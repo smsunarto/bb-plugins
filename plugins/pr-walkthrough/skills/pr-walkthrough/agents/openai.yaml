@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Walkthrough"
+  short_description: "Build narrative PR guides with linked evidence"
+  default_prompt: "Use $pr-walkthrough to build and browser-check a narrative review guide for the current pull request."

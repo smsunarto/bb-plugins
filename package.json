@@ -1,0 +1,21 @@
+{
+  "name": "bb-plugins",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "plugins/*"
+  ],
+  "overrides": {
+    "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub"
+  },
+  "scripts": {
+    "build": "bun run --filter './plugins/*' build",
+    "typecheck": "bun run --filter './plugins/*' typecheck",
+    "test": "bun run --filter './plugins/*' test",
+    "clean": "rm -rf plugins/*/dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

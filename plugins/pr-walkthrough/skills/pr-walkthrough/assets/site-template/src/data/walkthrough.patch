@@ -1,0 +1,8 @@
+diff --git a/src/example.ts b/src/example.ts
+index 7ed6ff8..56fb1a3 100644
+--- a/src/example.ts
++++ b/src/example.ts
+@@ -1 +1,2 @@
+-export const message = "before"
++export const message = "after"
++export const reviewed = true

@@ -1,0 +1,6 @@
+[install]
+# npm-style flat node_modules. Bun's default isolated linker hides a package's
+# own dependencies from the workspace root, which breaks type resolution for
+# bundled .d.ts files (e.g. @pierre/diffs -> shiki) and matches neither what
+# these plugins were developed against nor how `bb plugin build` resolves.
+linker = "hoisted"
