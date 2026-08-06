@@ -1,0 +1,35 @@
+{
+  "name": "bb-plugin-amp",
+  "version": "0.2.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.35",
+    "bbPluginSdk": "^0.4.1"
+  },
+  "bb": {
+    "name": "Amp",
+    "description": "Registers Amp as a custom ACP provider in bb through a bundled ACP bridge built on the official @ampcode/sdk.",
+    "branding": {
+      "icon": "Bot"
+    },
+    "server": "./server.ts",
+    "skills": []
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.2.1",
+    "@ampcode/sdk": "0.1.0-20260729105907-g72d5ca3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "build:bridge": "esbuild src/bridge.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/bridge.js --banner:js=\"import { createRequire as __bbCreateRequire } from 'node:module'; const require = __bbCreateRequire(import.meta.url);\"",
+    "build": "bun run build:bridge && bb plugin build .",
+    "clean": "rm -rf dist"
+  }
+}

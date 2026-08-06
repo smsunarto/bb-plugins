@@ -1,0 +1,3298 @@
+diff --git a/.github/actions/configure-git-private-repo/action.yml b/.github/actions/configure-git-private-repo/action.yml
+index 2257da712..bd0692c0e 100644
+--- a/.github/actions/configure-git-private-repo/action.yml
++++ b/.github/actions/configure-git-private-repo/action.yml
+@@ -1,16 +1,13 @@
+ name: "Configure Git for Private Repo Access"
+-description: "Updates manifest.json with token authentication for dev.world.sdk"
++description: "Adds token authentication to private Argus Labs UPM dependencies"
+ 
+ inputs:
+-  github_token:
+-    description: "GitHub token (fallback)"
+-    required: false
+-  watchdog_pat:
+-    description: "Watchdog PAT"
+-    required: false
+   monorepo_pat:
+-    description: "Monorepo PAT (preferred)"
+-    required: false
++    description: "Fine-grained read-only token for Argus-Labs/monorepo"
++    required: true
++  rampage_backend_pat:
++    description: "Fine-grained read-only token for Argus-Labs/rampage-backend"
++    required: true
+ 
+ runs:
+   using: "composite"
+@@ -19,60 +16,74 @@ runs:
+       if: runner.os != 'Windows'
+       shell: bash
+       env:
+-        GITHUB_TOKEN: ${{ inputs.github_token }}
+-        WATCHDOG_PAT: ${{ inputs.watchdog_pat }}
+         MONOREPO_PAT: ${{ inputs.monorepo_pat }}
++        RAMPAGE_BACKEND_PAT: ${{ inputs.rampage_backend_pat }}
+       run: |
+-        TOKEN=""
+-        if [ -n "$MONOREPO_PAT" ]; then
+-          TOKEN="$MONOREPO_PAT"
+-          echo "✅ Using MONOREPO_PAT for private repo access"
+-        elif [ -n "$WATCHDOG_PAT" ]; then
+-          TOKEN="$WATCHDOG_PAT"
+-          echo "✅ Using WATCHDOG_PAT for private repo access"
+-        elif [ -n "$GITHUB_TOKEN" ]; then
+-          TOKEN="$GITHUB_TOKEN"
+-          echo "✅ Using GITHUB_TOKEN for private repo access"
+-        fi
++        set -euo pipefail
+ 
+-        if [ -n "$TOKEN" ]; then
+-          MANIFEST_PATH="Packages/manifest.json"
+-          ESCAPED_TOKEN=$(echo "$TOKEN" | sed 's/[[\.*^$()+?{|]/\\&/g')
+-          sed -i.bak "s|https://github.com/Argus-Labs/monorepo.git|https://x-access-token:$ESCAPED_TOKEN@github.com/Argus-Labs/monorepo.git|g" "$MANIFEST_PATH"
+-          rm -f "$MANIFEST_PATH.bak"
+-          echo "✅ Updated manifest.json with token authentication for dev.world.sdk"
+-        else
+-          echo "⚠️ No GitHub token found - private repo access may fail"
++        if [ -z "$MONOREPO_PAT" ] || [ -z "$RAMPAGE_BACKEND_PAT" ]; then
++          echo "::error::Private UPM dependencies require MONOREPO_PAT and RAMPAGE_BACKEND_PAT."
++          echo "::error::Use fine-grained tokens with read-only Contents access to their named repository."
++          exit 1
+         fi
+ 
++        GIT_CONFIG_PATH="${RUNNER_TEMP}/rampage-upm-gitconfig"
++        rm -f "$GIT_CONFIG_PATH"
++        export GIT_CONFIG_GLOBAL="$GIT_CONFIG_PATH"
++
++        git config --global \
++          "url.https://x-access-token:${MONOREPO_PAT}@github.com/Argus-Labs/monorepo.git.insteadOf" \
++          "https://github.com/Argus-Labs/monorepo.git"
++        git config --global \
++          "url.https://x-access-token:${RAMPAGE_BACKEND_PAT}@github.com/Argus-Labs/rampage-backend.git.insteadOf" \
++          "https://github.com/Argus-Labs/rampage-backend.git"
++
++        {
++          echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_PATH"
++          echo "GIT_CONFIG_EXTENSIONS<<RAMPAGE_UPM_GIT_CONFIG"
++          git config --global --list
++          echo "RAMPAGE_UPM_GIT_CONFIG"
++        } >> "$GITHUB_ENV"
++        echo "Configured host and GameCI-container Git authentication; package files unchanged"
++
+     - name: Configure Git (Windows)
+       if: runner.os == 'Windows'
+       shell: pwsh
+       env:
+-        GITHUB_TOKEN: ${{ inputs.github_token }}
+-        WATCHDOG_PAT: ${{ inputs.watchdog_pat }}
+         MONOREPO_PAT: ${{ inputs.monorepo_pat }}
++        RAMPAGE_BACKEND_PAT: ${{ inputs.rampage_backend_pat }}
+       run: |
+-        $token = $null
+-        if ($env:MONOREPO_PAT) {
+-          $token = $env:MONOREPO_PAT
+-          Write-Host "✅ Using MONOREPO_PAT for private repo access"
+-        } elseif ($env:WATCHDOG_PAT) {
+-          $token = $env:WATCHDOG_PAT
+-          Write-Host "✅ Using WATCHDOG_PAT for private repo access"
+-        } elseif ($env:GITHUB_TOKEN) {
+-          $token = $env:GITHUB_TOKEN
+-          Write-Host "✅ Using GITHUB_TOKEN for private repo access"
++        $ErrorActionPreference = "Stop"
++
++        if (-not $env:MONOREPO_PAT -or -not $env:RAMPAGE_BACKEND_PAT) {
++          Write-Error "Private UPM dependencies require fine-grained, read-only MONOREPO_PAT and RAMPAGE_BACKEND_PAT tokens."
+         }
+ 
+-        if ($token) {
+-          $manifestPath = "Packages/manifest.json"
+-          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+-          $originalUrl = $manifest.dependencies.'dev.world.sdk'
+-          $newUrl = $originalUrl -replace 'https://github.com/', "https://x-access-token:$token@github.com/"
+-          $manifest.dependencies.'dev.world.sdk' = $newUrl
+-          $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath
+-          Write-Host "✅ Updated manifest.json with token authentication for dev.world.sdk"
+-        } else {
+-          Write-Host "⚠️ No GitHub token found - private repo access may fail"
++        $gitConfigPath = Join-Path $env:RUNNER_TEMP "rampage-upm-gitconfig"
++        Remove-Item -Force -ErrorAction SilentlyContinue $gitConfigPath
++        $env:GIT_CONFIG_GLOBAL = $gitConfigPath
++
++        git config --global `
++          "url.https://x-access-token:$env:MONOREPO_PAT@github.com/Argus-Labs/monorepo.git.insteadOf" `
++          "https://github.com/Argus-Labs/monorepo.git"
++        if ($LASTEXITCODE -ne 0) {
++          throw "Failed to configure Argus-Labs/monorepo authentication"
+         }
++
++        git config --global `
++          "url.https://x-access-token:$env:RAMPAGE_BACKEND_PAT@github.com/Argus-Labs/rampage-backend.git.insteadOf" `
++          "https://github.com/Argus-Labs/rampage-backend.git"
++        if ($LASTEXITCODE -ne 0) {
++          throw "Failed to configure Argus-Labs/rampage-backend authentication"
++        }
++
++        $configExtensions = git config --global --list
++        if ($LASTEXITCODE -ne 0) {
++          throw "Failed to read private UPM Git configuration"
++        }
++
++        Add-Content -Path $env:GITHUB_ENV -Value "GIT_CONFIG_GLOBAL=$gitConfigPath"
++        Add-Content -Path $env:GITHUB_ENV -Value "GIT_CONFIG_EXTENSIONS<<RAMPAGE_UPM_GIT_CONFIG"
++        Add-Content -Path $env:GITHUB_ENV -Value $configExtensions
++        Add-Content -Path $env:GITHUB_ENV -Value "RAMPAGE_UPM_GIT_CONFIG"
++        Write-Host "Configured host and GameCI-container Git authentication; package files unchanged"
+diff --git a/.github/workflows/build-nightly.yaml b/.github/workflows/build-nightly.yaml
+index 4a5bcf33e..0d61b9a5c 100644
+--- a/.github/workflows/build-nightly.yaml
++++ b/.github/workflows/build-nightly.yaml
+@@ -243,9 +243,8 @@ jobs:
+       - name: Configure Git for private repo access
+         uses: ./.github/actions/configure-git-private-repo
+         with:
+-          github_token: ${{ secrets.GITHUB_TOKEN }}
+-          watchdog_pat: ${{ secrets.WATCHDOG_PAT }}
+           monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
+ 
+       - name: Debug version values
+         run: |
+@@ -361,9 +360,8 @@ jobs:
+       - name: Configure Git for private repo access
+         uses: ./.github/actions/configure-git-private-repo
+         with:
+-          github_token: ${{ secrets.GITHUB_TOKEN }}
+-          watchdog_pat: ${{ secrets.WATCHDOG_PAT }}
+           monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
+ 
+       - name: Build with Unity
+         id: build
+@@ -445,9 +443,8 @@ jobs:
+       - name: Configure Git for private repo access
+         uses: ./.github/actions/configure-git-private-repo
+         with:
+-          github_token: ${{ secrets.GITHUB_TOKEN }}
+-          watchdog_pat: ${{ secrets.WATCHDOG_PAT }}
+           monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
+ 
+       - name: Build with Unity
+         uses: game-ci/unity-builder@v5
+@@ -528,9 +525,8 @@ jobs:
+       - name: Configure Git for private repo access
+         uses: ./.github/actions/configure-git-private-repo
+         with:
+-          github_token: ${{ secrets.GITHUB_TOKEN }}
+-          watchdog_pat: ${{ secrets.WATCHDOG_PAT }}
+           monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
+ 
+       - name: Build with Unity
+         uses: game-ci/unity-builder@v5
+diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
+index 450c0a04f..5004b03b9 100644
+--- a/.github/workflows/ci.yaml
++++ b/.github/workflows/ci.yaml
+@@ -59,10 +59,82 @@ jobs:
+           message: 'chore: Unity .meta Check Autofix'
+           add: '*.meta'
+ 
++  unity-editmode:
++    name: Unity EditMode Tests
++    needs: optimize_ci
++    if: >-
++      needs.optimize_ci.outputs.skip == 'false' &&
++      (
++        github.event_name != 'pull_request' ||
++        (
++          github.event.pull_request.head.repo.full_name == github.repository &&
++          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
++        )
++      )
++    concurrency:
++      group: unity-serial-1-ci
++      cancel-in-progress: false
++    runs-on: namespace-profile-unity-builder
++    permissions:
++      contents: read
++      checks: write
++    timeout-minutes: 30
++    steps:
++      - uses: namespacelabs/nscloud-checkout-action@v9
++        with:
++          fetch-depth: 1
++          lfs: true
++
++      - name: Configure Git for private UPM dependencies
++        uses: ./.github/actions/configure-git-private-repo
++        with:
++          monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
++
++      - name: Cache Unity Library
++        uses: namespacelabs/nscloud-cache-action@v1
++        with:
++          path: Library
++
++      - name: Run EditMode tests
++        id: editmode
++        uses: game-ci/unity-test-runner@v4
++        env:
++          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
++          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
++          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
++        with:
++          testMode: EditMode
++          githubToken: ${{ secrets.GITHUB_TOKEN }}
++
++      - name: Return Unity license
++        if: always()
++        uses: ./.github/actions/return-unity-license
++        with:
++          unity_email: ${{ secrets.UNITY_EMAIL }}
++          unity_password: ${{ secrets.UNITY_PASSWORD }}
++          unity_serial: ${{ secrets.UNITY_SERIAL }}
++
++      - name: Upload EditMode test results
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: unity-editmode-results
++          path: ${{ steps.editmode.outputs.artifactsPath }}
++          if-no-files-found: warn
++
+   qodana:
+     name: Qodana
+     needs: optimize_ci
+-    if: needs.optimize_ci.outputs.skip == 'false'
++    if: >-
++      needs.optimize_ci.outputs.skip == 'false' &&
++      (
++        github.event_name != 'pull_request' ||
++        (
++          github.event.pull_request.head.repo.full_name == github.repository &&
++          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
++        )
++      )
+     concurrency:
+       group: unity-serial-1-ci
+       cancel-in-progress: false
+@@ -78,6 +150,12 @@ jobs:
+           fetch-depth: 0
+           lfs: true
+ 
++      - name: Configure Git for private UPM dependencies
++        uses: ./.github/actions/configure-git-private-repo
++        with:
++          monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
++
+       - name: Cache Unity Library
+         uses: namespacelabs/nscloud-cache-action@v1
+         with:
+diff --git a/.github/workflows/manual-ios-build.yaml b/.github/workflows/manual-ios-build.yaml
+index 5b265e3e8..4ae9d13dc 100644
+--- a/.github/workflows/manual-ios-build.yaml
++++ b/.github/workflows/manual-ios-build.yaml
+@@ -151,9 +151,8 @@ jobs:
+       - name: Configure Git for private repo access
+         uses: ./.github/actions/configure-git-private-repo
+         with:
+-          github_token: ${{ secrets.GITHUB_TOKEN }}
+-          watchdog_pat: ${{ secrets.WATCHDOG_PAT }}
+           monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
+ 
+       - name: Build with Unity
+         id: build
+diff --git a/.github/workflows/manual-test-build.yaml b/.github/workflows/manual-test-build.yaml
+index fa60eae1f..82ea6db7a 100644
+--- a/.github/workflows/manual-test-build.yaml
++++ b/.github/workflows/manual-test-build.yaml
+@@ -22,6 +22,12 @@ jobs:
+           fetch-depth: 0
+           lfs: true
+ 
++      - name: Configure Git for private UPM dependencies
++        uses: ./.github/actions/configure-git-private-repo
++        with:
++          monorepo_pat: ${{ secrets.MONOREPO_PAT }}
++          rampage_backend_pat: ${{ secrets.RAMPAGE_BACKEND_PAT }}
++
+       - name: Cache Unity Library
+         uses: namespacelabs/nscloud-cache-action@v1
+         with:
+diff --git a/Assets/Rampage/ArgusLabs_Rampage_Client.asmdef b/Assets/Rampage/ArgusLabs_Rampage_Client.asmdef
+index a9f27bc1c..34b978285 100644
+--- a/Assets/Rampage/ArgusLabs_Rampage_Client.asmdef
++++ b/Assets/Rampage/ArgusLabs_Rampage_Client.asmdef
+@@ -46,7 +46,8 @@
+         "GUID:e0cd26848372d4e5c891c569017e11f1",
+         "GUID:177881d2867e14e2bac8e36e4de20177",
+         "GUID:21d1eb854b91ade49bc69a263d12bee2",
+-        "GUID:bb26fc9ad9756c346b786dbef47679fb"
++        "GUID:bb26fc9ad9756c346b786dbef47679fb",
++        "GUID:72c4bca220534ae49710c6fb58374c4a"
+     ],
+     "includePlatforms": [],
+     "excludePlatforms": [],
+@@ -57,4 +58,4 @@
+     "defineConstraints": [],
+     "versionDefines": [],
+     "noEngineReferences": false
+-}
+\ No newline at end of file
++}
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs
+index 103a7c677..e14e9fe82 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs
+@@ -10,6 +10,7 @@
+ using ArgusLabs.Rampage.Client.Common.Scripts.Core.Events;
+ 
+ using System.Collections;
++using Rampage.Gameplay;
+ using UnityEngine;
+ 
+ using VContainer;
+@@ -567,30 +568,22 @@ private void UpdateOrbitalPositionLocally()
+                 _smoothedOrbitCenter = Vector3.Lerp(_smoothedOrbitCenter, centerTarget, followT);
+             }
+ 
+-            // Advance angle based on angular speed (degrees per second)
+-            _orbCurrentAngle += _orbAngularSpeed * Time.deltaTime;
+-            
+-            // Normalize angle to 0-360 range (same as backend)
+-            while (_orbCurrentAngle >= 360f)
+-            {
+-                _orbCurrentAngle -= 360f;
+-            }
+-            while (_orbCurrentAngle < 0f)
+-            {
+-                _orbCurrentAngle += 360f;
+-            }
+-
+-            // Calculate orbital offset (MUST match backend math!)
+-            float angleRad = _orbCurrentAngle * Mathf.Deg2Rad;
+-            Vector3 offset = new Vector3(
+-                Mathf.Cos(angleRad) * _orbRadius,  // X offset on horizontal plane
+-                0.5f,                               // Fixed Y height
+-                Mathf.Sin(angleRad) * _orbRadius   // Z offset on horizontal plane
++            _orbCurrentAngle = OrbKinematics.AdvanceAngle(
++                _orbCurrentAngle,
++                _orbAngularSpeed,
++                Time.deltaTime);
++            OrbPosition sharedPosition = OrbKinematics.CalculatePosition(
++                _smoothedOrbitCenter.x,
++                0.5,
++                _smoothedOrbitCenter.z,
++                _orbCurrentAngle,
++                _orbRadius);
++            Vector3 targetPosition = new Vector3(
++                (float)sharedPosition.X,
++                (float)sharedPosition.Y,
++                (float)sharedPosition.Z
+             );
+ 
+-            // Calculate target world position
+-            Vector3 targetPosition = _smoothedOrbitCenter + offset;
+-            
+             // Direct assignment - no interpolation needed (already at 60 FPS!)
+             _transform.position = targetPosition;
+             Position = targetPosition;
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs
+index 5b7e2bb0e..029453d1a 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs
+@@ -11,6 +11,7 @@
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.Scripts.Pool;
+ using ArgusLabs.Rampage.Client.Common.Scripts.Core.Events;
+ using ArgusLabs.Rampage.Client.Gameplay.Network;
++using Rampage.Gameplay;
+ 
+ using UnityEngine;
+ using UnityEngine.AddressableAssets;
+@@ -71,6 +72,7 @@ public class OrbsController : AbstractGameController
+         private ObjectPool<Orb> _defaultOrbPool;
+         private IObjectResolver _resolver;
+         private IGameplayNetworkService _networkService;
++        private ServerTickClock _serverTickClock;
+         private SynchronizationContext _unitySyncContext;
+ 
+         private struct PendingOrbSpawn
+@@ -84,14 +86,20 @@ private struct PendingOrbSpawn
+             public float InitialAngle;
+             public float OrbitSpeed;
+             public float Radius;
++            public float Duration;
++            public ulong PhaseOriginTick;
+             public float QueuedAt;
+         }
+ 
+         [Inject]
+-        public void Construct(IObjectResolver resolver, IGameplayNetworkService networkService)
++        public void Construct(
++            IObjectResolver resolver,
++            IGameplayNetworkService networkService,
++            ServerTickClock serverTickClock)
+         {
+             _resolver = resolver;
+             _networkService = networkService;
++            _serverTickClock = serverTickClock;
+             _unitySyncContext = SynchronizationContext.Current;
+         }
+ 
+@@ -246,8 +254,10 @@ private void OnOrbSpawned(ShardEvent<OrbSpawnedEvent> shardEvent)
+ 
+                 float initialAngle = data.GetInitialAngle();
+                 float scale = data.GetScale();
+-                float radius = data.GetRadius() != 0 ? data.GetRadius() : 3f;
+-                float orbitSpeed = data.GetOrbitSpeed() != 0 ? data.GetOrbitSpeed() : 180f;
++                float radius = data.GetRadius();
++                float orbitSpeed = data.GetOrbitSpeed();
++                float duration = data.GetDuration();
++                ulong phaseOriginTick = data.GetPhaseOriginTick();
+ 
+                 if (string.IsNullOrEmpty(entityId))
+                 {
+@@ -282,6 +292,8 @@ private void OnOrbSpawned(ShardEvent<OrbSpawnedEvent> shardEvent)
+                     InitialAngle = initialAngle,
+                     OrbitSpeed = orbitSpeed,
+                     Radius = radius,
++                    Duration = duration,
++                    PhaseOriginTick = phaseOriginTick,
+                     QueuedAt = Time.unscaledTime,
+                 };
+ 
+@@ -488,7 +500,20 @@ private bool TrySpawnFromRequest(PendingOrbSpawn request)
+                 return false;
+             }
+ 
+-            orb.SetupOrbParameters(request.InitialAngle, request.OrbitSpeed, request.Radius);
++            float elapsedAtClient = 0f;
++            if (request.PhaseOriginTick != 0)
++            {
++                elapsedAtClient = request.Duration > 0f
++                    ? (float)_serverTickClock.GetElapsedSeconds(
++                        request.PhaseOriginTick,
++                        request.Duration)
++                    : (float)_serverTickClock.GetElapsedSeconds(request.PhaseOriginTick);
++            }
++            float currentAngle = OrbKinematics.AdvanceAngle(
++                request.InitialAngle,
++                request.OrbitSpeed,
++                elapsedAtClient);
++            orb.SetupOrbParameters(currentAngle, request.OrbitSpeed, request.Radius);
+             return true;
+         }
+ 
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs
+index 4ee8a7b01..74e434787 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs
+@@ -3,6 +3,8 @@
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.Scripts.Network.Interfaces;
+ using ArgusLabs.Rampage.Client.Common.Scripts.DataLoader.DataDefinition;
+ using ArgusLabs.Rampage.Client.Common.Scripts.DataLoader.DataDefinition.Implementations;
++using ArgusLabs.Rampage.Client.Gameplay.Network;
++using Rampage.Gameplay;
+ using UnityEngine;
+ using UnityEngine.Pool;
+ 
+@@ -19,6 +21,7 @@ public class LocalMovementPredictionService
+ 
+         private readonly IGameplayNetworkService _gameplayNetworkService;
+         private readonly MovementSettings _settings;
++        private readonly ServerTickClock _serverTickClock;
+ 
+         // Visual correction offset to avoid teleport after reconciliation
+         private Vector3 _visualOffset = Vector3.zero;
+@@ -80,7 +83,7 @@ public class LocalMovementPredictionService
+ 
+         #region Server Reconciliation
+ 
+-        private readonly Queue<(Vector3 pos, long ts, uint lastSeq, Vector3 velocity, uint serverTick)> _serverSnapshots = new();
++        private readonly Queue<(Vector3 pos, long ts, uint lastSeq, Vector3 velocity, ulong serverTick)> _serverSnapshots = new();
+ 
+         // CRITICAL: Track highest acknowledged sequence to skip stale/out-of-order snapshots.
+         // Without this, jitter can cause old snapshots to arrive late and trigger false corrections.
+@@ -120,12 +123,11 @@ public class LocalMovementPredictionService
+         private Vector3 _dashDirection = Vector3.zero;
+         private Vector3 _dashRawTargetPosition = Vector3.zero;
+         private Vector3 _dashResolvedTargetPosition = Vector3.zero;
+-        private float _dashStartTime;
++        private PauseAwareElapsedTimer _dashTimer;
++        private bool _isGameplayPaused;
+         //private float _dashEndTime; // Unused?
+-        private float _dashDuration = 0.5f; // From dash hook config, fallback 0.5f
+-        private float _dashDistance = 6.0f; // From dash hook config, fallback 6.0f
+-        private const float DashDurationFallback = 0.5f;
+-        private const float DashDistanceFallback = 6.0f;
++        private float _dashDuration;
++        private float _dashDistance;
+         private const float DashReconciliationPositionEpsilonSqr = 0.0001f;
+ 
+         /// <summary>
+@@ -152,6 +154,7 @@ public void StopDashPrediction(Vector3? finalPosition = null)
+             _isPredictingDash = false;
+             _dashAnimationComplete = false; // Reset animation state
+             _dashDirection = Vector3.zero;
++            _dashTimer.Reset();
+             ClearMovementPredictionBuffers();
+ 
+             // If server provided an authoritative final position, snap to it
+@@ -184,10 +187,12 @@ public void StopDashPrediction(Vector3? finalPosition = null)
+ 
+         public LocalMovementPredictionService(
+             IGameplayNetworkService gameplayNetworkService,
+-            MovementSettings settings)
++            MovementSettings settings,
++            ServerTickClock serverTickClock)
+         {
+             _gameplayNetworkService = gameplayNetworkService;
+             _settings = settings;
++            _serverTickClock = serverTickClock;
+             ResetRttEstimates();
+         }
+ 
+@@ -217,6 +222,8 @@ public void SetLocalPlayer(Player player)
+                 _accumulatedTime = 0f;
+                 _visualOffset = Vector3.zero;
+                 _dashDirection = Vector3.zero;
++                _dashTimer.Reset();
++                _isGameplayPaused = false;
+                 _inputPausedUntil = 0f; // Clear any overflow pause
+                 _isThrottling = false;
+                 _throttleTickCounter = 0;
+@@ -240,6 +247,8 @@ public void ClearLocalPlayer()
+             _accumulatedTime = 0f;
+             _visualOffset = Vector3.zero;
+             _dashDirection = Vector3.zero;
++            _dashTimer.Reset();
++            _isGameplayPaused = false;
+             _inputPausedUntil = 0f; // Clear any overflow pause
+             _isThrottling = false;
+             _throttleTickCounter = 0;
+@@ -265,7 +274,7 @@ public void UpdateInput(Vector2 moveInput, Vector3 aimDirection)
+ 
+         /// <summary>
+         /// Start predicting dash movement locally. Called when player presses Space.
+-        /// Uses dash hook config (distance, duration) from ability definition to match backend.
++        /// Uses the latest server-resolved dash distance and duration.
+         /// </summary>
+         public void StartDashPrediction()
+         {
+@@ -277,22 +286,27 @@ public void StartDashPrediction()
+                 return;
+             }
+ 
+-            // Resolve dash duration and distance from ability definition (dash hook config)
++            // Use parameters resolved from the live server ability instance.
+             (_dashDuration, _dashDistance) = GetDashHookParams();
++            if (_dashDuration <= 0f || _dashDistance <= 0f)
++            {
++                Debug.LogWarning(
++                    "[LocalMovementPredictionService] Dash prediction is waiting for authoritative parameters.");
++                return;
++            }
+ 
+-            // Calculate dash direction (same logic as backend)
+-            Vector3 dashDirection = CalculateDashDirection();
+-            _dashDirection = dashDirection;
+-
+-            // Calculate collision-resolved target position from prediction state, not the smoothed render transform.
+             _dashStartPosition = _physicsController != null ? _physicsController.GetPosition() : _predictedPosition;
+             _dashStartPosition.y = 0f;
+-            _dashTargetPosition = ResolveDashTarget(_dashStartPosition, dashDirection, _dashDistance);
++
++            // Plan from prediction state, not the smoothed render transform.
++            DashPlanResult dashPlan = CalculateDashPlan(_dashStartPosition, _dashDistance);
++            _dashDirection = ToUnityDirection(in dashPlan);
++            _dashTargetPosition = ResolveDashTarget(_dashStartPosition, in dashPlan);
+ 
+             ClearMovementPredictionBuffers();
+             _isPredictingDash = true;
+             _dashAnimationComplete = false; // Reset animation state
+-            _dashStartTime = Time.time;
++            BeginDashTiming(Time.time);
+             //_dashEndTime = Time.time + _dashDuration; <-- Unused
+         }
+ 
+@@ -302,17 +316,57 @@ public void ApplyAuthoritativeDash(
+             Vector3 direction,
+             Vector3? resolvedTargetPosition)
+         {
+-            if (!_isPredictingDash || distance <= 0f || duration <= 0f)
++            if (_settings != null)
++            {
++                if (distance > 0f)
++                {
++                    _settings.DashDistance = distance;
++                }
++                if (duration > 0f)
++                {
++                    _settings.DashDuration = duration;
++                }
++            }
++
++            if (distance <= 0f || duration <= 0f)
+             {
+                 return;
+             }
+ 
+             direction.y = 0f;
+-            if (direction.sqrMagnitude > 0.0001f)
++            bool hasDirection = direction.sqrMagnitude > 0.0001f;
++            if (hasDirection)
+             {
+                 _dashDirection = direction.normalized;
+             }
+ 
++            if (!_isPredictingDash)
++            {
++                _dashStartPosition = _physicsController != null
++                    ? _physicsController.GetPosition()
++                    : _predictedPosition;
++                _dashStartPosition.y = 0f;
++                if (!hasDirection)
++                {
++                    DashPlanResult plan = CalculateDashPlan(
++                        _dashStartPosition,
++                        distance);
++                    _dashDirection = ToUnityDirection(in plan);
++                }
++                _dashTargetPosition = resolvedTargetPosition.HasValue
++                    ? resolvedTargetPosition.Value
++                    : ResolveDashTarget(_dashStartPosition, _dashDirection, distance);
++                _dashTargetPosition.y = 0f;
++                _dashResolvedTargetPosition = _dashTargetPosition;
++                _dashDistance = distance;
++                _dashDuration = duration;
++                BeginDashTiming(Time.time);
++                _dashAnimationComplete = false;
++                ClearMovementPredictionBuffers();
++                _isPredictingDash = true;
++                return;
++            }
++
+             Vector3 targetPosition;
+             if (resolvedTargetPosition.HasValue)
+             {
+@@ -332,7 +386,8 @@ public void ApplyAuthoritativeDash(
+                 return;
+             }
+ 
+-            float elapsedTime = Mathf.Max(0f, Time.time - _dashStartTime);
++            float currentTime = Time.time;
++            float elapsedTime = GetDashElapsedTime(currentTime);
+             float remainingDuration = Mathf.Max(duration - elapsedTime, _settings.FixedStepSeconds);
+             Vector3 currentPosition = _physicsController != null
+                 ? _physicsController.GetPosition()
+@@ -343,10 +398,20 @@ public void ApplyAuthoritativeDash(
+             _dashTargetPosition = targetPosition;
+             _dashDistance = distance;
+             _dashDuration = remainingDuration;
+-            _dashStartTime = Time.time;
++            BeginDashTiming(currentTime);
+             _dashAnimationComplete = false;
+         }
+ 
++        private void BeginDashTiming(float currentTime)
++        {
++            _dashTimer.Start(currentTime, _isGameplayPaused);
++        }
++
++        private float GetDashElapsedTime(float currentTime)
++        {
++            return _dashTimer.GetElapsed(currentTime);
++        }
++
+         private void ClearMovementPredictionBuffers()
+         {
+             _pendingInputs.Clear();
+@@ -359,11 +424,10 @@ private void ClearMovementPredictionBuffers()
+         }
+ 
+         /// <summary>
+-        /// Dash duration and distance for client prediction. Hook params are server-only;
+-        /// constants match abilities.json dash onCast parameters.
++        /// Dash duration and distance last supplied by the authoritative server.
+         /// </summary>
+-        private static (float duration, float distance) GetDashHookParams() =>
+-            (DashDurationFallback, DashDistanceFallback);
++        private (float duration, float distance) GetDashHookParams() =>
++            (_settings.DashDuration, _settings.DashDistance);
+ 
+         public Vector3 GetDashDirection()
+         {
+@@ -377,18 +441,35 @@ public Vector3 GetDashDirection()
+ 
+         private Vector3 CalculateDashDirection()
+         {
+-            // Check if player is moving (velocity magnitude > threshold)
+-            float velocityMagnitude = _currentVelocity.magnitude;
+-            if (velocityMagnitude > 0.1f)
+-            {
+-                // Use movement direction (normalized velocity)
+-                return _currentVelocity.normalized;
+-            }
+-            else
+-            {
+-                // Use facing direction (aim direction)
+-                return new Vector3(_aimDirection.x, 0f, _aimDirection.z).normalized;
+-            }
++            DashPlanResult plan = CalculateDashPlan(_predictedPosition, _dashDistance);
++            return ToUnityDirection(in plan);
++        }
++
++        private DashPlanResult CalculateDashPlan(Vector3 startPosition, float distance)
++        {
++            var input = new DashPlanInput(
++                startPosition.x,
++                startPosition.z,
++                _currentVelocity.x,
++                _currentVelocity.z,
++                _aimDirection.x,
++                _aimDirection.z,
++                distance);
++            return DashKinematics.Plan(in input);
++        }
++
++        private static Vector3 ToUnityDirection(in DashPlanResult plan) =>
++            new(plan.DirectionX, 0f, plan.DirectionZ);
++
++        private Vector3 ResolveDashTarget(
++            Vector3 startPosition,
++            in DashPlanResult plan)
++        {
++            _dashRawTargetPosition = new Vector3(
++                (float)plan.RawTargetX,
++                0f,
++                (float)plan.RawTargetZ);
++            return ResolveDashTargetWithPhysics(startPosition);
+         }
+ 
+         private Vector3 ResolveDashTarget(Vector3 startPosition, Vector3 direction, float distance)
+@@ -396,9 +477,20 @@ private Vector3 ResolveDashTarget(Vector3 startPosition, Vector3 direction, floa
+             startPosition.y = 0f;
+             direction.y = 0f;
+ 
+-            _dashRawTargetPosition = startPosition + (direction * distance);
+-            _dashRawTargetPosition.y = 0f;
++            var input = new DashPlanInput(
++                startPosition.x,
++                startPosition.z,
++                direction.x,
++                direction.z,
++                direction.x,
++                direction.z,
++                distance);
++            DashPlanResult plan = DashKinematics.Plan(in input);
++            return ResolveDashTarget(startPosition, in plan);
++        }
+ 
++        private Vector3 ResolveDashTargetWithPhysics(Vector3 startPosition)
++        {
+             if (_physicsController == null)
+             {
+                 _dashResolvedTargetPosition = _dashRawTargetPosition;
+@@ -455,8 +547,15 @@ public void Update()
+             if (_isPredictingDash)
+             {
+                 float currentTime = Time.time;
+-                float elapsedTime = currentTime - _dashStartTime;
+-                float progress = Mathf.Clamp01(elapsedTime / _dashDuration);
++                float elapsedTime = GetDashElapsedTime(currentTime);
++                var sampleInput = new DashSampleInput(
++                    _dashStartPosition.x,
++                    _dashStartPosition.z,
++                    _dashTargetPosition.x,
++                    _dashTargetPosition.z,
++                    elapsedTime,
++                    _dashDuration);
++                DashSampleResult dashSample = DashKinematics.Sample(in sampleInput);
+ 
+                 // Safety timeout: if server hasn't sent DashCompleted after 2 seconds, force end prediction
+                 // This prevents getting stuck if server event is lost
+@@ -473,11 +572,14 @@ public void Update()
+                 {
+                     skipFixedStepPrediction = true;
+ 
+-                    // Lerp position from start to target (only during animation phase)
+-                    if (progress < 1.0f)
++                    // Apply every sample, including the exact completed endpoint.
++                    // The server event owns dash lifetime; the shared kernel owns position.
++                    if (!dashSample.Complete || !_dashAnimationComplete)
+                     {
+-                        Vector3 targetLerpPosition = Vector3.Lerp(_dashStartPosition, _dashTargetPosition, progress);
+-                        targetLerpPosition.y = 0f;
++                        var targetLerpPosition = new Vector3(
++                            (float)dashSample.PositionX,
++                            0f,
++                            (float)dashSample.PositionZ);
+ 
+                         // Use physics-based movement for dash (respects walls)
+                         if (_physicsController != null)
+@@ -493,22 +595,10 @@ public void Update()
+                         }
+                         _previousPosition = _predictedPosition;
+                     }
+-                    else if (!_dashAnimationComplete)
++
++                    if (dashSample.Complete && !_dashAnimationComplete)
+                     {
+-                        // Animation finished - snap to final position once
+                         _dashAnimationComplete = true;
+-                        if (_physicsController != null)
+-                        {
+-                            _predictedPosition = _physicsController.GetPosition();
+-                            _predictedPosition.y = 0f;
+-                        }
+-                        else
+-                        {
+-                            _localPlayer.transform.position = _dashTargetPosition;
+-                            _predictedPosition = _dashTargetPosition;
+-                        }
+-                        _previousPosition = _predictedPosition;
+-
+                         Debug.Log($"[LocalMovementPredictionService] 💨 Dash animation complete - waiting for DashCompleted event from server");
+                     }
+                     // Keep _isPredictingDash = true until StopDashPrediction() is called by DashCompleted event
+@@ -882,7 +972,7 @@ async void Send()
+             }
+         }
+ 
+-        public void OnServerPositionUpdate(Vector3 serverPosition, long serverTimestamp, uint lastProcessedInputSeq, Vector3 serverVelocity, uint serverTick)
++        public void OnServerPositionUpdate(Vector3 serverPosition, long serverTimestamp, uint lastProcessedInputSeq, Vector3 serverVelocity, ulong serverTick)
+         {
+             if (_localPlayer == null || _settings == null) return;
+ 
+@@ -1066,6 +1156,12 @@ private void ApplyServerSnapshotAndReconcile(Vector3 serverPosition, uint lastPr
+         /// </summary>
+         public void OnGameplayPaused()
+         {
++            _isGameplayPaused = true;
++            if (_isPredictingDash)
++            {
++                _dashTimer.Pause(Time.time);
++            }
++
+             _pendingInputs.Clear();
+             _lastAcknowledgedSequence = _inputSequence; // Mark all current inputs as acknowledged to avoid stale processing on resume
+ 
+@@ -1096,6 +1192,9 @@ public void OnGameplayPaused()
+         /// </summary>
+         public void OnGameplayResumed()
+         {
++            _dashTimer.Resume(Time.time);
++            _isGameplayPaused = false;
++
+             _pendingInputs.Clear();
+             _lastAcknowledgedSequence = _inputSequence; // Mark all current inputs as acknowledged to start fresh
+             _inputPausedUntil = 0f; // Clear any overflow pause
+@@ -1127,12 +1226,14 @@ private void ResetRttEstimates()
+             {
+                 _smoothedRttSeconds = 0.05f;
+                 _maxObservedRttSeconds = 0.05f;
++                _serverTickClock.ObserveSmoothedRttSeconds(_smoothedRttSeconds);
+                 return;
+             }
+ 
+             float baseline = Mathf.Clamp(_settings.FixedStepSeconds, 0.05f, _settings.MaxReconciliationExtrapolationSeconds);
+             _smoothedRttSeconds = baseline;
+             _maxObservedRttSeconds = baseline;
++            _serverTickClock.ObserveSmoothedRttSeconds(_smoothedRttSeconds);
+         }
+ 
+         private void UpdateRttEstimates(float rttSeconds)
+@@ -1149,6 +1250,67 @@ private void UpdateRttEstimates(float rttSeconds)
+             _maxObservedRttSeconds = Mathf.Max(_maxObservedRttSeconds * maxDecay, rttSeconds);
+             _maxObservedRttSeconds = Mathf.Min(_maxObservedRttSeconds, _settings.MaxReconciliationExtrapolationSeconds);
+             _smoothedRttSeconds = Mathf.Min(_smoothedRttSeconds, _settings.MaxReconciliationExtrapolationSeconds);
++            _serverTickClock.ObserveSmoothedRttSeconds(_smoothedRttSeconds);
++        }
++    }
++
++    public struct PauseAwareElapsedTimer
++    {
++        private bool _isStarted;
++        private bool _isPaused;
++        private float _startTime;
++        private float _pauseStartedAt;
++
++        public void Start(float currentTime, bool paused)
++        {
++            _isStarted = true;
++            _isPaused = paused;
++            _startTime = currentTime;
++            _pauseStartedAt = paused ? currentTime : 0f;
++        }
++
++        public void Pause(float currentTime)
++        {
++            if (!_isStarted || _isPaused)
++            {
++                return;
++            }
++
++            _isPaused = true;
++            _pauseStartedAt = currentTime;
++        }
++
++        public void Resume(float currentTime)
++        {
++            if (!_isStarted || !_isPaused)
++            {
++                return;
++            }
++
++            float pausedSeconds = currentTime - _pauseStartedAt;
++            if (pausedSeconds > 0f)
++            {
++                _startTime += pausedSeconds;
++            }
++            _isPaused = false;
++            _pauseStartedAt = 0f;
++        }
++
++        public float GetElapsed(float currentTime)
++        {
++            if (!_isStarted)
++            {
++                return 0f;
++            }
++
++            float effectiveCurrentTime = _isPaused ? _pauseStartedAt : currentTime;
++            float elapsed = effectiveCurrentTime - _startTime;
++            return elapsed > 0f ? elapsed : 0f;
++        }
++
++        public void Reset()
++        {
++            this = default;
+         }
+     }
+ }
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs
+index ecd1c6697..daf9b6932 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs
+@@ -20,6 +20,7 @@ public class MovementParametersController : IInitializable, IDisposable
+     {
+         private readonly IGameplayNetworkService _gameplayNetworkService;
+         private readonly MovementSettings _settings;
++        private readonly ServerTickClock _serverTickClock;
+         private Action<ShardEvent<MovementParametersEvent>> _movementParametersHandler;
+         private bool _hasReceivedParameters;
+ 
+@@ -27,14 +28,17 @@ public class MovementParametersController : IInitializable, IDisposable
+ 
+         public MovementParametersController(
+             IGameplayNetworkService gameplayNetworkService,
+-            MovementSettings settings)
++            MovementSettings settings,
++            ServerTickClock serverTickClock)
+         {
+             _gameplayNetworkService = gameplayNetworkService;
+             _settings = settings;
++            _serverTickClock = serverTickClock;
+         }
+ 
+         void IInitializable.Initialize()
+         {
++            _settings.ResetMoveSpeedAuthority();
+             _ = InitializeAsync();
+         }
+ 
+@@ -98,17 +102,26 @@ private void OnMovementParametersEvent(ShardEvent<MovementParametersEvent> evt)
+             try
+             {
+                 var p = evt.Payload;
++                string currentPersonaId = _gameplayNetworkService.GetCurrentPersonaId();
++                if (string.IsNullOrEmpty(currentPersonaId) ||
++                    !string.Equals(p.PersonaID, currentPersonaId, StringComparison.Ordinal))
++                {
++                    return;
++                }
+                 parameters = new MovementParameters
+                 {
+                     PersonaID = p.PersonaID ?? string.Empty,
+                     MoveSpeed = p.MoveSpeed,
++                    ServerTick = p.ServerTick,
+                     MinInputThreshold = p.MinInputThreshold,
+                     MaxInputMagnitude = p.MaxInputMagnitude,
+                     TickRateHz = p.TickRateHz,
+                     MsPerTick = p.MsPerTick,
+                     PositionSyncInterval = p.PositionSyncInterval,
+                     UseQuantizedProtocol = p.UseQuantizedProtocol,
+-                    BaseTimestampReference = p.BaseTimestampReference
++                    BaseTimestampReference = p.BaseTimestampReference,
++                    DashDistance = p.DashDistance,
++                    DashDuration = p.DashDuration
+                 };
+             }
+             catch (Exception ex)
+@@ -126,12 +139,6 @@ private void OnMovementParametersEvent(ShardEvent<MovementParametersEvent> evt)
+ 
+         private void ApplyParametersOnMainThread(MovementParameters parameters)
+         {
+-            if (_hasReceivedParameters)
+-            {
+-                Debug.LogWarning("[MovementParametersController] Already received parameters, ignoring duplicate event");
+-                return;
+-            }
+-
+             ApplyParameters(parameters);
+             _hasReceivedParameters = true;
+             OnParametersReceived?.Invoke();
+@@ -149,6 +156,9 @@ private void ApplyParameters(MovementParameters parameters)
+             }
+ 
+             _settings.ApplyServerParameters(parameters);
++            _serverTickClock.Configure(
++                _settings.FixedStepSeconds,
++                _settings.MaxReconciliationExtrapolationSeconds);
+         }
+ 
+         /// <summary>
+@@ -158,4 +168,3 @@ private void ApplyParameters(MovementParameters parameters)
+ 
+     }
+ }
+-
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs
+index a416cfc67..476a864b0 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs
+@@ -15,6 +15,8 @@ public class MovementSettings : ScriptableObject
+         [Tooltip("Player movement speed in units per second (meters/second). Overridden by server on spawn via NewPlayer and movement_parameters events.")]
+         public float MoveSpeed = 5.0f;
+ 
++        [System.NonSerialized] private EffectiveMoveSpeedState _effectiveMoveSpeedState;
++
+         [Tooltip("Minimum input threshold to process movement (prevents noise)")]
+         [Range(0f, 0.1f)]
+         public float MinInputThreshold = 0.01f;
+@@ -30,6 +32,13 @@ public class MovementSettings : ScriptableObject
+         [Tooltip("Enable smooth interpolation between fixed timesteps to eliminate jittering")]
+         public bool EnableSmoothInterpolation = true;
+ 
++        [Header("Dash Prediction (Default - overridden by server)")]
++        [Tooltip("Dash distance in meters. Overridden by movement_parameters and dash_executed events.")]
++        public float DashDistance;
++
++        [Tooltip("Dash duration in seconds. Overridden by movement_parameters and dash_executed events.")]
++        public float DashDuration;
++
+         [Header("Reconciliation")]
+         [Tooltip("Distance at which to snap to server position (local player)")]
+         [Range(0.1f, 10f)]
+@@ -98,13 +107,41 @@ public void ApplyServerParameters(MovementParameters parameters)
+         {
+             Debug.Log($"[MovementSettings] 📥 Received from server: MoveSpeed={parameters.MoveSpeed} (double)");
+ 
+-            MoveSpeed = (float)parameters.MoveSpeed;
++            ApplyEffectiveMoveSpeed((float)parameters.MoveSpeed, parameters.ServerTick);
+             MinInputThreshold = (float)parameters.MinInputThreshold;
+             MaxInputMagnitude = (float)parameters.MaxInputMagnitude;
+             FixedStepSeconds = parameters.MsPerTick / 1000f;
+             BaseTimestampReference = (long)parameters.BaseTimestampReference;
++            if (parameters.DashDistance > 0f)
++            {
++                DashDistance = parameters.DashDistance;
++            }
++            if (parameters.DashDuration > 0f)
++            {
++                DashDuration = parameters.DashDuration;
++            }
++
++            Debug.Log($"[MovementSettings] ✅ Applied: MoveSpeed={MoveSpeed}f, TickRate={1f / FixedStepSeconds}Hz, FixedStep={FixedStepSeconds}s, Dash={DashDistance}m/{DashDuration}s");
++        }
+ 
+-            Debug.Log($"[MovementSettings] ✅ Applied: MoveSpeed={MoveSpeed}f, TickRate={1f / FixedStepSeconds}Hz, FixedStep={FixedStepSeconds}s");
++        /// <summary>
++        /// Applies the server-computed effective speed. The client never rebuilds buff
++        /// arithmetic; one ordered snapshot is the prediction source of truth.
++        /// </summary>
++        public bool ApplyEffectiveMoveSpeed(float effectiveMoveSpeed, ulong serverTick)
++        {
++            if (!_effectiveMoveSpeedState.TryApply(effectiveMoveSpeed, serverTick))
++            {
++                return false;
++            }
++
++            MoveSpeed = _effectiveMoveSpeedState.Value;
++            return true;
++        }
++
++        public void ResetMoveSpeedAuthority()
++        {
++            _effectiveMoveSpeedState.Reset();
+         }
+     }
+ 
+@@ -117,6 +154,7 @@ public struct MovementParameters
+     {
+         public string PersonaID;
+         public double MoveSpeed;
++        public ulong ServerTick;
+         public double MinInputThreshold;
+         public double MaxInputMagnitude;
+         public uint TickRateHz;
+@@ -124,5 +162,39 @@ public struct MovementParameters
+         public uint PositionSyncInterval;
+         public bool UseQuantizedProtocol;
+         public ulong BaseTimestampReference;
++        public float DashDistance;
++        public float DashDuration;
++    }
++
++    public struct EffectiveMoveSpeedState
++    {
++        private bool _hasValue;
++        private ulong _latestServerTick;
++
++        public float Value { get; private set; }
++
++        public bool TryApply(float effectiveMoveSpeed, ulong serverTick)
++        {
++            if (effectiveMoveSpeed <= 0f ||
++                float.IsNaN(effectiveMoveSpeed) ||
++                float.IsInfinity(effectiveMoveSpeed))
++            {
++                return false;
++            }
++            if (_hasValue && serverTick < _latestServerTick)
++            {
++                return false;
++            }
++
++            Value = effectiveMoveSpeed;
++            _latestServerTick = serverTick;
++            _hasValue = true;
++            return true;
++        }
++
++        public void Reset()
++        {
++            this = default;
++        }
+     }
+ }
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs
+index f4e01c2f7..5e12e5ea5 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs
+@@ -27,6 +27,7 @@ public class PlayersMovementController : IInitializable, ITickable, IDisposable
+         private readonly PlayersManager _playersManager;
+         private readonly PlayerInputController _playerInputController;
+         private readonly MovementSettings _settings;
++        private readonly ServerTickClock _serverTickClock;
+         private NetworkPerformanceMonitor _performanceMonitor;
+ 
+         private readonly Queue<PlayerPositionSnapshot> _pendingPositionUpdates = new();
+@@ -37,23 +38,14 @@ public class PlayersMovementController : IInitializable, ITickable, IDisposable
+         private Action<ShardEvent> _playerPositionUpdateEventHandler;
+         private Action<ShardEvent> _playerPositionUpdateQuantizedEventHandler;
+         private Action<ShardEvent<PlayerPositionDeltaEvent>> _playerPositionDeltaEventHandler;
+-        private Action<ShardEvent<EmptyEvent>> _pauseGameEventHandler;
+-        private Action<ShardEvent<EmptyEvent>> _resumeGameEventHandler;
+-        private Action<ShardEvent<SpeedBoostAppliedEvent>> _speedBoostEventHandler;
++        private Action<ShardEvent<GamePhaseTickEvent>> _pauseGameEventHandler;
++        private Action<ShardEvent<GamePhaseTickEvent>> _resumeGameEventHandler;
+         private Action<ShardEvent<DashExecutedEvent>> _dashExecutedEventHandler;
+         private Action<ShardEvent<DashCompletedEvent>> _dashCompletedEventHandler;
+         private Action<ShardEvent<AbilityCastRejectedEvent>> _abilityCastRejectedEventHandler;
+         public event Action<Player> OnLocalPlayerDashEnded;
+         public event Action<Player> OnLocalPlayerDashRejected;
+ 
+-        // Base speed from server (before any boosts) - used to calculate boosted speed.
+-        // The server computes effective speed as: MoveSpeed.Speed * BuffList.MovementSpeedMultiplier()
+-        // where MoveSpeed.Speed = baseSpeed * (1 + statGrowthModifier) and
+-        // MovementSpeedMultiplier = 1 + buffListModifier. These are multiplicative, NOT additive.
+-        // We track them separately so a buff event doesn't overwrite the stat growth modifier.
+-        private float _baseMoveSpeed;
+-        private float _statGrowthModifier;
+-        private float _buffListModifier;
+         private readonly Dictionary<ulong, PlayerDeltaState> _deltaStateCache = new();
+         private readonly Queue<uint> _forceAllPlayersToIdleQueue = new();
+         private bool _isPaused;
+@@ -71,12 +63,14 @@ public PlayersMovementController(
+             IGameplayNetworkService gameplayNetworkService,
+             PlayersManager playersManager,
+             PlayerInputController playerInputController,
+-            MovementSettings settings)
++            MovementSettings settings,
++            ServerTickClock serverTickClock)
+         {
+             _gameplayNetworkService = gameplayNetworkService;
+             _playersManager = playersManager;
+             _playerInputController = playerInputController;
+             _settings = settings;
++            _serverTickClock = serverTickClock;
+         }
+ 
+         public void SetPerformanceMonitor(NetworkPerformanceMonitor monitor)
+@@ -93,7 +87,8 @@ void IInitializable.Initialize()
+             // Create local player controller
+             _localPlayerMovementPredictionService = new LocalMovementPredictionService(
+                 _gameplayNetworkService,
+-                _settings);
++                _settings,
++                _serverTickClock);
+ 
+             // Subscribe to input events
+             _playerInputController.OnMovementInputChanged += HandleMovementInputChanged;
+@@ -212,11 +207,6 @@ private async Task SubscribeToPlayerEvents()
+                 Debug.Log("[PlayersMovementController] Subscribing to player events");
+             }
+ 
+-            // Store the initial base speed from server sync
+-            _baseMoveSpeed = _settings.MoveSpeed;
+-            _statGrowthModifier = 0f;
+-            _buffListModifier = 0f;
+-
+             _playerPositionUpdateEventHandler = OnPlayerPositionUpdateEvent;
+             await _gameplayNetworkService.SubscribeEventAsync("player_position_update", _playerPositionUpdateEventHandler, ct);
+ 
+@@ -227,14 +217,10 @@ private async Task SubscribeToPlayerEvents()
+             await _gameplayNetworkService.SubscribeEventAsync<PlayerPositionDeltaEvent>("player_position_delta", _playerPositionDeltaEventHandler, ct);
+ 
+             _pauseGameEventHandler = OnPauseGameEvent;
+-            await _gameplayNetworkService.SubscribeEventAsync<EmptyEvent>("pause_game_event", _pauseGameEventHandler, ct);
++            await _gameplayNetworkService.SubscribeEventAsync<GamePhaseTickEvent>("pause_game_event", _pauseGameEventHandler, ct);
+ 
+             _resumeGameEventHandler = OnResumeGameEvent;
+-            await _gameplayNetworkService.SubscribeEventAsync<EmptyEvent>("resume_game_event", _resumeGameEventHandler, ct);
+-
+-            // Subscribe to speed boost events to update client movement speed
+-            _speedBoostEventHandler = OnSpeedBoostEvent;
+-            await _gameplayNetworkService.SubscribeEventAsync<SpeedBoostAppliedEvent>("speed_boost_applied", _speedBoostEventHandler, ct);
++            await _gameplayNetworkService.SubscribeEventAsync<GamePhaseTickEvent>("resume_game_event", _resumeGameEventHandler, ct);
+ 
+             _dashExecutedEventHandler = OnDashExecutedEvent;
+             await _gameplayNetworkService.SubscribeEventAsync<DashExecutedEvent>("dash_executed", _dashExecutedEventHandler, ct);
+@@ -259,9 +245,8 @@ private async Task UnsubscribeFromPlayerEvents()
+             await _gameplayNetworkService.UnsubscribeEventAsync("player_position_update", _playerPositionUpdateEventHandler, ct);
+             await _gameplayNetworkService.UnsubscribeEventAsync("player_position_update_quantized", _playerPositionUpdateQuantizedEventHandler, ct);
+             await _gameplayNetworkService.UnsubscribeEventAsync<PlayerPositionDeltaEvent>("player_position_delta", _playerPositionDeltaEventHandler, ct);
+-            await _gameplayNetworkService.UnsubscribeEventAsync<EmptyEvent>("pause_game_event", _pauseGameEventHandler, ct);
+-            await _gameplayNetworkService.UnsubscribeEventAsync<EmptyEvent>("resume_game_event", _resumeGameEventHandler, ct);
+-            await _gameplayNetworkService.UnsubscribeEventAsync<SpeedBoostAppliedEvent>("speed_boost_applied", _speedBoostEventHandler, ct);
++            await _gameplayNetworkService.UnsubscribeEventAsync<GamePhaseTickEvent>("pause_game_event", _pauseGameEventHandler, ct);
++            await _gameplayNetworkService.UnsubscribeEventAsync<GamePhaseTickEvent>("resume_game_event", _resumeGameEventHandler, ct);
+             await _gameplayNetworkService.UnsubscribeEventAsync<DashExecutedEvent>("dash_executed", _dashExecutedEventHandler, ct);
+             await _gameplayNetworkService.UnsubscribeEventAsync<DashCompletedEvent>("dash_completed", _dashCompletedEventHandler, ct);
+             await _gameplayNetworkService.UnsubscribeEventAsync<AbilityCastRejectedEvent>("ability_cast_rejected", _abilityCastRejectedEventHandler, ct);
+@@ -299,12 +284,24 @@ private void OnPlayerPositionUpdateQuantizedEvent(ShardEvent evt)
+             Debug.LogWarning("[PlayersMovementController] Failed to parse player_position_update_quantized payload");
+         }
+ 
+-        private void OnPauseGameEvent(ShardEvent<EmptyEvent> evt)
++        private void OnPauseGameEvent(ShardEvent<GamePhaseTickEvent> evt)
+         {
+             if (EnableDebugLogs)
+             {
+                 Debug.Log($"[PlayersMovementController] Pausing game #{GetHashCode()}");
+             }
++            if (evt.Payload != null)
++            {
++                _serverTickClock.PauseGameplay(evt.Payload.ServerTick);
++                if (!_serverTickClock.IsGameplayPaused || _isPaused)
++                {
++                    return;
++                }
++            }
++            else if (_isPaused)
++            {
++                return;
++            }
+             _isPaused = true;
+ 
+             // Reset local prediction buffers to avoid reconciliation bursts on resume.
+@@ -314,82 +311,28 @@ private void OnPauseGameEvent(ShardEvent<EmptyEvent> evt)
+             _forceAllPlayersToIdleQueue.Enqueue(0);
+         }
+ 
+-        private void OnResumeGameEvent(ShardEvent<EmptyEvent> evt)
++        private void OnResumeGameEvent(ShardEvent<GamePhaseTickEvent> evt)
+         {
+             if (EnableDebugLogs)
+             {
+                 Debug.Log("[PlayersMovementController] Resuming game");
+             }
+-            _isPaused = false;
+-
+-            // Reset again to ensure clean state after any queued snapshots during pause.
+-            _localPlayerMovementPredictionService?.OnGameplayResumed();
+-        }
+-
+-        /// <summary>
+-        /// Handles speed boost events from the server.
+-        /// Updates the client's movement speed to match the server's boosted speed.
+-        /// The server computes speed as MoveSpeed.Speed * BuffList.MovementSpeedMultiplier(),
+-        /// where stat growth modifies MoveSpeed.Speed and ability buffs modify the BuffList.
+-        /// These are multiplicative, so we track them separately to avoid one overwriting the other.
+-        /// </summary>
+-        private void OnSpeedBoostEvent(ShardEvent<SpeedBoostAppliedEvent> evt)
+-        {
+-            var p = evt.Payload;
+-            if (p == null)
++            if (evt.Payload != null)
+             {
+-                return;
+-            }
+-
+-            // Only update if this is for our local player
+-            if (_localPlayer == null)
+-            {
+-                return;
++                _serverTickClock.ResumeGameplay(evt.Payload.ServerTick);
++                if (_serverTickClock.IsGameplayPaused || !_isPaused)
++                {
++                    return;
++                }
+             }
+-
+-            if (p.EntityID != _playersManager.LocalPlayerEntityId)
++            else if (!_isPaused)
+             {
+-                // Speed boost for another player, ignore
+                 return;
+             }
++            _isPaused = false;
+ 
+-            // Recover base speed from current speed if it was changed externally
+-            // (e.g., by NewPlayer or movement_parameters events after initialization).
+-            float previousCombined = (1f + _statGrowthModifier) * (1f + _buffListModifier);
+-            if (Mathf.Abs(previousCombined) > 0.0001f)
+-            {
+-                _baseMoveSpeed = _settings.MoveSpeed / previousCombined;
+-            }
+-            else if (_baseMoveSpeed <= 0f)
+-            {
+-                _baseMoveSpeed = _settings.MoveSpeed;
+-            }
+-
+-            // Route by tag: stat growth events update the stat growth modifier,
+-            // everything else (ability buffs, buff expiration) updates the buff modifier.
+-            if (p.Tag == "stat_growth")
+-            {
+-                _statGrowthModifier = p.TotalModifier;
+-            }
+-            else
+-            {
+-                _buffListModifier = p.TotalModifier;
+-            }
+-
+-            // Multiplicative composition matching server:
+-            // server speed = baseSpeed * (1 + statGrowthMod) * clamp(1 + buffListMod, 0.01, 2.0)
+-            // Buff multiplier clamp matches server BuffList.MovementSpeedMultiplier() in buff.go.
+-            float buffMultiplier = Mathf.Clamp(1f + _buffListModifier, 0.01f, 2.0f);
+-            float oldSpeed = _settings.MoveSpeed;
+-            float newSpeed = Mathf.Max(0f, _baseMoveSpeed * (1f + _statGrowthModifier) * buffMultiplier);
+-            _settings.MoveSpeed = newSpeed;
+-
+-            if (EnableDebugLogs)
+-            {
+-                Debug.Log($"[PlayersMovementController] Speed modifier applied. Base:{_baseMoveSpeed:F2} " +
+-                    $"StatGrowth:{_statGrowthModifier:F2} BuffList:{_buffListModifier:F2} " +
+-                    $"OldSpeed:{oldSpeed:F2} NewSpeed:{newSpeed:F2} Tag:{p.Tag ?? "none"}");
+-            }
++            // Reset again to ensure clean state after any queued snapshots during pause.
++            _localPlayerMovementPredictionService?.OnGameplayResumed();
+         }
+ 
+         private void OnDashExecutedEvent(ShardEvent<DashExecutedEvent> evt)
+@@ -519,6 +462,7 @@ private void OnPlayerPositionDeltaEvent(ShardEvent<PlayerPositionDeltaEvent> evt
+ 
+         private void QueuePositionUpdate(in PlayerPositionSnapshot snapshot)
+         {
++            _serverTickClock.ObserveServerTick(snapshot.ServerTick);
+             _pendingPositionUpdates.Enqueue(snapshot);
+ 
+             // Safety valve: if we ever fall behind (main thread stall / network burst),
+@@ -763,9 +707,6 @@ private void UpdateLocalPlayerCache()
+ 
+             _localPlayer = managerLocalPlayer;
+             _localPlayerMovementPredictionService?.SetLocalPlayer(_localPlayer);
+-            _statGrowthModifier = 0f;
+-            _buffListModifier = 0f;
+-            _baseMoveSpeed = _settings.MoveSpeed;
+ 
+             if (EnableDebugLogs)
+             {
+@@ -966,7 +907,7 @@ private static bool TryCreateSnapshot(
+             var lastProcessedSeq = TryGetUInt(payload, "LastProcessedInputSeq", "last_processed_input_seq");
+             var velocityX = TryGetFloat(payload, velocityScale, "VelocityX", "velocity_x", "velocityX");
+             var velocityZ = TryGetFloat(payload, velocityScale, "VelocityZ", "velocity_z", "velocityZ");
+-            var serverTick = TryGetUInt(payload, "ServerTick", "server_tick");
++            TryGetUlong(payload, out var serverTick, "ServerTick", "server_tick");
+ 
+             snapshot = new PlayerPositionSnapshot(entityId, position, timestamp, direction, lastProcessedSeq, velocityX, velocityZ, serverTick);
+             return true;
+@@ -1083,7 +1024,7 @@ public PlayerPositionSnapshot(
+                 uint lastProcessedInputSeq,
+                 float velocityX,
+                 float velocityZ,
+-                uint serverTick)
++                ulong serverTick)
+             {
+                 EntityId = entityId;
+                 Position = position;
+@@ -1102,7 +1043,7 @@ public PlayerPositionSnapshot(
+             public uint LastProcessedInputSeq { get; }
+             public float VelocityX { get; }
+             public float VelocityZ { get; }
+-            public uint ServerTick { get; }
++            public ulong ServerTick { get; }
+ 
+             public Vector2 GetMovementVector()
+             {
+@@ -1126,7 +1067,7 @@ private sealed class PlayerDeltaState
+             public float VelocityX;
+             public float VelocityZ;
+             public uint LastProcessedInputSeq;
+-            public uint ServerTick;
++            public ulong ServerTick;
+             public long Timestamp;
+         }
+ 
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersSpawnManager.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersSpawnManager.cs
+index feb5e90b8..1ab0af182 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersSpawnManager.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersSpawnManager.cs
+@@ -405,6 +405,7 @@ private void OnNewPlayerEvent(ShardEvent<NewPlayerEvent> evt)
+             float? initialHP = evt.Payload.CurrentHP;
+             float? maxHP = evt.Payload.MaxHP;
+             float? moveSpeed = evt.Payload.MoveSpeed;
++            ulong serverTick = evt.Payload.ServerTick;
+             string visualPetId = VisualPetIds.Normalize(evt.Payload.VisualPetId);
+ 
+             Debug.Log($"[PlayersSpawnManager] New player event received: EntityId = {entityId}, Nickname = {nickname}, CharacterId = {characterId}, HP = {initialHP}/{maxHP}");
+@@ -421,6 +422,7 @@ private void OnNewPlayerEvent(ShardEvent<NewPlayerEvent> evt)
+                 InitialHP = initialHP,
+                 MaxHP = maxHP,
+                 MoveSpeed = moveSpeed,
++                ServerTick = serverTick,
+                 VisualPetId = visualPetId
+             });
+         }
+@@ -664,7 +666,9 @@ private async UniTask<Player> SpawnPlayerAsync(PlayerSpawnData spawnData)
+                 // Apply move speed from backend to ensure client-side prediction matches server
+                 if (spawnData.MoveSpeed.HasValue && spawnData.MoveSpeed.Value > 0 && _movementSettings != null)
+                 {
+-                    _movementSettings.MoveSpeed = spawnData.MoveSpeed.Value;
++                    _movementSettings.ApplyEffectiveMoveSpeed(
++                        spawnData.MoveSpeed.Value,
++                        spawnData.ServerTick);
+                     Debug.Log($"[PlayersSpawnManager] 🏃 Applied MoveSpeed from NewPlayer: {spawnData.MoveSpeed.Value}");
+                 }
+ 
+@@ -859,6 +863,7 @@ public class PlayerSpawnData
+         public float? InitialHP { get; set; }
+         public float? MaxHP { get; set; }
+         public float? MoveSpeed { get; set; }
++        public ulong ServerTick { get; set; }
+         public string VisualPetId { get; set; }
+     }
+ 
+@@ -890,6 +895,8 @@ public class NewPlayerEvent
+         public float? MaxHP { get; set; }
+         [Field("MoveSpeed")]
+         public float? MoveSpeed { get; set; }
++        [Field("ServerTick")]
++        public ulong ServerTick { get; set; }
+         [Field("VisualPetID")]
+         public string VisualPetId { get; set; }
+     }
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/RemotePlayerController.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/RemotePlayerController.cs
+index a1573ad33..cc247e954 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/RemotePlayerController.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/RemotePlayerController.cs
+@@ -13,7 +13,7 @@ public sealed class RemotePlayerController : MonoBehaviour
+ 
+         private struct StateSample
+         {
+-            public uint ServerTick;
++            public ulong ServerTick;
+             public float LocalTime;
+             public Vector3 Pos;
+             public Vector3 Dir;
+@@ -33,8 +33,8 @@ private struct StateSample
+         private static MovementSettings _cachedSettings;
+         
+         private float _estimatedTickDuration = 0.05f; // ~20Hz default, updated dynamically
+-        private uint _lastReceivedTick;
+-        private uint _highestBufferedTick; // Track highest tick for out-of-order filtering
++        private ulong _lastReceivedTick;
++        private ulong _highestBufferedTick; // Track highest tick for out-of-order filtering
+         private Vector3 _idlePresentationFacing = Vector3.forward;
+ 
+         private void Awake()
+@@ -157,7 +157,7 @@ private void ApplyDirection(Vector3 targetDir, Vector3 targetVelocity)
+         /// SIMCOM-STYLE: Only buffers samples with ticks newer than what we've already seen.
+         /// This filters out-of-order arrivals caused by jitter, keeping the buffer monotonically sorted.
+         /// </summary>
+-        public void SetTargetPosition(Vector3 position, Vector3 direction, uint serverTick, Vector3 velocity = default)
++        public void SetTargetPosition(Vector3 position, Vector3 direction, ulong serverTick, Vector3 velocity = default)
+         {
+             // SIMCOM-STYLE: Filter out-of-order snapshots
+             // Only buffer samples with ticks newer than what we've already seen
+@@ -171,7 +171,7 @@ public void SetTargetPosition(Vector3 position, Vector3 direction, uint serverTi
+             // Update tick duration estimate for adaptive delay
+             if (_lastReceivedTick > 0 && serverTick > _lastReceivedTick && _buffer.Count > 0)
+             {
+-                uint tickDelta = serverTick - _lastReceivedTick;
++                ulong tickDelta = serverTick - _lastReceivedTick;
+                 float timeDelta = Time.time - _buffer[^1].LocalTime;
+                 if (tickDelta > 0 && timeDelta > 0)
+                 {
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/PlayerEntity.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/PlayerEntity.cs
+index 7f58dacea..06d95256d 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/PlayerEntity.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/PlayerEntity.cs
+@@ -48,6 +48,6 @@ public class PlayerEntity
+         public Direction Direction { get; set; }
+         public float ServerVelocityX { get; set; }
+         public float ServerVelocityZ { get; set; }
+-        public uint ServerTick { get; set; }
++        public ulong ServerTick { get; set; }
+     }
+ }
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs
+index beb32cc47..d735258cf 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs
+@@ -1,5 +1,7 @@
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.Objects.Entities.Scripts;
++using ArgusLabs.Rampage.Client._Scenes.Gameplay.Scripts.Services;
+ using ArgusLabs.Rampage.Client.Common.Scripts.Rendering;
++using Rampage.Gameplay;
+ using System;
+ using System.Collections.Generic;
+ using UnityEngine;
+@@ -50,7 +52,7 @@ public class Laser : MonoBehaviour
+         [Header("Debug")]
+         [SerializeField] private bool showDebugLogs = false;
+ 
+-        private float startTime;
++        private float _elapsedSeconds;
+         private Vector3 startPos;
+         private Vector3 endPos;
+         private bool isInitialized = false;
+@@ -126,14 +128,28 @@ private void DestroyOwnedMaterial()
+         /// <summary>
+         /// Initialize the laser with an entity ID and properties
+         /// </summary>
+-        public void Init(string entityId, ulong ownerId, Dictionary<string, object> payload)
++        public void Init(
++            string entityId,
++            ulong ownerId,
++            Dictionary<string, object> payload,
++            float phaseElapsedSeconds = 0f)
+         {
+             this.entityId = entityId;
+             OwnerId = ownerId;
+-            startTime = Time.time;
+ 
+             ParsePayload(payload);
++            _elapsedSeconds = duration > 0f
++                ? Mathf.Clamp(phaseElapsedSeconds, 0f, duration)
++                : Mathf.Max(0f, phaseElapsedSeconds);
++            timeRemaining = duration > 0f
++                ? Mathf.Max(0f, duration - _elapsedSeconds)
++                : duration;
++
+             CalculatePositions(payload);
++            if (movementPattern == LaserMovementPattern.Sweeping)
++            {
++                UpdateSweepingAngle();
++            }
+             SetupLineRenderer();
+ 
+             isInitialized = true;
+@@ -268,13 +284,20 @@ private void CalculatePositions(Dictionary<string, object> payload)
+             }
+             else
+             {
+-                // Calculate end position from start, angle, and length
+-                float angleRad = angle * Mathf.Deg2Rad;
+-                endPos = SetLaserHeight(startPos + new Vector3(
+-                    Mathf.Cos(angleRad) * length,
+-                    0f, // Will be set to LASER_HEIGHT by SetLaserHeight
+-                    Mathf.Sin(angleRad) * length
+-                ));
++                // A zero-width sweep evaluates the endpoint at the current angle.
++                LaserSweepResult result = LaserSweepKinematics.Evaluate(
++                    startPos.x,
++                    startPos.z,
++                    angle,
++                    0f,
++                    1f,
++                    0f,
++                    length,
++                    false);
++                endPos = SetLaserHeight(new Vector3(
++                    (float)result.EndX,
++                    0f,
++                    (float)result.EndZ));
+             }
+         }
+ 
+@@ -455,7 +478,7 @@ public void ResetLaser()
+             isInitialized = false;
+             entityId = "";
+             OwnerId = 0;
+-            startTime = 0;
++            _elapsedSeconds = 0f;
+ 
+             // Reset properties
+             laserId = "";
+@@ -530,11 +553,14 @@ public void ResetLaser()
+         private void Update()
+         {
+             if (!isInitialized) return;
++            if (GameplayAnimationPauseManager.IsPaused) return;
++
++            _elapsedSeconds += Time.deltaTime;
+ 
+             // Update time remaining
+             if (duration > 0)
+             {
+-                timeRemaining = duration - (Time.time - startTime);
++                timeRemaining = duration - _elapsedSeconds;
+ 
+                 // Only update colors when alpha actually changes (during the last 0.5s fade-out)
+                 if (lineRenderer != null && lineRenderer.enabled)
+@@ -607,37 +633,21 @@ private void UpdateSweepingAngle()
+                 return;
+             }
+ 
+-            float elapsedTime = duration - timeRemaining;
+-
+-            float traversal = elapsedTime / sweepDuration;
+-            int segment = (int)Mathf.Floor(traversal);
+-            float phase = traversal - Mathf.Floor(traversal); // 0..1
+-
+-            float progress = phase;
+-            if (segment%2 == 1) {
+-                progress = 1 - phase;
+-            }
+-
+-            if (sweepStartDirection == "Right") {
+-                progress = 1 - progress;
+-            }
+-
+-            float centerAngle = this.centerAngle;
+-            float halfArc = sweepAngle / 2;
+-            float offset = -halfArc + progress * sweepAngle;
+-            float newAngle = centerAngle + offset;
+-
+-            while (newAngle >= 360f) newAngle -= 360f;
+-            while (newAngle < 0f) newAngle += 360f;
+-
+-            angle = newAngle;
+-
+-            float angleRad = angle * Mathf.Deg2Rad;
+-            endPos = SetLaserHeight(startPos + new Vector3(
+-                Mathf.Cos(angleRad) * length,
+-                0f, // Will be set to LASER_HEIGHT by SetLaserHeight
+-                Mathf.Sin(angleRad) * length
+-            ));
++            LaserSweepResult result = LaserSweepKinematics.Evaluate(
++                startPos.x,
++                startPos.z,
++                centerAngle,
++                sweepAngle,
++                sweepDuration,
++                _elapsedSeconds,
++                length,
++                sweepStartDirection == "Right");
++
++            angle = (float)result.AngleDegrees;
++            endPos = SetLaserHeight(new Vector3(
++                (float)result.EndX,
++                0f,
++                (float)result.EndZ));
+         }
+ 
+         /// <summary>
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs
+index 4be4761e5..f75c9f092 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs
+@@ -78,6 +78,7 @@ public class LaserController : AbstractGameController
+         /// Network service for subscribing to backend events
+         /// </summary>
+         private IGameplayNetworkService _networkService;
++        private ServerTickClock _serverTickClock;
+ 
+         /// <summary>
+         /// Unity synchronization context for thread-safe operations
+@@ -85,10 +86,14 @@ public class LaserController : AbstractGameController
+         private SynchronizationContext _unitySyncContext;
+ 
+         [Inject]
+-        public void Construct(IObjectResolver resolver, IGameplayNetworkService networkService)
++        public void Construct(
++            IObjectResolver resolver,
++            IGameplayNetworkService networkService,
++            ServerTickClock serverTickClock)
+         {
+             _resolver = resolver;
+             _networkService = networkService;
++            _serverTickClock = serverTickClock;
+             _unitySyncContext = SynchronizationContext.Current;
+         }
+ 
+@@ -186,7 +191,8 @@ private async UniTask InitializeLaserPool()
+         public Laser SpawnLaser(
+             ulong entityId,
+             ulong ownerId,
+-            Dictionary<string, object> payload)
++            Dictionary<string, object> payload,
++            float phaseElapsedSeconds = 0f)
+         {
+             // Check if pool is ready
+             if (_laserPool == null)
+@@ -220,7 +226,7 @@ public Laser SpawnLaser(
+             }
+ 
+             // Initialize laser with backend data
+-            laser.Init(entityId.ToString(), ownerId, payload);
++            laser.Init(entityId.ToString(), ownerId, payload, phaseElapsedSeconds);
+             
+             // Track active laser
+             _activeLasers[entityId] = laser;
+@@ -365,10 +371,30 @@ private void OnLaserSpawned(ShardEvent shardEvent)
+                     ownerId = 0;
+                 }
+ 
++                ulong phaseOriginTick = GetUlong(
++                    payload,
++                    0,
++                    "PhaseOriginTick",
++                    "phase_origin_tick");
++                float duration = GetFloat(payload, 0f, "Duration", "duration");
++
+                 // Dispatch to main thread
+                 _unitySyncContext.Post(_ =>
+                 {
+-                    var laser = SpawnLaser(laserEntityId, ownerId, payload);
++                    float phaseElapsedSeconds = 0f;
++                    if (phaseOriginTick != 0)
++                    {
++                        phaseElapsedSeconds = duration > 0f
++                            ? (float)_serverTickClock.GetElapsedSeconds(
++                                phaseOriginTick,
++                                duration)
++                            : (float)_serverTickClock.GetElapsedSeconds(phaseOriginTick);
++                    }
++                    var laser = SpawnLaser(
++                        laserEntityId,
++                        ownerId,
++                        payload,
++                        phaseElapsedSeconds);
+                     if (laser != null)
+                     {
+                         Debug.Log($"[LaserController] ✅ Laser {laserEntityId} spawned from network event");
+@@ -630,5 +656,45 @@ private static int GetInt(
+             }
+         }
+ 
++        private static float GetFloat(
++            IReadOnlyDictionary<string, object> payload,
++            float defaultValue,
++            params string[] keys)
++        {
++            if (!TryGetValue(payload, out var value, keys) || value == null)
++            {
++                return defaultValue;
++            }
++
++            try
++            {
++                return Convert.ToSingle(value);
++            }
++            catch
++            {
++                return defaultValue;
++            }
++        }
++
++        private static ulong GetUlong(
++            IReadOnlyDictionary<string, object> payload,
++            ulong defaultValue,
++            params string[] keys)
++        {
++            if (!TryGetValue(payload, out var value, keys) || value == null)
++            {
++                return defaultValue;
++            }
++
++            try
++            {
++                return Convert.ToUInt64(value);
++            }
++            catch
++            {
++                return defaultValue;
++            }
++        }
++
+     }
+ }
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Projectile.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Projectile.cs
+index c3c887811..3872ba75b 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Projectile.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Projectile.cs
+@@ -14,19 +14,11 @@
+ 
+ namespace ArgusLabs.Rampage.Client._Scenes.Gameplay.Objects.Projectiles.Scripts
+ {
+-    public enum ProjectileType
+-    {
+-        Line,
+-        Follow,
+-        Special,
+-        Orb
+-    }
+-
+     public class Projectile : Entity
+     {
+         #region Constants
+ 
+-        private const float INTERPOLATION_DURATION = 0.15f; // 150ms for smooth orb movement (backend sends updates every 50ms)
++        private const float INTERPOLATION_DURATION = 0.15f;
+ 
+         #endregion
+ 
+@@ -63,12 +55,6 @@ private struct HitEntityInfo
+         private bool _ownerIsPlayer;
+         private TrailRenderer[] _trailRenderers;
+         
+-        // Orb-specific fields for client-side prediction
+-        private float _orbCurrentAngle;
+-        private float _orbAngularSpeed; // Degrees per second
+-        private float _orbRadius;
+-        private bool _useClientSidePrediction; // True for orbs that calculate position locally
+-
+         #endregion
+ 
+         #region Public Properties
+@@ -78,8 +64,6 @@ private struct HitEntityInfo
+         public bool ShouldDestroy { get; set; }
+         public ObjectPool<Projectile> Pool { get; private set; }
+         public float InterpolationTime { get; private set; }
+-        public ProjectileType ProjectileType { get; private set; }
+-        public IEntity OwnerEntity { get; private set; }
+         public bool IsWaitingForAnimation { get; set; }
+         public VFXEvent.VFXType MuzzleFlashParticle => _muzzleFlashParticle;
+ 
+@@ -93,16 +77,6 @@ private void Awake()
+             _trailRenderers = GetComponentsInChildren<TrailRenderer>();
+         }
+ 
+-        private void Update()
+-        {
+-            // Client-side prediction for orbs: calculate local position at 60 FPS
+-            // Orb is parented to owner, so Unity handles world position automatically!
+-            if (_useClientSidePrediction && ProjectileType == ProjectileType.Orb)
+-            {
+-                UpdateOrbitalPositionLocally();
+-            }
+-        }
+-
+         private void OnValidate()
+         {
+             if (_mainParticle == null && GetComponentInChildren<ParticleSystem>() != null)
+@@ -157,22 +131,6 @@ public void Setup(ulong entityId, ulong ownerId, Vector3 startPosition,
+             InterpolationTime = 0f;
+             _ownerIsPlayer = ownerIsPlayer;
+             _isDespawning = false;
+-            _useClientSidePrediction = false; // Disable by default
+-            
+-            // For orbs, cache the owner entity for smooth tracking
+-            if (ProjectileType == ProjectileType.Orb)
+-            {
+-                EntityManager.Instance.TryGetEntity(ownerId, out IEntity owner);
+-                OwnerEntity = owner;
+-                
+-                // Clear trail renderers immediately for orbs to prevent visible trails during positioning
+-                ClearTrails();
+-            }
+-            else
+-            {
+-                OwnerEntity = null;
+-            }
+-            
+             if (RemoteDirection.magnitude == 0)
+             {
+                 _transform.position = startPosition;
+@@ -183,21 +141,6 @@ public void Setup(ulong entityId, ulong ownerId, Vector3 startPosition,
+             }
+         }
+ 
+-        /// <summary>
+-        /// Set up orbital parameters for client-side prediction.
+-        /// This enables smooth 60 FPS orbital movement without server updates.
+-        /// CRITICAL: Math must match backend's calculateOrbPosition exactly!
+-        /// </summary>
+-        public void SetupOrbParameters(float initialAngle, float angularSpeed, float radius)
+-        {
+-            _orbCurrentAngle = initialAngle;
+-            _orbAngularSpeed = angularSpeed;
+-            _orbRadius = radius;
+-            _useClientSidePrediction = true;
+-            
+-            Debug.Log($"[Projectile] Orb {EntityId} setup: angle={initialAngle}°, speed={angularSpeed}°/s, radius={radius}m");
+-        }
+-
+         public void SetRendering(bool allowRendering)
+         {
+             gameObject.SetActive(allowRendering);
+@@ -232,15 +175,7 @@ public void SetProjectileRemotePositionAndRotation(Vector3 remotePosition, Vecto
+                 return;
+             }
+ 
+-            // For orbs, keep the Y position from backend (0.5f), for regular projectiles use owner's Y
+-            if (ProjectileType == ProjectileType.Orb)
+-            {
+-                RemotePosition = remotePosition; // Keep backend Y position (0.5f)
+-            }
+-            else
+-            {
+-                RemotePosition = new Vector3(remotePosition.x, OwnerYPosition, remotePosition.z);
+-            }
++            RemotePosition = new Vector3(remotePosition.x, OwnerYPosition, remotePosition.z);
+             
+             RemoteDirection = remoteDirection;
+ 
+@@ -284,9 +219,6 @@ public void Despawn()
+             // Clear trails before returning to pool
+             ClearTrails();
+             
+-            // Clear owner reference to prevent memory leaks
+-            OwnerEntity = null;
+-
+             Pool.Release(this);
+         }
+ 
+@@ -310,38 +242,7 @@ public void Activate()
+ 
+         private void UpdatePositionInterpolation(float t)
+         {
+-            // For orbs, adjust target position based on owner's current visual position
+-            if (ProjectileType == ProjectileType.Orb && OwnerEntity != null && OwnerEntity is Entity ownerEntityComponent)
+-            {
+-                // Get owner's remote (server) position - this is what backend is using as the orbit center
+-                // For 2D top-down movement, use only X and Z (horizontal plane), Y is always at ground level (0)
+-                Vector3 ownerRemotePos = new Vector3(
+-                    OwnerEntity.RemotePosition.x,
+-                    0f, // Player is at ground level
+-                    OwnerEntity.RemotePosition.z
+-                );
+-                
+-                // Calculate the orbital offset (orb position relative to owner center from backend)
+-                // RemotePosition already has Y=0.5f from backend
+-                Vector3 orbitalOffset = RemotePosition - new Vector3(ownerRemotePos.x, 0.5f, ownerRemotePos.z);
+-                
+-                // Apply this offset to the owner's current visual (interpolated) position
+-                Vector3 ownerVisualPos = new Vector3(
+-                    ownerEntityComponent.transform.position.x,
+-                    0.5f, // Keep orb at fixed height
+-                    ownerEntityComponent.transform.position.z
+-                );
+-                Vector3 adjustedTarget = ownerVisualPos + orbitalOffset;
+-                
+-                // Interpolate to the adjusted target (smooth following of owner's visual position)
+-                _transform.position = Vector3.Lerp(Position, adjustedTarget, t);
+-            }
+-            else
+-            {
+-                // Regular projectiles: normal interpolation
+-                _transform.position = Vector3.Lerp(Position, RemotePosition, t);
+-            }
+-            
++            _transform.position = Vector3.Lerp(Position, RemotePosition, t);
+             Position = _transform.position;
+         }
+ 
+@@ -426,60 +327,6 @@ private bool IsValidHitTarget<T>() where T : Component
+             return !(ownerEntity is T);
+         }
+ 
+-        /// <summary>
+-        /// Update orb's orbital position locally at 60 FPS (no server updates needed!).
+-        /// Uses owner's CURRENT visual position for smooth following.
+-        /// 
+-        /// CRITICAL: This math MUST exactly match backend's calculateOrbPosition in orb_collision.go!
+-        /// Backend formula:
+-        ///   angleRad = angle * Pi / 180.0
+-        ///   X = centerX + cos(angleRad) * radius
+-        ///   Y = centerY (fixed height)
+-        ///   Z = centerZ + sin(angleRad) * radius
+-        /// </summary>
+-        private void UpdateOrbitalPositionLocally()
+-        {
+-            // Get owner's SMOOTHED position (Entity.Position, not transform.position!)
+-            // transform.position may jitter due to network interpolation
+-            Entity ownerEntityComponent = OwnerEntity as Entity;
+-            if (ownerEntityComponent == null)
+-            {
+-                return; // Owner not found
+-            }
+-
+-            // Use Position property - this is the smoothed, interpolated position
+-            Vector3 ownerPosition = ownerEntityComponent.Position;
+-
+-            // Advance angle based on angular speed (degrees per second)
+-            _orbCurrentAngle += _orbAngularSpeed * Time.deltaTime;
+-            
+-            // Normalize angle to 0-360 range (same as backend)
+-            while (_orbCurrentAngle >= 360f)
+-            {
+-                _orbCurrentAngle -= 360f;
+-            }
+-            while (_orbCurrentAngle < 0f)
+-            {
+-                _orbCurrentAngle += 360f;
+-            }
+-
+-            // Calculate orbital offset (MUST match backend math!)
+-            float angleRad = _orbCurrentAngle * Mathf.Deg2Rad;
+-            Vector3 offset = new Vector3(
+-                Mathf.Cos(angleRad) * _orbRadius,  // X offset on horizontal plane
+-                0.5f,                               // Fixed Y height
+-                Mathf.Sin(angleRad) * _orbRadius   // Z offset on horizontal plane
+-            );
+-
+-            // Calculate target world position
+-            Vector3 targetPosition = ownerPosition + offset;
+-            
+-            // Direct assignment - no interpolation needed (already at 60 FPS!)
+-            _transform.position = targetPosition;
+-            Position = targetPosition;
+-            RemotePosition = targetPosition;
+-        }
+-
+         #endregion
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/ProjectilesManager.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/ProjectilesManager.cs
+index 6ddc2c09a..2f22a4443 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/ProjectilesManager.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/ProjectilesManager.cs
+@@ -315,13 +315,10 @@ private void OnNewProjectileEvent(ShardEvent evt)
+                         _predictedLocalProjectile.RemoteDirection = velocity;
+                         _activeProjectiles[entityId] = _predictedLocalProjectile;
+ 
+-                        if (_predictedLocalProjectile.ProjectileType != ProjectileType.Orb)
+-                        {
+-                            Vector3 currentPos = _predictedLocalProjectile.transform.position;
+-                            float predictedScale = _predictedLocalProjectile.transform.localScale.x;
+-                            _extrapolator.InitializeProjectile(
+-                                entityId, currentPos, velocity, serverTimestamp, currentPos.y, predictedScale);
+-                        }
++                        Vector3 currentPos = _predictedLocalProjectile.transform.position;
++                        float predictedScale = _predictedLocalProjectile.transform.localScale.x;
++                        _extrapolator.InitializeProjectile(
++                            entityId, currentPos, velocity, serverTimestamp, currentPos.y, predictedScale);
+ 
+                         _predictedLocalProjectile = null;
+                         _predictedPool = null;
+@@ -566,10 +563,7 @@ private bool TrySpawnProjectileInternal(string projectileId, ulong entityId, ulo
+             SetupProjectile(projectile, entityId, ownerId, spawnPosition, velocity, pool, false, scale);
+             projectile.Activate();
+ 
+-            if (projectile.ProjectileType != ProjectileType.Orb)
+-            {
+-                _extrapolator.InitializeProjectile(entityId, spawnPosition, velocity, serverTimestamp, spawnPosition.y, scale);
+-            }
++            _extrapolator.InitializeProjectile(entityId, spawnPosition, velocity, serverTimestamp, spawnPosition.y, scale);
+ 
+             return true;
+         }
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Objects/VContainer/Scripts/GameplaySystemsInstaller.cs b/Assets/Rampage/_Scenes/Gameplay/Objects/VContainer/Scripts/GameplaySystemsInstaller.cs
+index d0e7ed335..85783293a 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Objects/VContainer/Scripts/GameplaySystemsInstaller.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Objects/VContainer/Scripts/GameplaySystemsInstaller.cs
+@@ -23,6 +23,7 @@
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.Scripts.Diagnostics;
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.Scripts.Services;
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.UI.Scripts;
++using ArgusLabs.Rampage.Client.Gameplay.Network;
+ 
+ using Minimap = ArgusLabs.Rampage.Client._Scenes.Gameplay.UI.Scripts.Minimap;
+ using VContainer;
+@@ -104,6 +105,8 @@ private void RegisterControllers(IContainerBuilder builder)
+             builder.RegisterEntryPoint<PlayerInputController>(Lifetime.Scoped).AsSelf();
+             builder.RegisterComponentInHierarchy<SpectatorCamera>().AsImplementedInterfaces().AsSelf();
+ 
++            builder.Register<ServerTickClock>(Lifetime.Scoped).AsSelf();
++
+             // Register movement parameter controller
+             builder.RegisterEntryPoint<MovementParametersController>(Lifetime.Scoped).AsSelf();
+ 
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/GameplayEvents.cs b/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/GameplayEvents.cs
+index 0a7d8e7f6..14410f129 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/GameplayEvents.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/GameplayEvents.cs
+@@ -166,7 +166,7 @@ public class PlayerPositionUpdateEvent
+         [Field("VelocityZ")] public float VelocityZ { get; set; }
+         [Field("Timestamp")] public long Timestamp { get; set; }
+         [Field("LastProcessedInputSeq")] public uint LastProcessedInputSeq { get; set; }
+-        [Field("ServerTick")] public uint ServerTick { get; set; }
++        [Field("ServerTick")] public ulong ServerTick { get; set; }
+ 
+         /// <summary>
+         /// Returns position X, preferring X over PositionX (use whichever is non-zero).
+@@ -188,7 +188,7 @@ public class PlayerPositionDeltaEvent
+         [Field("DirectionX")] public float DirectionX { get; set; }
+         [Field("DirectionZ")] public float DirectionZ { get; set; }
+         [Field("LastProcessedInputSeq")] public uint LastProcessedInputSeq { get; set; }
+-        [Field("ServerTick")] public uint ServerTick { get; set; }
++        [Field("ServerTick")] public ulong ServerTick { get; set; }
+         [Field("Timestamp")] public long Timestamp { get; set; }
+         [Field("DeltaX")] public float DeltaX { get; set; }
+         [Field("DeltaY")] public float DeltaY { get; set; }
+@@ -271,6 +271,7 @@ public class MovementParametersEvent
+     {
+         [Field("PersonaID")] public string PersonaID { get; set; }
+         [Field("MoveSpeed")] public double MoveSpeed { get; set; }
++        [Field("ServerTick")] public ulong ServerTick { get; set; }
+         [Field("MinInputThreshold")] public double MinInputThreshold { get; set; }
+         [Field("MaxInputMagnitude")] public double MaxInputMagnitude { get; set; }
+         [Field("TickRateHz")] public uint TickRateHz { get; set; }
+@@ -278,6 +279,8 @@ public class MovementParametersEvent
+         [Field("PositionSyncInterval")] public uint PositionSyncInterval { get; set; }
+         [Field("UseQuantizedProtocol")] public bool UseQuantizedProtocol { get; set; }
+         [Field("BaseTimestampReference")] public ulong BaseTimestampReference { get; set; }
++        [Field("DashDistance")] public float DashDistance { get; set; }
++        [Field("DashDuration")] public float DashDuration { get; set; }
+     }
+ 
+     // --- Enemy Events ---
+@@ -557,6 +560,10 @@ public class OrbSpawnedEvent
+         [Field("radius")] public float RadiusAlt { get; set; }
+         [Field("OrbitSpeed")] public float OrbitSpeed { get; set; }
+         [Field("orbit_speed")] public float OrbitSpeedAlt { get; set; }
++        [Field("Duration")] public float Duration { get; set; }
++        [Field("duration")] public float DurationAlt { get; set; }
++        [Field("PhaseOriginTick")] public ulong PhaseOriginTick { get; set; }
++        [Field("phase_origin_tick")] public ulong PhaseOriginTickAlt { get; set; }
+ 
+         public string GetEntityID() => EntityID;
+         public string GetOrbID() => OrbID ?? OrbIdAlt;
+@@ -568,6 +575,9 @@ public class OrbSpawnedEvent
+         public float GetScale() => Scale > 0 ? Scale : ScaleAlt > 0 ? ScaleAlt : 1f;
+         public float GetRadius() => Radius != 0 ? Radius : RadiusAlt;
+         public float GetOrbitSpeed() => OrbitSpeed != 0 ? OrbitSpeed : OrbitSpeedAlt;
++        public float GetDuration() => Duration != 0 ? Duration : DurationAlt;
++        public ulong GetPhaseOriginTick() =>
++            PhaseOriginTick != 0 ? PhaseOriginTick : PhaseOriginTickAlt;
+     }
+ 
+     public class EntityMovementEvent
+@@ -595,8 +605,14 @@ public class EntityDestroyedEvent
+         public string GetEntityID() => EntityID ?? EntityIDAlt;
+     }
+ 
+-    // --- Empty payload events (pause/resume/level update) ---
+-    // These can use the same empty class since they carry no data.
++    // --- Game phase events ---
++
++    public class GamePhaseTickEvent
++    {
++        [Field("ServerTick")] public ulong ServerTick { get; set; }
++    }
++
++    // --- Empty payload events ---
+ 
+     public class EmptyEvent
+     {
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs b/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs
+new file mode 100644
+index 000000000..a1db9d7e8
+--- /dev/null
++++ b/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs
+@@ -0,0 +1,402 @@
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++
++namespace ArgusLabs.Rampage.Client.Gameplay.Network
++{
++    /// <summary>
++    /// Tracks authoritative server time using a monotonic local clock.
++    /// </summary>
++    public sealed class ServerTickClock
++    {
++        private readonly object _sync = new object();
++
++        private bool _isConfigured;
++        private double _fixedStepSeconds;
++        private double _maxExtrapolationSeconds;
++        private bool _hasServerTick;
++        private ulong _latestServerTick;
++        private long _latestReceiptTimestamp;
++        private double _smoothedRttSeconds;
++        private bool _isGameplayPaused;
++        private ulong _pauseStartTick;
++        private bool _hasPendingResumeTick;
++        private ulong _pendingResumeTick;
++        private readonly List<PauseInterval> _completedPauses = new List<PauseInterval>();
++
++        public ServerTickClock()
++        {
++        }
++
++        public ServerTickClock(double fixedStepSeconds, double maxExtrapolationSeconds)
++        {
++            Configure(fixedStepSeconds, maxExtrapolationSeconds);
++        }
++
++        public bool IsConfigured
++        {
++            get
++            {
++                lock (_sync)
++                {
++                    return _isConfigured;
++                }
++            }
++        }
++
++        public bool HasServerTick
++        {
++            get
++            {
++                lock (_sync)
++                {
++                    return _hasServerTick;
++                }
++            }
++        }
++
++        public ulong LatestServerTick
++        {
++            get
++            {
++                lock (_sync)
++                {
++                    return _latestServerTick;
++                }
++            }
++        }
++
++        public double SmoothedRttSeconds
++        {
++            get
++            {
++                lock (_sync)
++                {
++                    return _smoothedRttSeconds;
++                }
++            }
++        }
++
++        public bool IsGameplayPaused
++        {
++            get
++            {
++                lock (_sync)
++                {
++                    return _isGameplayPaused;
++                }
++            }
++        }
++
++        public void Configure(double fixedStepSeconds, double maxExtrapolationSeconds)
++        {
++            ValidatePositiveFinite(fixedStepSeconds, nameof(fixedStepSeconds));
++            ValidateNonNegativeFinite(maxExtrapolationSeconds, nameof(maxExtrapolationSeconds));
++
++            lock (_sync)
++            {
++                _fixedStepSeconds = fixedStepSeconds;
++                _maxExtrapolationSeconds = maxExtrapolationSeconds;
++                _isConfigured = true;
++            }
++        }
++
++        public bool ObserveServerTick(ulong serverTick)
++        {
++            return ObserveServerTick(serverTick, Stopwatch.GetTimestamp());
++        }
++
++        public bool ObserveServerTick(ulong serverTick, long receiptTimestamp)
++        {
++            lock (_sync)
++            {
++                return ObserveServerTickLocked(serverTick, receiptTimestamp, false);
++            }
++        }
++
++        public bool PauseGameplay(ulong serverTick)
++        {
++            return PauseGameplay(serverTick, Stopwatch.GetTimestamp());
++        }
++
++        public bool PauseGameplay(ulong serverTick, long receiptTimestamp)
++        {
++            lock (_sync)
++            {
++                AnchorServerTickLocked(serverTick, receiptTimestamp);
++                if (_isGameplayPaused)
++                {
++                    return false;
++                }
++                if (ContainsPauseStartLocked(serverTick))
++                {
++                    return false;
++                }
++                if (_hasPendingResumeTick)
++                {
++                    if (_pendingResumeTick >= serverTick)
++                    {
++                        AddPauseIntervalLocked(serverTick, _pendingResumeTick);
++                        _hasPendingResumeTick = false;
++                        return false;
++                    }
++                    _hasPendingResumeTick = false;
++                }
++
++                _pauseStartTick = serverTick;
++                _isGameplayPaused = true;
++                return true;
++            }
++        }
++
++        public bool ResumeGameplay(ulong serverTick)
++        {
++            return ResumeGameplay(serverTick, Stopwatch.GetTimestamp());
++        }
++
++        public bool ResumeGameplay(ulong serverTick, long receiptTimestamp)
++        {
++            lock (_sync)
++            {
++                AnchorServerTickLocked(serverTick, receiptTimestamp);
++                if (!_isGameplayPaused)
++                {
++                    if (!_hasPendingResumeTick || serverTick > _pendingResumeTick)
++                    {
++                        _pendingResumeTick = serverTick;
++                        _hasPendingResumeTick = true;
++                    }
++                    return false;
++                }
++                if (serverTick < _pauseStartTick)
++                {
++                    return false;
++                }
++
++                if (serverTick > _pauseStartTick)
++                {
++                    AddPauseIntervalLocked(_pauseStartTick, serverTick);
++                }
++
++                _pauseStartTick = 0;
++                _isGameplayPaused = false;
++                _hasPendingResumeTick = false;
++                return true;
++            }
++        }
++
++        public void ObserveSmoothedRttSeconds(double smoothedRttSeconds)
++        {
++            ValidateNonNegativeFinite(smoothedRttSeconds, nameof(smoothedRttSeconds));
++
++            lock (_sync)
++            {
++                _smoothedRttSeconds = smoothedRttSeconds;
++            }
++        }
++
++        public double EstimateServerTick()
++        {
++            return EstimateServerTick(Stopwatch.GetTimestamp(), Stopwatch.Frequency);
++        }
++
++        public double EstimateServerTick(long monotonicTimestamp, long timestampFrequency)
++        {
++            ValidateTimestampFrequency(timestampFrequency);
++
++            lock (_sync)
++            {
++                if (!_hasServerTick)
++                {
++                    return 0d;
++                }
++
++                if (!_isConfigured)
++                {
++                    return _latestServerTick;
++                }
++
++                if (_isGameplayPaused)
++                {
++                    return _pauseStartTick;
++                }
++
++                double extrapolatedSeconds = CalculateExtrapolatedSeconds(
++                    monotonicTimestamp,
++                    timestampFrequency);
++                return _latestServerTick + extrapolatedSeconds / _fixedStepSeconds;
++            }
++        }
++
++        public double GetElapsedSeconds(
++            ulong phaseOriginTick,
++            double? lifetimeSeconds = null)
++        {
++            return GetElapsedSeconds(
++                phaseOriginTick,
++                Stopwatch.GetTimestamp(),
++                Stopwatch.Frequency,
++                lifetimeSeconds);
++        }
++
++        public double GetElapsedSeconds(
++            ulong phaseOriginTick,
++            long monotonicTimestamp,
++            long timestampFrequency,
++            double? lifetimeSeconds = null)
++        {
++            ValidateTimestampFrequency(timestampFrequency);
++            if (lifetimeSeconds.HasValue)
++            {
++                ValidateNonNegativeFinite(lifetimeSeconds.Value, nameof(lifetimeSeconds));
++            }
++
++            lock (_sync)
++            {
++                if (!_hasServerTick || !_isConfigured)
++                {
++                    return 0d;
++                }
++
++                double estimatedTick = _isGameplayPaused
++                    ? _pauseStartTick
++                    : _latestServerTick + CalculateExtrapolatedSeconds(
++                        monotonicTimestamp,
++                        timestampFrequency) / _fixedStepSeconds;
++                double elapsedTicks = estimatedTick - phaseOriginTick;
++                if (elapsedTicks > 0d)
++                {
++                    elapsedTicks -= CountPausedTicks(phaseOriginTick, estimatedTick);
++                }
++                double elapsedSeconds = Math.Max(0d, elapsedTicks * _fixedStepSeconds);
++
++                return lifetimeSeconds.HasValue
++                    ? Math.Min(elapsedSeconds, lifetimeSeconds.Value)
++                    : elapsedSeconds;
++            }
++        }
++
++        private bool ObserveServerTickLocked(
++            ulong serverTick,
++            long receiptTimestamp,
++            bool refreshEqualTickReceipt)
++        {
++            if (_hasServerTick && serverTick < _latestServerTick)
++            {
++                return false;
++            }
++            if (_hasServerTick && serverTick == _latestServerTick)
++            {
++                if (refreshEqualTickReceipt)
++                {
++                    _latestReceiptTimestamp = receiptTimestamp;
++                }
++                return false;
++            }
++
++            _latestServerTick = serverTick;
++            _latestReceiptTimestamp = receiptTimestamp;
++            _hasServerTick = true;
++            return true;
++        }
++
++        private void AnchorServerTickLocked(ulong serverTick, long receiptTimestamp)
++        {
++            ObserveServerTickLocked(serverTick, receiptTimestamp, true);
++        }
++
++        private bool ContainsPauseStartLocked(ulong pauseStartTick)
++        {
++            foreach (PauseInterval pause in _completedPauses)
++            {
++                if (pause.StartTick == pauseStartTick)
++                {
++                    return true;
++                }
++            }
++            return false;
++        }
++
++        private void AddPauseIntervalLocked(ulong startTick, ulong endTick)
++        {
++            if (endTick <= startTick || ContainsPauseStartLocked(startTick))
++            {
++                return;
++            }
++            _completedPauses.Add(new PauseInterval(startTick, endTick));
++        }
++
++        private double CountPausedTicks(ulong phaseOriginTick, double estimatedTick)
++        {
++            double pausedTicks = 0d;
++            foreach (PauseInterval pause in _completedPauses)
++            {
++                double overlapStart = Math.Max(phaseOriginTick, pause.StartTick);
++                double overlapEnd = Math.Min(estimatedTick, pause.EndTick);
++                if (overlapEnd > overlapStart)
++                {
++                    pausedTicks += overlapEnd - overlapStart;
++                }
++            }
++            return pausedTicks;
++        }
++
++        private double CalculateExtrapolatedSeconds(
++            long monotonicTimestamp,
++            long timestampFrequency)
++        {
++            double monotonicElapsedSeconds =
++                (monotonicTimestamp - _latestReceiptTimestamp) / (double)timestampFrequency;
++            double extrapolatedSeconds = monotonicElapsedSeconds + _smoothedRttSeconds * 0.5d;
++
++            return Math.Min(
++                Math.Max(extrapolatedSeconds, 0d),
++                _maxExtrapolationSeconds);
++        }
++
++        private static void ValidateTimestampFrequency(long timestampFrequency)
++        {
++            if (timestampFrequency <= 0)
++            {
++                throw new ArgumentOutOfRangeException(
++                    nameof(timestampFrequency),
++                    timestampFrequency,
++                    "Timestamp frequency must be positive.");
++            }
++        }
++
++        private static void ValidatePositiveFinite(double value, string parameterName)
++        {
++            if (value <= 0d || double.IsNaN(value) || double.IsInfinity(value))
++            {
++                throw new ArgumentOutOfRangeException(
++                    parameterName,
++                    value,
++                    "Value must be positive and finite.");
++            }
++        }
++
++        private static void ValidateNonNegativeFinite(double value, string parameterName)
++        {
++            if (value < 0d || double.IsNaN(value) || double.IsInfinity(value))
++            {
++                throw new ArgumentOutOfRangeException(
++                    parameterName,
++                    value,
++                    "Value must be non-negative and finite.");
++            }
++        }
++
++        private readonly struct PauseInterval
++        {
++            public PauseInterval(ulong startTick, ulong endTick)
++            {
++                StartTick = startTick;
++                EndTick = endTick;
++            }
++
++            public ulong StartTick { get; }
++            public ulong EndTick { get; }
++        }
++    }
++}
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs.meta b/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs.meta
+new file mode 100644
+index 000000000..a2f42583b
+--- /dev/null
++++ b/Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: c7f1284f5c7d4dc0b3a0f9d8e2a61472
+diff --git a/Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs b/Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs
+index 543db466c..586c514bc 100644
+--- a/Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs
++++ b/Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs
+@@ -4,6 +4,7 @@
+ using System.Threading.Tasks;
+ 
+ using ArgusLabs.Rampage.Client._Scenes.Gameplay.Scripts.Network.Interfaces;
++using ArgusLabs.Rampage.Client.Gameplay.Network;
+ 
+ using Cysharp.Threading.Tasks;
+ 
+@@ -33,8 +34,10 @@ public sealed class GameplayAnimationPauseManager : IStartable, IDisposable
+         private static GameplayAnimationPauseManager _instance;
+ 
+         private readonly IGameplayNetworkService _gameplayNetworkService;
++        private readonly ServerTickClock _serverTickClock;
+         private readonly HashSet<Animator> _registeredAnimators = new();
+-        private readonly Dictionary<string, Action<ShardEvent>> _handlers = new(2);
++        private Action<ShardEvent<GamePhaseTickEvent>> _pauseHandler;
++        private Action<ShardEvent<GamePhaseTickEvent>> _resumeHandler;
+         private CancellationTokenSource _animationSpeedTransitionCts;
+         private bool _isPaused;
+ 
+@@ -66,10 +69,14 @@ public static void PauseAllAnimators()
+         }
+ 
+         [Inject]
+-        public GameplayAnimationPauseManager(IGameplayNetworkService gameplayNetworkService)
++        public GameplayAnimationPauseManager(
++            IGameplayNetworkService gameplayNetworkService,
++            ServerTickClock serverTickClock)
+         {
+             _gameplayNetworkService = gameplayNetworkService
+                 ?? throw new ArgumentNullException(nameof(gameplayNetworkService));
++            _serverTickClock = serverTickClock
++                ?? throw new ArgumentNullException(nameof(serverTickClock));
+             _instance = this;
+         }
+ 
+@@ -130,18 +137,22 @@ public void Unregister(Animator animator)
+             animator.speed = NormalAnimatorSpeed;
+         }
+ 
+-        private void OnPauseGame(ShardEvent shardEvent)
++        private void OnPauseGame(ShardEvent<GamePhaseTickEvent> shardEvent)
+         {
+-            if (shardEvent == null) return;
++            if (shardEvent.Payload == null) return;
++            _serverTickClock.PauseGameplay(shardEvent.Payload.ServerTick);
++            if (!_serverTickClock.IsGameplayPaused) return;
+             if (_isPaused) return;
+ 
+             _isPaused = true;
+             StartAnimatorSpeedTransition(PausedAnimatorSpeed, SoftPauseBlendSeconds, "Soft-paused");
+         }
+ 
+-        private void OnResumeGame(ShardEvent shardEvent)
++        private void OnResumeGame(ShardEvent<GamePhaseTickEvent> shardEvent)
+         {
+-            if (shardEvent == null) return;
++            if (shardEvent.Payload == null) return;
++            _serverTickClock.ResumeGameplay(shardEvent.Payload.ServerTick);
++            if (_serverTickClock.IsGameplayPaused) return;
+             if (!_isPaused) return;
+ 
+             _isPaused = false;
+@@ -259,48 +270,73 @@ private static void SetAnimatorSpeeds(IEnumerable<Animator> animators, float spe
+ 
+         private void RegisterHandlers()
+         {
+-            if (_handlers.Count > 0) return;
+-            _handlers.Add(PauseGameEventName, OnPauseGame);
+-            _handlers.Add(ResumeGameEventName, OnResumeGame);
++            _pauseHandler ??= OnPauseGame;
++            _resumeHandler ??= OnResumeGame;
+         }
+ 
+         private async Task SubscribeAllAsync()
+         {
+             CancellationToken ct = Application.exitCancellationToken;
+-            foreach (var entry in _handlers)
++            bool pauseSuccess = await _gameplayNetworkService.SubscribeEventAsync<GamePhaseTickEvent>(
++                PauseGameEventName,
++                _pauseHandler,
++                ct);
++            if (!pauseSuccess)
+             {
+-                bool success = await _gameplayNetworkService.SubscribeEventAsync(entry.Key, entry.Value, ct);
+-                if (!success)
+-                {
+-                    Debug.LogError(
+-                        $"[GameplayAnimationPauseManager] Failed to subscribe to '{entry.Key}'.");
+-                }
++                Debug.LogError(
++                    $"[GameplayAnimationPauseManager] Failed to subscribe to '{PauseGameEventName}'.");
++            }
++
++            bool resumeSuccess = await _gameplayNetworkService.SubscribeEventAsync<GamePhaseTickEvent>(
++                ResumeGameEventName,
++                _resumeHandler,
++                ct);
++            if (!resumeSuccess)
++            {
++                Debug.LogError(
++                    $"[GameplayAnimationPauseManager] Failed to subscribe to '{ResumeGameEventName}'.");
+             }
+         }
+ 
+         private async Task UnsubscribeAllAsync(
+-            IEnumerable<KeyValuePair<string, Action<ShardEvent>>> entries)
++            Action<ShardEvent<GamePhaseTickEvent>> pauseHandler,
++            Action<ShardEvent<GamePhaseTickEvent>> resumeHandler)
+         {
+             CancellationToken ct = Application.exitCancellationToken;
+-            foreach (var entry in entries)
++            if (pauseHandler != null)
++            {
++                bool success = await _gameplayNetworkService.UnsubscribeEventAsync<GamePhaseTickEvent>(
++                    PauseGameEventName,
++                    pauseHandler,
++                    ct);
++                if (!success)
++                {
++                    Debug.LogWarning(
++                        $"[GameplayAnimationPauseManager] Failed to unsubscribe from '{PauseGameEventName}'.");
++                }
++            }
++            if (resumeHandler != null)
+             {
+-                bool success = await _gameplayNetworkService.UnsubscribeEventAsync(
+-                    entry.Key, entry.Value, ct);
++                bool success = await _gameplayNetworkService.UnsubscribeEventAsync<GamePhaseTickEvent>(
++                    ResumeGameEventName,
++                    resumeHandler,
++                    ct);
+                 if (!success)
+                 {
+                     Debug.LogWarning(
+-                        $"[GameplayAnimationPauseManager] Failed to unsubscribe from '{entry.Key}'.");
++                        $"[GameplayAnimationPauseManager] Failed to unsubscribe from '{ResumeGameEventName}'.");
+                 }
+             }
+         }
+ 
+         public void Dispose()
+         {
+-            var snapshot = new KeyValuePair<string, Action<ShardEvent>>[_handlers.Count];
+-            ((ICollection<KeyValuePair<string, Action<ShardEvent>>>)_handlers).CopyTo(snapshot, 0);
+-            _handlers.Clear();
++            Action<ShardEvent<GamePhaseTickEvent>> pauseHandler = _pauseHandler;
++            Action<ShardEvent<GamePhaseTickEvent>> resumeHandler = _resumeHandler;
++            _pauseHandler = null;
++            _resumeHandler = null;
+ 
+-            _ = UnsubscribeAllAsync(snapshot).ContinueWith(
++            _ = UnsubscribeAllAsync(pauseHandler, resumeHandler).ContinueWith(
+                 task => Debug.LogError(
+                     $"[GameplayAnimationPauseManager] Failed to unsubscribe: {task.Exception}"),
+                 TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+diff --git a/Assets/Tests/EditMode/ArgusLabs.EditModeTests.asmdef b/Assets/Tests/EditMode/ArgusLabs.EditModeTests.asmdef
+index 705f8633c..d94cc8f7c 100644
+--- a/Assets/Tests/EditMode/ArgusLabs.EditModeTests.asmdef
++++ b/Assets/Tests/EditMode/ArgusLabs.EditModeTests.asmdef
+@@ -5,7 +5,8 @@
+         "UnityEngine.TestRunner",
+         "UnityEditor.TestRunner",
+         "ArgusLabs.Rampage.Client",
+-        "VContainer"
++        "VContainer",
++        "GUID:72c4bca220534ae49710c6fb58374c4a"
+     ],
+     "includePlatforms": [
+         "Editor"
+diff --git a/Assets/Tests/EditMode/DashKinematicsConsumerTests.cs b/Assets/Tests/EditMode/DashKinematicsConsumerTests.cs
+new file mode 100644
+index 000000000..da61858e5
+--- /dev/null
++++ b/Assets/Tests/EditMode/DashKinematicsConsumerTests.cs
+@@ -0,0 +1,76 @@
++using NUnit.Framework;
++using Rampage.Gameplay;
++using UnityEngine;
++
++namespace ArgusLabs.Rampage.Client.Tests
++{
++    public class DashKinematicsConsumerTests
++    {
++        [Test]
++        public void SharedPlanMapsVelocityAndRawTargetToUnityXZ()
++        {
++            var input = new DashPlanInput(
++                2,
++                -3,
++                3,
++                4,
++                -1,
++                0,
++                10);
++            DashPlanResult shared = DashKinematics.Plan(in input);
++
++            var unityDirection = new Vector3(
++                shared.DirectionX,
++                0f,
++                shared.DirectionZ);
++            var unityTarget = new Vector3(
++                (float)shared.RawTargetX,
++                0f,
++                (float)shared.RawTargetZ);
++
++            Assert.That(unityDirection, Is.EqualTo(new Vector3(0.6f, 0f, 0.8f)));
++            Assert.That(unityTarget, Is.EqualTo(new Vector3(8f, 0f, 5f)));
++        }
++
++        [Test]
++        public void SharedPlanUsesPositiveXWhenVelocityAndFacingAreZero()
++        {
++            var input = new DashPlanInput(
++                2,
++                -3,
++                0,
++                0,
++                0,
++                0,
++                6);
++            DashPlanResult shared = DashKinematics.Plan(in input);
++
++            Assert.That(shared.DirectionX, Is.EqualTo(1f));
++            Assert.That(shared.DirectionZ, Is.EqualTo(0f));
++            Assert.That(shared.RawTargetX, Is.EqualTo(8d));
++            Assert.That(shared.RawTargetZ, Is.EqualTo(-3d));
++        }
++
++        [Test]
++        public void SharedSampleMapsProgressAndPositionToUnityXZ()
++        {
++            var input = new DashSampleInput(
++                2,
++                -3,
++                8,
++                5,
++                0.25f,
++                0.5f);
++            DashSampleResult shared = DashKinematics.Sample(in input);
++
++            var unityPosition = new Vector3(
++                (float)shared.PositionX,
++                0f,
++                (float)shared.PositionZ);
++
++            Assert.That(shared.Progress, Is.EqualTo(0.5f));
++            Assert.That(shared.Complete, Is.False);
++            Assert.That(unityPosition, Is.EqualTo(new Vector3(5f, 0f, 1f)));
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/DashKinematicsConsumerTests.cs.meta b/Assets/Tests/EditMode/DashKinematicsConsumerTests.cs.meta
+new file mode 100644
+index 000000000..4ef01398d
+--- /dev/null
++++ b/Assets/Tests/EditMode/DashKinematicsConsumerTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: dcf4bd61c4414cb4a7a48cc8ddd1aac7
+diff --git a/Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs b/Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs
+new file mode 100644
+index 000000000..bd3ab7345
+--- /dev/null
++++ b/Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs
+@@ -0,0 +1,33 @@
++using NUnit.Framework;
++using Rampage.Gameplay;
++using UnityEngine;
++
++namespace ArgusLabs.Rampage.Client.Tests
++{
++    public class LaserSweepKinematicsConsumerTests
++    {
++        [Test]
++        public void SharedRightStartingSweepMapsToUnityXZ()
++        {
++            LaserSweepResult shared = LaserSweepKinematics.Evaluate(
++                2f,
++                -3f,
++                0f,
++                90f,
++                2f,
++                0f,
++                4f,
++                true);
++
++            var unityEnd = new Vector3(
++                (float)shared.EndX,
++                1f,
++                (float)shared.EndZ);
++
++            Assert.That(shared.AngleDegrees, Is.EqualTo(45f));
++            Assert.That(unityEnd.x, Is.EqualTo(4.828427f).Within(1e-6f));
++            Assert.That(unityEnd.y, Is.EqualTo(1f));
++            Assert.That(unityEnd.z, Is.EqualTo(-0.1715729f).Within(1e-6f));
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs.meta b/Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs.meta
+new file mode 100644
+index 000000000..d82cdc528
+--- /dev/null
++++ b/Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 6fdac631bcb64791a28598236629641e
+diff --git a/Assets/Tests/EditMode/MovementSettingsTests.cs b/Assets/Tests/EditMode/MovementSettingsTests.cs
+new file mode 100644
+index 000000000..122af7658
+--- /dev/null
++++ b/Assets/Tests/EditMode/MovementSettingsTests.cs
+@@ -0,0 +1,39 @@
++using ArgusLabs.Rampage.Client._Scenes.Gameplay.Objects.Players.Scripts.Controllers;
++using NUnit.Framework;
++
++namespace ArgusLabs.Rampage.Client.Tests.EditMode
++{
++    public class MovementSettingsTests
++    {
++        [Test]
++        public void EffectiveMoveSpeedRejectsOlderServerTick()
++        {
++            var state = new EffectiveMoveSpeedState();
++
++            Assert.That(state.TryApply(7.5f, 20), Is.True);
++            Assert.That(state.TryApply(3f, 19), Is.False);
++            Assert.That(state.Value, Is.EqualTo(7.5f));
++        }
++
++        [Test]
++        public void EffectiveMoveSpeedRejectsInvalidValues()
++        {
++            var state = new EffectiveMoveSpeedState();
++
++            Assert.That(state.TryApply(0f, 1), Is.False);
++            Assert.That(state.TryApply(float.NaN, 1), Is.False);
++            Assert.That(state.TryApply(float.PositiveInfinity, 1), Is.False);
++        }
++
++        [Test]
++        public void ResetAllowsNewSessionToStartAtLowerTick()
++        {
++            var state = new EffectiveMoveSpeedState();
++            Assert.That(state.TryApply(7f, 100), Is.True);
++            state.Reset();
++
++            Assert.That(state.TryApply(5f, 1), Is.True);
++            Assert.That(state.Value, Is.EqualTo(5f));
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/MovementSettingsTests.cs.meta b/Assets/Tests/EditMode/MovementSettingsTests.cs.meta
+new file mode 100644
+index 000000000..d815c3261
+--- /dev/null
++++ b/Assets/Tests/EditMode/MovementSettingsTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 0ad27f54f869478ca04aaf413504322c
+diff --git a/Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs b/Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs
+new file mode 100644
+index 000000000..2dc7e8f89
+--- /dev/null
++++ b/Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs
+@@ -0,0 +1,31 @@
++using NUnit.Framework;
++using Rampage.Gameplay;
++using UnityEngine;
++
++namespace ArgusLabs.Rampage.Client.Tests
++{
++    public class OrbKinematicsConsumerTests
++    {
++        [Test]
++        public void SharedPositionMapsToUnityXZAtPresentationHeight()
++        {
++            float angle = OrbKinematics.AdvanceAngle(359f, 40f, 0.05f);
++            OrbPosition shared = OrbKinematics.CalculatePosition(
++                2,
++                0.5,
++                -3,
++                angle,
++                4);
++
++            var unity = new Vector3(
++                (float)shared.X,
++                (float)shared.Y,
++                (float)shared.Z);
++
++            Assert.That(angle, Is.EqualTo(1f));
++            Assert.That(unity.x, Is.EqualTo(5.9993906f).Within(1e-6f));
++            Assert.That(unity.y, Is.EqualTo(0.5f));
++            Assert.That(unity.z, Is.EqualTo(-2.9301903f).Within(1e-6f));
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs.meta b/Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs.meta
+new file mode 100644
+index 000000000..a1ebb1065
+--- /dev/null
++++ b/Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 5edfcdf4d46b42d78993ed8babf52be9
+diff --git a/Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs b/Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs
+new file mode 100644
+index 000000000..dd08dfc3d
+--- /dev/null
++++ b/Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs
+@@ -0,0 +1,46 @@
++using ArgusLabs.Rampage.Client._Scenes.Gameplay.Objects.Players.Scripts.Controllers;
++using NUnit.Framework;
++
++namespace ArgusLabs.Rampage.Client.Tests.EditMode
++{
++    public class PauseAwareElapsedTimerTests
++    {
++        [Test]
++        public void PauseWindowDoesNotAdvanceElapsedTime()
++        {
++            var timer = new PauseAwareElapsedTimer();
++            timer.Start(10f, false);
++
++            timer.Pause(10.2f);
++            Assert.That(timer.GetElapsed(15f), Is.EqualTo(0.2f).Within(0.0001f));
++
++            timer.Resume(15f);
++            Assert.That(timer.GetElapsed(15.3f), Is.EqualTo(0.5f).Within(0.0001f));
++        }
++
++        [Test]
++        public void TimerStartedDuringPauseBeginsAtResume()
++        {
++            var timer = new PauseAwareElapsedTimer();
++            timer.Start(20f, true);
++
++            Assert.That(timer.GetElapsed(24f), Is.Zero);
++            timer.Resume(24f);
++            Assert.That(timer.GetElapsed(24.25f), Is.EqualTo(0.25f).Within(0.0001f));
++        }
++
++        [Test]
++        public void DuplicatePauseAndResumeCallsAreIdempotent()
++        {
++            var timer = new PauseAwareElapsedTimer();
++            timer.Start(1f, false);
++
++            timer.Pause(2f);
++            timer.Pause(3f);
++            timer.Resume(5f);
++            timer.Resume(6f);
++
++            Assert.That(timer.GetElapsed(6f), Is.EqualTo(2f).Within(0.0001f));
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs.meta b/Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs.meta
+new file mode 100644
+index 000000000..b744c26a8
+--- /dev/null
++++ b/Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 5866065980cd403cab0e07319a0c6258
+diff --git a/Assets/Tests/EditMode/ServerTickClockTests.cs b/Assets/Tests/EditMode/ServerTickClockTests.cs
+new file mode 100644
+index 000000000..833935cef
+--- /dev/null
++++ b/Assets/Tests/EditMode/ServerTickClockTests.cs
+@@ -0,0 +1,128 @@
++using ArgusLabs.Rampage.Client.Gameplay.Network;
++using NUnit.Framework;
++
++namespace ArgusLabs.Rampage.Client.Tests.EditMode
++{
++    public class ServerTickClockTests
++    {
++        private const long TimestampFrequency = 1_000;
++
++        [Test]
++        public void StaleServerTickDoesNotReplaceLatestObservation()
++        {
++            var clock = new ServerTickClock();
++            clock.Configure(0.1d, 2d);
++
++            Assert.That(clock.ObserveServerTick(10, 100), Is.True);
++            Assert.That(clock.ObserveServerTick(9, 1_000), Is.False);
++            Assert.That(clock.ObserveServerTick(10, 1_000), Is.False);
++
++            Assert.That(clock.LatestServerTick, Is.EqualTo(10));
++            Assert.That(
++                clock.EstimateServerTick(1_100, TimestampFrequency),
++                Is.EqualTo(20d).Within(1e-9d));
++        }
++
++        [Test]
++        public void EstimateIncludesHalfOfSmoothedRtt()
++        {
++            var clock = new ServerTickClock(0.1d, 1d);
++            clock.ObserveServerTick(20, 1_000);
++            clock.ObserveSmoothedRttSeconds(0.2d);
++
++            Assert.That(
++                clock.EstimateServerTick(1_000, TimestampFrequency),
++                Is.EqualTo(21d).Within(1e-9d));
++        }
++
++        [Test]
++        public void EstimateClampsExtrapolation()
++        {
++            var clock = new ServerTickClock(0.05d, 0.2d);
++            clock.ObserveServerTick(50, 1_000);
++
++            Assert.That(
++                clock.EstimateServerTick(5_000, TimestampFrequency),
++                Is.EqualTo(54d).Within(1e-9d));
++        }
++
++        [Test]
++        public void ElapsedPhaseClampsToZeroAndLifetime()
++        {
++            var clock = new ServerTickClock(0.1d, 1d);
++            clock.ObserveServerTick(100, 1_000);
++
++            Assert.That(
++                clock.GetElapsedSeconds(102, 1_500, TimestampFrequency),
++                Is.EqualTo(0.3d).Within(1e-9d));
++            Assert.That(
++                clock.GetElapsedSeconds(102, 1_500, TimestampFrequency, 0.25d),
++                Is.EqualTo(0.25d).Within(1e-9d));
++            Assert.That(
++                clock.GetElapsedSeconds(106, 1_500, TimestampFrequency),
++                Is.Zero);
++        }
++
++        [Test]
++        public void PauseFreezesEstimatesAndElapsedPhaseTime()
++        {
++            var clock = new ServerTickClock(0.1d, 1d);
++            clock.ObserveServerTick(100, 1_000);
++
++            Assert.That(clock.PauseGameplay(102, 1_200), Is.True);
++            Assert.That(
++                clock.EstimateServerTick(5_000, TimestampFrequency),
++                Is.EqualTo(102d).Within(1e-9d));
++            Assert.That(
++                clock.GetElapsedSeconds(90, 5_000, TimestampFrequency),
++                Is.EqualTo(1.2d).Within(1e-9d));
++        }
++
++        [Test]
++        public void ElapsedPhaseExcludesCompletedPauseTicks()
++        {
++            var clock = new ServerTickClock(0.1d, 1d);
++            clock.ObserveServerTick(100, 1_000);
++            clock.PauseGameplay(102, 1_200);
++
++            Assert.That(clock.ResumeGameplay(202, 5_000), Is.True);
++            Assert.That(
++                clock.GetElapsedSeconds(90, 5_000, TimestampFrequency),
++                Is.EqualTo(1.2d).Within(1e-9d));
++            Assert.That(
++                clock.GetElapsedSeconds(150, 5_000, TimestampFrequency),
++                Is.Zero);
++            Assert.That(
++                clock.GetElapsedSeconds(90, 5_500, TimestampFrequency),
++                Is.EqualTo(1.7d).Within(1e-9d));
++        }
++
++        [Test]
++        public void DuplicatePauseBoundariesAreIgnored()
++        {
++            var clock = new ServerTickClock(0.1d, 1d);
++
++            Assert.That(clock.PauseGameplay(10, 1_000), Is.True);
++            Assert.That(clock.PauseGameplay(11, 1_100), Is.False);
++            Assert.That(clock.ResumeGameplay(20, 2_000), Is.True);
++            Assert.That(clock.ResumeGameplay(21, 2_100), Is.False);
++            Assert.That(
++                clock.GetElapsedSeconds(5, 2_100, TimestampFrequency),
++                Is.EqualTo(0.6d).Within(1e-9d));
++        }
++
++        [Test]
++        public void ResumeDeliveredBeforePauseStillRecordsOneInterval()
++        {
++            var clock = new ServerTickClock(0.1d, 1d);
++            clock.ObserveServerTick(100, 1_000);
++
++            Assert.That(clock.ResumeGameplay(202, 5_000), Is.False);
++            Assert.That(clock.PauseGameplay(102, 5_100), Is.False);
++            Assert.That(clock.IsGameplayPaused, Is.False);
++            Assert.That(
++                clock.GetElapsedSeconds(90, 5_000, TimestampFrequency),
++                Is.EqualTo(1.2d).Within(1e-9d));
++        }
++    }
++}
+diff --git a/Assets/Tests/EditMode/ServerTickClockTests.cs.meta b/Assets/Tests/EditMode/ServerTickClockTests.cs.meta
+new file mode 100644
+index 000000000..e1c34d34c
+--- /dev/null
++++ b/Assets/Tests/EditMode/ServerTickClockTests.cs.meta
+@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 31ce6624017f4bf1bb9bf0784f72220e
+diff --git a/Packages/manifest.json b/Packages/manifest.json
+index 61fcb7634..b52de9f64 100644
+--- a/Packages/manifest.json
++++ b/Packages/manifest.json
+@@ -32,6 +32,7 @@
+     "com.unity.ugui": "2.0.0",
+     "com.unity.visualscripting": "1.9.9",
+     "dev.world.sdk": "https://github.com/Argus-Labs/monorepo.git?path=pkg/sdk-unity/Packages/dev.world.sdk#sdk-unity/v0.3.0",
++    "gg.argus.rampage.gameplay": "https://github.com/Argus-Labs/rampage-backend.git?path=native/gameplay/Rampage.Gameplay#rampage-gameplay/v0.1.0",
+     "io.sentry.unity": "https://github.com/getsentry/unity.git",
+     "jp.hadashikick.vcontainer": "https://github.com/hadashiA/VContainer.git?path=VContainer/Assets/VContainer#1.16.9",
+     "com.unity.modules.ai": "1.0.0",
+diff --git a/README.md b/README.md
+index 59bf2284f..40a7ad08f 100644
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,29 @@
+ 
+ ## Developer Setup
+ 
++### Private Unity packages
++
++The project reads `dev.world.sdk` and `gg.argus.rampage.gameplay` from private
++GitHub repositories. Let GitHub CLI configure a credential helper; keep tokens
++out of Git URLs and `Packages/manifest.json`:
++
++```bash
++gh auth login --git-protocol https --web
++gh auth setup-git --hostname github.com
++```
++
++Authorize the account for both repositories. CI uses separate fine-grained
++`MONOREPO_PAT` and `RAMPAGE_BACKEND_PAT` secrets with read-only Contents
++access; the auth action forwards scoped config into GameCI without changing
++package files. Secret-bearing Unity PR jobs run only for trusted same-repository
++contributors.
++
++For live shared-gameplay edits, open Unity Package Manager and choose **+ →
++Install package from disk**, then select the sibling backend checkout's
++`native/gameplay/Rampage.Gameplay/package.json`. Restore the tracked Git URL
++with **Install package from git URL** before committing; commit the UPM-updated
++manifest and lock together.
++
+ ### [For Windows] Install WSL2
+ 
+ It is recommended to always use WSL2 when interacting with the projects through CLI for consistency across all platforms.
+@@ -121,4 +144,4 @@ The lefthook configuration is defined in [`lefthook.yml`](lefthook.yml) and inte
+ 
+ The `.editorconfig` file is used to configure the IDE to follow a consistent code style.
+ 
+-If you are using Jetbrains Rider (which is the recommended IDE), make sure you select the **Read settings from editorconfig, project settings and rule sets** checkbox on the **Editor | Inspection Settings** page of JetBrains Rider settings.
+\ No newline at end of file
++If you are using Jetbrains Rider (which is the recommended IDE), make sure you select the **Read settings from editorconfig, project settings and rule sets** checkbox on the **Editor | Inspection Settings** page of JetBrains Rider settings.

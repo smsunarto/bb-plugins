@@ -1,0 +1,123 @@
+# Package, CI, and focused tests
+
+- ID: `package-ci-and-tests`
+- Objective: Verify that trusted CI can restore the pinned private package and execute the focused EditMode evidence without leaking credentials.
+- Link: [Backend package PR #734](https://github.com/Argus-Labs/rampage-backend/pull/734)
+- File: [.github/actions/configure-git-private-repo/action.yml](-) — Configures scoped read-only Git URL rewrites for host and GameCI package restore.
+- File: [.github/workflows/build-nightly.yaml](-) — Supplies the backend token to nightly trusted builds.
+- File: [.github/workflows/ci.yaml](-) — Adds trusted EditMode execution, package restore, license serialization, and uploaded results.
+- File: [.github/workflows/manual-ios-build.yaml](-) — Supplies the backend token to manual iOS builds.
+- File: [.github/workflows/manual-test-build.yaml](-) — Supplies the backend token to manual test builds.
+- File: [Assets/Rampage/ArgusLabs_Rampage_Client.asmdef](-) — References the shared gameplay assembly from runtime code.
+- File: [Assets/Tests/EditMode/ArgusLabs.EditModeTests.asmdef](-) — References the shared gameplay assembly from focused tests.
+- File: [Packages/manifest.json](-) — Pins the private gameplay package path and release tag.
+- File: [README.md](-) — Documents the second private-repository token required for local package restore.
+
+The client pins the shared gameplay package, references it from runtime and EditMode assemblies, and gives trusted CI scoped credentials to restore and test it.
+
+The pinned package tag remains a release gate; the workflow must keep secrets in scoped Git configuration and limit secret-bearing jobs to trusted events. The generated package lock is not changed in this patch and must be verified separately when Unity resolves the dependency.
+
+## Guide
+
+### Foundations and data structures
+
+Read the dependency identity before its delivery machinery. The pinned manifest reference determines which backend package clean environments restore, while runtime and test assembly GUIDs determine who may compile against it. Treat tag immutability and matching assembly visibility as prerequisites for every later CI result.
+
+#### Pin the shared package and expose its assemblies
+
+The manifest points Unity Package Manager at a tagged package path in the backend repository rather than a moving branch. Runtime and EditMode assembly definitions both reference the package assembly GUID, so production consumers and focused tests compile against the same public kernel surface.
+
+The tag is part of the reviewed behavior: the client patch can be correct against local backend source yet restore different code in CI if this immutable reference is wrong.
+
+- Diff: `pin-shared-gameplay-package` [Packages/manifest.json](#R35)
+- Comment: R35 — The package tag is a release gate; reviewing only a sibling backend checkout does not verify what clean CI will restore.
+
+#### Reference the package from runtime code
+
+The runtime assembly definition exposes the shared gameplay assembly to production consumers without changing platform constraints.
+
+- Diff: `runtime-shared-assembly-reference` [Assets/Rampage/ArgusLabs_Rampage_Client.asmdef](#L49,R49-R50)
+
+#### Reference the package from focused tests
+
+The EditMode assembly independently references the same package GUID, ensuring consumer tests compile against the restored artifact.
+
+- Diff: `test-shared-assembly-reference` [Assets/Tests/EditMode/ArgusLabs.EditModeTests.asmdef](#L8,R8-R9)
+
+### Core behavior
+
+This phase is the credential boundary, so review fail-closed behavior before workflow call sites. Follow each secret into an exact repository URL rewrite, then into the temporary Git configuration shared with GameCI. The invariant is that both private repositories remain fetchable without ever writing credentials into tracked package files or granting a token broader repository reach than necessary.
+
+#### Configure two repository-scoped credentials without rewriting package files
+
+The composite action replaces fallback token selection and manifest mutation with two required, fine-grained read-only credentials. Bash and PowerShell implementations both fail closed when either repository token is absent, create a temporary global Git config, and add exact `insteadOf` rewrites for only the monorepo and backend URLs.
+
+Keeping credentials out of `Packages/manifest.json` preserves a deterministic tracked dependency graph and prevents token-bearing file changes from leaking into caches or artifacts. Exporting the temporary config path and entries through `GITHUB_ENV` is also intentional: Unity/GameCI resolves packages in a container that would not otherwise inherit the runner's global Git configuration.
+
+- Diff: `scoped-private-upm-auth-action` [.github/actions/configure-git-private-repo/action.yml](#L2,L5-L10,L12-L13,L22-L23,L26-L36,L38-L45,L52-L53,L56-L65,L68-L77,R2,R6-R10,R20,R22,R24-R27,R30-R48,R54,R56-R59,R62-R70,R72-R89)
+- Comment: R30 — The temporary global config scopes credentials to the job and leaves tracked package files unchanged.
+- Comment: R43 — `GIT_CONFIG_EXTENSIONS` carries the URL rewrites into the GameCI container, where package restore actually runs.
+
+```guide-diagram
+{"summary":"Two repository-scoped secrets create a temporary Git configuration used by host and GameCI package restore, while the tracked manifest remains credential-free and pinned.","nodes":[{"id":"secrets","label":"Two read-only repository PATs","detail":"One credential per private repository","x":0,"y":0},{"id":"manifest","label":"Credential-free pinned manifest","detail":"Tracked package URLs and immutable tag","x":0,"y":180},{"id":"config","label":"Temporary runner Git config","detail":"Exact repository insteadOf rewrites","x":340,"y":0},{"id":"host","label":"Host UPM fetch","detail":"Runner-side package resolution","x":700,"y":0},{"id":"container","label":"GameCI container UPM fetch","detail":"Configuration forwarded through GIT_CONFIG_EXTENSIONS","x":700,"y":180}],"edges":[{"source":"secrets","target":"config"},{"source":"config","target":"host"},{"source":"config","target":"container","label":"GIT_CONFIG_EXTENSIONS"},{"source":"manifest","target":"host"},{"source":"manifest","target":"container"}]}
+```
+
+### Integration and wiring
+
+Once the auth action is trusted, verify every environment that can resolve Unity packages invokes it with both secrets. Read nightly paths before manual and analysis workflows to catch asymmetric wiring hidden by warm caches. A clean runner must behave consistently regardless of which supported build or test entrypoint starts the restore.
+
+#### Supply both credentials to every trusted Unity restore path
+
+Nightly platform builds and the manual iOS build replace broad fallback credentials with the two explicit repository secrets. The manual test workflow and Qodana path add the auth action before Unity can resolve packages. Reviewing these call sites together matters because one forgotten workflow can appear healthy on a warm cache while failing on a clean runner.
+
+- Diff: `nightly-private-package-auth` [.github/workflows/build-nightly.yaml](#L246-L247,L364-L365,L448-L449,L531-L532,R247,R364,R447,R529)
+
+#### Authenticate the manual iOS restore path
+
+The manual iOS workflow supplies both repository-scoped secrets before its Unity build.
+
+- Diff: `manual-ios-private-package-auth` [.github/workflows/manual-ios-build.yaml](#L154-L155,R155)
+
+#### Authenticate the manual test restore path
+
+The manual test workflow adds the same fail-closed package authentication before Unity Library caching and test execution.
+
+- Diff: `manual-test-private-package-auth` [.github/workflows/manual-test-build.yaml](#R25-R30)
+
+#### Authenticate Qodana package resolution
+
+Qodana resolves the Unity dependency graph too, so it receives the shared auth action rather than relying on a warm cache.
+
+- Diff: `qodana-private-package-auth` [.github/workflows/ci.yaml](#R153-R158)
+
+### Tests and verification
+
+The EditMode job provides executable evidence but also handles high-value secrets and a serialized Unity license. Review the trust condition first, then test execution, unconditional license return, and artifact upload. Passing tests are insufficient if forked code can access secrets or a failing run can strand the license and discard diagnostics.
+
+#### Run EditMode evidence only inside the trusted secret boundary
+
+The new EditMode job restores LFS assets, configures private package access, caches Unity's Library, runs the focused tests, returns the license, and uploads results. Its condition admits non-PR trusted events and same-repository PRs authored by owners, members, or collaborators; fork and untrusted-author PRs cannot receive the package or Unity secrets.
+
+Serial concurrency prevents simultaneous jobs from contending for the same Unity license. Cleanup and artifact upload use `always()`, preserving both license hygiene and test evidence when the runner fails partway through execution. Qodana receives the same trust condition because it also restores the private Unity dependency graph.
+
+- Diff: `trusted-editmode-ci` [.github/workflows/ci.yaml](#L65,R62-R125,R129-R137)
+- Comment: R66 — This trust condition is the security boundary that prevents secret-bearing Unity work from running for fork or untrusted-author pull requests.
+- Comment: R111 — License return uses `always()` so a failed test run does not strand the serialized Unity activation.
+
+### Imports, formatting, and miscellaneous
+
+Documentation and newline normalization come last because they do not establish runtime correctness. Check that local setup keeps tokens in the credential helper, names both repositories, and restores the tracked Git URL after a disk override. Treat the assembly newline change as mechanical; the functional reference was reviewed in Foundations.
+
+#### Document credential-safe local restore and live package editing
+
+Developer setup uses GitHub CLI's credential helper rather than embedding tokens in Git URLs. It names both required repositories and explains the temporary install-from-disk loop for shared gameplay development, including the requirement to restore the tracked Git URL before committing.
+
+The final README and runtime assembly changes also normalize missing trailing newlines. Those mechanical edits carry no dependency behavior beyond the reviewed package reference.
+
+- Diff: `private-package-developer-setup` [README.md](#L124,R5-R27,R147)
+
+#### Normalize the runtime assembly definition ending
+
+This newline-only assembly-definition change is mechanical; package visibility is covered by the separate runtime reference excerpt.
+
+- Diff: `runtime-assembly-formatting` [Assets/Rampage/ArgusLabs_Rampage_Client.asmdef](#L60,R61)

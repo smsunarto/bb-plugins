@@ -1,0 +1,136 @@
+# Server time authority
+
+- ID: `server-time-authority`
+- Objective: Confirm that one pause-aware, monotonic server clock drives all phase calculations in the gameplay session.
+- File: [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/GameplayEvents.cs](-) — Adds the server ticks and phase origins consumed by time-aware presentation.
+- File: [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs](-) — Introduces the shared clock, RTT compensation, stale-tick rejection, extrapolation clamp, and pause intervals.
+- File: [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs.meta](-) — Registers the new Unity source asset.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/VContainer/Scripts/GameplaySystemsInstaller.cs](-) — Registers one scoped clock for the gameplay session.
+- File: [Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs](-) — Sends pause and resume boundaries into the clock.
+- File: [Assets/Tests/EditMode/ServerTickClockTests.cs](-) — Verifies monotonic estimates, RTT compensation, clamps, stale ticks, and pause accounting.
+- File: [Assets/Tests/EditMode/ServerTickClockTests.cs.meta](-) — Registers the focused EditMode test asset.
+
+Network events now carry server ticks and effect phase origins; one gameplay-scoped clock rejects stale updates, compensates for RTT, clamps extrapolation, and excludes paused time.
+
+The gameplay shard remains the simulation authority. Unity receives its snapshots through gameplay-scoped services, maps them in controllers, and limits scene objects to presentation.
+
+Read the wire fields first, then the clock invariants, DI lifetime, pause integration, and focused tests.
+
+## Guide
+
+### Foundations and data structures
+
+Start with the wire contract because every clock calculation is only as reliable as the tick and phase data crossing the network boundary. Then inspect the clock's stored state and configuration separately. The invariant to carry forward is that one 64-bit authoritative tick domain, one monotonic receipt timeline, and one pause history must serve every later consumer.
+
+#### Make server time a durable protocol value
+
+The event contract establishes the facts every later phase depends on. Server ticks become 64-bit values everywhere they represent simulation time, while input sequence numbers remain 32-bit because they are a separate, short-lived ordering domain. Movement parameters now arrive with the tick at which they were resolved and with authoritative dash distance and duration. Orb events carry both a lifetime and a phase-origin tick, including compatibility aliases for the payload spellings already emitted by the backend.
+
+Pause and resume events are no longer empty notifications. Their tick turns each boundary into replayable data, which lets the client reject duplicates, tolerate transport reordering, and subtract paused simulation time from an effect that began before the pause.
+
+- Diff: `authoritative-time-event-contract` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/GameplayEvents.cs](#L169,L191,L598-L599,R169,R191,R274,R282-R283,R563-R566,R578-R580,R608-R615)
+- Comment: R169 — `ServerTick` is widened independently from `LastProcessedInputSeq`; the two counters have different lifetimes and must not be conflated.
+
+#### Store one monotonic clock state for the gameplay session
+
+`ServerTickClock` pairs the latest accepted authoritative tick with the local monotonic timestamp at which it arrived. The object also owns fixed-step conversion, the extrapolation ceiling, smoothed RTT, and completed pause intervals. Keeping these values together is essential: any consumer that estimated time with its own receipt timestamp or pause history could restore a different phase from the same server event.
+
+The configuration is intentionally separate from construction. The scoped clock can be registered before movement parameters arrive, but it does not extrapolate until the server-resolved fixed step and client safety cap have been applied.
+
+- Diff: `clock-state-and-configuration` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs](#R1-R103)
+
+### APIs and entrypoints
+
+Read mutation before observation: first see how snapshots, pause boundaries, resume boundaries, and RTT enter the clock, then see how consumers query estimated tick and elapsed phase. Notice which calls may advance authority, which only refresh timing evidence, and why unconfigured or unobserved clocks return conservative zero values instead of guessing.
+
+#### Observe ticks and record phase boundaries
+
+Normal observations advance only when a newer tick arrives. Pause and resume calls additionally anchor the receipt timestamp, because a phase boundary is itself authoritative timing evidence. A resume that arrives before its corresponding pause is held as a pending boundary; when the earlier pause appears, the clock records one completed interval instead of briefly entering the wrong live state.
+
+RTT is supplied independently by the movement transport. This keeps sampling and smoothing policy with the network path while giving every phase consumer the same latency-compensated clock.
+
+- Diff: `clock-observation-and-boundaries` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs](#R104-R201)
+- Comment: R137 — A pending resume makes an out-of-order resume-before-pause pair converge on one completed interval without exposing a false paused state.
+
+#### Query estimated time or pause-aware elapsed phase
+
+`EstimateServerTick` exposes the current fractional server tick for consumers that need a time coordinate. `GetElapsedSeconds` answers the more useful presentation question: how much active simulation time has passed since a phase-origin tick? It clamps future origins to zero, optionally caps the answer at an effect lifetime, freezes while gameplay is paused, and subtracts overlap with completed pause intervals.
+
+These APIs deliberately return safe zero values before the clock has both an observation and configuration. A late visual can therefore initialize conservatively rather than inventing a phase from wall-clock time.
+
+- Diff: `clock-query-api` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs](#R202-R281)
+
+### Core behavior
+
+This phase explains the safeguards behind the public API. Follow stale-tick rejection and pause-overlap accounting before extrapolation, because monotonic authority and active-time subtraction define the valid interval that latency compensation may extend. Reviewers should verify that no helper can move time backward, count a pause twice, or extrapolate beyond the configured safety ceiling.
+
+#### Preserve monotonic authority and subtract pause overlap
+
+The internal observation path rejects stale ticks and normally rejects equal ticks. Boundary anchoring may refresh only the receipt timestamp for an equal tick, preserving simulation authority while preventing a freshly received boundary from looking artificially old. Completed pauses are keyed by their start tick so duplicate events do not double-count time.
+
+Elapsed phase time subtracts only the intersection between each pause interval and the requested phase window. An effect that began during a pause therefore starts at zero active time, while an older effect loses only the paused portion that actually overlaps its lifetime.
+
+- Diff: `monotonic-and-pause-accounting` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs](#R282-R342)
+- Comment: R291 — Equal-tick refresh is private to boundary anchoring: receipt freshness may change, but the authoritative tick never moves backward or advances twice.
+
+#### Bound extrapolation and reject invalid clock configuration
+
+The extrapolator adds local monotonic time since receipt and one-half of smoothed RTT, approximating the one-way transit delay between server emission and client receipt. Negative elapsed time is clamped away and forward prediction is capped, so a clock discontinuity or long network stall cannot launch presentation arbitrarily far into the future.
+
+Validation rejects non-finite timing inputs and non-positive timestamp frequencies at the boundary. Those checks protect all downstream phase math from NaN and infinity propagation rather than requiring every orb, laser, or movement caller to repeat defensive logic.
+
+- Diff: `bounded-extrapolation` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs](#R343-R402)
+- Comment: R371 — Only half the smoothed round-trip time is added because receipt is modeled as approximately one one-way latency behind current server time.
+
+### Integration and wiring
+
+With the clock semantics established, trace ownership through dependency injection and event delivery. The important invariant is instance identity and ordering: the gameplay scope must share one clock, and pause boundaries must update it before visible animation state changes. A second clock or reversed transition order would make otherwise-correct calculations disagree.
+
+#### Share one clock through the gameplay scope
+
+The installer registers `ServerTickClock` with scoped lifetime. Controllers, pause services, and effect spawners therefore observe and query the same state for one gameplay session, while a new session starts without stale ticks or pause intervals from the previous match.
+
+- Diff: `register-scoped-server-clock` [Assets/Rampage/_Scenes/Gameplay/Objects/VContainer/Scripts/GameplaySystemsInstaller.cs](#R26,R108-R109)
+
+#### Apply typed pause boundaries before visual suspension
+
+The animation pause manager subscribes with `GamePhaseTickEvent` handlers instead of erasing the payload behind untyped callbacks. It forwards the authoritative boundary to the shared clock before changing animator speed, so later effect restoration agrees with what the player saw. Explicit typed subscribe and unsubscribe paths also make handler identity stable across disposal.
+
+- Diff: `pause-manager-clock-integration` [Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs](#L37,L69,L133,L135,L142,L144,L262-L264,L270,L272-L277,L282,L285,L287-L288,L292,L299-L301,L303,R37,R39-R40,R72-R74,R78-R79,R140,R142-R144,R151,R153-R155,R273-R274,R280-R284,R286-R297,R302-R303,R306-R318,R320-R323,R327,R334-R337,R339)
+- Comment: R142 — The clock receives the boundary before animators are stopped, keeping temporal state and visible state in the same order.
+
+### Tests and verification
+
+Use the deterministic timestamp tests as a compact replay of the preceding invariants. Read the ordinary monotonic and latency cases first, then the pause duplication and reordering cases that distinguish a robust clock from a simple stopwatch. The assertions should prove both numeric bounds and state-transition idempotence.
+
+#### Prove the clock invariants at deterministic timestamps
+
+The focused tests inject receipt timestamps and frequencies rather than depending on real time. They cover stale and equal observation rejection, half-RTT compensation, the extrapolation ceiling, future-origin and lifetime clamps, active-pause freezing, completed-pause subtraction, duplicate boundaries, and resume-before-pause delivery. Together they verify both the ordinary monotonic path and the transport edge cases that motivated storing phase boundaries as data.
+
+- Diff: `server-clock-invariants` [Assets/Tests/EditMode/ServerTickClockTests.cs](#R1-R128)
+
+### Imports, formatting, and miscellaneous
+
+Mechanical dependencies are deliberately deferred until after behavior so an import is not mistaken for implementation evidence. Confirm only that the pause service references the reviewed clock type; there is no additional timing policy in this phase.
+
+#### Reference the clock from the pause service
+
+This import is the mechanical edge that allows pause handling to use the scoped network clock; the behavior itself is reviewed above.
+
+- Diff: `pause-manager-clock-import` [Assets/Rampage/_Scenes/Gameplay/Scripts/Services/GameplayAnimationPauseManager.cs](#R7)
+
+### Generated output
+
+Generated Unity metadata is last because it registers source assets without explaining their behavior. Verify that every new source and test has a stable metadata companion, but do not use GUID content as evidence and do not include these items in Guide completion.
+
+#### Unity asset registrations
+
+Unity-generated metadata registers the new clock source and its focused test. These GUID-only artifacts are shown for completeness, remain collapsed by default, and do not count toward Guide completion.
+
+- Diff: `server-clock-meta` [Assets/Rampage/_Scenes/Gameplay/Scripts/Network/ServerTickClock.cs.meta](-)
+
+#### Focused clock test asset registration
+
+Unity-generated metadata separately registers the clock test source. It follows the same collapsed, non-completion treatment as the runtime asset metadata.
+
+- Diff: `server-clock-tests-meta` [Assets/Tests/EditMode/ServerTickClockTests.cs.meta](-)

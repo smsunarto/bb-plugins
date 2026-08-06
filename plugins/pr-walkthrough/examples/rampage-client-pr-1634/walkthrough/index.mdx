@@ -1,0 +1,18 @@
+---
+title: "PR #1634: shared deterministic gameplay kernels"
+description: A human-friendly review guide for the shared gameplay kernel integration.
+summary: Follow authoritative server time into movement, dash, orb, and laser presentation, then verify package restore and focused EditMode coverage.
+baseRef: main
+headRef: feat/shared-csharp-gameplay
+headSha: 12256987774320b15da2e2d06e17feb4d55a7eea
+prUrl: "https://github.com/Argus-Labs/rampage-client/pull/1634"
+---
+
+# Review guide
+
+> Review four semantic groups in order, following each changed mechanism into its tests and delivery path.
+
+- Section: [Server time authority](sections/02-server-time-authority.mdx)
+- Section: [Movement and dash prediction](sections/03-movement-and-dash-prediction.mdx)
+- Section: [Orb and laser phase restoration](sections/04-orb-and-laser-phase-restoration.mdx)
+- Section: [Package, CI, and focused tests](sections/05-package-ci-and-focused-tests.mdx)

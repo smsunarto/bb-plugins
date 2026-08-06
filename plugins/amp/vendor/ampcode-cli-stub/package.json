@@ -1,0 +1,5 @@
+{
+	"name": "@ampcode/cli",
+	"version": "0.0.0-stub",
+	"description": "Stub that replaces @ampcode/sdk's @ampcode/cli dependency. The bridge intentionally has no bundled CLI so the SDK resolves the Amp CLI from AMP_CLI_PATH (set by the bb-plugin-amp managed provider entry)."
+}

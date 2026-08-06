@@ -1,0 +1,208 @@
+# Movement and dash prediction
+
+- ID: `movement-and-dash-prediction`
+- Objective: Verify that local feedback uses authoritative movement values while snapshots and dash outcomes retain final authority.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](-) — Integrates authoritative dash settings, shared planning and sampling, pause-aware timing, collision resolution, and reconciliation.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs](-) — Routes authoritative movement parameters into session settings.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs](-) — Owns ordered speed, fixed-step, dash distance, and dash duration values.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs](-) — Separates dash completion and rejection while connecting input, snapshots, and prediction.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersSpawnManager.cs](-) — Supplies current movement state when local players spawn.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/RemotePlayerController.cs](-) — Keeps remote presentation aligned with the updated event contract.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/PlayerEntity.cs](-) — Carries the updated movement-facing entity data.
+- File: [Assets/Tests/EditMode/DashKinematicsConsumerTests.cs](-) — Verifies Unity mapping for the shared dash plan and sample kernels.
+- File: [Assets/Tests/EditMode/DashKinematicsConsumerTests.cs.meta](-) — Registers the dash consumer test asset.
+- File: [Assets/Tests/EditMode/MovementSettingsTests.cs](-) — Verifies ordered, finite movement parameter updates and reset behavior.
+- File: [Assets/Tests/EditMode/MovementSettingsTests.cs.meta](-) — Registers the movement settings test asset.
+- File: [Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs](-) — Verifies that local dash time excludes paused intervals.
+- File: [Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs.meta](-) — Registers the pause-aware timer test asset.
+
+Authoritative movement settings feed shared dash kernels, while Unity retains collision resolution and the server retains final lifecycle and reconciliation authority.
+
+Focus on ordered parameter updates, dash lifecycle states, pause-aware elapsed time, and the seam between pure kinematics and Unity collision handling.
+
+## Guide
+
+### Foundations and data structures
+
+Begin with authority-bearing state before following any dash control flow. Read ordered movement settings, timer state, and tick-width propagation as one foundation: server-resolved values must survive every DTO and cache without truncation, stale overwrite, or paused wall-time leakage. Later planning and reconciliation assume these invariants rather than defending against malformed state again.
+
+#### Make movement settings an ordered authority snapshot
+
+`MovementSettings` stops being a loose bag of locally overwritten values. It now stores the server-resolved dash distance and duration and delegates effective speed updates to a small ordered state. Invalid values and observations older than the latest server tick are rejected; resetting the state explicitly starts a new session in which lower tick numbers are valid again.
+
+This removes the need to reproduce backend buff arithmetic in Unity. The server sends the effective result, and the client preserves only ordering and validity invariants needed for prediction.
+
+- Diff: `ordered-movement-authority-state` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs](#R18-R19,R35-R41,R157,R165-R198)
+- Comment: R184 — Equal ticks remain acceptable; only a strictly older tick is stale, allowing fields resolved in the same server step to converge.
+
+#### Carry long-lived ticks and pause-aware dash time
+
+The prediction service widens snapshot ticks to `ulong`, receives the scoped server clock, removes hard-coded dash fallbacks, and replaces a raw `Time.time` origin with `PauseAwareElapsedTimer`. The timer shifts its effective start forward on resume, so paused wall time never advances the local dash curve.
+
+Tick width changes propagate through player snapshots, delta caches, remote interpolation samples, and player entities. This is a protocol migration rather than a numeric precision tweak: every storage and method boundary must agree or ordering will truncate at one seam.
+
+- Diff: `prediction-time-and-tick-state` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](#L83,L123,L125-L128,L885,R24,R86,R126-R127,R129-R130,R975,R1254-R1313)
+- Comment: R1290 — Resume moves the start time forward by the paused duration, subtracting paused wall time without maintaining a separate interval collection.
+
+#### Propagate tick width through local movement snapshots
+
+The movement controller's handlers, snapshot parser, immutable snapshot value, and delta cache all adopt the 64-bit tick contract while deleting the obsolete local speed-composition fields.
+
+- Diff: `player-tick-propagation` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs](#L40-L42,L49-L56,L969,L1086,L1105,L1129,R41-R42,R910,R1027,R1046,R1070)
+
+#### Preserve 64-bit ordering in remote presentation
+
+Remote-player samples and their highest-seen counters retain the full authoritative tick so jitter filtering cannot truncate long-running server time.
+
+- Diff: `remote-player-tick-propagation` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/RemotePlayerController.cs](#L16,L36-L37,L160,L174,R16,R36-R37,R160,R174)
+
+#### Store the authoritative tick on player entities
+
+The player entity model completes the type migration at the presentation-facing data boundary.
+
+- Diff: `player-entity-tick-propagation` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/PlayerEntity.cs](#L51,R51)
+
+### APIs and entrypoints
+
+Follow the three ways authoritative movement data enters the client: applying a settings snapshot, receiving repeated persona-scoped parameter events, and initializing speed during player spawn. The reading order shows that all paths converge on the same ordered state instead of writing public fields independently. Notice where a new session explicitly resets ordering and where optional dash values preserve the last valid observation.
+
+#### Commit speed, timing, and dash values as one snapshot
+
+`ApplyServerParameters` routes effective speed through the ordered state before updating input thresholds and fixed-step timing. Positive dash values replace the current prediction parameters; absent or invalid optional values leave the last accepted authority intact. The public effective-speed method returns whether an observation was accepted, while the reset method deliberately clears tick ordering at the session boundary.
+
+- Diff: `apply-authoritative-movement-settings` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementSettings.cs](#L101,L107,R110,R115-R125,R127-R144)
+
+#### Apply repeated server parameter snapshots for the local persona
+
+The movement-parameter controller filters events to the current persona, maps server tick and dash values into the settings DTO, and no longer discards every update after the first. Repeated snapshots are necessary because effective speed and ability parameters can change during a session; ordering is enforced by the settings state instead of by a one-shot controller latch.
+
+After applying fixed-step values, the same entrypoint configures `ServerTickClock`. That makes movement prediction and phase restoration derive seconds from one authoritative tick rate.
+
+- Diff: `movement-parameter-entrypoint` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs](#L30,L111,L129-L134,R23,R31-R32,R36,R41,R105-R110,R115,R122-R124,R159-R161)
+
+#### Route server speed through one ordered API at spawn
+
+New-player events preserve the tick attached to initial movement speed and carry it through `PlayerSpawnData`. Local spawn setup calls `ApplyEffectiveMoveSpeed` rather than writing the public field, so initial state and later movement-parameter events participate in the same stale-update policy.
+
+- Diff: `spawn-speed-authority-entrypoint` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersSpawnManager.cs](#L667,R408,R425,R669-R671,R866,R898-R899)
+
+### Core behavior
+
+Read the dash as an authority pipeline rather than one method: shared planning chooses the unconstrained trajectory, Unity resolves scene collisions, shared sampling advances presentation, and server events terminate or reconcile the action. Then review deletion of client-side speed composition as part of the same boundary cleanup. The central invariant is that deterministic gameplay math belongs to the shared package while Unity owns only engine-specific collision and visual application.
+
+#### Plan a dash from prediction state, then resolve Unity collisions
+
+Prediction now waits until positive server-resolved distance and duration are available. Shared `DashKinematics.Plan` chooses direction and raw target from the predicted/physics position, current velocity, aim direction, and authoritative distance. Unity then owns the environment-specific collision query that shortens the raw target against scene geometry.
+
+This boundary is deliberate: direction and unconstrained displacement must match backend math exactly, while collider casts cannot live in the platform-neutral gameplay package. Starting from prediction state rather than the smoothed render transform also avoids baking presentation lag into the simulated target.
+
+- Diff: `shared-dash-planning` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](#L268,L280,L283-L287,L290,L295,L362-L363,L365-L366,L380-L391,L399-L400,R277,R289,R291-R296,R300-R304,R309,R427,R429-R430,R444-R472,R480-R490,R492-R493)
+- Context: `5`
+- Comment: R300 — The plan starts from physics/prediction state, never the lagging smoothed render transform.
+
+#### Reconcile authoritative dash events without stealing lifecycle ownership
+
+An authoritative dash event first refreshes settings. If local prediction never started, the event can bootstrap the presentation from the current predicted position; if prediction is already running, it retargets the remaining path and restarts timing with only the remaining duration. In both paths, a server-provided collision-resolved target wins over the local estimate.
+
+The client is allowed to predict the curve, but it does not declare the gameplay action finished. Completion and rejection events remain the authority that stop prediction and reconcile the final position.
+
+- Diff: `authoritative-dash-reconciliation` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](#L305,L311,L335,L346,R319-R331,R337-R338,R343-R369,R389-R390,R401,R405-R414)
+- Comment: R343 — This branch supports a server-authoritative dash even when local input did not start prediction, such as delayed or non-local initiation.
+
+#### Sample the shared curve and hold its exact endpoint
+
+Each frame asks `DashKinematics.Sample` for the current XZ position using pause-aware elapsed time. Unity applies that sample through its physics controller, including the exact completed endpoint. Once the shared sample reports complete, the animation state freezes there but `_isPredictingDash` remains true until the server sends its lifecycle event.
+
+That distinction prevents two failure modes: a local lerp drifting from backend easing, and an animation timeout being mistaken for authoritative gameplay completion.
+
+- Diff: `shared-dash-sampling` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](#L458-L459,L476-L477,L479-L480,L496,L498,L500-L511,R550-R558,R575-R577,R579-R582,R598-R599)
+- Comment: R575 — Sample completion owns the visual endpoint only; the server event still owns dash lifetime and reconciliation.
+
+```guide-diagram
+{"summary":"Authoritative parameters and predicted inputs enter shared planning; Unity resolves collisions, shared sampling drives presentation, and the server alone terminates or reconciles the dash.","nodes":[{"id":"params","label":"Authoritative distance and duration","detail":"Server-resolved movement parameters","x":0,"y":0},{"id":"inputs","label":"Predicted position, velocity, and aim","detail":"Current client prediction state","x":0,"y":180},{"id":"plan","label":"Shared DashKinematics.Plan","detail":"Deterministic direction and raw target","x":300,"y":90},{"id":"collision","label":"Unity collision resolution","detail":"Scene-specific target shortening","x":600,"y":90},{"id":"sample","label":"Shared DashKinematics.Sample","detail":"Deterministic elapsed-time sample","x":900,"y":90},{"id":"present","label":"Predicted presentation","detail":"Unity applies the sampled endpoint","x":1200,"y":90},{"id":"lifecycle","label":"Server completed or rejected event","detail":"Final lifecycle and reconciliation authority","x":900,"y":270}],"edges":[{"source":"params","target":"plan"},{"source":"inputs","target":"plan"},{"source":"plan","target":"collision"},{"source":"collision","target":"sample"},{"source":"sample","target":"present"},{"source":"lifecycle","target":"present","label":"terminate and reconcile"}]}
+```
+
+#### Remove client-side speed composition
+
+The movement controller deletes its cached base speed, stat-growth modifier, buff modifier, and speed-boost subscription. Those calculations duplicated backend policy and could diverge when events arrived out of order. The client now consumes the server-computed effective speed through the ordered settings API, including when the local player cache changes.
+
+- Diff: `remove-client-speed-composition` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs](#L215-L219,L766-L768)
+
+### Integration and wiring
+
+After understanding the pure path, trace lifecycle signals that keep it coherent across player replacement, pause, resume, snapshots, and RTT updates. Read local timer resets before controller subscriptions and boundary gating. What matters is that every transition updates shared temporal authority exactly once before clearing prediction buffers or advancing presentation.
+
+#### Reset dash timing with player and pause lifecycle
+
+The prediction service resets timer state when a player is attached, cleared, or a dash stops. Pause and resume callbacks freeze and restart the elapsed timer, while RTT initialization and smoothing feed the shared server clock. This keeps local dash animation and authoritative effect restoration on consistent latency and pause inputs without merging their separate clocks.
+
+- Diff: `prediction-lifecycle-clock-integration` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](#L187,R157,R190-R191,R195,R225-R226,R250-R251,R1159-R1164,R1195-R1197,R1229,R1236,R1253)
+
+#### Gate typed phase events and observe every snapshot
+
+The movement controller receives the scoped clock and passes it into prediction. Pause/resume subscriptions now require tick-bearing payloads. Each boundary is applied to the clock before local pause state and buffer resets; duplicate or out-of-order boundaries can therefore return without applying the visual transition twice. Every accepted position snapshot also advances the clock before it enters the presentation queue.
+
+The same change removes the old speed-boost handler from subscribe, unsubscribe, pause, and cache paths. The large deletion is part of the authority transfer, not unrelated cleanup.
+
+- Diff: `movement-controller-clock-wiring` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/PlayersMovementController.cs](#L74,L96,L230,L233-L237,L262-L264,L302,L317,L323-L339,L341-L347,L349-L350,L352,L356-L392,R30,R66-R67,R73,R90-R91,R220,R223,R248-R249,R287,R293-R304,R314,R320,R322-R326,R328,R332,R334-R335,R465)
+- Comment: R293 — The clock result gates local pause state, making duplicate and reordered phase events idempotent before prediction buffers are reset.
+
+### Tests and verification
+
+The tests are organized by seam: shared dash inputs and Unity coordinate mapping first, ordered settings next, then pause-aware elapsed time in isolation. Review them as evidence that the client consumes package results correctly, not as a duplicate implementation of backend algorithms. Each test should pin an invariant that would otherwise fail silently as drift, stale state, or pause-dependent motion.
+
+#### Verify the shared dash consumer seam
+
+These tests do not reimplement the backend package. They verify that Unity supplies XZ values correctly, preserves shared direction and raw-target results, applies a collision-resolved endpoint to sampling, and receives the expected completed position from the platform-neutral kernel.
+
+- Diff: `dash-kernel-consumer-tests` [Assets/Tests/EditMode/DashKinematicsConsumerTests.cs](#R1-R76)
+
+#### Verify ordered settings and pause-aware elapsed time
+
+The settings tests prove that older ticks and invalid speeds cannot overwrite the accepted value and that a session reset permits a lower starting tick. Timer tests cover unstarted, running, paused, resumed, and reset states using explicit timestamps, demonstrating that paused wall time is excluded without depending on Unity frame timing.
+
+- Diff: `movement-settings-authority-tests` [Assets/Tests/EditMode/MovementSettingsTests.cs](#R1-R39)
+
+#### Verify pause-aware elapsed time independently
+
+Dedicated timer tests isolate pause, resume, reset, and unstarted behavior from movement settings so failures identify the correct invariant.
+
+- Diff: `pause-aware-timer-tests` [Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs](#R1-R46)
+
+### Imports, formatting, and miscellaneous
+
+Imports and newline cleanup are intentionally reviewed after functional evidence. Confirm that the prediction service references the shared gameplay and clock namespaces, while treating the controller file-ending change as mechanical rather than a separate behavior.
+
+#### Reference shared gameplay and normalize file endings
+
+The prediction service imports the shared clock and gameplay kernels. A trailing blank-line cleanup in the parameter controller carries no behavioral meaning.
+
+- Diff: `movement-shared-imports` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/LocalMovementPredictionService.cs](#R6-R7)
+
+#### Normalize the movement parameter controller ending
+
+This removed trailing blank line is mechanical and carries no runtime behavior.
+
+- Diff: `movement-controller-formatting` [Assets/Rampage/_Scenes/Gameplay/Objects/Players/Scripts/Controllers/MovementParametersController.cs](#L161)
+
+### Generated output
+
+Unity metadata for focused tests appears last and collapsed. Check one stable registration per test source, but exclude these whole-file items from Guide completion because their generated GUIDs do not require semantic review.
+
+#### Unity test asset registrations
+
+Unity-generated metadata registers the three new EditMode test files. These entries remain collapsed and are excluded from Guide completion.
+
+- Diff: `dash-tests-meta` [Assets/Tests/EditMode/DashKinematicsConsumerTests.cs.meta](-)
+
+#### Movement settings test asset registration
+
+Unity-generated metadata registers the ordered movement settings test and remains outside Guide completion.
+
+- Diff: `movement-settings-tests-meta` [Assets/Tests/EditMode/MovementSettingsTests.cs.meta](-)
+
+#### Pause timer test asset registration
+
+Unity-generated metadata registers the pause-aware timer test and remains outside Guide completion.
+
+- Diff: `pause-timer-tests-meta` [Assets/Tests/EditMode/PauseAwareElapsedTimerTests.cs.meta](-)

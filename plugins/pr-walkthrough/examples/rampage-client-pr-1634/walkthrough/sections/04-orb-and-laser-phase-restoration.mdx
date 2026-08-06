@@ -1,0 +1,184 @@
+# Orb and laser phase restoration
+
+- ID: `orb-and-laser-phase-restoration`
+- Objective: Confirm that late effect events begin at the current authoritative phase instead of restarting when Unity receives them.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs](-) — Uses shared orbit math for every presentation update.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs](-) — Restores elapsed server phase before the first visible orb frame.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](-) — Uses shared sweep evaluation for the live laser endpoint.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs](-) — Converts the phase origin tick to elapsed time before spawn.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Projectile.cs](-) — Removes the old projectile timing path replaced by phase-aware effects.
+- File: [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/ProjectilesManager.cs](-) — Preserves pool and lifecycle ownership around the new effect timing.
+- File: [Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs](-) — Verifies Unity mapping for shared laser sweep calculations.
+- File: [Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs.meta](-) — Registers the laser consumer test asset.
+- File: [Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs](-) — Verifies Unity mapping for shared orb angle and position calculations.
+- File: [Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs.meta](-) — Registers the orb consumer test asset.
+
+Orb and laser spawns convert server phase-origin ticks into pause-aware elapsed time, then shared kinematics restores the correct pooled-effect position on the first frame.
+
+Review the phase origin conversion before the per-frame math, then confirm pause boundaries do not advance either effect.
+
+## Guide
+
+### Foundations and data structures
+
+Start with the data that must survive asynchronous event handling and pool waits: phase origin, duration, explicit elapsed time, and the scoped clock dependency. These fields replace implicit local creation time. The invariant is that pooled presentation may be delayed, but its initial phase must still derive from authoritative active time rather than queue latency.
+
+#### Preserve phase data until pooled orb creation
+
+Orb spawn requests now retain duration and phase-origin tick alongside their geometric parameters. The controller receives the same scoped `ServerTickClock` used by movement and pause handling, so a request may wait for its pool without losing the authoritative time coordinate needed when the object finally becomes visible.
+
+- Diff: `orb-phase-spawn-state` [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs](#L91,R75,R89-R90,R95-R98,R102)
+
+#### Replace laser wall-clock origin with explicit elapsed phase
+
+The laser stores elapsed active seconds rather than the local wall-clock time at which Unity happened to instantiate it. Its controller receives the server clock, making initial phase an explicit input instead of an incidental consequence of event delivery latency.
+
+- Diff: `laser-phase-state` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](#L53,R55)
+
+#### Inject the shared clock into laser spawning
+
+The laser controller receives the gameplay-scoped clock that converts authoritative phase origins immediately before pooled initialization.
+
+- Diff: `laser-clock-injection` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs](#L88,R81,R89-R92,R96)
+
+### APIs and entrypoints
+
+Read orb and laser entrypoints before their per-frame kernels to see exactly where phase data crosses into pooled objects. Notice that wire values are preserved without client-only geometry defaults, numeric payload conversion is defensive, and elapsed phase becomes an explicit initialization argument. This establishes the handoff that prevents a correct kernel from starting at the wrong instant.
+
+#### Read authoritative orb lifetime and origin without local defaults
+
+The orb event handler reads radius, orbit speed, duration, and phase origin exactly from the wire DTO and carries them through the pending request. Removing the old radius and speed fallbacks matters because a legitimate zero must not silently turn into a different client-only trajectory.
+
+- Diff: `orb-event-phase-entrypoint` [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs](#L249-L250,R257-R260,R295-R296)
+
+#### Thread restored laser phase through pool initialization
+
+`SpawnLaser` and `Laser.Init` accept the restored elapsed phase. Initialization clamps it against lifetime, derives the remaining duration, and evaluates a sweeping laser before configuring its renderer. Numeric payload helpers accept alternate key spellings and safely convert boxed values without allowing malformed optional phase fields to abort the whole spawn.
+
+- Diff: `laser-spawn-phase-api` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs](#L189,L223,R194-R195,R229,R659-R698)
+
+#### Initialize pooled lasers at the restored phase
+
+The laser initialization API clamps restored elapsed time, derives remaining lifetime, and evaluates a sweep before renderer setup.
+
+- Diff: `laser-initialization-phase-api` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](#L129,L133,R131-R135,R141-R147,R149-R152)
+- Comment: R149 — The sweep is evaluated before `SetupLineRenderer`, preventing a one-frame flash at the unadvanced starting angle.
+
+### Core behavior
+
+Follow restoration before steady-state motion. First convert origin tick to elapsed active seconds at spawn, then see how shared orb and laser kernels continue from that restored state, and finally remove the obsolete generic-projectile orb path. Reviewers should verify single application of delivery delay, pause exclusion after instantiation, and one clear owner for each presentation algorithm.
+
+#### Restore the orb angle before its first visible frame
+
+When a pooled orb is ready, the controller asks the server clock for active elapsed seconds since the phase origin, optionally capped by lifetime. It advances the initial angle once by that duration before handing parameters to the orb. Thereafter the orb advances angle and computes XZ position with the shared kernel around the current smoothed owner center.
+
+This two-stage design handles both sources of motion correctly: server time determines where the orbit should begin, while the live smoothed center keeps the visual attached to an interpolated player without restarting the phase.
+
+- Diff: `restore-orb-phase-at-spawn` [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs](#L491,R503-R516)
+- Comment: R503 — Phase restoration happens once at pool spawn; subsequent frames continue from the restored angle instead of repeatedly reapplying network delay.
+
+#### Advance live orb presentation with the shared kernel
+
+After one-time phase restoration, the orb uses shared angle and position functions on every frame around its smoothed owner center.
+
+- Diff: `shared-orb-kinematics` [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs](#L570-L588,L591-L593,R571-R584)
+
+#### Restore and advance the laser sweep on active time
+
+Immediately before the main-thread spawn, the controller converts phase-origin tick to pause-aware elapsed seconds and passes that value through the pool API. The laser then accumulates `Time.deltaTime` only while gameplay is not paused. Both the static endpoint calculation and moving ping-pong sweep use `LaserSweepKinematics`, removing duplicated angle normalization and traversal math from Unity.
+
+The clock restores delay that occurred before instantiation; the local accumulator handles frames after instantiation. Keeping that handoff explicit avoids double-counting delivery time and avoids advancing through a later gameplay pause.
+
+- Diff: `restore-laser-phase-at-spawn` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/LaserController.cs](#L371,R374-R380,R384-R397)
+
+#### Evaluate static laser endpoints with shared sweep math
+
+A zero-width sweep uses the package evaluator too, keeping endpoint projection and angle conventions identical to animated lasers.
+
+- Diff: `shared-laser-endpoint` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](#L271-L277,R287-R300)
+
+#### Advance live sweeps only during active gameplay
+
+The per-frame path freezes its elapsed accumulator during pause and delegates ping-pong traversal and endpoint evaluation to the shared kernel.
+
+- Diff: `pause-aware-laser-advance` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](#L537,L610-L640,R556-R558,R563,R636-R650)
+- Comment: R556 — Elapsed seconds advance only while gameplay is active; subtracting from `Time.time` would include paused wall time.
+
+#### Remove the obsolete generic-projectile orb path
+
+The generic `Projectile` class deletes its orb subtype, owner tracking, local orbit state, per-frame update, setup API, special height/interpolation handling, and duplicated orbit formula. That behavior is not lost: dedicated `Orb` and `OrbsController` now own phase-aware presentation with the shared kernel.
+
+Once the subtype disappears, `ProjectilesManager` no longer needs to skip extrapolator initialization for orbs. Every remaining generic projectile follows one uniform interpolation/extrapolation path.
+
+- Diff: `remove-generic-orb-specialization` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Projectile.cs](#L17-L24,L29,L66-L71,L81-L82,L96-L105,L160-L175,L186-L200,L235-L243,L287-L289,L313-L344,L429-L482,L485,R21,R178,R245,R332)
+- Comment: L429 — This deleted orbit implementation is replaced by the dedicated `Orb` path above; it is ownership consolidation, not removal of local orbit presentation.
+
+#### Unify extrapolation for remaining generic projectiles
+
+With orbs removed from the generic projectile type, manager paths can initialize extrapolation uniformly without subtype checks.
+
+- Diff: `unify-generic-projectile-extrapolation` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/ProjectilesManager.cs](#L318-L324,L569-L572,R318-R321,R566)
+
+### Integration and wiring
+
+Pooling makes reset behavior part of correctness rather than cleanup trivia. Confirm that a released laser clears its accumulated phase so the next initialization starts only from its own authoritative event. No other lifecycle state may leak across pooled effect identities.
+
+#### Reset pooled laser phase state
+
+Pool reset clears the accumulated elapsed phase along with the other identity and renderer state. Without this reset, a reused laser could inherit the prior effect's phase before its next initialization.
+
+- Diff: `reset-pooled-laser-phase` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](#L458,R481)
+
+### Tests and verification
+
+Read the orb and laser consumer tests as coordinate-boundary checks. They verify that shared package outputs map into Unity XZ space, presentation height, sweep direction, and wraparound as expected. The goal is evidence at the integration seam, not reproducing the package's internal formulas in client tests.
+
+#### Verify Unity mappings for both shared kernels
+
+The consumer tests exercise the package through Unity-facing coordinates. Orb coverage verifies angle wraparound and the X/Y/Z mapping at presentation height. Laser coverage verifies right-starting sweep direction, evaluated angle, and XZ endpoint. They protect the integration seam without copying the kernel algorithms into test expectations beyond representative numeric results.
+
+- Diff: `orb-kernel-consumer-test` [Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs](#R1-R31)
+
+#### Verify the shared laser sweep mapping
+
+The laser consumer test independently checks right-start direction, evaluated angle, and Unity XZ endpoint conversion.
+
+- Diff: `laser-kernel-consumer-test` [Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs](#R1-R33)
+
+### Imports, formatting, and miscellaneous
+
+Shared-kernel and pause-service imports are grouped after the behavioral excerpts they enable. Verify that each dedicated owner references only the dependencies it needs; do not infer additional behavior from these mechanical namespace changes.
+
+#### Reference shared effect kernels and pause state
+
+These imports connect the dedicated presentation components to the shared gameplay package and pause service. All behavioral changes are reviewed in the excerpts above.
+
+- Diff: `orb-shared-kernel-import` [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/Orb.cs](#R13)
+
+#### Reference the shared kernel from orb orchestration
+
+The controller import enables spawn-time angle restoration through the same package API used by the orb component.
+
+- Diff: `orb-controller-shared-kernel-import` [Assets/Rampage/_Scenes/Gameplay/Objects/Orbs/Scripts/OrbsController.cs](#R14)
+
+#### Reference pause state and shared sweep math from lasers
+
+These imports connect live laser updates to pause gating and the package evaluator.
+
+- Diff: `laser-shared-kernel-imports` [Assets/Rampage/_Scenes/Gameplay/Objects/Projectiles/Scripts/Laser.cs](#R2,R4)
+
+### Generated output
+
+The final phase contains Unity-generated metadata for the two consumer tests. Confirm that both test assets are registered, keep the entries collapsed, and exclude them from Guide progress because GUID review adds no semantic confidence.
+
+#### Unity test asset registrations
+
+Unity-generated metadata registers the two new consumer tests. It remains collapsed by default and does not count toward Guide completion.
+
+- Diff: `orb-kernel-tests-meta` [Assets/Tests/EditMode/OrbKinematicsConsumerTests.cs.meta](-)
+
+#### Laser kernel test asset registration
+
+Unity-generated metadata registers the laser consumer test and remains outside Guide completion.
+
+- Diff: `laser-kernel-tests-meta` [Assets/Tests/EditMode/LaserSweepKinematicsConsumerTests.cs.meta](-)
