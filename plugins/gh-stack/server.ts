@@ -90,6 +90,10 @@ const branchOutSchema = z.object({
   // under it (a push from elsewhere, or divergence). 0 when there is no
   // remote branch (nothing to be behind); null when the probe failed.
   behindRemote: z.number().nullable(),
+  // Whether refs/heads/<name> still exists. `gh stack sync --prune` deletes
+  // the local branch but keeps the stack entry, so a merged branch stays in
+  // `view --json` forever — this is what tells an already-pruned one apart.
+  hasLocalRef: z.boolean(),
 });
 
 const stackOutSchema = z.object({
@@ -1125,12 +1129,17 @@ export default async function plugin(bb: BbPluginApi) {
             ? revListCount(cwd, branch.name, `origin/${branch.name}`)
             : 0,
         );
+        const localPromise = runGit(
+          ["rev-parse", "--verify", "--quiet", `refs/heads/${branch.name}`],
+          cwd,
+        ).then((probe) => probe.code === 0);
         if (!branch.pr) {
           return Object.assign({}, branch, {
             pr: null,
             diff: await diffPromise,
             aheadOfRemote: await aheadPromise,
             behindRemote: await behindPromise,
+            hasLocalRef: await localPromise,
           });
         }
         const view = await runGh(
@@ -1154,6 +1163,7 @@ export default async function plugin(bb: BbPluginApi) {
           diff: await diffPromise,
           aheadOfRemote: await aheadPromise,
           behindRemote: await behindPromise,
+          hasLocalRef: await localPromise,
         });
       }),
     );

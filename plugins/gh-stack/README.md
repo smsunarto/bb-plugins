@@ -16,7 +16,9 @@ branches and pull requests via the GitHub CLI.
   click to flip draft ⇄ ready for review (`gh pr ready [--undo]`). The flip
   is **optimistic and reconciled**: the pill switches on the click, the write
   runs behind it, and a failure is the only thing that puts it back (with the
-  reason). `gh pr ready` returns before GitHub's read path reflects it, so
+  reason). A spinner sits beside the label — never in place of it — for as
+  long as GitHub has not confirmed the new state. `gh pr ready` returns before
+  GitHub's read path reflects it, so
   both halves of the panel carry an overlay over what `gh pr view` reports —
   the client's covers the round trip, the server's covers every payload it
   serves (announced immediately, so other open panels flip too) until a
@@ -63,7 +65,10 @@ branches and pull requests via the GitHub CLI.
   branches behind, a "Delete N merged local branches…" button appears and
   runs `gh stack sync --prune` after a confirmation dialog (prune failures
   are never auto-handed to the agent — recovery must not delete branches as
-  a side effect).
+  a side effect). The count is of merged branches that still have a local
+  ref, not of merged branches: a prune deletes the branch but keeps its stack
+  entry, so `view --json` reports it as merged forever and the button would
+  otherwise never go away.
 - **Merge N layers** lands the stack from the bottom up through **GitHub's
   atomic stack-merge API** — `PUT
   repos/{owner}/{repo}/pulls/<PR>/merge-async` via `gh api`, then polling the
