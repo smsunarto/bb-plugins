@@ -9,5 +9,3 @@ const errConsole = new Console({ stdout: process.stderr, stderr: process.stderr 
 // Keep the Console constructor property the global console carries.
 (errConsole as unknown as { Console: typeof Console }).Console = Console;
 globalThis.console = errConsole as unknown as typeof console;
-
-export {};
