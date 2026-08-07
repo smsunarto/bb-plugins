@@ -11,6 +11,7 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 | `gh-stack` | `plugins/gh-stack` | Visualize and drive stacked pull requests. |
 | `ghostty` | `plugins/ghostty` | Terminal tabs rendered by libghostty (WebAssembly) instead of the built-in terminal. |
 | `pr-walkthrough` | `plugins/pr-walkthrough` | Generate a human-friendly pull-request walkthrough with a built-in viewer panel. |
+| `theme` | `plugins/theme` | Contributes Scott's Theme as a selectable palette (`plugin:theme:smsunarto`). |
 
 The plugin id comes from the `name` field in each `package.json` with the `bb-plugin-` prefix removed. The directory name is not used.
 
