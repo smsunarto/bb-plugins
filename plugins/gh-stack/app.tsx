@@ -1495,9 +1495,14 @@ function StackPanel({ threadId }: { threadId: string }) {
                 updates pull requests, Merge lands them. Submit keeps its
                 glyph when it escalates to Sync + Submit — the PRs are still
                 the point. */}
-            <span title={`Sync — ${syncSubtitle}`}>
+            {/* Every button is flex-1 with a fit-content floor, so each wrap
+                line divides itself: all three abreast while they fit, else
+                Sync and Submit split the first line and Merge — alone on the
+                second — takes its full width. */}
+            <span className="flex-1 min-w-fit" title={`Sync — ${syncSubtitle}`}>
               <Button
                 size="sm"
+                className="w-full"
                 onClick={() => void runAction("sync")}
                 disabled={anyBusy || !syncNeeded}
               >
@@ -1505,9 +1510,10 @@ function StackPanel({ threadId }: { threadId: string }) {
                 {busy === "sync" || busy === "prune" ? "Syncing…" : "Sync"}
               </Button>
             </span>
-            <span title={`Submit — ${submitEffect}`}>
+            <span className="flex-1 min-w-fit" title={`Submit — ${submitEffect}`}>
               <Button
                 size="sm"
+                className="w-full"
                 onClick={() =>
                   void runAction(needsRestack ? "sync-submit" : "submit")
                 }
@@ -1522,10 +1528,10 @@ function StackPanel({ threadId }: { threadId: string }) {
               </Button>
             </span>
             {mergeCount > 0 ? (
-              <span title={`Merge — ${mergeSubtitle}`}>
+              <span className="flex-1 min-w-fit" title={`Merge — ${mergeSubtitle}`}>
                 <Button
                   size="sm"
-                  className={MERGE_BUTTON_CLASSES}
+                  className={`w-full ${MERGE_BUTTON_CLASSES}`}
                   onClick={() => setMergeOpen(true)}
                   disabled={anyBusy || mergeBlocked}
                 >
