@@ -98,7 +98,6 @@ INDEX_BLOBS = re.compile(
     r"^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: \d+)?$",
     re.IGNORECASE,
 )
-FULL_CONTEXT_MARKER_NAME = "full-context.enabled"
 MAX_EXPANDABLE_BLOB_BYTES = 2_000_000
 MAX_EMBEDDED_CONTEXT_BYTES = 25_000_000
 
@@ -749,9 +748,11 @@ def compile_mdx(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=Path("src/content/walkthrough"))
-    parser.add_argument("--output", type=Path, default=Path("src/data/walkthrough.generated.json"))
-    parser.add_argument("--diff", type=Path, default=Path("src/data/walkthrough.patch"))
+    parser.add_argument("--input", type=Path, default=Path(".pr-walkthrough/walkthrough"))
+    parser.add_argument(
+        "--output", type=Path, default=Path(".pr-walkthrough/walkthrough.generated.json")
+    )
+    parser.add_argument("--diff", type=Path, default=Path(".pr-walkthrough/changes.patch"))
     parser.add_argument(
         "--include-full-context",
         action="store_true",
@@ -766,9 +767,7 @@ def main() -> int:
 
     try:
         patch = args.diff.read_text(encoding="utf-8") if args.diff.is_file() else ""
-        site_root = Path(__file__).resolve().parent.parent
-        marker_path = site_root / "src" / "data" / FULL_CONTEXT_MARKER_NAME
-        include_full_context = args.include_full_context or marker_path.is_file()
+        include_full_context = args.include_full_context
         repo_root = None
         if include_full_context:
             repo_root = find_git_root(args.repo or Path.cwd())

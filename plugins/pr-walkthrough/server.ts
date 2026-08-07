@@ -2,18 +2,19 @@
 //
 // The walkthrough is produced by the bundled `pr-walkthrough` skill
 // (skills/pr-walkthrough/), which agents run inside a thread. The skill's
-// compiler emits structured data (walkthrough.generated.json) at scaffold
-// time; this backend reads that file from the thread's workspace so the
-// frontend can render the walkthrough natively with bb's own diff renderer.
+// compiler (scripts/compile_walkthrough.py) turns canonical MDX plus a Git
+// patch into walkthrough.generated.json; this backend reads that file from the
+// thread's workspace so the frontend can render the walkthrough natively with
+// bb's own diff renderer. There is no static site: the compiled JSON is the
+// only artifact, and this panel is the renderer.
 import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
 import { z } from "zod";
 
-export const DEFAULT_SITE_DIR = ".pr-walkthrough/site";
+export const DEFAULT_SITE_DIR = ".pr-walkthrough";
 
-const GENERATED_DATA_PATH = "src/data/walkthrough.generated.json";
+const GENERATED_DATA_PATH = "walkthrough.generated.json";
 
-// Mirrors the site template's src/data/walkthrough.ts contract. The compiler
-// (compile_walkthrough.py) is the single producer of this shape.
+// compile_walkthrough.py is the single producer of this shape.
 export type WalkthroughGuideBlock =
   | { type: "paragraph"; text: string }
   | { type: "list"; ordered: boolean; items: string[] }
@@ -115,9 +116,12 @@ export function normalizeRelativeDir(path: string | undefined): string | null {
   if (candidate.startsWith("/") || candidate.includes("\0")) return null;
   const segments = candidate.split("/").filter((s) => s !== "" && s !== ".");
   if (segments.length === 0 || segments.some((s) => s === "..")) return null;
-  // Earlier directives pointed at the static export dir; the compiled data
-  // lives one level up in the site source.
+  // Directives written before the static site was removed pointed at the site
+  // source (".pr-walkthrough/site") or its export (".../site/out"). Both now
+  // resolve to the directory that holds the compiled JSON.
   if (segments[segments.length - 1] === "out") segments.pop();
+  if (segments[segments.length - 1] === "site") segments.pop();
+  if (segments.length === 0) return null;
   return segments.join("/");
 }
 
@@ -190,7 +194,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (!isWalkthroughData(parsed)) {
         return failure(
           "The compiled walkthrough data does not match the expected shape. " +
-            "Regenerate it with the skill's scaffold step.",
+            "Regenerate it with the skill's compile step.",
         );
       }
       return { walkthrough: parsed, error: null };
