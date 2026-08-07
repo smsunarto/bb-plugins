@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "unicorn", "import", "promise", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "error",
+    "perf": "error",
+    "suspicious": "warn",
+    "pedantic": "off",
+    "style": "off",
+    "restriction": "off"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true,
+    "node": true,
+    "browser": true
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/*.d.ts"
+  ],
+  "rules": {
+    "no-console": "off",
+    "typescript/no-explicit-any": "off",
+
+    "react/react-in-jsx-scope": "off",
+    "react/no-array-index-key": "warn",
+
+    "no-await-in-loop": "off",
+    "no-underscore-dangle": "off",
+    "no-shadow": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "import/no-unassigned-import": "off",
+
+    "unicorn/prefer-node-protocol": "error",
+    "import/no-duplicates": "error",
+    "promise/no-return-wrap": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/test/**"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "require-yield": "off"
+      }
+    }
+  ]
+}
