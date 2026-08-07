@@ -30,15 +30,13 @@ Generate the guide from a repository checkout, PR metadata, Git patch, changed s
 - Guide explanations may include one optional, read-only React Flow diagram per phase and sparse, read-only Pierre line annotations only when they add non-obvious context.
 - One canonical MDX file per review group; `index.mdx` owns PR metadata and reading order.
 - Bordered Pierre Diffs surfaces with native whole-header collapse, Viewed-to-collapse behavior, Pierre line-info hunk treatment, and group-level bulk marking.
-- Patch-only output by default. Exact old/new Git blobs from the locally generated canonical patch are an explicit, size-bounded, localhost-only build mode used solely to enable Pierre's native omitted-hunk expansion; opting out removes stale static bundles.
+- Patch-only output by default. Exact old/new Git blobs from the locally generated canonical patch are an explicit, size-bounded opt-in (`--include-full-context`) used solely to enable Pierre's native omitted-hunk expansion; the resulting JSON holds private source and must not leave the workspace.
 - One Pierre Tree directly under the center-column Changed files heading, with an explicit Show/Hide generated shadcn toggle that includes faded generated paths in the same tree.
 - Trees fit visible content without internal scrolling, artificial minimum height, or leftover bottom gutter.
 - Generated metadata, lockfiles, binary changes, and output remain reviewable. They are hidden from the Normal Tree by default, included through one Generated toggle, and rendered in a collapsed diff section after primary files. In Guide they appear as whole-file items in the final collapsed Generated output phase and do not affect Guide completion.
 - Tests stay in the normal Changed files tree and diff flow instead of being repeated as a separate evidence section. Only relevant specs and links plus existing notes use the supporting rail.
 - No secondary complete-patch destination, standalone conceptual-visualization mode, placeholder orientation section, generated findings, severity labels, approval decisions, merge controls, or fake chat.
-- Nextra, actual shadcn Lyra components, Pierre Trees, Pierre Diffs, pnpm, Oxlint, and a static Next.js export.
-- Self-hosted Berkeley Mono for code and monospaced metadata, using only locally licensed owner-supplied files and no remote font request.
-- Shadcn selected-state, dense-row, and no-data primitives are part of the contract; do not replace them with styled look-alikes.
+- The bb plugin's viewer panel is the renderer: Pierre Trees, Pierre Diffs, and bb's own theme tokens and fonts. There is no static site, no Next.js, and no pnpm — the skill authors MDX and one Python compiler emits the JSON the panel reads.
 - Compiled JSON and patch-derived data are generated artifacts, never canonical authoring surfaces.
 
 ## Brand Commitments

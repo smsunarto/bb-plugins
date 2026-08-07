@@ -14,7 +14,7 @@ Use a dense, full-height code-review workstation composed from shadcn `radix-lyr
 
 ## Typography
 
-- System sans for interface text; self-hosted Berkeley Mono for code, paths, refs, and counts.
+- System sans for interface text; a monospace face for code, paths, refs, and counts. The panel inherits both from bb's theme tokens and ships no fonts of its own — the self-hosted Berkeley Mono files went with the static site.
 - Base text: 13–14px with compact line height.
 - Group heading: 23–25px.
 - Section heading: 14–16px.

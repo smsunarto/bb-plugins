@@ -5,7 +5,7 @@ description: Generate a human-friendly pull-request walkthrough with semantic re
 
 # PR Walkthrough
 
-Create a local static review guide that teaches a pull request in semantic order. Make the diff the primary reading surface. Give every section a familiar file-oriented **Normal** mode and a model-authored **Guide** mode that can reorder exact diff excerpts around deeper explanations.
+Create a local review guide that teaches a pull request in semantic order. Make the diff the primary reading surface. Give every section a familiar file-oriented **Normal** mode and a model-authored **Guide** mode that can reorder exact diff excerpts around deeper explanations.
 
 This skill orients a reviewer. It does not perform a fresh code review. Do not generate findings, severities, approval recommendations, merge actions, or fake discussion.
 
@@ -21,48 +21,75 @@ Use one semantic review path with two readings:
 
 Do not add a standalone conceptual-visualization dashboard, relationship canvas, secondary file-browser page, or placeholder orientation group. Guide may include one read-only React Flow diagram inside a phase only when the relationship genuinely needs a visual explanation.
 
-## Output and stack
+## Output
 
-Create:
+Create exactly three things in the workspace:
 
 - Canonical source: `.pr-walkthrough/walkthrough/`
   - `index.mdx`: PR metadata and ordered section references.
   - `sections/*.mdx`: one logical review group per file.
 - Canonical patch: `.pr-walkthrough/changes.patch`
-- Site source: `.pr-walkthrough/site/`
-- Static artifact: `.pr-walkthrough/site/out/index.html`
+- Compiled data: `.pr-walkthrough/walkthrough.generated.json`
 
-Use `assets/site-template`. Do not create another frontend stack.
+You author MDX. You do not build a frontend. The compiler turns the MDX and the patch into the compiled JSON, and the bb plugin's viewer panel renders that JSON natively with bb's own Pierre Diffs and Pierre Trees. There is no static site, no Next.js, no pnpm, and no localhost server.
 
-The template provides:
+Treat the compiled JSON as generated code. Never hand-edit `walkthrough.generated.json`; regenerate it.
 
-- Nextra 4 and Next.js App Router for canonical MDX and static export.
-- Actual shadcn registry components in the compact `radix-lyra` style.
-- shadcn `Toggle` for persistent state, `Item` for dense review rows, and `Empty` for true no-data states.
-- Pierre Trees for active-group changed-file evidence.
-- Pierre Diffs for continuous inline unified or split patches.
-- React Flow for optional, read-only diagrams embedded only in authored Guide phases.
-- Tailwind CSS 4, Oxlint, TypeScript, pnpm, exact versions, and a committed lockfile.
+## Orchestrate with the bundled workflow
 
-Keep `assetPrefix: "."`, relative local assets, and no runtime `fetch()` for walkthrough data. Treat compiled JSON as generated code. Never hand-edit `walkthrough.generated.json`.
+`<skill-directory>/workflow.js` is one runtime-neutral script. bb's `bb_workflow_run` and Claude Code's `Workflow` expose the same `agent()` / `parallel()` / `pipeline()` / `phase()` / `log()` / `args` contract, so the same file drives either runner. When workflow tooling is available, generate the walkthrough through it instead of performing steps 1–8 in this thread.
 
-## Orchestrate with the bundled bb workflow
+Pick the runner:
 
-When this skill runs inside a bb thread with workflow tooling available (the `bb_workflow_run` tool or `bb workflows run`), generate the walkthrough through the bundled multi-agent workflow instead of performing steps 1–8 in this thread:
+- Both tools available (a bb thread whose provider is Claude Code): use `bb_workflow_run`. Its runs stay inspectable through `bb workflows status` and `bb workflows history`, and they resume after the session ends. Claude Code's `Workflow` resume is same-session only.
+- Only `bb_workflow_run`: use it.
+- Only `Workflow` (Claude Code without bb): use it.
+- Neither: follow steps 1–8 inline in this thread.
+
+Common launch procedure:
 
 1. Read `<skill-directory>/workflow.js`.
-2. Launch it with inline source. The skill directory sits outside the thread workspace, so `scriptPath`, `--file`, and `--name` do not resolve; pass the file contents as `script` (tool) or `--script` (CLI), with `args`:
+2. Launch it with inline source. The skill directory sits outside the thread workspace, so `scriptPath`, `--file`, and `--name` do not resolve on the first launch. Pass the file contents as the script, with `args`:
 
    ```json
    { "skillDir": "<skill-directory>", "request": "<optional user constraints, or omit>" }
    ```
 
-   Put base-branch overrides, PR selection, and emphasis requests from the user into `request`.
-3. After a successful launch, emit the returned `previewDirective` exactly once on its own plain line.
-4. Wait for the completion notification. `bb workflows status <run-id>` is the authoritative poll.
-5. Compose the final response from the workflow's return value. Emit the `::pr-walkthrough` directive only when it reports `ready: true`. When it returns `stage: "build"` with an `errorSummary`, report the failure honestly; after fixing the cause, relaunch with `resumeRunId` so completed phases replay from cache. When `ready` is false only because browser validation was unavailable, report rendering as unverified.
+   Put base-branch overrides, PR selection, and emphasis requests from the user into `request`. Omit `request` when the user gave no constraints. Do not paste the diff, file lists, or PR metadata into `args`; the Context phase collects them.
+3. Compose the final response from the workflow's return value. Emit the `::pr-walkthrough` directive only when it returns `built: true`. When it returns `stage: "compile"` with an `errorSummary`, report the failure honestly and omit the directive.
 
-The workflow phases map onto the numbered steps below: Context runs step 1 and the evidence half of step 2; Plan runs the grouping half of steps 2–3; Author runs steps 2, 4, and 5 once per group in parallel; Assemble and Repair run step 6; Validate runs step 8. Worker agents read this SKILL.md as their authoritative contract, so the numbered steps stay binding. Without workflow tooling, follow the steps inline in this thread exactly as written.
+### Runner: bb `bb_workflow_run`
+
+Use the `bb_workflow_run` tool, or `bb workflows run` from a shell.
+
+- Pass the contents as `script` (tool) or `--script` (CLI).
+- After a successful launch, emit the returned `previewDirective` exactly once on its own plain line. bb needs it to render the run in chat.
+- Wait for the completion notification. `bb workflows status <run-id>` is the authoritative poll.
+- Resume a failed run with `resumeRunId`. The prior run must be terminal and from the same project and environment.
+
+### Runner: Claude Code `Workflow`
+
+Use the `Workflow` tool.
+
+- These instructions are the explicit opt-in that the `Workflow` tool requires for multi-agent orchestration. Do not ask the user to authorize it again.
+- Pass the contents as `script`. Do not write the script to a file first: the tool persists it and returns the path to use for a resume.
+- The tool returns a run ID and returns immediately; the result arrives as a task notification. Do not poll and do not relaunch while it runs.
+- There is no `previewDirective` and none is needed. Progress renders on its own: bb reads the run from the provider stream and draws the phase and agent tree in the thread timeline plus a live card above the composer, and the Claude Code TUI has `/workflows`. Never invent a directive to make it render, and do not tell the user the run is invisible.
+- Resume a failed run with `{ "scriptPath": "<path returned by the launch>", "resumeFromRunId": "<run-id>" }`. Stop the prior run first. Resume works only inside the session that started the run.
+- The workflow caps review groups at 8, so one run stays inside the default workflow size guideline.
+
+### Resume instead of relaunch
+
+Both runners replay the longest unchanged prefix of `agent()` calls from cache, matched on the prompt and options of each call. The script is written to keep those prompts deterministic. Protect the cache:
+
+- After a compile failure, resume. Context, Plan, and Author replay instantly, and only the failed phase runs live. A fresh launch re-runs every agent.
+- Keep `args` byte-identical across the resume. A reworded `request`, or a different spelling of `skillDir`, invalidates every cached call.
+- Fix the cause in the workspace (`.pr-walkthrough/walkthrough/`) or in a late phase of the script. Editing an early phase invalidates every call after it.
+- Never add a timestamp, run counter, or other volatile value to `args`.
+
+### Phase mapping
+
+Context runs step 1 and the evidence half of step 2. Plan runs the grouping half of steps 2–3. Author runs steps 2, 4, and 5 once per group in parallel. Assemble and Repair run steps 6 and 8. Worker agents read this SKILL.md as their authoritative contract, so the numbered steps stay binding. Without workflow tooling, follow the steps inline in this thread exactly as written.
 
 ## 1. Establish pull-request context
 
@@ -124,9 +151,9 @@ Group files by implementation purpose, not path or file type. A useful group ans
 - What should the reviewer notice?
 - Which evidence proves the explanation?
 
-Assign every changed file to exactly one group. Keep generated metadata, lockfiles, snapshots, binaries, and other conservative generated artifacts reviewable, but classify them separately from primary source. They remain part of Normal file progress and render under a collapsed **Generated files** section after the group’s primary diffs. Guide treats them as collapsed whole-file items in **Generated output** and excludes them from its excerpt-progress numerator and denominator.
+Assign every changed file to exactly one group. Keep generated metadata, lockfiles, snapshots, binaries, and other conservative generated artifacts reviewable, but classify them separately from primary source. They render under a collapsed **Generated files** section after the group’s primary diffs, and Guide treats them as collapsed whole-file items in **Generated output**.
 
-Do not create a fileless section merely to satisfy a template. If architecture orientation is necessary, include it as a short opening paragraph in the first real change group. Use `reviewed` only for local reading progress. Never use `safe` or `approved`, and never imply that a reviewed file is correct.
+Do not create a fileless section merely to satisfy a template. If architecture orientation is necessary, include it as a short opening paragraph in the first real change group. Never label a file `safe`, `approved`, or correct.
 
 ## 4. Author canonical multi-file MDX
 
@@ -244,21 +271,20 @@ The compiler creates group file URLs from `(-)`. Use line-specific `R<new_line>`
 
 Connect tests to the behavior they verify. Surface documented risk or divergence as orientation notes. Do not convert observations into new findings.
 
-## 6. Build the static guide
+## 6. Compile the walkthrough
+
+One command produces the whole artifact:
 
 ```bash
-python3 <skill-directory>/scripts/scaffold_site.py \
-  --content .pr-walkthrough/walkthrough \
+python3 <skill-directory>/scripts/compile_walkthrough.py \
+  --input .pr-walkthrough/walkthrough \
   --diff .pr-walkthrough/changes.patch \
-  --output .pr-walkthrough/site
-pnpm --dir .pr-walkthrough/site install --frozen-lockfile
-pnpm --dir .pr-walkthrough/site run check
-python3 <skill-directory>/scripts/validate_site_template.py \
-  --site .pr-walkthrough/site \
-  --built
+  --output .pr-walkthrough/walkthrough.generated.json
 ```
 
-The default artifact remains patch-only. When the user explicitly requests genuine omitted-hunk expansion and the preview will stay on the same machine, add `--include-full-context` to `scaffold_site.py`. Use only the locally generated canonical patch from step 1. This embeds exact UTF-8 old/new Git blobs up to 2 MB per side and 25 MB total in generated JSON and the static bundle. Treat that output as localhost-only: bind the preview to `127.0.0.1`, never `0.0.0.0`, and regenerate without the flag before any LAN or network-accessible hosting. Opting out removes stale `.next/` and `out/` bundles before recompilation so full source cannot survive in an older static chunk.
+It exits non-zero with the offending section and line on any contract violation. A clean exit is the build gate; there is nothing further to install, bundle, or serve.
+
+The default artifact is patch-only: it carries just the changed hunks. When the user explicitly asks for genuine omitted-hunk expansion, add `--include-full-context`. Use only the locally generated canonical patch from step 1. The flag embeds exact UTF-8 old/new Git blobs, up to 2 MB per side and 25 MB total, into the compiled JSON. That file then holds full copies of private source, so add the flag only when the user asked for it, and regenerate without it before copying the JSON anywhere outside the workspace.
 
 The compiler must reject:
 
@@ -272,124 +298,48 @@ The compiler must reject:
 - Guide coverage gaps or overlaps, invalid context values, comments anchored outside their excerpt, or misleading whole-file selectors.
 - Duplicate or dangling diagram nodes/edges, multiple diagrams in one phase, or diagrams without a useful text summary.
 
-## 7. Interaction and visual contract
+## 7. Rendering
 
-Use a neutral, product-independent interface. Do not copy vendor names, logos, competitor assets, review findings, or merge controls. Use the owner-supplied, locally licensed Berkeley Mono files only for code and monospaced metadata. Do not hotlink or redistribute them.
+The bb plugin's viewer panel is the renderer. It is fixed application code in this repository, not something you produce per run, so nothing in this step is an authoring instruction. The panel reads the compiled JSON and provides group navigation, the Normal and Guide readings, the changed-file tree with its generated-files toggle, unified and split diffs, and read-only Guide line annotations and diagrams.
 
-At desktop width:
+The panel is a reader, not a review tracker. It has no per-file or per-excerpt progress, no Mark reviewed action, no search, and no persisted state. Do not author copy that tells the reviewer to mark, track, or complete anything.
 
-- Use a compact 48px PR header and no bottom footer.
-- Use three independently scrolling shadcn `ResizablePanel` regions only when the active group has supporting evidence.
-- Left: ordered review groups with file and line totals.
-- Center: group heading, concise explanation, progress, and continuous Diffs patches. This is the dominant surface and fills the available width without a prose-style maximum.
-- Right: only relevant specs and links plus existing notes. Render each as a flat sibling section with no enclosing evidence card and no divider between sections.
-- Omit every section that has no content.
+Two consequences bind your authoring:
 
-At widths below 1280px:
+- Everything the reader sees comes from the compiled JSON. If a group, excerpt, comment, or diagram is not in the MDX, it does not exist in the panel.
+- The walkthrough teaches a change; it never asserts that the change is correct, safe, or approved. Never author findings, severities, merge controls, or fabricated discussion.
 
-- Keep the diff dominant.
-- Move group navigation into a shadcn `Sheet` opened by an icon-only trigger at the far left of the 48px header.
-- Align the trigger with the review-document gutter and do not add a padded button block around it.
-- Move available supporting sections directly above Changed files as flat siblings.
-- Hide header search below 1024px.
-- The sheet header close action must reach the right edge of the header without an extra inset.
+`PRODUCT.md` and `DESIGN.md` in the skill directory hold the product and visual decisions. Parts of them describe reading-progress behavior that only the removed static site implemented; treat those parts as design intent for the panel, not as current behavior.
 
-Required behavior:
+## 8. Verify the compile
 
-- Selecting a group updates its explanation, evidence, and inline diffs together.
-- Put a prominent shadcn Normal/Guide tab control directly below section progress. Do not wrap the existing Normal content in a new container.
-- Persist the selected mode plus the independent Normal-file and Guide-excerpt progress sets in local storage keyed by PR and `headSha`. Do not persist or restore scroll offsets.
-- Normal progress counts files. Guide progress counts only non-generated, non-binary excerpts. Completing either mode marks the group Reviewed.
-- The group action marks or clears every Normal file and every Guide excerpt. Individual file and excerpt progress never synchronize.
-- Guide replaces the Changed files Tree with a compact informational phase outline. Do not add phase jump links or a second file browser.
-- Render Guide phases as flat semantic sections. Start miscellaneous and generated output collapsed; omit every empty phase.
-- Give every Guide excerpt its own Pierre header, collapse state, Viewed toggle, synthesized patch, and any authored read-only line annotations.
-- Keep Unified/Split as one shared preference across both modes.
-- Render an authored Guide diagram inline with explicit height and fit-to-view. Disable node dragging, connections, editing, and fake interaction.
-- Selecting a file in the Changed files tree scrolls to its inline patch.
-- Unified and split Diffs views work.
-- Each changed file uses Pierre Diffs’ built-in header layout, file icon, filename, rename state, line totals, and line-info hunk treatment.
-- Add collapse with `renderHeaderPrefix`, add only the local Viewed toggle with `renderHeaderMetadata`, and control the body with `options.collapsed`.
-- Make the complete Pierre file header toggle collapse through its composed click path. Stop propagation from the Viewed control so it remains a distinct action.
-- Marking a file Viewed collapses its open diff. Clearing Viewed leaves the current collapsed state unchanged.
-- Match Pierre’s landing-page collapse-prefix geometry: a plain 24px zero-padding button with `margin-left: -5px`.
-- Give the Viewed control visually equal padding on all four sides and adapt only its colors to walkthrough tokens.
-- Do not add external-link or information-icon actions to file headers.
-- Give every diff one clipped, width-bound border. Its code surface and background must fill the container to the right and bottom. Only that surface may scroll horizontally.
-- Render Pierre’s line-info hunk rows with the landing-page spacing, neutral fill, and full-width treatment rather than a custom alert-like row.
-- Use Pierre’s native line-info expansion only when exact old and new file contents are deliberately available to the artifact. Never show a fake expansion control, and never broaden a network-accessible artifact from patch hunks to full private files without explicit authorization.
-- Put one active-group **Changed files** Pierre Tree directly below the Changed files heading in the center document. Use full paths, Git status, flattened empty directories, 24px rows, walkthrough order, density `0.8`, and 8px inline padding. Disable sticky folders because the tree is not an internal scroll region.
-- Trees sections size to their visible rows plus their 1px top and bottom borders, remain fixed rather than internally scrollable, and add no block padding or artificial minimum-height gutter.
-- Do not add per-section “View all” actions.
-- Hide generated paths from the Changed files tree by default and expose one shadcn `Toggle` whose visible label says `Show generated` or `Hide generated`. When included, generated rows remain visibly faded. Do not render separate Generated files or Tests evidence sections.
-- Generated files remain in progress. Primary diffs precede one collapsed shadcn `Accordion` of generated diffs, without enclosing or nested cards.
-- The group `Mark reviewed` action marks or clears every changed file in that group. Progress is derived from file state.
-- Keep the unreviewed group action neutral. When active, change it to a green `Reviewed` control with a green check icon; clearing it returns to neutral `Mark reviewed`.
-- Reviewed state is local reading progress, not approval, correctness, or a completed code review.
-- Arrow keys or `n`/`p` move by semantic group.
-- Search filters semantic groups and their referenced file paths.
-- Indicate the active review group with the selected card border, fill, and numbered state only. Do not render an `Active` chip.
-- Do not render any empty supporting region or placeholder surface.
-- Do not render a Go to bottom action. Show one fixed Go to top action only after the review scroll area leaves its top edge, then hide it again at the top.
+There is no site to serve and no browser checklist. Verify these instead:
 
-Use real shadcn registry primitives. Do not replace them with look-alike elements. Stateful controls use `Toggle`; composite navigation and evidence rows use `Item`; true empty states use `Empty`. Do not force a component around plain semantic layout when it adds nesting without behavior. Use blue for focus, links, explanation, and progress; yellow for modified-file accents; and green/red only for Git additions/deletions. Use system sans for interface text and self-hosted Berkeley Mono for code and monospaced metadata. Keep 13px minimum interface text, thin borders, limited elevation, and no decorative gradients.
+- `compile_walkthrough.py` exited zero.
+- `.pr-walkthrough/walkthrough.generated.json` exists and is non-empty.
+- Its `reviewGroups` count equals the number of section files you authored, and its `diffFiles` count equals the changed-file count from step 1.
+- Every changed file from step 1 appears exactly once across the groups.
 
-Use one shared review-surface treatment for bounded content: clipped overflow, `rounded-md`, one thin border, and the background token used by Pierre Diffs. Apply it to diff files, the Changed files Tree, and grouped supporting rows. Keep headings, rails, section wrappers, generated Accordion headings, and splitters flat so the interface does not become a nested card stack.
+When a group, file, or excerpt is missing, fix the MDX and recompile. Do not edit the JSON.
 
-Use the same `rounded-md` control radius for Open PR, Mark reviewed, Reviewed badges, and the outer corners of the Unified/Split segmented control. Keep the segmented control's shared inner seam square.
+Inside bb, the reviewer opens the result from the directive below. You cannot see the rendered panel, so do not claim you inspected it.
 
-## 8. Browser validation
-
-Serve the static export:
-
-```bash
-python3 -m http.server 4173 --bind 127.0.0.1 --directory .pr-walkthrough/site/out
-```
-
-Inspect desktop and narrow viewports in a real browser. Do not report ready until all checks pass:
-
-- Review groups render in authored order and use clear `Section n of total` progress copy.
-- Normal and Guide tabs switch the active group without adding an enclosing card, preserving mode across section navigation.
-- Normal shows file progress and its unchanged Tree/file flow; Guide shows excerpt progress, its phase outline, and no Tree.
-- Generated/binary Guide items remain viewable but do not change Guide completion.
-- Completing Normal or Guide marks the group Reviewed; the group control marks or clears both modes.
-- Guide phase prose is substantive, changed-line coverage is exact, miscellaneous/generated phases start collapsed, and empty phases are absent.
-- Read-only line annotations render beneath their exact Pierre line in unified and split modes. Optional React Flow appears only where authored and has no editing controls.
-- The active review group is clear from its selected card styling and does not render an `Active` chip.
-- Open PR, Mark reviewed, Reviewed badges, and the Unified/Split outer corners use the shared `rounded-md` control radius.
-- Group selection synchronizes navigation, document, and available supporting evidence.
-- Changed files Tree clicks reach the correct inline diff.
-- Unified and split diffs render.
-- Per-file viewed state, group reviewed state, and keyboard group navigation work.
-- The group review control is neutral while unreviewed, then visibly changes to green `Reviewed` with a check icon.
-- The responsive Groups button stays in the PR header, aligns with the body gutter, and the sheet close action has no extra right inset.
-- Supporting sections are limited to non-empty specs, links, and existing notes; they remain flat siblings without dividers, enclosing cards, header actions, or empty placeholders.
-- The single Changed files Tree sits below its heading, fits its visible rows without bottom gutter or internal scrolling, fades included generated rows, and its explicit Show/Hide generated toggle changes membership without creating another tree.
-- Modified files use the same yellow state accent in Pierre Trees and Pierre Diffs; added and deleted files remain green and red.
-- Clicking anywhere in a Pierre file header collapses or expands that file. Marking Viewed collapses an open file, while clearing Viewed does not expand it; its Viewed control has balanced padding.
-- Normal files appear before one collapsed Generated files section.
-- Pierre line-info hunks match the landing-page treatment.
-- Line-info hunks expand when exact full-file context was explicitly included; otherwise they remain honest information rows with no dead affordance.
-- Diff code and background fill each bordered container to its right and bottom edges.
-- Go to bottom is absent. Go to top is absent at the top, appears after scrolling, returns to the top, and hides again.
-- Inline diffs do not create document-level horizontal overflow.
-- Static assets are relative and the console has no errors.
-- No vendor branding, fabricated review state, hotlinked asset, or removed secondary surface remains.
-
-If browser validation is unavailable, report rendering as unverified instead of ready.
 
 ## Final response
 
 When this skill runs inside a bb thread (it arrives through the bb `pr-walkthrough` plugin), start the final response with this directive on its own plain line, not inside a code fence:
 
-::pr-walkthrough{path=".pr-walkthrough/site"}
+::pr-walkthrough{path=".pr-walkthrough"}
 
-bb renders the directive as an **Open walkthrough** control. The plugin's viewer panel reads the compiled `src/data/walkthrough.generated.json` from that workspace directory and renders the review groups, explanations, and diffs natively inside bb — it does not serve the static export. Emit the directive only after the walkthrough compiled and validation succeeded. Outside bb, or when the build failed, omit the directive.
+bb renders the directive as an **Open walkthrough** control. The plugin's viewer panel reads `walkthrough.generated.json` from that workspace directory and renders the review groups, explanations, and diffs natively inside bb. Emit the directive only after the compile succeeded. Outside bb, or when the compile failed, omit it.
 
 Report:
 
-- Generated walkthrough path and localhost URL.
+- Compiled walkthrough path.
 - Base branch, PR title or branch, and PR URL used for links.
+- Review-group count and changed-file count.
 - Whether existing review comments and PR-changed specs were found.
-- Oxlint, TypeScript, static build, template validation, and browser results.
-- Any missing evidence or remaining validation caveat.
+- Compiler result, and whether `--include-full-context` was used.
+- Any missing evidence or remaining caveat.
+
+Do not claim you viewed the rendered walkthrough. Rendering happens in the reviewer's panel.
