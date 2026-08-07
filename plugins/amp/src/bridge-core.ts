@@ -433,7 +433,7 @@ export class AmpBridgeAgent implements Agent {
         continue;
       }
       if (isAuthError(message)) {
-        throw new Error(`${message}\n${AUTH_HINT}`);
+        throw new Error(`${message}\n${AUTH_HINT}`, { cause: error });
       }
       throw error;
     }

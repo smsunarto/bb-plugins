@@ -90,7 +90,7 @@ function findBinary(
   if (platform === "darwin") {
     searchDirectories.push("/opt/homebrew/bin", "/usr/local/bin");
   }
-  for (const directory of [...new Set(searchDirectories)]) {
+  for (const directory of new Set(searchDirectories)) {
     for (const name of names) {
       const candidate = join(directory, name);
       if (isExecutable(candidate)) return candidate;

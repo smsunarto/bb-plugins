@@ -28,7 +28,9 @@ const stream = ndJsonStream(
   Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
 );
 
-new AgentSideConnection(
+// Held in a binding, not constructed for effect: the connection owns the
+// JSON-RPC stream for the life of the process and must not be collected.
+const connection = new AgentSideConnection(
   (client) =>
     new AmpBridgeAgent(client, {
       execute: execute as unknown as AmpExecuteFn,
@@ -37,5 +39,6 @@ new AgentSideConnection(
   stream,
 );
 
-// Keep the process alive while waiting for JSON-RPC traffic.
+// Keep the process alive while waiting for JSON-RPC traffic on `connection`.
 process.stdin.resume();
+void connection;
