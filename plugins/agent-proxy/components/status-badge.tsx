@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { CoreStatus } from "../server";
 
-const STYLES: Record<CoreStatus["state"], { dot: string; label: string }> = {
+export const CORE_STATE_STYLES: Record<CoreStatus["state"], { dot: string; label: string }> = {
   "not-installed": { dot: "bg-muted-foreground", label: "Not installed" },
   stopped: { dot: "bg-muted-foreground", label: "Stopped" },
   starting: { dot: "bg-amber-500", label: "Starting…" },
@@ -11,7 +11,7 @@ const STYLES: Record<CoreStatus["state"], { dot: string; label: string }> = {
 };
 
 export function StatusBadge({ state, className }: { state: CoreStatus["state"]; className?: string }) {
-  const style = STYLES[state];
+  const style = CORE_STATE_STYLES[state];
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-sm text-foreground", className)}>
       <span className={cn("size-2 rounded-full", style.dot)} />

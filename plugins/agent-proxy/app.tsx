@@ -1,15 +1,18 @@
 import "./app.css";
 import { definePluginApp, useBbNavigate } from "@bb/plugin-sdk/app";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
+import { CORE_STATE_STYLES } from "@/components/status-badge";
+import { mountSidebarNavStatus } from "@/components/sidebar-nav-status";
 import { useCoreStatus } from "@/components/use-core-status";
 import { HomePage } from "@/components/pages/home";
 import { OAuthPage } from "@/components/pages/oauth";
 import { ProvidersPage } from "@/components/pages/providers";
 import { UsagePage } from "@/components/pages/usage";
 import { AgentsPage } from "@/components/pages/agents";
+import type { CoreStatus } from "./server";
+
+/** The sidebar row's label. The content script finds the row by this text. */
+const NAV_TITLE = "Agent Proxy";
 
 const PAGES: { key: string; label: string; component: () => React.JSX.Element }[] = [
   { key: "", label: "Home", component: HomePage },
@@ -18,6 +21,26 @@ const PAGES: { key: string; label: string; component: () => React.JSX.Element }[
   { key: "usage", label: "Usage", component: UsagePage },
   { key: "agents", label: "Agents", component: AgentsPage },
 ];
+
+/** One muted line: colored dot, state, and port. The full controls live on Home. */
+function SidebarIndicator({ status }: { status: CoreStatus | null }) {
+  const style = status ? CORE_STATE_STYLES[status.state] : null;
+  const text = !style
+    ? "…"
+    : status && status.state !== "not-installed"
+      ? `${style.label} · :${status.port}`
+      : style.label;
+
+  return (
+    <div
+      className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-muted-foreground"
+      title={style ? `CLIProxyAPI core — ${text}` : "CLIProxyAPI core — loading"}
+    >
+      <span className={cn("size-1.5 shrink-0 rounded-full", style?.dot ?? "bg-muted-foreground/40")} />
+      <span className="truncate">{text}</span>
+    </div>
+  );
+}
 
 function AgentProxyPanel({ subPath }: { subPath: string }) {
   const navigate = useBbNavigate();
@@ -29,14 +52,7 @@ function AgentProxyPanel({ subPath }: { subPath: string }) {
   return (
     <div className="flex h-full min-h-0">
       <aside className="flex w-48 shrink-0 flex-col border-r border-border">
-        <div className="border-b border-border p-3">
-          {status ? (
-            <StatusBadge state={status.state} />
-          ) : (
-            <span className="text-sm text-muted-foreground">…</span>
-          )}
-          <div className="mt-0.5 text-xs text-muted-foreground">port {status?.port ?? "…"}</div>
-        </div>
+        <SidebarIndicator status={status} />
         <nav className="flex-1 overflow-y-auto p-2">
           {PAGES.map((page) => (
             <button
@@ -64,55 +80,16 @@ function AgentProxyPanel({ subPath }: { subPath: string }) {
   );
 }
 
-function HomepageCard() {
-  const navigate = useBbNavigate();
-  const { status, rpc, refresh } = useCoreStatus();
-
-  const toggle = async () => {
-    if (!status) return;
-    try {
-      await rpc.call(status.state === "running" || status.state === "starting" ? "stop" : "start");
-      await refresh();
-    } catch (cause) {
-      toast.error(String(cause instanceof Error ? cause.message : cause));
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-      <div className="min-w-0 flex-1">
-        {status ? <StatusBadge state={status.state} /> : <span className="text-sm text-muted-foreground">…</span>}
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-          {status
-            ? status.state === "not-installed"
-              ? "CLIProxyAPI core is not installed yet"
-              : `${status.endpoints.openai} · v${status.installedVersion ?? "?"}`
-            : ""}
-        </div>
-      </div>
-      {status && status.state !== "not-installed" ? (
-        <Button size="sm" variant="outline" onClick={() => void toggle()}>
-          {status.state === "running" || status.state === "starting" ? "Stop" : "Start"}
-        </Button>
-      ) : null}
-      <Button size="sm" onClick={() => navigate.toPluginPanel("agent-proxy", { subPath: "" })}>
-        Open
-      </Button>
-    </div>
-  );
-}
-
 export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "agent-proxy",
-    title: "Agent Proxy",
+    title: NAV_TITLE,
     icon: "Server",
     path: "agent-proxy",
     component: AgentProxyPanel,
   });
-  app.slots.homepageSection({
-    id: "agent-proxy-status",
-    title: "Agent Proxy",
-    component: HomepageCard,
+  app.contentScripts.register({
+    id: "sidebar-nav-status",
+    mount: ({ signal }) => mountSidebarNavStatus({ title: NAV_TITLE, signal }),
   });
 });

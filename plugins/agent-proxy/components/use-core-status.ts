@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRealtime, useRpc } from "@bb/plugin-sdk/app";
+import { STATUS_EVENT } from "./sidebar-nav-status";
 import type { CoreStatus, rpcContract } from "../server";
 
 /** Core status: realtime-pushed on every supervisor transition, with a slow
@@ -16,6 +17,8 @@ export function useCoreStatus(pollMs = 30_000) {
       if (!aliveRef.current) return;
       setStatus(next);
       setError(null);
+      // Hand the realtime transition to the sidebar row, which has no hooks.
+      window.dispatchEvent(new CustomEvent(STATUS_EVENT, { detail: next.state }));
     } catch (cause) {
       if (aliveRef.current) setError(String(cause instanceof Error ? cause.message : cause));
     }

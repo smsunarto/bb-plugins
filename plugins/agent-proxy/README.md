@@ -9,7 +9,15 @@ exposes management UI inside bb.
 
 - **Core lifecycle** — download/update the release binary (sha256-verified,
   never auto-swapped), autostart on plugin load, crash restart with backoff,
-  manual stop stays stopped. Home page + homepage card + `bb agent-proxy` CLI.
+  manual stop stays stopped. Home page + sidebar indicators + `bb agent-proxy` CLI.
+- **Sidebar state** — the "Agent Proxy" row in bb's main sidebar is tinted by
+  core state (green running, amber pulsing while starting/stopping, red
+  crashed, dimmed stopped). bb renders that row itself and reads `navPanel`
+  title/icon once, so a content script sets one `data-agent-proxy-state`
+  attribute on it and `app.css` does the rest. Pushed instantly from
+  `useCoreStatus` while a panel is mounted, with a 5s poll as the floor. It
+  depends on host DOM internals (`[data-testid="plugin-nav-sidebar-items"]`
+  and the row label), so it degrades to painting nothing if either changes.
 - **OAuth** — Claude and Codex browser flows via the core's management API;
   auth-file list with enable/disable, delete, quota state, and quota reset.
 - **Providers** — upstream credential collections (`claude-api-key`,
