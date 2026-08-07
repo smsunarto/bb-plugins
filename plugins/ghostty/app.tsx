@@ -163,9 +163,9 @@ function GhosttyPanel({ threadId }: { threadId: string; params: unknown }) {
 
     restartRef.current = () => {
       if (disposed || !terminalId) return;
-      void rpc
-        .call("restart", { terminalId })
-        .then((session) => {
+      void (async () => {
+        try {
+          const session = await rpc.call("restart", { terminalId });
           if (disposed || !term) return;
           terminalId = session.id;
           cursor = undefined;
@@ -174,12 +174,12 @@ function GhosttyPanel({ threadId }: { threadId: string; params: unknown }) {
           setExitCode(null);
           setPhase("ready");
           schedule(0);
-        })
-        .catch((err) => {
+        } catch (err) {
           if (disposed) return;
           setError(err instanceof Error ? err.message : String(err));
           setPhase("error");
-        });
+        }
+      })();
     };
 
     async function setup() {
