@@ -78,9 +78,11 @@ const STATIC_GROUPS: TweakableGroup[] = [
     id: "shell",
     title: "Shell",
     files: [
-      { path: ".dotfiles/.zshrc", title: ".zshrc", note: "Live symlink — edits apply immediately" },
-      { path: ".dotfiles/.zprofile", title: ".zprofile" },
-      { path: ".dotfiles/.config/fish/config.fish", title: "fish config" },
+      {
+        path: ".dotfiles/.config/fish/config.fish",
+        title: "config.fish",
+        note: "Live symlink — edits apply immediately",
+      },
       { path: ".dotfiles/.config/starship.toml", title: "starship prompt" },
       { path: ".dotfiles/.gitconfig", title: ".gitconfig" },
     ],
@@ -100,6 +102,18 @@ const STATIC_GROUPS: TweakableGroup[] = [
     ],
   },
   {
+    id: "python",
+    title: "Python",
+    files: [
+      {
+        path: "python-packages.txt",
+        title: "python-packages.txt",
+        note: "Shared libraries for the bare python3",
+      },
+      { path: "python-tools.txt", title: "python-tools.txt", note: "CLI tools installed with uv tool" },
+    ],
+  },
+  {
     id: "repo",
     title: "Repo policy",
     files: [{ path: "AGENTS.md", title: "AGENTS.md", note: "Repository agent guide" }],
@@ -112,10 +126,13 @@ const TASKS: Record<string, { command: string; summary: string }> = {
   render: { command: "mise run render", summary: "Render generated agent configs" },
   check: { command: "mise run check", summary: "Full repository validation" },
   "check:mise": { command: "mise run check:mise", summary: "Validate mise + mappings" },
-  "check:shell": { command: "mise run check:shell", summary: "Validate shell syntax" },
+  "check:shell": { command: "mise run check:shell", summary: "Validate fish + script syntax" },
   "check:mcp": { command: "mise run check:mcp", summary: "Validate MCP JSON + renderer" },
+  "check:python": { command: "mise run check:python", summary: "Validate Python runtime, libs, tools" },
   "check:skills": { command: "mise run check:skills", summary: "Validate skill manifests" },
   "check:dotfiles": { command: "mise run check:dotfiles", summary: "Validate dotfile mappings apply" },
+  "check:safety": { command: "mise run check:safety", summary: "Reject forced dotfile applies" },
+  "check:secrets": { command: "mise run check:secrets", summary: "Reject tracked secret injection" },
   "apply:dry": {
     command: "mise dotfiles apply --dry-run --verbose",
     summary: "Preview dotfile application",
@@ -146,9 +163,37 @@ function discoverSkills(repoPath: string): Tweakable[] {
   return skills.sort((a, b) => a.title.localeCompare(b.title));
 }
 
+// fish splits its startup across conf.d, so the drop-ins are as tweakable as
+// config.fish itself. Discovering them keeps the panel honest when one is
+// added or removed. Functions stay out: they are a library, not config.
+function discoverFishDropins(repoPath: string): Tweakable[] {
+  const confDir = join(repoPath, ".dotfiles/.config/fish/conf.d");
+  if (!existsSync(confDir)) return [];
+  return readdirSync(confDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".fish"))
+    .map((entry) => ({
+      path: `.dotfiles/.config/fish/conf.d/${entry.name}`,
+      title: `conf.d/${entry.name}`,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
 function buildGroups(repoPath: string): TweakableGroup[] {
   return [
-    ...STATIC_GROUPS,
+    ...STATIC_GROUPS.map((group) =>
+      group.id === "shell"
+        ? {
+            ...group,
+            // Keep the fish files adjacent: drop-ins follow config.fish, ahead
+            // of the prompt and git config.
+            files: group.files.flatMap((file) =>
+              file.path.endsWith("fish/config.fish")
+                ? [file, ...discoverFishDropins(repoPath)]
+                : [file],
+            ),
+          }
+        : group,
+    ),
     { id: "skills", title: "Skills", files: discoverSkills(repoPath) },
   ];
 }
@@ -161,14 +206,32 @@ function allowedPaths(repoPath: string): Set<string> {
   return paths;
 }
 
+// Tasks run in a login shell so mise/git resolve from the user's normal PATH.
+// fish is the repo's only shell, but it is never at a fixed path (Homebrew on
+// macOS, /usr/bin on Linux), so probe the usual homes and keep sh as the
+// fallback for a machine where fish is not installed yet.
+const LOGIN_SHELL: { path: string; args: string[] } = (() => {
+  const candidates = [
+    process.env.SHELL,
+    "/opt/homebrew/bin/fish",
+    "/usr/local/bin/fish",
+    "/usr/bin/fish",
+  ];
+  for (const candidate of candidates) {
+    if (candidate?.endsWith("/fish") && existsSync(candidate)) {
+      return { path: candidate, args: ["-l", "-c"] };
+    }
+  }
+  return { path: "/bin/sh", args: ["-lc"] };
+})();
+
 function runCommand(
   command: string,
   cwd: string,
   timeoutMs = 300_000,
 ): Promise<{ exitCode: number; output: string }> {
   return new Promise((resolvePromise) => {
-    // Login shell so mise/git resolve from the user's normal PATH.
-    const child = spawn("/bin/zsh", ["-lc", command], { cwd });
+    const child = spawn(LOGIN_SHELL.path, [...LOGIN_SHELL.args, command], { cwd });
     let output = "";
     const append = (chunk: Buffer) => {
       if (output.length < OUTPUT_CAP) output += chunk.toString("utf8");
@@ -179,6 +242,10 @@ function runCommand(
       child.kill("SIGKILL");
       output += `\n[timed out after ${timeoutMs / 1000}s]`;
     }, timeoutMs);
+    // A spawn can emit `error` and `close`, or just one of them, so both
+    // handlers must be able to settle. Whichever fires first wins and the
+    // other call is a no-op — that race is the point, not a defect.
+    /* oxlint-disable promise/no-multiple-resolved */
     child.on("close", (code) => {
       clearTimeout(timer);
       if (output.length >= OUTPUT_CAP) output = `${output.slice(0, OUTPUT_CAP)}\n[output truncated]`;
@@ -188,24 +255,68 @@ function runCommand(
       clearTimeout(timer);
       resolvePromise({ exitCode: 127, output: `${output}\n${String(error)}` });
     });
+    /* oxlint-enable promise/no-multiple-resolved */
   });
 }
 
-interface GitEntry {
-  status: string;
+// One working-tree change, shaped for the panel's file tree. `code` is the raw
+// two-letter porcelain status; `status` is the coarse form Pierre Trees paints.
+export interface ChangedFile {
   path: string;
+  previousPath?: string;
+  status: "added" | "deleted" | "modified" | "renamed";
+  code: string;
 }
 
-async function gitStatus(repoPath: string): Promise<{ branch: string; entries: GitEntry[] }> {
-  const { exitCode, output } = await runCommand("git status --porcelain=v1 -b", repoPath, 30_000);
-  if (exitCode !== 0) return { branch: "unknown", entries: [] };
+// git quotes paths with non-ASCII or control characters using C escapes, which
+// JSON.parse decodes for the common cases.
+function unquotePath(raw: string): string {
+  if (!raw.startsWith('"')) return raw;
+  try {
+    return JSON.parse(raw) as string;
+  } catch {
+    return raw.slice(1, -1);
+  }
+}
+
+function classify(code: string): ChangedFile["status"] {
+  if (code === "??") return "added";
+  const letters = code.replace(/ /g, "");
+  if (letters.includes("R")) return "renamed";
+  if (letters.includes("D")) return "deleted";
+  if (letters.includes("A") || letters.includes("C")) return "added";
+  return "modified";
+}
+
+function parseStatusLine(line: string): ChangedFile {
+  const code = line.slice(0, 2);
+  const rest = line.slice(3);
+  const arrow = rest.indexOf(" -> ");
+  if (arrow === -1) {
+    return { path: unquotePath(rest), status: classify(code), code: code.trim() };
+  }
+  return {
+    path: unquotePath(rest.slice(arrow + 4)),
+    previousPath: unquotePath(rest.slice(0, arrow)),
+    status: classify(code),
+    code: code.trim(),
+  };
+}
+
+async function gitStatus(repoPath: string): Promise<{ branch: string; files: ChangedFile[] }> {
+  // -uall expands untracked directories into files; without it git reports a
+  // single "dir/" entry, which has no leaf to show in the file tree.
+  const { exitCode, output } = await runCommand(
+    "git status --porcelain=v1 -b -uall",
+    repoPath,
+    30_000,
+  );
+  if (exitCode !== 0) return { branch: "unknown", files: [] };
   const lines = output.split("\n").filter(Boolean);
   const branchLine = lines.find((line) => line.startsWith("## "));
   const branch = branchLine ? branchLine.slice(3).split("...")[0]! : "unknown";
-  const entries = lines
-    .filter((line) => !line.startsWith("## "))
-    .map((line) => ({ status: line.slice(0, 2).trim(), path: line.slice(3) }));
-  return { branch, entries };
+  const files = lines.filter((line) => !line.startsWith("## ")).map(parseStatusLine);
+  return { branch, files };
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +341,14 @@ export const rpcContract = defineRpcContract({
       groups: z.array(
         z.object({ id: z.string(), title: z.string(), files: z.array(fileSchema) }),
       ),
-      gitEntries: z.array(z.object({ status: z.string(), path: z.string() })),
+      changedFiles: z.array(
+        z.object({
+          path: z.string(),
+          previousPath: z.string().optional(),
+          status: z.enum(["added", "deleted", "modified", "renamed"]),
+          code: z.string(),
+        }),
+      ),
       tasks: z.array(z.object({ id: z.string(), summary: z.string() })),
     }),
   },
@@ -280,10 +398,14 @@ export default async function plugin(bb: BbPluginApi) {
     return expandHome(raw);
   }
 
-  function requireAllowed(repo: string, path: string): void {
-    if (!allowedPaths(repo).has(path)) {
-      throw new Error(`not a tweakable file: ${path}`);
-    }
+  // Openable = a registered tweakable, or any path git currently reports as
+  // changed. The changed-file tree lists the second kind, so a row there has to
+  // open (and save) like a tweakable does.
+  async function requireOpenable(repo: string, path: string): Promise<void> {
+    if (allowedPaths(repo).has(path)) return;
+    const { files } = await gitStatus(repo);
+    if (files.some((file) => file.path === path)) return;
+    throw new Error(`not a tweakable or changed file: ${path}`);
   }
 
   async function readTweakable(repo: string, path: string) {
@@ -297,10 +419,14 @@ export default async function plugin(bb: BbPluginApi) {
   bb.rpc.register(rpcContract, {
     async overview() {
       const repo = await repoPath();
-      const { branch, entries } = existsSync(repo)
+      const { branch, files: changedFiles } = existsSync(repo)
         ? await gitStatus(repo)
-        : { branch: "missing", entries: [] };
-      const dirtySet = new Set(entries.map((entry) => entry.path));
+        : { branch: "missing", files: [] as ChangedFile[] };
+      const dirtySet = new Set<string>();
+      for (const file of changedFiles) {
+        dirtySet.add(file.path);
+        if (file.previousPath) dirtySet.add(file.previousPath);
+      }
       const groups = buildGroups(repo).map((group) => ({
         id: group.id,
         title: group.title,
@@ -314,13 +440,13 @@ export default async function plugin(bb: BbPluginApi) {
         repoPath: repo,
         branch,
         groups,
-        gitEntries: entries,
+        changedFiles,
         tasks: Object.entries(TASKS).map(([id, task]) => ({ id, summary: task.summary })),
       };
     },
     async readFile({ path }) {
       const repo = await repoPath();
-      requireAllowed(repo, path);
+      await requireOpenable(repo, path);
       const file = await readTweakable(repo, path);
       // HEAD version for the diff view; null when untracked or not in HEAD.
       const head = await runCommand(`git show HEAD:${JSON.stringify(path)}`, repo, 30_000);
@@ -328,7 +454,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async saveFile({ path, content, expectedSha256 }) {
       const repo = await repoPath();
-      requireAllowed(repo, path);
+      await requireOpenable(repo, path);
       const saved = await bb.sdk.files.write({
         path: join(repo, path),
         rootPath: repo,
@@ -373,7 +499,8 @@ export default async function plugin(bb: BbPluginApi) {
       { name: "render", summary: "Run scripts/render-agent-config via mise", usage: "bb dotfiles render" },
       {
         name: "check",
-        summary: "Run repo validation (optionally one target: mise|shell|mcp|skills|dotfiles)",
+        summary:
+          "Run repo validation (optionally one target: mise|shell|mcp|python|skills|dotfiles|safety|secrets)",
         usage: "bb dotfiles check [target]",
       },
       {
@@ -390,8 +517,8 @@ export default async function plugin(bb: BbPluginApi) {
       }
       switch (command) {
         case "list": {
-          const { entries } = await gitStatus(repo);
-          const dirtySet = new Set(entries.map((entry) => entry.path));
+          const { files } = await gitStatus(repo);
+          const dirtySet = new Set(files.map((file) => file.path));
           const lines: string[] = [];
           for (const group of buildGroups(repo)) {
             lines.push(`# ${group.title}`);
@@ -409,8 +536,10 @@ export default async function plugin(bb: BbPluginApi) {
           return { exitCode: 0, stdout: lines.join("\n") };
         }
         case "status": {
-          const { branch, entries } = await gitStatus(repo);
-          const body = entries.map((entry) => `${entry.status.padEnd(2)} ${entry.path}`).join("\n");
+          const { branch, files } = await gitStatus(repo);
+          const body = files
+            .map((file) => `${file.code.padEnd(2)} ${file.path}`)
+            .join("\n");
           return {
             exitCode: 0,
             stdout: `branch: ${branch}\n${body || "clean"}`,
@@ -420,7 +549,7 @@ export default async function plugin(bb: BbPluginApi) {
           const path = rest[0];
           if (!path) return { exitCode: 2, stderr: "usage: bb dotfiles cat <repo-relative-path>" };
           try {
-            requireAllowed(repo, path);
+            await requireOpenable(repo, path);
             const { content } = await readTweakable(repo, path);
             return { exitCode: 0, stdout: content };
           } catch (error) {
@@ -453,7 +582,7 @@ export default async function plugin(bb: BbPluginApi) {
               "  status            git status of the repo\n" +
               "  cat <path>        print a tweakable file\n" +
               "  render            render generated agent configs\n" +
-              "  check [target]    run validation (mise|shell|mcp|skills|dotfiles)\n" +
+              "  check [target]    run validation (mise|shell|mcp|python|skills|dotfiles|safety|secrets)\n" +
               "  sync [--publish]  pull-only sync, or publish with --publish",
           };
       }
