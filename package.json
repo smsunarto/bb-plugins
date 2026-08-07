@@ -6,6 +6,9 @@
   "workspaces": [
     "plugins/*"
   ],
+  "comments": {
+    "overrides": "@ampcode/sdk's findAmpCommand() tries its bundled @ampcode/cli BEFORE the AMP_CLI_PATH env var, so a real @ampcode/cli silently outranks the CLI that plugins/amp provisions. The stub declares no bin.amp, so that first resolver returns null and AMP_CLI_PATH wins. It also keeps the ~69MiB @ampcode/cli-<platform> binary out of every install. Bun only honours overrides in the workspace root, so this leaf concern must live here, and it ignores scoped/nested override syntax -- keep the key flat. plugins/amp/test/cli-stub.test.ts fails if the stub stops resolving."
+  },
   "overrides": {
     "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub"
   },
