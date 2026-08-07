@@ -19,6 +19,7 @@ import {
   isThreadId,
   oneLine,
   parseSeconds,
+  parseSendArgs,
   plainText,
   suppressionReason,
   threadLabel,
@@ -44,6 +45,8 @@ const QUEUE_STALE_MS = 10 * 60_000;
 const DEDUPE_WINDOW_MS = 3_000;
 /** Bounds the in-memory per-thread maps on a long-lived server. */
 const MAX_TRACKED_THREADS = 500;
+/** How long a cached project name is trusted before it is read again. */
+const PROJECT_NAME_TTL_MS = 5 * 60_000;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -157,15 +160,14 @@ export default async function plugin(bb: BbPluginApi) {
   function waitForQueue(signal: AbortSignal): Promise<void> {
     if (queue.length > 0 || signal.aborted) return Promise.resolve();
     return new Promise((resolve) => {
-      let settled = false;
       // Reachable from three directions — a new notification, the hold
-      // expiring, and the client hanging up — so it guards against re-entry.
+      // expiring, and the client hanging up. The first one through disarms
+      // the other two, so the body runs exactly once.
       const settle = () => {
-        if (settled) return;
-        settled = true;
         waiters.delete(settle);
         clearTimeout(timer);
         signal.removeEventListener("abort", settle);
+        // oxlint-disable-next-line promise/no-multiple-resolved
         resolve();
       };
       const timer = setTimeout(settle, POLL_HOLD_MS);
@@ -175,8 +177,15 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.http.route("GET", "/pending", async (context) => {
+    const { signal } = context.req.raw;
     lastPollAt = Date.now();
-    await waitForQueue(context.req.raw.signal);
+    await waitForQueue(signal);
+    // The hold also ends when the window hangs up — a reload, a close, a
+    // navigation. Draining then would splice the queue, play the tone, and
+    // write the batch into a socket nobody reads, so the notifications would
+    // be gone. Leave them queued for the next window instead. The body is
+    // moot on an aborted request; what matters is that drain() is not called.
+    if (signal.aborted) return context.json({ notifications: [] });
     lastPollAt = Date.now();
     return context.json({ notifications: drain() });
   });
@@ -230,16 +239,23 @@ export default async function plugin(bb: BbPluginApi) {
     return windowIsListening();
   }
 
-  const projectNames = new Map<string, string>();
+  // Bounded by the number of projects, which is small — the TTL is here for
+  // freshness, not size. Without it a renamed project would keep tagging
+  // notifications with its old name for the life of the server.
+  const projectNames = new Map<string, { name: string; readAt: number }>();
   async function projectName(projectId: string): Promise<string | null> {
     const cached = projectNames.get(projectId);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined && Date.now() - cached.readAt < PROJECT_NAME_TTL_MS) {
+      return cached.name;
+    }
     try {
       const project = await bb.sdk.projects.get({ projectId });
-      projectNames.set(projectId, project.name);
+      projectNames.set(projectId, { name: project.name, readAt: Date.now() });
       return project.name;
     } catch {
-      return null;
+      // A refresh that fails should not strip the tag off the notification;
+      // the last known name is still better than no name.
+      return cached?.name ?? null;
     }
   }
 
@@ -247,10 +263,15 @@ export default async function plugin(bb: BbPluginApi) {
   const notifiedAt = new Map<string, number>();
 
   function remember(map: Map<string, number>, threadId: string): void {
-    if (map.size >= MAX_TRACKED_THREADS) {
-      // Insertion order: drop the oldest entry rather than growing forever.
+    // Re-setting a key does not move it in a JS Map, so a busy thread would
+    // keep the position of its first sighting and be evicted ahead of threads
+    // nobody has touched since. Delete first, and iteration order becomes a
+    // true least-recently-seen order for the eviction below.
+    map.delete(threadId);
+    while (map.size >= MAX_TRACKED_THREADS) {
       const oldest = map.keys().next();
-      if (!oldest.done) map.delete(oldest.value);
+      if (oldest.done) break;
+      map.delete(oldest.value);
     }
     map.set(threadId, Date.now());
   }
@@ -436,27 +457,9 @@ export default async function plugin(bb: BbPluginApi) {
       }
 
       if (command === "send") {
-        const flags = new Map<string, string>();
-        const positional: string[] = [];
-        for (let index = 0; index < rest.length; index += 1) {
-          const token = rest[index]!;
-          if (token.startsWith("--")) {
-            const value = rest[index + 1];
-            if (value === undefined) {
-              return { exitCode: 2, stderr: `${token} needs a value\n` };
-            }
-            flags.set(token.slice(2), value);
-            index += 1;
-          } else {
-            positional.push(token);
-          }
-        }
-        const message = positional.join(" ").trim() || flags.get("message");
-        if (!message) {
-          return {
-            exitCode: 2,
-            stderr: 'usage: bb notify send "<message>" [--title <text>]\n',
-          };
+        const parsed = parseSendArgs(rest);
+        if (!parsed.ok) {
+          return { exitCode: 2, stderr: `${parsed.error}\n` };
         }
         // Same title shape as an event notification, so a scripted one does
         // not look like it came from somewhere else.
@@ -465,9 +468,9 @@ export default async function plugin(bb: BbPluginApi) {
         return sent(
           post(
             project,
-            flags.get("title") ?? "bb",
-            oneLine(plainText(message), BODY_MAX_CHARS),
-            flags.get("thread") ?? invokingThread,
+            parsed.value.title ?? "bb",
+            oneLine(plainText(parsed.value.message), BODY_MAX_CHARS),
+            parsed.value.threadId ?? invokingThread,
           ),
         );
       }

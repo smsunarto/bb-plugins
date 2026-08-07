@@ -20,6 +20,7 @@
         "./types/bb-plugin-sdk-app.d.ts"
       ]
     },
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": false
   },
@@ -28,6 +29,7 @@
     "app.tsx",
     "format.ts",
     "sound.ts",
-    "types"
+    "types",
+    "test"
   ]
 }

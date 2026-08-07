@@ -57,9 +57,9 @@ export function AgentsPage() {
           </CardTitle>
           <CardDescription>
             Merges ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN into the env block of{" "}
-            <span className="font-mono">{state?.claude.settingsPath ?? "~/.claude/settings.json"}</span>. Your
-            dotfiles-rendered ~/.claude.json is never touched; a timestamped backup is taken before the first
-            write.
+            <span className="font-mono">{state?.claude.settingsPath ?? "~/.claude/settings.json"}</span>.
+            ~/.claude.json is never touched, so a generated one stays intact; a timestamped backup is taken
+            before the first write.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -104,7 +104,8 @@ export function AgentsPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Codex</CardTitle>
           <CardDescription>
-            Two zero-collision options — your dotfiles-rendered ~/.codex/config.toml is never touched. Either
+            Two zero-collision options — ~/.codex/config.toml is never touched, so a generated one stays
+            intact. Either
             export env vars per invocation, or generate a standalone CODEX_HOME (note: it does not inherit
             your normal Codex config such as MCP servers).
           </CardDescription>

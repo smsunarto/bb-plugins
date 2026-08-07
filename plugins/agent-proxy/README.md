@@ -28,7 +28,8 @@ exposes management UI inside bb.
 - **Agents** — zero-collision wiring for Claude Code (env block in
   `~/.claude/settings.json`, timestamped backups, restore removes only the
   managed keys) and Codex (env vars or a generated standalone `CODEX_HOME`).
-  Never touches dotfiles-rendered `~/.claude.json` / `~/.codex/config.toml`.
+  Never touches `~/.claude.json` / `~/.codex/config.toml`, so a generated one
+  (rendered from a dotfiles repo, for example) stays intact.
 
 ## Layout on disk
 

@@ -1,11 +1,10 @@
-/* bb app palette derived from ~/git/smsunarto-theme (Scott's Theme).
+/* bb app palette derived from Scott's Theme.
  *
  * Contributed by bb-plugin-theme through `bb.themes` in package.json, so bb
  * reads this file in place — no copy under ~/.bb/theme.
  *
  * Scott's Theme is dark-only, so only the .dark block restyles the app;
- * light mode keeps bb's default palette. Token reference:
- * ~/.agents/skills/bb-cli/references/theming.md
+ * light mode keeps bb's default palette.
  *
  * Note: this recolors the app chrome and terminal ANSI palette. Code and
  * diff token colors come from bb's bundled shiki themes and are not

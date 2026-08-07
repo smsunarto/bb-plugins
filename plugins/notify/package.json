@@ -30,6 +30,7 @@
   "scripts": {
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
     "clean": "rm -rf dist"
   }
 }

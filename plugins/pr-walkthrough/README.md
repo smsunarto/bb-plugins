@@ -22,7 +22,6 @@ bb plugin install .
 - `package.json` — bb plugin manifest.
 - `server.ts` / `app.tsx` — plugin backend and frontend.
 - `skills/pr-walkthrough/` — the skill, the compiler (`scripts/compile_walkthrough.py` + `guide_contract.py`), and the product/design references.
-- `examples/rampage-client-pr-1634/` — preserved example walkthrough and design-evidence fixture.
 - `components/ui/`, `lib/`, `hooks/`, `types/` — vendored bb plugin scaffold support.
 
 See `AGENTS.md` for the full product contract and development workflow.

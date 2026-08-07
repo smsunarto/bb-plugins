@@ -97,7 +97,7 @@ collapse into the first.
 ## Install
 
 ```sh
-bb plugin install /Users/smsunarto/git/bb-plugins/plugins/notify --yes
+bb plugin install ./plugins/notify --yes
 bb notify test
 ```
 
@@ -110,7 +110,13 @@ script mounts. BB then appears under System Settings → Notifications.
 bb notify status                 # is a window listening, and the filters
 bb notify test                   # post a sample notification
 bb notify send "Build is green" --title "CI"
+bb notify send "Ready" --thread t_abc123   # open a thread other than this one
 ```
+
+`send` takes `--flag value` or `--flag=value`, and `--` ends the flags. It
+refuses a misspelled flag rather than silently eating the word after it, and
+refuses a `--thread` value that is not a thread id rather than posting a
+notification whose click can land nowhere.
 
 ## Settings
 
@@ -165,8 +171,14 @@ already running when the plugin loaded always notifies.
 |---|---|
 | `server.ts` | Settings, events, agent tool, CLI, queue and routes |
 | `app.tsx` | Content script that posts the notification from the BB window |
-| `format.ts` | Pure text and filter helpers |
+| `format.ts` | Pure text, argument, and filter helpers |
 | `sound.ts` | The sound choices and how each is carried out |
+| `test/` | `node --test` over the two pure modules |
+
+The queue is only drained for a window that is still listening. When a held
+poll ends because the window hung up — a reload, a close, a navigation — the
+batch stays queued and the tone is not played, so a reload never costs a
+notification.
 
 `app.tsx` is a content script rather than a slot component because that is the
 only frontend surface mounted everywhere in the app. It has no React context,

@@ -1,6 +1,28 @@
 # bb-plugin-dotfiles
 
-A BB plugin.
+Browse, edit, render, and sync a dotfiles repo from a bb panel.
+
+## Requirements
+
+The plugin does not scan an arbitrary repo. It shows a fixed list of tweakable
+files and runs a fixed list of tasks, so it expects a repo with this shape:
+
+| Expectation | Used for |
+|---|---|
+| A `.dotfiles/` subdirectory | Agent config, seed settings, shell files |
+| `mise.toml` with `render`, `check*`, and `sync*` tasks | Every button in the panel |
+| `git` | The changed-file tree |
+
+A file that the repo does not have is simply absent from the panel, and the
+skills and `fish` drop-in lists are discovered at load rather than hardcoded.
+A task the `mise.toml` does not define fails when its button is pressed.
+
+To point the plugin at a different layout, edit `STATIC_GROUPS` and `TASKS` at
+the top of `server.ts` — that registry is the whole contract.
+
+Tasks run in a login shell. `fish` is preferred and located at run time
+(`$SHELL`, then the usual Homebrew, `/usr/local`, and `/usr/bin` paths), with
+`/bin/sh` as the fallback.
 
 ## UI components
 
@@ -57,8 +79,11 @@ bb plugin reload dotfiles
 
 ```
 bb plugin config dotfiles
-bb plugin config dotfiles set greeting hi
+bb plugin config dotfiles set repoPath /path/to/your/dotfiles
 ```
+
+`repoPath` is required and may be absolute or start with `~/`. The path is
+resolved on the machine running the bb server.
 
 ## Types & API reference
 

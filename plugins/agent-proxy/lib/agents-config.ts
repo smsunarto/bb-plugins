@@ -2,9 +2,10 @@
 // in server.ts (bb.sdk.files with CAS for user-owned files) so these are
 // trivially testable.
 //
-// Hard constraint: the user's ~/.claude.json and ~/.codex/config.toml are
-// rendered from their dotfiles repo and must never be touched. Claude Code is
-// wired through the env block of ~/.claude/settings.json; Codex through env
+// Hard constraint: ~/.claude.json and ~/.codex/config.toml must never be
+// touched. Either may be generated (rendered from a dotfiles repo, for
+// example), so a write there can be clobbered or cause a conflict. Claude Code
+// is wired through the env block of ~/.claude/settings.json; Codex through env
 // vars or a generated standalone CODEX_HOME.
 
 export const CLAUDE_ENV_KEYS = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"] as const;
@@ -77,8 +78,8 @@ export function claudeApplied(content: string | null, baseUrl: string): boolean 
 
 export const CODEX_ENV_KEY = "AGENT_PROXY_API_KEY";
 
-/** Standalone CODEX_HOME config: guaranteed zero collision with the
-    dotfiles-rendered ~/.codex/config.toml, at the cost of not inheriting it. */
+/** Standalone CODEX_HOME config: guaranteed zero collision with the user's
+    ~/.codex/config.toml, at the cost of not inheriting it. */
 export function renderCodexConfig(openAiBaseUrl: string): string {
   return [
     "# Managed by bb-plugin-agent-proxy. Use via:",

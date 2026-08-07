@@ -18,6 +18,13 @@ const OPEN_URL = "/api/v1/plugins/notify/http/open";
 const POLL_LOCK = "bb-plugin-notify:poller";
 /** Backoff after a failed poll, so a server restart is not hammered. */
 const RETRY_DELAY_MS = 3_000;
+/**
+ * Floor between two empty polls. The server holds the request open, so an
+ * empty batch should never come back fast; if one does — a proxy that will not
+ * hold, a route answering 200 with nothing — this keeps the loop from becoming
+ * a spin. A batch with notifications in it re-polls immediately, as it should.
+ */
+const MIN_EMPTY_POLL_MS = 1_000;
 
 interface PendingNotification {
   id: number;
@@ -39,14 +46,14 @@ function isPending(value: unknown): value is PendingNotification {
   );
 }
 
+/** Wait, cut short by abort. Each path disarms the other, so `finish` runs once. */
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    let settled = false;
     const finish = () => {
-      if (settled) return;
-      settled = true;
       clearTimeout(timer);
       signal.removeEventListener("abort", finish);
+      // oxlint-disable-next-line promise/no-multiple-resolved
       resolve();
     };
     const timer = setTimeout(finish, ms);
@@ -105,6 +112,7 @@ function present(item: PendingNotification): void {
 
 async function poll(signal: AbortSignal): Promise<void> {
   while (!signal.aborted) {
+    const startedAt = Date.now();
     try {
       const response = await fetch(PENDING_URL, {
         signal,
@@ -118,8 +126,19 @@ async function poll(signal: AbortSignal): Promise<void> {
         Array.isArray((payload as { notifications?: unknown }).notifications)
           ? (payload as { notifications: unknown[] }).notifications
           : [];
+      let shown = 0;
       for (const item of list) {
-        if (isPending(item)) present(item);
+        if (!isPending(item)) continue;
+        try {
+          present(item);
+          shown += 1;
+        } catch {
+          // The batch has already left the server, so one notification the
+          // browser refuses to construct must not cost the rest of them.
+        }
+      }
+      if (shown === 0 && Date.now() - startedAt < MIN_EMPTY_POLL_MS) {
+        await sleep(MIN_EMPTY_POLL_MS, signal);
       }
     } catch {
       if (signal.aborted) return;

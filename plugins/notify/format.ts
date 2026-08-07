@@ -99,6 +99,83 @@ export function parseSeconds(value: string): number {
   return parsed;
 }
 
+/** The flags `bb notify send` understands. Anything else is a typo. */
+const SEND_FLAGS = new Set(["title", "thread", "message"]);
+
+export interface SendArgs {
+  message: string;
+  /** Heading override; null means the caller's default. */
+  title: string | null;
+  /** Thread the notification opens; null means the invoking thread. */
+  threadId: string | null;
+}
+
+/**
+ * Parse the argument list of `bb notify send`.
+ *
+ * Hand-rolled because the plugin CLI hands over a raw argv, but strict where
+ * the earlier pass was permissive: a misspelled flag used to swallow the word
+ * after it and send a truncated message, and `--thread <junk>` used to build a
+ * notification whose click could not land anywhere. Both now fail loudly.
+ * Supports `--flag value` and `--flag=value`, and `--` ends the flags.
+ */
+export function parseSendArgs(
+  argv: readonly string[],
+): { ok: true; value: SendArgs } | { ok: false; error: string } {
+  const flags = new Map<string, string>();
+  const positional: string[] = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]!;
+    if (token === "--") {
+      positional.push(...argv.slice(index + 1));
+      break;
+    }
+    if (!token.startsWith("--")) {
+      positional.push(token);
+      continue;
+    }
+    const equals = token.indexOf("=");
+    const name = equals === -1 ? token.slice(2) : token.slice(2, equals);
+    if (!SEND_FLAGS.has(name)) {
+      return { ok: false, error: `unknown flag: --${name}` };
+    }
+    if (equals !== -1) {
+      flags.set(name, token.slice(equals + 1));
+      continue;
+    }
+    const value = argv[index + 1];
+    // A flag followed by another flag has no value; it swallowed one before.
+    if (value === undefined || value.startsWith("--")) {
+      return { ok: false, error: `--${name} needs a value` };
+    }
+    flags.set(name, value);
+    index += 1;
+  }
+
+  const message = (positional.join(" ") || flags.get("message") || "").trim();
+  if (message === "") {
+    return {
+      ok: false,
+      error: 'usage: bb notify send "<message>" [--title <text>] [--thread <id>]',
+    };
+  }
+
+  const threadId = flags.get("thread");
+  if (threadId !== undefined && !isThreadId(threadId)) {
+    return { ok: false, error: `not a thread id: ${threadId}` };
+  }
+
+  return {
+    ok: true,
+    value: {
+      message,
+      title: flags.get("title") ?? null,
+      threadId: threadId ?? null,
+    },
+  };
+}
+
 export interface ThreadFilterInput {
   visibility: "visible" | "hidden";
   parentThreadId: string | null;

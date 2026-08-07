@@ -18,7 +18,6 @@ Keep the diff as the primary surface. Do not add findings, severities, approval 
 - `skills/pr-walkthrough/scripts/compile_walkthrough.py` (with its `guide_contract.py` sibling) is the single producer of `walkthrough.generated.json` and the entire authoring quality gate. The two modules import each other by sibling path, so keep them together.
 - `skills/pr-walkthrough/PRODUCT.md` and `DESIGN.md` define product and visual decisions. They predate the static site's removal, so any reading-progress, search, or keyboard behavior they describe is design intent, not current behavior.
 - `skills/pr-walkthrough/scripts/migrate_monolith.py` splits a legacy single-file walkthrough into canonical multi-file MDX.
-- `examples/rampage-client-pr-1634/` is a preserved example and design-evidence fixture. It is not the reusable product source.
 - `components/ui/`, `lib/`, `hooks/`, and `types/` are vendored bb plugin scaffold support (shadcn model plus bundled SDK type declarations). Edit vendored components freely; refresh SDK types only from a matching bb release.
 
 Never develop against an installed copy (`bb plugin list` path or `~/.codex/skills/pr-walkthrough`) and then copy changes back. Make changes here first. Update an installed copy only when the user explicitly asks to install or synchronize, and only after repository validation passes.
@@ -83,7 +82,7 @@ The static site had reading progress, search, keyboard group navigation, resizab
 
 ## Current Product Priorities
 
-The `examples/rampage-client-pr-1634/critique/` and `audit/` material evaluated the removed static site. Keep it as historical design evidence; it is not an active backlog. Its still-relevant themes for the panel:
+A design critique and audit of the removed static site produced these themes. They are still relevant to the panel, but they are not an active backlog:
 
 1. Preserve section and active Guide phase context while scrolling long reviews.
 2. Decide whether reading progress returns to the panel, and design its scope before building it.
@@ -103,16 +102,20 @@ When editing the product:
 3. Never hand-edit `walkthrough.generated.json`; regenerate it.
 4. Use official local package documentation or maintained upstream documentation before relying on a new or unstable API.
 
-Compiler checks — compile the preserved example, which exercises Guide coverage, generated-file classification, and diff parsing end to end:
+Compiler checks — no fixture ships with the repo, so compile a walkthrough you
+generated locally. Any real PR exercises Guide coverage, generated-file
+classification, and diff parsing end to end:
 
 ```bash
 python3 skills/pr-walkthrough/scripts/compile_walkthrough.py \
-  --input examples/rampage-client-pr-1634/walkthrough \
-  --diff examples/rampage-client-pr-1634/changes.patch \
+  --input <walkthrough dir> \
+  --diff <changes.patch> \
   --output /tmp/pr-walkthrough-example.json
 ```
 
-It must exit zero and report 4 review groups and 39 diff files. Corrupt a section and confirm it exits non-zero: silent acceptance is the failure mode that matters.
+It must exit zero and report the review-group and diff-file counts you expect.
+Corrupt a section and confirm it exits non-zero: silent acceptance is the
+failure mode that matters.
 
 Plugin checks (`server.ts`, `app.tsx`, manifest, vendored UI), from the monorepo root:
 

@@ -49,5 +49,6 @@ bb agent-proxy usage                  # recent request buckets (JSON)
   the `cli-proxy-api` binary directly and never edit its `config.yaml` by hand —
   the plugin and the core co-own that file.
 - The proxy listens on 127.0.0.1 of the bb server machine only.
-- Do not write proxy settings into `~/.claude.json` or `~/.codex/config.toml`;
-  those are rendered from the user's dotfiles repo. Use the env recipes above.
+- Do not write proxy settings into `~/.claude.json` or `~/.codex/config.toml`.
+  Either may be generated (rendered from a dotfiles repo, for example), so an
+  edit there can be overwritten or cause a conflict. Use the env recipes above.

@@ -389,13 +389,17 @@ export default async function plugin(bb: BbPluginApi) {
     repoPath: {
       type: "string",
       label: "Dotfiles repo path (on the bb server host)",
-      default: "~/git/dotfiles",
+      default: "",
     },
   });
 
   async function repoPath(): Promise<string> {
     const { repoPath: raw } = await settings.get();
-    return expandHome(raw);
+    const configured = raw.trim();
+    if (!configured) {
+      throw new Error("dotfiles repo path is not configured");
+    }
+    return expandHome(configured);
   }
 
   // Openable = a registered tweakable, or any path git currently reports as
@@ -590,9 +594,14 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   const initial = await settings.get();
-  if (!existsSync(expandHome(initial.repoPath))) {
+  const configuredRepoPath = initial.repoPath.trim();
+  if (!configuredRepoPath) {
     bb.status.needsConfiguration(
-      `Dotfiles repo not found at ${initial.repoPath}. Set repoPath with \`bb plugin config dotfiles\`, then reload.`,
+      "Set repoPath to your dotfiles repository with `bb plugin config dotfiles`, then reload.",
+    );
+  } else if (!existsSync(expandHome(configuredRepoPath))) {
+    bb.status.needsConfiguration(
+      `Dotfiles repo not found at ${configuredRepoPath}. Set repoPath with \`bb plugin config dotfiles\`, then reload.`,
     );
   }
 }
