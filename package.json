@@ -11,11 +11,14 @@
   },
   "scripts": {
     "build": "bun run --filter './plugins/*' build",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "typecheck": "bun run --filter './plugins/*' typecheck",
     "test": "bun run --filter './plugins/*' test",
     "clean": "rm -rf plugins/*/dist"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "oxlint": "^1.77.0",
+    "typescript": "^7.0.0"
   }
 }
