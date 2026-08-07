@@ -6,10 +6,16 @@
 // then the branches top-first, then the trunk anchor. Every row expands into
 // its changed-file tree with +/− deltas.
 import "./app.css";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import {
   definePluginApp,
-  useComposer,
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
@@ -37,6 +43,33 @@ type StackView = NonNullable<StackResult["stack"]>;
 type StackBranch = StackView["branches"][number];
 type ChangeSet = NonNullable<StackResult["pending"]>;
 type Settings = StackResult["settings"];
+type MergeMethod = "squash" | "merge" | "rebase";
+
+// Merge is the panel's one green action, matching the open-PR green the rail
+// already speaks. Same solid green in both themes — laid over a Button
+// variant's own colors via tailwind-merge.
+const MERGE_BUTTON_CLASSES =
+  "bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600";
+
+// The merge dialog's method choice. Squash leads: a stack is written so that
+// each layer reads as one commit on the trunk, which is what it produces.
+const MERGE_METHODS: { value: MergeMethod; label: string; effect: string }[] = [
+  {
+    value: "squash",
+    label: "Squash",
+    effect: "each branch lands as a single commit",
+  },
+  {
+    value: "merge",
+    label: "Merge commit",
+    effect: "every commit is kept, under one merge commit per branch",
+  },
+  {
+    value: "rebase",
+    label: "Rebase",
+    effect: "every commit is replayed onto the base",
+  },
+];
 
 // Octicon paths (16×16), extracted from GitHub's stack widget.
 const OCTICONS = {
@@ -109,33 +142,19 @@ function StatusPill({
   if (!onToggle) {
     return <span className={pill}>{label}</span>;
   }
+  // The label is already the state the click asked for — the toggle is
+  // optimistic — so an in-flight write only dims the pill and blocks a second
+  // click. Swapping in a spinner here would be the flicker it is meant to end.
   return (
     <button
       type="button"
-      className={`${pill} cursor-pointer hover:border-border disabled:opacity-60`}
+      className={`${pill} cursor-pointer hover:border-border disabled:cursor-default ${busy ? "opacity-70" : ""}`}
       disabled={busy}
       title={pr.isDraft ? "Mark ready for review" : "Convert to draft"}
       onClick={onToggle}
     >
-      {busy ? "…" : label}
+      {label}
     </button>
-  );
-}
-
-// +N −M, in the diff colors. Rendered next to a file count.
-function DeltaChip({ change }: { change: ChangeSet }) {
-  const fileCount = change.files.length;
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs leading-4 tabular-nums">
-      <span className="text-muted-foreground">
-        {fileCount}
-        {change.truncated ? "+" : ""} file{fileCount === 1 ? "" : "s"}
-      </span>
-      <span className="text-green-600 dark:text-green-400">
-        +{change.additions}
-      </span>
-      <span className="text-red-600 dark:text-red-400">−{change.deletions}</span>
-    </span>
   );
 }
 
@@ -179,8 +198,44 @@ function RailRow({
   );
 }
 
+// Branch names display at most this many characters; the tooltip carries the
+// full name.
+const BRANCH_DISPLAY_CHARS = 25;
+
+function shortBranchName(name: string): string {
+  return name.length > BRANCH_DISPLAY_CHARS
+    ? `${name.slice(0, BRANCH_DISPLAY_CHARS)}…`
+    : name;
+}
+
+// What a branch row prints under its title. Pass a shortened `name` for the
+// visible copy; the default full name is for tooltips.
+function sublineLabel(branch: StackBranch, name = branch.name): string {
+  return branch.pr
+    ? `#${branch.pr.number} · ${name}`
+    : `${name} · no pull request yet`;
+}
+
+// +N −M, in the diff colors. Rendered next to a file count.
+function DeltaChip({ change }: { change: ChangeSet }) {
+  const fileCount = change.files.length;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs leading-4 tabular-nums">
+      <span className="text-muted-foreground">
+        {fileCount}
+        {change.truncated ? "+" : ""} file{fileCount === 1 ? "" : "s"}
+      </span>
+      <span className="text-green-600 dark:text-green-400">
+        +{change.additions}
+      </span>
+      <span className="text-red-600 dark:text-red-400">−{change.deletions}</span>
+    </span>
+  );
+}
+
 // A row's changed-file tree, plus the caret that toggles it. Returns null
-// when the diff could not be computed or is empty.
+// when the diff could not be computed or is empty. relative, so it stays
+// clickable above a row's stretched PR link.
 function ChangeDisclosure({
   change,
   expanded,
@@ -198,7 +253,7 @@ function ChangeDisclosure({
       type="button"
       onClick={onToggle}
       title={expanded ? `Hide ${label}` : `Show ${label}`}
-      className="inline-flex items-center gap-1 rounded text-muted-foreground hover:text-foreground"
+      className="relative inline-flex shrink-0 items-center gap-1 rounded text-muted-foreground hover:text-foreground"
     >
       <Octicon
         path={expanded ? OCTICONS.chevronDown : OCTICONS.chevronRight}
@@ -222,18 +277,34 @@ function ChangeTree({ change }: { change: ChangeSet }) {
   );
 }
 
+// Whether a click should stay in the app: modified clicks (cmd, ctrl, shift,
+// middle button) are left to the browser, which opens the anchor's href —
+// the PR's web URL — in a real tab.
+function isPlainClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean {
+  return (
+    !event.defaultPrevented &&
+    event.button === 0 &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.shiftKey
+  );
+}
+
 function BranchRow({
   branch,
   prBusy,
   expanded,
   onToggleExpanded,
   onToggleDraft,
+  onCheckout,
 }: {
   branch: StackBranch;
   prBusy: number | null;
   expanded: boolean;
   onToggleExpanded: () => void;
   onToggleDraft: (pr: NonNullable<StackBranch["pr"]>) => void;
+  onCheckout: (branchName: string) => void;
 }) {
   const pr = branch.pr;
   const title = pr?.title ?? branch.name;
@@ -246,38 +317,69 @@ function BranchRow({
       accent={branch.isCurrent}
       highlighted={branch.isCurrent}
     >
+      {/* Stretched overlay: a plain click checks the branch out in the
+          workspace. Rows with a PR keep an anchor so cmd/middle-click still
+          opens github.com; the current branch gets no overlay at all.
+          Controls that must stay clickable (status pill, disclosure caret,
+          file tree) sit above it — they are position:relative, so they paint
+          over the overlay. */}
+      {branch.isCurrent ? null : pr ? (
+        <a
+          href={pr.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => {
+            if (!isPlainClick(event)) return;
+            event.preventDefault();
+            onCheckout(branch.name);
+          }}
+          title={`Check out ${branch.name}`}
+          aria-label={`Check out ${branch.name}`}
+          className="absolute inset-0 rounded-md"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => onCheckout(branch.name)}
+          title={`Check out ${branch.name}`}
+          aria-label={`Check out ${branch.name}`}
+          className="absolute inset-0 cursor-pointer rounded-md"
+        />
+      )}
       <div className="flex items-start justify-between gap-3">
-        {pr ? (
-          <a
-            href={pr.url}
-            target="_blank"
-            rel="noreferrer"
-            className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground hover:underline"
-          >
-            {title}
-          </a>
-        ) : (
-          <span className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">
-            {title}
-          </span>
-        )}
-        {pr ? (
-          <StatusPill
-            pr={pr}
-            busy={prBusy === pr.number}
-            onToggle={canToggle ? () => onToggleDraft(pr) : null}
-          />
-        ) : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
-        <span className="truncate">
-          {pr ? `#${pr.number} · ` : ""}
-          {branch.name}
-          {!pr ? " · no pull request yet" : ""}
+        <span className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">
+          {title}
         </span>
-        {branch.needsRebase ? (
-          <span className="rounded border border-destructive/50 px-1 text-[10px] font-medium uppercase tracking-wide text-destructive">
-            needs rebase
+        <span className="relative flex shrink-0 items-center gap-1.5">
+          {branch.needsRebase ? (
+            <span className="rounded border border-destructive/50 px-1 text-[10px] font-medium uppercase tracking-wide leading-4 text-destructive">
+              needs rebase
+            </span>
+          ) : null}
+          {pr ? (
+            <StatusPill
+              pr={pr}
+              busy={prBusy === pr.number}
+              onToggle={canToggle ? () => onToggleDraft(pr) : null}
+            />
+          ) : null}
+        </span>
+      </div>
+      {/* One line, never wrapped: the chip follows the name in normal flow,
+          and the name is the only cell that can shrink — a narrow panel
+          ellipsizes it instead of clipping the file count and deltas. Mono,
+          like the chip, so a name capped at BRANCH_DISPLAY_CHARS puts every
+          row's chip in the same place. */}
+      <div className="flex items-center gap-x-2 overflow-hidden text-xs leading-4 text-muted-foreground">
+        <span
+          className="min-w-0 truncate font-mono tabular-nums"
+          title={sublineLabel(branch)}
+        >
+          {sublineLabel(branch, shortBranchName(branch.name))}
+        </span>
+        {!branch.isMerged && !branch.isQueued && (branch.aheadOfRemote ?? 0) > 0 ? (
+          <span className="shrink-0 rounded border border-amber-600/50 px-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+            {branch.aheadOfRemote} unpushed
           </span>
         ) : null}
         <ChangeDisclosure
@@ -287,7 +389,11 @@ function BranchRow({
           label={`files changed in ${branch.name}`}
         />
       </div>
-      {expanded && branch.diff ? <ChangeTree change={branch.diff} /> : null}
+      {expanded && branch.diff ? (
+        <div className="relative">
+          <ChangeTree change={branch.diff} />
+        </div>
+      ) : null}
     </RailRow>
   );
 }
@@ -309,17 +415,32 @@ function slugify(text: string): string {
     .replace(/-+$/g, "");
 }
 
-// "feat(api)!: add rate limiting" → type "feat", subject "add rate limiting".
-const CONVENTIONAL_HEAD = /^\s*([A-Za-z]+)\s*(?:\([^)]*\))?\s*!?\s*:\s*(.+)$/;
+// "feat(api)!: add rate limiting" → type "feat", scope "api", subject "add
+// rate limiting".
+const CONVENTIONAL_HEAD = /^\s*([A-Za-z]+)\s*(?:\(([^)]*)\))?\s*!?\s*:\s*(.+)$/;
 
-// Under Conventional Commits the type leads the slug; a name without a type
-// just slugifies.
+// Under Conventional Commits the type and the scope lead the slug; a name
+// without a type just slugifies.
 function deriveBranchName(name: string, conventional: boolean): string {
   if (!conventional) return slugify(name);
   const match = CONVENTIONAL_HEAD.exec(name);
-  const slug = slugify(match ? match[2] : name);
+  const slug = slugify(match ? match[3] : name);
   if (!slug) return "";
-  return match ? `${match[1].toLowerCase()}-${slug}` : slug;
+  if (!match) return slug;
+  const scope = match[2] ? slugify(match[2]) : "";
+  const type = match[1].toLowerCase();
+  return scope ? `${type}-${scope}-${slug}` : `${type}-${slug}`;
+}
+
+// The namespace new stacks land in until the gear popup says otherwise.
+// Keep in sync with DEFAULT_BRANCH_PREFIX in server.ts.
+const DEFAULT_BRANCH_PREFIX = "bb/";
+
+// A prefix is a branch namespace, so it ends on a separator: "bb" and "bb/"
+// name the same one. Keep in sync with withBranchSeparator in server.ts.
+function withBranchSeparator(prefix: string): string {
+  if (!prefix) return "";
+  return /[/_-]$/.test(prefix) ? prefix : `${prefix}/`;
 }
 
 // The next layer, at the top of the rail: the name field, and below it the
@@ -332,7 +453,7 @@ function LayerComposer({
   mode,
   busy,
   suggesting,
-  magicking,
+  autoStacking,
   pending,
   prefix,
   conventional,
@@ -341,12 +462,12 @@ function LayerComposer({
   onToggleExpanded,
   onSubmit,
   onSuggest,
-  onMagic,
+  onAutoStack,
 }: {
   mode: "init" | "add";
   busy: boolean;
   suggesting: boolean;
-  magicking: boolean;
+  autoStacking: boolean;
   pending: ChangeSet | null;
   prefix: string | null;
   conventional: boolean;
@@ -356,41 +477,42 @@ function LayerComposer({
   // Resolves true when the layer was created, so the field can clear.
   onSubmit: (name: string, branch: string) => Promise<boolean>;
   onSuggest: () => Promise<string>;
-  onMagic: () => void;
+  onAutoStack: () => void;
 }) {
   const [name, setName] = useState("");
   const slug = deriveBranchName(name, conventional);
-  const branch = slug ? `${prefix ?? ""}${slug}` : "";
+  const branch = slug ? `${withBranchSeparator(prefix ?? "")}${slug}` : "";
   const canSubmit = slug.length > 0 && !busy;
   const submitLabel = mode === "init" ? "Create stack" : "Stack";
   const busyLabel = mode === "init" ? "Creating…" : "Stacking…";
   return (
     <RailRow icon={OCTICONS.plus}>
       <form
-        // justify-end only bites on a wrapped line, so buttons that do not
-        // fit beside the field land right-aligned under it.
-        className="flex flex-wrap items-center justify-end gap-2"
+        className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (!canSubmit) return;
           // Clear only on success: a failed create leaves the name to retry
           // or edit.
-          void onSubmit(name.trim(), branch).then((created) => {
+          void (async () => {
+            const created = await onSubmit(name.trim(), branch);
             if (created) setName("");
-          });
+          })();
         }}
       >
         {/* The field keeps its own width floor so it stays readable in a
-            narrow panel; the other buttons wrap below it instead. */}
-        <div className="relative w-40 min-w-40 flex-1">
+            narrow panel; the button pair wraps below it instead. grow-[99]
+            against the pair's grow-1: on one line the field soaks up the
+            slack and the buttons hug their content. */}
+        <div className="relative w-40 min-w-40 grow-[99] basis-40">
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={
               conventional
                 ? mode === "init"
-                  ? 'e.g. "feat: add rate limiting to the API"'
-                  : 'e.g. "feat: add metrics for the rate limiter"'
+                  ? 'e.g. "feat(api): add rate limiting"'
+                  : 'e.g. "feat(api): add metrics for the rate limiter"'
                 : mode === "init"
                   ? 'e.g. "Add rate limiting to the API"'
                   : 'e.g. "Add metrics for the rate limiter"'
@@ -418,9 +540,10 @@ function LayerComposer({
               aria-label="Suggest a name from the workspace changes"
               disabled={busy || suggesting}
               onClick={() => {
-                void onSuggest().then((suggested) => {
+                void (async () => {
+                  const suggested = await onSuggest();
                   if (suggested) setName(suggested);
-                });
+                })();
               }}
             >
               <Icon
@@ -430,27 +553,41 @@ function LayerComposer({
             </Button>
           </span>
         </div>
-        {/* One layer at a time is the form; Magic Stack hands the whole
-            split to the thread's agent instead. */}
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="h-7"
-          disabled={busy || magicking}
-          onClick={onMagic}
-        >
-          {magicking ? "Summoning…" : "Magic Stack 🪄"}
-        </Button>
-        <Button type="submit" size="sm" className="h-7" disabled={!canSubmit}>
-          {busy ? busyLabel : submitLabel}
-        </Button>
+        {/* One layer at a time is the form; Auto Stack hands the whole split
+            to the thread's agent instead. The pair moves as one unit:
+            beside the field while it fits, else onto its own full-width row
+            split 50:50 (each button flex-1). */}
+        <div className="flex min-w-fit flex-1 items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-7 flex-1 gap-1.5"
+            disabled={busy || autoStacking}
+            onClick={onAutoStack}
+          >
+            <Icon name="MagicWand" className="size-3.5" />
+            {autoStacking ? "Summoning…" : "Auto Stack"}
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            className="h-7 flex-1"
+            disabled={!canSubmit}
+          >
+            {busy ? busyLabel : submitLabel}
+          </Button>
+        </div>
       </form>
-      {/* Same subline as a branch row: "#N · branch", then the file count. */}
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
-        <span className="truncate">
+      {/* Same subline as a branch row: "#N · branch", then the file count;
+          only the name shrinks. */}
+      <div className="mt-1 flex items-center gap-x-2 overflow-hidden text-xs leading-4 text-muted-foreground">
+        <span
+          className="min-w-0 truncate font-mono tabular-nums"
+          title={`${nextNumber !== null ? `#${nextNumber} · ` : ""}${branch || "working tree"}`}
+        >
           {nextNumber !== null ? `#${nextNumber} · ` : ""}
-          {branch || "working tree"}
+          {branch ? shortBranchName(branch) : "working tree"}
         </span>
         <ChangeDisclosure
           change={pending}
@@ -536,9 +673,11 @@ function SettingsDialog({
 
   // What the composer would build from an example title under this draft.
   const exampleTitle = conventional
-    ? "feat: add rate limiting to the API"
+    ? "feat(api): add rate limiting"
     : "Add rate limiting to the API";
-  const examplePrefix = prefix.trim() || detectedPrefix || "";
+  // Preview the namespace the way the server will store it, so a prefix
+  // typed without its trailing separator still reads as one here.
+  const examplePrefix = withBranchSeparator(prefix.trim()) || detectedPrefix || "";
   const exampleBranch = `${examplePrefix}${deriveBranchName(exampleTitle, conventional)}`;
 
   const save = async () => {
@@ -594,9 +733,9 @@ function SettingsDialog({
                 Conventional Commits
               </span>
               <p className="text-xs text-muted-foreground">
-                Titles read <span className="font-mono">feat: …</span>, and the
-                type leads the branch slug. Suggest and Magic Stack follow the
-                same convention.
+                Titles read <span className="font-mono">feat(scope): …</span>,
+                and the type and scope lead the branch slug. Suggest and Auto
+                Stack follow the same convention.
               </p>
             </div>
             <div className="pt-0.5">
@@ -635,6 +774,119 @@ function SettingsDialog({
   );
 }
 
+// The merge confirmation: one all-or-nothing `gh stack merge` run that lands
+// every unmerged PR in the stack on the trunk, bottom-first. Merging is
+// outward-facing and irreversible, so the click that starts it is a dialog
+// rather than a button — and the dialog is where the strategy is chosen.
+function MergeDialog({
+  open,
+  onOpenChange,
+  count,
+  total,
+  base,
+  topPrNumber,
+  unpushedCount,
+  onMerge,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  // Layers this run merges (the ready run from the trunk up) …
+  count: number;
+  // … out of the layers still unmerged. Equal when the whole stack goes.
+  total: number;
+  base: string;
+  topPrNumber: number | null;
+  unpushedCount: number;
+  onMerge: (method: MergeMethod) => void;
+}) {
+  const left = total - count;
+  const [method, setMethod] = useState<MergeMethod>("squash");
+  // Reopen on the default: a one-off "Rebase" should not become the habit.
+  useEffect(() => {
+    if (open) setMethod("squash");
+  }, [open]);
+  const chosen = MERGE_METHODS.find((entry) => entry.value === method);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Merge {left > 0 ? `${count} of ${total}` : count} layer
+            {count === 1 && left === 0 ? "" : "s"} into {base}
+          </DialogTitle>
+          <DialogDescription>
+            This submits GitHub's atomic stack merge
+            {topPrNumber !== null ? (
+              <>
+                {" "}
+                for <span className="font-mono">#{topPrNumber}</span>
+              </>
+            ) : null}
+            : that pull request and every unmerged one below it, merged
+            bottom-first into <span className="font-mono">{base}</span>. The
+            merge is all-or-nothing — if any one of them cannot merge, none
+            do.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {MERGE_METHODS.map((entry) => (
+              <Button
+                key={entry.value}
+                size="sm"
+                variant={entry.value === method ? "default" : "outline"}
+                aria-pressed={entry.value === method}
+                onClick={() => setMethod(entry.value)}
+              >
+                {entry.label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">{chosen?.effect}.</p>
+          {left > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              The {left} layer{left === 1 ? "" : "s"} above stay open — a layer
+              merges only once every layer under it has, and{" "}
+              {left === 1 ? "that one is" : "those are"} still in draft or
+              without a PR. Run Sync afterwards to restack{" "}
+              {left === 1 ? "it" : "them"} onto {base}.
+            </p>
+          ) : null}
+          {unpushedCount > 0 ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {unpushedCount} branch{unpushedCount === 1 ? " has" : "es have"}{" "}
+              unpushed commits. Only what is on GitHub gets merged — run Sync
+              first to include them.
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            If {base} uses a merge queue, the stack is queued instead and the
+            queue picks the strategy.
+          </p>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className={MERGE_BUTTON_CLASSES}
+            onClick={() => {
+              onOpenChange(false);
+              onMerge(method);
+            }}
+          >
+            <Icon name="GitMerge" className="size-3.5" />
+            Merge {count} layer{count === 1 ? "" : "s"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Expansion key for the composer row's working-tree files (branch rows use
 // their own name).
 const PENDING_KEY = "__pending__";
@@ -644,15 +896,35 @@ const POLL_MS = 30_000;
 
 function StackPanel({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
-  const composer = useComposer();
   const [result, setResult] = useState<StackResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // getStack calls in flight — manual and automatic alike; the refresh icon
+  // spins while it is non-zero.
+  const [inflight, setInflight] = useState(0);
   const [busy, setBusy] = useState<
-    "sync" | "submit" | "create" | "magic" | null
+    | "sync"
+    | "submit"
+    | "sync-submit"
+    | "prune"
+    | "merge"
+    | "create"
+    | "auto"
+    | "checkout"
+    | null
   >(null);
   const [prBusy, setPrBusy] = useState<number | null>(null);
+  // The client half of the draft overlay: the state a pill was clicked into,
+  // by PR number. It covers the round trip the server cannot — between the
+  // click and the RPC returning, nothing has been announced yet. The server
+  // keeps the same overlay afterwards, so entries here retire as soon as a
+  // payload agrees.
+  const [draftIntents, setDraftIntents] = useState<Map<number, boolean>>(
+    new Map(),
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pruneOpen, setPruneOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionDetail, setActionDetail] = useState<string | null>(null);
@@ -674,6 +946,7 @@ function StackPanel({ threadId }: { threadId: string }) {
     (options?: { fresh?: boolean }) => {
       const fresh = options?.fresh === true;
       if (fresh) setRefreshing(true);
+      setInflight((count) => count + 1);
       setFetchError(null);
       return rpc
         .call("getStack", fresh ? { threadId, refresh: true } : { threadId })
@@ -691,6 +964,7 @@ function StackPanel({ threadId }: { threadId: string }) {
         })
         .finally(() => {
           setLoading(false);
+          setInflight((count) => count - 1);
           if (fresh) setRefreshing(false);
         });
     },
@@ -738,7 +1012,25 @@ function StackPanel({ threadId }: { threadId: string }) {
     previousConnection.current = connection;
   }, [connection, refresh]);
 
-  const runAction = async (action: "sync" | "submit") => {
+  // Retire an optimistic pill state once a payload reports the same thing:
+  // the write is visible, so the overlay has nothing left to hide.
+  useEffect(() => {
+    const branches = result?.stack?.branches;
+    if (!branches) return;
+    setDraftIntents((current) => {
+      if (current.size === 0) return current;
+      const next = new Map(current);
+      for (const branch of branches) {
+        const pr = branch.pr;
+        if (pr && next.get(pr.number) === pr.isDraft) next.delete(pr.number);
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, [result]);
+
+  const runAction = async (
+    action: "sync" | "submit" | "sync-submit" | "prune",
+  ) => {
     setBusy(action);
     setActionDetail(null);
     try {
@@ -749,7 +1041,39 @@ function StackPanel({ threadId }: { threadId: string }) {
         toast.error(outcome.message);
         setActionDetail(outcome.detail);
       }
-      void refresh({ fresh: true });
+      // Hold busy until the fresh payload lands: the subtitles and the
+      // sync-first routing derive from it, so re-enabling the buttons
+      // against the pre-action state would let a click act on stale counts.
+      await refresh({ fresh: true });
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // throughPrNumber pins the merge to the run the dialog offered, so a layer
+  // that goes ready between opening it and confirming is not swept in.
+  const mergeStack = async (
+    method: MergeMethod,
+    throughPrNumber: number | null,
+  ) => {
+    setBusy("merge");
+    setActionDetail(null);
+    try {
+      const outcome = await rpc.call("mergeStack", {
+        threadId,
+        method,
+        ...(throughPrNumber === null ? {} : { throughPrNumber }),
+      });
+      if (outcome.ok) {
+        toast.success(outcome.message);
+      } else {
+        toast.error(outcome.message);
+        setActionDetail(outcome.detail);
+      }
+      // Hold busy until the stack reports the merged state, as runAction does.
+      await refresh({ fresh: true });
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -802,10 +1126,10 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
-  const magicStack = async () => {
-    setBusy("magic");
+  const autoStack = async () => {
+    setBusy("auto");
     try {
-      const outcome = await rpc.call("magicStack", { threadId });
+      const outcome = await rpc.call("autoStack", { threadId });
       if (outcome.ok) {
         toast.success(outcome.message);
       } else {
@@ -819,13 +1143,15 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
-  const toggleDraft = async (pr: NonNullable<StackBranch["pr"]>) => {
-    setPrBusy(pr.number);
+  // Check out a clicked branch in the workspace. Held busy until the fresh
+  // payload lands so the highlight moves with the actual current branch.
+  const checkout = async (branchName: string) => {
+    setBusy("checkout");
+    setActionDetail(null);
     try {
-      const outcome = await rpc.call("setPrDraft", {
+      const outcome = await rpc.call("checkoutBranch", {
         threadId,
-        prNumber: pr.number,
-        draft: !pr.isDraft,
+        branch: branchName,
       });
       if (outcome.ok) {
         toast.success(outcome.message);
@@ -833,19 +1159,48 @@ function StackPanel({ threadId }: { threadId: string }) {
         toast.error(outcome.message);
         setActionDetail(outcome.detail);
       }
+      await refresh({ fresh: true });
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const forgetDraftIntent = (prNumber: number) => {
+    setDraftIntents((current) => {
+      if (!current.has(prNumber)) return current;
+      const next = new Map(current);
+      next.delete(prNumber);
+      return next;
+    });
+  };
+
+  // The pill flips first and the write follows. Success is silent — the pill
+  // is the feedback, and a toast for a state already on screen is noise. A
+  // failure drops the optimistic value, so the pill snaps back, and says why.
+  const toggleDraft = async (pr: NonNullable<StackBranch["pr"]>) => {
+    const draft = !pr.isDraft;
+    setPrBusy(pr.number);
+    setDraftIntents((current) => new Map(current).set(pr.number, draft));
+    try {
+      const outcome = await rpc.call("setPrDraft", {
+        threadId,
+        prNumber: pr.number,
+        draft,
+      });
+      if (!outcome.ok) {
+        forgetDraftIntent(pr.number);
+        toast.error(outcome.message);
+        setActionDetail(outcome.detail);
+      }
       void refresh({ fresh: true });
     } catch (error: unknown) {
+      forgetDraftIntent(pr.number);
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setPrBusy(null);
     }
-  };
-
-  const askAgent = (instruction: string) => {
-    composer.updateText((current) =>
-      current.trim().length > 0 ? `${current}\n\n${instruction}` : instruction,
-    );
-    composer.focus();
   };
 
   // Settings ride along on the getStack payload, so adopt the saved values
@@ -875,7 +1230,22 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
-  const stack = result?.stack ?? null;
+  // Everything below reads the stack through the draft overlay, so the merge
+  // set and the pills agree on which PRs are ready.
+  const rawStack = result?.stack ?? null;
+  const stack: StackView | null =
+    rawStack && draftIntents.size > 0
+      ? {
+          ...rawStack,
+          branches: rawStack.branches.map((branch) => {
+            const pr = branch.pr;
+            const intent = pr ? draftIntents.get(pr.number) : undefined;
+            return pr && intent !== undefined && intent !== pr.isDraft
+              ? { ...branch, pr: { ...pr, isDraft: intent } }
+              : branch;
+          }),
+        }
+      : rawStack;
   const pending = result?.pending ?? null;
   const base = stack?.trunk ?? result?.defaultBranch ?? null;
   // gh stack orders branches bottom (nearest trunk) → top; render top-first.
@@ -888,54 +1258,163 @@ function StackPanel({ threadId }: { threadId: string }) {
   // Before the first payload lands the popup still has to open onto
   // something; these match the server's own defaults.
   const settings: Settings = result?.settings ?? {
-    branchPrefix: "",
-    conventionalCommits: false,
+    branchPrefix: DEFAULT_BRANCH_PREFIX,
+    conventionalCommits: true,
   };
+
+  // State-driven action row: the tooltips say what each click would do right
+  // now, Sync disarms when there is provably nothing to do, and Submit
+  // escalates its label to "Sync + Submit" when a restack must come first.
+  // Counts exclude merged and queued branches — the ones gh stack skips.
+  const activeBranches = stack
+    ? stack.branches.filter((branch) => !branch.isMerged && !branch.isQueued)
+    : [];
+  const mergedCount = stack
+    ? stack.branches.filter((branch) => branch.isMerged).length
+    : 0;
+  const rebaseCount = activeBranches.filter((branch) => branch.needsRebase).length;
+  const trunkBehind = stack?.trunkBehind ?? 0;
+  const needsRestack = rebaseCount > 0 || trunkBehind > 0;
+  const missingPrCount = activeBranches.filter((branch) => !branch.pr).length;
+  const unpushedCount = activeBranches.filter(
+    (branch) => (branch.aheadOfRemote ?? 0) > 0,
+  ).length;
+  const updatePrCount = activeBranches.filter(
+    (branch) => branch.pr && (branch.aheadOfRemote ?? 0) > 0,
+  ).length;
+  const behindCount = activeBranches.filter(
+    (branch) => (branch.behindRemote ?? 0) > 0,
+  ).length;
+  // Null probes mean the remote state is unknown (fetch failed, refs
+  // missing), not clean — collapsing them to 0 here would disarm Sync in
+  // exactly the situations where it is the recovery path.
+  const probesUnknown =
+    stack !== null &&
+    (stack.trunkBehind === null ||
+      activeBranches.some(
+        (branch) =>
+          branch.aheadOfRemote === null || branch.behindRemote === null,
+      ));
+
+  const syncParts: string[] = [];
+  if (trunkBehind > 0) syncParts.push(`trunk moved (+${trunkBehind})`);
+  if (rebaseCount > 0)
+    syncParts.push(
+      `${rebaseCount} branch${rebaseCount === 1 ? "" : "es"} to restack`,
+    );
+  if (unpushedCount > 0) syncParts.push(`${unpushedCount} to push`);
+  if (behindCount > 0)
+    syncParts.push(
+      `${behindCount} branch${behindCount === 1 ? "" : "es"} behind origin`,
+    );
+  // Sync disarms only when the panel affirmatively knows there is nothing to
+  // do. An unknown remote state keeps it armed — clicking it is how the
+  // state gets resolved (and how a divergence reaches the agent).
+  const syncNeeded = syncParts.length > 0 || probesUnknown;
+  const syncSubtitle =
+    syncParts.length > 0
+      ? syncParts.join(" · ")
+      : probesUnknown
+        ? "remote state unknown"
+        : "up to date";
+
+  // A layer's PR targets the branch below it, so a layer can only merge once
+  // every layer under it has. The merge set is therefore a run from the trunk
+  // up — the longest prefix of unmerged branches whose PRs are out of draft —
+  // and it need not reach the top: the layers above simply stay open. Queued
+  // branches count as ready; the queue is where gh stack merge already put
+  // them.
+  const unmergedBranches = stack
+    ? stack.branches.filter((branch) => !branch.isMerged)
+    : [];
+  const mergeCount = unmergedBranches.length;
+  const mergeReady: StackBranch[] = [];
+  for (const branch of unmergedBranches) {
+    if (!branch.pr || branch.pr.isDraft) break;
+    mergeReady.push(branch);
+  }
+  const mergeReadyCount = mergeReady.length;
+  const mergePartial = mergeReadyCount > 0 && mergeReadyCount < mergeCount;
+  // The PR the run stops at — what the server is asked to merge through.
+  const mergeThroughPr = mergeReady[mergeReadyCount - 1]?.pr?.number ?? null;
+  const mergeUnpushed = mergeReady.filter(
+    (branch) => (branch.aheadOfRemote ?? 0) > 0,
+  ).length;
+  const mergeBlocked = mergeReadyCount === 0;
+  // Nothing can merge only when the bottom layer itself is not ready; naming
+  // that one layer is more useful than counting every unready layer above it.
+  const mergeBlocker = unmergedBranches[0];
+  const mergeSubtitle =
+    mergeReadyCount === 0
+      ? mergeBlocker?.pr
+        ? `#${mergeBlocker.pr.number} is the bottom layer and still a draft — mark it ready first`
+        : "the bottom layer has no PR yet — submit first"
+      : mergePartial
+        ? `squashes the bottom ${mergeReadyCount} of ${mergeCount} PRs onto ${base ?? "the base branch"}; the rest stay open`
+        : `squashes ${mergeReadyCount} PR${mergeReadyCount === 1 ? "" : "s"} onto ${base ?? "the base branch"}, one commit per branch`;
+
+  const submitEffect =
+    missingPrCount > 0 && updatePrCount > 0
+      ? `opens ${missingPrCount} PR${missingPrCount === 1 ? "" : "s"}, updates ${updatePrCount}`
+      : missingPrCount > 0
+        ? `opens ${missingPrCount} PR${missingPrCount === 1 ? "" : "s"}`
+        : updatePrCount > 0
+          ? `updates ${updatePrCount} PR${updatePrCount === 1 ? "" : "s"}`
+          : "no PR changes";
+  // Submit disarms like Sync: only when the panel affirmatively knows the
+  // click would change nothing — no PRs to open or update, no restack to run
+  // first, and no probe in the unknown state (an unseen push count could
+  // still need a submit).
+  const submitNeeded =
+    missingPrCount > 0 || updatePrCount > 0 || needsRestack || probesUnknown;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-muted-foreground">
-          {base ? (
-            <>
-              {stack ? "Stack on" : "New stack on"}{" "}
-              <span className="font-mono text-foreground">{base}</span>
-            </>
-          ) : (
-            "Stacked pull requests"
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <span
+        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          <span className="truncate">
+            {base ? (
+              <>
+                {stack ? "Stack on" : "New stack on"}{" "}
+                <span className="font-mono text-foreground">{base}</span>
+              </>
+            ) : (
+              "Stacked pull requests"
+            )}
+          </span>
+          {/* A bare clickable icon rather than a button: it reads as part of
+              the header line, not as a third action next to Sync/Submit. It
+              spins for every getStack in flight — the manual click and the
+              background polls alike. */}
+          <button
+            type="button"
+            aria-label="Refresh"
             title={
               result
-                ? `Last updated ${new Date(result.fetchedAt).toLocaleTimeString()}`
-                : undefined
+                ? `Refresh — last updated ${new Date(result.fetchedAt).toLocaleTimeString()}`
+                : "Refresh"
             }
+            onClick={() => void refresh({ fresh: true })}
+            disabled={loading || refreshing || anyBusy}
+            className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground"
           >
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void refresh({ fresh: true })}
-              disabled={loading || refreshing || anyBusy}
-            >
-              {loading ? "Loading…" : refreshing ? "Refreshing…" : "Refresh"}
-            </Button>
-          </span>
-          {/* Button drops `title`, so the tooltip rides on a wrapper — the
-              same idiom the Refresh button's timestamp uses. */}
-          <span title="Stack settings">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="w-8 px-0"
-              aria-label="Stack settings"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Icon name="Settings" className="size-4" />
-            </Button>
-          </span>
+            <Icon
+              name="RotateCcw"
+              className={inflight > 0 ? "size-3 animate-spin" : "size-3"}
+            />
+          </button>
         </div>
+        <span title="Stack settings">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="w-8 px-0"
+            aria-label="Stack settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Icon name="Settings" className="size-4" />
+          </Button>
+        </span>
       </div>
 
       <SettingsDialog
@@ -969,7 +1448,7 @@ function StackPanel({ threadId }: { threadId: string }) {
             mode={stack ? "add" : "init"}
             busy={busy === "create"}
             suggesting={suggesting}
-            magicking={busy === "magic"}
+            autoStacking={busy === "auto"}
             pending={pending}
             prefix={result?.branchPrefix ?? null}
             conventional={settings.conventionalCommits}
@@ -980,7 +1459,7 @@ function StackPanel({ threadId }: { threadId: string }) {
               addLayer(name, branch, stack ? "add" : "init")
             }
             onSuggest={suggestName}
-            onMagic={() => void magicStack()}
+            onAutoStack={() => void autoStack()}
           />
           {layers.map((branch) => (
             <BranchRow
@@ -990,6 +1469,7 @@ function StackPanel({ threadId }: { threadId: string }) {
               expanded={expanded.has(branch.name)}
               onToggleExpanded={() => toggleExpanded(branch.name)}
               onToggleDraft={(pr) => void toggleDraft(pr)}
+              onCheckout={(branchName) => void checkout(branchName)}
             />
           ))}
           {/* trunk anchor: dot octicon + BranchName chip (2px/6px pad, 6px radius) */}
@@ -1005,35 +1485,119 @@ function StackPanel({ threadId }: { threadId: string }) {
       ) : null}
 
       {stack ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => void runAction("sync")}
-            disabled={anyBusy}
-          >
-            {busy === "sync" ? "Syncing…" : "Sync"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => void runAction("submit")}
-            disabled={anyBusy}
-          >
-            {busy === "submit" ? "Submitting…" : "Submit"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={anyBusy}
-            onClick={() =>
-              askAgent(
-                "Sync the stack with `gh stack sync` and report the result.",
-              )
-            }
-          >
-            Ask agent to sync
-          </Button>
+        <div className="space-y-2">
+          {/* Button drops `title`, so the tooltips ride on wrappers — and a
+              wrapper keeps showing its tooltip while the button is disabled,
+              which is when "Sync — up to date" explains the most. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Each glyph names the outcome, not the mechanism: Sync moves
+                commits both ways (fetch, rebase, push), Submit opens and
+                updates pull requests, Merge lands them. Submit keeps its
+                glyph when it escalates to Sync + Submit — the PRs are still
+                the point. */}
+            <span title={`Sync — ${syncSubtitle}`}>
+              <Button
+                size="sm"
+                onClick={() => void runAction("sync")}
+                disabled={anyBusy || !syncNeeded}
+              >
+                <Icon name="ArrowDataTransferVertical" className="size-3.5" />
+                {busy === "sync" || busy === "prune" ? "Syncing…" : "Sync"}
+              </Button>
+            </span>
+            <span title={`Submit — ${submitEffect}`}>
+              <Button
+                size="sm"
+                onClick={() =>
+                  void runAction(needsRestack ? "sync-submit" : "submit")
+                }
+                disabled={anyBusy || !submitNeeded}
+              >
+                <Icon name="GitPullRequestCreate" className="size-3.5" />
+                {busy === "submit" || busy === "sync-submit"
+                  ? "Submitting…"
+                  : needsRestack
+                    ? "Sync + Submit"
+                    : "Submit"}
+              </Button>
+            </span>
+            {mergeCount > 0 ? (
+              <span title={`Merge — ${mergeSubtitle}`}>
+                <Button
+                  size="sm"
+                  className={MERGE_BUTTON_CLASSES}
+                  onClick={() => setMergeOpen(true)}
+                  disabled={anyBusy || mergeBlocked}
+                >
+                  <Icon name="GitMerge" className="size-3.5" />
+                  {busy === "merge"
+                    ? "Merging…"
+                    : mergePartial
+                      ? `Merge ${mergeReadyCount} of ${mergeCount} layers`
+                      : `Merge ${mergeCount} layer${mergeCount === 1 ? "" : "s"}`}
+                </Button>
+              </span>
+            ) : null}
+          </div>
+          {mergedCount > 0 ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              disabled={anyBusy}
+              onClick={() => setPruneOpen(true)}
+            >
+              Delete {mergedCount} merged local branch
+              {mergedCount === 1 ? "" : "es"}…
+            </Button>
+          ) : null}
         </div>
       ) : null}
+
+      <MergeDialog
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+        count={mergeReadyCount}
+        total={mergeCount}
+        base={base ?? "the base branch"}
+        topPrNumber={mergeThroughPr}
+        unpushedCount={mergeUnpushed}
+        onMerge={(method) => void mergeStack(method, mergeThroughPr)}
+      />
+
+      <Dialog open={pruneOpen} onOpenChange={setPruneOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete merged branches</DialogTitle>
+            <DialogDescription>
+              This runs <span className="font-mono">gh stack sync --prune</span>:
+              a full sync (fetch, rebase, push), then deletion of the{" "}
+              {mergedCount} local branch{mergedCount === 1 ? "" : "es"} whose
+              pull request{mergedCount === 1 ? " is" : "s are"} merged. The
+              merged PRs and their remote branches stay on GitHub.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPruneOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                setPruneOpen(false);
+                void runAction("prune");
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {actionDetail ? (
         <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
