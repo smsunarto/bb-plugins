@@ -117,10 +117,15 @@ function branchIcon(branch: StackBranch): { path: string; tone: string } {
 function StatusPill({
   pr,
   busy,
+  syncing,
   onToggle,
 }: {
   pr: NonNullable<StackBranch["pr"]>;
+  // The write itself is in flight — block a second click.
   busy: boolean;
+  // The pill shows what was asked for and GitHub has not confirmed it yet.
+  // Outlives `busy`: `gh pr ready` returns before the read path agrees.
+  syncing: boolean;
   onToggle: (() => void) | null;
 }) {
   let label: string;
@@ -143,17 +148,25 @@ function StatusPill({
     return <span className={pill}>{label}</span>;
   }
   // The label is already the state the click asked for — the toggle is
-  // optimistic — so an in-flight write only dims the pill and blocks a second
-  // click. Swapping in a spinner here would be the flicker it is meant to end.
+  // optimistic — so the label never changes while the write runs. A spinner
+  // joins it instead of replacing it: the state reads as settled, and the
+  // spinner says only that GitHub has not confirmed it yet.
   return (
     <button
       type="button"
-      className={`${pill} cursor-pointer hover:border-border disabled:cursor-default ${busy ? "opacity-70" : ""}`}
+      className={`${pill} gap-1 cursor-pointer hover:border-border disabled:cursor-default`}
       disabled={busy}
-      title={pr.isDraft ? "Mark ready for review" : "Convert to draft"}
+      title={
+        syncing
+          ? `${label} — syncing with GitHub`
+          : pr.isDraft
+            ? "Mark ready for review"
+            : "Convert to draft"
+      }
       onClick={onToggle}
     >
       {label}
+      {syncing ? <Icon name="Loading" className="size-3 animate-spin" /> : null}
     </button>
   );
 }
@@ -294,6 +307,7 @@ function isPlainClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean {
 function BranchRow({
   branch,
   prBusy,
+  prSyncing,
   expanded,
   onToggleExpanded,
   onToggleDraft,
@@ -301,6 +315,7 @@ function BranchRow({
 }: {
   branch: StackBranch;
   prBusy: number | null;
+  prSyncing: boolean;
   expanded: boolean;
   onToggleExpanded: () => void;
   onToggleDraft: (pr: NonNullable<StackBranch["pr"]>) => void;
@@ -360,6 +375,7 @@ function BranchRow({
             <StatusPill
               pr={pr}
               busy={prBusy === pr.number}
+              syncing={prSyncing || prBusy === pr.number}
               onToggle={canToggle ? () => onToggleDraft(pr) : null}
             />
           ) : null}
@@ -1269,8 +1285,12 @@ function StackPanel({ threadId }: { threadId: string }) {
   const activeBranches = stack
     ? stack.branches.filter((branch) => !branch.isMerged && !branch.isQueued)
     : [];
+  // Only branches that still have a local ref: a pruned one keeps its stack
+  // entry (and its isMerged) forever, so counting those would leave the
+  // button offering work that is already done.
   const mergedCount = stack
-    ? stack.branches.filter((branch) => branch.isMerged).length
+    ? stack.branches.filter((branch) => branch.isMerged && branch.hasLocalRef)
+        .length
     : 0;
   const rebaseCount = activeBranches.filter((branch) => branch.needsRebase).length;
   const trunkBehind = stack?.trunkBehind ?? 0;
@@ -1466,6 +1486,7 @@ function StackPanel({ threadId }: { threadId: string }) {
               key={branch.name}
               branch={branch}
               prBusy={prBusy}
+              prSyncing={branch.pr ? draftIntents.has(branch.pr.number) : false}
               expanded={expanded.has(branch.name)}
               onToggleExpanded={() => toggleExpanded(branch.name)}
               onToggleDraft={(pr) => void toggleDraft(pr)}
