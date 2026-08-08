@@ -5,6 +5,33 @@ export function isCurrentBranchNotInStack(code: number, stderr: string): boolean
   return /current branch\s+"[^"]+"\s+is not part of a stack/i.test(stderr);
 }
 
+function hasExactSyncAbortedOutput(...outputs: string[]): boolean {
+  return outputs
+    .flatMap((output) => output.split(/\r?\n/))
+    .some((line) => /^sync aborted(?:\s*[—-]\s*no changes were made)?[.!]?$/i.test(line.trim()));
+}
+
+// Positive allowlist for Sync states that need repository-aware recovery.
+// Infrastructure, authentication, timeout, push, and generic CLI failures
+// remain ordinary errors instead of starting an agent turn.
+export function requiresAgentSyncRecovery(
+  code: number,
+  ...outputs: string[]
+): boolean {
+  if (code === 3 || code === 7) return true;
+  const text = outputs.join("\n");
+  return (
+    hasExactSyncAbortedOutput(text) ||
+    /your local stack has diverged from the stack on github/i.test(text) ||
+    /PR .* has base .*expected .*but cannot update while stacked/i.test(text) ||
+    /your PRs belong to multiple stacks on GitHub/i.test(text) ||
+    /the stack on GitHub differs from your local stack and couldn['’]t be updated automatically/i.test(
+      text,
+    ) ||
+    /(?:cannot|could not) create stack:\s*invalid PR chain/i.test(text)
+  );
+}
+
 // gh-stack intentionally treats several push, pull-request, and remote-stack
 // failures as best effort. Convert those exit-0 outputs into honest failures
 // for the plugin; callers still perform Git/PR postcondition checks afterward.
@@ -14,7 +41,7 @@ export function partialSuccessWarning(
   stderr: string,
 ): string | null {
   const output = `${stdout}\n${stderr}`;
-  if (action === "sync" && /sync aborted/i.test(output)) {
+  if (action === "sync" && hasExactSyncAbortedOutput(output)) {
     return "Local and remote stacks diverged; sync aborted with no changes.";
   }
   if (action === "sync" && /push failed/i.test(output)) {
