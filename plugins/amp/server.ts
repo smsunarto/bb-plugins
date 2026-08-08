@@ -1,11 +1,12 @@
 // Registers Amp as a custom ACP provider in bb via the plugin's own bundled
 // ACP bridge (dist/bridge.js), which drives the Amp CLI through the official
 // @ampcode/sdk. No third-party adapter required.
-import type { BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import {
   inspectInstallation,
   provisionInstallation,
@@ -14,12 +15,47 @@ import {
   PROVIDER_ID,
   type ProvisionPaths,
 } from "./lib/provision.js";
+import { loadOracleReport } from "./src/oracle-report-store.js";
+
+export const rpcContract = defineRpcContract({
+  getOracleReport: {
+    input: z.object({ reportId: z.string().uuid() }).strict(),
+    output: z.object({
+      report: z.object({
+        id: z.string(),
+        request: z.string().nullable(),
+        response: z.string(),
+        status: z.enum(["running", "completed", "error"]),
+        trace: z.array(z.object({
+          id: z.string(),
+          toolCallId: z.string().nullable(),
+          kind: z.enum(["thinking", "message", "tool"]),
+          title: z.string(),
+          content: z.string().nullable(),
+          status: z.enum(["running", "completed", "error"]).nullable(),
+          createdAt: z.string(),
+        })),
+        createdAt: z.string(),
+      }).nullable(),
+      error: z.string().nullable(),
+    }),
+  },
+});
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url));
 const BRIDGE_PATH = join(PLUGIN_DIR, "dist", "bridge.js");
 
 export default async function plugin(bb: BbPluginApi) {
   bb.log.info("loaded");
+
+  bb.rpc.register(rpcContract, {
+    getOracleReport({ reportId }) {
+      const report = loadOracleReport(reportId);
+      return report === null
+        ? { report: null, error: "The Oracle report is unavailable. Open the native tool call to view its output." }
+        : { report, error: null };
+    },
+  });
 
   async function resolveDataDir(): Promise<string> {
     try {

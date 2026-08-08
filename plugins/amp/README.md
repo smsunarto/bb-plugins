@@ -12,9 +12,16 @@ bb (ACP client, JSON-RPC over stdio)
             └─ Amp CLI, resolved via AMP_CLI_PATH   (set on the managed entry env)
 ```
 
-- One `execute()` call per ACP prompt turn. The Amp thread id (`session_id` on every stream message) is captured from the first message and later turns pass `continue: <threadId>`, so a bb thread maps to a single Amp thread. `--no-archive-after-execute` keeps the thread continuable.
+- One `execute()` call per ACP prompt turn. Every execution adds the `via-amp-acp` label. The Amp thread id (`session_id` on every stream message) is captured from the first message and later turns pass `continue: <threadId>`, so a bb thread maps to a single Amp thread. `--no-archive-after-execute` keeps the thread continuable.
 - Amp stream messages are translated to ACP `session/update` notifications: text → `agent_message_chunk`, thinking → `agent_thought_chunk` (the bridge always runs with `thinking: true`), `tool_use` → `tool_call`, `tool_result` → `tool_call_update`. Amp emits whole messages per line — there is no token-level streaming to forward.
 - sessionId → Amp thread id mappings persist as independent atomic records in `$XDG_STATE_HOME/bb-plugin-amp/sessions/` (default `~/.local/state/...`), so concurrent bridge processes cannot overwrite one another and bb thread resume (`session/load`) reconnects to the original Amp thread across bridge restarts. Existing `sessions.json` mappings are migrated automatically.
+
+### Current protocol limitations
+
+- **Input images:** not advertised. The current `@ampcode/sdk` input schema accepts text blocks only; claiming image input would silently discard attachments. Output images are emitted as standard ACP image content, although bb 0.35's ACP adapter currently renders only text content.
+- **Nested agents:** Amp reports `parent_tool_use_id`, but ACP v1 tool/message updates have no parent field and bb's ACP bridge exposes no nesting extension. Subagent events therefore remain flat rather than carrying misleading private metadata.
+- **ACP file proxy:** bb advertises `fs/read_text_file` and `fs/write_text_file`, but the Amp SDK has no filesystem callback seam and Amp operates directly in the session `cwd`. Pass-through methods would be dead protocol plumbing, so the bridge does not claim proxy-backed filesystem execution.
+- **Session-load replay:** ACP ordinarily requires an agent to replay conversation updates before returning from `session/load`. bb 0.35 drops updates delivered while that request is in flight, so this bb-specific bridge restores Amp's server-side thread context without replaying the transcript. Replay can be added once bb buffers load-time updates.
 
 ### Config options exposed over ACP
 
@@ -37,17 +44,17 @@ Constraints: the group must be last and must not contain parentheses of its own,
 
 bb's host daemon caches ACP model discovery for 60s, so a label change takes up to a minute to appear.
 
-### No reasoning option, and why the Reasoning row still appears
+### Why explicit SDK effort is not exposed yet
 
-Amp selects its own model and effort per mode (see [ampcode.com/modes](https://ampcode.com/modes)) and the CLI has no `--effort` flag, so the bridge advertises no `thought_level` option and never sends an effort.
+The pinned Amp SDK accepts an explicit `effort` override (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`). Omitting it has distinct meaning: Amp selects the default effort for the chosen mode. The bridge preserves that default and currently advertises no `thought_level` option.
 
-bb still renders a **Reasoning** row showing `Medium`. That cannot be suppressed from the agent side: for ACP providers bb substitutes a fixed fallback
+bb cannot currently represent an agent-managed/default value alongside explicit reasoning levels. Unknown values such as `default` are dropped from its ACP reasoning catalog, while advertising `medium` as the current value would cause bb to send an explicit override and silently change Amp's mode semantics. bb therefore still renders its fallback **Reasoning** row showing `Medium`:
 
 ```js
 [{ reasoningEffort: "medium", description: "Reasoning effort is managed by the connected ACP agent." }]
 ```
 
-in both of its model-discovery paths, and the row renders whenever that list is non-empty. The row is inert — nothing bb puts there reaches Amp.
+The row remains inert for this provider: untouched or changed fallback state cannot map to an advertised Amp effort value, so the bridge sends no effort. Once bb can represent an unspecified/agent-default reasoning state, the bridge can safely expose the SDK's explicit overrides without changing existing runs.
 
 Related: bb takes the reasoning label from a hardcoded table keyed by level (`none`/`low`/`medium`/`high`/`xhigh` → "Extra High"/…), not from anything the agent sends, so the slot cannot be repurposed to display other text. Only the **model** option's entry names are rendered verbatim.
 
