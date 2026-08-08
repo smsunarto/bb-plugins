@@ -23,6 +23,7 @@
         "./*"
       ]
     },
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": false
   },
@@ -32,6 +33,7 @@
     "types",
     "components",
     "lib",
-    "hooks"
+    "hooks",
+    "test"
   ]
 }
