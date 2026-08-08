@@ -1,6 +1,6 @@
 # bb-plugins
 
-Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace, one lockfile.
+Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace, one lockfile, one `node_modules`.
 
 ## Plugins
 
@@ -20,14 +20,9 @@ The plugin id comes from the `name` field in each `package.json` with the `bb-pl
 ## Setup
 
 ```sh
-bun install          # one package store at the repo root, linked per plugin
+bun install          # one hoisted node_modules at the repo root
 bun run build        # bb plugin build for every plugin
 ```
-
-Bun installs this workspace isolated: every dependency is unpacked once into
-`node_modules/.bun/` and symlinked into the `plugins/<name>/node_modules` of
-each plugin that declares it. A plugin therefore only resolves what its own
-`package.json` lists — a missing dependency fails here rather than in bb.
 
 ## Install into bb
 
@@ -42,10 +37,12 @@ bb plugin install ./plugins/<name>
 | Command | Effect |
 |---|---|
 | `bun run build` | Build every plugin. |
+| `bun run build:reload` | Build every plugin, then reload the ones installed in the running bb. |
 | `bun run typecheck` | Type-check every plugin. |
-| `bun run lint` | Run oxlint over the repo (`lint:fix` to apply fixes). |
-| `bun run test` | Run every plugin's tests (`amp`, `agent-proxy`, `notify`). |
+| `bun run test` | Run tests (plugins that define a `test` script). |
 | `bun run clean` | Remove every `dist/`. |
+| `bun run sdk-types:check` | Verify vendored SDK `.d.ts` files match the pinned bb release. |
+| `bun run sdk-types:refresh` | Regenerate vendored SDK `.d.ts` files after a bb upgrade. |
 | `bun run --filter './plugins/<name>' build` | Build one plugin. |
 | `bb plugin dev plugins/<name>` | Watch one plugin and hot-reload its frontend. |
 | `bb plugin reload <id>` | Reload one plugin after a backend change. |
@@ -53,6 +50,8 @@ bb plugin install ./plugins/<name>
 
 ## Notes
 
+- The bb release this repo tracks is pinned in `package.json` → `config.bbVersion`. CI installs that exact `bb-app` from npm; the `sdk-types:*` scripts refuse to run against a mismatched local bb.
+- Each plugin's `types/bb-plugin-sdk*.d.ts` is generated from the pinned bb release — never hand-edited. `bun run sdk-types:refresh` regenerates them; CI runs `sdk-types:check`.
 - `dist/` is generated and git-ignored. Run `bun run build` after a fresh clone.
 - The root `overrides` entry replaces `@ampcode/cli` with a stub in `plugins/amp/vendor/`, so the Amp bridge resolves the real CLI from `AMP_CLI_PATH` instead of bundling one. Bun only honours `overrides` in the workspace root, so it must stay there.
 - `plugins/pr-walkthrough/skills/pr-walkthrough/scripts/compile_walkthrough.py` (with its `guide_contract.py` sibling) compiles walkthrough MDX into the JSON the plugin's viewer panel renders. It is plain Python with no Node or frontend build behind it, so it is not covered by `bun run build`; the two modules resolve each other by sibling path and must stay together.

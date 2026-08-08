@@ -1,0 +1,6 @@
+# Bun 1.3+ defaults workspace installs to the isolated linker. This repo
+# relies on the classic hoisted layout: the README documents one hoisted
+# node_modules, and code like plugins/dotfiles/diffs-lib.ts imports
+# @pierre/diffs subpaths through the workspace root. Keep the linker pinned.
+[install]
+linker = "hoisted"
