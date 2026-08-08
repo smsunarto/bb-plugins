@@ -1364,6 +1364,16 @@ function StackPanel({ threadId }: { threadId: string }) {
                 onClick={() => void runAction("sync")}
                 disabled={mutationsDisabled || !syncNeeded}
               >
+                <Icon
+                  name={
+                    busy === "sync" || busy === "prune"
+                      ? "Spinner"
+                      : "ArrowReloadHorizontal"
+                  }
+                  className={
+                    busy === "sync" || busy === "prune" ? "animate-spin" : undefined
+                  }
+                />
                 {busy === "sync" || busy === "prune" ? "Syncing…" : "Sync"}
               </Button>
             </span>
@@ -1374,6 +1384,18 @@ function StackPanel({ threadId }: { threadId: string }) {
                 onClick={() => void runAction(needsRestack ? "sync-submit" : "submit")}
                 disabled={mutationsDisabled || !submitNeeded}
               >
+                <Icon
+                  name={
+                    busy === "submit" || busy === "sync-submit"
+                      ? "Spinner"
+                      : "GitPullRequestArrow"
+                  }
+                  className={
+                    busy === "submit" || busy === "sync-submit"
+                      ? "animate-spin"
+                      : undefined
+                  }
+                />
                 {busy === "submit" || busy === "sync-submit"
                   ? "Submitting…"
                   : needsRestack
@@ -1398,6 +1420,10 @@ function StackPanel({ threadId }: { threadId: string }) {
                   }}
                   disabled={mutationsDisabled || mergeReadyCount === 0}
                 >
+                  <Icon
+                    name={busy === "merge" ? "Spinner" : "GitMerge"}
+                    className={busy === "merge" ? "animate-spin" : undefined}
+                  />
                   {busy === "merge"
                     ? "Merging…"
                     : mergeReadyCount < mergeCount
