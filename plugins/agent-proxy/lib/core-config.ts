@@ -44,7 +44,7 @@ export function updateConfigFile(path: string, mutate: (doc: Document) => void):
     throw new Error(`config file is not valid YAML: ${doc.errors[0]!.message}`);
   }
   mutate(doc);
-  writeAtomic(path, doc.toString());
+  writeAtomic(path, doc.toString(), 0o600);
 }
 
 export function setConfigPort(path: string, port: number): void {
@@ -55,6 +55,31 @@ export function setConfigPort(path: string, port: number): void {
     Never compare the file's value — it is expected to be a bcrypt hash. */
 export function setConfigManagementKey(path: string, key: string): void {
   updateConfigFile(path, (doc) => doc.setIn(["remote-management", "secret-key"], key));
+}
+
+/** Reassert every field owned by the plugin while preserving provider blocks
+    and other core-managed configuration. The local API key is mandatory but
+    additional proxy access keys remain user-managed. */
+export function reconcileConfigFile(path: string, options: InitialConfig): void {
+  updateConfigFile(path, (doc) => {
+    const value = doc.toJS() as Record<string, unknown>;
+    const existingKeys = Array.isArray(value["api-keys"])
+      ? value["api-keys"].filter((entry): entry is string => typeof entry === "string")
+      : [];
+    const apiKeys = existingKeys.includes(options.localApiKey)
+      ? existingKeys
+      : [options.localApiKey, ...existingKeys];
+
+    doc.set("host", "127.0.0.1");
+    doc.set("port", options.port);
+    doc.setIn(["remote-management", "allow-remote"], false);
+    // The core hashes this plaintext value at startup. Reasserting it on load
+    // keeps settings changed while the plugin was disabled in sync.
+    doc.setIn(["remote-management", "secret-key"], options.managementKey);
+    doc.set("auth-dir", options.authDir);
+    doc.set("api-keys", apiKeys);
+    doc.set("usage-statistics-enabled", true);
+  });
 }
 
 export function readConfigPort(path: string): number | null {

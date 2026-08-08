@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   applyClaudeEnv,
+  captureClaudeEnvState,
   claudeApplied,
   renderCodexConfig,
-  stripClaudeEnv,
+  restoreClaudeEnv,
   CODEX_ENV_KEY,
 } from "../lib/agents-config.ts";
 
@@ -36,33 +37,62 @@ test("applyClaudeEnv refuses non-object json", () => {
   assert.throws(() => applyClaudeEnv("not json {", TARGET), /not valid JSON/);
 });
 
-test("stripClaudeEnv removes exactly the managed keys", () => {
-  const content = applyClaudeEnv(JSON.stringify({ env: { KEEP: "yes" }, other: true }), TARGET);
-  const { content: restored, changed } = stripClaudeEnv(content);
-  assert.equal(changed, true);
-  const parsed = JSON.parse(restored) as Record<string, unknown>;
-  assert.deepEqual(parsed.env, { KEEP: "yes" });
-  assert.equal(parsed.other, true);
+test("restoreClaudeEnv reinstates pre-existing values", () => {
+  const before = JSON.stringify({
+    env: {
+      KEEP: "yes",
+      ANTHROPIC_BASE_URL: "https://previous.example",
+      ANTHROPIC_AUTH_TOKEN: "previous-token",
+    },
+    other: true,
+  });
+  const state = captureClaudeEnvState(before, TARGET);
+  const applied = applyClaudeEnv(before, TARGET);
+  const restored = restoreClaudeEnv(applied, state);
+  assert.equal(restored.changed, true);
+  assert.equal(restored.preservedUserChanges, false);
+  assert.deepEqual(JSON.parse(restored.content), JSON.parse(before));
 });
 
-test("stripClaudeEnv drops env entirely when it becomes empty", () => {
+test("restoreClaudeEnv removes keys that did not previously exist", () => {
+  const state = captureClaudeEnvState(null, TARGET);
+  const restored = restoreClaudeEnv(applyClaudeEnv(null, TARGET), state);
+  assert.equal(restored.changed, true);
+  assert.deepEqual(JSON.parse(restored.content), {});
+});
+
+test("restoreClaudeEnv preserves values changed after Apply", () => {
+  const before = JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://previous.example" } });
+  const state = captureClaudeEnvState(before, TARGET);
+  const changedByUser = JSON.parse(applyClaudeEnv(before, TARGET)) as Record<string, unknown>;
+  (changedByUser.env as Record<string, unknown>).ANTHROPIC_AUTH_TOKEN = "user-rotated-token";
+  const restored = restoreClaudeEnv(JSON.stringify(changedByUser), state);
+  assert.equal(restored.changed, true);
+  assert.equal(restored.preservedUserChanges, true);
+  assert.deepEqual(JSON.parse(restored.content), {
+    env: {
+      ANTHROPIC_BASE_URL: "https://previous.example",
+      ANTHROPIC_AUTH_TOKEN: "user-rotated-token",
+    },
+  });
+});
+
+test("captureClaudeEnvState retains the original baseline across target changes", () => {
+  const before = JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "original" } });
+  const first = captureClaudeEnvState(before, TARGET);
+  const nextTarget = { baseUrl: "http://127.0.0.1:9000", token: "local-key" };
+  const second = captureClaudeEnvState(applyClaudeEnv(before, TARGET), nextTarget, first);
+  const restored = restoreClaudeEnv(applyClaudeEnv(before, nextTarget), second);
+  assert.deepEqual(JSON.parse(restored.content), JSON.parse(before));
+});
+
+test("claudeApplied requires both the managed base URL and token", () => {
   const content = applyClaudeEnv(null, TARGET);
-  const { content: restored, changed } = stripClaudeEnv(content);
-  assert.equal(changed, true);
-  assert.deepEqual(JSON.parse(restored), {});
-});
-
-test("stripClaudeEnv is a no-op when keys are absent", () => {
-  const { changed } = stripClaudeEnv(JSON.stringify({ env: { A: "1" } }));
-  assert.equal(changed, false);
-});
-
-test("claudeApplied detects the managed base url", () => {
-  const content = applyClaudeEnv(null, TARGET);
-  assert.equal(claudeApplied(content, TARGET.baseUrl), true);
-  assert.equal(claudeApplied(content, "http://127.0.0.1:9999"), false);
-  assert.equal(claudeApplied(null, TARGET.baseUrl), false);
-  assert.equal(claudeApplied("garbage {", TARGET.baseUrl), false);
+  assert.equal(claudeApplied(content, TARGET), true);
+  assert.equal(claudeApplied(content, { ...TARGET, baseUrl: "http://127.0.0.1:9999" }), false);
+  assert.equal(claudeApplied(content, { ...TARGET, token: "stale" }), false);
+  assert.equal(claudeApplied(null, TARGET), false);
+  assert.equal(claudeApplied("garbage {", TARGET), false);
 });
 
 test("renderCodexConfig declares the proxy provider", () => {

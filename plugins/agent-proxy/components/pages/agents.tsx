@@ -7,8 +7,12 @@ import { CopyField } from "@/components/copy-field";
 import type { rpcContract } from "../../server";
 
 interface AgentsState {
-  claude: { applied: boolean; settingsPath: string; lastBackup: string | null };
+  claude: { applied: boolean; canRestore: boolean; settingsPath: string; lastBackup: string | null };
   codex: { codexHomePath: string; generated: boolean; envKey: string };
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 export function AgentsPage() {
@@ -51,15 +55,19 @@ export function AgentsPage() {
             <span>Claude Code</span>
             {state ? (
               <span className="text-sm text-muted-foreground">
-                {state.claude.applied ? "routed through proxy" : "not applied"}
+                {state.claude.applied
+                  ? "routed through proxy"
+                  : state.claude.canRestore
+                    ? "managed values changed"
+                    : "not applied"}
               </span>
             ) : null}
           </CardTitle>
           <CardDescription>
             Merges ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN into the env block of{" "}
             <span className="font-mono">{state?.claude.settingsPath ?? "~/.claude/settings.json"}</span>.
-            ~/.claude.json is never touched, so a generated one stays intact; a timestamped backup is taken
-            before the first write.
+            ~/.claude.json is never touched. Apply records the previous values; Restore reinstates them while
+            preserving any values changed afterward.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -81,7 +89,7 @@ export function AgentsPage() {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy || state?.claude.applied === false}
+              disabled={busy || state?.claude.canRestore !== true}
               onClick={() =>
                 void act(async () => {
                   const result = await rpc.call("agentsRestore", { agent: "claude" });
@@ -114,13 +122,13 @@ export function AgentsPage() {
           {endpoints ? (
             <>
               <CopyField
-                label="Per-invocation env vars"
-                value={`OPENAI_BASE_URL=${endpoints.openai} OPENAI_API_KEY=${endpoints.apiKey} codex`}
+                label="Per-invocation Codex command"
+                value={`OPENAI_API_KEY='${endpoints.apiKey}' codex -c 'openai_base_url="${endpoints.openai}"'`}
               />
               {state?.codex.generated ? (
                 <CopyField
-                  label="Shell alias for the generated CODEX_HOME"
-                  value={`alias codexp='CODEX_HOME=${state.codex.codexHomePath} ${state.codex.envKey}=${endpoints.apiKey} codex'`}
+                  label="Command using the generated CODEX_HOME"
+                  value={`env CODEX_HOME=${shellQuote(state.codex.codexHomePath)} ${state.codex.envKey}=${shellQuote(endpoints.apiKey)} codex`}
                 />
               ) : null}
             </>
@@ -151,7 +159,7 @@ export function AgentsPage() {
                 })
               }
             >
-              Remove
+              Remove generated config
             </Button>
           </div>
         </CardContent>

@@ -1,6 +1,5 @@
 import {
   accessSync,
-  chmodSync,
   constants,
   mkdirSync,
   readFileSync,
@@ -8,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 
 export function ensureDir(path: string): void {
@@ -35,10 +35,9 @@ export function isExecutable(path: string): boolean {
     a partial file. Adapted from plugins/amp/lib/provision.ts. */
 export function writeAtomic(path: string, content: string | Buffer, mode?: number): void {
   ensureDir(dirname(path));
-  const tmp = `${path}.bb-plugin-agent-proxy-${process.pid}.tmp`;
+  const tmp = `${path}.bb-plugin-agent-proxy-${process.pid}-${randomUUID()}.tmp`;
   try {
-    writeFileSync(tmp, content);
-    if (mode !== undefined) chmodSync(tmp, mode);
+    writeFileSync(tmp, content, mode === undefined ? undefined : { mode });
     renameSync(tmp, path);
   } finally {
     rmSync(tmp, { force: true });
@@ -49,8 +48,8 @@ export function writeAtomic(path: string, content: string | Buffer, mode?: numbe
     backup's absolute path. Backups are kept forever; newest wins in listings. */
 export function timestampedBackup(content: string, backupsDir: string, baseName: string): string {
   ensureDir(backupsDir);
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const stamp = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
   const target = join(backupsDir, `${baseName}.${stamp}`);
-  writeFileSync(target, content);
+  writeFileSync(target, content, { mode: 0o600 });
   return target;
 }

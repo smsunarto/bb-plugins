@@ -21,6 +21,7 @@
         "clsx": "^2.1.1",
         "tailwind-merge": "^3.4.0",
         "yaml": "^2.8.0",
+        "zod": "^4.3.6",
       },
       "devDependencies": {
         "@radix-ui/react-dialog": "^1.1.19",
@@ -32,7 +33,6 @@
         "sonner": "^2.0.7",
         "typescript": "^7.0.0",
         "vaul": "^1.1.2",
-        "zod": "^4.3.6",
       },
     },
     "plugins/amp": {

@@ -1,9 +1,10 @@
 import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
 import { z } from "zod";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, readdirSync, renameSync, rmSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ensureDir, timestampedBackup, writeAtomic } from "./lib/fsx.ts";
+import { ensureDir, readTextOr, timestampedBackup, writeAtomic } from "./lib/fsx.ts";
 import { loadOrCreateKey } from "./lib/keys.ts";
 import { buildPaths, type Paths } from "./lib/paths.ts";
 import {
@@ -11,9 +12,10 @@ import {
   fetchRelease,
   installCore,
   installedVersion,
+  migrateLegacyInstall,
 } from "./lib/core-install.ts";
 import { compareVersions } from "./lib/release.ts";
-import { renderInitialConfig, setConfigManagementKey, setConfigPort } from "./lib/core-config.ts";
+import { reconcileConfigFile, renderInitialConfig } from "./lib/core-config.ts";
 import { Supervisor } from "./lib/core-process.ts";
 import {
   ManagementClient,
@@ -23,10 +25,12 @@ import {
 } from "./lib/management-client.ts";
 import {
   applyClaudeEnv,
+  captureClaudeEnvState,
   claudeApplied,
   renderCodexConfig,
-  stripClaudeEnv,
+  restoreClaudeEnv,
   CODEX_ENV_KEY,
+  type ClaudeEnvState,
 } from "./lib/agents-config.ts";
 
 const DEFAULT_PORT = 8317;
@@ -43,6 +47,20 @@ function endpointsFor(port: number) {
   const base = `http://127.0.0.1:${port}`;
   return { openai: `${base}/v1`, anthropic: base, gemini: `${base}/v1beta` };
 }
+
+function resourceRevision(value: unknown[]): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+const previousClaudeValueSchema = z.object({ present: z.boolean(), value: z.unknown().optional() });
+const claudeEnvStateSchema = z.object({
+  version: z.literal(1),
+  applied: z.object({ baseUrl: z.string(), token: z.string() }),
+  previous: z.object({
+    baseUrl: previousClaudeValueSchema,
+    token: previousClaudeValueSchema,
+  }),
+});
 
 // ---------------------------------------------------------------------------
 // RPC contract (imported type-only by app.tsx)
@@ -135,10 +153,12 @@ export const rpcContract = defineRpcContract({
 
   resourceGet: {
     input: z.object({ resource: z.enum(RESOURCES) }).strict(),
-    output: z.object({ value: z.unknown() }),
+    output: z.object({ value: z.array(z.unknown()), revision: z.string() }),
   },
   resourcePut: {
-    input: z.object({ resource: z.enum(RESOURCES), value: z.array(z.unknown()) }).strict(),
+    input: z
+      .object({ resource: z.enum(RESOURCES), value: z.array(z.unknown()), revision: z.string() })
+      .strict(),
     output: z.null(),
   },
 
@@ -149,6 +169,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       claude: z.object({
         applied: z.boolean(),
+        canRestore: z.boolean(),
         settingsPath: z.string(),
         lastBackup: z.string().nullable(),
       }),
@@ -199,11 +220,18 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   const paths: Paths = buildPaths(await resolveDataDir());
+  function secureAuthDirectory(): void {
+    ensureDir(paths.authDir);
+    chmodSync(paths.authDir, 0o700);
+    for (const entry of readdirSync(paths.authDir, { withFileTypes: true })) {
+      if (entry.isFile()) chmodSync(join(paths.authDir, entry.name), 0o600);
+    }
+  }
+
   ensureDir(paths.binDir);
-  ensureDir(paths.authDir);
+  secureAuthDirectory();
   ensureDir(paths.secretsDir);
   ensureDir(paths.backupsDir);
-  cleanStaleStaging(paths.coreDir);
 
   const generatedManagementKey = loadOrCreateKey(paths.managementKeyPath);
   const localApiKey = loadOrCreateKey(paths.localApiKeyPath);
@@ -219,20 +247,60 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   const initial = await effectiveSettings();
-  if (!existsSync(paths.configPath)) {
-    writeAtomic(
-      paths.configPath,
-      renderInitialConfig({
-        port: initial.port,
-        managementKey: initial.managementKey,
-        localApiKey,
-        authDir: paths.authDir,
-      }),
+  let currentPort = initial.port;
+  let currentManagementKey = initial.managementKey;
+  let desiredRunning = initial.autostart;
+  let acceptingOperations = true;
+  let initialized = false;
+  let operationTail: Promise<void> = Promise.resolve();
+  let initializationTask: Promise<void> | null = null;
+  const pluginAbort = new AbortController();
+
+  function enqueue<T>(operation: () => Promise<T> | T): Promise<T> {
+    if (!acceptingOperations) return Promise.reject(new Error("agent-proxy plugin is shutting down"));
+    const result = operationTail.then(async () => {
+      if (pluginAbort.signal.aborted) throw new Error("agent-proxy plugin is shutting down");
+      return operation();
+    });
+    operationTail = result.then(
+      () => undefined,
+      () => undefined,
     );
-    bb.log.info(`wrote initial core config at ${paths.configPath}`);
+    return result;
   }
 
-  let currentPort = initial.port;
+  function persistCoreConfig(effective: {
+    port: number;
+    managementKey: string;
+    autostart: boolean;
+  }): void {
+    const config = {
+      port: effective.port,
+      managementKey: effective.managementKey,
+      localApiKey,
+      authDir: paths.authDir,
+    };
+    if (existsSync(paths.configPath)) {
+      reconcileConfigFile(paths.configPath, config);
+    } else {
+      writeAtomic(paths.configPath, renderInitialConfig(config), 0o600);
+      bb.log.info(`wrote initial core config at ${paths.configPath}`);
+    }
+    currentPort = effective.port;
+    currentManagementKey = effective.managementKey;
+  }
+
+  function initialize(): Promise<void> {
+    if (initialized) return Promise.resolve();
+    initializationTask ??= enqueue(async () => {
+      cleanStaleStaging(paths.coreDir);
+      migrateLegacyInstall(paths);
+      secureAuthDirectory();
+      persistCoreConfig(await effectiveSettings());
+      initialized = true;
+    });
+    return initializationTask;
+  }
 
   const supervisor = new Supervisor({
     binPath: paths.binPath,
@@ -245,16 +313,24 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.background.service("core", {
-    start: (signal) => supervisor.run(signal),
+    async start(signal) {
+      await initialize();
+      if (desiredRunning) supervisor.start();
+      else supervisor.poke();
+      await supervisor.run(signal);
+    },
   });
-  if (initial.autostart && installedVersion(paths) !== null) supervisor.start();
   bb.onDispose(async () => {
+    acceptingOperations = false;
+    desiredRunning = false;
+    pluginAbort.abort(new Error("agent-proxy plugin disposed"));
+    await operationTail;
     await supervisor.stop();
   });
 
   async function managementClient(): Promise<ManagementClient> {
-    const { port, managementKey } = await effectiveSettings();
-    return new ManagementClient({ port, key: managementKey });
+    await initialize();
+    return new ManagementClient({ port: currentPort, key: currentManagementKey });
   }
 
   async function cachedLatest(): Promise<LatestCache | null> {
@@ -264,63 +340,98 @@ export default async function plugin(bb: BbPluginApi) {
   async function refreshLatest(): Promise<LatestCache> {
     const cached = await cachedLatest();
     if (cached && Date.now() - cached.checkedAt < LATEST_CACHE_TTL_MS) return cached;
-    const release = await fetchRelease(undefined);
+    const release = await fetchRelease(undefined, fetch, pluginAbort.signal);
     const next: LatestCache = { version: release.version, checkedAt: Date.now() };
     await bb.storage.kv.set(LATEST_CACHE_KEY, next);
     return next;
   }
 
   async function computeStatus(): Promise<CoreStatus> {
+    await initialize();
     const snapshot = supervisor.snapshot();
-    const { port } = await effectiveSettings();
     return {
       state: snapshot.state,
       pid: snapshot.pid,
-      port,
+      port: currentPort,
       installedVersion: installedVersion(paths),
       crashCount: snapshot.crashCount,
       lastExit: snapshot.lastExit,
-      endpoints: endpointsFor(port),
+      endpoints: endpointsFor(currentPort),
       latest: await cachedLatest(),
     };
   }
 
   async function runInstall(version: string | undefined): Promise<string> {
-    const release = await fetchRelease(version);
-    const wasRunning = supervisor.state === "running" || supervisor.state === "starting";
-    if (wasRunning) await supervisor.stop();
+    const release = await fetchRelease(version, fetch, pluginAbort.signal);
+    let stoppedForSwap = false;
     try {
       const installed = await installCore(paths, release, {
-        log: (message) => bb.log.warn(message),
+        signal: pluginAbort.signal,
         onProgress: (stage) => bb.realtime.publish("install", { stage, version: release.version }),
+        beforeInstall: async () => {
+          stoppedForSwap = true;
+          await supervisor.stop();
+        },
       });
       bb.log.info(`installed CLIProxyAPI v${installed}`);
       return installed;
     } finally {
-      if (wasRunning) supervisor.start();
+      if (stoppedForSwap && desiredRunning) supervisor.start();
       else supervisor.poke();
     }
   }
 
-  settings.onChange(async (next, previous) => {
+  async function requestInstall(version: string | undefined): Promise<string> {
+    await initialize();
+    return enqueue(() => runInstall(version));
+  }
+
+  async function requestStart(): Promise<CoreStatus> {
+    desiredRunning = true;
+    await initialize();
+    return enqueue(async () => {
+      supervisor.start();
+      return computeStatus();
+    });
+  }
+
+  async function requestStop(): Promise<CoreStatus> {
+    desiredRunning = false;
+    await initialize();
+    return enqueue(async () => {
+      await supervisor.stop();
+      return computeStatus();
+    });
+  }
+
+  async function requestRestart(): Promise<CoreStatus> {
+    desiredRunning = true;
+    await initialize();
+    return enqueue(async () => {
+      await supervisor.restart();
+      return computeStatus();
+    });
+  }
+
+  settings.onChange((next, previous) => {
     if (next.port === previous.port && next.managementKey === previous.managementKey) return;
-    const effective = await effectiveSettings();
-    const wasRunning = supervisor.state === "running" || supervisor.state === "starting";
-    if (wasRunning) await supervisor.stop();
-    try {
-      if (next.port !== previous.port) {
-        setConfigPort(paths.configPath, effective.port);
-        currentPort = effective.port;
-        bb.log.info(`core port changed to ${effective.port}`);
-      }
-      if (next.managementKey !== previous.managementKey) {
-        setConfigManagementKey(paths.configPath, effective.managementKey);
-        bb.log.info("management key rotated; core will re-hash it on next start");
-      }
-    } catch (error) {
-      bb.log.error(`failed to apply settings to core config: ${String(error)}`);
-    }
-    if (wasRunning) supervisor.start();
+    void initialize()
+      .then(() =>
+        enqueue(async () => {
+          const effective = await effectiveSettings();
+          await supervisor.stop();
+          try {
+            persistCoreConfig(effective);
+            bb.log.info(`core settings reconciled on port ${effective.port}`);
+          } finally {
+            if (desiredRunning) supervisor.start();
+            else supervisor.poke();
+          }
+        }),
+      )
+      .catch((error: unknown) => {
+        bb.log.error(`failed to apply settings to core config: ${String(error)}`);
+      });
   });
 
   // -------------------------------------------------------------------------
@@ -330,15 +441,12 @@ export default async function plugin(bb: BbPluginApi) {
   const claudeSettingsPath = join(homedir(), ".claude", "settings.json");
 
   async function readClaudeSettings(): Promise<{ content: string | null; sha256: string | null }> {
-    try {
-      const file = await bb.sdk.files.read({ path: claudeSettingsPath });
-      if (file.contentEncoding !== "utf8") {
-        throw new Error(`${claudeSettingsPath} is not a text file`);
-      }
-      return { content: file.content, sha256: file.sha256 };
-    } catch {
-      return { content: null, sha256: null };
+    if (!existsSync(claudeSettingsPath)) return { content: null, sha256: null };
+    const file = await bb.sdk.files.read({ path: claudeSettingsPath });
+    if (file.contentEncoding !== "utf8") {
+      throw new Error(`${claudeSettingsPath} is not a text file`);
     }
+    return { content: file.content, sha256: file.sha256 };
   }
 
   async function writeClaudeSettings(content: string, expectedSha256: string | null): Promise<void> {
@@ -346,10 +454,37 @@ export default async function plugin(bb: BbPluginApi) {
       path: claudeSettingsPath,
       content,
       expectedSha256,
+      createParents: true,
+      mode: 0o600,
     });
     if (saved.outcome === "conflict") {
       throw new Error(`${claudeSettingsPath} changed while applying; retry`);
     }
+  }
+
+  function readClaudeState(path: string): ClaudeEnvState | null {
+    const raw = readTextOr(path);
+    if (raw === null) return null;
+    try {
+      const parsed = claudeEnvStateSchema.safeParse(JSON.parse(raw));
+      return parsed.success ? (parsed.data as ClaudeEnvState) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Recover an Apply interrupted between the user-file CAS and ownership-state
+      commit. The prior committed state remains untouched until the CAS wins. */
+  function reconcileClaudeState(content: string | null): ClaudeEnvState | null {
+    if (existsSync(paths.claudePendingStatePath)) {
+      const pending = readClaudeState(paths.claudePendingStatePath);
+      if (pending !== null && claudeApplied(content, pending.applied)) {
+        renameSync(paths.claudePendingStatePath, paths.claudeStatePath);
+        return pending;
+      }
+      rmSync(paths.claudePendingStatePath, { force: true });
+    }
+    return readClaudeState(paths.claudeStatePath);
   }
 
   function lastClaudeBackup(): string | null {
@@ -372,7 +507,8 @@ export default async function plugin(bb: BbPluginApi) {
     status: () => computeStatus(),
     coreLogs: () => ({ lines: supervisor.logs() }),
     async connectivity() {
-      const { port } = await effectiveSettings();
+      await initialize();
+      const port = currentPort;
       try {
         await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2_000) });
       } catch {
@@ -404,23 +540,20 @@ export default async function plugin(bb: BbPluginApi) {
       };
     },
     async install({ version }) {
-      return { installedVersion: await runInstall(version) };
+      return { installedVersion: await requestInstall(version) };
     },
     async start() {
-      supervisor.start();
-      return computeStatus();
+      return requestStart();
     },
     async stop() {
-      await supervisor.stop();
-      return computeStatus();
+      return requestStop();
     },
     async restart() {
-      await supervisor.restart();
-      return computeStatus();
+      return requestRestart();
     },
     async endpoints() {
-      const { port } = await effectiveSettings();
-      return { ...endpointsFor(port), apiKey: localApiKey };
+      await initialize();
+      return { ...endpointsFor(currentPort), apiKey: localApiKey };
     },
 
     async oauthStart({ provider }) {
@@ -436,29 +569,50 @@ export default async function plugin(bb: BbPluginApi) {
       return { files: await client.authFiles() };
     },
     async authFileStatus({ name, disabled }) {
-      const client = await managementClient();
-      await client.setAuthFileStatus(name, disabled);
-      return null;
+      await initialize();
+      return enqueue(async () => {
+        const client = await managementClient();
+        await client.setAuthFileStatus(name, disabled);
+        return null;
+      });
     },
     async authFileDelete({ name }) {
-      const client = await managementClient();
-      await client.deleteAuthFile(name);
-      return null;
+      await initialize();
+      return enqueue(async () => {
+        const client = await managementClient();
+        await client.deleteAuthFile(name);
+        return null;
+      });
     },
     async resetQuota({ authIndex }) {
-      const client = await managementClient();
-      await client.resetQuota(authIndex);
-      return null;
+      await initialize();
+      return enqueue(async () => {
+        const client = await managementClient();
+        await client.resetQuota(authIndex);
+        return null;
+      });
     },
 
     async resourceGet({ resource }) {
       const client = await managementClient();
-      return { value: await client.getResource(resource) };
+      const value = await client.getResource(resource);
+      return { value, revision: resourceRevision(value) };
     },
-    async resourcePut({ resource, value }) {
-      const client = await managementClient();
-      await client.putResource(resource, value);
-      return null;
+    async resourcePut({ resource, value, revision }) {
+      await initialize();
+      return enqueue(async () => {
+        const client = new ManagementClient({ port: currentPort, key: currentManagementKey });
+        const current = await client.getResource(resource);
+        if (resourceRevision(current) !== revision) {
+          throw new Error(`${resource} changed since it was loaded; reload before saving`);
+        }
+        const next =
+          resource === "api-keys" && !value.includes(localApiKey)
+            ? [localApiKey, ...value]
+            : value;
+        await client.putResource(resource, next);
+        return null;
+      });
     },
 
     async usage() {
@@ -467,11 +621,18 @@ export default async function plugin(bb: BbPluginApi) {
     },
 
     async agentsStatus() {
-      const { port } = await effectiveSettings();
+      await initialize();
       const { content } = await readClaudeSettings();
+      const target = { baseUrl: endpointsFor(currentPort).anthropic, token: localApiKey };
+      const state = reconcileClaudeState(content);
       return {
         claude: {
-          applied: claudeApplied(content, endpointsFor(port).anthropic),
+          applied:
+            state !== null &&
+            state.applied.baseUrl === target.baseUrl &&
+            state.applied.token === target.token &&
+            claudeApplied(content, target),
+          canRestore: state !== null,
           settingsPath: claudeSettingsPath,
           lastBackup: lastClaudeBackup(),
         },
@@ -483,37 +644,65 @@ export default async function plugin(bb: BbPluginApi) {
       };
     },
     async agentsApply({ agent }) {
-      const { port } = await effectiveSettings();
-      if (agent === "claude") {
-        const { content, sha256 } = await readClaudeSettings();
-        const backupPath =
-          content !== null ? timestampedBackup(content, paths.backupsDir, CLAUDE_BACKUP_BASE) : null;
-        const next = applyClaudeEnv(content, {
-          baseUrl: endpointsFor(port).anthropic,
-          token: localApiKey,
-        });
-        await writeClaudeSettings(next, sha256);
-        bb.log.info(`applied proxy env to ${claudeSettingsPath}`);
-        return { backupPath };
-      }
-      writeAtomic(paths.codexConfigPath, renderCodexConfig(endpointsFor(port).openai));
-      bb.log.info(`generated Codex home at ${paths.codexHomeDir}`);
-      return { backupPath: null };
+      await initialize();
+      return enqueue(async () => {
+        if (agent === "claude") {
+          const { content, sha256 } = await readClaudeSettings();
+          const target = { baseUrl: endpointsFor(currentPort).anthropic, token: localApiKey };
+          const backupPath =
+            content !== null ? timestampedBackup(content, paths.backupsDir, CLAUDE_BACKUP_BASE) : null;
+          const state = captureClaudeEnvState(content, target, reconcileClaudeState(content));
+          writeAtomic(
+            paths.claudePendingStatePath,
+            `${JSON.stringify(state, null, 2)}\n`,
+            0o600,
+          );
+          try {
+            await writeClaudeSettings(applyClaudeEnv(content, target), sha256);
+          } catch (error) {
+            rmSync(paths.claudePendingStatePath, { force: true });
+            throw error;
+          }
+          renameSync(paths.claudePendingStatePath, paths.claudeStatePath);
+          bb.log.info(`applied proxy env to ${claudeSettingsPath}`);
+          return { backupPath };
+        }
+        writeAtomic(paths.codexConfigPath, renderCodexConfig(endpointsFor(currentPort).openai), 0o600);
+        bb.log.info(`generated Codex home at ${paths.codexHomeDir}`);
+        return { backupPath: null };
+      });
     },
     async agentsRestore({ agent }) {
-      if (agent === "claude") {
-        const { content, sha256 } = await readClaudeSettings();
-        if (content === null) return { detail: "settings file does not exist; nothing to restore" };
-        const { content: next, changed } = stripClaudeEnv(content);
-        if (!changed) return { detail: "proxy env vars were not present" };
-        await writeClaudeSettings(next, sha256);
-        return { detail: `removed proxy env vars from ${claudeSettingsPath}` };
-      }
-      if (!existsSync(paths.codexConfigPath)) {
-        return { detail: "no generated Codex home to remove" };
-      }
-      rmSync(paths.codexHomeDir, { recursive: true, force: true });
-      return { detail: `removed generated Codex home at ${paths.codexHomeDir}` };
+      await initialize();
+      return enqueue(async () => {
+        if (agent === "claude") {
+          const { content, sha256 } = await readClaudeSettings();
+          const state = reconcileClaudeState(content);
+          if (state === null) return { detail: "no plugin-owned Claude settings to restore" };
+          if (content === null) {
+            rmSync(paths.claudeStatePath, { force: true });
+            return { detail: "settings file does not exist; cleared stale restore state" };
+          }
+          const restored = restoreClaudeEnv(content, state);
+          if (restored.changed) await writeClaudeSettings(restored.content, sha256);
+          rmSync(paths.claudeStatePath, { force: true });
+          return {
+            detail: restored.preservedUserChanges
+              ? `restored plugin-owned values in ${claudeSettingsPath}; preserved later user changes`
+              : `restored previous values in ${claudeSettingsPath}`,
+          };
+        }
+        if (!existsSync(paths.codexConfigPath)) {
+          return { detail: "no generated Codex config to remove" };
+        }
+        rmSync(paths.codexConfigPath, { force: true });
+        try {
+          if (readdirSync(paths.codexHomeDir).length === 0) rmdirSync(paths.codexHomeDir);
+        } catch {
+          // Codex may have created state beside config.toml; preserve it.
+        }
+        return { detail: `removed generated config at ${paths.codexConfigPath}; preserved other Codex state` };
+      });
     },
   });
 
@@ -574,20 +763,20 @@ export default async function plugin(bb: BbPluginApi) {
             return { exitCode: 0, stdout: lines.join("\n") };
           }
           case "start": {
-            supervisor.start();
+            await requestStart();
             return { exitCode: 0, stdout: "start requested" };
           }
           case "stop": {
-            await supervisor.stop();
+            await requestStop();
             return { exitCode: 0, stdout: "stopped" };
           }
           case "restart": {
-            await supervisor.restart();
+            await requestRestart();
             return { exitCode: 0, stdout: "restart requested" };
           }
           case "endpoints": {
-            const { port } = await effectiveSettings();
-            const endpoints = endpointsFor(port);
+            await initialize();
+            const endpoints = endpointsFor(currentPort);
             return {
               exitCode: 0,
               stdout: [
@@ -599,7 +788,7 @@ export default async function plugin(bb: BbPluginApi) {
             };
           }
           case "install": {
-            const version = await runInstall(rest[0]);
+            const version = await requestInstall(rest[0]);
             return { exitCode: 0, stdout: `installed CLIProxyAPI v${version}` };
           }
           case "oauth": {
@@ -630,8 +819,7 @@ export default async function plugin(bb: BbPluginApi) {
             const lines: string[] = [];
             for (const resource of RESOURCES) {
               const value = await client.getResource(resource);
-              const count = Array.isArray(value) ? value.length : value ? 1 : 0;
-              lines.push(`${resource}: ${count} configured`);
+              lines.push(`${resource}: ${value.length} configured`);
             }
             const files = await client.authFiles();
             lines.push(`auth files: ${files.length}`);

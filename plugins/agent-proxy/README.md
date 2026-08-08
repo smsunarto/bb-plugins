@@ -22,12 +22,14 @@ exposes management UI inside bb.
   auth-file list with enable/disable, delete, quota state, and quota reset.
 - **Providers** — upstream credential collections (`claude-api-key`,
   `codex-api-key`, `gemini-api-key`, `openai-compatibility`) and proxy access
-  keys, edited whole-array.
+  keys, edited whole-array with stale-write detection. The generated local key
+  is always preserved.
 - **Usage** — the core's `api-key-usage` view (20 × 10-minute buckets per
   provider key). CLIProxyAPI removed durable per-request history in v6.10.0.
 - **Agents** — zero-collision wiring for Claude Code (env block in
-  `~/.claude/settings.json`, timestamped backups, restore removes only the
-  managed keys) and Codex (env vars or a generated standalone `CODEX_HOME`).
+  `~/.claude/settings.json`, timestamped backups, restore reinstates previous
+  values without overwriting later user edits) and Codex (a per-invocation
+  `openai_base_url` override or generated standalone `CODEX_HOME`).
   Never touches `~/.claude.json` / `~/.codex/config.toml`, so a generated one
   (rendered from a dotfiles repo, for example) stays intact.
 
@@ -35,12 +37,14 @@ exposes management UI inside bb.
 
 `<bb dataDir>/plugins/agent-proxy/`:
 
-- `core/bin/cli-proxy-api` + `core/bin/.version` — installed binary
+- `core/bin/current` — atomic pointer to the active binary + version marker
+- `core/versions/` — immutable installed releases; binary and marker switch together
 - `core/config.yaml` — co-owned: plugin bootstraps it, the core bcrypt-hashes
   `secret-key` in place and persists management-API writes into it
 - `core/auth/` — OAuth credential files (auth-dir)
 - `core/secrets/` — generated management + local API keys (0600)
 - `backups/` — timestamped copies of user files before the plugin writes them
+- `agents/claude-env-state.json` — private ownership metadata used for safe restore
 
 ## Settings
 
@@ -50,6 +54,9 @@ exposes management UI inside bb.
 
 Port/key changes stop the core, rewrite `config.yaml` surgically, and restart
 it if it was running.
+
+The core runs with a child-local `umask 077`; `core/auth/` is reconciled to
+`0700` and existing OAuth credential files to `0600` on plugin load.
 
 ## Develop
 

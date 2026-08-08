@@ -11,7 +11,7 @@ const SECTIONS: { resource: Resource; title: string; description: string; lineBa
   {
     resource: "api-keys",
     title: "Proxy access keys",
-    description: "Keys clients use against the local proxy endpoints. One key per line.",
+    description: "Keys clients use against the local proxy endpoints. One key per line; the plugin-generated key is always preserved.",
     lineBased: true,
   },
   {
@@ -43,21 +43,23 @@ const SECTIONS: { resource: Resource; title: string; description: string; lineBa
 function ResourceEditor({ resource, title, description, lineBased }: (typeof SECTIONS)[number]) {
   const rpc = useRpc<typeof rpcContract>();
   const [text, setText] = useState<string | null>(null);
+  const [revision, setRevision] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const result = await rpc.call("resourceGet", { resource });
-      const value = Array.isArray(result.value) ? result.value : [];
       setText(
         lineBased
-          ? (value as unknown[]).map((entry) => String(entry)).join("\n")
-          : JSON.stringify(value, null, 2),
+          ? result.value.map((entry) => String(entry)).join("\n")
+          : JSON.stringify(result.value, null, 2),
       );
+      setRevision(result.revision);
       setDirty(false);
     } catch (cause) {
       setText(null);
+      setRevision(null);
       toast.error(`${title}: ${String(cause instanceof Error ? cause.message : cause)}`);
     }
   }, [rpc, resource, lineBased, title]);
@@ -67,7 +69,7 @@ function ResourceEditor({ resource, title, description, lineBased }: (typeof SEC
   }, [load]);
 
   const save = async () => {
-    if (text === null) return;
+    if (text === null || revision === null) return;
     let value: unknown[];
     if (lineBased) {
       value = text
@@ -86,7 +88,7 @@ function ResourceEditor({ resource, title, description, lineBased }: (typeof SEC
     }
     setSaving(true);
     try {
-      await rpc.call("resourcePut", { resource, value });
+      await rpc.call("resourcePut", { resource, value, revision });
       toast.success(`${title} saved`);
       await load();
     } catch (cause) {
@@ -105,7 +107,7 @@ function ResourceEditor({ resource, title, description, lineBased }: (typeof SEC
             <Button size="sm" variant="outline" onClick={() => void load()}>
               Reload
             </Button>
-            <Button size="sm" disabled={saving || !dirty || text === null} onClick={() => void save()}>
+            <Button size="sm" disabled={saving || !dirty || text === null || revision === null} onClick={() => void save()}>
               {saving ? "Saving…" : "Save"}
             </Button>
           </span>
