@@ -12,7 +12,7 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 | `gh-stack` | `plugins/gh-stack` | Visualize and drive stacked pull requests. |
 | `notify` | `plugins/notify` | Desktop notifications when a BB thread finishes or fails, plus a `notify_user` agent tool and a `bb notify` command. |
 | `pr-walkthrough` | `plugins/pr-walkthrough` | Generate a human-friendly pull-request walkthrough with a built-in viewer panel. |
-| `theme` | `plugins/theme` | Contributes Scott's Theme as a selectable palette (`plugin:theme:smsunarto`). |
+| `theme` | `plugins/theme` | Ships Scott's Theme as a selectable BB palette. |
 
 The plugin id comes from the `name` field in each `package.json` with the `bb-plugin-` prefix removed. The directory name is not used.
 
@@ -28,7 +28,7 @@ bun run build        # bb plugin build for every plugin
 Each plugin is installed as a local path source, so bb reads the files in place. Edit, rebuild, reload — no reinstall.
 
 ```sh
-bb plugin install ./plugins/<name>
+bb plugin install ~/git/bb-plugins/plugins/<name>
 ```
 
 ## Daily commands
