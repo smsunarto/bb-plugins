@@ -15,7 +15,7 @@ import {
   type PluginMessageDirectiveProps,
   type PluginThreadPanelProps,
 } from "@bb/plugin-sdk/app";
-import { parsePatchFiles } from "@pierre/diffs";
+import { parsePatchFiles, type DiffLineAnnotation } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { toast } from "sonner";
 import type {
@@ -23,6 +23,8 @@ import type {
   WalkthroughData,
   WalkthroughDiffFile,
   WalkthroughGuideBlock,
+  WalkthroughGuideComment,
+  WalkthroughGuideDiagram,
   WalkthroughGuideExcerpt,
   WalkthroughReviewGroup,
 } from "./server";
@@ -72,13 +74,6 @@ function WalkthroughDirective({ attributes }: PluginMessageDirectiveProps) {
 function GuideBlocks({ blocks }: { blocks: WalkthroughGuideBlock[] }) {
   return (
     <div className="space-y-2 text-sm text-foreground">
-      {/*
-        Index keys are correct here. Blocks carry no id, and the array comes
-        from the compiled walkthrough JSON: it is fixed for the life of the
-        component and never reordered, inserted into, or filtered. Content
-        would not be a safe key either, since two paragraphs can be identical.
-      */}
-      {/* oxlint-disable react/no-array-index-key */}
       {blocks.map((block, index) => {
         switch (block.type) {
           case "paragraph":
@@ -107,7 +102,6 @@ function GuideBlocks({ blocks }: { blocks: WalkthroughGuideBlock[] }) {
             return null;
         }
       })}
-      {/* oxlint-enable react/no-array-index-key */}
     </div>
   );
 }
@@ -115,9 +109,11 @@ function GuideBlocks({ blocks }: { blocks: WalkthroughGuideBlock[] }) {
 function PatchDiff({
   patch,
   diffStyle,
+  lineAnnotations,
 }: {
   patch: string;
   diffStyle: DiffStyle;
+  lineAnnotations?: DiffLineAnnotation<WalkthroughGuideComment>[];
 }) {
   const fileDiff = useMemo(() => {
     try {
@@ -136,41 +132,111 @@ function PatchDiff({
   }
   return (
     <div className="overflow-hidden rounded-md border border-border">
-      <FileDiff fileDiff={fileDiff} options={{ diffStyle }} />
+      <FileDiff<WalkthroughGuideComment>
+        fileDiff={fileDiff}
+        lineAnnotations={lineAnnotations}
+        options={{ diffStyle }}
+        renderAnnotation={(annotation) =>
+          annotation.metadata ? (
+            <div className="border-y border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
+              <span className="mr-2 font-mono text-primary">
+                {annotation.metadata.side === "additions" ? "R" : "L"}
+                {annotation.metadata.lineNumber}
+              </span>
+              {annotation.metadata.body}
+            </div>
+          ) : null
+        }
+      />
     </div>
+  );
+}
+
+function GuideDiagram({ diagram }: { diagram: WalkthroughGuideDiagram }) {
+  const labels = new Map(diagram.nodes.map((node) => [node.id, node.label]));
+  return (
+    <figure
+      aria-label={diagram.summary}
+      className="space-y-3 rounded-md border border-border bg-card p-3"
+    >
+      <div className="grid gap-2 sm:grid-cols-2">
+        {diagram.nodes.map((node) => (
+          <div key={node.id} className="rounded-md border border-border p-2">
+            <div className="text-xs font-medium text-foreground">
+              {node.label}
+            </div>
+            {node.detail && (
+              <div className="mt-1 text-xs text-muted-foreground">
+                {node.detail}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <ul className="space-y-1 text-xs text-muted-foreground">
+        {diagram.edges.map((edge) => (
+          <li key={edge.id}>
+            <span className="text-foreground">{labels.get(edge.source)}</span>
+            {" → "}
+            <span className="text-foreground">{labels.get(edge.target)}</span>
+            {edge.label ? ` — ${edge.label}` : ""}
+          </li>
+        ))}
+      </ul>
+      <figcaption className="text-xs text-muted-foreground">
+        {diagram.summary}
+      </figcaption>
+    </figure>
   );
 }
 
 function ExcerptSection({
   excerpt,
   diffStyle,
+  reviewed,
+  onToggleReviewed,
 }: {
   excerpt: WalkthroughGuideExcerpt;
   diffStyle: DiffStyle;
+  reviewed: boolean;
+  onToggleReviewed: () => void;
 }) {
+  const lineAnnotations = useMemo<
+    DiffLineAnnotation<WalkthroughGuideComment>[]
+  >(
+    () =>
+      excerpt.comments.map((comment) => ({
+        lineNumber: comment.lineNumber,
+        metadata: comment,
+        side: comment.side,
+      })),
+    [excerpt.comments],
+  );
+
   return (
     <section className="space-y-2">
-      <h4 className="text-sm font-medium text-foreground">{excerpt.title}</h4>
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-sm font-medium text-foreground">{excerpt.title}</h4>
+        <Button
+          aria-pressed={reviewed}
+          size="sm"
+          variant={reviewed ? "secondary" : "outline"}
+          onClick={onToggleReviewed}
+        >
+          {reviewed ? "Viewed" : "Mark viewed"}
+        </Button>
+      </div>
       <GuideBlocks blocks={excerpt.explanation} />
       {excerpt.binary ? (
         <div className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
           Binary file: {excerpt.path}
         </div>
       ) : (
-        <PatchDiff patch={excerpt.patch} diffStyle={diffStyle} />
-      )}
-      {excerpt.comments.length > 0 && (
-        <ul className="space-y-1">
-          {excerpt.comments.map((comment) => (
-            <li key={comment.id} className="text-xs text-muted-foreground">
-              <span className="font-mono text-foreground">
-                {comment.side === "additions" ? "R" : "L"}
-                {comment.lineNumber}
-              </span>{" "}
-              — {comment.body}
-            </li>
-          ))}
-        </ul>
+        <PatchDiff
+          patch={excerpt.patch}
+          diffStyle={diffStyle}
+          lineAnnotations={lineAnnotations}
+        />
       )}
     </section>
   );
@@ -180,10 +246,14 @@ function NormalMode({
   group,
   diffFiles,
   diffStyle,
+  reviewedPaths,
+  onToggleReviewed,
 }: {
   group: WalkthroughReviewGroup;
   diffFiles: WalkthroughDiffFile[];
   diffStyle: DiffStyle;
+  reviewedPaths: Set<string>;
+  onToggleReviewed: (path: string) => void;
 }) {
   const [showGenerated, setShowGenerated] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
@@ -196,12 +266,19 @@ function NormalMode({
   const files = group.files
     .map((file) => ({ file, diff: byPath.get(file.path) }))
     .filter((entry) => entry.diff !== undefined);
-  const primary = files.filter((entry) => !entry.diff!.generated);
-  const generated = files.filter((entry) => entry.diff!.generated);
+  const primary = files.filter(
+    (entry) => !entry.diff!.generated && !entry.diff!.binary,
+  );
+  const generated = files.filter(
+    (entry) => entry.diff!.generated || entry.diff!.binary,
+  );
   const treeFiles = useMemo(
     () =>
       files
-        .filter((entry) => showGenerated || !entry.diff!.generated)
+        .filter(
+          (entry) =>
+            showGenerated || (!entry.diff!.generated && !entry.diff!.binary),
+        )
         .map((entry) => entry.diff!),
     [files, showGenerated],
   );
@@ -222,9 +299,28 @@ function NormalMode({
       }}
       className="scroll-mt-2 space-y-2"
     >
-      {entry.file.note && (
-        <p className="text-sm text-muted-foreground">{entry.file.note}</p>
-      )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate font-mono text-xs text-foreground">
+            {entry.file.path}
+          </div>
+          {entry.file.note && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {entry.file.note}
+            </p>
+          )}
+        </div>
+        <Button
+          aria-pressed={reviewedPaths.has(entry.file.path)}
+          size="sm"
+          variant={
+            reviewedPaths.has(entry.file.path) ? "secondary" : "outline"
+          }
+          onClick={() => onToggleReviewed(entry.file.path)}
+        >
+          {reviewedPaths.has(entry.file.path) ? "Viewed" : "Mark viewed"}
+        </Button>
+      </div>
       {entry.diff!.binary ? (
         <div className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
           Binary file: {entry.diff!.path}
@@ -237,7 +333,7 @@ function NormalMode({
 
   return (
     <div className="space-y-5">
-      {treeFiles.length > 0 && (
+      {files.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-medium text-foreground">
@@ -249,22 +345,26 @@ function NormalMode({
                 variant="outline"
                 onClick={() => setShowGenerated(!showGenerated)}
               >
-                {showGenerated ? "Hide generated" : "Show generated"}
+                {showGenerated
+                  ? "Hide generated/binary"
+                  : "Show generated/binary"}
               </Button>
             )}
           </div>
-          <ChangedFileTree
-            files={treeFiles}
-            selectedPath={selectedPath}
-            onSelectedPathChange={selectPath}
-          />
+          {treeFiles.length > 0 && (
+            <ChangedFileTree
+              files={treeFiles}
+              selectedPath={selectedPath}
+              onSelectedPathChange={selectPath}
+            />
+          )}
         </section>
       )}
       {primary.map(renderEntry)}
       {generated.length > 0 && (
         <details className="space-y-3" open={showGenerated}>
           <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-            Generated files ({generated.length})
+            Generated and binary files ({generated.length})
           </summary>
           <div className="mt-3 space-y-5">{generated.map(renderEntry)}</div>
         </details>
@@ -276,9 +376,13 @@ function NormalMode({
 function GuideMode({
   group,
   diffStyle,
+  reviewedExcerptIds,
+  onToggleReviewed,
 }: {
   group: WalkthroughReviewGroup;
   diffStyle: DiffStyle;
+  reviewedExcerptIds: Set<string>;
+  onToggleReviewed: (id: string) => void;
 }) {
   const phases = group.guide.phases.filter(
     (phase) => phase.excerpts.length > 0 || phase.explanation.length > 0,
@@ -299,11 +403,14 @@ function GuideMode({
           </summary>
           <div className="mt-3 space-y-4">
             <GuideBlocks blocks={phase.explanation} />
+            {phase.diagram && <GuideDiagram diagram={phase.diagram} />}
             {phase.excerpts.map((excerpt) => (
               <ExcerptSection
                 key={excerpt.id}
                 excerpt={excerpt}
                 diffStyle={diffStyle}
+                reviewed={reviewedExcerptIds.has(excerpt.id)}
+                onToggleReviewed={() => onToggleReviewed(excerpt.id)}
               />
             ))}
           </div>
@@ -318,12 +425,33 @@ type FetchState =
   | { kind: "error"; message: string }
   | { kind: "ready"; data: WalkthroughData };
 
+type PersistenceState =
+  | { kind: "loading" }
+  | { kind: "saved" }
+  | { kind: "failed"; stage: "load" | "save" };
+
+function toggledSet(current: Set<string>, value: string): Set<string> {
+  const next = new Set(current);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
 function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
   const rpc = useRpc<typeof rpcContract>();
   const [state, setState] = useState<FetchState>({ kind: "loading" });
   const [groupIndex, setGroupIndex] = useState(0);
   const [mode, setMode] = useState<"normal" | "guide">("normal");
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
+  const [reviewedPaths, setReviewedPaths] = useState<Set<string>>(new Set());
+  const [reviewedExcerptIds, setReviewedExcerptIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [persistenceReady, setPersistenceReady] = useState(false);
+  const [persistenceState, setPersistenceState] = useState<PersistenceState>({
+    kind: "loading",
+  });
+  const [persistenceRetry, setPersistenceRetry] = useState(0);
 
   // params round-trip through persistence — treat as untrusted and let the
   // backend validate the path.
@@ -337,12 +465,14 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
 
   const load = useCallback(() => {
     setState({ kind: "loading" });
-    void (async () => {
-      try {
-        const result = await rpc.call(
-          "getWalkthrough",
-          path === undefined ? { threadId } : { threadId, path },
-        );
+    setPersistenceReady(false);
+    setPersistenceState({ kind: "loading" });
+    rpc
+      .call(
+        "getWalkthrough",
+        path === undefined ? { threadId } : { threadId, path },
+      )
+      .then((result) => {
         if (result.walkthrough === null) {
           setState({
             kind: "error",
@@ -352,15 +482,131 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
           setState({ kind: "ready", data: result.walkthrough });
           setGroupIndex(0);
         }
-      } catch {
+      })
+      .catch(() => {
         setState({ kind: "error", message: "The walkthrough request failed." });
-      }
-    })();
+      });
   }, [rpc, threadId, path]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const walkthrough = state.kind === "ready" ? state.data : null;
+  const storageKey = useMemo(
+    () =>
+      walkthrough
+        ? `pr-walkthrough:v1:${walkthrough.meta.prUrl || walkthrough.meta.title}:${walkthrough.meta.headSha}`
+        : null,
+    [walkthrough],
+  );
+  const validPaths = useMemo(
+    () => new Set(walkthrough?.diffFiles.map((file) => file.path) ?? []),
+    [walkthrough],
+  );
+  const validExcerptIds = useMemo(
+    () =>
+      new Set(
+        walkthrough?.reviewGroups.flatMap((group) =>
+          group.guide.phases.flatMap((phase) =>
+            phase.excerpts.map((excerpt) => excerpt.id),
+          ),
+        ) ?? [],
+      ),
+    [walkthrough],
+  );
+  const serializedProgress = useMemo(
+    () =>
+      JSON.stringify({
+        mode,
+        reviewedExcerptIds: [...reviewedExcerptIds].sort(),
+        reviewedPaths: [...reviewedPaths].sort(),
+      }),
+    [mode, reviewedExcerptIds, reviewedPaths],
+  );
+
+  useEffect(() => {
+    if (storageKey === null) return;
+    setPersistenceReady(false);
+    setPersistenceState({ kind: "loading" });
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === null) {
+        setMode("normal");
+        setReviewedPaths(new Set());
+        setReviewedExcerptIds(new Set());
+      } else {
+        const parsed = JSON.parse(stored) as {
+          mode?: unknown;
+          reviewedExcerptIds?: unknown;
+          reviewedPaths?: unknown;
+        };
+        setMode(parsed.mode === "guide" ? "guide" : "normal");
+        setReviewedPaths(
+          new Set(
+            Array.isArray(parsed.reviewedPaths)
+              ? parsed.reviewedPaths.filter(
+                  (value): value is string =>
+                    typeof value === "string" && validPaths.has(value),
+                )
+              : [],
+          ),
+        );
+        setReviewedExcerptIds(
+          new Set(
+            Array.isArray(parsed.reviewedExcerptIds)
+              ? parsed.reviewedExcerptIds.filter(
+                  (value): value is string =>
+                    typeof value === "string" && validExcerptIds.has(value),
+                )
+              : [],
+          ),
+        );
+      }
+      setPersistenceReady(true);
+      setPersistenceState({ kind: "saved" });
+    } catch {
+      setPersistenceState({ kind: "failed", stage: "load" });
+    }
+  }, [persistenceRetry, storageKey, validExcerptIds, validPaths]);
+
+  useEffect(() => {
+    if (!persistenceReady || storageKey === null) return;
+    try {
+      window.localStorage.setItem(storageKey, serializedProgress);
+      setPersistenceState({ kind: "saved" });
+    } catch {
+      setPersistenceState({ kind: "failed", stage: "save" });
+    }
+  }, [persistenceReady, serializedProgress, storageKey]);
+
+  const retryPersistence = () => {
+    if (persistenceState.kind !== "failed" || storageKey === null) return;
+    if (persistenceState.stage === "load") {
+      setPersistenceRetry((value) => value + 1);
+      return;
+    }
+    try {
+      window.localStorage.setItem(storageKey, serializedProgress);
+      setPersistenceState({ kind: "saved" });
+    } catch {
+      setPersistenceState({ kind: "failed", stage: "save" });
+    }
+  };
+
+  const resetUnreadableProgress = () => {
+    if (storageKey === null) return;
+    try {
+      window.localStorage.removeItem(storageKey);
+      setMode("normal");
+      setReviewedPaths(new Set());
+      setReviewedExcerptIds(new Set());
+      setPersistenceReady(true);
+      setPersistenceState({ kind: "saved" });
+    } catch {
+      setPersistenceState({ kind: "failed", stage: "load" });
+    }
+  };
 
   if (state.kind === "loading") {
     return (
@@ -382,6 +628,47 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
 
   const { meta, reviewGroups, diffFiles } = state.data;
   const group = reviewGroups[Math.min(groupIndex, reviewGroups.length - 1)];
+  const diffByPath = new Map(diffFiles.map((file) => [file.path, file]));
+  const groupPaths =
+    group?.files
+      .map((file) => file.path)
+      .filter((filePath) => diffByPath.has(filePath)) ?? [];
+  const groupExcerpts =
+    group?.guide.phases.flatMap((phase) => phase.excerpts) ?? [];
+  const requiredExcerpts = groupExcerpts.filter(
+    (excerpt) => excerpt.countsTowardCompletion,
+  );
+  const reviewedFileCount = groupPaths.filter((filePath) =>
+    reviewedPaths.has(filePath),
+  ).length;
+  const reviewedExcerptCount = requiredExcerpts.filter((excerpt) =>
+    reviewedExcerptIds.has(excerpt.id),
+  ).length;
+  const normalComplete =
+    groupPaths.length > 0 && reviewedFileCount === groupPaths.length;
+  const guideComplete =
+    requiredExcerpts.length > 0 &&
+    reviewedExcerptCount === requiredExcerpts.length;
+  const groupReviewed = normalComplete || guideComplete;
+
+  const toggleGroupReviewed = () => {
+    setReviewedPaths((current) => {
+      const next = new Set(current);
+      for (const filePath of groupPaths) {
+        if (groupReviewed) next.delete(filePath);
+        else next.add(filePath);
+      }
+      return next;
+    });
+    setReviewedExcerptIds((current) => {
+      const next = new Set(current);
+      for (const excerpt of groupExcerpts) {
+        if (groupReviewed) next.delete(excerpt.id);
+        else next.add(excerpt.id);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -393,6 +680,13 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
             </div>
             <div className="truncate font-mono text-xs text-muted-foreground">
               {meta.headRef} → {meta.baseRef}
+            </div>
+            <div className="text-[11px] text-muted-foreground" aria-live="polite">
+              {persistenceState.kind === "loading"
+                ? "Loading local progress…"
+                : persistenceState.kind === "saved"
+                  ? "Local progress saved"
+                  : "Local progress not saved"}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -427,10 +721,45 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
               }`}
             >
               {index + 1}. {g.title}
+              {(() => {
+                const paths = g.files
+                  .map((file) => file.path)
+                  .filter((filePath) => diffByPath.has(filePath));
+                const excerpts = g.guide.phases
+                  .flatMap((phase) => phase.excerpts)
+                  .filter((excerpt) => excerpt.countsTowardCompletion);
+                const reviewed =
+                  (paths.length > 0 &&
+                    paths.every((filePath) => reviewedPaths.has(filePath))) ||
+                  (excerpts.length > 0 &&
+                    excerpts.every((excerpt) =>
+                      reviewedExcerptIds.has(excerpt.id),
+                    ));
+                return reviewed ? " · Reviewed" : "";
+              })()}
             </button>
           ))}
         </div>
       </header>
+      {persistenceState.kind === "failed" && (
+        <output
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground"
+        >
+          <span className="min-w-0 flex-1">
+            {persistenceState.stage === "load"
+              ? "Saved progress could not be read. Retry or reset it before new progress is saved."
+              : "Progress is kept in this panel but could not be saved locally."}
+          </span>
+          <Button size="sm" variant="outline" onClick={retryPersistence}>
+            Retry
+          </Button>
+          {persistenceState.stage === "load" && (
+            <Button size="sm" variant="outline" onClick={resetUnreadableProgress}>
+              Reset saved progress
+            </Button>
+          )}
+        </output>
+      )}
       {group !== undefined && (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="space-y-4 p-4">
@@ -443,33 +772,58 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
                 {group.objective}
               </p>
               <Markdown content={group.summary} />
-              {/* Fixed list of strings from the compiled JSON; see GuideBlocks. */}
-              {/* oxlint-disable react/no-array-index-key */}
               {group.details.map((detail, index) => (
                 <Markdown key={index} content={detail} />
               ))}
-              {/* oxlint-enable react/no-array-index-key */}
             </div>
-            <div className="flex gap-1">
-              {(["normal", "guide"] as const).map((m) => (
-                <Button
-                  key={m}
-                  size="sm"
-                  variant={mode === m ? "default" : "outline"}
-                  onClick={() => setMode(m)}
-                >
-                  {m === "normal" ? "Normal" : "Guide"}
-                </Button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                {(["normal", "guide"] as const).map((m) => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={mode === m ? "default" : "outline"}
+                    onClick={() => setMode(m)}
+                  >
+                    {m === "normal" ? "Normal" : "Guide"}
+                  </Button>
+                ))}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {mode === "normal"
+                    ? `${reviewedFileCount} of ${groupPaths.length} files viewed`
+                    : `${reviewedExcerptCount} of ${requiredExcerpts.length} excerpts viewed`}
+                </span>
+              </div>
+              <Button
+                aria-pressed={groupReviewed}
+                size="sm"
+                variant={groupReviewed ? "secondary" : "outline"}
+                onClick={toggleGroupReviewed}
+              >
+                {groupReviewed
+                  ? "Reviewed · Normal + Guide"
+                  : "Mark Normal + Guide reviewed"}
+              </Button>
             </div>
             {mode === "normal" ? (
               <NormalMode
                 group={group}
                 diffFiles={diffFiles}
                 diffStyle={diffStyle}
+                reviewedPaths={reviewedPaths}
+                onToggleReviewed={(filePath) =>
+                  setReviewedPaths((current) => toggledSet(current, filePath))
+                }
               />
             ) : (
-              <GuideMode group={group} diffStyle={diffStyle} />
+              <GuideMode
+                group={group}
+                diffStyle={diffStyle}
+                reviewedExcerptIds={reviewedExcerptIds}
+                onToggleReviewed={(id) =>
+                  setReviewedExcerptIds((current) => toggledSet(current, id))
+                }
+              />
             )}
           </div>
         </div>

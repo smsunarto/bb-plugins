@@ -1,0 +1,6 @@
+.next/
+node_modules/
+out/
+*.tsbuildinfo
+src/data/walkthrough.generated.json
+src/data/full-context.enabled

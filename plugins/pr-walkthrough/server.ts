@@ -2,94 +2,207 @@
 //
 // The walkthrough is produced by the bundled `pr-walkthrough` skill
 // (skills/pr-walkthrough/), which agents run inside a thread. The skill's
-// compiler (scripts/compile_walkthrough.py) turns canonical MDX plus a Git
-// patch into walkthrough.generated.json; this backend reads that file from the
-// thread's workspace so the frontend can render the walkthrough natively with
-// bb's own diff renderer. There is no static site: the compiled JSON is the
-// only artifact, and this panel is the renderer.
+// compiler emits structured data (walkthrough.generated.json) at scaffold
+// time; this backend reads that file from the thread's workspace so the
+// frontend can render the walkthrough natively with bb's own diff renderer.
 import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
 import { z } from "zod";
 
-export const DEFAULT_SITE_DIR = ".pr-walkthrough";
+export const DEFAULT_SITE_DIR = ".pr-walkthrough/site";
 
-const GENERATED_DATA_PATH = "walkthrough.generated.json";
+const GENERATED_DATA_PATH = "src/data/walkthrough.generated.json";
 
-// compile_walkthrough.py is the single producer of this shape.
-export type WalkthroughGuideBlock =
-  | { type: "paragraph"; text: string }
-  | { type: "list"; ordered: boolean; items: string[] }
-  | { type: "code"; language?: string; code: string }
-  | { type: "quote"; text: string };
+// Mirrors the site template's src/data/walkthrough.ts contract. The compiler
+// (compile_walkthrough.py) is the single producer of this shape.
+const nonNegativeInteger = z.number().int().nonnegative();
 
-export type WalkthroughGuideComment = {
-  id: string;
-  side: "deletions" | "additions";
-  lineNumber: number;
-  body: string;
-};
+const walkthroughGuideBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("paragraph"), text: z.string() }).strict(),
+  z
+    .object({
+      type: z.literal("list"),
+      ordered: z.boolean(),
+      items: z.array(z.string()),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("code"),
+      language: z.string().optional(),
+      code: z.string(),
+    })
+    .strict(),
+  z.object({ type: z.literal("quote"), text: z.string() }).strict(),
+]);
 
-export type WalkthroughGuideExcerpt = {
-  id: string;
-  title: string;
-  explanation: WalkthroughGuideBlock[];
-  path: string;
-  url: string;
-  patch: string;
-  rangeLabel: string;
-  additions: number;
-  deletions: number;
-  binary: boolean;
-  generated: boolean;
-  countsTowardCompletion: boolean;
-  defaultCollapsed: boolean;
-  comments: WalkthroughGuideComment[];
-};
+const walkthroughGuideCommentSchema = z
+  .object({
+    id: z.string().min(1),
+    side: z.enum(["deletions", "additions"]),
+    lineNumber: z.number().int().positive(),
+    body: z.string(),
+  })
+  .strict();
 
-export type WalkthroughGuidePhase = {
-  id: string;
-  title: string;
-  explanation: WalkthroughGuideBlock[];
-  excerpts: WalkthroughGuideExcerpt[];
-  defaultCollapsed: boolean;
-};
+const walkthroughGuideDiagramSchema = z
+  .object({
+    summary: z.string(),
+    nodes: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            label: z.string(),
+            detail: z.string().optional(),
+            x: z.number().finite(),
+            y: z.number().finite(),
+          })
+          .strict(),
+      )
+      .min(2),
+    edges: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            source: z.string().min(1),
+            target: z.string().min(1),
+            label: z.string().optional(),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
 
-export type WalkthroughReviewGroup = {
-  id: string;
-  title: string;
-  objective: string;
-  summary: string;
-  details: string[];
-  files: Array<{ path: string; url?: string; note?: string }>;
-  comments: Array<{ author: string; body: string; url?: string }>;
-  links: Array<{ label: string; url: string }>;
-  guide: { phases: WalkthroughGuidePhase[] };
-};
+const walkthroughGuideExcerptSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string(),
+    explanation: z.array(walkthroughGuideBlockSchema),
+    path: z.string().min(1),
+    url: z.string(),
+    patch: z.string(),
+    rangeLabel: z.string(),
+    additions: nonNegativeInteger,
+    deletions: nonNegativeInteger,
+    binary: z.boolean(),
+    generated: z.boolean(),
+    countsTowardCompletion: z.boolean(),
+    defaultCollapsed: z.boolean(),
+    comments: z.array(walkthroughGuideCommentSchema),
+  })
+  .strict();
 
-export type WalkthroughDiffFile = {
-  path: string;
-  previousPath?: string;
-  status: "added" | "copied" | "deleted" | "modified" | "renamed";
-  additions: number;
-  deletions: number;
-  patch: string;
-  binary: boolean;
-  generated: boolean;
-  generatedReason?: string;
-  url: string;
-};
+const walkthroughGuidePhaseSchema = z
+  .object({
+    id: z.enum([
+      "foundations",
+      "apis",
+      "behavior",
+      "integration",
+      "tests",
+      "misc",
+      "generated",
+    ]),
+    title: z.string(),
+    explanation: z.array(walkthroughGuideBlockSchema),
+    diagram: walkthroughGuideDiagramSchema.optional(),
+    excerpts: z.array(walkthroughGuideExcerptSchema).min(1),
+    defaultCollapsed: z.boolean(),
+  })
+  .strict();
 
-export type WalkthroughData = {
-  meta: {
-    title: string;
-    prUrl: string;
-    baseRef: string;
-    headRef: string;
-    headSha: string;
-    summary: string;
-  };
-  reviewGroups: WalkthroughReviewGroup[];
-  diffFiles: WalkthroughDiffFile[];
-};
+const walkthroughReviewGroupSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string(),
+    objective: z.string(),
+    summary: z.string(),
+    details: z.array(z.string()),
+    files: z
+      .array(
+        z
+          .object({
+            path: z.string().min(1),
+            url: z.string().optional(),
+            note: z.string().optional(),
+          })
+          .strict(),
+      )
+      .min(1),
+    comments: z.array(
+      z
+        .object({
+          author: z.string(),
+          body: z.string(),
+          url: z.string().optional(),
+        })
+        .strict(),
+    ),
+    links: z.array(
+      z.object({ label: z.string(), url: z.string() }).strict(),
+    ),
+    guide: z
+      .object({ phases: z.array(walkthroughGuidePhaseSchema).min(1) })
+      .strict(),
+  })
+  .strict();
+
+const walkthroughDiffFileSchema = z
+  .object({
+    path: z.string().min(1),
+    previousPath: z.string().optional(),
+    status: z.enum(["added", "copied", "deleted", "modified", "renamed"]),
+    additions: nonNegativeInteger,
+    deletions: nonNegativeInteger,
+    patch: z.string(),
+    oldContents: z.string().optional(),
+    newContents: z.string().optional(),
+    binary: z.boolean(),
+    generated: z.boolean(),
+    generatedReason: z.string().optional(),
+    url: z.string(),
+  })
+  .strict();
+
+export const walkthroughDataSchema = z
+  .object({
+    meta: z
+      .object({
+        title: z.string(),
+        prUrl: z.string(),
+        baseRef: z.string(),
+        headRef: z.string(),
+        headSha: z.string(),
+        summary: z.string(),
+      })
+      .strict(),
+    reviewGroups: z.array(walkthroughReviewGroupSchema).min(1),
+    diffFiles: z.array(walkthroughDiffFileSchema).min(1),
+  })
+  .strict();
+
+export type WalkthroughGuideBlock = z.infer<
+  typeof walkthroughGuideBlockSchema
+>;
+export type WalkthroughGuideComment = z.infer<
+  typeof walkthroughGuideCommentSchema
+>;
+export type WalkthroughGuideDiagram = z.infer<
+  typeof walkthroughGuideDiagramSchema
+>;
+export type WalkthroughGuideExcerpt = z.infer<
+  typeof walkthroughGuideExcerptSchema
+>;
+export type WalkthroughGuidePhase = z.infer<
+  typeof walkthroughGuidePhaseSchema
+>;
+export type WalkthroughReviewGroup = z.infer<
+  typeof walkthroughReviewGroupSchema
+>;
+export type WalkthroughDiffFile = z.infer<typeof walkthroughDiffFileSchema>;
+export type WalkthroughData = z.infer<typeof walkthroughDataSchema>;
 
 export const rpcContract = defineRpcContract({
   getWalkthrough: {
@@ -101,11 +214,9 @@ export const rpcContract = defineRpcContract({
       })
       .strict(),
     output: z.object({
-      walkthrough: z.custom<WalkthroughData | null>(
-        (value) => value === null || typeof value === "object",
-      ),
+      walkthrough: walkthroughDataSchema.nullable(),
       error: z.string().nullable(),
-    }),
+    }).strict(),
   },
 });
 
@@ -116,26 +227,10 @@ export function normalizeRelativeDir(path: string | undefined): string | null {
   if (candidate.startsWith("/") || candidate.includes("\0")) return null;
   const segments = candidate.split("/").filter((s) => s !== "" && s !== ".");
   if (segments.length === 0 || segments.some((s) => s === "..")) return null;
-  // Directives written before the static site was removed pointed at the site
-  // source (".pr-walkthrough/site") or its export (".../site/out"). Both now
-  // resolve to the directory that holds the compiled JSON.
+  // Earlier directives pointed at the static export dir; the compiled data
+  // lives one level up in the site source.
   if (segments[segments.length - 1] === "out") segments.pop();
-  if (segments[segments.length - 1] === "site") segments.pop();
-  if (segments.length === 0) return null;
   return segments.join("/");
-}
-
-function isWalkthroughData(value: unknown): value is WalkthroughData {
-  if (typeof value !== "object" || value === null) return false;
-  const data = value as Record<string, unknown>;
-  const meta = data.meta as Record<string, unknown> | undefined;
-  return (
-    typeof meta === "object" &&
-    meta !== null &&
-    typeof meta.title === "string" &&
-    Array.isArray(data.reviewGroups) &&
-    Array.isArray(data.diffFiles)
-  );
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -191,13 +286,14 @@ export default async function plugin(bb: BbPluginApi) {
       } catch {
         return failure("The compiled walkthrough data is not valid JSON.");
       }
-      if (!isWalkthroughData(parsed)) {
+      const result = walkthroughDataSchema.safeParse(parsed);
+      if (!result.success) {
         return failure(
           "The compiled walkthrough data does not match the expected shape. " +
-            "Regenerate it with the skill's compile step.",
+            "Regenerate it with the skill's scaffold step.",
         );
       }
-      return { walkthrough: parsed, error: null };
+      return { walkthrough: result.data, error: null };
     },
   });
 }

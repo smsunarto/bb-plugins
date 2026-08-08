@@ -53,4 +53,4 @@ bb plugin install ./plugins/<name>
 - Each plugin's `types/bb-plugin-sdk*.d.ts` is generated from the pinned bb release — never hand-edited. `bun run sdk-types:refresh` regenerates them; CI runs `sdk-types:check`.
 - `dist/` is generated and git-ignored. Run `bun run build` after a fresh clone.
 - The root `overrides` entry replaces `@ampcode/cli` with a stub in `plugins/amp/vendor/`, so the Amp bridge resolves the real CLI from `AMP_CLI_PATH` instead of bundling one. Bun only honours `overrides` in the workspace root, so it must stay there.
-- `plugins/pr-walkthrough/skills/pr-walkthrough/scripts/compile_walkthrough.py` (with its `guide_contract.py` sibling) compiles walkthrough MDX into the JSON the plugin's viewer panel renders. It is plain Python with no Node or frontend build behind it, so it is not covered by `bun run build`; the two modules resolve each other by sibling path and must stay together.
+- `plugins/pr-walkthrough/skills/pr-walkthrough/assets/site-template` is a payload template with its own nested `.gitignore`. Its build output is not tracked.

@@ -8,7 +8,6 @@ import hashlib
 import json
 import math
 import re
-import shlex
 from typing import Literal
 
 
@@ -121,40 +120,139 @@ def _strip_git_prefix(path: str) -> str:
     return path[2:] if path.startswith(("a/", "b/")) else path
 
 
-def _parse_diff_header(line: str) -> tuple[str, str]:
+def decode_git_path(value: str) -> str:
+    """Decode one Git C-quoted, byte-oriented path without destabilizing bad input."""
+
+    if not value.startswith('"'):
+        return value
+    if len(value) < 2 or not value.endswith('"'):
+        return value
+    payload = value[1:-1]
+    decoded = bytearray()
+    index = 0
+    escapes = {
+        "a": 0x07,
+        "b": 0x08,
+        "t": 0x09,
+        "n": 0x0A,
+        "v": 0x0B,
+        "f": 0x0C,
+        "r": 0x0D,
+        "\\": 0x5C,
+        '"': 0x22,
+    }
     try:
-        fields = shlex.split(line)
-    except ValueError:
-        fields = line.split()
-    if len(fields) < 4:
+        while index < len(payload):
+            character = payload[index]
+            if character != "\\":
+                decoded.extend(character.encode("utf-8"))
+                index += 1
+                continue
+            index += 1
+            if index >= len(payload):
+                return value
+            escaped = payload[index]
+            if escaped in escapes:
+                decoded.append(escapes[escaped])
+                index += 1
+                continue
+            if escaped in "01234567":
+                end = index + 1
+                while end < min(index + 3, len(payload)) and payload[end] in "01234567":
+                    end += 1
+                decoded.append(int(payload[index:end], 8))
+                index = end
+                continue
+            return value
+        return decoded.decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError, ValueError):
+        return value
+
+
+def decode_git_metadata_path(value: str) -> str:
+    """Decode metadata paths while preserving spaces in their unquoted form."""
+
+    return decode_git_path(value)
+
+
+def parse_git_diff_header(line: str) -> tuple[str, str]:
+    prefix = "diff --git "
+    if not line.startswith(prefix):
         return "", ""
-    return _strip_git_prefix(fields[2]), _strip_git_prefix(fields[3])
+    remainder = line[len(prefix):]
+    if remainder.startswith('"'):
+        escaped = False
+        for index, character in enumerate(remainder[1:], start=1):
+            if character == '"' and not escaped:
+                old_field = remainder[: index + 1]
+                new_field = remainder[index + 1 :].lstrip()
+                if not new_field:
+                    return "", ""
+                return (
+                    _strip_git_prefix(decode_git_path(old_field)),
+                    _strip_git_prefix(decode_git_path(new_field)),
+                )
+            if character == "\\" and not escaped:
+                escaped = True
+            else:
+                escaped = False
+        return "", ""
+
+    candidates: list[tuple[str, str]] = []
+    offset = 0
+    while (separator := remainder.find(" b/", offset)) >= 0:
+        old_field = remainder[:separator]
+        new_field = remainder[separator + 1 :]
+        candidates.append((old_field, new_field))
+        offset = separator + 1
+    if not candidates:
+        return "", ""
+    old_field, new_field = next(
+        (
+            candidate
+            for candidate in candidates
+            if _strip_git_prefix(candidate[0]) == _strip_git_prefix(candidate[1])
+        ),
+        candidates[-1],
+    )
+    return _strip_git_prefix(old_field), _strip_git_prefix(decode_git_path(new_field))
+
+
+def decode_git_marker_path(value: str) -> str:
+    """Decode one ---/+++ path, including Git's tab delimiter for paths with spaces."""
+
+    decoded = decode_git_path(value.removesuffix("\t"))
+    return "" if decoded == "/dev/null" else _strip_git_prefix(decoded)
 
 
 def _index_patch_block(block: str) -> IndexedPatchFile | None:
-    lines = block.rstrip("\n").splitlines()
+    lines = block.rstrip("\n").split("\n")
     if not lines or not lines[0].startswith("diff --git "):
         return None
-    old_path, new_path = _parse_diff_header(lines[0])
+    old_path, new_path = parse_git_diff_header(lines[0])
+    first_hunk = next((index for index, line in enumerate(lines) if line.startswith("@@ ")), len(lines))
     status = "modified"
     rename_to = ""
     copied_to = ""
-    for line in lines[1:]:
+    for line in lines[1:first_hunk]:
         if line.startswith("new file mode "):
             status = "added"
         elif line.startswith("deleted file mode "):
             status = "deleted"
+        elif line.startswith("--- "):
+            old_path = decode_git_marker_path(line.removeprefix("--- "))
+        elif line.startswith("+++ "):
+            new_path = decode_git_marker_path(line.removeprefix("+++ "))
         elif line.startswith("rename to "):
-            rename_to = line.removeprefix("rename to ")
+            rename_to = decode_git_metadata_path(line.removeprefix("rename to "))
             status = "renamed"
         elif line.startswith("copy to "):
-            copied_to = line.removeprefix("copy to ")
+            copied_to = decode_git_metadata_path(line.removeprefix("copy to "))
             status = "copied"
     path = rename_to or copied_to or (old_path if status == "deleted" else new_path)
     if not path:
         return None
 
-    first_hunk = next((index for index, line in enumerate(lines) if line.startswith("@@ ")), len(lines))
     prelude = tuple(lines[:first_hunk])
     hunks: list[PatchHunk] = []
     index = first_hunk
@@ -175,10 +273,10 @@ def _index_patch_block(block: str) -> IndexedPatchFile | None:
                 rows.append(PatchRow("context", raw, old_cursor, new_cursor, old_before, new_before))
                 old_cursor += 1
                 new_cursor += 1
-            elif raw.startswith("-") and not raw.startswith("---"):
+            elif raw.startswith("-"):
                 rows.append(PatchRow("deletion", raw, old_cursor, None, old_before, new_before))
                 old_cursor += 1
-            elif raw.startswith("+") and not raw.startswith("+++"):
+            elif raw.startswith("+"):
                 rows.append(PatchRow("addition", raw, None, new_cursor, old_before, new_before))
                 new_cursor += 1
             elif raw.startswith("\\ No newline at end of file"):
@@ -187,7 +285,7 @@ def _index_patch_block(block: str) -> IndexedPatchFile | None:
                 raise GuideCompileError(f"patch for {path} contains an invalid hunk row: {raw}")
             index += 1
         hunks.append(PatchHunk(suffix, tuple(rows)))
-    return IndexedPatchFile(path, prelude, tuple(hunks), block.rstrip() + "\n")
+    return IndexedPatchFile(path, prelude, tuple(hunks), block.rstrip("\n") + "\n")
 
 
 def index_patch(patch: str) -> dict[str, IndexedPatchFile]:
@@ -359,7 +457,7 @@ def synthesize_patch(
             f"failed to synthesize exact excerpt for {indexed.path}; missing {missing}"
         )
     output = [*indexed.prelude, *rendered_hunks]
-    return "\n".join(output).rstrip() + "\n", visible
+    return "\n".join(output).rstrip("\n") + "\n", visible
 
 
 def _is_fence(line: str) -> bool:
