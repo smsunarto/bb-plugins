@@ -10,7 +10,6 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 | `amp` | `plugins/amp` | Registers Amp as a custom ACP provider through a bundled ACP bridge. |
 | `dotfiles` | `plugins/dotfiles` | Browse, edit, render, and sync the dotfiles repo. |
 | `gh-stack` | `plugins/gh-stack` | Visualize and drive stacked pull requests. |
-| `ghostty` | `plugins/ghostty` | Terminal tabs rendered by libghostty (WebAssembly) instead of the built-in terminal. |
 | `notify` | `plugins/notify` | Desktop notifications when a thread finishes or fails, posted by the BB window itself. |
 | `pr-walkthrough` | `plugins/pr-walkthrough` | Generate a human-friendly pull-request walkthrough with a built-in viewer panel. |
 | `theme` | `plugins/theme` | Contributes Scott's Theme as a selectable palette (`plugin:theme:smsunarto`). |
