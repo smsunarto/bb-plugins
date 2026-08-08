@@ -57,6 +57,13 @@ test("QUEUED layers are eligible while drafts block the prefix", () => {
   );
 });
 
+test("queue-like states other than QUEUED block the merge prefix", () => {
+  assert.deepEqual(
+    mergePrefix([branch("b1", "DEQUEUED"), branch("b2")]).selected,
+    [],
+  );
+});
+
 test("merged layers are excluded from selection", () => {
   assert.deepEqual(
     mergePrefix([branch("b1", "MERGED"), branch("b2")]).selected.map(

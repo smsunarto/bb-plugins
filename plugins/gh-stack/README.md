@@ -16,13 +16,18 @@ branches and pull requests via the GitHub CLI.
   above it, or the stack's trunk when none remains above. A running thread or
   dirty worktree defers that checkout without showing the merged layer. For
   open PRs the pill is a toggle — click to flip draft ⇄ ready for review
-  (`gh pr ready [--undo]`). Click any other visible layer to check it out with
-  `gh stack checkout`; its title opens the pull request in a new browser tab.
-  Manual checkout is refused while the thread is running. With local changes,
-  it first lets Git carry non-conflicting tracked and untracked files across.
-  If tracked changes conflict, they are stashed under a plugin-owned marker
-  and restored automatically when their branch is checked out again. Handmade
-  stashes are never touched, and untracked files are never stashed.
+  (`gh pr ready [--undo]`). The requested label changes optimistically and
+  remains over stale GitHub reads until a fresh payload agrees; a spinner sits
+  beside (never instead of) the label, including in sibling panels that share
+  the workspace. Click any other visible layer to check it out with `gh stack
+  checkout`; its title opens the pull request in a new browser tab.
+  Manual checkout uses a semantic button and is refused while the thread is
+  running. With local changes, it first lets Git carry non-conflicting tracked
+  and untracked files across. If tracked changes conflict, they are stashed
+  under a plugin-owned marker and restored automatically when their branch is
+  checked out again. Handmade stashes are never touched, and untracked files
+  are never stashed. PR links and pill/file-tree controls stay independently
+  interactive and never trigger checkout.
 - Every row carries a **`N files +A −D`** chip that expands into the
   **changed-file tree** for that layer (Pierre Trees, as in the PR
   walkthrough viewer), with per-file and aggregated per-directory deltas and
@@ -35,12 +40,27 @@ branches and pull requests via the GitHub CLI.
   the namespace the stack's branches already share, and the subline falls
   back to `working tree` until a name is typed. Untracked files are counted
   with `wc -l`; binary files show no delta.
-- **Sync** and **Submit** buttons run `gh stack sync` and
-  `gh stack submit --auto` directly in the workspace, with toasts and a
-  diagnostics tail whenever the command emits output. Exit status alone is
-  not treated as success: divergence, best-effort push/PR warnings, branches
-  that do not match their upstream refs, and missing PRs are detected and
-  surfaced.
+- **Sync** and **Submit** derive their state and tooltips from the visible
+  active layers: trunk movement, layers needing restack, local commits to
+  push, branches behind remote, and unknown remote probes are called out.
+  Unknown is never treated as clean. Submit opens or updates PRs directly only
+  when the stack is based correctly; otherwise it becomes **Sync + Submit**
+  and verifies Sync before submitting. Command detail, partial-success
+  warnings, and checkout warnings remain visible as well as appearing in
+  toasts. Accepted-but-unresolved work uses warning presentation rather than
+  claiming success or definite failure. After any mutation, controls remain
+  locked until a fresh stack payload lands; a failed refresh leaves an
+  explicit retry warning instead of re-enabling actions against stale counts.
+- **Prune** appears only for a verified positive count of merged local
+  branches. After confirmation it runs `gh stack sync --prune`, verifies and
+  refreshes, then disappears; an unknown count is not presented as zero.
+- **Merge** offers the contiguous ready prefix from the trunk upward, stopping
+  at the first missing, draft, or closed PR; queued PRs remain eligible. Its
+  confirmation chooses squash, merge-commit, or rebase and pins the displayed
+  through-PR in a snapshot when the dialog opens, so background refreshes
+  cannot widen the irreversible request. Results distinguish queued or
+  uncertain work from completed merges and errors, then refresh while
+  projected merged rows stay hidden.
 - **Layer composer**: that same row takes a PR-title-like layer name ("Add
   rate limiting to the API") and derives the branch from it (stopwords
   dropped, prefix applied, live preview). With no stack it runs
@@ -57,9 +77,12 @@ branches and pull requests via the GitHub CLI.
   the composer takes one layer at a time. The prompt adapts to the workspace:
   `gh stack init` when there is no stack, `gh stack top` + `add` on top of an
   existing one.
-- **Ask agent to sync** drops the instruction into the thread composer for
-  cases better handled by the agent (which has the `gh-stack` skill), e.g.
-  conflicts.
+- **Automatic Sync recovery** keeps ordinary updates deterministic with native
+  `gh stack sync`. Rebase conflicts, unfinished rebases, local/remote
+  divergence, and known stack-topology conflicts are sent directly to the
+  thread's agent with the `gh-stack` skill. Authentication, API, timeout,
+  missing-CLI, push, and generic failures stay explicit errors instead of
+  starting an agent turn.
 - **Settings popup** (the gear beside Refresh) holds the two naming
   conventions the panel follows, global to the plugin rather than per
   repository:
@@ -131,7 +154,8 @@ or run `bun run --filter './plugins/gh-stack' build` and
   diffs; served from the per-thread cache with background revalidation and
   `stack-updated` realtime announcements), `checkoutBranch` (guarded smart
   checkout with tracked-only auto-stash and owner-branch restore),
-  `runAction` (sync / submit), `createStack` (init),
+  `runAction` (sync / submit / sync-submit / prune),
+  `mergeStack` (validated atomic stack merge), `createStack` (init),
   `addBranch` (top + add), `setPrDraft`,
   `suggestStackName`, `magicStack`, `saveSettings` (normalize the prefix,
   write the kv row, patch cached payloads). Shared workspace resolution,
