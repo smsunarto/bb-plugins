@@ -4,17 +4,22 @@
 // drives the Amp CLI through the official @ampcode/sdk.
 import "./stderr-guard.ts";
 
-// This one process multiplexes every active bb session. A stray EPIPE from an
-// amp child's stdin (the Amp SDK writes the prompt with no 'error' listener;
-// a fast cancel can SIGTERM the child before the write flushes) or a floating
-// rejection anywhere in the SDK dependency tree must not take the bridge down
-// and kill unrelated sessions. Log and keep serving; if bb itself goes away,
-// stdin ends and the process exits naturally.
+// bb normally starts one bridge process per ACP session. The Amp SDK writes
+// prompts to child stdin without an error listener, so a fast cancellation can
+// surface EPIPE after SIGTERM; that specific failure is safe to ignore. Every
+// other uncaught failure terminates the process rather than leaving the ACP
+// request hung in unknown state.
 process.on("unhandledRejection", (reason) => {
   console.error("[bridge] unhandled rejection", reason);
+  process.exit(1);
 });
 process.on("uncaughtException", (error) => {
+  if ((error as NodeJS.ErrnoException).code === "EPIPE") {
+    console.error("[bridge] ignored child stdin EPIPE", error);
+    return;
+  }
   console.error("[bridge] uncaught exception", error);
+  process.exit(1);
 });
 
 import { Readable, Writable } from "node:stream";

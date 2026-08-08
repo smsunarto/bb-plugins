@@ -59,7 +59,7 @@ interface CustomAgent extends Record<string, unknown> {
   env?: unknown;
 }
 
-// Official Amp mark, inlined so the entry needs no external asset file.
+// Official Amp mark, copied from the hand-written ~/.bb/amp-logo.svg.
 const LOGO = `<svg width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M3.76879 18.3015L8.49839 13.505L10.2196 20.0399L12.72 19.3561L10.2288 9.86749L0.890876 7.33844L0.22594 9.89331L6.65134 11.6388L1.94138 16.4282L3.76879 18.3015Z" fill="#F34E3F"/>
 <path d="M17.4074 12.7414L19.9078 12.0575L17.4167 2.56897L8.07873 0.0399246L7.4138 2.5948L15.2992 4.73685L17.4074 12.7414Z" fill="#F34E3F"/>
@@ -151,10 +151,9 @@ function writeIfChanged(path: string, content: string): boolean {
  * Managed customAcpAgents entry: node runs the bundled bridge, which speaks
  * ACP to bb and drives the Amp CLI (AMP_CLI_PATH) via @ampcode/sdk.
  *
- * No nativeReasoning block: the bridge exposes a `category: "thought_level"`
- * config option (id "effort") over ACP, which bb binds to its per-model
- * reasoning-effort picker directly; nativeReasoning is only consulted when no
- * such option exists.
+ * No nativeReasoning block: Amp owns the default effort for each mode, and the
+ * bridge deliberately omits a thought_level selector until bb can represent
+ * that agent-managed default alongside explicit SDK effort overrides.
  */
 export function managedAgentEntry(launch: BridgeLaunch): Record<string, unknown> {
   const env: Record<string, string> = { AMP_CLI_PATH: launch.amp };
@@ -211,6 +210,9 @@ export function provisionInstallation(
       ...existingEnv,
       ...(entry.env as Record<string, unknown>),
     };
+    // Removed bridge option: do not leave the old provider-wide continuation
+    // behavior enabled in previously provisioned entries.
+    delete mergedEnv.AMP_ACP_CONTINUE_LATEST;
     // Drop a stale run-as-node flag left by a previous Electron-hosted setup.
     if (!launch.electron) delete mergedEnv.ELECTRON_RUN_AS_NODE;
     const updated = { ...existing, ...entry, env: mergedEnv };
