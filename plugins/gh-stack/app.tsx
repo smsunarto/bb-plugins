@@ -833,7 +833,7 @@ function StackPanel({ threadId }: { threadId: string }) {
 
   // Cached mode paints instantly from the server's per-thread cache (which
   // revalidates itself in the background); fresh mode waits for a recompute —
-  // used by the Refresh button and after actions that change the stack.
+  // used by the refresh control and after actions that change the stack.
   const refresh = useCallback(
     (options?: { fresh?: boolean }) => {
       const fresh = options?.fresh === true;
@@ -1225,35 +1225,42 @@ function StackPanel({ threadId }: { threadId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-muted-foreground">
-          {base ? (
-            <>
-              {stack ? "Stack on" : "New stack on"}{" "}
-              <span className="font-mono text-foreground">{base}</span>
-            </>
-          ) : (
-            "Stacked pull requests"
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          <div className="truncate">
+            {base ? (
+              <>
+                {stack ? "Stack on" : "New stack on"}{" "}
+                <span className="font-mono text-foreground">{base}</span>
+              </>
+            ) : (
+              "Stacked pull requests"
+            )}
+          </div>
           <span
+            className="shrink-0"
             title={
               result
-                ? `Last updated ${new Date(result.fetchedAt).toLocaleTimeString()}`
-                : undefined
+                ? `Refresh stack · Last updated ${new Date(result.fetchedAt).toLocaleTimeString()}`
+                : "Refresh stack"
             }
           >
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
+              className="w-8 px-0"
+              aria-label="Refresh stack"
               onClick={() => void refresh({ fresh: true })}
               disabled={loading || refreshing || anyBusy}
             >
-              {loading ? "Loading…" : refreshing ? "Refreshing…" : "Refresh"}
+              <Icon
+                name="RotateCcw"
+                className={`size-4 ${loading || refreshing ? "animate-spin" : ""}`}
+              />
             </Button>
           </span>
-          {/* Button drops `title`, so the tooltip rides on a wrapper — the
-              same idiom the Refresh button's timestamp uses. */}
+        </div>
+        <div className="flex shrink-0 items-center">
+          {/* Button drops `title`, so the tooltip rides on a wrapper. */}
           <span title="Stack settings">
             <Button
               size="sm"
