@@ -28,6 +28,7 @@
     "server.ts",
     "app.tsx",
     "format.ts",
+    "queue.ts",
     "sound.ts",
     "types",
     "test"

@@ -17,14 +17,19 @@ import { z } from "zod";
 
 import {
   isThreadId,
+  notificationLines,
   oneLine,
   parseSeconds,
   parseSendArgs,
   plainText,
   suppressionReason,
   threadLabel,
-  notificationLines,
 } from "./format";
+import {
+  NotificationQueue,
+  QUEUE_MAX,
+  type NotificationInput,
+} from "./queue";
 import {
   playSound,
   resolveSound,
@@ -37,16 +42,16 @@ const BODY_MAX_CHARS = 160;
 const POLL_HOLD_MS = 25_000;
 /** A window that polled this recently still counts as able to display. */
 const RENDERER_TTL_MS = 40_000;
-/** Undelivered notifications kept for a window that is about to open. */
-const QUEUE_MAX = 20;
-/** News this old is no longer news; a queued notification expires. */
-const QUEUE_STALE_MS = 10 * 60_000;
 /** Two events about one thread inside this window collapse into the first. */
 const DEDUPE_WINDOW_MS = 3_000;
 /** Bounds the in-memory per-thread maps on a long-lived server. */
 const MAX_TRACKED_THREADS = 500;
 /** How long a cached project name is trusted before it is read again. */
 const PROJECT_NAME_TTL_MS = 5 * 60_000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -106,59 +111,35 @@ export default async function plugin(bb: BbPluginApi) {
 
   // --- The delivery queue ---------------------------------------------------
   //
-  // One window at a time holds a long-poll open here. Notifications handed to
-  // it are posted by the BB renderer, so macOS credits them to BB.
-
-  interface QueuedNotification {
-    id: number;
-    title: string;
-    body: string;
-    threadId: string | null;
-    /** Passed to the Notification; true when a tone plays instead. */
-    silent: boolean;
-    /** System sound to play as it is shown, or null. Never sent to the client. */
-    play: string | null;
-    queuedAt: number;
-  }
-
-  const queue: QueuedNotification[] = [];
+  // One window at a time holds a long-poll open here. A delivered batch stays
+  // persisted under a lease until the renderer acknowledges the notifications
+  // it constructed. A dropped response therefore retries instead of vanishing.
+  const notifications = new NotificationQueue(bb.storage.kv);
   const waiters = new Set<() => void>();
-  let queueSeq = 0;
   let lastPollAt = 0;
+  let soundPlayback = Promise.resolve();
 
   /** True while a BB window is polling, or has polled recently enough. */
   function windowIsListening(): boolean {
     return waiters.size > 0 || Date.now() - lastPollAt < RENDERER_TTL_MS;
   }
 
-  function enqueue(item: Omit<QueuedNotification, "id" | "queuedAt">): void {
-    queueSeq += 1;
-    queue.push({ ...item, id: queueSeq, queuedAt: Date.now() });
-    while (queue.length > QUEUE_MAX) queue.shift();
+  function wakeWaiters(): void {
     for (const wake of waiters) wake();
+  }
+
+  async function enqueue(item: NotificationInput): Promise<boolean> {
+    await notifications.enqueue(item);
+    const listening = windowIsListening();
+    wakeWaiters();
     bb.log.debug(
-      `${windowIsListening() ? "queued" : "held"} — opens ${item.threadId ?? "nothing"}`,
+      `${listening ? "queued" : "held"} — opens ${item.threadId ?? "nothing"}`,
     );
+    return listening;
   }
 
-  /**
-   * Hand the queue to the window. The tone is played here rather than at
-   * enqueue time, so a notification held while BB was closed does not chime
-   * into an empty room.
-   */
-  function drain(): Array<Omit<QueuedNotification, "play" | "queuedAt">> {
-    const cutoff = Date.now() - QUEUE_STALE_MS;
-    const fresh = queue
-      .splice(0, queue.length)
-      .filter((item) => item.queuedAt >= cutoff);
-    for (const item of fresh) {
-      if (item.play !== null) void playSound(item.play);
-    }
-    return fresh.map(({ play: _play, queuedAt: _queuedAt, ...rest }) => rest);
-  }
-
-  function waitForQueue(signal: AbortSignal): Promise<void> {
-    if (queue.length > 0 || signal.aborted) return Promise.resolve();
+  function waitForQueue(signal: AbortSignal, holdMs: number): Promise<void> {
+    if (signal.aborted || holdMs <= 0) return Promise.resolve();
     return new Promise((resolve) => {
       // Reachable from three directions — a new notification, the hold
       // expiring, and the client hanging up. The first one through disarms
@@ -170,7 +151,7 @@ export default async function plugin(bb: BbPluginApi) {
         // oxlint-disable-next-line promise/no-multiple-resolved
         resolve();
       };
-      const timer = setTimeout(settle, POLL_HOLD_MS);
+      const timer = setTimeout(settle, holdMs);
       signal.addEventListener("abort", settle, { once: true });
       waiters.add(settle);
     });
@@ -179,15 +160,53 @@ export default async function plugin(bb: BbPluginApi) {
   bb.http.route("GET", "/pending", async (context) => {
     const { signal } = context.req.raw;
     lastPollAt = Date.now();
-    await waitForQueue(signal);
-    // The hold also ends when the window hangs up — a reload, a close, a
-    // navigation. Draining then would splice the queue, play the tone, and
-    // write the batch into a socket nobody reads, so the notifications would
-    // be gone. Leave them queued for the next window instead. The body is
-    // moot on an aborted request; what matters is that drain() is not called.
-    if (signal.aborted) return context.json({ notifications: [] });
+    let delivery = await notifications.lease();
+    if (delivery.lease === null) {
+      const holdMs = Math.min(
+        POLL_HOLD_MS,
+        delivery.retryAfterMs ?? POLL_HOLD_MS,
+      );
+      await waitForQueue(signal, holdMs);
+      // Do not acquire a lease for a response whose client has already gone.
+      if (signal.aborted) {
+        return context.json({ leaseId: null, notifications: [] });
+      }
+      delivery = await notifications.lease();
+    }
     lastPollAt = Date.now();
-    return context.json({ notifications: drain() });
+    return context.json({
+      leaseId: delivery.lease?.id ?? null,
+      notifications: delivery.lease?.notifications ?? [],
+    });
+  });
+
+  bb.http.route("POST", "/ack", async (context) => {
+    const body: unknown = await context.req.json().catch(() => null);
+    const leaseId = isRecord(body) ? body.leaseId : undefined;
+    const notificationIds = isRecord(body) ? body.notificationIds : undefined;
+    if (
+      typeof leaseId !== "string" ||
+      leaseId === "" ||
+      leaseId.length > 128 ||
+      !Array.isArray(notificationIds) ||
+      notificationIds.length > QUEUE_MAX ||
+      notificationIds.some(
+        (id) => !Number.isSafeInteger(id) || (id as number) < 1,
+      )
+    ) {
+      return context.json({ ok: false, error: "invalid acknowledgement" }, 400);
+    }
+    const result = await notifications.acknowledge(
+      leaseId,
+      notificationIds as number[],
+    );
+    const sound = result.play;
+    if (sound !== null) {
+      // One tone per acknowledged batch, serialized so a group of completed
+      // threads does not launch overlapping afplay processes.
+      soundPlayback = soundPlayback.then(() => playSound(sound));
+    }
+    return context.json({ ok: true, acknowledged: result.acknowledged });
   });
 
   // Clicking a notification routes through BB's own open action — the same one
@@ -212,12 +231,6 @@ export default async function plugin(bb: BbPluginApi) {
     }
   });
 
-  bb.onDispose(() => {
-    // Release any held long-poll so a reload is not stalled by it. Each wake
-    // removes itself from the set, which Set iteration tolerates.
-    for (const wake of waiters) wake();
-  });
-
   /**
    * Hand a notification to the window, or hold it until one opens. The
    * project heads it and the thread takes the line below — see
@@ -228,15 +241,20 @@ export default async function plugin(bb: BbPluginApi) {
     threadName: string,
     message: string,
     threadId: string | null,
-  ): boolean {
+  ): Promise<boolean> {
     const { silent, play } = resolveSound(current.sound);
     const { title, body } = notificationLines(
       project,
       oneLine(threadName, 90),
       message,
     );
-    enqueue({ title: oneLine(title, 90), body, threadId, silent, play });
-    return windowIsListening();
+    return enqueue({
+      title: oneLine(title, 90),
+      body: oneLine(body, BODY_MAX_CHARS),
+      threadId,
+      silent,
+      play,
+    });
   }
 
   // Bounded by the number of projects, which is small — the TTL is here for
@@ -312,19 +330,27 @@ export default async function plugin(bb: BbPluginApi) {
       return;
     }
     startedAt.delete(thread.id);
+    // Reserve the dedupe window before the awaits below so idle and failed
+    // events arriving together cannot both enqueue. Roll it back if delivery
+    // persistence fails, allowing a later event to retry.
     remember(notifiedAt, thread.id);
 
-    const project = await projectName(thread.projectId);
-    const fallback = outcome === "failed" ? "Thread failed." : "Turn finished.";
-    // The outcome used to sit on its own line. Now that the title carries
-    // project and thread, only a failure earns the words.
-    const said = oneLine(plainText(detail?.trim() || fallback), BODY_MAX_CHARS);
-    post(
-      project,
-      threadLabel(thread),
-      outcome === "failed" ? `Failed — ${said}` : said,
-      thread.id,
-    );
+    try {
+      const project = await projectName(thread.projectId);
+      const fallback = outcome === "failed" ? "Thread failed." : "Turn finished.";
+      // The outcome used to sit on its own line. Now that the title carries
+      // project and thread, only a failure earns the words.
+      const said = oneLine(plainText(detail?.trim() || fallback), BODY_MAX_CHARS);
+      await post(
+        project,
+        threadLabel(thread),
+        outcome === "failed" ? `Failed — ${said}` : said,
+        thread.id,
+      );
+    } catch (error) {
+      notifiedAt.delete(thread.id);
+      throw error;
+    }
   }
 
   bb.events.on("thread.active", ({ thread }) => {
@@ -336,7 +362,7 @@ export default async function plugin(bb: BbPluginApi) {
       startedAt.delete(thread.id);
       return;
     }
-    void notifyThread(thread, "finished", lastAssistantText);
+    return notifyThread(thread, "finished", lastAssistantText);
   });
 
   bb.events.on("thread.failed", ({ thread, error }) => {
@@ -344,7 +370,7 @@ export default async function plugin(bb: BbPluginApi) {
       startedAt.delete(thread.id);
       return;
     }
-    void notifyThread(thread, "failed", error);
+    return notifyThread(thread, "failed", error);
   });
 
   bb.events.on("thread.deleted", ({ thread }) => forget(thread.id));
@@ -377,14 +403,14 @@ export default async function plugin(bb: BbPluginApi) {
       } catch {
         // Thread lookup is decoration only — still send the notification.
       }
-      const shown = post(
+      const listening = await post(
         project,
         heading,
         oneLine(plainText(message), BODY_MAX_CHARS),
         ctx.threadId,
       );
-      return shown
-        ? "Notification shown."
+      return listening
+        ? "Notification queued; a BB window is listening."
         : "No BB window is open; the notification will appear when one is.";
     },
   });
@@ -420,18 +446,19 @@ export default async function plugin(bb: BbPluginApi) {
       // An agent running `bb notify send` from inside a thread should get a
       // notification that opens that thread, without naming it.
       const invokingThread = ctx.threadId ?? null;
-      const sent = (shown: boolean) =>
-        shown
-          ? { exitCode: 0, stdout: "Shown.\n" }
+      const sent = (listening: boolean) =>
+        listening
+          ? { exitCode: 0, stdout: "Queued — a BB window is listening.\n" }
           : {
               exitCode: 0,
               stdout: "Held — no BB window is open. It will appear when one is.\n",
             };
 
       if (command === "status") {
+        const held = await notifications.count();
         const lines = [
           `window:     ${windowIsListening() ? `listening (${waiters.size} polling)` : "none open — notifications will wait"}`,
-          `held:       ${queue.length}`,
+          `held:       ${held}`,
           `on idle:    ${current.notifyOnIdle}`,
           `on failed:  ${current.notifyOnFailed}`,
           `children:   ${current.includeChildThreads}`,
@@ -447,7 +474,7 @@ export default async function plugin(bb: BbPluginApi) {
         const project =
           ctx.projectId === undefined ? null : await projectName(ctx.projectId);
         return sent(
-          post(
+          await post(
             project,
             "bb notify",
             "Notifications are working. Click to open the thread this came from.",
@@ -466,7 +493,7 @@ export default async function plugin(bb: BbPluginApi) {
         const project =
           ctx.projectId === undefined ? null : await projectName(ctx.projectId);
         return sent(
-          post(
+          await post(
             project,
             parsed.value.title ?? "bb",
             oneLine(plainText(parsed.value.message), BODY_MAX_CHARS),
@@ -482,9 +509,13 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.onDispose(() => {
+  bb.onDispose(async () => {
+    // Release held long-polls before waiting for sound playback. Each wake
+    // removes itself from the set, which Set iteration tolerates.
+    wakeWaiters();
     startedAt.clear();
     notifiedAt.clear();
     projectNames.clear();
+    await soundPlayback;
   });
 }

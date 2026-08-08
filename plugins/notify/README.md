@@ -1,6 +1,6 @@
 # bb-plugin-notify
 
-Desktop notifications for BB, posted by BB.
+Native notifications for BB on macOS, posted by BB.
 
 BB notifies *agents* — a parent thread hears about its children, a workflow
 reports back into its origin thread — but it never notifies the *person*. This
@@ -12,22 +12,32 @@ a `notify_user` tool agents can call, and a `bb notify` command.
 macOS credits a notification to the process that posted it. The only process
 that can post as BB is BB, so the plugin posts from the app window: a content
 script long-polls the plugin's own HTTP route and calls the web `Notification`
-API, which Electron turns into a native notification owned by BB.
+API, which Electron turns into a native notification owned by BB. The supported
+topology is deliberately local: the BB server and desktop window run on the
+same Mac.
 
 ```
-server                            BB window
-  thread.idle ──▶ queue ◀── GET /pending (held open)
-                    │
-                    └──────────▶ new Notification(…) ──▶ macOS, as BB
+server                                      BB window
+  thread.idle ──▶ durable queue ◀── GET /pending (leased)
+                       │                       │
+                       │                       └──▶ new Notification(…) ──▶ macOS, as BB
+                       │                                      │
+                       └──────── remove ◀────────── POST /ack ┘
 ```
 
 There is no notifier setting, because there is no second notifier worth
 offering. osascript and terminal-notifier were both built and both removed:
 each can only ever arrive as the interpreter — Script Editor's icon, no click
 target — and an alternative that is worse in every respect is not a choice, it
-is a trap. **With no BB window open, a notification waits in the queue and
-appears when one opens**, expiring after 10 minutes because news that old is
-no longer news.
+is a trap. **With no BB window open, a notification waits in the durable queue
+and appears when one opens**, surviving plugin reloads and server restarts. It
+expires after 10 minutes because news that old is no longer news.
+
+Delivery is at least once. A batch remains leased until the window confirms
+that it constructed each notification; a dropped response or renderer reload
+therefore retries instead of losing the batch. A renderer that displays a
+notification and closes before acknowledging it can cause the same item to be
+shown again after the 30-second lease expires.
 
 ## Shape
 
@@ -128,7 +138,7 @@ notification whose click can land nowhere.
 | `notifyOnFailed` | `true` | Notify when a thread fails |
 | `includeChildThreads` | `false` | Include subagent threads |
 | `includeHiddenThreads` | `false` | Include hidden plugin worker threads |
-| `minRunSeconds` | `0` | Skip threads that finished faster than this |
+| `minRunSeconds` | `0` | Skip threads that finished faster than this; capped at 30 days |
 | `sound` | `off` | `off`, `system default`, or a macOS tone |
 | `agentTool` | `false` | Offer the `notify_user` tool to agents |
 
@@ -148,19 +158,22 @@ tone. So the dropdown resolves three ways:
 
 A named tone silences the notification so macOS does not stack its own default
 underneath the chosen one. The name is matched against the known list rather
-than escaped, so no setting string reaches the filesystem. The tone plays when
-the window collects the notification, not when it is queued — one held while
-BB was closed does not chime into an empty room.
+than escaped, so no setting string reaches the filesystem. The server plays one
+tone after the window acknowledges a displayed batch, so a notification held
+while BB was closed does not chime into an empty room and a batch does not
+launch overlapping sounds. This relies on the supported same-Mac topology.
 
 `minRunSeconds` only applies when the plugin saw the thread start. A thread
 already running when the plugin loaded always notifies.
 
 ## Limits
 
-- **A headless BB never notifies.** Delivery needs an app window. A server-only
-  BB queues notifications that nothing will ever collect.
-- **The window's machine gets the notification**, and the queue lives in the
-  server process — so a remote enrolled host cannot be notified.
+- **Local macOS only.** The BB server and desktop window must run on the same
+  Mac. Remote enrolled hosts, browser-only clients, and split server/renderer
+  machines are outside this plugin's support contract.
+- **A headless BB never notifies.** Delivery needs a desktop app window. A
+  server-only BB queues notifications that nothing will collect before they
+  expire.
 - **No focus detection.** The plugin cannot tell whether you are already
   looking at the thread, so it notifies either way. Use `minRunSeconds` to cut
   the short turns you were clearly watching.
@@ -172,13 +185,15 @@ already running when the plugin loaded always notifies.
 | `server.ts` | Settings, events, agent tool, CLI, queue and routes |
 | `app.tsx` | Content script that posts the notification from the BB window |
 | `format.ts` | Pure text, argument, and filter helpers |
+| `queue.ts` | Durable queue, delivery leases, acknowledgement and expiry |
 | `sound.ts` | The sound choices and how each is carried out |
-| `test/` | `node --test` over the two pure modules |
+| `test/` | `node --test` over the pure modules |
 
-The queue is only drained for a window that is still listening. When a held
-poll ends because the window hung up — a reload, a close, a navigation — the
-batch stays queued and the tone is not played, so a reload never costs a
-notification.
+The queue is never drained merely because a window polled it. The server leases
+a batch for 30 seconds and removes only the notification IDs the window
+acknowledges. When a response is dropped or the window hangs up — a reload, a
+close, a navigation — the lease expires and the batch becomes deliverable
+again. The tone is played only after acknowledgement.
 
 `app.tsx` is a content script rather than a slot component because that is the
 only frontend surface mounted everywhere in the app. It has no React context,
