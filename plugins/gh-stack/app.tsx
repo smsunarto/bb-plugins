@@ -6,7 +6,13 @@
 // then the branches top-first, then the trunk anchor. Every row expands into
 // its changed-file tree with +/− deltas.
 import "./app.css";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   definePluginApp,
   useComposer,
@@ -204,7 +210,7 @@ function ChangeDisclosure({
       type="button"
       onClick={onToggle}
       title={expanded ? `Hide ${label}` : `Show ${label}`}
-      className="inline-flex items-center gap-1 rounded text-muted-foreground hover:text-foreground"
+      className="relative inline-flex items-center gap-1 rounded text-muted-foreground hover:text-foreground"
     >
       <Octicon
         path={expanded ? OCTICONS.chevronDown : OCTICONS.chevronRight}
@@ -230,16 +236,20 @@ function ChangeTree({ change }: { change: ChangeSet }) {
 
 function BranchRow({
   branch,
+  checkoutDisabled,
   prBusy,
   expanded,
   onToggleExpanded,
   onToggleDraft,
+  onCheckout,
 }: {
   branch: StackBranch;
+  checkoutDisabled: boolean;
   prBusy: number | null;
   expanded: boolean;
   onToggleExpanded: () => void;
   onToggleDraft: (pr: NonNullable<StackBranch["pr"]>) => void;
+  onCheckout: (branchName: string) => void;
 }) {
   const pr = branch.pr;
   const title = pr?.title ?? branch.name;
@@ -252,13 +262,23 @@ function BranchRow({
       accent={branch.isCurrent}
       highlighted={branch.isCurrent}
     >
+      {branch.isCurrent ? null : (
+        <button
+          type="button"
+          onClick={() => onCheckout(branch.name)}
+          disabled={checkoutDisabled}
+          title={`Check out ${branch.name}`}
+          aria-label={`Check out ${branch.name}`}
+          className="absolute inset-0 cursor-pointer rounded-md disabled:cursor-wait"
+        />
+      )}
       <div className="flex items-start justify-between gap-3">
         {pr ? (
           <a
             href={pr.url}
             target="_blank"
             rel="noreferrer"
-            className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground hover:underline"
+            className="relative min-w-0 truncate text-sm font-semibold leading-5 text-foreground hover:underline"
           >
             {title}
           </a>
@@ -267,13 +287,15 @@ function BranchRow({
             {title}
           </span>
         )}
-        {pr ? (
-          <StatusPill
-            pr={pr}
-            busy={prBusy === pr.number}
-            onToggle={canToggle ? () => onToggleDraft(pr) : null}
-          />
-        ) : null}
+        <span className="relative shrink-0">
+          {pr ? (
+            <StatusPill
+              pr={pr}
+              busy={prBusy === pr.number}
+              onToggle={canToggle ? () => onToggleDraft(pr) : null}
+            />
+          ) : null}
+        </span>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
         <span className="truncate">
@@ -293,7 +315,11 @@ function BranchRow({
           label={`files changed in ${branch.name}`}
         />
       </div>
-      {expanded && branch.diff ? <ChangeTree change={branch.diff} /> : null}
+      {expanded && branch.diff ? (
+        <div className="relative">
+          <ChangeTree change={branch.diff} />
+        </div>
+      ) : null}
     </RailRow>
   );
 }
@@ -627,7 +653,7 @@ function StackPanel({ threadId }: { threadId: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<
-    "sync" | "submit" | "create" | "magic" | null
+    "sync" | "submit" | "create" | "magic" | "checkout" | null
   >(null);
   const [prBusy, setPrBusy] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -790,6 +816,25 @@ function StackPanel({ threadId }: { threadId: string }) {
       } else {
         toast.error(outcome.message);
       }
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const checkout = async (branch: string) => {
+    setBusy("checkout");
+    setActionDetail(null);
+    try {
+      const outcome = await rpc.call("checkoutBranch", { threadId, branch });
+      setActionDetail(outcome.detail);
+      if (outcome.ok) {
+        toast.success(outcome.message);
+      } else {
+        toast.error(outcome.message);
+      }
+      await refresh({ fresh: true });
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -970,10 +1015,12 @@ function StackPanel({ threadId }: { threadId: string }) {
             <BranchRow
               key={branch.name}
               branch={branch}
+              checkoutDisabled={anyBusy}
               prBusy={prBusy}
               expanded={expanded.has(branch.name)}
               onToggleExpanded={() => toggleExpanded(branch.name)}
               onToggleDraft={(pr) => void toggleDraft(pr)}
+              onCheckout={(branch) => void checkout(branch)}
             />
           ))}
           {/* trunk anchor: dot octicon + BranchName chip (2px/6px pad, 6px radius) */}

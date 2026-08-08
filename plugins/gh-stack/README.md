@@ -16,7 +16,13 @@ branches and pull requests via the GitHub CLI.
   above it, or the stack's trunk when none remains above. A running thread or
   dirty worktree defers that checkout without showing the merged layer. For
   open PRs the pill is a toggle — click to flip draft ⇄ ready for review
-  (`gh pr ready [--undo]`).
+  (`gh pr ready [--undo]`). Click any other visible layer to check it out with
+  `gh stack checkout`; its title opens the pull request in a new browser tab.
+  Manual checkout is refused while the thread is running. With local changes,
+  it first lets Git carry non-conflicting tracked and untracked files across.
+  If tracked changes conflict, they are stashed under a plugin-owned marker
+  and restored automatically when their branch is checked out again. Handmade
+  stashes are never touched, and untracked files are never stashed.
 - Every row carries a **`N files +A −D`** chip that expands into the
   **changed-file tree** for that layer (Pierre Trees, as in the PR
   walkthrough viewer), with per-file and aggregated per-directory deltas and
@@ -77,13 +83,13 @@ branches and pull requests via the GitHub CLI.
   conflict, GitHub API failure, stack file locked, stacked PRs unavailable,
   gh missing, timeout. Exit code 2 becomes “not a stack” only when the command
   explicitly reports that the current branch is not part of one.
-- **Serialized workspace mutations**: Sync, Submit, Init, Add, and PR readiness
-  changes, plus automatic checkout after a merge, share a server-side lock
-  keyed by the repository's canonical Git common directory. A second
-  operation is rejected while one is active. Add records the original
-  checkout, verifies the requested branch became the checked-out top layer,
-  and restores the original branch after a clean failure; possible partial
-  mutations are reported instead of rolled back destructively.
+- **Serialized workspace mutations**: Sync, Submit, Init, Add, manual layer
+  checkout, and PR readiness changes, plus automatic checkout after a merge,
+  share a server-side lock keyed by the repository's canonical Git common
+  directory. A second operation is rejected while one is active. Add records
+  the original checkout, verifies the requested branch became the checked-out
+  top layer, and restores the original branch after a clean failure; possible
+  partial mutations are reported instead of rolled back destructively.
 - **Cached, self-refreshing panel**: the server keeps a per-thread cache of
   the computed stack, so opening the panel paints instantly
   (stale-while-revalidate — reads older than 10s trigger a background
@@ -123,8 +129,10 @@ or run `bun run --filter './plugins/gh-stack' build` and
 - `server.ts` — RPCs: `getStack` (thread → environment path →
   `gh stack view --json`, lenient zod parse, per-branch and working-tree
   diffs; served from the per-thread cache with background revalidation and
-  `stack-updated` realtime announcements), `runAction` (sync / submit),
-  `createStack` (init), `addBranch` (top + add), `setPrDraft`,
+  `stack-updated` realtime announcements), `checkoutBranch` (guarded smart
+  checkout with tracked-only auto-stash and owner-branch restore),
+  `runAction` (sync / submit), `createStack` (init),
+  `addBranch` (top + add), `setPrDraft`,
   `suggestStackName`, `magicStack`, `saveSettings` (normalize the prefix,
   write the kv row, patch cached payloads). Shared workspace resolution,
   exit-code mapping, and the settings-aware branch derivation the composer
