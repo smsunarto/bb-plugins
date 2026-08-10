@@ -25,6 +25,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type { AmpOptions, MCPConfig } from "@ampcode/sdk";
 import {
+  drainOracleDirectives,
   finishOpenOracleReports,
   toSessionUpdates,
   type AmpStreamMessage,
@@ -373,6 +374,7 @@ export class AmpBridgeAgent implements Agent {
       toolNamesById: new Map(),
       oracleReportByToolId: new Map(),
       oracleRootToolIds: new Set(),
+      queuedOracleReportIds: [],
       oracleReports: this.oracleReports,
     };
 
@@ -483,6 +485,12 @@ export class AmpBridgeAgent implements Agent {
           ? "Oracle execution was cancelled before returning a result."
           : "Oracle execution ended before returning a result.",
       );
+      for (const directive of drainOracleDirectives(translationState)) {
+        await this.sendUpdate(this.textChunk(
+          params.sessionId,
+          `\n\n${directive}\n\n`,
+        ));
+      }
       // Only clear state we still own: if a client ever overlapped prompts on
       // one session (bb serializes them today), a stale prompt finishing late
       // must not null the newer prompt's controller and break session/cancel.

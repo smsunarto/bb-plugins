@@ -449,7 +449,7 @@ test("failed tool_result maps to status failed with code-fenced content", async 
   assert.equal(content[0].content.text, "```\nboom\n```");
 });
 
-test("Oracle emits its card at start and captures nested progress before completion", async () => {
+test("Oracle keeps its completed card in the terminal assistant message", async () => {
   const oracleResponse = "## Recommendation\n\nKeep the protocol seam. ✓";
   const { fn } = scriptedExecute(() => [
     sysInit(),
@@ -534,7 +534,7 @@ test("Oracle emits its card at start and captures nested progress before complet
     .map((notification) => notification.update as { sessionUpdate?: string; content?: { text?: string } })
     .filter((update) => update.sessionUpdate === "agent_message_chunk")
     .map((update) => update.content?.text);
-  assert.deepEqual(textChunks.slice(-2), [directive, "Follow-up analysis."]);
+  assert.deepEqual(textChunks.slice(-2), ["Follow-up analysis.", directive]);
 
   const directiveIndex = updates.updates.findIndex((notification) => {
     const update = notification.update as { sessionUpdate?: string; content?: { text?: string } };
@@ -545,7 +545,11 @@ test("Oracle emits its card at start and captures nested progress before complet
     const update = notification.update as Record<string, unknown>;
     return update.sessionUpdate === "tool_call_update" && update.toolCallId === "tu-oracle";
   });
-  assert.ok(directiveIndex < oracleCompleteIndex, "the card must render before Oracle finishes");
+  assert.ok(
+    directiveIndex > oracleCompleteIndex,
+    "the card must follow Oracle completion so BB keeps it outside the Working disclosure",
+  );
+  assert.equal(directiveIndex, updates.updates.length - 1, "the card must be terminal turn content");
 
   const toolUpdate = updates.updates
     .map((notification) => notification.update as Record<string, unknown>)
@@ -580,6 +584,11 @@ test("an interrupted Oracle report stops running when its turn ends", async () =
     content: "Oracle execution ended before returning a result.",
     isError: true,
   }]);
+  const finalUpdate = updates.updates.at(-1)?.update as
+    | { sessionUpdate?: string; content?: { text?: string } }
+    | undefined;
+  assert.equal(finalUpdate?.sessionUpdate, "agent_message_chunk");
+  assert.match(finalUpdate?.content?.text ?? "", /::amp-oracle\{/);
 });
 
 test("assistant and tool-result images map to valid ACP content", async () => {

@@ -53,6 +53,7 @@ export interface TranslationState {
   toolNamesById: Map<string, string>;
   oracleReportByToolId: Map<string, string>;
   oracleRootToolIds: Set<string>;
+  queuedOracleReportIds: string[];
   oracleReports: OracleReportStore;
 }
 
@@ -147,12 +148,10 @@ export function toSessionUpdates(
           });
           if (name.toLowerCase() === "oracle") {
             const reportId = state.oracleReports.start(block.input);
-            const directive = reportId === null ? null : oracleDirective(reportId);
             if (reportId !== null) {
               state.oracleReportByToolId.set(block.id, reportId);
               state.oracleRootToolIds.add(block.id);
             }
-            if (directive) output.push(chunk(sessionId, `\n\n${directive}\n\n`));
           }
         }
         break;
@@ -175,11 +174,12 @@ export function toSessionUpdates(
           });
           if (reportId && oracleRoot) {
             state.oracleRootToolIds.delete(result.tool_use_id);
-            state.oracleReports.complete(
+            const completed = state.oracleReports.complete(
               reportId,
               result.content,
               result.is_error === true,
             );
+            if (completed) state.queuedOracleReportIds.push(reportId);
           } else if (reportId) {
             state.oracleReports.append(reportId, {
               kind: "tool",
@@ -203,9 +203,25 @@ export function finishOpenOracleReports(state: TranslationState, reason: string)
       .map((toolId) => state.oracleReportByToolId.get(toolId))
       .filter((reportId): reportId is string => reportId !== undefined),
   );
-  for (const reportId of reportIds) state.oracleReports.complete(reportId, reason, true);
+  for (const reportId of reportIds) {
+    if (state.oracleReports.complete(reportId, reason, true)) {
+      state.queuedOracleReportIds.push(reportId);
+    }
+  }
   state.oracleRootToolIds.clear();
   state.oracleReportByToolId.clear();
+}
+
+/**
+ * Oracle cards must be the turn's terminal assistant content. BB collapses
+ * intermediate assistant messages into the completed "Working" disclosure,
+ * while terminal assistant content stays visible in the chat log.
+ */
+export function drainOracleDirectives(state: TranslationState): string[] {
+  return state.queuedOracleReportIds.splice(0).flatMap((reportId) => {
+    const directive = oracleDirective(reportId);
+    return directive === null ? [] : [directive];
+  });
 }
 
 function chunk(sessionId: string, content: ContentBlock | string): SessionNotification {
