@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CopyField } from "@/components/copy-field";
 import { StatusBadge } from "@/components/status-badge";
 import { useCoreStatus } from "@/components/use-core-status";
+import { canStopService } from "@/lib/service-actions";
 
 export function HomePage() {
   const { status, error, refresh, rpc } = useCoreStatus();
@@ -42,7 +43,7 @@ export function HomePage() {
 
   const installLabel = status?.installedVersion
     ? status.latest && status.latest.version !== status.installedVersion
-      ? `Update to v${status.latest.version}`
+      ? `Update to ${status.latest.version}`
       : "Reinstall"
     : "Install core";
 
@@ -75,9 +76,29 @@ export function HomePage() {
               <div className="text-foreground">{status?.pid ?? "—"}</div>
             </div>
           </div>
+          <div className="text-sm">
+            <div className="text-xs text-muted-foreground">Source</div>
+            <div className="break-all font-mono text-xs text-foreground">
+              {status ? `${status.source.repository}#${status.source.branch}` : "—"}
+            </div>
+          </div>
+          <div className="text-sm">
+            <div className="text-xs text-muted-foreground">Service</div>
+            <div className="text-foreground">
+              {status
+                ? `${status.service.manager} · ${status.service.loaded ? "loaded" : "not loaded"}`
+                : "—"}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              The proxy stays available when bb is closed. Stop disables the login service until it is started again.
+            </div>
+          </div>
+          {status?.source.error ? (
+            <div className="text-sm text-destructive">Source setting error: {status.source.error}</div>
+          ) : null}
           {status?.state === "crashed" && status.lastExit ? (
             <div className="text-sm text-destructive">
-              Core keeps exiting (code {status.lastExit.code ?? "?"}, crash #{status.crashCount}). Check the
+              Core keeps exiting (code {status.lastExit.code ?? "?"}, launch #{status.crashCount + 1}). Check the
               log tail below — a port conflict is the usual cause.
             </div>
           ) : null}
@@ -92,7 +113,11 @@ export function HomePage() {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy !== null || !status || ["not-installed", "stopped"].includes(status.state)}
+              disabled={
+                busy !== null ||
+                !status ||
+                !canStopService(status.state, status.service.loaded)
+              }
               onClick={() => void act("stop", () => rpc.call("stop"))}
             >
               Stop
@@ -114,8 +139,8 @@ export function HomePage() {
                   const result = await rpc.call("checkLatest");
                   toast.success(
                     result.updateAvailable
-                      ? `v${result.latest} is available (installed: ${result.installed ?? "none"})`
-                      : `up to date (v${result.latest})`,
+                      ? `${result.latest} is available (installed: ${result.installed ?? "none"})`
+                      : `up to date (${result.latest})`,
                   );
                 })
               }
@@ -129,7 +154,7 @@ export function HomePage() {
               onClick={() =>
                 void act("install", async () => {
                   const result = await rpc.call("install", {});
-                  toast.success(`installed CLIProxyAPI v${result.installedVersion}`);
+                  toast.success(`installed CLIProxyAPI ${result.installedVersion}`);
                 })
               }
             >

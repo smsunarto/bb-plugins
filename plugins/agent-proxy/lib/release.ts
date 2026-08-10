@@ -1,84 +1,128 @@
-// Pure helpers for resolving CLIProxyAPI GitHub releases. No IO here — the
+// Pure helpers for resolving the CLIProxyAPI fork source. No IO here — the
 // install pipeline injects fetch.
 
-export const CORE_REPO = "router-for-me/CLIProxyAPI";
+export const CORE_REPO = "smsunarto/CLIProxyAPI";
+export const CORE_REF = "fix/claude-advisor-server-tool";
 
-export interface ReleaseAsset {
-  name: string;
-  url: string;
+export interface CoreSource {
+  repo: string;
+  ref: string;
 }
 
-export interface Release {
+export const DEFAULT_CORE_SOURCE: CoreSource = {
+  repo: CORE_REPO,
+  ref: CORE_REF,
+};
+const INVALID_REF_CHARACTERS = new Set(["~", "^", ":", "?", "*", "[", "\\"]);
+
+export interface SourceRevision {
+  repo: string;
+  ref: string;
+  commit: string;
   version: string;
-  assets: ReleaseAsset[];
+  archiveUrl: string;
 }
 
-export function normalizeVersion(version: string): string {
-  return version.replace(/^v/, "");
-}
-
-/** Release archives are CLIProxyAPI_<ver>_<os>_<arch>.tar.gz; upstream uses
-    aarch64 (not arm64) and only ships tar.gz for darwin/linux. */
-export function assetName(
-  version: string,
-  platform: NodeJS.Platform = process.platform,
-  arch: NodeJS.Architecture = process.arch,
-): string {
-  if (platform !== "darwin" && platform !== "linux") {
-    throw new Error(`CLIProxyAPI install is not supported on ${platform} (darwin/linux only)`);
-  }
-  const archName = arch === "arm64" ? "aarch64" : arch === "x64" ? "amd64" : null;
-  if (!archName) throw new Error(`unsupported architecture: ${arch}`);
-  return `CLIProxyAPI_${normalizeVersion(version)}_${platform}_${archName}.tar.gz`;
-}
-
-export function releaseApiUrl(version?: string): string {
-  const base = `https://api.github.com/repos/${CORE_REPO}/releases`;
-  return version ? `${base}/tags/v${normalizeVersion(version)}` : `${base}/latest`;
-}
-
-export function parseRelease(json: unknown): Release {
-  if (typeof json !== "object" || json === null) throw new Error("malformed GitHub release response");
-  const record = json as Record<string, unknown>;
-  const tag = record.tag_name;
-  if (typeof tag !== "string" || tag.length === 0) {
-    throw new Error("GitHub release response has no tag_name");
-  }
-  const assets: ReleaseAsset[] = [];
-  if (Array.isArray(record.assets)) {
-    for (const entry of record.assets) {
-      if (typeof entry !== "object" || entry === null) continue;
-      const asset = entry as Record<string, unknown>;
-      if (typeof asset.name === "string" && typeof asset.browser_download_url === "string") {
-        assets.push({ name: asset.name, url: asset.browser_download_url });
-      }
+export function normalizeCoreRepo(value: string): string {
+  let candidate = value.trim();
+  const ssh = candidate.match(/^git@github\.com:(.+)$/i);
+  if (ssh) candidate = ssh[1]!;
+  else if (/^https?:\/\//i.test(candidate)) {
+    let url: URL;
+    try {
+      url = new URL(candidate);
+    } catch {
+      throw new Error("repository must be a GitHub owner/name or URL");
     }
+    if (
+      url.protocol !== "https:" ||
+      url.hostname.toLowerCase() !== "github.com" ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      throw new Error("repository URL must be an HTTPS github.com URL without credentials or query data");
+    }
+    candidate = url.pathname;
   }
-  return { version: normalizeVersion(tag), assets };
+
+  candidate = candidate.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+  const parts = candidate.split("/");
+  const owner = parts[0] ?? "";
+  const repo = parts[1] ?? "";
+  const ownerPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+  const repoPattern = /^[A-Za-z0-9._-]{1,100}$/;
+  if (
+    parts.length !== 2 ||
+    !ownerPattern.test(owner) ||
+    !repoPattern.test(repo) ||
+    repo === "." ||
+    repo === ".."
+  ) {
+    throw new Error("repository must be a GitHub owner/name");
+  }
+  return `${owner}/${repo}`;
 }
 
-export function pickAsset(release: Release, name: string): ReleaseAsset | null {
-  return release.assets.find((asset) => asset.name === name) ?? null;
+export function normalizeCoreRef(value: string): string {
+  const ref = value.trim();
+  const hasInvalidCharacter = Array.from(ref).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x20 || codePoint === 0x7f || INVALID_REF_CHARACTERS.has(character);
+  });
+  if (ref.length === 0 || ref.length > 255) {
+    throw new Error("branch or ref must contain 1 to 255 characters");
+  }
+  if (
+    ref === "@" ||
+    ref.startsWith("/") ||
+    ref.endsWith("/") ||
+    ref.endsWith(".") ||
+    ref.includes("..") ||
+    ref.includes("@{") ||
+    ref.includes("//") ||
+    hasInvalidCharacter ||
+    ref.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock"))
+  ) {
+    throw new Error("branch or ref is not a valid Git ref");
+  }
+  return ref;
 }
 
-/** checksums.txt lines are "<sha256>  <filename>". */
-export function parseChecksums(text: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const line of text.split("\n")) {
-    const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(line.trim());
-    if (match) map.set(match[2]!.trim(), match[1]!.toLowerCase());
-  }
-  return map;
+export function normalizeCoreSource(repo: string, ref: string): CoreSource {
+  return { repo: normalizeCoreRepo(repo), ref: normalizeCoreRef(ref) };
 }
 
-/** Numeric dotted-version compare tolerant of a leading v. Returns <0, 0, >0. */
-export function compareVersions(a: string, b: string): number {
-  const partsA = normalizeVersion(a).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const partsB = normalizeVersion(b).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const length = Math.max(partsA.length, partsB.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (partsA[index] ?? 0) - (partsB[index] ?? 0);
-    if (diff !== 0) return diff;
+export function commitApiUrl(source: CoreSource = DEFAULT_CORE_SOURCE): string {
+  return `https://api.github.com/repos/${source.repo}/commits/${encodeURIComponent(source.ref)}`;
+}
+
+export function sourceArchiveUrl(repo: string, commit: string): string {
+  return `https://codeload.github.com/${repo}/tar.gz/${commit}`;
+}
+
+export function sourceVersion(ref: string, commit: string): string {
+  return `${ref}@${commit.slice(0, 12)}`;
+}
+
+export function parseSourceRevision(
+  json: unknown,
+  source: CoreSource = DEFAULT_CORE_SOURCE,
+): SourceRevision {
+  if (typeof json !== "object" || json === null) {
+    throw new Error("malformed GitHub commit response");
   }
-  return 0;
+  const commit = (json as Record<string, unknown>).sha;
+  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/i.test(commit)) {
+    throw new Error("GitHub commit response has no valid sha");
+  }
+  const normalizedCommit = commit.toLowerCase();
+  return {
+    repo: source.repo,
+    ref: source.ref,
+    commit: normalizedCommit,
+    version: sourceVersion(source.ref, normalizedCommit),
+    archiveUrl: sourceArchiveUrl(source.repo, normalizedCommit),
+  };
 }

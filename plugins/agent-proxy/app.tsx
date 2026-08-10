@@ -9,6 +9,7 @@ import { OAuthPage } from "@/components/pages/oauth";
 import { ProvidersPage } from "@/components/pages/providers";
 import { UsagePage } from "@/components/pages/usage";
 import { AgentsPage } from "@/components/pages/agents";
+import { AdvancedPage } from "@/components/pages/advanced";
 import type { CoreStatus } from "./server";
 
 /** The sidebar row's label. The content script finds the row by this text. */
@@ -20,6 +21,7 @@ const PAGES: { key: string; label: string; component: () => React.JSX.Element }[
   { key: "providers", label: "Providers", component: ProvidersPage },
   { key: "usage", label: "Usage", component: UsagePage },
   { key: "agents", label: "Agents", component: AgentsPage },
+  { key: "advanced", label: "Advanced", component: AdvancedPage },
 ];
 
 /** One muted line: colored dot, state, and port. The full controls live on Home. */

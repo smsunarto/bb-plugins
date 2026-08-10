@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 /** On-disk layout under <bb dataDir>/plugins/agent-proxy. Coexists with bb's
     own data.db / secrets/ / logs for this plugin. */
@@ -14,6 +14,9 @@ export interface Paths {
   legacyVersionMarker: string;
   configPath: string;
   authDir: string;
+  serviceDir: string;
+  serviceLogPath: string;
+  runtimeFingerprintPath: string;
   secretsDir: string;
   managementKeyPath: string;
   localApiKeyPath: string;
@@ -30,6 +33,8 @@ export function buildPaths(dataDir: string): Paths {
   const coreDir = join(root, "core");
   const binDir = join(coreDir, "bin");
   const currentLink = join(binDir, "current");
+  const coreExecutable = "cli-proxy-api";
+  const serviceDir = join(coreDir, "service");
   const secretsDir = join(coreDir, "secrets");
   const agentsDir = join(root, "agents");
   const codexHomeDir = join(agentsDir, "codex-home");
@@ -39,12 +44,15 @@ export function buildPaths(dataDir: string): Paths {
     binDir,
     versionsDir: join(coreDir, "versions"),
     currentLink,
-    binPath: join(currentLink, "cli-proxy-api"),
+    binPath: join(currentLink, coreExecutable),
     versionMarker: join(currentLink, ".version"),
-    legacyBinPath: join(binDir, "cli-proxy-api"),
+    legacyBinPath: join(binDir, coreExecutable),
     legacyVersionMarker: join(binDir, ".version"),
     configPath: join(coreDir, "config.yaml"),
     authDir: join(coreDir, "auth"),
+    serviceDir,
+    serviceLogPath: join(serviceDir, "core.log"),
+    runtimeFingerprintPath: join(serviceDir, "runtime-fingerprint"),
     secretsDir,
     managementKeyPath: join(secretsDir, "management-key"),
     localApiKeyPath: join(secretsDir, "local-api-key"),
@@ -55,4 +63,16 @@ export function buildPaths(dataDir: string): Paths {
     claudeStatePath: join(agentsDir, "claude-env-state.json"),
     claudePendingStatePath: join(agentsDir, "claude-env-state.pending.json"),
   };
+}
+
+export function systemdUserUnitPath(
+  homeDir: string,
+  label: string,
+  xdgConfigHome: string | undefined = process.env.XDG_CONFIG_HOME,
+): string {
+  const configHome = xdgConfigHome?.trim() || join(homeDir, ".config");
+  if (!isAbsolute(configHome)) {
+    throw new Error("XDG_CONFIG_HOME must be an absolute path");
+  }
+  return join(configHome, "systemd", "user", `${label}.service`);
 }

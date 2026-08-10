@@ -6,17 +6,32 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { ensureDir, readTextOr, timestampedBackup, writeAtomic } from "./lib/fsx.ts";
 import { loadOrCreateKey } from "./lib/keys.ts";
-import { buildPaths, type Paths } from "./lib/paths.ts";
+import { buildPaths, systemdUserUnitPath, type Paths } from "./lib/paths.ts";
 import {
   cleanStaleStaging,
-  fetchRelease,
+  fetchSourceRevision,
   installCore,
   installedVersion,
   migrateLegacyInstall,
 } from "./lib/core-install.ts";
-import { compareVersions } from "./lib/release.ts";
+import {
+  CORE_REF,
+  CORE_REPO,
+  normalizeCoreRef,
+  normalizeCoreSource,
+  type CoreSource,
+} from "./lib/release.ts";
 import { reconcileConfigFile, renderInitialConfig } from "./lib/core-config.ts";
-import { Supervisor } from "./lib/core-process.ts";
+import {
+  LaunchdSupervisor,
+  SystemdSupervisor,
+  type CoreSupervisor,
+  type SupervisorSnapshot,
+} from "./lib/core-process.ts";
+import {
+  planRuntimeReconciliation,
+  runtimeConfigFingerprint,
+} from "./lib/runtime-state.ts";
 import {
   ManagementClient,
   ManagementError,
@@ -34,11 +49,14 @@ import {
 } from "./lib/agents-config.ts";
 
 const DEFAULT_PORT = 8317;
-const LATEST_CACHE_KEY = "latest-release";
+const LATEST_CACHE_KEY = "latest-source-revision-v1";
 const LATEST_CACHE_TTL_MS = 3_600_000;
 const CLAUDE_BACKUP_BASE = "claude-settings.json";
+const SERVICE_LABEL = "com.smsunarto.bb.agent-proxy";
 
 interface LatestCache {
+  repo: string;
+  ref: string;
   version: string;
   checkedAt: number;
 }
@@ -81,6 +99,17 @@ const endpointsSchema = z.object({
   gemini: z.string(),
 });
 
+const sourceSchema = z.object({
+  repository: z.string(),
+  branch: z.string(),
+  error: z.string().nullable(),
+});
+
+const sourceSettingsSchema = sourceSchema.extend({
+  defaultRepository: z.string(),
+  defaultBranch: z.string(),
+});
+
 const statusSchema = z.object({
   state: stateSchema,
   pid: z.number().nullable(),
@@ -91,6 +120,13 @@ const statusSchema = z.object({
     .object({ code: z.number().nullable(), signal: z.string().nullable(), at: z.number() })
     .nullable(),
   endpoints: endpointsSchema,
+  service: z.object({
+    manager: z.enum(["launchd", "systemd"]),
+    label: z.string(),
+    definitionPath: z.string(),
+    loaded: z.boolean(),
+  }),
+  source: sourceSchema,
   latest: z.object({ version: z.string(), checkedAt: z.number() }).nullable(),
 });
 
@@ -112,7 +148,7 @@ export const rpcContract = defineRpcContract({
     }),
   },
   install: {
-    input: z.object({ version: z.string().optional() }).strict(),
+    input: z.object({ ref: z.string().optional() }).strict(),
     output: z.object({ installedVersion: z.string() }),
   },
   start: { input: z.null(), output: statusSchema },
@@ -121,6 +157,11 @@ export const rpcContract = defineRpcContract({
   endpoints: {
     input: z.null(),
     output: endpointsSchema.extend({ apiKey: z.string() }),
+  },
+  sourceSettings: { input: z.null(), output: sourceSettingsSchema },
+  sourceSettingsUpdate: {
+    input: z.object({ repository: z.string(), branch: z.string() }).strict(),
+    output: sourceSettingsSchema,
   },
 
   oauthStart: {
@@ -198,10 +239,23 @@ export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
     autostart: {
       type: "boolean",
-      label: "Start the proxy core when the plugin loads",
+      label: "Keep the proxy running as a login service",
+      description: "The operating system starts it at login and keeps it running when bb is closed.",
       default: true,
     },
     port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
+    sourceRepository: {
+      type: "string",
+      label: "Advanced: core source repository",
+      description: "Public GitHub repository in owner/name form. A github.com URL is also accepted.",
+      default: CORE_REPO,
+    },
+    sourceBranch: {
+      type: "string",
+      label: "Advanced: core source branch or ref",
+      description: "Branch, tag, or commit used for update checks and source builds.",
+      default: CORE_REF,
+    },
     managementKey: {
       type: "string",
       label: "Management API key override (leave empty to auto-generate)",
@@ -219,7 +273,9 @@ export default async function plugin(bb: BbPluginApi) {
     return process.env.BB_DATA_DIR ?? join(homedir(), ".bb");
   }
 
+  const homeDir = homedir();
   const paths: Paths = buildPaths(await resolveDataDir());
+  const launchdPlistPath = join(homeDir, "Library", "LaunchAgents", `${SERVICE_LABEL}.plist`);
   function secureAuthDirectory(): void {
     ensureDir(paths.authDir);
     chmodSync(paths.authDir, 0o700);
@@ -246,7 +302,37 @@ export default async function plugin(bb: BbPluginApi) {
     };
   }
 
+  async function sourceSettingsView() {
+    const values = await settings.get();
+    const repository = values.sourceRepository.trim();
+    const branch = values.sourceBranch.trim();
+    try {
+      const source = normalizeCoreSource(repository, branch);
+      return {
+        repository: source.repo,
+        branch: source.ref,
+        error: null,
+        defaultRepository: CORE_REPO,
+        defaultBranch: CORE_REF,
+      };
+    } catch (error) {
+      return {
+        repository,
+        branch,
+        error: String(error instanceof Error ? error.message : error),
+        defaultRepository: CORE_REPO,
+        defaultBranch: CORE_REF,
+      };
+    }
+  }
+
+  async function configuredSource(): Promise<CoreSource> {
+    const values = await settings.get();
+    return normalizeCoreSource(values.sourceRepository, values.sourceBranch);
+  }
+
   const initial = await effectiveSettings();
+  const initialSource = await sourceSettingsView();
   let currentPort = initial.port;
   let currentManagementKey = initial.managementKey;
   let desiredRunning = initial.autostart;
@@ -254,6 +340,8 @@ export default async function plugin(bb: BbPluginApi) {
   let initialized = false;
   let operationTail: Promise<void> = Promise.resolve();
   let initializationTask: Promise<void> | null = null;
+  let currentRuntimeFingerprint = runtimeConfigFingerprint(initial);
+  let supervisor: CoreSupervisor;
   const pluginAbort = new AbortController();
 
   function enqueue<T>(operation: () => Promise<T> | T): Promise<T> {
@@ -286,8 +374,29 @@ export default async function plugin(bb: BbPluginApi) {
       writeAtomic(paths.configPath, renderInitialConfig(config), 0o600);
       bb.log.info(`wrote initial core config at ${paths.configPath}`);
     }
+    adoptCoreSettings(effective);
+  }
+
+  function adoptCoreSettings(effective: { port: number; managementKey: string }): void {
     currentPort = effective.port;
     currentManagementKey = effective.managementKey;
+    currentRuntimeFingerprint = runtimeConfigFingerprint(effective);
+  }
+
+  function markRuntimeApplied(): void {
+    writeAtomic(paths.runtimeFingerprintPath, `${currentRuntimeFingerprint}\n`, 0o600);
+  }
+
+  async function startManagedService(): Promise<SupervisorSnapshot> {
+    const snapshot = await supervisor.start();
+    if (snapshot.loaded) markRuntimeApplied();
+    return snapshot;
+  }
+
+  async function restartManagedService(): Promise<SupervisorSnapshot> {
+    const snapshot = await supervisor.restart();
+    if (snapshot.loaded) markRuntimeApplied();
+    return snapshot;
   }
 
   function initialize(): Promise<void> {
@@ -296,36 +405,72 @@ export default async function plugin(bb: BbPluginApi) {
       cleanStaleStaging(paths.coreDir);
       migrateLegacyInstall(paths);
       secureAuthDirectory();
-      persistCoreConfig(await effectiveSettings());
+      const effective = await effectiveSettings();
+      const desiredFingerprint = runtimeConfigFingerprint(effective);
+      const snapshot = await supervisor.snapshot();
+      const plan = planRuntimeReconciliation({
+        appliedFingerprint: readTextOr(paths.runtimeFingerprintPath)?.trim() || null,
+        desiredFingerprint,
+        desiredRunning,
+        serviceLoaded: snapshot.loaded,
+      });
+      if (plan.stopBeforeWrite) await supervisor.stop();
+      if (plan.writeConfig) persistCoreConfig(effective);
+      else adoptCoreSettings(effective);
+      if (plan.startAfterWrite) await startManagedService();
       initialized = true;
     });
     return initializationTask;
   }
 
-  const supervisor = new Supervisor({
+  const supervisorOptions = {
+    label: SERVICE_LABEL,
     binPath: paths.binPath,
     configPath: paths.configPath,
     isInstalled: () => installedVersion(paths) !== null,
     probeUrl: () => `http://127.0.0.1:${currentPort}/`,
-    onChange: (snapshot) => {
+    onChange: (snapshot: SupervisorSnapshot) => {
       bb.realtime.publish("status", snapshot);
     },
-  });
+    onError: (error: unknown) => {
+      bb.log.error(`service monitor failed: ${String(error)}`);
+    },
+  };
+  switch (process.platform) {
+    case "darwin": {
+      const uid = process.getuid?.();
+      if (uid === undefined) throw new Error("agent-proxy launchd service requires a POSIX user id");
+      supervisor = new LaunchdSupervisor({
+        ...supervisorOptions,
+        uid,
+        plistPath: launchdPlistPath,
+        logPath: paths.serviceLogPath,
+      });
+      break;
+    }
+    case "linux":
+      supervisor = new SystemdSupervisor({
+        ...supervisorOptions,
+        unitPath: systemdUserUnitPath(homeDir, SERVICE_LABEL),
+        logPath: paths.serviceLogPath,
+      });
+      break;
+    default:
+      throw new Error(`agent-proxy does not support persistent services on ${process.platform}`);
+  }
 
   bb.background.service("core", {
     async start(signal) {
       await initialize();
-      if (desiredRunning) supervisor.start();
-      else supervisor.poke();
-      await supervisor.run(signal);
+      if (desiredRunning) await startManagedService();
+      else if (installedVersion(paths) !== null) await supervisor.stop();
+      await supervisor.monitor(signal);
     },
   });
   bb.onDispose(async () => {
     acceptingOperations = false;
-    desiredRunning = false;
     pluginAbort.abort(new Error("agent-proxy plugin disposed"));
     await operationTail;
-    await supervisor.stop();
   });
 
   async function managementClient(): Promise<ManagementClient> {
@@ -333,22 +478,34 @@ export default async function plugin(bb: BbPluginApi) {
     return new ManagementClient({ port: currentPort, key: currentManagementKey });
   }
 
-  async function cachedLatest(): Promise<LatestCache | null> {
-    return (await bb.storage.kv.get<LatestCache>(LATEST_CACHE_KEY)) ?? null;
+  async function cachedLatest(source: CoreSource): Promise<LatestCache | null> {
+    const cached = (await bb.storage.kv.get<LatestCache>(LATEST_CACHE_KEY)) ?? null;
+    return cached?.repo === source.repo && cached.ref === source.ref ? cached : null;
   }
 
   async function refreshLatest(): Promise<LatestCache> {
-    const cached = await cachedLatest();
+    const source = await configuredSource();
+    const cached = await cachedLatest(source);
     if (cached && Date.now() - cached.checkedAt < LATEST_CACHE_TTL_MS) return cached;
-    const release = await fetchRelease(undefined, fetch, pluginAbort.signal);
-    const next: LatestCache = { version: release.version, checkedAt: Date.now() };
+    const revision = await fetchSourceRevision(source, fetch, pluginAbort.signal);
+    const next: LatestCache = {
+      repo: source.repo,
+      ref: source.ref,
+      version: revision.version,
+      checkedAt: Date.now(),
+    };
     await bb.storage.kv.set(LATEST_CACHE_KEY, next);
     return next;
   }
 
   async function computeStatus(): Promise<CoreStatus> {
     await initialize();
-    const snapshot = supervisor.snapshot();
+    const snapshot = await supervisor.snapshot();
+    const sourceView = await sourceSettingsView();
+    const latest =
+      sourceView.error === null
+        ? await cachedLatest({ repo: sourceView.repository, ref: sourceView.branch })
+        : null;
     return {
       state: snapshot.state,
       pid: snapshot.pid,
@@ -357,40 +514,61 @@ export default async function plugin(bb: BbPluginApi) {
       crashCount: snapshot.crashCount,
       lastExit: snapshot.lastExit,
       endpoints: endpointsFor(currentPort),
-      latest: await cachedLatest(),
+      service: {
+        manager: supervisor.manager,
+        label: supervisor.label,
+        definitionPath: supervisor.definitionPath,
+        loaded: snapshot.loaded,
+      },
+      source: {
+        repository: sourceView.repository,
+        branch: sourceView.branch,
+        error: sourceView.error,
+      },
+      latest,
     };
   }
 
-  async function runInstall(version: string | undefined): Promise<string> {
-    const release = await fetchRelease(version, fetch, pluginAbort.signal);
+  async function runInstall(ref: string | undefined): Promise<string> {
+    const configured = await configuredSource();
+    const source = ref === undefined ? configured : { ...configured, ref: normalizeCoreRef(ref) };
+    const revision = await fetchSourceRevision(source, fetch, pluginAbort.signal);
     let stoppedForSwap = false;
     try {
-      const installed = await installCore(paths, release, {
+      const installed = await installCore(paths, revision, {
         signal: pluginAbort.signal,
-        onProgress: (stage) => bb.realtime.publish("install", { stage, version: release.version }),
+        onProgress: (stage) => bb.realtime.publish("install", { stage, version: revision.version }),
         beforeInstall: async () => {
           stoppedForSwap = true;
           await supervisor.stop();
         },
       });
-      bb.log.info(`installed CLIProxyAPI v${installed}`);
+      if (source.repo === configured.repo && source.ref === configured.ref) {
+        await bb.storage.kv.set(LATEST_CACHE_KEY, {
+          repo: source.repo,
+          ref: source.ref,
+          version: revision.version,
+          checkedAt: Date.now(),
+        } satisfies LatestCache);
+      }
+      bb.log.info(`installed CLIProxyAPI ${installed}`);
       return installed;
     } finally {
-      if (stoppedForSwap && desiredRunning) supervisor.start();
-      else supervisor.poke();
+      if (stoppedForSwap && desiredRunning) await startManagedService();
+      else await supervisor.snapshot();
     }
   }
 
-  async function requestInstall(version: string | undefined): Promise<string> {
+  async function requestInstall(ref: string | undefined): Promise<string> {
     await initialize();
-    return enqueue(() => runInstall(version));
+    return enqueue(() => runInstall(ref));
   }
 
   async function requestStart(): Promise<CoreStatus> {
     desiredRunning = true;
     await initialize();
     return enqueue(async () => {
-      supervisor.start();
+      await startManagedService();
       return computeStatus();
     });
   }
@@ -408,24 +586,42 @@ export default async function plugin(bb: BbPluginApi) {
     desiredRunning = true;
     await initialize();
     return enqueue(async () => {
-      await supervisor.restart();
+      await restartManagedService();
       return computeStatus();
     });
   }
 
   settings.onChange((next, previous) => {
-    if (next.port === previous.port && next.managementKey === previous.managementKey) return;
+    const sourceChanged =
+      next.sourceRepository !== previous.sourceRepository || next.sourceBranch !== previous.sourceBranch;
+    if (sourceChanged) {
+      void bb.storage.kv
+        .delete(LATEST_CACHE_KEY)
+        .then(() => bb.realtime.publish("status", { sourceChanged: true }))
+        .catch((error: unknown) => {
+          bb.log.error(`failed to clear the source update cache: ${String(error)}`);
+        });
+    }
+    const runtimeChanged = next.port !== previous.port || next.managementKey !== previous.managementKey;
+    const autostartChanged = next.autostart !== previous.autostart;
+    if (autostartChanged) desiredRunning = next.autostart;
+    if (!runtimeChanged && !autostartChanged) return;
     void initialize()
       .then(() =>
         enqueue(async () => {
-          const effective = await effectiveSettings();
-          await supervisor.stop();
-          try {
-            persistCoreConfig(effective);
-            bb.log.info(`core settings reconciled on port ${effective.port}`);
-          } finally {
-            if (desiredRunning) supervisor.start();
-            else supervisor.poke();
+          if (runtimeChanged) {
+            const effective = await effectiveSettings();
+            await supervisor.stop();
+            try {
+              persistCoreConfig(effective);
+              bb.log.info(`core settings reconciled on port ${effective.port}`);
+            } finally {
+              if (desiredRunning) await startManagedService();
+            }
+          } else if (desiredRunning) {
+            await startManagedService();
+          } else {
+            await supervisor.stop();
           }
         }),
       )
@@ -533,14 +729,11 @@ export default async function plugin(bb: BbPluginApi) {
       return {
         latest: latest.version,
         installed,
-        updateAvailable:
-          installed !== null && installed !== "unknown"
-            ? compareVersions(latest.version, installed) > 0
-            : installed === null || installed === "unknown",
+        updateAvailable: installed !== latest.version,
       };
     },
-    async install({ version }) {
-      return { installedVersion: await requestInstall(version) };
+    async install({ ref }) {
+      return { installedVersion: await requestInstall(ref) };
     },
     async start() {
       return requestStart();
@@ -554,6 +747,20 @@ export default async function plugin(bb: BbPluginApi) {
     async endpoints() {
       await initialize();
       return { ...endpointsFor(currentPort), apiKey: localApiKey };
+    },
+    sourceSettings: () => sourceSettingsView(),
+    async sourceSettingsUpdate({ repository, branch }) {
+      const source = normalizeCoreSource(repository, branch);
+      await bb.sdk.plugins.updateSettings({
+        pluginId: bb.pluginId,
+        values: {
+          sourceRepository: source.repo,
+          sourceBranch: source.ref,
+        },
+      });
+      await bb.storage.kv.delete(LATEST_CACHE_KEY);
+      bb.realtime.publish("status", { sourceChanged: true });
+      return sourceSettingsView();
     },
 
     async oauthStart({ provider }) {
@@ -725,8 +932,8 @@ export default async function plugin(bb: BbPluginApi) {
       },
       {
         name: "install",
-        summary: "Install or update the CLIProxyAPI core (latest, or a specific version)",
-        usage: "bb agent-proxy install [version]",
+        summary: "Build and install the CLIProxyAPI core from the configured source (or another ref)",
+        usage: "bb agent-proxy install [ref]",
       },
       {
         name: "oauth",
@@ -749,7 +956,10 @@ export default async function plugin(bb: BbPluginApi) {
             const lines = [
               `state: ${status.state}${status.pid !== null ? ` (pid ${status.pid})` : ""}`,
               `port: ${status.port}`,
+              `service: ${status.service.manager} (${status.service.loaded ? "loaded" : "not loaded"})`,
+              `service definition: ${status.service.definitionPath}`,
               `installed: ${status.installedVersion ?? "not installed"}`,
+              `source: ${status.source.repository}#${status.source.branch}`,
               `latest: ${status.latest?.version ?? "unknown (run: bb agent-proxy install)"}`,
               `openai: ${status.endpoints.openai}`,
               `anthropic: ${status.endpoints.anthropic}`,
@@ -760,6 +970,7 @@ export default async function plugin(bb: BbPluginApi) {
                 `last exit: code ${status.lastExit.code ?? "null"} signal ${status.lastExit.signal ?? "null"} (${new Date(status.lastExit.at).toISOString()})`,
               );
             }
+            if (status.source.error) lines.push(`source error: ${status.source.error}`);
             return { exitCode: 0, stdout: lines.join("\n") };
           }
           case "start": {
@@ -789,7 +1000,7 @@ export default async function plugin(bb: BbPluginApi) {
           }
           case "install": {
             const version = await requestInstall(rest[0]);
-            return { exitCode: 0, stdout: `installed CLIProxyAPI v${version}` };
+            return { exitCode: 0, stdout: `installed CLIProxyAPI ${version}` };
           }
           case "oauth": {
             const which = rest[0];
@@ -843,7 +1054,7 @@ export default async function plugin(bb: BbPluginApi) {
                 "  status              core state, versions, endpoints\n" +
                 "  start|stop|restart  control the proxy core\n" +
                 "  endpoints           local endpoint URLs + API key\n" +
-                "  install [version]   install or update the core\n" +
+                "  install [ref]       build and install the configured GitHub source\n" +
                 "  oauth <claude|codex> run a browser OAuth flow\n" +
                 "  providers           configured credentials + auth files\n" +
                 "  usage               recent request buckets",
@@ -856,6 +1067,6 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.log.info(
-    `loaded (core ${installedVersion(paths) ?? "not installed"}, port ${initial.port}, autostart ${String(initial.autostart)})`,
+    `loaded (core ${installedVersion(paths) ?? "not installed"}, source ${initialSource.repository}#${initialSource.branch}, port ${initial.port}, autostart ${String(initial.autostart)})`,
   );
 }
