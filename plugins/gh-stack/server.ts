@@ -23,6 +23,7 @@ import {
 import {
   isCurrentBranchNotInStack,
   partialSuccessWarning,
+  requiresAgentSyncRecovery,
 } from "./lib/gh-stack-output";
 import {
   projectStackLayers,
@@ -30,6 +31,7 @@ import {
 } from "./lib/stack-layers";
 import { checkoutWithAutoStash } from "./lib/smart-checkout";
 import { resolveWorkspaceKey } from "./lib/workspace-key";
+import { mergePrefix, pruneCandidates } from "./lib/stack-actions";
 
 const prSchema = z.object({
   number: z.number(),
@@ -97,12 +99,21 @@ const branchOutSchema = z.object({
   pr: prOutSchema.nullable(),
   // Diff against the branch's stack parent (the branch below, or the trunk).
   diff: changeSetSchema.nullable(),
+  // Commit distance from the fetched remote branch. Null means remote refs
+  // could not be refreshed safely; a missing remote branch is ahead of its
+  // stack parent and zero behind.
+  aheadOfRemote: z.number().nullable(),
+  behindRemote: z.number().nullable(),
 });
 
 const stackOutSchema = z.object({
   trunk: z.string(),
   currentBranch: z.string().nullable(),
   branches: z.array(branchOutSchema),
+  // Commits the local trunk is behind its fetched origin ref. Null is unknown.
+  trunkBehind: z.number().nullable(),
+  // Existing local merged-layer refs, or null when any ref probe failed.
+  prunableBranchCount: z.number().int().nonnegative().nullable(),
 });
 
 const prEnrichSchema = z.object({
@@ -115,6 +126,12 @@ const prMutationStateSchema = z.object({
   isDraft: z.boolean(),
   state: z.string(),
   headRefName: z.string(),
+});
+
+const mergeValidationSchema = prMutationStateSchema.extend({
+  baseRefName: z.string(),
+  headRefOid: z.string().regex(/^[0-9a-f]{40}$/i),
+  mergedAt: z.string().nullable(),
 });
 
 const errorKindSchema = z.enum([
@@ -148,6 +165,22 @@ const actionResultSchema = z.object({
 });
 
 type ActionResult = z.infer<typeof actionResultSchema>;
+const mergeMethodSchema = z.enum(["squash", "merge", "rebase"]);
+const asyncMergeSchema = z.object({
+  status: z.enum(["pending", "merged", "enqueued", "failed"]),
+  details: z.object({ message: z.string().catch(""), uuid: z.string().optional() }).catch({ message: "" }),
+});
+const MERGE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseAsyncMerge(stdout: string): z.infer<typeof asyncMergeSchema> | null {
+  try {
+    const parsed = asyncMergeSchema.safeParse(JSON.parse(stdout));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 // Panel settings, edited in the gear popup and stored in the plugin's kv.
 // Both are lenient on read so a row written by an older build still loads.
@@ -252,7 +285,20 @@ export const rpcContract = defineRpcContract({
   },
   runAction: {
     input: z
-      .object({ threadId: z.string(), action: z.enum(["sync", "submit"]) })
+      .object({
+        threadId: z.string(),
+        action: z.enum(["sync", "submit", "sync-submit", "prune"]),
+      })
+      .strict(),
+    output: actionResultSchema,
+  },
+  mergeStack: {
+    input: z
+      .object({
+        threadId: z.string(),
+        method: mergeMethodSchema.default("squash"),
+        throughPrNumber: z.number().int().positive().optional(),
+      })
       .strict(),
     output: actionResultSchema,
   },
@@ -364,7 +410,12 @@ function mapExitCode(result: GhResult): { kind: StackErrorKind; message: string 
       return {
         kind: "rebase-conflict",
         message:
-          "Rebase conflict. Ask the agent to run gh stack rebase, resolve the conflicts, then gh stack rebase --continue.",
+          "Rebase conflict. This needs repository-aware recovery before Sync can finish.",
+      };
+    case 7:
+      return {
+        kind: "rebase-conflict",
+        message: "A stack rebase is already in progress and needs recovery before Sync can finish.",
       };
     case 4:
       return {
@@ -476,6 +527,20 @@ async function nextPrNumber(cwd: string): Promise<number | null> {
   return Number.isInteger(latest) && latest >= 0 ? latest + 1 : null;
 }
 
+async function revListCount(
+  cwd: string,
+  left: string,
+  right: string,
+): Promise<number | null> {
+  if (left.startsWith("-") || right.startsWith("-")) return null;
+  const result = await runGit(["rev-list", "--count", `${left}..${right}`, "--"], cwd);
+  if (result.code !== 0) return null;
+  const count = Number(result.stdout.trim());
+  return Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+const REMOTE_FETCH_FRESH_MS = 90_000;
+
 // Committed changes a branch introduces over its stack parent
 // (merge-base three-dot range, so a pending rebase doesn't inflate it).
 async function branchChangeSet(
@@ -541,17 +606,28 @@ function joinDetails(...details: Array<string | null>): string | null {
   return joined || null;
 }
 
+async function localBranchNames(cwd: string): Promise<string[] | null> {
+  const result = await runGit(
+    ["for-each-ref", "--format=%(refname:strip=2)", "refs/heads"],
+    cwd,
+  );
+  if (result.code !== 0) return null;
+  return result.stdout.split("\n").map((name) => name.trim()).filter(Boolean);
+}
+
 async function currentBranchName(cwd: string): Promise<string | null> {
   const result = await runGit(["symbolic-ref", "--short", "-q", "HEAD"], cwd);
   return result.code === 0 ? result.stdout.trim() || null : null;
 }
 
-async function localBranchExists(cwd: string, branch: string): Promise<boolean> {
+async function localBranchExists(cwd: string, branch: string): Promise<boolean | null> {
   const result = await runGit(
     ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
     cwd,
   );
-  return result.code === 0;
+  if (result.code === 0) return true;
+  // show-ref uses 1 specifically for a well-formed ref that does not exist.
+  return result.code === 1 ? false : null;
 }
 
 type BranchPostcondition = {
@@ -574,7 +650,7 @@ async function inspectBranchPostcondition(
   if (view.error) {
     return {
       complete: false,
-      branchExists,
+      branchExists: branchExists === true,
       stackHasBranch: false,
       currentBranch,
       error: view.error.message,
@@ -584,12 +660,12 @@ async function inspectBranchPostcondition(
   const top = view.stack.branches.at(-1);
   return {
     complete:
-      branchExists &&
+      branchExists === true &&
       matches.length === 1 &&
       matches[0].isCurrent &&
       currentBranch === branch &&
       top?.name === branch,
-    branchExists,
+    branchExists: branchExists === true,
     stackHasBranch: matches.length > 0,
     currentBranch,
     error: null,
@@ -733,6 +809,7 @@ const STACK_FRESH_MS = 10_000;
 const STACK_WATCH_MS = 90_000;
 // Idle events under this age of the cache don't recompute (burst coalescing).
 const STACK_IDLE_COALESCE_MS = 2_000;
+const DRAFT_INTENT_TTL_MS = 120_000;
 
 export default async function plugin(bb: BbPluginApi) {
   // Per-thread cache of the last computed getStack payload; lastReadAt is the
@@ -760,6 +837,106 @@ export default async function plugin(bb: BbPluginApi) {
   // A handled stash apply is also recorded durably. Keep its OID blocked in
   // memory as a fail-safe if that state write only partly succeeds.
   const blockedAutoStashOids = new Set<string>();
+  const remoteRefreshAt = new Map<string, number>();
+  const remoteRefreshInflight = new Map<string, Promise<boolean>>();
+  const draftIntents = new Map<string, { draft: boolean; at: number }>();
+  const syncHandoffAt = new Map<string, number>();
+  const recoveryLeases = new Map<
+    string,
+    { workspaceKey: string; threadId: string; intent: string; expiresAt: number }
+  >();
+
+  function activeRecoveryLease(workspaceKey: string) {
+    const lease = recoveryLeases.get(workspaceKey);
+    if (lease && lease.expiresAt <= Date.now()) {
+      recoveryLeases.delete(workspaceKey);
+      syncHandoffAt.delete(`${workspaceKey}\0${lease.intent}`);
+      return null;
+    }
+    return lease ?? null;
+  }
+
+  function clearRecoveryForThread(threadId: string): void {
+    for (const [workspaceKey, lease] of recoveryLeases) {
+      if (lease.threadId !== threadId) continue;
+      recoveryLeases.delete(workspaceKey);
+      syncHandoffAt.delete(`${workspaceKey}\0${lease.intent}`);
+    }
+  }
+
+  function refreshRemoteRefs(workspace: ValidWorkspace): Promise<boolean> {
+    if (
+      activeWorkspaceMutations.has(workspace.key) ||
+      activeRecoveryLease(workspace.key)
+    ) {
+      return Promise.resolve(false);
+    }
+    if (Date.now() - (remoteRefreshAt.get(workspace.key) ?? 0) <= REMOTE_FETCH_FRESH_MS) {
+      return Promise.resolve(true);
+    }
+    const existing = remoteRefreshInflight.get(workspace.key);
+    if (existing) return existing;
+
+    let resolveRefresh!: (successful: boolean) => void;
+    const reservation = new Promise<boolean>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    // Reserve before starting any asynchronous work so mutations cannot race
+    // the fetch and computes for other threads in this workspace join it.
+    remoteRefreshInflight.set(workspace.key, reservation);
+    void (async () => {
+      let successful = false;
+      try {
+        if (!activeWorkspaceMutations.has(workspace.key)) {
+          const fetch = await runGit(
+            ["fetch", "--quiet", "origin"],
+            workspace.cwd,
+            20_000,
+          );
+          successful = fetch.code === 0;
+          if (successful) remoteRefreshAt.set(workspace.key, Date.now());
+        }
+      } finally {
+        remoteRefreshInflight.delete(workspace.key);
+        resolveRefresh(successful);
+      }
+    })();
+    return reservation;
+  }
+
+  const draftIntentKey = (workspaceKey: string, prNumber: number) =>
+    `${workspaceKey}\0${prNumber}`;
+
+  function applyDraftIntents(threadId: string, payload: StackPayload): StackPayload {
+    const now = Date.now();
+    for (const [key, intent] of draftIntents) {
+      if (now - intent.at > DRAFT_INTENT_TTL_MS) draftIntents.delete(key);
+    }
+    const workspaceKey = threadWorkspaceKeys.get(threadId);
+    if (!workspaceKey || !payload.stack) return payload;
+    let changed = false;
+    const branches = payload.stack.branches.map((branch) => {
+      if (!branch.pr) return branch;
+      const key = draftIntentKey(workspaceKey, branch.pr.number);
+      const intent = draftIntents.get(key);
+      if (!intent) return branch;
+      if (branch.pr.isDraft === intent.draft) {
+        draftIntents.delete(key);
+        return branch;
+      }
+      changed = true;
+      return { ...branch, pr: { ...branch.pr, isDraft: intent.draft } };
+    });
+    return changed ? { ...payload, stack: { ...payload.stack, branches } } : payload;
+  }
+
+  function publishWorkspace(workspaceKey: string): void {
+    for (const [threadId, key] of threadWorkspaceKeys) {
+      if (key !== workspaceKey) continue;
+      const fetchedAt = stackCache.get(threadId)?.fetchedAt ?? Date.now();
+      bb.realtime.publish("stack-updated", { threadId, fetchedAt });
+    }
+  }
 
   // The settings popup writes one global kv row; it is read on every compute,
   // so keep the parsed value in memory and refresh it on save.
@@ -796,6 +973,7 @@ export default async function plugin(bb: BbPluginApi) {
   // lifecycle events below.
   const idleWaiters = new Map<string, (text: string | null) => void>();
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
+    clearRecoveryForThread(thread.id);
     const waiter = idleWaiters.get(thread.id);
     if (waiter) {
       idleWaiters.delete(thread.id);
@@ -817,10 +995,12 @@ export default async function plugin(bb: BbPluginApi) {
     }
   });
   bb.events.on("thread.deleted", ({ thread }) => {
+    clearRecoveryForThread(thread.id);
     stackCache.delete(thread.id);
     threadWorkspaceKeys.delete(thread.id);
   });
   bb.events.on("thread.failed", ({ thread }) => {
+    clearRecoveryForThread(thread.id);
     const waiter = idleWaiters.get(thread.id);
     if (waiter) {
       idleWaiters.delete(thread.id);
@@ -931,6 +1111,20 @@ export default async function plugin(bb: BbPluginApi) {
     workspace: ValidWorkspace,
     operation: () => Promise<ActionResult>,
   ): Promise<ActionResult> {
+    if (activeRecoveryLease(workspace.key)) {
+      return {
+        ok: false,
+        message: "Recovery for this repository is already with an agent — watch the conversation.",
+        detail: null,
+      };
+    }
+    if (remoteRefreshInflight.has(workspace.key)) {
+      return {
+        ok: false,
+        message: "Remote state is refreshing for this repository. Wait for it to finish, then retry.",
+        detail: null,
+      };
+    }
     if (activeWorkspaceMutations.has(workspace.key)) {
       return {
         ok: false,
@@ -1218,13 +1412,51 @@ export default async function plugin(bb: BbPluginApi) {
     // (the branch below, or the trunk for the bottom branch).
     const rawStack = inspected.stack;
     const rawBranches = rawStack.branches;
+    // Metrics are advisory, but stale refs must never look clean. A mutation
+    // owns the repository, so do not fetch underneath it; report unknown.
+    const remoteFresh = await refreshRemoteRefs(workspace);
+    const trunkBehindPromise = remoteFresh
+      ? revListCount(cwd, rawStack.trunk, `origin/${rawStack.trunk}`)
+      : Promise.resolve(null);
     const branches = await Promise.all(
       // oxlint-disable-next-line oxc/no-map-spread -- copy-on-write over zod-parsed data
       rawBranches.map(async (branch, index) => {
         const parent = index === 0 ? rawStack.trunk : rawBranches[index - 1].name;
         const diffPromise = branchChangeSet(cwd, parent, branch.name);
+        const remote = `refs/remotes/origin/${branch.name}`;
+        const remoteExists = remoteFresh
+          ? await runGit(["rev-parse", "--verify", "--quiet", remote], cwd)
+          : null;
+        const remotePresent =
+          remoteExists === null
+            ? null
+            : remoteExists.code === 0
+              ? true
+              : remoteExists.code === 1
+                ? false
+                : null;
+        const aheadPromise = !remoteFresh
+          ? Promise.resolve(null)
+          : remotePresent === true
+            ? revListCount(cwd, remote, branch.name)
+            : remotePresent === false
+              ? revListCount(cwd, parent, branch.name)
+              : Promise.resolve(null);
+        const behindPromise = !remoteFresh
+          ? Promise.resolve(null)
+          : remotePresent === true
+            ? revListCount(cwd, branch.name, remote)
+            : remotePresent === false
+              ? Promise.resolve(0)
+              : Promise.resolve(null);
         if (!branch.pr) {
-          return { ...branch, pr: null, diff: await diffPromise };
+          return {
+            ...branch,
+            pr: null,
+            diff: await diffPromise,
+            aheadOfRemote: await aheadPromise,
+            behindRemote: await behindPromise,
+          };
         }
         const view = await runGh(
           [
@@ -1261,6 +1493,8 @@ export default async function plugin(bb: BbPluginApi) {
           isMerged,
           pr: { ...branch.pr, state, title, isDraft },
           diff: await diffPromise,
+          aheadOfRemote: await aheadPromise,
+          behindRemote: await behindPromise,
         };
       }),
     );
@@ -1272,9 +1506,22 @@ export default async function plugin(bb: BbPluginApi) {
       rawStack.trunk,
       rawStack.currentBranch,
     );
+    // Direct PR state can be newer than gh stack's metadata. Count only after
+    // enrichment, while leaving merged rows hidden from the branch payload.
+    const pruneProbes = await Promise.all(
+      pruneCandidates(branches).map((branch) => localBranchExists(cwd, branch)),
+    );
+    const prunableBranchCount = pruneProbes.some((exists) => exists === null)
+      ? null
+      : pruneProbes.filter((exists) => exists).length;
     return {
       payload: {
-        stack: { ...rawStack, branches: projected.visibleBranches },
+        stack: {
+          ...rawStack,
+          branches: projected.visibleBranches,
+          trunkBehind: await trunkBehindPromise,
+          prunableBranchCount,
+        },
         workspacePath: cwd,
         error: null,
         checkoutWarning: null,
@@ -1298,7 +1545,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (Date.now() - cached.fetchedAt > STACK_FRESH_MS) {
           refreshStackInBackground(threadId);
         }
-        return { ...cached.payload, fetchedAt: cached.fetchedAt };
+        return { ...applyDraftIntents(threadId, cached.payload), fetchedAt: cached.fetchedAt };
       }
       let payload = await refreshStack(threadId);
       let entry = stackCache.get(threadId);
@@ -1310,7 +1557,10 @@ export default async function plugin(bb: BbPluginApi) {
         entry = stackCache.get(threadId);
       }
       if (entry) entry.lastReadAt = Date.now();
-      return { ...payload, fetchedAt: entry?.fetchedAt ?? Date.now() };
+      return {
+        ...applyDraftIntents(threadId, payload),
+        fetchedAt: entry?.fetchedAt ?? Date.now(),
+      };
     },
 
     async checkoutBranch({ threadId, branch }) {
@@ -1423,10 +1673,10 @@ export default async function plugin(bb: BbPluginApi) {
         if (view.error) {
           return { ok: false, message: view.error.message, detail: null };
         }
-        const belongsToStack = view.stack.branches.some(
+        const owner = view.stack.branches.find(
           (branch) => branch.pr?.number === prNumber,
         );
-        if (!belongsToStack) {
+        if (!owner) {
           return {
             ok: false,
             message: `PR #${prNumber} is not an open pull request in the current stack.`,
@@ -1436,6 +1686,13 @@ export default async function plugin(bb: BbPluginApi) {
         const before = await readPullRequestState(cwd, prNumber);
         if (!before.state) {
           return { ok: false, message: before.error, detail: before.detail };
+        }
+        if (before.state.headRefName !== owner.name) {
+          return {
+            ok: false,
+            message: `PR #${prNumber} points to ${before.state.headRefName}, not stack branch ${owner.name}.`,
+            detail: before.detail,
+          };
         }
         if (before.state.state !== "OPEN") {
           return {
@@ -1452,6 +1709,9 @@ export default async function plugin(bb: BbPluginApi) {
           };
         }
 
+        const intentKey = draftIntentKey(workspace.key, prNumber);
+        draftIntents.set(intentKey, { draft, at: Date.now() });
+        publishWorkspace(workspace.key);
         const args = draft
           ? ["pr", "ready", String(prNumber), "--undo"]
           : ["pr", "ready", String(prNumber)];
@@ -1459,6 +1719,8 @@ export default async function plugin(bb: BbPluginApi) {
         const result = await runGh(args, cwd, 30_000);
         const detail = outputTail(result);
         if (result.failedToSpawn || result.timedOut || result.code !== 0) {
+          draftIntents.delete(intentKey);
+          publishWorkspace(workspace.key);
           const reason = result.stderr.trim().split("\n").pop() ?? "";
           return {
             ok: false,
@@ -1467,10 +1729,11 @@ export default async function plugin(bb: BbPluginApi) {
           };
         }
         const after = await readPullRequestState(cwd, prNumber);
-        if (!after.state || after.state.isDraft !== draft) {
+        if (after.state?.isDraft === draft) draftIntents.delete(intentKey);
+        if (!after.state) {
           return {
-            ok: false,
-            message: `gh completed, but PR #${prNumber} did not become ${draft ? "a draft" : "ready for review"}.`,
+            ok: true,
+            message: `GitHub accepted the change for PR #${prNumber}; its read model is still catching up.`,
             detail: joinDetails(detail, after.detail),
           };
         }
@@ -1489,105 +1752,520 @@ export default async function plugin(bb: BbPluginApi) {
       if (workspace.error) {
         return { ok: false, message: workspace.error.message, detail: null };
       }
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (
+        thread.status === "active" ||
+        thread.status === "starting" ||
+        thread.status === "stopping"
+      ) {
+        return {
+          ok: false,
+          message: "Wait for this thread's agent to become idle before changing the stack.",
+          detail: null,
+        };
+      }
+      const handoffKey = `${workspace.key}\0${action}`;
+      if (Date.now() - (syncHandoffAt.get(handoffKey) ?? 0) < 600_000) {
+        return {
+          ok: false,
+          message: "This recovery is already with the thread's agent — watch the conversation.",
+          detail: null,
+        };
+      }
       return withWorkspaceMutation(workspace, async () => {
         const cwd = workspace.cwd;
-        const args =
-          action === "sync"
-            ? ["stack", "sync"]
-            : ["stack", "submit", "--auto"];
-        bb.log.info(`running gh ${args.join(" ")} in ${cwd}`);
-        const result = await runGh(args, cwd, 180_000);
-        const detail = outputTail(result);
+        let prunePreflight: { candidates: string[]; protected: string[] } | null = null;
 
-        if (result.code !== 0) {
-          return { ok: false, message: mapExitCode(result).message, detail };
-        }
-        const warning = partialSuccessWarning(action, result.stdout, result.stderr);
-        if (warning) return { ok: false, message: warning, detail };
+        if (action === "prune") {
+          const before = await readStackView(cwd);
+          if (before.error) {
+            return { ok: false, message: before.error.message, detail: null };
+          }
 
-        const view = await readStackView(cwd);
-        if (view.error) {
-          return {
-            ok: false,
-            message: `${action === "sync" ? "Sync" : "Submit"} completed, but the resulting stack could not be verified: ${view.error.message}`,
-            detail,
-          };
-        }
-        const activeBranches = view.stack.branches.filter((branch) => !branch.isMerged);
-        const unpushed = await branchesNotAtUpstream(
-          cwd,
-          activeBranches.map((branch) => branch.name),
-        );
-        if (unpushed.length > 0) {
-          return {
-            ok: false,
-            message: `${action === "sync" ? "Sync" : "Submit"} completed, but these branches do not match their upstream refs: ${unpushed.join(", ")}.`,
-            detail,
-          };
-        }
-        if (action === "submit") {
-          const missingPrs = activeBranches
-            .filter((branch) => !branch.pr || branch.pr.number <= 0)
-            .map((branch) => branch.name);
-          if (missingPrs.length > 0) {
+          const corrected = [];
+          for (const branch of before.stack.branches) {
+            if (!branch.pr) {
+              corrected.push(branch);
+              continue;
+            }
+            const direct = await readPullRequestState(cwd, branch.pr.number);
+            if (!direct.state || direct.state.headRefName !== branch.name) {
+              return {
+                ok: false,
+                message: `Prune stopped because PR state could not be verified for ${branch.name}.`,
+                detail: direct.detail,
+              };
+            }
+            corrected.push({
+              ...branch,
+              isMerged: branch.isMerged || direct.state.state === "MERGED",
+              pr: {
+                ...branch.pr,
+                state:
+                  branch.pr.state === "MERGED" || branch.isMerged
+                    ? "MERGED"
+                    : direct.state.state,
+              },
+            });
+          }
+
+          const candidateNames = pruneCandidates(corrected);
+          const probes = await Promise.all(
+            candidateNames.map((branch) => localBranchExists(cwd, branch)),
+          );
+          if (probes.some((exists) => exists === null)) {
             return {
               ok: false,
-              message: `Submit completed, but no pull request was verified for: ${missingPrs.join(", ")}.`,
+              message: "Prune stopped because a candidate local ref could not be verified.",
+              detail: null,
+            };
+          }
+          const candidates = candidateNames.filter((_, index) => probes[index] === true);
+          if (candidates.length === 0) {
+            return { ok: false, message: "There are no merged local branches to prune.", detail: null };
+          }
+          if (before.stack.currentBranch && candidates.includes(before.stack.currentBranch)) {
+            return {
+              ok: false,
+              message: "Check out an unmerged branch before pruning the current merged branch.",
+              detail: null,
+            };
+          }
+          const allLocal = await localBranchNames(cwd);
+          if (!allLocal) {
+            return {
+              ok: false,
+              message: "Prune stopped because existing local branches could not be recorded.",
+              detail: null,
+            };
+          }
+          prunePreflight = {
+            candidates,
+            protected: allLocal.filter((branch) => !candidates.includes(branch)),
+          };
+        }
+
+        const verify = async (intent: "sync" | "submit", detail: string | null) => {
+          const view = await readStackView(cwd);
+          if (view.error) {
+            return {
+              ok: false,
+              message: `${intent} completed, but verification failed: ${view.error.message}`,
               detail,
             };
           }
-          const prChecks = await Promise.all(
-            activeBranches.map(async (branch) => {
-              const pr = branch.pr!;
-              const direct = await readPullRequestState(cwd, pr.number);
-              if (!direct.state) {
-                return {
-                  branch: branch.name,
-                  problem: direct.error,
-                  detail: direct.detail,
-                };
-              }
-              if (direct.state.headRefName !== branch.name) {
-                return {
-                  branch: branch.name,
-                  problem: `PR #${pr.number} points to ${direct.state.headRefName}, not ${branch.name}.`,
-                  detail: null,
-                };
-              }
-              if (direct.state.state !== "OPEN") {
-                return {
-                  branch: branch.name,
-                  problem: `PR #${pr.number} is ${direct.state.state.toLowerCase()}.`,
-                  detail: null,
-                };
-              }
-              return null;
-            }),
+          const active = view.stack.branches.filter(
+            (branch) =>
+              !branch.isMerged &&
+              !branch.isQueued &&
+              branch.pr?.state !== "MERGED" &&
+              !branch.pr?.state.includes("QUEUE"),
           );
-          const failedPrChecks = prChecks.filter(
-            (check): check is NonNullable<typeof check> => check !== null,
+          const unpushed = await branchesNotAtUpstream(
+            cwd,
+            active.map((branch) => branch.name),
           );
-          if (failedPrChecks.length > 0) {
+          if (unpushed.length > 0) {
             return {
               ok: false,
-              message: `Submit completed, but pull requests could not be verified for: ${failedPrChecks.map((check) => check.branch).join(", ")}.`,
-              detail: joinDetails(
-                detail,
-                ...failedPrChecks.map(
-                  (check) =>
-                    `${check.branch}: ${check.problem}${check.detail ? `\n${check.detail}` : ""}`,
-                ),
-              ),
+              message: `${intent} completed, but branches do not match upstream: ${unpushed.join(", ")}.`,
+              detail,
             };
           }
+          if (intent === "sync") {
+            const stale = active.filter((branch) => branch.needsRebase);
+            if (stale.length > 0) {
+              return {
+                ok: false,
+                message: `Sync completed, but these active branches still need a rebase: ${stale.map((branch) => branch.name).join(", ")}.`,
+                detail,
+              };
+            }
+          }
+          if (intent === "submit") {
+            for (const branch of active) {
+              if (!branch.pr) {
+                return {
+                  ok: false,
+                  message: `Submit completed, but no PR was verified for ${branch.name}.`,
+                  detail,
+                };
+              }
+              const direct = await readPullRequestState(cwd, branch.pr.number);
+              if (
+                !direct.state ||
+                direct.state.state !== "OPEN" ||
+                direct.state.headRefName !== branch.name
+              ) {
+                return {
+                  ok: false,
+                  message: `Submit completed, but a matching open PR was not verified for ${branch.name}.`,
+                  detail: joinDetails(detail, direct.detail),
+                };
+              }
+            }
+          }
+          return { ok: true, message: "", detail };
+        };
+
+        const steps: Array<"sync" | "submit" | "prune"> =
+          action === "sync-submit" ? ["sync", "submit"] : [action];
+        let detail: string | null = null;
+        for (const step of steps) {
+          const args =
+            step === "submit"
+              ? ["stack", "submit", "--auto"]
+              : step === "prune"
+                ? ["stack", "sync", "--prune"]
+                : ["stack", "sync"];
+          bb.log.info(`running gh ${args.join(" ")} in ${cwd}`);
+          const result = await runGh(args, cwd, 180_000);
+          detail = joinDetails(detail, outputTail(result));
+          const warning = partialSuccessWarning(
+            step === "prune" ? "sync" : step,
+            result.stdout,
+            result.stderr,
+          );
+          if (step !== "prune" && (result.code !== 0 || warning)) {
+            const mapped = mapExitCode(result);
+            const needsAgent =
+              !result.failedToSpawn &&
+              !result.timedOut &&
+              requiresAgentSyncRecovery(result.code, result.stdout, result.stderr);
+            if (
+              step === "sync" &&
+              action !== "prune" &&
+              needsAgent
+            ) {
+              const lease = {
+                workspaceKey: workspace.key,
+                threadId,
+                intent: action,
+                expiresAt: Date.now() + 600_000,
+              };
+              recoveryLeases.set(workspace.key, lease);
+              syncHandoffAt.set(handoffKey, Date.now());
+              try {
+                await bb.sdk.threads.send({
+                  threadId,
+                  mode: "auto",
+                  input: [{
+                    type: "text",
+                    mentions: [],
+                    text: action === "sync-submit"
+                      ? "Native `gh stack sync` already ran and reported a non-trivial recovery state; it may have partial effects. Use the gh-stack skill. Inspect Git, rebase, ref, and stack state before retrying anything. Recover and verify Sync completely, then run `gh stack submit --auto` only after that verification succeeds, and verify the submitted stack."
+                      : "Native `gh stack sync` already ran and reported a non-trivial recovery state; it may have partial effects. Use the gh-stack skill. Inspect Git, rebase, ref, and stack state before retrying anything, recover the stack, and verify the final stack.",
+                  }],
+                });
+                return {
+                  ok: true,
+                  message: "Sync needs recovery and was handed to this thread's agent.",
+                  detail,
+                };
+              } catch (error: unknown) {
+                const reason = error instanceof Error ? error.message : String(error);
+                if (recoveryLeases.get(workspace.key) === lease) {
+                  recoveryLeases.delete(workspace.key);
+                }
+                syncHandoffAt.delete(handoffKey);
+                bb.log.warn(`sync handoff failed: ${reason}`);
+                return {
+                  ok: false,
+                  message:
+                    "Sync needs agent recovery, but the agent could not be started. Retry Sync when the thread is idle.",
+                  detail: joinDetails(detail, `Agent handoff failed: ${reason}`),
+                };
+              }
+            }
+            const failure = warning ?? mapped.message;
+            return {
+              ok: false,
+              message: `${failure}${steps.length > 1 && step === "sync" ? " Submit was not run." : ""}`,
+              detail,
+            };
+          }
+          if (step === "prune") {
+            const preflight = prunePreflight!;
+            const [candidateProbes, protectedProbes] = await Promise.all([
+              Promise.all(preflight.candidates.map((branch) => localBranchExists(cwd, branch))),
+              Promise.all(preflight.protected.map((branch) => localBranchExists(cwd, branch))),
+            ]);
+            const remaining = preflight.candidates.filter(
+              (_, index) => candidateProbes[index] !== false,
+            );
+            const missing = preflight.protected.filter(
+              (_, index) => protectedProbes[index] !== true,
+            );
+            const postconditionDamage =
+              remaining.length > 0 || missing.length > 0
+                ? `Prune postcondition damage: remaining candidates: ${remaining.join(", ") || "none"}; unexpectedly missing protected refs: ${missing.join(", ") || "none"}.`
+                : null;
+            if (result.code !== 0 || warning) {
+              const primary = warning ?? mapExitCode(result).message;
+              return {
+                ok: false,
+                message: postconditionDamage ? `${primary} ${postconditionDamage}` : primary,
+                detail: joinDetails(detail, postconditionDamage),
+              };
+            }
+            if (remaining.length > 0 || missing.length > 0) {
+              return {
+                ok: false,
+                message: `Prune verification failed. Remaining candidates: ${remaining.join(", ") || "none"}. Unexpectedly missing protected refs: ${missing.join(", ") || "none"}.`,
+                detail,
+              };
+            }
+          } else {
+            const checked = await verify(step, detail);
+            if (!checked.ok) {
+              return {
+                ...checked,
+                message: `${checked.message}${steps.length > 1 && step === "sync" ? " Submit was not run." : ""}`,
+              };
+            }
+          }
         }
+        syncHandoffAt.delete(`${workspace.key}\0${action}`);
+        const pruned = prunePreflight?.candidates.length ?? 0;
+        const message =
+          action === "sync"
+            ? "Stack sync verified."
+            : action === "submit"
+              ? "Stack submit verified."
+              : action === "prune"
+                ? `Pruned ${pruned} merged local branch${pruned === 1 ? "" : "es"}.`
+                : "Stack sync and submit verified in order.";
+        return { ok: true, message, detail };
+      });
+    },
+
+    async mergeStack({ threadId, method, throughPrNumber }) {
+      const workspace = await resolveWorkspace(threadId);
+      if (workspace.error) return { ok: false, message: workspace.error.message, detail: null };
+      return withWorkspaceMutation(workspace, async () => {
+        const cwd = workspace.cwd;
+        const raw = await readStackView(cwd);
+        if (raw.error) return { ok: false, message: raw.error.message, detail: null };
+        // GitHub is authoritative for terminal state. Preserve gh stack's
+        // QUEUED state while GitHub still reports OPEN.
+        const enriched = await Promise.all(
+          raw.stack.branches.map(async (branch) => {
+            if (!branch.pr) return { ...branch, pr: null };
+            const direct = await runGh(
+              [
+                "pr",
+                "view",
+                String(branch.pr.number),
+                "--json",
+                "state,isDraft,headRefName,headRefOid,baseRefName,mergedAt",
+              ],
+              cwd,
+              20_000,
+            );
+            let parsed: z.infer<typeof mergeValidationSchema> | null = null;
+            try {
+              const checked = mergeValidationSchema.safeParse(JSON.parse(direct.stdout));
+              parsed = checked.success ? checked.data : null;
+            } catch {
+              // Malformed direct state fails eligibility without throwing.
+            }
+            if (direct.code !== 0 || !parsed) {
+              return { ...branch, pr: { ...branch.pr, isDraft: true } };
+            }
+            const state =
+              parsed.state === "CLOSED" || parsed.state === "MERGED"
+                ? parsed.state
+                : branch.pr.state;
+            return {
+              ...branch,
+              isMerged: parsed.state === "MERGED",
+              pr: { ...branch.pr, state, isDraft: parsed.isDraft },
+            };
+          }),
+        );
+        const prefix = mergePrefix(enriched, throughPrNumber);
+        if (!prefix.pinned || prefix.selected.length === 0) {
+          return {
+            ok: false,
+            message: "No contiguous eligible merge prefix matches that request. A closed, draft, merged, missing, or unqueued PR blocks it.",
+            detail: null,
+          };
+        }
+
+        // Recompute and authorize directly immediately before the irreversible request.
+        const fresh = await readStackView(cwd);
+        if (fresh.error) return { ok: false, message: fresh.error.message, detail: null };
+        let authorizedTopOid: string | null = null;
+        for (let index = 0; index < prefix.selected.length; index++) {
+          const selected = prefix.selected[index];
+          const stackBranch = fresh.stack.branches.find(
+            (branch) =>
+              branch.name === selected.name && branch.pr?.number === selected.pr?.number,
+          );
+          if (!stackBranch?.pr) {
+            return {
+              ok: false,
+              message: `${selected.name} changed before merge; refresh and retry.`,
+              detail: null,
+            };
+          }
+          const direct = await runGh(
+            [
+              "pr",
+              "view",
+              String(stackBranch.pr.number),
+              "--json",
+              "state,isDraft,headRefName,headRefOid,baseRefName,mergedAt",
+            ],
+            cwd,
+            20_000,
+          );
+          let state: z.infer<typeof mergeValidationSchema>;
+          try {
+            state = mergeValidationSchema.parse(JSON.parse(direct.stdout));
+          } catch {
+            return {
+              ok: false,
+              message: `Could not authorize PR #${stackBranch.pr.number}.`,
+              detail: outputTail(direct),
+            };
+          }
+          const expectedBase = index === 0 ? fresh.stack.trunk : prefix.selected[index - 1].name;
+          const authorized =
+            direct.code === 0 &&
+            state.headRefName === selected.name &&
+            state.baseRefName === expectedBase &&
+            !state.isDraft &&
+            !state.mergedAt &&
+            (state.state === "OPEN" || state.state.includes("QUEUE"));
+          if (!authorized) {
+            return {
+              ok: false,
+              message: `PR #${stackBranch.pr.number} no longer has the expected open/queued head and base chain.`,
+              detail: null,
+            };
+          }
+          if (index === prefix.selected.length - 1) {
+            authorizedTopOid = state.headRefOid;
+          }
+        }
+        const top = prefix.selected.at(-1)?.pr;
+        if (!top || !authorizedTopOid) {
+          return { ok: false, message: "No pull request is eligible to merge.", detail: null };
+        }
+        const endpoint = `repos/{owner}/{repo}/pulls/${top.number}/merge-async`;
+        const submit = await runGh(
+          [
+            "api",
+            "--method",
+            "PUT",
+            endpoint,
+            "-f",
+            `merge_method=${method}`,
+            "-f",
+            "merge_action=default",
+            "-f",
+            `sha=${authorizedTopOid}`,
+          ],
+          cwd,
+          30_000,
+        );
+        let outcome = parseAsyncMerge(submit.stdout);
+        let terminalFromPolling = false;
+        const http = submit.stderr.match(/HTTP (\d{3})/)?.[1];
+        if (submit.code !== 0 && (http !== "409" || !outcome?.details.uuid)) {
+          return {
+            ok: false,
+            message:
+              http === "404"
+                ? "GitHub's stack merge API is unavailable or the PR was not found. Nothing was merged."
+                : outcome?.details.message || "GitHub rejected the merge request. Nothing was merged.",
+            detail: outputTail(submit),
+          };
+        }
+        if (!outcome) {
+          return {
+            ok: false,
+            message: "GitHub returned an unexpected merge response.",
+            detail: outputTail(submit),
+          };
+        }
+        const deadline = Date.now() + 240_000;
+        while (outcome.status === "pending") {
+          if (!outcome.details.uuid || !MERGE_UUID.test(outcome.details.uuid)) {
+            return {
+              ok: false,
+              message: "GitHub accepted the merge without a valid polling id.",
+              detail: null,
+            };
+          }
+          const uuid = outcome.details.uuid;
+          if (Date.now() >= deadline) {
+            return {
+              ok: false,
+              message: "GitHub is still processing the merge and its final outcome is uncertain; refresh to reconcile.",
+              detail: `Merge request UUID: ${uuid}`,
+            };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+          const poll = await runGh(["api", `${endpoint}/${uuid}`], cwd, 15_000);
+          if (poll.failedToSpawn || poll.timedOut || poll.code !== 0) {
+            return {
+              ok: false,
+              message: "Could not poll the running merge; its final outcome is uncertain. Refresh to reconcile.",
+              detail: joinDetails(`Merge request UUID: ${uuid}`, outputTail(poll)),
+            };
+          }
+          const next = parseAsyncMerge(poll.stdout);
+          if (!next) {
+            return {
+              ok: false,
+              message: "Lost track of the running merge; refresh shortly.",
+              detail: outputTail(poll),
+            };
+          }
+          outcome = next;
+          if (outcome.status !== "pending") terminalFromPolling = true;
+        }
+        if (outcome.status === "failed") {
+          return {
+            ok: false,
+            message: `Nothing was merged: ${outcome.details.message || "GitHub reported a failure."}`,
+            detail: null,
+          };
+        }
+        const count = prefix.selected.length;
+        const left = enriched.filter(
+          (branch) => !branch.isMerged && branch.pr?.state !== "MERGED",
+        ).length - count;
+        const rest =
+          left > 0
+            ? ` The ${left} layer${left === 1 ? "" : "s"} above stay open — run Sync to restack ${left === 1 ? "it" : "them"} onto ${raw.stack.trunk}.`
+            : "";
+        if (outcome.status === "enqueued") {
+          return {
+            ok: true,
+            message: `${count} pull request${count === 1 ? "" : "s"} added to the merge queue on ${raw.stack.trunk}; they land as the queue processes them.${rest}`,
+            detail: null,
+          };
+        }
+        if (outcome.status === "merged" && !terminalFromPolling) {
+          return {
+            ok: true,
+            message: "GitHub reports the target is already merged; refresh to reconcile the stack.",
+            detail: null,
+          };
+        }
+        const shape =
+          method === "squash"
+            ? "one commit per branch"
+            : method === "rebase"
+              ? "every commit replayed"
+              : "one merge commit per branch";
         return {
           ok: true,
-          message:
-            action === "sync"
-              ? "Stack sync completed; active branches match their upstream refs."
-              : "Stack submit completed; active branches are pushed and have pull requests.",
-          detail,
+          message: `Merged ${count} branch${count === 1 ? "" : "es"} into ${raw.stack.trunk} — ${shape}.${rest}`,
+          detail: null,
         };
       });
     },
