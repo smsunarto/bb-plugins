@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { projectStackLayers } from "../lib/stack-layers.ts";
+import { hasExtendableLayers, projectStackLayers } from "../lib/stack-layers.ts";
 
 type Layer = { name: string; isMerged: boolean; marker: number };
 
@@ -79,4 +79,21 @@ test("hiding other merged layers does not move an active or unknown current bran
 
   assert.equal(projectStackLayers(branches, "main", null).checkout, null);
   assert.equal(projectStackLayers(branches, "main", "other").checkout, null);
+});
+
+test("a stack is extendable only while some layer is unmerged", () => {
+  const merged = { isMerged: true, pr: { state: "MERGED" } };
+  const open = { isMerged: false, pr: { state: "OPEN" } };
+
+  assert.equal(hasExtendableLayers([merged, open]), true);
+  assert.equal(hasExtendableLayers([merged, merged]), false);
+  assert.equal(hasExtendableLayers([]), false);
+});
+
+test("a layer whose PR merged behind gh-stack's back is not extendable", () => {
+  // gh stack view can report isMerged: false while the PR already says MERGED.
+  assert.equal(hasExtendableLayers([{ isMerged: false, pr: { state: "MERGED" } }]), false);
+  // A layer with no PR yet is still somewhere to stack onto.
+  assert.equal(hasExtendableLayers([{ isMerged: false, pr: null }]), true);
+  assert.equal(hasExtendableLayers([{ isMerged: false }]), true);
 });

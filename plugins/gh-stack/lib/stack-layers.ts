@@ -1,3 +1,15 @@
+/**
+ * A stack whose every layer is merged cannot be extended: `gh stack top` has
+ * no branch to check out, because merged layer branches are normally pruned
+ * locally and on the remote. Only the layers that survive make a stack
+ * extendable; without one, new work starts a stack of its own.
+ */
+export function hasExtendableLayers<
+  T extends { isMerged: boolean; pr?: { state: string } | null },
+>(branches: readonly T[]): boolean {
+  return branches.some((branch) => !branch.isMerged && branch.pr?.state !== "MERGED");
+}
+
 export type StackLayerCheckout = {
   mergedBranch: string;
   target:

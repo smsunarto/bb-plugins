@@ -26,6 +26,7 @@ import {
   requiresAgentSyncRecovery,
 } from "./lib/gh-stack-output";
 import {
+  hasExtendableLayers,
   projectStackLayers,
   type StackLayerCheckout,
 } from "./lib/stack-layers";
@@ -881,7 +882,8 @@ function magicExtendPrompt(settings: Settings, detectedPrefix: string | null): s
     "This workspace already has a stack. Split the work that is not yet in it into more layers on top, with `gh stack` (follow the gh-stack skill).",
     "1. Inspect the state: `gh stack view --json`, plus uncommitted changes and commits not yet in a layer.",
     "2. Design the new layers bottom-to-top — one dependent concern per layer (read references/stack-design.md if unsure).",
-    "3. Run `gh stack top`, then `gh stack add <branch>` per layer, moving each concern into its owning layer. Do not run `gh stack init`; it would start a second stack.",
+    "3. Run `gh stack top`, then `gh stack add <branch>` per layer, moving each concern into its owning layer. Do not run `gh stack init` while the stack still has a branch to build on; it would start a second stack.",
+    "If `gh stack top` fails because the layer branches no longer exist (every layer merged, branches pruned locally and on the remote), there is nothing to extend: build the layers on the trunk instead, then adopt them with `gh stack init --base <trunk> <branch>...`, which reuses those branches rather than creating a competing stack.",
     "4. Push and open draft PRs with `gh stack submit --auto`, then confirm with `gh stack view --json` and share the PR links.",
     ...splitProtocolLines(),
     ...conventionsLines(settings, detectedPrefix),
@@ -2604,12 +2606,15 @@ export default async function plugin(bb: BbPluginApi) {
       if (workspace.error) {
         return { ok: false, message: workspace.error.message, detail: null };
       }
-      // An existing stack must be extended, not re-initialized.
+      // A stack with layers left to build on must be extended, not
+      // re-initialized. One whose layers are all merged is finished: its
+      // branches are gone, so there is nothing to stack onto and the agent
+      // needs the create prompt instead.
       const view = await readStackView(workspace.cwd);
       if (view.error && view.error.kind !== "not-a-stack") {
         return { ok: false, message: view.error.message, detail: null };
       }
-      const hasStack = view.stack !== null;
+      const hasStack = view.stack !== null && hasExtendableLayers(view.stack.branches);
       // Hand the agent the same naming rules the composer follows.
       const settings = await loadSettings();
       const detectedPrefix =
