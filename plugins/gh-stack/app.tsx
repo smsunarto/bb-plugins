@@ -164,9 +164,11 @@ function StatusPill({
     );
   }
   return (
+    // `relative` lifts the toggle above the row-wide checkout overlay, which
+    // is absolutely positioned and would otherwise take this click.
     <button
       type="button"
-      className={`${pill} gap-1 cursor-pointer hover:border-border disabled:opacity-70`}
+      className={`${pill} relative gap-1 cursor-pointer hover:border-border disabled:opacity-70`}
       disabled={busy}
       title={
         syncing
@@ -187,9 +189,10 @@ function StatusPill({
 }
 
 // +N −M, in the diff colors. The file names live in the tree below the row,
-// so the chip carries the line counts alone. The colors are the host's own
-// diff tokens — the same ones the changed-file tree paints its rows with — so
-// a row total and the files under it never read as two different greens.
+// so the chip carries the line counts alone. The colors and the 6px gap match
+// the file tree's own decorations (see changed-file-tree), so the row total
+// and the rows under it read as one set of figures. Nothing may dim this:
+// an opacity here would show as a different color from the same token.
 const ADDED_COLOR = "var(--diffs-addition-color, #3fb950)";
 const DELETED_COLOR = "var(--diffs-deletion-color, #f85149)";
 
@@ -202,10 +205,11 @@ function DeltaChip({ change }: { change: ChangeSet }) {
   );
 }
 
-// Branch state, as uppercase chips beside the status pill.
+// Branch state, as uppercase chips. Ordered so "unpushed" — the one that
+// says something about the diff beside it — ends up next to the counts.
 function BranchChips({ branch }: { branch: StackBranch }) {
   const chip =
-    "rounded border px-1 text-[10px] font-medium uppercase leading-4 tracking-wide";
+    "shrink-0 rounded border px-1 text-[10px] font-medium uppercase leading-4 tracking-wide";
   const settled = branch.isMerged || branch.isQueued;
   return (
     <>
@@ -223,16 +227,16 @@ function BranchChips({ branch }: { branch: StackBranch }) {
           stashed
         </span>
       ) : null}
+      {!settled && (branch.aheadOfRemote === null || branch.behindRemote === null) ? (
+        <span className={`${chip} border-border text-muted-foreground`}>
+          remote unknown
+        </span>
+      ) : null}
       {!settled && branch.aheadOfRemote !== null && branch.aheadOfRemote > 0 ? (
         <span
           className={`${chip} border-amber-600/50 text-amber-600 dark:text-amber-400`}
         >
           {branch.aheadOfRemote} unpushed
-        </span>
-      ) : null}
-      {!settled && (branch.aheadOfRemote === null || branch.behindRemote === null) ? (
-        <span className={`${chip} border-border text-muted-foreground`}>
-          remote unknown
         </span>
       ) : null}
     </>
@@ -245,7 +249,6 @@ function RailRow({
   icon,
   iconTone,
   accent,
-  highlighted,
   // The row-wide hover wash reads as "this row does something when clicked",
   // so rows that only hold their own controls opt out of it.
   interactive = true,
@@ -254,15 +257,12 @@ function RailRow({
   icon: string;
   iconTone?: string;
   accent?: boolean;
-  highlighted?: boolean;
   interactive?: boolean;
   children: ReactNode;
 }) {
   return (
     <div
-      className={`relative mx-2 rounded-md ${
-        highlighted ? "bg-muted" : interactive ? "hover:bg-muted/50" : ""
-      }`}
+      className={`relative mx-2 rounded-md ${interactive ? "hover:bg-muted/50" : ""}`}
     >
       {accent ? (
         <div
@@ -330,72 +330,83 @@ function BranchRow({
   const canToggle =
     pr !== null && pr.state === "OPEN" && !pr.metadataStale;
   const canExpand = (branch.diff?.files.length ?? 0) > 0;
+  const canCheckout = !branch.isCurrent && !checkoutDisabled;
   const icon = branchIcon(branch);
   return (
     <RailRow
       icon={icon.path}
       iconTone={icon.tone}
+      // The accent rail alone marks the current layer; a filled row read as
+      // a selection state louder than the rest of the panel.
       accent={branch.isCurrent}
-      highlighted={branch.isCurrent}
-      // A row with no diff has nothing to expand, so it should not offer
-      // the hover wash that says it does.
-      interactive={canExpand}
+      // The row itself is the checkout control, so the wash appears only
+      // where that click would do something.
+      interactive={canCheckout}
     >
+      {/* Clicking anywhere on the row checks the layer out. The controls that
+          do something else — the PR link, the draft pill, the diff toggle —
+          are positioned above this overlay. */}
       <button
         type="button"
-        onClick={onToggleExpanded}
-        disabled={!canExpand}
-        aria-expanded={canExpand ? expanded : undefined}
-        aria-label={`${expanded ? "Hide" : "Show"} files changed in ${branch.name}`}
+        onClick={() => onCheckout(branch.name)}
+        disabled={!canCheckout}
+        aria-label={branch.isCurrent ? "Current branch" : `Check out ${branch.name}`}
         className="absolute inset-0 rounded-md enabled:cursor-pointer disabled:cursor-default"
       />
-      <div className="flex items-start justify-between gap-3">
-        {pr ? (
-          <a
-            href={pr.url}
-            target="_blank"
-            rel="noreferrer"
-            className="relative min-w-0 truncate text-sm font-semibold leading-5 text-foreground hover:underline"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {title}
-          </a>
-        ) : (
+      {/* One row: state, number, title, then the state chips and counts at
+          the trailing edge. The branch name no longer has a line of its own,
+          so it rides in the row's tooltip. This container stays static so the
+          checkout overlay covers it; each control that does something else
+          lifts itself above the overlay with `relative`. */}
+      <div className="flex items-center gap-2" title={branch.name}>
+        <StatusPill
+          pr={pr}
+          busy={checkoutDisabled || (pr !== null && prBusy === pr.number)}
+          syncing={prSyncing}
+          onToggle={canToggle && pr ? () => onToggleDraft(pr) : null}
+        />
+        {/* The link rides with the title rather than the trailing controls,
+            so it reads as "open this PR" and follows the text as it
+            truncates. min-w-0 is what lets that truncation happen instead
+            of pushing the trailing controls off the row. */}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          {pr ? (
+            <span className="shrink-0 font-mono text-xs leading-5 text-muted-foreground tabular-nums">
+              #{pr.number}
+            </span>
+          ) : null}
           <span className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">
             {title}
           </span>
-        )}
-        {/* The pill keeps a fixed offset from the checkout button, so the
-            state chips grow to its left rather than shifting it. */}
-        <div className="relative flex shrink-0 items-center gap-1">
-          <BranchChips branch={branch} />
-          <StatusPill
-            pr={pr}
-            busy={checkoutDisabled || (pr !== null && prBusy === pr.number)}
-            syncing={prSyncing}
-            onToggle={canToggle && pr ? () => onToggleDraft(pr) : null}
-          />
-          <span title={branch.isCurrent ? "Current branch" : `Check out ${branch.name}`}>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="size-5 rounded-sm px-0 text-muted-foreground"
-              aria-label={branch.isCurrent ? "Current branch" : `Check out ${branch.name}`}
-              disabled={branch.isCurrent || checkoutDisabled}
-              onClick={() => onCheckout(branch.name)}
+          {pr ? (
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open #${pr.number} on GitHub`}
+              aria-label={`Open pull request #${pr.number} on GitHub`}
+              className="relative inline-flex shrink-0 items-center text-muted-foreground hover:text-foreground"
+              onClick={(event) => event.stopPropagation()}
             >
-              <Icon name="GitBranch" className="size-3.5" />
-            </Button>
-          </span>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
-        <span className="truncate">
-          {pr ? `#${pr.number} · ` : ""}
-          {branch.name}
+              <Icon name="ExternalLink" className="size-3.5" aria-hidden />
+            </a>
+          ) : null}
         </span>
-        {branch.diff && canExpand ? <DeltaChip change={branch.diff} /> : null}
+        <BranchChips branch={branch} />
+        {/* The counts close the row, and double as the file-tree toggle now
+            that the row click is checkout. */}
+        {branch.diff && canExpand ? (
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Hide" : "Show"} files changed in ${branch.name}`}
+            title={expanded ? "Hide changed files" : "Show changed files"}
+            className="relative shrink-0 cursor-pointer rounded-sm"
+          >
+            <DeltaChip change={branch.diff} />
+          </button>
+        ) : null}
       </div>
       {expanded && branch.diff ? (
         <div className="relative">
@@ -526,6 +537,9 @@ function LayerComposer({
           >
             {magicking ? "Summoning…" : "Magic Stack 🪄"}
           </Button>
+          {/* Secondary like Magic Stack beside it and like Sync/Submit below:
+              the default variant is bg-foreground, which reads as the panel's
+              loudest surface for what is an ordinary action. */}
           <Button
             type="submit"
             size="sm"
@@ -841,15 +855,21 @@ function StackPanel({ threadId }: { threadId: string }) {
   const [suggesting, setSuggesting] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionDetail, setActionDetail] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Only the rows the reader has explicitly toggled. Everything else follows
+  // the default below — the checked-out layer opens on its own, since its
+  // changes are the ones being worked on.
+  const [expansionOverrides, setExpansionOverrides] = useState<
+    Map<string, boolean>
+  >(new Map());
 
-  const toggleExpanded = (key: string) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const isExpanded = (branch: StackBranch) =>
+    expansionOverrides.get(branch.name) ?? branch.isCurrent;
+
+  const toggleExpanded = (branch: StackBranch) => {
+    const next = !isExpanded(branch);
+    setExpansionOverrides((current) =>
+      new Map(current).set(branch.name, next),
+    );
   };
 
   // Cached mode paints instantly from the server's per-thread cache (which
@@ -1247,12 +1267,17 @@ function StackPanel({ threadId }: { threadId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          {/* Before the first payload the trunk is simply unknown, so the
+              generic label would be a claim that gets replaced a moment
+              later. Hold the line empty instead of flashing it. */}
           <div className="truncate">
             {base ? (
               <>
                 {stack ? "Stack on" : "New stack on"}{" "}
                 <span className="font-mono text-foreground">{base}</span>
               </>
+            ) : result === null ? (
+              <span className="invisible">Stacked pull requests</span>
             ) : (
               "Stacked pull requests"
             )}
@@ -1358,8 +1383,8 @@ function StackPanel({ threadId }: { threadId: string }) {
                 branch.draftReconciliationPending === true ||
                 (branch.pr ? draftIntents.has(branch.pr.number) : false)
               }
-              expanded={expanded.has(branch.name)}
-              onToggleExpanded={() => toggleExpanded(branch.name)}
+              expanded={isExpanded(branch)}
+              onToggleExpanded={() => toggleExpanded(branch)}
               onToggleDraft={(pr) => void toggleDraft(pr)}
               onCheckout={(branch) => void checkout(branch)}
             />
@@ -1380,9 +1405,9 @@ function StackPanel({ threadId }: { threadId: string }) {
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             {/* Secondary, not the default fill: that variant is
-                bg-foreground, the brightest surface the theme has, and a row
-                of them out-shouts the stack they act on. Merge keeps its own
-                color — it is the irreversible one. */}
+                bg-foreground, the brightest surface the theme has, and two of
+                them side by side out-shout the stack they act on. Merge keeps
+                its own color — it is the irreversible one. */}
             <span className="flex-1 min-w-fit" title={`Sync — ${syncSubtitle}`}>
               <Button
                 size="sm"
