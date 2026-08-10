@@ -28,6 +28,7 @@
     "typescript": "^7.0.0"
   },
   "scripts": {
+    "dev": "bun ../../scripts/dev-plugin.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",
     "build:bridge": "esbuild src/bridge.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/bridge.js --banner:js=\"import { createRequire as __bbCreateRequire } from 'node:module'; const require = __bbCreateRequire(import.meta.url);\"",

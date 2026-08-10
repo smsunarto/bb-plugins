@@ -14,7 +14,16 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 | `pr-walkthrough` | `plugins/pr-walkthrough` | Generate a human-friendly pull-request walkthrough with a built-in viewer panel. |
 | `theme` | `plugins/theme` | Ships Scott's Theme as a selectable BB palette. |
 
-The plugin id comes from the `name` field in each `package.json` with the `bb-plugin-` prefix removed. The directory name is not used.
+## Package naming
+
+Use a hybrid convention:
+
+| Package type | Package name | Directory |
+|---|---|---|
+| Installable bb plugin | `bb-plugin-<id>` | `plugins/<id>` |
+| Shared non-plugin package | `@smsunarto/<name>` | `packages/<name>` |
+
+For example, the Agent Proxy plugin is `bb-plugin-agent-proxy` in `plugins/agent-proxy`. bb derives `agent-proxy` from the package name by removing `bb-plugin-`; the directory name does not define its identity. Keep `@smsunarto/*` names for shared packages because scoped bb plugin names do not follow this id contract.
 
 ## Setup
 
@@ -37,15 +46,16 @@ bb plugin install ~/git/bb-plugins/plugins/<name>
 |---|---|
 | `bun run build` | Build every plugin. |
 | `bun run build:reload` | Build every plugin, then reload the ones installed in the running bb. |
+| `bun run dev` | Watch all plugins and reload each one after its files change; live watchers are not duplicated. |
+| `bun run --filter 'bb-plugin-<name>' dev` | Watch one plugin and reload it after each change; no-op if its watcher is already running. |
+| `bun run reload <id>` | Reload one plugin once. |
+| `bun run logs <id> -f` | Follow one plugin's backend log. |
 | `bun run typecheck` | Type-check every plugin. |
 | `bun run test` | Run tests (plugins that define a `test` script). |
 | `bun run clean` | Remove every `dist/`. |
 | `bun run sdk-types:check` | Verify vendored SDK `.d.ts` files match the pinned bb release. |
 | `bun run sdk-types:refresh` | Regenerate vendored SDK `.d.ts` files after a bb upgrade. |
-| `bun run --filter './plugins/<name>' build` | Build one plugin. |
-| `bb plugin dev plugins/<name>` | Watch one plugin and hot-reload its frontend. |
-| `bb plugin reload <id>` | Reload one plugin after a backend change. |
-| `bb plugin logs <id>` | Tail one plugin's log. |
+| `bun run --filter 'bb-plugin-<name>' build` | Build one plugin. |
 
 ## Notes
 

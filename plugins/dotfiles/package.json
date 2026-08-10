@@ -38,6 +38,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
+    "dev": "bun ../../scripts/dev-plugin.ts",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"

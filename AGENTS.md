@@ -1,28 +1,25 @@
 # bb-plugins
 
-Bun-workspace monorepo of personal bb plugins under `plugins/*`. One lockfile, one hoisted `node_modules`. This repo is developed almost entirely by coding agents — keep this file accurate when conventions change.
+Bun-workspace monorepo of personal bb plugins under `plugins/*`. One lockfile, one hoisted `node_modules`. Keep this file accurate when conventions change.
 
-## Commands
+## Development workflow
 
-| Command | Effect |
-|---|---|
-| `bun install` | Install everything (one hoisted `node_modules`). |
-| `bun run build` | Build every plugin (`bb plugin build`). |
-| `bun run typecheck` | Type-check every plugin. |
-| `bun run lint` / `bun run lint:fix` | Oxlint. |
-| `bun run test` | Run tests; only plugins that define a `test` script run. |
-| `bun run --filter './plugins/<name>' <script>` | Any script for one plugin. |
-| `bun run sdk-types:check` | Verify vendored SDK `.d.ts` files match the pinned bb release. |
-| `bun run sdk-types:refresh` | Regenerate vendored SDK `.d.ts` files from the pinned bb release. |
-| `bun run build:reload` | Build everything, then reload the workspace plugins installed in the running bb. |
-| `bb plugin dev plugins/<name>` | Watch one plugin, hot-reload its frontend. |
-| `bb plugin logs <id> -f` | Follow one plugin's backend log. |
+- **Default during plugin work:** run `bun run dev` once and leave it running. It watches every plugin, rebuilds and reloads only the plugin that changed, and does not create duplicate watchers when run again. Do not prefer a filtered dev command; this repo is small and the all-plugin loop is the standard path.
+- **Fast check while editing:** run `bun run --filter 'bb-plugin-<name>' typecheck` or `test` for the plugin you changed. Use this only for iteration speed.
+- **Before handoff:** run root `bun run typecheck`, `bun run test`, and `bun run lint`. Also run `bun run build` when the change affects a manifest, frontend bundle, build input, dependency, or workspace tooling. A pure backend logic change with passing typecheck and tests does not need an extra build.
+- **Live UI or runtime behavior:** use the existing `bun run dev` loop, exercise the affected surface in bb, and inspect `bun run logs <id> -f` when behavior or reload is unclear.
+- **One-shot recovery:** use `bun run reload <id>` only when no dev watcher is running or a plugin needs manual recovery. Use `bun run build:reload` only when you explicitly want one full build-and-reload pass instead of a watcher. Do not run either after each edit.
+- **Dependencies:** run `bun install` after a fresh checkout or after package or lockfile changes, not as a routine verification step.
+- **Generated SDK types:** use `bun run sdk-types:check` in bb-version work. Use `bun run sdk-types:refresh` only after changing the pinned bb version; never refresh generated types to fix an ordinary type error.
+- **Clean builds:** use `bun run clean` only to diagnose stale generated output or to prove a clean build. Do not delete `dist/` during the normal live loop.
 
 The pinned bb release lives in root `package.json` → `config.bbVersion`. Locally `bb` comes from the desktop app; CI installs the same version from the `bb-app` npm package. The scripts fail if the CLI version does not match the pin.
 
 ## Layout and invariants
 
-- Plugin id = manifest `name` minus the `bb-plugin-` prefix. The directory name is irrelevant.
+- Use the hybrid package-name convention: installable bb plugins are `bb-plugin-<id>`; shared non-plugin packages are `@smsunarto/<name>`.
+- Plugin id = manifest `name` minus the `bb-plugin-` prefix. Keep its directory at `plugins/<id>` for navigation, although bb does not use the directory name as identity.
+- Put shared non-plugin packages in `packages/<name>` when needed. Do not give a bb plugin an `@smsunarto/*` name because bb derives its id from the `bb-plugin-` prefix.
 - `bb plugin build` is the authoritative build. `dist/` is generated and git-ignored — never edit or commit it.
 - Plugins are installed into bb as local **path sources**: bb reads files in place. Anything a plugin imports at build time must resolve from the plugin directory via the workspace `node_modules`.
 - `types/bb-plugin-sdk.d.ts` and `types/bb-plugin-sdk-app.d.ts` in each plugin are **generated** from the pinned bb release. Never hand-edit them. After a bb upgrade: bump `config.bbVersion`, run `bun run sdk-types:refresh`, and keep each manifest's `engines.bb` / `engines.bbPluginSdk` aligned. `types/css-modules.d.ts` is hand-maintained.
@@ -33,8 +30,8 @@ The pinned bb release lives in root `package.json` → `config.bbVersion`. Local
 
 ## Testing and verification
 
-- `bun run test` fans out across plugins; amp uses `node --test` and that is fine — do not rewrite it for runner uniformity.
-- The `@bb/plugin-sdk/testing` vitest harness is documented in the bb plugin-authoring skill but is **not distributable in bb 0.35.x** (no npm package). Until it ships, verify UI plugins with the live loop: `bun run build:reload` (or `bb plugin dev plugins/<name>`), exercise the surface in bb, and check `bb plugin logs <id> -f`.
+- Root build, dev, typecheck, and clean scripts fan out through Bun's `bb-plugin-*` workspace filter. Root tests cover workspace scripts before the plugin suites. Dev scripts use `scripts/dev-plugin.ts` for one polling watcher per plugin directory and stale-lock recovery. Amp uses `node --test` and that is fine — do not rewrite it for runner uniformity.
+- The `@bb/plugin-sdk/testing` vitest harness is documented in the bb plugin-authoring skill but is **still not distributable at bb 0.36.0**. Re-verified 2026-08-09, so do not re-litigate it: `@bb/plugin-sdk` 404s on npm and the whole `@bb` scope is empty; GitHub Packages has nothing under that owner; the `bb-app` tarball ships only the host-side `plugin-sdk-runtime.js`, not the package; bb's sole publish workflow publishes `packages/bb-app` alone; and `bb plugin new --app` vendors only the `types/*.d.ts`, no vitest and no harness. Upstream examples reach it via `"@bb/plugin-sdk": "workspace:*"`, which a fork cannot resolve, and no package manager can install a subdirectory of a git monorepo. Until it ships, UI verification means the live loop plus a real surface check; build success alone is insufficient.
 - Keep pure logic in plain modules so it stays unit-testable without a bb server.
 
 ## Conduct

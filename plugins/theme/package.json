@@ -33,6 +33,7 @@
     "zod": "^4.3.6"
   },
   "scripts": {
+    "dev": "bun ../../scripts/dev-plugin.ts",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
