@@ -859,6 +859,7 @@ function splitProtocolLines(): string[] {
     "Before restructuring: `git stash push` any workspace changes that are not part of this work; run the repository's lint and typecheck so you split a clean tree; copy every file you will move to a temporary snapshot directory, and when the stack is built byte-compare the top against that snapshot.",
     "If the work already exists as per-concern commits, build each layer by cherry-picking them — never re-edit files a commit already captures.",
     "When splitting a mixed tree, assign whole files to the single layer that owns them, and for a file two layers share write out its full intermediate state per layer — byte-exact copies, not patches or anchored string edits, which drift and cannot safely re-run. If the repository has a splitter tool (for example `bun scripts/split-layers.ts <manifest>`), drive it with a manifest instead of editing by hand.",
+    "Prove every layer stands alone, not just the top one: give the splitter a `verify` command that runs the repository's typecheck and tests, or run them yourself before each commit. A layer that only compiles once the layer above lands is not reviewable.",
   ];
 }
 

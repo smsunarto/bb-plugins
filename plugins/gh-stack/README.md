@@ -78,9 +78,9 @@ branches and pull requests via the GitHub CLI.
   `gh stack init` when there is no stack or every layer of the last one merged,
   `gh stack top` + `add` while a stack still has a layer to build on. It also
   carries the split protocol — stash unrelated work, lint before splitting,
-  snapshot the finished state and byte-verify the top against it, cherry-pick
-  per-concern commits when they exist, and prefer a manifest-driven splitter
-  (`scripts/split-layers.ts` here) over hand edits.
+  snapshot the finished state and byte-verify the top against it, verify each
+  layer on its own, cherry-pick per-concern commits when they exist, and prefer
+  a manifest-driven splitter (`scripts/split-layers.ts` here) over hand edits.
 - **Automatic Sync recovery** keeps ordinary updates deterministic with native
   `gh stack sync`. Rebase conflicts, unfinished rebases, local/remote
   divergence, and known stack-topology conflicts are sent directly to the
