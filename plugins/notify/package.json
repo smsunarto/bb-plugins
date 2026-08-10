@@ -28,6 +28,7 @@
     "typescript": "^7.0.0"
   },
   "scripts": {
+    "dev": "bun ../../scripts/dev-plugin.ts",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts",

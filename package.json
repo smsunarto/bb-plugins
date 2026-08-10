@@ -16,15 +16,18 @@
     "bbVersion": "0.36.0"
   },
   "scripts": {
-    "build": "bun run --filter './plugins/*' build",
+    "build": "bun run --filter 'bb-plugin-*' --parallel build",
     "build:reload": "bun run build && bun scripts/reload-workspace-plugins.ts",
+    "dev": "bun run --filter 'bb-plugin-*' --parallel --no-orphans dev",
+    "reload": "bb plugin reload",
+    "logs": "bb plugin logs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "typecheck": "bun run --filter './plugins/*' typecheck",
-    "test": "bun run --filter './plugins/*' test",
+    "typecheck": "bun run --filter 'bb-plugin-*' --parallel typecheck",
+    "test": "bun test scripts/*.test.ts && bun run --filter 'bb-plugin-*' --parallel test",
     "sdk-types:check": "bun scripts/sdk-types.ts check",
     "sdk-types:refresh": "bun scripts/sdk-types.ts refresh",
-    "clean": "rm -rf plugins/*/dist"
+    "clean": "bun run --filter 'bb-plugin-*' --parallel clean"
   },
   "devDependencies": {
     "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
