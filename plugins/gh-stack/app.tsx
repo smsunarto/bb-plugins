@@ -1576,7 +1576,7 @@ function StackPanel({ threadId }: { threadId: string }) {
 export default definePluginApp((app) => {
   app.slots.threadPanelAction({
     id: "stack",
-    title: "Stack",
+    title: "GitHub Stack",
     icon: "Layers",
     component: StackPanel,
   });
