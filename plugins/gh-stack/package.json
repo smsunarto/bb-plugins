@@ -34,12 +34,12 @@
     "hono": "^4.11.9",
     "sonner": "^2.0.7",
     "typescript": "^7.0.0",
-    "vaul": "^1.1.2",
-    "zod": "^4.3.6"
+    "vaul": "^1.1.2"
   },
   "scripts": {
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
     "clean": "rm -rf dist"
   }
 }
