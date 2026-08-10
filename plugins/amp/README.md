@@ -14,7 +14,7 @@ bb (ACP client, JSON-RPC over stdio)
 
 - One `execute()` call per ACP prompt turn. The Amp thread id (`session_id` on every stream message) is captured from the first message and later turns pass `continue: <threadId>`, so a bb thread maps to a single Amp thread. `--no-archive-after-execute` keeps the thread continuable.
 - Amp stream messages are translated to ACP `session/update` notifications: text → `agent_message_chunk`, thinking → `agent_thought_chunk` (the bridge always runs with `thinking: true`), `tool_use` → `tool_call`, `tool_result` → `tool_call_update`. Amp emits whole messages per line — there is no token-level streaming to forward.
-- sessionId → Amp thread id mappings persist in `$XDG_STATE_HOME/bb-plugin-amp/sessions.json` (default `~/.local/state/...`), so bb thread resume (`session/load`) reconnects to the original Amp thread across bridge restarts.
+- sessionId → Amp thread id mappings persist as independent atomic records in `$XDG_STATE_HOME/bb-plugin-amp/sessions/` (default `~/.local/state/...`), so concurrent bridge processes cannot overwrite one another and bb thread resume (`session/load`) reconnects to the original Amp thread across bridge restarts. Existing `sessions.json` mappings are migrated automatically.
 
 ### Config options exposed over ACP
 
@@ -101,5 +101,5 @@ The bridge core (`src/bridge-core.ts`) takes `execute` as an injected dependency
 - **"Could not find a usable Amp CLI"** in a thread — the `AMP_CLI_PATH` in the managed entry no longer exists. Reinstall Amp, then rerun `bb amp setup`.
 - **Auth errors in a thread** — run `amp login` in a terminal, or add `AMP_API_KEY` to the entry's `env` in `<bb data dir>/config.json`.
 - **Tool calls silently rejected** — Amp's headless permission rules denied them (the bridge posts a notice listing the tools). Set the `permission` option to `bypass`, or adjust `amp.permissions` / `amp.commands.allowlist` in Amp settings.
-- **Thread resume starts fresh with a warning** — the sessionId → thread mapping is missing from `~/.local/state/bb-plugin-amp/sessions.json` (e.g. pruned after 200 sessions, or removed).
+- **Thread resume starts fresh with a warning** — the sessionId → thread mapping is missing from `~/.local/state/bb-plugin-amp/sessions/` (e.g. pruned after 200 sessions, or removed).
 - **Provider not listed** — `bb amp status` shows each link in the chain (CLI, bundle, config entry, logo, provider registration).

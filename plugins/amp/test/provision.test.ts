@@ -138,7 +138,7 @@ test("merges an existing hand-written amp entry in place, preserving unknown key
       displayName: "Amp (old)",
       command: "/old/amp-acp",
       args: [],
-      env: { AMP_CLI_PATH: "/old/amp", AMP_ACP_CONTINUE_LATEST: "1" },
+      env: { AMP_CLI_PATH: "/old/amp", AMP_ACP_CONTINUE_LATEST: "1", KEEP_ME: "yes" },
       logo: "amp-logo.svg",
       note: "keep",
     }],
@@ -153,7 +153,8 @@ test("merges an existing hand-written amp entry in place, preserving unknown key
   assert.equal(entry.logo, "logos/amp.svg");
   assert.equal(entry.note, "keep");
   assert.equal(entry.env.AMP_CLI_PATH, launch.amp);
-  assert.equal(entry.env.AMP_ACP_CONTINUE_LATEST, "1");
+  assert.equal(entry.env.AMP_ACP_CONTINUE_LATEST, undefined);
+  assert.equal(entry.env.KEEP_ME, "yes");
 });
 
 test("second run after a merge reports no change", () => {
