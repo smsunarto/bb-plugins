@@ -1822,84 +1822,123 @@ export default async function plugin(bb: BbPluginApi) {
       if (workspace.error) {
         return { ok: false, message: workspace.error.message, detail: null };
       }
-      return withWorkspaceMutation(workspace, async () => {
-        const cwd = workspace.cwd;
+      const cwd = workspace.cwd;
+      // No workspace mutation lock: `gh pr ready` talks to GitHub and never
+      // touches the working tree, so any number of toggles run concurrently —
+      // with each other, and with reads. Stack membership is checked against
+      // the cached payload (one fresh view only when the cache is cold)
+      // instead of paying a full `gh stack view` per click.
+      let ownerName =
+        stackCache.get(threadId)?.payload.stack?.branches.find(
+          (branch) => branch.pr?.number === prNumber,
+        )?.name ?? null;
+      if (ownerName === null) {
         const view = await readStackView(cwd);
         if (view.error) {
           return { ok: false, message: view.error.message, detail: null };
         }
-        const owner = view.stack.branches.find(
-          (branch) => branch.pr?.number === prNumber,
-        );
-        if (!owner) {
-          return {
-            ok: false,
-            message: `PR #${prNumber} is not an open pull request in the current stack.`,
-            detail: null,
-          };
-        }
-        const before = await readPullRequestState(cwd, prNumber);
-        if (!before.state) {
-          return { ok: false, message: before.error, detail: before.detail };
-        }
-        if (before.state.headRefName !== owner.name) {
-          return {
-            ok: false,
-            message: `PR #${prNumber} points to ${before.state.headRefName}, not stack branch ${owner.name}.`,
-            detail: before.detail,
-          };
-        }
-        if (before.state.state !== "OPEN") {
-          return {
-            ok: false,
-            message: `PR #${prNumber} is ${before.state.state.toLowerCase()} and cannot change review readiness.`,
-            detail: before.detail,
-          };
-        }
-        if (before.state.isDraft === draft) {
-          return {
-            ok: false,
-            message: `PR #${prNumber} is already ${draft ? "a draft" : "ready for review"}.`,
-            detail: before.detail,
-          };
-        }
-
-        const intentKey = draftIntentKey(workspace.key, prNumber);
-        draftIntents.set(intentKey, { draft, at: Date.now() });
-        publishWorkspace(workspace.key);
-        const args = draft
-          ? ["pr", "ready", String(prNumber), "--undo"]
-          : ["pr", "ready", String(prNumber)];
-        bb.log.info(`running gh ${args.join(" ")} in ${cwd}`);
-        const result = await runGh(args, cwd, 30_000);
-        const detail = outputTail(result);
-        if (result.failedToSpawn || result.timedOut || result.code !== 0) {
-          draftIntents.delete(intentKey);
-          publishWorkspace(workspace.key);
-          const reason = result.stderr.trim().split("\n").pop() ?? "";
-          return {
-            ok: false,
-            message: reason || `gh pr ready exited with code ${result.code}.`,
-            detail,
-          };
-        }
-        const after = await readPullRequestState(cwd, prNumber);
-        if (after.state?.isDraft === draft) draftIntents.delete(intentKey);
-        if (!after.state) {
-          return {
-            ok: true,
-            message: `GitHub accepted the change for PR #${prNumber}; its read model is still catching up.`,
-            detail: joinDetails(detail, after.detail),
-          };
-        }
+        ownerName =
+          view.stack.branches.find((branch) => branch.pr?.number === prNumber)
+            ?.name ?? null;
+      }
+      if (ownerName === null) {
         return {
-          ok: true,
-          message: draft
-            ? `PR #${prNumber} converted to draft.`
-            : `PR #${prNumber} marked ready for review.`,
+          ok: false,
+          message: `PR #${prNumber} is not an open pull request in the current stack.`,
+          detail: null,
+        };
+      }
+      const before = await readPullRequestState(cwd, prNumber);
+      if (!before.state) {
+        return { ok: false, message: before.error, detail: before.detail };
+      }
+      if (before.state.headRefName !== ownerName) {
+        return {
+          ok: false,
+          message: `PR #${prNumber} points to ${before.state.headRefName}, not stack branch ${ownerName}.`,
+          detail: before.detail,
+        };
+      }
+      if (before.state.state !== "OPEN") {
+        return {
+          ok: false,
+          message: `PR #${prNumber} is ${before.state.state.toLowerCase()} and cannot change review readiness.`,
+          detail: before.detail,
+        };
+      }
+      if (before.state.isDraft === draft) {
+        return {
+          ok: false,
+          message: `PR #${prNumber} is already ${draft ? "a draft" : "ready for review"}.`,
+          detail: before.detail,
+        };
+      }
+
+      // Claim the new state before the command runs: a payload served while
+      // gh is still working would otherwise show the old pill everywhere.
+      const intentKey = draftIntentKey(workspace.key, prNumber);
+      draftIntents.set(intentKey, { draft, at: Date.now() });
+      publishWorkspace(workspace.key);
+      const args = draft
+        ? ["pr", "ready", String(prNumber), "--undo"]
+        : ["pr", "ready", String(prNumber)];
+      bb.log.info(`running gh ${args.join(" ")} in ${cwd}`);
+      const result = await runGh(args, cwd, 30_000);
+      const detail = outputTail(result);
+      if (result.failedToSpawn || result.timedOut || result.code !== 0) {
+        // The write never landed — drop the claim and announce, so the pill
+        // reverts to what GitHub reports instead of holding a state that
+        // does not exist.
+        draftIntents.delete(intentKey);
+        publishWorkspace(workspace.key);
+        const reason = result.stderr.trim().split("\n").pop() ?? "";
+        return {
+          ok: false,
+          message: reason || `gh pr ready exited with code ${result.code}.`,
           detail,
         };
-      });
+      }
+      const after = await readPullRequestState(cwd, prNumber);
+      if (after.state?.isDraft === draft) draftIntents.delete(intentKey);
+      // Patch the PR-metadata cache so a compute inside its freshness window
+      // serves the post-toggle value rather than a pre-toggle read.
+      const metadata = prMetadataCache.get(workspace.key);
+      const metadataEntry = metadata?.get(prNumber);
+      if (metadata && metadataEntry) {
+        metadata.set(prNumber, {
+          data: {
+            ...metadataEntry.data,
+            isDraft: after.state?.isDraft ?? draft,
+          },
+          at: Date.now(),
+        });
+      }
+      // Converge in the background: the overlay carries the pill until a
+      // compute comes back agreeing, which retires it. A compute already in
+      // flight started before this write landed and cannot contain it —
+      // chain one more behind it instead of joining it, or the overlay would
+      // wait out its TTL on a payload that predates the toggle.
+      const inflight = stackInflight.get(threadId);
+      if (inflight) {
+        const rerun = () => refreshStackInBackground(threadId);
+        void inflight.then(rerun, rerun);
+      } else {
+        refreshStackInBackground(threadId);
+      }
+      if (!after.state) {
+        return {
+          ok: true,
+          message: `GitHub accepted the change for PR #${prNumber}; its read model is still catching up.`,
+          detail: joinDetails(detail, after.detail),
+        };
+      }
+      return {
+        ok: true,
+        message: draft
+          ? `PR #${prNumber} converted to draft.`
+          : `PR #${prNumber} marked ready for review.`,
+        detail,
+      };
     },
 
     async runAction({ threadId, action }) {

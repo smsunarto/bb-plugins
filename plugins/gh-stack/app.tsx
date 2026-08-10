@@ -327,7 +327,9 @@ function BranchRow({
 }: {
   branch: StackBranch;
   checkoutDisabled: boolean;
-  prBusy: number | null;
+  // This row's own toggle round trip — never another row's, so pills on
+  // different PRs stay independently clickable.
+  prBusy: boolean;
   prSyncing: boolean;
   expanded: boolean;
   onToggleExpanded: () => void;
@@ -370,9 +372,12 @@ function BranchRow({
           checkout overlay covers it; each control that does something else
           lifts itself above the overlay with `relative`. */}
       <div className="flex items-center gap-2" title={branch.name}>
+        {/* Only this pill's own round trip disables it: a toggle is a
+            GitHub-side write that never touches the working tree, so it need
+            not wait on checkouts, syncs, or any other pill. */}
         <StatusPill
           pr={pr}
-          busy={checkoutDisabled || (pr !== null && prBusy === pr.number)}
+          busy={prBusy}
           syncing={prSyncing}
           onToggle={canToggle && pr ? () => onToggleDraft(pr) : null}
         />
@@ -858,7 +863,10 @@ function StackPanel({ threadId }: { threadId: string }) {
     | "checkout"
     | null
   >(null);
-  const [prBusy, setPrBusy] = useState<number | null>(null);
+  // Per-PR, so draft toggles run concurrently: each pill locks only itself,
+  // and only for its own round trip. A scalar here would let a second
+  // toggle's cleanup re-enable a pill whose write was still in flight.
+  const [prBusy, setPrBusy] = useState<Set<number>>(new Set());
   const [draftIntents, setDraftIntents] = useState<Map<number, boolean>>(new Map());
   // Any mutation can succeed before its response or the following refresh is
   // observed. While true, mutation controls stay locked against stale data;
@@ -1112,10 +1120,20 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
+  // The pill flips first and the write follows; a failure drops the
+  // optimistic value so the pill snaps back, and says why. No panel lock and
+  // no fresh refetch: the server claims the new state for every payload it
+  // serves and reconciles with its own background recompute, so any number
+  // of toggles run at once while the sync engine catches up behind them.
   const toggleDraft = async (pr: NonNullable<StackBranch["pr"]>) => {
     const draft = !pr.isDraft;
-    setPrBusy(pr.number);
-    setMutationNeedsRefresh(true);
+    const forgetIntent = () =>
+      setDraftIntents((current) => {
+        const next = new Map(current);
+        next.delete(pr.number);
+        return next;
+      });
+    setPrBusy((current) => new Set(current).add(pr.number));
     setDraftIntents((current) => new Map(current).set(pr.number, draft));
     try {
       const outcome = await rpc.call("setPrDraft", {
@@ -1125,18 +1143,18 @@ function StackPanel({ threadId }: { threadId: string }) {
       });
       setActionDetail(outcome.detail);
       if (!outcome.ok) {
-        setDraftIntents((current) => {
-          const next = new Map(current);
-          next.delete(pr.number);
-          return next;
-        });
+        forgetIntent();
         toast.error(outcome.message);
       }
     } catch (error: unknown) {
+      forgetIntent();
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      await refresh({ fresh: true });
-      setPrBusy(null);
+      setPrBusy((current) => {
+        const next = new Set(current);
+        next.delete(pr.number);
+        return next;
+      });
     }
   };
 
@@ -1167,6 +1185,30 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
+  // Retire a client intent once a payload agrees with it. The payload runs
+  // through the server's own overlay, so agreement means the server has taken
+  // the claim over — from here its draftReconciliationPending flag drives the
+  // spinner. An entry left behind would spin its pill forever.
+  useEffect(() => {
+    if (draftIntents.size === 0) return;
+    const branches = result?.stack?.branches;
+    if (!branches) return;
+    setDraftIntents((current) => {
+      let changed = false;
+      const next = new Map(current);
+      for (const branch of branches) {
+        const pr = branch.pr;
+        if (!pr) continue;
+        const intent = next.get(pr.number);
+        if (intent !== undefined && pr.isDraft === intent) {
+          next.delete(pr.number);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [result, draftIntents]);
+
   const rawStack = result?.stack ?? null;
   const stack: StackView | null = rawStack
     ? {
@@ -1185,7 +1227,9 @@ function StackPanel({ threadId }: { threadId: string }) {
   const base = stack?.trunk ?? result?.defaultBranch ?? null;
   // gh stack orders branches bottom (nearest trunk) → top; render top-first.
   const layers = stack ? [...stack.branches].reverse() : [];
-  const anyBusy = busy !== null || prBusy !== null;
+  // Draft toggles deliberately absent: they are GitHub-side writes that
+  // reconcile in the background, so they must not lock the panel.
+  const anyBusy = busy !== null;
   const mutationsDisabled =
     anyBusy || mutationNeedsRefresh || loading || refreshing;
   const notAStack = result?.error?.kind === "not-a-stack";
@@ -1393,7 +1437,7 @@ function StackPanel({ threadId }: { threadId: string }) {
               key={branch.name}
               branch={branch}
               checkoutDisabled={mutationsDisabled}
-              prBusy={prBusy}
+              prBusy={branch.pr ? prBusy.has(branch.pr.number) : false}
               prSyncing={
                 branch.draftReconciliationPending === true ||
                 (branch.pr ? draftIntents.has(branch.pr.number) : false)
