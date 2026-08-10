@@ -32,6 +32,7 @@ import {
 import {
   activeAutoStashOwners,
   checkoutWithAutoStash,
+  stashCountsByBranch,
 } from "./lib/smart-checkout";
 import { resolveWorkspaceKey } from "./lib/workspace-key";
 import {
@@ -116,8 +117,13 @@ const branchOutSchema = z.object({
   isMerged: z.boolean(),
   isQueued: z.boolean(),
   needsRebase: z.boolean(),
-  // True while tracked changes for this branch wait in a plugin auto-stash.
+  // True while tracked changes for this branch wait in a plugin auto-stash,
+  // which the plugin restores on checkout.
   hasStash: z.boolean(),
+  // Stash entries Git holds for this branch, whoever made them — this
+  // plugin's auto-stashes, `git stash` by hand, another tool. Zero when there
+  // are none; null when the stash list could not be read.
+  stashCount: z.number().int().nonnegative().nullable(),
   pr: prOutSchema.nullable(),
   // Present and true only when the returned draft value is an optimistic
   // server overlay over a GitHub read that has not caught up yet.
@@ -1501,7 +1507,7 @@ export default async function plugin(bb: BbPluginApi) {
       mutationVersion: workspaceMutationVersions.get(workspace.key) ?? 0,
     });
 
-    const [result, pending, defaultBranch, headPrefix, stashOwners] =
+    const [result, pending, defaultBranch, headPrefix, stashOwners, stashCounts] =
       await Promise.all([
         runGh(["stack", "view", "--json"], cwd, 30_000),
         pendingChangeSet(cwd),
@@ -1510,6 +1516,9 @@ export default async function plugin(bb: BbPluginApi) {
         activeAutoStashOwners({
           runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
           blockedStashOids: blockedAutoStashOids,
+        }),
+        stashCountsByBranch({
+          runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
         }),
       ]);
     const inspected = parseStackViewResult(result);
@@ -1584,6 +1593,7 @@ export default async function plugin(bb: BbPluginApi) {
           return {
             ...branch,
             hasStash: stashOwners?.has(branch.name) ?? false,
+            stashCount: stashCounts?.get(branch.name) ?? (stashCounts ? 0 : null),
             pr: null,
             diff: await diffPromise,
             aheadOfRemote: await aheadPromise,
@@ -1609,6 +1619,7 @@ export default async function plugin(bb: BbPluginApi) {
           ...branch,
           isMerged,
           hasStash: stashOwners?.has(branch.name) ?? false,
+          stashCount: stashCounts?.get(branch.name) ?? (stashCounts ? 0 : null),
           pr: {
             ...branch.pr,
             state,

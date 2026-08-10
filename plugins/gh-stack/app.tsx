@@ -218,13 +218,24 @@ function BranchChips({ branch }: { branch: StackBranch }) {
           needs rebase
         </span>
       ) : null}
-      {branch.hasStash ? (
+      {/* Two different facts share one chip. A pending auto-stash is the
+          louder one — those changes come back on checkout — so it wins the
+          wording when both hold. */}
+      {branch.hasStash || (branch.stashCount ?? 0) > 0 ? (
         <span
           className={`${chip} inline-flex items-center gap-1 border-border text-muted-foreground`}
-          title="Tracked changes for this layer are stored in a plugin stash and will return when the layer is checked out."
+          title={
+            branch.hasStash
+              ? "Tracked changes for this layer are stored in a plugin stash and will return when the layer is checked out."
+              : `${branch.stashCount} stash ${branch.stashCount === 1 ? "entry was" : "entries were"} made on this branch. Restore them yourself with git stash.`
+          }
         >
           <Icon name="Archive" className="size-3" aria-hidden />
-          stashed
+          {branch.hasStash
+            ? "stashed"
+            : branch.stashCount === 1
+              ? "1 stash"
+              : `${branch.stashCount} stashes`}
         </span>
       ) : null}
       {!settled && (branch.aheadOfRemote === null || branch.behindRemote === null) ? (

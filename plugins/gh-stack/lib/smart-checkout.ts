@@ -295,6 +295,31 @@ export async function activeAutoStashOwners(
   );
 }
 
+// "On <branch>: …" / "WIP on <branch>: …" — how Git records the branch a
+// stash was taken from. Anchored, so a branch name appearing later in a
+// hand-written message cannot be mistaken for the owner.
+const STASH_BRANCH = /^(?:WIP on|On) ([^:]+):/;
+
+// How many stash entries exist per branch, counting every entry Git holds —
+// this plugin's auto-stashes as well as ones made by hand or by another tool.
+// Null when the stash list could not be read, so the caller can tell "no
+// stashes" from "unknown".
+export async function stashCountsByBranch(
+  deps: StashInspectionDependencies,
+): Promise<Map<string, number> | null> {
+  const result = await deps.runGit(["stash", "list", "--format=%gs"]);
+  if (result.code !== 0) return null;
+  const counts = new Map<string, number>();
+  for (const line of result.stdout.split("\n")) {
+    const match = STASH_BRANCH.exec(line.trim());
+    if (!match) continue;
+    const branch = match[1].trim();
+    if (!branch) continue;
+    counts.set(branch, (counts.get(branch) ?? 0) + 1);
+  }
+  return counts;
+}
+
 async function markEntryHandled(
   entry: StashEntry,
   deps: SmartCheckoutDependencies,
