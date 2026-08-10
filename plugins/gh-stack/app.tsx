@@ -187,14 +187,17 @@ function StatusPill({
 }
 
 // +N −M, in the diff colors. The file names live in the tree below the row,
-// so the chip carries the line counts alone.
+// so the chip carries the line counts alone. The colors are the host's own
+// diff tokens — the same ones the changed-file tree paints its rows with — so
+// a row total and the files under it never read as two different greens.
+const ADDED_COLOR = "var(--diffs-addition-color, #3fb950)";
+const DELETED_COLOR = "var(--diffs-deletion-color, #f85149)";
+
 function DeltaChip({ change }: { change: ChangeSet }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs leading-4 tabular-nums">
-      <span className="text-green-600 dark:text-green-400">
-        +{change.additions}
-      </span>
-      <span className="text-red-600 dark:text-red-400">−{change.deletions}</span>
+      <span style={{ color: ADDED_COLOR }}>+{change.additions}</span>
+      <span style={{ color: DELETED_COLOR }}>−{change.deletions}</span>
     </span>
   );
 }
@@ -263,7 +266,7 @@ function RailRow({
     >
       {accent ? (
         <div
-          className="absolute -left-2 top-1 bottom-1 w-1 rounded-md bg-blue-500"
+          className="absolute -left-2 top-1 bottom-1 w-1 rounded-md bg-primary"
           aria-hidden
         />
       ) : null}
@@ -526,6 +529,7 @@ function LayerComposer({
           <Button
             type="submit"
             size="sm"
+            variant="secondary"
             className="h-7"
             disabled={!canSubmit}
           >
@@ -565,7 +569,7 @@ function Switch({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-input transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 ${
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 ${
         checked ? "bg-foreground" : "bg-muted"
       }`}
     >
@@ -1365,7 +1369,7 @@ function StackPanel({ threadId }: { threadId: string }) {
             <span className="text-muted-foreground">
               <Octicon path={OCTICONS.dot} />
             </span>
-            <span className="justify-self-start rounded-md bg-blue-500/10 px-1.5 py-0.5 font-mono text-xs leading-[18px] text-muted-foreground">
+            <span className="justify-self-start rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs leading-[18px] text-muted-foreground">
               {base ?? "trunk"}
             </span>
           </div>
@@ -1375,9 +1379,14 @@ function StackPanel({ threadId }: { threadId: string }) {
       {stack ? (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
+            {/* Secondary, not the default fill: that variant is
+                bg-foreground, the brightest surface the theme has, and a row
+                of them out-shouts the stack they act on. Merge keeps its own
+                color — it is the irreversible one. */}
             <span className="flex-1 min-w-fit" title={`Sync — ${syncSubtitle}`}>
               <Button
                 size="sm"
+                variant="secondary"
                 className="w-full"
                 onClick={() => void runAction("sync")}
                 disabled={mutationsDisabled || !syncNeeded}
@@ -1398,6 +1407,7 @@ function StackPanel({ threadId }: { threadId: string }) {
             <span className="flex-1 min-w-fit" title={`Submit — ${submitEffect}`}>
               <Button
                 size="sm"
+                variant="secondary"
                 className="w-full"
                 onClick={() => void runAction(needsRestack ? "sync-submit" : "submit")}
                 disabled={mutationsDisabled || !submitNeeded}
