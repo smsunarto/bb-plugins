@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Theme",
-    "description": "Ships Scott's Theme as a selectable BB palette.",
+    "description": "Ships Cursor Monokai as a selectable BB palette.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -20,8 +20,8 @@
     "themes": [
       {
         "id": "smsunarto",
-        "name": "Scott's Theme",
-        "description": "Dark-only palette derived from the smsunarto VS Code theme, with a Monokai ANSI terminal palette and Berkeley Mono.",
+        "name": "Cursor Monokai",
+        "description": "Dark-only palette ported from the Cursor Monokai editor theme: one meaning per hue, the shared ANSI content palette, and Berkeley Mono.",
         "css": "./themes/smsunarto.css"
       }
     ],
