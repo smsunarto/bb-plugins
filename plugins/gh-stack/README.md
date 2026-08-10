@@ -76,7 +76,10 @@ branches and pull requests via the GitHub CLI.
   workspace, design layers, and submit draft PRs — automatic splitting, where
   the composer takes one layer at a time. The prompt adapts to the workspace:
   `gh stack init` when there is no stack, `gh stack top` + `add` on top of an
-  existing one.
+  existing one. It also carries the split protocol — stash unrelated work,
+  lint before splitting, snapshot the finished state and byte-verify the top
+  against it, cherry-pick per-concern commits when they exist, and prefer a
+  manifest-driven splitter (`scripts/split-layers.ts` here) over hand edits.
 - **Automatic Sync recovery** keeps ordinary updates deterministic with native
   `gh stack sync`. Rebase conflicts, unfinished rebases, local/remote
   divergence, and known stack-topology conflicts are sent directly to the

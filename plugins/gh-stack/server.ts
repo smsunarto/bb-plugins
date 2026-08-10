@@ -849,6 +849,18 @@ function conventionsLines(settings: Settings, detectedPrefix: string | null): st
   return lines;
 }
 
+// How to run a split fast and prove it lossless. Restated on every Magic
+// Stack run — without it each agent rediscovers these rules the slow way
+// (anchored string edits that drift, partial failures that cannot re-run,
+// a top of stack nobody verified).
+function splitProtocolLines(): string[] {
+  return [
+    "Before restructuring: `git stash push` any workspace changes that are not part of this work; run the repository's lint and typecheck so you split a clean tree; copy every file you will move to a temporary snapshot directory, and when the stack is built byte-compare the top against that snapshot.",
+    "If the work already exists as per-concern commits, build each layer by cherry-picking them — never re-edit files a commit already captures.",
+    "When splitting a mixed tree, assign whole files to the single layer that owns them, and for a file two layers share write out its full intermediate state per layer — byte-exact copies, not patches or anchored string edits, which drift and cannot safely re-run. If the repository has a splitter tool (for example `bun scripts/split-layers.ts <manifest>`), drive it with a manifest instead of editing by hand.",
+  ];
+}
+
 function magicCreatePrompt(settings: Settings, detectedPrefix: string | null): string {
   return [
     "Split the work in this workspace into a stack of reviewable branches with `gh stack` (follow the gh-stack skill).",
@@ -856,6 +868,7 @@ function magicCreatePrompt(settings: Settings, detectedPrefix: string | null): s
     "2. Design the layers bottom-to-top — one dependent concern per layer, foundational work at the bottom (read references/stack-design.md if unsure).",
     "3. Create the stack with `gh stack init <branch>` and `gh stack add <branch>`, moving each concern into its owning layer.",
     "4. Push and open draft PRs with `gh stack submit --auto`, then confirm with `gh stack view --json` and share the PR links.",
+    ...splitProtocolLines(),
     ...conventionsLines(settings, detectedPrefix),
     "If the work is a single indivisible concern, say so and create a one-layer stack instead of forcing a split.",
   ].join("\n");
@@ -870,6 +883,7 @@ function magicExtendPrompt(settings: Settings, detectedPrefix: string | null): s
     "2. Design the new layers bottom-to-top — one dependent concern per layer (read references/stack-design.md if unsure).",
     "3. Run `gh stack top`, then `gh stack add <branch>` per layer, moving each concern into its owning layer. Do not run `gh stack init`; it would start a second stack.",
     "4. Push and open draft PRs with `gh stack submit --auto`, then confirm with `gh stack view --json` and share the PR links.",
+    ...splitProtocolLines(),
     ...conventionsLines(settings, detectedPrefix),
     "If the remaining work belongs in an existing layer, say so and commit it there instead of forcing a new layer.",
   ].join("\n");
