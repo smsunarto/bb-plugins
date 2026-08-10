@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   activeAutoStashOwners,
   checkoutWithAutoStash,
+  stashCountsByBranch,
   type CommandResult,
   type SmartCheckoutDependencies,
 } from "../lib/smart-checkout.ts";
@@ -218,4 +219,61 @@ test("a restore conflict preserves the stash and records durable recovery state"
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("stash counts group every entry by the branch it was made on", async () => {
+  const cwd = repository();
+  try {
+    const deps = dependencies(cwd);
+    assert.deepEqual(await stashCountsByBranch(deps), new Map());
+
+    // Two on `source`, one made by hand and one by the plugin's own path.
+    writeFileSync(join(cwd, "manual.txt"), "hand edit\n");
+    gitOk(cwd, ["stash", "push", "-m", "by hand"]);
+    writeFileSync(join(cwd, "carry.txt"), "second edit\n");
+    gitOk(cwd, ["stash", "push"]);
+
+    gitOk(cwd, ["checkout", "target"]);
+    writeFileSync(join(cwd, "manual.txt"), "target edit\n");
+    gitOk(cwd, ["stash", "push", "-m", "on target"]);
+
+    assert.deepEqual(
+      await stashCountsByBranch(deps),
+      new Map([
+        ["source", 2],
+        ["target", 1],
+      ]),
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// The owner is read from Git's own "On <branch>:" prefix, so a branch name
+// inside a hand-written message must not be counted as an owner.
+test("stash counts read the branch prefix, not the message body", async () => {
+  const cwd = repository();
+  try {
+    writeFileSync(join(cwd, "manual.txt"), "hand edit\n");
+    gitOk(cwd, ["stash", "push", "-m", "On target: notes about target"]);
+    assert.deepEqual(
+      await stashCountsByBranch(dependencies(cwd)),
+      new Map([["source", 1]]),
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable stash list reports unknown rather than zero", async () => {
+  const counts = await stashCountsByBranch({
+    runGit: async () => ({
+      code: 128,
+      stdout: "",
+      stderr: "fatal: not a git repository",
+      failedToSpawn: false,
+      timedOut: false,
+    }),
+  });
+  assert.equal(counts, null);
 });
