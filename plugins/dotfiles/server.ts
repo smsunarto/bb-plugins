@@ -56,21 +56,26 @@ const STATIC_GROUPS: TweakableGroup[] = [
     ],
   },
   {
-    id: "seeds",
-    title: "Seed settings",
+    id: "overlays",
+    title: "Settings overlays",
     files: [
       {
-        path: ".dotfiles/.claude/settings.json",
-        title: "Claude settings seed",
-        note: "Copied only when ~/.claude/settings.json is missing",
+        path: ".dotfiles/.claude/settings.overlay.json",
+        title: "Claude settings overlay",
+        note: "Re-imposed on the host-owned ~/.claude/settings.json",
+        render: true,
       },
       {
-        path: ".dotfiles/.codex/config.macos.toml",
-        title: "Codex seed (macOS)",
+        path: ".dotfiles/.codex/config.macos.overlay.toml",
+        title: "Codex overlay (macOS)",
+        note: "Re-imposed on the host-owned ~/.codex/config.toml",
+        render: true,
       },
       {
-        path: ".dotfiles/.codex/config.linux.toml",
-        title: "Codex seed (Linux)",
+        path: ".dotfiles/.codex/config.linux.overlay.toml",
+        title: "Codex overlay (Linux)",
+        note: "Re-imposed on the host-owned ~/.codex/config.toml",
+        render: true,
       },
     ],
   },
@@ -91,6 +96,11 @@ const STATIC_GROUPS: TweakableGroup[] = [
       { path: "mise.macos.toml", title: "mise.macos.toml", note: "Homebrew + macOS state" },
       { path: "mise.linux.toml", title: "mise.linux.toml", note: "apt + yui state" },
       {
+        path: ".miserc.toml",
+        title: ".miserc.toml",
+        note: "Enables platform-specific mise configuration",
+      },
+      {
         path: ".dotfiles/.config/mise/config.toml",
         title: "Global mise config",
         note: "The only [tools]/[env] declaration",
@@ -107,13 +117,32 @@ const STATIC_GROUPS: TweakableGroup[] = [
 // Tasks the plugin may run, keyed by a stable id. `sync` publishes (pushes);
 // everything else is local-only.
 const TASKS: Record<string, { command: string; summary: string }> = {
-  render: { command: "mise run render", summary: "Render generated agent configs" },
+  render: {
+    command: "mise run render",
+    summary: "Render agent configs and settings overlays",
+  },
   check: { command: "mise run check", summary: "Full repository validation" },
+  "check:location": {
+    command: "mise run check:location",
+    summary: "Validate the canonical checkout path",
+  },
   "check:mise": { command: "mise run check:mise", summary: "Validate mise + mappings" },
   "check:shell": { command: "mise run check:shell", summary: "Validate shell syntax" },
   "check:mcp": { command: "mise run check:mcp", summary: "Validate MCP JSON + renderer" },
+  "check:python": {
+    command: "mise run check:python",
+    summary: "Validate the shared Python runtime and tools",
+  },
   "check:skills": { command: "mise run check:skills", summary: "Validate skill manifests" },
   "check:dotfiles": { command: "mise run check:dotfiles", summary: "Validate dotfile mappings apply" },
+  "check:safety": {
+    command: "mise run check:safety",
+    summary: "Reject unsafe forced apply workflows",
+  },
+  "check:secrets": {
+    command: "mise run check:secrets",
+    summary: "Reject legacy tracked secret injection",
+  },
   "apply:dry": {
     command: "mise dotfiles apply --dry-run --verbose",
     summary: "Preview dotfile application",
@@ -123,6 +152,25 @@ const TASKS: Record<string, { command: string; summary: string }> = {
 };
 
 const OUTPUT_CAP = 200_000;
+
+// Fish is the dotfiles repository's login shell on every managed host. BB can
+// start with a limited desktop-app PATH, so use an absolute shell path and let
+// the login config expose mise. A POSIX shell keeps first-run recovery usable
+// before Fish is installed.
+const LOGIN_SHELL: { path: string; args: string[] } = (() => {
+  const candidates = [
+    process.env.SHELL,
+    "/opt/homebrew/bin/fish",
+    "/usr/local/bin/fish",
+    "/usr/bin/fish",
+  ];
+  for (const candidate of candidates) {
+    if (candidate?.endsWith("/fish") && existsSync(candidate)) {
+      return { path: candidate, args: ["-l", "-c"] };
+    }
+  }
+  return { path: "/bin/sh", args: ["-lc"] };
+})();
 
 function expandHome(path: string): string {
   return path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
@@ -165,8 +213,7 @@ function runCommand(
   timeoutMs = 300_000,
 ): Promise<{ exitCode: number; output: string }> {
   return new Promise((resolvePromise) => {
-    // Login shell so mise/git resolve from the user's normal PATH.
-    const child = spawn("/bin/zsh", ["-lc", command], { cwd });
+    const child = spawn(LOGIN_SHELL.path, [...LOGIN_SHELL.args, command], { cwd });
     let output = "";
     const append = (chunk: Buffer) => {
       if (output.length < OUTPUT_CAP) output += chunk.toString("utf8");
@@ -177,6 +224,9 @@ function runCommand(
       child.kill("SIGKILL");
       output += `\n[timed out after ${timeoutMs / 1000}s]`;
     }, timeoutMs);
+    // A spawn can emit `error` and `close`, or just one of them. The first
+    // resolution wins and the second is intentionally a no-op.
+    /* oxlint-disable promise/no-multiple-resolved */
     child.on("close", (code) => {
       clearTimeout(timer);
       if (output.length >= OUTPUT_CAP) output = `${output.slice(0, OUTPUT_CAP)}\n[output truncated]`;
@@ -186,6 +236,7 @@ function runCommand(
       clearTimeout(timer);
       resolvePromise({ exitCode: 127, output: `${output}\n${String(error)}` });
     });
+    /* oxlint-enable promise/no-multiple-resolved */
   });
 }
 
@@ -368,10 +419,14 @@ export default async function plugin(bb: BbPluginApi) {
       { name: "list", summary: "List tweakable files with dirty markers", usage: "bb dotfiles list" },
       { name: "status", summary: "Git status of the dotfiles repo", usage: "bb dotfiles status" },
       { name: "cat", summary: "Print a tweakable file", usage: "bb dotfiles cat <repo-relative-path>" },
-      { name: "render", summary: "Run scripts/render-agent-config via mise", usage: "bb dotfiles render" },
+      {
+        name: "render",
+        summary: "Render agent configs and settings overlays via mise",
+        usage: "bb dotfiles render",
+      },
       {
         name: "check",
-        summary: "Run repo validation (optionally one target: mise|shell|mcp|skills|dotfiles)",
+        summary: "Run all validation or one named check target",
         usage: "bb dotfiles check [target]",
       },
       {
@@ -450,8 +505,8 @@ export default async function plugin(bb: BbPluginApi) {
               "  list              list tweakable files\n" +
               "  status            git status of the repo\n" +
               "  cat <path>        print a tweakable file\n" +
-              "  render            render generated agent configs\n" +
-              "  check [target]    run validation (mise|shell|mcp|skills|dotfiles)\n" +
+              "  render            render agent configs and settings overlays\n" +
+              "  check [target]    run validation (location|mise|shell|mcp|python|dotfiles|safety|secrets|skills)\n" +
               "  sync [--publish]  pull-only sync, or publish with --publish",
           };
       }

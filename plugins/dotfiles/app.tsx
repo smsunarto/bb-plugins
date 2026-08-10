@@ -178,7 +178,9 @@ function DotfilesPanel() {
         setTaskOutput({ id: task, ...result });
         if (result.exitCode === 0) {
           toast.success(`${task} succeeded`);
-          if (task === "render") setRenderHint(false);
+          if (task === "render" || task === "sync") {
+            setRenderHint(false);
+          }
         } else {
           toast.error(`${task} exited with code ${result.exitCode}`);
         }
@@ -326,7 +328,7 @@ function DotfilesPanel() {
                 <div className="truncate font-mono text-sm text-foreground">{selected}</div>
                 {renderHint && (
                   <div className="text-xs text-amber-500">
-                    Generated consumers are stale — run render.
+                    Host-owned rendered files are stale — run render.
                   </div>
                 )}
               </div>
