@@ -216,8 +216,9 @@ const settingsSchema = z.object({
   // Namespace put in front of every derived branch ("scott/"). Empty means
   // "match the branches already in the workspace" (the detected prefix).
   branchPrefix: z.string().catch(""),
-  // Layer names read as Conventional Commits ("feat: add rate limiting"), and
-  // the derived branch carries the type ("scott/feat-add-rate-limiting").
+  // Layer and PR titles read as Conventional Commits, scope optional
+  // ("feat(api): add rate limiting"). The derived branch carries the type but
+  // not the scope ("scott/feat-add-rate-limiting").
   conventionalCommits: z.boolean().catch(false),
 });
 
@@ -816,7 +817,7 @@ function suggestNamePrompt(conventional: boolean): string {
   return [
     "Inspect the current work in this workspace: uncommitted changes (git status, git diff) and commits not yet on the default branch.",
     conventional
-      ? "Then reply with ONLY one Conventional Commits title that describes the work as a whole — `type: subject`, type one of feat, fix, docs, refactor, perf, test, build, ci, chore; subject in imperative mood, lower case, no trailing period; at most 60 characters in total."
+      ? "Then reply with ONLY one Conventional Commits title that describes the work as a whole — `type(scope): subject`, type one of feat, fix, docs, refactor, perf, test, build, ci, chore; scope is the part of the codebase the work touches (a package, module, or directory name, lower case) and is omitted when the work spans several or none fits; subject in imperative mood, lower case, no trailing period; at most 60 characters in total."
       : "Then reply with ONLY one PR-style title that describes the work as a whole — imperative mood, at most 60 characters, no quotes, no trailing period.",
     "Your entire final message must be just the title, nothing else.",
   ].join("\n");
@@ -842,7 +843,7 @@ function conventionsLines(settings: Settings, detectedPrefix: string | null): st
   }
   if (settings.conventionalCommits) {
     lines.push(
-      "Write every commit message and PR title as a Conventional Commit (`type: subject`, type one of feat, fix, docs, refactor, perf, test, build, ci, chore), and lead each branch slug with the same type (e.g. `feat-add-rate-limiting`).",
+      "Write every commit message and PR title as a Conventional Commit — `type(scope): subject`, type one of feat, fix, docs, refactor, perf, test, build, ci, chore. The scope names the part of the codebase the layer touches (a package, module, or directory name, lower case); omit it when the layer spans several or none fits. Lead each branch slug with the type only, not the scope (`feat(api): add rate limiting` → `feat-add-rate-limiting`).",
     );
   }
   return lines;
