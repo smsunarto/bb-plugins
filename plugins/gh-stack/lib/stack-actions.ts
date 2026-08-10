@@ -4,6 +4,26 @@ export type ActionBranch = {
   pr: { number: number; state: string; isDraft?: boolean } | null;
 };
 
+export type StackMergeMethod = "squash" | "merge" | "rebase";
+
+export function stackMergeArgs(
+  throughPrNumber: number,
+  method: StackMergeMethod,
+): string[] {
+  return [
+    "stack",
+    "merge",
+    String(throughPrNumber),
+    "--yes",
+    "--merge-method",
+    method,
+  ];
+}
+
+export function stackMergeWasQueued(stdout: string, stderr: string): boolean {
+  return /\b(?:enqueued|queued)\b|merge queue/i.test(`${stdout}\n${stderr}`);
+}
+
 export function pruneCandidates(branches: readonly ActionBranch[]): string[] {
   return branches
     .filter((branch) => branch.isMerged || branch.pr?.state === "MERGED")

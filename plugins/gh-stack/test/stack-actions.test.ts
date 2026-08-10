@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergePrefix, pruneCandidates, type ActionBranch } from "../lib/stack-actions.ts";
+import {
+  mergePrefix,
+  pruneCandidates,
+  stackMergeArgs,
+  stackMergeWasQueued,
+  type ActionBranch,
+} from "../lib/stack-actions.ts";
 
 const branch = (name: string, state = "OPEN", draft = false): ActionBranch => ({
   name,
@@ -20,6 +26,25 @@ test("prune candidates select only merged metadata or direct PR state", () => {
     ]),
     ["b1", "b3"],
   );
+});
+
+test("stack merge arguments pin the PR, confirmation, and method", () => {
+  assert.deepEqual(stackMergeArgs(42, "squash"), [
+    "stack",
+    "merge",
+    "42",
+    "--yes",
+    "--merge-method",
+    "squash",
+  ]);
+  assert.equal(stackMergeArgs(7, "rebase").at(-1), "rebase");
+  assert.equal(stackMergeArgs(9, "merge").at(-1), "merge");
+});
+
+test("stack merge queue output is distinguished from a completed merge", () => {
+  assert.equal(stackMergeWasQueued("Added to the merge queue", ""), true);
+  assert.equal(stackMergeWasQueued("", "PR #42 is queued for merge"), true);
+  assert.equal(stackMergeWasQueued("Merged feature into main", ""), false);
 });
 
 test("merge prefix stops at a missing PR", () => {

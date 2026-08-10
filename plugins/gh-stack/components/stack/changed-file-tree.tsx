@@ -70,11 +70,13 @@ function computeRowStats(files: TreeDiffFile[]): RowStats {
 }
 
 function deltaDecoration(additions: number, deletions: number): FileTreeRowDecoration {
+  // The gap between the two counts is a non-breaking space: the tree renders
+  // each part in its own element, where a plain space collapses away.
   return {
     text: `+${additions} −${deletions}`,
     parts: [
       { text: `+${additions}`, color: ADDED_COLOR },
-      { text: ` −${deletions}`, color: DELETED_COLOR },
+      { text: `\u00a0−${deletions}`, color: DELETED_COLOR },
     ],
   };
 }

@@ -34,7 +34,20 @@ import {
   checkoutWithAutoStash,
 } from "./lib/smart-checkout";
 import { resolveWorkspaceKey } from "./lib/workspace-key";
-import { mergePrefix, pruneCandidates } from "./lib/stack-actions";
+import {
+  applyPrMetadataReads,
+  evictAbsentPrMetadata,
+  partitionPrMetadata,
+  type PrMetadata,
+  type PrMetadataCache,
+  type PrMetadataResolution,
+} from "./lib/pr-metadata";
+import {
+  mergePrefix,
+  pruneCandidates,
+  stackMergeArgs,
+  stackMergeWasQueued,
+} from "./lib/stack-actions";
 
 const prSchema = z.object({
   number: z.number(),
@@ -66,7 +79,7 @@ const stackSchema = z.object({
   branches: z.array(branchSchema),
 });
 
-// Wire shape after enriching each PR with title/isDraft from `gh pr view`
+// Wire shape after enriching each PR with title/isDraft from GitHub
 // (gh stack view --json exposes neither).
 const prOutSchema = z.object({
   number: z.number(),
@@ -74,6 +87,10 @@ const prOutSchema = z.object({
   state: z.string(),
   title: z.string().nullable(),
   isDraft: z.boolean(),
+  // True when GitHub could not be read for this PR, so title/isDraft are a
+  // previous read or a placeholder. The panel must not present such values as
+  // current, and must not offer the draft toggle over them.
+  metadataStale: z.boolean(),
 });
 
 // Changed-file info computed with git in the workspace. Counts are null when
@@ -130,6 +147,15 @@ const prEnrichSchema = z.object({
   state: z.string().catch(""),
 });
 
+// One row of `gh pr list --json number,title,isDraft,state`.
+const prListRowSchema = z.object({
+  number: z.number(),
+  title: z.string().catch(""),
+  isDraft: z.boolean().catch(false),
+  state: z.string().catch(""),
+});
+const prListSchema = z.array(prListRowSchema);
+
 const prMutationStateSchema = z.object({
   isDraft: z.boolean(),
   state: z.string(),
@@ -138,7 +164,6 @@ const prMutationStateSchema = z.object({
 
 const mergeValidationSchema = prMutationStateSchema.extend({
   baseRefName: z.string(),
-  headRefOid: z.string().regex(/^[0-9a-f]{40}$/i),
   mergedAt: z.string().nullable(),
 });
 
@@ -178,21 +203,6 @@ const actionResultSchema = z.object({
 
 type ActionResult = z.infer<typeof actionResultSchema>;
 const mergeMethodSchema = z.enum(["squash", "merge", "rebase"]);
-const asyncMergeSchema = z.object({
-  status: z.enum(["pending", "merged", "enqueued", "failed"]),
-  details: z.object({ message: z.string().catch(""), uuid: z.string().optional() }).catch({ message: "" }),
-});
-const MERGE_UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function parseAsyncMerge(stdout: string): z.infer<typeof asyncMergeSchema> | null {
-  try {
-    const parsed = asyncMergeSchema.safeParse(JSON.parse(stdout));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
 
 // Panel settings, edited in the gear popup and stored in the plugin's kv.
 // Both are lenient on read so a row written by an older build still loads.
@@ -256,10 +266,6 @@ const stackPayloadSchema = z.object({
   // The settings in force, as stored — branchPrefix here is the raw
   // configured value ("" when unset), not the effective one above.
   settings: settingsSchema,
-  // The number GitHub would most likely give the next pull request —
-  // one past the highest issue or PR number. A guess: concurrent work
-  // in the repository can take it first.
-  nextPrNumber: z.number().nullable(),
 });
 
 export const rpcContract = defineRpcContract({
@@ -520,27 +526,6 @@ async function currentBranchPrefix(cwd: string): Promise<string | null> {
   return branchPrefixOf([result.stdout.trim()].filter(Boolean));
 }
 
-// GitHub numbers issues and pull requests from one sequence, so the newest
-// of either, plus one, is the next PR number. A guess — someone else's PR
-// can take it first.
-async function nextPrNumber(cwd: string): Promise<number | null> {
-  const result = await runGh(
-    [
-      "api",
-      "repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&per_page=1",
-      "--jq",
-      ".[0].number",
-    ],
-    cwd,
-    20_000,
-  );
-  if (result.code !== 0) return null;
-  const text = result.stdout.trim();
-  if (!text) return 1; // no issues or PRs yet
-  const latest = Number(text);
-  return Number.isInteger(latest) && latest >= 0 ? latest + 1 : null;
-}
-
 async function revListCount(
   cwd: string,
   left: string,
@@ -710,6 +695,75 @@ async function branchesNotAtUpstream(
   return checks.filter((branch): branch is string => branch !== null);
 }
 
+// One `gh pr list` covers the whole stack, so enrichment costs a single
+// GraphQL call per compute instead of one per branch. Numbers the list misses
+// (closed PRs past the page, or a PR in another repository) fall back to a
+// per-PR read, which is rare and bounded by the stack's height.
+const PR_LIST_PAGE = 100;
+const PR_FALLBACK_LIMIT = 5;
+
+async function readPrMetadata(
+  cwd: string,
+  numbers: number[],
+): Promise<Map<number, PrMetadata>> {
+  const found = new Map<number, PrMetadata>();
+  if (numbers.length === 0) return found;
+  const wanted = new Set(numbers);
+  const list = await runGh(
+    [
+      "pr",
+      "list",
+      "--state",
+      "all",
+      "--limit",
+      String(PR_LIST_PAGE),
+      "--json",
+      "number,title,isDraft,state",
+    ],
+    cwd,
+    30_000,
+  );
+  if (list.code === 0) {
+    try {
+      for (const row of prListSchema.parse(JSON.parse(list.stdout))) {
+        if (!wanted.has(row.number)) continue;
+        found.set(row.number, {
+          title: row.title || null,
+          isDraft: row.isDraft,
+          state: row.state,
+        });
+      }
+    } catch {
+      // Unparseable list: every number falls through to the per-PR read.
+    }
+  }
+  const missing = numbers.filter((number) => !found.has(number));
+  // A wholesale list failure (rate limit, network) would otherwise turn into
+  // one `gh pr view` per branch — exactly the cost this batching removes.
+  if (missing.length > PR_FALLBACK_LIMIT) return found;
+  await Promise.all(
+    missing.map(async (number) => {
+      const view = await runGh(
+        ["pr", "view", String(number), "--json", "title,isDraft,state"],
+        cwd,
+        20_000,
+      );
+      if (view.code !== 0) return;
+      try {
+        const enriched = prEnrichSchema.parse(JSON.parse(view.stdout));
+        found.set(number, {
+          title: enriched.title || null,
+          isDraft: enriched.isDraft,
+          state: enriched.state,
+        });
+      } catch {
+        // keep state-only for this PR
+      }
+    }),
+  );
+  return found;
+}
+
 async function readPullRequestState(
   cwd: string,
   prNumber: number,
@@ -824,6 +878,13 @@ const STACK_WATCH_MS = 90_000;
 // Idle events under this age of the cache don't recompute (burst coalescing).
 const STACK_IDLE_COALESCE_MS = 2_000;
 const DRAFT_INTENT_TTL_MS = 120_000;
+// PR title/draft/state, cached per workspace. A hit inside this window skips
+// the `gh pr list` entirely; an older entry is still served when the read
+// fails, so a rate limit degrades titles to stale rather than to nothing.
+const PR_METADATA_FRESH_MS = 60_000;
+// How long a failed read may keep serving the last good values before the
+// panel shows state-only rows instead.
+const PR_METADATA_MAX_AGE_MS = 30 * 60_000;
 
 export default async function plugin(bb: BbPluginApi) {
   // Per-thread cache of the last computed getStack payload; lastReadAt is the
@@ -853,6 +914,9 @@ export default async function plugin(bb: BbPluginApi) {
   const blockedAutoStashOids = new Set<string>();
   const remoteRefreshAt = new Map<string, number>();
   const remoteRefreshInflight = new Map<string, Promise<boolean>>();
+  // workspaceKey -> prNumber -> last successful read. Survives a failed
+  // refresh so the panel keeps showing titles it has already seen.
+  const prMetadataCache = new Map<string, PrMetadataCache>();
   const draftIntents = new Map<string, { draft: boolean; at: number }>();
   const syncHandoffAt = new Map<string, number>();
   const recoveryLeases = new Map<
@@ -916,6 +980,43 @@ export default async function plugin(bb: BbPluginApi) {
       }
     })();
     return reservation;
+  }
+
+  // Enrichment for one stack's PRs: cache first, one `gh pr list` for the
+  // rest. Entries are stamped per PR, so a failed read keeps serving the last
+  // good values (flagged stale) rather than collapsing rows to branch names.
+  async function enrichPrs(
+    workspaceKey: string,
+    cwd: string,
+    numbers: number[],
+  ): Promise<Map<number, PrMetadataResolution>> {
+    if (numbers.length === 0) return new Map();
+    let cached = prMetadataCache.get(workspaceKey);
+    if (!cached) {
+      cached = new Map();
+      prMetadataCache.set(workspaceKey, cached);
+    }
+    const { hits, missing } = partitionPrMetadata(
+      cached,
+      numbers,
+      Date.now(),
+      PR_METADATA_FRESH_MS,
+    );
+    if (missing.length === 0) return hits;
+    const fetched = await readPrMetadata(cwd, missing);
+    const resolved = applyPrMetadataReads(
+      cached,
+      missing,
+      fetched,
+      Date.now(),
+      PR_METADATA_MAX_AGE_MS,
+    );
+    // Numbers that left the stack should not pin memory. Sweep only when the
+    // cache has clearly outgrown the stack, so an ordinary compute does not
+    // discard entries a concurrent one just read.
+    if (cached.size > numbers.length * 4) evictAbsentPrMetadata(cached, numbers);
+    for (const [number, entry] of resolved) hits.set(number, entry);
+    return hits;
   }
 
   const draftIntentKey = (workspaceKey: string, prNumber: number) =>
@@ -1108,6 +1209,10 @@ export default async function plugin(bb: BbPluginApi) {
 
   function invalidateWorkspaceCaches(workspaceKey: string): void {
     const fetchedAt = Date.now();
+    // A mutation is exactly what changes titles and draft flags (submit,
+    // ready, merge), so the next compute must re-read them rather than serve
+    // the pre-mutation copy for the rest of its freshness window.
+    prMetadataCache.delete(workspaceKey);
     for (const [cachedThreadId, key] of threadWorkspaceKeys) {
       if (key !== workspaceKey) continue;
       stackCache.delete(cachedThreadId);
@@ -1385,7 +1490,6 @@ export default async function plugin(bb: BbPluginApi) {
           branchPrefix: effectivePrefix(null),
           detectedBranchPrefix: null,
           settings,
-          nextPrNumber: null,
         },
         workspace: null,
         checkout: null,
@@ -1397,13 +1501,12 @@ export default async function plugin(bb: BbPluginApi) {
       mutationVersion: workspaceMutationVersions.get(workspace.key) ?? 0,
     });
 
-    const [result, pending, defaultBranch, headPrefix, next, stashOwners] =
+    const [result, pending, defaultBranch, headPrefix, stashOwners] =
       await Promise.all([
         runGh(["stack", "view", "--json"], cwd, 30_000),
         pendingChangeSet(cwd),
         defaultBranchName(cwd),
         currentBranchPrefix(cwd),
-        nextPrNumber(cwd),
         activeAutoStashOwners({
           runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
           blockedStashOids: blockedAutoStashOids,
@@ -1422,18 +1525,24 @@ export default async function plugin(bb: BbPluginApi) {
           branchPrefix: effectivePrefix(headPrefix),
           detectedBranchPrefix: headPrefix,
           settings,
-          nextPrNumber: next,
         },
         workspace,
         checkout: null,
       };
     }
 
-    // Enrich each branch concurrently: PR title + draft status (a failed
-    // lookup degrades to state-only) and the diff against its stack parent
-    // (the branch below, or the trunk for the bottom branch).
+    // Enrich each branch: PR title + draft status for the whole stack in one
+    // batched read, and the diff against its stack parent (the branch below,
+    // or the trunk for the bottom branch).
     const rawStack = inspected.stack;
     const rawBranches = rawStack.branches;
+    const prMetadata = await enrichPrs(
+      workspace.key,
+      cwd,
+      rawBranches
+        .map((branch) => branch.pr?.number)
+        .filter((number): number is number => typeof number === "number"),
+    );
     // Metrics are advisory, but stale refs must never look clean. A mutation
     // owns the repository, so do not fetch underneath it; report unknown.
     const remoteFresh = await refreshRemoteRefs(workspace);
@@ -1481,41 +1590,33 @@ export default async function plugin(bb: BbPluginApi) {
             behindRemote: await behindPromise,
           };
         }
-        const view = await runGh(
-          [
-            "pr",
-            "view",
-            String(branch.pr.number),
-            "--json",
-            "title,isDraft,state",
-          ],
-          cwd,
-          20_000,
-        );
+        const enriched = prMetadata.get(branch.pr.number);
         let title: string | null = null;
         let isDraft = false;
         let state = branch.pr.state;
         let isMerged = branch.isMerged || branch.pr.state === "MERGED";
-        if (view.code === 0) {
-          try {
-            const enriched = prEnrichSchema.parse(JSON.parse(view.stdout));
-            title = enriched.title || null;
-            isDraft = enriched.isDraft;
-            // Preserve gh-stack's queued state while GitHub still calls the
-            // PR open, but correct its false OPEN for closed/merged PRs.
-            if (enriched.state === "CLOSED" || enriched.state === "MERGED") {
-              state = enriched.state;
-              if (enriched.state === "MERGED") isMerged = true;
-            }
-          } catch {
-            // keep state-only
+        if (enriched) {
+          title = enriched.data.title;
+          isDraft = enriched.data.isDraft;
+          // Preserve gh-stack's queued state while GitHub still calls the
+          // PR open, but correct its false OPEN for closed/merged PRs.
+          if (enriched.data.state === "CLOSED" || enriched.data.state === "MERGED") {
+            state = enriched.data.state;
+            if (enriched.data.state === "MERGED") isMerged = true;
           }
         }
         return {
           ...branch,
           isMerged,
           hasStash: stashOwners?.has(branch.name) ?? false,
-          pr: { ...branch.pr, state, title, isDraft },
+          pr: {
+            ...branch.pr,
+            state,
+            title,
+            isDraft,
+            // No metadata at all, or values kept from an older read.
+            metadataStale: !enriched || enriched.stale,
+          },
           diff: await diffPromise,
           aheadOfRemote: await aheadPromise,
           behindRemote: await behindPromise,
@@ -1554,7 +1655,6 @@ export default async function plugin(bb: BbPluginApi) {
         branchPrefix: effectivePrefix(detected),
         detectedBranchPrefix: detected,
         settings,
-        nextPrNumber: next,
       },
       workspace,
       checkout: projected.checkout,
@@ -1571,6 +1671,11 @@ export default async function plugin(bb: BbPluginApi) {
         }
         return { ...applyDraftIntents(threadId, cached.payload), fetchedAt: cached.fetchedAt };
       }
+      // An explicit Refresh is the user asking GitHub again — usually because
+      // what the panel shows looks wrong — so it re-reads PR metadata instead
+      // of serving the rest of that cache window.
+      const workspaceKey = threadWorkspaceKeys.get(threadId);
+      if (workspaceKey) prMetadataCache.delete(workspaceKey);
       let payload = await refreshStack(threadId);
       let entry = stackCache.get(threadId);
       // An explicit refresh may have joined a compute that overlapped a
@@ -2095,7 +2200,7 @@ export default async function plugin(bb: BbPluginApi) {
                 "view",
                 String(branch.pr.number),
                 "--json",
-                "state,isDraft,headRefName,headRefOid,baseRefName,mergedAt",
+                "state,isDraft,headRefName,baseRefName,mergedAt",
               ],
               cwd,
               20_000,
@@ -2133,7 +2238,6 @@ export default async function plugin(bb: BbPluginApi) {
         // Recompute and authorize directly immediately before the irreversible request.
         const fresh = await readStackView(cwd);
         if (fresh.error) return { ok: false, message: fresh.error.message, detail: null };
-        let authorizedTopOid: string | null = null;
         for (let index = 0; index < prefix.selected.length; index++) {
           const selected = prefix.selected[index];
           const stackBranch = fresh.stack.branches.find(
@@ -2153,7 +2257,7 @@ export default async function plugin(bb: BbPluginApi) {
               "view",
               String(stackBranch.pr.number),
               "--json",
-              "state,isDraft,headRefName,headRefOid,baseRefName,mergedAt",
+              "state,isDraft,headRefName,baseRefName,mergedAt",
             ],
             cwd,
             20_000,
@@ -2183,98 +2287,26 @@ export default async function plugin(bb: BbPluginApi) {
               detail: null,
             };
           }
-          if (index === prefix.selected.length - 1) {
-            authorizedTopOid = state.headRefOid;
-          }
         }
         const top = prefix.selected.at(-1)?.pr;
-        if (!top || !authorizedTopOid) {
+        if (!top) {
           return { ok: false, message: "No pull request is eligible to merge.", detail: null };
         }
-        const endpoint = `repos/{owner}/{repo}/pulls/${top.number}/merge-async`;
-        const submit = await runGh(
-          [
-            "api",
-            "--method",
-            "PUT",
-            endpoint,
-            "-f",
-            `merge_method=${method}`,
-            "-f",
-            "merge_action=default",
-            "-f",
-            `sha=${authorizedTopOid}`,
-          ],
-          cwd,
-          30_000,
-        );
-        let outcome = parseAsyncMerge(submit.stdout);
-        let terminalFromPolling = false;
-        const http = submit.stderr.match(/HTTP (\d{3})/)?.[1];
-        if (submit.code !== 0 && (http !== "409" || !outcome?.details.uuid)) {
+        const submit = await runGh(stackMergeArgs(top.number, method), cwd, 300_000);
+        const detail = outputTail(submit);
+        if (submit.timedOut) {
           return {
             ok: false,
-            message:
-              http === "404"
-                ? "GitHub's stack merge API is unavailable or the PR was not found. Nothing was merged."
-                : outcome?.details.message || "GitHub rejected the merge request. Nothing was merged.",
-            detail: outputTail(submit),
+            message: "The stack merge command timed out. Its final outcome is uncertain; refresh to reconcile.",
+            tone: "warning" as const,
+            detail,
           };
         }
-        if (!outcome) {
+        if (submit.code !== 0) {
           return {
             ok: false,
-            message: "GitHub returned an unexpected merge response.",
-            tone: submit.code === 0 ? "warning" as const : "error" as const,
-            detail: outputTail(submit),
-          };
-        }
-        const deadline = Date.now() + 240_000;
-        while (outcome.status === "pending") {
-          if (!outcome.details.uuid || !MERGE_UUID.test(outcome.details.uuid)) {
-            return {
-              ok: false,
-              message: "GitHub accepted the merge without a valid polling id.",
-              tone: "warning" as const,
-              detail: null,
-            };
-          }
-          const uuid = outcome.details.uuid;
-          if (Date.now() >= deadline) {
-            return {
-              ok: false,
-              message: "GitHub is still processing the merge and its final outcome is uncertain; refresh to reconcile.",
-              tone: "warning" as const,
-              detail: `Merge request UUID: ${uuid}`,
-            };
-          }
-          await new Promise((resolve) => setTimeout(resolve, 2_000));
-          const poll = await runGh(["api", `${endpoint}/${uuid}`], cwd, 15_000);
-          if (poll.failedToSpawn || poll.timedOut || poll.code !== 0) {
-            return {
-              ok: false,
-              message: "Could not poll the running merge; its final outcome is uncertain. Refresh to reconcile.",
-              tone: "warning" as const,
-              detail: joinDetails(`Merge request UUID: ${uuid}`, outputTail(poll)),
-            };
-          }
-          const next = parseAsyncMerge(poll.stdout);
-          if (!next) {
-            return {
-              ok: false,
-              message: "Lost track of the running merge; refresh shortly.",
-              tone: "warning" as const,
-              detail: outputTail(poll),
-            };
-          }
-          outcome = next;
-          if (outcome.status !== "pending") terminalFromPolling = true;
-        }
-        if (outcome.status === "failed") {
-          return {
-            ok: false,
-            message: `Nothing was merged: ${outcome.details.message || "GitHub reported a failure."}`,
-            detail: null,
+            message: `Nothing was merged. ${mapExitCode(submit).message}`,
+            detail,
           };
         }
         const count = prefix.selected.length;
@@ -2285,20 +2317,12 @@ export default async function plugin(bb: BbPluginApi) {
           left > 0
             ? ` The ${left} layer${left === 1 ? "" : "s"} above stay open — run Sync to restack ${left === 1 ? "it" : "them"} onto ${raw.stack.trunk}.`
             : "";
-        if (outcome.status === "enqueued") {
+        if (stackMergeWasQueued(submit.stdout, submit.stderr)) {
           return {
             ok: true,
             message: `${count} pull request${count === 1 ? "" : "s"} added to the merge queue on ${raw.stack.trunk}; they land as the queue processes them.${rest}`,
             tone: "warning" as const,
-            detail: null,
-          };
-        }
-        if (outcome.status === "merged" && !terminalFromPolling) {
-          return {
-            ok: true,
-            message: "GitHub reports the target is already merged; refresh to reconcile the stack.",
-            tone: "warning" as const,
-            detail: null,
+            detail,
           };
         }
         const shape =
@@ -2310,7 +2334,7 @@ export default async function plugin(bb: BbPluginApi) {
         return {
           ok: true,
           message: `Merged ${count} branch${count === 1 ? "" : "es"} into ${raw.stack.trunk} — ${shape}.${rest}`,
-          detail: null,
+          detail,
         };
       });
     },
