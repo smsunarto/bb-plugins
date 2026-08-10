@@ -1,6 +1,6 @@
 # bb-plugin-theme
 
-Contributes **Scott's Theme** as a selectable bb palette.
+Contributes **Cursor Monokai** as a selectable bb palette.
 
 Selectable id: `plugin:theme:smsunarto`.
 
