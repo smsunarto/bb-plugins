@@ -1,6 +1,16 @@
 # bb-plugin-dotfiles
 
-A BB plugin.
+Browse and edit the authored sources in the canonical `~/git/dotfiles`
+checkout. Run the repository's render, validation, apply-preview, consume, and
+publish tasks from BB.
+
+The plugin follows the repository's deployment modes:
+
+- Symlinked sources are live as soon as they are saved.
+- Claude and Codex settings overlays, MCP config, and global agent
+  instructions need `mise run render` after a save.
+- `sync:pull` only consumes published `main`; `sync` rebases, pushes, applies,
+  and renders.
 
 ## UI components
 
@@ -56,9 +66,11 @@ bb plugin reload dotfiles
 ## Configure
 
 ```
-bb plugin config dotfiles
-bb plugin config dotfiles set greeting hi
+bb plugin config dotfiles set repoPath ~/git/dotfiles
+bb plugin reload dotfiles
 ```
+
+The default path is `~/git/dotfiles`.
 
 ## Types & API reference
 
