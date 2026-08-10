@@ -491,8 +491,8 @@ function LayerComposer({
             placeholder={
               conventional
                 ? mode === "init"
-                  ? 'e.g. "feat: add rate limiting to the API"'
-                  : 'e.g. "feat: add metrics for the rate limiter"'
+                  ? 'e.g. "feat(api): add rate limiting"'
+                  : 'e.g. "feat(api): add rate limiter metrics"'
                 : mode === "init"
                   ? 'e.g. "Add rate limiting to the API"'
                   : 'e.g. "Add metrics for the rate limiter"'
@@ -644,8 +644,10 @@ function SettingsDialog({
   }, [open]);
 
   // What the composer would build from an example title under this draft.
+  // The conventional example carries a scope, since that is the part the
+  // branch slug drops — showing it here makes that visible.
   const exampleTitle = conventional
-    ? "feat: add rate limiting to the API"
+    ? "feat(api): add rate limiting"
     : "Add rate limiting to the API";
   const examplePrefix = prefix.trim() || detectedPrefix || "";
   const exampleBranch = `${examplePrefix}${deriveBranchName(exampleTitle, conventional)}`;
@@ -703,9 +705,11 @@ function SettingsDialog({
                 Conventional Commits
               </span>
               <p className="text-xs text-muted-foreground">
-                Titles read <span className="font-mono">feat: …</span>, and the
-                type leads the branch slug. Suggest and Magic Stack follow the
-                same convention.
+                Layer and PR titles read{" "}
+                <span className="font-mono">feat(scope): …</span>, with the
+                scope optional. The type leads the branch slug; the scope is
+                not part of it. Suggest and Magic Stack follow the same
+                convention.
               </p>
             </div>
             <div className="pt-0.5">

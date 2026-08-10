@@ -92,11 +92,13 @@ branches and pull requests via the GitHub CLI.
     trailing separator is added (`scott` → `scott/`), and a value that
     cannot form a branch according to `git check-ref-format --branch` is
     rejected.
-  - **Conventional Commits** — layer names read `feat: add rate limiting`
-    and the type leads the branch slug (`scott/feat-add-rate-limiting`).
-    Suggest asks the agent for a Conventional Commits title, and Magic Stack
-    tells it to write commits, PR titles, and branch names the same way.
-    Off, a name slugifies whole, as before.
+  - **Conventional Commits** — layer and PR titles read
+    `feat(api): add rate limiting`, with the scope optional. The type leads
+    the branch slug and the scope is dropped from it
+    (`scott/feat-add-rate-limiting`), since a scope repeats what the slug
+    already says. Suggest asks the agent for a Conventional Commits title,
+    and Magic Stack tells it to write commits, PR titles, and branch names
+    the same way. Off, a name slugifies whole, as before.
 
   Both are stored in the plugin's kv (one global row) and travel on the
   `getStack` payload, so the popup opens without a second round trip and a

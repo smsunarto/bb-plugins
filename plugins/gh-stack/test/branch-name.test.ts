@@ -17,6 +17,29 @@ test("deriveBranchName applies the same naming policy to UI and server callers",
   assert.equal(deriveBranchName("the and to", false), "");
 });
 
+// The branch carries the type but not the scope: a scope names the area the
+// slug already describes, so repeating it only lengthens the ref.
+test("deriveBranchName keeps the type and drops the scope", () => {
+  assert.equal(
+    deriveBranchName("feat(api): add rate limiting", true),
+    "feat-add-rate-limiting",
+  );
+  assert.equal(
+    deriveBranchName("fix(gh-stack): stop double counting", true),
+    "fix-stop-double-counting",
+  );
+  // A scope with punctuation or spaces still leaves the slug untouched.
+  assert.equal(
+    deriveBranchName("refactor(plugins/amp): split provisioning", true),
+    "refactor-split-provisioning",
+  );
+  // Without the setting, the whole title slugifies — scope included.
+  assert.equal(
+    deriveBranchName("feat(api): add rate limiting", false),
+    "feat-api-add-rate-limiting",
+  );
+});
+
 test("normalizeBranchPrefix trims and adds a namespace separator", () => {
   assert.deepEqual(normalizeBranchPrefix(" scott "), { prefix: "scott/" });
   assert.deepEqual(normalizeBranchPrefix("team_"), { prefix: "team_" });
