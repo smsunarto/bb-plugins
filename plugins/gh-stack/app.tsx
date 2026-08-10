@@ -846,6 +846,13 @@ function MergeDialog({
 // Cadence of the background cache revalidation while the panel is open.
 const POLL_MS = 30_000;
 
+// Last known header per thread, module-level on purpose: the panel remounts
+// on every tab switch and `result` starts null each time, so without this the
+// header blanks for the whole first fetch and then reflows the refresh button
+// when the text lands. The remembered value paints immediately and the first
+// payload corrects it if the stack changed underneath.
+const HEADER_MEMORY = new Map<string, { base: string | null; hadStack: boolean }>();
+
 function StackPanel({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [result, setResult] = useState<StackResult | null>(null);
@@ -1224,6 +1231,17 @@ function StackPanel({ threadId }: { threadId: string }) {
     : null;
   const pending = result?.pending ?? null;
   const base = stack?.trunk ?? result?.defaultBranch ?? null;
+  // Remember the header once a payload confirms it, and serve the memory
+  // only while none has arrived yet (see HEADER_MEMORY).
+  const hasStack = stack !== null;
+  useEffect(() => {
+    if (result !== null) {
+      HEADER_MEMORY.set(threadId, { base, hadStack: hasStack });
+    }
+  }, [result, base, hasStack, threadId]);
+  const remembered = result === null ? HEADER_MEMORY.get(threadId) : undefined;
+  const headerBase = base ?? remembered?.base ?? null;
+  const headerHasStack = hasStack || (remembered?.hadStack ?? false);
   // gh stack orders branches bottom (nearest trunk) → top; render top-first.
   const layers = stack ? [...stack.branches].reverse() : [];
   // Draft toggles deliberately absent: they are GitHub-side writes that
@@ -1325,14 +1343,15 @@ function StackPanel({ threadId }: { threadId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          {/* Before the first payload the trunk is simply unknown, so the
-              generic label would be a claim that gets replaced a moment
-              later. Hold the line empty instead of flashing it. */}
+          {/* The remembered header covers the gap between mount and first
+              payload, so the text is there immediately and the refresh
+              button beside it never reflows. The invisible placeholder only
+              remains for a thread this panel has never painted before. */}
           <div className="truncate">
-            {base ? (
+            {headerBase ? (
               <>
-                {stack ? "Stack on" : "New stack on"}{" "}
-                <span className="font-mono text-foreground">{base}</span>
+                {headerHasStack ? "Stack on" : "New stack on"}{" "}
+                <span className="font-mono text-foreground">{headerBase}</span>
               </>
             ) : result === null ? (
               <span className="invisible">Stacked pull requests</span>
