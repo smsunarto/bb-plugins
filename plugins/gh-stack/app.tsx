@@ -327,7 +327,9 @@ function BranchRow({
 }: {
   branch: StackBranch;
   checkoutDisabled: boolean;
-  prBusy: number | null;
+  // This row's own toggle round trip — never another row's, so pills on
+  // different PRs stay independently clickable.
+  prBusy: boolean;
   prSyncing: boolean;
   expanded: boolean;
   onToggleExpanded: () => void;
@@ -370,16 +372,31 @@ function BranchRow({
           checkout overlay covers it; each control that does something else
           lifts itself above the overlay with `relative`. */}
       <div className="flex items-center gap-2" title={branch.name}>
+        {/* Only this pill's own round trip disables it: a toggle is a
+            GitHub-side write that never touches the working tree, so it need
+            not wait on checkouts, syncs, or any other pill. */}
         <StatusPill
           pr={pr}
-          busy={checkoutDisabled || (pr !== null && prBusy === pr.number)}
+          busy={prBusy}
           syncing={prSyncing}
           onToggle={canToggle && pr ? () => onToggleDraft(pr) : null}
         />
-        {/* The link rides with the title rather than the trailing controls,
-            so it reads as "open this PR" and follows the text as it
-            truncates. min-w-0 is what lets that truncation happen instead
-            of pushing the trailing controls off the row. */}
+        {/* The link sits between the status pill and the number, so the
+            row's controls cluster at its head and the title runs clean to
+            the counts. `relative` lifts it above the checkout overlay. */}
+        {pr ? (
+          <a
+            href={pr.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open #${pr.number} on GitHub`}
+            aria-label={`Open pull request #${pr.number} on GitHub`}
+            className="relative inline-flex shrink-0 items-center text-muted-foreground hover:text-foreground"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Icon name="ExternalLink" className="size-3.5" aria-hidden />
+          </a>
+        ) : null}
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           {pr ? (
             <span className="shrink-0 font-mono text-xs leading-5 text-muted-foreground tabular-nums">
@@ -389,19 +406,6 @@ function BranchRow({
           <span className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">
             {title}
           </span>
-          {pr ? (
-            <a
-              href={pr.url}
-              target="_blank"
-              rel="noreferrer"
-              title={`Open #${pr.number} on GitHub`}
-              aria-label={`Open pull request #${pr.number} on GitHub`}
-              className="relative inline-flex shrink-0 items-center text-muted-foreground hover:text-foreground"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Icon name="ExternalLink" className="size-3.5" aria-hidden />
-            </a>
-          ) : null}
         </span>
         <BranchChips branch={branch} />
         {/* The counts close the row, and double as the file-tree toggle now
@@ -842,6 +846,13 @@ function MergeDialog({
 // Cadence of the background cache revalidation while the panel is open.
 const POLL_MS = 30_000;
 
+// Last known header per thread, module-level on purpose: the panel remounts
+// on every tab switch and `result` starts null each time, so without this the
+// header blanks for the whole first fetch and then reflows the refresh button
+// when the text lands. The remembered value paints immediately and the first
+// payload corrects it if the stack changed underneath.
+const HEADER_MEMORY = new Map<string, { base: string | null; hadStack: boolean }>();
+
 function StackPanel({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [result, setResult] = useState<StackResult | null>(null);
@@ -858,7 +869,10 @@ function StackPanel({ threadId }: { threadId: string }) {
     | "checkout"
     | null
   >(null);
-  const [prBusy, setPrBusy] = useState<number | null>(null);
+  // Per-PR, so draft toggles run concurrently: each pill locks only itself,
+  // and only for its own round trip. A scalar here would let a second
+  // toggle's cleanup re-enable a pill whose write was still in flight.
+  const [prBusy, setPrBusy] = useState<Set<number>>(new Set());
   const [draftIntents, setDraftIntents] = useState<Map<number, boolean>>(new Map());
   // Any mutation can succeed before its response or the following refresh is
   // observed. While true, mutation controls stay locked against stale data;
@@ -1112,10 +1126,20 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
+  // The pill flips first and the write follows; a failure drops the
+  // optimistic value so the pill snaps back, and says why. No panel lock and
+  // no fresh refetch: the server claims the new state for every payload it
+  // serves and reconciles with its own background recompute, so any number
+  // of toggles run at once while the sync engine catches up behind them.
   const toggleDraft = async (pr: NonNullable<StackBranch["pr"]>) => {
     const draft = !pr.isDraft;
-    setPrBusy(pr.number);
-    setMutationNeedsRefresh(true);
+    const forgetIntent = () =>
+      setDraftIntents((current) => {
+        const next = new Map(current);
+        next.delete(pr.number);
+        return next;
+      });
+    setPrBusy((current) => new Set(current).add(pr.number));
     setDraftIntents((current) => new Map(current).set(pr.number, draft));
     try {
       const outcome = await rpc.call("setPrDraft", {
@@ -1125,18 +1149,18 @@ function StackPanel({ threadId }: { threadId: string }) {
       });
       setActionDetail(outcome.detail);
       if (!outcome.ok) {
-        setDraftIntents((current) => {
-          const next = new Map(current);
-          next.delete(pr.number);
-          return next;
-        });
+        forgetIntent();
         toast.error(outcome.message);
       }
     } catch (error: unknown) {
+      forgetIntent();
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      await refresh({ fresh: true });
-      setPrBusy(null);
+      setPrBusy((current) => {
+        const next = new Set(current);
+        next.delete(pr.number);
+        return next;
+      });
     }
   };
 
@@ -1167,6 +1191,30 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
+  // Retire a client intent once a payload agrees with it. The payload runs
+  // through the server's own overlay, so agreement means the server has taken
+  // the claim over — from here its draftReconciliationPending flag drives the
+  // spinner. An entry left behind would spin its pill forever.
+  useEffect(() => {
+    if (draftIntents.size === 0) return;
+    const branches = result?.stack?.branches;
+    if (!branches) return;
+    setDraftIntents((current) => {
+      let changed = false;
+      const next = new Map(current);
+      for (const branch of branches) {
+        const pr = branch.pr;
+        if (!pr) continue;
+        const intent = next.get(pr.number);
+        if (intent !== undefined && pr.isDraft === intent) {
+          next.delete(pr.number);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [result, draftIntents]);
+
   const rawStack = result?.stack ?? null;
   const stack: StackView | null = rawStack
     ? {
@@ -1183,9 +1231,22 @@ function StackPanel({ threadId }: { threadId: string }) {
     : null;
   const pending = result?.pending ?? null;
   const base = stack?.trunk ?? result?.defaultBranch ?? null;
+  // Remember the header once a payload confirms it, and serve the memory
+  // only while none has arrived yet (see HEADER_MEMORY).
+  const hasStack = stack !== null;
+  useEffect(() => {
+    if (result !== null) {
+      HEADER_MEMORY.set(threadId, { base, hadStack: hasStack });
+    }
+  }, [result, base, hasStack, threadId]);
+  const remembered = result === null ? HEADER_MEMORY.get(threadId) : undefined;
+  const headerBase = base ?? remembered?.base ?? null;
+  const headerHasStack = hasStack || (remembered?.hadStack ?? false);
   // gh stack orders branches bottom (nearest trunk) → top; render top-first.
   const layers = stack ? [...stack.branches].reverse() : [];
-  const anyBusy = busy !== null || prBusy !== null;
+  // Draft toggles deliberately absent: they are GitHub-side writes that
+  // reconcile in the background, so they must not lock the panel.
+  const anyBusy = busy !== null;
   const mutationsDisabled =
     anyBusy || mutationNeedsRefresh || loading || refreshing;
   const notAStack = result?.error?.kind === "not-a-stack";
@@ -1282,14 +1343,15 @@ function StackPanel({ threadId }: { threadId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          {/* Before the first payload the trunk is simply unknown, so the
-              generic label would be a claim that gets replaced a moment
-              later. Hold the line empty instead of flashing it. */}
+          {/* The remembered header covers the gap between mount and first
+              payload, so the text is there immediately and the refresh
+              button beside it never reflows. The invisible placeholder only
+              remains for a thread this panel has never painted before. */}
           <div className="truncate">
-            {base ? (
+            {headerBase ? (
               <>
-                {stack ? "Stack on" : "New stack on"}{" "}
-                <span className="font-mono text-foreground">{base}</span>
+                {headerHasStack ? "Stack on" : "New stack on"}{" "}
+                <span className="font-mono text-foreground">{headerBase}</span>
               </>
             ) : result === null ? (
               <span className="invisible">Stacked pull requests</span>
@@ -1393,7 +1455,7 @@ function StackPanel({ threadId }: { threadId: string }) {
               key={branch.name}
               branch={branch}
               checkoutDisabled={mutationsDisabled}
-              prBusy={prBusy}
+              prBusy={branch.pr ? prBusy.has(branch.pr.number) : false}
               prSyncing={
                 branch.draftReconciliationPending === true ||
                 (branch.pr ? draftIntents.has(branch.pr.number) : false)
