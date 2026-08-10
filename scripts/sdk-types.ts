@@ -13,6 +13,7 @@
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -20,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -111,6 +112,8 @@ for (const plugin of workspacePlugins()) {
       console.error(`drift: ${rel} does not match bb ${expectedVersion}`);
       drifted++;
     } else {
+      // A newly added plugin has no types/ directory yet.
+      mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, want);
       console.log(`updated ${rel}`);
       updated++;
