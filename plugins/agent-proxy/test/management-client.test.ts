@@ -95,7 +95,10 @@ test("auth file status patch and delete shapes", async () => {
 });
 
 test("resources use GET and whole-array PUT", async () => {
-  nextResponse = { status: 200, body: JSON.stringify([{ "api-key": "k" }]) };
+  nextResponse = {
+    status: 200,
+    body: JSON.stringify({ "claude-api-key": [{ "api-key": "k" }] }),
+  };
   const value = await client().getResource("claude-api-key");
   assert.deepEqual(value, [{ "api-key": "k" }]);
 
@@ -105,6 +108,15 @@ test("resources use GET and whole-array PUT", async () => {
   assert.equal(last.method, "PUT");
   assert.equal(last.url, "/v0/management/api-keys");
   assert.deepEqual(JSON.parse(last.body), ["a", "b"]);
+});
+
+test("resources reject malformed wrapped responses instead of treating them as empty", async () => {
+  nextResponse = { status: 200, body: JSON.stringify({ "claude-api-key": { unexpected: true } }) };
+  await assert.rejects(client().getResource("claude-api-key"), /unexpected.*response/);
+
+  // Historical cores returned the array directly; retain compatibility.
+  nextResponse = { status: 200, body: JSON.stringify(["legacy-key"]) };
+  assert.deepEqual(await client().getResource("api-keys"), ["legacy-key"]);
 });
 
 test("unauthorized and 404 map to readable errors", async () => {

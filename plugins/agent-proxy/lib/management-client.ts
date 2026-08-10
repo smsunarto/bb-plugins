@@ -135,8 +135,16 @@ export class ManagementClient {
     await this.request("POST", "/reset-quota", { auth_index: authIndex });
   }
 
-  async getResource(resource: Resource): Promise<unknown> {
-    return this.request("GET", `/${resource}`);
+  async getResource(resource: Resource): Promise<unknown[]> {
+    const result = await this.request("GET", `/${resource}`);
+    // Current cores wrap GET collections by resource name, while historical
+    // versions returned the array directly. Both use a bare array for PUT.
+    if (Array.isArray(result)) return result;
+    if (typeof result === "object" && result !== null) {
+      const value = (result as Record<string, unknown>)[resource];
+      if (Array.isArray(value)) return value;
+    }
+    throw new ManagementError(0, `unexpected /${resource} response from the core`);
   }
 
   async putResource(resource: Resource, value: unknown[]): Promise<void> {

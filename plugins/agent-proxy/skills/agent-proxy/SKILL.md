@@ -28,7 +28,8 @@ Auth: pass the local API key as the bearer token / `x-api-key`.
 ## Env recipes
 
 - Claude Code: `ANTHROPIC_BASE_URL=<anthropic url> ANTHROPIC_AUTH_TOKEN=<key>`
-- Codex / OpenAI SDKs: `OPENAI_BASE_URL=<openai url> OPENAI_API_KEY=<key>`
+- Codex CLI: `OPENAI_API_KEY=<key> codex -c 'openai_base_url="<openai url>"'`
+- OpenAI-compatible SDKs: `OPENAI_BASE_URL=<openai url> OPENAI_API_KEY=<key>`
 - Codex persistent: generated standalone `CODEX_HOME` (see the plugin's Agents page)
 
 ## CLI

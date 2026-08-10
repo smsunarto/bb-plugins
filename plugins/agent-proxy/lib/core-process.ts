@@ -39,6 +39,15 @@ export interface SupervisorOptions {
   healthyResetMs?: number;
   killGraceMs?: number;
   logLimit?: number;
+  /** Start through a child-local umask 077 shell wrapper. Disable only in
+      tests that need to provoke a direct spawn error. */
+  privateUmask?: boolean;
+}
+
+interface ChildOutcome {
+  code: number | null;
+  signal: string | null;
+  error?: Error;
 }
 
 /** Wakes the supervisor loop out of its parked/backoff sleeps when desired
@@ -73,12 +82,23 @@ class Wake {
   }
 }
 
-function waitExit(child: ChildProcess): Promise<{ code: number | null; signal: string | null }> {
+function waitExit(child: ChildProcess): Promise<ChildOutcome> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
   }
   return new Promise((resolve) => {
-    child.once("exit", (code, signal) => resolve({ code, signal }));
+    let settled = false;
+    const finish = (outcome: ChildOutcome) => {
+      if (settled) return;
+      settled = true;
+      child.removeListener("close", onClose);
+      child.removeListener("error", onError);
+      resolve(outcome);
+    };
+    const onClose = (code: number | null, signal: NodeJS.Signals | null) => finish({ code, signal });
+    const onError = (error: Error) => finish({ code: null, signal: null, error });
+    child.once("close", onClose);
+    child.once("error", onError);
   });
 }
 
@@ -178,7 +198,15 @@ export class Supervisor {
       const spawnImpl = this.options.spawnImpl ?? spawn;
       let child: ChildProcess;
       try {
-        child = spawnImpl(this.options.binPath, ["--config", this.options.configPath], {
+        const coreArgs = ["--config", this.options.configPath];
+        const [command, args] =
+          this.options.privateUmask === false
+            ? [this.options.binPath, coreArgs]
+            : [
+                "/bin/sh",
+                ["-c", 'umask 077; exec "$@"', "agent-proxy-core", this.options.binPath, ...coreArgs],
+              ];
+        child = spawnImpl(command, args, {
           stdio: ["ignore", "pipe", "pipe"],
         });
       } catch (error) {
@@ -191,33 +219,66 @@ export class Supervisor {
       this.pipeLogs(child);
       const startedAt = Date.now();
       const exited = waitExit(child);
-      const spawnError = new Promise<never>((_, reject) => {
-        child.once("error", (error) => reject(error));
+      let resolveAborted: () => void = () => {};
+      const aborted = new Promise<void>((resolve) => {
+        resolveAborted = resolve;
       });
+      const onAbort = () => resolveAborted();
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+      const clearAbortListener = () => signal.removeEventListener("abort", onAbort);
 
-      try {
-        const listening = await Promise.race([
-          this.probeUntilUp(signal, child),
-          spawnError,
-        ]);
-        if (!signal.aborted && this.desiredRunning && this.child === child) {
-          if (!listening && child.exitCode === null && child.signalCode === null) {
-            this.appendLog("[supervisor] port probe timed out; treating process as running");
-          }
-          if (child.exitCode === null && child.signalCode === null) this.setState("running");
-        }
-      } catch (error) {
-        this.appendLog(`[supervisor] spawn failed: ${String(error)}`);
+      const startup = await Promise.race([
+        this.probeUntilUp(signal, child).then((listening) => ({ kind: "probe" as const, listening })),
+        exited.then((outcome) => ({ kind: "exit" as const, outcome })),
+        aborted.then(() => ({ kind: "abort" as const })),
+      ]);
+
+      if (startup.kind === "abort") {
+        clearAbortListener();
+        await this.killChild();
+        this.child = null;
+        this.setState("stopped");
+        return;
       }
 
-      const abortPromise = new Promise<void>((resolve) => {
-        if (signal.aborted) resolve();
-        else signal.addEventListener("abort", () => resolve(), { once: true });
-      });
+      if (startup.kind === "exit") {
+        clearAbortListener();
+        this.child = null;
+        if (!this.desiredRunning) {
+          this.setState("stopped");
+          continue;
+        }
+        if (startup.outcome.error) {
+          this.appendLog(`[supervisor] spawn failed: ${startup.outcome.error.message}`);
+        }
+        this.recordCrash(startup.outcome);
+        await this.wake.wait(signal, this.nextBackoff());
+        continue;
+      }
+
+      if (!startup.listening) {
+        clearAbortListener();
+        this.appendLog("[supervisor] readiness probe timed out; terminating process");
+        await this.killChild();
+        const outcome = await exited;
+        this.child = null;
+        if (!this.desiredRunning) {
+          this.setState("stopped");
+          continue;
+        }
+        this.recordCrash(outcome);
+        await this.wake.wait(signal, this.nextBackoff());
+        continue;
+      }
+
+      if (this.desiredRunning && this.child === child) this.setState("running");
+
       const outcome = await Promise.race([
         exited.then((exit) => ({ kind: "exit" as const, exit })),
-        abortPromise.then(() => ({ kind: "abort" as const })),
+        aborted.then(() => ({ kind: "abort" as const })),
       ]);
+      clearAbortListener();
 
       if (outcome.kind === "abort") {
         await this.killChild();
@@ -240,7 +301,7 @@ export class Supervisor {
     this.child = null;
   }
 
-  private recordCrash(exit: { code: number | null; signal: string | null }): void {
+  private recordCrash(exit: ChildOutcome): void {
     this.crashCount += 1;
     this.lastExit = { code: exit.code, signal: exit.signal, at: Date.now() };
     this.appendLog(
@@ -259,7 +320,7 @@ export class Supervisor {
     const fetchImpl = this.options.fetchImpl ?? fetch;
     const deadline = Date.now() + this.options.probeTimeoutMs;
     const childAlive = () => child.exitCode === null && child.signalCode === null;
-    while (!signal.aborted && childAlive() && Date.now() < deadline) {
+    while (!signal.aborted && this.desiredRunning && childAlive() && Date.now() < deadline) {
       try {
         await fetchImpl(this.options.probeUrl(), { signal: AbortSignal.timeout(1_000) });
         return true;

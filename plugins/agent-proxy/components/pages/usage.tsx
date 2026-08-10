@@ -5,20 +5,35 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { rpcContract } from "../../server";
 
-// GET /api-key-usage groups records by provider, then by "base_url|api_key",
-// as 20 fixed 10-minute buckets. The exact row shape varies across core
-// versions, so rendering is defensive: numeric series draw as bar strips,
-// anything unrecognized falls back to raw JSON.
+// GET /api-key-usage groups records by provider, then by "base_url|api_key".
+// Current rows contain aggregate success/failed counts plus 20 recent request
+// buckets; historical numeric series are also supported.
 
 function bucketValue(entry: unknown): number | null {
   if (typeof entry === "number") return entry;
   if (typeof entry === "object" && entry !== null) {
     const record = entry as Record<string, unknown>;
+    if (typeof record.success === "number" && typeof record.failed === "number") {
+      return record.success + record.failed;
+    }
     for (const key of ["total", "count", "requests", "tokens"]) {
       if (typeof record[key] === "number") return record[key];
     }
   }
   return null;
+}
+
+function usageRow(value: unknown): { success: number; failed: number; buckets: unknown[] } | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.success !== "number" ||
+    typeof row.failed !== "number" ||
+    !Array.isArray(row.recent_requests)
+  ) {
+    return null;
+  }
+  return { success: row.success, failed: row.failed, buckets: row.recent_requests };
 }
 
 function BucketStrip({ buckets }: { buckets: unknown[] }) {
@@ -125,20 +140,32 @@ export function UsagePage() {
                   <div className="pb-1 text-sm font-medium text-foreground">{provider}</div>
                   {typeof byKey === "object" && byKey !== null && !Array.isArray(byKey) ? (
                     <div className="space-y-2">
-                      {Object.entries(byKey as Record<string, unknown>).map(([key, buckets]) => (
-                        <div key={key} className="rounded-md border border-border p-2">
-                          <div className="truncate pb-1 font-mono text-xs text-muted-foreground">
-                            {maskKey(key)}
+                      {Object.entries(byKey as Record<string, unknown>).map(([key, value]) => {
+                        const row = usageRow(value);
+                        return (
+                          <div key={key} className="rounded-md border border-border p-2">
+                            <div className="flex items-center justify-between gap-3 pb-1">
+                              <div className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                                {maskKey(key)}
+                              </div>
+                              {row ? (
+                                <div className="shrink-0 text-xs text-muted-foreground">
+                                  {row.success} succeeded · {row.failed} failed
+                                </div>
+                              ) : null}
+                            </div>
+                            {row ? (
+                              <BucketStrip buckets={row.buckets} />
+                            ) : Array.isArray(value) ? (
+                              <BucketStrip buckets={value} />
+                            ) : (
+                              <pre className="overflow-auto font-mono text-xs text-foreground">
+                                {JSON.stringify(value)}
+                              </pre>
+                            )}
                           </div>
-                          {Array.isArray(buckets) ? (
-                            <BucketStrip buckets={buckets} />
-                          ) : (
-                            <pre className="overflow-auto font-mono text-xs text-foreground">
-                              {JSON.stringify(buckets)}
-                            </pre>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <pre className="overflow-auto font-mono text-xs text-foreground">{JSON.stringify(byKey)}</pre>

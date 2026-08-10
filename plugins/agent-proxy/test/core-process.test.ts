@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { Supervisor, type SupervisorSnapshot } from "../lib/core-process.ts";
 
@@ -114,6 +117,75 @@ test("crash restarts with backoff and records exits", async () => {
 
   await supervisor.stop();
   await until(() => supervisor.state === "stopped");
+  controller.abort();
+  await done;
+});
+
+test("spawn errors become crashes instead of parking in starting", async () => {
+  const transitions: string[] = [];
+  const supervisor = new Supervisor({
+    binPath: "/definitely/not/a/real/agent-proxy-binary",
+    configPath: "unused",
+    isInstalled: () => true,
+    probeUrl: () => "http://127.0.0.1:1/",
+    fetchImpl: (() => Promise.reject(new Error("nope"))) as typeof fetch,
+    probeTimeoutMs: 100,
+    probeIntervalMs: 10,
+    backoffInitialMs: 20,
+    backoffMaxMs: 40,
+    privateUmask: false,
+    onChange: (snapshot) => transitions.push(snapshot.state),
+  });
+  const controller = new AbortController();
+  const done = supervisor.run(controller.signal);
+  supervisor.start();
+  await until(() => supervisor.snapshot().crashCount >= 2);
+  assert.ok(transitions.includes("crashed"));
+  assert.match(supervisor.logs().join("\n"), /spawn failed/);
+  await supervisor.stop();
+  controller.abort();
+  await done;
+});
+
+test("readiness timeout terminates and retries without reporting running", async () => {
+  const { supervisor, transitions } = makeSupervisor({
+    script: SLEEP_FOREVER,
+    probeOk: false,
+    backoffInitialMs: 20,
+  });
+  const controller = new AbortController();
+  const done = supervisor.run(controller.signal);
+  supervisor.start();
+  await until(() => supervisor.snapshot().crashCount >= 1);
+  assert.equal(transitions.includes("running"), false);
+  assert.match(supervisor.logs().join("\n"), /readiness probe timed out/);
+  await supervisor.stop();
+  controller.abort();
+  await done;
+});
+
+test("core child creates files under a private umask", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-umask-"));
+  const createdPath = join(dir, "credential.json");
+  const scriptPath = join(dir, "fake-core.sh");
+  writeFileSync(
+    scriptPath,
+    `#!/bin/sh\ntouch ${JSON.stringify(createdPath)}\nwhile true; do sleep 1; done\n`,
+  );
+  chmodSync(scriptPath, 0o755);
+  const supervisor = new Supervisor({
+    binPath: scriptPath,
+    configPath: "unused",
+    isInstalled: () => true,
+    probeUrl: () => "http://127.0.0.1:1/",
+    fetchImpl: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+    killGraceMs: 200,
+  });
+  const controller = new AbortController();
+  const done = supervisor.run(controller.signal);
+  supervisor.start();
+  await until(() => supervisor.state === "running" && existsSync(createdPath));
+  assert.equal(statSync(createdPath).mode & 0o777, 0o600);
   controller.abort();
   await done;
 });

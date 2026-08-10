@@ -15,6 +15,20 @@ export interface ProxyTarget {
   token: string;
 }
 
+interface PreviousValue {
+  present: boolean;
+  value?: unknown;
+}
+
+export interface ClaudeEnvState {
+  version: 1;
+  applied: ProxyTarget;
+  previous: {
+    baseUrl: PreviousValue;
+    token: PreviousValue;
+  };
+}
+
 function parseSettings(content: string | null): Record<string, unknown> {
   if (content === null || content.trim().length === 0) return {};
   let parsed: unknown;
@@ -45,32 +59,82 @@ export function applyClaudeEnv(content: string | null, target: ProxyTarget): str
   return `${JSON.stringify(settings, null, 2)}\n`;
 }
 
-/** Remove exactly the two managed keys (dropping env entirely if it becomes
-    empty). Safer than restoring a stale backup over interim user edits. */
-export function stripClaudeEnv(content: string | null): { content: string; changed: boolean } {
+function previousValue(record: Record<string, unknown>, key: string): PreviousValue {
+  return key in record ? { present: true, value: record[key] } : { present: false };
+}
+
+/** Capture the values Apply is about to replace. If the current values still
+    match a prior application, retain its original baseline across target
+    changes (for example, a proxy port change). */
+export function captureClaudeEnvState(
+  content: string | null,
+  target: ProxyTarget,
+  existing: ClaudeEnvState | null = null,
+): ClaudeEnvState {
+  const settings = parseSettings(content);
+  const record =
+    typeof settings.env === "object" && settings.env !== null && !Array.isArray(settings.env)
+      ? (settings.env as Record<string, unknown>)
+      : {};
+  const previous =
+    existing !== null && claudeApplied(content, existing.applied)
+      ? existing.previous
+      : {
+          baseUrl: previousValue(record, "ANTHROPIC_BASE_URL"),
+          token: previousValue(record, "ANTHROPIC_AUTH_TOKEN"),
+        };
+  return { version: 1, applied: target, previous };
+}
+
+function restoreValue(record: Record<string, unknown>, key: string, previous: PreviousValue): void {
+  if (previous.present) record[key] = previous.value;
+  else delete record[key];
+}
+
+/** Restore only values that still equal what Apply wrote. Values changed by
+    the user since Apply are left untouched. */
+export function restoreClaudeEnv(
+  content: string | null,
+  state: ClaudeEnvState,
+): { content: string; changed: boolean; preservedUserChanges: boolean } {
   const settings = parseSettings(content);
   const env = settings.env;
   if (typeof env !== "object" || env === null || Array.isArray(env)) {
-    return { content: `${JSON.stringify(settings, null, 2)}\n`, changed: false };
+    return {
+      content: `${JSON.stringify(settings, null, 2)}\n`,
+      changed: false,
+      preservedUserChanges: true,
+    };
   }
   const record = env as Record<string, unknown>;
   let changed = false;
-  for (const key of CLAUDE_ENV_KEYS) {
-    if (key in record) {
-      delete record[key];
-      changed = true;
-    }
+  let preservedUserChanges = false;
+  if (record.ANTHROPIC_BASE_URL === state.applied.baseUrl) {
+    restoreValue(record, "ANTHROPIC_BASE_URL", state.previous.baseUrl);
+    changed = true;
+  } else {
+    preservedUserChanges = true;
+  }
+  if (record.ANTHROPIC_AUTH_TOKEN === state.applied.token) {
+    restoreValue(record, "ANTHROPIC_AUTH_TOKEN", state.previous.token);
+    changed = true;
+  } else {
+    preservedUserChanges = true;
   }
   if (Object.keys(record).length === 0) delete settings.env;
-  return { content: `${JSON.stringify(settings, null, 2)}\n`, changed };
+  return { content: `${JSON.stringify(settings, null, 2)}\n`, changed, preservedUserChanges };
 }
 
-export function claudeApplied(content: string | null, baseUrl: string): boolean {
+export function claudeApplied(content: string | null, target: ProxyTarget): boolean {
   try {
     const settings = parseSettings(content);
     const env = settings.env;
     if (typeof env !== "object" || env === null || Array.isArray(env)) return false;
-    return (env as Record<string, unknown>).ANTHROPIC_BASE_URL === baseUrl;
+    const record = env as Record<string, unknown>;
+    return (
+      record.ANTHROPIC_BASE_URL === target.baseUrl &&
+      record.ANTHROPIC_AUTH_TOKEN === target.token
+    );
   } catch {
     return false;
   }

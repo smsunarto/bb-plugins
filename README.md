@@ -6,7 +6,7 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 
 | Id | Path | What it does |
 |---|---|---|
-| `agent-proxy` | `plugins/agent-proxy` | Runs and manages a local CLIProxyAPI core: install/supervise the binary, OAuth accounts, providers, usage, agent wiring. |
+| `agent-proxy` | `plugins/agent-proxy` | Run and manage a local CLIProxyAPI core: OAuth accounts, upstream providers, usage, and agent wiring. |
 | `amp` | `plugins/amp` | Registers Amp as a custom ACP provider through a bundled ACP bridge. |
 | `dotfiles` | `plugins/dotfiles` | Browse, edit, render, and sync the dotfiles repo. |
 | `gh-stack` | `plugins/gh-stack` | Visualize and drive stacked pull requests. |
