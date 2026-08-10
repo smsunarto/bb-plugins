@@ -356,6 +356,15 @@ function BranchRow({
             needs rebase
           </span>
         ) : null}
+        {branch.hasStash ? (
+          <span
+            className="inline-flex items-center gap-1 rounded border border-border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            title="Tracked changes for this layer are stored in a plugin stash and will return when the layer is checked out."
+          >
+            <Icon name="Archive" className="size-3" aria-hidden />
+            stashed
+          </span>
+        ) : null}
         {!branch.isMerged && !branch.isQueued && branch.aheadOfRemote !== null && branch.aheadOfRemote > 0 ? (
           <span className="rounded border border-amber-600/50 px-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
             {branch.aheadOfRemote} unpushed

@@ -29,7 +29,10 @@ import {
   projectStackLayers,
   type StackLayerCheckout,
 } from "./lib/stack-layers";
-import { checkoutWithAutoStash } from "./lib/smart-checkout";
+import {
+  activeAutoStashOwners,
+  checkoutWithAutoStash,
+} from "./lib/smart-checkout";
 import { resolveWorkspaceKey } from "./lib/workspace-key";
 import { mergePrefix, pruneCandidates } from "./lib/stack-actions";
 
@@ -96,6 +99,8 @@ const branchOutSchema = z.object({
   isMerged: z.boolean(),
   isQueued: z.boolean(),
   needsRebase: z.boolean(),
+  // True while tracked changes for this branch wait in a plugin auto-stash.
+  hasStash: z.boolean(),
   pr: prOutSchema.nullable(),
   // Present and true only when the returned draft value is an optimistic
   // server overlay over a GitHub read that has not caught up yet.
@@ -1392,13 +1397,17 @@ export default async function plugin(bb: BbPluginApi) {
       mutationVersion: workspaceMutationVersions.get(workspace.key) ?? 0,
     });
 
-    const [result, pending, defaultBranch, headPrefix, next] =
+    const [result, pending, defaultBranch, headPrefix, next, stashOwners] =
       await Promise.all([
         runGh(["stack", "view", "--json"], cwd, 30_000),
         pendingChangeSet(cwd),
         defaultBranchName(cwd),
         currentBranchPrefix(cwd),
         nextPrNumber(cwd),
+        activeAutoStashOwners({
+          runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
+          blockedStashOids: blockedAutoStashOids,
+        }),
       ]);
     const inspected = parseStackViewResult(result);
     if (inspected.error) {
@@ -1465,6 +1474,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (!branch.pr) {
           return {
             ...branch,
+            hasStash: stashOwners?.has(branch.name) ?? false,
             pr: null,
             diff: await diffPromise,
             aheadOfRemote: await aheadPromise,
@@ -1504,6 +1514,7 @@ export default async function plugin(bb: BbPluginApi) {
         return {
           ...branch,
           isMerged,
+          hasStash: stashOwners?.has(branch.name) ?? false,
           pr: { ...branch.pr, state, title, isDraft },
           diff: await diffPromise,
           aheadOfRemote: await aheadPromise,

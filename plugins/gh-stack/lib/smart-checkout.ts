@@ -24,6 +24,11 @@ export type SmartCheckoutDependencies = {
   blockedStashOids?: Set<string>;
 };
 
+type StashInspectionDependencies = Pick<
+  SmartCheckoutDependencies,
+  "runGit" | "blockedStashOids"
+>;
+
 const AUTO_STASH_PREFIX = "bb-gh-stack:auto-stash:v1:";
 const STASH_STATE_PREFIX = "refs/bb-gh-stack/stash-state/";
 const STASH_OID = /^[0-9a-f]{40,64}$/i;
@@ -140,7 +145,7 @@ function isTrackedCheckoutConflict(result: CommandResult): boolean {
 }
 
 async function listOwnedStashes(
-  deps: SmartCheckoutDependencies,
+  deps: StashInspectionDependencies,
   prefix: string,
 ): Promise<StashList> {
   const result = await deps.runGit([
@@ -243,7 +248,7 @@ async function createAutoStash(
 }
 
 async function readHandledStashOids(
-  deps: SmartCheckoutDependencies,
+  deps: StashInspectionDependencies,
 ): Promise<StashState> {
   const result = await deps.runGit([
     "for-each-ref",
@@ -267,6 +272,27 @@ async function readHandledStashOids(
     result,
     error: null,
   };
+}
+
+// Branches whose tracked changes are still waiting in a plugin-owned stash.
+// A handled stash remains in Git as a recovery backup but is no longer active.
+export async function activeAutoStashOwners(
+  deps: StashInspectionDependencies,
+): Promise<Set<string> | null> {
+  const auto = await listOwnedStashes(deps, AUTO_STASH_PREFIX);
+  if (auto.error !== null) return null;
+  const state = await readHandledStashOids(deps);
+  if (state.error !== null) return null;
+
+  return new Set(
+    auto.entries
+      .filter(
+        (entry) =>
+          !state.oids.has(entry.oid) &&
+          !deps.blockedStashOids?.has(entry.oid),
+      )
+      .map((entry) => entry.owner),
+  );
 }
 
 async function markEntryHandled(

@@ -19,17 +19,17 @@ branches and pull requests via the GitHub CLI.
   (`gh pr ready [--undo]`). The requested label changes optimistically and
   remains over stale GitHub reads until a fresh payload agrees; a spinner sits
   beside (never instead of) the label, including in sibling panels that share
-  the workspace. Click any other visible layer to check it out with `gh stack
-  checkout`; its title opens the pull request in a new browser tab.
-  Manual checkout uses a semantic button and is refused while the thread is
-  running. With local changes, it first lets Git carry non-conflicting tracked
-  and untracked files across. If tracked changes conflict, they are stashed
-  under a plugin-owned marker and restored automatically when their branch is
-  checked out again. Handmade stashes are never touched, and untracked files
-  are never stashed. PR links and pill/file-tree controls stay independently
-  interactive and never trigger checkout.
-- Every row carries a **`N files +A −D`** chip that expands into the
-  **changed-file tree** for that layer (Pierre Trees, as in the PR
+  the workspace. Each layer has a subtle branch icon that checks it out with
+  `gh stack checkout`; its title opens the pull request in a new browser tab.
+  Manual checkout is refused while the thread is running. With local changes,
+  it first lets Git carry non-conflicting tracked and untracked files across.
+  If tracked changes conflict, they are stashed under a plugin-owned marker
+  and restored automatically when their branch is checked out again. Handmade
+  stashes are never touched, and untracked files are never stashed. A layer
+  with active plugin-stashed changes shows a **stashed** marker; it disappears
+  after restore while the stash remains as a recovery backup. PR links, status
+  pills, and checkout icons stay independently interactive.
+- Click a layer to expand its **changed-file tree** (Pierre Trees, as in the PR
   walkthrough viewer), with per-file and aggregated per-directory deltas and
   git status colors. A branch's diff is computed against its stack parent
   (`git diff <parent>...<branch>`), so each layer shows only what it adds.
