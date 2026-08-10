@@ -10,7 +10,7 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 | `amp` | `plugins/amp` | Registers Amp as a custom ACP provider through a bundled ACP bridge. |
 | `dotfiles` | `plugins/dotfiles` | Browse, edit, render, and sync the dotfiles repo. |
 | `gh-stack` | `plugins/gh-stack` | Visualize and drive stacked pull requests. |
-| `notify` | `plugins/notify` | Desktop notifications when a thread finishes or fails, posted by the BB window itself. |
+| `notify` | `plugins/notify` | Desktop notifications when a BB thread finishes or fails, plus a `notify_user` agent tool and a `bb notify` command. |
 | `pr-walkthrough` | `plugins/pr-walkthrough` | Generate a human-friendly pull-request walkthrough with a built-in viewer panel. |
 | `theme` | `plugins/theme` | Contributes Scott's Theme as a selectable palette (`plugin:theme:smsunarto`). |
 

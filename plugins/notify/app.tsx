@@ -13,6 +13,7 @@
 import { definePluginApp } from "@bb/plugin-sdk/app";
 
 const PENDING_URL = "/api/v1/plugins/notify/http/pending";
+const ACK_URL = "/api/v1/plugins/notify/http/ack";
 const OPEN_URL = "/api/v1/plugins/notify/http/open";
 /** Only one window may poll; the rest wait behind this lock. */
 const POLL_LOCK = "bb-plugin-notify:poller";
@@ -110,6 +111,21 @@ function present(item: PendingNotification): void {
   });
 }
 
+async function acknowledge(
+  leaseId: string,
+  notificationIds: readonly number[],
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(ACK_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ leaseId, notificationIds }),
+    credentials: "same-origin",
+    signal,
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+}
+
 async function poll(signal: AbortSignal): Promise<void> {
   while (!signal.aborted) {
     const startedAt = Date.now();
@@ -120,22 +136,32 @@ async function poll(signal: AbortSignal): Promise<void> {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload: unknown = await response.json();
-      const list =
-        typeof payload === "object" &&
-        payload !== null &&
-        Array.isArray((payload as { notifications?: unknown }).notifications)
-          ? (payload as { notifications: unknown[] }).notifications
-          : [];
+      const record =
+        typeof payload === "object" && payload !== null
+          ? (payload as Record<string, unknown>)
+          : null;
+      const list = Array.isArray(record?.notifications)
+        ? record.notifications
+        : [];
+      const leaseId = typeof record?.leaseId === "string" ? record.leaseId : null;
+      if (list.length > 0 && leaseId === null) {
+        throw new Error("notification batch has no lease");
+      }
       let shown = 0;
+      const shownIds: number[] = [];
       for (const item of list) {
         if (!isPending(item)) continue;
         try {
           present(item);
           shown += 1;
+          shownIds.push(item.id);
         } catch {
-          // The batch has already left the server, so one notification the
-          // browser refuses to construct must not cost the rest of them.
+          // A failed item remains leased and is retried later; the rest of the
+          // batch can still be acknowledged independently.
         }
+      }
+      if (leaseId !== null && shownIds.length > 0) {
+        await acknowledge(leaseId, shownIds, signal);
       }
       if (shown === 0 && Date.now() - startedAt < MIN_EMPTY_POLL_MS) {
         await sleep(MIN_EMPTY_POLL_MS, signal);

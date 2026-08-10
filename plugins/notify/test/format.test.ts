@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   isThreadId,
+  MAX_RUN_SECONDS,
   notificationLines,
   oneLine,
   parseSeconds,
@@ -28,6 +29,11 @@ test("oneLine does not leave a dangling space before the ellipsis", () => {
   assert.equal(oneLine("ab cdefg", 4), "ab…");
 });
 
+test("oneLine clips without splitting a Unicode code point", () => {
+  assert.equal(oneLine("abc😀def", 5), "abc😀…");
+  assert.equal(oneLine("abc", 0), "");
+});
+
 test("threadLabel prefers the title, then the fallback, then a constant", () => {
   assert.equal(threadLabel({ title: "Real", titleFallback: "Fall" }), "Real");
   assert.equal(threadLabel({ title: "  ", titleFallback: "Fall" }), "Fall");
@@ -45,6 +51,14 @@ test("notificationLines titles with the thread and tags with the project", () =>
 test("notificationLines omits empty brackets when there is no project", () => {
   assert.deepEqual(notificationLines(null, "T", "Done."), { title: "T", body: "Done." });
   assert.deepEqual(notificationLines("", "T", "Done."), { title: "T", body: "Done." });
+});
+
+test("the assembled notification body can be clipped to its final budget", () => {
+  const { body } = notificationLines("project", "Thread", "😀".repeat(200));
+  const clipped = oneLine(body, 160);
+  assert.equal(Array.from(clipped).length, 160);
+  assert.ok(clipped.startsWith("[project] "));
+  assert.ok(clipped.endsWith("…"));
 });
 
 test("plainText unwraps emphasis, code, links, and images", () => {
@@ -99,13 +113,15 @@ test("isThreadId accepts bb slugs and rejects anything that could escape", () =>
   assert.ok(!isThreadId("x".repeat(65)));
 });
 
-test("parseSeconds treats junk and negatives as off", () => {
+test("parseSeconds treats malformed values as off and caps extreme values", () => {
   assert.equal(parseSeconds("0"), 0);
   assert.equal(parseSeconds(" 2.5 "), 2.5);
   assert.equal(parseSeconds("abc"), 0);
+  assert.equal(parseSeconds("5seconds"), 0);
   assert.equal(parseSeconds(""), 0);
   assert.equal(parseSeconds("-4"), 0);
   assert.equal(parseSeconds("Infinity"), 0);
+  assert.equal(parseSeconds("1e100"), MAX_RUN_SECONDS);
 });
 
 test("suppressionReason applies the default quiet filters", () => {

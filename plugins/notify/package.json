@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Notify",
-    "description": "Desktop notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
+    "description": "Native macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
     "branding": {
       "icon": "./assets/icon.svg"
     },

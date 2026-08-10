@@ -3,12 +3,16 @@
 
 /** Escaped markdown literals are parked at this offset while syntax is stripped. */
 const ESCAPE_OFFSET = 0xe000;
+/** A minimum-run filter longer than this is treated as this maximum. */
+export const MAX_RUN_SECONDS = 30 * 24 * 60 * 60;
 
 /** Notification bodies are one line: collapse whitespace, then clip. */
 export function oneLine(text: string, maxChars: number): string {
   const collapsed = text.replace(/\s+/gu, " ").trim();
-  if (collapsed.length <= maxChars) return collapsed;
-  return `${collapsed.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+  const characters = Array.from(collapsed);
+  if (characters.length <= maxChars) return collapsed;
+  if (maxChars <= 0) return "";
+  return `${characters.slice(0, maxChars - 1).join("").trimEnd()}…`;
 }
 
 /** Best available human name for a thread. */
@@ -94,9 +98,9 @@ export function isThreadId(value: string): boolean {
 
 /** Settings hold strings; a bad value should mean "off", not NaN. */
 export function parseSeconds(value: string): number {
-  const parsed = Number.parseFloat(value.trim());
+  const parsed = Number(value.trim());
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return parsed;
+  return Math.min(parsed, MAX_RUN_SECONDS);
 }
 
 /** The flags `bb notify send` understands. Anything else is a typo. */
