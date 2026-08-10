@@ -34,7 +34,12 @@ import {
   checkoutWithAutoStash,
 } from "./lib/smart-checkout";
 import { resolveWorkspaceKey } from "./lib/workspace-key";
-import { mergePrefix, pruneCandidates } from "./lib/stack-actions";
+import {
+  mergePrefix,
+  pruneCandidates,
+  stackMergeArgs,
+  stackMergeWasQueued,
+} from "./lib/stack-actions";
 
 const prSchema = z.object({
   number: z.number(),
@@ -138,7 +143,6 @@ const prMutationStateSchema = z.object({
 
 const mergeValidationSchema = prMutationStateSchema.extend({
   baseRefName: z.string(),
-  headRefOid: z.string().regex(/^[0-9a-f]{40}$/i),
   mergedAt: z.string().nullable(),
 });
 
@@ -178,21 +182,6 @@ const actionResultSchema = z.object({
 
 type ActionResult = z.infer<typeof actionResultSchema>;
 const mergeMethodSchema = z.enum(["squash", "merge", "rebase"]);
-const asyncMergeSchema = z.object({
-  status: z.enum(["pending", "merged", "enqueued", "failed"]),
-  details: z.object({ message: z.string().catch(""), uuid: z.string().optional() }).catch({ message: "" }),
-});
-const MERGE_UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function parseAsyncMerge(stdout: string): z.infer<typeof asyncMergeSchema> | null {
-  try {
-    const parsed = asyncMergeSchema.safeParse(JSON.parse(stdout));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
 
 // Panel settings, edited in the gear popup and stored in the plugin's kv.
 // Both are lenient on read so a row written by an older build still loads.
@@ -2095,7 +2084,7 @@ export default async function plugin(bb: BbPluginApi) {
                 "view",
                 String(branch.pr.number),
                 "--json",
-                "state,isDraft,headRefName,headRefOid,baseRefName,mergedAt",
+                "state,isDraft,headRefName,baseRefName,mergedAt",
               ],
               cwd,
               20_000,
@@ -2133,7 +2122,6 @@ export default async function plugin(bb: BbPluginApi) {
         // Recompute and authorize directly immediately before the irreversible request.
         const fresh = await readStackView(cwd);
         if (fresh.error) return { ok: false, message: fresh.error.message, detail: null };
-        let authorizedTopOid: string | null = null;
         for (let index = 0; index < prefix.selected.length; index++) {
           const selected = prefix.selected[index];
           const stackBranch = fresh.stack.branches.find(
@@ -2153,7 +2141,7 @@ export default async function plugin(bb: BbPluginApi) {
               "view",
               String(stackBranch.pr.number),
               "--json",
-              "state,isDraft,headRefName,headRefOid,baseRefName,mergedAt",
+              "state,isDraft,headRefName,baseRefName,mergedAt",
             ],
             cwd,
             20_000,
@@ -2183,98 +2171,26 @@ export default async function plugin(bb: BbPluginApi) {
               detail: null,
             };
           }
-          if (index === prefix.selected.length - 1) {
-            authorizedTopOid = state.headRefOid;
-          }
         }
         const top = prefix.selected.at(-1)?.pr;
-        if (!top || !authorizedTopOid) {
+        if (!top) {
           return { ok: false, message: "No pull request is eligible to merge.", detail: null };
         }
-        const endpoint = `repos/{owner}/{repo}/pulls/${top.number}/merge-async`;
-        const submit = await runGh(
-          [
-            "api",
-            "--method",
-            "PUT",
-            endpoint,
-            "-f",
-            `merge_method=${method}`,
-            "-f",
-            "merge_action=default",
-            "-f",
-            `sha=${authorizedTopOid}`,
-          ],
-          cwd,
-          30_000,
-        );
-        let outcome = parseAsyncMerge(submit.stdout);
-        let terminalFromPolling = false;
-        const http = submit.stderr.match(/HTTP (\d{3})/)?.[1];
-        if (submit.code !== 0 && (http !== "409" || !outcome?.details.uuid)) {
+        const submit = await runGh(stackMergeArgs(top.number, method), cwd, 300_000);
+        const detail = outputTail(submit);
+        if (submit.timedOut) {
           return {
             ok: false,
-            message:
-              http === "404"
-                ? "GitHub's stack merge API is unavailable or the PR was not found. Nothing was merged."
-                : outcome?.details.message || "GitHub rejected the merge request. Nothing was merged.",
-            detail: outputTail(submit),
+            message: "The stack merge command timed out. Its final outcome is uncertain; refresh to reconcile.",
+            tone: "warning" as const,
+            detail,
           };
         }
-        if (!outcome) {
+        if (submit.code !== 0) {
           return {
             ok: false,
-            message: "GitHub returned an unexpected merge response.",
-            tone: submit.code === 0 ? "warning" as const : "error" as const,
-            detail: outputTail(submit),
-          };
-        }
-        const deadline = Date.now() + 240_000;
-        while (outcome.status === "pending") {
-          if (!outcome.details.uuid || !MERGE_UUID.test(outcome.details.uuid)) {
-            return {
-              ok: false,
-              message: "GitHub accepted the merge without a valid polling id.",
-              tone: "warning" as const,
-              detail: null,
-            };
-          }
-          const uuid = outcome.details.uuid;
-          if (Date.now() >= deadline) {
-            return {
-              ok: false,
-              message: "GitHub is still processing the merge and its final outcome is uncertain; refresh to reconcile.",
-              tone: "warning" as const,
-              detail: `Merge request UUID: ${uuid}`,
-            };
-          }
-          await new Promise((resolve) => setTimeout(resolve, 2_000));
-          const poll = await runGh(["api", `${endpoint}/${uuid}`], cwd, 15_000);
-          if (poll.failedToSpawn || poll.timedOut || poll.code !== 0) {
-            return {
-              ok: false,
-              message: "Could not poll the running merge; its final outcome is uncertain. Refresh to reconcile.",
-              tone: "warning" as const,
-              detail: joinDetails(`Merge request UUID: ${uuid}`, outputTail(poll)),
-            };
-          }
-          const next = parseAsyncMerge(poll.stdout);
-          if (!next) {
-            return {
-              ok: false,
-              message: "Lost track of the running merge; refresh shortly.",
-              tone: "warning" as const,
-              detail: outputTail(poll),
-            };
-          }
-          outcome = next;
-          if (outcome.status !== "pending") terminalFromPolling = true;
-        }
-        if (outcome.status === "failed") {
-          return {
-            ok: false,
-            message: `Nothing was merged: ${outcome.details.message || "GitHub reported a failure."}`,
-            detail: null,
+            message: `Nothing was merged. ${mapExitCode(submit).message}`,
+            detail,
           };
         }
         const count = prefix.selected.length;
@@ -2285,20 +2201,12 @@ export default async function plugin(bb: BbPluginApi) {
           left > 0
             ? ` The ${left} layer${left === 1 ? "" : "s"} above stay open — run Sync to restack ${left === 1 ? "it" : "them"} onto ${raw.stack.trunk}.`
             : "";
-        if (outcome.status === "enqueued") {
+        if (stackMergeWasQueued(submit.stdout, submit.stderr)) {
           return {
             ok: true,
             message: `${count} pull request${count === 1 ? "" : "s"} added to the merge queue on ${raw.stack.trunk}; they land as the queue processes them.${rest}`,
             tone: "warning" as const,
-            detail: null,
-          };
-        }
-        if (outcome.status === "merged" && !terminalFromPolling) {
-          return {
-            ok: true,
-            message: "GitHub reports the target is already merged; refresh to reconcile the stack.",
-            tone: "warning" as const,
-            detail: null,
+            detail,
           };
         }
         const shape =
@@ -2310,7 +2218,7 @@ export default async function plugin(bb: BbPluginApi) {
         return {
           ok: true,
           message: `Merged ${count} branch${count === 1 ? "" : "es"} into ${raw.stack.trunk} — ${shape}.${rest}`,
-          detail: null,
+          detail,
         };
       });
     },

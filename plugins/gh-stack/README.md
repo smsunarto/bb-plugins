@@ -155,7 +155,7 @@ or run `bun run --filter './plugins/gh-stack' build` and
   `stack-updated` realtime announcements), `checkoutBranch` (guarded smart
   checkout with tracked-only auto-stash and owner-branch restore),
   `runAction` (sync / submit / sync-submit / prune),
-  `mergeStack` (validated atomic stack merge), `createStack` (init),
+  `mergeStack` (validated non-interactive `gh stack merge <pr> --yes`), `createStack` (init),
   `addBranch` (top + add), `setPrDraft`,
   `suggestStackName`, `magicStack`, `saveSettings` (normalize the prefix,
   write the kv row, patch cached payloads). Shared workspace resolution,
