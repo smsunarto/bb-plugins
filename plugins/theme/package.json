@@ -10,7 +10,11 @@
     "name": "Theme",
     "description": "Ships Scott's Theme as a selectable BB palette.",
     "branding": {
-      "icon": "Palette"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "themes": [

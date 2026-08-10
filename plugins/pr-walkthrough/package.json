@@ -10,7 +10,11 @@
     "name": "PR Walkthrough",
     "description": "Generate a human-friendly pull-request walkthrough with semantic review groups, inline diffs, and a built-in viewer panel.",
     "branding": {
-      "icon": "GitPullRequest"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

@@ -10,7 +10,11 @@
     "name": "Notify",
     "description": "Native macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

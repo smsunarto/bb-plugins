@@ -10,7 +10,11 @@
     "name": "Agent Proxy",
     "description": "Run and manage a local CLIProxyAPI core: OAuth accounts, upstream providers, usage, and agent wiring.",
     "branding": {
-      "icon": "Server"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

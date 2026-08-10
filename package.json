@@ -21,6 +21,8 @@
     "dev": "bun run --filter 'bb-plugin-*' --parallel --no-orphans dev",
     "reload": "bb plugin reload",
     "logs": "bb plugin logs",
+    "icons": "bun scripts/plugin-icons.ts",
+    "icons:check": "bun scripts/plugin-icons.ts --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "typecheck": "bun run --filter 'bb-plugin-*' --parallel typecheck",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
+    "@hugeicons/core-free-icons": "4.2.3",
     "oxlint": "^1.77.0",
     "typescript": "^7.0.0"
   }

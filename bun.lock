@@ -6,6 +6,7 @@
       "name": "bb-plugins",
       "devDependencies": {
         "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
+        "@hugeicons/core-free-icons": "4.2.3",
         "oxlint": "^1.77.0",
         "typescript": "^7.0.0",
       },
