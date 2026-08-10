@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import {
+  activeAutoStashOwners,
   checkoutWithAutoStash,
   type CommandResult,
   type SmartCheckoutDependencies,
@@ -106,19 +107,21 @@ test("conflicting tracked edits are auto-stashed and restored on their owner bra
     writeFileSync(join(cwd, "shared.txt"), "unstaged source work\n");
     writeFileSync(join(cwd, "untracked-note.txt"), "never stash me\n");
 
-    const away = await checkoutWithAutoStash("target", dependencies(cwd));
+    const deps = dependencies(cwd);
+    const away = await checkoutWithAutoStash("target", deps);
     assert.equal(away.ok, true, away.message);
     assert.equal(currentBranch(cwd), "target");
     assert.equal(readFileSync(join(cwd, "shared.txt"), "utf8"), "target\n");
     assert.equal(readFileSync(join(cwd, "untracked-note.txt"), "utf8"), "never stash me\n");
     assert.match(stashSubjects(cwd), /bb-gh-stack:auto-stash:v1:/);
     assert.match(stashSubjects(cwd), /handmade stash/);
+    assert.deepEqual(await activeAutoStashOwners(deps), new Set(["source"]));
 
     // A handmade stash pushed above the plugin stash must also remain intact.
     writeFileSync(join(cwd, "carry.txt"), "second handmade stash\n");
     gitOk(cwd, ["stash", "push", "-m", "handmade stash above"]);
 
-    const back = await checkoutWithAutoStash("source", dependencies(cwd));
+    const back = await checkoutWithAutoStash("source", deps);
     assert.equal(back.ok, true, back.message);
     assert.equal(currentBranch(cwd), "source");
     assert.equal(
@@ -132,6 +135,7 @@ test("conflicting tracked edits are auto-stashed and restored on their owner bra
     assert.match(stashSubjects(cwd), /handmade stash/);
     assert.match(stashSubjects(cwd), /handmade stash above/);
     assert.match(handledStashes(cwd), /^[0-9a-f]{40,64}$/m);
+    assert.deepEqual(await activeAutoStashOwners(deps), new Set());
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
