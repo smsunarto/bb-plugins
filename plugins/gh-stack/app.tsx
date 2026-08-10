@@ -54,7 +54,7 @@ type MergeOffer = {
 };
 
 const MERGE_BUTTON_CLASSES =
-  "bg-purple-600 text-white hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-500";
+  "bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600";
 const MERGE_METHODS: { value: MergeMethod; label: string; effect: string }[] = [
   { value: "squash", label: "Squash", effect: "One commit per branch" },
   { value: "merge", label: "Merge commit", effect: "One merge commit per branch" },
@@ -81,9 +81,6 @@ const OCTICONS = {
     "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
   dot: "M4 8a4 4 0 1 1 8 0 4 4 0 0 1-8 0Zm4-2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z",
   plus: "M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z",
-  chevronRight: "M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z",
-  chevronDown:
-    "M12.78 6.22a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L3.22 7.28a.75.75 0 0 1 1.06-1.06L8 9.94l3.72-3.72a.75.75 0 0 1 1.06 0Z",
 } as const;
 
 function Octicon({ path, className }: { path: string; className?: string }) {
@@ -230,8 +227,8 @@ function RailRow({
   );
 }
 
-// A row's changed-file tree, plus the caret that toggles it. Returns null
-// when the diff could not be computed or is empty.
+// A row's changed-file summary. Returns null when the diff could not be
+// computed or is empty.
 function ChangeDisclosure({
   change,
   expanded,
@@ -249,12 +246,8 @@ function ChangeDisclosure({
       type="button"
       onClick={onToggle}
       title={expanded ? `Hide ${label}` : `Show ${label}`}
-      className="relative inline-flex items-center gap-1 rounded text-muted-foreground hover:text-foreground"
+      className="relative inline-flex items-center rounded text-muted-foreground hover:text-foreground"
     >
-      <Octicon
-        path={expanded ? OCTICONS.chevronDown : OCTICONS.chevronRight}
-        className="size-3.5"
-      />
       <DeltaChip change={change} />
     </button>
   );
@@ -295,6 +288,7 @@ function BranchRow({
   const pr = branch.pr;
   const title = pr?.title ?? branch.name;
   const canToggle = pr !== null && pr.state === "OPEN";
+  const canExpand = (branch.diff?.files.length ?? 0) > 0;
   const icon = branchIcon(branch);
   return (
     <RailRow
@@ -303,16 +297,14 @@ function BranchRow({
       accent={branch.isCurrent}
       highlighted={branch.isCurrent}
     >
-      {branch.isCurrent ? null : (
-        <button
-          type="button"
-          onClick={() => onCheckout(branch.name)}
-          disabled={checkoutDisabled}
-          title={`Check out ${branch.name}`}
-          aria-label={`Check out ${branch.name}`}
-          className="absolute inset-0 cursor-pointer rounded-md disabled:cursor-wait"
-        />
-      )}
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        disabled={!canExpand}
+        aria-expanded={canExpand ? expanded : undefined}
+        aria-label={`${expanded ? "Hide" : "Show"} files changed in ${branch.name}`}
+        className="absolute inset-0 rounded-md enabled:cursor-pointer disabled:cursor-default"
+      />
       <div className="flex items-start justify-between gap-3">
         {pr ? (
           <a
@@ -329,7 +321,7 @@ function BranchRow({
             {title}
           </span>
         )}
-        <span className="relative shrink-0">
+        <div className="relative flex shrink-0 items-center gap-1">
           {pr ? (
             <StatusPill
               pr={pr}
@@ -338,7 +330,20 @@ function BranchRow({
               onToggle={canToggle ? () => onToggleDraft(pr) : null}
             />
           ) : null}
-        </span>
+          <span title={branch.isCurrent ? "Current branch" : `Check out ${branch.name}`}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="size-5 rounded-sm px-0 text-muted-foreground"
+              aria-label={branch.isCurrent ? "Current branch" : `Check out ${branch.name}`}
+              disabled={branch.isCurrent || checkoutDisabled}
+              onClick={() => onCheckout(branch.name)}
+            >
+              <Icon name="GitBranch" className="size-3.5" />
+            </Button>
+          </span>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
         <span className="truncate">
@@ -361,12 +366,7 @@ function BranchRow({
             remote unknown
           </span>
         ) : null}
-        <ChangeDisclosure
-          change={branch.diff}
-          expanded={expanded}
-          onToggle={onToggleExpanded}
-          label={`files changed in ${branch.name}`}
-        />
+        {branch.diff && canExpand ? <DeltaChip change={branch.diff} /> : null}
       </div>
       {expanded && branch.diff ? (
         <div className="relative">
@@ -424,9 +424,7 @@ function LayerComposer({
   return (
     <RailRow icon={OCTICONS.plus}>
       <form
-        // justify-end only bites on a wrapped line, so buttons that do not
-        // fit beside the field land right-aligned under it.
-        className="flex flex-wrap items-center justify-end gap-2"
+        className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (!canSubmit) return;
@@ -439,8 +437,9 @@ function LayerComposer({
         }}
       >
         {/* The field keeps its own width floor so it stays readable in a
-            narrow panel; the other buttons wrap below it instead. */}
-        <div className="relative w-40 min-w-40 flex-1">
+            narrow panel. Its high grow factor leaves the actions at their
+            content width while all controls fit on one row. */}
+        <div className="relative min-w-40 flex-[999_1_10rem]">
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -489,21 +488,30 @@ function LayerComposer({
             </Button>
           </span>
         </div>
-        {/* One layer at a time is the form; Magic Stack hands the whole
-            split to the thread's agent instead. */}
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="h-7"
-          disabled={busy || disabled || magicking}
-          onClick={onMagic}
-        >
-          {magicking ? "Summoning…" : "Magic Stack 🪄"}
-        </Button>
-        <Button type="submit" size="sm" className="h-7" disabled={!canSubmit}>
-          {busy ? busyLabel : submitLabel}
-        </Button>
+        {/* Keep both actions on the same line. When the group wraps below the
+            field, it grows across the row and gives each action half. */}
+        <div className="grid flex-[1_1_auto] grid-cols-2 gap-2">
+          {/* One layer at a time is the form; Magic Stack hands the whole
+              split to the thread's agent instead. */}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-7"
+            disabled={busy || disabled || magicking}
+            onClick={onMagic}
+          >
+            {magicking ? "Summoning…" : "Magic Stack 🪄"}
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            className="h-7"
+            disabled={!canSubmit}
+          >
+            {busy ? busyLabel : submitLabel}
+          </Button>
+        </div>
       </form>
       {/* Same subline as a branch row: "#N · branch", then the file count. */}
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
@@ -1236,28 +1244,25 @@ function StackPanel({ threadId }: { threadId: string }) {
               "Stacked pull requests"
             )}
           </div>
-          <span
-            className="shrink-0"
+          <button
+            type="button"
             title={
               result
                 ? `Refresh stack · Last updated ${new Date(result.fetchedAt).toLocaleTimeString()}`
                 : "Refresh stack"
             }
+            aria-label={
+              loading ? "Loading stack" : refreshing ? "Refreshing stack" : "Refresh stack"
+            }
+            onClick={() => void refresh({ fresh: true })}
+            disabled={loading || refreshing || anyBusy}
+            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-50"
           >
-            <Button
-              size="sm"
-              variant="ghost"
-              className="w-8 px-0"
-              aria-label="Refresh stack"
-              onClick={() => void refresh({ fresh: true })}
-              disabled={loading || refreshing || anyBusy}
-            >
-              <Icon
-                name="RotateCcw"
-                className={`size-4 ${loading || refreshing ? "animate-spin" : ""}`}
-              />
-            </Button>
-          </span>
+            <Icon
+              name="RotateCcw"
+              className={`size-3.5 ${loading || refreshing ? "animate-spin" : ""}`}
+            />
+          </button>
         </div>
         <div className="flex shrink-0 items-center">
           {/* Button drops `title`, so the tooltip rides on a wrapper. */}
