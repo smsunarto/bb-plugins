@@ -28,6 +28,7 @@ import {
   projectStackLayers,
   type StackLayerCheckout,
 } from "./lib/stack-layers";
+import { checkoutWithAutoStash } from "./lib/smart-checkout";
 import { resolveWorkspaceKey } from "./lib/workspace-key";
 
 const prSchema = z.object({
@@ -237,6 +238,15 @@ export const rpcContract = defineRpcContract({
         prNumber: z.number().int().positive(),
         draft: z.boolean(),
       })
+      .strict(),
+    output: actionResultSchema,
+  },
+  // Check out a visible layer in the current stack. The handler validates the
+  // branch against a fresh stack view, so the browser cannot select an
+  // arbitrary local ref or a merged layer hidden from the panel.
+  checkoutBranch: {
+    input: z
+      .object({ threadId: z.string(), branch: z.string().min(1).max(255) })
       .strict(),
     output: actionResultSchema,
   },
@@ -747,6 +757,9 @@ export default async function plugin(bb: BbPluginApi) {
   // the full checkout/rebase/push/PR operation and rejects overlap rather
   // than letting two BB panels mutate one repository concurrently.
   const activeWorkspaceMutations = new Set<string>();
+  // A handled stash apply is also recorded durably. Keep its OID blocked in
+  // memory as a fail-safe if that state write only partly succeeds.
+  const blockedAutoStashOids = new Set<string>();
 
   // The settings popup writes one global kv row; it is read on every compute,
   // so keep the parsed value in memory and refresh it on save.
@@ -901,6 +914,16 @@ export default async function plugin(bb: BbPluginApi) {
       if (key !== workspaceKey) continue;
       stackCache.delete(cachedThreadId);
       bb.realtime.publish("stack-updated", { threadId: cachedThreadId, fetchedAt });
+      // A compute that overlapped this mutation is intentionally not cached.
+      // Once it releases the per-thread slot, run a stable post-mutation
+      // compute so realtime listeners cannot remain on its stale checkout.
+      const inflight = stackInflight.get(cachedThreadId);
+      if (inflight) {
+        void inflight.then(
+          () => refreshStackInBackground(cachedThreadId),
+          () => refreshStackInBackground(cachedThreadId),
+        );
+      }
     }
   }
 
@@ -1277,10 +1300,116 @@ export default async function plugin(bb: BbPluginApi) {
         }
         return { ...cached.payload, fetchedAt: cached.fetchedAt };
       }
-      const payload = await refreshStack(threadId);
-      const entry = stackCache.get(threadId);
+      let payload = await refreshStack(threadId);
+      let entry = stackCache.get(threadId);
+      // An explicit refresh may have joined a compute that overlapped a
+      // workspace mutation. Such payloads are deliberately not cached; wait
+      // for one stable retry instead of stamping and returning stale state.
+      if (refresh === true && !entry) {
+        payload = await refreshStack(threadId);
+        entry = stackCache.get(threadId);
+      }
       if (entry) entry.lastReadAt = Date.now();
       return { ...payload, fetchedAt: entry?.fetchedAt ?? Date.now() };
+    },
+
+    async checkoutBranch({ threadId, branch }) {
+      const workspace = await resolveWorkspace(threadId);
+      if (workspace.error) {
+        return { ok: false, message: workspace.error.message, detail: null };
+      }
+      return withWorkspaceMutation(workspace, async () => {
+        const thread = await bb.sdk.threads.get({ threadId });
+        if (
+          thread.status === "active" ||
+          thread.status === "starting" ||
+          thread.status === "stopping"
+        ) {
+          return {
+            ok: false,
+            message: "Wait for this thread to become idle before checking out another stack layer.",
+            detail: null,
+          };
+        }
+
+        const cwd = workspace.cwd;
+        const view = await readStackView(cwd);
+        if (view.error) {
+          return { ok: false, message: view.error.message, detail: null };
+        }
+        const target = view.stack.branches.find(
+          (candidate) => candidate.name === branch,
+        );
+        if (!target) {
+          return {
+            ok: false,
+            message: `${branch} is not in the current stack anymore. Refresh the panel.`,
+            detail: null,
+          };
+        }
+        if (target.isMerged || target.pr?.state === "MERGED") {
+          return {
+            ok: false,
+            message: `${branch} is merged and no longer available in the stack panel.`,
+            detail: null,
+          };
+        }
+        if (target.pr) {
+          const direct = await readPullRequestState(cwd, target.pr.number);
+          if (!direct.state) {
+            return {
+              ok: false,
+              message: `Could not verify whether ${branch} is still available: ${direct.error}`,
+              detail: direct.detail,
+            };
+          }
+          if (direct.state.headRefName !== branch) {
+            return {
+              ok: false,
+              message: `PR #${target.pr.number} points to ${direct.state.headRefName}, not ${branch}. Refresh the panel.`,
+              detail: direct.detail,
+            };
+          }
+          if (direct.state.state === "MERGED") {
+            return {
+              ok: false,
+              message: `${branch} is merged and no longer available in the stack panel.`,
+              detail: direct.detail,
+            };
+          }
+        }
+
+        const current = await currentBranchName(cwd);
+        if (current === branch) {
+          return { ok: true, message: `Already on ${branch}.`, detail: null };
+        }
+
+        // Validation above may await GitHub. Recheck immediately before the
+        // mutation so an agent cannot start working underneath the checkout.
+        const latestThread = await bb.sdk.threads.get({ threadId });
+        if (
+          latestThread.status === "active" ||
+          latestThread.status === "starting" ||
+          latestThread.status === "stopping"
+        ) {
+          return {
+            ok: false,
+            message: "Wait for this thread to become idle before checking out another stack layer.",
+            detail: null,
+          };
+        }
+
+        return checkoutWithAutoStash(branch, {
+          runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
+          checkout: (targetBranch) => {
+            const args = ["stack", "checkout", "--", targetBranch];
+            bb.log.info(`running gh ${args.join(" ")} in ${cwd}`);
+            return runGh(args, cwd, 30_000);
+          },
+          currentBranch: () => currentBranchName(cwd),
+          blockedStashOids: blockedAutoStashOids,
+        });
+      });
     },
 
     async setPrDraft({ threadId, prNumber, draft }) {
