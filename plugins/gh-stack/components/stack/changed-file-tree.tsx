@@ -31,7 +31,24 @@ export type TreeDiffFile = {
 
 const TREE_ROW_HEIGHT = 24;
 const TREE_BORDER_WIDTH = 1;
-const NON_SCROLLING_TREE_CSS = `[data-file-tree-virtualized-scroll="true"] { overflow-y: clip; scrollbar-gutter: auto; }`;
+// The tree keeps a "git" lane after the decoration lane: a dot on directory
+// rows, an A/M/D letter on file rows. The row's own status already comes
+// through in its filename color, so the lane only adds a marker beside the
+// +/− counts. It cannot be turned off through the model, so hide it here.
+const NON_SCROLLING_TREE_CSS = [
+  // The scroll container insets its rows by `padding-inline − item-margin-x`
+  // on the left and subtracts the reserved scrollbar gutter again on the
+  // right. This tree never scrolls, so that gutter is dead space and the two
+  // sides disagree. Zero the padding here and let the row's own padding hold
+  // the text off the edge: the hover fill then spans the full width, flush
+  // and symmetric, and the border on the wrapper clips it.
+  `[data-file-tree-virtualized-scroll="true"] { overflow-y: clip; scrollbar-gutter: auto; padding-inline: 0; }`,
+  `[data-item-section="git"] { display: none; }`,
+  // The decoration lane lays its parts out as flex items, so leading
+  // whitespace in the text collapses. A gap is the only thing that separates
+  // +N from −M here; it matches the gap the panel's own DeltaChip uses.
+  `[data-item-section="decoration"] > span { gap: 6px; }`,
+].join("\n");
 
 const ADDED_COLOR = "var(--diffs-addition-color, #3fb950)";
 const DELETED_COLOR = "var(--diffs-deletion-color, #f85149)";
@@ -40,7 +57,13 @@ type RowStats = {
   fileStats: Map<string, { additions: number | null; deletions: number | null }>;
   // `counted` stays false while every file below the directory has unknown
   // counts (binary only), so the row shows nothing instead of "+0 −0".
-  dirStats: Map<string, { additions: number; deletions: number; counted: boolean }>;
+  // `files` is how many changed files sit below the directory, which is what
+  // identifies a row that merely restates the whole diff.
+  dirStats: Map<
+    string,
+    { additions: number; deletions: number; counted: boolean; files: number }
+  >;
+  total: number;
 };
 
 function computeRowStats(files: TreeDiffFile[]): RowStats {
@@ -59,24 +82,27 @@ function computeRowStats(files: TreeDiffFile[]): RowStats {
         additions: 0,
         deletions: 0,
         counted: false,
+        files: 0,
       };
       entry.additions += file.additions ?? 0;
       entry.deletions += file.deletions ?? 0;
       entry.counted ||= counted;
+      entry.files += 1;
       dirStats.set(dir, entry);
     }
   }
-  return { fileStats, dirStats };
+  return { fileStats, dirStats, total: files.length };
 }
 
 function deltaDecoration(additions: number, deletions: number): FileTreeRowDecoration {
-  // The gap between the two counts is a non-breaking space: the tree renders
-  // each part in its own element, where a plain space collapses away.
+  // The two counts are separated by the lane flex gap, not by whitespace in
+  // the text: each part becomes its own flex item, which drops leading spaces
+  // (see the decoration rule in NON_SCROLLING_TREE_CSS).
   return {
     text: `+${additions} −${deletions}`,
     parts: [
       { text: `+${additions}`, color: ADDED_COLOR },
-      { text: `\u00a0−${deletions}`, color: DELETED_COLOR },
+      { text: `−${deletions}`, color: DELETED_COLOR },
     ],
   };
 }
@@ -140,6 +166,10 @@ export function ChangedFileTree({
       }
       const stat = statsRef.current.dirStats.get(path);
       if (!stat || !stat.counted) return null;
+      // A directory holding every changed file restates the totals the caller
+      // already shows beside the tree. Two identical figures, one above the
+      // other, read as a doubled number rather than as a subtotal.
+      if (stat.files === statsRef.current.total) return null;
       return deltaDecoration(stat.additions, stat.deletions);
     },
     [],
@@ -187,7 +217,12 @@ export function ChangedFileTree({
       style={
         {
           "--trees-density-override": 0.8,
-          "--trees-padding-inline-override": 8,
+          // 0, so rows span the full width and their own padding holds the
+          // text off the edge. Units matter here: React passes custom
+          // properties through verbatim, and the tree feeds this one to
+          // calc(), where a bare number would invalidate the declaration and
+          // silently restore the 16px default.
+          "--trees-padding-inline-override": "0px",
           boxSizing: "border-box",
           height: `${treeHeight}px`,
         } as CSSProperties

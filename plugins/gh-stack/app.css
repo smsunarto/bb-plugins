@@ -8,7 +8,11 @@
   --trees-bg-override: transparent;
   --trees-border-color-override: var(--border);
   --trees-fg-muted-override: var(--muted-foreground);
-  --trees-fg-override: var(--foreground);
+  /* Folder rows carry no git status, so they fall back to this. At full
+     --foreground they out-shout the changed files below them, which is the
+     opposite of the reading order: the files are the content, the folders are
+     the path to it. One step down the text ladder. */
+  --trees-fg-override: var(--muted-foreground);
   --trees-focus-ring-color-override: var(--ring);
   --trees-font-size-override: 12px;
   --trees-git-added-color-override: var(--diffs-addition-color, #3fb950);
