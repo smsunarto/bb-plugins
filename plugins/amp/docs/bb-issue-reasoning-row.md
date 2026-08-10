@@ -1,18 +1,27 @@
-# feat(acp): let agents supply their own reasoning levels
+# ACP providers: let an agent declare that it has no reasoning control
 
-**Environment:** bb 0.35.1, macOS. Custom ACP provider via `customAcpAgents`.
+> **Update, 2026-08-08:** The pinned Amp SDK now supports explicit `--effort`
+> overrides. Amp still has a distinct omitted/default state in which the chosen
+> mode owns effort. bb cannot represent that state alongside explicit ACP
+> `thought_level` values: an unknown `default` sentinel is dropped, while a
+> recognized current value can be sent back as an override. The bridge
+> therefore continues to omit `thought_level` to preserve Amp's mode defaults.
+> The original report below is retained as historical context for bb's fallback
+> Reasoning row.
+
+**Environment:** bb 0.35.1, macOS. Custom ACP provider registered via `customAcpAgents`.
 
 ## Summary
 
-I'm writing a bb plugin that registers [Amp](https://ampcode.com) as an ACP provider. Amp has no reasoning-effort setting: it picks model and effort from the selected mode, and its CLI has no `--effort` flag.
+I'm writing a bb plugin that registers [Amp](https://ampcode.com) as an ACP provider. Amp has no per-request reasoning-effort setting — it derives both the model and its effort from the selected agent mode, and its CLI has no `--effort` flag at all.
 
-bb shows a **Reasoning** picker for every ACP provider anyway, with no way for an agent to say it doesn't have one. Users get a control that looks real and does nothing.
+bb always shows a **Reasoning** control for ACP providers, and an agent has no way to say "I don't have this setting". The user gets a picker that looks like a setting but changes nothing.
 
-The UI is willing to hide it. `ModelReasoningPicker.tsx` gates on `activeReasoningOptions.length > 0`, and `useThreadCreationOptions.ts` returns `[]` when there are no efforts. The row survives because the ACP catalog layer never lets the list be empty.
+The UI is already willing to hide the section — `ModelReasoningPicker.tsx` gates it on `activeReasoningOptions.length > 0`, and `useThreadCreationOptions.ts` returns `[]` when there are no efforts. The section survives only because the ACP catalog layer always injects a non-empty list.
 
-## Why the list is never empty
+## Where it comes from
 
-`packages/agent-runtime/src/acp/bridge/model-catalog.ts` defines one fallback entry:
+`packages/agent-runtime/src/acp/bridge/model-catalog.ts`:
 
 ```ts
 export const ACP_NATIVE_REASONING_EFFORTS: AvailableModel["supportedReasoningEfforts"] = [
@@ -20,29 +29,42 @@ export const ACP_NATIVE_REASONING_EFFORTS: AvailableModel["supportedReasoningEff
 ];
 ```
 
-and substitutes it at four points:
+It is substituted at three points, so no ACP agent can ever produce an empty list:
 
-- `buildAcpNativeReasoningSupport`, when `thought_level` is absent or no value maps to a `ReasoningLevel`
-- `buildModelCatalogFromConfigOptions`, per model, when `reasoningByModel` has no entry
-- `buildModelCatalogFromSessionModels`, unconditionally
-- `bridge.ts`, on the synthetic `ACP_DEFAULT_MODEL` it invents when an agent advertises no models
+- `buildAcpNativeReasoningSupport` — when the `thought_level` option is absent or none of its values map to a `ReasoningLevel`.
+- `buildModelCatalogFromConfigOptions` — per model, when there is no entry in `reasoningByModel`.
+- `buildModelCatalogFromSessionModels` — unconditionally.
 
-It's the floor of every path, so no configuration reaches an empty list.
+Supplying the option instead doesn't express "not applicable" either:
 
-Sending the option doesn't help either. Values must map through `acpNativeValueToReasoningLevel` or they're skipped, and an all-skipped list hits the fallback. Labels come from `REASONING_LABELS`, keyed by level; `buildAcpNativeReasoningSupport` does carry the agent's `option.name` into `description`, but nothing renders it.
+- **Values** must map through `acpNativeValueToReasoningLevel`; unmapped values are skipped, and if all are skipped the fallback applies.
+- **Labels** are looked up by level in `apps/app/src/lib/reasoning-labels.ts` (`REASONING_LABELS`), used by both `useThreadCreationOptions.ts` and `ModelReasoningPicker.tsx`. The agent's `option.name` reaches `supportedReasoningEfforts[].description` in `buildAcpNativeReasoningSupport`, but neither call site renders `description` — both use `REASONING_LABELS[effort.reasoningEffort]`.
 
-So the only choice is which of bb's eight levels to show, and all eight are wrong. `Medium` claims an effort Amp was never given; `None` says reasoning is off when it isn't. The fallback's own description says the true thing and never appears.
+So the only real choice is *which* of the eight built-in levels to display. For an agent with no reasoning setting every option is wrong: `Medium` implies a level Amp was never given, `None` implies reasoning is off when it isn't.
+
+The fallback's own description — *"Reasoning effort is managed by the connected ACP agent."* — states the correct thing. It's just never shown.
 
 ## Proposals
 
-**Let agents supply their own levels.** Pass `option.value` and `option.name` through instead of mapping them to `ReasoningLevel` and `REASONING_LABELS`. bb already receives both and throws them away.
+Any one of these unblocks it; roughly in order of preference.
 
-That makes the row useful for Amp. Its modes are `low`, `medium`, `high`, `ultra`, and each selects a pair of models: the agent model, and the Oracle it escalates to. Right now I pack that pair into the model picker's `displayName` (`Medium (GPT 5.6 Sol · GPT 5.6 Sol)`) because it's the one string bb prints verbatim. With custom levels the mode axis moves to the Reasoning row, where it reads naturally, and the picker can show models.
-
-It's a stretch and I know it — Amp's mode bundles model choice with effort, so filing it under reasoning isn't quite honest. But it's a general capability, useful to any agent whose effort axis doesn't match bb's eight, and I'd rather overload an existing axis than ask for a flag only Amp will ever set.
-
-**Or let agents opt out.** Treat `thought_level` present with `options: []` as "no reasoning control" and skip the fallback, so the existing gate hides the row. `acpConfigOptionSchema` already allows an empty array, so nothing changes on the wire, and requiring the option to be present keeps today's behaviour for agents that send no config options. Narrower, and it hides the row instead of making it worth having.
+1. **Let an agent opt out explicitly.** Treat a `thought_level` option that is present with `options: []` as "no reasoning control" and skip the fallback, so `supportedReasoningEfforts` stays empty and the existing `showReasoningSection` gate hides the row. Explicit-empty preserves today's behaviour for agents that simply don't implement config options.
+2. **Render the description instead of a picker.** When the efforts are `ACP_NATIVE_REASONING_EFFORTS`, show that sentence as static text rather than a selectable "Medium". No protocol change, and the copy already exists.
+3. **Render the agent's `description`** for reasoning entries in the two call sites, falling back to `REASONING_LABELS`. That would also let agents label what a level means for them.
 
 ## Smaller, related
 
-The two catalog builders disagree about descriptions. `buildModelCatalogFromSessionModels` passes `model.description` through; `buildModelCatalogFromConfigOptions` hardcodes `""`. The gap starts in `wire.ts` — `acpSessionModelSchema` declares `description`, `acpConfigOptionSelectOptionSchema` doesn't. Amp sends one per mode and it survives only as a passthrough key. Adding the field and reading it would let providers explain their modes.
+`buildModelCatalogFromConfigOptions` hardcodes `description: ""` for every model, while `buildModelCatalogFromSessionModels` passes `model.description ?? ""` through. Threading `option.description` in the configOptions path too would let providers explain their modes in the picker, and would make the two paths consistent.
+
+## Repro
+
+1. Register any ACP agent under `customAcpAgents`.
+2. Have `session/new` return a `category: "model"` config option and **no** `thought_level` option.
+3. Open the model picker — a **Reasoning** section appears with a single selectable "Medium".
+4. Selecting it changes nothing: the agent is never told, and has nothing to apply.
+
+## Note
+
+`splitModelLabelTag`'s trailing-parenthesis convention is lovely — I'm using it to surface Amp's underlying models as `Medium (GPT 5.6 Sol · GPT 5.6 Sol)`, the same way Claude Code renders `Opus 5 (1M)`. The reasoning row is the last piece I can't represent honestly.
+
+I'm happy to send a PR for option 1 or 2 if you'd like.

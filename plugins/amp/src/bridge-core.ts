@@ -23,27 +23,26 @@ import type {
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import { toSessionUpdates, type AmpStreamMessage } from "./translate.ts";
+import type { AmpOptions, MCPConfig } from "@ampcode/sdk";
+import {
+  finishOpenOracleReports,
+  toSessionUpdates,
+  type AmpStreamMessage,
+  type TranslationState,
+} from "./translate.ts";
+import {
+  createFileOracleReportStore,
+  type OracleReportStore,
+} from "./oracle-report-store.ts";
 
 /** Minimal slice of AgentSideConnection the core needs; injected for tests. */
 export interface BridgeClient {
   sessionUpdate(params: SessionNotification): Promise<void>;
 }
 
-/** Options the bridge passes to @ampcode/sdk execute(). Loose on purpose so
- * the core does not depend on the Amp SDK at runtime; the real execute()
- * validates with its own zod schema. */
-export interface AmpExecuteOptions {
-  cwd?: string;
-  mode?: string;
-  effort?: string;
-  thinking?: boolean;
-  noArchiveAfterExecute?: boolean;
-  dangerouslyAllowAll?: boolean;
-  continue?: boolean | string;
-  mcpConfig?: Record<string, unknown>;
-  env?: Record<string, string>;
-}
+/** Keep the injected seam testable while deriving its option contract from
+ * the exact @ampcode/sdk version this plugin pins. */
+export type AmpExecuteOptions = AmpOptions;
 
 export type AmpExecuteFn = (args: {
   prompt: string;
@@ -120,21 +119,24 @@ const PERMISSION_MODES = [
 
 interface SessionState {
   cwd: string;
-  mcpConfig: Record<string, unknown>;
+  mcpConfig: MCPConfig;
   threadId: string | null;
   controller: AbortController | null;
   cancelled: boolean;
   active: boolean;
   mode: string;
   permission: "default" | "bypass";
+  reportedMcpStatuses: Set<string>;
 }
 
 export interface BridgeDeps {
   execute: AmpExecuteFn;
   store?: SessionStore;
+  oracleReports?: OracleReportStore;
 }
 
 const AUTH_HINT = "Amp authentication required: run `amp login` once, or set AMP_API_KEY in the provider env, then retry.";
+export const AMP_ACP_LABEL = "via-amp-acp";
 
 export function isAuthError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -151,39 +153,43 @@ export function isAuthError(message: string): boolean {
 /** ACP McpServer[] (bb sends the stdio shape) -> Amp mcpConfig record. */
 export function convertMcpServers(
   mcpServers: McpServer[] | undefined | null,
-): Record<string, unknown> {
-  const config: Record<string, unknown> = {};
+): MCPConfig {
+  const config: MCPConfig = {};
   if (!Array.isArray(mcpServers)) return config;
   for (const server of mcpServers) {
-    const raw = server as Record<string, unknown>;
-    if ("type" in raw && raw.type !== undefined) {
-      if (raw.type === "acp") continue;
-      const headerList = Array.isArray(raw.headers)
-        ? (raw.headers as { name: string; value: string }[])
-        : [];
-      const headers = Object.fromEntries(headerList.map((h) => [h.name, h.value]));
-      config[String(raw.name)] = {
-        url: raw.url,
+    if ("type" in server) {
+      if (server.type === "acp") continue;
+      const headers = Object.fromEntries(server.headers.map((header) => [header.name, header.value]));
+      config[server.name] = {
+        url: server.url,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
+        transport: server.type === "sse" ? "sse" : undefined,
       };
       continue;
     }
-    const envList = Array.isArray(raw.env) ? (raw.env as { name: string; value: string }[]) : [];
-    config[String(raw.name)] = {
-      command: raw.command,
-      args: raw.args,
-      env: envList.length > 0 ? Object.fromEntries(envList.map((e) => [e.name, e.value])) : undefined,
+    config[server.name] = {
+      command: server.command,
+      args: server.args,
+      env: server.env.length > 0
+        ? Object.fromEntries(server.env.map((variable) => [variable.name, variable.value]))
+        : undefined,
     };
   }
   return config;
 }
 
+const MCP_ATTENTION_STATUSES = new Set([
+  "awaiting-approval",
+  "denied",
+  "failed",
+  "blocked-by-registry",
+]);
+
 /**
- * No `thought_level` option: Amp picks its own models and effort per mode, and
- * the CLI has no `--effort` flag, so there is nothing to control. bb still
- * shows a Reasoning row — for ACP providers it falls back to a single entry
- * described as "managed by the connected ACP agent", and that row cannot be
- * suppressed from this side (bb hardcodes a non-empty effort list either way).
+ * No `thought_level` option yet: the SDK supports explicit effort overrides,
+ * but omission means "use the Amp mode default" and bb cannot represent that
+ * state alongside explicit values. Advertising a recognized current value
+ * would cause bb to send an override and silently change existing runs.
  */
 function buildConfigOptions(s: SessionState): SessionConfigOption[] {
   return [
@@ -238,7 +244,10 @@ function flattenPrompt(blocks: ContentBlock[]): string {
  */
 const FLAG_TO_OPTION: Record<string, keyof AmpExecuteOptions> = {
   effort: "effort",
+  label: "labels",
+  "mcp-config": "mcpConfig",
   mode: "mode",
+  "settings-file": "dangerouslyAllowAll",
   "stream-json-thinking": "thinking",
   "no-archive-after-execute": "noArchiveAfterExecute",
   "dangerously-allow-all": "dangerouslyAllowAll",
@@ -255,6 +264,7 @@ export class AmpBridgeAgent implements Agent {
   private readonly client: BridgeClient;
   private readonly execute: AmpExecuteFn;
   private readonly store: SessionStore;
+  private readonly oracleReports: OracleReportStore;
   /** Options this Amp CLI rejected; dropped from every later turn. */
   private readonly unsupported = new Set<keyof AmpExecuteOptions>();
   readonly sessions = new Map<string, SessionState>();
@@ -263,6 +273,7 @@ export class AmpBridgeAgent implements Agent {
     this.client = client;
     this.execute = deps.execute;
     this.store = deps.store ?? memorySessionStore();
+    this.oracleReports = deps.oracleReports ?? createFileOracleReportStore();
   }
 
 
@@ -272,7 +283,7 @@ export class AmpBridgeAgent implements Agent {
       agentCapabilities: {
         loadSession: true,
         promptCapabilities: { image: false, embeddedContext: true },
-        mcpCapabilities: { http: true, sse: false },
+        mcpCapabilities: { http: true, sse: true },
       },
       // No authMethods: auth is handled by the Amp CLI (`amp login`) or
       // AMP_API_KEY in the provider env.
@@ -293,6 +304,7 @@ export class AmpBridgeAgent implements Agent {
       active: false,
       mode: "medium",
       permission: "default",
+      reportedMcpStatuses: new Set(),
     };
   }
 
@@ -343,7 +355,12 @@ export class AmpBridgeAgent implements Agent {
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
-    return { configOptions: buildConfigOptions(s) };
+    const configOptions = buildConfigOptions(s);
+    await this.sendUpdate({
+      sessionId: params.sessionId,
+      update: { sessionUpdate: "config_option_update", configOptions },
+    });
+    return { configOptions };
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
@@ -352,6 +369,12 @@ export class AmpBridgeAgent implements Agent {
     s.active = true;
     const controller = new AbortController();
     s.controller = controller;
+    const translationState: TranslationState = {
+      toolNamesById: new Map(),
+      oracleReportByToolId: new Map(),
+      oracleRootToolIds: new Set(),
+      oracleReports: this.oracleReports,
+    };
 
     const buildOptions = (): AmpExecuteOptions => {
       const options: AmpExecuteOptions = {
@@ -360,6 +383,7 @@ export class AmpBridgeAgent implements Agent {
         thinking: true,
         noArchiveAfterExecute: true,
         env: { TERM: "dumb" },
+        labels: [AMP_ACP_LABEL],
       };
       if (s.permission === "bypass") options.dangerouslyAllowAll = true;
       if (Object.keys(s.mcpConfig).length > 0) options.mcpConfig = s.mcpConfig;
@@ -374,6 +398,7 @@ export class AmpBridgeAgent implements Agent {
     // an option before streaming anything, so no output can be duplicated.
     for (let attempt = 0; ; attempt++) {
     let streamed = false;
+    let executionError: Error | null = null;
     try {
       const stream = this.execute({
         prompt: flattenPrompt(params.prompt),
@@ -388,8 +413,17 @@ export class AmpBridgeAgent implements Agent {
           console.error(`[amp] thread ${s.threadId}`);
         }
 
+        if (message.type === "system" && message.subtype === "init") {
+          const warning = this.mcpStatusWarning(s, message);
+          if (warning) await this.sendUpdate(this.textChunk(params.sessionId, warning));
+        }
+
         if (message.type === "assistant" || message.type === "user") {
-          for (const notification of toSessionUpdates(message, params.sessionId)) {
+          const ampStopReason = message.message?.stop_reason;
+          if (ampStopReason === "end_turn" || ampStopReason === "max_tokens" || ampStopReason === "refusal") {
+            stopReason = ampStopReason;
+          }
+          for (const notification of toSessionUpdates(message, params.sessionId, translationState)) {
             await this.sendUpdate(notification);
           }
           continue;
@@ -405,6 +439,9 @@ export class AmpBridgeAgent implements Agent {
           const error = typeof message.error === "string" ? message.error : "unknown error";
           const hint = isAuthError(error) ? `\n${AUTH_HINT}` : "";
           await this.sendUpdate(this.textChunk(params.sessionId, `Error: ${error}${hint}`));
+          if (message.subtype !== "error_max_turns") {
+            executionError = new Error(error);
+          }
           continue;
         }
 
@@ -417,6 +454,7 @@ export class AmpBridgeAgent implements Agent {
           ));
         }
       }
+      if (executionError) throw executionError;
       return { stopReason: s.cancelled ? "cancelled" : stopReason };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -427,7 +465,7 @@ export class AmpBridgeAgent implements Agent {
       if (unsupported && !streamed && attempt === 0 && !this.unsupported.has(unsupported)) {
         this.unsupported.add(unsupported);
         console.error(
-          `[amp] this Amp CLI rejects --${unsupported}; dropping it and retrying. `
+          `[amp] this Amp CLI rejects the flag generated by ${unsupported}; dropping it and retrying. `
             + "Update the Amp CLI to use that control.",
         );
         continue;
@@ -439,6 +477,12 @@ export class AmpBridgeAgent implements Agent {
     }
     }
     } finally {
+      finishOpenOracleReports(
+        translationState,
+        s.cancelled
+          ? "Oracle execution was cancelled before returning a result."
+          : "Oracle execution ended before returning a result.",
+      );
       // Only clear state we still own: if a client ever overlapped prompts on
       // one session (bb serializes them today), a stale prompt finishing late
       // must not null the newer prompt's controller and break session/cancel.
@@ -482,6 +526,24 @@ export class AmpBridgeAgent implements Agent {
         content: { type: "text", text },
       },
     };
+  }
+
+  private mcpStatusWarning(s: SessionState, message: AmpStreamMessage): string | null {
+    if (!Array.isArray(message.mcp_servers)) return null;
+    const issues: string[] = [];
+    for (const value of message.mcp_servers) {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+      const server = value as Record<string, unknown>;
+      if (typeof server.name !== "string" || typeof server.status !== "string") continue;
+      if (!MCP_ATTENTION_STATUSES.has(server.status)) continue;
+      const key = `${server.name}\0${server.status}`;
+      if (s.reportedMcpStatuses.has(key)) continue;
+      s.reportedMcpStatuses.add(key);
+      issues.push(`${server.name} (${server.status.replaceAll("-", " ")})`);
+    }
+    if (issues.length === 0) return null;
+    const subject = issues.length === 1 ? "server needs" : "servers need";
+    return `Amp MCP ${subject} attention: ${issues.join(", ")}.`;
   }
 
   private async sendUpdate(notification: SessionNotification): Promise<void> {
