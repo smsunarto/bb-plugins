@@ -44,7 +44,11 @@ export function AdvancedPage() {
     void load();
   }, [load]);
 
-  const save = async (nextRepository: string, nextBranch: string) => {
+  const save = async (
+    nextRepository: string,
+    nextBranch: string,
+    successMessage = "Core source saved",
+  ) => {
     setSaving(true);
     setError(null);
     try {
@@ -56,7 +60,7 @@ export function AdvancedPage() {
       setRepository(next.repository);
       setBranch(next.branch);
       setError(next.error);
-      toast.success("Core source saved");
+      toast.success(successMessage);
     } catch (cause) {
       const message = String(cause instanceof Error ? cause.message : cause);
       setError(message);
@@ -68,6 +72,32 @@ export function AdvancedPage() {
 
   const dirty =
     saved !== null && (repository !== saved.repository || branch !== saved.branch);
+
+  // The saved source can already be the defaults. Writing them again would
+  // look like a dead button: no field moves and the save toast claims a change
+  // that never happened. Revert the edited fields instead, and only call the
+  // server when the stored source actually differs.
+  const savedIsDefault =
+    saved !== null &&
+    saved.error === null &&
+    saved.repository === saved.defaultRepository &&
+    saved.branch === saved.defaultBranch;
+  const fieldsAreDefault =
+    saved !== null &&
+    repository === saved.defaultRepository &&
+    branch === saved.defaultBranch;
+
+  const reset = () => {
+    if (saved === null) return;
+    if (!savedIsDefault) {
+      void save(saved.defaultRepository, saved.defaultBranch, "Core source reset to defaults");
+      return;
+    }
+    setRepository(saved.defaultRepository);
+    setBranch(saved.defaultBranch);
+    setError(null);
+    toast.success("Core source is back to the defaults");
+  };
 
   return (
     <div className="space-y-4">
@@ -122,13 +152,16 @@ export function AdvancedPage() {
             <Button
               size="sm"
               variant="outline"
-              disabled={saved === null || saving}
-              onClick={() =>
-                void save(saved?.defaultRepository ?? "", saved?.defaultBranch ?? "")
-              }
+              disabled={saved === null || saving || (savedIsDefault && fieldsAreDefault)}
+              onClick={reset}
             >
               Reset to defaults
             </Button>
+            {savedIsDefault && fieldsAreDefault ? (
+              <span className="self-center text-xs text-muted-foreground">
+                This is the default source.
+              </span>
+            ) : null}
           </div>
         </CardContent>
       </Card>
