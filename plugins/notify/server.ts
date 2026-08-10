@@ -25,6 +25,7 @@ import {
   suppressionReason,
   threadLabel,
 } from "./format";
+import { latestRunWasManuallyStopped } from "./lifecycle";
 import {
   NotificationQueue,
   QUEUE_MAX,
@@ -299,6 +300,20 @@ export default async function plugin(bb: BbPluginApi) {
     notifiedAt.delete(threadId);
   }
 
+  async function wasManuallyStopped(threadId: string): Promise<boolean> {
+    try {
+      return await latestRunWasManuallyStopped((args) =>
+        bb.sdk.threads.events.list({ threadId, ...args }),
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      bb.log.warn(`could not inspect stop reason for ${threadId}: ${detail}`);
+      // Preserve the existing notification behavior when the diagnostic read
+      // fails. A transient SDK error must not hide a genuine completion.
+      return false;
+    }
+  }
+
   async function notifyThread(
     thread: {
       id: string;
@@ -316,6 +331,11 @@ export default async function plugin(bb: BbPluginApi) {
       includeChildThreads: current.includeChildThreads,
     });
     if (suppressed !== null) return;
+
+    if (outcome === "finished" && (await wasManuallyStopped(thread.id))) {
+      startedAt.delete(thread.id);
+      return;
+    }
 
     const now = Date.now();
     const lastNotified = notifiedAt.get(thread.id);
