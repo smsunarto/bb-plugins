@@ -15,8 +15,10 @@ const buttonVariants = cva(
           "bg-foreground text-background hover:bg-foreground/90",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        // --border, not --input: see the note in input.tsx. Every bordered
+        // surface in a panel should draw the same line.
         outline:
-          "border border-input bg-transparent hover:bg-state-hover hover:text-foreground",
+          "border border-border bg-transparent hover:bg-state-hover hover:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
