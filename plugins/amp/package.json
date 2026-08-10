@@ -13,6 +13,7 @@
       "icon": "Bot"
     },
     "server": "./server.ts",
+    "app": "./app.tsx",
     "skills": []
   },
   "dependencies": {
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^7.0.0"
   },
