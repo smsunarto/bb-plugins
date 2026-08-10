@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
-  createReadStream,
   createWriteStream,
   existsSync,
   lstatSync,
@@ -12,33 +11,43 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { ensureDir, readTextOr, writeAtomic } from "./fsx.ts";
 import type { Paths } from "./paths.ts";
 import {
-  assetName,
-  normalizeVersion,
-  parseChecksums,
-  parseRelease,
-  pickAsset,
-  releaseApiUrl,
-  type Release,
+  commitApiUrl,
+  DEFAULT_CORE_SOURCE,
+  parseSourceRevision,
+  type CoreSource,
+  type SourceRevision,
 } from "./release.ts";
 
 const GH_HEADERS = {
   "User-Agent": "bb-plugin-agent-proxy",
   Accept: "application/vnd.github+json",
 };
-const CORE_EXECUTABLE = "cli-proxy-api";
+export type InstallStage =
+  | "downloading"
+  | "verifying"
+  | "extracting"
+  | "building"
+  | "installing"
+  | "done";
 
-export type InstallStage = "downloading" | "verifying" | "extracting" | "installing" | "done";
+export interface BuildSourceOptions {
+  sourceDir: string;
+  outputPath: string;
+  revision: SourceRevision;
+  signal?: AbortSignal;
+}
 
 export interface InstallDeps {
   fetchImpl?: typeof fetch;
   onProgress?: (stage: InstallStage) => void;
   beforeInstall?: () => Promise<void>;
+  buildSource?: (options: BuildSourceOptions) => Promise<void>;
   signal?: AbortSignal;
 }
 
@@ -47,23 +56,21 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-export async function fetchRelease(
-  version: string | undefined,
+export async function fetchSourceRevision(
+  source: CoreSource = DEFAULT_CORE_SOURCE,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
-): Promise<Release> {
-  const response = await fetchImpl(releaseApiUrl(version), {
+): Promise<SourceRevision> {
+  const response = await fetchImpl(commitApiUrl(source), {
     headers: GH_HEADERS,
     signal: requestSignal(signal, 30_000),
   });
   if (!response.ok) {
     throw new Error(
-      version
-        ? `CLIProxyAPI release v${normalizeVersion(version)} not found (HTTP ${response.status})`
-        : `GitHub release lookup failed: HTTP ${response.status}`,
+      `CLIProxyAPI source ${source.repo}#${source.ref} not found (HTTP ${response.status})`,
     );
   }
-  return parseRelease(await response.json());
+  return parseSourceRevision(await response.json(), source);
 }
 
 /** The binary file is the source of truth; a surviving marker without a binary
@@ -85,6 +92,20 @@ export function cleanStaleStaging(coreDir: string): void {
   }
 }
 
+function publishReleasePointer(
+  currentLink: string,
+  releaseDir: string,
+  suffix: string,
+): void {
+  const temporaryLink = `${currentLink}.${suffix}-${randomUUID()}`;
+  symlinkSync(releaseDir, temporaryLink, "dir");
+  try {
+    renameSync(temporaryLink, currentLink);
+  } finally {
+    rmSync(temporaryLink, { recursive: true, force: true });
+  }
+}
+
 /** One-time compatibility bridge from the pre-pointer layout. Copy first and
     publish the pointer last so an interrupted migration leaves the legacy
     installation runnable and retryable. */
@@ -92,16 +113,14 @@ export function migrateLegacyInstall(paths: Paths): void {
   if (existsSync(paths.binPath) || !existsSync(paths.legacyBinPath)) return;
   const version = readTextOr(paths.legacyVersionMarker)?.trim() || "unknown";
   const releaseDir = join(paths.versionsDir, `legacy-${randomUUID()}`);
-  const temporaryLink = `${paths.currentLink}.migrate-${randomUUID()}`;
   ensureDir(releaseDir);
   try {
-    copyFileSync(paths.legacyBinPath, join(releaseDir, CORE_EXECUTABLE));
-    chmodSync(join(releaseDir, CORE_EXECUTABLE), 0o755);
+    const executable = join(releaseDir, basename(paths.binPath));
+    copyFileSync(paths.legacyBinPath, executable);
+    chmodSync(executable, 0o755);
     writeAtomic(join(releaseDir, ".version"), `${version}\n`);
-    symlinkSync(releaseDir, temporaryLink, "dir");
-    renameSync(temporaryLink, paths.currentLink);
+    publishReleasePointer(paths.currentLink, releaseDir, "migrate");
   } catch (error) {
-    rmSync(temporaryLink, { force: true });
     rmSync(releaseDir, { recursive: true, force: true });
     throw error;
   }
@@ -124,18 +143,6 @@ async function downloadTo(
   }
   const body = Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream);
   await pipeline(body, createWriteStream(dest), { signal: requestAbort });
-}
-
-async function sha256File(path: string, signal?: AbortSignal): Promise<string> {
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(path), async function* (source) {
-    for await (const chunk of source) {
-      signal?.throwIfAborted();
-      hash.update(chunk as Buffer);
-      yield;
-    }
-  }, { signal });
-  return hash.digest("hex");
 }
 
 function runTar(args: string[], signal?: AbortSignal): Promise<string> {
@@ -168,6 +175,53 @@ function runTar(args: string[], signal?: AbortSignal): Promise<string> {
   });
 }
 
+function runGoBuild(options: BuildSourceOptions): Promise<void> {
+  const { sourceDir, outputPath, revision } = options;
+  const signal = requestSignal(options.signal, 10 * 60_000);
+  const buildDate = new Date().toISOString();
+  const ldflags = [
+    "-s",
+    "-w",
+    `-X main.Version=${revision.version}`,
+    `-X main.Commit=${revision.commit.slice(0, 12)}`,
+    `-X main.BuildDate=${buildDate}`,
+  ].join(" ");
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "go",
+      [
+        "build",
+        "-trimpath",
+        "-buildvcs=false",
+        `-ldflags=${ldflags}`,
+        "-o",
+        outputPath,
+        "./cmd/server/",
+      ],
+      { cwd: sourceDir, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let output = "";
+    const append = (chunk: Buffer) => {
+      output = `${output}${chunk.toString("utf8")}`.slice(-64_000);
+    };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
+    const abort = () => child.kill("SIGKILL");
+    signal.addEventListener("abort", abort, { once: true });
+    child.on("close", (code) => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) reject(signal.reason);
+      else if (code === 0) resolve();
+      else reject(new Error(`go build failed (exit ${code}): ${output.trim()}`));
+    });
+    child.on("error", (error) => {
+      signal.removeEventListener("abort", abort);
+      reject(new Error(`could not run go build: ${String(error)}`));
+    });
+  });
+}
+
 function normalizedArchivePath(path: string): string {
   let normalized = path;
   while (normalized.startsWith("./")) normalized = normalized.slice(2);
@@ -175,19 +229,20 @@ function normalizedArchivePath(path: string): string {
 }
 
 /** Refuse paths that can escape staging and links that can redirect extraction
-    outside it. Require the one upstream executable at the archive root. */
-async function validateArchive(archive: string, signal?: AbortSignal): Promise<void> {
+    outside it. GitHub source archives must contain exactly one root directory. */
+async function validateSourceArchive(archive: string, signal?: AbortSignal): Promise<string> {
   const entries = (await runTar(["-tzf", archive], signal)).split("\n").filter(Boolean);
-  let binaryCount = 0;
+  const roots = new Set<string>();
   for (const entry of entries) {
     const normalized = normalizedArchivePath(entry);
     if (entry.startsWith("/") || normalized.split("/").includes("..")) {
       throw new Error(`unsafe archive path: ${entry}`);
     }
-    if (normalized === CORE_EXECUTABLE) binaryCount += 1;
+    const root = normalized.split("/")[0];
+    if (root) roots.add(root);
   }
-  if (binaryCount !== 1) {
-    throw new Error(`archive must contain exactly one root ${CORE_EXECUTABLE} executable`);
+  if (roots.size !== 1) {
+    throw new Error("source archive must contain exactly one root directory");
   }
 
   const verbose = await runTar(["-tvzf", archive], signal);
@@ -196,90 +251,60 @@ async function validateArchive(archive: string, signal?: AbortSignal): Promise<v
       throw new Error("archive contains an unsafe link entry");
     }
   }
+  return [...roots][0]!;
 }
 
-/** Locate the exact executable validated at the archive root. */
-export function findExtractedBinary(stagingDir: string, archiveName: string): string {
-  const candidate = join(stagingDir, CORE_EXECUTABLE);
-  try {
-    if (lstatSync(candidate).isFile()) return candidate;
-  } catch {
-    // Fall through to the stable install error below.
-  }
-  throw new Error(`no CLIProxyAPI binary found inside ${archiveName}`);
-}
-
-/** Download → verify → extract → atomically land. Any failure leaves the
-    previously installed binary untouched; staging is always cleaned up. */
+/** Download → verify → extract → publish. Any failure leaves the previously
+    installed binary untouched; staging is always cleaned up. */
 export async function installCore(
   paths: Paths,
-  release: Release,
+  revision: SourceRevision,
   deps: InstallDeps = {},
 ): Promise<string> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const onProgress = deps.onProgress ?? (() => {});
-  const name = assetName(release.version);
-  const asset = pickAsset(release, name);
-  if (!asset) {
-    throw new Error(`release v${release.version} has no asset named ${name}`);
-  }
-  const checksumsAsset = pickAsset(release, "checksums.txt");
-  if (!checksumsAsset) {
-    throw new Error(`release v${release.version} ships no checksums.txt; refusing unverified install`);
-  }
+  const buildSource = deps.buildSource ?? runGoBuild;
+  const archiveName = `CLIProxyAPI-${revision.commit}.tar.gz`;
   const staging = join(paths.coreDir, `tmp-${process.pid}-${randomUUID()}`);
   let landedRelease: string | null = null;
   let pointerCommitted = false;
   ensureDir(staging);
   try {
     onProgress("downloading");
-    const archivePath = join(staging, name);
-    await downloadTo(asset.url, archivePath, fetchImpl, deps.signal);
+    const archivePath = join(staging, archiveName);
+    await downloadTo(revision.archiveUrl, archivePath, fetchImpl, deps.signal);
 
     onProgress("verifying");
-    const checksumsResponse = await fetchImpl(checksumsAsset.url, {
-      headers: { "User-Agent": GH_HEADERS["User-Agent"] },
-      redirect: "follow",
-      signal: requestSignal(deps.signal, 30_000),
-    });
-    if (!checksumsResponse.ok) throw new Error(`checksums.txt download failed: HTTP ${checksumsResponse.status}`);
-    const expected = parseChecksums(await checksumsResponse.text()).get(name);
-    if (!expected) {
-      throw new Error(`checksums.txt has no entry for ${name}; refusing unverified install`);
-    }
-    const actual = await sha256File(archivePath, deps.signal);
-    if (actual !== expected) {
-      throw new Error(`checksum mismatch for ${name}: expected ${expected}, got ${actual}`);
-    }
+    const sourceRootName = await validateSourceArchive(archivePath, deps.signal);
 
     onProgress("extracting");
-    await validateArchive(archivePath, deps.signal);
     await runTar(["-xzf", archivePath, "-C", staging], deps.signal);
-    const extracted = findExtractedBinary(staging, name);
-    chmodSync(extracted, 0o755);
+    const sourceDir = join(staging, sourceRootName);
+    if (!lstatSync(join(sourceDir, "go.mod")).isFile()) {
+      throw new Error("CLIProxyAPI source archive has no root go.mod");
+    }
 
-    const version = normalizeVersion(release.version);
     const candidateRelease = join(staging, "release");
     ensureDir(candidateRelease);
-    renameSync(extracted, join(candidateRelease, CORE_EXECUTABLE));
-    writeAtomic(join(candidateRelease, ".version"), `${version}\n`);
+    const candidateBinary = join(candidateRelease, basename(paths.binPath));
+    onProgress("building");
+    await buildSource({ sourceDir, outputPath: candidateBinary, revision, signal: deps.signal });
+    if (!lstatSync(candidateBinary).isFile()) {
+      throw new Error("go build did not produce the CLIProxyAPI executable");
+    }
+    chmodSync(candidateBinary, 0o755);
+    writeAtomic(join(candidateRelease, ".version"), `${revision.version}\n`);
     ensureDir(paths.versionsDir);
-    landedRelease = join(paths.versionsDir, `${version}-${randomUUID()}`);
+    landedRelease = join(paths.versionsDir, `${revision.commit.slice(0, 12)}-${randomUUID()}`);
     renameSync(candidateRelease, landedRelease);
 
     onProgress("installing");
     await deps.beforeInstall?.();
     ensureDir(paths.binDir);
-    const temporaryLink = `${paths.currentLink}.install-${randomUUID()}`;
-    try {
-      symlinkSync(landedRelease, temporaryLink, "dir");
-      renameSync(temporaryLink, paths.currentLink);
-      pointerCommitted = true;
-    } finally {
-      rmSync(temporaryLink, { force: true });
-    }
+    publishReleasePointer(paths.currentLink, landedRelease, "install");
+    pointerCommitted = true;
     onProgress("done");
-    return version;
+    return revision.version;
   } finally {
     if (landedRelease !== null && !pointerCommitted) {
       rmSync(landedRelease, { recursive: true, force: true });

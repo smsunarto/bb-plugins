@@ -1,73 +1,78 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  assetName,
-  compareVersions,
-  normalizeVersion,
-  parseChecksums,
-  parseRelease,
-  pickAsset,
-  releaseApiUrl,
+  commitApiUrl,
+  DEFAULT_CORE_SOURCE,
+  CORE_REF,
+  CORE_REPO,
+  normalizeCoreRef,
+  normalizeCoreRepo,
+  normalizeCoreSource,
+  parseSourceRevision,
+  sourceArchiveUrl,
+  sourceVersion,
 } from "../lib/release.ts";
 
-test("assetName maps platform/arch to upstream naming", () => {
-  assert.equal(assetName("v7.2.121", "darwin", "arm64"), "CLIProxyAPI_7.2.121_darwin_aarch64.tar.gz");
-  assert.equal(assetName("7.2.121", "linux", "x64"), "CLIProxyAPI_7.2.121_linux_amd64.tar.gz");
+const COMMIT = "9e593b74486a79b6117c1ffd5bcdc7e9ec3881b4";
+
+test("source constants target the advisor fix branch", () => {
+  assert.equal(CORE_REPO, "smsunarto/CLIProxyAPI");
+  assert.equal(CORE_REF, "fix/claude-advisor-server-tool");
+  assert.deepEqual(DEFAULT_CORE_SOURCE, { repo: CORE_REPO, ref: CORE_REF });
 });
 
-test("assetName rejects unsupported platforms and arches", () => {
-  assert.throws(() => assetName("1.0.0", "win32", "x64"), /not supported/);
-  assert.throws(() => assetName("1.0.0", "darwin", "ia32" as NodeJS.Architecture), /unsupported architecture/);
-});
-
-test("normalizeVersion strips a leading v only", () => {
-  assert.equal(normalizeVersion("v6.5.2"), "6.5.2");
-  assert.equal(normalizeVersion("6.5.2"), "6.5.2");
-});
-
-test("releaseApiUrl targets latest or a pinned tag", () => {
-  assert.match(releaseApiUrl(), /releases\/latest$/);
-  assert.match(releaseApiUrl("7.1.0"), /releases\/tags\/v7\.1\.0$/);
-  assert.match(releaseApiUrl("v7.1.0"), /releases\/tags\/v7\.1\.0$/);
-});
-
-test("parseChecksums reads sha256 lines", () => {
-  const map = parseChecksums(
-    [
-      "abc".padEnd(64, "0") + "  CLIProxyAPI_7.2.121_darwin_aarch64.tar.gz",
-      "def".padEnd(64, "1") + " *CLIProxyAPI_7.2.121_linux_amd64.tar.gz",
-      "not a checksum line",
-      "",
-    ].join("\n"),
+test("commitApiUrl safely encodes branch names", () => {
+  assert.equal(
+    commitApiUrl(),
+    "https://api.github.com/repos/smsunarto/CLIProxyAPI/commits/fix%2Fclaude-advisor-server-tool",
   );
-  assert.equal(map.get("CLIProxyAPI_7.2.121_darwin_aarch64.tar.gz"), "abc".padEnd(64, "0"));
-  assert.equal(map.get("CLIProxyAPI_7.2.121_linux_amd64.tar.gz"), "def".padEnd(64, "1"));
-  assert.equal(map.size, 2);
+  assert.equal(
+    commitApiUrl({ repo: "router-for-me/CLIProxyAPI", ref: "feature/a b" }),
+    "https://api.github.com/repos/router-for-me/CLIProxyAPI/commits/feature%2Fa%20b",
+  );
 });
 
-test("compareVersions is numeric per segment and tolerant of v", () => {
-  assert.ok(compareVersions("6.10.0", "6.5.2") > 0);
-  assert.ok(compareVersions("v6.5.2", "6.10.0") < 0);
-  assert.equal(compareVersions("v7.2.121", "7.2.121"), 0);
-  assert.ok(compareVersions("7.2.121.1", "7.2.121") > 0);
+test("repository settings normalize supported GitHub source forms", () => {
+  assert.equal(normalizeCoreRepo(" router-for-me/CLIProxyAPI "), "router-for-me/CLIProxyAPI");
+  assert.equal(
+    normalizeCoreRepo("https://github.com/smsunarto/CLIProxyAPI.git"),
+    "smsunarto/CLIProxyAPI",
+  );
+  assert.equal(
+    normalizeCoreRepo("git@github.com:smsunarto/CLIProxyAPI.git"),
+    "smsunarto/CLIProxyAPI",
+  );
+  assert.throws(() => normalizeCoreRepo("https://example.com/owner/repo"), /github\.com/);
+  assert.throws(() => normalizeCoreRepo("owner/repo/extra"), /owner\/name/);
 });
 
-test("parseRelease extracts tag and usable assets", () => {
-  const release = parseRelease({
-    tag_name: "v7.2.121",
-    assets: [
-      { name: "checksums.txt", browser_download_url: "https://example.com/checksums.txt" },
-      { name: "CLIProxyAPI_7.2.121_darwin_aarch64.tar.gz", browser_download_url: "https://example.com/a.tar.gz" },
-      { bogus: true },
-    ],
+test("branch settings accept Git refs and reject unsafe names", () => {
+  assert.equal(normalizeCoreRef(" fix/claude-advisor-server-tool "), CORE_REF);
+  assert.equal(normalizeCoreRef(COMMIT), COMMIT);
+  for (const invalid of ["", "feature branch", "../main", "main..next", "topic@{1}", ".hidden"]) {
+    assert.throws(() => normalizeCoreRef(invalid), /branch or ref/);
+  }
+  assert.deepEqual(normalizeCoreSource("smsunarto/CLIProxyAPI", CORE_REF), {
+    repo: CORE_REPO,
+    ref: CORE_REF,
   });
-  assert.equal(release.version, "7.2.121");
-  assert.equal(release.assets.length, 2);
-  assert.equal(pickAsset(release, "checksums.txt")?.url, "https://example.com/checksums.txt");
-  assert.equal(pickAsset(release, "missing"), null);
 });
 
-test("parseRelease rejects malformed responses", () => {
-  assert.throws(() => parseRelease(null), /malformed/);
-  assert.throws(() => parseRelease({}), /tag_name/);
+test("source revision is pinned to the resolved commit", () => {
+  const revision = parseSourceRevision({ sha: COMMIT.toUpperCase() });
+  assert.deepEqual(revision, {
+    repo: CORE_REPO,
+    ref: CORE_REF,
+    commit: COMMIT,
+    version: `${CORE_REF}@9e593b74486a`,
+    archiveUrl: `https://codeload.github.com/${CORE_REPO}/tar.gz/${COMMIT}`,
+  });
+  assert.equal(sourceVersion(CORE_REF, COMMIT), `${CORE_REF}@9e593b74486a`);
+  assert.equal(sourceArchiveUrl(CORE_REPO, COMMIT), revision.archiveUrl);
+});
+
+test("parseSourceRevision rejects malformed responses", () => {
+  assert.throws(() => parseSourceRevision(null), /malformed/);
+  assert.throws(() => parseSourceRevision({}), /valid sha/);
+  assert.throws(() => parseSourceRevision({ sha: "not-a-commit" }), /valid sha/);
 });

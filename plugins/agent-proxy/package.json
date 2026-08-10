@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Agent Proxy",
-    "description": "Run and manage a local CLIProxyAPI core: OAuth accounts, upstream providers, usage, and agent wiring.",
+    "description": "Run CLIProxyAPI as a persistent macOS or Linux service with OAuth accounts, providers, usage, and agent wiring.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

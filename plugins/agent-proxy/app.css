@@ -3,26 +3,26 @@
    main sidebar by core state. `components/sidebar-nav-status.ts` is the only
    writer of `data-agent-proxy-state`, so nothing else in the app can match. */
 
-[data-agent-proxy-state] > svg {
+[data-agent-proxy-state] > :is(svg, [data-plugin-icon-asset]) {
   transition: color 150ms ease, opacity 150ms ease;
 }
 
-[data-agent-proxy-state="running"] > svg {
+[data-agent-proxy-state="running"] > :is(svg, [data-plugin-icon-asset]) {
   color: #10b981;
 }
 
-[data-agent-proxy-state="starting"] > svg,
-[data-agent-proxy-state="stopping"] > svg {
+[data-agent-proxy-state="starting"] > :is(svg, [data-plugin-icon-asset]),
+[data-agent-proxy-state="stopping"] > :is(svg, [data-plugin-icon-asset]) {
   color: #f59e0b;
   animation: agent-proxy-pulse 1.4s ease-in-out infinite;
 }
 
-[data-agent-proxy-state="crashed"] > svg {
+[data-agent-proxy-state="crashed"] > :is(svg, [data-plugin-icon-asset]) {
   color: var(--destructive, #ef4444);
 }
 
-[data-agent-proxy-state="stopped"] > svg,
-[data-agent-proxy-state="not-installed"] > svg {
+[data-agent-proxy-state="stopped"] > :is(svg, [data-plugin-icon-asset]),
+[data-agent-proxy-state="not-installed"] > :is(svg, [data-plugin-icon-asset]) {
   opacity: 0.45;
 }
 
@@ -37,7 +37,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-agent-proxy-state] > svg {
+  [data-agent-proxy-state] > :is(svg, [data-plugin-icon-asset]) {
     animation: none;
     transition: none;
   }

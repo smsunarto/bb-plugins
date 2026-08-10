@@ -1,15 +1,26 @@
 # bb-plugin-agent-proxy
 
 EasyCLIProxyAPI, rebuilt as a bb plugin. Owns a local
-[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) core on the bb
-server machine: installs the release binary, supervises the process, and
-exposes management UI inside bb.
+[CLIProxyAPI fork](https://github.com/smsunarto/CLIProxyAPI/tree/fix/claude-advisor-server-tool)
+core on the bb server machine: resolves the configured branch to an immutable
+commit, builds it with the local Go toolchain, installs it as a persistent
+operating-system service, and exposes management UI inside bb. It uses
+`launchd` on macOS and user `systemd` on Linux. The proxy continues to run
+after bb exits. Windows is not supported.
 
 ## Features
 
-- **Core lifecycle** — download/update the release binary (sha256-verified,
-  never auto-swapped), autostart on plugin load, crash restart with backoff,
-  manual stop stays stopped. Home page + sidebar indicators + `bb agent-proxy` CLI.
+- **Core lifecycle** — download a commit-pinned source archive from the
+  configured public GitHub repository and branch, validate it, build it with
+  Go, and publish the binary behind a stable pointer only after a successful
+  build. The pointer swap is atomic. A persistent operating-system service
+  starts it at login, keeps it alive after bb exits, and restarts it after a
+  crash. Manual Stop disables the service until Start or the autostart setting
+  enables it again. Home page + sidebar indicators + `bb agent-proxy` CLI.
+- **Advanced source settings** — change the GitHub repository and branch from
+  the Advanced page. The defaults remain
+  `smsunarto/CLIProxyAPI#fix/claude-advisor-server-tool`. Saving a source does
+  not change the running binary; Install core resolves and builds it.
 - **Sidebar state** — the "Agent Proxy" row in bb's main sidebar is tinted by
   core state (green running, amber pulsing while starting/stopping, red
   crashed, dimmed stopped). bb renders that row itself and reads `navPanel`
@@ -37,25 +48,40 @@ exposes management UI inside bb.
 
 `<bb dataDir>/plugins/agent-proxy/`:
 
-- `core/bin/current` — atomic pointer to the active binary + version marker
-- `core/versions/` — immutable installed releases; binary and marker switch together
+- `core/bin/current` — stable pointer to the active binary + version marker
+- `core/versions/` — immutable installed builds; binary and source-revision marker switch together
 - `core/config.yaml` — co-owned: plugin bootstraps it, the core bcrypt-hashes
   `secret-key` in place and persists management-API writes into it
+- `core/service/core.log` — bounded-read macOS/Linux log source for the Home page
+- `core/service/runtime-fingerprint` — hash of the startup settings used by the running service
 - `core/auth/` — OAuth credential files (auth-dir)
 - `core/secrets/` — generated management + local API keys (0600)
 - `backups/` — timestamped copies of user files before the plugin writes them
 - `agents/claude-env-state.json` — private ownership metadata used for safe restore
 
+The persistent service definition is platform-specific:
+
+- macOS: `~/Library/LaunchAgents/com.smsunarto.bb.agent-proxy.plist`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/systemd/user/com.smsunarto.bb.agent-proxy.service`
+
+Definitions contain only absolute paths and service settings. Credentials
+remain under the core directory.
+
 ## Settings
 
-- `autostart` (default on) — start the core when the plugin loads
+- `autostart` (default on) — keep the login service enabled; it starts at login
+  and remains active when bb is closed
 - `port` (default 8317)
+- `sourceRepository` (default `smsunarto/CLIProxyAPI`) — public GitHub source
+- `sourceBranch` (default `fix/claude-advisor-server-tool`) — branch, tag, or commit
 - `managementKey` (secret, optional) — overrides the generated key
 
-Port/key changes stop the core, rewrite `config.yaml` surgically, and restart
-it if it was running.
+Autostart changes apply immediately. Port/key changes stop the service,
+rewrite `config.yaml` surgically, and restart it if it was running. If these
+settings change while the plugin is disabled, the applied runtime fingerprint
+causes the same reconciliation on the next plugin start.
 
-The core runs with a child-local `umask 077`; `core/auth/` is reconciled to
+The macOS and Linux jobs run with `umask 077`; `core/auth/` is reconciled to
 `0700` and existing OAuth credential files to `0600` on plugin load.
 
 ## Develop
@@ -68,6 +94,18 @@ bun run build       # bb plugin build .
 bb plugin install . # register in place; then: bb plugin dev
 ```
 
-Note: the core binary is quarantine-free because it is written by node and
-extracted with `tar`; if macOS Gatekeeper ever kills it on launch, run
+Installing or updating the core also requires Go 1.26 or newer. The Advanced
+page accepts `owner/repository`, an HTTPS `github.com` URL, or a
+`git@github.com` source. `bb agent-proxy install <ref>` can temporarily build
+another branch, tag, or commit from the configured repository without changing
+the saved source.
+
+Persistent services support macOS (`launchd`) and Linux (user `systemd`). The
+bb UI and `bb agent-proxy` commands require a running bb server,
+but traffic through `127.0.0.1:8317` does not. Plugin reload, disable, and bb
+shutdown stop only the plugin status monitor; they do not stop the operating-
+system service.
+
+Note: the core binary is quarantine-free because the local Go toolchain writes
+it directly; if macOS Gatekeeper ever kills it on launch, run
 `xattr -d com.apple.quarantine <core/bin/cli-proxy-api>`.

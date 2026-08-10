@@ -1,225 +1,431 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { Supervisor, type SupervisorSnapshot } from "../lib/core-process.ts";
+import {
+  LaunchdSupervisor,
+  SystemdSupervisor,
+  parseLaunchctlPrint,
+  parseSystemctlShow,
+  renderLaunchAgentPlist,
+  renderSystemdUserUnit,
+  type CommandRunner,
+  type CommandResult,
+} from "../lib/core-process.ts";
 
-// Children are real `node -e` processes; probes are stubbed via fetchImpl.
-// Timings are compressed so the whole suite runs in well under a second per
-// case.
+interface FakeJob {
+  loaded: boolean;
+  state: string;
+  pid: number | null;
+  runs: number;
+  lastExitCode: number | null;
+  lastSignal: string | null;
+}
+
+function successful(stdout = ""): CommandResult {
+  return { code: 0, stdout, stderr: "" };
+}
+
+function launchctlOutput(job: FakeJob): string {
+  return `gui/501/com.smsunarto.bb.agent-proxy = {
+\tstate = ${job.state}
+\truns = ${job.runs}
+${job.pid === null ? "" : `\tpid = ${job.pid}\n`}${
+    job.lastExitCode === null ? "" : `\tlast exit code = ${job.lastExitCode}\n`
+  }${job.lastSignal === null ? "" : `\tlast terminating signal = ${job.lastSignal}\n`}}
+`;
+}
+
+function makeFakeLaunchctl(initial: Partial<FakeJob> = {}) {
+  const calls: string[][] = [];
+  const job: FakeJob = {
+    loaded: false,
+    state: "waiting",
+    pid: null,
+    runs: 0,
+    lastExitCode: null,
+    lastSignal: null,
+    ...initial,
+  };
+  let nextPid = 9000;
+  const runner: CommandRunner = async (file, args) => {
+    assert.equal(file, "/bin/launchctl");
+    calls.push(args);
+    switch (args[0]) {
+      case "print":
+        return job.loaded
+          ? successful(launchctlOutput(job))
+          : { code: 113, stdout: "", stderr: "Could not find service in domain for user gui: 501" };
+      case "enable":
+      case "disable":
+        return successful();
+      case "bootstrap":
+        job.loaded = true;
+        job.state = "running";
+        job.pid = ++nextPid;
+        job.runs += 1;
+        return successful();
+      case "bootout":
+        if (!job.loaded) {
+          return { code: 113, stdout: "", stderr: "Could not find service" };
+        }
+        job.loaded = false;
+        job.state = "waiting";
+        job.pid = null;
+        return successful();
+      case "kickstart":
+        job.loaded = true;
+        job.state = "running";
+        job.pid = ++nextPid;
+        job.runs += 1;
+        return successful();
+      default:
+        throw new Error(`unexpected launchctl command: ${args.join(" ")}`);
+    }
+  };
+  return { calls, job, runner };
+}
 
 function makeSupervisor(options: {
-  script: string;
   installed?: () => boolean;
-  probeOk?: boolean;
-  backoffInitialMs?: number;
+  launchctl?: ReturnType<typeof makeFakeLaunchctl>;
+  logLimit?: number;
 }) {
+  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-launchd-"));
+  const launchctl = options.launchctl ?? makeFakeLaunchctl();
+  const plistPath = join(dir, "Library", "LaunchAgents", "com.smsunarto.bb.agent-proxy.plist");
+  const logPath = join(dir, "core", "launchd.log");
   const transitions: string[] = [];
-  const supervisor = new Supervisor({
-    binPath: process.execPath,
-    configPath: "unused",
+  const supervisor = new LaunchdSupervisor({
+    label: "com.smsunarto.bb.agent-proxy",
+    uid: 501,
+    plistPath,
+    binPath: join(dir, "core", "bin", "current", "cli-proxy-api"),
+    configPath: join(dir, "core", "config.yaml"),
+    logPath,
     isInstalled: options.installed ?? (() => true),
-    probeUrl: () => "http://127.0.0.1:1/",
-    spawnImpl: ((_bin: string, _args: string[], spawnOptions: object) =>
-      spawn(process.execPath, ["-e", options.script], spawnOptions)) as never,
-    fetchImpl: (() =>
-      options.probeOk === false
-        ? Promise.reject(new Error("nope"))
-        : Promise.resolve(new Response("ok"))) as typeof fetch,
-    probeTimeoutMs: 300,
-    probeIntervalMs: 20,
-    backoffInitialMs: options.backoffInitialMs ?? 30,
-    backoffMaxMs: 200,
-    healthyResetMs: 10_000,
-    killGraceMs: 200,
-    onChange: (snapshot: SupervisorSnapshot) => transitions.push(snapshot.state),
-  });
-  return { supervisor, transitions };
-}
-
-const SLEEP_FOREVER = "setInterval(() => {}, 1000)";
-const EXIT_NOW = "process.exit(1)";
-
-function until(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      if (predicate()) {
-        clearInterval(timer);
-        resolve();
-      } else if (Date.now() - startedAt > timeoutMs) {
-        clearInterval(timer);
-        reject(new Error("condition not reached"));
-      }
-    }, 10);
-  });
-}
-
-test("parks when not installed, starts when installed and desired", async () => {
-  let installed = false;
-  const { supervisor } = makeSupervisor({ script: SLEEP_FOREVER, installed: () => installed });
-  const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-
-  supervisor.start();
-  await until(() => supervisor.state === "not-installed");
-
-  installed = true;
-  supervisor.poke();
-  supervisor.start();
-  await until(() => supervisor.state === "running");
-  assert.ok(supervisor.snapshot().pid !== null);
-
-  controller.abort();
-  await done;
-  assert.equal(supervisor.state, "stopped");
-});
-
-test("manual stop stays stopped; restart works", async () => {
-  const { supervisor } = makeSupervisor({ script: SLEEP_FOREVER });
-  const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-
-  supervisor.start();
-  await until(() => supervisor.state === "running");
-  await supervisor.stop();
-  await until(() => supervisor.state === "stopped");
-  assert.equal(supervisor.snapshot().crashCount, 0);
-
-  // Stays stopped (no respawn) for a while.
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(supervisor.state, "stopped");
-
-  supervisor.start();
-  await until(() => supervisor.state === "running");
-
-  controller.abort();
-  await done;
-});
-
-test("crash restarts with backoff and records exits", async () => {
-  const { supervisor, transitions } = makeSupervisor({
-    script: EXIT_NOW,
-    probeOk: false,
-    backoffInitialMs: 20,
-  });
-  const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-
-  supervisor.start();
-  await until(() => supervisor.snapshot().crashCount >= 3);
-  assert.ok(transitions.includes("crashed"));
-  const exit = supervisor.snapshot().lastExit;
-  assert.ok(exit);
-  assert.equal(exit.code, 1);
-
-  await supervisor.stop();
-  await until(() => supervisor.state === "stopped");
-  controller.abort();
-  await done;
-});
-
-test("spawn errors become crashes instead of parking in starting", async () => {
-  const transitions: string[] = [];
-  const supervisor = new Supervisor({
-    binPath: "/definitely/not/a/real/agent-proxy-binary",
-    configPath: "unused",
-    isInstalled: () => true,
-    probeUrl: () => "http://127.0.0.1:1/",
-    fetchImpl: (() => Promise.reject(new Error("nope"))) as typeof fetch,
-    probeTimeoutMs: 100,
-    probeIntervalMs: 10,
-    backoffInitialMs: 20,
-    backoffMaxMs: 40,
-    privateUmask: false,
+    probeUrl: () => "http://127.0.0.1:8317/",
+    runCommand: launchctl.runner,
+    fetchImpl: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+    monitorIntervalMs: 10,
+    ...(options.logLimit === undefined ? {} : { logLimit: options.logLimit }),
+    platform: "darwin",
+    now: () => 1_700_000_000_000,
     onChange: (snapshot) => transitions.push(snapshot.state),
   });
-  const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-  supervisor.start();
-  await until(() => supervisor.snapshot().crashCount >= 2);
-  assert.ok(transitions.includes("crashed"));
-  assert.match(supervisor.logs().join("\n"), /spawn failed/);
-  await supervisor.stop();
-  controller.abort();
-  await done;
-});
+  return { supervisor, transitions, launchctl, plistPath, logPath };
+}
 
-test("readiness timeout terminates and retries without reporting running", async () => {
-  const { supervisor, transitions } = makeSupervisor({
-    script: SLEEP_FOREVER,
-    probeOk: false,
-    backoffInitialMs: 20,
+test("renders a private, persistent launch agent definition", () => {
+  const plist = renderLaunchAgentPlist({
+    label: "com.example.proxy",
+    binPath: "/Users/a&b/core/proxy",
+    configPath: "/Users/a&b/core/config.yaml",
+    logPath: "/Users/a&b/core/core.log",
   });
-  const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-  supervisor.start();
-  await until(() => supervisor.snapshot().crashCount >= 1);
-  assert.equal(transitions.includes("running"), false);
-  assert.match(supervisor.logs().join("\n"), /readiness probe timed out/);
-  await supervisor.stop();
-  controller.abort();
-  await done;
+  assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
+  assert.match(plist, /<key>Umask<\/key>\s*<integer>63<\/integer>/);
+  assert.match(plist, /\/Users\/a&amp;b\/core\/proxy/);
+  assert.match(plist, /<key>StandardOutPath<\/key>/);
+  assert.match(plist, /<key>StandardErrorPath<\/key>/);
 });
 
-test("core child creates files under a private umask", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-umask-"));
-  const createdPath = join(dir, "credential.json");
-  const scriptPath = join(dir, "fake-core.sh");
-  writeFileSync(
-    scriptPath,
-    `#!/bin/sh\ntouch ${JSON.stringify(createdPath)}\nwhile true; do sleep 1; done\n`,
+test("parses launchctl service state", () => {
+  assert.deepEqual(
+    parseLaunchctlPrint(`state = running
+runs = 4
+pid = 8123
+last exit code = 2
+last terminating signal = Terminated: 15
+`),
+    {
+      state: "running",
+      pid: 8123,
+      runs: 4,
+      lastExitCode: 2,
+      lastSignal: "Terminated: 15",
+    },
   );
-  chmodSync(scriptPath, 0o755);
-  const supervisor = new Supervisor({
-    binPath: scriptPath,
-    configPath: "unused",
-    isInstalled: () => true,
-    probeUrl: () => "http://127.0.0.1:1/",
-    fetchImpl: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
-    killGraceMs: 200,
-  });
-  const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-  supervisor.start();
-  await until(() => supervisor.state === "running" && existsSync(createdPath));
-  assert.equal(statSync(createdPath).mode & 0o777, 0o600);
-  controller.abort();
-  await done;
 });
 
-test("abort during run kills the child and resolves", async () => {
-  const { supervisor } = makeSupervisor({ script: SLEEP_FOREVER });
+test("does not install a launch agent before the core exists", async () => {
+  const { supervisor, launchctl, plistPath } = makeSupervisor({ installed: () => false });
+  const snapshot = await supervisor.start();
+  assert.equal(snapshot.state, "not-installed");
+  assert.deepEqual(launchctl.calls, []);
+  assert.equal(existsSync(plistPath), false);
+});
+
+test("start writes, enables, bootstraps, and then leaves a running job alone", async () => {
+  const { supervisor, launchctl, plistPath } = makeSupervisor({});
+  const first = await supervisor.start();
+  assert.equal(first.state, "running");
+  assert.equal(first.loaded, true);
+  assert.ok(first.pid);
+  assert.match(readFileSync(plistPath, "utf8"), /com\.smsunarto\.bb\.agent-proxy/);
+  assert.deepEqual(
+    launchctl.calls.map((args) => args[0]),
+    ["enable", "print", "bootstrap", "print"],
+  );
+
+  launchctl.calls.length = 0;
+  const second = await supervisor.start();
+  assert.equal(second.pid, first.pid);
+  assert.deepEqual(
+    launchctl.calls.map((args) => args[0]),
+    ["enable", "print", "print"],
+  );
+});
+
+test("stop removes and disables the job but preserves its plist", async () => {
+  const { supervisor, launchctl, plistPath } = makeSupervisor({});
+  await supervisor.start();
+  launchctl.calls.length = 0;
+  const snapshot = await supervisor.stop();
+  assert.equal(snapshot.state, "stopped");
+  assert.equal(snapshot.loaded, false);
+  assert.equal(existsSync(plistPath), true);
+  assert.deepEqual(
+    launchctl.calls.map((args) => args[0]),
+    ["bootout", "disable"],
+  );
+});
+
+test("restart kickstarts a loaded job", async () => {
+  const { supervisor, launchctl } = makeSupervisor({});
+  const first = await supervisor.start();
+  launchctl.calls.length = 0;
+  const second = await supervisor.restart();
+  assert.notEqual(second.pid, first.pid);
+  assert.deepEqual(launchctl.calls.at(2), [
+    "kickstart",
+    "-k",
+    "gui/501/com.smsunarto.bb.agent-proxy",
+  ]);
+});
+
+test("a changed plist is re-bootstrapped before start", async () => {
+  const { supervisor, launchctl, plistPath } = makeSupervisor({});
+  await supervisor.start();
+  writeFileSync(plistPath, "stale definition");
+  launchctl.calls.length = 0;
+  await supervisor.start();
+  assert.deepEqual(
+    launchctl.calls.map((args) => args[0]),
+    ["enable", "print", "bootout", "bootstrap", "print"],
+  );
+});
+
+test("reports a launchd crash and its last exit", async () => {
+  const launchctl = makeFakeLaunchctl({
+    loaded: true,
+    state: "waiting",
+    runs: 4,
+    lastExitCode: 2,
+  });
+  const { supervisor } = makeSupervisor({ launchctl });
+  const snapshot = await supervisor.snapshot();
+  assert.equal(snapshot.state, "crashed");
+  assert.equal(snapshot.crashCount, 3);
+  assert.deepEqual(snapshot.lastExit, {
+    code: 2,
+    signal: null,
+    at: 1_700_000_000_000,
+  });
+});
+
+test("aborting the monitor does not stop the external service", async () => {
+  const { supervisor, launchctl } = makeSupervisor({});
+  await supervisor.start();
+  launchctl.calls.length = 0;
   const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-  supervisor.start();
-  await until(() => supervisor.state === "running");
-  const pid = supervisor.snapshot().pid;
-  assert.ok(pid);
+  const done = supervisor.monitor(controller.signal);
+  await new Promise((resolve) => setTimeout(resolve, 25));
   controller.abort();
   await done;
-  assert.equal(supervisor.state, "stopped");
-  // The child must actually be gone.
-  await until(() => {
-    try {
-      process.kill(pid, 0);
-      return false;
-    } catch {
-      return true;
+  assert.equal(launchctl.job.loaded, true);
+  assert.equal(launchctl.calls.some((args) => args[0] === "bootout"), false);
+  assert.equal(launchctl.calls.some((args) => args[0] === "disable"), false);
+});
+
+test("reads the bounded launchd log tail", () => {
+  const { supervisor, logPath } = makeSupervisor({ logLimit: 3 });
+  mkdirSync(dirname(logPath), { recursive: true });
+  writeFileSync(logPath, "one\ntwo\nthree\nfour\n");
+  assert.deepEqual(supervisor.logs(), ["two", "three", "four"]);
+});
+
+interface FakeSystemdJob {
+  enabled: boolean;
+  activeState: "inactive" | "active" | "failed";
+  pid: number | null;
+  restarts: number;
+  exitStatus: number;
+  exitCode: 1 | 2 | 3;
+}
+
+function systemctlOutput(job: FakeSystemdJob): string {
+  return `LoadState=loaded
+ActiveState=${job.activeState}
+SubState=${job.activeState === "active" ? "running" : "dead"}
+MainPID=${job.pid ?? 0}
+NRestarts=${job.restarts}
+ExecMainStatus=${job.exitStatus}
+ExecMainCode=${job.exitCode}
+`;
+}
+
+function makeFakeSystemctl(initial: Partial<FakeSystemdJob> = {}) {
+  const calls: string[][] = [];
+  const job: FakeSystemdJob = {
+    enabled: false,
+    activeState: "inactive",
+    pid: null,
+    restarts: 0,
+    exitStatus: 0,
+    exitCode: 1,
+    ...initial,
+  };
+  let nextPid = 10_000;
+  const runner: CommandRunner = async (file, args) => {
+    assert.equal(file, "systemctl");
+    calls.push(args);
+    const command = args.find((arg) => !arg.startsWith("--"));
+    switch (command) {
+      case "daemon-reload":
+        return successful();
+      case "show":
+        return successful(systemctlOutput(job));
+      case "is-enabled":
+        return job.enabled
+          ? successful("enabled\n")
+          : { code: 1, stdout: "disabled\n", stderr: "" };
+      case "enable":
+        job.enabled = true;
+        return successful();
+      case "start":
+      case "restart":
+        job.activeState = "active";
+        job.pid = ++nextPid;
+        return successful();
+      case "disable":
+        job.enabled = false;
+        job.activeState = "inactive";
+        job.pid = null;
+        return successful();
+      default:
+        throw new Error(`unexpected systemctl command: ${args.join(" ")}`);
     }
+  };
+  return { calls, job, runner };
+}
+
+function makeSystemdSupervisor(initial: Partial<FakeSystemdJob> = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-systemd-"));
+  const systemctl = makeFakeSystemctl(initial);
+  const unitPath = join(dir, ".config", "systemd", "user", "agent-proxy.service");
+  const logPath = join(dir, "core", "service", "core.log");
+  const supervisor = new SystemdSupervisor({
+    label: "com.smsunarto.bb.agent-proxy",
+    unitPath,
+    binPath: join(dir, "core", "bin", "current", "cli-proxy-api"),
+    configPath: join(dir, "core", "config.yaml"),
+    logPath,
+    isInstalled: () => true,
+    probeUrl: () => "http://127.0.0.1:8317/",
+    runCommand: systemctl.runner,
+    fetchImpl: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+    monitorIntervalMs: 10,
+    platform: "linux",
+    now: () => 1_700_000_000_000,
+  });
+  return { supervisor, systemctl, unitPath, logPath };
+}
+
+test("renders and parses a persistent user systemd service", () => {
+  const unit = renderSystemdUserUnit({
+    label: "com.example.proxy",
+    binPath: "/home/test/Agent Proxy/proxy",
+    configPath: "/home/test/Agent Proxy/config.yaml",
+    logPath: "/home/test/Agent Proxy/core.log",
+  });
+  assert.match(unit, /WantedBy=default\.target/);
+  assert.match(unit, /Restart=always/);
+  assert.match(unit, /UMask=0077/);
+  assert.match(unit, /ExecStart="\/home\/test\/Agent Proxy\/proxy" "--config"/);
+  assert.deepEqual(parseSystemctlShow(systemctlOutput({
+    enabled: true,
+    activeState: "active",
+    pid: 8123,
+    restarts: 3,
+    exitStatus: 2,
+    exitCode: 1,
+  })), {
+    loadState: "loaded",
+    activeState: "active",
+    subState: "running",
+    pid: 8123,
+    restarts: 3,
+    exitStatus: 2,
+    exitCode: 1,
   });
 });
 
-test("captures child output in the log ring", async () => {
-  const { supervisor } = makeSupervisor({
-    script: 'console.log("hello from core"); setInterval(() => {}, 1000)',
+test("systemd start is idempotent and stop disables the user service", async () => {
+  const { supervisor, systemctl, unitPath } = makeSystemdSupervisor();
+  const first = await supervisor.start();
+  assert.equal(first.state, "running");
+  assert.equal(first.loaded, true);
+  assert.ok(first.pid);
+  assert.match(readFileSync(unitPath, "utf8"), /Restart=always/);
+
+  systemctl.calls.length = 0;
+  const second = await supervisor.start();
+  assert.equal(second.pid, first.pid);
+  assert.equal(systemctl.calls.some((args) => args.includes("start")), false);
+  assert.equal(systemctl.calls.some((args) => args.includes("restart")), false);
+
+  const stopped = await supervisor.stop();
+  assert.equal(stopped.state, "stopped");
+  assert.equal(stopped.loaded, false);
+  assert.equal(systemctl.job.enabled, false);
+  assert.equal(systemctl.job.activeState, "inactive");
+});
+
+test("systemd reports failed jobs and does not stop one when monitoring ends", async () => {
+  const failed = makeSystemdSupervisor({
+    enabled: true,
+    activeState: "failed",
+    restarts: 4,
+    exitStatus: 2,
   });
+  const snapshot = await failed.supervisor.snapshot();
+  assert.equal(snapshot.state, "crashed");
+  assert.equal(snapshot.crashCount, 4);
+  assert.equal(snapshot.lastExit?.code, 2);
+
+  const running = makeSystemdSupervisor();
+  await running.supervisor.start();
+  running.systemctl.calls.length = 0;
   const controller = new AbortController();
-  const done = supervisor.run(controller.signal);
-  supervisor.start();
-  await until(() => supervisor.logs().some((line) => line.includes("hello from core")));
+  const done = running.supervisor.monitor(controller.signal);
+  await new Promise((resolve) => setTimeout(resolve, 25));
   controller.abort();
   await done;
+  assert.equal(running.systemctl.job.activeState, "active");
+  assert.equal(running.systemctl.calls.some((args) => args.includes("disable")), false);
+});
+
+test("systemd maps numeric CLD_KILLED exit metadata to a signal", async () => {
+  const killed = makeSystemdSupervisor({
+    enabled: true,
+    activeState: "failed",
+    restarts: 1,
+    exitStatus: 15,
+    exitCode: 2,
+  });
+  const snapshot = await killed.supervisor.snapshot();
+  assert.equal(snapshot.lastExit?.code, null);
+  assert.equal(snapshot.lastExit?.signal, "15");
 });
