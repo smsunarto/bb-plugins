@@ -2,18 +2,22 @@
 
 EasyCLIProxyAPI, rebuilt as a bb plugin. Owns a local
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
-core on the bb server machine: resolves the configured ref to an immutable
-commit, builds it with the local Go toolchain, installs it as a persistent
+core on the bb server machine: installs the published release archive for the
+platform, or builds the resolved commit with the local Go toolchain when the
+ref ships none, runs it as a persistent
 operating-system service, and exposes management UI inside bb. It uses
 `launchd` on macOS and user `systemd` on Linux. The proxy continues to run
 after bb exits. Windows is not supported.
 
 ## Features
 
-- **Core lifecycle** — download a commit-pinned source archive from the
-  configured public GitHub repository and branch, validate it, build it with
-  Go, and publish the binary behind a stable pointer only after a successful
-  build. The pointer swap is atomic. A persistent operating-system service
+- **Core lifecycle** — two install paths behind one Install core button. A ref
+  that names a published release downloads that release's archive for the
+  platform and verifies its sha256 against the release's own `checksums.txt`;
+  any other ref (branch, commit, fork) downloads a commit-pinned source archive
+  and builds it with Go. Either way the binary is published behind a stable
+  pointer only after it lands. The pointer swap is atomic. A persistent
+  operating-system service
   starts it at login, keeps it alive after bb exits, and restarts it after a
   crash. Manual Stop disables the service until Start or the autostart setting
   enables it again. Home page + sidebar indicators + `bb agent-proxy` CLI.
@@ -21,7 +25,7 @@ after bb exits. Windows is not supported.
   the Advanced page. The defaults are `router-for-me/CLIProxyAPI#latest`, where
   the `latest` ref resolves to the newest published GitHub release (drafts and
   prereleases excluded) and then to that tag's commit. Saving a source does not
-  change the running binary; Install core resolves and builds it.
+  change the running binary; Install core resolves and installs it.
 - **Sidebar state** — the "Agent Proxy" row in bb's main sidebar is tinted by
   core state (green running, amber pulsing while starting/stopping, red
   crashed, dimmed stopped). bb renders that row itself and reads `navPanel`
@@ -96,11 +100,12 @@ bun run build       # bb plugin build .
 bb plugin install . # register in place; then: bb plugin dev
 ```
 
-Installing or updating the core also requires Go 1.26 or newer. The Advanced
-page accepts `owner/repository`, an HTTPS `github.com` URL, or a
-`git@github.com` source. `bb agent-proxy install <ref>` can temporarily build
-another branch, tag, or commit from the configured repository without changing
-the saved source.
+Go 1.26 or newer is required only for source builds — that is, for any ref that
+ships no release archive for the platform. Installing a published release needs
+no toolchain. The Advanced page accepts `owner/repository`, an HTTPS
+`github.com` URL, or a `git@github.com` source. `bb agent-proxy install <ref>`
+can temporarily install another branch, tag, or commit from the configured
+repository without changing the saved source.
 
 Persistent services support macOS (`launchd`) and Linux (user `systemd`). The
 bb UI and `bb agent-proxy` commands require a running bb server,
@@ -108,6 +113,7 @@ but traffic through `127.0.0.1:8317` does not. Plugin reload, disable, and bb
 shutdown stop only the plugin status monitor; they do not stop the operating-
 system service.
 
-Note: the core binary is quarantine-free because the local Go toolchain writes
-it directly; if macOS Gatekeeper ever kills it on launch, run
+Note: the core binary is quarantine-free either way — the Go toolchain writes
+it directly, and a downloaded release archive is fetched and extracted without
+LaunchServices. If macOS Gatekeeper ever kills it on launch, run
 `xattr -d com.apple.quarantine <core/bin/cli-proxy-api>`.

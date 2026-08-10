@@ -22,12 +22,37 @@ export const DEFAULT_CORE_SOURCE: CoreSource = {
 };
 const INVALID_REF_CHARACTERS = new Set(["~", "^", ":", "?", "*", "[", "\\"]);
 
+export interface ReleaseAsset {
+  name: string;
+  url: string;
+}
+
+export interface Release {
+  tag: string;
+  assets: ReleaseAsset[];
+}
+
+/** The published archive for this platform plus the checksums file that must
+    verify it. Both are required; a release missing either is built from
+    source instead. */
+export interface ReleaseBinary {
+  assetName: string;
+  assetUrl: string;
+  checksumsUrl: string;
+}
+
+/**
+ * A resolved install target. The commit is always known, so a build from
+ * source is always possible; `binary` is set only when the ref names a
+ * published release that ships an archive for this platform.
+ */
 export interface SourceRevision {
   repo: string;
   ref: string;
   commit: string;
   version: string;
   archiveUrl: string;
+  binary: ReleaseBinary | null;
 }
 
 export function normalizeCoreRepo(value: string): string {
@@ -113,17 +138,74 @@ export function latestReleaseApiUrl(repo: string): string {
   return `https://api.github.com/repos/${repo}/releases/latest`;
 }
 
+export function releaseTagApiUrl(repo: string, tag: string): string {
+  return `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`;
+}
+
+export function normalizeVersion(version: string): string {
+  return version.replace(/^v/, "");
+}
+
 /** GitHub's releases/latest already excludes drafts and prereleases, so the
     tag it reports is the newest release a user would download by hand. */
-export function parseLatestReleaseTag(json: unknown): string {
+export function parseRelease(json: unknown): Release {
   if (typeof json !== "object" || json === null) {
     throw new Error("malformed GitHub release response");
   }
-  const tag = (json as Record<string, unknown>).tag_name;
-  if (typeof tag !== "string" || tag.trim().length === 0) {
+  const record = json as Record<string, unknown>;
+  if (typeof record.tag_name !== "string" || record.tag_name.trim().length === 0) {
     throw new Error("GitHub release response has no tag_name");
   }
-  return normalizeCoreRef(tag);
+  const assets: ReleaseAsset[] = [];
+  if (Array.isArray(record.assets)) {
+    for (const entry of record.assets) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const asset = entry as Record<string, unknown>;
+      if (typeof asset.name === "string" && typeof asset.browser_download_url === "string") {
+        assets.push({ name: asset.name, url: asset.browser_download_url });
+      }
+    }
+  }
+  return { tag: normalizeCoreRef(record.tag_name), assets };
+}
+
+/** Release archives are CLIProxyAPI_<ver>_<os>_<arch>.tar.gz; upstream uses
+    aarch64 (not arm64) and ships tar.gz only for darwin and linux. Anything
+    else returns null and falls back to a source build. */
+export function releaseAssetName(
+  version: string,
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch,
+): string | null {
+  if (platform !== "darwin" && platform !== "linux") return null;
+  const archName = arch === "arm64" ? "aarch64" : arch === "x64" ? "amd64" : null;
+  if (!archName) return null;
+  return `CLIProxyAPI_${normalizeVersion(version)}_${platform}_${archName}.tar.gz`;
+}
+
+/** Null whenever this platform's archive or checksums.txt is absent — the
+    caller then builds the same commit from source. */
+export function pickReleaseBinary(
+  release: Release,
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch,
+): ReleaseBinary | null {
+  const name = releaseAssetName(release.tag, platform, arch);
+  if (name === null) return null;
+  const asset = release.assets.find((candidate) => candidate.name === name);
+  const checksums = release.assets.find((candidate) => candidate.name === "checksums.txt");
+  if (!asset || !checksums) return null;
+  return { assetName: asset.name, assetUrl: asset.url, checksumsUrl: checksums.url };
+}
+
+/** checksums.txt lines are "<sha256>  <filename>". */
+export function parseChecksums(text: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const line of text.split("\n")) {
+    const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(line.trim());
+    if (match) map.set(match[2]!.trim(), match[1]!.toLowerCase());
+  }
+  return map;
 }
 
 export function sourceArchiveUrl(repo: string, commit: string): string {
@@ -137,6 +219,7 @@ export function sourceVersion(ref: string, commit: string): string {
 export function parseSourceRevision(
   json: unknown,
   source: CoreSource = DEFAULT_CORE_SOURCE,
+  binary: ReleaseBinary | null = null,
 ): SourceRevision {
   if (typeof json !== "object" || json === null) {
     throw new Error("malformed GitHub commit response");
@@ -152,5 +235,6 @@ export function parseSourceRevision(
     commit: normalizedCommit,
     version: sourceVersion(source.ref, normalizedCommit),
     archiveUrl: sourceArchiveUrl(source.repo, normalizedCommit),
+    binary,
   };
 }

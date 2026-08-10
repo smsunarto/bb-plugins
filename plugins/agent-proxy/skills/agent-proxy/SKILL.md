@@ -43,7 +43,7 @@ Auth: pass the local API key as the bearer token / `x-api-key`.
 bb agent-proxy status                 # core state, versions, endpoints
 bb agent-proxy start|stop|restart     # lifecycle
 bb agent-proxy endpoints              # URLs + local API key
-bb agent-proxy install [ref]          # build/install configured source; ref temporarily overrides branch
+bb agent-proxy install [ref]          # install configured source (release archive, else source build); ref temporarily overrides branch
 bb agent-proxy oauth <claude|codex>   # browser OAuth flow (prints URL, waits)
 bb agent-proxy providers              # configured credentials + auth files
 bb agent-proxy usage                  # recent request buckets (JSON)

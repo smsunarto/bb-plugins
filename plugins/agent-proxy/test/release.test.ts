@@ -11,8 +11,12 @@ import {
   normalizeCoreRef,
   normalizeCoreRepo,
   normalizeCoreSource,
-  parseLatestReleaseTag,
+  parseChecksums,
+  parseRelease,
   parseSourceRevision,
+  pickReleaseBinary,
+  releaseAssetName,
+  releaseTagApiUrl,
   sourceArchiveUrl,
   sourceVersion,
 } from "../lib/release.ts";
@@ -38,12 +42,55 @@ test("the latest sentinel is recognized whatever the case", () => {
   );
 });
 
-test("parseLatestReleaseTag reads and validates the release tag", () => {
-  assert.equal(parseLatestReleaseTag({ tag_name: " v7.2.127 " }), "v7.2.127");
-  assert.throws(() => parseLatestReleaseTag(null), /malformed/);
-  assert.throws(() => parseLatestReleaseTag({}), /tag_name/);
-  assert.throws(() => parseLatestReleaseTag({ tag_name: "   " }), /tag_name/);
-  assert.throws(() => parseLatestReleaseTag({ tag_name: "bad ref" }), /branch or ref/);
+test("parseRelease reads the tag and the downloadable assets", () => {
+  const release = parseRelease({
+    tag_name: " v7.2.127 ",
+    assets: [
+      { name: "checksums.txt", browser_download_url: "https://example.invalid/checksums.txt" },
+      { name: "ignored", size: 1 },
+      { name: "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz", browser_download_url: "https://example.invalid/a" },
+    ],
+  });
+  assert.equal(release.tag, "v7.2.127");
+  assert.deepEqual(
+    release.assets.map((asset) => asset.name),
+    ["checksums.txt", "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz"],
+  );
+  assert.throws(() => parseRelease(null), /malformed/);
+  assert.throws(() => parseRelease({}), /tag_name/);
+  assert.throws(() => parseRelease({ tag_name: "   " }), /tag_name/);
+  assert.throws(() => parseRelease({ tag_name: "bad ref" }), /branch or ref/);
+  assert.equal(
+    releaseTagApiUrl(CORE_REPO, "v7.2.127"),
+    "https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/tags/v7.2.127",
+  );
+});
+
+test("release assets are named per platform, with source as the fallback", () => {
+  assert.equal(releaseAssetName("v7.2.127", "darwin", "arm64"), "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz");
+  assert.equal(releaseAssetName("7.2.127", "linux", "x64"), "CLIProxyAPI_7.2.127_linux_amd64.tar.gz");
+  assert.equal(releaseAssetName("7.2.127", "win32", "x64"), null);
+  assert.equal(releaseAssetName("7.2.127", "linux", "ppc64"), null);
+
+  const assets = [
+    { name: "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz", url: "https://example.invalid/a" },
+    { name: "checksums.txt", url: "https://example.invalid/c" },
+  ];
+  assert.deepEqual(pickReleaseBinary({ tag: "v7.2.127", assets }, "darwin", "arm64"), {
+    assetName: "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz",
+    assetUrl: "https://example.invalid/a",
+    checksumsUrl: "https://example.invalid/c",
+  });
+  // No archive for the platform, and no checksums.txt: both build from source.
+  assert.equal(pickReleaseBinary({ tag: "v7.2.127", assets }, "linux", "x64"), null);
+  assert.equal(pickReleaseBinary({ tag: "v7.2.127", assets: [assets[0]!] }, "darwin", "arm64"), null);
+});
+
+test("parseChecksums reads sha256 lines", () => {
+  const sha = "a".repeat(64);
+  const map = parseChecksums(`${sha}  CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz\nnonsense\n`);
+  assert.equal(map.get("CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz"), sha);
+  assert.equal(map.size, 1);
 });
 
 test("commitApiUrl safely encodes branch names", () => {
@@ -94,6 +141,7 @@ test("source revision is pinned to the resolved commit", () => {
     commit: COMMIT,
     version: "v7.2.127@9e593b74486a",
     archiveUrl: `https://codeload.github.com/${CORE_REPO}/tar.gz/${COMMIT}`,
+    binary: null,
   });
   assert.equal(sourceVersion("v7.2.127", COMMIT), "v7.2.127@9e593b74486a");
   assert.equal(sourceArchiveUrl(CORE_REPO, COMMIT), revision.archiveUrl);

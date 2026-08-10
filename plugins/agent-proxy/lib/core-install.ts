@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
+  createReadStream,
   createWriteStream,
   existsSync,
   lstatSync,
@@ -21,9 +22,13 @@ import {
   DEFAULT_CORE_SOURCE,
   isLatestReleaseRef,
   latestReleaseApiUrl,
-  parseLatestReleaseTag,
+  parseChecksums,
+  parseRelease,
   parseSourceRevision,
+  pickReleaseBinary,
+  releaseTagApiUrl,
   type CoreSource,
+  type Release,
   type SourceRevision,
 } from "./release.ts";
 
@@ -59,32 +64,48 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-export async function fetchLatestReleaseTag(
+/** Null when the tag names no release. A missing releases/latest is an error
+    instead: the user asked for the newest release by name. */
+export async function fetchRelease(
   repo: string,
+  ref: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
-): Promise<string> {
-  const response = await fetchImpl(latestReleaseApiUrl(repo), {
-    headers: GH_HEADERS,
-    signal: requestSignal(signal, 30_000),
-  });
-  if (!response.ok) {
-    throw new Error(`${repo} has no published release (HTTP ${response.status})`);
+): Promise<Release | null> {
+  const latest = isLatestReleaseRef(ref);
+  const response = await fetchImpl(
+    latest ? latestReleaseApiUrl(repo) : releaseTagApiUrl(repo, ref),
+    { headers: GH_HEADERS, signal: requestSignal(signal, 30_000) },
+  );
+  if (response.status === 404) {
+    if (latest) throw new Error(`${repo} has no published release (HTTP 404)`);
+    return null;
   }
-  return parseLatestReleaseTag(await response.json());
+  if (!response.ok) {
+    throw new Error(`GitHub release lookup for ${repo}#${ref} failed (HTTP ${response.status})`);
+  }
+  return parseRelease(await response.json());
 }
 
-/** Resolves the configured ref to an immutable commit. The "latest" sentinel
-    first becomes the newest release tag, so the recorded version names that
-    release instead of a moving branch. */
+/**
+ * Resolves the configured ref to an immutable commit, and to a published
+ * archive when one exists for this platform. The "latest" sentinel becomes the
+ * newest release tag first, so the recorded version names that release instead
+ * of a moving branch. A commit SHA never names a release, so it skips the
+ * release lookup entirely.
+ */
 export async function fetchSourceRevision(
   source: CoreSource = DEFAULT_CORE_SOURCE,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
 ): Promise<SourceRevision> {
-  const resolved: CoreSource = isLatestReleaseRef(source.ref)
-    ? { repo: source.repo, ref: await fetchLatestReleaseTag(source.repo, fetchImpl, signal) }
-    : source;
+  const release = /^[0-9a-f]{40}$/i.test(source.ref)
+    ? null
+    : await fetchRelease(source.repo, source.ref, fetchImpl, signal);
+  const resolved: CoreSource =
+    release && isLatestReleaseRef(source.ref)
+      ? { repo: source.repo, ref: release.tag }
+      : source;
   const response = await fetchImpl(commitApiUrl(resolved), {
     headers: GH_HEADERS,
     signal: requestSignal(signal, 30_000),
@@ -94,7 +115,11 @@ export async function fetchSourceRevision(
       `CLIProxyAPI source ${resolved.repo}#${resolved.ref} not found (HTTP ${response.status})`,
     );
   }
-  return parseSourceRevision(await response.json(), resolved);
+  return parseSourceRevision(
+    await response.json(),
+    resolved,
+    release ? pickReleaseBinary(release) : null,
+  );
 }
 
 /** The binary file is the source of truth; a surviving marker without a binary
@@ -167,6 +192,22 @@ async function downloadTo(
   }
   const body = Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream);
   await pipeline(body, createWriteStream(dest), { signal: requestAbort });
+}
+
+async function sha256File(path: string, signal?: AbortSignal): Promise<string> {
+  const hash = createHash("sha256");
+  await pipeline(
+    createReadStream(path),
+    async function* (source) {
+      for await (const chunk of source) {
+        signal?.throwIfAborted();
+        hash.update(chunk as Buffer);
+        yield;
+      }
+    },
+    { signal },
+  );
+  return hash.digest("hex");
 }
 
 function runTar(args: string[], signal?: AbortSignal): Promise<string> {
@@ -278,7 +319,117 @@ async function validateSourceArchive(archive: string, signal?: AbortSignal): Pro
   return [...roots][0]!;
 }
 
-/** Download → verify → extract → publish. Any failure leaves the previously
+/** Refuse paths that can escape staging and links that can redirect extraction
+    outside it. Require the one upstream executable at the archive root. */
+async function validateBinaryArchive(
+  archive: string,
+  executable: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const entries = (await runTar(["-tzf", archive], signal)).split("\n").filter(Boolean);
+  let binaryCount = 0;
+  for (const entry of entries) {
+    const normalized = normalizedArchivePath(entry);
+    if (entry.startsWith("/") || normalized.split("/").includes("..")) {
+      throw new Error(`unsafe archive path: ${entry}`);
+    }
+    if (normalized === executable) binaryCount += 1;
+  }
+  if (binaryCount !== 1) {
+    throw new Error(`archive must contain exactly one root ${executable} executable`);
+  }
+
+  const verbose = await runTar(["-tvzf", archive], signal);
+  for (const line of verbose.split("\n")) {
+    if (line.startsWith("l") || line.startsWith("h")) {
+      throw new Error("archive contains an unsafe link entry");
+    }
+  }
+}
+
+interface StageOptions {
+  staging: string;
+  candidateBinary: string;
+  revision: SourceRevision;
+  fetchImpl: typeof fetch;
+  onProgress: (stage: InstallStage) => void;
+  signal?: AbortSignal;
+}
+
+/** Published release path: the archive is only trusted after its sha256
+    matches the release's own checksums.txt. No Go toolchain is involved. */
+async function stagePublishedBinary(options: StageOptions): Promise<void> {
+  const { staging, candidateBinary, revision, fetchImpl, onProgress, signal } = options;
+  const binary = revision.binary!;
+  const executable = basename(candidateBinary);
+
+  onProgress("downloading");
+  const archivePath = join(staging, binary.assetName);
+  await downloadTo(binary.assetUrl, archivePath, fetchImpl, signal);
+
+  onProgress("verifying");
+  const checksumsResponse = await fetchImpl(binary.checksumsUrl, {
+    headers: { "User-Agent": GH_HEADERS["User-Agent"] },
+    redirect: "follow",
+    signal: requestSignal(signal, 30_000),
+  });
+  if (!checksumsResponse.ok) {
+    throw new Error(`checksums.txt download failed: HTTP ${checksumsResponse.status}`);
+  }
+  const expected = parseChecksums(await checksumsResponse.text()).get(binary.assetName);
+  if (!expected) {
+    throw new Error(
+      `checksums.txt has no entry for ${binary.assetName}; refusing unverified install`,
+    );
+  }
+  const actual = await sha256File(archivePath, signal);
+  if (actual !== expected) {
+    throw new Error(
+      `checksum mismatch for ${binary.assetName}: expected ${expected}, got ${actual}`,
+    );
+  }
+
+  onProgress("extracting");
+  await validateBinaryArchive(archivePath, executable, signal);
+  const extractDir = join(staging, "extract");
+  ensureDir(extractDir);
+  await runTar(["-xzf", archivePath, "-C", extractDir], signal);
+  const extracted = join(extractDir, executable);
+  if (!lstatSync(extracted).isFile()) {
+    throw new Error(`no CLIProxyAPI binary found inside ${binary.assetName}`);
+  }
+  renameSync(extracted, candidateBinary);
+}
+
+/** Source path: any ref that names no published archive, including branches,
+    commits, and forks. Requires the local Go toolchain. */
+async function stageSourceBuild(
+  options: StageOptions & { buildSource: (options: BuildSourceOptions) => Promise<void> },
+): Promise<void> {
+  const { staging, candidateBinary, revision, fetchImpl, onProgress, signal } = options;
+
+  onProgress("downloading");
+  const archivePath = join(staging, `CLIProxyAPI-${revision.commit}.tar.gz`);
+  await downloadTo(revision.archiveUrl, archivePath, fetchImpl, signal);
+
+  onProgress("verifying");
+  const sourceRootName = await validateSourceArchive(archivePath, signal);
+
+  onProgress("extracting");
+  await runTar(["-xzf", archivePath, "-C", staging], signal);
+  const sourceDir = join(staging, sourceRootName);
+  if (!lstatSync(join(sourceDir, "go.mod")).isFile()) {
+    throw new Error("CLIProxyAPI source archive has no root go.mod");
+  }
+
+  onProgress("building");
+  await options.buildSource({ sourceDir, outputPath: candidateBinary, revision, signal });
+  if (!lstatSync(candidateBinary).isFile()) {
+    throw new Error("go build did not produce the CLIProxyAPI executable");
+  }
+}
+
+/** Download → verify → stage → publish. Any failure leaves the previously
     installed binary untouched; staging is always cleaned up. */
 export async function installCore(
   paths: Paths,
@@ -287,35 +438,25 @@ export async function installCore(
 ): Promise<string> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const onProgress = deps.onProgress ?? (() => {});
-  const buildSource = deps.buildSource ?? runGoBuild;
-  const archiveName = `CLIProxyAPI-${revision.commit}.tar.gz`;
   const staging = join(paths.coreDir, `tmp-${process.pid}-${randomUUID()}`);
   let landedRelease: string | null = null;
   let pointerCommitted = false;
   ensureDir(staging);
   try {
-    onProgress("downloading");
-    const archivePath = join(staging, archiveName);
-    await downloadTo(revision.archiveUrl, archivePath, fetchImpl, deps.signal);
-
-    onProgress("verifying");
-    const sourceRootName = await validateSourceArchive(archivePath, deps.signal);
-
-    onProgress("extracting");
-    await runTar(["-xzf", archivePath, "-C", staging], deps.signal);
-    const sourceDir = join(staging, sourceRootName);
-    if (!lstatSync(join(sourceDir, "go.mod")).isFile()) {
-      throw new Error("CLIProxyAPI source archive has no root go.mod");
-    }
-
     const candidateRelease = join(staging, "release");
     ensureDir(candidateRelease);
     const candidateBinary = join(candidateRelease, basename(paths.binPath));
-    onProgress("building");
-    await buildSource({ sourceDir, outputPath: candidateBinary, revision, signal: deps.signal });
-    if (!lstatSync(candidateBinary).isFile()) {
-      throw new Error("go build did not produce the CLIProxyAPI executable");
-    }
+    const stage: StageOptions = {
+      staging,
+      candidateBinary,
+      revision,
+      fetchImpl,
+      onProgress,
+      signal: deps.signal,
+    };
+    if (revision.binary) await stagePublishedBinary(stage);
+    else await stageSourceBuild({ ...stage, buildSource: deps.buildSource ?? runGoBuild });
+
     chmodSync(candidateBinary, 0o755);
     writeAtomic(join(candidateRelease, ".version"), `${revision.version}\n`);
     ensureDir(paths.versionsDir);
