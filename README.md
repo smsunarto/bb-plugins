@@ -12,6 +12,7 @@ Monorepo for personal [bb](https://github.com/bb-app) plugins. One Bun workspace
 | `gh-stack` | `plugins/gh-stack` | Visualize and drive stacked pull requests. |
 | `notify` | `plugins/notify` | Desktop notifications when a BB thread finishes or fails, plus a `notify_user` agent tool and a `bb notify` command. |
 | `pr-walkthrough` | `plugins/pr-walkthrough` | Generate a human-friendly pull-request walkthrough with a built-in viewer panel. |
+| `t3sidebar` | `plugins/t3sidebar` | Replace bb's sidebar thread list with an inbox of cards that never re-orders. Forked from bb's own example. |
 | `theme` | `plugins/theme` | Ships Scott's Theme as a selectable BB palette. |
 
 ## Package naming
