@@ -266,10 +266,6 @@ const stackPayloadSchema = z.object({
   // The settings in force, as stored — branchPrefix here is the raw
   // configured value ("" when unset), not the effective one above.
   settings: settingsSchema,
-  // The number GitHub would most likely give the next pull request —
-  // one past the highest issue or PR number. A guess: concurrent work
-  // in the repository can take it first.
-  nextPrNumber: z.number().nullable(),
 });
 
 export const rpcContract = defineRpcContract({
@@ -528,27 +524,6 @@ async function currentBranchPrefix(cwd: string): Promise<string | null> {
   const result = await runGit(["symbolic-ref", "--short", "-q", "HEAD"], cwd);
   if (result.code !== 0) return null;
   return branchPrefixOf([result.stdout.trim()].filter(Boolean));
-}
-
-// GitHub numbers issues and pull requests from one sequence, so the newest
-// of either, plus one, is the next PR number. A guess — someone else's PR
-// can take it first.
-async function nextPrNumber(cwd: string): Promise<number | null> {
-  const result = await runGh(
-    [
-      "api",
-      "repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&per_page=1",
-      "--jq",
-      ".[0].number",
-    ],
-    cwd,
-    20_000,
-  );
-  if (result.code !== 0) return null;
-  const text = result.stdout.trim();
-  if (!text) return 1; // no issues or PRs yet
-  const latest = Number(text);
-  return Number.isInteger(latest) && latest >= 0 ? latest + 1 : null;
 }
 
 async function revListCount(
@@ -1515,7 +1490,6 @@ export default async function plugin(bb: BbPluginApi) {
           branchPrefix: effectivePrefix(null),
           detectedBranchPrefix: null,
           settings,
-          nextPrNumber: null,
         },
         workspace: null,
         checkout: null,
@@ -1527,13 +1501,12 @@ export default async function plugin(bb: BbPluginApi) {
       mutationVersion: workspaceMutationVersions.get(workspace.key) ?? 0,
     });
 
-    const [result, pending, defaultBranch, headPrefix, next, stashOwners] =
+    const [result, pending, defaultBranch, headPrefix, stashOwners] =
       await Promise.all([
         runGh(["stack", "view", "--json"], cwd, 30_000),
         pendingChangeSet(cwd),
         defaultBranchName(cwd),
         currentBranchPrefix(cwd),
-        nextPrNumber(cwd),
         activeAutoStashOwners({
           runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
           blockedStashOids: blockedAutoStashOids,
@@ -1552,7 +1525,6 @@ export default async function plugin(bb: BbPluginApi) {
           branchPrefix: effectivePrefix(headPrefix),
           detectedBranchPrefix: headPrefix,
           settings,
-          nextPrNumber: next,
         },
         workspace,
         checkout: null,
@@ -1683,7 +1655,6 @@ export default async function plugin(bb: BbPluginApi) {
         branchPrefix: effectivePrefix(detected),
         detectedBranchPrefix: detected,
         settings,
-        nextPrNumber: next,
       },
       workspace,
       checkout: projected.checkout,

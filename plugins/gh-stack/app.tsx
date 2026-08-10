@@ -334,6 +334,9 @@ function BranchRow({
       iconTone={icon.tone}
       accent={branch.isCurrent}
       highlighted={branch.isCurrent}
+      // A row with no diff has nothing to expand, so it should not offer
+      // the hover wash that says it does.
+      interactive={canExpand}
     >
       <button
         type="button"
@@ -427,7 +430,6 @@ function LayerComposer({
   pending: ChangeSet | null;
   prefix: string | null;
   conventional: boolean;
-  nextNumber: number | null;
   // Resolves true when the layer was created, so the field can clear.
   onSubmit: (name: string, branch: string) => Promise<boolean>;
   onSuggest: () => Promise<string>;
@@ -1336,7 +1338,6 @@ function StackPanel({ threadId }: { threadId: string }) {
             pending={pending}
             prefix={result?.branchPrefix ?? null}
             conventional={settings.conventionalCommits}
-            nextNumber={result?.nextPrNumber ?? null}
             onSubmit={(name, branch) =>
               addLayer(name, branch, stack ? "add" : "init")
             }
