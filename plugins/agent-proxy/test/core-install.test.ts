@@ -24,6 +24,7 @@ import { buildPaths } from "../lib/paths.ts";
 import { CORE_REF, CORE_REPO, type SourceRevision } from "../lib/release.ts";
 
 const COMMIT = "9e593b74486a79b6117c1ffd5bcdc7e9ec3881b4";
+const RELEASE_TAG = "v7.2.127";
 
 function makeFixture() {
   const dir = mkdtempSync(join(tmpdir(), "agent-proxy-install-"));
@@ -40,11 +41,13 @@ function makeFixture() {
   execFileSync("tar", ["-czf", archivePath, "-C", archiveSrc, rootName]);
 
   const archiveBytes = readFileSync(archivePath);
+  // Installs always carry a resolved ref: the "latest" sentinel has already
+  // become a release tag by the time a revision exists.
   const revision: SourceRevision = {
     repo: CORE_REPO,
-    ref: CORE_REF,
+    ref: RELEASE_TAG,
     commit: COMMIT,
-    version: `${CORE_REF}@${COMMIT.slice(0, 12)}`,
+    version: `${RELEASE_TAG}@${COMMIT.slice(0, 12)}`,
     archiveUrl: `https://example.com/${COMMIT}.tar.gz`,
   };
 
@@ -85,10 +88,47 @@ test("fetchSourceRevision resolves the configured ref to an immutable commit", a
       }),
     );
   };
-  const revision = await fetchSourceRevision({ repo: CORE_REPO, ref: CORE_REF }, fetchImpl);
-  assert.match(requested, /commits\/fix%2Fclaude-advisor-server-tool$/);
+  const revision = await fetchSourceRevision({ repo: CORE_REPO, ref: "main" }, fetchImpl);
+  assert.match(requested, /commits\/main$/);
   assert.equal(revision.commit, COMMIT);
-  assert.equal(revision.version, `${CORE_REF}@${COMMIT.slice(0, 12)}`);
+  assert.equal(revision.version, `main@${COMMIT.slice(0, 12)}`);
+});
+
+test("fetchSourceRevision resolves the latest sentinel through the release tag", async () => {
+  const requested: string[] = [];
+  const fetchImpl: typeof fetch = (input) => {
+    const url = String(input);
+    requested.push(url);
+    const body = url.endsWith("/releases/latest")
+      ? JSON.stringify({ tag_name: "v7.2.127" })
+      : JSON.stringify({ sha: COMMIT });
+    return Promise.resolve(
+      new Response(body, { headers: { "content-type": "application/json" } }),
+    );
+  };
+  const revision = await fetchSourceRevision({ repo: CORE_REPO, ref: CORE_REF }, fetchImpl);
+  assert.deepEqual(requested, [
+    `https://api.github.com/repos/${CORE_REPO}/releases/latest`,
+    `https://api.github.com/repos/${CORE_REPO}/commits/v7.2.127`,
+  ]);
+  assert.equal(revision.ref, "v7.2.127");
+  assert.equal(revision.version, `v7.2.127@${COMMIT.slice(0, 12)}`);
+});
+
+test("fetchSourceRevision reports a repository with no published release", async () => {
+  const fetchImpl: typeof fetch = () => Promise.resolve(new Response("missing", { status: 404 }));
+  await assert.rejects(
+    fetchSourceRevision({ repo: "owner/repo", ref: "latest" }, fetchImpl),
+    /owner\/repo has no published release/,
+  );
+});
+
+test("fetchSourceRevision reports a repository with no published release", async () => {
+  const fetchImpl: typeof fetch = () => Promise.resolve(new Response("missing", { status: 404 }));
+  await assert.rejects(
+    fetchSourceRevision({ repo: "owner/repo", ref: "latest" }, fetchImpl),
+    /owner\/repo has no published release/,
+  );
 });
 
 test("fetchSourceRevision reports a missing ref", async () => {
@@ -127,7 +167,7 @@ test("successful update atomically switches binary and revision together", async
   seedInstalled(paths, "7.2.127");
   await installCore(paths, revision, { fetchImpl, buildSource });
   assert.equal(installedVersion(paths), revision.version);
-  assert.match(readFileSync(paths.binPath, "utf8"), /claude-advisor-server-tool/);
+  assert.match(readFileSync(paths.binPath, "utf8"), new RegExp(`${RELEASE_TAG}@`));
 });
 
 test("build failure leaves the previous binary active", async () => {

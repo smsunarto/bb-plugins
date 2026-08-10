@@ -5,9 +5,13 @@ import {
   DEFAULT_CORE_SOURCE,
   CORE_REF,
   CORE_REPO,
+  isLatestReleaseRef,
+  latestReleaseApiUrl,
+  LATEST_RELEASE_REF,
   normalizeCoreRef,
   normalizeCoreRepo,
   normalizeCoreSource,
+  parseLatestReleaseTag,
   parseSourceRevision,
   sourceArchiveUrl,
   sourceVersion,
@@ -15,16 +19,37 @@ import {
 
 const COMMIT = "9e593b74486a79b6117c1ffd5bcdc7e9ec3881b4";
 
-test("source constants target the advisor fix branch", () => {
-  assert.equal(CORE_REPO, "smsunarto/CLIProxyAPI");
-  assert.equal(CORE_REF, "fix/claude-advisor-server-tool");
+test("source constants target the upstream latest release", () => {
+  assert.equal(CORE_REPO, "router-for-me/CLIProxyAPI");
+  assert.equal(CORE_REF, LATEST_RELEASE_REF);
   assert.deepEqual(DEFAULT_CORE_SOURCE, { repo: CORE_REPO, ref: CORE_REF });
+});
+
+test("the latest sentinel is recognized whatever the case", () => {
+  for (const ref of ["latest", "Latest", " LATEST "]) {
+    assert.equal(isLatestReleaseRef(ref), true);
+  }
+  for (const ref of ["main", "v7.2.127", "latest-stable"]) {
+    assert.equal(isLatestReleaseRef(ref), false);
+  }
+  assert.equal(
+    latestReleaseApiUrl(CORE_REPO),
+    "https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest",
+  );
+});
+
+test("parseLatestReleaseTag reads and validates the release tag", () => {
+  assert.equal(parseLatestReleaseTag({ tag_name: " v7.2.127 " }), "v7.2.127");
+  assert.throws(() => parseLatestReleaseTag(null), /malformed/);
+  assert.throws(() => parseLatestReleaseTag({}), /tag_name/);
+  assert.throws(() => parseLatestReleaseTag({ tag_name: "   " }), /tag_name/);
+  assert.throws(() => parseLatestReleaseTag({ tag_name: "bad ref" }), /branch or ref/);
 });
 
 test("commitApiUrl safely encodes branch names", () => {
   assert.equal(
     commitApiUrl(),
-    "https://api.github.com/repos/smsunarto/CLIProxyAPI/commits/fix%2Fclaude-advisor-server-tool",
+    "https://api.github.com/repos/router-for-me/CLIProxyAPI/commits/latest",
   );
   assert.equal(
     commitApiUrl({ repo: "router-for-me/CLIProxyAPI", ref: "feature/a b" }),
@@ -47,27 +72,30 @@ test("repository settings normalize supported GitHub source forms", () => {
 });
 
 test("branch settings accept Git refs and reject unsafe names", () => {
-  assert.equal(normalizeCoreRef(" fix/claude-advisor-server-tool "), CORE_REF);
+  assert.equal(normalizeCoreRef(" fix/claude-advisor-server-tool "), "fix/claude-advisor-server-tool");
   assert.equal(normalizeCoreRef(COMMIT), COMMIT);
   for (const invalid of ["", "feature branch", "../main", "main..next", "topic@{1}", ".hidden"]) {
     assert.throws(() => normalizeCoreRef(invalid), /branch or ref/);
   }
-  assert.deepEqual(normalizeCoreSource("smsunarto/CLIProxyAPI", CORE_REF), {
+  assert.deepEqual(normalizeCoreSource("router-for-me/CLIProxyAPI", CORE_REF), {
     repo: CORE_REPO,
     ref: CORE_REF,
   });
 });
 
 test("source revision is pinned to the resolved commit", () => {
-  const revision = parseSourceRevision({ sha: COMMIT.toUpperCase() });
+  // The install pipeline resolves "latest" to a release tag before this call,
+  // so the version names the release rather than the sentinel.
+  const source = { repo: CORE_REPO, ref: "v7.2.127" };
+  const revision = parseSourceRevision({ sha: COMMIT.toUpperCase() }, source);
   assert.deepEqual(revision, {
     repo: CORE_REPO,
-    ref: CORE_REF,
+    ref: "v7.2.127",
     commit: COMMIT,
-    version: `${CORE_REF}@9e593b74486a`,
+    version: "v7.2.127@9e593b74486a",
     archiveUrl: `https://codeload.github.com/${CORE_REPO}/tar.gz/${COMMIT}`,
   });
-  assert.equal(sourceVersion(CORE_REF, COMMIT), `${CORE_REF}@9e593b74486a`);
+  assert.equal(sourceVersion("v7.2.127", COMMIT), "v7.2.127@9e593b74486a");
   assert.equal(sourceArchiveUrl(CORE_REPO, COMMIT), revision.archiveUrl);
 });
 

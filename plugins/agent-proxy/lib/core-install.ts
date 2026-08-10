@@ -19,6 +19,9 @@ import type { Paths } from "./paths.ts";
 import {
   commitApiUrl,
   DEFAULT_CORE_SOURCE,
+  isLatestReleaseRef,
+  latestReleaseApiUrl,
+  parseLatestReleaseTag,
   parseSourceRevision,
   type CoreSource,
   type SourceRevision,
@@ -56,21 +59,42 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
+export async function fetchLatestReleaseTag(
+  repo: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetchImpl(latestReleaseApiUrl(repo), {
+    headers: GH_HEADERS,
+    signal: requestSignal(signal, 30_000),
+  });
+  if (!response.ok) {
+    throw new Error(`${repo} has no published release (HTTP ${response.status})`);
+  }
+  return parseLatestReleaseTag(await response.json());
+}
+
+/** Resolves the configured ref to an immutable commit. The "latest" sentinel
+    first becomes the newest release tag, so the recorded version names that
+    release instead of a moving branch. */
 export async function fetchSourceRevision(
   source: CoreSource = DEFAULT_CORE_SOURCE,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
 ): Promise<SourceRevision> {
-  const response = await fetchImpl(commitApiUrl(source), {
+  const resolved: CoreSource = isLatestReleaseRef(source.ref)
+    ? { repo: source.repo, ref: await fetchLatestReleaseTag(source.repo, fetchImpl, signal) }
+    : source;
+  const response = await fetchImpl(commitApiUrl(resolved), {
     headers: GH_HEADERS,
     signal: requestSignal(signal, 30_000),
   });
   if (!response.ok) {
     throw new Error(
-      `CLIProxyAPI source ${source.repo}#${source.ref} not found (HTTP ${response.status})`,
+      `CLIProxyAPI source ${resolved.repo}#${resolved.ref} not found (HTTP ${response.status})`,
     );
   }
-  return parseSourceRevision(await response.json(), source);
+  return parseSourceRevision(await response.json(), resolved);
 }
 
 /** The binary file is the source of truth; a surviving marker without a binary

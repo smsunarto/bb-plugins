@@ -130,12 +130,14 @@ export function AdvancedPage() {
               id="agent-proxy-source-ref"
               value={branch}
               disabled={saved === null || saving}
-              placeholder="main"
+              placeholder="latest"
               spellCheck={false}
               onChange={(event) => setBranch(event.target.value)}
             />
             <span className="block text-xs text-muted-foreground">
-              A branch, tag, or full commit SHA. Branch names can contain slashes.
+              Use <span className="font-medium text-foreground">latest</span> for the newest
+              published release, or give a branch, tag, or full commit SHA. Branch names can
+              contain slashes.
             </span>
           </label>
 

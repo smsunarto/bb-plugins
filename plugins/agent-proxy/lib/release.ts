@@ -1,8 +1,15 @@
-// Pure helpers for resolving the CLIProxyAPI fork source. No IO here — the
-// install pipeline injects fetch.
+// Pure helpers for resolving the CLIProxyAPI source. No IO here — the install
+// pipeline injects fetch.
 
-export const CORE_REPO = "smsunarto/CLIProxyAPI";
-export const CORE_REF = "fix/claude-advisor-server-tool";
+/**
+ * Ref sentinel: resolve the repository's newest published release rather than
+ * a fixed branch or tag. A repository that also carries a branch literally
+ * named "latest" cannot be reached by name; pin it by commit instead.
+ */
+export const LATEST_RELEASE_REF = "latest";
+
+export const CORE_REPO = "router-for-me/CLIProxyAPI";
+export const CORE_REF = LATEST_RELEASE_REF;
 
 export interface CoreSource {
   repo: string;
@@ -94,8 +101,29 @@ export function normalizeCoreSource(repo: string, ref: string): CoreSource {
   return { repo: normalizeCoreRepo(repo), ref: normalizeCoreRef(ref) };
 }
 
+export function isLatestReleaseRef(ref: string): boolean {
+  return ref.trim().toLowerCase() === LATEST_RELEASE_REF;
+}
+
 export function commitApiUrl(source: CoreSource = DEFAULT_CORE_SOURCE): string {
   return `https://api.github.com/repos/${source.repo}/commits/${encodeURIComponent(source.ref)}`;
+}
+
+export function latestReleaseApiUrl(repo: string): string {
+  return `https://api.github.com/repos/${repo}/releases/latest`;
+}
+
+/** GitHub's releases/latest already excludes drafts and prereleases, so the
+    tag it reports is the newest release a user would download by hand. */
+export function parseLatestReleaseTag(json: unknown): string {
+  if (typeof json !== "object" || json === null) {
+    throw new Error("malformed GitHub release response");
+  }
+  const tag = (json as Record<string, unknown>).tag_name;
+  if (typeof tag !== "string" || tag.trim().length === 0) {
+    throw new Error("GitHub release response has no tag_name");
+  }
+  return normalizeCoreRef(tag);
 }
 
 export function sourceArchiveUrl(repo: string, commit: string): string {

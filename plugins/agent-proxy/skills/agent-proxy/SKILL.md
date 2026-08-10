@@ -10,8 +10,9 @@ machine as a persistent operating-system service: `launchd` on macOS, user
 `systemd` on Linux. Windows is not supported. The core stays available when bb
 is closed. It aggregates OAuth accounts (Claude, Codex) and upstream API keys
 behind local endpoints with protocol conversion. The default source is
-`smsunarto/CLIProxyAPI#fix/claude-advisor-server-tool`; the plugin's Advanced
-page can select another public GitHub repository and branch.
+`router-for-me/CLIProxyAPI#latest`, where `latest` means the newest published
+GitHub release; the plugin's Advanced page can select another public GitHub
+repository and ref.
 
 ## Endpoints
 

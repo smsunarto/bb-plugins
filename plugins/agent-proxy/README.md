@@ -1,8 +1,8 @@
 # bb-plugin-agent-proxy
 
 EasyCLIProxyAPI, rebuilt as a bb plugin. Owns a local
-[CLIProxyAPI fork](https://github.com/smsunarto/CLIProxyAPI/tree/fix/claude-advisor-server-tool)
-core on the bb server machine: resolves the configured branch to an immutable
+[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
+core on the bb server machine: resolves the configured ref to an immutable
 commit, builds it with the local Go toolchain, installs it as a persistent
 operating-system service, and exposes management UI inside bb. It uses
 `launchd` on macOS and user `systemd` on Linux. The proxy continues to run
@@ -18,9 +18,10 @@ after bb exits. Windows is not supported.
   crash. Manual Stop disables the service until Start or the autostart setting
   enables it again. Home page + sidebar indicators + `bb agent-proxy` CLI.
 - **Advanced source settings** — change the GitHub repository and branch from
-  the Advanced page. The defaults remain
-  `smsunarto/CLIProxyAPI#fix/claude-advisor-server-tool`. Saving a source does
-  not change the running binary; Install core resolves and builds it.
+  the Advanced page. The defaults are `router-for-me/CLIProxyAPI#latest`, where
+  the `latest` ref resolves to the newest published GitHub release (drafts and
+  prereleases excluded) and then to that tag's commit. Saving a source does not
+  change the running binary; Install core resolves and builds it.
 - **Sidebar state** — the "Agent Proxy" row in bb's main sidebar is tinted by
   core state (green running, amber pulsing while starting/stopping, red
   crashed, dimmed stopped). bb renders that row itself and reads `navPanel`
@@ -72,8 +73,9 @@ remain under the core directory.
 - `autostart` (default on) — keep the login service enabled; it starts at login
   and remains active when bb is closed
 - `port` (default 8317)
-- `sourceRepository` (default `smsunarto/CLIProxyAPI`) — public GitHub source
-- `sourceBranch` (default `fix/claude-advisor-server-tool`) — branch, tag, or commit
+- `sourceRepository` (default `router-for-me/CLIProxyAPI`) — public GitHub source
+- `sourceBranch` (default `latest`) — `latest` for the newest published release,
+  or a branch, tag, or commit
 - `managementKey` (secret, optional) — overrides the generated key
 
 Autostart changes apply immediately. Port/key changes stop the service,
