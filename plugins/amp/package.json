@@ -10,7 +10,11 @@
     "name": "Amp",
     "description": "Registers Amp as a custom ACP provider in bb through a bundled ACP bridge built on the official @ampcode/sdk.",
     "branding": {
-      "icon": "Bot"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

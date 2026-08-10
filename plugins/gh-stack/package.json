@@ -10,7 +10,11 @@
     "name": "gh stack",
     "description": "Visualize and drive stacked pull requests (gh stack) from BB threads.",
     "branding": {
-      "icon": "Layers"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx"

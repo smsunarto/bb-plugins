@@ -10,7 +10,11 @@
     "name": "Dotfiles",
     "description": "Browse, edit, render, and sync the tweakable dotfiles repo.",
     "branding": {
-      "icon": "Settings"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

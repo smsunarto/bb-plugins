@@ -28,6 +28,9 @@ jobs:
       - name: Check vendored SDK types against pinned bb
         run: bun run sdk-types:check
 
+      - name: Check generated plugin icons
+        run: bun run icons:check
+
       - name: Lint
         run: bun run lint
 
