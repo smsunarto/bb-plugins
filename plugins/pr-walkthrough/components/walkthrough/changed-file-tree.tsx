@@ -1,6 +1,7 @@
-// Vendored from skills/pr-walkthrough/assets/site-template's changed-file-tree,
-// adapted for the bb plugin panel: same Pierre Trees model and non-scrolling
-// row-fitted height, themed against bb host tokens in app.css.
+// Originally vendored from the static site template's changed-file-tree, which
+// has since been removed; this is now the only implementation. Same Pierre
+// Trees model and non-scrolling row-fitted height, themed against bb host
+// tokens in app.css.
 import type { CSSProperties } from "react";
 import {
   useCallback,

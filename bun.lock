@@ -5,6 +5,7 @@
     "": {
       "name": "bb-plugins",
       "devDependencies": {
+        "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
         "oxlint": "^1.77.0",
         "typescript": "^7.0.0",
       },
@@ -124,6 +125,21 @@
         "zod": "^4.3.6",
       },
     },
+    "plugins/notify": {
+      "name": "bb-plugin-notify",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/better-sqlite3": "^7.6.12",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "better-sqlite3": "^12.0.0",
+        "hono": "^4.11.9",
+        "typescript": "^7.0.0",
+      },
+    },
     "plugins/pr-walkthrough": {
       "name": "bb-plugin-pr-walkthrough",
       "version": "0.1.0",
@@ -169,6 +185,8 @@
   },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.3.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-i3h/efaeuMUFAO1HSfo97QZQnnvMd7wWBYtBsdL6UMZg3a78sk3Ffya5Xu7C7tYsXomXoDXJBAzQF2PcFKAhIQ=="],
+
+    "@ampcode/cli": ["@ampcode/cli@file:plugins/amp/vendor/ampcode-cli-stub", {}],
 
     "@ampcode/sdk": ["@ampcode/sdk@0.1.0-20260729105907-g72d5ca3", "", { "dependencies": { "@ampcode/cli": "latest", "zod": "^3.23.8" }, "bin": { "amp-sdk": "bin/amp-sdk.js" } }, "sha512-wk4vR7T+YoZ18X+//XgY5KxXPawKTbtMEhjBYIQp2vrEAIhaWb0Ia5HmDFqbLtFEOJejnqOaFCAx1sciZgJTYQ=="],
 
@@ -391,6 +409,8 @@
     "bb-plugin-gh-stack": ["bb-plugin-gh-stack@workspace:plugins/gh-stack"],
 
     "bb-plugin-ghostty": ["bb-plugin-ghostty@workspace:plugins/ghostty"],
+
+    "bb-plugin-notify": ["bb-plugin-notify@workspace:plugins/notify"],
 
     "bb-plugin-pr-walkthrough": ["bb-plugin-pr-walkthrough@workspace:plugins/pr-walkthrough"],
 

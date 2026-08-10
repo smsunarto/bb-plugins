@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "./app.css";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { definePluginApp, useRpc } from "@bb/plugin-sdk/app";
 import { toast } from "sonner";
 import {
@@ -12,7 +21,8 @@ import {
   type EditorOptions,
 } from "./diffs-lib";
 import { Button } from "@/components/ui/button";
-import type { rpcContract } from "./server";
+import { ChangedFileTree } from "@/components/changed-file-tree";
+import type { ChangedFile, rpcContract } from "./server";
 
 interface OverviewShape {
   repoPath: string;
@@ -29,17 +39,43 @@ interface OverviewShape {
       dirty: boolean;
     }[];
   }[];
-  gitEntries: { status: string; path: string }[];
+  changedFiles: ChangedFile[];
   tasks: { id: string; summary: string }[];
 }
 
 const QUICK_TASKS = ["render", "check", "apply:dry", "sync:pull", "sync"];
 
+// Sidebar width, in px. The default matches the previous fixed w-72.
+const SIDEBAR_DEFAULT_WIDTH = 288;
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 640;
+const SIDEBAR_WIDTH_KEY = "bb-plugin-dotfiles:sidebar-width";
+const SIDEBAR_KEYBOARD_STEP = 16;
+
+// Tallest the changed-file tree may grow before it scrolls internally
+// (24px rows, so roughly 13 rows).
+const CHANGED_TREE_MAX_HEIGHT = 320;
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+// Panels can be reloaded independently of the host, so the width outlives a
+// remount. Storage can throw in restricted contexts; fall back to the default.
+function readStoredSidebarWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!raw) return SIDEBAR_DEFAULT_WIDTH;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? clampSidebarWidth(parsed) : SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
 // Extension-less dotfiles that the library's filename inference maps to plain
 // text. git-config has no bundled grammar; ini is the closest match.
 const LANG_OVERRIDES: Record<string, string> = {
-  ".zshrc": "zsh",
-  ".zprofile": "zsh",
   ".gitconfig": "ini",
 };
 
@@ -244,12 +280,75 @@ function DotfilesPanel() {
   const diffOptions = useMemo(() => ({ disableFileHeader: true, diffStyle }), [diffStyle]);
 
   const isEdited = content !== savedContent;
-  const dirtyCount = overview?.gitEntries.length ?? 0;
+  const changedFiles = useMemo(() => overview?.changedFiles ?? [], [overview]);
+  const dirtyCount = changedFiles.length;
+
+  // A deleted path has nothing to read; keep the row visible but say why it
+  // will not open instead of surfacing a raw read error.
+  const selectChangedFile = useCallback(
+    (path: string) => {
+      const file = changedFiles.find((entry) => entry.path === path);
+      if (file?.status === "deleted") {
+        toast.error(`${path} is deleted in the working tree`);
+        return;
+      }
+      void openFile(path);
+    },
+    [changedFiles, openFile],
+  );
+
+  const asideRef = useRef<HTMLElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
+  const resizing = useRef(false);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {
+      // Non-persistent width is acceptable; the drag still works this session.
+    }
+  }, [sidebarWidth]);
+
+  // Pointer capture keeps the drag alive over the diff surface and past the
+  // panel edge, so the pointer never outruns the handle.
+  const startResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizing.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+
+  const trackResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizing.current || !asideRef.current) return;
+    const { left } = asideRef.current.getBoundingClientRect();
+    setSidebarWidth(clampSidebarWidth(event.clientX - left));
+  }, []);
+
+  const endResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizing.current) return;
+    resizing.current = false;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }, []);
+
+  const resizeByKey = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const delta =
+      event.key === "ArrowLeft"
+        ? -SIDEBAR_KEYBOARD_STEP
+        : event.key === "ArrowRight"
+          ? SIDEBAR_KEYBOARD_STEP
+          : 0;
+    if (delta === 0) return;
+    event.preventDefault();
+    setSidebarWidth((width) => clampSidebarWidth(width + delta));
+  }, []);
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-border">
-        <div className="border-b border-border p-3">
+      <aside
+        ref={asideRef}
+        className="relative flex shrink-0 flex-col border-r border-border"
+        style={{ width: `${sidebarWidth}px` }}
+      >
+        <div className="flex min-h-0 flex-col border-b border-border p-3">
           <div className="text-sm font-medium text-foreground">
             {overview?.branch ?? "…"}
             <span className="ml-2 text-xs text-muted-foreground">
@@ -272,6 +371,21 @@ function DotfilesPanel() {
               </Button>
             ))}
           </div>
+          {changedFiles.length > 0 && (
+            // The label stays put; the tree scrolls inside its own cap, so a
+            // busy repo never pushes the tweakable groups off-panel.
+            <div className="mt-3">
+              <div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Changed files
+              </div>
+              <ChangedFileTree
+                files={changedFiles}
+                maxHeight={CHANGED_TREE_MAX_HEIGHT}
+                selectedPath={selected ?? undefined}
+                onSelectedPathChange={selectChangedFile}
+              />
+            </div>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {overview?.groups.map((group) => (
@@ -318,6 +432,31 @@ function DotfilesPanel() {
             </div>
           ))}
         </div>
+        {/*
+          Not an `hr`. This is the ARIA window-splitter widget: a focusable
+          separator with aria-valuenow/min/max and pointer plus keyboard
+          resizing. `hr` is a non-interactive thematic break in content and
+          carries default borders and margins this handle must not have.
+        */}
+        {/* oxlint-disable jsx-a11y/prefer-tag-over-role */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onPointerMove={trackResize}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          onKeyDown={resizeByKey}
+          onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
+          title="Drag to resize — double-click to reset"
+          className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none bg-transparent transition-colors hover:bg-primary/40 focus-visible:bg-primary/40 focus-visible:outline-none"
+        />
+        {/* oxlint-enable jsx-a11y/prefer-tag-over-role */}
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">

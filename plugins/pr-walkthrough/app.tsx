@@ -72,6 +72,13 @@ function WalkthroughDirective({ attributes }: PluginMessageDirectiveProps) {
 function GuideBlocks({ blocks }: { blocks: WalkthroughGuideBlock[] }) {
   return (
     <div className="space-y-2 text-sm text-foreground">
+      {/*
+        Index keys are correct here. Blocks carry no id, and the array comes
+        from the compiled walkthrough JSON: it is fixed for the life of the
+        component and never reordered, inserted into, or filtered. Content
+        would not be a safe key either, since two paragraphs can be identical.
+      */}
+      {/* oxlint-disable react/no-array-index-key */}
       {blocks.map((block, index) => {
         switch (block.type) {
           case "paragraph":
@@ -100,6 +107,7 @@ function GuideBlocks({ blocks }: { blocks: WalkthroughGuideBlock[] }) {
             return null;
         }
       })}
+      {/* oxlint-enable react/no-array-index-key */}
     </div>
   );
 }
@@ -329,12 +337,12 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
 
   const load = useCallback(() => {
     setState({ kind: "loading" });
-    rpc
-      .call(
-        "getWalkthrough",
-        path === undefined ? { threadId } : { threadId, path },
-      )
-      .then((result) => {
+    void (async () => {
+      try {
+        const result = await rpc.call(
+          "getWalkthrough",
+          path === undefined ? { threadId } : { threadId, path },
+        );
         if (result.walkthrough === null) {
           setState({
             kind: "error",
@@ -344,10 +352,10 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
           setState({ kind: "ready", data: result.walkthrough });
           setGroupIndex(0);
         }
-      })
-      .catch(() => {
+      } catch {
         setState({ kind: "error", message: "The walkthrough request failed." });
-      });
+      }
+    })();
   }, [rpc, threadId, path]);
 
   useEffect(() => {
@@ -435,9 +443,12 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
                 {group.objective}
               </p>
               <Markdown content={group.summary} />
+              {/* Fixed list of strings from the compiled JSON; see GuideBlocks. */}
+              {/* oxlint-disable react/no-array-index-key */}
               {group.details.map((detail, index) => (
                 <Markdown key={index} content={detail} />
               ))}
+              {/* oxlint-enable react/no-array-index-key */}
             </div>
             <div className="flex gap-1">
               {(["normal", "guide"] as const).map((m) => (

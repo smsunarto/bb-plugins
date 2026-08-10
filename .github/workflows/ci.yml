@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install pinned bb CLI
+        run: npm install -g "bb-app@$(node -p "require('./package.json').config.bbVersion")"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check vendored SDK types against pinned bb
+        run: bun run sdk-types:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Guard against build mutating vendored types
+        run: git diff --exit-code -- 'plugins/*/types/*.d.ts'

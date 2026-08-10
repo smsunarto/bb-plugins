@@ -1,0 +1,44 @@
+/* Host theme tokens cover everything this plugin renders inside its own panel.
+   The rules below are the one exception: they colour this plugin's row in bb's
+   main sidebar by core state. `components/sidebar-nav-status.ts` is the only
+   writer of `data-agent-proxy-state`, so nothing else in the app can match. */
+
+[data-agent-proxy-state] > svg {
+  transition: color 150ms ease, opacity 150ms ease;
+}
+
+[data-agent-proxy-state="running"] > svg {
+  color: #10b981;
+}
+
+[data-agent-proxy-state="starting"] > svg,
+[data-agent-proxy-state="stopping"] > svg {
+  color: #f59e0b;
+  animation: agent-proxy-pulse 1.4s ease-in-out infinite;
+}
+
+[data-agent-proxy-state="crashed"] > svg {
+  color: var(--destructive, #ef4444);
+}
+
+[data-agent-proxy-state="stopped"] > svg,
+[data-agent-proxy-state="not-installed"] > svg {
+  opacity: 0.45;
+}
+
+@keyframes agent-proxy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-agent-proxy-state] > svg {
+    animation: none;
+    transition: none;
+  }
+}

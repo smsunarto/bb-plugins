@@ -107,12 +107,18 @@ export function ChangedFileTree({
         .join("\n"),
     [files],
   );
+  // `signature` is the dependency on purpose, even though the callback reads
+  // `filesRef` instead of closing over it. That indirection is the mechanism:
+  // depending on `files` would recompute on every refetch and wipe the
+  // reader's expansion and selection, and an empty array would never
+  // recompute at all. Only a real content change may reset the tree.
   const { paths, statuses, stats } = useMemo(
     () => ({
       paths: filesRef.current.map((file) => file.path),
       statuses: gitStatus(filesRef.current),
       stats: computeRowStats(filesRef.current),
     }),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [signature],
   );
   const statsRef = useRef(stats);

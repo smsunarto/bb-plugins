@@ -1,0 +1,40 @@
+{
+  "name": "bb-plugin-theme",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.35",
+    "bbPluginSdk": "^0.4.1"
+  },
+  "bb": {
+    "name": "Theme",
+    "description": "Ships Scott's Theme as a selectable BB palette.",
+    "branding": {
+      "icon": "Palette"
+    },
+    "server": "./server.ts",
+    "themes": [
+      {
+        "id": "smsunarto",
+        "name": "Scott's Theme",
+        "description": "Dark-only palette derived from the smsunarto VS Code theme, with a Monokai ANSI terminal palette and Berkeley Mono.",
+        "css": "./themes/smsunarto.css"
+      }
+    ],
+    "skills": []
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "better-sqlite3": "^12.0.0",
+    "hono": "^4.11.9",
+    "typescript": "^7.0.0",
+    "zod": "^4.3.6"
+  },
+  "scripts": {
+    "build": "bb plugin build .",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  }
+}

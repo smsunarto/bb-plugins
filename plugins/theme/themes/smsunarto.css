@@ -1,0 +1,93 @@
+/* bb app palette derived from Scott's Theme.
+ *
+ * Contributed by bb-plugin-theme through `bb.themes` in package.json, so bb
+ * reads this file in place — no copy under ~/.bb/theme.
+ *
+ * Scott's Theme is dark-only, so only the .dark block restyles the app;
+ * light mode keeps bb's default palette.
+ *
+ * Note: this recolors the app chrome and terminal ANSI palette. Code and
+ * diff token colors come from bb's bundled shiki themes and are not
+ * themeable via CSS.
+ */
+
+:root,
+.light {
+  --muted-foreground: color-mix(in oklch, var(--ink) 70%, var(--canvas));
+  --subtle-foreground: color-mix(in oklch, var(--ink) 58%, var(--canvas));
+  --readback-foreground: color-mix(in oklch, var(--ink) 64%, var(--canvas));
+
+  /* Fonts (mode-independent). --font-mono covers code in the app document;
+   * --diffs-font-family covers the code/diff views, which render in shadow
+   * DOM but inherit custom properties from the document. */
+  --font-mono: "Berkeley Mono", ui-monospace, Menlo, monospace;
+  --diffs-font-family: "Berkeley Mono", ui-monospace, Menlo, monospace;
+}
+
+/* The terminal font is an xterm.js option hardcoded in the app, not a design
+ * token. xterm uses its DOM renderer here, so an !important override works —
+ * it must also cover the char-measure element so cell metrics stay in sync
+ * with what is rendered. */
+.xterm .xterm-rows,
+.xterm .xterm-char-measure-element,
+.xterm .xterm-helper-textarea {
+  font-family: "BerkeleyMono Nerd Font Mono", "Berkeley Mono", monospace !important;
+}
+
+.dark {
+  /* Anchors */
+  --canvas: #181818;
+  --ink: #e4e4e4;
+
+  /* Accent — button/link blue; file tint uses the frost cyan */
+  --primary: #81a1c1;
+  --primary-foreground: #191c22;
+  --file-accent: #88c0d0;
+
+  /* Semantic / status */
+  --destructive: #e34671;
+  --destructive-text: #ea6d8f;
+  --warning: #f1b467;
+  --warning-text: #f1b467;
+  --attention: #f1b467;
+  --success: #3fa266;
+  --diff-added: #6f967d;
+  --diff-removed: #bf707d;
+  --pr-merged: #ae81ff;
+
+  /* Terminal — Monokai ANSI palette from the theme */
+  --ansi-0: #141414;
+  --ansi-1: #f92672;
+  --ansi-2: #a6e22e;
+  --ansi-3: #e6db74;
+  --ansi-4: #66d9ef;
+  --ansi-5: #ae81ff;
+  --ansi-6: #66d9ef;
+  --ansi-7: #f8f8f2;
+  --ansi-8: #75715e;
+  --ansi-9: #f92672;
+  --ansi-10: #a6e22e;
+  --ansi-11: #e6db74;
+  --ansi-12: #66d9ef;
+  --ansi-13: #ae81ff;
+  --ansi-14: #66d9ef;
+  --ansi-15: #f8f8f2;
+
+  /* Readable text drawn on each ANSI color used as a background */
+  --ansi-bg-fg-0: #f8f8f2;
+  --ansi-bg-fg-1: #141414;
+  --ansi-bg-fg-2: #141414;
+  --ansi-bg-fg-3: #141414;
+  --ansi-bg-fg-4: #141414;
+  --ansi-bg-fg-5: #141414;
+  --ansi-bg-fg-6: #141414;
+  --ansi-bg-fg-7: #141414;
+  --ansi-bg-fg-8: #f8f8f2;
+  --ansi-bg-fg-9: #141414;
+  --ansi-bg-fg-10: #141414;
+  --ansi-bg-fg-11: #141414;
+  --ansi-bg-fg-12: #141414;
+  --ansi-bg-fg-13: #141414;
+  --ansi-bg-fg-14: #141414;
+  --ansi-bg-fg-15: #141414;
+}
