@@ -152,7 +152,7 @@ export function ChangedFileTree({
       // Directory rows come through with a trailing slash, and flattened
       // rows can carry the tree's internal prefix; both are stripped so the
       // path matches the keys computed from the diff.
-      const { item } = context;
+      const { item, row } = context;
       const path = (
         item.path.startsWith(FLATTENED_PREFIX)
           ? item.path.slice(FLATTENED_PREFIX.length)
@@ -166,6 +166,10 @@ export function ChangedFileTree({
       }
       const stat = statsRef.current.dirStats.get(path);
       if (!stat || !stat.counted) return null;
+      // An open directory has its own children listed right below, each with
+      // its counts. The folder total then only repeats what the reader can
+      // already see, so it earns its place only while collapsed.
+      if (row.isExpanded) return null;
       // A directory holding every changed file restates the totals the caller
       // already shows beside the tree. Two identical figures, one above the
       // other, read as a doubled number rather than as a subtotal.
