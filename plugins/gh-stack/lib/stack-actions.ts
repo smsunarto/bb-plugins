@@ -21,7 +21,7 @@ export function mergePrefix(
     if (
       !branch.pr ||
       branch.pr.isDraft ||
-      (branch.pr.state !== "OPEN" && !branch.pr.state.includes("QUEUE"))
+      (branch.pr.state !== "OPEN" && branch.pr.state !== "QUEUED")
     ) {
       blocker = branch;
       break;

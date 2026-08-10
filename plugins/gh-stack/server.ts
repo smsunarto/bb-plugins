@@ -97,6 +97,9 @@ const branchOutSchema = z.object({
   isQueued: z.boolean(),
   needsRebase: z.boolean(),
   pr: prOutSchema.nullable(),
+  // Present and true only when the returned draft value is an optimistic
+  // server overlay over a GitHub read that has not caught up yet.
+  draftReconciliationPending: z.boolean().optional(),
   // Diff against the branch's stack parent (the branch below, or the trunk).
   diff: changeSetSchema.nullable(),
   // Commit distance from the fetched remote branch. Null means remote refs
@@ -160,6 +163,10 @@ type StackPayload = z.infer<typeof stackPayloadSchema>;
 const actionResultSchema = z.object({
   ok: z.boolean(),
   message: z.string(),
+  // Optional for compatibility with ordinary success/failure results. Set
+  // explicitly when an accepted or partially applied operation must not be
+  // presented as either verified success or definite failure.
+  tone: z.enum(["success", "warning", "error"]).optional(),
   // Tail of combined command output, for diagnostics in the panel.
   detail: z.string().nullable(),
 });
@@ -297,7 +304,9 @@ export const rpcContract = defineRpcContract({
       .object({
         threadId: z.string(),
         method: mergeMethodSchema.default("squash"),
-        throughPrNumber: z.number().int().positive().optional(),
+        // Required so every irreversible request is pinned to the exact
+        // prefix shown in the confirmation dialog.
+        throughPrNumber: z.number().int().positive(),
       })
       .strict(),
     output: actionResultSchema,
@@ -925,7 +934,11 @@ export default async function plugin(bb: BbPluginApi) {
         return branch;
       }
       changed = true;
-      return { ...branch, pr: { ...branch.pr, isDraft: intent.draft } };
+      return {
+        ...branch,
+        pr: { ...branch.pr, isDraft: intent.draft },
+        draftReconciliationPending: true,
+      };
     });
     return changed ? { ...payload, stack: { ...payload.stack, branches } } : payload;
   }
@@ -1769,6 +1782,7 @@ export default async function plugin(bb: BbPluginApi) {
         return {
           ok: false,
           message: "This recovery is already with the thread's agent — watch the conversation.",
+          tone: "warning" as const,
           detail: null,
         };
       }
@@ -1851,6 +1865,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: `${intent} completed, but verification failed: ${view.error.message}`,
+              tone: "warning" as const,
               detail,
             };
           }
@@ -1859,7 +1874,7 @@ export default async function plugin(bb: BbPluginApi) {
               !branch.isMerged &&
               !branch.isQueued &&
               branch.pr?.state !== "MERGED" &&
-              !branch.pr?.state.includes("QUEUE"),
+              branch.pr?.state !== "QUEUED",
           );
           const unpushed = await branchesNotAtUpstream(
             cwd,
@@ -1869,6 +1884,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: `${intent} completed, but branches do not match upstream: ${unpushed.join(", ")}.`,
+              tone: "warning" as const,
               detail,
             };
           }
@@ -1878,6 +1894,7 @@ export default async function plugin(bb: BbPluginApi) {
               return {
                 ok: false,
                 message: `Sync completed, but these active branches still need a rebase: ${stale.map((branch) => branch.name).join(", ")}.`,
+                tone: "warning" as const,
                 detail,
               };
             }
@@ -1888,6 +1905,7 @@ export default async function plugin(bb: BbPluginApi) {
                 return {
                   ok: false,
                   message: `Submit completed, but no PR was verified for ${branch.name}.`,
+                  tone: "warning" as const,
                   detail,
                 };
               }
@@ -1900,6 +1918,7 @@ export default async function plugin(bb: BbPluginApi) {
                 return {
                   ok: false,
                   message: `Submit completed, but a matching open PR was not verified for ${branch.name}.`,
+                  tone: "warning" as const,
                   detail: joinDetails(detail, direct.detail),
                 };
               }
@@ -1958,8 +1977,9 @@ export default async function plugin(bb: BbPluginApi) {
                   }],
                 });
                 return {
-                  ok: true,
-                  message: "Sync needs recovery and was handed to this thread's agent.",
+                  ok: false,
+                  message: "Agent recovery started. Sync is not complete yet.",
+                  tone: "warning" as const,
                   detail,
                 };
               } catch (error: unknown) {
@@ -1973,6 +1993,7 @@ export default async function plugin(bb: BbPluginApi) {
                   ok: false,
                   message:
                     "Sync needs agent recovery, but the agent could not be started. Retry Sync when the thread is idle.",
+                  tone: "error" as const,
                   detail: joinDetails(detail, `Agent handoff failed: ${reason}`),
                 };
               }
@@ -1981,6 +2002,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: `${failure}${steps.length > 1 && step === "sync" ? " Submit was not run." : ""}`,
+              tone: warning ? "warning" as const : "error" as const,
               detail,
             };
           }
@@ -2005,6 +2027,10 @@ export default async function plugin(bb: BbPluginApi) {
               return {
                 ok: false,
                 message: postconditionDamage ? `${primary} ${postconditionDamage}` : primary,
+                tone:
+                  warning && !postconditionDamage
+                    ? "warning" as const
+                    : "error" as const,
                 detail: joinDetails(detail, postconditionDamage),
               };
             }
@@ -2012,6 +2038,7 @@ export default async function plugin(bb: BbPluginApi) {
               return {
                 ok: false,
                 message: `Prune verification failed. Remaining candidates: ${remaining.join(", ") || "none"}. Unexpectedly missing protected refs: ${missing.join(", ") || "none"}.`,
+                tone: missing.length > 0 ? "error" as const : "warning" as const,
                 detail,
               };
             }
@@ -2137,7 +2164,7 @@ export default async function plugin(bb: BbPluginApi) {
             state.baseRefName === expectedBase &&
             !state.isDraft &&
             !state.mergedAt &&
-            (state.state === "OPEN" || state.state.includes("QUEUE"));
+            (state.state === "OPEN" || state.state === "QUEUED");
           if (!authorized) {
             return {
               ok: false,
@@ -2187,6 +2214,7 @@ export default async function plugin(bb: BbPluginApi) {
           return {
             ok: false,
             message: "GitHub returned an unexpected merge response.",
+            tone: submit.code === 0 ? "warning" as const : "error" as const,
             detail: outputTail(submit),
           };
         }
@@ -2196,6 +2224,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: "GitHub accepted the merge without a valid polling id.",
+              tone: "warning" as const,
               detail: null,
             };
           }
@@ -2204,6 +2233,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: "GitHub is still processing the merge and its final outcome is uncertain; refresh to reconcile.",
+              tone: "warning" as const,
               detail: `Merge request UUID: ${uuid}`,
             };
           }
@@ -2213,6 +2243,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: "Could not poll the running merge; its final outcome is uncertain. Refresh to reconcile.",
+              tone: "warning" as const,
               detail: joinDetails(`Merge request UUID: ${uuid}`, outputTail(poll)),
             };
           }
@@ -2221,6 +2252,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: "Lost track of the running merge; refresh shortly.",
+              tone: "warning" as const,
               detail: outputTail(poll),
             };
           }
@@ -2246,6 +2278,7 @@ export default async function plugin(bb: BbPluginApi) {
           return {
             ok: true,
             message: `${count} pull request${count === 1 ? "" : "s"} added to the merge queue on ${raw.stack.trunk}; they land as the queue processes them.${rest}`,
+            tone: "warning" as const,
             detail: null,
           };
         }
@@ -2253,6 +2286,7 @@ export default async function plugin(bb: BbPluginApi) {
           return {
             ok: true,
             message: "GitHub reports the target is already merged; refresh to reconcile the stack.",
+            tone: "warning" as const,
             detail: null,
           };
         }
