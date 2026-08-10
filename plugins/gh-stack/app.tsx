@@ -113,21 +113,25 @@ function branchIcon(branch: StackBranch): { path: string; tone: string } {
 }
 
 // GitHub-style status pill (h 20px, px 6px, radius full, 12px/500). For open
-// PRs it doubles as the draft⇄ready toggle.
+// PRs it doubles as the draft⇄ready toggle. A branch with no PR reads
+// "Unsubmitted" in the same slot, so the row always carries one status word.
 function StatusPill({
   pr,
   busy,
   syncing,
   onToggle,
 }: {
-  pr: NonNullable<StackBranch["pr"]>;
+  pr: StackBranch["pr"];
   busy: boolean;
   syncing: boolean;
   onToggle: (() => void) | null;
 }) {
   let label: string;
   let tone: string;
-  if (pr.state === "MERGED") {
+  if (!pr) {
+    label = "Unsubmitted";
+    tone = "bg-muted text-muted-foreground";
+  } else if (pr.state === "MERGED") {
     label = "Merged";
     tone = "bg-purple-600/10 text-purple-600 dark:text-purple-400";
   } else if (pr.state === "CLOSED") {
@@ -145,7 +149,19 @@ function StatusPill({
   }
   const pill = `inline-flex h-5 items-center rounded-full border border-transparent px-1.5 text-xs font-medium leading-none ${tone}`;
   if (!onToggle) {
-    return <span className={pill}>{label}</span>;
+    // A stale value is dimmed and says so, rather than reading as current.
+    return (
+      <span
+        className={pr?.metadataStale ? `${pill} opacity-60` : pill}
+        title={
+          pr?.metadataStale
+            ? "GitHub could not be read; this is the last known state."
+            : undefined
+        }
+      >
+        {label}
+      </span>
+    );
   }
   return (
     <button
@@ -155,7 +171,7 @@ function StatusPill({
       title={
         syncing
           ? `${label} — syncing with GitHub`
-          : pr.isDraft
+          : pr?.isDraft
             ? "Mark ready for review"
             : "Convert to draft"
       }
@@ -170,20 +186,53 @@ function StatusPill({
   );
 }
 
-// +N −M, in the diff colors. Rendered next to a file count.
+// +N −M, in the diff colors. The file names live in the tree below the row,
+// so the chip carries the line counts alone.
 function DeltaChip({ change }: { change: ChangeSet }) {
-  const fileCount = change.files.length;
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs leading-4 tabular-nums">
-      <span className="text-muted-foreground">
-        {fileCount}
-        {change.truncated ? "+" : ""} file{fileCount === 1 ? "" : "s"}
-      </span>
       <span className="text-green-600 dark:text-green-400">
         +{change.additions}
       </span>
       <span className="text-red-600 dark:text-red-400">−{change.deletions}</span>
     </span>
+  );
+}
+
+// Branch state, as uppercase chips beside the status pill.
+function BranchChips({ branch }: { branch: StackBranch }) {
+  const chip =
+    "rounded border px-1 text-[10px] font-medium uppercase leading-4 tracking-wide";
+  const settled = branch.isMerged || branch.isQueued;
+  return (
+    <>
+      {branch.needsRebase ? (
+        <span className={`${chip} border-destructive/50 text-destructive`}>
+          needs rebase
+        </span>
+      ) : null}
+      {branch.hasStash ? (
+        <span
+          className={`${chip} inline-flex items-center gap-1 border-border text-muted-foreground`}
+          title="Tracked changes for this layer are stored in a plugin stash and will return when the layer is checked out."
+        >
+          <Icon name="Archive" className="size-3" aria-hidden />
+          stashed
+        </span>
+      ) : null}
+      {!settled && branch.aheadOfRemote !== null && branch.aheadOfRemote > 0 ? (
+        <span
+          className={`${chip} border-amber-600/50 text-amber-600 dark:text-amber-400`}
+        >
+          {branch.aheadOfRemote} unpushed
+        </span>
+      ) : null}
+      {!settled && (branch.aheadOfRemote === null || branch.behindRemote === null) ? (
+        <span className={`${chip} border-border text-muted-foreground`}>
+          remote unknown
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -194,17 +243,23 @@ function RailRow({
   iconTone,
   accent,
   highlighted,
+  // The row-wide hover wash reads as "this row does something when clicked",
+  // so rows that only hold their own controls opt out of it.
+  interactive = true,
   children,
 }: {
   icon: string;
   iconTone?: string;
   accent?: boolean;
   highlighted?: boolean;
+  interactive?: boolean;
   children: ReactNode;
 }) {
   return (
     <div
-      className={`relative mx-2 rounded-md ${highlighted ? "bg-muted" : "hover:bg-muted/50"}`}
+      className={`relative mx-2 rounded-md ${
+        highlighted ? "bg-muted" : interactive ? "hover:bg-muted/50" : ""
+      }`}
     >
       {accent ? (
         <div
@@ -227,35 +282,15 @@ function RailRow({
   );
 }
 
-// A row's changed-file summary. Returns null when the diff could not be
-// computed or is empty.
-function ChangeDisclosure({
+function ChangeTree({
   change,
-  expanded,
-  onToggle,
-  label,
+  className = "mt-1.5",
 }: {
-  change: ChangeSet | null;
-  expanded: boolean;
-  onToggle: () => void;
-  label: string;
+  change: ChangeSet;
+  className?: string;
 }) {
-  if (!change || change.files.length === 0) return null;
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      title={expanded ? `Hide ${label}` : `Show ${label}`}
-      className="relative inline-flex items-center rounded text-muted-foreground hover:text-foreground"
-    >
-      <DeltaChip change={change} />
-    </button>
-  );
-}
-
-function ChangeTree({ change }: { change: ChangeSet }) {
-  return (
-    <div className="mt-1.5 space-y-1">
+    <div className={`${className} space-y-1`}>
       <ChangedFileTree files={change.files} />
       {change.truncated ? (
         <p className="text-[11px] text-muted-foreground">
@@ -287,7 +322,10 @@ function BranchRow({
 }) {
   const pr = branch.pr;
   const title = pr?.title ?? branch.name;
-  const canToggle = pr !== null && pr.state === "OPEN";
+  // Toggling draft over an unread PR would send the wrong direction: the
+  // shown value is a guess, so the control waits for a real read.
+  const canToggle =
+    pr !== null && pr.state === "OPEN" && !pr.metadataStale;
   const canExpand = (branch.diff?.files.length ?? 0) > 0;
   const icon = branchIcon(branch);
   return (
@@ -321,15 +359,16 @@ function BranchRow({
             {title}
           </span>
         )}
+        {/* The pill keeps a fixed offset from the checkout button, so the
+            state chips grow to its left rather than shifting it. */}
         <div className="relative flex shrink-0 items-center gap-1">
-          {pr ? (
-            <StatusPill
-              pr={pr}
-              busy={checkoutDisabled || prBusy === pr.number}
-              syncing={prSyncing}
-              onToggle={canToggle ? () => onToggleDraft(pr) : null}
-            />
-          ) : null}
+          <BranchChips branch={branch} />
+          <StatusPill
+            pr={pr}
+            busy={checkoutDisabled || (pr !== null && prBusy === pr.number)}
+            syncing={prSyncing}
+            onToggle={canToggle && pr ? () => onToggleDraft(pr) : null}
+          />
           <span title={branch.isCurrent ? "Current branch" : `Check out ${branch.name}`}>
             <Button
               type="button"
@@ -349,32 +388,7 @@ function BranchRow({
         <span className="truncate">
           {pr ? `#${pr.number} · ` : ""}
           {branch.name}
-          {!pr ? " · no pull request yet" : ""}
         </span>
-        {branch.needsRebase ? (
-          <span className="rounded border border-destructive/50 px-1 text-[10px] font-medium uppercase tracking-wide text-destructive">
-            needs rebase
-          </span>
-        ) : null}
-        {branch.hasStash ? (
-          <span
-            className="inline-flex items-center gap-1 rounded border border-border px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-            title="Tracked changes for this layer are stored in a plugin stash and will return when the layer is checked out."
-          >
-            <Icon name="Archive" className="size-3" aria-hidden />
-            stashed
-          </span>
-        ) : null}
-        {!branch.isMerged && !branch.isQueued && branch.aheadOfRemote !== null && branch.aheadOfRemote > 0 ? (
-          <span className="rounded border border-amber-600/50 px-1 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
-            {branch.aheadOfRemote} unpushed
-          </span>
-        ) : null}
-        {!branch.isMerged && !branch.isQueued && (branch.aheadOfRemote === null || branch.behindRemote === null) ? (
-          <span className="rounded border border-border px-1 text-[10px] font-medium uppercase tracking-wide">
-            remote unknown
-          </span>
-        ) : null}
         {branch.diff && canExpand ? <DeltaChip change={branch.diff} /> : null}
       </div>
       {expanded && branch.diff ? (
@@ -387,11 +401,11 @@ function BranchRow({
 }
 
 // The next layer, at the top of the rail: the name field, and below it the
-// same subline a branch row has — "#N · branch" plus the changed files. The
-// files are the uncommitted ones, since `gh stack add` carries the working
-// tree onto the new branch; before a name is typed they are still just the
-// working tree. With a stack the row stacks a branch on top (gh stack add);
-// without one it creates the stack (gh stack init).
+// same subline a branch row has — "#N · branch" plus the diff counts, over
+// the changed files themselves. The files are the uncommitted ones, since
+// `gh stack add` carries the working tree onto the new branch. With a stack
+// the row stacks a branch on top (gh stack add); without one it creates the
+// stack (gh stack init).
 function LayerComposer({
   mode,
   busy,
@@ -401,9 +415,6 @@ function LayerComposer({
   pending,
   prefix,
   conventional,
-  nextNumber,
-  expanded,
-  onToggleExpanded,
   onSubmit,
   onSuggest,
   onMagic,
@@ -417,8 +428,6 @@ function LayerComposer({
   prefix: string | null;
   conventional: boolean;
   nextNumber: number | null;
-  expanded: boolean;
-  onToggleExpanded: () => void;
   // Resolves true when the layer was created, so the field can clear.
   onSubmit: (name: string, branch: string) => Promise<boolean>;
   onSuggest: () => Promise<string>;
@@ -431,7 +440,7 @@ function LayerComposer({
   const submitLabel = mode === "init" ? "Create stack" : "Stack";
   const busyLabel = mode === "init" ? "Creating…" : "Stacking…";
   return (
-    <RailRow icon={OCTICONS.plus}>
+    <RailRow icon={OCTICONS.plus} interactive={false}>
       <form
         className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
@@ -522,20 +531,13 @@ function LayerComposer({
           </Button>
         </div>
       </form>
-      {/* Same subline as a branch row: "#N · branch", then the file count. */}
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground">
-        <span className="truncate">
-          {nextNumber !== null ? `#${nextNumber} · ` : ""}
-          {branch || "working tree"}
-        </span>
-        <ChangeDisclosure
-          change={pending}
-          expanded={expanded}
-          onToggle={onToggleExpanded}
-          label="uncommitted files"
-        />
-      </div>
-      {expanded && pending ? <ChangeTree change={pending} /> : null}
+      {/* The uncommitted files stay open here — they are what the layer will
+          carry, so they read as the row's content rather than a disclosure.
+          Their gap to the field matches the field's own gap to the card edge,
+          so the field sits in even space. */}
+      {pending && pending.files.length > 0 ? (
+        <ChangeTree change={pending} className="mt-3.5" />
+      ) : null}
     </RailRow>
   );
 }
@@ -801,10 +803,6 @@ function MergeDialog({
     </Dialog>
   );
 }
-
-// Expansion key for the composer row's working-tree files (branch rows use
-// their own name).
-const PENDING_KEY = "__pending__";
 
 // Cadence of the background cache revalidation while the panel is open.
 const POLL_MS = 30_000;
@@ -1339,8 +1337,6 @@ function StackPanel({ threadId }: { threadId: string }) {
             prefix={result?.branchPrefix ?? null}
             conventional={settings.conventionalCommits}
             nextNumber={result?.nextPrNumber ?? null}
-            expanded={expanded.has(PENDING_KEY)}
-            onToggleExpanded={() => toggleExpanded(PENDING_KEY)}
             onSubmit={(name, branch) =>
               addLayer(name, branch, stack ? "add" : "init")
             }
