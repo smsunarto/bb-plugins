@@ -14,7 +14,7 @@ Use a dense, full-height code-review workstation composed from shadcn `radix-lyr
 
 ## Typography
 
-- System sans for interface text; a monospace face for code, paths, refs, and counts. The panel inherits both from bb's theme tokens and ships no fonts of its own — the self-hosted Berkeley Mono files went with the static site.
+- System sans for interface text; self-hosted Berkeley Mono for code, paths, refs, and counts.
 - Base text: 13–14px with compact line height.
 - Group heading: 23–25px.
 - Section heading: 14–16px.
@@ -56,7 +56,7 @@ Use a dense, full-height code-review workstation composed from shadcn `radix-lyr
 
 ## Review Document
 
-Open PR, Mark reviewed, Reviewed badges, and segmented-control outer corners use `rounded-md`; segmented inner seams remain square.
+Open PR, the Normal + Guide bulk-review control, Reviewed badges, and segmented-control outer corners use `rounded-md`; segmented inner seams remain square.
 
 - Lead with section position, title, one concrete summary sentence, and mode-specific progress.
 - Put a prominent shadcn Normal/Guide tab control directly below progress. Do not wrap either mode's content in a new card or bordered container.
@@ -66,7 +66,7 @@ Open PR, Mark reviewed, Reviewed badges, and segmented-control outer corners use
 - Each Guide excerpt has its own Pierre header, collapse state, Viewed toggle, rationale, and optional read-only line annotations. Repeated excerpts from one file remain separate review items.
 - Render an inline read-only React Flow diagram only when authored for that phase. Give it a text summary, explicit height, stable node positions, and no editing controls or reserved empty space.
 - Put the active group’s single Changed files Tree immediately below the Changed files heading and controls, before its inline diffs.
-- Hide generated paths from that Tree by default and use one shadcn `Toggle` with visible `Show generated` / `Hide generated` state copy to include them. Fade generated rows when shown. Tests remain ordinary changed paths and do not get a duplicate section.
+- Hide generated and binary paths from that Tree by default and use one shadcn `Toggle` with visible `Show generated/binary` / `Hide generated/binary` state copy to include them. Fade those secondary-evidence rows when shown. Tests remain ordinary changed paths and do not get a duplicate section.
 - Put short file explanation in Pierre’s header suffix as quiet context, never as an alert.
 - Keep unified/split controls available.
 - Render actual Diffs patches in authored order.
@@ -78,8 +78,8 @@ Open PR, Mark reviewed, Reviewed badges, and segmented-control outer corners use
 - Make code and background fill the bordered diff surface to its right and bottom edges. Horizontal scrolling belongs only inside that clipped surface.
 - Use Pierre’s native expandable line-info treatment only when exact old and new file content was deliberately included through the explicit localhost-only full-context mode. Patch-only builds must not display a dead expansion affordance.
 - Give every file a Viewed toggle. Marking it collapses an open diff; clearing it preserves the current collapsed state. The group action updates every file in the active group.
-- Keep Mark reviewed neutral until selected; the selected state uses green text, border, tint, and a check icon with the label Reviewed.
-- Keep generated files in Normal progress and evidence, but render them under their own heading after primary diffs and inside one collapsed shadcn `Accordion` without an enclosing card. Guide-generated and binary whole-file items remain optionally viewable but do not enter its numerator or denominator.
+- Keep `Mark Normal + Guide reviewed` neutral until selected; the selected state uses green text, border, tint, and a check icon with the label `Reviewed · Normal + Guide`. Activating the selected control clears both modes.
+- Keep generated and binary files in Normal progress and evidence, but render them under their own heading after primary diffs and inside one collapsed shadcn `Accordion` without an enclosing card. Guide-generated and binary whole-file items remain optionally viewable but do not enter its numerator or denominator.
 - Do not render Go to bottom. Show Go to top at bottom right only after the review document leaves its top edge.
 
 ## Supporting Evidence Rail
@@ -102,8 +102,9 @@ Diff files, the Changed files Tree, and grouped supporting rows share clipped ov
 - Group selection updates explanation, supporting evidence, and diffs together.
 - File viewed state persists when its file surface is collapsed. Clicking anywhere in the native file header toggles collapse, except the Viewed control, which stops header propagation.
 - Normal progress counts files. Guide progress counts only non-generated, non-binary excerpts. The two item-level progress sets never synchronize.
-- The group `Mark reviewed` action updates every Normal file and every Guide excerpt. Clearing it clears both modes. Completing either mode is sufficient for the group Reviewed state.
+- The group `Mark Normal + Guide reviewed` action updates every Normal file and every Guide excerpt. Clearing `Reviewed · Normal + Guide` clears both modes. Completing either mode is sufficient for the group Reviewed state.
 - Persist the selected mode and both progress sets locally under the PR and head commit identity. Do not persist or restore mode-specific scroll positions.
+- Show quiet loading/saved persistence status. On a read or write failure, keep a persistent non-blocking recovery row with Retry and copy-backup guidance; require an explicit reset before replacing unreadable stored data.
 - Arrow keys or `n`/`p` move between semantic groups.
 - Changed files Tree clicks scroll to the exact inline patch.
 - Each inline diff owns horizontal scrolling inside a clipped width-bound container.

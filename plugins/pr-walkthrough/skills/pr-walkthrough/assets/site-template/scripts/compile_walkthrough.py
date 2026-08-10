@@ -8,11 +8,17 @@ import ast
 import hashlib
 import json
 import re
-import shlex
 import subprocess
 from pathlib import Path
 
-from guide_contract import GuideCompileError, compile_guide, split_guide_section
+from guide_contract import (
+    GuideCompileError,
+    compile_guide,
+    decode_git_metadata_path,
+    decode_git_marker_path,
+    parse_git_diff_header,
+    split_guide_section,
+)
 
 REVIEW_GUIDE_LABEL = "Review guide"
 LEGACY_LENS_HEADINGS = {
@@ -98,6 +104,7 @@ INDEX_BLOBS = re.compile(
     r"^index ([0-9a-f]+)\.\.([0-9a-f]+)(?: \d+)?$",
     re.IGNORECASE,
 )
+FULL_CONTEXT_MARKER_NAME = "full-context.enabled"
 MAX_EXPANDABLE_BLOB_BYTES = 2_000_000
 MAX_EMBEDDED_CONTEXT_BYTES = 25_000_000
 
@@ -412,20 +419,6 @@ def parse_review_guide(lines: list[str]) -> list[dict]:
     return groups
 
 
-def strip_git_prefix(path: str) -> str:
-    return path[2:] if path.startswith(("a/", "b/")) else path
-
-
-def parse_diff_header(line: str) -> tuple[str, str]:
-    try:
-        fields = shlex.split(line)
-    except ValueError:
-        fields = line.split()
-    if len(fields) < 4:
-        return "", ""
-    return strip_git_prefix(fields[2]), strip_git_prefix(fields[3])
-
-
 def github_diff_url(pr_url: str, path: str) -> str:
     if not pr_url or not path:
         return ""
@@ -465,27 +458,36 @@ def parse_patch(
     for block in blocks:
         if not block.startswith("diff --git "):
             continue
-        lines = block.rstrip("\n").splitlines()
-        old_path, new_path = parse_diff_header(lines[0])
+        lines = block.rstrip("\n").split("\n")
+        old_path, new_path = parse_git_diff_header(lines[0])
         rename_from = ""
         rename_to = ""
+        copied_from = ""
         copied_to = ""
         old_blob = ""
         new_blob = ""
         status = "modified"
-        for line in lines[1:]:
+        first_hunk = next((index for index, line in enumerate(lines) if line.startswith("@@ ")), len(lines))
+        for line in lines[1:first_hunk]:
             if line.startswith("new file mode "):
                 status = "added"
             elif line.startswith("deleted file mode "):
                 status = "deleted"
+            elif line.startswith("--- "):
+                old_path = decode_git_marker_path(line.removeprefix("--- "))
+            elif line.startswith("+++ "):
+                new_path = decode_git_marker_path(line.removeprefix("+++ "))
             elif line.startswith("rename from "):
-                rename_from = line.removeprefix("rename from ")
+                rename_from = decode_git_metadata_path(line.removeprefix("rename from "))
                 status = "renamed"
             elif line.startswith("rename to "):
-                rename_to = line.removeprefix("rename to ")
+                rename_to = decode_git_metadata_path(line.removeprefix("rename to "))
                 status = "renamed"
+            elif line.startswith("copy from "):
+                copied_from = decode_git_metadata_path(line.removeprefix("copy from "))
+                status = "copied"
             elif line.startswith("copy to "):
-                copied_to = line.removeprefix("copy to ")
+                copied_to = decode_git_metadata_path(line.removeprefix("copy to "))
                 status = "copied"
             elif match := INDEX_BLOBS.match(line):
                 old_blob, new_blob = match.groups()
@@ -494,12 +496,12 @@ def parse_patch(
         if not path:
             continue
         additions = sum(
-            1 for line in lines[1:]
-            if line.startswith("+") and not line.startswith("+++")
+            1 for line in lines[first_hunk + 1:]
+            if line.startswith("+")
         )
         deletions = sum(
-            1 for line in lines[1:]
-            if line.startswith("-") and not line.startswith("---")
+            1 for line in lines[first_hunk + 1:]
+            if line.startswith("-")
         )
         generated, generated_reason = classify_generated_file(path, block)
         item = {
@@ -507,14 +509,14 @@ def parse_patch(
             "status": status,
             "additions": additions,
             "deletions": deletions,
-            "patch": block.rstrip() + "\n",
+            "patch": block.rstrip("\n") + "\n",
             "binary": "GIT binary patch" in block or "Binary files " in block,
             "generated": generated,
             "url": github_diff_url(pr_url, path),
         }
         if generated_reason:
             item["generatedReason"] = generated_reason
-        previous_path = rename_from or (old_path if old_path != path else "")
+        previous_path = rename_from or copied_from or (old_path if old_path != path else "")
         if previous_path:
             item["previousPath"] = previous_path
         if (
@@ -748,11 +750,9 @@ def compile_mdx(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=Path(".pr-walkthrough/walkthrough"))
-    parser.add_argument(
-        "--output", type=Path, default=Path(".pr-walkthrough/walkthrough.generated.json")
-    )
-    parser.add_argument("--diff", type=Path, default=Path(".pr-walkthrough/changes.patch"))
+    parser.add_argument("--input", type=Path, default=Path("src/content/walkthrough"))
+    parser.add_argument("--output", type=Path, default=Path("src/data/walkthrough.generated.json"))
+    parser.add_argument("--diff", type=Path, default=Path("src/data/walkthrough.patch"))
     parser.add_argument(
         "--include-full-context",
         action="store_true",
@@ -766,8 +766,14 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        patch = args.diff.read_text(encoding="utf-8") if args.diff.is_file() else ""
-        include_full_context = args.include_full_context
+        if args.diff.is_file():
+            with args.diff.open("r", encoding="utf-8", newline="") as stream:
+                patch = stream.read()
+        else:
+            patch = ""
+        site_root = Path(__file__).resolve().parent.parent
+        marker_path = site_root / "src" / "data" / FULL_CONTEXT_MARKER_NAME
+        include_full_context = args.include_full_context or marker_path.is_file()
         repo_root = None
         if include_full_context:
             repo_root = find_git_root(args.repo or Path.cwd())
