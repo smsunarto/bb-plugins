@@ -381,10 +381,22 @@ function BranchRow({
           syncing={prSyncing}
           onToggle={canToggle && pr ? () => onToggleDraft(pr) : null}
         />
-        {/* The link rides with the title rather than the trailing controls,
-            so it reads as "open this PR" and follows the text as it
-            truncates. min-w-0 is what lets that truncation happen instead
-            of pushing the trailing controls off the row. */}
+        {/* The link sits between the status pill and the number, so the
+            row's controls cluster at its head and the title runs clean to
+            the counts. `relative` lifts it above the checkout overlay. */}
+        {pr ? (
+          <a
+            href={pr.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open #${pr.number} on GitHub`}
+            aria-label={`Open pull request #${pr.number} on GitHub`}
+            className="relative inline-flex shrink-0 items-center text-muted-foreground hover:text-foreground"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Icon name="ExternalLink" className="size-3.5" aria-hidden />
+          </a>
+        ) : null}
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           {pr ? (
             <span className="shrink-0 font-mono text-xs leading-5 text-muted-foreground tabular-nums">
@@ -394,19 +406,6 @@ function BranchRow({
           <span className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">
             {title}
           </span>
-          {pr ? (
-            <a
-              href={pr.url}
-              target="_blank"
-              rel="noreferrer"
-              title={`Open #${pr.number} on GitHub`}
-              aria-label={`Open pull request #${pr.number} on GitHub`}
-              className="relative inline-flex shrink-0 items-center text-muted-foreground hover:text-foreground"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Icon name="ExternalLink" className="size-3.5" aria-hidden />
-            </a>
-          ) : null}
         </span>
         <BranchChips branch={branch} />
         {/* The counts close the row, and double as the file-tree toggle now
