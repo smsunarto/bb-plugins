@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { workspacePlugins } from "./plugin-package";
 import {
   PLUGIN_SCREENSHOTS,
+  ROOT_SCREENSHOT,
   SCREENSHOT_EXCLUDED_PLUGINS,
   stageDocument,
 } from "./plugin-screenshots";
@@ -43,7 +44,7 @@ describe("plugin screenshot recipes", () => {
 
   test("produce fixed stages with an explicit readiness signal", () => {
     const captions: string[] = [];
-    for (const recipe of PLUGIN_SCREENSHOTS) {
+    for (const recipe of [ROOT_SCREENSHOT, ...PLUGIN_SCREENSHOTS]) {
       const document = stageDocument(recipe);
       expect(document).toContain('width: 1400px; height: 720px');
       expect(document).toContain(`data-plugin="${recipe.id}"`);
@@ -66,6 +67,24 @@ describe("plugin screenshot recipes", () => {
     }
     expect(captions.length).toBeGreaterThan(0);
     expect(captions.every((text) => !text.endsWith("."))).toBe(true);
+  });
+
+  test("stages the root hero from the deterministic full-app capture", () => {
+    const document = stageDocument(ROOT_SCREENSHOT);
+
+    expect(ROOT_SCREENSHOT).toMatchObject({
+      id: "root",
+      sourceId: "monokai",
+      logoId: null,
+      assets: ["app.png"],
+    });
+    expect(document.match(/<figure class="capture/g)).toHaveLength(1);
+    expect(document).toContain('src="/media/root/app.png"');
+    expect(document).toContain('class="collection-mark"');
+    expect(document).toContain("BB PLUGINS / <b>ALL</b>");
+    expect(document).toContain(
+      ".root-app .capture-image { object-fit: contain; }",
+    );
   });
 
   test("uses one production screenshot in the Monokai hero", () => {

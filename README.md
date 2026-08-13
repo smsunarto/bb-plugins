@@ -10,7 +10,7 @@
 
 </div>
 
-<picture><img src="docs/media/hero.png" alt="bb running with these plugins enabled: the t3sidebar inbox, Agent Proxy and Agentation in the sidebar, an Amp Orb thread with an Oracle card, the GitHub Stack panel, and the bb Monokai palette throughout" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="A staged overview of bb with the Monokai palette, t3sidebar, Agent Proxy, Agentation, and GitHub Stack" width="100%" /></picture>
 
 ### Agent Providers
 

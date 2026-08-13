@@ -78,6 +78,8 @@ interface ScreenshotRecipe {
   descriptor: string;
   accent: string;
   glow: string;
+  sourceId?: string;
+  logoId?: string | null;
   assets: string[];
   content: () => string;
 }
@@ -92,6 +94,23 @@ function caption(step: string, text: string): string {
 
 function callout(className: string, step: string, text: string): string {
   return `<div class="scene-callout ${className}"><span>${step}</span>${text}</div>`;
+}
+
+function root(): string {
+  return `
+    <div class="composition root-composition">
+      <figure class="capture root-app">
+        ${media("root", "app.png", "capture-image", "The bb app with workspace plugins enabled")}
+      </figure>
+      <aside class="collection-rail">
+        <span>ONE WORKSPACE</span>
+        <h2>Every part of<br />the agent loop</h2>
+        <div class="collection-row"><i>01</i><b>Agent providers</b></div>
+        <div class="collection-row"><i>02</i><b>Dev workflow</b></div>
+        <div class="collection-row"><i>03</i><b>Utilities</b></div>
+        <div class="collection-row"><i>04</i><b>Theme</b></div>
+      </aside>
+    </div>`;
 }
 
 function agentProxy(): string {
@@ -190,6 +209,18 @@ function t3sidebar(): string {
     </div>`;
 }
 
+export const ROOT_SCREENSHOT: ScreenshotRecipe = {
+  id: "root",
+  name: "smsunarto's bb-plugins",
+  descriptor: "AGENTS · WORKFLOW · UTILITIES · THEME",
+  accent: "#88C0D0",
+  glow: "82% 10%",
+  sourceId: "monokai",
+  logoId: null,
+  assets: ["app.png"],
+  content: root,
+};
+
 export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
   { id: "agent-proxy", name: "Agent Proxy", descriptor: "POOL · ROUTE · FAIL OVER", accent: "#21C991", glow: "18% 16%", assets: ["home.png", "agents.png"], content: agentProxy },
   { id: "agentation", name: "Agentation", descriptor: "POINT · EXPLAIN · SEND", accent: "#3FA266", glow: "18% 20%", assets: ["capture.png", "staging.png"], content: agentation },
@@ -199,7 +230,8 @@ export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
   { id: "t3sidebar", name: "t3sidebar", descriptor: "AN INBOX THAT HOLDS STILL", accent: "#F1B467", glow: "18% 12%", assets: ["sidebar.png"], content: t3sidebar },
 ] as const;
 
-const recipeById = new Map(PLUGIN_SCREENSHOTS.map((recipe) => [recipe.id, recipe]));
+const DOCUMENTATION_SCREENSHOTS = [ROOT_SCREENSHOT, ...PLUGIN_SCREENSHOTS] as const;
+const recipeById = new Map(DOCUMENTATION_SCREENSHOTS.map((recipe) => [recipe.id, recipe]));
 
 const STYLES = String.raw`
   @font-face { font-family: "Screenshot Inter"; src: url("/fonts/inter-latin-variable.woff2") format("woff2"); font-style: normal; font-weight: 100 900; font-display: block; }
@@ -220,8 +252,12 @@ const STYLES = String.raw`
   .stage-header { position: absolute; z-index: 10; top: 30px; left: 42px; right: 42px; display: flex; align-items: center; justify-content: space-between; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .brand img { width: 28px; height: 28px; object-fit: contain; filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent)); }
+  .collection-mark { position: relative; width: 28px; height: 28px; border: 1px solid color-mix(in srgb, var(--accent) 52%, transparent); border-radius: 8px; box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .collection-mark::before, .collection-mark::after { content: ""; position: absolute; width: 8px; height: 8px; border: 1px solid var(--accent); border-radius: 2px; }
+  .collection-mark::before { left: 6px; top: 6px; }
+  .collection-mark::after { right: 6px; bottom: 6px; background: color-mix(in srgb, var(--accent) 25%, transparent); }
   .brand strong { display: block; font-size: 15px; line-height: 1.1; letter-spacing: -.01em; }
-  .brand span, .stage-index { display: block; margin-top: 4px; color: color-mix(in srgb, var(--accent) 76%, #c8c8c3); font: 700 8px/1.2 "Screenshot IBM Plex Mono", monospace; letter-spacing: .16em; }
+  .brand-copy > span, .stage-index { display: block; margin-top: 4px; color: color-mix(in srgb, var(--accent) 76%, #c8c8c3); font: 700 8px/1.2 "Screenshot IBM Plex Mono", monospace; letter-spacing: .16em; }
   .stage-index { margin: 0; color: rgba(227,227,221,.38); }
   .stage-index b { color: var(--accent); font-weight: 700; }
   .composition { position: absolute; inset: 0; }
@@ -231,6 +267,14 @@ const STYLES = String.raw`
   figcaption, .scene-callout { position: absolute; z-index: 7; display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(8,9,10,.82); box-shadow: 0 8px 25px rgba(0,0,0,.4); backdrop-filter: blur(14px); color: rgba(227,227,221,.88); font-size: 11px; font-weight: 650; }
   figcaption { left: 18px; bottom: 14px; }
   figcaption span, .scene-callout span { color: var(--accent); font: 700 8px/1 "Screenshot IBM Plex Mono", monospace; letter-spacing: .12em; }
+
+  .root-app { left: 128px; top: 80px; width: 907px; height: 600px; }.root-app .capture-image { object-fit: contain; }
+  .collection-rail { position: absolute; z-index: 6; right: 54px; top: 178px; width: 252px; }
+  .collection-rail > span { color: var(--accent); font: 700 8px/1 "Screenshot IBM Plex Mono", monospace; letter-spacing: .17em; }
+  .collection-rail h2 { margin: 10px 0 24px; color: #e3e3dd; font-size: 27px; line-height: 1.06; letter-spacing: -.04em; }
+  .collection-row { display: grid; grid-template-columns: 31px 1fr; align-items: center; padding: 13px 4px; border-top: 1px solid rgba(227,227,221,.12); }
+  .collection-row i { color: var(--accent); font: 700 8px/1 "Screenshot IBM Plex Mono", monospace; font-style: normal; }
+  .collection-row b { color: rgba(227,227,221,.72); font-size: 11px; font-weight: 650; }
 
   .proxy-home { left: 68px; top: 92px; width: 604px; height: 507px; }
   .proxy-agents { right: 68px; top: 124px; width: 604px; height: 507px; }
@@ -266,7 +310,11 @@ const STYLES = String.raw`
 `;
 
 export function stageDocument(recipe: ScreenshotRecipe): string {
-  const index = String(PLUGIN_SCREENSHOTS.findIndex((candidate) => candidate.id === recipe.id) + 1).padStart(2, "0");
+  const pluginIndex = PLUGIN_SCREENSHOTS.findIndex((candidate) => candidate.id === recipe.id);
+  const index = pluginIndex === -1 ? "ALL" : String(pluginIndex + 1).padStart(2, "0");
+  const mark = recipe.logoId === null
+    ? '<span class="collection-mark" aria-hidden="true"></span>'
+    : `<img src="/logo/${recipe.id}" alt="" />`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -278,7 +326,7 @@ export function stageDocument(recipe: ScreenshotRecipe): string {
 <body>
   <main class="stage" style="--accent:${recipe.accent};--glow:${recipe.glow}" data-plugin="${recipe.id}">
     <header class="stage-header">
-      <div class="brand"><img src="/logo/${recipe.id}" alt="" /><div><strong>${recipe.name}</strong><span>${recipe.descriptor}</span></div></div>
+      <div class="brand">${mark}<div class="brand-copy"><strong>${recipe.name}</strong><span>${recipe.descriptor}</span></div></div>
       <div class="stage-index">BB PLUGINS / <b>${index}</b></div>
     </header>
     ${recipe.content()}
@@ -306,7 +354,7 @@ Usage:
   bun run screenshots [options]
 
 Options:
-  --plugin <id>       Capture one plugin. Repeat to capture several.
+  --plugin <id>       Capture one hero. Repeat to capture several.
   --output-dir <path> Write <id>.png there instead of docs/media/hero.png.
   --list              Print supported plugin ids.
   --help              Show this help.
@@ -320,11 +368,14 @@ function validateRecipes(): void {
   if (stale.length) {
     throw new Error(`recipes without workspace plugins: ${stale.join(", ")}`);
   }
-  for (const recipe of PLUGIN_SCREENSHOTS) {
-    const logo = join(ROOT, "plugins", recipe.id, "assets", "logo-dark.svg");
-    if (!existsSync(logo)) throw new Error(`missing screenshot logo: ${relative(ROOT, logo)}`);
+  for (const recipe of DOCUMENTATION_SCREENSHOTS) {
+    const sourceId = recipe.sourceId ?? recipe.id;
+    if (recipe.logoId !== null) {
+      const logo = join(ROOT, "plugins", recipe.logoId ?? recipe.id, "assets", "logo-dark.svg");
+      if (!existsSync(logo)) throw new Error(`missing screenshot logo: ${relative(ROOT, logo)}`);
+    }
     for (const asset of recipe.assets) {
-      const path = join(ROOT, "plugins", recipe.id, "docs", "media", asset);
+      const path = join(ROOT, "plugins", sourceId, "docs", "media", asset);
       if (!existsSync(path)) throw new Error(`missing screenshot source: ${relative(ROOT, path)}`);
     }
   }
@@ -341,6 +392,9 @@ function screenshotPath(recipe: ScreenshotRecipe, outputDir: string | null): str
   if (outputDir) {
     const directory = isAbsolute(outputDir) ? outputDir : resolve(ROOT, outputDir);
     return join(directory, `${recipe.id}.png`);
+  }
+  if (recipe.id === ROOT_SCREENSHOT.id) {
+    return join(ROOT, "docs", "media", "hero.png");
   }
   return join(ROOT, "plugins", recipe.id, "docs", "media", "hero.png");
 }
@@ -359,12 +413,14 @@ async function main(): Promise<void> {
     return;
   }
   if (options.list) {
-    console.log(PLUGIN_SCREENSHOTS.map((recipe) => recipe.id).join("\n"));
+    console.log(DOCUMENTATION_SCREENSHOTS.map((recipe) => recipe.id).join("\n"));
     return;
   }
 
   validateRecipes();
-  const requested = options.plugins.length ? options.plugins : PLUGIN_SCREENSHOTS.map((recipe) => recipe.id);
+  const requested = options.plugins.length
+    ? options.plugins
+    : DOCUMENTATION_SCREENSHOTS.map((recipe) => recipe.id);
   const unknown = requested.filter((id) => !recipeById.has(id));
   if (unknown.length) throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
   const recipes = requested.map((id) => recipeById.get(id)!);
@@ -378,10 +434,19 @@ async function main(): Promise<void> {
   for (const font of SCREENSHOT_FONT_ASSETS) {
     routes.set(font.route, font.path);
   }
-  for (const recipe of PLUGIN_SCREENSHOTS) {
-    routes.set(`/logo/${recipe.id}`, join(ROOT, "plugins", recipe.id, "assets", "logo-dark.svg"));
+  for (const recipe of DOCUMENTATION_SCREENSHOTS) {
+    const sourceId = recipe.sourceId ?? recipe.id;
+    if (recipe.logoId !== null) {
+      routes.set(
+        `/logo/${recipe.id}`,
+        join(ROOT, "plugins", recipe.logoId ?? recipe.id, "assets", "logo-dark.svg"),
+      );
+    }
     for (const asset of recipe.assets) {
-      routes.set(`/media/${recipe.id}/${asset}`, join(ROOT, "plugins", recipe.id, "docs", "media", asset));
+      routes.set(
+        `/media/${recipe.id}/${asset}`,
+        join(ROOT, "plugins", sourceId, "docs", "media", asset),
+      );
     }
   }
   const results = await withScreenshotBatch(async (batch) => {
