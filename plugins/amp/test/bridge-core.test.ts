@@ -42,8 +42,31 @@ function assistant(content: unknown, threadId = THREAD): AmpStreamMessage {
   };
 }
 
+function assistantStop(
+  text: string,
+  stopReason: "end_turn" | "max_tokens" | "refusal" = "end_turn",
+  threadId = THREAD,
+): AmpStreamMessage {
+  return {
+    ...assistant([{ type: "text", text }], threadId),
+    message: {
+      content: [{ type: "text", text }],
+      stop_reason: stopReason,
+    },
+  };
+}
+
 function userMsg(content: unknown, threadId = THREAD): AmpStreamMessage {
   return { type: "user", session_id: threadId, message: { content } as { content: unknown } };
+}
+
+function userEcho(text: string, threadId = THREAD): AmpStreamMessage {
+  return {
+    type: "user",
+    session_id: threadId,
+    parent_tool_use_id: null,
+    message: { content: [{ type: "text", text }] },
+  };
 }
 
 function success(threadId = THREAD, extra: Record<string, unknown> = {}): AmpStreamMessage {
@@ -69,10 +92,17 @@ function scriptedExecute(
 ): { fn: AmpExecuteFn; calls: RecordedCall[] } {
   const calls: RecordedCall[] = [];
   const fn: AmpExecuteFn = ({ prompt, options, signal }) => {
-    const call = { prompt, options };
+    const call: RecordedCall = {
+      prompt: typeof prompt === "string" ? prompt : "",
+      options,
+    };
     calls.push(call);
-    const messages = script(call, calls.length - 1);
     return (async function* () {
+      if (typeof prompt !== "string") {
+        const input = await prompt[Symbol.asyncIterator]().next();
+        if (!input.done) call.prompt = inputMessageText(input.value);
+      }
+      const messages = script(call, calls.length - 1);
       for (const message of messages) {
         signal?.throwIfAborted();
         yield message;
@@ -477,7 +507,7 @@ test("accepted bb steering is marked for Amp and its queued ACP copy is suppress
   assert.deepEqual(receivedInputs[1], ["next turn"]);
 });
 
-test("final assistant output closes streaming input so Amp can exit", async () => {
+test("Local prompts reuse one Amp process and leave its input open between turns", async () => {
   const monitor: SteeringInputMonitor = {
     async run(_onInput, signal) {
       await new Promise<void>((resolve) => {
@@ -486,30 +516,335 @@ test("final assistant output closes streaming input so Amp can exit", async () =
       });
     },
   };
+  let executeCalls = 0;
   let inputClosed = false;
+  const inputs: AmpUserInputMessage[] = [];
   const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    executeCalls += 1;
     assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
-    assert.equal((await iterator.next()).done, false);
-    yield sysInit();
-    yield {
-      ...assistant([{ type: "text", text: "done" }]),
-      message: {
-        content: [{ type: "text", text: "done" }],
-        stop_reason: "end_turn",
-      },
-    };
-    inputClosed = (await iterator.next()).done ?? false;
-    yield success();
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    for (let turn = 0; ; turn += 1) {
+      const input = await iterator.next();
+      if (input.done) {
+        inputClosed = true;
+        return;
+      }
+      inputs.push(input.value);
+      if (turn === 0) yield sysInit();
+      yield userEcho(inputMessageText(input.value));
+      yield assistantStop(`done ${turn + 1}`);
+    }
   })();
   const { agent, sessionId } = await newAgentSession(execute, collector(), {
     createSteeringMonitor: async () => monitor,
   });
 
-  const response = await agent.prompt({ sessionId, prompt: textPrompt("finish") });
+  const first = await agent.prompt({ sessionId, prompt: textPrompt("first") });
+  assert.equal(first.stopReason, "end_turn");
+  assert.equal(executeCalls, 1);
+  assert.equal(inputClosed, false);
+
+  const second = await agent.prompt({ sessionId, prompt: textPrompt("second") });
+
+  assert.equal(second.stopReason, "end_turn");
+  assert.equal(executeCalls, 1);
+  assert.deepEqual(inputs.map(inputMessageText), ["first", "second"]);
+  assert.deepEqual(inputs.map((input) => input.steer), [undefined, undefined]);
+  assert.equal(inputClosed, false);
+
+  await agent.shutdown();
+  assert.equal(inputClosed, true);
+});
+
+test("an unexpected Local output end rejects the turn and restarts cleanly", async () => {
+  let executeCalls = 0;
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    const call = executeCalls++;
+    assert.notEqual(typeof prompt, "string");
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    assert.equal((await iterator.next()).done, false);
+    if (call === 0) {
+      yield sysInit();
+      return;
+    }
+    yield assistantStop("recovered");
+  })();
+  const { agent, sessionId } = await newAgentSession(execute);
+
+  await assert.rejects(
+    agent.prompt({ sessionId, prompt: textPrompt("first") }),
+    /ended before the turn completed/,
+  );
+  const response = await agent.prompt({ sessionId, prompt: textPrompt("second") });
 
   assert.equal(response.stopReason, "end_turn");
-  assert.equal(inputClosed, true);
+  assert.equal(executeCalls, 2);
+});
+
+async function assertLateLocalTerminalRetries(terminal: AmpStreamMessage): Promise<void> {
+  let executeCalls = 0;
+  let releaseLateTerminal!: () => void;
+  const lateTerminal = new Promise<void>((resolve) => {
+    releaseLateTerminal = resolve;
+  });
+  const received: string[] = [];
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    const call = executeCalls++;
+    assert.notEqual(typeof prompt, "string");
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    const input = await iterator.next();
+    assert.equal(input.done, false);
+    received.push(inputMessageText(input.value));
+    if (call === 0) {
+      yield sysInit();
+      yield assistantStop("first done");
+      await lateTerminal;
+      yield terminal;
+      return;
+    }
+    yield userEcho(inputMessageText(input.value));
+    yield assistantStop("second done");
+  })();
+  const { agent, sessionId } = await newAgentSession(execute);
+
+  assert.equal(
+    (await agent.prompt({ sessionId, prompt: textPrompt("first") })).stopReason,
+    "end_turn",
+  );
+  const second = agent.prompt({ sessionId, prompt: textPrompt("second") });
+  releaseLateTerminal();
+  assert.equal(
+    (await second).stopReason,
+    "end_turn",
+  );
+  assert.equal(executeCalls, 2);
+  assert.deepEqual(received, ["first", "second"]);
+}
+
+test("a late Local result cannot settle the next prompt", async () => {
+  await assertLateLocalTerminalRetries(success());
+});
+
+test("a late Local terminal system error cannot reject the next prompt", async () => {
+  await assertLateLocalTerminalRetries({
+    type: "system",
+    subtype: "error_during_execution",
+    error: "stale failure",
+    session_id: THREAD,
+  });
+});
+
+test("a late Local result closes the idle runtime before awaited reporting", async () => {
+  let releaseLateTerminal!: () => void;
+  const lateTerminal = new Promise<void>((resolve) => {
+    releaseLateTerminal = resolve;
+  });
+  let reportingDenial = false;
+  let releaseReport!: () => void;
+  const reportReleased = new Promise<void>((resolve) => {
+    releaseReport = resolve;
+  });
+  const updates = collector();
+  const client = {
+    async sessionUpdate(notification: SessionNotification) {
+      updates.updates.push(notification);
+      const content = (notification.update as { content?: { text?: string } }).content;
+      if (!content?.text?.includes("Amp denied tool calls")) return;
+      reportingDenial = true;
+      await reportReleased;
+    },
+  };
+  let executeCalls = 0;
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    const call = executeCalls++;
+    assert.notEqual(typeof prompt, "string");
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    const input = await iterator.next();
+    assert.equal(input.done, false);
+    if (call === 0) {
+      yield sysInit();
+      yield assistantStop("first done");
+      await lateTerminal;
+      yield success(THREAD, { permission_denials: ["stale tool"] });
+      return;
+    }
+    yield assistantStop("second done");
+  })();
+  const agent = new AmpBridgeAgent(client, {
+    execute,
+    store: memorySessionStore(),
+    oracleReports: stubOracleReports(),
+  });
+  const session = await agent.newSession({ cwd: "/work", mcpServers: [] });
+
+  assert.equal(
+    (await agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("first") })).stopReason,
+    "end_turn",
+  );
+  releaseLateTerminal();
+  await waitUntil(() => reportingDenial);
+  const second = agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("second") });
+  releaseReport();
+
+  assert.equal((await second).stopReason, "end_turn");
+  assert.equal(executeCalls, 2);
+  await agent.shutdown();
+});
+
+async function assertLateLocalTerminalStopsRetry(action: "cancel" | "shutdown"): Promise<void> {
+  let monitorRun = 0;
+  let cleanupStarted = false;
+  let releaseCleanup!: () => void;
+  const monitor: SteeringInputMonitor = {
+    async run(_onInput, signal) {
+      const blockCleanup = monitorRun++ === 1;
+      await new Promise<void>((resolve) => {
+        const onAbort = () => {
+          if (!blockCleanup) {
+            resolve();
+            return;
+          }
+          cleanupStarted = true;
+          releaseCleanup = resolve;
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      });
+    },
+  };
+  let releaseLateTerminal!: () => void;
+  const lateTerminal = new Promise<void>((resolve) => {
+    releaseLateTerminal = resolve;
+  });
+  let executeCalls = 0;
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    const call = executeCalls++;
+    assert.notEqual(typeof prompt, "string");
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    const input = await iterator.next();
+    assert.equal(input.done, false);
+    if (call === 0) {
+      yield sysInit();
+      yield assistantStop("first done");
+      await lateTerminal;
+      yield success();
+      return;
+    }
+    yield userEcho(inputMessageText(input.value));
+    yield assistantStop("unexpected retry");
+  })();
+  const { agent, sessionId } = await newAgentSession(execute, collector(), {
+    createSteeringMonitor: async () => monitor,
+  });
+
+  assert.equal(
+    (await agent.prompt({ sessionId, prompt: textPrompt("first") })).stopReason,
+    "end_turn",
+  );
+  const second = agent.prompt({ sessionId, prompt: textPrompt("second") });
+  releaseLateTerminal();
+  await waitUntil(() => cleanupStarted);
+  const stopping = action === "cancel"
+    ? agent.cancel({ sessionId })
+    : agent.shutdown();
+  releaseCleanup();
+  await stopping;
+
+  assert.equal((await second).stopReason, "cancelled");
+  assert.equal(executeCalls, 1);
+  await agent.shutdown();
+}
+
+test("cancel during a late Local terminal does not retry the prompt", async () => {
+  await assertLateLocalTerminalStopsRetry("cancel");
+});
+
+test("shutdown during a late Local terminal does not retry the prompt", async () => {
+  await assertLateLocalTerminalStopsRetry("shutdown");
+});
+
+test("a runtime error overrides an assistant stop that has not settled", async () => {
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    assert.notEqual(typeof prompt, "string");
+    await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
+    yield sysInit();
+    yield assistantStop("apparently done");
+    yield {
+      type: "result",
+      subtype: "error",
+      is_error: true,
+      error: "late failure",
+      session_id: THREAD,
+    };
+  })();
+  const { agent, sessionId } = await newAgentSession(execute);
+
+  await assert.rejects(
+    agent.prompt({ sessionId, prompt: textPrompt("go") }),
+    /late failure/,
+  );
+});
+
+test("Local sessions reject overlapping prompts", async () => {
+  let started = false;
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    assert.notEqual(typeof prompt, "string");
+    await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
+    started = true;
+    yield sysInit();
+    await released;
+    yield success();
+  })();
+  const { agent, sessionId } = await newAgentSession(execute);
+
+  const first = agent.prompt({ sessionId, prompt: textPrompt("first") });
+  await waitUntil(() => started);
+  await assert.rejects(
+    agent.prompt({ sessionId, prompt: textPrompt("overlap") }),
+    /overlapping prompts/,
+  );
+  release();
+  assert.equal((await first).stopReason, "end_turn");
+});
+
+test("Local sessions stay active until turn cleanup completes", async () => {
+  let cleanupStarted = false;
+  let releaseCleanup!: () => void;
+  const cleanupReleased = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  const client = {
+    async sessionUpdate(notification: SessionNotification) {
+      const content = (notification.update as { content?: { text?: string } }).content;
+      if (!content?.text?.includes("could not be linked to an Amp thread")) return;
+      cleanupStarted = true;
+      await cleanupReleased;
+    },
+  };
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    assert.notEqual(typeof prompt, "string");
+    await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
+    yield assistantStop("done", "end_turn", "");
+  })();
+  const agent = new AmpBridgeAgent(client, {
+    execute,
+    store: memorySessionStore(),
+    oracleReports: stubOracleReports(),
+  });
+  const session = await agent.newSession({ cwd: "/work", mcpServers: [] });
+
+  const first = agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("first") });
+  await waitUntil(() => cleanupStarted);
+  await assert.rejects(
+    agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("overlap") }),
+    /overlapping prompts/,
+  );
+  releaseCleanup();
+  assert.equal((await first).stopReason, "end_turn");
 });
 
 test("cancel closes the active Amp input stream and steering monitor", async () => {
@@ -590,6 +925,70 @@ test("cancel aborts the running execute and the session recovers afterwards", as
   const third = await agent.prompt({ sessionId: fresh.sessionId, prompt: textPrompt("new") });
   assert.equal(third.stopReason, "end_turn");
   assert.equal(calls[2].options?.continue, undefined);
+});
+
+test("changing Local execution config restarts the persistent process", async () => {
+  const options: (AmpExecuteOptions | undefined)[] = [];
+  const signals: AbortSignal[] = [];
+  let firstInputClosed = false;
+  const execute: AmpExecuteFn = ({ prompt, options: callOptions, signal }) => (async function* () {
+    const call = options.push(callOptions) - 1;
+    assert.notEqual(typeof prompt, "string");
+    assert.ok(signal);
+    signals.push(signal);
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    assert.equal((await iterator.next()).done, false);
+    if (call === 0) yield sysInit();
+    yield assistantStop(`done ${call}`);
+    const next = await iterator.next();
+    if (call === 0) firstInputClosed = next.done ?? false;
+  })();
+  const { agent, sessionId } = await newAgentSession(execute);
+
+  await agent.prompt({ sessionId, prompt: textPrompt("first") });
+  await agent.setSessionConfigOption({
+    sessionId,
+    configId: CONFIG_MODE,
+    value: "high",
+  });
+
+  assert.equal(firstInputClosed, true);
+  assert.equal(signals[0]?.aborted, true);
+  await agent.prompt({ sessionId, prompt: textPrompt("second") });
+  assert.equal(options.length, 2);
+  assert.equal(options[1]?.mode, "high");
+  assert.equal(options[1]?.continue, THREAD);
+  await agent.shutdown();
+});
+
+test("connection abort shuts down an idle persistent Local process", async () => {
+  const connection = new AbortController();
+  let inputClosed = false;
+  let executeSignal: AbortSignal | undefined;
+  const execute: AmpExecuteFn = ({ prompt, signal }) => (async function* () {
+    assert.notEqual(typeof prompt, "string");
+    executeSignal = signal;
+    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+    assert.equal((await iterator.next()).done, false);
+    yield sysInit();
+    yield assistantStop("done");
+    inputClosed = (await iterator.next()).done ?? false;
+  })();
+  const updates = collector();
+  const agent = new AmpBridgeAgent(
+    { ...updates.client, signal: connection.signal },
+    { execute, store: memorySessionStore(), oracleReports: stubOracleReports() },
+  );
+  const session = await agent.newSession({ cwd: "/work", mcpServers: [] });
+
+  await agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("first") });
+  connection.abort();
+  await waitUntil(() => inputClosed && executeSignal?.aborted === true);
+
+  await assert.rejects(
+    agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("after close") }),
+    /connection is closed/,
+  );
 });
 
 test("execution errors soft-fail after surfacing a chunk; max turns maps to max_turn_requests", async () => {
@@ -916,7 +1315,13 @@ test("reports MCP servers needing attention once per session", async () => {
 
 test("a turn that ends without a thread id emits an unlinked-thread notice", async () => {
   const { fn } = scriptedExecute(() => [
-    { type: "assistant", message: { content: [{ type: "text", text: "hi" }] } },
+    {
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "hi" }],
+        stop_reason: "end_turn",
+      },
+    },
   ]);
   const updates = collector();
   const { agent, sessionId } = await newAgentSession(fn, updates);
