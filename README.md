@@ -97,4 +97,3 @@ bun install                              # one hoisted node_modules at the repo 
 bun run build                            # bb plugin build for every plugin
 bb plugin install ./plugins/<id>         # from the repo root
 ```
-

@@ -16,7 +16,7 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox: pinned and current threads, then Snoozed and Settled shelves" width="380" /></picture>
+<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox: pinned and current threads, then Snoozed and Settled shelves" width="100%" /></picture>
 </div>
 
 t3sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
