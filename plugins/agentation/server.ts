@@ -28,6 +28,7 @@ import {
 import { projectIdFromRoute, threadIdFromRoute } from "./lib/route.ts";
 import {
   renderAnnotation,
+  renderAnnotationAssignment,
   renderAnnotationLine,
   renderAnnotations,
 } from "./lib/markdown.ts";
@@ -374,11 +375,10 @@ export default async function plugin(bb: BbPluginApi) {
 
     broadcast({ type: "routing", sessionId: null });
 
-    const markdown = renderAnnotations(claim.dispatch.annotations, {
-      title: "bb UI feedback from Agentation",
-      sessions: listSessions(db, {}),
-    });
-    const instruction = `${markdown}\n\nResolve each item with the \`agentation_resolve\` tool once it is fixed, or \`agentation_reply\` if you need a decision from me.`;
+    const instruction = renderAnnotationAssignment(
+      claim.dispatch.annotations,
+      listSessions(db, {}),
+    );
 
     try {
       await bb.sdk.threads.send({
@@ -707,9 +707,9 @@ export default async function plugin(bb: BbPluginApi) {
   bb.agents.registerTool({
     name: "agentation_get_all_pending",
     description:
-      "Get every open annotation across all bb pages. Use this first when the human says to address their UI feedback.",
+      "Get every open annotation across all bb pages. Use this when the human refers to UI feedback but did not supply a self-contained Agentation annotation batch.",
     instructions:
-      "When the human refers to feedback they left on the bb interface, read it with agentation_get_all_pending before searching the code. Each annotation names the bb route and, for plugin surfaces, the owning plugin id.",
+      "When the human refers to feedback they left on the bb interface and their message does not already contain an Agentation annotation batch, read it with agentation_get_all_pending before searching the code. A supplied batch is self-contained; do not fetch other pending feedback. Each annotation names the bb route and, for plugin surfaces, the owning plugin id.",
     experimental_statusLabels: {
       pending: "Reading all pending annotations",
       completed: "Read all pending annotations",
@@ -932,7 +932,7 @@ export default async function plugin(bb: BbPluginApi) {
     try {
       const pending = countByStatus(db).pending;
       if (pending === 0) return null;
-      return `The human has ${pending} unresolved Agentation annotation${pending === 1 ? "" : "s"} on the bb interface. Read them with agentation_get_all_pending before acting on any request about the bb UI, and resolve each one you fix.`;
+      return `The human has ${pending} unresolved Agentation annotation${pending === 1 ? "" : "s"} on the bb interface. Before acting on a request about the bb UI, call agentation_get_all_pending only when the request does not already contain an Agentation annotation batch. A supplied batch is self-contained; work only on its listed annotation IDs. Resolve each annotation you fix.`;
     } catch {
       return null;
     }

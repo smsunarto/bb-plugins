@@ -4,6 +4,7 @@ import test from "node:test";
 import { sanitizeJson, type StoredAnnotation } from "../lib/afs.ts";
 import {
   renderAnnotation,
+  renderAnnotationAssignment,
   renderAnnotationLine,
   renderAnnotations,
 } from "../lib/markdown.ts";
@@ -115,6 +116,18 @@ test("a batch groups by page and numbers within each one", () => {
 
 test("an empty batch says so rather than rendering an empty heading", () => {
   assert.equal(renderAnnotations([]), "No annotations.");
+});
+
+test("a thread assignment is self-contained and preserves React context", () => {
+  const output = renderAnnotationAssignment(
+    [stored({ reactComponents: "<Sidebar> <Button>" })],
+    [],
+  );
+
+  assert.match(output, /\*\*React:\*\* <Sidebar> <Button>/);
+  assert.match(output, /complete batch assigned to this thread/);
+  assert.match(output, /Work only on these annotation IDs/);
+  assert.match(output, /Do not call `agentation_get_all_pending`/);
 });
 
 test("the one-line form carries id, status, and owner", () => {

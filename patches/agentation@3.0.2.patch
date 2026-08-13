@@ -1,0 +1,44 @@
+diff --git a/dist/index.js b/dist/index.js
+index 07036659fc11b8a3c9d300536631056ec3f58297..4af0d4af56aba12751a85f6b556b215c12b95045 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -6962,7 +6962,7 @@ var reactDetectionCache = null;
+ var componentCacheAll = /* @__PURE__ */ new WeakMap();
+ function hasReactFiber(element) {
+   return Object.keys(element).some(
+-    (key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$") || key.startsWith("__reactProps$")
++    (key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$") || key.startsWith("__reactProps$") || key.startsWith("__reactContainer$")
+   );
+ }
+ function isReactPage() {
+@@ -8479,7 +8479,7 @@ function PageFeedbackToolbarCSS({
+       portalWrapperRef.current?.classList.remove(styles_module_default4.disableTransitions);
+     });
+   };
+-  const isDevMode = process.env.NODE_ENV === "development";
++  const isDevMode = process.env.NODE_ENV === "development" || isReactPage();
+   const effectiveReactMode = isDevMode && settings.reactEnabled ? OUTPUT_TO_REACT_MODE[settings.outputDetail] : "off";
+   const [currentSessionId, setCurrentSessionId] = (0, import_react8.useState)(
+     initialSessionId ?? null
+diff --git a/dist/index.mjs b/dist/index.mjs
+index b6662bd6b8bcc9555e22a4d1a0de99198e0c11b5..700f90ec084c21af232c95026963609f89883dab 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -6878,7 +6878,7 @@ var reactDetectionCache = null;
+ var componentCacheAll = /* @__PURE__ */ new WeakMap();
+ function hasReactFiber(element) {
+   return Object.keys(element).some(
+-    (key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$") || key.startsWith("__reactProps$")
++    (key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$") || key.startsWith("__reactProps$") || key.startsWith("__reactContainer$")
+   );
+ }
+ function isReactPage() {
+@@ -8395,7 +8395,7 @@ function PageFeedbackToolbarCSS({
+       portalWrapperRef.current?.classList.remove(styles_module_default4.disableTransitions);
+     });
+   };
+-  const isDevMode = process.env.NODE_ENV === "development";
++  const isDevMode = process.env.NODE_ENV === "development" || isReactPage();
+   const effectiveReactMode = isDevMode && settings.reactEnabled ? OUTPUT_TO_REACT_MODE[settings.outputDetail] : "off";
+   const [currentSessionId, setCurrentSessionId] = useState6(
+     initialSessionId ?? null

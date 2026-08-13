@@ -16,8 +16,12 @@ source context, not the delivery target.
 
 ## The loop
 
-1. `agentation_get_all_pending` — read every open annotation. Do this before
-   searching the code; the annotation already tells you where to look.
+1. Read the assigned feedback:
+   - If the human's message contains an Agentation annotation batch, treat it
+     as the complete assignment. Work only on its listed annotation IDs and do
+     not call `agentation_get_all_pending`.
+   - Otherwise, call `agentation_get_all_pending` before searching the code;
+     the annotation already tells you where to look.
 2. `agentation_acknowledge` — for each item you are taking on, so the human sees
    you picked it up.
 3. Find the code, make the change.

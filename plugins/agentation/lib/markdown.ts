@@ -113,6 +113,19 @@ export function renderAnnotations(
   return out.trimEnd();
 }
 
+/** A self-contained assignment sent directly to one bb thread. */
+export function renderAnnotationAssignment(
+  annotations: StoredAnnotation[],
+  sessions: Session[],
+): string {
+  const markdown = renderAnnotations(annotations, {
+    title: "bb UI feedback from Agentation",
+    sessions,
+  });
+
+  return `${markdown}\n\nThe annotations above are the complete batch assigned to this thread. Work only on these annotation IDs. Do not call \`agentation_get_all_pending\`; it can include feedback assigned to other threads. Resolve each item with the \`agentation_resolve\` tool once it is fixed, or use \`agentation_reply\` if you need a decision from me.`;
+}
+
 /** One line per annotation, for CLI listings and tool summaries. */
 export function renderAnnotationLine(annotation: StoredAnnotation): string {
   const owner = annotation.bb.pluginId
