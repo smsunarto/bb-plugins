@@ -20,6 +20,7 @@ import type {
   OracleReportStore,
   OracleTraceEventInput,
 } from "../src/oracle-report-store.ts";
+import { AMP_CLI_SHIM_FAST_ENV } from "../src/amp-cli-shim.ts";
 
 const THREAD = "T-test-thread";
 
@@ -272,12 +273,30 @@ test("execute invocation contract: thinking on, archive suppressed", async () =>
   assert.equal(calls[0].options?.noArchiveAfterExecute, true);
 });
 
+test("bb Fast marks only a new Local Amp thread for the CLI shim", async () => {
+  let resolutions = 0;
+  const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
+  const { agent, sessionId } = await newAgentSession(fn, collector(), {
+    resolveFastMode: async () => {
+      resolutions += 1;
+      return true;
+    },
+  });
+
+  await agent.prompt({ sessionId, prompt: textPrompt("fast") });
+  await agent.prompt({ sessionId, prompt: textPrompt("continued fast thread") });
+
+  assert.equal(calls[0].options?.env?.[AMP_CLI_SHIM_FAST_ENV], "1");
+  assert.equal(calls[1].options?.env?.[AMP_CLI_SHIM_FAST_ENV], undefined);
+  assert.equal(resolutions, 1);
+});
+
 test("Orb execution passes the executor and optional Amp project", async () => {
   const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
   const { agent, sessionId } = await newAgentSession(
     fn,
     collector(),
-    { orbProject: " owner/repo " },
+    { orbProject: " owner/repo ", resolveFastMode: async () => true },
   );
   await agent.prompt({ sessionId, prompt: textPrompt("go /orb now") });
   await agent.prompt({ sessionId, prompt: textPrompt("continue") });
@@ -286,6 +305,7 @@ test("Orb execution passes the executor and optional Amp project", async () => {
   assert.equal(calls[0].options?.project, "owner/repo");
   assert.equal(calls[0].options?.dangerouslyAllowAll, undefined);
   assert.equal(calls[0].options?.mcpConfig, undefined);
+  assert.equal(calls[0].options?.env?.[AMP_CLI_SHIM_FAST_ENV], undefined);
   assert.equal(calls[1].options?.executor, "orb");
   assert.equal(calls[1].options?.continue, THREAD);
   assert.equal(calls[1].options?.project, undefined);

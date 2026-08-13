@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readBbPermissionMode } from "../src/bb-permission.ts";
+import { readBbFastMode, readBbPermissionMode } from "../src/bb-execution.ts";
 
 function responseJson(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -8,11 +8,15 @@ function responseJson(value: unknown): Response {
   });
 }
 
-function event(seq: number, permissionMode: unknown): Record<string, unknown> {
+function event(
+  seq: number,
+  permissionMode: unknown,
+  serviceTier: unknown = "standard",
+): Record<string, unknown> {
   return {
     seq,
     type: "client/turn/requested",
-    data: { execution: { permissionMode } },
+    data: { execution: { permissionMode, serviceTier } },
   };
 }
 
@@ -48,4 +52,26 @@ test("uses Amp's normal rules without bb thread context", async () => {
     threadId: "",
     fetch: async () => responseJson([]),
   }), "default");
+});
+
+test("reads the latest bb Fast selection from the thread events", async () => {
+  for (const [events, expected] of [
+    [[event(1, "full", "fast")], true],
+    [[event(1, "full", "fast"), event(2, "full", "standard")], false],
+    [[event(1, "full", "unexpected")], false],
+  ] as const) {
+    assert.equal(await readBbFastMode({
+      serverUrl: "http://127.0.0.1:38886",
+      threadId: "thread",
+      fetch: async () => responseJson(events),
+    }), expected);
+  }
+});
+
+test("uses standard service without bb thread context", async () => {
+  assert.equal(await readBbFastMode({
+    serverUrl: "",
+    threadId: "",
+    fetch: async () => responseJson([]),
+  }), false);
 });

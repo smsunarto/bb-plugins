@@ -23,7 +23,10 @@ process.on("uncaughtException", (error) => {
 });
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Readable, Writable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import { execute } from "@ampcode/sdk";
 import {
@@ -33,7 +36,17 @@ import {
 } from "./bridge-core.ts";
 import { AMP_ACP_ORB_PROJECT_ENV } from "./execution-target.ts";
 import { createFileSessionStore } from "./session-store.ts";
-import { readBbPermissionMode } from "./bb-permission.ts";
+import { readBbFastMode, readBbPermissionMode } from "./bb-execution.ts";
+import { AMP_CLI_SHIM_REAL_CLI_ENV } from "./amp-cli-shim.ts";
+
+const ampCliShim = join(dirname(fileURLToPath(import.meta.url)), "amp-cli-shim.js");
+const configuredAmpCli = process.env.AMP_CLI_PATH?.trim();
+if (configuredAmpCli && existsSync(ampCliShim)) {
+  process.env[AMP_CLI_SHIM_REAL_CLI_ENV] = configuredAmpCli;
+  process.env.AMP_CLI_PATH = ampCliShim;
+} else if (configuredAmpCli) {
+  console.error(`[amp] Fast compatibility shim is missing at ${ampCliShim}`);
+}
 
 const stream = ndJsonStream(
   Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
@@ -79,6 +92,7 @@ const connection = new AgentSideConnection(
     new AmpBridgeAgent(client, {
       execute: execute as unknown as AmpExecuteFn,
       resolveInitialPermission: readBbPermissionMode,
+      resolveFastMode: readBbFastMode,
       store: createFileSessionStore(),
       orbProject: process.env[AMP_ACP_ORB_PROJECT_ENV],
       reportExecutionUsage,

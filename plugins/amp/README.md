@@ -100,14 +100,21 @@ bb's resolved thread permission controls Local Amp when the ACP session starts:
 
 Orb permissions stay in the Amp project settings.
 
+### Fast
+
+bb **Fast** starts a new Local Amp thread with the CLI's native `--fast`
+feature. The official SDK does not expose that option yet, so the plugin's
+bundled launcher adds the flag only to SDK execute calls that bb marked Fast.
+Standard turns, continued threads, SDK version probes, and Orb executions are
+unchanged. Start a new bb thread after selecting Fast; Amp's CLI cannot add
+Fast to an existing Amp thread.
+
 ### Current transport limits
 
-Three bb controls cannot yet reach the official Amp SDK and are not simulated:
+Two bb controls cannot yet reach the official Amp SDK and are not simulated:
 
 - bb's generated project and host instructions are preserved at the start of
   the first Amp prompt, but the SDK has no system/developer instruction input.
-- bb Fast is not forwarded because the SDK has no service-tier or thread-feature
-  option for `execute()`.
 - Image input is disabled because the SDK's `UserInputMessage` accepts text only.
 
 These need upstream bb ACP and Amp SDK transport support before this plugin can
@@ -155,8 +162,8 @@ auth: handled by the Amp CLI — run `amp login` once, or set AMP_API_KEY in the
 ## Develop from source
 
 Install from source as shown under [Install](#install). `bun run build` in
-`plugins/amp` produces `dist/bridge.js` alongside `dist/server.js` and
-`dist/app.js`.
+`plugins/amp` produces `dist/bridge.js` and `dist/amp-cli-shim.js` alongside
+`dist/server.js` and `dist/app.js`.
 
 Never run `npm install` inside `plugins/amp`. The root `overrides` entry that
 keeps the real `@ampcode/cli` out of the tree only applies at the workspace

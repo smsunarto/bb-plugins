@@ -37,6 +37,7 @@ import {
 import { stripOrbDirectives } from "./orb-directive.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
 import type { AmpPermissionMode } from "./permission-mode.ts";
+import { AMP_CLI_SHIM_FAST_ENV } from "./amp-cli-shim.ts";
 
 /** Minimal slice of AgentSideConnection the core needs; injected for tests. */
 export interface BridgeClient {
@@ -153,6 +154,7 @@ interface SessionState {
 export interface BridgeDeps {
   execute: AmpExecuteFn;
   resolveInitialPermission?: () => Promise<AmpPermissionMode | null>;
+  resolveFastMode?: () => Promise<boolean>;
   store?: SessionStore;
   oracleReports?: OracleReportStore;
   orbProject?: string;
@@ -344,6 +346,7 @@ export class AmpBridgeAgent implements Agent {
   private readonly resolveInitialPermission:
     | (() => Promise<AmpPermissionMode | null>)
     | undefined;
+  private readonly resolveFastMode: (() => Promise<boolean>) | undefined;
   private readonly store: SessionStore;
   private readonly oracleReports: OracleReportStore;
   private readonly orbProject: string | undefined;
@@ -359,6 +362,7 @@ export class AmpBridgeAgent implements Agent {
     this.client = client;
     this.execute = deps.execute;
     this.resolveInitialPermission = deps.resolveInitialPermission;
+    this.resolveFastMode = deps.resolveFastMode;
     this.store = deps.store ?? memorySessionStore();
     this.oracleReports = deps.oracleReports ?? createFileOracleReportStore();
     this.orbProject = deps.orbProject?.trim() || undefined;
@@ -518,6 +522,14 @@ export class AmpBridgeAgent implements Agent {
       s.executionTarget = "orb";
     }
     const executionTarget = s.executionTarget;
+    let fast = false;
+    if (executionTarget === "local" && s.threadId === null) {
+      try {
+        fast = await this.resolveFastMode?.() ?? false;
+      } catch (error) {
+        console.error("[amp] could not read bb Fast mode; using standard service", error);
+      }
+    }
     const firstExecution = !s.executionAttempted;
     s.executionAttempted = true;
     s.cancelled = false;
@@ -548,7 +560,10 @@ export class AmpBridgeAgent implements Agent {
         mode: s.mode,
         thinking: true,
         noArchiveAfterExecute: true,
-        env: { TERM: "dumb" },
+        env: {
+          TERM: "dumb",
+          ...(fast && !s.threadId ? { [AMP_CLI_SHIM_FAST_ENV]: "1" } : {}),
+        },
         labels: [AMP_ACP_LABEL],
       };
       if (executionTarget === "orb") {
