@@ -219,10 +219,10 @@ describe("bb-kit generation", () => {
       compilerOptions: { paths: Record<string, string[]>; typeRoots?: string[] };
     };
     tsconfig.compilerOptions.typeRoots = [join(repositoryRoot, "node_modules/@types")];
-    tsconfig.compilerOptions.paths["@smsunarto/bb-kit/operations"] = [
+    tsconfig.compilerOptions.paths["@bb-kit/core/operations"] = [
       join(repositoryRoot, "packages/bb-kit/src/operations.ts"),
     ];
-    tsconfig.compilerOptions.paths["@smsunarto/bb-kit/query"] = [
+    tsconfig.compilerOptions.paths["@bb-kit/core/query"] = [
       join(repositoryRoot, "packages/bb-kit/src/query.ts"),
     ];
     tsconfig.compilerOptions.paths.zod = [

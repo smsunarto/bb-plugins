@@ -1,5 +1,5 @@
 {
-  "name": "@smsunarto/bb-kit-cli",
+  "name": "@bb-kit/cli",
   "version": "0.1.0",
   "description": "Scaffold, inspect, and check opinionated bb plugins.",
   "license": "MIT",

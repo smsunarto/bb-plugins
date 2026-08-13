@@ -28,8 +28,8 @@ The framework makes the correct path generated and easy, while making dangerous 
 
 The repository now contains the two initial packages:
 
-- `@smsunarto/bb-kit`: operation descriptors/catalogs, structural native RPC registration, TanStack Query options and boundary, and validated realtime invalidation with reconnect reconciliation.
-- `@smsunarto/bb-kit-cli`: additive initialization, module/operation/migration/panel/fixture generation, stable identity and migration locks, inspectable compatibility/surface/storage discovery, structural diagnostics, machine-readable output, native loaded-RPC invocation, deterministic JSON/YAML regression scenarios with command-risk guardrails, and an ordered verification gate through dry-run package/source-closure inspection.
+- `@bb-kit/core`: operation descriptors/catalogs, structural native RPC registration, TanStack Query options and boundary, and validated realtime invalidation with reconnect reconciliation.
+- `@bb-kit/cli`: additive initialization, module/operation/migration/panel/fixture generation, stable identity and migration locks, inspectable compatibility/surface/storage discovery, structural diagnostics, machine-readable output, native loaded-RPC invocation, deterministic JSON/YAML regression scenarios with command-risk guardrails, and an ordered verification gate through dry-run package/source-closure inspection.
 
 The first implementation deliberately stops at the accepted seams. The broader surface/tool/event/service generators, changed-file optimization, bare-package dependency closure analysis, graph output, recipe updater, and generated skill registry remain later delivery phases rather than shallow placeholders.
 
@@ -219,7 +219,7 @@ MVC correspondence:
 
 The initial framework should contain two published packages.
 
-### `@smsunarto/bb-kit`
+### `@bb-kit/core`
 
 A deliberately small runtime package:
 
@@ -234,16 +234,16 @@ A deliberately small runtime package:
 Suggested exports:
 
 ```text
-@smsunarto/bb-kit
-@smsunarto/bb-kit/operations
-@smsunarto/bb-kit/query
-@smsunarto/bb-kit/realtime
-@smsunarto/bb-kit/testing
+@bb-kit/core
+@bb-kit/core/operations
+@bb-kit/core/query
+@bb-kit/core/realtime
+@bb-kit/core/testing
 ```
 
 The operation runtime must not import or restate `@bb/plugin-sdk`: that package is not published, and leaking it into emitted declarations would make bb-kit uninstallable. Instead, operation registration accepts a narrow structural host that native `BbPluginApi` satisfies. Frontend realtime helpers retain the bare `@bb/plugin-sdk/app` runtime imports that bb host-shims and that plugin projects resolve through bb-generated declarations. The package must not bundle a second React instance or host-shimmed frontend dependencies.
 
-### `@smsunarto/bb-kit-cli`
+### `@bb-kit/cli`
 
 Development tooling and executable assets:
 
@@ -257,7 +257,7 @@ Development tooling and executable assets:
 - Recipe templates.
 - Agent skills and generated agent instructions.
 
-`@smsunarto/create-bb-plugin` may later be published as a convenience entrypoint, but it should delegate to `bb-kit init` rather than own a second scaffold implementation.
+`@bb-kit/create-bb-plugin` may later be published as a convenience entrypoint, but it should delegate to `bb-kit init` rather than own a second scaffold implementation.
 
 ### Packages not justified initially
 
@@ -505,7 +505,7 @@ An operation descriptor contains transport-safe metadata, not domain implementat
 
 ```ts
 // plugin/modules/approvals/operations/approve.ts
-import { defineOperation } from "@smsunarto/bb-kit/operations";
+import { defineOperation } from "@bb-kit/core/operations";
 import { z } from "zod";
 
 export default defineOperation({
@@ -844,7 +844,7 @@ explicit `--confirm` for the selected, reviewed fixture set.
 ### Initial creation
 
 ```sh
-bunx @smsunarto/bb-kit-cli init my-plugin
+bunx @bb-kit/cli init my-plugin
 ```
 
 Initialization:

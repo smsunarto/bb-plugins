@@ -1,5 +1,5 @@
 {
-  "name": "@smsunarto/bb-kit",
+  "name": "@bb-kit/core",
   "version": "0.1.0",
   "description": "Typed operations and frontend server-state helpers for bb plugins.",
   "license": "MIT",

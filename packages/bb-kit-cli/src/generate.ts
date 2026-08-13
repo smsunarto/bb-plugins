@@ -417,15 +417,15 @@ export function addModule(rootOrChild: string, moduleName: string): string[] {
   )) created.push(`${moduleName}/generated/operations.ts`);
   if (writeIfMissing(
     join(directory, "service.ts"),
-    `import type { OperationHandlersFor } from "@smsunarto/bb-kit/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\n\nexport const ${names.service} = {} satisfies OperationHandlersFor<typeof ${names.catalog}>;\n`,
+    `import type { OperationHandlersFor } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\n\nexport const ${names.service} = {} satisfies OperationHandlersFor<typeof ${names.catalog}>;\n`,
   )) created.push(`${moduleName}/service.ts`);
   const moduleServer = join(directory, "server.ts");
   if (writeIfMissing(
     moduleServer,
-    `import type { BbPluginApi } from "@bb/plugin-sdk";\nimport { registerOperations } from "@smsunarto/bb-kit/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\nimport { ${names.service} } from "./service.js";\n\nexport function ${names.installer}(bb: BbPluginApi): void {\n  registerOperations(bb, ${names.catalog}, ${names.service});\n}\n`,
+    `import type { BbPluginApi } from "@bb/plugin-sdk";\nimport { registerOperations } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\nimport { ${names.service} } from "./service.js";\n\nexport function ${names.installer}(bb: BbPluginApi): void {\n  registerOperations(bb, ${names.catalog}, ${names.service});\n}\n`,
   )) created.push(`${moduleName}/server.ts`);
   addInstallerToRoot(root, moduleName, moduleServer);
-  editJson(join(root, "package.json"), ["dependencies", "@smsunarto/bb-kit"], "^0.1.0");
+  editJson(join(root, "package.json"), ["dependencies", "@bb-kit/core"], "^0.1.0");
   editJson(join(root, "package.json"), ["dependencies", "zod"], "^4.4.3");
   editJson(join(root, "package.json"), ["devDependencies", "zod"], undefined);
   return created;
@@ -520,7 +520,7 @@ export function addOperation(
     const commandFields = kind === "command" ? `\n  risk: ${JSON.stringify(risk)},` : "";
     writeFileSync(
       operationPath,
-      `import { defineOperation } from "@smsunarto/bb-kit/operations";\nimport { z } from "zod";\n\nexport default defineOperation({\n  kind: ${JSON.stringify(kind)},${commandFields}\n  input: z.object({}).strict(),\n  output: z.object({}).strict(),\n});\n`,
+      `import { defineOperation } from "@bb-kit/core/operations";\nimport { z } from "zod";\n\nexport default defineOperation({\n  kind: ${JSON.stringify(kind)},${commandFields}\n  input: z.object({}).strict(),\n  output: z.object({}).strict(),\n});\n`,
     );
     created.push(projectPath(root, operationPath));
   }
@@ -667,7 +667,7 @@ export function addPanel(
   }
   if (writeIfMissing(
     panelPath,
-    `import type { ${props} } from "@bb/plugin-sdk/app";\nimport { PluginQueryBoundary } from "@smsunarto/bb-kit/query";\n\nexport function ${panelName}(_props: ${props}) {\n  return (\n    <PluginQueryBoundary>\n      <main>\n        <h1>${title}</h1>\n        <p>TODO: connect this panel to the module's operations.</p>\n      </main>\n    </PluginQueryBoundary>\n  );\n}\n`,
+    `import type { ${props} } from "@bb/plugin-sdk/app";\nimport { PluginQueryBoundary } from "@bb-kit/core/query";\n\nexport function ${panelName}(_props: ${props}) {\n  return (\n    <PluginQueryBoundary>\n      <main>\n        <h1>${title}</h1>\n        <p>TODO: connect this panel to the module's operations.</p>\n      </main>\n    </PluginQueryBoundary>\n  );\n}\n`,
   )) created.push(projectPath(root, panelPath));
   if (!existsSync(moduleApp)) {
     writeFileSync(
@@ -677,7 +677,7 @@ export function addPanel(
     created.push(projectPath(root, moduleApp));
   }
   addAppInstallerToRoot(root, moduleName, moduleApp);
-  editJson(join(root, "package.json"), ["dependencies", "@smsunarto/bb-kit"], "^0.1.0");
+  editJson(join(root, "package.json"), ["dependencies", "@bb-kit/core"], "^0.1.0");
   editJson(
     join(root, "package.json"),
     ["dependencies", "@tanstack/react-query"],

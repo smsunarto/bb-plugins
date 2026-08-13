@@ -77,9 +77,9 @@
 This repository also develops **bb-kit**, an opinionated, agent-friendly
 framework for bb plugin authors:
 
-- [`@smsunarto/bb-kit`](packages/bb-kit/) provides typed native-RPC operations,
+- [`@bb-kit/core`](packages/bb-kit/) provides typed native-RPC operations,
   TanStack Query integration, and realtime invalidation.
-- [`@smsunarto/bb-kit-cli`](packages/bb-kit-cli/) provides additive generators,
+- [`@bb-kit/cli`](packages/bb-kit-cli/) provides additive generators,
   structural checks, inspection, identity/migration locks, and headless loaded
   operation invocation with committed JSON/YAML regression scenarios.
 - The complete design and delivery boundaries live in the

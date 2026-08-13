@@ -12,7 +12,7 @@
       },
     },
     "packages/bb-kit": {
-      "name": "@smsunarto/bb-kit",
+      "name": "@bb-kit/core",
       "version": "0.1.0",
       "devDependencies": {
         "@tanstack/react-query": "^5.101.4",
@@ -32,7 +32,7 @@
       ],
     },
     "packages/bb-kit-cli": {
-      "name": "@smsunarto/bb-kit-cli",
+      "name": "@bb-kit/cli",
       "version": "0.1.0",
       "bin": {
         "bb-kit": "./dist/cli.js",
@@ -236,6 +236,10 @@
     "@ampcode/cli": ["@ampcode/cli@file:plugins/amp/vendor/ampcode-cli-stub", {}],
 
     "@ampcode/sdk": ["@ampcode/sdk@0.1.0-20260729105907-g72d5ca3", "", { "dependencies": { "@ampcode/cli": "latest", "zod": "^3.23.8" }, "bin": { "amp-sdk": "bin/amp-sdk.js" } }, "sha512-wk4vR7T+YoZ18X+//XgY5KxXPawKTbtMEhjBYIQp2vrEAIhaWb0Ia5HmDFqbLtFEOJejnqOaFCAx1sciZgJTYQ=="],
+
+    "@bb-kit/cli": ["@bb-kit/cli@workspace:packages/bb-kit-cli"],
+
+    "@bb-kit/core": ["@bb-kit/core@workspace:packages/bb-kit"],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.25.12", "", { "os": "aix", "cpu": "ppc64" }, "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA=="],
 
@@ -460,10 +464,6 @@
     "@shikijs/types": ["@shikijs/types@4.4.2", "", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.5" } }, "sha512-PFYitV4vpDr/iPCIhnHp+Q4ftic5N5VeNJ3KQ1O8gn3h2ar8qgwMAXF7tq4m1CWaMS60fV4VqF6vfnWH4F7vqQ=="],
 
     "@shikijs/vscode-textmate": ["@shikijs/vscode-textmate@10.0.2", "", {}, "sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg=="],
-
-    "@smsunarto/bb-kit": ["@smsunarto/bb-kit@workspace:packages/bb-kit"],
-
-    "@smsunarto/bb-kit-cli": ["@smsunarto/bb-kit-cli@workspace:packages/bb-kit-cli"],
 
     "@smsunarto/bb-plugin-agent-proxy": ["@smsunarto/bb-plugin-agent-proxy@workspace:plugins/agent-proxy"],
 

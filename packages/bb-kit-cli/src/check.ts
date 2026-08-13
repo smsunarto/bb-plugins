@@ -183,11 +183,11 @@ function checkFrameworkDependencies(info: ProjectInfo): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   if (info.modules.length === 0) return diagnostics;
   const dependencies = info.manifest.dependencies ?? {};
-  if (!dependencies["@smsunarto/bb-kit"]) {
+  if (!dependencies["@bb-kit/core"]) {
     diagnostics.push(diagnostic(
       "BBK008",
       "module source uses bb-kit but it is not a runtime dependency",
-      "Add @smsunarto/bb-kit to dependencies so bb's source fallback can resolve it.",
+      "Add @bb-kit/core to dependencies so bb's source fallback can resolve it.",
       "package.json",
     ));
   }
@@ -419,7 +419,7 @@ function checkImports(info: ProjectInfo): Diagnostic[] {
         && !isTypeOnlyImport(declaration)
         && !isHostRuntimePackage(packageName)
         && !info.manifest.dependencies?.[packageName]
-        && packageName !== "@smsunarto/bb-kit"
+        && packageName !== "@bb-kit/core"
         && packageName !== "zod"
         && packageName !== "@tanstack/react-query"
       ) {
