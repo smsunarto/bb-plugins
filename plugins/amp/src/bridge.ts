@@ -41,6 +41,7 @@ import { readBbFastMode, readBbPermissionMode } from "./bb-execution.ts";
 import {
   AMP_CLI_SHIM_REAL_CLI_ENV,
 } from "./amp-cli-shim.ts";
+import { buildSessionLinkCommandArgs } from "./amp-thread-link.ts";
 
 const ampCliShim = join(dirname(fileURLToPath(import.meta.url)), "amp-cli-shim.js");
 const configuredAmpCli = process.env.AMP_CLI_PATH?.trim();
@@ -60,15 +61,7 @@ function reportExecutionUsage(report: ExecutionUsageReport): void {
   const bbCli = process.env.BB_CLI?.trim();
   if (!bbCli) return;
 
-  const args = [
-    "amp",
-    "link-session",
-    report.sessionId,
-    report.executionTarget,
-    ...(report.executionTarget === "orb" && report.ampThreadId
-      ? [report.ampThreadId]
-      : []),
-  ];
+  const args = buildSessionLinkCommandArgs(report);
   const childEnv = { ...process.env };
   delete childEnv.ELECTRON_RUN_AS_NODE;
   execFile(
@@ -83,7 +76,7 @@ function reportExecutionUsage(report: ExecutionUsageReport): void {
     (error, _stdout, stderr) => {
       if (!error) return;
       const detail = stderr.trim() || error.message;
-      console.error(`[amp] could not update the Orb status bar: ${detail}`);
+      console.error(`[amp] could not update the bb session link: ${detail}`);
     },
   );
 }

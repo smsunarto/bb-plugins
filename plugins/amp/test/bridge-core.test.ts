@@ -811,7 +811,7 @@ test("mcp servers from bb are converted and passed to execute", async () => {
   });
 });
 
-test("the first Local attempt reports a hidden execution boundary", async () => {
+test("the first Local attempt reports its Amp thread link without showing Orb usage", async () => {
   const { fn } = scriptedExecute(() => [sysInit(), success()]);
   const usageReports: unknown[] = [];
   const { agent, sessionId } = await newAgentSession(fn, collector(), {
@@ -820,11 +820,18 @@ test("the first Local attempt reports a hidden execution boundary", async () => 
 
   await agent.prompt({ sessionId, prompt: textPrompt("work locally") });
 
-  assert.deepEqual(usageReports, [{
-    sessionId,
-    executionTarget: "local",
-    ampThreadId: null,
-  }]);
+  assert.deepEqual(usageReports, [
+    {
+      sessionId,
+      executionTarget: "local",
+      ampThreadId: null,
+    },
+    {
+      sessionId,
+      executionTarget: "local",
+      ampThreadId: THREAD,
+    },
+  ]);
 });
 
 test("Orb omits bb MCP without a chat note and reports its actual Amp thread", async () => {

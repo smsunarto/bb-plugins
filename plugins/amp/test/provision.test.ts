@@ -12,6 +12,7 @@ import {
   needsProvisioning,
   provisionInstallation,
   resolveAmpCli,
+  resolveAmpCliLaunch,
   resolveNodeRuntime,
 } from "../lib/provision.ts";
 import {
@@ -84,6 +85,29 @@ test("resolves the Amp CLI from known candidate dirs off PATH", () => {
 test("reports a missing Amp CLI as null", () => {
   const home = mkdtempSync(join(tmpdir(), "amp-empty-"));
   assert.equal(resolveAmpCli({ PATH: "" }, home, "linux"), null);
+});
+
+test("resolves the configured Amp CLI with its provider environment", () => {
+  const { amp, paths } = fixture();
+  writeFileSync(paths.configPath, JSON.stringify({
+    customAcpAgents: [{
+      id: AGENT_ID,
+      env: {
+        AMP_CLI_PATH: amp,
+        AMP_API_KEY: "test-key",
+        IGNORED: 7,
+      },
+    }],
+  }));
+
+  const launch = resolveAmpCliLaunch(paths, { KEEP_ME: "yes", PATH: "" });
+  assert.equal(launch?.command, amp);
+  assert.deepEqual(launch?.env, {
+    KEEP_ME: "yes",
+    PATH: "",
+    AMP_CLI_PATH: amp,
+    AMP_API_KEY: "test-key",
+  });
 });
 
 test("managed entry runs node with the bridge bundle and no provider-wide executor", () => {

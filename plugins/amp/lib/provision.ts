@@ -181,6 +181,40 @@ export function resolveAmpCli(
   );
 }
 
+export interface AmpCliLaunch {
+  command: string;
+  env: NodeJS.ProcessEnv;
+}
+
+/** Resolve the same Amp executable and environment that the managed ACP entry uses. */
+export function resolveAmpCliLaunch(
+  paths: ProvisionPaths,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): AmpCliLaunch | null {
+  const config = readConfig(paths.configPath);
+  const agents: CustomAgent[] = Array.isArray(config.customAcpAgents)
+    ? (config.customAcpAgents as CustomAgent[])
+    : [];
+  const configuredEnv = Object.fromEntries(
+    Object.entries(customAgentEnv(
+      agents.find((agent) => agent?.id === AMP_AGENT.agentId),
+    )).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+  const configuredCommand = configuredEnv.AMP_CLI_PATH;
+  const command = configuredCommand && isExecutable(configuredCommand)
+    ? configuredCommand
+    : resolveAmpCli(baseEnv);
+  if (command === null) return null;
+  return {
+    command,
+    env: {
+      ...baseEnv,
+      ...configuredEnv,
+      AMP_CLI_PATH: command,
+    },
+  };
+}
+
 function readConfig(configPath: string): Record<string, unknown> {
   if (!existsSync(configPath)) return {};
   const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
