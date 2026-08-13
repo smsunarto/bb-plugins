@@ -12,6 +12,8 @@
 // HTTP route instead, one held request at a time.
 import { definePluginApp } from "@bb/plugin-sdk/app";
 
+import { isDesktopNotificationHost, notificationTag } from "./format";
+
 const PENDING_URL = "/api/v1/plugins/notify/http/pending";
 const ACK_URL = "/api/v1/plugins/notify/http/ack";
 const OPEN_URL = "/api/v1/plugins/notify/http/open";
@@ -96,12 +98,14 @@ async function openThread(threadId: string): Promise<void> {
 }
 
 function present(item: PendingNotification): void {
-  // `tag` collapses repeats about one thread into a single notification.
+  // A stable per-thread tag makes Chromium replace an earlier delivered alert.
+  // macOS keeps that replacement in Notification Center but can skip its banner,
+  // so every queued item needs its own tag.
   // `silent` is the only sound control the web API has; a named tone is played
   // by the server alongside a silenced notification.
   const notification = new Notification(item.title, {
     body: item.body,
-    tag: item.threadId ?? `bb-notify-${item.id}`,
+    tag: notificationTag(item.id),
     silent: item.silent,
   });
   notification.addEventListener("click", () => {
@@ -174,6 +178,13 @@ async function poll(signal: AbortSignal): Promise<void> {
 }
 
 async function bridge(signal: AbortSignal): Promise<void> {
+  const desktopBridge = (
+    window as Window & { readonly bbDesktop?: unknown }
+  ).bbDesktop;
+  // The same content script also mounts in web browsers. Letting one of those
+  // poll races claim the queue attributes the alert to that browser and applies
+  // its notification settings instead of bb's.
+  if (!isDesktopNotificationHost(desktopBridge)) return;
   if (typeof Notification === "undefined") return;
   if (Notification.permission === "default") {
     await Notification.requestPermission();

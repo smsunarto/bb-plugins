@@ -55,7 +55,8 @@ appears under **System Settings → Notifications**.
 
 - **macOS.** The bb server and the bb desktop window must run on the same Mac.
 - The bb desktop app with **at least one window open**. A headless bb queues
-  notifications that nothing collects before they expire.
+  notifications that nothing collects before they expire. Web browser tabs do
+  not collect the desktop notification queue.
 - Notification permission granted to bb.
 - bb ≥ 0.36.
 
@@ -145,6 +146,9 @@ batch.
 - **Nothing is lost while bb is closed.** With no bb window open, a notification
   waits in a durable queue and appears when one opens. It survives plugin
   reloads and server restarts, and expires after 10 minutes.
+- **Every completed turn can alert.** Notifications use a unique system tag, so
+  a later turn from the same thread does not become a history-only replacement
+  for an earlier macOS notification.
 - **Markdown is flattened.** A notification body is plain text, so formatting is
   reduced to the words it decorated.
 

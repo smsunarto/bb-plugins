@@ -6,6 +6,16 @@ const ESCAPE_OFFSET = 0xe000;
 /** A minimum-run filter longer than this is treated as this maximum. */
 export const MAX_RUN_SECONDS = 30 * 24 * 60 * 60;
 
+/** A unique tag keeps a later turn from replacing an earlier macOS alert. */
+export function notificationTag(id: number): string {
+  return `bb-notify-${id}`;
+}
+
+/** Only the signed desktop app can post a notification attributed to bb. */
+export function isDesktopNotificationHost(desktopBridge: unknown): boolean {
+  return desktopBridge !== undefined;
+}
+
 /** Notification bodies are one line: collapse whitespace, then clip. */
 export function oneLine(text: string, maxChars: number): string {
   const collapsed = text.replace(/\s+/gu, " ").trim();
