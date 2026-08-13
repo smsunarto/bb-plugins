@@ -15,6 +15,7 @@ import {
   type BridgeDeps,
   type AmpExecuteFn,
   type AmpExecuteOptions,
+  type AmpUserInputMessage,
 } from "../src/bridge-core.ts";
 import type { AmpStreamMessage } from "../src/translate.ts";
 import type {
@@ -412,7 +413,7 @@ test("captures the Amp thread id and continues it on the next prompt", async () 
   assert.equal(calls[1].options?.continue, THREAD);
 });
 
-test("accepted bb steering enters Amp's active input stream and its queued ACP copy is suppressed", async () => {
+test("accepted bb steering is marked for Amp and its queued ACP copy is suppressed", async () => {
   let emitSteering: ((input: ContentBlock[]) => void) | undefined;
   const monitorSignals: AbortSignal[] = [];
   const monitor: SteeringInputMonitor = {
@@ -432,16 +433,18 @@ test("accepted bb steering enters Amp's active input stream and its queued ACP c
     executeCalls += 1;
     return (async function* () {
       assert.notEqual(typeof prompt, "string");
-      const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
       const inputs: string[] = [];
       receivedInputs[call] = inputs;
       const initial = await iterator.next();
       assert.equal(initial.done, false);
+      assert.equal(initial.value.steer, undefined);
       inputs.push(inputMessageText(initial.value));
       yield sysInit();
       if (call === 0) {
         const steering = await iterator.next();
         assert.equal(steering.done, false);
+        assert.equal(steering.value.steer, true);
         inputs.push(inputMessageText(steering.value));
       }
       yield success();

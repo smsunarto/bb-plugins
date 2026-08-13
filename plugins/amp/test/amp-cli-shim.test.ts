@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { execute } from "@ampcode/sdk";
+import { createUserMessage, execute } from "@ampcode/sdk";
 import {
   AMP_CLI_SHIM_FAST_ENV,
   AMP_CLI_SHIM_REAL_CLI_ENV,
@@ -78,6 +78,47 @@ test("rejects a missing real Amp CLI path", () => {
     () => buildAmpCliInvocation(["--version"], {}),
     new RegExp(AMP_CLI_SHIM_REAL_CLI_ENV),
   );
+});
+
+test("the official SDK preserves Amp steering input", async () => {
+  const root = mkdtempSync(join(tmpdir(), "amp-sdk-steering-"));
+  const fakeCli = join(root, "amp.mjs");
+  const capture = join(root, "capture.json");
+  writeFileSync(fakeCli, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+if (process.argv.includes("--version")) {
+  console.log("0.0.9999999999");
+  process.exit(0);
+}
+let input = "";
+for await (const chunk of process.stdin) input += chunk;
+writeFileSync(process.env.CAPTURE_PATH, input);
+console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false }));
+`);
+  chmodSync(fakeCli, 0o755);
+
+  const previous = {
+    ampCliPath: process.env.AMP_CLI_PATH,
+    capture: process.env.CAPTURE_PATH,
+  };
+  process.env.AMP_CLI_PATH = fakeCli;
+  process.env.CAPTURE_PATH = capture;
+  try {
+    const prompt = (async function* () {
+      yield { ...createUserMessage("change direction"), steer: true as const };
+    })();
+    for await (const _message of execute({ prompt })) {}
+
+    const captured = JSON.parse(readFileSync(capture, "utf8"));
+    assert.equal(captured.steer, true);
+    assert.equal(captured.message.content[0].text, "change direction");
+  } finally {
+    if (previous.ampCliPath === undefined) delete process.env.AMP_CLI_PATH;
+    else process.env.AMP_CLI_PATH = previous.ampCliPath;
+    if (previous.capture === undefined) delete process.env.CAPTURE_PATH;
+    else process.env.CAPTURE_PATH = previous.capture;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test(

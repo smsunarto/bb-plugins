@@ -200,6 +200,7 @@
     "esbuild",
   ],
   "patchedDependencies": {
+    "@ampcode/sdk@0.1.0-20260729105907-g72d5ca3": "patches/@ampcode+sdk@0.1.0-20260729105907-g72d5ca3.patch",
     "agentation@3.0.2": "patches/agentation@3.0.2.patch",
   },
   "overrides": {

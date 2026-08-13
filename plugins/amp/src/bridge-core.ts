@@ -55,7 +55,12 @@ export interface BridgeClient {
  * the exact @ampcode/sdk version this plugin pins. */
 export type AmpExecuteOptions = AmpOptions;
 
-export type AmpExecutePrompt = string | AsyncIterable<UserInputMessage>;
+/** Amp's stream-JSON input accepts `steer`, but the pinned SDK's public type
+ * does not expose it yet. A steered message runs at Amp's next interruption
+ * point instead of waiting for the current agent turn to finish. */
+export type AmpUserInputMessage = UserInputMessage & { steer?: true };
+
+export type AmpExecutePrompt = string | AsyncIterable<AmpUserInputMessage>;
 
 export type AmpExecuteFn = (args: {
   prompt: AmpExecutePrompt;
@@ -180,17 +185,17 @@ export const AMP_ACP_LABEL = "via-amp-acp";
 const STEERING_IDLE_MS = 250;
 
 class MultiTurnPrompt {
-  private readonly prompts: string[];
+  private readonly prompts: AmpUserInputMessage[];
   private readonly waiters = new Set<() => void>();
   private closed = false;
 
   constructor(initialPrompt: string) {
-    this.prompts = [initialPrompt];
+    this.prompts = [createUserMessage(initialPrompt)];
   }
 
   push(prompt: string): boolean {
     if (this.closed) return false;
-    this.prompts.push(prompt);
+    this.prompts.push({ ...createUserMessage(prompt), steer: true });
     this.wake();
     return true;
   }
@@ -201,11 +206,11 @@ class MultiTurnPrompt {
     this.wake();
   }
 
-  async *stream(signal: AbortSignal): AsyncGenerator<UserInputMessage> {
+  async *stream(signal: AbortSignal): AsyncGenerator<AmpUserInputMessage> {
     let index = 0;
     while (!signal.aborted) {
       while (index < this.prompts.length) {
-        yield createUserMessage(this.prompts[index] ?? "");
+        yield this.prompts[index]!;
         index += 1;
       }
       if (this.closed) return;
