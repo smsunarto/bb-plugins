@@ -28,6 +28,7 @@ import {
   workspacePlugins,
   unscopedPackageName,
   type PluginManifest,
+  type WorkspacePlugin,
 } from "./plugin-package";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -40,7 +41,28 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  * Both also carry `"private": true`, which npm itself refuses to publish; this
  * set keeps them out of the gate rather than letting them fail it.
  */
-const EXCLUDED = new Set(["dotfiles", "pr-walkthrough"]);
+export const EXCLUDED = new Set(["dotfiles", "pr-walkthrough"]);
+
+/**
+ * The workspace packages that may be published and receive GitHub Releases.
+ *
+ * Keep the explicit release policy and npm's `private` safety switch in step.
+ * A mismatch is an error instead of silently publishing or silently omitting a
+ * package from one half of the release process.
+ */
+export function publishableWorkspacePlugins(root: string): WorkspacePlugin[] {
+  const plugins = workspacePlugins(root);
+  for (const plugin of plugins) {
+    const excluded = EXCLUDED.has(plugin.directory);
+    const privatePackage = plugin.manifest.private === true;
+    if (excluded !== privatePackage) {
+      throw new Error(
+        `${plugin.directory}: EXCLUDED and package.json private must agree`,
+      );
+    }
+  }
+  return plugins.filter((plugin) => !EXCLUDED.has(plugin.directory));
+}
 
 /**
  * Licence expressions a published plugin may declare. A plugin that embeds
@@ -414,15 +436,20 @@ function publishUnder(dir: string, name: string, manifestName: string): void {
 
 function main(): void {
   const dryRun = process.argv.includes("--dry-run");
+  const unknown = process.argv.slice(2).filter(
+    (argument) => argument !== "--dry-run",
+  );
+  if (unknown.length > 0) {
+    console.error(`publish: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
+    process.exit(2);
+  }
 
   const fail = (message: string): never => {
     console.error(`\n✗ ${message}`);
     process.exit(1);
   };
 
-  const targets = workspacePlugins(ROOT).filter(
-    (plugin) => !EXCLUDED.has(plugin.directory),
-  );
+  const targets = publishableWorkspacePlugins(ROOT);
   console.log(
     `publishing ${targets.length} plugins (excluded: ${[...EXCLUDED].join(", ")})\n`,
   );
@@ -432,8 +459,21 @@ function main(): void {
   console.log("building every plugin…");
   run("bun", ["run", "build"], ROOT);
 
-  for (const { directory: id, dir, name, manifest } of targets) {
+  const plans: {
+    plugin: WorkspacePlugin;
+    version: string;
+    paths: string[];
+  }[] = [];
+
+  // Validate every tarball before publishing any of them. A broken package
+  // late in the workspace must not turn a preventable validation failure into
+  // a partial release.
+  for (const plugin of targets) {
+    const { directory: id, dir, manifest } = plugin;
     const version = manifest.version;
+    if (typeof version !== "string" || version.trim() === "") {
+      fail(`${id}: package.json has no version`);
+    }
     if (!existsSync(join(dir, "LICENSE"))) fail(`${id}: no LICENSE in the package`);
 
     for (const artifact of ["server", ...(manifest.bb?.app ? ["app"] : [])]) {
@@ -457,6 +497,10 @@ function main(): void {
       fail(`${id} cannot be published:\n${problems.map((problem) => `    - ${problem}`).join("\n")}`);
     }
 
+    plans.push({ plugin, version, paths });
+  }
+
+  for (const { plugin: { dir, name }, version, paths } of plans) {
     // The scoped name, then its unscoped mirror. Each is probed and published
     // on its own, so a mirror added to an already-released version still goes
     // out, and a half-finished run resumes without republishing what landed.

@@ -1,0 +1,67 @@
+name: Release (npm)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# A second main push should update the release PR, but it must not interrupt a
+# publish that can be between a scoped package and its unscoped mirror.
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version or publish packages
+    runs-on: namespace-profile-linux-8vcpu-16gb-cached
+    timeout-minutes: 30
+    steps:
+      - uses: namespacelabs/nscloud-checkout-action@v9
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup
+
+      # Namespace runners are self-hosted, so npm trusted publishing cannot
+      # issue an OIDC token here. Use a granular npm automation token with
+      # publish access to the scoped packages and their unscoped mirrors.
+      - name: Configure npm authentication
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "$NPM_TOKEN" ]]; then
+            echo "NPM_TOKEN is not configured" >&2
+            exit 1
+          fi
+          npmrc="$RUNNER_TEMP/npmrc"
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$npmrc"
+          chmod 600 "$npmrc"
+          printf 'NPM_CONFIG_USERCONFIG=%s\n' "$npmrc" >> "$GITHUB_ENV"
+
+      - name: Create release PR or publish packages
+        uses: changesets/action@v2
+        with:
+          publish-script: bun run release
+          version-script: bun run version-packages
+          create-github-releases: true
+          push-git-tags: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify manifests were restored
+        if: always()
+        run: git diff --exit-code -- 'plugins/*/package.json'
+
+      - name: Remove npm credentials
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
+            rm -f "$NPM_CONFIG_USERCONFIG"
+          fi

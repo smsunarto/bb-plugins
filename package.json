@@ -37,12 +37,16 @@
     "test": "bun test scripts/*.test.ts && bun run --filter '@smsunarto/bb-plugin-*' --parallel test",
     "sdk-types:check": "bun scripts/sdk-types.ts check",
     "sdk-types:refresh": "bun scripts/sdk-types.ts refresh",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "bun scripts/changeset-release.ts",
     "publish:dry": "bun scripts/publish.ts --dry-run",
     "publish:npm": "bun scripts/publish.ts",
     "clean": "bun run --filter '@smsunarto/bb-plugin-*' --parallel clean"
   },
   "devDependencies": {
     "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
+    "@changesets/cli": "3.0.0",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@hugeicons/core-free-icons": "4.2.3",
