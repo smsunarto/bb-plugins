@@ -1,0 +1,69 @@
+{
+  "name": "@smsunarto/bb-kit",
+  "version": "0.1.0",
+  "description": "Typed operations and frontend server-state helpers for bb plugins.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "packages/bb-kit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/operations.d.ts",
+      "import": "./dist/operations.js"
+    },
+    "./operations": {
+      "types": "./dist/operations.d.ts",
+      "import": "./dist/operations.js"
+    },
+    "./query": {
+      "types": "./dist/query.d.ts",
+      "import": "./dist/query.js"
+    },
+    "./realtime": {
+      "types": "./dist/realtime.d.ts",
+      "import": "./dist/realtime.js"
+    },
+    "./standard-schema": {
+      "types": "./dist/standard-schema.d.ts",
+      "import": "./dist/standard-schema.js"
+    }
+  },
+  "scripts": {
+    "build": "bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "bun run build && bun test test",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.10",
+    "zod": "^4.4.3"
+  }
+}

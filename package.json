@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "plugins/*"
+    "plugins/*",
+    "packages/*"
   ],
   "comments": {
     "overrides": "@ampcode/sdk's findAmpCommand() tries its bundled @ampcode/cli BEFORE the AMP_CLI_PATH env var, so a real @ampcode/cli silently outranks the CLI that plugins/amp provisions. The stub declares no bin.amp, so that first resolver returns null and AMP_CLI_PATH wins. It also keeps the ~69MiB @ampcode/cli-<platform> binary out of every install. Bun only honours overrides in the workspace root, so this leaf concern must live here, and it ignores scoped/nested override syntax -- keep the key flat. The root devDependency on @ampcode/cli exists because Bun 1.3's hoisted linker resolves the override in the lockfile but does not link the file: stub into node_modules on a fresh install; the devDependency forces the root link so @ampcode/sdk resolves the stub. plugins/amp/test/cli-stub.test.ts fails if the stub stops resolving.",
@@ -21,7 +22,8 @@
   },
   "scripts": {
     "postinstall": "cd node_modules/better-sqlite3 && node ../.bin/prebuild-install",
-    "build": "bun run --filter '@smsunarto/bb-plugin-*' --parallel build",
+    "build": "bun run build:framework && bun run --filter '@smsunarto/bb-plugin-*' --parallel build",
+    "build:framework": "bun run --filter '@smsunarto/bb-kit*' --parallel build",
     "build:reload": "bun run build && bun scripts/reload-workspace-plugins.ts",
     "dev": "bun run --filter '@smsunarto/bb-plugin-*' --parallel --no-orphans dev",
     "reload": "bb plugin reload",
@@ -30,13 +32,13 @@
     "icons:check": "bun scripts/plugin-icons.ts --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "typecheck": "bun run --filter '@smsunarto/bb-plugin-*' --parallel typecheck",
-    "test": "bun test scripts/*.test.ts && bun run --filter '@smsunarto/bb-plugin-*' --parallel test",
+    "typecheck": "bun run --filter '@smsunarto/bb-kit*' --parallel typecheck && bun run --filter '@smsunarto/bb-plugin-*' --parallel typecheck",
+    "test": "bun test scripts/*.test.ts && bun run --filter '@smsunarto/bb-kit*' --parallel test && bun run --filter '@smsunarto/bb-plugin-*' --parallel test",
     "sdk-types:check": "bun scripts/sdk-types.ts check",
     "sdk-types:refresh": "bun scripts/sdk-types.ts refresh",
     "publish:dry": "bun scripts/publish.ts --dry-run",
     "publish:npm": "bun scripts/publish.ts",
-    "clean": "bun run --filter '@smsunarto/bb-plugin-*' --parallel clean"
+    "clean": "bun run --filter '@smsunarto/bb-kit*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean"
   },
   "devDependencies": {
     "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
