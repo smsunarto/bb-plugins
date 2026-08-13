@@ -87,6 +87,19 @@ interface CustomAgent extends Record<string, unknown> {
   env?: unknown;
 }
 
+const AMP_NATIVE_SKILL_ROOTS = {
+  user: [
+    ".config/agents/skills",
+    ".agents/skills",
+    ".config/amp/skills",
+    ".claude/skills",
+  ],
+  project: [
+    ".agents/skills",
+    ".claude/skills",
+  ],
+};
+
 function customAgentEnv(agent: CustomAgent | undefined): Record<string, unknown> {
   return agent?.env !== null
     && typeof agent?.env === "object"
@@ -206,6 +219,8 @@ function writeManagedLogo(path: string): "written" | "updated" | "kept" {
  * No nativeReasoning block: Amp owns the default effort for each mode, and the
  * bridge deliberately omits a thought_level selector until bb can represent
  * that agent-managed default alongside explicit SDK effort overrides.
+ * nativeSkillRoots lets bb index the direct user and project roots that Amp
+ * scans itself; it does not change the ACP wire protocol or Amp execution.
  */
 export function managedAgentEntry(
   launch: BridgeLaunch,
@@ -221,6 +236,7 @@ export function managedAgentEntry(
     args: [launch.bridge],
     env,
     logo: "logos/amp.svg",
+    nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
   };
 }
 
@@ -326,12 +342,12 @@ export function provisionInstallation(
 /**
  * Whether the managed entry should be written without the user asking.
  *
- * True when the entry is absent, still carries the obsolete Orb id, or names a
- * runtime, bridge, or Amp CLI that this installation can no longer run — the
- * states in which the provider is broken and only a rewrite fixes it. A
- * working entry is left alone, so an added env var or a hand-picked Amp binary
- * survives every restart. An unreadable config throws so the background
- * service can report the failure without modifying the file.
+ * True when the entry is absent, still carries the obsolete Orb id, lacks the
+ * managed native skill roots, or names a runtime, bridge, or Amp CLI that this
+ * installation can no longer run. A working entry is left alone, so an added
+ * env var or a hand-picked Amp binary survives every restart. An unreadable
+ * config throws so the background service can report the failure without
+ * modifying the file.
  */
 export function needsProvisioning(
   paths: ProvisionPaths,
@@ -350,6 +366,12 @@ export function needsProvisioning(
     return true;
   }
   if ("permissionCli" in entry) return true;
+  if (
+    JSON.stringify(entry.nativeSkillRoots)
+      !== JSON.stringify(AMP_NATIVE_SKILL_ROOTS)
+  ) {
+    return true;
+  }
   const recordedCli = customAgentEnv(entry).AMP_CLI_PATH;
   return typeof recordedCli !== "string" || !isExecutable(recordedCli);
 }

@@ -20,6 +20,19 @@ import {
 } from "../src/amp-brand.ts";
 import { AMP_ACP_EXECUTOR_ENV } from "../src/execution-target.ts";
 
+const EXPECTED_NATIVE_SKILL_ROOTS = {
+  user: [
+    ".config/agents/skills",
+    ".agents/skills",
+    ".config/amp/skills",
+    ".claude/skills",
+  ],
+  project: [
+    ".agents/skills",
+    ".claude/skills",
+  ],
+};
+
 function fakeExecutable(directory: string, name: string): string {
   mkdirSync(directory, { recursive: true });
   const path = join(directory, name);
@@ -91,6 +104,7 @@ test("managed entry runs node with the bridge bundle and no provider-wide execut
   assert.equal("nativeReasoning" in entry, false);
   assert.equal("modelCli" in entry, false);
   assert.equal("cwd" in entry, false);
+  assert.deepEqual(entry.nativeSkillRoots, EXPECTED_NATIVE_SKILL_ROOTS);
 });
 
 test("an Electron host is detected and the entry gets ELECTRON_RUN_AS_NODE=1", () => {
@@ -161,6 +175,10 @@ test("fresh install adds one Amp entry without clobbering other config", () => {
   assert.deepEqual(config.customAcpAgents[1].env, {
     AMP_CLI_PATH: launch.amp,
   });
+  assert.deepEqual(
+    config.customAcpAgents[1].nativeSkillRoots,
+    EXPECTED_NATIVE_SKILL_ROOTS,
+  );
   assert.equal(readFileSync(paths.logoPath, "utf8"), AMP_LOGO_SVG);
   assert.deepEqual(inspectInstallation(paths), {
     configured: true,
@@ -423,6 +441,24 @@ test("the automatic pass provisions a config with no Amp entry", () => {
   assert.equal(needsProvisioning(paths, launch), true);
 
   provisionInstallation(paths, launch);
+  assert.equal(needsProvisioning(paths, launch), false);
+});
+
+test("the automatic pass upgrades an Amp entry without native skill roots", () => {
+  const { launch, paths } = fixture();
+  provisionInstallation(paths, launch);
+
+  const config = JSON.parse(readFileSync(paths.configPath, "utf8"));
+  delete config.customAcpAgents[0].nativeSkillRoots;
+  writeFileSync(paths.configPath, JSON.stringify(config));
+
+  assert.equal(needsProvisioning(paths, launch), true);
+  provisionInstallation(paths, launch);
+  const repaired = JSON.parse(readFileSync(paths.configPath, "utf8"));
+  assert.deepEqual(
+    repaired.customAcpAgents[0].nativeSkillRoots,
+    EXPECTED_NATIVE_SKILL_ROOTS,
+  );
   assert.equal(needsProvisioning(paths, launch), false);
 });
 

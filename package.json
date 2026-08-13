@@ -18,7 +18,7 @@
   },
   "trustedDependencies": ["esbuild"],
   "config": {
-    "bbVersion": "0.36.0"
+    "bbVersion": "0.37.0"
   },
   "scripts": {
     "postinstall": "cd node_modules/better-sqlite3 && node ../.bin/prebuild-install",

@@ -9,7 +9,7 @@
 
 **Run [Amp](https://ampcode.com) in a bb thread, like any built-in provider.**
 
-![bb ≥ 0.36](https://img.shields.io/badge/bb-%E2%89%A5%200.36-88C0D0?style=flat-square)
+![bb ≥ 0.37](https://img.shields.io/badge/bb-%E2%89%A5%200.37-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![needs Amp CLI](https://img.shields.io/badge/needs-Amp%20CLI-F1B467?style=flat-square)
 
@@ -53,7 +53,7 @@ bb plugin install ./plugins/amp
 
 ## Requirements
 
-- bb ≥ 0.36, on macOS or Linux
+- bb ≥ 0.37, on macOS or Linux
 - The **Amp CLI**, installed ([get started](https://ampcode.com/manual#get-started))
   and authenticated with `amp login`, or `AMP_API_KEY` set on the provider entry.
   The plugin locates and drives the CLI; it cannot install or sign in to it for you
@@ -108,6 +108,18 @@ bundled launcher adds the flag only to SDK execute calls that bb marked Fast.
 Standard turns, continued threads, SDK version probes, and Orb executions are
 unchanged. Start a new bb thread after selecting Fast; Amp's CLI cannot add
 Fast to an existing Amp thread.
+
+### Skills
+
+Local Amp loads skills from its standard user and project directories. The
+plugin registers Amp's direct native roots with bb, so those skills also appear
+in bb's `/` menu. This covers `.agents/skills` and `.claude/skills` in the
+workspace, plus Amp's direct user roots under `~/.config/agents`, `~/.agents`,
+`~/.config/amp`, and `~/.claude`.
+
+Amp still loads built-in and hosted skills, the recursive Claude plugin cache,
+and directories configured through `amp.skills.path` itself. bb's static custom
+ACP root registration does not index those sources.
 
 ### Current transport limits
 
