@@ -94,29 +94,30 @@ export const CONFIG_PERMISSION = "permission";
  * "Opus 5 (1M)" showing as `Opus 5 1M`. The group must be last and must not
  * contain parentheses of its own, or the whole string renders verbatim.
  *
- * The badge reads `<agent> · <oracle>`. Models come from
- * https://ampcode.com/modes and need updating when Amp changes them. `·` is
- * deliberate: parentheses inside the group would defeat the split.
+ * The badge reads `<agent> [<effort>] · <oracle> [<effort>]` using the "With
+ * ChatGPT Sub" mapping from https://ampcode.com/modes and needs updating when
+ * Amp changes it. `·` is deliberate: parentheses inside the group would
+ * defeat the split.
  */
 export const AMP_MODES = [
   {
     value: "low",
-    name: "Low (GLM 5.2 · GPT 5.6 Sol)",
+    name: "Low (GPT 5.6 Terra [low] · GPT 5.6 Sol [high])",
     description: "Fast and economical for simple, well-defined tasks.",
   },
   {
     value: "medium",
-    name: "Medium (GPT 5.6 Sol · GPT 5.6 Sol)",
+    name: "Medium (GPT 5.6 Sol [medium] · GPT 5.6 Sol [high])",
     description: "Balanced capability and cost for everyday coding tasks.",
   },
   {
     value: "high",
-    name: "High (GPT 5.6 Sol · Fable 5)",
+    name: "High (GPT 5.6 Sol [x-high] · GPT 5.6 Sol [high])",
     description: "Greater capability and reasoning for difficult tasks.",
   },
   {
     value: "ultra",
-    name: "Ultra (Fable 5 · GPT 5.6 Sol)",
+    name: "Ultra (Fable 5 [high] · GPT 5.6 Sol [high])",
     description: "Maximum capability for the most demanding tasks.",
   },
 ] as const;

@@ -1162,7 +1162,7 @@ test("an older CLI rejecting --settings-file retries without permission bypass",
 
 
 
-test("mode labels carry Amp's model as a bb-splittable dim badge", async () => {
+test("mode labels carry Amp's models and effort as a bb-splittable dim badge", async () => {
   // bb renders a trailing parenthesised group dimmed beside the name, the
   // mechanism behind Claude Code's "Opus 5 (1M)" -> `Opus 5 1M`.
   const bbSplit = (label: string) => {
@@ -1176,15 +1176,16 @@ test("mode labels carry Amp's model as a bb-splittable dim badge", async () => {
   const split = Object.fromEntries(
     (mode?.options ?? []).map((o) => [o.value, bbSplit(o.name)]),
   );
-  assert.deepEqual(split.low, { base: "Low", tag: "GLM 5.2 · GPT 5.6 Sol" });
-  assert.deepEqual(split.medium, { base: "Medium", tag: "GPT 5.6 Sol · GPT 5.6 Sol" });
-  assert.deepEqual(split.high, { base: "High", tag: "GPT 5.6 Sol · Fable 5" });
-  assert.deepEqual(split.ultra, { base: "Ultra", tag: "Fable 5 · GPT 5.6 Sol" });
+  assert.deepEqual(split.low, { base: "Low", tag: "GPT 5.6 Terra [low] · GPT 5.6 Sol [high]" });
+  assert.deepEqual(split.medium, { base: "Medium", tag: "GPT 5.6 Sol [medium] · GPT 5.6 Sol [high]" });
+  assert.deepEqual(split.high, { base: "High", tag: "GPT 5.6 Sol [x-high] · GPT 5.6 Sol [high]" });
+  assert.deepEqual(split.ultra, { base: "Ultra", tag: "Fable 5 [high] · GPT 5.6 Sol [high]" });
 
   for (const option of mode?.options ?? []) {
     const tag = bbSplit(option.name).tag;
     assert.ok(tag, `${option.value} must expose a badge`);
     assert.equal(/[()]/.test(tag), false, "a badge containing parens would not split");
+    assert.equal((tag.match(/\[[^\]]+\]/gu) ?? []).length, 2, "each effort must be bracketed");
   }
 });
 

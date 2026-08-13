@@ -86,7 +86,8 @@ selected.
 ### Modes
 
 Amp's four modes — low, medium, high, ultra — appear in bb's model picker, each
-labelled with the models behind it as `<agent> · <oracle>`.
+labelled with the "With ChatGPT Sub" routing as
+`<agent> [<effort>] · <oracle> [<effort>]`.
 
 ### The Oracle card
 
