@@ -89,6 +89,30 @@ Amp's four modes — low, medium, high, ultra — appear in bb's model picker, e
 labelled with the "With ChatGPT Sub" routing as
 `<agent> [<effort>] · <oracle> [<effort>]`.
 
+### Permissions
+
+bb's resolved thread permission controls Local Amp when the ACP session starts:
+
+- **Full** force-allows every Amp tool call (`amp.dangerouslyAllowAll`).
+- **Accept Edits** explicitly disables Amp's force-all setting and uses Amp's
+  normal permission rules. Amp does not provide an edit-only delegation mode;
+  a rule with the `ask` action is rejected during this headless run.
+
+Orb permissions stay in the Amp project settings.
+
+### Current transport limits
+
+Three bb controls cannot yet reach the official Amp SDK and are not simulated:
+
+- bb's generated project and host instructions are preserved at the start of
+  the first Amp prompt, but the SDK has no system/developer instruction input.
+- bb Fast is not forwarded because the SDK has no service-tier or thread-feature
+  option for `execute()`.
+- Image input is disabled because the SDK's `UserInputMessage` accepts text only.
+
+These need upstream bb ACP and Amp SDK transport support before this plugin can
+preserve their native meaning.
+
 ### The Oracle card
 
 When Amp calls its Oracle sub-agent, the thread shows a collapsible card with the
@@ -122,7 +146,7 @@ auth: handled by the Amp CLI — run `amp login` once, or set AMP_API_KEY in the
 | Amp is not in the provider list | `bb amp status` names the broken link |
 | Auth errors in a thread | `amp login`, or add `AMP_API_KEY` to the provider entry's `env` |
 | "Could not find a usable Amp CLI" | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp` |
-| Local tool calls silently rejected | Amp's permission rules denied them — the bridge posts a notice naming the tools. Set `permission` to `bypass`, or adjust Amp's own settings |
+| Local tool calls rejected | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits** |
 | Orb tool calls rejected | Change the permission settings in the Amp project |
 | Orb opens the wrong repository | Add `AMP_ACP_ORB_PROJECT` to the provider entry and start a new thread with `/orb` |
 | `/orb` is rejected in a thread | That Amp thread is already Local. Start a new bb thread with `/orb` in its first prompt |

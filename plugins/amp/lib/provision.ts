@@ -270,6 +270,10 @@ export function provisionInstallation(
       launch.electron,
     ),
   };
+  // bb's internal ACP launch type has permissionCli, but customAcpAgents does
+  // not accept it. Remove entries written by the short-lived bridge workaround;
+  // the bridge reads the resolved permission from bb's thread event instead.
+  delete updated.permissionCli;
 
   if (canonicalIndex >= 0) {
     agents[canonicalIndex] = updated;
@@ -345,6 +349,7 @@ export function needsProvisioning(
   if (!Array.isArray(args) || args.length !== 1 || args[0] !== launch.bridge) {
     return true;
   }
+  if ("permissionCli" in entry) return true;
   const recordedCli = customAgentEnv(entry).AMP_CLI_PATH;
   return typeof recordedCli !== "string" || !isExecutable(recordedCli);
 }

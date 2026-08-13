@@ -36,6 +36,7 @@ import {
 } from "./oracle-report-store.ts";
 import { stripOrbDirectives } from "./orb-directive.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
+import type { AmpPermissionMode } from "./permission-mode.ts";
 
 /** Minimal slice of AgentSideConnection the core needs; injected for tests. */
 export interface BridgeClient {
@@ -131,7 +132,7 @@ const PERMISSION_MODES = [
   {
     value: "bypass",
     name: "Bypass",
-    description: "Force-allow every tool call (--dangerously-allow-all).",
+    description: "Force-allow every tool call (amp.dangerouslyAllowAll).",
   },
 ] as const;
 
@@ -145,12 +146,13 @@ interface SessionState {
   cancelled: boolean;
   active: boolean;
   mode: string;
-  permission: "default" | "bypass";
+  permission: AmpPermissionMode;
   reportedMcpStatuses: Set<string>;
 }
 
 export interface BridgeDeps {
   execute: AmpExecuteFn;
+  resolveInitialPermission?: () => Promise<AmpPermissionMode | null>;
   store?: SessionStore;
   oracleReports?: OracleReportStore;
   orbProject?: string;
@@ -339,6 +341,9 @@ export function unsupportedOptionFrom(message: string): keyof AmpExecuteOptions 
 export class AmpBridgeAgent implements Agent {
   private readonly client: BridgeClient;
   private readonly execute: AmpExecuteFn;
+  private readonly resolveInitialPermission:
+    | (() => Promise<AmpPermissionMode | null>)
+    | undefined;
   private readonly store: SessionStore;
   private readonly oracleReports: OracleReportStore;
   private readonly orbProject: string | undefined;
@@ -353,6 +358,7 @@ export class AmpBridgeAgent implements Agent {
   constructor(client: BridgeClient, deps: BridgeDeps) {
     this.client = client;
     this.execute = deps.execute;
+    this.resolveInitialPermission = deps.resolveInitialPermission;
     this.store = deps.store ?? memorySessionStore();
     this.oracleReports = deps.oracleReports ?? createFileOracleReportStore();
     this.orbProject = deps.orbProject?.trim() || undefined;
@@ -380,12 +386,18 @@ export class AmpBridgeAgent implements Agent {
     return {};
   }
 
-  private createState(
+  private async createState(
     cwd: string,
     mcpServers: McpServer[] | undefined | null,
     executionTarget: AmpExecutionTarget = "local",
-  ): SessionState {
+  ): Promise<SessionState> {
     const mcpConfig = convertMcpServers(mcpServers);
+    let permission: AmpPermissionMode = "default";
+    try {
+      permission = await this.resolveInitialPermission?.() ?? permission;
+    } catch (error) {
+      console.error("[amp] could not read bb permission; using Amp's normal rules", error);
+    }
     return {
       cwd: cwd || process.cwd(),
       mcpConfig,
@@ -396,7 +408,7 @@ export class AmpBridgeAgent implements Agent {
       cancelled: false,
       active: false,
       mode: "medium",
-      permission: "default",
+      permission,
       reportedMcpStatuses: new Set(),
     };
   }
@@ -409,7 +421,7 @@ export class AmpBridgeAgent implements Agent {
       );
     }
     const sessionId = `S-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const state = this.createState(params.cwd, params.mcpServers);
+    const state = await this.createState(params.cwd, params.mcpServers);
     this.sessions.set(sessionId, state);
     return {
       sessionId,
@@ -430,7 +442,7 @@ export class AmpBridgeAgent implements Agent {
           `Unknown session ${params.sessionId}: its saved Amp thread and execution target are missing or invalid.`,
         );
       }
-      const state = this.createState(
+      const state = await this.createState(
         params.cwd,
         params.mcpServers,
         binding.executionTarget,
@@ -547,7 +559,10 @@ export class AmpBridgeAgent implements Agent {
           options.project = this.orbProject;
         }
       } else {
-        if (s.permission === "bypass") options.dangerouslyAllowAll = true;
+        // Always override the persisted Amp setting. bb Full force-allows all
+        // tools; Accept Edits keeps Amp's normal rules and explicitly turns
+        // off a user-level amp.dangerouslyAllowAll=true setting.
+        options.dangerouslyAllowAll = s.permission === "bypass";
         if (Object.keys(s.mcpConfig).length > 0) options.mcpConfig = s.mcpConfig;
       }
       if (s.threadId) options.continue = s.threadId;

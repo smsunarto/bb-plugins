@@ -86,6 +86,7 @@ test("managed entry runs node with the bridge bundle and no provider-wide execut
   assert.equal(entry.command, "/usr/bin/node");
   assert.deepEqual(entry.args, ["/plugin/dist/bridge.js"]);
   assert.deepEqual(entry.env, { AMP_CLI_PATH: "/tmp/amp" });
+  assert.equal("permissionCli" in entry, false);
   assert.equal(entry.logo, "logos/amp.svg");
   assert.equal("nativeReasoning" in entry, false);
   assert.equal("modelCli" in entry, false);
@@ -156,6 +157,7 @@ test("fresh install adds one Amp entry without clobbering other config", () => {
   assert.equal(config.customAcpAgents[1].displayName, "Amp");
   assert.equal(config.customAcpAgents[1].command, launch.node);
   assert.deepEqual(config.customAcpAgents[1].args, [launch.bridge]);
+  assert.equal("permissionCli" in config.customAcpAgents[1], false);
   assert.deepEqual(config.customAcpAgents[1].env, {
     AMP_CLI_PATH: launch.amp,
   });
@@ -445,6 +447,22 @@ test("the automatic pass rewrites an entry whose Amp CLI is gone", () => {
   writeFileSync(paths.configPath, JSON.stringify(config));
 
   assert.equal(needsProvisioning(paths, launch), true);
+});
+
+test("the automatic pass removes unsupported permission routing from an older entry", () => {
+  const { launch, paths } = fixture();
+  provisionInstallation(paths, launch);
+
+  const config = JSON.parse(readFileSync(paths.configPath, "utf8"));
+  config.customAcpAgents[0].permissionCli = {
+    full: ["--bb-permission-full"],
+  };
+  writeFileSync(paths.configPath, JSON.stringify(config));
+
+  assert.equal(needsProvisioning(paths, launch), true);
+  provisionInstallation(paths, launch);
+  const repaired = JSON.parse(readFileSync(paths.configPath, "utf8"));
+  assert.equal("permissionCli" in repaired.customAcpAgents[0], false);
 });
 
 test("the automatic pass rewrites an entry left on an older bridge or runtime", () => {

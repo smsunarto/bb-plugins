@@ -240,7 +240,7 @@ test("prompt streams thought, message, and tool call updates in order and return
   // No effort is sent unless one is picked: Amp's mode carries its own default.
   assert.equal("effort" in (calls[0].options ?? {}), false);
   assert.equal(calls[0].options?.continue, undefined);
-  assert.equal(calls[0].options?.dangerouslyAllowAll, undefined);
+  assert.equal(calls[0].options?.dangerouslyAllowAll, false);
   assert.deepEqual(calls[0].options?.labels, [AMP_ACP_LABEL]);
 
   const kinds = updates.updates.map((n) => n.update.sessionUpdate);
@@ -507,6 +507,39 @@ test("config option changes flow into the next execute options", async () => {
     agent.setSessionConfigOption({ sessionId, configId: CONFIG_MODE, value: "warp" }),
     /Unsupported Amp mode/,
   );
+});
+
+test("bb Full starts Local Amp in bypass while Accept Edits forces normal rules", async () => {
+  for (const [initialPermission, expected] of [
+    ["bypass", true],
+    ["default", false],
+  ] as const) {
+    const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
+    const { agent, sessionId, session } = await newAgentSession(
+      fn,
+      collector(),
+      { resolveInitialPermission: async () => initialPermission },
+    );
+    assert.equal(
+      session.configOptions?.find((option) => option.id === CONFIG_PERMISSION)?.currentValue,
+      initialPermission,
+    );
+
+    await agent.prompt({ sessionId, prompt: textPrompt("go") });
+    assert.equal(calls[0].options?.dangerouslyAllowAll, expected);
+  }
+});
+
+test("bb permission read failures use Amp's normal rules", async () => {
+  const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
+  const { agent, sessionId } = await newAgentSession(fn, collector(), {
+    resolveInitialPermission: async () => {
+      throw new Error("bb unavailable");
+    },
+  });
+
+  await agent.prompt({ sessionId, prompt: textPrompt("go") });
+  assert.equal(calls[0].options?.dangerouslyAllowAll, false);
 });
 
 test("loadSession resumes a stored thread without latching a failure", async () => {

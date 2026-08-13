@@ -33,6 +33,7 @@ import {
 } from "./bridge-core.ts";
 import { AMP_ACP_ORB_PROJECT_ENV } from "./execution-target.ts";
 import { createFileSessionStore } from "./session-store.ts";
+import { readBbPermissionMode } from "./bb-permission.ts";
 
 const stream = ndJsonStream(
   Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
@@ -77,6 +78,7 @@ const connection = new AgentSideConnection(
   (client) =>
     new AmpBridgeAgent(client, {
       execute: execute as unknown as AmpExecuteFn,
+      resolveInitialPermission: readBbPermissionMode,
       store: createFileSessionStore(),
       orbProject: process.env[AMP_ACP_ORB_PROJECT_ENV],
       reportExecutionUsage,
