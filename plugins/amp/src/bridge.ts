@@ -36,8 +36,11 @@ import {
 } from "./bridge-core.ts";
 import { AMP_ACP_ORB_PROJECT_ENV } from "./execution-target.ts";
 import { createFileSessionStore } from "./session-store.ts";
+import { createBbSteeringMonitor } from "./bb-steering-monitor.ts";
 import { readBbFastMode, readBbPermissionMode } from "./bb-execution.ts";
-import { AMP_CLI_SHIM_REAL_CLI_ENV } from "./amp-cli-shim.ts";
+import {
+  AMP_CLI_SHIM_REAL_CLI_ENV,
+} from "./amp-cli-shim.ts";
 
 const ampCliShim = join(dirname(fileURLToPath(import.meta.url)), "amp-cli-shim.js");
 const configuredAmpCli = process.env.AMP_CLI_PATH?.trim();
@@ -91,6 +94,7 @@ const connection = new AgentSideConnection(
   (client) =>
     new AmpBridgeAgent(client, {
       execute: execute as unknown as AmpExecuteFn,
+      createSteeringMonitor: createBbSteeringMonitor,
       resolveInitialPermission: readBbPermissionMode,
       resolveFastMode: readBbFastMode,
       store: createFileSessionStore(),

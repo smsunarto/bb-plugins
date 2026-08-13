@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SessionNotification } from "@agentclientprotocol/sdk";
+import type { ContentBlock, SessionNotification } from "@agentclientprotocol/sdk";
+import type { UserInputMessage } from "@ampcode/sdk";
 import {
   AmpBridgeAgent,
   AMP_ACP_LABEL,
@@ -20,6 +21,10 @@ import type {
   OracleReportStore,
   OracleTraceEventInput,
 } from "../src/oracle-report-store.ts";
+import type { SteeringInputMonitor } from "../src/bb-steering-monitor.ts";
+import {
+  permissionModeFromBb,
+} from "../src/permission-mode.ts";
 import { AMP_CLI_SHIM_FAST_ENV } from "../src/amp-cli-shim.ts";
 
 const THREAD = "T-test-thread";
@@ -113,6 +118,18 @@ async function newAgentSession(
 
 const textPrompt = (text: string) => [{ type: "text" as const, text }];
 
+function inputMessageText(message: UserInputMessage): string {
+  return message.message.content.map((block) => block.text).join("");
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error("Timed out waiting for test condition");
+}
+
 test("a case-insensitive standalone /orb token routes from anywhere and is removed", () => {
   for (const [input, expected] of [
     ["/orb fix the test", "fix the test"],
@@ -204,6 +221,13 @@ test("initialize advertises protocol 1, loadSession, remote MCP, and no image su
   assert.equal(response.agentCapabilities?.mcpCapabilities?.http, true);
   assert.equal(response.agentCapabilities?.mcpCapabilities?.sse, true);
   assert.equal(response.authMethods, undefined);
+});
+
+test("bb thread permissions map to Amp permission modes", () => {
+  assert.equal(permissionModeFromBb("full"), "bypass");
+  assert.equal(permissionModeFromBb("accept-edits"), "default");
+  assert.equal(permissionModeFromBb("auto"), "default");
+  assert.equal(permissionModeFromBb("unknown"), null);
 });
 
 test("newSession exposes the model, no reasoning control, and permission config options", async () => {
@@ -388,6 +412,137 @@ test("captures the Amp thread id and continues it on the next prompt", async () 
   assert.equal(calls[1].options?.continue, THREAD);
 });
 
+test("accepted bb steering enters Amp's active input stream and its queued ACP copy is suppressed", async () => {
+  let emitSteering: ((input: ContentBlock[]) => void) | undefined;
+  const monitorSignals: AbortSignal[] = [];
+  const monitor: SteeringInputMonitor = {
+    async run(onInput, signal) {
+      emitSteering = onInput;
+      monitorSignals.push(signal);
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    },
+  };
+  const receivedInputs: string[][] = [];
+  let executeCalls = 0;
+  const execute: AmpExecuteFn = ({ prompt }) => {
+    const call = executeCalls;
+    executeCalls += 1;
+    return (async function* () {
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
+      const inputs: string[] = [];
+      receivedInputs[call] = inputs;
+      const initial = await iterator.next();
+      assert.equal(initial.done, false);
+      inputs.push(inputMessageText(initial.value));
+      yield sysInit();
+      if (call === 0) {
+        const steering = await iterator.next();
+        assert.equal(steering.done, false);
+        inputs.push(inputMessageText(steering.value));
+      }
+      yield success();
+    })();
+  };
+  const { agent, sessionId } = await newAgentSession(execute, collector(), {
+    createSteeringMonitor: async () => monitor,
+  });
+
+  const activePrompt = agent.prompt({ sessionId, prompt: textPrompt("start") });
+  await waitUntil(() => emitSteering !== undefined && receivedInputs[0]?.length === 1);
+  assert.ok(emitSteering);
+  emitSteering(textPrompt("change direction"));
+  assert.equal((await activePrompt).stopReason, "end_turn");
+
+  assert.equal(executeCalls, 1);
+  assert.deepEqual(receivedInputs[0], ["start", "change direction"]);
+  assert.equal(monitorSignals[0]?.aborted, true);
+
+  const duplicate = await agent.prompt({
+    sessionId,
+    prompt: textPrompt("change direction"),
+  });
+  assert.equal(duplicate.stopReason, "end_turn");
+  assert.equal(executeCalls, 1, "bb's delayed ACP copy must not execute twice");
+
+  const next = await agent.prompt({ sessionId, prompt: textPrompt("next turn") });
+  assert.equal(next.stopReason, "end_turn");
+  assert.equal(executeCalls, 2);
+  assert.deepEqual(receivedInputs[1], ["next turn"]);
+});
+
+test("final assistant output closes streaming input so Amp can exit", async () => {
+  const monitor: SteeringInputMonitor = {
+    async run(_onInput, signal) {
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    },
+  };
+  let inputClosed = false;
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    assert.notEqual(typeof prompt, "string");
+    const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
+    assert.equal((await iterator.next()).done, false);
+    yield sysInit();
+    yield {
+      ...assistant([{ type: "text", text: "done" }]),
+      message: {
+        content: [{ type: "text", text: "done" }],
+        stop_reason: "end_turn",
+      },
+    };
+    inputClosed = (await iterator.next()).done ?? false;
+    yield success();
+  })();
+  const { agent, sessionId } = await newAgentSession(execute, collector(), {
+    createSteeringMonitor: async () => monitor,
+  });
+
+  const response = await agent.prompt({ sessionId, prompt: textPrompt("finish") });
+
+  assert.equal(response.stopReason, "end_turn");
+  assert.equal(inputClosed, true);
+});
+
+test("cancel closes the active Amp input stream and steering monitor", async () => {
+  let monitorSignal: AbortSignal | undefined;
+  const monitor: SteeringInputMonitor = {
+    async run(_onInput, signal) {
+      monitorSignal = signal;
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    },
+  };
+  let waitingForMoreInput = false;
+  let inputClosed = false;
+  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
+    assert.notEqual(typeof prompt, "string");
+    const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
+    assert.equal((await iterator.next()).done, false);
+    yield sysInit();
+    waitingForMoreInput = true;
+    inputClosed = (await iterator.next()).done ?? false;
+  })();
+  const { agent, sessionId } = await newAgentSession(execute, collector(), {
+    createSteeringMonitor: async () => monitor,
+  });
+
+  const pending = agent.prompt({ sessionId, prompt: textPrompt("wait") });
+  await waitUntil(() => waitingForMoreInput);
+  await agent.cancel({ sessionId });
+
+  assert.equal((await pending).stopReason, "cancelled");
+  assert.equal(inputClosed, true);
+  assert.equal(monitorSignal?.aborted, true);
+});
+
 test("cancel aborts the running execute and the session recovers afterwards", async () => {
   let sawAbort = false;
   const calls: RecordedCall[] = [];
@@ -550,16 +705,15 @@ test("bb Full starts Local Amp in bypass while Accept Edits forces normal rules"
   }
 });
 
-test("bb permission read failures use Amp's normal rules", async () => {
+test("bb thread permission overrides the safe default", async () => {
   const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
   const { agent, sessionId } = await newAgentSession(fn, collector(), {
-    resolveInitialPermission: async () => {
-      throw new Error("bb unavailable");
-    },
+    resolveInitialPermission: async () => "bypass",
   });
 
   await agent.prompt({ sessionId, prompt: textPrompt("go") });
-  assert.equal(calls[0].options?.dangerouslyAllowAll, false);
+
+  assert.equal(calls[0].options?.dangerouslyAllowAll, true);
 });
 
 test("loadSession resumes a stored thread without latching a failure", async () => {

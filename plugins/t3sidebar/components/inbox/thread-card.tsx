@@ -125,10 +125,13 @@ export function ThreadCard({
           </div>
           <div
             className={cn(
-              // Weight alone carries unread. Fading the title — or the whole
-              // card — makes a thread at rest read as disabled, and at rest is
-              // what most of the list is most of the time.
-              "pointer-events-none relative mt-0.5 truncate text-sm text-foreground",
+              // Keep resting titles on the sidebar's own text ladder. The
+              // active row earns the brighter accent foreground, while weight
+              // alone still carries unread.
+              "pointer-events-none relative mt-0.5 truncate text-sm",
+              isActive
+                ? "text-sidebar-accent-foreground"
+                : "text-sidebar-foreground",
               thread.isUnread && "font-medium",
             )}
           >

@@ -1,9 +1,18 @@
-# Every CI job needs the same four things, and two of them are easy to get
-# subtly wrong (the bb CLI must match config.bbVersion; the cache mount must
-# come after checkout). Keeping them in one composite action means a job cannot
-# drift from the others by forgetting a step.
+# Every CI job needs the same toolchain, and the order-sensitive parts are easy
+# to get subtly wrong (the cache mount must follow checkout; the bb CLI must
+# match config.bbVersion). Keeping them here means a job cannot drift from the
+# others by forgetting a step.
 name: Setup
-description: Node, Bun, the Namespace cache volume, and the pinned bb CLI.
+description: Node, Bun, the Namespace cache volume, and optionally the pinned bb CLI.
+
+inputs:
+  bb-cli:
+    description: >-
+      Install the pinned bb CLI. Only jobs that build a plugin or check the
+      vendored SDK types need it; it costs a native compile, so a job that just
+      runs tests should pass "false".
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -20,16 +29,33 @@ runs:
 
     # Must run AFTER checkout — checkout wipes the workspace and would delete a
     # mount placed before it — and after setup-bun, because a mode only mounts
-    # what its toolchain already resolves.
+    # what its toolchain already resolves. apt is here for the native build
+    # below, so the package downloads survive across runs.
     - uses: namespacelabs/nscloud-cache-action@v1
       with:
-        cache: bun
+        cache: |
+          bun
+          apt
+
+    # bb-app depends on node-pty, which ships prebuilds for darwin and win32
+    # only — no linux — so its install script always falls through to
+    # `node-gyp rebuild` here. GitHub's ubuntu image carries node-gyp and a
+    # compiler; the Namespace image does not, which is why this is explicit.
+    # Both commands are no-ops once the apt cache is warm.
+    - name: Install the native build toolchain node-pty needs
+      if: inputs.bb-cli == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends build-essential python3
+        npm install -g node-gyp
 
     # Not a convenience: `bun run build` shells out to `bb plugin build .` for
     # every plugin, and sdk-types:check diffs the vendored .d.ts against what
     # this exact release writes. Floating on latest would fail the type check
     # the moment bb shipped a new SDK.
     - name: Install pinned bb CLI
+      if: inputs.bb-cli == 'true'
       shell: bash
       run: bun install -g "bb-app@$(node -p "require('./package.json').config.bbVersion")"
 

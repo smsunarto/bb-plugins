@@ -2,6 +2,7 @@
 // injected so unit tests can drive the agent with a fake async generator.
 // bb is the only intended ACP client; the surface matches exactly what bb
 // calls (see README architecture notes).
+import { isDeepStrictEqual } from "node:util";
 import type {
   Agent,
   AuthenticateRequest,
@@ -23,7 +24,12 @@ import type {
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import type { AmpOptions, MCPConfig } from "@ampcode/sdk";
+import {
+  createUserMessage,
+  type AmpOptions,
+  type MCPConfig,
+  type UserInputMessage,
+} from "@ampcode/sdk";
 import {
   finishOpenOracleReports,
   toSessionUpdates,
@@ -36,6 +42,7 @@ import {
 } from "./oracle-report-store.ts";
 import { stripOrbDirectives } from "./orb-directive.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
+import type { SteeringInputMonitor } from "./bb-steering-monitor.ts";
 import type { AmpPermissionMode } from "./permission-mode.ts";
 import { AMP_CLI_SHIM_FAST_ENV } from "./amp-cli-shim.ts";
 
@@ -48,8 +55,10 @@ export interface BridgeClient {
  * the exact @ampcode/sdk version this plugin pins. */
 export type AmpExecuteOptions = AmpOptions;
 
+export type AmpExecutePrompt = string | AsyncIterable<UserInputMessage>;
+
 export type AmpExecuteFn = (args: {
-  prompt: string;
+  prompt: AmpExecutePrompt;
   signal?: AbortSignal;
   options?: AmpExecuteOptions;
 }) => AsyncIterable<AmpStreamMessage>;
@@ -144,6 +153,10 @@ interface SessionState {
   executionAttempted: boolean;
   threadId: string | null;
   controller: AbortController | null;
+  input: MultiTurnPrompt | null;
+  steeringController: AbortController | null;
+  steeringMonitor: SteeringInputMonitor | null;
+  consumedSteeringInputs: ContentBlock[][];
   cancelled: boolean;
   active: boolean;
   mode: string;
@@ -153,6 +166,7 @@ interface SessionState {
 
 export interface BridgeDeps {
   execute: AmpExecuteFn;
+  createSteeringMonitor?: () => Promise<SteeringInputMonitor | null>;
   resolveInitialPermission?: () => Promise<AmpPermissionMode | null>;
   resolveFastMode?: () => Promise<boolean>;
   store?: SessionStore;
@@ -163,6 +177,63 @@ export interface BridgeDeps {
 
 const AUTH_HINT = "Amp authentication required: run `amp login` once, or set AMP_API_KEY in the provider env, then retry.";
 export const AMP_ACP_LABEL = "via-amp-acp";
+const STEERING_IDLE_MS = 250;
+
+class MultiTurnPrompt {
+  private readonly prompts: string[];
+  private readonly waiters = new Set<() => void>();
+  private closed = false;
+
+  constructor(initialPrompt: string) {
+    this.prompts = [initialPrompt];
+  }
+
+  push(prompt: string): boolean {
+    if (this.closed) return false;
+    this.prompts.push(prompt);
+    this.wake();
+    return true;
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.wake();
+  }
+
+  async *stream(signal: AbortSignal): AsyncGenerator<UserInputMessage> {
+    let index = 0;
+    while (!signal.aborted) {
+      while (index < this.prompts.length) {
+        yield createUserMessage(this.prompts[index] ?? "");
+        index += 1;
+      }
+      if (this.closed) return;
+      await this.wait(signal);
+    }
+  }
+
+  private wait(signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal.aborted || this.closed) return resolve();
+      const finish = () => {
+        this.waiters.delete(finish);
+        signal.removeEventListener("abort", finish);
+        resolve();
+      };
+      this.waiters.add(finish);
+      signal.addEventListener("abort", finish, { once: true });
+    });
+  }
+
+  private wake(): void {
+    for (const waiter of this.waiters) waiter();
+  }
+}
+
+function sameContentBlocks(left: ContentBlock[], right: ContentBlock[]): boolean {
+  return isDeepStrictEqual(left, right);
+}
 
 export function isAuthError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -343,6 +414,9 @@ export function unsupportedOptionFrom(message: string): keyof AmpExecuteOptions 
 export class AmpBridgeAgent implements Agent {
   private readonly client: BridgeClient;
   private readonly execute: AmpExecuteFn;
+  private readonly createSteeringMonitor:
+    | (() => Promise<SteeringInputMonitor | null>)
+    | undefined;
   private readonly resolveInitialPermission:
     | (() => Promise<AmpPermissionMode | null>)
     | undefined;
@@ -361,6 +435,7 @@ export class AmpBridgeAgent implements Agent {
   constructor(client: BridgeClient, deps: BridgeDeps) {
     this.client = client;
     this.execute = deps.execute;
+    this.createSteeringMonitor = deps.createSteeringMonitor;
     this.resolveInitialPermission = deps.resolveInitialPermission;
     this.resolveFastMode = deps.resolveFastMode;
     this.store = deps.store ?? memorySessionStore();
@@ -396,7 +471,16 @@ export class AmpBridgeAgent implements Agent {
     executionTarget: AmpExecutionTarget = "local",
   ): Promise<SessionState> {
     const mcpConfig = convertMcpServers(mcpServers);
+    let steeringMonitor: SteeringInputMonitor | null = null;
     let permission: AmpPermissionMode = "default";
+    try {
+      steeringMonitor = await this.createSteeringMonitor?.() ?? null;
+    } catch (error) {
+      console.error(
+        "[amp] could not initialize bb steering input; queued follow-ups remain available",
+        error,
+      );
+    }
     try {
       permission = await this.resolveInitialPermission?.() ?? permission;
     } catch (error) {
@@ -409,6 +493,10 @@ export class AmpBridgeAgent implements Agent {
       executionAttempted: false,
       threadId: null,
       controller: null,
+      input: null,
+      steeringController: null,
+      steeringMonitor,
+      consumedSteeringInputs: [],
       cancelled: false,
       active: false,
       mode: "medium",
@@ -509,6 +597,14 @@ export class AmpBridgeAgent implements Agent {
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     const s = this.requireSession(params.sessionId);
+    const consumedSteeringInput = s.consumedSteeringInputs[0];
+    if (!s.active && consumedSteeringInput !== undefined) {
+      if (sameContentBlocks(consumedSteeringInput, params.prompt)) {
+        s.consumedSteeringInputs.shift();
+        return { stopReason: "end_turn" };
+      }
+      s.consumedSteeringInputs = [];
+    }
     const routed = routeAmpPrompt(params.prompt);
     if (routed.requestedTarget !== null && routed.directiveOnly) {
       throw new Error("Add instructions to the prompt with the /orb directive");
@@ -536,6 +632,40 @@ export class AmpBridgeAgent implements Agent {
     s.active = true;
     const controller = new AbortController();
     s.controller = controller;
+    const input = executionTarget === "local" && s.steeringMonitor !== null
+      ? new MultiTurnPrompt(routed.prompt)
+      : null;
+    s.input = input;
+    const steeringController = input === null ? null : new AbortController();
+    s.steeringController = steeringController;
+    let closeInputTimer: ReturnType<typeof setTimeout> | null = null;
+    const keepInputOpen = () => {
+      if (closeInputTimer === null) return;
+      clearTimeout(closeInputTimer);
+      closeInputTimer = null;
+    };
+    const closeInputAfterIdle = () => {
+      keepInputOpen();
+      closeInputTimer = setTimeout(() => {
+        closeInputTimer = null;
+        input?.close();
+      }, STEERING_IDLE_MS);
+    };
+    const monitorPromise = input !== null && steeringController !== null
+      ? s.steeringMonitor?.run((blocks) => {
+          const steering = routeAmpPrompt(blocks);
+          // Execution target is fixed by the first prompt. Let bb's queued ACP
+          // fallback report an invalid mid-thread /orb request instead.
+          if (steering.requestedTarget !== null) return;
+          if (!input.push(steering.prompt)) return;
+          keepInputOpen();
+          s.consumedSteeringInputs.push(blocks);
+        }, steeringController.signal).catch((error) => {
+          if (!steeringController.signal.aborted) {
+            console.error("[amp] bb steering input monitor stopped", error);
+          }
+        })
+      : undefined;
     const translationState: TranslationState = {
       toolNamesById: new Map(),
       oracleReportByToolId: new Map(),
@@ -586,6 +716,7 @@ export class AmpBridgeAgent implements Agent {
     };
 
     let stopReason: StopReason = "end_turn";
+    let preserveConsumedSteers = false;
     try {
       // Two attempts at most: the retry only fires when an older Amp CLI rejects
       // an option before streaming anything, so no output can be duplicated.
@@ -593,9 +724,10 @@ export class AmpBridgeAgent implements Agent {
         let streamed = false;
         let softFailed = false;
         let executionError: Error | null = null;
+        const attemptInputController = new AbortController();
         try {
           const stream = this.execute({
-            prompt: routed.prompt,
+            prompt: input?.stream(attemptInputController.signal) ?? routed.prompt,
             signal: controller.signal,
             options: buildOptions(),
           });
@@ -626,6 +758,12 @@ export class AmpBridgeAgent implements Agent {
               const ampStopReason = message.message?.stop_reason;
               if (ampStopReason === "end_turn" || ampStopReason === "max_tokens" || ampStopReason === "refusal") {
                 stopReason = ampStopReason;
+                if (message.type === "assistant" && input !== null) {
+                  // With streaming input, Amp does not emit its final result or
+                  // exit until stdin closes. Leave a short window for a steer
+                  // accepted alongside this completion, then signal EOF.
+                  closeInputAfterIdle();
+                }
               }
               for (const notification of toSessionUpdates(message, params.sessionId, translationState)) {
                 await this.sendUpdate(notification);
@@ -667,7 +805,11 @@ export class AmpBridgeAgent implements Agent {
             }
           }
           if (executionError) throw executionError;
-          return { stopReason: s.cancelled ? "cancelled" : (softFailed ? "end_turn" : stopReason) };
+          const response: PromptResponse = {
+            stopReason: s.cancelled ? "cancelled" : (softFailed ? "end_turn" : stopReason),
+          };
+          preserveConsumedSteers = response.stopReason !== "cancelled";
+          return response;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (s.cancelled || (error instanceof Error && error.name === "AbortError") || message.includes("aborted")) {
@@ -686,9 +828,16 @@ export class AmpBridgeAgent implements Agent {
             throw new Error(`${message}\n${AUTH_HINT}`, { cause: error });
           }
           throw error;
+        } finally {
+          attemptInputController.abort();
         }
       }
     } finally {
+      keepInputOpen();
+      input?.close();
+      steeringController?.abort();
+      await monitorPromise;
+      if (!preserveConsumedSteers) s.consumedSteeringInputs = [];
       finishOpenOracleReports(
         translationState,
         s.cancelled
@@ -702,6 +851,8 @@ export class AmpBridgeAgent implements Agent {
         s.active = false;
         s.cancelled = false;
         s.controller = null;
+        s.input = null;
+        s.steeringController = null;
       }
       // Amp emits system:init with a session_id at spawn, so this window is
       // tiny — but if the turn ended before any message carried one, the next
@@ -720,6 +871,8 @@ export class AmpBridgeAgent implements Agent {
     if (!s) return;
     if (s.active && s.controller) {
       s.cancelled = true;
+      s.input?.close();
+      s.steeringController?.abort();
       s.controller.abort();
     }
   }

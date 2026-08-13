@@ -12,12 +12,12 @@
   <g>
     <rect x="28"  y="52" width="126" height="52" rx="6" fill="#141414" stroke="#e3e3dd1e"/>
     <rect x="164" y="52" width="126" height="52" rx="6" fill="#181818" stroke="#e3e3dd1e"/>
-    <rect x="300" y="52" width="126" height="52" rx="6" fill="#1f1f1f" stroke="#e3e3dd1e"/>
+    <rect x="300" y="52" width="126" height="52" rx="6" fill="#1e1e1e" stroke="#e3e3dd1e"/>
     <rect x="436" y="52" width="126" height="52" rx="6" fill="#262626" stroke="#e3e3dd1e"/>
     <rect x="572" y="52" width="126" height="52" rx="6" fill="#404040" stroke="#e3e3dd1e"/>
     <text class="l" x="28"  y="120">chrome</text>   <text class="v" x="28"  y="134">#141414</text>
     <text class="l" x="164" y="120">editor</text>   <text class="v" x="164" y="134">#181818</text>
-    <text class="l" x="300" y="120">well</text>     <text class="v" x="300" y="134">#1F1F1F</text>
+    <text class="l" x="300" y="120">well</text>     <text class="v" x="300" y="134">#1E1E1E</text>
     <text class="l" x="436" y="120">raised</text>   <text class="v" x="436" y="134">#262626</text>
     <text class="l" x="572" y="120">selection</text><text class="v" x="572" y="134">#404040</text>
   </g>

@@ -62,16 +62,23 @@
   ],
   "dependencies": {},
   "devDependencies": {
+    "@storybook/react-vite": "10.5.7",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "better-sqlite3": "^12.0.0",
     "hono": "^4.11.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "storybook": "10.5.7",
     "typescript": "^7.0.0",
+    "vite": "^8.2.1",
     "zod": "^4.3.6"
   },
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
+    "storybook": "storybook dev --port 6006",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"

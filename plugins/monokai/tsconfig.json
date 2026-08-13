@@ -4,6 +4,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "lib": [
       "ES2022",
       "DOM"
@@ -20,7 +21,9 @@
     "skipLibCheck": false
   },
   "include": [
+    ".storybook/**/*.ts",
     "server.ts",
+    "storybook/**/*.ts",
     "types"
   ]
 }

@@ -370,7 +370,16 @@ function DotfilesPanel() {
                 {isEdited ? "Save" : "Saved"}
               </Button>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto">
+            {/* oxlint-disable-next-line jsx-a11y/no-static-element-interactions --
+                only blocks shadow-editor events from reaching page shortcuts */}
+            <div
+              className="min-h-0 flex-1 overflow-auto"
+              onKeyDown={(event) => {
+                // The editable lives in Pierre's shadow DOM, so document-level
+                // shortcuts otherwise see the non-editable custom-element host.
+                event.stopPropagation();
+              }}
+            >
               <EditProvider
                 createEditor={(options: EditorOptions<undefined>) => new Editor(options)}
               >

@@ -75,10 +75,14 @@ Disabling or removing the plugin returns bb to the default palette.
 
 | Role | Value | Where it lands |
 |---|---|---|
-| Chrome ground | `#141414` | cards, popovers, sidebar, terminal ground |
+| Chrome ground | `#141414` | cards, popovers, sidebars, terminal ground |
 | Editor ground | `#181818` | the main pane |
-| Well | `#1F1F1F` | inputs, code wells |
+| Sidebar divider | `#2B2B2B` | solid 1px boundary between navigation and content |
+| User message bubble | `#1E1E1E` | right-aligned user requests |
+| Composer | `#1E1E1E` | prompt input and controls |
+| Well | `#1E1E1E` | recessed and code wells; standard text fields stay `#181818` with a `#3C3C3C` edge |
 | Raised | `#262626` | hover and active fills |
+| Filled buttons | `#363635` / `#1E1E1E` | borderless primary / `#3C3C3C`-bordered secondary buttons |
 | Selection | `#404040` | text selection, chips |
 | Ink | `#E3E3DD` | the one white; every text tier is an alpha of it |
 | Accent | `#88C0D0` | the only chroma in the chrome — always means interactive |
@@ -99,7 +103,7 @@ ratio against the ground it sits on.
 | Terminal | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background |
 | Diff viewer | addition / deletion / modified colors, gutter number grounds and role-colored numbers |
 | File tree | the git-status column — added, untracked, renamed, modified, deleted, ignored |
-| Inline code | the sugar-high token set, measured on the `#1F1F1F` well |
+| Inline code | the sugar-high token set, measured on the `#1E1E1E` well |
 | Composer stop button | repainted to the danger hue |
 
 ## Troubleshooting
@@ -138,3 +142,13 @@ bb plugin reload monokai
 
 Re-apply with `bb theme set plugin:monokai:bb-monokai` if the palette does not
 refresh.
+
+To review the palette contract outside bb, start its local Storybook:
+
+```sh
+bun run --filter '@smsunarto/bb-plugin-monokai' storybook
+```
+
+The catalog imports the real theme stylesheet, so CSS edits update the stories
+without a second token source. It previews the palette and component states;
+live bb remains the integration check for shadow-DOM surfaces and host styles.

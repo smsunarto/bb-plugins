@@ -73,7 +73,7 @@
   --ink: #e3e3dd; /* the one white; ladder base */
 
   /* ---- Grounds ramp ---------------------------------------------------
-   * #141414 chrome · #181818 editor · #1F1F1F wells · #262626 raised/hover ·
+   * #141414 chrome · #181818 editor · #1E1E1E wells · #262626 raised/hover ·
    * #404040 selection. Nothing else serves as a surface. Translucent tiers use
    * an ink alpha chosen to flatten onto a ramp step over --background. */
   --background: #181818; /* main pane = editor ground */
@@ -82,18 +82,19 @@
   --secondary: #262626; /* raised */
   --accent: #262626; /* neutral hover/active fill, despite the name */
   --muted: #404040; /* chips + xterm selection ground (see below) */
-  --input: #1f1f1f; /* contract: one treatment for every text field.
-                     * bb uses this name as border AND fill; the fill is the
-                     * load-bearing role, so the well wins and the visible edge
-                     * comes from --border / --ring. */
+  --input: #3c3c3c; /* compact form-control edge from the reference; distinct
+                      * from the #181818 field without becoming a bright line */
 
-  --surface-recessed: #e3e3dd09; /* -> #1F1F1F over --background */
-  --surface-recessed-solid: #1f1f1f;
-  --surface-recessed-soft-solid: #1f1f1f; /* ramp has no step between #181818
-                                           * and #1F1F1F; coarse on purpose */
+  --surface-recessed: #e3e3dd08; /* -> #1E1E1E over --background */
+  --surface-recessed-solid: #1e1e1e;
+  --surface-recessed-soft-solid: #1e1e1e; /* ramp has no step between #181818
+                                           * and #1E1E1E; coarse on purpose */
   --surface-raised: #e3e3dd12; /* -> #262626 */
   --surface-raised-solid: #262626;
   --surface-scrim: #141414eb; /* veil = darkest ground */
+
+  --agent-surface-background: #1e1e1e;
+  --agent-surface-border: #e3e3dd11;
 
   --state-hover: #e3e3dd12; /* -> #262626, the raised/hover step */
   --state-active: #e3e3dd32; /* -> #404040, the selection step */
@@ -169,12 +170,12 @@
 
   /* ---- Sidebar ---------------------------------------------------------
    * --sidebar is also the xterm background and cursor accent, so pinning it to
-   * the chrome ground makes the terminal ground equal ANSI black #141414. */
+   * the chrome ground gives the navigation a clear step below the main pane. */
   --sidebar: #141414;
   --sidebar-foreground: #e3e3ddbd; /* 8.22:1 */
   --sidebar-accent: #262626;
   --sidebar-accent-foreground: #e3e3dd; /* selection keeps primary text */
-  --sidebar-border: #e3e3dd11;
+  --sidebar-border: #2b2b2b; /* solid, low-contrast 1px pane divider */
 
   /* ---- Mention pills ---------------------------------------------------
    * The gradient syntax is required (the token is consumed as a
@@ -279,7 +280,7 @@
   --trees-status-deleted-override: #e34671;
   --trees-status-ignored-override: #e3e3dd4d;
 
-  --trees-input-bg-override: #1f1f1f; /* default is #070707, darker than every
+  --trees-input-bg-override: #1e1e1e; /* default is #070707, darker than every
                                        * ground on the ramp */
   --trees-accent-override: #88c0d0; /* default is #009fff */
   --trees-indent-guide-bg-override: #e3e3dd2c;
@@ -294,10 +295,88 @@
   --trees-file-icon-cyan: #e3e3dd8c;
 }
 
+/* Keep the project/navigation sidebar on the #141414 chrome ground. The
+ * thread-side panel belongs to the #181818 editor plane instead; scope the
+ * token at its panel root so terminal and left-sidebar consumers do not move. */
+.dark #thread-detail-secondary-panel {
+  --sidebar: #181818;
+}
+
+/* Cursor Monokai leaves chat.request* unset. Its visible user request bubble is
+ * #1E1E1E with a faint edge. Match those colors while preserving bb's native
+ * bubble geometry. Agent replies stay flat on the #181818 panel ground. */
+.dark .rounded-xl.border.border-border-seam.bg-surface-recessed {
+  background-color: var(--agent-surface-background);
+  border-color: var(--agent-surface-border);
+}
+
+.dark [data-gh-stack-container] {
+  background-color: var(--agent-surface-background);
+}
+
+/* Some bb captions deliberately reduce the already-faint subtle token to 75%.
+ * On this dark ground that falls below readable body-text contrast, so keep
+ * that utility at the muted ladder step instead of multiplying two fades. */
+.dark .text-subtle-foreground\/75 {
+  color: var(--readback-foreground);
+}
+
+/* bb shares --input between control edges and, in a few components, fills.
+ * Keep standard text fields on the reference's dark ground while --input
+ * supplies their visible #3C3C3C keyline. */
+.dark input.border-input,
+.dark textarea.border-input {
+  background-color: #181818;
+}
+
+/* The composer's visible surface is #1E1E1E in the Cursor reference. Its
+ * native border remains responsible for the edge. */
+.dark [data-promptbox] {
+  background-color: #1e1e1e;
+}
+
+/* Chat image thumbnails already have a clipped rounded silhouette. Remove the
+ * selected-surface keyline so screenshots sit cleanly in the message bubble;
+ * keep a transparent 1px edge to avoid changing their measured size. */
+.dark button.cursor-zoom-in:has(> img.object-cover) {
+  border-color: transparent;
+}
+
+/* Keep button fills on the neutral ground ramp without changing --primary,
+ * which continues to own links and mention accents. */
+.dark button.bg-primary,
+.dark button.bg-foreground {
+  background-color: #363635;
+  color: var(--foreground);
+}
+
+.dark button.bg-primary:hover,
+.dark button.bg-foreground:hover {
+  background-color: #404040;
+}
+
+.dark button.bg-secondary {
+  background-color: #1e1e1e;
+  border: 1px solid var(--input);
+}
+
+.dark button.bg-secondary:hover {
+  background-color: #262626;
+}
+
+/* Tooltips use the same bg-primary utility as action buttons upstream, but
+ * they are neutral informational surfaces. Keep the accent for links and
+ * mentions; render tooltip content as an elevated dark control instead. */
+.dark .bg-primary:has([role="tooltip"]) {
+  background-color: #1e1e1e;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--foreground);
+}
+
 /* Composer stop button.
  *
  * bb 0.36 renders the run-interrupt control as `variant="secondary"`, so the
- * chip lands on --secondary (#262626) over the composer's #181818 ground —
+ * chip lands on --secondary (#262626) over the composer's #1E1E1E ground —
  * 1.35:1, under the 3:1 floor for a UI component. The send chip it replaces is
  * `variant="default"` (--foreground on --background) at 13.78:1, so the control
  * fades out at the one moment it is the only one that can be pressed.
@@ -315,7 +394,8 @@
  * because `hover:bg-secondary/80` ties at 0,2,0 and would otherwise decide on
  * sheet order; the /90 step mirrors what `variant="destructive"` uses. */
 .dark [data-promptbox-submit-action][aria-label="Stop run"] {
-  background-color: var(--destructive); /* 4.55:1 on the composer ground */
+  background-color: var(--destructive); /* 4.31:1 on the composer ground */
+  border-color: transparent;
   color: var(--foreground); /* the ladder white on the fill — 3.03:1, over the
                              * 3:1 floor this glyph answers to (WCAG 1.4.11,
                              * non-text) and under the 4.5:1 text floor, which a
@@ -334,7 +414,7 @@
  * blocks in the thread. This IS a code surface, so the code hues are legal.
  * bb declares these on `.dark .bb-code-highlight`, so the same selector is
  * needed to tie on specificity; this sheet is injected later and wins.
- * Measured on the recessed well #1F1F1F. */
+ * Measured on the recessed well #1E1E1E. */
 .dark .bb-code-highlight {
   --sh-space: inherit;
   --sh-identifier: #e3e3dd; /* everything else — 12.79:1 */
@@ -347,6 +427,28 @@
   --sh-class: #51dae9; /* compile-time structure — 9.85:1 */
   --sh-entity: #9ddd54; /* callables — 10.13:1 */
   --sh-jsxliterals: #fe5d86; /* JSX tags are machinery, same as keywords */
+}
+
+/* Diagram fences use adjacent rows of box-drawing glyphs. They describe
+ * structure rather than source code, but sugar-high still classifies capitalized
+ * labels and connectors as code tokens. Collapse every token to the text color
+ * so the diagram stays legible instead of acquiring arbitrary syntax hues.
+ * Remove the pre's strut and let the code child own each row. */
+.dark .bb-code-highlight:has(> .language-diagram) {
+  --sh-identifier: var(--foreground);
+  --sh-property: var(--foreground);
+  --sh-sign: var(--foreground);
+  --sh-comment: var(--foreground);
+  --sh-keyword: var(--foreground);
+  --sh-string: var(--foreground);
+  --sh-class: var(--foreground);
+  --sh-entity: var(--foreground);
+  --sh-jsxliterals: var(--foreground);
+  line-height: 0;
+}
+
+.dark .bb-code-highlight > .language-diagram {
+  line-height: 1.25;
 }
 
 /* Code and diff surface ground. `--diffs-bg` and `--diffs-fg` have no

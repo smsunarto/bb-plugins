@@ -227,6 +227,14 @@ export function ChangedFileTree({
           // calc(), where a bare number would invalidate the declaration and
           // silently restore the 16px default.
           "--trees-padding-inline-override": "0px",
+          // bb supplies its own tree foreground as an inline custom property,
+          // which outranks app.css. Keep folder paths one text step below the
+          // changed files by overriding the token at that same inline boundary.
+          "--trees-fg-override": "var(--muted-foreground)",
+          // Pierre's dark fallback is #141415 inside its shadow root. Match the
+          // surrounding container instead of opening a darker inner well.
+          "--trees-bg-override":
+            "var(--agent-surface-background, var(--surface-recessed-solid))",
           boxSizing: "border-box",
           height: `${treeHeight}px`,
         } as CSSProperties

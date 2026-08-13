@@ -177,7 +177,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
       {/* Bare composer banners use a display:contents host wrapper, so the
           component owns its gap from the native thread-context control below. */}
       <div className="mb-2 rounded-lg border border-border bg-card p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Icon

@@ -54,7 +54,7 @@ type MergeOffer = {
 };
 
 const MERGE_BUTTON_CLASSES =
-  "bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600";
+  "bg-green-600 text-foreground hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600";
 const MERGE_METHODS: { value: MergeMethod; label: string; effect: string }[] = [
   { value: "squash", label: "Squash", effect: "One commit per branch" },
   { value: "merge", label: "Merge commit", effect: "One merge commit per branch" },
@@ -273,18 +273,18 @@ function RailRow({
 }) {
   return (
     <div
-      className={`relative mx-2 rounded-md ${interactive ? "hover:bg-muted/50" : ""}`}
+      className={`relative rounded-md ${interactive ? "hover:bg-muted/50" : ""}`}
     >
       {accent ? (
         <div
-          className="absolute -left-2 top-1 bottom-1 w-1 rounded-md bg-primary"
+          className="absolute -left-1 top-1 bottom-1 w-1 rounded-md bg-primary"
           aria-hidden
         />
       ) : null}
-      <div className="relative grid grid-cols-[16px_1fr] gap-x-2 px-2 py-1.5">
+      <div className="relative grid grid-cols-[16px_1fr] gap-x-2 py-1.5">
         {/* connector segment below the icon, GitHub-exact */}
         <div
-          className="absolute bottom-0 left-[15px] top-8 w-[2px] bg-border"
+          className="absolute bottom-0 left-[7px] top-8 w-[2px] bg-border"
           aria-hidden
         />
         <span className={`mt-0.5 ${iconTone ?? "text-muted-foreground"}`}>
@@ -502,8 +502,9 @@ function LayerComposer({
                   : 'e.g. "Add metrics for the rate limiter"'
             }
             // Room for the suggest button plus a gap, so typed text never
-            // runs up against it.
-            className="h-7 w-full pr-9 text-sm"
+            // runs up against it. Ellipsis makes a long example's cutoff clear
+            // instead of clipping its final visible glyph at that boundary.
+            className="h-7 w-full text-ellipsis pr-9 text-sm"
             disabled={busy || disabled}
           />
           {/* Fills the field from the thread's agent, so it rides inside the
@@ -545,16 +546,15 @@ function LayerComposer({
           <Button
             type="button"
             size="sm"
-            variant="secondary"
+            variant="default"
             className="h-7"
             disabled={busy || disabled || magicking}
             onClick={onMagic}
           >
             {magicking ? "Summoning…" : "Magic Stack 🪄"}
           </Button>
-          {/* Secondary like Magic Stack beside it and like Sync/Submit below:
-              the default variant is bg-foreground, which reads as the panel's
-              loudest surface for what is an ordinary action. */}
+          {/* The manual action stays secondary beside the primary Magic Stack
+              path, and disabled state lowers it another step. */}
           <Button
             type="submit"
             size="sm"
@@ -1340,7 +1340,7 @@ function StackPanel({ threadId }: { threadId: string }) {
         : "the bottom layer has no open PR — submit first";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 [&>:first-child]:mb-0">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           {/* The remembered header covers the gap between mount and first
@@ -1434,7 +1434,7 @@ function StackPanel({ threadId }: { threadId: string }) {
       ) : null}
 
       {showRail ? (
-        <div className="rounded-lg border border-border bg-card py-2">
+        <div className="pb-2">
           <LayerComposer
             mode={stack ? "add" : "init"}
             busy={busy === "create"}
@@ -1467,7 +1467,7 @@ function StackPanel({ threadId }: { threadId: string }) {
             />
           ))}
           {/* trunk anchor: dot octicon + BranchName chip (2px/6px pad, 6px radius) */}
-          <div className="ml-2 grid grid-cols-[16px_1fr] items-center gap-x-2 px-2 py-1.5">
+          <div className="grid grid-cols-[16px_1fr] items-center gap-x-2 py-1.5">
             <span className="text-muted-foreground">
               <Octicon path={OCTICONS.dot} />
             </span>
