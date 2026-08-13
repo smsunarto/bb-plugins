@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@bb/plugin-sdk";
 import {
+  activeSectionFor,
   childrenOf,
   filterByProject,
   hideChildrenOfVisibleParents,
   parentOf,
+  partitionActiveSections,
   partitionPinned,
+  reconcileActiveSectionOrder,
   searchThreadsByTitle,
   sortByCreatedAtDescending,
   threadDisplayTitle,
@@ -62,8 +65,8 @@ describe("sortByCreatedAtDescending", () => {
     );
   });
 
-  // The whole premise: activity must never move a row. Only createdAt is read,
-  // so a thread that just did work keeps its place.
+  // This static sort still owns pinned and settled shelves. Activity must not
+  // move a row inside either one.
   it("ignores activity and update time", () => {
     const before = [
       thread({ id: "a", createdAt: 2, updatedAt: 1 }),
@@ -94,6 +97,137 @@ describe("sortByCreatedAtDescending", () => {
     sortByCreatedAtDescending(input);
     assert.deepEqual(
       input.map((t) => t.id),
+      ["a", "b"],
+    );
+  });
+});
+
+describe("active sections", () => {
+  it("puts quiet work with the user and live work in waiting", () => {
+    assert.equal(activeSectionFor(thread()), "next-action");
+    assert.equal(
+      activeSectionFor(thread({ indicator: "runtime" })),
+      "waiting",
+    );
+    assert.equal(
+      activeSectionFor(
+        thread({
+          activity: {
+            workflows: 0,
+            backgroundAgents: 0,
+            backgroundCommands: 1,
+            planMode: 0,
+            goals: 0,
+          },
+        }),
+      ),
+      "waiting",
+    );
+  });
+
+  it("puts a pending interaction in next action even with live work", () => {
+    assert.equal(
+      activeSectionFor(
+        thread({
+          hasPendingInteraction: true,
+          activity: {
+            workflows: 1,
+            backgroundAgents: 0,
+            backgroundCommands: 0,
+            planMode: 0,
+            goals: 0,
+          },
+        }),
+      ),
+      "next-action",
+    );
+  });
+
+  it("seeds oldest first from update time, creation time, then id", () => {
+    const threads = [
+      thread({ id: "d", updatedAt: 30, createdAt: 1 }),
+      thread({ id: "c", updatedAt: 20, createdAt: 20 }),
+      thread({ id: "b", updatedAt: 20, createdAt: 10 }),
+      thread({ id: "a", updatedAt: 20, createdAt: 10 }),
+    ];
+    const order = reconcileActiveSectionOrder(null, threads);
+    const sections = partitionActiveSections(threads, order);
+    assert.deepEqual(
+      sections.nextAction.map((candidate) => candidate.id),
+      ["a", "b", "c", "d"],
+    );
+  });
+
+  it("does not move a thread for metadata updates within one section", () => {
+    const initial = [
+      thread({ id: "a", updatedAt: 10 }),
+      thread({ id: "b", updatedAt: 20 }),
+    ];
+    const first = reconcileActiveSectionOrder(null, initial);
+    const updated = [
+      thread({ id: "a", updatedAt: 999, title: "Renamed" }),
+      initial[1]!,
+    ];
+    const next = reconcileActiveSectionOrder(first, updated);
+    assert.deepEqual(
+      partitionActiveSections(updated, next).nextAction.map(
+        (candidate) => candidate.id,
+      ),
+      ["a", "b"],
+    );
+  });
+
+  it("puts a section entrant at the bottom", () => {
+    const initial = [
+      thread({ id: "a", updatedAt: 10 }),
+      thread({ id: "b", updatedAt: 20, indicator: "runtime" }),
+    ];
+    const first = reconcileActiveSectionOrder(null, initial);
+    const transitioned = [
+      thread({ id: "a", updatedAt: 30, indicator: "runtime" }),
+      initial[1]!,
+    ];
+    const next = reconcileActiveSectionOrder(first, transitioned);
+    assert.deepEqual(
+      partitionActiveSections(transitioned, next).waiting.map(
+        (candidate) => candidate.id,
+      ),
+      ["b", "a"],
+    );
+  });
+
+  it("treats a return from pinning or parking as a new entrance", () => {
+    const initial = [
+      thread({ id: "a", updatedAt: 10 }),
+      thread({ id: "b", updatedAt: 20 }),
+    ];
+    const first = reconcileActiveSectionOrder(null, initial);
+    const withoutA = reconcileActiveSectionOrder(first, [initial[1]!]);
+    const returned = reconcileActiveSectionOrder(withoutA, initial);
+    assert.deepEqual(
+      partitionActiveSections(initial, returned).nextAction.map(
+        (candidate) => candidate.id,
+      ),
+      ["b", "a"],
+    );
+  });
+
+  it("keeps order when presentation filters hide a tracked thread", () => {
+    const threads = [
+      thread({ id: "a", updatedAt: 10, projectId: "p1" }),
+      thread({ id: "b", updatedAt: 20, projectId: "p2" }),
+    ];
+    const first = reconcileActiveSectionOrder(null, threads);
+    assert.deepEqual(
+      partitionActiveSections(filterByProject(threads, "p2"), first)
+        .nextAction.map((candidate) => candidate.id),
+      ["b"],
+    );
+    const next = reconcileActiveSectionOrder(first, threads);
+    assert.deepEqual(
+      partitionActiveSections(threads, next).nextAction.map(
+        (candidate) => candidate.id,
+      ),
       ["a", "b"],
     );
   });

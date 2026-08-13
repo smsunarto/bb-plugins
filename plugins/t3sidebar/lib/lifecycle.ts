@@ -7,6 +7,22 @@
  * `lib/warm-start.ts` for the browser-side copy it does not take.
  */
 
+import type { PluginSidebarThread } from "@bb/plugin-sdk";
+
+/** Any live work at all, whether it runs in the foreground or background. */
+export function isThreadWorking(thread: PluginSidebarThread): boolean {
+  const { activity } = thread;
+  return (
+    activity.workflows > 0 ||
+    activity.backgroundAgents > 0 ||
+    activity.backgroundCommands > 0 ||
+    activity.planMode > 0 ||
+    activity.goals > 0 ||
+    thread.indicator === "runtime" ||
+    thread.indicator === "working-draft"
+  );
+}
+
 export interface ThreadLifecycleRow {
   threadId: string;
   /** When the user settled it; null when it is active. */

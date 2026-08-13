@@ -58,7 +58,7 @@
 <tr>
 <td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/t3sidebar/assets/logo-dark.svg" /><img src="plugins/t3sidebar/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
 <td align="center"><a href="plugins/t3sidebar/"><b>t3sidebar</b></a></td>
-<td>An inbox-style thread list that never re-orders itself. Forked from <a href="https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar">bb's own example</a>.</td>
+<td>An action-oriented thread list with Next Action and Waiting sections. Forked from <a href="https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar">bb's own example</a>.</td>
 </tr>
 </table>
 

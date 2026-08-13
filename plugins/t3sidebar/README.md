@@ -7,7 +7,7 @@
 
 # t3sidebar
 
-**A thread list that only moves when you move it.**
+**A thread list organized by who can act next.**
 
 ![bb ≥ 0.36](https://img.shields.io/badge/bb-%E2%89%A5%200.36-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
@@ -16,15 +16,18 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox: pinned and current threads, then Snoozed and Settled shelves" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox with active and parked thread sections" width="100%" /></picture>
 </div>
 
 t3sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
 
-Threads sort by creation time, newest first, and **hold that place until you park
-them**. Status lives inside each card instead of in its position, so the sidebar only
-moves when *you* act — no row slides away under your cursor because an agent
-finished something.
+Active threads split into **Next Action** when the user can act and **Waiting** while
+the agent works. Each section is oldest first. A thread that enters a section goes
+to its bottom and holds that place until its next handoff.
+
+While the sidebar stays mounted, this is exact entrance order. After an app reload,
+bb does not provide historical section-entry times, so existing rows seed oldest
+first from their last update time.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
 **settle** it when you are done. Both shelves collapse to one counted header.
@@ -67,13 +70,16 @@ Sidebar** and choose **t3sidebar (inbox)**.
 bb's own list stays the default, and comes back the moment you switch away or
 disable the plugin.
 
-### Three shelves
+### Active and parked sections
 
-- **Inbox** — newest first, with pinned threads in their own shelf above.
+- **Pinned** — the user's explicit priority, kept in its own shelf above active work.
+- **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet. The oldest handoff is first.
+- **Waiting** — foreground or background agent work is live. The oldest wait is first.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 - **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
 
-An empty shelf disappears.
+An empty section disappears. A pending interaction stays in **Next Action** even if
+background work is also live, because the user can act now.
 
 ### Cards
 

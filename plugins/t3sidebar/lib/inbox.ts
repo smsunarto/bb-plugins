@@ -1,10 +1,8 @@
 import type { PluginSidebarThread } from "@bb/plugin-sdk";
+import { isThreadWorking } from "./lifecycle.ts";
 
 /**
- * The sort that defines this sidebar: newest thread on top, and NOTHING moves
- * it afterwards. Activity never re-orders the list, so a row holds its place
- * from creation until you park it and the screen only changes when you act.
- * Status is carried by the card, not by position.
+ * The static sort for user-controlled shelves: newest thread on top.
  *
  * Ties break on id so the order is total and stable across renders.
  */
@@ -15,6 +13,110 @@ export function sortByCreatedAtDescending<
     (left, right) =>
       right.createdAt - left.createdAt || left.id.localeCompare(right.id),
   );
+}
+
+export type ActiveSection = "next-action" | "waiting";
+
+/**
+ * The active section whose next move can change the thread.
+ *
+ * A pending interaction always needs the user, even when background work is
+ * still live. Otherwise any foreground or background work means the user is
+ * waiting for the agent; a quiet thread is ready for the user's next action.
+ */
+export function activeSectionFor(
+  thread: PluginSidebarThread,
+): ActiveSection {
+  return thread.hasPendingInteraction || !isThreadWorking(thread)
+    ? "next-action"
+    : "waiting";
+}
+
+interface ActiveSectionOrderEntry {
+  section: ActiveSection;
+  sequence: number;
+}
+
+/**
+ * Mounted-list entrance order for the two active sections.
+ *
+ * The SDK has no historical section-entry timestamp. `updatedAt` is therefore
+ * only the deterministic first-mount seed and batch tie-breaker; after that,
+ * sequence changes only when a thread enters a section.
+ */
+export interface ActiveSectionOrder {
+  entries: ReadonlyMap<string, ActiveSectionOrderEntry>;
+  nextSequence: number;
+}
+
+function compareInitialEntrance(
+  left: PluginSidebarThread,
+  right: PluginSidebarThread,
+): number {
+  return (
+    left.updatedAt - right.updatedAt ||
+    left.createdAt - right.createdAt ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+/**
+ * Reconcile every active, unpinned thread against its mounted-list order.
+ *
+ * Callers must pass the unfiltered active set. Project scope, search, and child
+ * hiding affect presentation only and must not look like section exits.
+ */
+export function reconcileActiveSectionOrder(
+  current: ActiveSectionOrder | null,
+  threads: readonly PluginSidebarThread[],
+): ActiveSectionOrder {
+  const entries = new Map<string, ActiveSectionOrderEntry>();
+  const entrants: PluginSidebarThread[] = [];
+  let nextSequence = current?.nextSequence ?? 0;
+
+  for (const thread of threads) {
+    const section = activeSectionFor(thread);
+    const existing = current?.entries.get(thread.id);
+    if (existing?.section === section) entries.set(thread.id, existing);
+    else entrants.push(thread);
+  }
+
+  entrants.sort(compareInitialEntrance);
+  for (const thread of entrants) {
+    entries.set(thread.id, {
+      section: activeSectionFor(thread),
+      sequence: nextSequence++,
+    });
+  }
+
+  return { entries, nextSequence };
+}
+
+/** Split visible active threads and retain their mounted entrance order. */
+export function partitionActiveSections(
+  threads: readonly PluginSidebarThread[],
+  order: ActiveSectionOrder,
+): {
+  nextAction: PluginSidebarThread[];
+  waiting: PluginSidebarThread[];
+} {
+  const nextAction: PluginSidebarThread[] = [];
+  const waiting: PluginSidebarThread[] = [];
+  for (const thread of threads) {
+    (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(
+      thread,
+    );
+  }
+  const byEntrance = (
+    left: PluginSidebarThread,
+    right: PluginSidebarThread,
+  ) =>
+    (order.entries.get(left.id)?.sequence ?? Number.MAX_SAFE_INTEGER) -
+      (order.entries.get(right.id)?.sequence ?? Number.MAX_SAFE_INTEGER) ||
+    left.id.localeCompare(right.id);
+  nextAction.sort(byEntrance);
+  waiting.sort(byEntrance);
+  return { nextAction, waiting };
 }
 
 export function threadDisplayTitle(thread: PluginSidebarThread): string {

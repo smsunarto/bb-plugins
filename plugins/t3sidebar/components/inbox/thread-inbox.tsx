@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useRpc,
@@ -26,9 +26,12 @@ import {
 } from "@/lib/settled-threads";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
+  type ActiveSectionOrder,
   filterByProject,
   hideChildrenOfVisibleParents,
+  partitionActiveSections,
   partitionPinned,
+  reconcileActiveSectionOrder,
   searchThreadsByTitle,
   sortByCreatedAtDescending,
   visibleInboxThreads,
@@ -42,7 +45,7 @@ const ALL_PROJECTS = "__all__";
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 
 /**
- * The sidebar's scrolling list: one flat, statically ordered stack of cards.
+ * The sidebar's scrolling list: cards grouped by who can act next.
  *
  * The host owns the New-thread button and the search field above it, so this
  * ships neither. It filters by the `searchQuery` prop and keeps only the one
@@ -127,7 +130,25 @@ export function ThreadInbox({
     [projects],
   );
 
-  const { pinned, inbox, snoozed, settled } = useMemo(() => {
+  // Entrance order observes the whole active, unpinned set. Project scope,
+  // search, and child hiding are presentation filters; applying them here
+  // would make hiding and showing a row look like a new section entrance.
+  const activeUnpinned = useMemo(
+    () =>
+      visibleInboxThreads(threads, lifecycle.parkedThreadIds).filter(
+        (thread) =>
+          !thread.isPinned && lifecycle.shelfFor(thread) === "active",
+      ),
+    [lifecycle, threads],
+  );
+  const activeSectionOrderRef = useRef<ActiveSectionOrder | null>(null);
+  const activeSectionOrder = reconcileActiveSectionOrder(
+    activeSectionOrderRef.current,
+    activeUnpinned,
+  );
+  activeSectionOrderRef.current = activeSectionOrder;
+
+  const { pinned, nextAction, waiting, snoozed, settled } = useMemo(() => {
     const scoped = filterByProject(
       // Settling archives the thread in bb, so the parked set is what keeps
       // the settled shelf from filtering itself away.
@@ -150,9 +171,13 @@ export function ThreadInbox({
       else active.push(thread);
     }
     const split = partitionPinned(active);
+    const activeSections = partitionActiveSections(
+      split.inbox,
+      activeSectionOrder,
+    );
     return {
       pinned: sortByCreatedAtDescending(split.pinned),
-      inbox: sortByCreatedAtDescending(split.inbox),
+      ...activeSections,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozed: [...onSnoozeShelf].sort(
         (left, right) =>
@@ -160,7 +185,7 @@ export function ThreadInbox({
       ),
       settled: sortByCreatedAtDescending(onSettledShelf),
     };
-  }, [lifecycle, scope, searchQuery, threads]);
+  }, [activeSectionOrder, lifecycle, scope, searchQuery, threads]);
 
   // The settled shelf's rows arrive on a second and slower read, while the
   // lifecycle rows naming those same threads are already warm. Counting them is
@@ -198,7 +223,8 @@ export function ThreadInbox({
 
   const shelvedTotal =
     pinned.length +
-    inbox.length +
+    nextAction.length +
+    waiting.length +
     snoozed.length +
     settled.length +
     pendingSettled;
@@ -252,18 +278,18 @@ export function ThreadInbox({
 
             There is deliberately no second gate for the settled rows. The
             shelves are ready by then, so waiting on the slower read would blank
-            pinned, inbox and snoozed — every one of them already in hand — to
-            protect one line at the bottom, and any wait bounded enough not to
-            hang the sidebar ends by opening on the same false empty state it
-            postponed. `shelvedTotal` counts the settled rows still in flight
-            instead. That closes this branch outright on a cache HIT: the rows
-            are already there, so a user whose threads are all settled has a
-            non-zero total from the first frame. On a MISS it only shortens the
-            exposure — there is nothing to count, so once `SHELF_GATE_MS` gives
-            up on a `listLifecycle` still in flight the branch is reachable
-            again and says "No threads yet" until that read lands. Nothing short
-            of the seed can close it there: on a cold origin the plugin knows
-            nothing about this user at all. */}
+            pinned and active sections, and snoozed — every one of them already
+            in hand — to protect one line at the bottom, and any wait bounded
+            enough not to hang the sidebar ends by opening on the same false
+            empty state it postponed. `shelvedTotal` counts the settled rows
+            still in flight instead. That closes this branch outright on a
+            cache HIT: the rows are already there, so a user whose threads are
+            all settled has a non-zero total from the first frame. On a MISS it
+            only shortens the exposure — there is nothing to count, so once
+            `SHELF_GATE_MS` gives up on a `listLifecycle` still in flight the
+            branch is reachable again and says "No threads yet" until that read
+            lands. Nothing short of the seed can close it there: on a cold
+            origin the plugin knows nothing about this user at all. */}
         {status === "loading" ? null : status === "error" ? (
           // `output` is for calculation results; a polite live region for a
           // status message is exactly what `role="status"` is for.
@@ -296,9 +322,27 @@ export function ThreadInbox({
                 ))}
               </Shelf>
             ) : null}
-            {inbox.length > 0 ? (
-              <Shelf label={pinned.length > 0 ? "Inbox" : null}>
-                {inbox.map((thread) => (
+            {nextAction.length > 0 ? (
+              <Shelf label="Next Action">
+                {nextAction.map((thread) => (
+                  <ThreadCard
+                    key={thread.id}
+                    thread={thread}
+                    provider={providerInfoById.get(thread.providerId)}
+                    projectName={projectNameById.get(thread.projectId) ?? null}
+                    isActive={thread.id === activeThreadId}
+                    canPark={lifecycle.canPark(thread)}
+                    onNavigate={onNavigate}
+                    onSettle={() => lifecycle.settle(thread.id)}
+                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+                    now={now}
+                  />
+                ))}
+              </Shelf>
+            ) : null}
+            {waiting.length > 0 ? (
+              <Shelf label="Waiting">
+                {waiting.map((thread) => (
                   <ThreadCard
                     key={thread.id}
                     thread={thread}

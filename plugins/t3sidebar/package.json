@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-t3sidebar",
   "version": "0.1.0",
-  "description": "An inbox-style sidebar: one flat list of cards that never re-orders.",
+  "description": "An action-oriented sidebar that groups threads by who can act next.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/t3sidebar#readme",
@@ -31,7 +31,7 @@
   },
   "bb": {
     "name": "t3sidebar",
-    "description": "An inbox-style sidebar: one flat list of cards that never re-orders.",
+    "description": "An action-oriented sidebar that groups threads by who can act next.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

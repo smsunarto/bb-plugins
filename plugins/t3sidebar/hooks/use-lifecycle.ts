@@ -8,6 +8,7 @@ import type { PluginSidebarThread } from "@bb/plugin-sdk";
 import type { t3sidebarRpcContract } from "@/server";
 import {
   canPark,
+  isThreadWorking,
   nextWakeDelayMs,
   resolveShelf,
   rowsMatch,
@@ -19,24 +20,10 @@ import {
 import { readWarmStartRows, writeWarmStartRows } from "@/lib/warm-start";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
 
-/** Any live work at all, which blocks parking and wakes a parked thread. */
-export function isWorking(thread: PluginSidebarThread): boolean {
-  const { activity } = thread;
-  return (
-    activity.workflows > 0 ||
-    activity.backgroundAgents > 0 ||
-    activity.backgroundCommands > 0 ||
-    activity.planMode > 0 ||
-    activity.goals > 0 ||
-    thread.indicator === "runtime" ||
-    thread.indicator === "working-draft"
-  );
-}
-
 function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
   return {
     hasPendingInteraction: thread.hasPendingInteraction,
-    isWorking: isWorking(thread),
+    isWorking: isThreadWorking(thread),
     isUnread: thread.isUnread,
     latestAttentionAt: thread.latestAttentionAt,
   };

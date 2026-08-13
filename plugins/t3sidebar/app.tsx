@@ -1,9 +1,8 @@
-// @smsunarto/bb-plugin-t3sidebar — an inbox-style replacement for bb's sidebar thread
-// list, and the reference example for `app.slots.experimental_threadList`.
+// @smsunarto/bb-plugin-t3sidebar — an action-oriented replacement for bb's
+// sidebar thread list, and a reference for `app.slots.experimental_threadList`.
 //
-// The idea it is built around: the list NEVER re-orders itself. Threads sort
-// by creation time, newest first, and hold that place. Status is carried by
-// each card, not by position, so the sidebar only moves when you act.
+// Active threads are grouped by who acts next. Each section holds entrance
+// order, oldest first, so a new handoff always arrives at the bottom.
 import { definePluginApp } from "@bb/plugin-sdk/app";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
@@ -13,7 +12,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "inbox",
     title: "t3sidebar (inbox)",
-    description: "One flat list of cards, newest first, that never re-orders.",
+    description: "Next Action and Waiting, ordered by section entrance.",
     component: ThreadInbox,
   });
 
