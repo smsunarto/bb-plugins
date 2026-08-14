@@ -1,4 +1,5 @@
 import { createElement, useEffect, useState, type ReactNode } from "react";
+import { useRpc } from "@bb/plugin-sdk/app";
 import {
   QueryClient,
   QueryClientProvider,
@@ -8,7 +9,11 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type { BoundOperation, OperationBinding } from "./operations.js";
+import type {
+  BoundOperation,
+  OperationBinding,
+  RpcContract,
+} from "./operations.js";
 import type { SchemaInput, SchemaOutput } from "./standard-schema.js";
 
 type AnyBoundOperation = BoundOperation<OperationBinding>;
@@ -21,6 +26,23 @@ export interface OperationRpcClient<
   Output,
 > {
   call(method: Method, input: Input): Promise<Output>;
+}
+
+export type OperationRpcClientFor<
+  Catalog extends { readonly rpcContract: RpcContract },
+> = {
+  call<Method extends Extract<keyof Catalog["rpcContract"], string>>(
+    method: Method,
+    input: SchemaInput<Catalog["rpcContract"][Method]["input"]>,
+  ): Promise<SchemaOutput<Catalog["rpcContract"][Method]["output"]>>;
+};
+
+/** Hide bb 0.37's narrower Standard Schema generic at one catalog-owned seam. */
+export function useOperationRpc<
+  const Catalog extends { readonly rpcContract: RpcContract },
+>(catalog: Catalog): OperationRpcClientFor<Catalog> {
+  void catalog;
+  return useRpc() as unknown as OperationRpcClientFor<Catalog>;
 }
 
 type ClientInput<Operation extends AnyBoundOperation> = SchemaInput<

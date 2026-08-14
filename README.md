@@ -4,7 +4,7 @@
 
 **Plugins for [bb](https://github.com/get-bb/bb), the agent IDE — in one GitHub repository.**
 
-![bb >=0.36](https://img.shields.io/badge/bb-%3E%3D0.36-88C0D0?style=flat-square)
+![bb 0.37.x](https://img.shields.io/badge/bb-0.37.x-88C0D0?style=flat-square)
 ![Bun workspace](https://img.shields.io/badge/Bun-1.3.14-3FA266?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-F1B467?style=flat-square)
 
@@ -82,7 +82,9 @@ framework for bb plugin authors:
 - [`@smsunarto/bb-kit-cli`](packages/bb-kit-cli/) provides additive generators,
   structural checks, inspection, identity/migration locks, and headless loaded
   operation invocation with committed JSON/YAML regression scenarios.
-- The complete design and delivery boundaries live in the
+- The [bb-kit design principles](docs/bb-kit-design-principles.md) explain which
+  choices the framework owns and why. The complete contracts and delivery
+  boundaries live in the
   [bb-kit framework specification](docs/bb-plugin-framework-spec.md).
 
 ## Install

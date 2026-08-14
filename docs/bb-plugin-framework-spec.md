@@ -1,7 +1,7 @@
 # bb-kit: an opinionated framework for bb plugins
 
 Status: accepted design; foundational MVP implemented
-Target baseline: bb 0.36.x, plugin SDK protocol 0.4.1
+Target baseline: bb 0.37.x, plugin SDK protocol 0.4.1
 Working name: `bb-kit`
 
 ## Summary
@@ -23,6 +23,9 @@ The governing principle is:
 > Generate broadly, abstract narrowly, diagnose precisely, and keep the resulting code ordinary.
 
 The framework makes the correct path generated and easy, while making dangerous states fail during generation, typechecking, testing, or building.
+
+The [bb-kit design principles](bb-kit-design-principles.md) distill the decision
+rules behind this specification and the lessons from real plugin dogfood.
 
 ### Implementation snapshot
 
@@ -251,7 +254,8 @@ Development tooling and executable assets:
 - Module, operation, surface, migration, tool, event, command, and service generators.
 - `bb-kit info` and graph generation.
 - `bb-kit invoke` for loaded RPC operations.
-- Fast and full verification.
+- Exact-CLI `bb-kit build` and fixed offline `bb-kit verify`.
+- Read-only live preflight through `bb-kit doctor`.
 - Structural dependency checks.
 - Manifest, package, SDK, migration, identity, and source-closure checks.
 - Recipe templates.
@@ -515,6 +519,10 @@ export default defineOperation({
     approvalId: z.string(),
     expectedRevision: z.number().int().nonnegative(),
   }),
+  exampleInput: {
+    approvalId: "A-123",
+    expectedRevision: 2,
+  },
   output: z.discriminatedUnion("outcome", [
     z.object({
       outcome: z.literal("approved"),
@@ -528,6 +536,18 @@ export default defineOperation({
   ]),
 });
 ```
+
+An operation has one of two input states. Import the frozen `noInput` singleton
+directly from `@smsunarto/bb-kit/operations` when callers supply no input. Do
+not add an example in that state. Every other Standard Schema input requires a
+finite JSON `exampleInput`; this includes `z.null()`, which requires callers to
+supply explicit JSON `null`.
+
+CLI discovery is deliberately stricter than TypeScript resolution. It accepts a
+direct named `noInput` import, including an import alias, and a literal JSON
+`exampleInput`. Local aliases, wrappers, re-exports, calls, spreads, shorthand,
+and computed values fail closed. bb-kit does not inspect private schema internals
+or guess a default input.
 
 Its operation identity is `approvals.approve`, derived from the path and stabilized in `bb-kit.lock.json`.
 
@@ -634,7 +654,7 @@ export const approvalKeys = {
 bb-kit helpers return native TanStack Query options rather than wrapping `useQuery`:
 
 ```tsx
-const rpc = useRpc<typeof approvalOperations.rpcContract>();
+const rpc = useOperationRpc(approvalOperations);
 
 const approval = useQuery(
   operationQueryOptions({
@@ -648,6 +668,9 @@ const approval = useQuery(
 ```
 
 Callers retain the complete native TanStack Query interface.
+`useOperationRpc` is the one frontend SDK compatibility seam. It keeps the bb
+0.37 Standard Schema assertion inside bb-kit and preserves exact catalog method,
+input, and output inference for plugin code.
 
 ### Commands and invalidation
 
@@ -757,6 +780,7 @@ Public CLI commands are adapters over the same service methods as RPC and tools.
 ```sh
 bb-kit operations
 bb-kit describe approvals.approve
+bb-kit invoke approvals.list
 bb-kit invoke approvals.get --input @fixtures/approvals/get.json
 bb-kit invoke approvals.approve --input '{"approvalId":"A-123","expectedRevision":2}'
 ```
@@ -779,6 +803,8 @@ Mutation guardrails:
 - Queries run directly.
 - Commands print their risk classification.
 - Destructive commands require `--confirm` in interactive use.
+- Canonical no-input operations reject `--input` and send exact JSON `null` when it is omitted.
+- Every other schema requires `--input`; missing or undiscoverable metadata makes zero requests.
 - `--json` emits stable machine-readable output.
 - Exit codes distinguish input validation, domain outcomes, and infrastructure failures.
 - Secrets are redacted from diagnostics, logs, and fixtures.
@@ -795,9 +821,10 @@ bb-kit add fixture approvals.approve conflict
 ```
 
 Each scenario has an optional name and seed list, one required invocation, and
-one required exact expected result. Omitted operation inputs default to `{}`;
-`expect` is always required and may explicitly be `null`. Stateful scenarios
-use the same deliberately small shape:
+one required exact expected result. A canonical no-input operation must omit
+`input`. Every other operation must include `input`, even when its required value
+is `null`. `expect` is always required and may explicitly be `null`. Stateful
+scenarios use the same deliberately small shape:
 
 ```yaml
 name: approve-conflict
@@ -904,7 +931,7 @@ This loop uses pure models, service dependencies, and fake repositories. It does
 Used for bb wiring and real persistence:
 
 ```sh
-bb-kit dev
+# Keep the repository's bb plugin watcher running.
 bb-kit invoke approvals.get --input @fixtures/approvals/get.json
 bb-kit fixtures run approvals
 ```
@@ -923,21 +950,27 @@ Used only for behavior that depends on:
 - Responsive behavior.
 - Host CSS and slot integration.
 
-The normal bb plugin watcher remains the source of truth. `bb-kit dev` should ensure or delegate to the repository's configured watcher rather than creating a competing reload system.
+The normal bb plugin watcher remains the source of truth. bb-kit does not own or
+configure the watcher.
 
 ### Fast verification
 
 ```sh
-bb-kit check --changed
+bb-kit check
+bb-kit check --workspace
 ```
 
-Runs only affected work where safe:
+Runs deterministic static checks:
 
-- Structural dependency checks.
-- Module typecheck.
-- Operation contract tests.
-- Changed migration checks.
-- Manifest and identity checks affected by the edit.
+- Exact manifest engines, owned script aliases, and SDK declaration hashes.
+- Package-local imports, exact host-shim specifiers, architecture boundaries, and cycles.
+- Operation metadata, command risks, generated catalogs, and identity locks.
+- Append-only migration hashes and composition-root invariants.
+
+The workspace form also rejects partial bb compatibility upgrades. It compares
+the root pin, generated framework contract, every plugin's exact current-minor
+engine range, generated declarations, component registry URL, and any existing
+build metadata.
 
 ### Full verification
 
@@ -948,15 +981,32 @@ bb-kit verify
 The implemented gate runs, in order:
 
 - Structural manifest, compatibility, import, operation, identity, generated-catalog, and migration checks.
-- The plugin's declared lint, typecheck, and test scripts.
-- A required plugin build.
+- Selection and exact `--version` validation of bb CLI 0.37.0.
+- Project-local Oxlint and TypeScript executables, then unscoped `bun test`.
+- An internal build that directly runs the selected bb executable with `plugin build .`.
 - `bun pm pack --dry-run`, parsed fail-closed against Bun's own file count.
 - Packed bb manifest-target, fixed build-output, license, and transitive relative source-fallback closure validation.
+- Canonical SDK declaration hashes after each tool, plus exact build metadata after build and pack.
 - Stable JSON steps and bounded, secret-redacted failure output.
 
-Later compatibility lines should add authoritative generated-declaration drift checks, framework package export tools, bare-package source-closure dependency checks, and a required live-surface checklist without weakening this ordered gate.
+The generated package aliases are fixed: `build` is `bb-kit build`, `lint` is
+`oxlint`, `typecheck` is `tsc --noEmit`, `test` is `bun test`, and `verify` is
+`bb-kit verify`. These aliases are not extension points, and verify does not
+execute them. Projects remain free to select a watcher and test layout.
 
 It does not falsely claim that build success proves UI behavior.
+
+### Read-only live preflight
+
+```sh
+bb-kit doctor
+```
+
+Doctor validates the exact CLI, reads the connected bb version and plugin list,
+and reports host compatibility, installed source, enabled/running state, app SDK
+facts, the first query by stable identity, and a surface-specific manual
+checklist. Its command allowlist has no install, reload, mutation, or RPC path.
+Run the suggested `invoke` and UI steps separately after doctor passes.
 
 ## Inspection and observability
 
@@ -975,7 +1025,7 @@ Representative output:
 ```text
 Plugin: @acme/bb-plugin-approvals
 ID: approvals
-bb: 0.36.0
+bb: 0.37.0
 SDK: 0.4.1
 
 Entrypoints
@@ -1029,6 +1079,7 @@ Autofixes are offered only for deterministic changes. The checker never rewrites
 
 - Package name and derived plugin ID agree.
 - `bb.server` and `bb.app` point to shipped source, not generated bundles.
+- Owned build, lint, typecheck, test, and verify aliases are exact.
 - Every manifest target exists in the packed package.
 - The transitive source fallback closure is shipped.
 - Runtime imports are declared in `dependencies` when source fallback needs them.
@@ -1037,9 +1088,10 @@ Autofixes are offered only for deterministic changes. The checker never rewrites
 
 #### Compatibility
 
-- bb and plugin SDK engine ranges agree with the tested compatibility line.
+- bb and plugin SDK engine ranges exactly match bb-kit's single compatibility contract.
 - The build uses the exact pinned bb CLI.
-- Generated SDK declarations match the pin.
+- Generated SDK declarations match canonical raw-byte hashes.
+- Build metadata reports the exact bb and plugin SDK versions.
 - Framework and plugin compatibility declarations agree.
 
 #### Architecture
@@ -1185,7 +1237,8 @@ Initialization writes a concise local `AGENTS.md` section or a referenced agent 
 - RPC is authoritative; realtime signals only invalidate queries.
 - Expected domain outcomes use discriminated unions.
 - Create host resources inside the plugin generation.
-- Run `bb-kit check --changed` while editing and `bb-kit verify` before handoff.
+- Import `noInput` directly for no-input operations; give every other input a literal JSON `exampleInput`.
+- Run `bb-kit check` while editing and `bb-kit verify` before handoff.
 ```
 
 ## UI strategy
@@ -1225,7 +1278,7 @@ Where bb's generated declarations or current toolchain cannot satisfy one of the
 
 bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. At the time of this design:
 
-- This repository targets bb 0.36.0 and plugin SDK protocol 0.4.1.
+- This repository targets bb 0.37.0 and plugin SDK protocol 0.4.1.
 - `@bb/plugin-sdk` is represented locally by bb-generated declaration files.
 - `@bb/plugin-sdk` is not available from the public npm registry.
 - Upstream source contains package and testing-harness exports, but registry availability cannot be assumed.
@@ -1236,7 +1289,7 @@ The initial generated engine policy should use a tested compatibility line rathe
 ```json
 {
   "engines": {
-    "bb": ">=0.36.0 <0.37.0",
+    "bb": ">=0.37.0 <0.38.0",
     "bbPluginSdk": "^0.4.1"
   }
 }
@@ -1248,19 +1301,38 @@ Framework SemVer is independent from bb SDK SemVer and maintains an explicit tab
 
 | bb-kit | bb | Plugin SDK | Status |
 | --- | --- | --- | --- |
-| 0.1.x | 0.36.x | 0.4.1 | Initial target |
+| 0.1.x | 0.37.x | 0.4.1 | Current target |
 | Later line | Explicitly tested | Explicitly tested | Added only after verification |
 
 Compatibility rules:
 
-- Build against the exact pinned bb release.
+- Select and execute bb 0.37.0 exactly; do not download or silently fall back after an invalid `BB_CLI`.
 - Keep generated declarations as the compile-time SDK source.
+- Treat declaration and build-metadata drift as a hard failure before later tools run.
 - Do not copy the complete bb API into framework-owned public types.
 - Preserve bare host runtime imports.
 - Declare bb-kit runtime packages in plugin `dependencies` so source fallback can resolve them.
 - Publish framework runtime packages before plugins that depend on them.
 - Include framework source/runtime dependencies in packed-source closure verification.
 - Treat an SDK compatibility-line change as a deliberate framework release decision.
+
+The release decision uses one fixed workflow:
+
+```sh
+bb-kit compatibility inspect
+bb-kit compatibility upgrade
+bun run build
+bb-kit compatibility check
+```
+
+`inspect` and `upgrade` derive the contract from a selected stable `x.y.z` CLI:
+the exact current-minor engine range, SDK version and artifact format, generated
+declarations and hashes, exact frontend host shims, and release-pinned component
+registry URL. The upgrade computes all writes before it changes the workspace,
+updates only framework-owned compatibility state, rolls back a failed post-check,
+refuses downgrades, and has no custom range, force, install, or reload path.
+Existing `dist/` output is not rewritten or made to claim a false build
+provenance; rebuild it before the final workspace check.
 
 ## Testing strategy
 
@@ -1427,11 +1499,16 @@ bb-kit invoke <operation> --input <json|@file> [--confirm] [--json]
 bb-kit fixtures run [module]
 bb-kit info [module|operation] [--json]
 bb-kit graph
-bb-kit check [--changed] [--json]
+bb-kit check [--workspace] [--json]
+bb-kit compatibility inspect [--json]
+bb-kit compatibility check [--json]
+bb-kit compatibility upgrade [--json]
+bb-kit build [--json]
 bb-kit explain <diagnostic-code>
 bb-kit fix <diagnostic-code>
 bb-kit dev
-bb-kit verify
+bb-kit verify [--json]
+bb-kit doctor [--json]
 ```
 
 Not every command belongs in the MVP.

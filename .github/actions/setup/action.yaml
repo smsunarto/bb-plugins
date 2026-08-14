@@ -26,9 +26,9 @@ runs:
         cache: bun
 
     # Not a convenience: `bun run build` shells out to `bb plugin build .` for
-    # every plugin, and sdk-types:check diffs the vendored .d.ts against what
-    # this exact release writes. Floating on latest would fail the type check
-    # the moment bb shipped a new SDK.
+    # every plugin, and compatibility:check locks every manifest and generated
+    # declaration to this exact release. Floating on latest would fail as soon
+    # as bb shipped a new compatibility line.
     - name: Install pinned bb CLI
       shell: bash
       run: bun install -g "bb-app@$(node -p "require('./package.json').config.bbVersion")"

@@ -18,7 +18,7 @@
   },
   "trustedDependencies": ["esbuild"],
   "config": {
-    "bbVersion": "0.36.0"
+    "bbVersion": "0.37.0"
   },
   "scripts": {
     "postinstall": "cd node_modules/better-sqlite3 && node ../.bin/prebuild-install",
@@ -34,8 +34,9 @@
     "lint:fix": "oxlint --fix",
     "typecheck": "bun run --filter '@smsunarto/bb-kit*' --parallel typecheck && bun run --filter '@smsunarto/bb-plugin-*' --parallel typecheck",
     "test": "bun test scripts/*.test.ts && bun run --filter '@smsunarto/bb-kit*' --parallel test && bun run --filter '@smsunarto/bb-plugin-*' --parallel test",
-    "sdk-types:check": "bun scripts/sdk-types.ts check",
-    "sdk-types:refresh": "bun scripts/sdk-types.ts refresh",
+    "compatibility:inspect": "bun packages/bb-kit-cli/src/cli.ts compatibility inspect",
+    "compatibility:check": "bun packages/bb-kit-cli/src/cli.ts compatibility check",
+    "compatibility:upgrade": "bun packages/bb-kit-cli/src/cli.ts compatibility upgrade",
     "publish:dry": "bun scripts/publish.ts --dry-run",
     "publish:npm": "bun scripts/publish.ts",
     "clean": "bun run --filter '@smsunarto/bb-kit*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean"

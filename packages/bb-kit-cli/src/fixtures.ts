@@ -15,7 +15,7 @@ import {
 
 interface FixtureStep {
   readonly operation: string;
-  readonly input: unknown;
+  readonly input?: unknown;
 }
 
 interface FixtureScenario {
@@ -118,9 +118,11 @@ function fixtureStep(value: unknown, label: string): FixtureStep {
   if (typeof value.operation !== "string" || value.operation.trim() === "") {
     throw new FixtureError("invalid_fixture", `${label}.operation must be a non-empty string`);
   }
-  const input = Object.hasOwn(value, "input") ? value.input : {};
-  assertJson(input, `${label}.input`);
-  return { operation: value.operation, input };
+  if (Object.hasOwn(value, "input")) {
+    assertJson(value.input, `${label}.input`);
+    return { operation: value.operation, input: value.input };
+  }
+  return { operation: value.operation };
 }
 
 function loadScenario(root: string, path: string): LoadedScenario {
@@ -238,8 +240,14 @@ export async function runFixtures(
   preflightOperationInvocations(
     root,
     loaded.flatMap(({ scenario }) => [
-      ...scenario.seed.map((step) => step.operation),
-      scenario.invoke.operation,
+      ...scenario.seed.map((step) => ({
+        identity: step.operation,
+        hasInput: Object.hasOwn(step, "input"),
+      })),
+      {
+        identity: scenario.invoke.operation,
+        hasInput: Object.hasOwn(scenario.invoke, "input"),
+      },
     ]),
     options.confirm === true,
   );
@@ -270,7 +278,9 @@ export async function runFixtures(
         currentOperation = step.operation;
         await invokeOperation(root, step.operation, {
           ...invocationOptions,
-          input: JSON.stringify(step.input),
+          ...(Object.hasOwn(step, "input")
+            ? { input: JSON.stringify(step.input) }
+            : {}),
           cwd: root,
         });
       }
@@ -278,7 +288,9 @@ export async function runFixtures(
       currentOperation = scenario.invoke.operation;
       const result = await invokeOperation(root, scenario.invoke.operation, {
         ...invocationOptions,
-        input: JSON.stringify(scenario.invoke.input),
+        ...(Object.hasOwn(scenario.invoke, "input")
+          ? { input: JSON.stringify(scenario.invoke.input) }
+          : {}),
         cwd: root,
       });
       if (!isDeepStrictEqual(result.result, scenario.expect)) {

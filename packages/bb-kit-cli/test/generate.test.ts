@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -20,6 +20,7 @@ import {
   inspectProject,
   readLock,
 } from "../src/index.js";
+import { repositoryRoot, seedCanonicalTypes } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -32,6 +33,7 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
+  seedCanonicalTypes(root);
   return root;
 }
 
@@ -43,6 +45,13 @@ describe("bb-kit generation", () => {
   it("initializes additively and idempotently", () => {
     const root = temporaryProject();
     const before = readFileSync(join(root, "plugin/server.ts"), "utf8");
+    expect(readFileSync(join(root, "test/scaffold.test.ts"), "utf8"))
+      .toContain('from "node:test"');
+    const testResult = spawnSync("bun", ["test"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(testResult.status).toBe(0);
     const second = initializeProject(root, {
       kind: "fullstack",
       syncTypes: false,
@@ -84,12 +93,186 @@ describe("bb-kit generation", () => {
           kind: "command",
           risk: "mutating",
           rpcMethod: "reports_refresh",
+          input: { mode: "none" },
+          metadataError: null,
         }],
         migrations: [],
         surfaces: [],
         storage: null,
       },
     ]);
+  });
+
+  it("discovers only direct named noInput imports as no-input", () => {
+    const aliasedRoot = temporaryProject();
+    addOperation(aliasedRoot, "reports.get", "query");
+    writeFileSync(
+      join(aliasedRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { defineOperation, noInput as none } from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        "export default defineOperation({",
+        '  kind: "query",',
+        "  input: none,",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(inspectProject(aliasedRoot).modules[0]?.operations[0]).toEqual(
+      expect.objectContaining({ input: { mode: "none" }, metadataError: null }),
+    );
+
+    const namespaceRoot = temporaryProject();
+    addOperation(namespaceRoot, "reports.get", "query");
+    writeFileSync(
+      join(namespaceRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import * as kit from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        "export default kit.defineOperation({",
+        '  kind: "query",',
+        "  input: kit.noInput,",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(checkProject(namespaceRoot)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "BBK210" }),
+    ]));
+
+    const reexportRoot = temporaryProject();
+    addOperation(reexportRoot, "reports.get", "query");
+    writeFileSync(
+      join(reexportRoot, "plugin/no-input.ts"),
+      'export { noInput } from "@smsunarto/bb-kit/operations";\n',
+    );
+    writeFileSync(
+      join(reexportRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { defineOperation } from "@smsunarto/bb-kit/operations";',
+        'import { noInput } from "../../../no-input.js";',
+        'import { z } from "zod";',
+        "export default defineOperation({",
+        '  kind: "query",',
+        "  input: noInput,",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(checkProject(reexportRoot)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "BBK210" }),
+    ]));
+
+    const localAliasRoot = temporaryProject();
+    addOperation(localAliasRoot, "reports.get", "query");
+    writeFileSync(
+      join(localAliasRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { defineOperation, noInput } from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        "const input = noInput;",
+        "export default defineOperation({",
+        '  kind: "query",',
+        "  input,",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(checkProject(localAliasRoot)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "BBK210" }),
+    ]));
+
+    const wrapperRoot = temporaryProject();
+    addOperation(wrapperRoot, "reports.get", "query");
+    writeFileSync(
+      join(wrapperRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { noInput } from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        "function wrap(value: unknown) { return value; }",
+        "export default wrap({",
+        '  kind: "query",',
+        "  input: noInput,",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(checkProject(wrapperRoot)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "BBK210" }),
+    ]));
+
+    const structuralNullRoot = temporaryProject();
+    addOperation(structuralNullRoot, "reports.get", "query");
+    writeFileSync(
+      join(structuralNullRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { defineOperation } from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        "export default defineOperation({",
+        '  kind: "query",',
+        "  input: z.null(),",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(checkProject(structuralNullRoot)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "BBK210" }),
+    ]));
+  });
+
+  it("reads literal required examples and rejects dynamic metadata", () => {
+    const literalRoot = temporaryProject();
+    addOperation(literalRoot, "reports.get", "query");
+    writeFileSync(
+      join(literalRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { defineOperation } from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        "export default defineOperation({",
+        '  kind: "query",',
+        "  input: z.null(),",
+        '  exampleInput: (({ id: "A-1", nested: [true, null, -2] } as const) satisfies object),',
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(inspectProject(literalRoot).modules[0]?.operations[0]).toEqual(
+      expect.objectContaining({
+        input: {
+          mode: "required",
+          example: { id: "A-1", nested: [true, null, -2] },
+        },
+        metadataError: null,
+      }),
+    );
+
+    const dynamicRoot = temporaryProject();
+    addOperation(dynamicRoot, "reports.get", "query");
+    writeFileSync(
+      join(dynamicRoot, "plugin/modules/reports/operations/get.ts"),
+      [
+        'import { defineOperation } from "@smsunarto/bb-kit/operations";',
+        'import { z } from "zod";',
+        'const example = { id: "A-1" };',
+        "export default defineOperation({",
+        '  kind: "query",',
+        "  input: z.object({ id: z.string() }),",
+        "  exampleInput: example,",
+        "  output: z.null(),",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    expect(checkProject(dynamicRoot)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "BBK210" }),
+    ]));
   });
 
   it("rejects frontend imports of server adapters", () => {
@@ -208,7 +391,6 @@ describe("bb-kit generation", () => {
       surfaces: ["thread-panel"],
       storage: "sqlite",
     }));
-    const repositoryRoot = resolve(import.meta.dirname, "../../..");
     cpSync(
       join(repositoryRoot, "plugins/agentation/types"),
       join(root, "types"),

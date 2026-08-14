@@ -17,6 +17,10 @@ import {
   runFixtures,
   type CliIo,
 } from "../src/index.js";
+import {
+  makeOperationRequireInput,
+  seedCanonicalTypes,
+} from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -29,6 +33,7 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
+  seedCanonicalTypes(root);
   return root;
 }
 
@@ -70,6 +75,8 @@ describe("loaded-operation fixtures", () => {
     const root = temporaryProject();
     addOperation(root, "state.seed", "command", "mutating");
     addOperation(root, "state.get", "query");
+    makeOperationRequireInput(root, "state.seed", "command", { id: 1 }, "mutating");
+    makeOperationRequireInput(root, "state.get", "query", { id: 1 });
     writeFixture(root, "zeta/second.json", {
       name: "second",
       invoke: { operation: "state.get", input: { id: 2 } },
@@ -160,6 +167,36 @@ describe("loaded-operation fixtures", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("rejects missing and extra fixture inputs before the first RPC", async () => {
+    const root = temporaryProject();
+    addOperation(root, "state.get", "query");
+    addOperation(root, "state.find", "query");
+    makeOperationRequireInput(root, "state.find", "query", { id: 1 });
+    writeFixture(root, "state/first.json", {
+      invoke: { operation: "state.get" },
+      expect: {},
+    });
+    writeFixture(root, "state/extra.json", {
+      invoke: { operation: "state.get", input: null },
+      expect: {},
+    });
+    const request = vi.fn<typeof fetch>();
+    await expect(runFixtures(root, { fetch: request })).rejects.toMatchObject({
+      code: "unexpected_operation_input",
+    } satisfies Partial<InvocationError>);
+    expect(request).not.toHaveBeenCalled();
+
+    rmSync(join(root, "fixtures"), { recursive: true });
+    writeFixture(root, "state/missing.json", {
+      invoke: { operation: "state.find" },
+      expect: {},
+    });
+    await expect(runFixtures(root, { fetch: request })).rejects.toMatchObject({
+      code: "missing_operation_input",
+    } satisfies Partial<InvocationError>);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it("stops after an exact-result mismatch and redacts sensitive values", async () => {
     const root = temporaryProject();
     addOperation(root, "state.get", "query");
@@ -214,6 +251,7 @@ describe("loaded-operation fixtures", () => {
     const root = temporaryProject();
     addOperation(root, "state.seed", "command", "mutating");
     addOperation(root, "state.get", "query");
+    makeOperationRequireInput(root, "state.seed", "command", { id: 1 }, "mutating");
     writeFixture(root, "state/seed.json", {
       name: "seed-failure",
       seed: [{ operation: "state.seed", input: { id: 1 } }],
@@ -272,6 +310,7 @@ describe("loaded-operation fixtures", () => {
     const root = temporaryProject();
     addOperation(root, "state.get", "query");
     addOperation(root, "state.delete", "command", "destructive");
+    makeOperationRequireInput(root, "state.delete", "command", { id: 1 }, "destructive");
     writeFixture(root, "state/first.json", {
       name: "safe-first",
       invoke: { operation: "state.get" },
@@ -319,7 +358,7 @@ describe("loaded-operation fixtures", () => {
       "utf8",
     ))).toEqual({
       name: "state.get-happy-path",
-      invoke: { operation: "state.get", input: {} },
+      invoke: { operation: "state.get" },
       expect: {},
     });
 
