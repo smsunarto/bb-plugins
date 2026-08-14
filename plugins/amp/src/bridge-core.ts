@@ -719,7 +719,7 @@ export class AmpBridgeAgent implements Agent {
     const firstExecution = !s.executionAttempted;
     s.executionAttempted = true;
 
-    // Local only needs to clear a stale bar once. Orb re-reports its durable
+    // Local only needs to clear a stale link once. Orb re-reports its durable
     // binding on every turn so a transient bb control-plane failure repairs
     // itself without requiring a bridge restart.
     if (firstExecution || executionTarget === "orb") {
@@ -1275,13 +1275,11 @@ export class AmpBridgeAgent implements Agent {
         threadId: s.threadId,
         executionTarget,
       });
-      if (executionTarget === "orb") {
-        this.reportUsage({
-          sessionId,
-          executionTarget,
-          ampThreadId: s.threadId,
-        });
-      }
+      this.reportUsage({
+        sessionId,
+        executionTarget,
+        ampThreadId: s.threadId,
+      });
       console.error(`[amp] thread ${s.threadId}`);
     }
 

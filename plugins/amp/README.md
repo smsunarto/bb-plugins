@@ -81,7 +81,8 @@ An Orb thread shows a bar above the composer with the Amp thread id and a copyab
 `amp sync T-…` command. Run that in a local checkout to mirror the Orb's live
 working-tree changes. Orb brings its own tools, permissions, skills, and MCP
 config; bb terminals, files, and diffs still point at the bb environment you
-selected.
+selected. Archiving an Amp-provider thread in bb also archives its linked Local
+or Orb thread in Amp.
 
 ### Modes
 
