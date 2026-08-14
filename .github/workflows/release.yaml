@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
   pull-requests: write
 
 # A second main push should update the release PR, but it must not interrupt a
@@ -17,31 +18,33 @@ concurrency:
 jobs:
   release:
     name: Version or publish packages
-    runs-on: namespace-profile-linux-8vcpu-16gb-cached
+    # npm trusted publishing accepts OIDC identities from GitHub-hosted runners,
+    # not self-hosted Namespace runners.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: namespacelabs/nscloud-checkout-action@v9
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/setup
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
-      # Namespace runners are self-hosted, so npm trusted publishing cannot
-      # issue an OIDC token here. Use a granular npm automation token with
-      # publish access to the scoped packages and their unscoped mirrors.
-      - name: Configure npm authentication
-        shell: bash
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+          no-cache: true
+
+      # Trusted publishing requires npm >=11.5.1. Pin it so an image update
+      # cannot silently change the publisher used by this release workflow.
+      - name: Install release tools
         run: |
-          if [[ -z "$NPM_TOKEN" ]]; then
-            echo "NPM_TOKEN is not configured" >&2
-            exit 1
-          fi
-          npmrc="$RUNNER_TEMP/npmrc"
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > "$npmrc"
-          chmod 600 "$npmrc"
-          printf 'NPM_CONFIG_USERCONFIG=%s\n' "$npmrc" >> "$GITHUB_ENV"
+          npm install --global npm@12.0.2 node-gyp
+          bun install --frozen-lockfile
+          bun install --global "bb-app@$(node -p "require('./package.json').config.bbVersion")"
 
       - name: Create release PR or publish packages
         uses: changesets/action@v2
@@ -52,16 +55,7 @@ jobs:
           push-git-tags: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify manifests were restored
         if: always()
         run: git diff --exit-code -- 'plugins/*/package.json'
-
-      - name: Remove npm credentials
-        if: always()
-        shell: bash
-        run: |
-          if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
-            rm -f "$NPM_CONFIG_USERCONFIG"
-          fi

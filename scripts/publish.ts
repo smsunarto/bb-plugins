@@ -384,9 +384,9 @@ function run(command: string, args: string[], cwd: string): string {
 /**
  * Like run(), but the child keeps this terminal.
  *
- * `bun publish` can need the user: a web auth handshake, or a 2FA one-time
+ * `npm publish` can need the user: a web auth handshake, or a 2FA one-time
  * password. Those prompts go to stdout, so capturing it the way run() does
- * leaves bun waiting on a keypress for a prompt nobody was shown — the publish
+ * leaves npm waiting on a keypress for a prompt nobody was shown — the publish
  * looks hung when it is only asking a question.
  */
 function runInteractive(command: string, args: string[], cwd: string): void {
@@ -411,7 +411,7 @@ function probe(command: string, args: string[], cwd: string): string | null {
 /**
  * Publish the package in `dir` under `name`.
  *
- * `bun publish` reads the name from package.json on disk, so shipping the
+ * `npm publish` reads the name from package.json on disk, so shipping the
  * unscoped mirror means holding that one field rewritten for the length of one
  * command. The original bytes go back in a `finally`, so an interrupted or
  * failed publish cannot leave a rewritten manifest in the working tree — only
@@ -419,7 +419,7 @@ function probe(command: string, args: string[], cwd: string): string | null {
  */
 function publishUnder(dir: string, name: string, manifestName: string): void {
   if (name === manifestName) {
-    runInteractive("bun", ["publish", "--access", "public"], dir);
+    runInteractive("npm", ["publish", "--access", "public"], dir);
     return;
   }
   const manifestPath = join(dir, "package.json");
@@ -428,7 +428,7 @@ function publishUnder(dir: string, name: string, manifestName: string): void {
   patched.name = name;
   writeFileSync(manifestPath, `${JSON.stringify(patched, null, 2)}\n`);
   try {
-    runInteractive("bun", ["publish", "--access", "public"], dir);
+    runInteractive("npm", ["publish", "--access", "public"], dir);
   } finally {
     writeFileSync(manifestPath, original);
   }
@@ -508,7 +508,7 @@ function main(): void {
       (candidate): candidate is string => candidate !== null,
     );
     for (const target of names) {
-      const published = probe("bun", ["info", `${target}@${version}`, "version"], ROOT);
+      const published = probe("npm", ["view", `${target}@${version}`, "version"], ROOT);
       if (published === version) {
         console.log(`  ${target}@${version} already published — skipping`);
         continue;
