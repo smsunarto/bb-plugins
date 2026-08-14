@@ -79,8 +79,12 @@
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
     "storybook": "storybook dev --port 6006",
-    "build": "bb plugin build .",
+    "generate:theme": "bun run scripts/generate-theme.ts",
+    "check:theme": "bun run scripts/generate-theme.ts --check",
+    "check": "bun run typecheck && bun run check:theme",
+    "build": "bun run check && bb plugin build .",
     "typecheck": "tsc --noEmit",
+    "test": "bun test test/*.test.ts",
     "clean": "rm -rf dist"
   }
 }

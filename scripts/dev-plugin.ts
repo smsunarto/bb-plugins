@@ -151,6 +151,8 @@ async function main(): Promise<void> {
     typeof manifest.name === "string" ? manifest.name : basename(pluginDir);
   const pluginId = derivePluginId(pluginName);
   const hasApp = typeof manifest.bb?.app === "string";
+  const hasThemeGenerator =
+    typeof manifest.scripts?.["generate:theme"] === "string";
   const lockKey = createHash("sha256")
     .update(pluginDir)
     .digest("hex")
@@ -266,6 +268,18 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (hasThemeGenerator) {
+      const generateExitCode = await runCommand(
+        "bun",
+        ["run", "generate:theme"],
+        pluginDir,
+        setActiveChild,
+      );
+      if (generateExitCode !== 0) {
+        throw new Error(`could not generate the theme for ${installed.id}`);
+      }
+    }
+
     const typesExitCode = await runCommand(
       bb,
       ["plugin", "types", "."],
@@ -299,6 +313,27 @@ async function main(): Promise<void> {
       snapshot = next;
 
       const startedAt = Date.now();
+      if (hasThemeGenerator) {
+        const generateExitCode = await runCommand(
+          "bun",
+          ["run", "generate:theme"],
+          pluginDir,
+          setActiveChild,
+        );
+        if (stopping) break;
+        if (generateExitCode !== 0) {
+          console.error(
+            `${changed.size} file${changed.size === 1 ? "" : "s"} changed · generation failed — fix and save to retry`,
+          );
+          continue;
+        }
+
+        // Include the generated output in this change and consume its new
+        // signature now, so it does not trigger a redundant second reload.
+        next = await snapshotPluginFiles(pluginDir);
+        for (const path of changedPluginFiles(snapshot, next)) changed.add(path);
+        snapshot = next;
+      }
       if (hasApp) {
         const buildExitCode = await runCommand(
           "bun",
@@ -325,7 +360,7 @@ async function main(): Promise<void> {
       const elapsed = Math.max(0, Date.now() - startedAt);
       if (reloadExitCode === 0) {
         console.log(
-          `${changed.size} file${changed.size === 1 ? "" : "s"} changed · ${hasApp ? "built and " : ""}reloaded ${installed.id} in ${elapsed}ms`,
+          `${changed.size} file${changed.size === 1 ? "" : "s"} changed · ${hasThemeGenerator ? "generated, " : ""}${hasApp ? "built, " : ""}reloaded ${installed.id} in ${elapsed}ms`,
         );
       } else {
         console.error(

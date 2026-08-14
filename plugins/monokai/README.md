@@ -80,7 +80,7 @@ Disabling or removing the plugin returns bb to the default palette.
 | Sidebar divider | `#2B2B2B` | solid 1px boundary between navigation and content |
 | User message bubble | `#1E1E1E` | right-aligned user requests |
 | Composer | `#1E1E1E` | prompt input and controls |
-| Well | `#1E1E1E` | recessed and code wells; standard text fields stay `#181818` with a `#3C3C3C` edge |
+| Well | `#1E1E1E` | recessed and code wells, text fields, selectors; controls use a `#3C3C3C` edge |
 | Raised | `#262626` | hover and active fills |
 | Filled buttons | `#363635` / `#1E1E1E` | borderless primary / `#3C3C3C`-bordered secondary buttons |
 | Selection | `#404040` | text selection, chips |
@@ -132,13 +132,26 @@ mode the palette contributes fonts only.
 
 ## Develop from source
 
-Install from source as shown under [Install](#install). Only `server.ts` is
-bundled; the CSS is read in place, so an edit needs no rebuild:
+Install from source as shown under [Install](#install). The shipped CSS is
+generated from the TypeScript palette and a selector-focused template:
 
 ```sh
-$EDITOR plugins/monokai/themes/bb-monokai.css
+$EDITOR plugins/monokai/CONTRACT.md
+$EDITOR plugins/monokai/scripts/generate-theme.ts
+$EDITOR plugins/monokai/scripts/bb-monokai.template.css
+bun run --filter '@smsunarto/bb-plugin-monokai' generate:theme
+bun run --filter '@smsunarto/bb-plugin-monokai' check
 bb plugin reload monokai
 ```
+
+`CONTRACT.md` is a relative symlink to the Cursor Monokai contract in the
+sibling `smsunarto-theme` checkout. Change that shared contract before the CSS,
+then update the code-owned role registry. `themes/bb-monokai.css` is generated;
+do not edit it. The generator rejects stale output, unknown roles, off-contract
+colors, missing tokens, wrong role mappings, and illegible pairs. The plugin
+build runs that check automatically. In a standalone clone where the sibling
+checkout is absent, read the canonical contract in the
+[`smsunarto-theme` repository](https://github.com/smsunarto/smsunarto-theme/blob/main/CONTRACT.md).
 
 Re-apply with `bb theme set plugin:monokai:bb-monokai` if the palette does not
 refresh.
@@ -149,6 +162,7 @@ To review the palette contract outside bb, start its local Storybook:
 bun run --filter '@smsunarto/bb-plugin-monokai' storybook
 ```
 
-The catalog imports the real theme stylesheet, so CSS edits update the stories
-without a second token source. It previews the palette and component states;
-live bb remains the integration check for shadow-DOM surfaces and host styles.
+The catalog imports the generated theme stylesheet, so regeneration updates
+the stories without a second token source. It previews the palette and
+component states; live bb remains the integration check for shadow-DOM
+surfaces and host styles.

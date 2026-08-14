@@ -1,0 +1,1 @@
+../../../smsunarto-theme/CONTRACT.md
