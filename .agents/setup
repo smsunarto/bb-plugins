@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# bb 0.36 requires Node 22.19+, while the base orb may still provide Node 20.
+node_package_bin="$HOME/.bun/install/global/node_modules/node/bin"
+if [[ ! -x "$node_package_bin/node" ]] || [[ "$($node_package_bin/node --version)" != v22.* ]]; then
+  bun install -g node@22
+fi
+
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$node_package_bin/node" "$HOME/.local/bin/node"
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+
+bb_version="$(node -p "require('./package.json').config.bbVersion")"
+if ! command -v bb >/dev/null || [[ "$(bb --version 2>/dev/null || true)" != "$bb_version" ]]; then
+  bun install -g "bb-app@$bb_version"
+fi
+ln -sfn "$HOME/.bun/bin/bb" "$HOME/.local/bin/bb"
+ln -sfn "$HOME/.bun/bin/bb-app" "$HOME/.local/bin/bb-app"
+
+# Repair an interrupted global install before trying to launch the bb server.
+global_modules="$HOME/.bun/install/global/node_modules"
+if [[ ! -f "$global_modules/better-sqlite3/build/Release/better_sqlite3.node" ]]; then
+  (cd "$global_modules/better-sqlite3" && node ../.bin/prebuild-install)
+fi
+if [[ ! -f "$global_modules/node-pty/build/Release/pty.node" ]]; then
+  (cd "$global_modules/node-pty" && bunx node-gyp@11.4.2 rebuild && node scripts/post-install.js)
+fi
+
+bun install --frozen-lockfile

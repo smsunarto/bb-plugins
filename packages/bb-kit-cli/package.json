@@ -1,0 +1,46 @@
+{
+  "name": "@bb-kit/cli",
+  "version": "0.1.0",
+  "description": "Scaffold, inspect, and check opinionated bb plugins.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "packages/bb-kit-cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "bb-kit": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "bun run build && bun test test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "ts-morph": "^28.0.0",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.10"
+  }
+}

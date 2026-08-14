@@ -18,7 +18,7 @@ The pinned bb release lives in root `package.json` → `config.bbVersion`. Local
 
 ## Layout and invariants
 
-- Every package in this workspace takes the owner's npm scope: installable bb plugins are `@smsunarto/bb-plugin-<id>`; shared non-plugin packages are `@smsunarto/<name>` in `packages/<name>`.
+- Installable bb plugins use the owner's npm scope, `@smsunarto/bb-plugin-<id>`. The bb-kit framework packages are `@bb-kit/core` in `packages/bb-kit` and `@bb-kit/cli` in `packages/bb-kit-cli`.
 - Plugin id = manifest `name` with the scope dropped and the `bb-plugin-` prefix stripped, so `@smsunarto/bb-plugin-notify` yields `notify`. bb's `derivePluginId()` splits on `/` and keeps the last segment, so the scope is harmless — but the `bb-plugin-` segment after it is load-bearing and must stay. Keep the directory at `plugins/<id>` for navigation, although bb does not use the directory name as identity.
 - Root `build`, `dev`, `typecheck`, `test`, and `clean` fan out through the `--filter '@smsunarto/bb-plugin-*'` workspace glob. A filter that matches nothing exits 0 and looks like a successful no-op, so any change to package names must be re-proved against these five scripts.
 - `bb plugin build` is the authoritative build. `dist/` is generated and git-ignored — never edit or commit it, and run `bun run build` after a fresh clone.

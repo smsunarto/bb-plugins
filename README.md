@@ -72,6 +72,19 @@
 </tr>
 </table>
 
+## Plugin authoring framework
+
+This repository also develops **bb-kit**, an opinionated, agent-friendly
+framework for bb plugin authors:
+
+- [`@bb-kit/core`](packages/bb-kit/) provides typed native-RPC operations,
+  TanStack Query integration, and realtime invalidation.
+- [`@bb-kit/cli`](packages/bb-kit-cli/) provides additive generators,
+  structural checks, inspection, identity/migration locks, and headless loaded
+  operation invocation with committed JSON/YAML regression scenarios.
+- The complete design and delivery boundaries live in the
+  [bb-kit framework specification](docs/bb-plugin-framework-spec.md).
+
 ## Install
 
 One command per plugin:
