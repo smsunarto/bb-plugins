@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   defineOperation,
   defineOperationCatalog,
+  noInput,
   registerOperations,
   type OperationHost,
   type RpcContract,
@@ -12,6 +13,7 @@ import {
 const getOperation = defineOperation({
   kind: "query",
   input: z.object({ id: z.string() }),
+  exampleInput: { id: "A-1" },
   output: z.object({ value: z.string() }),
 });
 
@@ -19,6 +21,7 @@ const approveOperation = defineOperation({
   kind: "command",
   risk: "destructive",
   input: z.object({ id: z.string() }),
+  exampleInput: { id: "A-1" },
   output: z.object({ approved: z.boolean() }),
 });
 
@@ -36,6 +39,46 @@ const catalog = defineOperationCatalog({
 });
 
 describe("operation catalogs", () => {
+  it("uses one frozen, null-only no-input schema", async () => {
+    expect(Object.isFrozen(noInput)).toBe(true);
+    expect(Object.isFrozen(noInput["~standard"])).toBe(true);
+    await expect(Promise.resolve(noInput["~standard"].validate(null))).resolves.toEqual({ value: null });
+    await expect(Promise.resolve(noInput["~standard"].validate({}))).resolves.toEqual({
+      issues: [{ message: "expected no input" }],
+    });
+    expect(defineOperation({
+      kind: "query",
+      input: noInput,
+      output: z.null(),
+    }).input).toBe(noInput);
+  });
+
+  it("treats structural null schemas as required input and rejects invalid examples", () => {
+    expect(defineOperation({
+      kind: "query",
+      input: z.null(),
+      exampleInput: null,
+      output: z.null(),
+    }).input).not.toBe(noInput);
+    expect(() => defineOperation({
+      kind: "query",
+      input: z.string(),
+      output: z.null(),
+    } as never)).toThrow(/must declare exampleInput/);
+    expect(() => defineOperation({
+      kind: "query",
+      input: noInput,
+      exampleInput: null,
+      output: z.null(),
+    } as never)).toThrow(/must not declare exampleInput/);
+    expect(() => defineOperation({
+      kind: "query",
+      input: z.unknown(),
+      exampleInput: new Date(),
+      output: z.null(),
+    } as never)).toThrow(/finite, acyclic JSON/);
+  });
+
   it("builds a native Standard Schema RPC contract", () => {
     expect(Object.keys(catalog.rpcContract)).toEqual([
       "approvals_get",

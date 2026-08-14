@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
@@ -14,6 +13,18 @@ import {
   QuoteKind,
   SyntaxKind,
 } from "ts-morph";
+import {
+  checkSdkDeclarations,
+  compatibility,
+} from "./compatibility.js";
+import {
+  defaultCommandRunner,
+  processFailure,
+  resolvePathExecutable,
+  selectBbCli,
+  type CommandRunner,
+  type SelectedBbCli,
+} from "./process.js";
 import {
   defaultWireMethod,
   discoverProject,
@@ -38,7 +49,8 @@ export interface InitOptions {
   packageName?: string;
   syncTypes?: boolean;
   install?: boolean;
-  bbCli?: string;
+  env?: Readonly<NodeJS.ProcessEnv>;
+  run?: CommandRunner;
 }
 
 const MODULE_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -81,7 +93,7 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
       "README.md",
       "LICENSE",
     ],
-    engines: { bb: ">=0.36.0 <0.37.0", bbPluginSdk: "^0.4.1" },
+    engines: compatibility.engines,
     bb: {
       name: id,
       description: `${id} plugin for bb`,
@@ -100,15 +112,17 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
       skills: [],
     },
     scripts: {
-      build: "bb plugin build .",
+      build: "bb-kit build",
       dev: "bb plugin dev .",
       lint: "oxlint",
       typecheck: "tsc --noEmit",
       test: "bun test",
+      verify: "bb-kit verify",
       clean: "rm -rf dist",
     },
     dependencies: {},
     devDependencies: {
+      "@bb-kit/cli": "^0.1.0",
       "@types/better-sqlite3": "^7.6.12",
       "@types/node": "^22.0.0",
       "@types/react": "^19.0.0",
@@ -152,11 +166,17 @@ function tsconfigTemplate(app: boolean): unknown {
   };
 }
 
-function run(command: string, args: string[], cwd: string, label: string): void {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: "pipe" });
-  if (result.status !== 0) {
-    const detail = result.stderr?.trim() || result.stdout?.trim() || "unknown error";
-    throw new Error(`${label} failed: ${detail}`);
+function runCommand(
+  run: CommandRunner,
+  file: string,
+  args: readonly string[],
+  cwd: string,
+  env: Readonly<NodeJS.ProcessEnv>,
+  label: string,
+): void {
+  const result = run({ file, args, cwd, env });
+  if (result.status !== 0 || result.error) {
+    throw new Error(`${label} failed: ${processFailure(result)}`);
   }
 }
 
@@ -166,6 +186,23 @@ export function initializeProject(
 ): string[] {
   const root = resolve(target);
   const kind = options.kind ?? "backend";
+  const env = options.env ?? process.env;
+  const commandRunner = options.run ?? defaultCommandRunner;
+  let selectedBbCli: SelectedBbCli | null = null;
+  if (options.syncTypes !== false) {
+    let preflightDirectory = dirname(root);
+    while (!existsSync(preflightDirectory)) {
+      const parent = dirname(preflightDirectory);
+      if (parent === preflightDirectory) break;
+      preflightDirectory = parent;
+    }
+    selectedBbCli = selectBbCli(
+      preflightDirectory,
+      env,
+      compatibility.bbCliVersion,
+      commandRunner,
+    );
+  }
   const created: string[] = [];
   mkdirSync(root, { recursive: true });
   const packagePath = join(root, "package.json");
@@ -208,8 +245,12 @@ export function initializeProject(
     created.push("README.md");
   }
   if (writeIfMissing(
+    join(root, "test", "scaffold.test.ts"),
+    `import assert from "node:assert/strict";\nimport test from "node:test";\nimport plugin from "../${relative(root, serverPath).replaceAll("\\", "/").replace(/\.ts$/, ".js")}";\n\ntest("plugin scaffold exports its factory", () => {\n  assert.equal(typeof plugin, "function");\n});\n`,
+  )) created.push("test/scaffold.test.ts");
+  if (writeIfMissing(
     join(root, "AGENTS.md"),
-    `# bb-kit plugin conventions\n\n- Organize behavior under \`plugin/modules/<name>/\`.\n- Keep \`contract.ts\` and \`model.ts\` browser-safe.\n- Frontend code must not import \`server.ts\` or \`repository.ts\`.\n- Implement business behavior as headless operations.\n- RPC is authoritative; realtime signals only invalidate queries.\n- Expected domain outcomes use discriminated unions.\n- Create host resources inside the plugin generation.\n- Run \`bb-kit check\` while editing.\n`,
+    `# bb-kit plugin conventions\n\n- Organize behavior under \`plugin/modules/<name>/\`.\n- Keep \`contract.ts\` and \`model.ts\` browser-safe.\n- Frontend code must not import \`server.ts\` or \`repository.ts\`.\n- Implement business behavior as headless operations.\n- RPC is authoritative; realtime signals only invalidate queries.\n- Expected domain outcomes use discriminated unions.\n- Create host resources inside the plugin generation.\n- Import \`noInput\` directly for no-input operations; give every other input a literal JSON \`exampleInput\`.\n- Run \`bb-kit check\` while editing and \`bb-kit verify\` before handoff.\n`,
   )) created.push("AGENTS.md");
   const ownLicense = resolve(import.meta.dirname, "../LICENSE");
   if (!existsSync(join(root, "LICENSE")) && existsSync(ownLicense)) {
@@ -217,10 +258,29 @@ export function initializeProject(
     created.push("LICENSE");
   }
 
-  if (options.syncTypes !== false) {
-    run(options.bbCli ?? process.env.BB_CLI ?? "bb", ["plugin", "types", root], root, "bb SDK type sync");
+  if (selectedBbCli) {
+    runCommand(
+      commandRunner,
+      selectedBbCli.path,
+      ["plugin", "types", root],
+      root,
+      selectedBbCli.env,
+      "bb SDK type sync",
+    );
+    const declarationDiagnostics = checkSdkDeclarations(root, manifest);
+    if (declarationDiagnostics.length > 0) {
+      throw new Error(
+        `bb SDK type sync produced incompatible declarations: ${declarationDiagnostics
+          .map((value) => `${value.file ?? "types"}: ${value.message}`)
+          .join("; ")}`,
+      );
+    }
   }
-  if (options.install !== false) run("bun", ["install"], root, "dependency install");
+  if (options.install !== false) {
+    const bun = resolvePathExecutable("bun", env);
+    if (!bun) throw new Error("dependency install failed: bun was not found on PATH");
+    runCommand(commandRunner, bun, ["install"], root, env, "dependency install");
+  }
   return created;
 }
 
@@ -520,7 +580,7 @@ export function addOperation(
     const commandFields = kind === "command" ? `\n  risk: ${JSON.stringify(risk)},` : "";
     writeFileSync(
       operationPath,
-      `import { defineOperation } from "@bb-kit/core/operations";\nimport { z } from "zod";\n\nexport default defineOperation({\n  kind: ${JSON.stringify(kind)},${commandFields}\n  input: z.object({}).strict(),\n  output: z.object({}).strict(),\n});\n`,
+      `import { defineOperation, noInput } from "@bb-kit/core/operations";\nimport { z } from "zod";\n\nexport default defineOperation({\n  kind: ${JSON.stringify(kind)},${commandFields}\n  input: noInput,\n  output: z.object({}).strict(),\n});\n`,
     );
     created.push(projectPath(root, operationPath));
   }
@@ -547,10 +607,18 @@ export function addFixture(
   if (!operation) {
     throw new Error(`unknown operation "${identity}"; add the operation before its fixture`);
   }
+  if (operation.metadataError !== null || operation.input === null) {
+    throw new Error(
+      `${identity} has invalid input metadata: ${operation.metadataError ?? "input state is missing"}`,
+    );
+  }
   const path = join(root, "fixtures", operation.module, `${fixtureName}.json`);
+  const invoke = operation.input.mode === "none"
+    ? { operation: identity }
+    : { operation: identity, input: operation.input.example };
   const content = `${JSON.stringify({
     name: `${identity}-${fixtureName}`,
-    invoke: { operation: identity, input: {} },
+    invoke,
     expect: {},
   }, null, 2)}\n`;
   return writeIfMissing(path, content) ? [projectPath(root, path)] : [];

@@ -6,34 +6,100 @@ import type {
 
 export type OperationRisk = "safe" | "mutating" | "destructive";
 
-export type OperationDescriptor<
-  Input extends StandardSchemaV1 = StandardSchemaV1,
-  Output extends StandardSchemaV1 = StandardSchemaV1,
-> =
-  | {
-      readonly kind: "query";
-      readonly input: Input;
-      readonly output: Output;
+export type OperationJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly OperationJsonValue[]
+  | { readonly [key: string]: OperationJsonValue };
+
+declare const noInputBrand: unique symbol;
+
+type NoInputSchema = StandardSchemaV1<null, null> & {
+  readonly [noInputBrand]: true;
+};
+
+export const noInput: NoInputSchema = Object.freeze({
+  "~standard": Object.freeze({
+    version: 1 as const,
+    vendor: "bb-kit",
+    validate(value: unknown) {
+      return value === null
+        ? { value: null }
+        : { issues: [{ message: "expected no input" }] };
+    },
+    types: undefined as unknown as { readonly input: null; readonly output: null },
+  }),
+}) as unknown as NoInputSchema;
+
+type OperationKind =
+  | { readonly kind: "query" }
+  | { readonly kind: "command"; readonly risk: OperationRisk };
+
+type RequiredInputSchema = StandardSchemaV1 & {
+  readonly [noInputBrand]?: never;
+};
+
+type OperationInput<Input extends StandardSchemaV1> =
+  Input extends NoInputSchema
+    ? {
+      readonly input: NoInputSchema;
+      readonly exampleInput?: never;
     }
-  | {
-      readonly kind: "command";
-      readonly risk: OperationRisk;
-      readonly input: Input;
-      readonly output: Output;
+    : {
+      readonly input: Input & RequiredInputSchema;
+      readonly exampleInput: SchemaInput<Input> & OperationJsonValue;
     };
 
+export type OperationDescriptor<
+  Input extends StandardSchemaV1,
+  Output extends StandardSchemaV1 = StandardSchemaV1,
+> = OperationInput<Input> & {
+  readonly output: Output;
+} & OperationKind;
+
+export type AnyOperationDescriptor = OperationKind & {
+  readonly input: StandardSchemaV1;
+  readonly output: StandardSchemaV1;
+  readonly exampleInput?: OperationJsonValue;
+};
+
+type DescriptorShape = OperationKind & {
+  readonly input: StandardSchemaV1;
+  readonly output: StandardSchemaV1;
+};
+
+type ValidDescriptor<Descriptor extends DescriptorShape> =
+  Descriptor["input"] extends NoInputSchema
+    ? { readonly input: NoInputSchema; readonly exampleInput?: never }
+    : {
+        readonly input: Descriptor["input"] & RequiredInputSchema;
+        readonly exampleInput: SchemaInput<Descriptor["input"]> & OperationJsonValue;
+      };
+
 export function defineOperation<
-  const Input extends StandardSchemaV1,
-  const Output extends StandardSchemaV1,
-  const Descriptor extends OperationDescriptor<Input, Output>,
->(descriptor: Descriptor): Descriptor {
+  const Descriptor extends DescriptorShape,
+>(descriptor: Descriptor & ValidDescriptor<Descriptor>): Descriptor {
+  assertSchema(descriptor.input, "operation input");
+  assertSchema(descriptor.output, "operation output");
+  if (descriptor.input === noInput) {
+    if (Object.hasOwn(descriptor, "exampleInput")) {
+      throw new TypeError("no-input operations must not declare exampleInput");
+    }
+  } else {
+    if (!Object.hasOwn(descriptor, "exampleInput")) {
+      throw new TypeError("required-input operations must declare exampleInput");
+    }
+    assertJsonValue(descriptor.exampleInput, "operation exampleInput", new Set());
+  }
   return descriptor;
 }
 
 export interface OperationBinding<
   Identity extends string = string,
   WireMethod extends string = string,
-  Descriptor extends OperationDescriptor = OperationDescriptor,
+  Descriptor extends AnyOperationDescriptor = AnyOperationDescriptor,
 > {
   readonly identity: Identity;
   readonly wireMethod: WireMethod;
@@ -41,7 +107,7 @@ export interface OperationBinding<
 }
 
 export type OperationBindings = Readonly<
-  Record<string, OperationBinding<string, string, OperationDescriptor>>
+  Record<string, OperationBinding<string, string, AnyOperationDescriptor>>
 >;
 
 export type BoundOperation<Binding extends OperationBinding> =
@@ -133,6 +199,39 @@ function assertSchema(value: unknown, label: string): asserts value is StandardS
   ) {
     throw new TypeError(`${label} must implement Standard Schema v1`);
   }
+}
+
+function assertJsonValue(
+  value: unknown,
+  label: string,
+  ancestors: Set<object>,
+): asserts value is OperationJsonValue {
+  if (
+    value === null
+    || typeof value === "string"
+    || typeof value === "boolean"
+    || (typeof value === "number" && Number.isFinite(value))
+  ) return;
+  if (typeof value !== "object") {
+    throw new TypeError(`${label} must be finite, acyclic JSON`);
+  }
+  if (ancestors.has(value)) {
+    throw new TypeError(`${label} must be finite, acyclic JSON`);
+  }
+  ancestors.add(value);
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertJsonValue(item, `${label}[${index}]`, ancestors);
+    }
+  } else {
+    if (Object.getPrototypeOf(value) !== Object.prototype) {
+      throw new TypeError(`${label} must be finite, acyclic JSON`);
+    }
+    for (const [key, item] of Object.entries(value)) {
+      assertJsonValue(item, `${label}.${key}`, ancestors);
+    }
+  }
+  ancestors.delete(value);
 }
 
 /**

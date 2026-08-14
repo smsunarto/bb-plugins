@@ -7,7 +7,7 @@
  * (managed-plugin-artifacts.ts: `git clone --quiet`, then `stagedRoot =
  * stagingDir`), and its parsed source carries only a url and a ref — there is
  * no subdirectory field. So a monorepo plugin cannot be installed over git: at
- * bb 0.36, and npm is the channel.
+ * bb 0.37, and npm is the channel.
  *
  * That makes the tarball the product, and everything bb reads at install time
  * has to be INSIDE it. bb never builds an npm plugin: it stats the manifest's

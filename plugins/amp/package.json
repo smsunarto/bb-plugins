@@ -27,7 +27,7 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.37",
+    "bb": ">=0.37.0 <0.38.0",
     "bbPluginSdk": "^0.4.1"
   },
   "bb": {

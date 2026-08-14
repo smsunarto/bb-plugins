@@ -5,11 +5,13 @@ import {
   defineOperation,
   defineOperationCatalog,
   registerOperations,
+  type OperationDescriptor,
   type OperationHost,
 } from "../src/operations.js";
 import {
   operationMutationOptions,
   operationQueryOptions,
+  useOperationRpc,
 } from "../src/query.js";
 
 const catalog = defineOperationCatalog({
@@ -19,6 +21,7 @@ const catalog = defineOperationCatalog({
     operation: defineOperation({
       kind: "query",
       input: z.object({ id: z.string() }),
+      exampleInput: { id: "A-1" },
       output: z.object({ count: z.number() }),
     }),
   },
@@ -32,6 +35,7 @@ const commandCatalog = defineOperationCatalog({
       kind: "command",
       risk: "mutating",
       input: z.object({ id: z.string() }),
+      exampleInput: { id: "A-1" },
       output: z.object({ count: z.number() }),
     }),
   },
@@ -79,3 +83,35 @@ function operationKindCompatibility(queryClient: QueryClient): void {
 }
 
 void operationKindCompatibility;
+
+function operationRpcCompatibility(): void {
+  const rpc = useOperationRpc(catalog);
+  const result: Promise<{ count: number }> = rpc.call("types_get", { id: "A-1" });
+  void result;
+  // @ts-expect-error input comes from the selected catalog method
+  rpc.call("types_get", { missing: true });
+  // @ts-expect-error unknown methods are rejected
+  rpc.call("types_missing", { id: "A-1" });
+}
+
+void operationRpcCompatibility;
+
+const typeInput = z.string();
+const typeOutput = z.null();
+const invalidExample: OperationDescriptor<typeof typeInput, typeof typeOutput> = {
+  kind: "query",
+  input: typeInput,
+  // @ts-expect-error example input must satisfy the schema input
+  exampleInput: 123,
+  output: typeOutput,
+};
+
+// @ts-expect-error required-input operations cannot omit exampleInput
+const missingExample: OperationDescriptor<typeof typeInput, typeof typeOutput> = {
+  kind: "query",
+  input: typeInput,
+  output: typeOutput,
+};
+
+void invalidExample;
+void missingExample;

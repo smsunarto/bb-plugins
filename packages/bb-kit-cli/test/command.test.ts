@@ -9,6 +9,14 @@ import {
   type CommandRunner,
   type CliIo,
 } from "../src/index.js";
+import {
+  commandResult,
+  makeOperationRequireInput,
+  seedCanonicalTypes,
+  seedProjectExecutables,
+  testEnvironment,
+  writeBuildMetadata,
+} from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -21,6 +29,7 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
+  seedCanonicalTypes(root);
   return root;
 }
 
@@ -53,6 +62,8 @@ describe("bb-kit command interface", () => {
         kind: "query",
         risk: null,
         rpcMethod: "reports_get",
+        input: { mode: "none" },
+        metadataError: null,
       },
     ]);
 
@@ -67,6 +78,13 @@ describe("bb-kit command interface", () => {
   it("requires confirmation before destructive invocation", async () => {
     const root = temporaryProject();
     addOperation(root, "reports.delete", "command", "destructive");
+    makeOperationRequireInput(
+      root,
+      "reports.delete",
+      "command",
+      { id: "R-1" },
+      "destructive",
+    );
     const request = vi.fn<typeof fetch>();
     const output = capture();
     expect(await runCli(
@@ -86,6 +104,13 @@ describe("bb-kit command interface", () => {
   it("invokes the locked native RPC method without a GUI", async () => {
     const root = temporaryProject();
     addOperation(root, "reports.refresh", "command", "mutating");
+    makeOperationRequireInput(
+      root,
+      "reports.refresh",
+      "command",
+      { scope: "all" },
+      "mutating",
+    );
     const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       ok: true,
       result: { refreshed: true },
@@ -121,6 +146,85 @@ describe("bb-kit command interface", () => {
     });
   });
 
+  it("sends null only for omitted canonical no-input operations", async () => {
+    const root = temporaryProject();
+    addOperation(root, "reports.get", "query");
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      result: {},
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const output = capture();
+    expect(await runCli(["invoke", "reports.get", "--json"], {
+      cwd: root,
+      io: output.io,
+      fetch: request,
+    })).toBe(0);
+    expect(request.mock.calls[0]?.[1]?.body).toBe("null");
+
+    const extra = capture();
+    expect(await runCli(
+      ["invoke", "reports.get", "--input", "null", "--json"],
+      { cwd: root, io: extra.io, fetch: request },
+    )).toBe(1);
+    expect(JSON.parse(extra.stdout[0] ?? "null")).toEqual({
+      ok: false,
+      error: {
+        code: "unexpected_operation_input",
+        message: "reports.get accepts no input; omit --input",
+      },
+    });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("requires explicit input for every other schema", async () => {
+    const root = temporaryProject();
+    addOperation(root, "reports.nullable", "query");
+    makeOperationRequireInput(root, "reports.nullable", "query", null);
+    const request = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      result: {},
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const missing = capture();
+    expect(await runCli(["invoke", "reports.nullable", "--json"], {
+      cwd: root,
+      io: missing.io,
+      fetch: request,
+    })).toBe(1);
+    expect(JSON.parse(missing.stdout[0] ?? "null")).toEqual({
+      ok: false,
+      error: {
+        code: "missing_operation_input",
+        message: "reports.nullable requires input. Example: null. Run: bb-kit invoke reports.nullable --input 'null'",
+      },
+    });
+    expect(request).not.toHaveBeenCalled();
+
+    const explicit = capture();
+    expect(await runCli(
+      ["invoke", "reports.nullable", "--input", "null", "--json"],
+      { cwd: root, io: explicit.io, fetch: request },
+    )).toBe(0);
+    expect(request.mock.calls[0]?.[1]?.body).toBe("null");
+  });
+
+  it("prints command-local help without reading operation metadata", async () => {
+    const output = capture();
+    expect(await runCli(["invoke", "--help"], {
+      cwd: join(tmpdir(), "not-a-plugin"),
+      io: output.io,
+    })).toBe(0);
+    expect(output.stdout).toEqual([
+      "Usage: bb-kit invoke <module.name> [--input <json|@file>] [--confirm] [--server <url>] [--json]",
+    ]);
+    expect(output.stderr).toEqual([]);
+  });
+
   it("keeps init option values out of the target path", async () => {
     const parent = mkdtempSync(join(tmpdir(), "bb-kit-init-command-"));
     roots.push(parent);
@@ -135,6 +239,8 @@ describe("bb-kit command interface", () => {
 
   it("exposes the complete verification gate as stable JSON", async () => {
     const root = temporaryProject();
+    seedProjectExecutables(root);
+    writeBuildMetadata(root);
     const paths = [
       "package.json",
       "LICENSE",
@@ -142,21 +248,25 @@ describe("bb-kit command interface", () => {
       "dist/server.js",
       "dist/server.meta.json",
     ];
-    const run = vi.fn<CommandRunner>((_command, args) => ({
-      status: 0,
-      stdout: args[0] === "pm"
-        ? [
+    const run = vi.fn<CommandRunner>((request) => {
+      if (request.args[0] === "--version") {
+        return commandResult({ stdout: "0.37.0\n" });
+      }
+      return commandResult({
+        stdout: request.args[0] === "pm"
+          ? [
             ...paths.map((path) => `packed 1KB ${path}`),
             `Total files: ${paths.length}`,
           ].join("\n")
-        : "",
-      stderr: "",
-    }));
+          : "",
+      });
+    });
     const output = capture();
     expect(await runCli(["verify", "--json"], {
       cwd: root,
       io: output.io,
       run,
+      env: testEnvironment(),
     })).toBe(0);
     expect(JSON.parse(output.stdout[0] ?? "null")).toEqual(expect.objectContaining({
       ok: true,

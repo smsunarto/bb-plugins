@@ -16,6 +16,6 @@
     "hooks": "@/hooks"
   },
   "registries": {
-    "@bb": "https://raw.githubusercontent.com/ymichael/bb/desktop-v0.35.1/packages/plugin-registry/r/{name}.json"
+    "@bb": "https://raw.githubusercontent.com/get-bb/bb/desktop-v0.37.0/packages/plugin-registry/r/{name}.json"
   }
 }

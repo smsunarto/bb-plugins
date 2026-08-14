@@ -2,6 +2,12 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { Node, Project } from "ts-morph";
 import {
+  checkSdkDeclarations,
+  compatibility,
+  exactHostShims,
+  shimmedPackageRoots,
+} from "./compatibility.js";
+import {
   OPERATION_IDENTITY_PATTERN,
   RPC_METHOD_PATTERN,
   discoverProject,
@@ -41,32 +47,48 @@ function walk(directory: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(directory)) {
     const path = join(directory, entry);
-    if (statSync(path).isDirectory()) files.push(...walk(path));
+    if (statSync(path).isDirectory()) {
+      if ([".git", "dist", "node_modules"].includes(entry)) continue;
+      files.push(...walk(path));
+    }
     else if (/\.(?:ts|tsx)$/.test(entry) && !entry.endsWith(".d.ts")) files.push(path);
   }
   return files;
 }
 
+type LocalImportResolution =
+  | { readonly kind: "resolved"; readonly path: string }
+  | { readonly kind: "escaped" }
+  | { readonly kind: "unresolved" };
+
 function resolveLocalImport(
   root: string,
   from: string,
   specifier: string,
-  files: ReadonlySet<string>,
-): string | null {
+): LocalImportResolution | null {
   if (!specifier.startsWith(".") && !specifier.startsWith("@/")) return null;
   const base = specifier.startsWith("@/")
     ? resolve(root, specifier.slice(2))
     : resolve(dirname(from), specifier);
+  const relativeBase = relative(root, base).replaceAll("\\", "/");
+  if (relativeBase === ".." || relativeBase.startsWith("../")) {
+    return { kind: "escaped" };
+  }
   const sourceBase = base.endsWith(".js")
     ? base.slice(0, -3)
     : base.endsWith(".jsx") ? base.slice(0, -4) : base;
-  return [
+  const target = [
     base,
     `${sourceBase}.ts`,
     `${sourceBase}.tsx`,
+    `${sourceBase}.js`,
+    `${sourceBase}.jsx`,
+    `${sourceBase}.css`,
+    `${sourceBase}.json`,
     join(sourceBase, "index.ts"),
     join(sourceBase, "index.tsx"),
-  ].find((candidate) => files.has(candidate)) ?? null;
+  ].find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+  return target ? { kind: "resolved", path: target } : { kind: "unresolved" };
 }
 
 function owningModule(info: ProjectInfo, path: string): string | null {
@@ -95,15 +117,6 @@ function isTypeOnlyImport(
   if (declaration.getDefaultImport() || declaration.getNamespaceImport()) return false;
   const named = declaration.getNamedImports();
   return named.length > 0 && named.every((value) => value.isTypeOnly());
-}
-
-function isHostRuntimePackage(name: string): boolean {
-  return name === "@bb/plugin-sdk"
-    || name === "react"
-    || name === "react-dom"
-    || name === "sonner"
-    || name === "vaul"
-    || name.startsWith("@radix-ui/");
 }
 
 function checkManifest(info: ProjectInfo): Diagnostic[] {
@@ -139,24 +152,19 @@ function checkManifest(info: ProjectInfo): Diagnostic[] {
     }
   }
   const bbRange = info.manifest.engines?.bb;
-  if (
-    bbRange !== ">=0.36.0 <0.37.0"
-    && bbRange !== ">=0.36 <0.37"
-    && bbRange !== "^0.36.0"
-    && bbRange !== "^0.36"
-  ) {
+  if (bbRange !== compatibility.engines.bb) {
     diagnostics.push(diagnostic(
       "BBK004",
-      `engines.bb ${JSON.stringify(bbRange)} is outside bb-kit's tested 0.36.x line`,
-      "Set engines.bb to \">=0.36.0 <0.37.0\" or verify and release a new compatibility line.",
+      `engines.bb ${JSON.stringify(bbRange)} does not match ${JSON.stringify(compatibility.engines.bb)}`,
+      `Set engines.bb to ${JSON.stringify(compatibility.engines.bb)}; bb-kit has no selectable compatibility profiles.`,
       "package.json",
     ));
   }
-  if (info.manifest.engines?.bbPluginSdk !== "^0.4.1") {
+  if (info.manifest.engines?.bbPluginSdk !== compatibility.engines.bbPluginSdk) {
     diagnostics.push(diagnostic(
       "BBK005",
-      `engines.bbPluginSdk ${JSON.stringify(info.manifest.engines?.bbPluginSdk)} does not match protocol 0.4.1`,
-      "Set engines.bbPluginSdk to \"^0.4.1\" and refresh generated SDK declarations with the matching bb CLI.",
+      `engines.bbPluginSdk ${JSON.stringify(info.manifest.engines?.bbPluginSdk)} does not match ${JSON.stringify(compatibility.engines.bbPluginSdk)}`,
+      `Set engines.bbPluginSdk to ${JSON.stringify(compatibility.engines.bbPluginSdk)} and refresh generated SDK declarations with the matching bb CLI.`,
       "package.json",
     ));
   }
@@ -175,6 +183,24 @@ function checkManifest(info: ProjectInfo): Diagnostic[] {
       "Declare the exact source, generated output, license, and documentation shipped by the plugin.",
       "package.json",
     ));
+  }
+  const expectedScripts = {
+    build: "bb-kit build",
+    lint: "oxlint",
+    typecheck: "tsc --noEmit",
+    test: "bun test",
+    verify: "bb-kit verify",
+  } as const;
+  for (const [name, expected] of Object.entries(expectedScripts)) {
+    const actual = info.manifest.scripts?.[name];
+    if (actual !== expected) {
+      diagnostics.push(diagnostic(
+        "BBK012",
+        `scripts.${name} is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`,
+        "Use the canonical alias. bb-kit owns build and verification policy; package scripts are not extension points.",
+        "package.json",
+      ));
+    }
   }
   return diagnostics;
 }
@@ -245,6 +271,14 @@ function checkOperations(info: ProjectInfo): Diagnostic[] {
           "BBK207",
           `${operation.identity} does not declare a recognized command risk`,
           "Declare risk: \"safe\", \"mutating\", or \"destructive\".",
+          file,
+        ));
+      }
+      if (operation.metadataError !== null || operation.input === null) {
+        diagnostics.push(diagnostic(
+          "BBK210",
+          `${operation.identity} has invalid input metadata: ${operation.metadataError ?? "input state is missing"}`,
+          "Use the direct noInput import with no example, or declare a required schema with a literal JSON exampleInput.",
           file,
         ));
       }
@@ -381,15 +415,15 @@ function checkImports(info: ProjectInfo): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const sourceRoot = dirname(resolve(info.root, info.serverEntry));
   const files = walk(sourceRoot);
-  const fileSet = new Set(files);
+  const queued = new Set(files);
   const graph = new Map<string, string[]>();
   const project = new Project({
     compilerOptions: { allowJs: false },
     skipAddingFilesFromTsConfig: true,
   });
-  project.addSourceFilesAtPaths(files);
-  for (const source of project.getSourceFiles()) {
-    const path = source.getFilePath();
+  for (let index = 0; index < files.length; index += 1) {
+    const path = files[index] as string;
+    const source = project.addSourceFileAtPath(path);
     const base = path.split("/").at(-1) ?? path;
     const frontend = /^(?:app|panel|queries)\.tsx?$/.test(base);
     const pure = /^(?:contract|model)\.ts$/.test(base);
@@ -416,8 +450,22 @@ function checkImports(info: ProjectInfo): Diagnostic[] {
       const packageName = runtimePackage(specifier);
       if (
         packageName
+        && shimmedPackageRoots.has(packageName)
+        && !exactHostShims.has(specifier)
+      ) {
+        diagnostics.push(diagnostic(
+          "BBK112",
+          `${base} imports unsupported host-shim subpath "${specifier}"`,
+          `Use one of the exact host shims: ${[...exactHostShims]
+            .filter((candidate) => runtimePackage(candidate) === packageName)
+            .join(", ")}.`,
+          projectPath(info.root, path),
+        ));
+      }
+      if (
+        packageName
         && !isTypeOnlyImport(declaration)
-        && !isHostRuntimePackage(packageName)
+        && !exactHostShims.has(specifier)
         && !info.manifest.dependencies?.[packageName]
         && packageName !== "@bb-kit/core"
         && packageName !== "zod"
@@ -430,9 +478,30 @@ function checkImports(info: ProjectInfo): Diagnostic[] {
           projectPath(info.root, path),
         ));
       }
-      const target = resolveLocalImport(info.root, path, specifier, fileSet);
-      if (target) {
-        dependencies.push(target);
+      const resolution = resolveLocalImport(info.root, path, specifier);
+      if (resolution?.kind === "escaped") {
+        diagnostics.push(diagnostic(
+          "BBK110",
+          `${base} imports outside the plugin package through "${specifier}"`,
+          "Move the source into the package or declare a runtime dependency; source fallback cannot escape the installed package.",
+          projectPath(info.root, path),
+        ));
+      } else if (resolution?.kind === "unresolved") {
+        diagnostics.push(diagnostic(
+          "BBK111",
+          `${base} has unresolved local import "${specifier}"`,
+          "Restore the imported package-local source file or correct the specifier.",
+          projectPath(info.root, path),
+        ));
+      } else if (resolution?.kind === "resolved") {
+        const target = resolution.path;
+        if (/\.(?:ts|tsx)$/.test(target)) {
+          dependencies.push(target);
+          if (!queued.has(target)) {
+            queued.add(target);
+            files.push(target);
+          }
+        }
         const sourceModule = owningModule(info, path);
         const targetModule = owningModule(info, target);
         if (
@@ -525,6 +594,7 @@ export function checkProject(root: string): Diagnostic[] {
   }
   return [
     ...checkManifest(info),
+    ...checkSdkDeclarations(info.root, info.manifest),
     ...checkFrameworkDependencies(info),
     ...checkOperations(info),
     ...checkMigrations(info),

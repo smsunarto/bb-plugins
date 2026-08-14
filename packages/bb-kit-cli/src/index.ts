@@ -1,4 +1,10 @@
 export { checkProject, formatDiagnostic, type Diagnostic } from "./check.js";
+export {
+  buildProject,
+  formatBuild,
+  type BuildOptions,
+  type BuildResult,
+} from "./build.js";
 export { runCli, type CliIo, type RunCliOptions } from "./command.js";
 export {
   addFixture,
@@ -12,6 +18,12 @@ export {
   type PluginKind,
 } from "./generate.js";
 export { formatInfo, inspectProject, type InspectResult } from "./info.js";
+export {
+  doctorProject,
+  formatDoctor,
+  type DoctorOptions,
+  type DoctorReport,
+} from "./doctor.js";
 export {
   invokeOperation,
   InvocationError,
@@ -35,6 +47,7 @@ export {
   writeLock,
   type BbKitLock,
   type ProjectInfo,
+  type DiscoveredOperationInput,
 } from "./project.js";
 export {
   formatVerification,

@@ -19,6 +19,8 @@ export interface InspectResult {
       kind: string;
       risk: string | null;
       rpcMethod: string | null;
+      input: import("./project.js").DiscoveredOperationInput | null;
+      metadataError: string | null;
     }>;
     migrations: string[];
     surfaces: string[];
@@ -47,6 +49,8 @@ export function inspectProject(root: string): InspectResult {
         kind: operation.kind,
         risk: operation.risk,
         rpcMethod: operation.rpcMethod,
+        input: operation.input,
+        metadataError: operation.metadataError,
       })),
       migrations: module.migrations,
       surfaces: module.surfaces,
@@ -76,7 +80,8 @@ export function formatInfo(result: InspectResult): string {
       lines.push(
         `    ${operation.kind.padEnd(7)} ${operation.identity}`
         + `${operation.risk ? ` [${operation.risk}]` : ""}`
-        + ` → ${operation.rpcMethod ?? "unlocked"}`,
+        + ` → ${operation.rpcMethod ?? "unlocked"}`
+        + ` (${operation.input?.mode ?? "invalid input"})`,
       );
     }
     if (module.migrations.length > 0) {

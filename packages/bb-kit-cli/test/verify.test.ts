@@ -13,6 +13,13 @@ import {
   type CommandRunner,
 } from "../src/index.js";
 import { checkPackedPackage, packedPaths } from "../src/package.js";
+import {
+  commandResult,
+  seedCanonicalTypes,
+  seedProjectExecutables,
+  testEnvironment,
+  writeBuildMetadata,
+} from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -25,6 +32,7 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
+  seedCanonicalTypes(root);
   return root;
 }
 
@@ -74,8 +82,24 @@ describe("package inspection", () => {
 });
 
 describe("project verification", () => {
+  it("runs no project tool when the bb CLI is wrong", () => {
+    const root = temporaryProject();
+    seedProjectExecutables(root);
+    const run = vi.fn<CommandRunner>(() => commandResult({ stdout: "0.36.0\n" }));
+    const result = verifyProject(root, { run, env: testEnvironment() });
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      steps: [],
+      error: expect.objectContaining({ code: "bb_cli_version_mismatch" }),
+    }));
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]?.[0].args).toEqual(["--version"]);
+  });
+
   it("runs checks in order and validates the packed plugin", () => {
     const root = temporaryProject();
+    seedProjectExecutables(root);
+    writeBuildMetadata(root);
     const paths = [
       "package.json",
       "LICENSE",
@@ -83,12 +107,12 @@ describe("project verification", () => {
       "dist/server.js",
       "dist/server.meta.json",
     ];
-    const run = vi.fn<CommandRunner>((_command, args) => ({
-      status: 0,
-      stdout: args[1] === "pack" ? packOutput(paths) : "",
-      stderr: "",
+    const run = vi.fn<CommandRunner>((request) => commandResult({
+      stdout: request.args[0] === "--version"
+        ? "0.37.0\n"
+        : request.args[0] === "pm" ? packOutput(paths) : "",
     }));
-    const result = verifyProject(root, { run });
+    const result = verifyProject(root, { run, env: testEnvironment() });
     expect(result.ok).toBe(true);
     expect(result.diagnostics).toEqual([]);
     expect(result.steps.map((step) => [step.name, step.status])).toEqual([
@@ -98,31 +122,97 @@ describe("project verification", () => {
       ["build", "passed"],
       ["pack", "passed"],
     ]);
-    expect(run.mock.calls.map((call) => call[1].join(" "))).toEqual([
-      "run lint",
-      "run typecheck",
-      "run test",
-      "run build",
+    expect(run.mock.calls.map(([request]) => request.args.join(" "))).toEqual([
+      "--version",
+      "",
+      "--noEmit",
+      "test",
+      "plugin build .",
       "pm pack --dry-run",
     ]);
   });
 
   it("stops after a failed step and keeps its actionable output", () => {
     const root = temporaryProject();
-    const run = vi.fn<CommandRunner>(() => ({
-      status: 1,
-      stdout: "",
-      stderr: "lint failed at plugin/server.ts:1 token=secret-value",
-    }));
-    const result = verifyProject(root, { run });
+    seedProjectExecutables(root);
+    const run = vi.fn<CommandRunner>((request) => request.args[0] === "--version"
+      ? commandResult({ stdout: "0.37.0\n" })
+      : commandResult({
+          status: 1,
+          stderr: "lint failed at plugin/server.ts:1 token=secret-value",
+        }));
+    const result = verifyProject(root, { run, env: testEnvironment() });
     expect(result.ok).toBe(false);
     expect(result.steps[0]).toEqual({
       name: "lint",
-      command: "bun run lint",
+      command: expect.stringMatching(/node_modules\/.bin\/oxlint$/),
       status: "failed",
       detail: "lint failed at plugin/server.ts:1 token=[REDACTED]",
     });
     expect(result.steps.slice(1).every((step) => step.status === "skipped")).toBe(true);
-    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops when a fixed tool changes a protected declaration", () => {
+    const root = temporaryProject();
+    seedProjectExecutables(root);
+    const run = vi.fn<CommandRunner>((request) => {
+      if (request.args[0] === "--version") {
+        return commandResult({ stdout: "0.37.0\n" });
+      }
+      writeFileSync(join(root, "types/bb-plugin-sdk.d.ts"), "changed by lint\n");
+      return commandResult();
+    });
+    const result = verifyProject(root, { run, env: testEnvironment() });
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({ code: "sdk_declaration_drift" }),
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "BBK011" }),
+      ]),
+    }));
+    expect(result.steps.map((step) => [step.name, step.status])).toEqual([
+      ["lint", "failed"],
+      ["typecheck", "skipped"],
+      ["test", "skipped"],
+      ["build", "skipped"],
+      ["pack", "skipped"],
+    ]);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("rechecks protected outputs after pack lifecycle work", () => {
+    const root = temporaryProject();
+    seedProjectExecutables(root);
+    writeBuildMetadata(root);
+    const paths = [
+      "package.json",
+      "LICENSE",
+      "plugin/server.ts",
+      "dist/server.js",
+      "dist/server.meta.json",
+    ];
+    const run = vi.fn<CommandRunner>((request) => {
+      if (request.args[0] === "--version") {
+        return commandResult({ stdout: "0.37.0\n" });
+      }
+      if (request.args[0] === "pm") {
+        writeFileSync(join(root, "types/bb-plugin-sdk.d.ts"), "changed by pack\n");
+        return commandResult({ stdout: packOutput(paths) });
+      }
+      return commandResult();
+    });
+    const result = verifyProject(root, { run, env: testEnvironment() });
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      error: expect.objectContaining({ code: "sdk_declaration_drift" }),
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "BBK011" }),
+      ]),
+    }));
+    expect(result.steps.at(-1)).toEqual(expect.objectContaining({
+      name: "pack",
+      status: "failed",
+    }));
   });
 });

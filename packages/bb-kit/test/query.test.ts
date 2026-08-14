@@ -5,10 +5,13 @@ import {
   defineOperation,
   defineOperationCatalog,
 } from "../src/operations.js";
-import {
+
+vi.mock("@bb/plugin-sdk/app", () => ({ useRpc: vi.fn() }));
+
+const {
   operationMutationOptions,
   operationQueryOptions,
-} from "../src/query.js";
+} = await import("../src/query.js");
 
 const catalog = defineOperationCatalog({
   get: {
@@ -17,6 +20,7 @@ const catalog = defineOperationCatalog({
     operation: defineOperation({
       kind: "query",
       input: z.object({ id: z.string() }),
+      exampleInput: { id: "R-1" },
       output: z.object({ value: z.string() }),
     }),
   },
@@ -27,6 +31,7 @@ const catalog = defineOperationCatalog({
       kind: "command",
       risk: "mutating",
       input: z.object({ id: z.string(), value: z.string() }),
+      exampleInput: { id: "R-1", value: "updated" },
       output: z.object({ value: z.string() }),
     }),
   },

@@ -47,11 +47,10 @@ export class InvocationError extends Error {
   }
 }
 
-function parseInput(value: string | undefined, cwd: string): unknown {
+function parseInput(value: string, cwd: string): unknown {
   const source = value?.startsWith("@")
     ? readFileSync(resolve(cwd, value.slice(1)), "utf8")
     : value;
-  if (source === undefined) return {};
   try {
     return JSON.parse(source) as unknown;
   } catch (error) {
@@ -60,6 +59,20 @@ function parseInput(value: string | undefined, cwd: string): unknown {
       `operation input is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+export function operationInvokeCommand(
+  operation: Pick<DiscoveredOperation, "identity" | "input">,
+): string | null {
+  if (operation.input === null) return null;
+  const base = `bb-kit invoke ${operation.identity}`;
+  return operation.input.mode === "none"
+    ? base
+    : `${base} --input ${shellQuote(JSON.stringify(operation.input.example))}`;
 }
 
 function findOperation(root: string, identity: string): {
@@ -103,6 +116,12 @@ function assertInvocable(
       `${identity} has no recognized risk classification; run bb-kit check`,
     );
   }
+  if (operation.metadataError !== null || operation.input === null) {
+    throw new InvocationError(
+      "invalid_operation_metadata",
+      `${identity} has invalid input metadata: ${operation.metadataError ?? "input state is missing"}; run bb-kit check`,
+    );
+  }
   if (operation.risk === "destructive" && !confirm) {
     throw new InvocationError(
       "confirmation_required",
@@ -111,15 +130,47 @@ function assertInvocable(
   }
 }
 
+function assertInputState(
+  identity: string,
+  operation: DiscoveredOperation,
+  hasInput: boolean,
+): void {
+  if (operation.input === null) {
+    throw new InvocationError(
+      "invalid_operation_metadata",
+      `${identity} has invalid input metadata: ${operation.metadataError ?? "input state is missing"}; run bb-kit check`,
+    );
+  }
+  if (operation.input.mode === "none" && hasInput) {
+    throw new InvocationError(
+      "unexpected_operation_input",
+      `${identity} accepts no input; omit --input`,
+    );
+  }
+  if (operation.input.mode === "required" && !hasInput) {
+    const example = JSON.stringify(operation.input.example);
+    throw new InvocationError(
+      "missing_operation_input",
+      `${identity} requires input. Example: ${example}. Run: ${operationInvokeCommand(operation)}`,
+    );
+  }
+}
+
+export interface OperationInvocationPreflight {
+  readonly identity: string;
+  readonly hasInput: boolean;
+}
+
 /** Validate a batch before any operation in it can mutate loaded-plugin state. */
 export function preflightOperationInvocations(
   root: string,
-  identities: readonly string[],
+  invocations: readonly OperationInvocationPreflight[],
   confirm = false,
 ): void {
-  for (const identity of new Set(identities)) {
+  for (const { identity, hasInput } of invocations) {
     const { operation } = findOperation(root, identity);
     assertInvocable(identity, operation, confirm);
+    assertInputState(identity, operation, hasInput);
   }
 }
 
@@ -131,9 +182,12 @@ export async function invokeOperation(
 ): Promise<InvocationResult> {
   const { pluginId, operation, rpcMethod } = findOperation(root, identity);
   assertInvocable(identity, operation, options.confirm === true);
+  assertInputState(identity, operation, options.input !== undefined);
 
   const cwd = options.cwd ?? root;
-  const input = parseInput(options.input, cwd);
+  const input = operation.input?.mode === "none"
+    ? null
+    : parseInput(options.input as string, cwd);
   const baseUrl = new URL(
     options.serverUrl ?? process.env.BB_SERVER_URL ?? "http://127.0.0.1:38886",
   );

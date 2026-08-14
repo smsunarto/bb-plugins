@@ -23,15 +23,20 @@
         "./*"
       ]
     },
+    "allowImportingTsExtensions": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "useUnknownInCatchVariables": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
     "noEmit": true,
     "skipLibCheck": false
   },
   "include": [
-    "server.ts",
-    "app.tsx",
+    "plugin",
+    "diffs-lib.ts",
     "types",
-    "components",
-    "lib",
-    "hooks"
+    "test"
   ]
 }

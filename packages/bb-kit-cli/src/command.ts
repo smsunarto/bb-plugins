@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { buildProject, formatBuild } from "./build.js";
 import {
   addFixture,
   addMigration,
@@ -10,7 +11,12 @@ import {
 } from "./generate.js";
 import { checkProject, formatDiagnostic } from "./check.js";
 import { formatInfo, inspectProject } from "./info.js";
-import { invokeOperation, InvocationError } from "./invoke.js";
+import {
+  invokeOperation,
+  InvocationError,
+  operationInvokeCommand,
+} from "./invoke.js";
+import { doctorProject, formatDoctor } from "./doctor.js";
 import { discoverProject, findProjectRoot } from "./project.js";
 import {
   FixtureError,
@@ -22,6 +28,14 @@ import {
   verifyProject,
   type CommandRunner,
 } from "./verify.js";
+import { ProcessError } from "./process.js";
+import {
+  checkWorkspaceCompatibility,
+  findWorkspaceRoot,
+  formatCompatibilityInspection,
+  inspectCompatibility,
+  upgradeCompatibility,
+} from "./compatibility-workspace.js";
 
 export interface CliIo {
   stdout(value: string): void;
@@ -58,8 +72,34 @@ const USAGE = `Usage:
   bb-kit invoke <module.name> [--input <json|@file>] [--confirm] [--server <url>] [--json]
   bb-kit fixtures run [module] [--confirm] [--server <url>] [--json]
   bb-kit info [--json]
-  bb-kit check [--json]
-  bb-kit verify [--json]`;
+  bb-kit check [--workspace] [--json]
+  bb-kit compatibility inspect [--json]
+  bb-kit compatibility check [--json]
+  bb-kit compatibility upgrade [--json]
+  bb-kit build [--json]
+  bb-kit verify [--json]
+  bb-kit doctor [--json]`;
+
+const COMMAND_USAGE: Readonly<Record<string, string>> = {
+  init: "Usage: bb-kit init [directory] [--kind backend|fullstack|theme] [--skip-install] [--skip-types] [--json]",
+  "add module": "Usage: bb-kit add module <name> [--json]",
+  "add operation": "Usage: bb-kit add operation <module.name> --kind query|command [--risk safe|mutating|destructive] [--json]",
+  "add fixture": "Usage: bb-kit add fixture <module.name> <name> [--json]",
+  "add migration": "Usage: bb-kit add migration <module> <name> [--json]",
+  "add panel": "Usage: bb-kit add panel <module> --location nav|thread [--json]",
+  operations: "Usage: bb-kit operations [--json]",
+  describe: "Usage: bb-kit describe <module.name> [--json]",
+  invoke: "Usage: bb-kit invoke <module.name> [--input <json|@file>] [--confirm] [--server <url>] [--json]",
+  "fixtures run": "Usage: bb-kit fixtures run [module] [--confirm] [--server <url>] [--json]",
+  info: "Usage: bb-kit info [--json]",
+  check: "Usage: bb-kit check [--workspace] [--json]",
+  "compatibility inspect": "Usage: bb-kit compatibility inspect [--json]",
+  "compatibility check": "Usage: bb-kit compatibility check [--json]",
+  "compatibility upgrade": "Usage: bb-kit compatibility upgrade [--json]",
+  build: "Usage: bb-kit build [--json]",
+  verify: "Usage: bb-kit verify [--json]",
+  doctor: "Usage: bb-kit doctor [--json]",
+};
 
 function parseArguments(
   args: readonly string[],
@@ -123,6 +163,7 @@ function printableError(error: unknown): { code: string; message: string; issues
   }
   if (error instanceof FixtureError) return { code: error.code, message: error.message };
   if (error instanceof CliUsageError) return { code: error.code, message: error.message };
+  if (error instanceof ProcessError) return { code: error.code, message: error.message };
   return {
     code: "bb_kit_error",
     message: error instanceof Error ? error.message : String(error),
@@ -136,6 +177,8 @@ function operations(root: string) {
       kind: operation.kind,
       risk: operation.risk,
       rpcMethod: operation.rpcMethod,
+      input: operation.input,
+      metadataError: operation.metadataError,
     })),
   );
 }
@@ -157,6 +200,11 @@ export async function runCli(
       io.stdout(USAGE);
       return command ? 0 : 2;
     }
+    if (args.includes("--help") || args.includes("-h")) {
+      const subject = args.find((argument) => !argument.startsWith("-"));
+      io.stdout(COMMAND_USAGE[subject ? `${command} ${subject}` : command] ?? USAGE);
+      return 0;
+    }
     if (command === "init") {
       const parsed = parseArguments(
         args,
@@ -173,6 +221,8 @@ export async function runCli(
         kind,
         syncTypes: !parsed.flags.has("--skip-types"),
         install: !parsed.flags.has("--skip-install"),
+        env,
+        ...(options.run ? { run: options.run } : {}),
       });
       if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
       else io.stdout(created.length === 0
@@ -280,12 +330,23 @@ export async function runCli(
       const identity = parsed.positionals[0] as string;
       const operation = operations(findProjectRoot(cwd)).find((item) => item.identity === identity);
       if (!operation) throw new InvocationError("unknown_operation", `unknown operation "${identity}"`);
+      if (operation.input === null || operation.metadataError !== null) {
+        throw new InvocationError(
+          "invalid_operation_metadata",
+          `${identity} has invalid input metadata: ${operation.metadataError ?? "input state is missing"}`,
+        );
+      }
       if (json) io.stdout(JSON.stringify(operation, null, 2));
       else io.stdout([
         `Operation: ${operation.identity}`,
         `Kind: ${operation.kind}`,
         ...(operation.risk ? [`Risk: ${operation.risk}`] : []),
         `RPC method: ${operation.rpcMethod ?? "unlocked"}`,
+        `Input: ${operation.input.mode}`,
+        ...(operation.input.mode === "none"
+          ? ["Wire input: null"]
+          : [`Example input: ${JSON.stringify(operation.input.example)}`]),
+        `Invoke: ${operationInvokeCommand(operation)}`,
       ].join("\n"));
       return 0;
     }
@@ -336,23 +397,74 @@ export async function runCli(
       return 0;
     }
     if (command === "check") {
-      const parsed = parseArguments(args);
+      const parsed = parseArguments(args, [], ["--workspace"]);
       expectPositionals(parsed, 0);
-      const diagnostics = checkProject(findProjectRoot(cwd));
+      const diagnostics = parsed.flags.has("--workspace")
+        ? checkWorkspaceCompatibility(findWorkspaceRoot(cwd))
+        : checkProject(findProjectRoot(cwd));
       if (json) io.stdout(JSON.stringify(diagnostics, null, 2));
       else if (diagnostics.length === 0) io.stdout("✓ bb-kit check passed");
       else io.stderr(diagnostics.map(formatDiagnostic).join("\n\n"));
       return diagnostics.some((value) => value.severity === "error") ? 1 : 0;
+    }
+    if (command === "compatibility") {
+      const [subject, ...subjectArgs] = args;
+      if (subject !== "inspect" && subject !== "check" && subject !== "upgrade") {
+        throw new CliUsageError("compatibility requires inspect, check, or upgrade");
+      }
+      const parsed = parseArguments(subjectArgs);
+      expectPositionals(parsed, 0);
+      if (subject === "check") {
+        const diagnostics = checkWorkspaceCompatibility(findWorkspaceRoot(cwd));
+        if (json) io.stdout(JSON.stringify(diagnostics, null, 2));
+        else if (diagnostics.length === 0) io.stdout("✓ bb-kit compatibility check passed");
+        else io.stderr(diagnostics.map(formatDiagnostic).join("\n\n"));
+        return diagnostics.some((value) => value.severity === "error") ? 1 : 0;
+      }
+      const commandOptions = {
+        env,
+        ...(options.run ? { run: options.run } : {}),
+      };
+      const result = subject === "inspect"
+        ? inspectCompatibility(cwd, commandOptions)
+        : upgradeCompatibility(cwd, commandOptions);
+      io.stdout(json ? JSON.stringify(result, null, 2) : formatCompatibilityInspection(result));
+      return 0;
+    }
+    if (command === "build") {
+      const parsed = parseArguments(args);
+      expectPositionals(parsed, 0);
+      const result = buildProject(findProjectRoot(cwd), {
+        env,
+        ...(options.run ? { run: options.run } : {}),
+      });
+      if (json) io.stdout(JSON.stringify(result, null, 2));
+      else (result.ok ? io.stdout : io.stderr)(formatBuild(result));
+      return result.ok ? 0 : 1;
     }
     if (command === "verify") {
       const parsed = parseArguments(args);
       expectPositionals(parsed, 0);
       const result = verifyProject(
         findProjectRoot(cwd),
-        options.run ? { run: options.run } : {},
+        {
+          env,
+          ...(options.run ? { run: options.run } : {}),
+        },
       );
       if (json) io.stdout(JSON.stringify(result, null, 2));
       else (result.ok ? io.stdout : io.stderr)(formatVerification(result));
+      return result.ok ? 0 : 1;
+    }
+    if (command === "doctor") {
+      const parsed = parseArguments(args);
+      expectPositionals(parsed, 0);
+      const result = doctorProject(findProjectRoot(cwd), {
+        env,
+        ...(options.run ? { run: options.run } : {}),
+      });
+      if (json) io.stdout(JSON.stringify(result, null, 2));
+      else (result.ok ? io.stdout : io.stderr)(formatDoctor(result));
       return result.ok ? 0 : 1;
     }
     throw new CliUsageError(`unknown command "${command}"`);

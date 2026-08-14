@@ -7,6 +7,13 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type Expression,
+  type ObjectLiteralExpression,
+} from "ts-morph";
 
 export const OPERATION_IDENTITY_PATTERN =
   /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
@@ -54,7 +61,21 @@ export interface DiscoveredOperation {
   kind: "query" | "command" | "unknown";
   risk: "safe" | "mutating" | "destructive" | null;
   rpcMethod: string | null;
+  input: DiscoveredOperationInput | null;
+  metadataError: string | null;
 }
+
+export type OperationJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly OperationJsonValue[]
+  | { readonly [key: string]: OperationJsonValue };
+
+export type DiscoveredOperationInput =
+  | { readonly mode: "none" }
+  | { readonly mode: "required"; readonly example: OperationJsonValue };
 
 export interface DiscoveredModule {
   name: string;
@@ -184,21 +205,202 @@ export function writeLock(root: string, lock: BbKitLock): void {
   );
 }
 
-function operationMetadata(path: string): Pick<DiscoveredOperation, "kind" | "risk"> {
-  const source = readFileSync(path, "utf8");
-  if (/kind\s*:\s*["']query["']/.test(source)) {
-    return { kind: "query", risk: null };
+function unwrapExpression(expression: Expression): Expression {
+  let current = expression;
+  while (
+    Node.isParenthesizedExpression(current)
+    || Node.isAsExpression(current)
+    || Node.isSatisfiesExpression(current)
+    || Node.isTypeAssertion(current)
+  ) {
+    current = current.getExpression();
   }
-  if (/kind\s*:\s*["']command["']/.test(source)) {
-    const risk = /risk\s*:\s*["'](safe|mutating|destructive)["']/.exec(source)?.[1];
+  return current;
+}
+
+function propertyInitializer(
+  object: ObjectLiteralExpression,
+  name: string,
+): Expression | null {
+  const property = object.getProperty(name);
+  if (!property || !Node.isPropertyAssignment(property)) return null;
+  return unwrapExpression(property.getInitializerOrThrow());
+}
+
+function jsonPropertyName(node: Node): string {
+  if (Node.isIdentifier(node)) return node.getText();
+  if (Node.isStringLiteral(node) || Node.isNumericLiteral(node)) {
+    return String(node.getLiteralValue());
+  }
+  throw new Error("exampleInput contains a computed or unsupported property name");
+}
+
+function jsonLiteral(node: Expression): OperationJsonValue {
+  const value = unwrapExpression(node);
+  if (Node.isStringLiteral(value) || Node.isNumericLiteral(value)) {
+    const literal = value.getLiteralValue();
+    if (typeof literal === "number" && !Number.isFinite(literal)) {
+      throw new Error("exampleInput contains a non-finite number");
+    }
+    return literal;
+  }
+  if (value.getKind() === SyntaxKind.NullKeyword) return null;
+  if (value.getKind() === SyntaxKind.TrueKeyword) return true;
+  if (value.getKind() === SyntaxKind.FalseKeyword) return false;
+  if (Node.isPrefixUnaryExpression(value)) {
+    if (value.getOperatorToken() !== SyntaxKind.MinusToken) {
+      throw new Error("exampleInput contains an unsupported unary expression");
+    }
+    const operand = unwrapExpression(value.getOperand());
+    if (!Node.isNumericLiteral(operand)) {
+      throw new Error("exampleInput contains an unsupported unary expression");
+    }
+    const number = -operand.getLiteralValue();
+    if (!Number.isFinite(number)) throw new Error("exampleInput contains a non-finite number");
+    return number;
+  }
+  if (Node.isArrayLiteralExpression(value)) {
+    return value.getElements().map((element) => {
+      if (!Node.isExpression(element) || Node.isSpreadElement(element)) {
+        throw new Error("exampleInput arrays must not contain holes or spreads");
+      }
+      return jsonLiteral(element);
+    });
+  }
+  if (Node.isObjectLiteralExpression(value)) {
+    const entries: Array<[string, OperationJsonValue]> = [];
+    const keys = new Set<string>();
+    for (const property of value.getProperties()) {
+      if (!Node.isPropertyAssignment(property)) {
+        throw new Error("exampleInput objects require explicit property assignments");
+      }
+      const key = jsonPropertyName(property.getNameNode());
+      if (keys.has(key)) {
+        throw new Error(`exampleInput contains duplicate property ${JSON.stringify(key)}`);
+      }
+      keys.add(key);
+      entries.push([key, jsonLiteral(property.getInitializerOrThrow())]);
+    }
+    return Object.fromEntries(entries);
+  }
+  throw new Error("exampleInput must be a statically readable JSON literal");
+}
+
+function namedOperationImportNames(
+  source: ReturnType<Project["addSourceFileAtPath"]>,
+  importedName: "defineOperation" | "noInput",
+): Set<string> {
+  const names = new Set<string>();
+  for (const declaration of source.getImportDeclarations()) {
+    if (
+      declaration.isTypeOnly()
+      || declaration.getModuleSpecifierValue() !== "@bb-kit/core/operations"
+    ) continue;
+    for (const named of declaration.getNamedImports()) {
+      if (!named.isTypeOnly() && named.getName() === importedName) {
+        names.add(named.getAliasNode()?.getText() ?? named.getName());
+      }
+    }
+  }
+  return names;
+}
+
+function operationObject(source: ReturnType<Project["addSourceFileAtPath"]>): ObjectLiteralExpression {
+  const assignment = source.getExportAssignments().find((value) => !value.isExportEquals());
+  const exported = assignment && unwrapExpression(assignment.getExpression());
+  if (!exported || !Node.isCallExpression(exported)) {
+    throw new Error("default export must call defineOperation({...})");
+  }
+  const callee = unwrapExpression(exported.getExpression());
+  if (
+    !Node.isIdentifier(callee)
+    || !namedOperationImportNames(source, "defineOperation").has(callee.getText())
+  ) {
+    throw new Error("default export must call the direct defineOperation import");
+  }
+  if (exported.getArguments().length !== 1) {
+    throw new Error("defineOperation must receive exactly one object literal");
+  }
+  const argument = exported.getArguments()[0];
+  if (!argument || !Node.isExpression(argument)) {
+    throw new Error("defineOperation must receive an object literal");
+  }
+  const object = unwrapExpression(argument);
+  if (!Node.isObjectLiteralExpression(object)) {
+    throw new Error("defineOperation must receive an object literal");
+  }
+  return object;
+}
+
+function noInputImportNames(source: ReturnType<Project["addSourceFileAtPath"]>): Set<string> {
+  return namedOperationImportNames(source, "noInput");
+}
+
+function operationMetadata(path: string): Pick<
+  DiscoveredOperation,
+  "kind" | "risk" | "input" | "metadataError"
+> {
+  const project = new Project({ skipAddingFilesFromTsConfig: true });
+  const source = project.addSourceFileAtPath(path);
+  let object: ObjectLiteralExpression;
+  try {
+    object = operationObject(source);
+  } catch (error) {
     return {
-      kind: "command",
-      risk: risk === "safe" || risk === "mutating" || risk === "destructive"
-        ? risk
-        : null,
+      kind: "unknown",
+      risk: null,
+      input: null,
+      metadataError: error instanceof Error ? error.message : String(error),
     };
   }
-  return { kind: "unknown", risk: null };
+
+  const kindValue = propertyInitializer(object, "kind");
+  const kindLiteral = kindValue && Node.isStringLiteral(kindValue)
+    ? kindValue.getLiteralValue()
+    : null;
+  const kind = kindLiteral === "query" || kindLiteral === "command"
+    ? kindLiteral
+    : "unknown";
+  const riskValue = propertyInitializer(object, "risk");
+  const riskLiteral = riskValue && Node.isStringLiteral(riskValue)
+    ? riskValue.getLiteralValue()
+    : null;
+  const risk = riskLiteral === "safe"
+    || riskLiteral === "mutating"
+    || riskLiteral === "destructive"
+    ? riskLiteral
+    : null;
+
+  try {
+    const input = propertyInitializer(object, "input");
+    if (!input) throw new Error("operation must declare input");
+    const noInputNames = noInputImportNames(source);
+    const isNoInput = Node.isIdentifier(input) && noInputNames.has(input.getText());
+    const exampleProperty = object.getProperty("exampleInput");
+    if (isNoInput) {
+      if (exampleProperty) throw new Error("noInput operations must not declare exampleInput");
+      return { kind, risk, input: { mode: "none" }, metadataError: null };
+    }
+    if (!exampleProperty || !Node.isPropertyAssignment(exampleProperty)) {
+      throw new Error("required-input operations must declare literal exampleInput");
+    }
+    return {
+      kind,
+      risk,
+      input: {
+        mode: "required",
+        example: jsonLiteral(exampleProperty.getInitializerOrThrow()),
+      },
+      metadataError: null,
+    };
+  } catch (error) {
+    return {
+      kind,
+      risk,
+      input: null,
+      metadataError: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function sourceFiles(directory: string): string[] {
@@ -234,6 +436,8 @@ export function discoverProject(root: string): ProjectInfo {
           kind: metadata.kind,
           risk: metadata.risk,
           rpcMethod: lock.operations[identity]?.rpcMethod ?? null,
+          input: metadata.input,
+          metadataError: metadata.metadataError,
         } satisfies DiscoveredOperation;
       });
       const migrationsDirectory = join(directory, "migrations");
