@@ -67,6 +67,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-kit/cli": "^0.1.0",
     "@radix-ui/react-dialog": "^1.1.19",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
