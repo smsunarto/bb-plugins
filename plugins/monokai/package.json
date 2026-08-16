@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-monokai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A dark Monokai-family palette for bb: one meaning per hue, a single text ladder, and a matching terminal.",
   "keywords": [
     "bb",
