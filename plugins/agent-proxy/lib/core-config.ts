@@ -6,6 +6,7 @@ export interface InitialConfig {
   managementKey: string;
   localApiKey: string;
   authDir: string;
+  routingStrategy: string;
 }
 
 /** First-run config.yaml. After this the file is co-owned: the core bcrypt-
@@ -24,6 +25,7 @@ export function renderInitialConfig(options: InitialConfig): string {
     "auth-dir": options.authDir,
     "api-keys": [options.localApiKey],
     "usage-statistics-enabled": true,
+    routing: { strategy: options.routingStrategy },
   });
   doc.commentBefore =
     " Managed by @smsunarto/bb-plugin-agent-proxy.\n" +
@@ -79,6 +81,7 @@ export function reconcileConfigFile(path: string, options: InitialConfig): void 
     doc.set("auth-dir", options.authDir);
     doc.set("api-keys", apiKeys);
     doc.set("usage-statistics-enabled", true);
+    doc.setIn(["routing", "strategy"], options.routingStrategy);
   });
 }
 

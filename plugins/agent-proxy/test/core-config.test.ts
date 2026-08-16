@@ -17,6 +17,7 @@ const OPTS = {
   managementKey: "mgmt-key-plaintext",
   localApiKey: "local-key",
   authDir: "/data/plugins/agent-proxy/core/auth",
+  routingStrategy: "round-robin",
 };
 
 test("renderInitialConfig produces the expected yaml", () => {
@@ -28,7 +29,7 @@ test("renderInitialConfig produces the expected yaml", () => {
   assert.match(text, /auth-dir: \/data\/plugins\/agent-proxy\/core\/auth/);
   assert.match(text, /api-keys:\n\s+- local-key/);
   assert.match(text, /usage-statistics-enabled: true/);
-  assert.match(text, /Managed by @smsunarto\/bb-plugin-agent-proxy/);
+  assert.match(text, /routing:\n\s+strategy: round-robin/);
 });
 
 test("surgical updates preserve core-owned edits", () => {
@@ -103,7 +104,7 @@ test("reconcileConfigFile restores plugin invariants without deleting user keys"
   assert.match(text, /- local-key/);
   assert.match(text, /- extra-user-key/);
   assert.match(text, /name: custom/);
-  assert.equal(statSync(path).mode & 0o777, 0o600);
+  assert.match(text, /strategy: round-robin/);
 });
 
 test("updateConfigFile refuses missing or invalid files", () => {

@@ -7,11 +7,12 @@ import {
   runtimeConfigFingerprint,
 } from "../lib/runtime-state.ts";
 
-test("runtime fingerprints cover startup-only port and management key settings", () => {
-  const original = runtimeConfigFingerprint({ port: 8317, managementKey: "one" });
-  assert.equal(original, runtimeConfigFingerprint({ port: 8317, managementKey: "one" }));
-  assert.notEqual(original, runtimeConfigFingerprint({ port: 8318, managementKey: "one" }));
-  assert.notEqual(original, runtimeConfigFingerprint({ port: 8317, managementKey: "two" }));
+test("runtime fingerprints cover startup-only port, management key, and routing strategy settings", () => {
+  const original = runtimeConfigFingerprint({ port: 8317, managementKey: "one", routingStrategy: "round-robin" });
+  assert.equal(original, runtimeConfigFingerprint({ port: 8317, managementKey: "one", routingStrategy: "round-robin" }));
+  assert.notEqual(original, runtimeConfigFingerprint({ port: 8318, managementKey: "one", routingStrategy: "round-robin" }));
+  assert.notEqual(original, runtimeConfigFingerprint({ port: 8317, managementKey: "two", routingStrategy: "round-robin" }));
+  assert.notEqual(original, runtimeConfigFingerprint({ port: 8317, managementKey: "one", routingStrategy: "fill-first" }));
 });
 
 test("a loaded service restarts before an unapplied runtime config is written", () => {

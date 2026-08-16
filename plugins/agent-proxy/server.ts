@@ -265,6 +265,13 @@ export default async function plugin(bb: BbPluginApi) {
       label: "Management API key override (leave empty to auto-generate)",
       secret: true,
     },
+    routingStrategy: {
+      type: "string",
+      label: "Credential routing strategy",
+      description:
+        "How the core selects between multiple matching credentials. round-robin rotates per request (trashes upstream prompt caches); fill-first sticks to one until it cools down; weighted-round-robin uses per-credential weights.",
+      default: "round-robin",
+    },
   });
 
   async function resolveDataDir(): Promise<string> {
@@ -300,13 +307,20 @@ export default async function plugin(bb: BbPluginApi) {
   const generatedManagementKey = loadOrCreateKey(paths.managementKeyPath);
   const localApiKey = loadOrCreateKey(paths.localApiKeyPath);
 
-  async function effectiveSettings(): Promise<{ port: number; managementKey: string; autostart: boolean }> {
+  async function effectiveSettings(): Promise<{
+    port: number;
+    managementKey: string;
+    autostart: boolean;
+    routingStrategy: string;
+  }> {
     const values = await settings.get();
     const port = Number.parseInt(values.port, 10);
+    const strategy = values.routingStrategy?.trim() || "round-robin";
     return {
       port: Number.isFinite(port) && port > 0 && port < 65_536 ? port : DEFAULT_PORT,
       managementKey: values.managementKey?.trim() || generatedManagementKey,
       autostart: values.autostart,
+      routingStrategy: strategy,
     };
   }
 
@@ -369,12 +383,14 @@ export default async function plugin(bb: BbPluginApi) {
     port: number;
     managementKey: string;
     autostart: boolean;
+    routingStrategy: string;
   }): void {
     const config = {
       port: effective.port,
       managementKey: effective.managementKey,
       localApiKey,
       authDir: paths.authDir,
+      routingStrategy: effective.routingStrategy,
     };
     if (existsSync(paths.configPath)) {
       reconcileConfigFile(paths.configPath, config);
@@ -385,7 +401,11 @@ export default async function plugin(bb: BbPluginApi) {
     adoptCoreSettings(effective);
   }
 
-  function adoptCoreSettings(effective: { port: number; managementKey: string }): void {
+  function adoptCoreSettings(effective: {
+    port: number;
+    managementKey: string;
+    routingStrategy: string;
+  }): void {
     currentPort = effective.port;
     currentManagementKey = effective.managementKey;
     currentRuntimeFingerprint = runtimeConfigFingerprint(effective);
@@ -653,7 +673,10 @@ export default async function plugin(bb: BbPluginApi) {
           bb.log.error(`failed to clear the source update cache: ${String(error)}`);
         });
     }
-    const runtimeChanged = next.port !== previous.port || next.managementKey !== previous.managementKey;
+    const runtimeChanged =
+      next.port !== previous.port ||
+      next.managementKey !== previous.managementKey ||
+      next.routingStrategy !== previous.routingStrategy;
     const autostartChanged = next.autostart !== previous.autostart;
     if (autostartChanged) desiredRunning = next.autostart;
     if (!runtimeChanged && !autostartChanged) return;
@@ -1118,6 +1141,6 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.log.info(
-    `loaded (core ${installedVersion(paths) ?? "not installed"}, source ${initialSource.repository}#${initialSource.branch}, port ${initial.port}, autostart ${String(initial.autostart)})`,
+    `loaded (core ${installedVersion(paths) ?? "not installed"}, source ${initialSource.repository}#${initialSource.branch}, port ${initial.port}, routing ${initial.routingStrategy}, autostart ${String(initial.autostart)})`,
   );
 }
