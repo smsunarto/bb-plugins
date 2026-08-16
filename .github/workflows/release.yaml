@@ -47,6 +47,7 @@ jobs:
           bun install --global "bb-app@$(node -p "require('./package.json').config.bbVersion")"
 
       - name: Create release PR or publish packages
+        id: changesets
         uses: changesets/action@v2
         with:
           publish-script: bun run release
@@ -56,6 +57,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      # `scripts/publish.ts` rewrites every manifest to publish the unscoped
+      # mirror and must put it back. Only the publish path does that: the
+      # version path rewrites the same files on purpose, so guarding it there
+      # fails every release PR run.
       - name: Verify manifests were restored
-        if: always()
+        if: always() && steps.changesets.outputs.published == 'true'
         run: git diff --exit-code -- 'plugins/*/package.json'
