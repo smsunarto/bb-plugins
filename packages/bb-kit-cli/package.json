@@ -14,9 +14,10 @@
   },
   "type": "module",
   "bin": {
-    "bb-kit": "./dist/cli.js"
+    "bb-kit": "./bin/bb-kit.mjs"
   },
   "files": [
+    "bin/",
     "dist/",
     "README.md",
     "LICENSE"

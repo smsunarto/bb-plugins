@@ -40,7 +40,7 @@
       "name": "@bb-kit/cli",
       "version": "0.1.0",
       "bin": {
-        "bb-kit": "./dist/cli.js",
+        "bb-kit": "./bin/bb-kit.mjs",
       },
       "dependencies": {
         "jsonc-parser": "^3.3.1",
