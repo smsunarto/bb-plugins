@@ -149,7 +149,7 @@ describe("exact bb CLI selection", () => {
       BB_CLI_REEXEC: "1",
     }, compatibility.bbCliVersion, run);
     expect(selected.path).toBe(fakeBbCli);
-    expect(selected.env.BB_CLI).toBe(fakeBbCli);
+    expect(selected.env.BB_CLI).toBeUndefined();
     expect(selected.env.BB_CLI_REEXEC).toBeUndefined();
     expect(run.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       file: fakeBbCli,

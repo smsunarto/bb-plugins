@@ -126,7 +126,18 @@ export function inspectBbCli(
     }
   }
 
-  const childEnv: NodeJS.ProcessEnv = { ...env, BB_CLI: path };
+  // Strip bb's CLI-redirection protocol rather than pinning it. `path` is
+  // spawned directly, so `BB_CLI` buys no extra pinning — and when it names the
+  // npm launcher it is fatal. `bb` on PATH from the `bb-app` package resolves to
+  // `bb-app/dist/bb.js`, a launcher that runs `env.BB_CLI` when set and its own
+  // bundled CLI otherwise, with no depth guard: pointing it at itself made it
+  // spawn itself without end. CI reached 289 nested processes and 26 GB before
+  // the OOM killer ended `dotfiles:build` with SIGKILL. Locally `BB_CLI` names
+  // the desktop app's real CLI, which does guard re-exec, so this only ever
+  // failed in CI. With the variable removed the launcher resolves the bundle
+  // beside the very binary we selected, and any inherited value is neutralised.
+  const childEnv: NodeJS.ProcessEnv = { ...env };
+  delete childEnv.BB_CLI;
   delete childEnv.BB_CLI_REEXEC;
   const result = run({ file: path, args: ["--version"], cwd, env: childEnv });
   if (result.error || result.status !== 0) {
