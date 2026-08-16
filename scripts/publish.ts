@@ -456,8 +456,25 @@ function main(): void {
 
   // A stale dist/ is the failure mode that matters: the tarball is the product,
   // and a version stamp that disagrees with the manifest is refused at install.
-  console.log("building every plugin…");
-  run("bun", ["run", "build"], ROOT);
+  //
+  // Build the publish targets, not root `bun run build`. The root script fans
+  // out across every workspace plugin including the private ones, so a build
+  // failure in a package this script is documented to exclude — `EXCLUDED`,
+  // above — aborted the release before it packed anything. A plugin that is
+  // never published cannot be a release blocker. The framework still builds
+  // first: it is cheap, and a publishable plugin may depend on `@bb-kit/core`.
+  console.log(`building ${targets.length} plugins…`);
+  run("bun", ["run", "build:framework"], ROOT);
+  run(
+    "bun",
+    [
+      "run",
+      ...targets.flatMap((plugin) => ["--filter", plugin.name]),
+      "--parallel",
+      "build",
+    ],
+    ROOT,
+  );
 
   const plans: {
     plugin: WorkspacePlugin;
