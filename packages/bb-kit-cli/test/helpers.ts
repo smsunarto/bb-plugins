@@ -1,6 +1,7 @@
 import {
   chmodSync,
   mkdirSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
@@ -8,7 +9,10 @@ import { compatibility } from "../src/compatibility.js";
 import type { CommandResult } from "../src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../../..");
-export const fakeBbCli = "/bin/echo";
+// `executable()` returns the realpath, so this has to be one already. Linux
+// merges `/bin` into `/usr/bin` through a symlink, where the literal `/bin/echo`
+// came back as `/usr/bin/echo` and only macOS matched.
+export const fakeBbCli = realpathSync("/bin/echo");
 
 export function testEnvironment(): NodeJS.ProcessEnv {
   return { ...process.env, BB_CLI: fakeBbCli };
