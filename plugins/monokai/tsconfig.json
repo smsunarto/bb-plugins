@@ -12,11 +12,6 @@
     "types": [
       "node"
     ],
-    "paths": {
-      "@bb/plugin-sdk": [
-        "./types/bb-plugin-sdk.d.ts"
-      ]
-    },
     "noEmit": true,
     "skipLibCheck": false
   },
@@ -24,7 +19,6 @@
     ".storybook/**/*.ts",
     "scripts/**/*.ts",
     "server.ts",
-    "storybook/**/*.ts",
-    "types"
+    "storybook/**/*.ts"
   ]
 }

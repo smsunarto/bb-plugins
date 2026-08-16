@@ -14,7 +14,7 @@ import {
   SyntaxKind,
 } from "ts-morph";
 import {
-  checkSdkDeclarations,
+  checkSdkDependency,
   compatibility,
 } from "./compatibility.js";
 import {
@@ -89,7 +89,6 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
     files: [
       "dist/",
       "plugin/",
-      "types/",
       "README.md",
       "LICENSE",
     ],
@@ -123,6 +122,7 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
     dependencies: {},
     devDependencies: {
       "@bb-kit/cli": "^0.1.0",
+      "@get-bb/plugin-sdk": compatibility.sdkPackage.version,
       "@types/better-sqlite3": "^7.6.12",
       "@types/node": "^22.0.0",
       "@types/react": "^19.0.0",
@@ -135,7 +135,7 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
   };
 }
 
-function tsconfigTemplate(app: boolean): unknown {
+function tsconfigTemplate(): unknown {
   return {
     compilerOptions: {
       strict: true,
@@ -146,10 +146,6 @@ function tsconfigTemplate(app: boolean): unknown {
       lib: ["ES2022", "DOM"],
       types: ["node"],
       paths: {
-        "@bb/plugin-sdk": ["./types/bb-plugin-sdk.d.ts"],
-        ...(app
-          ? { "@bb/plugin-sdk/app": ["./types/bb-plugin-sdk-app.d.ts"] }
-          : {}),
         "@/*": ["./*"],
       },
       allowImportingTsExtensions: true,
@@ -162,7 +158,7 @@ function tsconfigTemplate(app: boolean): unknown {
       noEmit: true,
       skipLibCheck: false,
     },
-    include: ["plugin", "types", "test"],
+    include: ["plugin", "test"],
   };
 }
 
@@ -219,13 +215,13 @@ export function initializeProject(
   const serverPath = resolve(root, manifest.bb.server);
   if (writeIfMissing(
     serverPath,
-    `import type { BbPluginApi } from "@bb/plugin-sdk";\n\nexport default function plugin(_bb: BbPluginApi): void {}\n`,
+    `import type { BbPluginApi } from "@get-bb/plugin-sdk";\n\nexport default function plugin(_bb: BbPluginApi): void {}\n`,
   )) created.push(relative(root, serverPath));
   if (manifest.bb.app) {
     const appPath = resolve(root, manifest.bb.app);
     if (writeIfMissing(
       appPath,
-      `import { definePluginApp } from "@bb/plugin-sdk/app";\n\nexport default definePluginApp((_app) => {});\n`,
+      `import { definePluginApp } from "@get-bb/plugin-sdk/app";\n\nexport default definePluginApp((_app) => {});\n`,
     )) created.push(relative(root, appPath));
   }
   if (kind === "theme") {
@@ -235,7 +231,7 @@ export function initializeProject(
       created.push(relative(root, themePath));
     }
   }
-  if (writeIfMissing(join(root, "tsconfig.json"), `${JSON.stringify(tsconfigTemplate(Boolean(manifest.bb.app)), null, 2)}\n`)) {
+  if (writeIfMissing(join(root, "tsconfig.json"), `${JSON.stringify(tsconfigTemplate(), null, 2)}\n`)) {
     created.push("tsconfig.json");
   }
   if (writeIfMissing(join(root, "bb-kit.lock.json"), `${JSON.stringify(emptyLock(), null, 2)}\n`)) {
@@ -267,11 +263,11 @@ export function initializeProject(
       selectedBbCli.env,
       "bb SDK type sync",
     );
-    const declarationDiagnostics = checkSdkDeclarations(root, manifest);
+    const declarationDiagnostics = checkSdkDependency(root, manifest);
     if (declarationDiagnostics.length > 0) {
       throw new Error(
-        `bb SDK type sync produced incompatible declarations: ${declarationDiagnostics
-          .map((value) => `${value.file ?? "types"}: ${value.message}`)
+        `bb SDK type sync produced an incompatible SDK surface: ${declarationDiagnostics
+          .map((value) => `${value.file ?? "package.json"}: ${value.message}`)
           .join("; ")}`,
       );
     }
@@ -482,7 +478,7 @@ export function addModule(rootOrChild: string, moduleName: string): string[] {
   const moduleServer = join(directory, "server.ts");
   if (writeIfMissing(
     moduleServer,
-    `import type { BbPluginApi } from "@bb/plugin-sdk";\nimport { registerOperations } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\nimport { ${names.service} } from "./service.js";\n\nexport function ${names.installer}(bb: BbPluginApi): void {\n  registerOperations(bb, ${names.catalog}, ${names.service});\n}\n`,
+    `import type { BbPluginApi } from "@get-bb/plugin-sdk";\nimport { registerOperations } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\nimport { ${names.service} } from "./service.js";\n\nexport function ${names.installer}(bb: BbPluginApi): void {\n  registerOperations(bb, ${names.catalog}, ${names.service});\n}\n`,
   )) created.push(`${moduleName}/server.ts`);
   addInstallerToRoot(root, moduleName, moduleServer);
   editJson(join(root, "package.json"), ["dependencies", "@bb-kit/core"], "^0.1.0");
@@ -735,12 +731,12 @@ export function addPanel(
   }
   if (writeIfMissing(
     panelPath,
-    `import type { ${props} } from "@bb/plugin-sdk/app";\nimport { PluginQueryBoundary } from "@bb-kit/core/query";\n\nexport function ${panelName}(_props: ${props}) {\n  return (\n    <PluginQueryBoundary>\n      <main>\n        <h1>${title}</h1>\n        <p>TODO: connect this panel to the module's operations.</p>\n      </main>\n    </PluginQueryBoundary>\n  );\n}\n`,
+    `import type { ${props} } from "@get-bb/plugin-sdk/app";\nimport { PluginQueryBoundary } from "@bb-kit/core/query";\n\nexport function ${panelName}(_props: ${props}) {\n  return (\n    <PluginQueryBoundary>\n      <main>\n        <h1>${title}</h1>\n        <p>TODO: connect this panel to the module's operations.</p>\n      </main>\n    </PluginQueryBoundary>\n  );\n}\n`,
   )) created.push(projectPath(root, panelPath));
   if (!existsSync(moduleApp)) {
     writeFileSync(
       moduleApp,
-      `import type { PluginAppBuilder } from "@bb/plugin-sdk/app";\nimport { ${panelName} } from "./panel.js";\n\nexport function register${pascal}App(app: PluginAppBuilder): void {\n  ${registration}\n}\n`,
+      `import type { PluginAppBuilder } from "@get-bb/plugin-sdk/app";\nimport { ${panelName} } from "./panel.js";\n\nexport function register${pascal}App(app: PluginAppBuilder): void {\n  ${registration}\n}\n`,
     );
     created.push(projectPath(root, moduleApp));
   }

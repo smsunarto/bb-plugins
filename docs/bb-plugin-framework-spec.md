@@ -244,7 +244,7 @@ Suggested exports:
 @bb-kit/core/testing
 ```
 
-The operation runtime must not import or restate `@bb/plugin-sdk`: that package is not published, and leaking it into emitted declarations would make bb-kit uninstallable. Instead, operation registration accepts a narrow structural host that native `BbPluginApi` satisfies. Frontend realtime helpers retain the bare `@bb/plugin-sdk/app` runtime imports that bb host-shims and that plugin projects resolve through bb-generated declarations. The package must not bundle a second React instance or host-shimmed frontend dependencies.
+The operation runtime must not import or restate the SDK: leaking its type surface into emitted declarations would tie every bb-kit consumer to one SDK minor of a pre-1.0 package. Instead, operation registration accepts a narrow structural host that native `BbPluginApi` satisfies. Frontend realtime helpers retain the bare `@get-bb/plugin-sdk/app` runtime imports that bb host-shims. The package must not bundle a second React instance or host-shimmed frontend dependencies.
 
 ### `@bb-kit/cli`
 
@@ -273,7 +273,7 @@ Do not create empty `core`, `server`, `ui`, or `shared` packages merely for symm
 
 | Concern | Choice | Reason |
 | --- | --- | --- |
-| Host integration | Native `@bb/plugin-sdk` and `@bb/plugin-sdk/app` | This is the actual interoperability contract. |
+| Host integration | Native `@get-bb/plugin-sdk` and `@get-bb/plugin-sdk/app` | This is the actual interoperability contract. |
 | UI | Host React plus locally owned recipes | Avoid duplicate React and preserve plugin-specific divergence. |
 | Frontend server state | `@tanstack/react-query` | Owns request lifecycle, deduplication, retries, caching, mutations, and invalidation. |
 | RPC validation | Standard Schema V1 | Matches bb's validator-neutral RPC contract. |
@@ -484,7 +484,7 @@ export default async function plugin(bb: BbPluginApi) {
 
 ```tsx
 // plugin/app.tsx
-import { definePluginApp } from "@bb/plugin-sdk/app";
+import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { registerApprovalsApp } from "./modules/approvals/app";
 
 export default definePluginApp((app) => {
@@ -598,7 +598,7 @@ export async function installApprovals(bb: BbPluginApi): Promise<void> {
 
 `registerOperations` uses bb's native RPC contract, validation, JSON boundary, errors, and authentication. It does not define a second transport.
 
-The helper accepts a narrow structural `rpc.register` host so its published server declarations do not depend on the unpublished `@bb/plugin-sdk` package. A native `BbPluginApi` satisfies that structure directly; the adapter's unavoidable generic assertion remains private to bb-kit.
+The helper accepts a narrow structural `rpc.register` host so its published server declarations do not depend on the `@get-bb/plugin-sdk` package. A native `BbPluginApi` satisfies that structure directly; the adapter's unavoidable generic assertion remains private to bb-kit.
 
 Capabilities that do not fit an application query or command use native bb directly:
 
@@ -1276,12 +1276,12 @@ Where bb's generated declarations or current toolchain cannot satisfy one of the
 
 ## bb and SDK compatibility
 
-bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. At the time of this design:
+bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. As of bb 0.38.0:
 
-- This repository targets bb 0.37.0 and plugin SDK protocol 0.4.1.
-- `@bb/plugin-sdk` is represented locally by bb-generated declaration files.
-- `@bb/plugin-sdk` is not available from the public npm registry.
-- Upstream source contains package and testing-harness exports, but registry availability cannot be assumed.
+- This repository targets bb 0.38.0 and plugin SDK protocol 0.4.6.
+- The SDK ships as `@get-bb/plugin-sdk` on the public npm registry, pinned exactly in each plugin's `devDependencies`.
+- Before 0.38 it was the unpublished `@bb/plugin-sdk`, represented locally by declarations `bb plugin new` vendored into `types/`. bb 0.38 stops generating those and `bb plugin migrate` deletes them; the host still shims the legacy `@bb/plugin-sdk/app` specifier for already-built frontends.
+- The published package includes the `./testing` and `./testing/app` harness exports.
 - `bb-app` is the distributable source of the matching bb CLI/build behavior.
 
 The initial generated engine policy should use a tested compatibility line rather than a broad optimistic range:
@@ -1375,7 +1375,7 @@ provenance; rebuild it before the final workspace check.
 - Background service cancellation.
 - Packed source fallback.
 
-Use the official `@bb/plugin-sdk/testing` harness only after it is actually distributable for the target compatibility line. Until then, do not build the framework around unavailable imports.
+The official `@get-bb/plugin-sdk/testing` harness is distributable from bb 0.38.0. Its frontend half needs the optional `@testing-library/react` peer before it will run, and no suite here uses it yet.
 
 ### Frontend tests
 
@@ -1449,9 +1449,9 @@ Generators follow these requirements:
 
 ### 4. SDK publication assumptions break consumers
 
-**Risk:** installs fail because `@bb/plugin-sdk` is treated as an npm dependency even though bb supplies the runtime and generated declarations.
+**Risk:** a plugin ships the SDK as a runtime `dependency`, or widens the pin to a range, even though bb host-shims the specifier and only one SDK minor matches the running host.
 
-**Guardrail:** use generated declaration aliases, host runtime imports, exact bb pins, source-closure checks, and explicit compatibility lines.
+**Guardrail:** keep `@get-bb/plugin-sdk` an exact `devDependencies` pin owned by the compatibility contract, use host runtime imports, exact bb pins, source-closure checks, and explicit compatibility lines.
 
 ### 5. Frontend dependencies conflict with host shims
 

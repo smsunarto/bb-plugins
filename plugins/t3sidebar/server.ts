@@ -6,7 +6,7 @@
 // understands. Here, uninstalling the plugin removes this database with it —
 // see `lib/warm-start.ts` for the browser-side copy of the same rows, which is
 // the one part it does not take.
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.

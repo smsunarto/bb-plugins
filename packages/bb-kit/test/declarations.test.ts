@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("published declarations", () => {
-  it("keep the operations boundary independent of the unpublished bb SDK", () => {
+  it("keep the operations boundary independent of the bb SDK", () => {
     const operations = readFileSync(
       join(import.meta.dirname, "../dist/operations.d.ts"),
       "utf8",
@@ -12,7 +12,7 @@ describe("published declarations", () => {
       join(import.meta.dirname, "../dist/standard-schema.d.ts"),
       "utf8",
     );
-    expect(operations).not.toContain("@bb/plugin-sdk");
-    expect(standardSchema).not.toContain("@bb/plugin-sdk");
+    expect(operations).not.toContain("@get-bb/plugin-sdk");
+    expect(standardSchema).not.toContain("@get-bb/plugin-sdk");
   });
 });

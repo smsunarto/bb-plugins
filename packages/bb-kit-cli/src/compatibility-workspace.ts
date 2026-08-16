@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -18,7 +17,7 @@ import { Node, Project } from "ts-morph";
 import type { Diagnostic } from "./check.js";
 import {
   checkBuildMetadata,
-  checkSdkDeclarations,
+  checkSdkDependency,
   compatibility,
   type CompatibilityContract,
 } from "./compatibility.js";
@@ -33,6 +32,7 @@ import {
 import type { PluginManifest } from "./project.js";
 
 const CONTRACT_PATH = "packages/bb-kit-cli/src/compatibility-contract.ts";
+const SDK_PACKAGE_NAME = "@get-bb/plugin-sdk";
 
 interface WorkspacePlugin {
   readonly directory: string;
@@ -42,10 +42,6 @@ interface WorkspacePlugin {
 
 interface ProbedCompatibility {
   readonly contract: CompatibilityContract;
-  readonly declarations: {
-    readonly server: string;
-    readonly app: string;
-  };
 }
 
 export interface CompatibilityCommandOptions {
@@ -144,6 +140,43 @@ function workspacePlugins(root: string): WorkspacePlugin[] {
   return plugins;
 }
 
+interface SdkDependentPackage {
+  readonly relativePath: string;
+  readonly path: string;
+  readonly pinned: unknown;
+}
+
+/**
+ * Workspace packages that compile against the SDK themselves. They opt in by
+ * declaring the pin; the upgrade has to carry them in the same transaction or
+ * they drift away from the contract every plugin is held to.
+ */
+function sdkDependentPackages(
+  root: string,
+  contract: CompatibilityContract,
+): SdkDependentPackage[] {
+  const packagesRoot = join(root, "packages");
+  if (!existsSync(packagesRoot) || !statSync(packagesRoot).isDirectory()) return [];
+  const packages: SdkDependentPackage[] = [];
+  for (const directory of readdirSync(packagesRoot).sort()) {
+    const path = join(packagesRoot, directory, "package.json");
+    if (!existsSync(path)) continue;
+    const devDependencies = jsonObject(path).devDependencies;
+    if (
+      typeof devDependencies !== "object"
+      || devDependencies === null
+      || Array.isArray(devDependencies)
+    ) continue;
+    if (!(contract.sdkPackage.name in devDependencies)) continue;
+    packages.push({
+      relativePath: `packages/${directory}/package.json`,
+      path,
+      pinned: (devDependencies as Record<string, unknown>)[contract.sdkPackage.name],
+    });
+  }
+  return packages;
+}
+
 export function findWorkspaceRoot(start = process.cwd()): string {
   let current = resolve(start);
   while (true) {
@@ -169,10 +202,6 @@ export function findWorkspaceRoot(start = process.cwd()): string {
     }
     current = parent;
   }
-}
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function exactEngineRange(version: string): string {
@@ -206,14 +235,37 @@ function compareStableVersions(left: string, right: string): number | null {
   return 0;
 }
 
-function stringPropertyName(property: Node): string | null {
+const PLUGIN_SDK_APP_SHIM = "@get-bb/plugin-sdk/app";
+
+function stringPropertyName(
+  property: Node,
+  constants: ReadonlyMap<string, string>,
+): string | null {
   if (!Node.isPropertyAssignment(property)) return null;
   const name = property.getNameNode();
   if (Node.isStringLiteral(name) || Node.isNoSubstitutionTemplateLiteral(name)) {
     return name.getLiteralValue();
   }
   if (Node.isIdentifier(name)) return name.getText();
+  // A specifier bb references more than once is hoisted into a const and the
+  // shim map is keyed off it, so a computed name is a normal shape here.
+  if (Node.isComputedPropertyName(name)) {
+    const expression = name.getExpression();
+    if (Node.isStringLiteral(expression)) return expression.getLiteralValue();
+    if (Node.isIdentifier(expression)) return constants.get(expression.getText()) ?? null;
+  }
   return null;
+}
+
+function stringConstants(source: ReturnType<Project["createSourceFile"]>): Map<string, string> {
+  const constants = new Map<string, string>();
+  for (const declaration of source.getVariableDeclarations()) {
+    const initializer = declaration.getInitializer();
+    if (initializer && Node.isStringLiteral(initializer)) {
+      constants.set(declaration.getName(), initializer.getLiteralValue());
+    }
+  }
+  return constants;
 }
 
 function frontendHostShims(bbPath: string): string[] {
@@ -227,6 +279,7 @@ function frontendHostShims(bbPath: string): string[] {
       `could not inspect bb's frontend host shims: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  const constants = stringConstants(source);
   const candidates: string[][] = [];
   for (const declaration of source.getVariableDeclarations()) {
     const initializer = declaration.getInitializer();
@@ -238,7 +291,7 @@ function frontendHostShims(bbPath: string): string[] {
         valid = false;
         break;
       }
-      const name = stringPropertyName(property);
+      const name = stringPropertyName(property, constants);
       const value = property.getInitializer();
       if (!name || !value || !Node.isStringLiteral(value)) {
         valid = false;
@@ -249,7 +302,7 @@ function frontendHostShims(bbPath: string): string[] {
     if (
       valid
       && entries.some(([name, value]) =>
-        name === "@bb/plugin-sdk/app" && value === "pluginSdkApp",
+        name === PLUGIN_SDK_APP_SHIM && value === "pluginSdkApp",
       )
     ) candidates.push(entries.map(([name]) => name));
   }
@@ -261,8 +314,8 @@ function frontendHostShims(bbPath: string): string[] {
   }
   const shims = candidates[0] as string[];
   return [
-    "@bb/plugin-sdk/app",
-    ...shims.filter((specifier) => specifier !== "@bb/plugin-sdk/app"),
+    PLUGIN_SDK_APP_SHIM,
+    ...shims.filter((specifier) => specifier !== PLUGIN_SDK_APP_SHIM),
   ];
 }
 
@@ -361,15 +414,37 @@ function defaultCompatibilityProbe(
         "server and app build metadata disagree on the plugin SDK contract",
       );
     }
-    if (sdkRange !== `^${sdkVersion}`) {
+    if (sdkRange !== `>=${sdkVersion}`) {
       throw new ProcessError(
         "compatibility_probe_invalid",
         `the scaffold declares plugin SDK ${sdkRange}, but build metadata reports ${sdkVersion}`,
       );
     }
+    const devDependencies = manifest.devDependencies;
+    if (
+      typeof devDependencies !== "object"
+      || devDependencies === null
+      || Array.isArray(devDependencies)
+    ) {
+      throw new ProcessError(
+        "compatibility_probe_invalid",
+        "the bb scaffold has no devDependencies object",
+      );
+    }
+    // engines.bbPluginSdk is only a floor. The exact build surface is the npm
+    // pin, so that is what the workspace has to carry.
+    const sdkPackageVersion = requiredString(
+      devDependencies as Record<string, unknown>,
+      SDK_PACKAGE_NAME,
+      "the bb scaffold devDependencies",
+    );
+    if (sdkPackageVersion !== sdkVersion) {
+      throw new ProcessError(
+        "compatibility_probe_invalid",
+        `the scaffold pins ${SDK_PACKAGE_NAME} ${sdkPackageVersion}, but build metadata reports ${sdkVersion}`,
+      );
+    }
 
-    const server = readFileSync(join(probeRoot, "types", "bb-plugin-sdk.d.ts"), "utf8");
-    const app = readFileSync(join(probeRoot, "types", "bb-plugin-sdk-app.d.ts"), "utf8");
     const components = jsonObject(join(probeRoot, "components.json"));
     const registries = components.registries;
     if (typeof registries !== "object" || registries === null || Array.isArray(registries)) {
@@ -391,17 +466,13 @@ function defaultCompatibilityProbe(
           bbPluginSdk: sdkRange,
         },
         pluginSdk: { version: sdkVersion, major: sdkMajor, artifactFormatVersion },
-        declarations: {
-          server: { path: "types/bb-plugin-sdk.d.ts", sha256: sha256(server) },
-          app: { path: "types/bb-plugin-sdk-app.d.ts", sha256: sha256(app) },
-        },
+        sdkPackage: { name: SDK_PACKAGE_NAME, version: sdkPackageVersion },
         hostShims: {
-          server: ["@bb/plugin-sdk"],
+          server: [SDK_PACKAGE_NAME],
           frontend: frontendHostShims(selected.path),
         },
         registryUrl,
       },
-      declarations: { server, app },
     };
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
@@ -481,21 +552,12 @@ function planCompatibilityUpgrade(
       ["engines", "bbPluginSdk"],
       probed.contract.engines.bbPluginSdk,
     );
-    addPlannedWrite(writes, root, manifestPath, manifestSource);
-    addPlannedWrite(
-      writes,
-      root,
-      join(plugin.root, probed.contract.declarations.server.path),
-      probed.declarations.server,
+    manifestSource = editJsonText(
+      manifestSource,
+      ["devDependencies", probed.contract.sdkPackage.name],
+      probed.contract.sdkPackage.version,
     );
-    if (plugin.manifest.bb?.app) {
-      addPlannedWrite(
-        writes,
-        root,
-        join(plugin.root, probed.contract.declarations.app.path),
-        probed.declarations.app,
-      );
-    }
+    addPlannedWrite(writes, root, manifestPath, manifestSource);
     const componentsPath = join(plugin.root, "components.json");
     if (existsSync(componentsPath)) {
       const source = readFileSync(componentsPath, "utf8");
@@ -506,6 +568,20 @@ function planCompatibilityUpgrade(
         editJsonText(source, ["registries", "@bb"], probed.contract.registryUrl),
       );
     }
+  }
+
+  for (const dependent of sdkDependentPackages(root, probed.contract)) {
+    const source = readFileSync(dependent.path, "utf8");
+    addPlannedWrite(
+      writes,
+      root,
+      dependent.path,
+      editJsonText(
+        source,
+        ["devDependencies", probed.contract.sdkPackage.name],
+        probed.contract.sdkPackage.version,
+      ),
+    );
   }
   return [...writes.values()].sort((left, right) =>
     left.relativePath.localeCompare(right.relativePath),
@@ -650,7 +726,7 @@ export function checkWorkspaceCompatibility(
     }
     diagnostics.push(...prefixDiagnostics(
       plugin,
-      checkSdkDeclarations(plugin.root, plugin.manifest, contract),
+      checkSdkDependency(plugin.root, plugin.manifest, contract),
     ));
 
     const componentsPath = join(plugin.root, "components.json");
@@ -689,6 +765,16 @@ export function checkWorkspaceCompatibility(
         ));
       }
     }
+  }
+
+  for (const dependent of sdkDependentPackages(root, contract)) {
+    if (dependent.pinned === contract.sdkPackage.version) continue;
+    diagnostics.push(diagnostic(
+      "BBKW008",
+      `devDependencies["${contract.sdkPackage.name}"] is ${JSON.stringify(dependent.pinned)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
+      "Run bb-kit compatibility upgrade; workspace packages build against the same SDK as the plugins.",
+      dependent.relativePath,
+    ));
   }
   return diagnostics.sort((left, right) =>
     `${left.file ?? ""}:${left.code}`.localeCompare(`${right.file ?? ""}:${right.code}`),

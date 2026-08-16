@@ -1,5 +1,5 @@
 import "./app.css";
-import { definePluginApp, useBbNavigate } from "@bb/plugin-sdk/app";
+import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import { CORE_STATE_STYLES } from "@/components/status-badge";
 import { mountSidebarNavStatus } from "@/components/sidebar-nav-status";

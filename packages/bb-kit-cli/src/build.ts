@@ -1,7 +1,7 @@
 import { checkProject, type Diagnostic } from "./check.js";
 import {
   checkBuildMetadata,
-  checkSdkDeclarations,
+  checkSdkDependency,
   compatibility,
 } from "./compatibility.js";
 import {
@@ -63,7 +63,7 @@ export function buildWithSelectedCli(
     env: selectedBbCli.env,
   });
   const diagnostics = [
-    ...checkSdkDeclarations(root, manifest),
+    ...checkSdkDependency(root, manifest),
     ...(result.status === 0 && !result.error
       ? checkBuildMetadata(root, manifest)
       : []),

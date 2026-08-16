@@ -6,7 +6,7 @@ import {
   defineOperationCatalog,
 } from "../src/operations.js";
 
-vi.mock("@bb/plugin-sdk/app", () => ({ useRpc: vi.fn() }));
+vi.mock("@get-bb/plugin-sdk/app", () => ({ useRpc: vi.fn() }));
 
 const {
   operationMutationOptions,

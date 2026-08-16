@@ -14,7 +14,7 @@
 import type {
   PluginSidebarThread,
   PluginSidebarThreadIndicator,
-} from "@bb/plugin-sdk";
+} from "@get-bb/plugin-sdk";
 import type { ThreadLifecycleRow } from "@/lib/lifecycle";
 
 /**
@@ -123,9 +123,9 @@ export function settledIndicator(row: SettledThreadRow): {
   return { indicator: "none", indicatorLabel: null };
 }
 
-/** Only the two kinds this sidebar draws a parent chip for survive. */
-function originKindFor(value: string | null): "fork" | "side-chat" | null {
-  return value === "fork" || value === "side-chat" ? value : null;
+/** Only the one kind this sidebar draws a parent chip for survives. */
+function originKindFor(value: string | null): "fork" | null {
+  return value === "fork" ? value : null;
 }
 
 /**

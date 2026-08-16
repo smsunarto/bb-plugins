@@ -12,7 +12,6 @@ import {
 import {
   commandResult,
   makeOperationRequireInput,
-  seedCanonicalTypes,
   seedProjectExecutables,
   testEnvironment,
   writeBuildMetadata,
@@ -29,7 +28,6 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
-  seedCanonicalTypes(root);
   return root;
 }
 
@@ -250,7 +248,7 @@ describe("bb-kit command interface", () => {
     ];
     const run = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.37.0\n" });
+        return commandResult({ stdout: "0.38.0\n" });
       }
       return commandResult({
         stdout: request.args[0] === "pm"

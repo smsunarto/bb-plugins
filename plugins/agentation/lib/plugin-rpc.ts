@@ -12,7 +12,7 @@ import type {
   PluginRpcContract,
   PluginRpcMethodContract,
   PluginRpcResult,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 
 interface RpcEnvelope {
   ok: boolean;
