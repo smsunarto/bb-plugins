@@ -1,10 +1,10 @@
 import {
   chmodSync,
-  cpSync,
   mkdirSync,
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { compatibility } from "../src/compatibility.js";
 import type { CommandResult } from "../src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../../..");
@@ -26,14 +26,6 @@ export function commandResult(
   };
 }
 
-export function seedCanonicalTypes(root: string): void {
-  cpSync(
-    join(repositoryRoot, "plugins/dotfiles/types"),
-    join(root, "types"),
-    { recursive: true },
-  );
-}
-
 export function seedProjectExecutables(root: string): void {
   const directory = join(root, "node_modules/.bin");
   mkdirSync(directory, { recursive: true });
@@ -42,6 +34,12 @@ export function seedProjectExecutables(root: string): void {
     writeFileSync(path, "#!/bin/sh\nexit 0\n");
     chmodSync(path, 0o755);
   }
+}
+
+/** Re-create a declaration bb vendored before 0.38, which now shadows the SDK package. */
+export function writeVendoredDeclaration(root: string, content: string): void {
+  mkdirSync(join(root, "types"), { recursive: true });
+  writeFileSync(join(root, "types/bb-plugin-sdk.d.ts"), content);
 }
 
 export function makeOperationRequireInput(
@@ -73,14 +71,14 @@ export function makeOperationRequireInput(
 
 export function writeBuildMetadata(root: string, app = false): void {
   const metadata = {
-    sdkMajor: 0,
-    sdkVersion: "0.4.1",
-    artifactFormatVersion: 1,
+    sdkMajor: compatibility.pluginSdk.major,
+    sdkVersion: compatibility.pluginSdk.version,
+    artifactFormatVersion: compatibility.pluginSdk.artifactFormatVersion,
     pluginId: "example",
     pluginVersion: "0.1.0",
     builtWith: {
-      bbVersion: "0.37.0",
-      pluginSdkVersion: "0.4.1",
+      bbVersion: compatibility.bbCliVersion,
+      pluginSdkVersion: compatibility.pluginSdk.version,
     },
   };
   mkdirSync(join(root, "dist"), { recursive: true });

@@ -15,10 +15,10 @@ import {
 import { checkPackedPackage, packedPaths } from "../src/package.js";
 import {
   commandResult,
-  seedCanonicalTypes,
   seedProjectExecutables,
   testEnvironment,
   writeBuildMetadata,
+  writeVendoredDeclaration,
 } from "./helpers.js";
 
 const roots: string[] = [];
@@ -32,7 +32,6 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
-  seedCanonicalTypes(root);
   return root;
 }
 
@@ -109,7 +108,7 @@ describe("project verification", () => {
     ];
     const run = vi.fn<CommandRunner>((request) => commandResult({
       stdout: request.args[0] === "--version"
-        ? "0.37.0\n"
+        ? "0.38.0\n"
         : request.args[0] === "pm" ? packOutput(paths) : "",
     }));
     const result = verifyProject(root, { run, env: testEnvironment() });
@@ -136,7 +135,7 @@ describe("project verification", () => {
     const root = temporaryProject();
     seedProjectExecutables(root);
     const run = vi.fn<CommandRunner>((request) => request.args[0] === "--version"
-      ? commandResult({ stdout: "0.37.0\n" })
+      ? commandResult({ stdout: "0.38.0\n" })
       : commandResult({
           status: 1,
           stderr: "lint failed at plugin/server.ts:1 token=secret-value",
@@ -158,9 +157,9 @@ describe("project verification", () => {
     seedProjectExecutables(root);
     const run = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.37.0\n" });
+        return commandResult({ stdout: "0.38.0\n" });
       }
-      writeFileSync(join(root, "types/bb-plugin-sdk.d.ts"), "changed by lint\n");
+      writeVendoredDeclaration(root, "changed by lint\n");
       return commandResult();
     });
     const result = verifyProject(root, { run, env: testEnvironment() });
@@ -194,10 +193,10 @@ describe("project verification", () => {
     ];
     const run = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.37.0\n" });
+        return commandResult({ stdout: "0.38.0\n" });
       }
       if (request.args[0] === "pm") {
-        writeFileSync(join(root, "types/bb-plugin-sdk.d.ts"), "changed by pack\n");
+        writeVendoredDeclaration(root, "changed by pack\n");
         return commandResult({ stdout: packOutput(paths) });
       }
       return commandResult();

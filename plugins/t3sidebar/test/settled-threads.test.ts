@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { PluginSidebarThread } from "@bb/plugin-sdk";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import {
   isUnread,
   isWithinSettledWindow,
@@ -154,13 +154,11 @@ describe("toSidebarThread", () => {
     assert.equal(toSidebarThread(row()).isArchived, true);
   });
 
-  it("keeps only the origin kinds this sidebar draws", () => {
+  it("keeps only the origin kind this sidebar draws", () => {
     assert.equal(toSidebarThread(row({ originKind: "fork" })).originKind, "fork");
-    assert.equal(
-      toSidebarThread(row({ originKind: "side-chat" })).originKind,
-      "side-chat",
-    );
-    // A kind bb adds later must degrade, not crash the shelf.
+    // A kind bb adds later, or one it has since dropped, must degrade rather
+    // than crash the shelf.
+    assert.equal(toSidebarThread(row({ originKind: "side-chat" })).originKind, null);
     assert.equal(toSidebarThread(row({ originKind: "teleport" })).originKind, null);
   });
 

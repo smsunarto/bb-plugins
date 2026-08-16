@@ -27,8 +27,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.37.0 <0.38.0",
-    "bbPluginSdk": "^0.4.1"
+    "bb": ">=0.38.0 <0.39.0",
+    "bbPluginSdk": ">=0.4.6"
   },
   "bb": {
     "name": "Amp",
@@ -66,6 +66,7 @@
   "devDependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",
     "@ampcode/sdk": "0.1.0-20260729105907-g72d5ca3",
+    "@get-bb/plugin-sdk": "0.4.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "esbuild": "^0.25.0",

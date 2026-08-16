@@ -2,7 +2,7 @@ import { buildWithSelectedCli } from "./build.js";
 import { checkProject, type Diagnostic } from "./check.js";
 import {
   checkBuildMetadata,
-  checkSdkDeclarations,
+  checkSdkDependency,
   compatibility,
 } from "./compatibility.js";
 import { checkPackedPackage, packedPaths } from "./package.js";
@@ -48,7 +48,7 @@ interface FixedStep {
 function protectedDiagnostics(root: string, includeMetadata: boolean): Diagnostic[] {
   const manifest = readManifest(root);
   return [
-    ...checkSdkDeclarations(root, manifest),
+    ...checkSdkDependency(root, manifest),
     ...(includeMetadata ? checkBuildMetadata(root, manifest) : []),
   ];
 }

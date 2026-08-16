@@ -2,7 +2,7 @@
 //
 // Runs `gh stack` commands in a thread's workspace (server host):
 // view --json for the panel, plus sync / submit / init actions.
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";

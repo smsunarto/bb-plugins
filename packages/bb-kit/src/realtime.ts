@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   useRealtime,
   useRealtimeConnectionState,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import type { SchemaOutput, StandardSchemaV1 } from "./standard-schema.js";
 

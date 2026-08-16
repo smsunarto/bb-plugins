@@ -321,7 +321,7 @@ export function registerOperations<const Bindings extends OperationBindings>(
   // The catalog construction above proves both maps have the same legal wire
   // keys. Keep the unavoidable host assertion private to this adapter: bb's
   // generic register signature cannot be structurally restated without making
-  // published declarations depend on its unpublished SDK package.
+  // the published operations declarations depend on the bb SDK package.
   const register = host.rpc.register as (
     contract: typeof catalog.rpcContract,
     registeredHandlers: RpcHandlers<typeof catalog.rpcContract>,

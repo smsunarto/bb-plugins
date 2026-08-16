@@ -14,7 +14,7 @@ import {
   useRpc,
   type PluginMessageDirectiveProps,
   type PluginThreadPanelProps,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 import { parsePatchFiles, type DiffLineAnnotation } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { toast } from "sonner";

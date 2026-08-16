@@ -12,14 +12,6 @@
     "types": [
       "node"
     ],
-    "paths": {
-      "@bb/plugin-sdk": [
-        "./types/bb-plugin-sdk.d.ts"
-      ],
-      "@bb/plugin-sdk/app": [
-        "./types/bb-plugin-sdk-app.d.ts"
-      ]
-    },
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": false
@@ -31,7 +23,6 @@
     "lifecycle.ts",
     "queue.ts",
     "sound.ts",
-    "types",
     "test"
   ]
 }

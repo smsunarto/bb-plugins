@@ -78,7 +78,7 @@ Source: <https://github.com/colinhacks/zod>
 
 ## Not shipped here
 
-React, `@radix-ui/react-select`, `@radix-ui/react-context-menu` and `@bb/plugin-sdk`
+React, `@radix-ui/react-select`, `@radix-ui/react-context-menu` and `@get-bb/plugin-sdk`
 are **not** bundled in this package. The bb app provides them at run time, so their
 licences travel with bb, not with this plugin.
 

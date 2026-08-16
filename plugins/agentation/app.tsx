@@ -7,7 +7,7 @@
 // - a nav panel that reads the collected annotations back, with the reply
 //   thread an agent may have opened on each one.
 import "./app.css";
-import { definePluginApp } from "@bb/plugin-sdk/app";
+import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
 import {
   AgentationSettingsSection,

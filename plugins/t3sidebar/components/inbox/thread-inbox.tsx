@@ -4,7 +4,7 @@ import {
   useRpc,
   type PluginSidebarThread,
   type PluginThreadListProps,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {

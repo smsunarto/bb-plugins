@@ -1,4 +1,4 @@
-import type { PluginAppBuilder } from "@bb/plugin-sdk/app";
+import type { PluginAppBuilder } from "@get-bb/plugin-sdk/app";
 import { DotfilesPanel } from "./panel.js";
 
 export function registerDotfilesApp(app: PluginAppBuilder): void {

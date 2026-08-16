@@ -1,4 +1,4 @@
-import type { BbPluginApi } from "@bb/plugin-sdk";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { registerOperations } from "@bb-kit/core/operations";
 import { registerDotfilesCli } from "./cli.js";
 import { dotfilesOperations } from "./generated/operations.js";

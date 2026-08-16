@@ -13,13 +13,12 @@ this one, and neither replaces a licence that travels with a dependency.
 
 ## bb — `get-bb/bb`
 
-Four separate bodies of code arrive from bb, all under the MIT licence:
+Three separate bodies of code arrive from bb, all under the MIT licence:
 
 | What | Where |
 |---|---|
 | The whole **t3sidebar** plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) | `plugins/t3sidebar/` |
 | Provider brand-mark **geometry**, lifted from bb's own icon components | `plugins/t3sidebar/lib/provider-marks.ts` |
-| Generated bb plugin SDK type declarations, emitted by `bb plugin new` from the pinned bb release | `plugins/*/types/bb-plugin-sdk.d.ts`, `plugins/*/types/bb-plugin-sdk-app.d.ts` |
 | shadcn/ui-derived components, vendored through bb's own plugin component registry and marked `/* shadcn/ui-derived */` | `plugins/*/components/ui/` |
 
 ```

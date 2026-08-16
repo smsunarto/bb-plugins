@@ -19,7 +19,6 @@ import {
 } from "../src/index.js";
 import {
   makeOperationRequireInput,
-  seedCanonicalTypes,
 } from "./helpers.js";
 
 const roots: string[] = [];
@@ -33,7 +32,6 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
-  seedCanonicalTypes(root);
   return root;
 }
 

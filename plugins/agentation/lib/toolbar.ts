@@ -23,7 +23,7 @@ import {
 import type {
   PluginContentScriptContext,
   PluginContentScriptDisposer,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 
 import type { BbContext, StoredAnnotation } from "./afs.ts";
 import { selectOrphans, withoutBundleSource } from "./annotation-hygiene.ts";

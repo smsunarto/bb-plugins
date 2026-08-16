@@ -5,7 +5,7 @@
 // compiler emits structured data (walkthrough.generated.json) at scaffold
 // time; this backend reads that file from the thread's workspace so the
 // frontend can render the walkthrough natively with bb's own diff renderer.
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 export const DEFAULT_SITE_DIR = ".pr-walkthrough/site";

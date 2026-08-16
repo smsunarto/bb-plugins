@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRealtime } from "@bb/plugin-sdk/app";
+import { useRealtime } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

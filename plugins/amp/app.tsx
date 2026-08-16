@@ -8,7 +8,7 @@ import {
   useRealtimeConnectionState,
   useRpc,
   type PluginMessageDirectiveProps,
-} from "@bb/plugin-sdk/app";
+} from "@get-bb/plugin-sdk/app";
 import {
   isOracleReportId,
   ORACLE_DIRECTIVE_ID,

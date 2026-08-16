@@ -1,4 +1,4 @@
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, readdirSync, renameSync, rmSync, rmdirSync } from "node:fs";

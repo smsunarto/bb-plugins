@@ -10,8 +10,8 @@
  * plugins by a name bb never uses.
  *
  * The same `bb-plugin-` text also appears in DOM attributes
- * (`data-bb-plugin-root`) and in the generated `types/bb-plugin-sdk.d.ts`
- * filenames. Those are not package names and must not be routed through here.
+ * (`data-bb-plugin-root`). Those are not package names and must not be routed
+ * through here.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

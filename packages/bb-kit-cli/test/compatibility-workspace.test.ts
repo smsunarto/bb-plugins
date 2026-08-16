@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -30,21 +29,17 @@ import {
 } from "../src/compatibility.js";
 import {
   commandResult,
-  repositoryRoot,
+  writeVendoredDeclaration,
 } from "./helpers.js";
 
 const roots: string[] = [];
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
+const SDK_PACKAGE = "@get-bb/plugin-sdk";
 
 function testContract(
   version: string,
   sdkVersion: string,
-  server: string,
-  app: string,
-  frontend: readonly string[] = ["@bb/plugin-sdk/app", "react", "sonner"],
+  frontend: readonly string[] = [`${SDK_PACKAGE}/app`, "react", "sonner"],
 ): CompatibilityContract {
   const [majorText, minorText] = version.split(".");
   const major = Number(majorText);
@@ -53,19 +48,16 @@ function testContract(
     bbCliVersion: version,
     engines: {
       bb: `>=${version} <${major}.${minor + 1}.0`,
-      bbPluginSdk: `^${sdkVersion}`,
+      bbPluginSdk: `>=${sdkVersion}`,
     },
     pluginSdk: {
       version: sdkVersion,
       major: Number(sdkVersion.split(".")[0]),
       artifactFormatVersion: 1,
     },
-    declarations: {
-      server: { path: "types/bb-plugin-sdk.d.ts", sha256: sha256(server) },
-      app: { path: "types/bb-plugin-sdk-app.d.ts", sha256: sha256(app) },
-    },
+    sdkPackage: { name: SDK_PACKAGE, version: sdkVersion },
     hostShims: {
-      server: ["@bb/plugin-sdk"],
+      server: [SDK_PACKAGE],
       frontend,
     },
     registryUrl: `https://raw.githubusercontent.com/get-bb/bb/desktop-v${version}/packages/plugin-registry/r/{name}.json`,
@@ -79,13 +71,12 @@ interface SeedOptions {
 
 function seedWorkspace(
   contract: CompatibilityContract,
-  declarations: { readonly server: string; readonly app: string },
   options: SeedOptions = {},
 ): string {
   const root = mkdtempSync(join(tmpdir(), "bb-kit-workspace-"));
   roots.push(root);
   mkdirSync(join(root, "packages/bb-kit-cli/src"), { recursive: true });
-  mkdirSync(join(root, "plugins/example/types"), { recursive: true });
+  mkdirSync(join(root, "plugins/example"), { recursive: true });
   writeFileSync(join(root, "package.json"), `${JSON.stringify({
     name: "test-workspace",
     private: true,
@@ -101,15 +92,12 @@ function seedWorkspace(
     version: "0.1.0",
     untouched: { plugin: true },
     engines: contract.engines,
+    devDependencies: { [contract.sdkPackage.name]: contract.sdkPackage.version },
     bb: {
       server: "./server.ts",
       ...(options.fullstack ? { app: "./app.tsx" } : {}),
     },
   }, null, 2)}\n`);
-  writeFileSync(join(root, "plugins/example/types/bb-plugin-sdk.d.ts"), declarations.server);
-  if (options.fullstack) {
-    writeFileSync(join(root, "plugins/example/types/bb-plugin-sdk-app.d.ts"), declarations.app);
-  }
   writeFileSync(join(root, "plugins/example/components.json"), `${JSON.stringify({
     registries: {
       "@bb": contract.registryUrl,
@@ -147,12 +135,11 @@ function seedWorkspace(
 function fakeBb(
   root: string,
   contract: CompatibilityContract,
-  declarations: { readonly server: string; readonly app: string },
 ): { readonly env: NodeJS.ProcessEnv; readonly run: ReturnType<typeof vi.fn<CommandRunner>> } {
   const path = join(root, "selected-bb.js");
   const slots = Object.fromEntries(contract.hostShims.frontend.map((specifier) => [
     specifier,
-    specifier === "@bb/plugin-sdk/app" ? "pluginSdkApp" : `host:${specifier}`,
+    specifier.endsWith("plugin-sdk/app") ? "pluginSdkApp" : `host:${specifier}`,
   ]));
   writeFileSync(path, `#!/usr/bin/env node\nconst hostSlots = ${JSON.stringify(slots)};\n`);
   chmodSync(path, 0o755);
@@ -162,15 +149,16 @@ function fakeBb(
     }
     if (request.args.join(" ") === "plugin new probe --app") {
       const probe = join(request.cwd, "bb-plugin-probe");
-      mkdirSync(join(probe, "types"), { recursive: true });
+      mkdirSync(probe, { recursive: true });
       writeFileSync(join(probe, "package.json"), `${JSON.stringify({
         engines: { bbPluginSdk: contract.engines.bbPluginSdk },
+        devDependencies: {
+          [contract.sdkPackage.name]: contract.sdkPackage.version,
+        },
       }, null, 2)}\n`);
       writeFileSync(join(probe, "components.json"), `${JSON.stringify({
         registries: { "@bb": contract.registryUrl },
       }, null, 2)}\n`);
-      writeFileSync(join(probe, "types/bb-plugin-sdk.d.ts"), declarations.server);
-      writeFileSync(join(probe, "types/bb-plugin-sdk-app.d.ts"), declarations.app);
       return commandResult();
     }
     if (request.args.join(" ") === "plugin build .") {
@@ -227,9 +215,8 @@ afterEach(() => {
 
 describe("workspace compatibility policy", () => {
   it("reports every partial or optimistic compatibility change", () => {
-    const declarations = { server: "server target\n", app: "app target\n" };
-    const contract = testContract("0.38.2", "0.5.0", declarations.server, declarations.app);
-    const root = seedWorkspace(contract, declarations, { fullstack: true, metadata: true });
+    const contract = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(contract, { fullstack: true, metadata: true });
 
     const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
       config: { bbVersion: string };
@@ -246,7 +233,7 @@ describe("workspace compatibility policy", () => {
     };
     manifest.engines = { bb: ">=0.38.0", bbPluginSdk: "^0.4.1" };
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    writeFileSync(join(root, "plugins/example/types/bb-plugin-sdk.d.ts"), "drift\n");
+    writeVendoredDeclaration(join(root, "plugins/example"), "superseded\n");
     const componentsPath = join(root, "plugins/example/components.json");
     const components = JSON.parse(readFileSync(componentsPath, "utf8")) as {
       registries: Record<string, string>;
@@ -275,13 +262,61 @@ describe("workspace compatibility policy", () => {
     );
   });
 
+  it("reports a plugin whose SDK package pin drifts from the contract", () => {
+    const contract = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(contract);
+    const manifestPath = join(root, "plugins/example/package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      devDependencies: Record<string, string>;
+    };
+    manifest.devDependencies[SDK_PACKAGE] = "^0.5.0";
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    expect(checkWorkspaceCompatibility(root, contract)).toEqual([
+      expect.objectContaining({
+        code: "BBK011",
+        file: "plugins/example/package.json",
+        message: expect.stringContaining('is "^0.5.0", expected "0.5.0"'),
+      }),
+    ]);
+  });
+
+  it("carries workspace packages that build against the SDK", () => {
+    const oldContract = testContract("0.37.0", "0.4.1");
+    const target = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(oldContract);
+    const dependentPath = join(root, "packages/bb-kit/package.json");
+    mkdirSync(join(root, "packages/bb-kit"), { recursive: true });
+    writeFileSync(dependentPath, `${JSON.stringify({
+      name: "@bb-kit/core",
+      devDependencies: { [SDK_PACKAGE]: oldContract.sdkPackage.version },
+      untouched: true,
+    }, null, 2)}\n`);
+
+    expect(checkWorkspaceCompatibility(root, target)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "BBKW008",
+        file: "packages/bb-kit/package.json",
+      }),
+    ]));
+
+    const selected = fakeBb(root, target);
+    const result = upgradeCompatibility(root, selected);
+
+    expect(result.changes).toContain("packages/bb-kit/package.json");
+    expect(JSON.parse(readFileSync(dependentPath, "utf8"))).toEqual({
+      name: "@bb-kit/core",
+      devDependencies: { [SDK_PACKAGE]: target.sdkPackage.version },
+      untouched: true,
+    });
+    expect(checkWorkspaceCompatibility(root, target)).toEqual([]);
+  });
+
   it("inspects a selected release without changing the workspace", () => {
-    const oldDeclarations = { server: "old server\n", app: "old app\n" };
-    const oldContract = testContract("0.37.0", "0.4.1", oldDeclarations.server, oldDeclarations.app);
-    const targetDeclarations = { server: "new server\n", app: "new app\n" };
-    const target = testContract("0.38.2", "0.5.0", targetDeclarations.server, targetDeclarations.app);
-    const root = seedWorkspace(oldContract, oldDeclarations, { fullstack: true });
-    const selected = fakeBb(root, target, targetDeclarations);
+    const oldContract = testContract("0.37.0", "0.4.1");
+    const target = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(oldContract, { fullstack: true });
+    const selected = fakeBb(root, target);
     const before = snapshot(root);
 
     const result = inspectCompatibility(root, selected);
@@ -292,8 +327,6 @@ describe("workspace compatibility policy", () => {
       "packages/bb-kit-cli/src/compatibility-contract.ts",
       "plugins/example/package.json",
       "plugins/example/components.json",
-      "plugins/example/types/bb-plugin-sdk.d.ts",
-      "plugins/example/types/bb-plugin-sdk-app.d.ts",
     ]));
     expect(snapshot(root)).toEqual(before);
     expect(selected.run.mock.calls.map(([request]) => request.args)).toEqual([
@@ -304,12 +337,10 @@ describe("workspace compatibility policy", () => {
   });
 
   it("upgrades every owned target together, preserves other fields, and is idempotent", () => {
-    const oldDeclarations = { server: "old server\n", app: "old app\n" };
-    const oldContract = testContract("0.37.0", "0.4.1", oldDeclarations.server, oldDeclarations.app);
-    const targetDeclarations = { server: "new server\n", app: "new app\n" };
-    const target = testContract("0.38.2", "0.5.0", targetDeclarations.server, targetDeclarations.app);
-    const root = seedWorkspace(oldContract, oldDeclarations, { fullstack: true });
-    const selected = fakeBb(root, target, targetDeclarations);
+    const oldContract = testContract("0.37.0", "0.4.1");
+    const target = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(oldContract, { fullstack: true });
+    const selected = fakeBb(root, target);
 
     const result = upgradeCompatibility(root, selected);
 
@@ -325,9 +356,10 @@ describe("workspace compatibility policy", () => {
     }));
     const pluginManifest = JSON.parse(
       readFileSync(join(root, "plugins/example/package.json"), "utf8"),
-    ) as { engines: unknown; untouched: unknown };
+    ) as { engines: unknown; devDependencies: unknown; untouched: unknown };
     expect(pluginManifest).toEqual(expect.objectContaining({
       engines: target.engines,
+      devDependencies: { [SDK_PACKAGE]: target.sdkPackage.version },
       untouched: { plugin: true },
     }));
     const components = JSON.parse(
@@ -340,10 +372,6 @@ describe("workspace compatibility policy", () => {
       },
       untouched: true,
     }));
-    expect(readFileSync(join(root, "plugins/example/types/bb-plugin-sdk.d.ts"), "utf8"))
-      .toBe(targetDeclarations.server);
-    expect(readFileSync(join(root, "plugins/example/types/bb-plugin-sdk-app.d.ts"), "utf8"))
-      .toBe(targetDeclarations.app);
 
     const second = upgradeCompatibility(root, selected);
     expect(second).toEqual(expect.objectContaining({ updated: false, changes: [] }));
@@ -353,17 +381,10 @@ describe("workspace compatibility policy", () => {
   });
 
   it("does not turn upgrade into a downgrade escape hatch", () => {
-    const currentDeclarations = { server: "current server\n", app: "current app\n" };
-    const current = testContract(
-      "0.38.2",
-      "0.5.0",
-      currentDeclarations.server,
-      currentDeclarations.app,
-    );
-    const oldDeclarations = { server: "old server\n", app: "old app\n" };
-    const old = testContract("0.37.0", "0.4.1", oldDeclarations.server, oldDeclarations.app);
-    const root = seedWorkspace(current, currentDeclarations, { fullstack: true });
-    const selected = fakeBb(root, old, oldDeclarations);
+    const current = testContract("0.38.2", "0.5.0");
+    const old = testContract("0.37.0", "0.4.1");
+    const root = seedWorkspace(current, { fullstack: true });
+    const selected = fakeBb(root, old);
     const before = snapshot(root);
 
     expect(() => upgradeCompatibility(root, selected)).toThrow(expect.objectContaining({
@@ -373,15 +394,13 @@ describe("workspace compatibility policy", () => {
   });
 
   it("refuses linked write targets before changing any compatibility state", () => {
-    const oldDeclarations = { server: "old server\n", app: "old app\n" };
-    const oldContract = testContract("0.37.0", "0.4.1", oldDeclarations.server, oldDeclarations.app);
-    const targetDeclarations = { server: "new server\n", app: "new app\n" };
-    const target = testContract("0.38.2", "0.5.0", targetDeclarations.server, targetDeclarations.app);
-    const root = seedWorkspace(oldContract, oldDeclarations);
-    const declarationPath = join(root, "plugins/example/types/bb-plugin-sdk.d.ts");
-    rmSync(declarationPath);
-    symlinkSync("/dev/null", declarationPath);
-    const selected = fakeBb(root, target, targetDeclarations);
+    const oldContract = testContract("0.37.0", "0.4.1");
+    const target = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(oldContract);
+    const componentsPath = join(root, "plugins/example/components.json");
+    rmSync(componentsPath);
+    symlinkSync("/dev/null", componentsPath);
+    const selected = fakeBb(root, target);
     const packageBefore = readFileSync(join(root, "package.json"), "utf8");
     const pluginBefore = readFileSync(join(root, "plugins/example/package.json"), "utf8");
     const contractBefore = readFileSync(
@@ -398,17 +417,13 @@ describe("workspace compatibility policy", () => {
       join(root, "packages/bb-kit-cli/src/compatibility-contract.ts"),
       "utf8",
     )).toBe(contractBefore);
-    expect(existsSync(declarationPath)).toBe(true);
+    expect(existsSync(componentsPath)).toBe(true);
   });
 
   it("restores all writes when the post-write workspace check fails", () => {
-    const oldDeclarations = { server: "old server\n", app: "old app\n" };
-    const oldContract = testContract("0.37.0", "0.4.1", oldDeclarations.server, oldDeclarations.app);
-    const targetDeclarations = { server: "new server\n", app: "new app\n" };
-    const target = testContract("0.38.2", "0.5.0", targetDeclarations.server, targetDeclarations.app);
-    const root = seedWorkspace(oldContract, oldDeclarations);
-    const typesPath = join(root, "plugins/example/types");
-    rmSync(typesPath, { recursive: true });
+    const oldContract = testContract("0.37.0", "0.4.1");
+    const target = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(oldContract);
     const pluginPath = join(root, "plugins/example/package.json");
     writeFileSync(pluginPath, [
       "{",
@@ -419,28 +434,24 @@ describe("workspace compatibility policy", () => {
       `    "bb": ${JSON.stringify(oldContract.engines.bb)},`,
       `    "bbPluginSdk": ${JSON.stringify(oldContract.engines.bbPluginSdk)}`,
       "  },",
+      `  "devDependencies": { ${JSON.stringify(SDK_PACKAGE)}: ${JSON.stringify(oldContract.sdkPackage.version)} },`,
       '  "bb": { "server": "./server.ts" }',
       "}",
       "",
     ].join("\n"));
-    const selected = fakeBb(root, target, targetDeclarations);
+    const selected = fakeBb(root, target);
     const before = snapshot(root);
 
     expect(() => upgradeCompatibility(root, selected)).toThrow(expect.objectContaining({
       code: "compatibility_upgrade_invalid",
     }));
     expect(snapshot(root)).toEqual(before);
-    expect(existsSync(typesPath)).toBe(false);
   });
 });
 
 describe("workspace compatibility commands", () => {
   it("exposes both workspace check forms and rejects unsafe upgrade options", async () => {
-    const declarations = {
-      server: readFileSync(join(repositoryRoot, "plugins/dotfiles/types/bb-plugin-sdk.d.ts"), "utf8"),
-      app: readFileSync(join(repositoryRoot, "plugins/dotfiles/types/bb-plugin-sdk-app.d.ts"), "utf8"),
-    };
-    const root = seedWorkspace(compatibility, declarations, { fullstack: true });
+    const root = seedWorkspace(compatibility, { fullstack: true });
     const check = capture();
     expect(await runCli(["check", "--workspace", "--json"], {
       cwd: join(root, "plugins/example"),
@@ -455,7 +466,7 @@ describe("workspace compatibility commands", () => {
     })).toBe(0);
     expect(JSON.parse(compatibilityCheck.stdout[0] ?? "null")).toEqual([]);
 
-    const selected = fakeBb(root, compatibility, declarations);
+    const selected = fakeBb(root, compatibility);
     const inspect = capture();
     expect(await runCli(["compatibility", "inspect", "--json"], {
       cwd: root,

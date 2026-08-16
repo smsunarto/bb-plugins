@@ -6,10 +6,6 @@
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM"],
     "types": ["node"],
-    "paths": {
-      "@bb/plugin-sdk": ["../../plugins/agentation/types/bb-plugin-sdk.d.ts"],
-      "@bb/plugin-sdk/app": ["../../plugins/agentation/types/bb-plugin-sdk-app.d.ts"]
-    },
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "useUnknownInCatchVariables": true,

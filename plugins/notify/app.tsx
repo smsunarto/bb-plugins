@@ -10,7 +10,7 @@
 // frontend surface that stays mounted everywhere in the app. It has no React
 // context, so it cannot use the realtime hook — it long-polls the plugin's own
 // HTTP route instead, one held request at a time.
-import { definePluginApp } from "@bb/plugin-sdk/app";
+import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
 import { isDesktopNotificationHost, notificationTag } from "./format";
 

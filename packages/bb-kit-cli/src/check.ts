@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { Node, Project } from "ts-morph";
 import {
-  checkSdkDeclarations,
+  checkSdkDependency,
   compatibility,
   exactHostShims,
   shimmedPackageRoots,
@@ -164,7 +164,7 @@ function checkManifest(info: ProjectInfo): Diagnostic[] {
     diagnostics.push(diagnostic(
       "BBK005",
       `engines.bbPluginSdk ${JSON.stringify(info.manifest.engines?.bbPluginSdk)} does not match ${JSON.stringify(compatibility.engines.bbPluginSdk)}`,
-      `Set engines.bbPluginSdk to ${JSON.stringify(compatibility.engines.bbPluginSdk)} and refresh generated SDK declarations with the matching bb CLI.`,
+      `Set engines.bbPluginSdk to ${JSON.stringify(compatibility.engines.bbPluginSdk)} and pin ${compatibility.sdkPackage.name} to the matching release.`,
       "package.json",
     ));
   }
@@ -532,6 +532,8 @@ function checkImports(info: ProjectInfo): Diagnostic[] {
       if (
         pure
         && (specifier.startsWith("node:")
+          || specifier === "@get-bb/plugin-sdk"
+          || specifier === "@get-bb/plugin-sdk/app"
           || specifier === "@bb/plugin-sdk"
           || specifier === "@bb/plugin-sdk/app"
           || specifier === "react"
@@ -594,7 +596,7 @@ export function checkProject(root: string): Diagnostic[] {
   }
   return [
     ...checkManifest(info),
-    ...checkSdkDeclarations(info.root, info.manifest),
+    ...checkSdkDependency(info.root, info.manifest),
     ...checkFrameworkDependencies(info),
     ...checkOperations(info),
     ...checkMigrations(info),

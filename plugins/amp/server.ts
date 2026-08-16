@@ -1,7 +1,7 @@
 // Registers Amp as a custom ACP provider in bb via the plugin's own bundled
 // ACP bridge (dist/bridge.js), which drives the Amp CLI through the official
 // @ampcode/sdk. No third-party adapter required.
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";

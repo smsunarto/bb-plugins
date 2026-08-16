@@ -26,8 +26,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.37.0 <0.38.0",
-    "bbPluginSdk": "^0.4.1"
+    "bb": ">=0.38.0 <0.39.0",
+    "bbPluginSdk": ">=0.4.6"
   },
   "bb": {
     "name": "bb Monokai",
@@ -62,6 +62,7 @@
   ],
   "dependencies": {},
   "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.6",
     "@storybook/react-vite": "10.5.7",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",

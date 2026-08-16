@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtime, useRpc } from "@bb/plugin-sdk/app";
+import { useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { STATUS_EVENT } from "./sidebar-nav-status";
 import type { CoreStatus, rpcContract } from "../server";
 

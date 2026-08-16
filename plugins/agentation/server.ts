@@ -10,7 +10,7 @@
 //   agent tools    the loop an agent actually runs (pending → fix → resolve)
 //   bb agentation  the same loop for agents that prefer a shell
 
-import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 import {

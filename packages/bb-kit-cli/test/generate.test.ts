@@ -1,5 +1,4 @@
 import {
-  cpSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -20,7 +19,7 @@ import {
   inspectProject,
   readLock,
 } from "../src/index.js";
-import { repositoryRoot, seedCanonicalTypes } from "./helpers.js";
+import { repositoryRoot } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -33,7 +32,6 @@ function temporaryProject(): string {
     syncTypes: false,
     install: false,
   });
-  seedCanonicalTypes(root);
   return root;
 }
 
@@ -391,16 +389,17 @@ describe("bb-kit generation", () => {
       surfaces: ["thread-panel"],
       storage: "sqlite",
     }));
-    cpSync(
-      join(repositoryRoot, "plugins/agentation/types"),
-      join(root, "types"),
-      { recursive: true },
-    );
     const tsconfigPath = join(root, "tsconfig.json");
     const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as {
       compilerOptions: { paths: Record<string, string[]>; typeRoots?: string[] };
     };
     tsconfig.compilerOptions.typeRoots = [join(repositoryRoot, "node_modules/@types")];
+    tsconfig.compilerOptions.paths["@get-bb/plugin-sdk"] = [
+      join(repositoryRoot, "node_modules/@get-bb/plugin-sdk/bundled-types/bb-plugin-sdk.d.ts"),
+    ];
+    tsconfig.compilerOptions.paths["@get-bb/plugin-sdk/app"] = [
+      join(repositoryRoot, "node_modules/@get-bb/plugin-sdk/bundled-types/bb-plugin-sdk-app.d.ts"),
+    ];
     tsconfig.compilerOptions.paths["@bb-kit/core/operations"] = [
       join(repositoryRoot, "packages/bb-kit/src/operations.ts"),
     ];
