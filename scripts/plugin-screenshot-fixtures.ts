@@ -41,12 +41,26 @@ const FIXED_TIME = new Date("2026-08-13T12:00:00.000Z");
 const SIDEBAR_PROVIDER_KEY = "bb.sidebar.threadListProvider";
 const SIDEBAR_PROVIDER = "t3sidebar/inbox";
 const SIDEBAR_PLUGIN_ORDER_KEY = "bb.sidebar.pluginPanelOrder";
+/**
+ * bb's own Extensions row. It is pinned above the plugin rows and is not part
+ * of the reorderable set — `bb.sidebar.pluginPanelOrder` holds
+ * `<pluginId>/<panelId>` keys only — so it belongs in what the navigation
+ * assertion expects and not in what the run seeds.
+ */
+const SIDEBAR_BUILTIN_LEAD_LABEL = "Extensions";
+/**
+ * The panels the screenshot instance draws, in order.
+ *
+ * This is the set a bb dev instance carries once the workspace plugins are
+ * installed into it: bb's built-in automations, plus the three workspace
+ * plugins that register a sidebar panel. It deliberately does not list panels
+ * that only exist on a developer's personal bb — a plugin installed there but
+ * absent here would make the run depend on who is capturing.
+ */
 const SIDEBAR_PLUGIN_ORDER = [
   { id: "automations/automations", label: "Automations" },
-  { id: "github/github", label: "GitHub" },
   { id: "agentation/annotations", label: "Agentation" },
   { id: "dotfiles/dotfiles", label: "Dotfiles" },
-  { id: "usage/usage", label: "Usage" },
   { id: "agent-proxy/agent-proxy", label: "Agent Proxy" },
 ] as const;
 const DEFAULT_PROJECT_ID = "proj_b25re9h8d7";
@@ -1049,7 +1063,10 @@ async function hideWorkingTreeStatus(page: Page): Promise<void> {
 }
 
 async function assertSidebarNavigation(page: Page): Promise<void> {
-  const expected = SIDEBAR_PLUGIN_ORDER.map(({ label }) => label);
+  const expected = [
+    SIDEBAR_BUILTIN_LEAD_LABEL,
+    ...SIDEBAR_PLUGIN_ORDER.map(({ label }) => label),
+  ];
   await page.waitForFunction((orderedLabels) => {
     const rows = document.querySelectorAll(
       '[data-testid="plugin-nav-sidebar-items"] > .bb-sidebar-hover-actions-row',
