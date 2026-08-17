@@ -416,10 +416,12 @@
 
 /* Lightweight code highlighter (sugar-high) used for inline code and code
  * blocks in the thread. This IS a code surface, so the code hues are legal.
- * bb declares these on `.dark .bb-code-highlight`, so the same selector is
- * needed to tie on specificity; this sheet is injected later and wins.
+ * bb declares six of these on `.dark .bb-code-highlight` in its lazily-loaded
+ * workspace-checkout-display chunk. That chunk arrives after this sheet, so a
+ * tie on specificity loses the moment a thread is opened. Repeating the class
+ * outranks it without reaching for `!important`.
  * Measured on the recessed well #1E1E1E. */
-.dark .bb-code-highlight {
+.dark .bb-code-highlight.bb-code-highlight {
   --sh-space: inherit;
   --sh-identifier: {{text.ink}}; /* everything else — 12.79:1 */
   --sh-property: {{text.ink}}; /* properties are white by contract */
@@ -438,7 +440,7 @@
  * labels and connectors as code tokens. Collapse every token to the text color
  * so the diagram stays legible instead of acquiring arbitrary syntax hues.
  * Remove the pre's strut and let the code child own each row. */
-.dark .bb-code-highlight:has(> .language-diagram) {
+.dark .bb-code-highlight.bb-code-highlight:has(> .language-diagram) {
   --sh-identifier: var(--foreground);
   --sh-property: var(--foreground);
   --sh-sign: var(--foreground);

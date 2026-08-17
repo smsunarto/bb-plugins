@@ -493,7 +493,9 @@ const requiredRules: Array<{
     },
   },
   {
-    selector: ".dark .bb-code-highlight",
+    // Doubled class: bb re-declares six of these on the single-class selector
+    // from a chunk that loads after this sheet, so a tie loses.
+    selector: ".dark .bb-code-highlight.bb-code-highlight",
     declarations: {
       "--sh-identifier": palette.text.ink,
       "--sh-property": palette.text.ink,
