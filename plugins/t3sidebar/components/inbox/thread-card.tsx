@@ -135,8 +135,9 @@ export function ThreadCard({
             </span>
           </div>
           {/* One step below the title, not half a step: at 10px the size drop
-              alone does not carry the hierarchy, so the whole line also sits at
-              the tint the provider glyph already uses. */}
+              alone does not carry the hierarchy, so the line also starts at the
+              tint the provider glyph already uses. Segments that rank below the
+              project dim further from here. */}
           <div className="pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
             {/* Project and origin share this line now that the title has taken
                 the one above. The project holds its full name and the origin
@@ -149,7 +150,7 @@ export function ThreadCard({
                 <span className="min-w-0 truncate">{projectName}</span>
               ) : null}
               {projectName && (thread.environment?.branchName || thread.host) ? (
-                <span aria-hidden className="shrink-0 text-muted-foreground/50">
+                <span aria-hidden className="shrink-0 text-muted-foreground/40">
                   ·
                 </span>
               ) : null}
@@ -166,11 +167,11 @@ export function ThreadCard({
                   machine takes the branch's place rather than leaving the
                   segment blank. */}
               {thread.environment?.branchName ? (
-                <span className="min-w-0 shrink-[9999] truncate font-mono">
+                <span className="min-w-0 shrink-[9999] truncate font-mono text-muted-foreground/50">
                   {thread.environment.branchName}
                 </span>
               ) : thread.host ? (
-                <span className="min-w-0 shrink-[9999] truncate">
+                <span className="min-w-0 shrink-[9999] truncate text-muted-foreground/50">
                   {thread.host.name}
                 </span>
               ) : null}
