@@ -1,16 +1,21 @@
 #!/usr/bin/env bun
 /**
- * Put the pinned screenshot instance into the state the captures assume.
+ * Put the pinned dev instance into a known baseline: the one bb that every
+ * bb-plugins task targets, for captures and for live plugin testing alike.
  *
  * `prepareBbForScreenshots` already enforces plugin enablement and the theme on
- * every run, so this covers what preflight cannot: it installs the workspace
- * plugins (preflight only errors and prints the commands), returns plugin
- * settings to their declared defaults, and pins the experiment that gates the
- * onboarding overlay.
+ * every capture run, so this covers what preflight cannot: it installs the
+ * workspace plugins (preflight only errors and prints the commands), returns
+ * plugin settings to their declared defaults, and pins the experiment that
+ * gates the onboarding overlay.
  *
  * Idempotent by design — running it twice is how you confirm it converged, and
  * it is the first thing to run after moving the worktree, because the instance
  * id derives from the worktree path and a moved worktree is a fresh instance.
+ *
+ * Resetting settings is the point, which makes it the wrong thing to run in the
+ * middle of a test that deliberately set one. Run it to establish a baseline,
+ * not to recover from a surprise.
  *
  * It rewrites settings, so it refuses to run against anything but a dev
  * instance. Pointed at the desktop app it would reset the developer's own
@@ -35,7 +40,7 @@ import {
  * timestamp, never stamp it. Holding the experiment off is what keeps the
  * overlay out of a capture.
  */
-export const SCREENSHOT_EXPERIMENTS: Readonly<Record<string, boolean>> = {
+export const BB_DEV_EXPERIMENTS: Readonly<Record<string, boolean>> = {
   claudeCodeMockCliTraffic: false,
   editMessages: true,
   newOnboarding: false,
@@ -87,7 +92,7 @@ export function assertDevInstance(config: { dataDir?: string }): void {
       [
         `refusing to configure a non-dev bb (data dir ${dataDir || "unknown"})`,
         "This rewrites settings and is only for the pinned screenshot instance.",
-        "Point BB_CLI at scripts/bb-screenshot-cli and try again.",
+        "Point BB_CLI at scripts/bb-dev-cli and try again.",
       ].join("\n"),
     );
   }
@@ -150,7 +155,7 @@ async function waitForRunningPlugins(
   }
 }
 
-export async function setUpScreenshotInstance(
+export async function setUpBbDevInstance(
   runCommand: BbCommandRunner = runBbCommand,
   log: (message: string) => void = console.log,
 ): Promise<void> {
@@ -176,10 +181,10 @@ export async function setUpScreenshotInstance(
   if (stale.length === 0) log("all workspace plugins already installed from this checkout");
   else await waitForRunningPlugins(runCommand);
 
-  for (const [key, value] of Object.entries(SCREENSHOT_EXPERIMENTS)) {
+  for (const [key, value] of Object.entries(BB_DEV_EXPERIMENTS)) {
     await runCommand(["settings", "experiment", key, String(value), "--json"]);
   }
-  log(`pinned ${Object.keys(SCREENSHOT_EXPERIMENTS).length} experiments`);
+  log(`pinned ${Object.keys(BB_DEV_EXPERIMENTS).length} experiments`);
 
   for (const plugin of SCREENSHOT_PREFLIGHT_PLUGINS) {
     const configArgs = ["plugin", "config", plugin.id, "--json"] as const;
@@ -210,9 +215,9 @@ export async function setUpScreenshotInstance(
   if (remaining.length > 0) {
     throw new Error(`settings did not return to their defaults: ${remaining.join(", ")}`);
   }
-  log("screenshot instance ready");
+  log("bb dev instance ready");
 }
 
 if (import.meta.main) {
-  await setUpScreenshotInstance();
+  await setUpBbDevInstance();
 }
