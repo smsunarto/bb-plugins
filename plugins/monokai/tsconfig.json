@@ -17,6 +17,7 @@
   },
   "include": [
     ".storybook/**/*.ts",
+    "docs/**/*.ts",
     "scripts/**/*.ts",
     "server.ts",
     "storybook/**/*.ts"
