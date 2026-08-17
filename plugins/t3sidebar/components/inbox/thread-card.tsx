@@ -33,6 +33,7 @@ export function ThreadCard({
   projectName,
   isActive,
   canPark,
+  showProviderIcon,
   onNavigate,
   onSettle,
   onSnooze,
@@ -44,6 +45,8 @@ export function ThreadCard({
   isActive: boolean;
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
+  /** The `showProviderIcon` setting, on by default. */
+  showProviderIcon: boolean;
   onNavigate: () => void;
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
@@ -210,8 +213,14 @@ export function ThreadCard({
                 #{pullRequest.number}
               </a>
             ) : null}
-            {/* Always drawn, so the line has a fixed right edge. */}
-            <ProviderGlyph providerId={thread.providerId} provider={provider} />
+            {/* Drawn for every card or for none, never per thread, so the line
+                keeps a fixed right edge whichever way the setting is set. */}
+            {showProviderIcon ? (
+              <ProviderGlyph
+                providerId={thread.providerId}
+                provider={provider}
+              />
+            ) : null}
           </div>
         </div>
       </li>

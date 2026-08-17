@@ -129,6 +129,19 @@ export const t3sidebarRpcContract = defineRpcContract({
 export const LIFECYCLE_CHANNEL = "lifecycle";
 
 export default function plugin(bb: BbPluginApi) {
+  // Declared, never read here. The card is the only consumer and it reads the
+  // value through `useSettings()`, so this exists to put the toggle in the
+  // plugin's settings form and give it its default.
+  bb.settings.define({
+    showProviderIcon: {
+      type: "boolean",
+      label: "Show the agent icon on each card",
+      description:
+        "The trailing glyph naming the agent a thread runs on. Turn it off to give the branch that space back.",
+      default: true,
+    },
+  });
+
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
 

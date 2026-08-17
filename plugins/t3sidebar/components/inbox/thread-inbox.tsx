@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useRpc,
+  useSettings,
   type PluginSidebarThread,
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
@@ -98,6 +99,12 @@ export function ThreadInbox({
       ),
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
+  // Read once here rather than per card, and compared against `false` rather
+  // than coerced: `values` is undefined while the settings load, and the
+  // setting is on by default, so anything that is not an explicit "off" draws
+  // the glyph. That way the common case never flashes it on and off.
+  const { values: settingValues } = useSettings();
+  const showProviderIcon = settingValues?.showProviderIcon !== false;
 
   useEffect(() => {
     let cancelled = false;
@@ -311,6 +318,7 @@ export function ThreadInbox({
                     key={thread.id}
                     thread={thread}
                     provider={providerInfoById.get(thread.providerId)}
+                    showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
@@ -329,6 +337,7 @@ export function ThreadInbox({
                     key={thread.id}
                     thread={thread}
                     provider={providerInfoById.get(thread.providerId)}
+                    showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
@@ -347,6 +356,7 @@ export function ThreadInbox({
                     key={thread.id}
                     thread={thread}
                     provider={providerInfoById.get(thread.providerId)}
+                    showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}

@@ -84,7 +84,8 @@ background work is also live, because the user can act now.
 ### Cards
 
 Two lines: the title in bold when unread and a status slot, then the project, the
-branch, activity counts, PR number, and the agent. The status slot shows what the
+branch, activity counts, PR number, and the agent (which you can turn off — see
+[Configuration](#configuration)). The status slot shows what the
 thread needs — failed, waiting on you, working, or finished while you were away —
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
 the two park buttons.
@@ -115,9 +116,15 @@ a child, a chip that names the parent and opens it.
 
 ## Configuration
 
-There is nothing to configure. The snooze presets assume a 09:00 morning, an 18:00
-evening, and a week starting Monday, in your local timezone. The settled shelf
-reaches back 24 hours. None of these are settings.
+One setting, in **Settings → Plugins → t3sidebar**:
+
+- **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
+  glyph and give the branch that space back. Every card follows it together, so the
+  meta line keeps a straight right edge either way.
+
+The snooze presets assume a 09:00 morning, an 18:00 evening, and a week starting
+Monday, in your local timezone. The settled shelf reaches back 24 hours. None of
+these are settings.
 
 ## Troubleshooting
 
