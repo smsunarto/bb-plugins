@@ -158,7 +158,7 @@ function activeTheme(output: string, args: readonly string[]): string {
   return value.themeId;
 }
 
-async function runBbCommand(args: readonly string[]): Promise<string> {
+export async function runBbCommand(args: readonly string[]): Promise<string> {
   const executable = process.env.BB_CLI ?? "bb";
   const child = Bun.spawn([executable, ...args], {
     cwd: SCREENSHOT_ROOT,

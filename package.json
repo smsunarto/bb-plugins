@@ -32,6 +32,7 @@
     "icons": "bun scripts/plugin-icons.ts",
     "icons:check": "bun scripts/plugin-icons.ts --check",
     "screenshots": "bun scripts/plugin-screenshots.ts",
+    "screenshots:setup": "bun scripts/screenshot-instance-setup.ts",
     "screenshots:fixtures": "bun scripts/plugin-screenshot-fixtures.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
