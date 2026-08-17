@@ -14,7 +14,10 @@
 # whatever is landing this week.
 set -euo pipefail
 
-repo="${BB_SCREENSHOT_REPO:-${HOME}/git/bb-screenshots}"
+# Under bb's own worktrees directory rather than beside the source checkouts:
+# this is a fixture, not something anyone edits, and it should not sit in the
+# working directory as if it were.
+repo="${BB_SCREENSHOT_REPO:-${HOME}/.bb/worktrees/screenshots/bb}"
 
 if [[ ! -d "${repo}" ]]; then
   echo "bb-screenshot-cli: no worktree at ${repo}" >&2
