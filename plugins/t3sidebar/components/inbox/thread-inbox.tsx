@@ -462,7 +462,7 @@ function ParkedShelf({
         </span>
       </button>
       {expanded ? (
-        <ul className="flex flex-col gap-px">
+        <ul className="flex flex-col gap-0.5">
           {threads.map((thread) => (
             <SlimRow
               key={thread.id}
@@ -504,7 +504,10 @@ function Shelf({
           <span className="h-px flex-1 bg-sidebar-border" />
         </h2>
       ) : null}
-      <ul className="flex flex-col gap-px">{children}</ul>
+      {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
+          1px seam let two stacked cards read as one block. Slim rows below get
+          less — a single centred line already carries its own air. */}
+      <ul className="flex flex-col gap-1">{children}</ul>
     </section>
   );
 }

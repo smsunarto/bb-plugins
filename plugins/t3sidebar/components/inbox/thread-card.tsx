@@ -134,7 +134,10 @@ export function ThreadCard({
               <StatusOrTime thread={thread} now={now} />
             </span>
           </div>
-          <div className="pointer-events-none relative mt-0.5 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground">
+          {/* One step below the title, not half a step: at 10px the size drop
+              alone does not carry the hierarchy, so the whole line also sits at
+              the tint the provider glyph already uses. */}
+          <div className="pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
             {/* Project and origin share this line now that the title has taken
                 the one above. Both truncate, so a long branch squeezes the
                 project rather than pushing the fixed trailing columns off
@@ -142,9 +145,7 @@ export function ThreadCard({
                 card missing both still holds the line's right side still. */}
             <span className="flex min-w-0 flex-1 items-center gap-1">
               {projectName ? (
-                <span className="min-w-0 truncate font-medium">
-                  {projectName}
-                </span>
+                <span className="min-w-0 truncate">{projectName}</span>
               ) : null}
               {projectName && (thread.environment?.branchName || thread.host) ? (
                 <span aria-hidden className="shrink-0 text-muted-foreground/50">
@@ -234,7 +235,7 @@ function ActivityCount({ label, count }: { label: string; count: number }) {
   return (
     <span
       aria-label={`${count} ${label}`}
-      className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-muted-foreground"
+      className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-muted-foreground/70"
     >
       {count}
     </span>
