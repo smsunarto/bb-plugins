@@ -49,3 +49,17 @@ The pinned bb release lives in root `package.json` → `config.bbVersion`. Local
 - Do not commit or push unless asked. Preserve unrelated changes.
 - Do not split work into a stack unless asked. One branch and one commit is the default, and a single commit covering a whole session's work is a fine answer. Reach for `gh-stack` or `scripts/split-layers.ts` only when the user asks for a stack, or when a change is genuinely too large to review in one pass — and say so before splitting rather than assuming. Splitting after the fact costs more than it returns: hunk-level surgery on interleaved edits is slow and error-prone, and a mechanical rename that touches every package is one concern, not twenty.
 - Nested `AGENTS.md` files (for example `plugins/pr-walkthrough/AGENTS.md`) add plugin-specific rules and take precedence within their scope.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown files under `.scratch/<feature>/` in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary; each label string equals its role name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: root `CONTEXT-MAP.md` points at one `CONTEXT.md` per plugin/package. See `docs/agents/domain.md`.
