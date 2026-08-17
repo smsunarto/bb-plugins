@@ -46,7 +46,6 @@ const SIDEBAR_PLUGIN_ORDER = [
   { id: "github/github", label: "GitHub" },
   { id: "agentation/annotations", label: "Agentation" },
   { id: "dotfiles/dotfiles", label: "Dotfiles" },
-  { id: "tldraw/diagrams", label: "Diagrams" },
   { id: "usage/usage", label: "Usage" },
   { id: "agent-proxy/agent-proxy", label: "Agent Proxy" },
 ] as const;
