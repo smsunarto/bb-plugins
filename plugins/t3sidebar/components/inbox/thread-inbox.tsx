@@ -248,9 +248,16 @@ export function ThreadInbox({
       <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
         <Select value={scope} onValueChange={setScope}>
           {/* Ghost trigger: no border, no filled track — it reads as a label
-              until you hover it. */}
+              until you hover it.
+
+              `border-transparent` alongside `border-0`, because width and
+              color are separate merge groups: `border-0` alone leaves
+              `border-input` on the element, and a theme is free to key a
+              recessed background off that class rather than off a drawn
+              border. Evicting the color class is what actually keeps the
+              track clear. */}
           <SelectTrigger
-            className="h-6 min-w-0 flex-1 border-0 px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
+            className="h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
             aria-label={`Project scope: ${scopeLabel}`}
           >
             <SelectValue />
