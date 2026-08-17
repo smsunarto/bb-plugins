@@ -139,10 +139,11 @@ export function ThreadCard({
               the tint the provider glyph already uses. */}
           <div className="pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
             {/* Project and origin share this line now that the title has taken
-                the one above. Both truncate, so a long branch squeezes the
-                project rather than pushing the fixed trailing columns off
-                their edge. The wrapper is the flexible cell either way, so a
-                card missing both still holds the line's right side still. */}
+                the one above. The project holds its full name and the origin
+                yields: which repository a thread belongs to outranks which
+                branch it sits on, and the branch is the one that grows without
+                bound. The wrapper is the flexible cell either way, so a card
+                missing both still holds the line's right side still. */}
             <span className="flex min-w-0 flex-1 items-center gap-1">
               {projectName ? (
                 <span className="min-w-0 truncate">{projectName}</span>
@@ -152,15 +153,26 @@ export function ThreadCard({
                   ·
                 </span>
               ) : null}
-              {/* A thread without a worktree still runs somewhere, so the
+              {/* Weighted rather than capped, so the project keeps its full
+                  name whenever the line has room for both and only starts
+                  truncating once this one has already given up everything. A
+                  fixed cap on the project instead truncates it while slack
+                  sits unused beside a short branch. Never `flex-1` either: a
+                  branch that GREW would take that slack off the project.
+                  Overflowing beyond zero is left alone — the project is
+                  truncating by then, so this segment has nothing to show.
+
+                  A thread without a worktree still runs somewhere, so the
                   machine takes the branch's place rather than leaving the
                   segment blank. */}
               {thread.environment?.branchName ? (
-                <span className="min-w-0 truncate font-mono">
+                <span className="min-w-0 shrink-[9999] truncate font-mono">
                   {thread.environment.branchName}
                 </span>
               ) : thread.host ? (
-                <span className="min-w-0 truncate">{thread.host.name}</span>
+                <span className="min-w-0 shrink-[9999] truncate">
+                  {thread.host.name}
+                </span>
               ) : null}
             </span>
             {thread.activity.workflows > 0 ? (
