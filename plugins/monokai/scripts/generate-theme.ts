@@ -1,6 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import { type CodeThemeRule, readCodeThemeRules } from "./code-theme-rules";
+
 function withAlpha(color: string, alpha: number): string {
   return `${color}${alpha.toString(16).padStart(2, "0")}`;
 }
@@ -36,6 +38,10 @@ const palette = {
     string: "#f7d05c",
     type: "#51dae9",
     constant: "#a895fe",
+    // Values passed into scope. The bb chrome has no parameter role, so this
+    // hue reaches only the code theme — it is here because CONTRACT.md owns it,
+    // not because a CSS token spends it.
+    parameter: "#ff8342",
   },
   contentTint: {
     comment: "#7c7865",
@@ -89,10 +95,13 @@ const roleValues = {
   "feedback.info": palette.feedback.info,
   "feedback.debug": palette.feedback.debug,
   "code.keyword": palette.code.keyword,
+  "code.keyword60": withAlpha(palette.code.keyword, 0x99),
   "code.entity": palette.code.entity,
   "code.string": palette.code.string,
   "code.type": palette.code.type,
   "code.constant": palette.code.constant,
+  "code.constant63": withAlpha(palette.code.constant, 0xa0),
+  "code.parameter": palette.code.parameter,
   "content.comment": palette.contentTint.comment,
   "content.white": palette.contentTint.white,
   "content.blue": palette.contentTint.blue,
@@ -107,6 +116,38 @@ interface CssRule {
 
 const templatePath = fileURLToPath(new URL("./bb-monokai.template.css", import.meta.url));
 const themePath = fileURLToPath(new URL("../themes/bb-monokai.css", import.meta.url));
+const codeThemePath = fileURLToPath(new URL("../themes/bb-monokai-code.json", import.meta.url));
+
+// bb registers the shipped file under its own name, so this one is only what a
+// reader sees in a stack trace. It stays distinct from the CSS theme's name so
+// the two cannot be confused in a log line.
+const CODE_THEME_NAME = "bb Monokai Code";
+
+// Roles a syntax token may spend. Narrower than the chrome registry on purpose:
+// the code hues carry kind, the ink ladder and comment tint carry the text
+// tiers, feedback marks invalid and log levels, and the content ground is the
+// one legal background. The accent, the control colors and the ANSI content
+// tints are chrome-only — a token wearing one would claim a meaning it does not
+// have.
+const tokenRoles = new Set<keyof typeof roleValues>([
+  "text.ink",
+  "text.ink55",
+  "text.ink30",
+  "text.comment60",
+  "code.keyword",
+  "code.keyword60",
+  "code.entity",
+  "code.string",
+  "code.type",
+  "code.constant",
+  "code.constant63",
+  "code.parameter",
+  "feedback.error",
+  "feedback.warning",
+  "feedback.info",
+  "feedback.debug",
+  "ground.content",
+]);
 
 const allowedBases = new Set(
   Object.values(roleValues).map((color) => color.slice(1, 7).toLowerCase()),
@@ -139,6 +180,68 @@ export function renderTheme(template: string): string {
     throw new Error(`Malformed theme role placeholder(s): ${unresolved.join(", ")}`);
   }
   return `${generatedBanner}${rendered.trimStart()}`;
+}
+
+interface CodeThemeSettings {
+  foreground?: string;
+  background?: string;
+  fontStyle?: string;
+}
+
+export interface CodeTheme {
+  name: string;
+  type: "dark";
+  colors: Record<string, string>;
+  tokenColors: Array<{ scope: string[]; settings: CodeThemeSettings }>;
+}
+
+function tokenColor(role: string, scope: readonly string[], violations: string[]): string {
+  if (!tokenRoles.has(role as keyof typeof roleValues)) {
+    violations.push(`${scope[0] ?? "(no scope)"}: ${role} is not a token role`);
+    return "#000000";
+  }
+  return roleValues[role as keyof typeof roleValues];
+}
+
+// Renders the vendored scope map against the palette. bb hands the result to
+// Shiki, which reads `colors` for the default pair and `tokenColors` for the
+// rest; there is no language server behind a diff, so the editor theme's
+// semantic layer has nothing to resolve here and is left out.
+export function renderCodeTheme(rules: readonly CodeThemeRule[]): CodeTheme {
+  const violations: string[] = [];
+  const tokenColors = rules.map((rule) => {
+    if (rule.scope.length === 0) {
+      violations.push("a rule carries no scope");
+    }
+    const settings: CodeThemeSettings = {};
+    if (rule.foreground !== undefined) {
+      settings.foreground = tokenColor(rule.foreground, rule.scope, violations);
+    }
+    if (rule.background !== undefined) {
+      settings.background = tokenColor(rule.background, rule.scope, violations);
+    }
+    if (rule.fontStyle !== undefined) {
+      settings.fontStyle = rule.fontStyle;
+    }
+    if (Object.keys(settings).length === 0) {
+      violations.push(`${rule.scope[0] ?? "(no scope)"}: a rule with no settings`);
+    }
+    return { scope: rule.scope, settings };
+  });
+  if (violations.length > 0) {
+    throw new Error(
+      `bb Monokai code theme audit failed — ${violations.length} violation(s):\n  ${violations.join("\n  ")}`,
+    );
+  }
+  return {
+    name: CODE_THEME_NAME,
+    type: "dark",
+    colors: {
+      "editor.background": roleValues["ground.content"],
+      "editor.foreground": roleValues["text.ink"],
+    },
+    tokenColors,
+  };
 }
 
 function stripComments(source: string): string {
@@ -562,21 +665,26 @@ export function auditTheme(source: string): void {
   }
 }
 
-async function emit(output: string, check: boolean): Promise<void> {
-  const current = await readFile(themePath, "utf8").catch(() => null);
+async function emit(path: string, output: string, check: boolean): Promise<void> {
+  const current = await readFile(path, "utf8").catch(() => null);
   if (check) {
     if (current !== output) {
-      throw new Error(`${themePath} is stale. Run bun run generate:theme.`);
+      throw new Error(`${path} is stale. Run bun run generate:theme.`);
     }
   } else if (current !== output) {
-    await writeFile(themePath, output);
+    await writeFile(path, output);
   }
 }
 
 async function main(): Promise<void> {
-  const output = renderTheme(await readFile(templatePath, "utf8"));
-  auditTheme(output);
-  await emit(output, process.argv.includes("--check"));
+  const check = process.argv.includes("--check");
+  const css = renderTheme(await readFile(templatePath, "utf8"));
+  auditTheme(css);
+  await emit(themePath, css, check);
+
+  const codeTheme = renderCodeTheme(readCodeThemeRules().rules);
+  await emit(codeThemePath, `${JSON.stringify(codeTheme, null, 2)}\n`, check);
+
   console.log("bb Monokai generated and contract audit passed.");
 }
 

@@ -45,7 +45,10 @@
         "id": "bb-monokai",
         "name": "bb Monokai",
         "description": "Dark-only Monokai-family palette: one meaning per hue, a single text ladder, the shared ANSI content palette, and a monospace-first type stack.",
-        "css": "./themes/bb-monokai.css"
+        "css": "./themes/bb-monokai.css",
+        "codeTheme": {
+          "dark": "./themes/bb-monokai-code.json"
+        }
       }
     ],
     "skills": []
@@ -81,6 +84,7 @@
     "dev": "bun ../../scripts/dev-plugin.ts",
     "storybook": "storybook dev --port 6006",
     "generate:theme": "bun run scripts/generate-theme.ts",
+    "sync:code-theme": "bun run scripts/sync-code-theme.ts",
     "check:theme": "bun run scripts/generate-theme.ts --check",
     "check": "bun run typecheck && bun run check:theme",
     "build": "bun run check && bb plugin build .",

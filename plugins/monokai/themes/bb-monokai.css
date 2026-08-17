@@ -17,28 +17,29 @@
  * therefore carries fonts only — the alpha text ladder moved into `.dark`,
  * where it belongs, because `#E3E3DDBD` is meaningless on a light ground.
  *
+ * Syntax token colours in the code and diff viewer are NOT a CSS surface and
+ * are not missing: Shiki writes an inline style on every token span inside the
+ * `<diffs-container>` shadow root, so no selector reaches them. bb 0.38 answers
+ * that with the `bb.themes[].codeTheme` manifest field, which picks the Shiki
+ * theme instead of trying to restyle its output — this plugin points it at
+ * themes/bb-monokai-code.json, the same TextMate layer the editor theme ships.
+ *
  * WHAT CSS CANNOT REACH (do not file these as porting gaps):
- *   1. Syntax token colours in the code and diff viewer. The vendored Pierre
- *      diffs library calls Shiki with a constant theme pair (pierre-dark /
- *      pierre-light) and `cssVariablePrefix:'--diffs-token-'`, so Shiki writes
- *      an inline style on every token span inside a `<diffs-container>` shadow
- *      root. Inline style + shadow DOM = no selector reaches it, and no bb
- *      setting or manifest field selects a different Shiki theme.
- *   2. The 13 `--trees-icon-*` file-icon swatches. They are declared on
+ *   1. The 13 `--trees-icon-*` file-icon swatches. They are declared on
  *      `:host`, so only the flat `--trees-file-icon-color` handle is reachable
  *      and all 48 language icons collapse to one colour.
- *   3. xterm construction options: font size 12, blinking cursor. Cursor colour
+ *   2. xterm construction options: font size 12, blinking cursor. Cursor colour
  *      is locked to `--foreground` and cursor accent to `--sidebar`; terminal
  *      selection is silently clamped to 30% alpha, so a solid #404040 selection
  *      fill is not obtainable. Scrollbar and overview ruler derive from
  *      `--foreground` only.
- *   4. Mermaid diagram font (hardcoded Inter). Its colours do follow this
+ *   3. Mermaid diagram font (hardcoded Inter). Its colours do follow this
  *      palette, but only on the next diagram render.
- *   5. Favicon tint — a fixed 8-colour list chosen by an appearance field, no
+ *   4. Favicon tint — a fixed 8-colour list chosen by an appearance field, no
  *      CSS involvement.
- *   6. Built-in plugin panels (tasks, docs, github, workflows, memory, …) ship
+ *   5. Built-in plugin panels (tasks, docs, github, workflows, memory, …) ship
  *      their own tailwind bundles with raw scale colours.
- *   7. Nine `--trees-theme-*` names, shadowed by inline `-override` values bb
+ *   6. Nine `--trees-theme-*` names, shadowed by inline `-override` values bb
  *      sets on the tree host. Those already point at our tokens, so tree
  *      background, foreground, border, hover, selection and focus ring track
  *      this palette automatically.

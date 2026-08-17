@@ -9,7 +9,7 @@
 
 **A dark Monokai palette for bb, terminal included.**
 
-![bb ≥ 0.36](https://img.shields.io/badge/bb-%E2%89%A5%200.36-88C0D0?style=flat-square)
+![bb ≥ 0.38](https://img.shields.io/badge/bb-%E2%89%A5%200.38-88C0D0?style=flat-square)
 ![platform: any](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![dark only](https://img.shields.io/badge/appearance-dark%20only-E3E3DD?style=flat-square)
 
@@ -23,8 +23,8 @@ grounds ramp, a single off-white text ladder, and one accent that always means
 *interactive*.
 
 It reaches past the app chrome: the terminal, the diff viewer, the file tree's
-git-status column, and inline code all draw from the same palette rather than
-keeping bb's defaults.
+git-status column, inline code, and the syntax tokens inside diffs and file
+previews all draw from the same palette rather than keeping bb's defaults.
 
 ## Install
 
@@ -61,7 +61,7 @@ Disabling or removing the plugin returns bb to the default palette.
 
 ## Requirements
 
-- bb ≥ 0.36
+- bb ≥ 0.38 — the version that lets a theme declare its own code theme
 - bb set to **dark** appearance. The palette only restyles `.dark`; light mode
   keeps bb's defaults.
 - Optional: **Berkeley Mono**. It is *not* bundled. Install it yourself and the
@@ -102,9 +102,25 @@ ratio against the ground it sits on.
 | App chrome | panes, panels, sidebar, menus, buttons, mention pills, focus rings |
 | Terminal | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background |
 | Diff viewer | addition / deletion / modified colors, gutter number grounds and role-colored numbers |
+| Syntax tokens | the Cursor Monokai TextMate layer, in diffs and file previews |
 | File tree | the git-status column — added, untracked, renamed, modified, deleted, ignored |
 | Inline code | the sugar-high token set, measured on the `#1E1E1E` well |
 | Composer stop button | repainted to the danger hue |
+
+### Syntax tokens
+
+Token colors are not a CSS surface — Shiki writes an inline style on every span
+inside a shadow root. bb 0.38 answers that with a manifest field that picks the
+Shiki theme, so the plugin ships one: `themes/bb-monokai-code.json`, the same
+TextMate layer as the [Cursor Monokai](https://github.com/smsunarto/smsunarto-theme)
+editor theme. One hue per kind — pink machinery, cyan structure, green
+callables, yellow literals, purple constants, gray commentary, white for
+everything else.
+
+Only the dark side is declared, so light mode keeps bb's `pierre-light`. A
+diff has no language server behind it, so this is the TextMate layer alone:
+tokens an editor colors from semantic tokens (a plain parameter, a declaration
+in bold) stay at their TextMate color here.
 
 ## Troubleshooting
 
@@ -117,9 +133,6 @@ mode the palette contributes fonts only.
 
 **Some surfaces stay off-palette.** CSS cannot reach them:
 
-- **Code and diff syntax tokens.** The bundled diff library calls Shiki with a
-  fixed theme pair and writes inline styles inside a shadow root, so no
-  selector reaches them. Code keeps bb's own token colors.
 - **File-type icons.** Their 13 source swatches are declared on `:host`, so all
   48 language icons collapse to a single color.
 - **Terminal font size and cursor blink.** Both are xterm constructor
@@ -146,12 +159,24 @@ bb plugin reload monokai
 
 `CONTRACT.md` is a relative symlink to the Cursor Monokai contract in the
 sibling `smsunarto-theme` checkout. Change that shared contract before the CSS,
-then update the code-owned role registry. `themes/bb-monokai.css` is generated;
-do not edit it. The generator rejects stale output, unknown roles, off-contract
-colors, missing tokens, wrong role mappings, and illegible pairs. The plugin
-build runs that check automatically. In a standalone clone where the sibling
-checkout is absent, read the canonical contract in the
+then update the code-owned role registry. `themes/bb-monokai.css` and
+`themes/bb-monokai-code.json` are generated; do not edit them. The generator
+rejects stale output, unknown roles, off-contract colors, missing tokens, wrong
+role mappings, illegible pairs, and a chrome-only role on a syntax token. The
+plugin build runs that check automatically. In a standalone clone where the
+sibling checkout is absent, read the canonical contract in the
 [`smsunarto-theme` repository](https://github.com/smsunarto/smsunarto-theme/blob/main/CONTRACT.md).
+
+The code theme's scope map is vendored, because the editor theme is a private
+repository and cannot be a dependency of this one. `scripts/code-theme-rules.json`
+holds which scopes take which role — role names, never hexes, so the palette
+stays in one place. Re-vendor it after an editor-theme change, from a checkout
+that has the sibling:
+
+```sh
+bun run --filter '@smsunarto/bb-plugin-monokai' sync:code-theme
+bun run --filter '@smsunarto/bb-plugin-monokai' generate:theme
+```
 
 Re-apply with `bb theme set plugin:monokai:bb-monokai` if the palette does not
 refresh.
