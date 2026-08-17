@@ -41,7 +41,7 @@ export function SlimRow({
       <li className="list-none">
         <div
           className={cn(
-            "group/slim relative flex h-8 items-center gap-2 rounded-md px-2.5 text-xs",
+            "group/slim relative flex h-7 items-center gap-2 rounded-md px-2.5 text-xs",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
           )}
         >

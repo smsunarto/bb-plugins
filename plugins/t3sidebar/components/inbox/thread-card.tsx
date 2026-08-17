@@ -19,7 +19,7 @@ import { threadDisplayTitle } from "@/lib/inbox";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
 
 /**
- * One thread as a three-line card: project and status, title, then branch and
+ * One thread as a two-line card: title and status, then project, branch and
  * activity. Status stays in the row while section placement answers the larger
  * question: whether the user or the agent can act next.
  *
@@ -61,7 +61,7 @@ export function ThreadCard({
       <li className="list-none">
         <div
           className={cn(
-            "group/card relative rounded-md px-2.5 py-2 transition-colors",
+            "group/card relative rounded-md px-2.5 py-1.5 transition-colors",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             // A thread open in another pane gets a weaker tint than the active
             // row, so the two states stay distinguishable.
@@ -88,11 +88,22 @@ export function ThreadCard({
             className="absolute inset-0 cursor-pointer rounded-md"
           />
           <div className="pointer-events-none relative flex h-5 items-center gap-1.5">
-            <span className="min-w-0 flex-1 truncate text-2xs font-medium text-muted-foreground">
-              {projectName ?? " "}
+            <span
+              className={cn(
+                // Keep resting titles on the sidebar's own text ladder. The
+                // active row earns the brighter accent foreground, while weight
+                // alone still carries unread.
+                "min-w-0 flex-1 truncate text-sm",
+                isActive
+                  ? "text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground",
+                thread.isUnread && "font-medium",
+              )}
+            >
+              {threadDisplayTitle(thread)}
             </span>
             {/* Status at rest, park actions on hover. Only the status yields,
-                so the project name never shifts. */}
+                so the title never shifts. */}
             {canPark ? (
               <span className="pointer-events-auto hidden items-center gap-0.5 group-hover/card:flex">
                 <ParkButton
@@ -123,35 +134,34 @@ export function ThreadCard({
               <StatusOrTime thread={thread} now={now} />
             </span>
           </div>
-          <div
-            className={cn(
-              // Keep resting titles on the sidebar's own text ladder. The
-              // active row earns the brighter accent foreground, while weight
-              // alone still carries unread.
-              "pointer-events-none relative mt-0.5 truncate text-sm",
-              isActive
-                ? "text-sidebar-accent-foreground"
-                : "text-sidebar-foreground",
-              thread.isUnread && "font-medium",
-            )}
-          >
-            {threadDisplayTitle(thread)}
-          </div>
           <div className="pointer-events-none relative mt-0.5 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground">
-            {/* A thread without a worktree still runs somewhere, so the
-                machine takes the branch's place rather than leaving the line
-                blank. */}
-            {thread.environment?.branchName ? (
-              <span className="min-w-0 flex-1 truncate font-mono">
-                {thread.environment.branchName}
-              </span>
-            ) : thread.host ? (
-              <span className="min-w-0 flex-1 truncate">
-                {thread.host.name}
-              </span>
-            ) : (
-              <span className="flex-1" />
-            )}
+            {/* Project and origin share this line now that the title has taken
+                the one above. Both truncate, so a long branch squeezes the
+                project rather than pushing the fixed trailing columns off
+                their edge. The wrapper is the flexible cell either way, so a
+                card missing both still holds the line's right side still. */}
+            <span className="flex min-w-0 flex-1 items-center gap-1">
+              {projectName ? (
+                <span className="min-w-0 truncate font-medium">
+                  {projectName}
+                </span>
+              ) : null}
+              {projectName && (thread.environment?.branchName || thread.host) ? (
+                <span aria-hidden className="shrink-0 text-muted-foreground/50">
+                  ·
+                </span>
+              ) : null}
+              {/* A thread without a worktree still runs somewhere, so the
+                  machine takes the branch's place rather than leaving the
+                  segment blank. */}
+              {thread.environment?.branchName ? (
+                <span className="min-w-0 truncate font-mono">
+                  {thread.environment.branchName}
+                </span>
+              ) : thread.host ? (
+                <span className="min-w-0 truncate">{thread.host.name}</span>
+              ) : null}
+            </span>
             {thread.activity.workflows > 0 ? (
               <ActivityCount
                 label="workflows"

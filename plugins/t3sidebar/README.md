@@ -83,7 +83,7 @@ background work is also live, because the user can act now.
 
 ### Cards
 
-Three lines: the project and a status slot, the title in bold when unread, then the
+Two lines: the title in bold when unread and a status slot, then the project, the
 branch, activity counts, PR number, and the agent. The status slot shows what the
 thread needs — failed, waiting on you, working, or finished while you were away —
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for

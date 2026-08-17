@@ -238,12 +238,12 @@ export function ThreadInbox({
     <div className="flex min-h-0 flex-1 flex-col">
       {/* The one control the host has no equivalent for. Everything else in
           the chrome above — New thread, search — is bb's and stays bb's. */}
-      <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
+      <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
         <Select value={scope} onValueChange={setScope}>
           {/* Ghost trigger: no border, no filled track — it reads as a label
               until you hover it. */}
           <SelectTrigger
-            className="h-7 min-w-0 flex-1 border-0 px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
+            className="h-6 min-w-0 flex-1 border-0 px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
             aria-label={`Project scope: ${scopeLabel}`}
           >
             <SelectValue />
@@ -445,7 +445,7 @@ function ParkedShelf({
         // every row's status and provider glyph. `cursor-pointer` is explicit
         // because Tailwind v4's preflight gives a button `cursor: default`,
         // and the whole header is the hit target for collapsing the shelf.
-        className="mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 pb-1 text-left"
+        className="mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 pb-0.5 text-left"
       >
         <span className="text-2xs font-medium text-muted-foreground/70">
           {expanded ? label : `${label} (${count})`}
@@ -497,7 +497,7 @@ function Shelf({
     // which is exactly right for the single unlabelled inbox list.
     <section {...(label ? { "aria-label": label } : {})}>
       {label ? (
-        <h2 className={cn("flex items-center gap-2 px-2.5 pb-1 pt-3")}>
+        <h2 className={cn("flex items-center gap-2 px-2.5 pb-0.5 pt-2")}>
           <span className="text-2xs font-medium text-muted-foreground/70">
             {label}
           </span>
