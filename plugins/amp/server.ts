@@ -5,6 +5,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
@@ -31,12 +32,18 @@ import {
   toOrbUsageView,
 } from "./src/orb-usage.js";
 import {
+  AMP_ARCHIVE_WATCH_KEY_PREFIX,
+  ampArchiveWatchKey,
   ampThreadLinkKey,
   archiveAmpThread,
+  archiveWatchRecordAfterFailure,
   currentAmpThreadId,
   mergeAmpThreadLinkRecord,
+  parseAmpArchiveWatchRecord,
   parseAmpThreadLinkRecord,
   parseSessionLinkReport,
+  unarchiveAmpThread,
+  watchedThreadIdsToConfirm,
   type SessionLinkReport,
 } from "./src/amp-thread-link.js";
 
@@ -371,6 +378,12 @@ export default async function plugin(bb: BbPluginApi) {
         return;
       }
       await archiveAmpThread(launch.command, ampThreadId, launch.env);
+      // Remember what was taken. Unarchiving is the one half of this mirror bb
+      // cannot announce, so the restore is driven from this row instead.
+      await bb.storage.kv.set(ampArchiveWatchKey(thread.id), {
+        ampThreadId,
+        failures: 0,
+      });
       bb.log.info(`Archived Amp thread ${ampThreadId} with bb thread ${thread.id}`);
     } catch (error) {
       bb.log.error(`Could not archive the linked Amp thread for bb thread ${thread.id}: ${String(error)}`);
@@ -381,7 +394,113 @@ export default async function plugin(bb: BbPluginApi) {
     await Promise.all([
       bb.storage.kv.delete(ampThreadLinkKey(thread.id)),
       bb.storage.kv.delete(orbUsageKey(thread.id)),
+      bb.storage.kv.delete(ampArchiveWatchKey(thread.id)),
     ]);
     bb.realtime.publish(ORB_USAGE_CHANNEL, { threadId: thread.id });
+  });
+
+  /** One page is already generous; the loop is for the account that isn't. */
+  const ARCHIVED_PAGE_SIZE = 200;
+  const ARCHIVED_PAGE_LIMIT = 50;
+
+  async function listArchivedThreadIds(signal: AbortSignal): Promise<Set<string>> {
+    const ids = new Set<string>();
+    for (let page = 0; page < ARCHIVED_PAGE_LIMIT; page++) {
+      const rows = await bb.sdk.threads.list({
+        archived: true,
+        // A side chat is hidden, and a hidden thread missing from this listing
+        // would read as restored.
+        includeHidden: true,
+        limit: ARCHIVED_PAGE_SIZE,
+        offset: page * ARCHIVED_PAGE_SIZE,
+        signal,
+      });
+      for (const row of rows) ids.add(row.id);
+      if (rows.length < ARCHIVED_PAGE_SIZE) break;
+    }
+    return ids;
+  }
+
+  /**
+   * Give an Amp thread back when its bb thread stops being archived.
+   *
+   * bb archives through t3sidebar's settle, its own sidebar menu, and its
+   * archived view, and every one of those fires `thread.archived`. None of them
+   * fires anything on the way back — the plugin event map has no unarchive —
+   * so the restore is polled rather than received, and the listing above is one
+   * query however many threads are being watched.
+   */
+  async function restoreUnarchivedAmpThreads(signal: AbortSignal): Promise<void> {
+    const watchKeys = await bb.storage.kv.list(AMP_ARCHIVE_WATCH_KEY_PREFIX);
+    if (watchKeys.length === 0) return;
+
+    const archivedThreadIds = await listArchivedThreadIds(signal);
+    for (const threadId of watchedThreadIdsToConfirm(watchKeys, archivedThreadIds)) {
+      if (signal.aborted) return;
+      const key = ampArchiveWatchKey(threadId);
+      const record = parseAmpArchiveWatchRecord(await bb.storage.kv.get<unknown>(key));
+      if (record === null) {
+        await bb.storage.kv.delete(key);
+        continue;
+      }
+
+      // The listing is capped and drops deleted threads, so it can only ever
+      // suggest a restore. The thread itself decides.
+      let thread;
+      try {
+        thread = await bb.sdk.threads.get({ threadId, signal });
+      } catch (error) {
+        // A thread bb cannot report is left alone: a deleted one is cleared by
+        // `thread.deleted`, and a transient failure gets the next pass.
+        bb.log.debug(`Could not read bb thread ${threadId} to mirror its archive state: ${String(error)}`);
+        continue;
+      }
+      if (thread.deletedAt !== null) {
+        await bb.storage.kv.delete(key);
+        continue;
+      }
+      if (thread.archivedAt !== null) continue;
+
+      const launch = resolveAmpCliLaunch(await paths());
+      if (launch === null) {
+        // Nothing to retry against, so this is not one of the record's tries.
+        bb.log.warn(`Could not unarchive Amp thread ${record.ampThreadId}: the Amp CLI was not found`);
+        return;
+      }
+      try {
+        await unarchiveAmpThread(launch.command, record.ampThreadId, launch.env);
+        await bb.storage.kv.delete(key);
+        bb.log.info(`Unarchived Amp thread ${record.ampThreadId} with bb thread ${threadId}`);
+      } catch (error) {
+        const next = archiveWatchRecordAfterFailure(record);
+        if (next === null) {
+          await bb.storage.kv.delete(key);
+          bb.log.error(`Gave up unarchiving Amp thread ${record.ampThreadId} for bb thread ${threadId}: ${String(error)}`);
+        } else {
+          await bb.storage.kv.set(key, next);
+          bb.log.warn(`Could not unarchive the linked Amp thread for bb thread ${threadId}: ${String(error)}`);
+        }
+      }
+    }
+  }
+
+  const ARCHIVE_MIRROR_INTERVAL_MS = 20_000;
+
+  bb.background.service("archive-mirror", {
+    async start(signal) {
+      while (!signal.aborted) {
+        try {
+          await restoreUnarchivedAmpThreads(signal);
+        } catch (error) {
+          if (signal.aborted) return;
+          bb.log.warn(`Could not mirror unarchived bb threads to Amp: ${String(error)}`);
+        }
+        try {
+          await delay(ARCHIVE_MIRROR_INTERVAL_MS, undefined, { signal });
+        } catch {
+          return;
+        }
+      }
+    },
   });
 }

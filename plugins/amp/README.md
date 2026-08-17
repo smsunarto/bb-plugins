@@ -81,8 +81,22 @@ An Orb thread shows a bar above the composer with the Amp thread id and a copyab
 `amp sync T-…` command. Run that in a local checkout to mirror the Orb's live
 working-tree changes. Orb brings its own tools, permissions, skills, and MCP
 config; bb terminals, files, and diffs still point at the bb environment you
-selected. Archiving an Amp-provider thread in bb also archives its linked Local
-or Orb thread in Amp.
+selected.
+
+### Archiving
+
+Archiving an Amp-provider thread in bb also archives its linked Local or Orb
+thread in Amp, and unarchiving it in bb brings that Amp thread back. Both
+directions cover every bb surface — the sidebar menu, the archived view, and a
+replaced sidebar such as t3sidebar, where settling archives and un-settling or
+snoozing restores.
+
+The two halves are not equally quick. bb announces an archive, so that half is
+immediate; it announces no unarchive, so the plugin polls bb every 20 seconds
+for threads it archived and gives the Amp thread back when one returns. A
+restore that keeps failing — an Amp thread deleted on Amp's side, say — is
+dropped after three attempts. Threads archived before this plugin version have
+nothing recorded and are not restored.
 
 ### Modes
 

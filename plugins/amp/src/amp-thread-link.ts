@@ -118,11 +118,17 @@ export function currentAmpThreadId(
   return null;
 }
 
-/** Archive an existing Amp thread without starting or continuing an agent turn. */
-export function archiveAmpThread(
+type AmpArchiveAction = "archive" | "unarchive";
+
+/**
+ * Amp has one command for both directions — `threads archive <id>`, with
+ * `--unarchive` to restore — so both directions share this runner.
+ */
+function runAmpArchiveCommand(
   ampCli: string,
   ampThreadId: string,
-  sourceEnv: NodeJS.ProcessEnv = process.env,
+  action: AmpArchiveAction,
+  sourceEnv: NodeJS.ProcessEnv,
 ): Promise<void> {
   if (!isValidAmpThreadId(ampThreadId)) {
     return Promise.reject(new Error(`Invalid Amp thread id: ${ampThreadId}`));
@@ -133,7 +139,7 @@ export function archiveAmpThread(
   return new Promise((resolve, reject) => {
     execFile(
       ampCli,
-      ["threads", "archive", ampThreadId],
+      buildAmpArchiveCommandArgs(ampThreadId, action),
       {
         encoding: "utf8",
         env,
@@ -147,10 +153,115 @@ export function archiveAmpThread(
           return;
         }
         const detail = stderr.trim() || stdout.trim() || error.message;
-        reject(new Error(`Could not archive Amp thread ${ampThreadId}: ${detail}`, {
+        reject(new Error(`Could not ${action} Amp thread ${ampThreadId}: ${detail}`, {
           cause: error,
         }));
       },
     );
   });
+}
+
+export function buildAmpArchiveCommandArgs(
+  ampThreadId: string,
+  action: AmpArchiveAction,
+): string[] {
+  const args = ["threads", "archive", ampThreadId];
+  return action === "archive" ? args : [...args, "--unarchive"];
+}
+
+/** Archive an existing Amp thread without starting or continuing an agent turn. */
+export function archiveAmpThread(
+  ampCli: string,
+  ampThreadId: string,
+  sourceEnv: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  return runAmpArchiveCommand(ampCli, ampThreadId, "archive", sourceEnv);
+}
+
+/** The mirror of `archiveAmpThread`, for a bb thread that came back. */
+export function unarchiveAmpThread(
+  ampCli: string,
+  ampThreadId: string,
+  sourceEnv: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  return runAmpArchiveCommand(ampCli, ampThreadId, "unarchive", sourceEnv);
+}
+
+export const AMP_ARCHIVE_WATCH_KEY_PREFIX = "amp-archive-watch:";
+
+export function ampArchiveWatchKey(threadId: string): string {
+  return `${AMP_ARCHIVE_WATCH_KEY_PREFIX}${threadId}`;
+}
+
+export function threadIdFromArchiveWatchKey(key: string): string | null {
+  if (!key.startsWith(AMP_ARCHIVE_WATCH_KEY_PREFIX)) return null;
+  const threadId = key.slice(AMP_ARCHIVE_WATCH_KEY_PREFIX.length);
+  return threadId.length === 0 ? null : threadId;
+}
+
+/**
+ * One archived bb thread whose Amp thread is waiting to be given back.
+ *
+ * bb fires `thread.archived` but has no unarchive event, so the restore has to
+ * be noticed rather than received. This row is what there is to notice: it says
+ * which Amp thread this plugin archived, and it lives exactly as long as bb
+ * still calls the bb thread archived.
+ */
+export interface AmpArchiveWatchRecord {
+  ampThreadId: string;
+  /** Failed restores so far. Kept to stop a permanent failure retrying forever. */
+  failures: number;
+}
+
+export function parseAmpArchiveWatchRecord(value: unknown): AmpArchiveWatchRecord | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!hasExactKeys(record, ["ampThreadId", "failures"])) return null;
+  if (!isValidAmpThreadId(record.ampThreadId)) return null;
+  if (
+    typeof record.failures !== "number"
+    || !Number.isInteger(record.failures)
+    || record.failures < 0
+  ) {
+    return null;
+  }
+  return { ampThreadId: record.ampThreadId, failures: record.failures };
+}
+
+/**
+ * How many times a restore may fail before the watch is dropped.
+ *
+ * The Amp CLI reaches the network, so one failure says nothing. A thread
+ * deleted in Amp, though, fails identically and forever — and this poll runs on
+ * a timer, so "forever" is a hot loop. Three attempts separates the two.
+ */
+export const MAX_ARCHIVE_WATCH_FAILURES = 3;
+
+/** The record to store after a failed restore, or null to stop trying. */
+export function archiveWatchRecordAfterFailure(
+  record: AmpArchiveWatchRecord,
+): AmpArchiveWatchRecord | null {
+  const failures = record.failures + 1;
+  return failures >= MAX_ARCHIVE_WATCH_FAILURES
+    ? null
+    : { ampThreadId: record.ampThreadId, failures };
+}
+
+/**
+ * The watched bb threads bb no longer lists as archived.
+ *
+ * A truncated archive listing puts extra ids in here rather than missing one,
+ * which is why the caller confirms each against the thread itself before
+ * restoring anything.
+ */
+export function watchedThreadIdsToConfirm(
+  watchKeys: readonly string[],
+  archivedThreadIds: ReadonlySet<string>,
+): string[] {
+  const ids = [];
+  for (const key of watchKeys) {
+    const threadId = threadIdFromArchiveWatchKey(key);
+    if (threadId !== null && !archivedThreadIds.has(threadId)) ids.push(threadId);
+  }
+  return ids;
 }
