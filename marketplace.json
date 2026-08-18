@@ -1,0 +1,149 @@
+{
+  "$schema": "https://getbb.app/schemas/marketplace.schema.json",
+  "schemaVersion": 1,
+  "name": "smsunarto",
+  "displayName": "smsunarto's bb plugins",
+  "description": "Plugins for bb: agents, GitHub stacks, notifications, themes.",
+  "plugins": [
+    {
+      "id": "agent-proxy",
+      "displayName": "Agent Proxy",
+      "description": "Run CLIProxyAPI as a persistent macOS or Linux service with OAuth accounts, providers, usage, and agent wiring.",
+      "icon": {
+        "url": "plugins/agent-proxy/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/agent-proxy",
+          "range": "*",
+          "tagPrefix": "agent-proxy/"
+        }
+      }
+    },
+    {
+      "id": "agentation",
+      "displayName": "Agentation",
+      "description": "Point at any part of the bb UI — including plugin surfaces — and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
+      "icon": {
+        "url": "plugins/agentation/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/agentation",
+          "range": "*",
+          "tagPrefix": "agentation/"
+        }
+      }
+    },
+    {
+      "id": "amp",
+      "displayName": "Amp",
+      "description": "Runs Amp locally or in an Orb as one bb provider through a bundled ACP bridge built on the official @ampcode/sdk.",
+      "icon": {
+        "url": "plugins/amp/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/amp",
+          "range": "*",
+          "tagPrefix": "amp/"
+        }
+      }
+    },
+    {
+      "id": "gh-stack",
+      "displayName": "GitHub Stack",
+      "description": "Visualize and drive stacked pull requests (gh stack) from BB threads.",
+      "icon": {
+        "url": "plugins/gh-stack/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/gh-stack",
+          "range": "*",
+          "tagPrefix": "gh-stack/"
+        }
+      }
+    },
+    {
+      "id": "monokai",
+      "displayName": "bb Monokai",
+      "description": "A dark Monokai-family palette for bb: one meaning per hue, a single text ladder, and a matching terminal.",
+      "icon": {
+        "url": "plugins/monokai/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/monokai",
+          "range": "*",
+          "tagPrefix": "monokai/"
+        }
+      }
+    },
+    {
+      "id": "notify",
+      "displayName": "Notify",
+      "description": "Native macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
+      "icon": {
+        "url": "plugins/notify/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/notify",
+          "range": "*",
+          "tagPrefix": "notify/"
+        }
+      }
+    },
+    {
+      "id": "t3sidebar",
+      "displayName": "T3 Sidebar",
+      "description": "An action-oriented sidebar that groups threads by who can act next.",
+      "icon": {
+        "url": "plugins/t3sidebar/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/t3sidebar",
+          "range": "*",
+          "tagPrefix": "t3sidebar/"
+        }
+      }
+    }
+  ]
+}

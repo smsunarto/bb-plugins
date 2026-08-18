@@ -43,16 +43,30 @@ per agent. The toolbar talks to bb's own origin, so annotating through
 
 ## Install
 
-**From a release tag** — one command:
+**From the marketplace** — add this repository once, then install by name:
+
+```sh
+bb marketplace add git:github.com/smsunarto/bb-plugins
+bb plugin install agentation
+```
+
+bb resolves the newest `agentation/vX.Y.Z` tag and builds the plugin from it against
+your bb, so the bundle always matches the host it runs on. `bb plugin update
+agentation` follows the same release line. If another marketplace you have added
+publishes a `agentation`, spell it `agentation@smsunarto`.
+
+<details>
+<summary>Installing the tag directly, without the marketplace</summary>
 
 ```sh
 bb plugin install git:github.com/smsunarto/bb-plugins@semver:agentation/:* --plugin agentation
 ```
 
-`*` always resolves the newest `agentation/vX.Y.Z` tag; replace it with a range
-such as `^0.2.0` to pin a line, and `bb plugin update agentation` follows the
-range from there. bb builds the plugin from the tag against your bb, so the
-bundle always matches the host it runs on.
+`*` always resolves the newest `agentation/vX.Y.Z` tag; replace it with a range such
+as `^0.2.0` to pin a line. `--plugin agentation` names the entry of
+[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
+
+</details>
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:

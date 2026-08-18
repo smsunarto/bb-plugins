@@ -89,19 +89,41 @@ framework for bb plugin authors:
 
 ## Install
 
-Every plugin ships as a git tag. One command per plugin, and it installs the newest release:
+Add this repository as a marketplace once, then install by name:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:<id>/:* --plugin <id>
+bb marketplace add git:github.com/smsunarto/bb-plugins
+bb plugin install notify
 ```
 
-`<id>` names one entry of this repository's [`.bb/plugins.json`](.bb/plugins.json) collection manifest — `agent-proxy`, `agentation`, `gh-stack`, `notify`, `amp`, `t3sidebar`, or `monokai`. For example:
+Adding a marketplace installs nothing — it caches the catalog, so these plugins
+become findable by name in `bb plugin search` and in bb's plugin browser. `<id>`
+is `agent-proxy`, `agentation`, `amp`, `gh-stack`, `notify`, `t3sidebar`, or
+`monokai`; if another marketplace you have added publishes the same name, spell
+it `notify@smsunarto`.
+
+Every plugin ships as a git tag, and the catalog entry carries its release line.
+bb resolves the newest `<id>/vX.Y.Z` tag, clones it, installs the plugin's
+runtime dependencies, and builds both bundles against your bb — a plugin is
+never shipped prebuilt, so it always matches the host it runs on. `bb plugin
+update <id>` follows the same line.
+
+<details>
+<summary>Installing a tag directly, without the marketplace</summary>
+
+The catalog is a convenience; the git tag is the artifact. One command per
+plugin, naming the release line and the directory yourself:
 
 ```sh
 bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --plugin notify
 ```
 
-`*` is a semver range over that plugin's `<id>/vX.Y.Z` tags, so it always resolves the newest release; replace it with `^0.2.0` or any other range to pin a line, and `bb plugin update <id>` follows the range from there. bb clones the tag, installs the plugin's runtime dependencies, and builds both bundles against your bb — a plugin is never shipped prebuilt, so it always matches the host it runs on.
+`*` is a semver range over that plugin's `<id>/vX.Y.Z` tags; replace it with
+`^0.2.0` or any other range to pin a line. `--plugin <id>` names an entry of
+this repository's [`.bb/plugins.json`](.bb/plugins.json) collection manifest,
+which is how bb knows which directory of the monorepo to build.
+
+</details>
 
 ## Build from source
 

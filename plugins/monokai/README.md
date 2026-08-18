@@ -28,17 +28,31 @@ previews all draw from the same palette rather than keeping bb's defaults.
 
 ## Install
 
-**From a release tag** — install the plugin, then select the palette:
+**From the marketplace** — add this repository once, then install by name:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:monokai/:* --plugin monokai
+bb marketplace add git:github.com/smsunarto/bb-plugins
+bb plugin install monokai
 bb theme set plugin:monokai:bb-monokai
 ```
 
-`*` always resolves the newest `monokai/vX.Y.Z` tag; replace it with a range
-such as `^0.2.0` to pin a line, and `bb plugin update monokai` follows the range
-from there. bb builds the plugin from the tag against your bb, so the bundle
-always matches the host it runs on.
+bb resolves the newest `monokai/vX.Y.Z` tag and builds the plugin from it against
+your bb, so the bundle always matches the host it runs on. `bb plugin update
+monokai` follows the same release line. If another marketplace you have added
+publishes a `monokai`, spell it `monokai@smsunarto`.
+
+<details>
+<summary>Installing the tag directly, without the marketplace</summary>
+
+```sh
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:monokai/:* --plugin monokai
+```
+
+`*` always resolves the newest `monokai/vX.Y.Z` tag; replace it with a range such
+as `^0.2.0` to pin a line. `--plugin monokai` names the entry of
+[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
+
+</details>
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:

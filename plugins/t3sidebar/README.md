@@ -34,16 +34,30 @@ You clear the list with two email verbs: **snooze** a thread until a wake time, 
 
 ## Install
 
-**From a release tag** — one command:
+**From the marketplace** — add this repository once, then install by name:
+
+```sh
+bb marketplace add git:github.com/smsunarto/bb-plugins
+bb plugin install t3sidebar
+```
+
+bb resolves the newest `t3sidebar/vX.Y.Z` tag and builds the plugin from it against
+your bb, so the bundle always matches the host it runs on. `bb plugin update
+t3sidebar` follows the same release line. If another marketplace you have added
+publishes a `t3sidebar`, spell it `t3sidebar@smsunarto`.
+
+<details>
+<summary>Installing the tag directly, without the marketplace</summary>
 
 ```sh
 bb plugin install git:github.com/smsunarto/bb-plugins@semver:t3sidebar/:* --plugin t3sidebar
 ```
 
-`*` always resolves the newest `t3sidebar/vX.Y.Z` tag; replace it with a range
-such as `^0.2.0` to pin a line, and `bb plugin update t3sidebar` follows the
-range from there. bb builds the plugin from the tag against your bb, so the
-bundle always matches the host it runs on.
+`*` always resolves the newest `t3sidebar/vX.Y.Z` tag; replace it with a range such
+as `^0.2.0` to pin a line. `--plugin t3sidebar` names the entry of
+[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
+
+</details>
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:

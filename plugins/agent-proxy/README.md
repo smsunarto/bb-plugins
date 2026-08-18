@@ -42,16 +42,30 @@ the machine that runs the bb server and gives it a management UI inside bb.
 
 ## Install
 
-**From a release tag** — one command:
+**From the marketplace** — add this repository once, then install by name:
+
+```sh
+bb marketplace add git:github.com/smsunarto/bb-plugins
+bb plugin install agent-proxy
+```
+
+bb resolves the newest `agent-proxy/vX.Y.Z` tag and builds the plugin from it against
+your bb, so the bundle always matches the host it runs on. `bb plugin update
+agent-proxy` follows the same release line. If another marketplace you have added
+publishes a `agent-proxy`, spell it `agent-proxy@smsunarto`.
+
+<details>
+<summary>Installing the tag directly, without the marketplace</summary>
 
 ```sh
 bb plugin install git:github.com/smsunarto/bb-plugins@semver:agent-proxy/:* --plugin agent-proxy
 ```
 
-`*` always resolves the newest `agent-proxy/vX.Y.Z` tag; replace it with a range
-such as `^0.2.0` to pin a line, and `bb plugin update agent-proxy` follows the
-range from there. bb builds the plugin from the tag against your bb, so the
-bundle always matches the host it runs on.
+`*` always resolves the newest `agent-proxy/vX.Y.Z` tag; replace it with a range such
+as `^0.2.0` to pin a line. `--plugin agent-proxy` names the entry of
+[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
+
+</details>
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
