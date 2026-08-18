@@ -1,4 +1,4 @@
-import { defineOperation } from "@bb-kit/core/operations";
+import { defineOperation } from "../../../lib/bb-kit/operations.js";
 import { readFileInputSchema, readFileOutputSchema } from "../contract.js";
 
 export default defineOperation({

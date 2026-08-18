@@ -130,11 +130,12 @@ or change `$SHELL`, then run `bb plugin reload dotfiles`.
 
 ```sh
 bun install
-bun run dev
-bun ../../packages/bb-kit-cli/src/cli.ts check
-BB_CLI=/absolute/path/to/bb-0.39.0 bun ../../packages/bb-kit-cli/src/cli.ts build
-BB_CLI=/absolute/path/to/bb-0.39.0 bun ../../packages/bb-kit-cli/src/cli.ts verify
-BB_CLI=/absolute/path/to/bb-0.39.0 bun ../../packages/bb-kit-cli/src/cli.ts doctor
+bun run dev        # watch + rebuild against the dev bb instance
+bun run lint
+bun run typecheck
+bun test
+bun run build      # bb plugin build . — needs the bb CLI on PATH
+bun run verify     # lint + typecheck + tests + build + pack dry-run
 ```
 
 The plugin is one bb-kit vertical module under `plugin/modules/dotfiles/`. Its six
@@ -143,10 +144,9 @@ calls; `bb-kit.lock.json` keeps their wire names stable. Overview and publish us
 canonical `noInput`; the other operations have required literal examples. The
 repository watcher builds and reloads the plugin after each source change.
 
-bb-kit accepts only the pinned bb CLI, today 0.39.0. `doctor` can use that CLI to report a newer
-connected host, an installed source mismatch, or a failed plugin. It is an observation
-step only; run the suggested query and UI checklist separately after the correct
-checkout is installed and running.
+The build and verify scripts call the bb CLI directly (`bb plugin build .`), so a
+bb 0.39 checkout must be on PATH. Run the query and UI checklist against the dev
+instance after the plugin is installed and running.
 
 BB supplies the read-only Pierre diff runtime. The text editor is plugin-owned because
 BB does not expose Pierre's edit subpath from that same runtime; bundling a second copy

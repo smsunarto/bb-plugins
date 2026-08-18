@@ -59,7 +59,6 @@
     "@hugeicons/react": "^1.1.6",
     "@pierre/diffs": "^1.3.4",
     "@radix-ui/react-slot": "^1.3.0",
-    "@bb-kit/core": "^0.1.0",
     "@tanstack/react-query": "^5.101.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -67,7 +66,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@bb-kit/cli": "^0.1.0",
     "@get-bb/plugin-sdk": "0.4.8",
     "@radix-ui/react-dialog": "^1.1.19",
     "@types/better-sqlite3": "^7.6.12",
@@ -81,11 +79,11 @@
   },
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
-    "build": "bb-kit build",
+    "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "verify": "bb-kit verify",
+    "verify": "oxlint && tsc --noEmit && bun test && bb plugin build . && bun pm pack --dry-run",
     "clean": "rm -rf dist"
   }
 }

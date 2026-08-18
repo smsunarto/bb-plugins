@@ -8,4 +8,4 @@
 - Expected domain outcomes use discriminated unions.
 - Create host resources inside the plugin generation.
 - Import `noInput` directly for no-input operations; give every other input a literal JSON `exampleInput`.
-- Run `bb-kit check` while editing and `bb-kit verify` before handoff.
+- Run `bun run typecheck` while editing and `bun run verify` before handoff.

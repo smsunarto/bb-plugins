@@ -3,7 +3,7 @@ import {
   operationQueryOptions,
   type OperationRpcClientFor,
   type QueryClient,
-} from "@bb-kit/core/query";
+} from "../../lib/bb-kit/query.js";
 import { dotfilesOperations } from "./generated/operations.js";
 
 type DotfilesRpcClient = OperationRpcClientFor<typeof dotfilesOperations>;

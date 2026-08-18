@@ -1,4 +1,4 @@
-import { defineOperation, noInput } from "@bb-kit/core/operations";
+import { defineOperation, noInput } from "../../../lib/bb-kit/operations.js";
 import { overviewOutputSchema } from "../contract.js";
 
 export default defineOperation({
