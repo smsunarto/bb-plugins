@@ -1,21 +1,27 @@
 /**
  * Publish the supportable plugins to npm.
  *
- * npm is the only bb install channel that does not fetch a whole repository:
- * `bb plugin install npm:<name>` pulls one tarball. `git:<url>@<ref>` runs a
- * full `git clone` and reads the manifest at the repository ROOT
- * (managed-plugin-artifacts.ts: `git clone --quiet`, then `stagedRoot =
- * stagingDir`), and its parsed source carries only a url and a ref — there is
- * no subdirectory field. So a monorepo plugin cannot be installed over git: at
- * bb 0.37, and npm is the channel.
+ * npm is no longer the only channel a monorepo plugin can reach. bb 0.38 added
+ * a subdirectory selector to the git source, so `git:<url>@semver:<prefix>:*`
+ * plus a directory installs one plugin out of this repository, and the release
+ * tag is now the blessed path (docs/adr/0011-git-first-distribution.md). npm
+ * stays published alongside it: it is the one channel that fetches a single
+ * tarball instead of cloning the whole repository, and it is what an existing
+ * `npm:` install updates from.
  *
- * That makes the tarball the product, and everything bb reads at install time
- * has to be INSIDE it. bb never builds an npm plugin: it stats the manifest's
- * `bb.*` paths against the unpacked package and refuses what is missing, so a
- * `files` allowlist that omits one of them ships a package that installs
- * nowhere. The gate below packs each plugin and looks for those paths in the
- * result — a check that costs one `npm pack --dry-run` and is the difference
- * between a release and eight dead tarballs.
+ * The two channels ship differently, and that is the reason this gate exists.
+ * bb BUILDS a git install on the host, so a tag can carry sources. bb NEVER
+ * builds an npm plugin: it stats the manifest's `bb.*` paths against the
+ * unpacked package and refuses what is missing. The tarball is therefore the
+ * product, and everything bb reads at install time has to be INSIDE it — a
+ * `files` allowlist that omits one of those paths ships a package that
+ * installs nowhere. The gate below packs each plugin and looks for the paths
+ * in the result, a check that costs one `npm pack --dry-run` and is the
+ * difference between a release and eight dead tarballs.
+ *
+ * The same asymmetry sets the version floor: a prebuilt bundle has to match
+ * the host's SDK exactly, so an npm release is only good for the bb line its
+ * manifest declares in `engines.bb`.
  *
  *   bun scripts/publish.ts --dry-run     # pack and check, publish nothing
  *   bun scripts/publish.ts               # the real thing
