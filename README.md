@@ -40,11 +40,6 @@
 <td align="center"><a href="plugins/gh-stack/"><b>GitHub Stack</b></a></td>
 <td>Drives a <code>gh stack</code> from the thread panel — build, sync, submit, merge — and can hand the split to your agent.</td>
 </tr>
-<tr>
-<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/dotfiles/assets/logo-dark.svg" /><img src="plugins/dotfiles/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
-<td align="center"><a href="plugins/dotfiles/"><b>Dotfiles</b></a> ⚠️</td>
-<td><b>Personal, unsupported.</b> Syncs one specific dotfiles repo layout. Not released.</td>
-</tr>
 </table>
 
 ### Utilities
@@ -71,21 +66,6 @@
 <td>A dark Monokai-family palette for the whole app: one meaning per hue, a single text ladder, all 16 ANSI colors, and a matching diff viewer.</td>
 </tr>
 </table>
-
-## Plugin authoring framework
-
-This repository also develops **bb-kit**, an opinionated, agent-friendly
-framework for bb plugin authors:
-
-- [`@bb-kit/core`](packages/bb-kit/) provides typed native-RPC operations,
-  TanStack Query integration, and realtime invalidation.
-- [`@bb-kit/cli`](packages/bb-kit-cli/) provides additive generators,
-  structural checks, inspection, identity/migration locks, and headless loaded
-  operation invocation with committed JSON/YAML regression scenarios.
-- The [bb-kit design principles](docs/bb-kit-design-principles.md) explain which
-  choices the framework owns and why. The complete contracts and delivery
-  boundaries live in the
-  [bb-kit framework specification](docs/bb-plugin-framework-spec.md).
 
 ## Install
 
