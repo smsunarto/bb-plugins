@@ -9,7 +9,7 @@
 
 **A thread list organized by who can act next.**
 
-![bb ≥ 0.36](https://img.shields.io/badge/bb-%E2%89%A5%200.36-88C0D0?style=flat-square)
+![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![experimental slot](https://img.shields.io/badge/uses-experimental%20SDK%20slot-F1B467?style=flat-square)
 
@@ -63,7 +63,7 @@ reinstall.
 
 ## Requirements
 
-- bb ≥ 0.36
+- bb 0.38.x
 - Nothing else. No accounts, keys, or external services.
 
 ## Usage

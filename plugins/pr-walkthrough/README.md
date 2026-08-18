@@ -9,7 +9,7 @@
 
 **Read a pull request in the order it should be explained.**
 
-![bb ≥ 0.36](https://img.shields.io/badge/bb-%E2%89%A5%200.36-88C0D0?style=flat-square)
+![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![work in progress](https://img.shields.io/badge/status-work%20in%20progress-E5484D?style=flat-square)
 
@@ -41,7 +41,7 @@ approval verdicts. "Reviewed" means you read it.
 
 | | |
 |---|---|
-| bb | ≥ 0.36 |
+| bb | 0.38.x |
 | Bun | builds the plugin, and scaffolds, compiles, and validates the static site |
 | Node.js | 20.9+ |
 | git | on `PATH` |

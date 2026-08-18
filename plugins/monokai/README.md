@@ -9,7 +9,7 @@
 
 **A dark Monokai palette for bb, terminal included.**
 
-![bb ≥ 0.38](https://img.shields.io/badge/bb-%E2%89%A5%200.38-88C0D0?style=flat-square)
+![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
 ![platform: any](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![dark only](https://img.shields.io/badge/appearance-dark%20only-E3E3DD?style=flat-square)
 
@@ -67,7 +67,7 @@ Disabling or removing the plugin returns bb to the default palette.
 
 ## Requirements
 
-- bb ≥ 0.38 — the version that lets a theme declare its own code theme
+- bb 0.38.x — the line that lets a theme declare its own code theme
 - bb set to **dark** appearance. The palette only restyles `.dark`; light mode
   keeps bb's defaults.
 - Optional: **Berkeley Mono**. It is *not* bundled. Install it yourself and the

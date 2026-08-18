@@ -9,7 +9,7 @@
 
 **Run [Amp](https://ampcode.com) in a bb thread, like any built-in provider.**
 
-![bb ≥ 0.37](https://img.shields.io/badge/bb-%E2%89%A5%200.37-88C0D0?style=flat-square)
+![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![needs Amp CLI](https://img.shields.io/badge/needs-Amp%20CLI-F1B467?style=flat-square)
 
@@ -59,7 +59,7 @@ bb plugin install ./plugins/amp
 
 ## Requirements
 
-- bb ≥ 0.37, on macOS or Linux
+- bb 0.38.x, on macOS or Linux
 - The **Amp CLI**, installed ([get started](https://ampcode.com/manual#get-started))
   and authenticated with `amp login`, or `AMP_API_KEY` set on the provider entry.
   The plugin locates and drives the CLI; it cannot install or sign in to it for you

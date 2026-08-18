@@ -4,7 +4,7 @@
 
 **Plugins for [bb](https://github.com/get-bb/bb), the agent IDE — in one GitHub repository.**
 
-![bb 0.37.x](https://img.shields.io/badge/bb-0.37.x-88C0D0?style=flat-square)
+![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
 ![Bun workspace](https://img.shields.io/badge/Bun-1.3.14-3FA266?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-F1B467?style=flat-square)
 
