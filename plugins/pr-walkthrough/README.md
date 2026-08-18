@@ -18,10 +18,9 @@
 > [!WARNING]
 > **Work in progress. Not published, not supported, expect it to break.**
 >
-> This plugin is unfinished and is not published to npm — there is no
-> `bb plugin install npm:...` command for it, and it is deliberately excluded from
-> the release. Install it from a source checkout with the steps below if you want to
-> try it.
+> This plugin is unfinished and is never tagged — there is no release to install
+> from, and it is deliberately excluded from the release run. Install it from a
+> source checkout with the steps below if you want to try it.
 >
 > Behaviour, commands, and the generated output all still change without notice.
 

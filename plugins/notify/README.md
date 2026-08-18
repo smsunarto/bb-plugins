@@ -27,11 +27,16 @@ thread it came from.
 
 ## Install
 
-**From npm** — one command:
+**From a release tag** — one command:
 
 ```sh
-bb plugin install npm:@smsunarto/bb-plugin-notify
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --subdirectory plugins/notify
 ```
+
+`*` always resolves the newest `notify/vX.Y.Z` tag; replace it with a range such
+as `^0.2.0` to pin a line, and `bb plugin update notify` follows the range from
+there. bb builds the plugin from the tag against your bb, so the bundle always
+matches the host it runs on.
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
@@ -44,9 +49,9 @@ bun run --filter '@smsunarto/bb-plugin-notify' build
 bb plugin install ./plugins/notify
 ```
 
-The source path needs Bun and the `bb` CLI. Note that
-`bb plugin install git:<url>@<ref>` does not work for these plugins: bb reads
-the manifest at the repository root, so it cannot see `plugins/<id>`.
+The source path needs Bun and the `bb` CLI. It installs the plugin as a **local
+path source**, so bb reads the files in place: edit, rebuild, reload, with no
+reinstall.
 
 The bb window asks for notification permission the first time it mounts. bb then
 appears under **System Settings → Notifications**.

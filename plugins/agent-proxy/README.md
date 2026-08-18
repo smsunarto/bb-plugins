@@ -42,11 +42,16 @@ the machine that runs the bb server and gives it a management UI inside bb.
 
 ## Install
 
-**From npm** — one command:
+**From a release tag** — one command:
 
 ```sh
-bb plugin install npm:@smsunarto/bb-plugin-agent-proxy
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:agent-proxy/:* --subdirectory plugins/agent-proxy
 ```
+
+`*` always resolves the newest `agent-proxy/vX.Y.Z` tag; replace it with a range
+such as `^0.2.0` to pin a line, and `bb plugin update agent-proxy` follows the
+range from there. bb builds the plugin from the tag against your bb, so the
+bundle always matches the host it runs on.
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
@@ -59,9 +64,9 @@ bun run --filter '@smsunarto/bb-plugin-agent-proxy' build
 bb plugin install ./plugins/agent-proxy
 ```
 
-The source path needs Bun and the `bb` CLI. Note that
-`bb plugin install git:<url>@<ref>` does not work for these plugins: bb reads
-the manifest at the repository root, so it cannot see `plugins/<id>`.
+The source path needs Bun and the `bb` CLI. It installs the plugin as a **local
+path source**, so bb reads the files in place: edit, rebuild, reload, with no
+reinstall.
 
 ## First run
 

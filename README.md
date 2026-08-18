@@ -43,7 +43,7 @@
 <tr>
 <td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/dotfiles/assets/logo-dark.svg" /><img src="plugins/dotfiles/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
 <td align="center"><a href="plugins/dotfiles/"><b>Dotfiles</b></a> ⚠️</td>
-<td><b>Personal, unsupported.</b> Syncs one specific dotfiles repo layout. Not published to npm.</td>
+<td><b>Personal, unsupported.</b> Syncs one specific dotfiles repo layout. Not released.</td>
 </tr>
 </table>
 
@@ -89,21 +89,23 @@ framework for bb plugin authors:
 
 ## Install
 
-One command per plugin:
+Every plugin ships as a git tag. One command per plugin, and it installs the newest release:
 
 ```sh
-bb plugin install npm:@smsunarto/bb-plugin-<id>
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:<id>/:* --subdirectory plugins/<id>
 ```
 
 `<id>` is the plugin's directory name — `agent-proxy`, `agentation`, `gh-stack`, `notify`, `amp`, `t3sidebar`, or `monokai`. For example:
 
 ```sh
-bb plugin install npm:@smsunarto/bb-plugin-notify
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --subdirectory plugins/notify
 ```
+
+`*` is a semver range over that plugin's `<id>/vX.Y.Z` tags, so it always resolves the newest release; replace it with `^0.2.0` or any other range to pin a line, and `bb plugin update <id>` follows the range from there. bb clones the tag, installs the plugin's runtime dependencies, and builds both bundles against your bb — a plugin is never shipped prebuilt, so it always matches the host it runs on.
 
 ## Build from source
 
-This is also the git install route. It puts each plugin in as a **local path source**, so bb reads the files in place: edit, rebuild, reload — no reinstall. `bb plugin install git:<url>@<ref>` does not work for these plugins, because bb reads the manifest at the repository root and cannot see `plugins/<id>`.
+This is the route for unreleased work. It puts each plugin in as a **local path source**, so bb reads the files in place: edit, rebuild, reload — no reinstall.
 
 ```sh
 git clone https://github.com/smsunarto/bb-plugins

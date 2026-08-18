@@ -34,11 +34,16 @@ amp --version
 amp login
 ```
 
-**From npm** — one command:
+**From a release tag** — one command:
 
 ```sh
-bb plugin install npm:@smsunarto/bb-plugin-amp
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:amp/:* --subdirectory plugins/amp
 ```
+
+`*` always resolves the newest `amp/vX.Y.Z` tag; replace it with a range such as
+`^0.3.0` to pin a line, and `bb plugin update amp` follows the range from there.
+bb builds the plugin from the tag against your bb, so the bundle always matches
+the host it runs on.
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:

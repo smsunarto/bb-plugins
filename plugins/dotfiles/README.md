@@ -16,10 +16,10 @@
 </div>
 
 > [!IMPORTANT]
-> **Not published to npm. Personal tooling, unsupported for external use.**
+> **Not released. Personal tooling, unsupported for external use.**
 >
-> There is no `bb plugin install npm:` command for this plugin. Install it from a
-> source checkout, as shown below.
+> This plugin is never tagged, so there is no release to install from. Install it
+> from a source checkout, as shown below.
 >
 > The plugin is written against **one specific dotfiles repository layout** — a fixed
 > set of file paths and a fixed set of `mise` task names. Against a differently shaped
