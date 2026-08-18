@@ -82,12 +82,17 @@ configures, instead of resolving a bundled CLI.
 
 ## `agentation`
 
-`plugins/agentation` depends on `agentation` and bundles it into `dist/app.js`.
+`plugins/agentation` bundles `agentation` into `dist/app.js`, from a **modified
+copy** kept at `plugins/agentation/vendor/agentation`. The changes are recorded
+in `plugins/agentation/vendor/agentation.patch` and explained in that
+directory's README; upstream's own `LICENSE` and `README.md` travel with the
+copy unchanged.
+
 That package uses the [**PolyForm Shield License 1.0.0**](https://polyformproject.org/licenses/shield/1.0.0/),
-not MIT. It permits use and redistribution, but not use in a product or service
-that competes with the software or another product from its authors. A
-distribution must include a copy of that licence; the Agentation package's copy
-is included in `plugins/agentation/THIRD_PARTY_NOTICES.md`.
+not MIT. It permits use, modification, and redistribution, but not use in a
+product or service that competes with the software or another product from its
+authors. A distribution must include a copy of that licence; it is included both
+beside the vendored copy and in `plugins/agentation/THIRD_PARTY_NOTICES.md`.
 
 Source: <https://github.com/benjitaylor/agentation>
 

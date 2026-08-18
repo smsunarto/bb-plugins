@@ -7,7 +7,7 @@ those files. Their licences apply to those parts, in addition to the plugin's ow
 
 | Component | Where it is included | Licence |
 |---|---|---|
-| [agentation](https://www.npmjs.com/package/agentation) | `dist/app.js` | PolyForm Shield 1.0.0 |
+| [agentation](https://www.npmjs.com/package/agentation), modified — see [`vendor/README.md`](vendor/README.md) | `dist/app.js`, `vendor/agentation/` | PolyForm Shield 1.0.0 |
 | [class-variance-authority](https://www.npmjs.com/package/class-variance-authority) | `dist/app.js` | Apache-2.0 |
 | [zod](https://www.npmjs.com/package/zod) | `dist/server.js` | MIT |
 | [clsx](https://www.npmjs.com/package/clsx) | `dist/app.js` | MIT |
