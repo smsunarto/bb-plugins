@@ -8,6 +8,10 @@ dist/
 plugins/amp/dist/*
 !plugins/amp/dist/bridge.js
 !plugins/amp/dist/amp-cli-shim.js
+
+# The vendored agentation build is source, not output: bb's install-time build
+# has to find it, and no build step in this repo regenerates it.
+!plugins/agentation/vendor/agentation/dist/
 storybook-static/
 out/
 .next/

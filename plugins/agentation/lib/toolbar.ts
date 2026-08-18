@@ -13,13 +13,17 @@
 
 import { createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
+// Imported by path, not by package name: the copy under vendor/ carries changes
+// upstream does not ship (see vendor/README.md), and a path import is the only
+// form both Bun and the npm install bb runs for a `git:` source resolve the same
+// way.
 import {
   Agentation,
   loadAnnotations,
   saveAnnotations,
   type AgentationProps,
   type Annotation,
-} from "agentation";
+} from "../vendor/agentation/dist/index.mjs";
 import type {
   PluginContentScriptContext,
   PluginContentScriptDisposer,
