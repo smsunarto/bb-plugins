@@ -1,5 +1,44 @@
 # @smsunarto/bb-plugin-amp
 
+## 0.4.0
+
+### Minor Changes
+
+- 2c4cef6: Give the Amp thread back when bb unarchives. Archiving a bb thread archived its
+  Amp thread, and nothing reversed it.
+  
+  The restore cannot be received: bb 0.38 emits six plugin thread events —
+  `created`, `active`, `idle`, `failed`, `archived`, `deleted` — and unarchive is
+  not one. So the archive half stays event-driven and the restore half is polled.
+  `thread.archived` writes an `amp-archive-watch:<id>` row naming the Amp thread
+  it took, and a background service asks bb every 20 seconds which of those bb
+  still calls archived. Reading the state covers t3sidebar and bb's own view at
+  once, rather than the action either one performs.
+  
+  The listing is one paginated query however many rows are watched, and the pass
+  exits before it when there are none. It only suggests a restore — it is capped
+  and drops deleted threads — so each candidate is confirmed against the thread
+  itself first. Amp has no `threads unarchive`; the restore is `threads archive
+  <id> --unarchive`, one flag from the archive path. A candidate that fails three
+  times, an Amp thread deleted on Amp's side being that case, is dropped rather
+  than retried forever.
+  
+  Threads archived before this upgrade carry no watch row and are not restored.
+
+### Patch Changes
+
+- 186c131: Make the release tag installable. Every import the server bundle pulls in at
+  runtime is now a real `dependencies` entry, so `bb plugin install` from a git
+  tag resolves it. The previous tags built only inside this workspace, where a
+  hoisted `node_modules` supplied what the manifests had left out as devDependencies —
+  a fresh checkout of the tag failed the build with `Could not resolve "zod"`.
+- 186c131: Ship the ACP bridge in the tag. bb runs no lifecycle script for a git install,
+  so the sidecar it never compiles — `dist/bridge.js` and the CLI shim — has to be
+  committed rather than built on the consumer's machine. CI diffs both against a
+  fresh build so they cannot go stale.
+  
+  Align `zod` with the plugin SDK's peer range, which the bridge shares.
+
 ## 0.3.0
 
 ### Minor Changes
