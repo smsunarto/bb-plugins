@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Recapture the production bb UI close-ups used by plugin-screenshots.ts.
+ * Recapture the production bb UI images the READMEs ship: the close-ups
+ * plugin-screenshots.ts stages into heroes, and the standalone captures a
+ * README embeds directly.
  *
  * The browser renders at DPR 3 while the final heroes render at DPR 2. Every
  * foreground image is therefore downsampled in the hero instead of enlarged.
@@ -40,6 +42,12 @@ const APP_VIEWPORT = { width: 1512, height: 1000 } as const;
 const FIXED_TIME = new Date("2026-08-13T12:00:00.000Z");
 const SIDEBAR_PROVIDER_KEY = "bb.sidebar.threadListProvider";
 const SIDEBAR_PROVIDER = "gtd-sidebar/inbox";
+/**
+ * The title gtd-sidebar registers for that provider. The Appearance capture
+ * exists to show it, so the run fails rather than shipping an image of some
+ * other list.
+ */
+const SIDEBAR_PROVIDER_TITLE = "GTD Sidebar (inbox)";
 const SIDEBAR_PLUGIN_ORDER_KEY = "bb.sidebar.pluginPanelOrder";
 /**
  * bb's own Extensions row. It is pinned above the plugin rows and is not part
@@ -173,6 +181,7 @@ export const PLUGIN_SCREENSHOT_FIXTURES: readonly FixtureSpec[] = [
   { id: "gh-stack/magic-stack-report", plugin: "gh-stack", filename: "magic-stack-report.png", width: 798, height: 598 },
   { id: "gh-stack/magic-stack-result", plugin: "gh-stack", filename: "magic-stack-result.png", width: 596, height: 1000 },
   { id: "gtd-sidebar/sidebar", plugin: "gtd-sidebar", filename: "sidebar.png", width: 320, height: 1000 },
+  { id: "gtd-sidebar/enable", plugin: "gtd-sidebar", filename: "enable.png", width: 1512, height: 1000 },
   { id: "monokai/app", plugin: "monokai", filename: "app.png", width: 1512, height: 1000 },
 ] as const;
 
@@ -864,7 +873,7 @@ function settledSidebarThread(id: string, title: string, minutesAgo: number) {
   };
 }
 
-async function mockT3Sidebar(context: BrowserContext): Promise<void> {
+async function mockGtdSidebar(context: BrowserContext): Promise<void> {
   const inbox = [
     sidebarThread("thr_capture_active", "Prepare bb plugin monorepo", 0, {
       status: "active",
@@ -1373,7 +1382,7 @@ async function captureMonokai(browser: Browser, writeCapture: WriteCapture): Pro
   try {
     await mockAgentation(appContext, {});
     await mockStack(appContext);
-    await mockT3Sidebar(appContext);
+    await mockGtdSidebar(appContext);
     await mockThread(appContext, THREAD_CAPTURE_FIXTURES.stack!);
     const page = await createScreenshotPage(appContext, { fixedTime: FIXED_TIME });
     await navigate(
@@ -1396,7 +1405,7 @@ async function captureGtdSidebar(browser: Browser, writeCapture: WriteCapture): 
   const context = await createContext(browser);
   try {
     await mockAgentation(context, {});
-    await mockT3Sidebar(context);
+    await mockGtdSidebar(context);
     const page = await createScreenshotPage(context, { fixedTime: FIXED_TIME });
     await navigate(page, "/", page.getByRole("combobox", { name: /Project scope:/ }));
     await page.getByRole("button").filter({ hasText: "Snoozed" }).click();
@@ -1408,6 +1417,30 @@ async function captureGtdSidebar(browser: Browser, writeCapture: WriteCapture): 
     await writeCapture(page, spec, { x: 0, y: 0, width: spec.width, height: spec.height });
   } finally {
     await context.close();
+  }
+
+  const settingsContext = await createContext(browser);
+  try {
+    await mockAgentation(settingsContext, {});
+    const page = await createScreenshotPage(settingsContext, { fixedTime: FIXED_TIME });
+    // Not navigate(): /settings swaps the app sidebar for the settings nav, so
+    // the project scope picker it waits for never mounts on this route.
+    await page.goto(appUrl("/settings/appearance"), { waitUntil: "domcontentloaded" });
+    const trigger = page.getByRole("button", { name: "Sidebar thread list" });
+    await trigger.waitFor({ state: "visible" });
+    const selected = (await trigger.textContent())?.trim();
+    if (selected !== SIDEBAR_PROVIDER_TITLE) {
+      throw new Error(`Sidebar setting reads ${selected}; expected ${SIDEBAR_PROVIDER_TITLE}`);
+    }
+    await trigger.click();
+    await page
+      .getByRole("menuitem")
+      .filter({ hasText: SIDEBAR_PROVIDER_TITLE })
+      .waitFor({ state: "visible" });
+    await settle(page);
+    await writeCapture(page, specById.get("gtd-sidebar/enable")!);
+  } finally {
+    await settingsContext.close();
   }
 }
 
