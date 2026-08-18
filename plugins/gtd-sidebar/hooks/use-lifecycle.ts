@@ -5,7 +5,7 @@ import {
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import type { t3sidebarRpcContract } from "@/server";
+import type { gtdSidebarRpcContract } from "@/server";
 import {
   canPark,
   isThreadWorking,
@@ -82,7 +82,7 @@ const SHELF_GATE_MS = 250;
 export function useLifecycle(
   threads: readonly PluginSidebarThread[],
 ): LifecycleApi {
-  const rpc = useRpc<typeof t3sidebarRpcContract>();
+  const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One read, at the only moment that can still beat the first paint.
   // `useState` and not `useMemo`: React is free to throw a memo away and run
   // it again, and a second read would see whatever the origin holds by then.

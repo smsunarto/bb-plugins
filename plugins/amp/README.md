@@ -94,7 +94,7 @@ selected.
 Archiving an Amp-provider thread in bb also archives its linked Local or Orb
 thread in Amp, and unarchiving it in bb brings that Amp thread back. Both
 directions cover every bb surface — the sidebar menu, the archived view, and a
-replaced sidebar such as t3sidebar, where settling archives and un-settling or
+replaced sidebar such as GTD Sidebar, where settling archives and un-settling or
 snoozing restores.
 
 The two halves are not equally quick. bb announces an archive, so that half is

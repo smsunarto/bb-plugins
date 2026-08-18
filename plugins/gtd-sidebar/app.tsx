@@ -1,4 +1,4 @@
-// @smsunarto/bb-plugin-t3sidebar — an action-oriented replacement for bb's
+// @smsunarto/bb-plugin-gtd-sidebar — an action-oriented replacement for bb's
 // sidebar thread list, and a reference for `app.slots.experimental_threadList`.
 //
 // Active threads are grouped by who acts next. Each section holds entrance
@@ -11,7 +11,7 @@ import { SubagentsChip } from "@/components/inbox/subagents-chip";
 export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "inbox",
-    title: "t3sidebar (inbox)",
+    title: "GTD Sidebar (inbox)",
     description: "Next Action and Waiting, ordered by section entrance.",
     component: ThreadInbox,
   });

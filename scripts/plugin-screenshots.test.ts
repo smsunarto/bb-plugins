@@ -26,8 +26,8 @@ describe("plugin screenshot recipes", () => {
       "agentation",
       "amp",
       "gh-stack",
+      "gtd-sidebar",
       "monokai",
-      "t3sidebar",
     ]);
     expect(new Set(recipeIds).size).toBe(recipeIds.length);
   });

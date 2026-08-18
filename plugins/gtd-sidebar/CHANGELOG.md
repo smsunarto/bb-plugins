@@ -1,4 +1,4 @@
-# @smsunarto/bb-plugin-t3sidebar
+# @smsunarto/bb-plugin-gtd-sidebar
 
 ## 0.3.0
 

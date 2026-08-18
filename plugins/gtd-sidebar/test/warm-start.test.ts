@@ -293,9 +293,9 @@ describe("readWarmStartRows", () => {
 
   it("ignores an entry written under another version's key", () => {
     resetWarmStartMemoryForTests();
-    assert.equal(WARM_START_ROWS_KEY, "t3sidebar:v1:lifecycle-rows");
+    assert.equal(WARM_START_ROWS_KEY, "gtd-sidebar:v1:lifecycle-rows");
     const store = storage({
-      "t3sidebar:v0:lifecycle-rows": encodeWarmStartRows([
+      "gtd-sidebar:v0:lifecycle-rows": encodeWarmStartRows([
         row({ threadId: "a", settledAt: 500 }),
       ]),
     });
@@ -318,6 +318,42 @@ describe("writeWarmStartRows", () => {
       decodeWarmStartRows(store.entries.get(WARM_START_ROWS_KEY) ?? null),
       [row({ threadId: "a", settledAt: 500 })],
     );
+  });
+
+  // The plugin shipped as t3sidebar, and bb installs the renamed one under a
+  // new id — so the old install's keys are left on an origin nothing else will
+  // ever sweep. A write is what proves the store takes writes at all, so it is
+  // where the sweep goes.
+  it("retires the keys written under the old name", () => {
+    resetWarmStartMemoryForTests();
+    const store = storage({
+      "t3sidebar:v1:lifecycle-rows": encodeWarmStartRows([row()]),
+      "t3sidebar:v1:providers": "[]",
+    });
+    writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], store);
+    assert.equal(store.entries.has("t3sidebar:v1:lifecycle-rows"), false);
+    assert.equal(store.entries.has("t3sidebar:v1:providers"), false);
+    assert.equal(store.entries.has(WARM_START_ROWS_KEY), true);
+  });
+
+  // A store that refused the write is one where freeing those two entries is
+  // worth the most, so the sweep is not spent on the attempt that failed.
+  it("leaves the old keys for the next write when the store refuses", () => {
+    resetWarmStartMemoryForTests();
+    const store = storage({ "t3sidebar:v1:providers": "[]" });
+    let refusing = true;
+    const flaky: FakeStorage = {
+      ...store,
+      setItem: (key, value) => {
+        if (refusing) throw new Error("quota");
+        store.setItem(key, value);
+      },
+    };
+    writeWarmStartRows([row()], flaky);
+    assert.equal(store.entries.has("t3sidebar:v1:providers"), true);
+    refusing = false;
+    writeWarmStartRows([row()], flaky);
+    assert.equal(store.entries.has("t3sidebar:v1:providers"), false);
   });
 
   // A quota that filled once frees again. Deduping the repeat write against
@@ -465,9 +501,9 @@ describe("readWarmStartProviders", () => {
 
   it("ignores an entry written under another version's key", () => {
     resetWarmStartMemoryForTests();
-    assert.equal(WARM_START_PROVIDERS_KEY, "t3sidebar:v1:providers");
+    assert.equal(WARM_START_PROVIDERS_KEY, "gtd-sidebar:v1:providers");
     const store = storage({
-      "t3sidebar:v0:providers": encodeWarmStartProviders([provider]),
+      "gtd-sidebar:v0:providers": encodeWarmStartProviders([provider]),
     });
     assert.equal(readWarmStartProviders(store), null);
   });

@@ -424,7 +424,7 @@ export default async function plugin(bb: BbPluginApi) {
   /**
    * Give an Amp thread back when its bb thread stops being archived.
    *
-   * bb archives through t3sidebar's settle, its own sidebar menu, and its
+   * bb archives through GTD Sidebar's settle, its own sidebar menu, and its
    * archived view, and every one of those fires `thread.archived`. None of them
    * fires anything on the way back — the plugin event map has no unarchive —
    * so the restore is polled rather than received, and the listing above is one

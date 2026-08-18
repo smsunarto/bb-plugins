@@ -49,8 +49,23 @@ import type { ThreadLifecycleRow } from "@/lib/lifecycle";
 // the old entry instead of mis-reading data of the wrong shape; whoever writes
 // v2 should `removeItem` these two on its first successful write, because
 // nothing else on this origin ever will.
-export const WARM_START_ROWS_KEY = "t3sidebar:v1:lifecycle-rows";
-export const WARM_START_PROVIDERS_KEY = "t3sidebar:v1:providers";
+export const WARM_START_ROWS_KEY = "gtd-sidebar:v1:lifecycle-rows";
+export const WARM_START_PROVIDERS_KEY = "gtd-sidebar:v1:providers";
+
+/**
+ * What this plugin wrote under its old name, t3sidebar.
+ *
+ * A rename is a prefix retirement with none of a version bump's cover: bb
+ * installs the renamed plugin under a new id, so the old install's uninstall
+ * never runs and no later version of this file is ever asked for those keys
+ * again. Nothing else on the origin will reclaim the space, so the first
+ * successful write does it — the same discipline the comment above prescribes
+ * for whoever writes v2.
+ */
+const RETIRED_KEYS = [
+  "t3sidebar:v1:lifecycle-rows",
+  "t3sidebar:v1:providers",
+] as const;
 
 /** The `Storage` methods this needs, so a test can hand it a stub. */
 export type WarmStartStorage = Pick<
@@ -90,6 +105,7 @@ const persistedTier = new Map<string, string>();
 export function resetWarmStartMemoryForTests(): void {
   memoryTier.clear();
   persistedTier.clear();
+  retiredOldName = false;
 }
 
 /**
@@ -165,12 +181,36 @@ function writeEntry(
   try {
     storage.setItem(key, serialized);
     persistedTier.set(key, serialized);
+    retireOldNameEntries(storage);
   } catch {
     // Quota is shared with bb's own keys, so a full store is ordinary rather
     // than exceptional. Memory carries this session on its own; forgetting
     // what the store holds is what makes the next write offer the value again
     // instead of recognising it as already written.
     persistedTier.delete(key);
+  }
+}
+
+/**
+ * Runs once per page, after a write has proven the store accepts writes at
+ * all. Doing it on read instead would spend two `removeItem` calls on the
+ * cold-start path this file exists to keep short, and a store too full to
+ * accept the write is one where freeing these two entries is worth the most —
+ * so the next write, not this one, is what retries.
+ */
+// Reset by resetWarmStartMemoryForTests, which is where every other
+// module-level tier is cleared.
+let retiredOldName = false;
+function retireOldNameEntries(storage: WarmStartStorage): void {
+  if (retiredOldName) return;
+  retiredOldName = true;
+  for (const key of RETIRED_KEYS) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // A store that refuses the removal keeps the stale entry; it is dead
+      // weight on the origin, not something this plugin will ever read.
+    }
   }
 }
 
@@ -370,7 +410,7 @@ export function writeWarmStartRows(
  * asked, and asking `window` for the real one would make a pure decode need a
  * DOM. `.invalid` is reserved by RFC 2606, so it can never name a real host.
  */
-const LOGO_URL_BASE = "https://t3sidebar.invalid";
+const LOGO_URL_BASE = "https://gtd-sidebar.invalid";
 
 /**
  * A logo the host serves, and nothing else.

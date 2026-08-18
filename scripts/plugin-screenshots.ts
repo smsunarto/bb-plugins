@@ -193,11 +193,11 @@ function monokai(): string {
     </div>`;
 }
 
-function t3sidebar(): string {
+function gtdSidebar(): string {
   return `
-    <div class="composition t3-composition">
-      <figure class="capture t3-sidebar">
-        ${media("t3sidebar", "sidebar.png", "capture-image", "The t3sidebar inbox with waiting, snoozed, and settled threads")}
+    <div class="composition gtd-composition">
+      <figure class="capture gtd-sidebar-shot">
+        ${media("gtd-sidebar", "sidebar.png", "capture-image", "The GTD Sidebar inbox with waiting, snoozed, and settled threads")}
       </figure>
       <div class="shelf-guide">
         <div class="guide-intro"><span>STABLE BY DESIGN</span><h2>The list moves<br />when you move it</h2></div>
@@ -206,7 +206,7 @@ function t3sidebar(): string {
         <div class="guide-row"><i>03</i><div><b>Snoozed</b><span>Hidden until its wake time or new activity</span></div><em>4</em></div>
         <div class="guide-row"><i>04</i><div><b>Settled</b><span>Archived work, collapsed into one shelf</span></div><em>4</em></div>
       </div>
-      <div class="t3-pointer"><span></span><b>one flat inbox</b></div>
+      <div class="gtd-pointer"><span></span><b>one flat inbox</b></div>
     </div>`;
 }
 
@@ -227,8 +227,8 @@ export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
   { id: "agentation", name: "Agentation", descriptor: "POINT · EXPLAIN · SEND", accent: "#3FA266", glow: "18% 20%", assets: ["capture.png", "staging.png"], content: agentation },
   { id: "amp", name: "Amp", descriptor: "LOCAL WHEN CLOSE · ORB WHEN FAR", accent: "#F25B45", glow: "12% 18%", assets: ["orb-prompt.png", "orb-bar.png", "oracle-card.png"], content: amp },
   { id: "gh-stack", name: "GitHub Stack", descriptor: "ONE CHANGE · REVIEWABLE LAYERS", accent: "#A78BFA", glow: "50% 14%", assets: ["new-tab.png", "magic-stack-report.png", "magic-stack-result.png"], content: ghStack },
+  { id: "gtd-sidebar", name: "GTD Sidebar", descriptor: "AN INBOX THAT HOLDS STILL", accent: "#F1B467", glow: "18% 12%", assets: ["sidebar.png"], content: gtdSidebar },
   { id: "monokai", name: "bb Monokai", descriptor: "ONE HUE · ONE MEANING", accent: "#88C0D0", glow: "82% 10%", assets: ["app.png"], content: monokai },
-  { id: "t3sidebar", name: "t3sidebar", descriptor: "AN INBOX THAT HOLDS STILL", accent: "#F1B467", glow: "18% 12%", assets: ["sidebar.png"], content: t3sidebar },
 ] as const;
 
 const DOCUMENTATION_SCREENSHOTS = [ROOT_SCREENSHOT, ...PLUGIN_SCREENSHOTS] as const;
@@ -303,9 +303,9 @@ const STYLES = String.raw`
   .monokai-app { left: 188px; top: 80px; width: 907px; height: 600px; }.monokai-app .capture-image { object-fit: contain; }
   .palette-rail { position: absolute; z-index: 6; right: 52px; top: 188px; display: grid; gap: 7px; }.palette-rail span { display: grid; grid-template-columns: 8px 74px 62px; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.08); border-radius: 7px; background: rgba(10,10,11,.82); color: rgba(227,227,221,.55); font: 600 7px/1 "Screenshot IBM Plex Mono", monospace; backdrop-filter: blur(12px); }.palette-rail span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--swatch); box-shadow: 0 0 14px color-mix(in srgb, var(--swatch) 45%, transparent); }.palette-rail b { color: rgba(227,227,221,.86); font-size: 7px; letter-spacing: .08em; }
 
-  .t3-sidebar { left: 240px; top: 53px; width: 202px; height: 632px; border-radius: 15px; }.t3-sidebar .capture-image { object-position: top; }
+  .gtd-sidebar-shot { left: 240px; top: 53px; width: 202px; height: 632px; border-radius: 15px; }.gtd-sidebar-shot .capture-image { object-position: top; }
   .shelf-guide { position: absolute; left: 540px; top: 118px; width: 660px; }.guide-intro { margin-bottom: 28px; }.guide-intro span { color: var(--accent); font: 700 8px/1 "Screenshot IBM Plex Mono", monospace; letter-spacing: .17em; }.guide-intro h2 { margin: 9px 0 0; color: #e3e3dd; font-size: 34px; line-height: 1.04; letter-spacing: -.04em; }
-  .guide-row { display: grid; grid-template-columns: 40px 1fr auto; gap: 15px; align-items: center; padding: 17px 6px; border-top: 1px solid rgba(227,227,221,.12); }.guide-row > i { color: var(--accent); font: 700 9px/1 "Screenshot IBM Plex Mono", monospace; font-style: normal; }.guide-row div { display: grid; gap: 5px; }.guide-row b { font-size: 13px; }.guide-row span { color: rgba(227,227,221,.49); font-size: 10px; }.guide-row em { min-width: 45px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.09); border-radius: 999px; color: rgba(227,227,221,.58); font: 600 8px/1 "Screenshot IBM Plex Mono", monospace; font-style: normal; text-align: center; }.t3-pointer { position: absolute; left: 416px; top: 232px; display: flex; align-items: center; color: var(--accent); transform: rotate(-7deg); }.t3-pointer span { width: 92px; border-top: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }.t3-pointer b { margin-left: 7px; font: 700 7px/1 "Screenshot IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
+  .guide-row { display: grid; grid-template-columns: 40px 1fr auto; gap: 15px; align-items: center; padding: 17px 6px; border-top: 1px solid rgba(227,227,221,.12); }.guide-row > i { color: var(--accent); font: 700 9px/1 "Screenshot IBM Plex Mono", monospace; font-style: normal; }.guide-row div { display: grid; gap: 5px; }.guide-row b { font-size: 13px; }.guide-row span { color: rgba(227,227,221,.49); font-size: 10px; }.guide-row em { min-width: 45px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.09); border-radius: 999px; color: rgba(227,227,221,.58); font: 600 8px/1 "Screenshot IBM Plex Mono", monospace; font-style: normal; text-align: center; }.gtd-pointer { position: absolute; left: 416px; top: 232px; display: flex; align-items: center; color: var(--accent); transform: rotate(-7deg); }.gtd-pointer span { width: 92px; border-top: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }.gtd-pointer b { margin-left: 7px; font: 700 7px/1 "Screenshot IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; } }
 `;

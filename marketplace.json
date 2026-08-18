@@ -28,7 +28,7 @@
     {
       "id": "agentation",
       "displayName": "Agentation",
-      "description": "Point at any part of the bb UI — including plugin surfaces — and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
+      "description": "Point at any part of the bb UI \u2014 including plugin surfaces \u2014 and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
       "icon": {
         "url": "plugins/agentation/assets/icon.svg"
       },
@@ -86,6 +86,26 @@
       }
     },
     {
+      "id": "gtd-sidebar",
+      "displayName": "GTD Sidebar",
+      "description": "An action-oriented sidebar that groups threads by who can act next.",
+      "icon": {
+        "url": "plugins/gtd-sidebar/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/gtd-sidebar",
+          "range": "*",
+          "tagPrefix": "gtd-sidebar/"
+        }
+      }
+    },
+    {
       "id": "monokai",
       "displayName": "bb Monokai",
       "description": "A dark Monokai-family palette for bb: one meaning per hue, a single text ladder, and a matching terminal.",
@@ -122,26 +142,6 @@
           "subdir": "plugins/notify",
           "range": "*",
           "tagPrefix": "notify/"
-        }
-      }
-    },
-    {
-      "id": "t3sidebar",
-      "displayName": "T3 Sidebar",
-      "description": "An action-oriented sidebar that groups threads by who can act next.",
-      "icon": {
-        "url": "plugins/t3sidebar/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/t3sidebar",
-          "range": "*",
-          "tagPrefix": "t3sidebar/"
         }
       }
     }

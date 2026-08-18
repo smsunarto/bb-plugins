@@ -10,8 +10,8 @@ describe("plugin screenshot foreground fixtures", () => {
       "agentation",
       "amp",
       "gh-stack",
+      "gtd-sidebar",
       "monokai",
-      "t3sidebar",
     ]);
     expect(PLUGIN_SCREENSHOT_FIXTURES).toHaveLength(12);
     expect(new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.id)).size).toBe(12);

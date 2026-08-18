@@ -39,7 +39,7 @@ const DPR = 3;
 const APP_VIEWPORT = { width: 1512, height: 1000 } as const;
 const FIXED_TIME = new Date("2026-08-13T12:00:00.000Z");
 const SIDEBAR_PROVIDER_KEY = "bb.sidebar.threadListProvider";
-const SIDEBAR_PROVIDER = "t3sidebar/inbox";
+const SIDEBAR_PROVIDER = "gtd-sidebar/inbox";
 const SIDEBAR_PLUGIN_ORDER_KEY = "bb.sidebar.pluginPanelOrder";
 /**
  * bb's own Extensions row. It is pinned above the plugin rows and is not part
@@ -172,8 +172,8 @@ export const PLUGIN_SCREENSHOT_FIXTURES: readonly FixtureSpec[] = [
   { id: "gh-stack/new-tab", plugin: "gh-stack", filename: "new-tab.png", width: 576, height: 418 },
   { id: "gh-stack/magic-stack-report", plugin: "gh-stack", filename: "magic-stack-report.png", width: 798, height: 598 },
   { id: "gh-stack/magic-stack-result", plugin: "gh-stack", filename: "magic-stack-result.png", width: 596, height: 1000 },
+  { id: "gtd-sidebar/sidebar", plugin: "gtd-sidebar", filename: "sidebar.png", width: 320, height: 1000 },
   { id: "monokai/app", plugin: "monokai", filename: "app.png", width: 1512, height: 1000 },
-  { id: "t3sidebar/sidebar", plugin: "t3sidebar", filename: "sidebar.png", width: 320, height: 1000 },
 ] as const;
 
 const specById = new Map(PLUGIN_SCREENSHOT_FIXTURES.map((spec) => [spec.id, spec]));
@@ -921,7 +921,7 @@ async function mockT3Sidebar(context: BrowserContext): Promise<void> {
     contentType: "application/json",
     body: JSON.stringify(inbox),
   }));
-  await context.route("**/api/v1/plugins/t3sidebar/rpc/*", async (route) => {
+  await context.route("**/api/v1/plugins/gtd-sidebar/rpc/*", async (route) => {
     const method = new URL(route.request().url()).pathname.split("/").at(-1);
     if (method === "listProviders") {
       await fulfillRpc(route, {
@@ -1392,7 +1392,7 @@ async function captureMonokai(browser: Browser, writeCapture: WriteCapture): Pro
   }
 }
 
-async function captureT3Sidebar(browser: Browser, writeCapture: WriteCapture): Promise<void> {
+async function captureGtdSidebar(browser: Browser, writeCapture: WriteCapture): Promise<void> {
   const context = await createContext(browser);
   try {
     await mockAgentation(context, {});
@@ -1404,7 +1404,7 @@ async function captureT3Sidebar(browser: Browser, writeCapture: WriteCapture): P
     await page.getByText("Update theme color palette", { exact: true }).waitFor();
     await assertSidebarNavigation(page);
     await settle(page);
-    const spec = specById.get("t3sidebar/sidebar")!;
+    const spec = specById.get("gtd-sidebar/sidebar")!;
     await writeCapture(page, spec, { x: 0, y: 0, width: spec.width, height: spec.height });
   } finally {
     await context.close();
@@ -1416,8 +1416,8 @@ const captures: Record<string, (browser: Browser, writeCapture: WriteCapture) =>
   agentation: captureAgentation,
   amp: captureAmp,
   "gh-stack": captureGhStack,
+  "gtd-sidebar": captureGtdSidebar,
   monokai: captureMonokai,
-  t3sidebar: captureT3Sidebar,
 };
 
 async function main(): Promise<void> {

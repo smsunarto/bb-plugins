@@ -178,7 +178,8 @@ Not submittable as-is:
   Phosphor's `@phosphorco/bb-plugin-agentation`. Entry ids are unique per
   manifest, so ours needs a different id (and package name) or a conversation
   with the maintainers first.
-- **t3sidebar** — same collision, upstream entry belongs to Sawyer Hood. Ours
+- **gtd-sidebar** (was `t3sidebar`) — renamed out of the upstream collision with
+  Sawyer Hood's entry; submittable once a `gtd-sidebar/vX.Y.Z` tag exists. Ours
   is a fork of bb's own example, which makes a distinct id the right answer
   regardless.
 - **dotfiles**, **pr-walkthrough** — `private: true`; pr-walkthrough still

@@ -10,7 +10,7 @@
 
 </div>
 
-<picture><img src="docs/media/hero.png" alt="A staged overview of bb with the Monokai palette, t3sidebar, Agent Proxy, Agentation, and GitHub Stack" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="A staged overview of bb with the Monokai palette, GTD Sidebar, Agent Proxy, Agentation, and GitHub Stack" width="100%" /></picture>
 
 ### Agent Providers
 
@@ -51,8 +51,8 @@
 <td>Real macOS notifications from bb itself when a thread finishes or fails, plus a <code>notify_user</code> agent tool.</td>
 </tr>
 <tr>
-<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/t3sidebar/assets/logo-dark.svg" /><img src="plugins/t3sidebar/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
-<td align="center"><a href="plugins/t3sidebar/"><b>t3sidebar</b></a></td>
+<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/gtd-sidebar/assets/logo-dark.svg" /><img src="plugins/gtd-sidebar/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
+<td align="center"><a href="plugins/gtd-sidebar/"><b>GTD Sidebar</b></a></td>
 <td>An action-oriented thread list with Next Action and Waiting sections. Forked from <a href="https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar">bb's own example</a>.</td>
 </tr>
 </table>
@@ -78,7 +78,7 @@ bb plugin install notify
 
 Adding a marketplace installs nothing — it caches the catalog, so these plugins
 become findable by name in `bb plugin search` and in bb's plugin browser. `<id>`
-is `agent-proxy`, `agentation`, `amp`, `gh-stack`, `notify`, `t3sidebar`, or
+is `agent-proxy`, `agentation`, `amp`, `gh-stack`, `gtd-sidebar`, `notify`, or
 `monokai`; if another marketplace you have added publishes the same name, spell
 it `notify@smsunarto`.
 

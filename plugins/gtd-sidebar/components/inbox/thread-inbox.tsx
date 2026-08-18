@@ -18,7 +18,7 @@ import {
 import { ThreadCard } from "@/components/inbox/thread-card";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
-import type { t3sidebarRpcContract } from "@/server";
+import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle } from "@/hooks/use-lifecycle";
 import { useSettledThreads } from "@/hooks/use-settled-threads";
 import {
@@ -58,7 +58,7 @@ export function ThreadInbox({
   searchQuery,
 }: PluginThreadListProps) {
   const { status, threads: hostThreads, projects } = useSidebarThreads();
-  const rpc = useRpc<typeof t3sidebarRpcContract>();
+  const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One clock for every card in a render, quantized to the minute so the
   // labels do not disagree and do not churn on unrelated re-renders. It is
   // read first because the settled shelf's day-long window is cut against it.

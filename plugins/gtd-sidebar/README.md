@@ -5,7 +5,7 @@
   <img src="assets/logo.svg" width="72" height="72" alt="" />
 </picture>
 
-# t3sidebar
+# GTD Sidebar
 
 **A thread list organized by who can act next.**
 
@@ -16,10 +16,10 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The GTD Sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
 </div>
 
-t3sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
+GTD Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
 
 Active threads split into **Next Action** when the user can act and **Waiting** while
 the agent works. Each section is oldest first. A thread that enters a section goes
@@ -38,13 +38,13 @@ You clear the list with two email verbs: **snooze** a thread until a wake time, 
 
 ```sh
 bb marketplace add git:github.com/smsunarto/bb-plugins
-bb plugin install t3sidebar
+bb plugin install gtd-sidebar
 ```
 
-bb resolves the newest `t3sidebar/vX.Y.Z` tag and builds the plugin from it against
+bb resolves the newest `gtd-sidebar/vX.Y.Z` tag and builds the plugin from it against
 your bb, so the bundle always matches the host it runs on. `bb plugin update
-t3sidebar` follows the same release line. If another marketplace you have added
-publishes a `t3sidebar`, spell it `t3sidebar@smsunarto`.
+gtd-sidebar` follows the same release line. If another marketplace you have added
+publishes a `gtd-sidebar`, spell it `gtd-sidebar@smsunarto`.
 
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
@@ -53,8 +53,8 @@ source. This is also how you install a change that is not released yet:
 git clone https://github.com/smsunarto/bb-plugins.git
 cd bb-plugins
 bun install
-bun run --filter '@smsunarto/bb-plugin-t3sidebar' build
-bb plugin install ./plugins/t3sidebar
+bun run --filter '@smsunarto/bb-plugin-gtd-sidebar' build
+bb plugin install ./plugins/gtd-sidebar
 ```
 
 The source path needs Bun and the `bb` CLI. It installs the plugin as a **local
@@ -69,9 +69,9 @@ reinstall.
 ## Usage
 
 Installing does not change your sidebar by itself. Open **Settings → Appearance →
-Sidebar** and choose **t3sidebar (inbox)**.
+Sidebar** and choose **GTD Sidebar (inbox)**.
 
-<picture><img src="docs/media/enable.png" alt="bb's Appearance settings with t3sidebar (inbox) chosen for Sidebar" width="100%" /></picture>
+<picture><img src="docs/media/enable.png" alt="bb's Appearance settings with GTD Sidebar (inbox) chosen for Sidebar" width="100%" /></picture>
 
 bb's own list stays the default, and comes back the moment you switch away or
 disable the plugin.
@@ -122,7 +122,7 @@ a child, a chip that names the parent and opens it.
 
 ## Configuration
 
-One setting, in **Settings → Plugins → t3sidebar**:
+One setting, in **Settings → Plugins → GTD Sidebar**:
 
 - **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
   glyph and give the branch that space back. Every card follows it together, so the
@@ -134,7 +134,7 @@ these are settings.
 
 ## Troubleshooting
 
-**My sidebar looks the same after installing.** Choose t3sidebar in Settings →
+**My sidebar looks the same after installing.** Choose GTD Sidebar in Settings →
 Appearance → Sidebar. Installing alone changes nothing.
 
 **A thread I settled is not on the Settled shelf.** The shelf only reaches back 24
@@ -150,13 +150,16 @@ archived and the thread leaves the sidebar until you unarchive it in bb yourself
 
 **Uninstalling left data behind.** The shelves live in the plugin's own database,
 which bb removes with the plugin — but a copy of them is cached in the browser's
-`localStorage` under `t3sidebar:v1:*` (thread ids, park timestamps, and provider ids,
+`localStorage` under `gtd-sidebar:v1:*` (thread ids, park timestamps, and provider ids,
 names, and logo paths). bb's uninstall does not clear web storage. Clear site data if
 that matters to you.
 
 ## Credits
 
-Forked from bb's own example.
+Forked from bb's own example, and released as `t3sidebar` until 0.3.0. bb keys a
+plugin by its id, so the renamed plugin installs as a separate one: install
+`gtd-sidebar`, then uninstall `t3sidebar`. Shelves do not carry over — settled and
+snoozed state lives in the old plugin's database and goes with it.
 
 | | |
 |---|---|
@@ -173,8 +176,8 @@ Install from source as shown under [Install](#install), then check a change
 with:
 
 ```sh
-bun run --filter '@smsunarto/bb-plugin-t3sidebar' typecheck
-bun run --filter '@smsunarto/bb-plugin-t3sidebar' test
+bun run --filter '@smsunarto/bb-plugin-gtd-sidebar' typecheck
+bun run --filter '@smsunarto/bb-plugin-gtd-sidebar' test
 ```
 
 The test script needs Node 22.6+.

@@ -1,17 +1,17 @@
 {
-  "name": "@smsunarto/bb-plugin-t3sidebar",
+  "name": "@smsunarto/bb-plugin-gtd-sidebar",
   "version": "0.3.0",
   "description": "An action-oriented sidebar that groups threads by who can act next.",
   "license": "MIT",
   "author": "Scott Sunarto",
-  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/t3sidebar#readme",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/gtd-sidebar#readme",
   "bugs": {
     "url": "https://github.com/smsunarto/bb-plugins/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/smsunarto/bb-plugins.git",
-    "directory": "plugins/t3sidebar"
+    "directory": "plugins/gtd-sidebar"
   },
   "keywords": [
     "bb",
@@ -30,7 +30,7 @@
     "bbPluginSdk": ">=0.4.6"
   },
   "bb": {
-    "name": "t3sidebar",
+    "name": "GTD Sidebar",
     "description": "An action-oriented sidebar that groups threads by who can act next.",
     "branding": {
       "icon": "./assets/icon.svg",

@@ -98,9 +98,9 @@ describe("Changesets release routing", () => {
       "agentation",
       "amp",
       "gh-stack",
+      "gtd-sidebar",
       "monokai",
       "notify",
-      "t3sidebar",
     ]);
     expect(plugins.every((candidate) => candidate.manifest.private !== true)).toBe(true);
   });

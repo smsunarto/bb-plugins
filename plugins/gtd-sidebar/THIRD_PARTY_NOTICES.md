@@ -1,4 +1,4 @@
-# Third-party notices — t3sidebar
+# Third-party notices — GTD Sidebar
 
 The plugin's own code is MIT, Copyright (c) 2026 Scott Sunarto. See [LICENSE](LICENSE).
 
