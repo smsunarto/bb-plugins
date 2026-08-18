@@ -1,7 +1,7 @@
 {
   "name": "@bb-kit/core",
   "version": "0.1.0",
-  "description": "Typed operations and frontend server-state helpers for bb plugins.",
+  "description": "The framework a bb plugin is written in.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "repository": {
@@ -13,58 +13,84 @@
     "access": "public"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "files": [
     "dist/",
     "README.md",
     "LICENSE"
   ],
+  "bin": {
+    "bb-kit": "./dist/bin.js"
+  },
   "exports": {
-    ".": {
-      "types": "./dist/operations.d.ts",
-      "import": "./dist/operations.js"
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
     },
-    "./operations": {
-      "types": "./dist/operations.d.ts",
-      "import": "./dist/operations.js"
+    "./rpc": {
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
     },
     "./query": {
       "types": "./dist/query.d.ts",
       "import": "./dist/query.js"
     },
-    "./realtime": {
-      "types": "./dist/realtime.d.ts",
-      "import": "./dist/realtime.js"
-    },
-    "./standard-schema": {
-      "types": "./dist/standard-schema.d.ts",
-      "import": "./dist/standard-schema.js"
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
   "scripts": {
-    "build": "bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
-    "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
-    "test": "bun run build && bun test test",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test --import tsx",
     "clean": "rm -rf dist"
   },
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
   "peerDependencies": {
-    "@tanstack/react-query": "^5.101.4",
-    "react": ">=19"
+    "@get-bb/plugin-sdk": "0.x",
+    "@tanstack/react-query": "^5.0.0",
+    "jsdom": "*",
+    "react": ">=19",
+    "typescript": "*"
   },
   "peerDependenciesMeta": {
+    "@get-bb/plugin-sdk": {
+      "optional": true
+    },
     "@tanstack/react-query": {
+      "optional": true
+    },
+    "jsdom": {
       "optional": true
     },
     "react": {
       "optional": true
+    },
+    "typescript": {
+      "optional": true
     }
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.8",
-    "@tanstack/react-query": "^5.101.4",
-    "@types/react": "^19.0.0",
-    "react": "^19.0.0",
+    "@get-bb/plugin-sdk": "0.4.6",
+    "@tanstack/react-query": "^5.101.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tsx": "^4.19.0",
     "typescript": "^7.0.0",
-    "vitest": "^4.1.10",
     "zod": "^4.4.3"
   }
 }

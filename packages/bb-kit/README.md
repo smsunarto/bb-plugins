@@ -1,55 +1,60 @@
-# bb-kit
+# @bb-kit/core
 
-Typed operations and frontend server-state helpers for bb plugins.
+The framework a bb plugin is written in.
 
-This package implements the narrow runtime from
-[`docs/bb-plugin-framework-spec.md`](../../docs/bb-plugin-framework-spec.md).
-It intentionally wraps only application operations, TanStack Query options,
-and realtime invalidation. All other plugin capabilities use bb's native SDK.
-The [bb-kit design principles](../../docs/bb-kit-design-principles.md) define
-the test for adding more framework surface.
+A plugin declares procedures with `defineQuery` / `defineMutation`,
+composes them into a namespaced RPC with `defineRPC`, adds CLI commands
+with `defineCommand`, and wires everything in one composition root with
+`definePlugin`. Every procedure is also a terminal command: the CLI
+mounts an `rpc` subtree automatically, one subcommand per procedure,
+JSON object in, JSON object out.
 
 ```ts
-import {
-  defineOperation,
-  defineOperationCatalog,
-  noInput,
-  registerOperations,
-} from "@bb-kit/core/operations";
-import { z } from "zod";
+// server.ts
+import { definePlugin } from "@bb-kit/core/plugin";
+import { defineRPC, type ClientFor } from "@bb-kit/core/rpc";
+import { overview } from "./rpc/overview.ts";
+import { status } from "./cli/status.ts";
+import { createContext } from "./server/context.ts";
 
-const listApprovals = defineOperation({
-  kind: "query",
-  input: noInput,
-  output: z.array(z.object({ id: z.string() })),
+export const rpc = defineRPC({
+  namespace: "my-plugin",
+  procedures: { overview },
 });
+export type RPC = typeof rpc;
+export type Client = ClientFor<RPC>;
 
-const getApproval = defineOperation({
-  kind: "query",
-  input: z.object({ id: z.string() }),
-  exampleInput: { id: "A-1" },
-  output: z.object({ id: z.string() }),
-});
-
-const operations = defineOperationCatalog({
-  get: {
-    identity: "approvals.get",
-    wireMethod: "approvals_get",
-    operation: getApproval,
-  },
-});
-
-registerOperations(bb, operations, {
-  get: approvalService.get,
+export default definePlugin({
+  rpc,
+  cli: { summary: "My plugin", commands: { status } },
+  context: createContext,
 });
 ```
 
-`noInput` is the only no-input schema. Import it directly and do not add an
-example. Every other Standard Schema input, including `z.null()`, requires a
-finite JSON `exampleInput`.
+## Getting started
 
-Use `useOperationRpc(operations)` with `operationQueryOptions` and
-`operationMutationOptions`. The RPC hook derives exact methods, inputs, and
-outputs from the catalog and keeps bb 0.37's SDK compatibility cast inside
-bb-kit. Callers retain native TanStack Query hooks. Realtime helpers validate
-ephemeral signals and only invalidate authoritative queries.
+```sh
+npx @bb-kit/core create my-plugin
+cd my-plugin
+npm test
+```
+
+`create` scaffolds a working plugin — procedures, CLI, UI, and passing
+tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
+`npx bb-kit check` verifies the wiring.
+
+## Subpaths
+
+| Subpath | Exports |
+| --- | --- |
+| `@bb-kit/core/plugin` | `definePlugin` |
+| `@bb-kit/core/rpc` | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, and the types |
+| `@bb-kit/core/cli` | `defineCommand`, `invokeCLI`, `CLIError`, and the types |
+| `@bb-kit/core/query` | `createRPC`, `PluginQueryBoundary` (browser) |
+| `@bb-kit/core/testing` | `installDom` |
+
+There is no root export; the subpath is the unit.
+
+## License
+
+MIT
