@@ -15,7 +15,7 @@
 
 </div>
 
-<picture><img src="docs/media/hero.png" alt="The Agent Proxy core page with the proxy running, beside bb's sidebar where the Agent Proxy row is tinted green while every other plugin stays grey" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The Agent Proxy core page with CLIProxyAPI running on one local port, beside the Agents page wiring Claude Code and Codex to it" width="100%" /></picture>
 
 Agent Proxy installs [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) on
 the machine that runs the bb server and gives it a management UI inside bb.

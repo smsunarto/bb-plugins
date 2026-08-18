@@ -197,13 +197,14 @@ function t3sidebar(): string {
   return `
     <div class="composition t3-composition">
       <figure class="capture t3-sidebar">
-        ${media("t3sidebar", "sidebar.png", "capture-image", "The t3sidebar inbox with current, snoozed, and settled threads")}
+        ${media("t3sidebar", "sidebar.png", "capture-image", "The t3sidebar inbox with waiting, snoozed, and settled threads")}
       </figure>
       <div class="shelf-guide">
         <div class="guide-intro"><span>STABLE BY DESIGN</span><h2>The list moves<br />when you move it</h2></div>
-        <div class="guide-row"><i>01</i><div><b>Inbox</b><span>Newest first. Status stays inside the card</span></div><em>active</em></div>
-        <div class="guide-row"><i>02</i><div><b>Snoozed</b><span>Hidden until its wake time or new activity</span></div><em>3</em></div>
-        <div class="guide-row"><i>03</i><div><b>Settled</b><span>Archived work, collapsed into one shelf</span></div><em>12</em></div>
+        <div class="guide-row"><i>01</i><div><b>Next Action</b><span>Your turn. Oldest handoff first</span></div><em>empty</em></div>
+        <div class="guide-row"><i>02</i><div><b>Waiting</b><span>The agent is working. Oldest wait first</span></div><em>1</em></div>
+        <div class="guide-row"><i>03</i><div><b>Snoozed</b><span>Hidden until its wake time or new activity</span></div><em>4</em></div>
+        <div class="guide-row"><i>04</i><div><b>Settled</b><span>Archived work, collapsed into one shelf</span></div><em>4</em></div>
       </div>
       <div class="t3-pointer"><span></span><b>one flat inbox</b></div>
     </div>`;

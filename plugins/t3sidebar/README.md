@@ -16,7 +16,7 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox with active and parked thread sections" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The t3sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
 </div>
 
 t3sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
