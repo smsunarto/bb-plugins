@@ -39,19 +39,6 @@ your bb, so the bundle always matches the host it runs on. `bb plugin update
 notify` follows the same release line. If another marketplace you have added
 publishes a `notify`, spell it `notify@smsunarto`.
 
-<details>
-<summary>Installing the tag directly, without the marketplace</summary>
-
-```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --plugin notify
-```
-
-`*` always resolves the newest `notify/vX.Y.Z` tag; replace it with a range such
-as `^0.2.0` to pin a line. `--plugin notify` names the entry of
-[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
-
-</details>
-
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
 

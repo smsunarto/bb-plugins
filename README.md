@@ -108,23 +108,6 @@ runtime dependencies, and builds both bundles against your bb — a plugin is
 never shipped prebuilt, so it always matches the host it runs on. `bb plugin
 update <id>` follows the same line.
 
-<details>
-<summary>Installing a tag directly, without the marketplace</summary>
-
-The catalog is a convenience; the git tag is the artifact. One command per
-plugin, naming the release line and the directory yourself:
-
-```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --plugin notify
-```
-
-`*` is a semver range over that plugin's `<id>/vX.Y.Z` tags; replace it with
-`^0.2.0` or any other range to pin a line. `--plugin <id>` names an entry of
-this repository's [`.bb/plugins.json`](.bb/plugins.json) collection manifest,
-which is how bb knows which directory of the monorepo to build.
-
-</details>
-
 ## Build from source
 
 This is the route for unreleased work. It puts each plugin in as a **local path source**, so bb reads the files in place: edit, rebuild, reload — no reinstall.

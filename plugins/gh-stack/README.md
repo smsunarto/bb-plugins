@@ -51,19 +51,6 @@ your bb, so the bundle always matches the host it runs on. `bb plugin update
 gh-stack` follows the same release line. If another marketplace you have added
 publishes a `gh-stack`, spell it `gh-stack@smsunarto`.
 
-<details>
-<summary>Installing the tag directly, without the marketplace</summary>
-
-```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:gh-stack/:* --plugin gh-stack
-```
-
-`*` always resolves the newest `gh-stack/vX.Y.Z` tag; replace it with a range such
-as `^0.2.0` to pin a line. `--plugin gh-stack` names the entry of
-[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
-
-</details>
-
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
 

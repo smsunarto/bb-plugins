@@ -46,19 +46,6 @@ your bb, so the bundle always matches the host it runs on. `bb plugin update
 amp` follows the same release line. If another marketplace you have added
 publishes a `amp`, spell it `amp@smsunarto`.
 
-<details>
-<summary>Installing the tag directly, without the marketplace</summary>
-
-```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:amp/:* --plugin amp
-```
-
-`*` always resolves the newest `amp/vX.Y.Z` tag; replace it with a range such
-as `^0.3.0` to pin a line. `--plugin amp` names the entry of
-[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
-
-</details>
-
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
 

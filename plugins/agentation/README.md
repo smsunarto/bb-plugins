@@ -55,19 +55,6 @@ your bb, so the bundle always matches the host it runs on. `bb plugin update
 agentation` follows the same release line. If another marketplace you have added
 publishes a `agentation`, spell it `agentation@smsunarto`.
 
-<details>
-<summary>Installing the tag directly, without the marketplace</summary>
-
-```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:agentation/:* --plugin agentation
-```
-
-`*` always resolves the newest `agentation/vX.Y.Z` tag; replace it with a range such
-as `^0.2.0` to pin a line. `--plugin agentation` names the entry of
-[`.bb/plugins.json`](../../.bb/plugins.json) that points at this directory.
-
-</details>
-
 **From source** — clone the repo and install the plugin as a local path
 source. This is also how you install a change that is not released yet:
 
