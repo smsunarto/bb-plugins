@@ -118,8 +118,7 @@ ratio against the ground it sits on.
 Token colors are not a CSS surface — Shiki writes an inline style on every span
 inside a shadow root. bb 0.38 answers that with a manifest field that picks the
 Shiki theme, so the plugin ships one: `themes/bb-monokai-code.json`, the same
-TextMate layer as the [Cursor Monokai](https://github.com/smsunarto/smsunarto-theme)
-editor theme. One hue per kind — pink machinery, cyan structure, green
+TextMate layer as the Cursor Monokai editor theme. One hue per kind — pink machinery, cyan structure, green
 callables, yellow literals, purple constants, gray commentary, white for
 everything else.
 
@@ -155,7 +154,6 @@ Install from source as shown under [Install](#install). The shipped CSS is
 generated from the TypeScript palette and a selector-focused template:
 
 ```sh
-$EDITOR plugins/monokai/CONTRACT.md
 $EDITOR plugins/monokai/scripts/generate-theme.ts
 $EDITOR plugins/monokai/scripts/bb-monokai.template.css
 bun run --filter '@smsunarto/bb-plugin-monokai' generate:theme
@@ -163,26 +161,14 @@ bun run --filter '@smsunarto/bb-plugin-monokai' check
 bb plugin reload monokai
 ```
 
-`CONTRACT.md` is a relative symlink to the Cursor Monokai contract in the
-sibling `smsunarto-theme` checkout. Change that shared contract before the CSS,
-then update the code-owned role registry. `themes/bb-monokai.css` and
-`themes/bb-monokai-code.json` are generated; do not edit them. The generator
-rejects stale output, unknown roles, off-contract colors, missing tokens, wrong
-role mappings, illegible pairs, and a chrome-only role on a syntax token. The
-plugin build runs that check automatically. In a standalone clone where the
-sibling checkout is absent, read the canonical contract in the
-[`smsunarto-theme` repository](https://github.com/smsunarto/smsunarto-theme/blob/main/CONTRACT.md).
+The palette in `generate-theme.ts` is the only color registry: every surface
+takes a role name, never a hex. `themes/bb-monokai.css` and
+`themes/bb-monokai-code.json` are generated; do not edit them. The syntax
+layer's scope map lives in `scripts/code-theme-rules.json`, also in role names.
 
-The code theme's scope map is vendored, because the editor theme is a private
-repository and cannot be a dependency of this one. `scripts/code-theme-rules.json`
-holds which scopes take which role — role names, never hexes, so the palette
-stays in one place. Re-vendor it after an editor-theme change, from a checkout
-that has the sibling:
-
-```sh
-bun run --filter '@smsunarto/bb-plugin-monokai' sync:code-theme
-bun run --filter '@smsunarto/bb-plugin-monokai' generate:theme
-```
+The generator rejects stale output, unknown roles, off-contract colors, missing
+tokens, wrong role mappings, illegible pairs, and a chrome-only role on a
+syntax token. The plugin build runs that check automatically.
 
 Re-apply with `bb theme set plugin:monokai:bb-monokai` if the palette does not
 refresh.
