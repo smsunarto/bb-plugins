@@ -1,6 +1,7 @@
 # bb-kit design principles
 
-Status: active design guidance
+Status: historical evidence — superseded as guidance by the clean rewrite
+(see docs/adr/0002-simplicity-over-inherited-safety.md)
 Current compatibility line: bb 0.37.x, plugin SDK protocol 0.4.1
 
 This document records the design rules learned while building bb-kit, rewriting

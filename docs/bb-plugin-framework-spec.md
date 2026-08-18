@@ -1,6 +1,7 @@
 # bb-kit: an opinionated framework for bb plugins
 
-Status: accepted design; foundational MVP implemented
+Status: superseded — describes bb-kit 0.1; the clean rewrite replaces it
+(see docs/adr/0001-bb-kit-clean-rewrite.md)
 Target baseline: bb 0.37.x, plugin SDK protocol 0.4.1
 Working name: `bb-kit`
 
