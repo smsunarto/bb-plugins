@@ -31,7 +31,7 @@ previews all draw from the same palette rather than keeping bb's defaults.
 **From a release tag** — install the plugin, then select the palette:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:monokai/:* --subdirectory plugins/monokai
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:monokai/:* --plugin monokai
 bb theme set plugin:monokai:bb-monokai
 ```
 

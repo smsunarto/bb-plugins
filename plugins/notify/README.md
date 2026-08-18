@@ -30,7 +30,7 @@ thread it came from.
 **From a release tag** — one command:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --subdirectory plugins/notify
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --plugin notify
 ```
 
 `*` always resolves the newest `notify/vX.Y.Z` tag; replace it with a range such

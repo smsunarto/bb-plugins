@@ -46,7 +46,7 @@ per agent. The toolbar talks to bb's own origin, so annotating through
 **From a release tag** — one command:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:agentation/:* --subdirectory plugins/agentation
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:agentation/:* --plugin agentation
 ```
 
 `*` always resolves the newest `agentation/vX.Y.Z` tag; replace it with a range

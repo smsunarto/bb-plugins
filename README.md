@@ -92,13 +92,13 @@ framework for bb plugin authors:
 Every plugin ships as a git tag. One command per plugin, and it installs the newest release:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:<id>/:* --subdirectory plugins/<id>
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:<id>/:* --plugin <id>
 ```
 
-`<id>` is the plugin's directory name — `agent-proxy`, `agentation`, `gh-stack`, `notify`, `amp`, `t3sidebar`, or `monokai`. For example:
+`<id>` names one entry of this repository's [`.bb/plugins.json`](.bb/plugins.json) collection manifest — `agent-proxy`, `agentation`, `gh-stack`, `notify`, `amp`, `t3sidebar`, or `monokai`. For example:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --subdirectory plugins/notify
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:notify/:* --plugin notify
 ```
 
 `*` is a semver range over that plugin's `<id>/vX.Y.Z` tags, so it always resolves the newest release; replace it with `^0.2.0` or any other range to pin a line, and `bb plugin update <id>` follows the range from there. bb clones the tag, installs the plugin's runtime dependencies, and builds both bundles against your bb — a plugin is never shipped prebuilt, so it always matches the host it runs on.

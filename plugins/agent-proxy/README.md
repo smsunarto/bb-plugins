@@ -45,7 +45,7 @@ the machine that runs the bb server and gives it a management UI inside bb.
 **From a release tag** — one command:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:agent-proxy/:* --subdirectory plugins/agent-proxy
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:agent-proxy/:* --plugin agent-proxy
 ```
 
 `*` always resolves the newest `agent-proxy/vX.Y.Z` tag; replace it with a range

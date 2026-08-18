@@ -42,7 +42,7 @@ gh extension install github/gh-stack
 **From a release tag** — one command:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:gh-stack/:* --subdirectory plugins/gh-stack
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:gh-stack/:* --plugin gh-stack
 ```
 
 `*` always resolves the newest `gh-stack/vX.Y.Z` tag; replace it with a range

@@ -21,7 +21,10 @@ __pycache__/
 .DS_Store
 .env
 .env.*
-.bb/
+# bb writes local project state into .bb/; only the plugin collection
+# manifest is ours to track.
+.bb/*
+!.bb/plugins.json
 .claude/
 .pr-walkthrough/
 .scratch/

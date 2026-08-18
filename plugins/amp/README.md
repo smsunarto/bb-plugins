@@ -37,7 +37,7 @@ amp login
 **From a release tag** — one command:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:amp/:* --subdirectory plugins/amp
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:amp/:* --plugin amp
 ```
 
 `*` always resolves the newest `amp/vX.Y.Z` tag; replace it with a range such as

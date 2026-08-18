@@ -1,0 +1,16 @@
+{
+  "$schema": "https://getbb.app/schemas/plugins.schema.json",
+  "schemaVersion": 1,
+  "name": "bb-plugins",
+  "plugins": [
+    { "name": "agent-proxy", "source": "./plugins/agent-proxy" },
+    { "name": "agentation", "source": "./plugins/agentation" },
+    { "name": "amp", "source": "./plugins/amp" },
+    { "name": "dotfiles", "source": "./plugins/dotfiles" },
+    { "name": "gh-stack", "source": "./plugins/gh-stack" },
+    { "name": "monokai", "source": "./plugins/monokai" },
+    { "name": "notify", "source": "./plugins/notify" },
+    { "name": "pr-walkthrough", "source": "./plugins/pr-walkthrough" },
+    { "name": "t3sidebar", "source": "./plugins/t3sidebar" }
+  ]
+}

@@ -37,7 +37,7 @@ You clear the list with two email verbs: **snooze** a thread until a wake time, 
 **From a release tag** — one command:
 
 ```sh
-bb plugin install git:github.com/smsunarto/bb-plugins@semver:t3sidebar/:* --subdirectory plugins/t3sidebar
+bb plugin install git:github.com/smsunarto/bb-plugins@semver:t3sidebar/:* --plugin t3sidebar
 ```
 
 `*` always resolves the newest `t3sidebar/vX.Y.Z` tag; replace it with a range
