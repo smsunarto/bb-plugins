@@ -7,6 +7,8 @@
     "**/vendor/**",
     "**/*.d.ts",
     "**/*.template.css",
+    "**/generated/**",
+    "packages/bb-kit-cli/src/compatibility-contract.ts",
     "plugins/monokai/themes/**"
   ]
 }
