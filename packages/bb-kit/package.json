@@ -59,7 +59,7 @@
     }
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.6",
+    "@get-bb/plugin-sdk": "0.4.8",
     "@tanstack/react-query": "^5.101.4",
     "@types/react": "^19.0.0",
     "react": "^19.0.0",

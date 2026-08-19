@@ -41,13 +41,12 @@ function testContract(
   sdkVersion: string,
   frontend: readonly string[] = [`${SDK_PACKAGE}/app`, "react", "sonner"],
 ): CompatibilityContract {
-  const [majorText, minorText] = version.split(".");
+  const [majorText] = version.split(".");
   const major = Number(majorText);
-  const minor = Number(minorText);
   return {
     bbCliVersion: version,
     engines: {
-      bb: `>=${version} <${major}.${minor + 1}.0`,
+      bb: `>=${version} <${major + 1}.0.0`,
       bbPluginSdk: `>=${sdkVersion}`,
     },
     pluginSdk: {

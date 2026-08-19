@@ -204,17 +204,16 @@ export function findWorkspaceRoot(start = process.cwd()): string {
   }
 }
 
-function exactEngineRange(version: string): string {
-  const [majorText, minorText] = version.split(".");
+function majorEngineRange(version: string): string {
+  const [majorText] = version.split(".");
   const major = Number(majorText);
-  const minor = Number(minorText);
-  if (!Number.isSafeInteger(major) || !Number.isSafeInteger(minor)) {
+  if (!Number.isSafeInteger(major)) {
     throw new ProcessError(
       "compatibility_probe_invalid",
       `cannot derive an engine range from bb ${version}`,
     );
   }
-  return `>=${version} <${major}.${minor + 1}.0`;
+  return `>=${version} <${major + 1}.0.0`;
 }
 
 function stableVersionParts(version: string): readonly [number, number, number] | null {
@@ -462,7 +461,7 @@ function defaultCompatibilityProbe(
       contract: {
         bbCliVersion: selected.version,
         engines: {
-          bb: exactEngineRange(selected.version),
+          bb: majorEngineRange(selected.version),
           bbPluginSdk: sdkRange,
         },
         pluginSdk: { version: sdkVersion, major: sdkMajor, artifactFormatVersion },
@@ -712,7 +711,7 @@ export function checkWorkspaceCompatibility(
       diagnostics.push(diagnostic(
         "BBKW005",
         `${plugin.manifest.name} engines.bb is ${JSON.stringify(plugin.manifest.engines?.bb)}, expected ${JSON.stringify(contract.engines.bb)}`,
-        "Run bb-kit compatibility upgrade; future untested bb minors must remain excluded.",
+        "Run bb-kit compatibility upgrade; the range floors at the tested bb and excludes the next major.",
         manifestFile,
       ));
     }

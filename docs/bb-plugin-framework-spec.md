@@ -968,7 +968,7 @@ Runs deterministic static checks:
 - Append-only migration hashes and composition-root invariants.
 
 The workspace form also rejects partial bb compatibility upgrades. It compares
-the root pin, generated framework contract, every plugin's exact current-minor
+the root pin, generated framework contract, every plugin's major-bound
 engine range, generated declarations, component registry URL, and any existing
 build metadata.
 
@@ -1276,26 +1276,27 @@ Where bb's generated declarations or current toolchain cannot satisfy one of the
 
 ## bb and SDK compatibility
 
-bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. As of bb 0.38.0:
+bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. As of bb 0.39.0:
 
-- This repository targets bb 0.38.0 and plugin SDK protocol 0.4.6.
+- This repository targets bb 0.39.0 and plugin SDK protocol 0.4.8.
 - The SDK ships as `@get-bb/plugin-sdk` on the public npm registry, pinned exactly in each plugin's `devDependencies`.
 - Before 0.38 it was the unpublished `@bb/plugin-sdk`, represented locally by declarations `bb plugin new` vendored into `types/`. bb 0.38 stops generating those and `bb plugin migrate` deletes them; the host still shims the legacy `@bb/plugin-sdk/app` specifier for already-built frontends.
 - The published package includes the `./testing` and `./testing/app` harness exports.
 - `bb-app` is the distributable source of the matching bb CLI/build behavior.
 
-The initial generated engine policy should use a tested compatibility line rather than a broad optimistic range:
+The generated engine policy floors at the tested bb release and excludes only
+the next major:
 
 ```json
 {
   "engines": {
-    "bb": ">=0.37.0 <0.38.0",
-    "bbPluginSdk": "^0.4.1"
+    "bb": ">=0.39.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.8"
   }
 }
 ```
 
-Ranges widen only after CI and live verification prove another bb line.
+The floor rises only through a verified `compatibility upgrade`.
 
 Framework SemVer is independent from bb SDK SemVer and maintains an explicit table:
 
@@ -1326,7 +1327,7 @@ bb-kit compatibility check
 ```
 
 `inspect` and `upgrade` derive the contract from a selected stable `x.y.z` CLI:
-the exact current-minor engine range, SDK version and artifact format, generated
+the major-bound engine range, SDK version and artifact format, generated
 declarations and hashes, exact frontend host shims, and release-pinned component
 registry URL. The upgrade computes all writes before it changes the workspace,
 updates only framework-owned compatibility state, rolls back a failed post-check,

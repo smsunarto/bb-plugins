@@ -9,7 +9,7 @@
 
 **Point at the problem instead of describing it.**
 
-![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
+![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![no setup](https://img.shields.io/badge/setup-none-F1B467?style=flat-square)
 

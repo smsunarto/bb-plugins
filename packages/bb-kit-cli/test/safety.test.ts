@@ -52,16 +52,23 @@ afterEach(() => {
 });
 
 describe("private compatibility contract", () => {
-  it("matches the repository pin, SDK package, and exact bb 0.38 host shims", () => {
+  it("matches the repository pin, SDK package, and the published host shims", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { config: { bbVersion: string } };
     expect(compatibility.bbCliVersion).toBe(rootManifest.config.bbVersion);
-    expect(isCompatibleHostVersion("0.38.9")).toBe(true);
-    expect(isCompatibleHostVersion("0.38.x")).toBe(false);
-    expect(isCompatibleHostVersion("0.38.0-beta.1")).toBe(false);
-    expect(isCompatibleHostVersion("0.36.0")).toBe(false);
-    expect(isCompatibleHostVersion("0.39.0")).toBe(false);
+    const [major, minor, patch] = compatibility.bbCliVersion.split(".").map(Number) as [
+      number,
+      number,
+      number,
+    ];
+    expect(isCompatibleHostVersion(compatibility.bbCliVersion)).toBe(true);
+    expect(isCompatibleHostVersion(`${major}.${minor}.${patch + 9}`)).toBe(true);
+    expect(isCompatibleHostVersion(`${major}.${minor + 1}.0`)).toBe(true);
+    expect(isCompatibleHostVersion(`${major}.${minor}.x`)).toBe(false);
+    expect(isCompatibleHostVersion(`${compatibility.bbCliVersion}-beta.1`)).toBe(false);
+    expect(isCompatibleHostVersion(`${major}.${minor - 1}.0`)).toBe(false);
+    expect(isCompatibleHostVersion(`${major + 1}.0.0`)).toBe(false);
     expect(checkProject(temporaryProject("fullstack"))).toEqual([]);
     expect([
       ...compatibility.hostShims.server,
@@ -143,7 +150,9 @@ describe("exact bb CLI selection", () => {
   });
 
   it("uses one protected child environment", () => {
-    const run = vi.fn<CommandRunner>(() => commandResult({ stdout: "0.38.0\n" }));
+    const run = vi.fn<CommandRunner>(() => commandResult({
+      stdout: `${compatibility.bbCliVersion}\n`,
+    }));
     const selected = selectBbCli(process.cwd(), {
       ...testEnvironment(),
       BB_CLI_REEXEC: "1",
@@ -179,7 +188,7 @@ describe("owned builds", () => {
     const root = temporaryProject();
     writeBuildMetadata(root);
     const run = vi.fn<CommandRunner>((request) => commandResult({
-      stdout: request.args[0] === "--version" ? "0.38.0\n" : "",
+      stdout: request.args[0] === "--version" ? `${compatibility.bbCliVersion}\n` : "",
     }));
     const result = buildProject(root, { run, env: testEnvironment() });
     expect(result).toEqual(expect.objectContaining({
@@ -188,7 +197,7 @@ describe("owned builds", () => {
       selectedBbCli: {
         path: fakeBbCli,
         source: "BB_CLI",
-        version: "0.38.0",
+        version: compatibility.bbCliVersion,
       },
     }));
     expect(run.mock.calls.map(([request]) => ({
@@ -216,7 +225,7 @@ describe("owned builds", () => {
     writeBuildMetadata(driftRoot);
     const driftRun = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.38.0\n" });
+        return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
       }
       writeVendoredDeclaration(driftRoot, "drift\n");
       return commandResult();
@@ -235,7 +244,7 @@ describe("owned builds", () => {
     const metadataRoot = temporaryProject();
     const metadataRun = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.38.0\n" });
+        return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
       }
       writeBuildMetadata(metadataRoot);
       const path = join(metadataRoot, "dist/server.meta.json");

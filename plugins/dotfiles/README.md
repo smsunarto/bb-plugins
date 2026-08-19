@@ -10,7 +10,7 @@
 **Browse, edit, and sync one dotfiles repo from a bb panel.**
 
 ![personal](https://img.shields.io/badge/status-personal%20%C2%B7%20unsupported-E34671?style=flat-square)
-![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
+![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 
 </div>
@@ -37,7 +37,7 @@ run validation checks, preview an apply, pull published changes, or publish loca
 
 ## Requirements
 
-- bb 0.38.x
+- bb 0.39+
 - macOS or Linux. There is no Windows path
 - `git` and `mise` on `PATH` inside the bb server host's login shell
 - A dotfiles repository matching the layout this plugin expects, with the matching
@@ -132,9 +132,9 @@ or change `$SHELL`, then run `bb plugin reload dotfiles`.
 bun install
 bun run dev
 bun ../../packages/bb-kit-cli/src/cli.ts check
-BB_CLI=/absolute/path/to/bb-0.38.0 bun ../../packages/bb-kit-cli/src/cli.ts build
-BB_CLI=/absolute/path/to/bb-0.38.0 bun ../../packages/bb-kit-cli/src/cli.ts verify
-BB_CLI=/absolute/path/to/bb-0.38.0 bun ../../packages/bb-kit-cli/src/cli.ts doctor
+BB_CLI=/absolute/path/to/bb-0.39.0 bun ../../packages/bb-kit-cli/src/cli.ts build
+BB_CLI=/absolute/path/to/bb-0.39.0 bun ../../packages/bb-kit-cli/src/cli.ts verify
+BB_CLI=/absolute/path/to/bb-0.39.0 bun ../../packages/bb-kit-cli/src/cli.ts doctor
 ```
 
 The plugin is one bb-kit vertical module under `plugin/modules/dotfiles/`. Its six
@@ -143,7 +143,7 @@ calls; `bb-kit.lock.json` keeps their wire names stable. Overview and publish us
 canonical `noInput`; the other operations have required literal examples. The
 repository watcher builds and reloads the plugin after each source change.
 
-bb-kit 0.1 accepts only bb CLI 0.38.0. `doctor` can use that CLI to report a newer
+bb-kit accepts only the pinned bb CLI, today 0.39.0. `doctor` can use that CLI to report a newer
 connected host, an installed source mismatch, or a failed plugin. It is an observation
 step only; run the suggested query and UI checklist separately after the correct
 checkout is installed and running.

@@ -13,6 +13,7 @@ import {
   type CommandRunner,
 } from "../src/index.js";
 import { checkPackedPackage, packedPaths } from "../src/package.js";
+import { compatibility } from "../src/compatibility.js";
 import {
   commandResult,
   seedProjectExecutables,
@@ -108,7 +109,7 @@ describe("project verification", () => {
     ];
     const run = vi.fn<CommandRunner>((request) => commandResult({
       stdout: request.args[0] === "--version"
-        ? "0.38.0\n"
+        ? `${compatibility.bbCliVersion}\n`
         : request.args[0] === "pm" ? packOutput(paths) : "",
     }));
     const result = verifyProject(root, { run, env: testEnvironment() });
@@ -135,7 +136,7 @@ describe("project verification", () => {
     const root = temporaryProject();
     seedProjectExecutables(root);
     const run = vi.fn<CommandRunner>((request) => request.args[0] === "--version"
-      ? commandResult({ stdout: "0.38.0\n" })
+      ? commandResult({ stdout: `${compatibility.bbCliVersion}\n` })
       : commandResult({
           status: 1,
           stderr: "lint failed at plugin/server.ts:1 token=secret-value",
@@ -157,7 +158,7 @@ describe("project verification", () => {
     seedProjectExecutables(root);
     const run = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.38.0\n" });
+        return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
       }
       writeVendoredDeclaration(root, "changed by lint\n");
       return commandResult();
@@ -193,7 +194,7 @@ describe("project verification", () => {
     ];
     const run = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.38.0\n" });
+        return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
       }
       if (request.args[0] === "pm") {
         writeVendoredDeclaration(root, "changed by pack\n");

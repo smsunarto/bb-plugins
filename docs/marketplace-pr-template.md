@@ -168,7 +168,7 @@ Ready to submit (public, released, id unclaimed upstream):
 | Notify | `notify` | Notify | `notify/v0.2.1` | `^0.2.1` |
 
 All five share `subdir: plugins/<id>`, `tagPrefix: <id>/`, and declare
-`bb >=0.38.0 <0.39.0` / `bbPluginSdk >=0.4.6` in their own manifests. Re-read
+`bb >=0.39.0 <1.0.0` / `bbPluginSdk >=0.4.8` in their own manifests. Re-read
 the tag and the manifest before filling a PR — the table is a snapshot, not the
 source of truth.
 

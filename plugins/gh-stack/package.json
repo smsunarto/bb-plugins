@@ -27,8 +27,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.38.0 <0.39.0",
-    "bbPluginSdk": ">=0.4.6"
+    "bb": ">=0.39.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.8"
   },
   "bb": {
     "name": "GitHub Stack",
@@ -71,7 +71,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.6",
+    "@get-bb/plugin-sdk": "0.4.8",
     "@radix-ui/react-dialog": "^1.1.19",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",

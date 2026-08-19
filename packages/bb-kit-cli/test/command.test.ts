@@ -9,6 +9,7 @@ import {
   type CommandRunner,
   type CliIo,
 } from "../src/index.js";
+import { compatibility } from "../src/compatibility.js";
 import {
   commandResult,
   makeOperationRequireInput,
@@ -248,7 +249,7 @@ describe("bb-kit command interface", () => {
     ];
     const run = vi.fn<CommandRunner>((request) => {
       if (request.args[0] === "--version") {
-        return commandResult({ stdout: "0.38.0\n" });
+        return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
       }
       return commandResult({
         stdout: request.args[0] === "pm"

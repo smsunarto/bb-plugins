@@ -38,7 +38,7 @@ designing the safe operation.
 
 | Risk | bb-kit policy |
 | --- | --- |
-| An untested bb range can claim false compatibility | Require one exact current-minor engine range. |
+| An untested bb range can claim false compatibility | Require one generated range: floor at the tested bb, cap at the next major. |
 | A different CLI can mutate generated SDK declarations | Select and validate the exact bb CLI before any project tool runs. |
 | Package scripts can bypass the verification contract | Own a fixed verification sequence; treat scripts as exact aliases. |
 | A package-family prefix can admit an unsupported runtime subpath | Allow exact host-shim specifiers only. |

@@ -32,8 +32,8 @@ composition roots. `bb-kit.lock.json` preserves public RPC identities and
 append-only migration hashes. `--json` provides stable output for coding
 agents. Destructive loaded-operation invocations require `--confirm`.
 
-bb-kit 0.1 has one compatibility contract: bb CLI 0.37.0, bb engine
-`>=0.37.0 <0.38.0`, and plugin SDK 0.4.1. `check` fails on declaration drift,
+bb-kit has one generated compatibility contract, today bb CLI 0.39.0, bb
+engine `>=0.39.0 <1.0.0`, and plugin SDK 0.4.8. `check` fails on declaration drift,
 non-canonical owned scripts, package escapes, unresolved local imports, and
 unsupported host-shim subpaths. It also requires one statically discoverable
 input state per operation: a direct `noInput` import, or another schema with a

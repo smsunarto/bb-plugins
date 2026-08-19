@@ -8,6 +8,7 @@ import {
   initializeProject,
   type CommandRunner,
 } from "../src/index.js";
+import { compatibility } from "../src/compatibility.js";
 import {
   commandResult,
   testEnvironment,
@@ -36,11 +37,13 @@ function doctorRunner(root: string, overrides: {
 } = {}): CommandRunner {
   return (request) => {
     if (request.args[0] === "--version") {
-      return commandResult({ stdout: "0.38.0\n" });
+      return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
     }
     if (request.args.join(" ") === "settings version --json") {
       return commandResult({
-        stdout: JSON.stringify({ currentVersion: overrides.hostVersion ?? "0.38.9" }),
+        stdout: JSON.stringify({
+          currentVersion: overrides.hostVersion ?? compatibility.bbCliVersion,
+        }),
       });
     }
     if (request.args.join(" ") === "plugin list --json") {
@@ -56,7 +59,7 @@ function doctorRunner(root: string, overrides: {
             statusDetail: null,
             app: {
               bundle: {
-                sdkVersion: "0.4.6",
+                sdkVersion: compatibility.pluginSdk.version,
                 compatible: true,
               },
             },
@@ -79,12 +82,12 @@ describe("read-only doctor", () => {
     const report = doctorProject(root, { run, env: testEnvironment() });
     expect(report).toEqual(expect.objectContaining({
       ok: true,
-      host: { version: "0.38.9", compatible: true },
+      host: { version: compatibility.bbCliVersion, compatible: true },
       plugin: expect.objectContaining({
         id: "example",
         found: true,
         sourceMatches: true,
-        appSdkVersion: "0.4.6",
+        appSdkVersion: compatibility.pluginSdk.version,
         appCompatible: true,
       }),
       suggestedQuery: "bb-kit invoke reports.get",
@@ -105,7 +108,7 @@ describe("read-only doctor", () => {
     const other = mkdtempSync(join(tmpdir(), "bb-kit-doctor-other-"));
     roots.push(other);
     const run = vi.fn<CommandRunner>(doctorRunner(root, {
-      hostVersion: "0.39.0",
+      hostVersion: "1.0.0",
       rootDir: other,
       enabled: false,
       status: "failed",

@@ -9,7 +9,7 @@
 
 **Stacked pull requests, without the rebase choreography.**
 
-![bb 0.38.x](https://img.shields.io/badge/bb-0.38.x-88C0D0?style=flat-square)
+![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![needs gh-stack](https://img.shields.io/badge/needs-gh--stack-F1B467?style=flat-square)
 

@@ -26,8 +26,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.38.0 <0.39.0",
-    "bbPluginSdk": ">=0.4.6"
+    "bb": ">=0.39.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.8"
   },
   "bb": {
     "name": "GTD Sidebar",
@@ -67,7 +67,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.6",
+    "@get-bb/plugin-sdk": "0.4.8",
     "@radix-ui/react-context-menu": "^2.3.3",
     "@radix-ui/react-select": "^2.3.3",
     "@types/better-sqlite3": "^7.6.12",

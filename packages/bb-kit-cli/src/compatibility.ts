@@ -153,6 +153,14 @@ export const shimmedPackageRoots = new Set<string>(
 );
 
 export function isCompatibleHostVersion(version: string): boolean {
-  const [major, minor] = compatibility.bbCliVersion.split(".");
-  return new RegExp(`^${major}\\.${minor}\\.\\d+$`).test(version);
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) return false;
+  const host = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
+  const floor = compatibility.bbCliVersion.split(".").map(Number);
+  if (host[0] !== floor[0]) return false;
+  for (let index = 0; index < 3; index += 1) {
+    const difference = host[index]! - (floor[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return true;
 }
