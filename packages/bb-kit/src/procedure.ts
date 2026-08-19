@@ -30,11 +30,7 @@ export type ProcedureWithInput<
 };
 
 /** The shape for a procedure with no input: no `input` key at all. */
-export type ProcedureNoInput<
-  K extends ProcedureKind,
-  Context,
-  Out extends StandardSchemaV1,
-> = {
+export type ProcedureNoInput<K extends ProcedureKind, Context, Out extends StandardSchemaV1> = {
   readonly kind: K;
   readonly output: Out;
   handler(context: Context): MaybePromise<SchemaInput<Out>>;
@@ -78,8 +74,8 @@ export function runtimeProcedures(rpc: AnyRPC): Record<string, RuntimeProcedure>
 }
 
 /** `A | B` → `A & B`. One private helper, shared by `./rpc` and `./cli`. */
-export type UnionToIntersection<U> = (
-  U extends unknown ? (x: U) => void : never
-) extends (x: infer I) => void
+export type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (
+  x: infer I,
+) => void
   ? I
   : never;

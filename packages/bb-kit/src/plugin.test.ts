@@ -250,8 +250,12 @@ function typeOnly() {
     summary: "wants more than the client provides",
     run: (_client: DemoClient & { extra(): void }) => ({ exitCode: 0 }),
   });
-  // @ts-expect-error a command demanding a superset of the client is rejected
-  void definePlugin({ rpc: demo, cli: { summary: "x", commands: { greedy } }, context: (): Ctx => ({ prefix: "" }) });
+  void definePlugin({
+    rpc: demo,
+    // @ts-expect-error a command demanding a superset of the client is rejected
+    cli: { summary: "x", commands: { greedy } },
+    context: (): Ctx => ({ prefix: "" }),
+  });
   // @ts-expect-error the context factory must satisfy the handlers' demand
   void definePlugin({ rpc: demo, context: () => ({}) });
   void definePlugin({ rpc: demo, context: (): Ctx => ({ prefix: "" }) });

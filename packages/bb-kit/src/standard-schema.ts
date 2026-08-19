@@ -28,9 +28,7 @@ export interface StandardSchemaV1Issue {
 }
 
 /** The schema's declared input type — what a caller passes. */
-export type SchemaInput<S extends StandardSchemaV1> = NonNullable<
-  S["~standard"]["types"]
->["input"];
+export type SchemaInput<S extends StandardSchemaV1> = NonNullable<S["~standard"]["types"]>["input"];
 
 /** The schema's parsed output type — what validation produces. */
 export type SchemaOutput<S extends StandardSchemaV1> = NonNullable<

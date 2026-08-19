@@ -1,8 +1,5 @@
 import type { OperationHandlersFor } from "../../lib/bb-kit/operations.js";
-import type {
-  GitEntry,
-  TaskResult,
-} from "./contract.js";
+import type { GitEntry, TaskResult } from "./contract.js";
 import { dotfilesOperations } from "./generated/operations.js";
 import {
   groupDefinitions,
@@ -24,7 +21,10 @@ export interface DotfilesRepository {
     branch: string;
     entries: GitEntry[];
   }>;
-  readFile(repoPath: string, path: string): Promise<{
+  readFile(
+    repoPath: string,
+    path: string,
+  ): Promise<{
     content: string;
     sha256: string;
   }>;
@@ -34,10 +34,7 @@ export interface DotfilesRepository {
     path: string,
     content: string,
     expectedSha256: string,
-  ): Promise<
-    | { outcome: "written"; sha256: string }
-    | { outcome: "conflict" }
-  >;
+  ): Promise<{ outcome: "written"; sha256: string } | { outcome: "conflict" }>;
   run(repoPath: string, command: string): Promise<TaskResult>;
   removeSkill(repoPath: string, name: string): Promise<TaskResult>;
 }
@@ -52,9 +49,7 @@ export function createDotfilesService({
   log,
 }: DotfilesServiceDependencies): OperationHandlersFor<typeof dotfilesOperations> {
   async function definitions(repoPath: string): Promise<readonly TweakableDefinition[]> {
-    return repository.repoExists(repoPath)
-      ? repository.discoverSkills(repoPath)
-      : [];
+    return repository.repoExists(repoPath) ? repository.discoverSkills(repoPath) : [];
   }
 
   async function requireAllowedPath(repoPath: string, path: string): Promise<void> {
@@ -79,11 +74,7 @@ export function createDotfilesService({
         branch: status.branch,
         gitEntries: status.entries,
         groups: groupDefinitions(skills).map((group) =>
-          toOverviewGroup(
-            group,
-            (path) => repository.pathExists(repoPath, path),
-            dirtyPaths,
-          ),
+          toOverviewGroup(group, (path) => repository.pathExists(repoPath, path), dirtyPaths),
         ),
       };
     },
@@ -101,12 +92,7 @@ export function createDotfilesService({
     async saveFile({ path, content, expectedSha256 }) {
       const repoPath = await repository.getRepoPath();
       await requireAllowedPath(repoPath, path);
-      const result = await repository.writeFile(
-        repoPath,
-        path,
-        content,
-        expectedSha256,
-      );
+      const result = await repository.writeFile(repoPath, path, content, expectedSha256);
       if (result.outcome === "conflict") return result;
       return {
         outcome: "written",
@@ -131,9 +117,7 @@ export function createDotfilesService({
     async removeSkill({ name }) {
       if (!isValidSkillName(name)) throw new Error(`invalid skill name: ${name}`);
       const repoPath = await repository.getRepoPath();
-      const skillExists = repository
-        .discoverSkills(repoPath)
-        .some((skill) => skill.title === name);
+      const skillExists = repository.discoverSkills(repoPath).some((skill) => skill.title === name);
       if (!skillExists) return { outcome: "not-found" };
       log(`removing skill ${name} via npx skills`);
       const result = await repository.removeSkill(repoPath, name);

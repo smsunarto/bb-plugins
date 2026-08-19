@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,7 +70,10 @@ test("an unwired unit file breaks the bijection (rule 1)", async () => {
   writeFileSync(join(root, "rpc", "extra.test.ts"), "export {};\n");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /error: rpc\/extra\.ts — not wired into server\.ts procedures — rule 1/);
+  assert.match(
+    result.stderr,
+    /error: rpc\/extra\.ts — not wired into server\.ts procedures — rule 1/,
+  );
 });
 
 test("a wrong unit export name fails rule 1", async () => {
@@ -70,7 +81,10 @@ test("a wrong unit export name fails rule 1", async () => {
   edit(root, "rpc/ping.ts", "export const ping =", "export const pong =");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /rpc\/ping\.ts.*exactly one value export named "ping" \(found: pong\)/);
+  assert.match(
+    result.stderr,
+    /rpc\/ping\.ts.*exactly one value export named "ping" \(found: pong\)/,
+  );
 });
 
 test("two keys wiring one unit file break the bijection (rule 1)", async () => {
@@ -121,7 +135,10 @@ test("a namespace that is not the plugin id fails rule 2", async () => {
   edit(root, "server.ts", 'namespace: "notes",', 'namespace: "other",');
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /RPC namespace "other" must equal derivePluginID.* = "notes" — rule 2/);
+  assert.match(
+    result.stderr,
+    /RPC namespace "other" must equal derivePluginID.* = "notes" — rule 2/,
+  );
 });
 
 test("a manifest path that does not exist fails rule 4", async () => {
@@ -144,7 +161,10 @@ test("a missing sibling test is a warning, not a failure (rule 6)", async () => 
   rmSync(join(root, "rpc", "ping.test.ts"));
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
-  assert.match(result.stderr, /warning: rpc\/ping\.ts — no sibling test rpc\/ping\.test\.ts — rule 6/);
+  assert.match(
+    result.stderr,
+    /warning: rpc\/ping\.ts — no sibling test rpc\/ping\.test\.ts — rule 6/,
+  );
   assert.match(result.stdout, /check passed with 1 warning\n$/);
 });
 
@@ -156,7 +176,16 @@ test("a missing typescript is a toolchain failure, not a crash", async () => {
 });
 
 test("isValidSemverRange accepts npm ranges and rejects junk", () => {
-  for (const range of [">=22.19.0", "^1.2.3", "~2.0", "1.2.x", "*", "1.0.0 - 2.0.0", "^1.0.0 || ^2.0.0", ">=1.2.3 <2.0.0"]) {
+  for (const range of [
+    ">=22.19.0",
+    "^1.2.3",
+    "~2.0",
+    "1.2.x",
+    "*",
+    "1.0.0 - 2.0.0",
+    "^1.0.0 || ^2.0.0",
+    ">=1.2.3 <2.0.0",
+  ]) {
     assert.ok(isValidSemverRange(range), range);
   }
   for (const range of ["not a version", ">=abc", "1.2.3.4.5"]) {

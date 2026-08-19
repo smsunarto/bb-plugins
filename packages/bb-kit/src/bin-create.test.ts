@@ -38,7 +38,10 @@ test("create writes the full scaffold tree and prints the plugin id", () => {
       `expected ${relative} on disk`,
     );
   }
-  assert.deepEqual(Object.keys(scaffoldFiles("bb-plugin-hello-world").files).sort(), [...expected].sort());
+  assert.deepEqual(
+    Object.keys(scaffoldFiles("bb-plugin-hello-world").files).sort(),
+    [...expected].sort(),
+  );
 });
 
 test("the scaffold package.json carries the manifest and the exact pins", () => {

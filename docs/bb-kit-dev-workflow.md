@@ -8,11 +8,11 @@ loop. All host-facing commands are verified against bb 0.38 source.
 
 ## Three loops, by frequency
 
-| Loop | Needs | When |
-|---|---|---|
-| Inner: `node --test --watch` | Node ≥ 22.19 + dev dependencies | every edit |
-| Live: `bb plugin dev` | running bb + installed plugin | host-visible behaviour |
-| Release QA: browser ritual | release build in a real bb | before each release |
+| Loop                         | Needs                           | When                   |
+| ---------------------------- | ------------------------------- | ---------------------- |
+| Inner: `node --test --watch` | Node ≥ 22.19 + dev dependencies | every edit             |
+| Live: `bb plugin dev`        | running bb + installed plugin   | host-visible behaviour |
+| Release QA: browser ritual   | release build in a real bb      | before each release    |
 
 The framework's job is to make the inner loop good enough that the other
 two stay rare. No agent-browser, no Playwright, no running bb in the

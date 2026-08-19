@@ -79,7 +79,7 @@ test("no-input useQuery calls the wire name with null input", async (t) => {
   const slot = renderSlot(
     { component: boundary(createElement(OverviewPanel)) },
     {},
-    { rpc: { "demo_overview": () => ({ total: 7 }) } },
+    { rpc: { demo_overview: () => ({ total: 7 }) } },
   );
   await slot.findByText("total:7");
   assert.deepEqual(slot.rpcCalls, [{ method: "demo_overview", input: null }]);
@@ -100,7 +100,7 @@ test("with-input useQuery(input) sends the input and derives the key", async (t)
   const slot = renderSlot(
     { component: boundary(createElement(ReadFilePanel)) },
     {},
-    { rpc: { "demo_read_file": (input) => ({ content: (input as { path: string }).path }) } },
+    { rpc: { demo_read_file: (input) => ({ content: (input as { path: string }).path }) } },
   );
   await slot.findByText("content:notes.md");
   assert.deepEqual(slot.rpcCalls, [{ method: "demo_read_file", input: { path: "notes.md" } }]);
@@ -122,7 +122,7 @@ test("no-input useQuery(options) reads a sole options object as options", async 
   const slot = renderSlot(
     { component: boundary(createElement(DisabledPanel)) },
     {},
-    { rpc: { "demo_overview": () => ({ total: 0 }) } },
+    { rpc: { demo_overview: () => ({ total: 0 }) } },
   );
   await slot.findByText("disabled:pending:idle");
   assert.equal(slot.rpcCalls.length, 0);
@@ -144,7 +144,7 @@ test("useQuery(input, options) passes options through to TanStack", async (t) =>
     {},
     {
       rpc: {
-        "demo_read_file": () => {
+        demo_read_file: () => {
           throw new Error("nope");
         },
       },
@@ -179,7 +179,7 @@ test("useMutation sends variables over the wire", async (t) => {
   const slot = renderSlot(
     { component: boundary(createElement(SavePanel)) },
     {},
-    { rpc: { "demo_save_file": () => ({ saved: true }) } },
+    { rpc: { demo_save_file: () => ({ saved: true }) } },
   );
   await slot.findByText("saved:true");
   assert.deepEqual(slot.rpcCalls, [{ method: "demo_save_file", input: { path: "out.md" } }]);
@@ -211,7 +211,7 @@ test("useClient is the imperative escape hatch", async (t) => {
   const slot = renderSlot(
     { component: boundary(createElement(ClientPanel)) },
     {},
-    { rpc: { "demo_read_file": (input) => ({ content: (input as { path: string }).path }) } },
+    { rpc: { demo_read_file: (input) => ({ content: (input as { path: string }).path }) } },
   );
   await slot.findByText("client:via-client.md");
   assert.deepEqual(slot.rpcCalls, [{ method: "demo_read_file", input: { path: "via-client.md" } }]);

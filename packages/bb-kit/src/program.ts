@@ -101,11 +101,7 @@ export function buildProgram(
   return program;
 }
 
-function addSubcommand(
-  parent: Command,
-  definition: SubcommandDefinition,
-  sink?: OutputSink,
-): void {
+function addSubcommand(parent: Command, definition: SubcommandDefinition, sink?: OutputSink): void {
   const sub = parent.command(definition.name);
   sub.summary(definition.summary);
   definition.configure?.(sub);

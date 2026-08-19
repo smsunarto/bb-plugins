@@ -14,9 +14,7 @@ export const UNIT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
  */
 export function camelName(name: string): string {
   const [first = "", ...rest] = name.split("-");
-  return (
-    first + rest.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("")
-  );
+  return first + rest.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("");
 }
 
 /** What every bin command returns; `bin.ts` writes the streams and exits. */

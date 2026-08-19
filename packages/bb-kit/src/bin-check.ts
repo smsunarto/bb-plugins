@@ -76,7 +76,8 @@ async function loadToolchain(
   const tsconfigPath = join(cwd, "tsconfig.json");
   if (!existsSync(tsconfigPath)) {
     return {
-      failure: "tsconfig.json not found — check parses files through the plugin's TypeScript project",
+      failure:
+        "tsconfig.json not found — check parses files through the plugin's TypeScript project",
     };
   }
   const sync = (await import(pathToFileURL(syncPath).href)) as {
@@ -192,8 +193,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name)
       .filter(
-        (name) =>
-          /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) && !name.endsWith(".d.ts"),
+        (name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) && !name.endsWith(".d.ts"),
       )
       .sort()
       .map((name) => `${dir}/${name}`);
@@ -290,10 +290,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         const found: { name: string; line: number }[] = [];
         for (const statement of sourceFile.statements) {
           const line = lineOf(sourceFile.text, statement.pos);
-          if (
-            statement.kind === K.VariableStatement &&
-            hasModifier(statement, K.ExportKeyword)
-          ) {
+          if (statement.kind === K.VariableStatement && hasModifier(statement, K.ExportKeyword)) {
             for (const declaration of statement.declarationList?.declarations ?? []) {
               const name =
                 declaration.name?.kind === K.Identifier
@@ -526,7 +523,11 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             for (const property of objectLiteral.properties ?? []) {
               const line = lineOf(sourceText, property.pos);
               if (property.kind === K.SpreadAssignment) {
-                fail(`a ${what} spread is outside what check can verify — rule 1`, serverRelative, line);
+                fail(
+                  `a ${what} spread is outside what check can verify — rule 1`,
+                  serverRelative,
+                  line,
+                );
                 continue;
               }
               const key = propertyKeyOf(property);
@@ -540,11 +541,14 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               } else if (property.kind === K.PropertyAssignment) {
                 const value = unwrap(property.initializer);
                 if (value?.kind === K.ObjectLiteralExpression && what === "commands") {
-                  fail("commands must be flat — nesting is not supported (rule 5)", serverRelative, line);
+                  fail(
+                    "commands must be flat — nesting is not supported (rule 5)",
+                    serverRelative,
+                    line,
+                  );
                   continue;
                 }
-                valueName =
-                  value?.kind === K.Identifier ? value.text : undefined;
+                valueName = value?.kind === K.Identifier ? value.text : undefined;
               }
               if (valueName === undefined) {
                 fail(
@@ -891,10 +895,7 @@ function checkManifest(
         }
       }
       if (!any) {
-        fail(
-          "bb.branding needs an icon or a logo.light path — rule 4",
-          "package.json",
-        );
+        fail("bb.branding needs an icon or a logo.light path — rule 4", "package.json");
       }
     }
     const skills = manifest["skills"];
@@ -913,7 +914,10 @@ function checkManifest(
   if (engines !== undefined && engines !== null && typeof engines === "object") {
     for (const [key, value] of Object.entries(engines as Record<string, unknown>)) {
       if (typeof value !== "string" || !isValidSemverRange(value)) {
-        fail(`engines.${key} ${JSON.stringify(value)} is not a valid semver range — rule 4`, "package.json");
+        fail(
+          `engines.${key} ${JSON.stringify(value)} is not a valid semver range — rule 4`,
+          "package.json",
+        );
       }
     }
   }

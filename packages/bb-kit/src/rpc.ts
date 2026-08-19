@@ -90,16 +90,12 @@ export function defineRPC<N extends string, P extends RPCProcedures>(definition:
 }): { namespace: N; procedures: P } {
   const { namespace, procedures } = definition;
   if (!NAMESPACE_PATTERN.test(namespace)) {
-    throw new Error(
-      `invalid RPC namespace "${namespace}": must match /^[a-z0-9][a-z0-9-]*$/`,
-    );
+    throw new Error(`invalid RPC namespace "${namespace}": must match /^[a-z0-9][a-z0-9-]*$/`);
   }
   const seen = new Map<string, string>();
   for (const key of Object.keys(procedures)) {
     if (!PROCEDURE_KEY_PATTERN.test(key)) {
-      throw new Error(
-        `invalid procedure key "${key}": must match /^[a-z][a-zA-Z0-9]*$/`,
-      );
+      throw new Error(`invalid procedure key "${key}": must match /^[a-z][a-zA-Z0-9]*$/`);
     }
     // "useClient" is the ./query escape hatch on the createRPC proxy and
     // "then" is guarded there to keep the client proxy non-thenable — a
@@ -110,9 +106,7 @@ export function defineRPC<N extends string, P extends RPCProcedures>(definition:
     const wire = wireName(namespace, key);
     const existing = seen.get(wire);
     if (existing !== undefined) {
-      throw new Error(
-        `procedures "${existing}" and "${key}" both derive the wire name "${wire}"`,
-      );
+      throw new Error(`procedures "${existing}" and "${key}" both derive the wire name "${wire}"`);
     }
     seen.set(wire, key);
   }

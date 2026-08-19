@@ -1,13 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import {
-  createClient,
-  defineMutation,
-  defineQuery,
-  defineRPC,
-  RPCValidationError,
-} from "./rpc.ts";
+import { createClient, defineMutation, defineQuery, defineRPC, RPCValidationError } from "./rpc.ts";
 import type { ClientFor, RPCContext } from "./rpc.ts";
 
 type Expect<T extends true> = T;

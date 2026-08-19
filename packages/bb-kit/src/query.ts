@@ -59,13 +59,19 @@ type MutationHooksWithInput<In, Out> = {
  * input, a no-input one has no input parameter at all.
  */
 type ProcedureHooks<P> = P extends { kind: "query" }
-  ? P extends { input: infer In extends StandardSchemaV1; output: infer Out extends StandardSchemaV1 }
+  ? P extends {
+      input: infer In extends StandardSchemaV1;
+      output: infer Out extends StandardSchemaV1;
+    }
     ? QueryHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
     : P extends { output: infer Out extends StandardSchemaV1 }
       ? QueryHooksNoInput<SchemaOutput<Out>>
       : never
   : P extends { kind: "mutation" }
-    ? P extends { input: infer In extends StandardSchemaV1; output: infer Out extends StandardSchemaV1 }
+    ? P extends {
+        input: infer In extends StandardSchemaV1;
+        output: infer Out extends StandardSchemaV1;
+      }
       ? MutationHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
       : P extends { output: infer Out extends StandardSchemaV1 }
         ? MutationHooksNoInput<SchemaOutput<Out>>
@@ -226,10 +232,7 @@ export function createRPC<R extends AnyRPC>(namespace: R["namespace"]): RPCHooks
   const bundles = new Map<string, RuntimeProcedureHooks>();
   const useClient = (): ClientFor<R> => {
     const transport = useTransport();
-    return useMemo(
-      () => clientProxy(namespace, transport) as unknown as ClientFor<R>,
-      [transport],
-    );
+    return useMemo(() => clientProxy(namespace, transport) as unknown as ClientFor<R>, [transport]);
   };
   return new Proxy({} as Record<string | symbol, unknown>, {
     get(_target, property) {

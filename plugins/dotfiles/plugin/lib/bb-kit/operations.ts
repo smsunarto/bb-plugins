@@ -1,8 +1,4 @@
-import type {
-  SchemaInput,
-  SchemaOutput,
-  StandardSchemaV1,
-} from "./standard-schema.js";
+import type { SchemaInput, SchemaOutput, StandardSchemaV1 } from "./standard-schema.js";
 
 export type OperationRisk = "safe" | "mutating" | "destructive";
 
@@ -25,9 +21,7 @@ export const noInput: NoInputSchema = Object.freeze({
     version: 1 as const,
     vendor: "bb-kit",
     validate(value: unknown) {
-      return value === null
-        ? { value: null }
-        : { issues: [{ message: "expected no input" }] };
+      return value === null ? { value: null } : { issues: [{ message: "expected no input" }] };
     },
     types: undefined as unknown as { readonly input: null; readonly output: null },
   }),
@@ -41,13 +35,12 @@ type RequiredInputSchema = StandardSchemaV1 & {
   readonly [noInputBrand]?: never;
 };
 
-type OperationInput<Input extends StandardSchemaV1> =
-  Input extends NoInputSchema
-    ? {
+type OperationInput<Input extends StandardSchemaV1> = Input extends NoInputSchema
+  ? {
       readonly input: NoInputSchema;
       readonly exampleInput?: never;
     }
-    : {
+  : {
       readonly input: Input & RequiredInputSchema;
       readonly exampleInput: SchemaInput<Input> & OperationJsonValue;
     };
@@ -70,17 +63,16 @@ type DescriptorShape = OperationKind & {
   readonly output: StandardSchemaV1;
 };
 
-type ValidDescriptor<Descriptor extends DescriptorShape> =
-  Descriptor["input"] extends NoInputSchema
-    ? { readonly input: NoInputSchema; readonly exampleInput?: never }
-    : {
-        readonly input: Descriptor["input"] & RequiredInputSchema;
-        readonly exampleInput: SchemaInput<Descriptor["input"]> & OperationJsonValue;
-      };
+type ValidDescriptor<Descriptor extends DescriptorShape> = Descriptor["input"] extends NoInputSchema
+  ? { readonly input: NoInputSchema; readonly exampleInput?: never }
+  : {
+      readonly input: Descriptor["input"] & RequiredInputSchema;
+      readonly exampleInput: SchemaInput<Descriptor["input"]> & OperationJsonValue;
+    };
 
-export function defineOperation<
-  const Descriptor extends DescriptorShape,
->(descriptor: Descriptor & ValidDescriptor<Descriptor>): Descriptor {
+export function defineOperation<const Descriptor extends DescriptorShape>(
+  descriptor: Descriptor & ValidDescriptor<Descriptor>,
+): Descriptor {
   assertSchema(descriptor.input, "operation input");
   assertSchema(descriptor.output, "operation output");
   if (descriptor.input === noInput) {
@@ -110,11 +102,10 @@ export type OperationBindings = Readonly<
   Record<string, OperationBinding<string, string, AnyOperationDescriptor>>
 >;
 
-export type BoundOperation<Binding extends OperationBinding> =
-  Binding["operation"] & {
-    readonly identity: Binding["identity"];
-    readonly wireMethod: Binding["wireMethod"];
-  };
+export type BoundOperation<Binding extends OperationBinding> = Binding["operation"] & {
+  readonly identity: Binding["identity"];
+  readonly wireMethod: Binding["wireMethod"];
+};
 
 export interface RpcMethodContract<
   Input extends StandardSchemaV1 = StandardSchemaV1,
@@ -129,9 +120,7 @@ export type RpcContract = Readonly<Record<string, RpcMethodContract>>;
 export type RpcHandlers<Contract extends RpcContract> = {
   [Method in keyof Contract]: (
     input: SchemaOutput<Contract[Method]["input"]>,
-  ) =>
-    | SchemaInput<Contract[Method]["output"]>
-    | Promise<SchemaInput<Contract[Method]["output"]>>;
+  ) => SchemaInput<Contract[Method]["output"]> | Promise<SchemaInput<Contract[Method]["output"]>>;
 };
 
 export interface OperationHost {
@@ -165,15 +154,12 @@ export type OperationCatalog<Bindings extends OperationBindings> = {
 export type OperationHandlersFor<
   Catalog extends Record<string, unknown> & { readonly rpcContract: RpcContract },
 > = {
-  readonly [Key in Exclude<keyof Catalog, "rpcContract">]:
-    Catalog[Key] extends {
-      readonly input: infer Input extends StandardSchemaV1;
-      readonly output: infer Output extends StandardSchemaV1;
-    }
-      ? (
-          input: SchemaOutput<Input>,
-        ) => SchemaInput<Output> | Promise<SchemaInput<Output>>
-      : never;
+  readonly [Key in Exclude<keyof Catalog, "rpcContract">]: Catalog[Key] extends {
+    readonly input: infer Input extends StandardSchemaV1;
+    readonly output: infer Output extends StandardSchemaV1;
+  }
+    ? (input: SchemaOutput<Input>) => SchemaInput<Output> | Promise<SchemaInput<Output>>
+    : never;
 };
 
 const IDENTITY_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
@@ -181,21 +167,17 @@ const RPC_METHOD_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const RESERVED_CATALOG_KEY = "rpcContract";
 
 function assertSchema(value: unknown, label: string): asserts value is StandardSchemaV1 {
-  if (
-    typeof value !== "object"
-    || value === null
-    || !("~standard" in value)
-  ) {
+  if (typeof value !== "object" || value === null || !("~standard" in value)) {
     throw new TypeError(`${label} must implement Standard Schema v1`);
   }
   const standard = value["~standard"];
   if (
-    typeof standard !== "object"
-    || standard === null
-    || !("version" in standard)
-    || standard.version !== 1
-    || !("validate" in standard)
-    || typeof standard.validate !== "function"
+    typeof standard !== "object" ||
+    standard === null ||
+    !("version" in standard) ||
+    standard.version !== 1 ||
+    !("validate" in standard) ||
+    typeof standard.validate !== "function"
   ) {
     throw new TypeError(`${label} must implement Standard Schema v1`);
   }
@@ -207,11 +189,12 @@ function assertJsonValue(
   ancestors: Set<object>,
 ): asserts value is OperationJsonValue {
   if (
-    value === null
-    || typeof value === "string"
-    || typeof value === "boolean"
-    || (typeof value === "number" && Number.isFinite(value))
-  ) return;
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  )
+    return;
   if (typeof value !== "object") {
     throw new TypeError(`${label} must be finite, acyclic JSON`);
   }
@@ -239,9 +222,9 @@ function assertJsonValue(
  * Runtime checks deliberately duplicate generator checks so hand-authored
  * catalogs fail before bb sees a partial registration.
  */
-export function defineOperationCatalog<
-  const Bindings extends OperationBindings,
->(bindings: Bindings): OperationCatalog<Bindings> {
+export function defineOperationCatalog<const Bindings extends OperationBindings>(
+  bindings: Bindings,
+): OperationCatalog<Bindings> {
   const identities = new Set<string>();
   const methods = new Set<string>();
   const operations: Record<string, BoundOperation<OperationBinding>> = {};
@@ -252,14 +235,10 @@ export function defineOperationCatalog<
       throw new Error(`operation key "${RESERVED_CATALOG_KEY}" is reserved`);
     }
     if (!IDENTITY_PATTERN.test(binding.identity)) {
-      throw new Error(
-        `operation identity "${binding.identity}" must match module.operation`,
-      );
+      throw new Error(`operation identity "${binding.identity}" must match module.operation`);
     }
     if (!RPC_METHOD_PATTERN.test(binding.wireMethod)) {
-      throw new Error(
-        `RPC method "${binding.wireMethod}" must match ${RPC_METHOD_PATTERN}`,
-      );
+      throw new Error(`RPC method "${binding.wireMethod}" must match ${RPC_METHOD_PATTERN}`);
     }
     if (identities.has(binding.identity)) {
       throw new Error(`duplicate operation identity "${binding.identity}"`);
@@ -296,9 +275,7 @@ export function registerOperations<const Bindings extends OperationBindings>(
     throw new TypeError("operation host must provide rpc.register");
   }
   const rpcHandlers: Record<string, (input: unknown) => unknown> = {};
-  const catalogKeys = Object.keys(catalog).filter(
-    (key) => key !== RESERVED_CATALOG_KEY,
-  );
+  const catalogKeys = Object.keys(catalog).filter((key) => key !== RESERVED_CATALOG_KEY);
   const handlerKeys = Object.keys(handlers);
 
   for (const key of handlerKeys) {
@@ -326,10 +303,7 @@ export function registerOperations<const Bindings extends OperationBindings>(
     contract: typeof catalog.rpcContract,
     registeredHandlers: RpcHandlers<typeof catalog.rpcContract>,
   ) => void;
-  register(
-    catalog.rpcContract,
-    rpcHandlers as RpcHandlers<typeof catalog.rpcContract>,
-  );
+  register(catalog.rpcContract, rpcHandlers as RpcHandlers<typeof catalog.rpcContract>);
 }
 
 export type {

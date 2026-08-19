@@ -22,8 +22,7 @@ export type CreateOptions = {
  * npm's registry occasionally answers 5xx (the E502 lore) — those and
  * plain network drops are worth up to three attempts before giving up.
  */
-const TRANSIENT_NPM_FAILURE =
-  /E5\d\d|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i;
+const TRANSIENT_NPM_FAILURE = /E5\d\d|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i;
 
 function npmInstall(dir: string): InstallOutcome {
   const run = spawnSync("npm", ["install"], { cwd: dir, encoding: "utf8" });

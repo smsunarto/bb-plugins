@@ -45,13 +45,13 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 
 ## Subpaths
 
-| Subpath | Exports |
-| --- | --- |
-| `@bb-kit/core/plugin` | `definePlugin` |
-| `@bb-kit/core/rpc` | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, and the types |
-| `@bb-kit/core/cli` | `defineCommand`, `invokeCLI`, `CLIError`, and the types |
-| `@bb-kit/core/query` | `createRPC`, `PluginQueryBoundary` (browser) |
-| `@bb-kit/core/testing` | `installDom` |
+| Subpath                | Exports                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `@bb-kit/core/plugin`  | `definePlugin`                                                                                                |
+| `@bb-kit/core/rpc`     | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, and the types |
+| `@bb-kit/core/cli`     | `defineCommand`, `invokeCLI`, `CLIError`, and the types                                                       |
+| `@bb-kit/core/query`   | `createRPC`, `PluginQueryBoundary` (browser)                                                                  |
+| `@bb-kit/core/testing` | `installDom`                                                                                                  |
 
 There is no root export; the subpath is the unit.
 

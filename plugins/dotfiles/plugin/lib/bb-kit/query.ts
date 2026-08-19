@@ -9,28 +9,18 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type {
-  BoundOperation,
-  OperationBinding,
-  RpcContract,
-} from "./operations.js";
+import type { BoundOperation, OperationBinding, RpcContract } from "./operations.js";
 import type { SchemaInput, SchemaOutput } from "./standard-schema.js";
 
 type AnyBoundOperation = BoundOperation<OperationBinding>;
 type BoundQueryOperation = AnyBoundOperation & { readonly kind: "query" };
 type BoundCommandOperation = AnyBoundOperation & { readonly kind: "command" };
 
-export interface OperationRpcClient<
-  Method extends string,
-  Input,
-  Output,
-> {
+export interface OperationRpcClient<Method extends string, Input, Output> {
   call(method: Method, input: Input): Promise<Output>;
 }
 
-export type OperationRpcClientFor<
-  Catalog extends { readonly rpcContract: RpcContract },
-> = {
+export type OperationRpcClientFor<Catalog extends { readonly rpcContract: RpcContract }> = {
   call<Method extends Extract<keyof Catalog["rpcContract"], string>>(
     method: Method,
     input: SchemaInput<Catalog["rpcContract"][Method]["input"]>,
@@ -38,30 +28,21 @@ export type OperationRpcClientFor<
 };
 
 /** Hide bb 0.37's narrower Standard Schema generic at one catalog-owned seam. */
-export function useOperationRpc<
-  const Catalog extends { readonly rpcContract: RpcContract },
->(catalog: Catalog): OperationRpcClientFor<Catalog> {
+export function useOperationRpc<const Catalog extends { readonly rpcContract: RpcContract }>(
+  catalog: Catalog,
+): OperationRpcClientFor<Catalog> {
   void catalog;
   return useRpc() as unknown as OperationRpcClientFor<Catalog>;
 }
 
-type ClientInput<Operation extends AnyBoundOperation> = SchemaInput<
-  Operation["input"]
->;
-type ClientOutput<Operation extends AnyBoundOperation> = SchemaOutput<
-  Operation["output"]
->;
+type ClientInput<Operation extends AnyBoundOperation> = SchemaInput<Operation["input"]>;
+type ClientOutput<Operation extends AnyBoundOperation> = SchemaOutput<Operation["output"]>;
 
 export type OperationQueryOptions<
   Operation extends BoundQueryOperation,
   Key extends QueryKey,
 > = Omit<
-  UseQueryOptions<
-    ClientOutput<Operation>,
-    Error,
-    ClientOutput<Operation>,
-    Key
-  >,
+  UseQueryOptions<ClientOutput<Operation>, Error, ClientOutput<Operation>, Key>,
   "queryFn" | "queryKey"
 > & {
   readonly rpc: OperationRpcClient<
@@ -90,29 +71,20 @@ export function operationQueryOptions<
   });
 }
 
-export interface MutationInvalidationContext<
-  Operation extends BoundCommandOperation,
-> {
+export interface MutationInvalidationContext<Operation extends BoundCommandOperation> {
   readonly input: ClientInput<Operation>;
   readonly result: ClientOutput<Operation>;
 }
 
 type Invalidation<Operation extends BoundCommandOperation> =
   | false
-  | ((
-      context: MutationInvalidationContext<Operation>,
-    ) => readonly QueryKey[]);
+  | ((context: MutationInvalidationContext<Operation>) => readonly QueryKey[]);
 
 export type OperationMutationOptions<
   Operation extends BoundCommandOperation,
   Context = unknown,
 > = Omit<
-  UseMutationOptions<
-    ClientOutput<Operation>,
-    Error,
-    ClientInput<Operation>,
-    Context
-  >,
+  UseMutationOptions<ClientOutput<Operation>, Error, ClientInput<Operation>, Context>,
   "mutationFn" | "onSuccess"
 > & {
   readonly rpc: OperationRpcClient<
@@ -148,29 +120,17 @@ export function operationMutationOptions<
   const Operation extends BoundCommandOperation,
   Context = unknown,
 >(configuration: OperationMutationOptions<Operation, Context>) {
-  const {
-    rpc,
-    operation,
-    queryClient,
-    invalidate,
-    onSuccess,
-    ...nativeOptions
-  } = configuration;
+  const { rpc, operation, queryClient, invalidate, onSuccess, ...nativeOptions } = configuration;
   if (operation.kind !== "command") {
     throw new TypeError("operationMutationOptions requires a command operation");
   }
   return mutationOptions({
     ...nativeOptions,
-    mutationFn: (input: ClientInput<Operation>) =>
-      rpc.call(operation.wireMethod, input),
+    mutationFn: (input: ClientInput<Operation>) => rpc.call(operation.wireMethod, input),
     async onSuccess(data, variables, onMutateResult, context) {
       if (invalidate !== false) {
         const keys = invalidate({ input: variables, result: data });
-        await Promise.all(
-          keys.map((queryKey) =>
-            queryClient.invalidateQueries({ queryKey }),
-          ),
-        );
+        await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
       }
       await onSuccess?.(data, variables, onMutateResult, context);
     },
@@ -183,10 +143,7 @@ export interface PluginQueryBoundaryProps {
 }
 
 /** Own one QueryClient for one mounted plugin application generation. */
-export function PluginQueryBoundary({
-  children,
-  client,
-}: PluginQueryBoundaryProps) {
+export function PluginQueryBoundary({ children, client }: PluginQueryBoundaryProps) {
   const [queryClient] = useState(() => client ?? new QueryClient());
   const ownsClient = client === undefined;
 

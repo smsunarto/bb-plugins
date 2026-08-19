@@ -5,12 +5,7 @@ import type { ClientFor, RPCContext } from "./rpc.ts";
 import { createClient } from "./rpc.ts";
 import { noInputSchema } from "./no-input.ts";
 import { kebabName, wireName } from "./wire-name.ts";
-import type {
-  CLICommand,
-  CLIContext,
-  CLIResult,
-  SubcommandDefinition,
-} from "./program.ts";
+import type { CLICommand, CLIContext, CLIResult, SubcommandDefinition } from "./program.ts";
 import { buildProgram, commandDefinitions, runProgram } from "./program.ts";
 import type { HostSeam } from "./host.ts";
 
@@ -70,7 +65,10 @@ export function definePlugin<
 
     // cli.register — always (§2): curated commands plus the always-on
     // rpc subtree behind ONE program, so root help lists everything.
-    const runtimeClient = client as unknown as Record<string, (input?: unknown) => Promise<unknown>>;
+    const runtimeClient = client as unknown as Record<
+      string,
+      (input?: unknown) => Promise<unknown>
+    >;
     const makeDefinitions = (cliContext: CLIContext): SubcommandDefinition[] => [
       ...commandDefinitions<ClientFor<R>>(curated, client, cliContext),
       rpcSubtreeDefinition(rpc, runtimeClient),

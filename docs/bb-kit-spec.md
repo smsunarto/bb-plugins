@@ -29,13 +29,13 @@ on purpose: the subpath is the unit.
 > Aside: the reconsider branch aliased `.` to the rpc module, which read
 > as arbitrary.
 
-| Subpath | Runs in | Exports |
-| --- | --- | --- |
-| `./plugin` | server, tests | `definePlugin` |
-| `./rpc` | server, CLI, tests | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, types `ClientFor`, `RPCContext`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
-| `./cli` | server, tests | `defineCommand`, `invokeCLI`, `CLIError`, types `CLIResult`, `CLIContext` |
-| `./query` | browser | `createRPC`, `PluginQueryBoundary` |
-| `./testing` | tests | `installDom` |
+| Subpath     | Runs in            | Exports                                                                                                                                                                                                |
+| ----------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `./plugin`  | server, tests      | `definePlugin`                                                                                                                                                                                         |
+| `./rpc`     | server, CLI, tests | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, types `ClientFor`, `RPCContext`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
+| `./cli`     | server, tests      | `defineCommand`, `invokeCLI`, `CLIError`, types `CLIResult`, `CLIContext`                                                                                                                              |
+| `./query`   | browser            | `createRPC`, `PluginQueryBoundary`                                                                                                                                                                     |
+| `./testing` | tests              | `installDom`                                                                                                                                                                                           |
 
 bin: `bb-kit` — `create` / `add` / `check`, nothing else (§7; ADR-0009,
 ADR-0010).
@@ -150,7 +150,7 @@ One phase boundary runs through this file:
   host-free; `defineRPC` throws on bad names (§3) the moment any
   test imports this file, and `definePlugin` adds only the two reserved
   command keys of its own (§4).
-  `defineRPC` produces the value whose *type* travels — `RPC` to
+  `defineRPC` produces the value whose _type_ travels — `RPC` to
   `createRPC` in the browser (§5), `Client` to every CLI command (§4).
 - The factory `definePlugin` returns runs when bb loads the plugin,
   because its other ingredients — `bb` and the assembled context — exist
@@ -204,7 +204,7 @@ unrestricted). Camelization is pinned like `snake` (below): split the
 basename on `-`, uppercase the first letter of every segment after the
 first, join — no acronym awareness, and a segment that starts with a
 digit joins unchanged (`read-url.ts` → `readUrl`, never `readURL`;
-`save-2fa.ts` → `save2fa`, *not* lodash's `save2Fa`, whose extra
+`save-2fa.ts` → `save2fa`, _not_ lodash's `save2Fa`, whose extra
 boundary would also change the derived wire name). The name is born at
 the definition and travels by import
 shorthand into the procedures key (§2) and from there into the wire name —
@@ -240,10 +240,10 @@ users `import "zod/v4"`). The no-input convention below is exempt:
 omitting `input` is absence, not a non-object input.
 
 The handler's `input` parameter is the
-schema's *output* type; the return value is the output schema's *input*
+schema's _output_ type; the return value is the output schema's _input_
 type (async or not) — mirroring the host's own validation direction.
 
-`input` is optional in the definition — but the *returned* Procedure type
+`input` is optional in the definition — but the _returned_ Procedure type
 carries it required-or-absent, never optional. `defineQuery` and
 `defineMutation` are two overloads: with `input`, the result type has a
 required `input` member; without, the result type has no `input` member
@@ -257,7 +257,7 @@ constraint.
 
 A procedure without input: the handler takes only `context`, the Client
 method takes no argument, and bb-kit registers a vendored no-input schema
-with the host. That schema accepts `null` *and* `undefined` — the SDK's
+with the host. That schema accepts `null` _and_ `undefined` — the SDK's
 app hooks and fake host deliver `null` for a missing input, but the
 server route leaves a truly empty POST body as `undefined`, and the
 endpoint is public API (§6), so hand-crafted empty-body calls must pass
@@ -312,7 +312,7 @@ exhaustive — no other boundary inserts an underscore. Pinned examples:
 - `("audit-log", "readEntry")` → `audit_log_read_entry`
 - `("audit-log", "readURL")` → `audit_log_read_url`
 - `("audit-log", "readURLPath")` → `audit_log_read_urlpath` — the
-  acronym-then-word shape; *not* lodash's `read_url_path`. Substituting a
+  acronym-then-word shape; _not_ lodash's `read_url_path`. Substituting a
   snake-case library silently changes public wire names.
 
 The acronym shapes never arise by shorthand — camelization is
@@ -346,13 +346,14 @@ compile-time namespace check (§5) keys off.
 
 ```ts
 type ClientFor<R> = {
-  [K in keyof R["procedures"]]:
-    R["procedures"][K] extends { input: infer In extends StandardSchemaV1;
-                                 output: infer Out extends StandardSchemaV1 }
-      ? (input: SchemaInput<In>) => Promise<SchemaOutput<Out>>
-      : R["procedures"][K] extends { output: infer Out extends StandardSchemaV1 }
-        ? () => Promise<SchemaOutput<Out>>
-        : never
+  [K in keyof R["procedures"]]: R["procedures"][K] extends {
+    input: infer In extends StandardSchemaV1;
+    output: infer Out extends StandardSchemaV1;
+  }
+    ? (input: SchemaInput<In>) => Promise<SchemaOutput<Out>>
+    : R["procedures"][K] extends { output: infer Out extends StandardSchemaV1 }
+      ? () => Promise<SchemaOutput<Out>>
+      : never;
 };
 ```
 
@@ -364,7 +365,7 @@ This exact formulation is the verified one: with `input`
 required-or-absent on the Procedure types (above), the with-input arm
 matches only procedures that declare input, a no-input procedure never
 leaks into it, and the wire direction holds — the client takes the input
-schema's *input* type and receives the output schema's *output* type.
+schema's _input_ type and receives the output schema's _output_ type.
 
 One Client type, used identically on the server, in CLI commands, and in
 the browser — and one set of semantics. `createClient(rpc, context)`
@@ -471,7 +472,7 @@ The composition surface is `definePlugin`'s `cli` entry (§2):
   helper needed (verified on tsc 5.9.3 and 7.0.2, identical
   diagnostics). The check is per-command, so one drifted command never
   obscures the others. One pin keeps it sound: `CLICommand` declares
-  `run` as a function *property* (`run: (rpc: D, …) => …`), never
+  `run` as a function _property_ (`run: (rpc: D, …) => …`), never
   method syntax — method syntax makes the parameter bivariant, and a
   command demanding Client-plus-extra procedures then compiles
   silently. Only the type's syntax matters; command object literals
@@ -491,13 +492,13 @@ strings and `exitOverride` on — `configure` therefore runs once at
 registration and again on every invocation; a throw from it here lands
 in the anything-else row below. Behavior:
 
-| Invocation | Result |
-| --- | --- |
-| empty argv | exit 2, help on stderr |
-| `--help` / `help` | exit 0, help on stdout |
+| Invocation                    | Result                                |
+| ----------------------------- | ------------------------------------- |
+| empty argv                    | exit 2, help on stderr                |
+| `--help` / `help`             | exit 0, help on stdout                |
 | unknown command / parse error | exit 2, commander's message on stderr |
-| `run` throws `CLIError` | its `exitCode`, message on stderr |
-| anything else thrown | exit 1, message on stderr |
+| `run` throws `CLIError`       | its `exitCode`, message on stderr     |
+| anything else thrown          | exit 1, message on stderr             |
 
 `CLIError` is `new CLIError(message, { exitCode = 1 })` — a message and
 an exit code, nothing else; it carries no stdout. Output travels only
@@ -507,7 +508,7 @@ Reserved names (`thread`, `plugin`, `status`, …) apply only to the
 top-level CLI name — under `definePlugin`, the plugin id itself — never
 to command keys (bb-kit's own `rpc`/`help` reservation above is
 separate), so the scaffold's `cli/status.ts` is legal, while a
-plugin *id* colliding with a reserved name cannot mount a CLI at all,
+plugin _id_ colliding with a reserved name cannot mount a CLI at all,
 subtree included.
 The rule is the host's, enforced by the real policy in tier-2 tests —
 the SDK's fake host shares `internal/host-policy` with production, so a
@@ -546,7 +547,7 @@ ergonomics; the subtree is deliberately boring.
   procedure key that kebabs to `help` is a `check` failure (§7) — it
   would shadow the subtree's own help.
 - Each subcommand takes one optional positional, which must parse to a
-  JSON *object* (ADR-0014) — a non-object is exit 1 before dispatch.
+  JSON _object_ (ADR-0014) — a non-object is exit 1 before dispatch.
   Omitted, the client is invoked as for no input (§3): a no-input
   procedure accepts that; a with-input procedure reports its schema's
   issues. An object positional starts with `{`, so commander's
@@ -582,8 +583,7 @@ export function Panel() {
   const queryClient = useQueryClient();
   const overview = rpc.overview.useQuery();
   const save = rpc.saveFile.useMutation({
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
   });
   // save.mutate({ path: "…", content: "…" })
 }
@@ -611,7 +611,7 @@ browser imports the RPC as a type only (§2), and the host gives a
 plugin's own components no way to read their plugin id at runtime —
 verified against SDK 0.4.6: `PluginSdkApp` has no id hook, `BbContext` is
 only `{ projectId, threadId }`, and `pluginId` is delivered solely to
-content scripts (the host *holds* the id in a React context of its own,
+content scripts (the host _holds_ the id in a React context of its own,
 but exports no hook for it). That one value is the scaffolded `ui/rpc.ts`
 binding above; the parameter is typed as the RPC's namespace literal,
 so a binding that disagrees with `server.ts` is a compile error.
@@ -622,7 +622,7 @@ bb 0.38 `useRpc` is a `useMemo` over `callPluginRpc(fetch, pluginId,
 method, input)` whose `pluginId` comes from host-internal React context,
 so the client only exists inside render. `createRPC` itself is not a hook
 and is safe at module scope — and for the same rules-of-hooks reason it
-cannot be *named* `useRPC`: a `use*`-named call at module top level is a
+cannot be _named_ `useRPC`: a `use*`-named call at module top level is a
 lint violation by convention.
 
 For imperative call sites — event handlers, prefetching —
@@ -632,7 +632,7 @@ For imperative call sites — event handlers, prefetching —
 At runtime every path is one proxy over `call(wireName(namespace, key),
 input)`; a no-input method calls with `null`, matching the SDK hooks' own
 `input ?? null` serialization. Unlike the server client (§3), the proxy
-necessarily forwards *any* key to the wire — the RPC exists here as a
+necessarily forwards _any_ key to the wire — the RPC exists here as a
 type only — so a typo the type system misses becomes a wire call to a
 nonexistent method.
 
@@ -669,12 +669,12 @@ invalidation-only — realtime data is never authoritative.
 
 What bb-kit compiles down to, per the verified bb 0.38 contract:
 
-| bb-kit | Host call |
-| --- | --- |
-| `definePlugin` factory, `rpc` half | one `bb.rpc.register(contract, handlers)` — wire-named methods, Standard Schema `{ input, output }`, served at `POST /api/v1/plugins/<id>/rpc/<method>` |
-| `definePlugin` factory, `cli` half | one `bb.cli.register({ name, summary, commands, run })` — `name` is the RPC namespace; always called, so the RPC subtree (§4) mounts even without a `cli` entry |
-| `ui/app.tsx` default export | `definePluginApp(setup)` from `@get-bb/plugin-sdk/app`, bundled by `bb plugin build` when `bb.app` is declared |
-| `bb-kit create` manifest | `package.json` with the `bb` section: `{ name, description, server: "./server.ts", app: "./ui/app.tsx", branding: { icon: "./assets/icon.svg" }, skills: [] }` — `branding` is required by the host's manifest schema (an `icon` or `logo.light`, plugin-owned paths must be `.svg`), so `create` ships a placeholder icon |
+| bb-kit                             | Host call                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `definePlugin` factory, `rpc` half | one `bb.rpc.register(contract, handlers)` — wire-named methods, Standard Schema `{ input, output }`, served at `POST /api/v1/plugins/<id>/rpc/<method>`                                                                                                                                                                    |
+| `definePlugin` factory, `cli` half | one `bb.cli.register({ name, summary, commands, run })` — `name` is the RPC namespace; always called, so the RPC subtree (§4) mounts even without a `cli` entry                                                                                                                                                            |
+| `ui/app.tsx` default export        | `definePluginApp(setup)` from `@get-bb/plugin-sdk/app`, bundled by `bb plugin build` when `bb.app` is declared                                                                                                                                                                                                             |
+| `bb-kit create` manifest           | `package.json` with the `bb` section: `{ name, description, server: "./server.ts", app: "./ui/app.tsx", branding: { icon: "./assets/icon.svg" }, skills: [] }` — `branding` is required by the host's manifest schema (an `icon` or `logo.light`, plugin-owned paths must be `.svg`), so `create` ships a placeholder icon |
 
 The app entry is entirely the SDK's contract; bb-kit adds nothing to it.
 The default export must be the branded object from
@@ -690,7 +690,13 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { Panel } from "./panel.tsx";
 
 export default definePluginApp((app) => {
-  app.slots.navPanel({ id: "main", title: "Dotfiles", icon: "Folder", path: "dotfiles", component: Panel });
+  app.slots.navPanel({
+    id: "main",
+    title: "Dotfiles",
+    icon: "Folder",
+    path: "dotfiles",
+    component: Panel,
+  });
 });
 ```
 
@@ -702,7 +708,7 @@ which is the whole reason `PluginQueryBoundary` exists (§5).
 
 bb-kit never imports `@get-bb/plugin-sdk` in its `./plugin`, `./rpc`,
 and `./cli` type surface. The `bb` the factory receives — and hands to
-`context` and `setup` — is a *structural* type — just the
+`context` and `setup` — is a _structural_ type — just the
 `rpc.register` / `cli.register` method shapes — that the real
 `BbPluginApi` satisfies. `definePlugin` declares `context` and `setup`
 in method syntax (the same variance device as §3's handlers), so a
@@ -728,7 +734,7 @@ registration code — never in plugin code.
 The factory registers everything before it resolves — context assembly
 (awaited when async), the `rpc.register` and `cli.register` calls, then
 `setup`. The host accepts late registration (its liveness check only
-trips when a load *fails*), but `definePlugin` owns the factory, so
+trips when a load _fails_), but `definePlugin` owns the factory, so
 registration cannot drift into timers or request handlers unless
 `setup` puts it there. Second `rpc.register` of the same method, second
 `cli.register`, or a malformed name throws whenever it happens — at load
@@ -838,11 +844,11 @@ those are the plugin's own scripts and the consuming repo's business.
 
 How the three tiers (ADR-0005) map onto this API:
 
-| Tier | Harness | bb-kit involvement |
-| --- | --- | --- |
-| 1 unit | none | call a handler directly, or `createClient(rpc, fakeContext)`; CLI via `invokeCLI({ cat }, fakeClient, argv)` — a full-`Client` command takes a full fake (or `as unknown as Client`); a `Pick`-annotated one keeps a minimal, cast-free fake |
-| 2 integration | `@get-bb/plugin-sdk/testing` `createFakePluginHost` | run the default-export factory against the fake host; invoke registered RPC/CLI through it |
-| 3 UI component | `@get-bb/plugin-sdk/testing/app` under jsdom | `installDom()` first, then `loadPluginApp` + `renderSlot` |
+| Tier           | Harness                                             | bb-kit involvement                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 unit         | none                                                | call a handler directly, or `createClient(rpc, fakeContext)`; CLI via `invokeCLI({ cat }, fakeClient, argv)` — a full-`Client` command takes a full fake (or `as unknown as Client`); a `Pick`-annotated one keeps a minimal, cast-free fake |
+| 2 integration  | `@get-bb/plugin-sdk/testing` `createFakePluginHost` | run the default-export factory against the fake host; invoke registered RPC/CLI through it                                                                                                                                                   |
+| 3 UI component | `@get-bb/plugin-sdk/testing/app` under jsdom        | `installDom()` first, then `loadPluginApp` + `renderSlot`                                                                                                                                                                                    |
 
 `installDom()` is `./testing`'s only export: idempotent, installs jsdom
 globals (`window`, `document`, …) onto `globalThis`, and fails with a
@@ -900,16 +906,16 @@ Each cut names its scar (decisions in ADRs 0002, 0008, 0009):
 The branch (`bb/reconsider-bb-kit-plugin-directory-thr_ss2vds65gf`) is an
 idea mine, not a source (ADR-0001). What the rewrite changes against it:
 
-| Branch | Rewrite |
-| --- | --- |
-| `.` export aliases `./rpc` | no root export |
-| `noInput` branded singleton, callers pass `null` | optional `input`, zero-arg callers |
-| dual type-level + runtime wire derivation | runtime derivation only |
-| `RpcCallerFor` vs `RpcClientFor` mirror types | one validated `ClientFor`, both sides |
-| unvalidated in-process caller | client validates input and output |
-| `CliCommand extends Command` + `handle()` | plain `configure` + `run`, bb-kit owns the action |
-| hand-annotated `defineCLI<Dependencies>` | commands take the full `Client`; a missing procedure is a call-site error |
-| `RpcHost.register: unknown` | precise structural host types |
-| duplicated intersection helper | one private helper |
-| `defineRpcRouter` / per-file+composed `defineCLI` overloads | `defineRPC`; `defineCommand` (file); `definePlugin` (composition) |
-| hand-written `plugin(bb)` factory wiring register calls | `definePlugin` returns the factory; wiring is data |
+| Branch                                                      | Rewrite                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `.` export aliases `./rpc`                                  | no root export                                                            |
+| `noInput` branded singleton, callers pass `null`            | optional `input`, zero-arg callers                                        |
+| dual type-level + runtime wire derivation                   | runtime derivation only                                                   |
+| `RpcCallerFor` vs `RpcClientFor` mirror types               | one validated `ClientFor`, both sides                                     |
+| unvalidated in-process caller                               | client validates input and output                                         |
+| `CliCommand extends Command` + `handle()`                   | plain `configure` + `run`, bb-kit owns the action                         |
+| hand-annotated `defineCLI<Dependencies>`                    | commands take the full `Client`; a missing procedure is a call-site error |
+| `RpcHost.register: unknown`                                 | precise structural host types                                             |
+| duplicated intersection helper                              | one private helper                                                        |
+| `defineRpcRouter` / per-file+composed `defineCLI` overloads | `defineRPC`; `defineCommand` (file); `definePlugin` (composition)         |
+| hand-written `plugin(bb)` factory wiring register calls     | `definePlugin` returns the factory; wiring is data                        |
