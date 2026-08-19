@@ -277,10 +277,7 @@ export default async function plugin(bb: BbPluginApi) {
     streams.delete(controller);
   }
 
-  // Responses are built through the Hono context rather than `new Response`:
-  // the host checks `instanceof Response` against its own realm, and only the
-  // context's constructor is guaranteed to be the same one.
-  bb.http.route("GET", "/events", (c) => {
+  bb.http.route("GET", "/events", () => {
     let self: ReadableStreamDefaultController<Uint8Array> | null = null;
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -308,7 +305,7 @@ export default async function plugin(bb: BbPluginApi) {
       },
     });
 
-    return c.newResponse(stream, {
+    return new Response(stream, {
       headers: {
         "content-type": "text/event-stream",
         "cache-control": "no-cache, no-transform",
