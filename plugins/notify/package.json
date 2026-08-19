@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-notify",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Native macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
   "license": "MIT",
   "author": "Scott Sunarto",
