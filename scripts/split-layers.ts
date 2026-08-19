@@ -34,14 +34,7 @@
  * the branches it created and re-run.
  */
 import { execFileSync } from "node:child_process";
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 interface Layer {
@@ -68,19 +61,15 @@ function run(command: string, args: string[]): string {
     return execFileSync(command, args, { encoding: "utf8" });
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string };
-    fail(
-      `\`${command} ${args.join(" ")}\` failed\n${err.stderr ?? ""}${err.stdout ?? ""}`.trim(),
-    );
+    fail(`\`${command} ${args.join(" ")}\` failed\n${err.stderr ?? ""}${err.stdout ?? ""}`.trim());
   }
 }
 
 function branchExists(branch: string): boolean {
   try {
-    execFileSync(
-      "git",
-      ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`],
-      { encoding: "utf8" },
-    );
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], {
+      encoding: "utf8",
+    });
     return true;
   } catch {
     return false;
@@ -107,9 +96,7 @@ if (!manifest.layers?.length) fail("manifest has no layers");
 // ---- Preflight: every failure here happens before any mutation. ----------
 const dirty = run("git", ["status", "--porcelain"]).trim();
 if (dirty) {
-  fail(
-    `working tree is dirty — stash work that is not part of this split first:\n${dirty}`,
-  );
+  fail(`working tree is dirty — stash work that is not part of this split first:\n${dirty}`);
 }
 const known = new Set(snapshotFiles(snapshotDir));
 if (known.size === 0) fail("snapshot directory holds no files");

@@ -102,10 +102,18 @@ textarea {
   font-size: 16px;
 }
 
-.sb-foreground { color: var(--foreground); }
-.sb-muted-foreground { color: var(--muted-foreground); }
-.sb-readback-foreground { color: var(--readback-foreground); }
-.sb-subtle-foreground { color: var(--subtle-foreground); }
+.sb-foreground {
+  color: var(--foreground);
+}
+.sb-muted-foreground {
+  color: var(--muted-foreground);
+}
+.sb-readback-foreground {
+  color: var(--readback-foreground);
+}
+.sb-subtle-foreground {
+  color: var(--subtle-foreground);
+}
 
 .sb-borders {
   display: grid;

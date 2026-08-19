@@ -2,13 +2,7 @@
 // adapted for the bb plugin panel: same Pierre Trees model and non-scrolling
 // row-fitted height, themed against bb host tokens in app.css.
 import type { CSSProperties } from "react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { GitStatusEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 
@@ -34,10 +28,7 @@ function treeCss(files: WalkthroughDiffFile[]) {
     .filter((file) => file.generated)
     .flatMap((file) => {
       const row = `[data-item-path="${escapeCssAttributeValue(file.path)}"]`;
-      return [
-        `${row} > [data-item-section="icon"]`,
-        `${row} > [data-item-section="content"]`,
-      ];
+      return [`${row} > [data-item-section="icon"]`, `${row} > [data-item-section="content"]`];
     });
 
   if (generatedRowContentSelectors.length === 0) return NON_SCROLLING_TREE_CSS;
@@ -83,9 +74,7 @@ export function ChangedFileTree({
     initialSelectedPaths: selectedPath ? [selectedPath] : [],
     itemHeight: TREE_ROW_HEIGHT,
     onSelectionChange: (selection) => {
-      const nextPath = selection.find((path) =>
-        pathsRef.current.includes(path),
-      );
+      const nextPath = selection.find((path) => pathsRef.current.includes(path));
       if (nextPath) onSelectedPathChangeRef.current(nextPath);
     },
     paths,
@@ -95,18 +84,10 @@ export function ChangedFileTree({
     unsafeCSS,
   });
 
-  const subscribe = useCallback(
-    (listener: () => void) => model.subscribe(listener),
-    [model],
-  );
+  const subscribe = useCallback((listener: () => void) => model.subscribe(listener), [model]);
   const getVisibleRowCount = useCallback(() => model.getVisibleCount(), [model]);
-  const visibleRowCount = useSyncExternalStore(
-    subscribe,
-    getVisibleRowCount,
-    getVisibleRowCount,
-  );
-  const treeHeight =
-    visibleRowCount * model.getItemHeight() + TREE_BORDER_WIDTH * 2;
+  const visibleRowCount = useSyncExternalStore(subscribe, getVisibleRowCount, getVisibleRowCount);
+  const treeHeight = visibleRowCount * model.getItemHeight() + TREE_BORDER_WIDTH * 2;
 
   useEffect(() => {
     model.resetPaths(paths);
@@ -120,8 +101,7 @@ export function ChangedFileTree({
       model.getSelectedPaths().includes(selectedPath)
     )
       return;
-    for (const path of model.getSelectedPaths())
-      model.getItem(path)?.deselect();
+    for (const path of model.getSelectedPaths()) model.getItem(path)?.deselect();
     model.getItem(selectedPath)?.select();
     model.scrollToPath(selectedPath, { focus: true, offset: "nearest" });
   }, [model, paths, selectedPath]);

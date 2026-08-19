@@ -13,10 +13,7 @@ export function Disc({ thread }: { thread: PluginSidebarThread | null }) {
     <span
       className="inline-block size-3.5 shrink-0 rounded-full border border-background"
       style={{
-        backgroundColor:
-          thread === null
-            ? "var(--muted-foreground)"
-            : `oklch(0.72 0.13 ${hue})`,
+        backgroundColor: thread === null ? "var(--muted-foreground)" : `oklch(0.72 0.13 ${hue})`,
       }}
     />
   );

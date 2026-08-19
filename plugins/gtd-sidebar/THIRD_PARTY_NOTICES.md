@@ -12,11 +12,11 @@ applies to each copyright notice listed here.
 
 MIT License, Copyright (c) 2026 Michael Yong.
 
-| What | Where it ships |
-|---|---|
+| What                                                                                                                         | Where it ships                                  |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | The whole plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) | `dist/app.js`, `dist/server.js`, `dist/app.css` |
-| Provider brand-mark geometry, lifted from bb's own icon components | `dist/app.js` |
-| shadcn/ui-derived components, vendored through bb's plugin component registry | `dist/app.js` |
+| Provider brand-mark geometry, lifted from bb's own icon components                                                           | `dist/app.js`                                   |
+| shadcn/ui-derived components, vendored through bb's plugin component registry                                                | `dist/app.js`                                   |
 
 Source: <https://github.com/get-bb/bb>
 

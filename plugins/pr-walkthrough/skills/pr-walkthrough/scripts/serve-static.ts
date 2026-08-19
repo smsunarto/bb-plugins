@@ -105,7 +105,8 @@ const server = http.createServer((request, response) => {
     return;
   }
   response.writeHead(200, {
-    "content-type": CONTENT_TYPES.get(path.extname(target).toLowerCase()) ?? "application/octet-stream",
+    "content-type":
+      CONTENT_TYPES.get(path.extname(target).toLowerCase()) ?? "application/octet-stream",
     "content-length": String(body.length),
   });
   response.end(body);

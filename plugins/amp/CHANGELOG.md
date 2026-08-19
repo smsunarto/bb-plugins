@@ -6,7 +6,7 @@
 
 - 2c4cef6: Give the Amp thread back when bb unarchives. Archiving a bb thread archived its
   Amp thread, and nothing reversed it.
-  
+
   The restore cannot be received: bb 0.38 emits six plugin thread events —
   `created`, `active`, `idle`, `failed`, `archived`, `deleted` — and unarchive is
   not one. So the archive half stays event-driven and the restore half is polled.
@@ -14,15 +14,15 @@
   it took, and a background service asks bb every 20 seconds which of those bb
   still calls archived. Reading the state covers t3sidebar and bb's own view at
   once, rather than the action either one performs.
-  
+
   The listing is one paginated query however many rows are watched, and the pass
   exits before it when there are none. It only suggests a restore — it is capped
   and drops deleted threads — so each candidate is confirmed against the thread
   itself first. Amp has no `threads unarchive`; the restore is `threads archive
-  <id> --unarchive`, one flag from the archive path. A candidate that fails three
+<id> --unarchive`, one flag from the archive path. A candidate that fails three
   times, an Amp thread deleted on Amp's side being that case, is dropped rather
   than retried forever.
-  
+
   Threads archived before this upgrade carry no watch row and are not restored.
 
 ### Patch Changes
@@ -36,7 +36,7 @@
   so the sidecar it never compiles — `dist/bridge.js` and the CLI shim — has to be
   committed rather than built on the consumer's machine. CI diffs both against a
   fresh build so they cannot go stale.
-  
+
   Align `zod` with the plugin SDK's peer range, which the bridge shares.
 
 ## 0.3.0
@@ -46,9 +46,10 @@
 - b3ed493: Require bb 0.38 and take the SDK types from the published `@get-bb/plugin-sdk`
   package. `engines.bb` is now `>=0.38.0 <0.39.0`, so an older bb no longer
   installs these plugins.
-  
+
   Agent Proxy gains a `routingStrategy` setting (`round-robin`, `fill-first`, or
   `weighted-round-robin`) that it writes to the core `config.yaml`. Pick
   `fill-first` to keep several Claude OAuth accounts from rotating away the
   upstream prompt cache.
+
 - 65ececd: Release the runtime, presentation, notification, theme, and thread workflow updates.

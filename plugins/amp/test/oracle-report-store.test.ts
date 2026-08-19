@@ -16,37 +16,69 @@ test("Oracle reports persist and load bounded text content", () => {
     const reportId = startOracleReport({ task: "Review the protocol seam" }, directory);
     assert.ok(reportId);
     assert.equal(loadOracleReport(reportId, directory)?.status, "running");
-    assert.equal(appendOracleTrace(reportId, {
-      kind: "thinking",
-      title: "Thinking",
-      content: "Inspecting the protocol seam",
-    }, directory), true);
-    assert.equal(appendOracleTrace(reportId, {
-      kind: "tool",
-      toolCallId: "tu-read",
-      title: "Read src/a.ts",
-      status: "running",
-    }, directory), true);
-    assert.equal(appendOracleTrace(reportId, {
-      kind: "tool",
-      toolCallId: "tu-read",
-      title: "Read",
-      status: "completed",
-    }, directory), true);
-    assert.equal(completeOracleReport(reportId, [
-      { type: "text", text: "## Recommendation" },
-      { type: "image", source: { type: "base64", data: "ignored" } },
-      { type: "text", text: "Keep the protocol seam. ✓" },
-    ], false, directory), true);
+    assert.equal(
+      appendOracleTrace(
+        reportId,
+        {
+          kind: "thinking",
+          title: "Thinking",
+          content: "Inspecting the protocol seam",
+        },
+        directory,
+      ),
+      true,
+    );
+    assert.equal(
+      appendOracleTrace(
+        reportId,
+        {
+          kind: "tool",
+          toolCallId: "tu-read",
+          title: "Read src/a.ts",
+          status: "running",
+        },
+        directory,
+      ),
+      true,
+    );
+    assert.equal(
+      appendOracleTrace(
+        reportId,
+        {
+          kind: "tool",
+          toolCallId: "tu-read",
+          title: "Read",
+          status: "completed",
+        },
+        directory,
+      ),
+      true,
+    );
+    assert.equal(
+      completeOracleReport(
+        reportId,
+        [
+          { type: "text", text: "## Recommendation" },
+          { type: "image", source: { type: "base64", data: "ignored" } },
+          { type: "text", text: "Keep the protocol seam. ✓" },
+        ],
+        false,
+        directory,
+      ),
+      true,
+    );
     const report = loadOracleReport(reportId, directory);
     assert.equal(report?.id, reportId);
     assert.equal(report?.request, "Review the protocol seam");
     assert.equal(report?.response, "## Recommendation\nKeep the protocol seam. ✓");
     assert.equal(report?.status, "completed");
-    assert.deepEqual(report?.trace.map((event) => [event.kind, event.status]), [
-      ["thinking", null],
-      ["tool", "completed"],
-    ]);
+    assert.deepEqual(
+      report?.trace.map((event) => [event.kind, event.status]),
+      [
+        ["thinking", null],
+        ["tool", "completed"],
+      ],
+    );
     assert.ok(report?.createdAt);
     assert.equal(statSync(join(directory, `${reportId}.json`)).mode & 0o777, 0o600);
   } finally {
@@ -72,21 +104,34 @@ test("finishing an interrupted Oracle settles running trace tools", () => {
   try {
     const reportId = startOracleReport({ task: "Review it" }, directory);
     assert.ok(reportId);
-    assert.equal(appendOracleTrace(reportId, {
-      kind: "tool",
-      toolCallId: "tu-running",
-      title: "Read src/a.ts",
-      status: "running",
-    }, directory), true);
-    assert.equal(completeOracleReport(
-      reportId,
-      "Oracle execution was cancelled before returning a result.",
+    assert.equal(
+      appendOracleTrace(
+        reportId,
+        {
+          kind: "tool",
+          toolCallId: "tu-running",
+          title: "Read src/a.ts",
+          status: "running",
+        },
+        directory,
+      ),
       true,
-      directory,
-    ), true);
+    );
+    assert.equal(
+      completeOracleReport(
+        reportId,
+        "Oracle execution was cancelled before returning a result.",
+        true,
+        directory,
+      ),
+      true,
+    );
     const report = loadOracleReport(reportId, directory);
     assert.equal(report?.status, "error");
-    assert.deepEqual(report?.trace.map((event) => event.status), ["error"]);
+    assert.deepEqual(
+      report?.trace.map((event) => event.status),
+      ["error"],
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -101,12 +146,15 @@ test("Oracle report reads reject traversal and malformed files", () => {
     assert.equal(loadOracleReport(reportId, directory), null);
 
     const legacyId = "22222222-2222-4222-8222-222222222222";
-    writeFileSync(join(directory, `${legacyId}.json`), JSON.stringify({
-      id: legacyId,
-      response: "Earlier Oracle response",
-      status: "completed",
-      createdAt: "2026-08-08T00:00:00.000Z",
-    }));
+    writeFileSync(
+      join(directory, `${legacyId}.json`),
+      JSON.stringify({
+        id: legacyId,
+        response: "Earlier Oracle response",
+        status: "completed",
+        createdAt: "2026-08-08T00:00:00.000Z",
+      }),
+    );
     const legacy = loadOracleReport(legacyId, directory);
     assert.equal(legacy?.request, null);
     assert.deepEqual(legacy?.trace, []);

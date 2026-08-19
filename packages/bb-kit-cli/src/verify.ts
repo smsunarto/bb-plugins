@@ -1,10 +1,6 @@
 import { buildWithSelectedCli } from "./build.js";
 import { checkProject, type Diagnostic } from "./check.js";
-import {
-  checkBuildMetadata,
-  checkSdkDependency,
-  compatibility,
-} from "./compatibility.js";
+import { checkBuildMetadata, checkSdkDependency, compatibility } from "./compatibility.js";
 import { checkPackedPackage, packedPaths } from "./package.js";
 import {
   defaultCommandRunner,
@@ -62,10 +58,7 @@ function selectedSummary(selected: SelectedBbCli): Omit<SelectedBbCli, "env"> {
 }
 
 /** Run the complete non-live handoff gate through one bb-kit-owned toolchain. */
-export function verifyProject(
-  root: string,
-  options: VerifyOptions = {},
-): VerificationResult {
+export function verifyProject(root: string, options: VerifyOptions = {}): VerificationResult {
   const diagnostics = checkProject(root);
   if (diagnostics.some((value) => value.severity === "error")) {
     const declaration = diagnostics.find((value) => value.code === "BBK011");
@@ -91,9 +84,11 @@ export function verifyProject(
   let bun: string;
   try {
     selected = selectBbCli(root, env, compatibility.bbCliVersion, run);
-    bun = resolvePathExecutable("bun", env) ?? (() => {
-      throw new ProcessError("project_tool_not_found", "bun was not found on PATH");
-    })();
+    bun =
+      resolvePathExecutable("bun", env) ??
+      (() => {
+        throw new ProcessError("project_tool_not_found", "bun was not found on PATH");
+      })();
     const oxlint = resolveProjectExecutable(root, "oxlint");
     const tsc = resolveProjectExecutable(root, "tsc");
     fixedSteps = [
@@ -102,9 +97,13 @@ export function verifyProject(
       { name: "test", file: bun, args: ["test"], command: `${bun} test` },
     ];
   } catch (error) {
-    const failure = error instanceof ProcessError
-      ? error
-      : new ProcessError("verification_preflight_failed", error instanceof Error ? error.message : String(error));
+    const failure =
+      error instanceof ProcessError
+        ? error
+        : new ProcessError(
+            "verification_preflight_failed",
+            error instanceof Error ? error.message : String(error),
+          );
     return {
       ok: false,
       diagnostics,
@@ -147,9 +146,10 @@ export function verifyProject(
         name: step.name,
         command: step.command,
         status: "failed",
-        detail: result.status !== 0 || result.error
-          ? processFailure(result)
-          : "protected SDK declarations changed during this step",
+        detail:
+          result.status !== 0 || result.error
+            ? processFailure(result)
+            : "protected SDK declarations changed during this step",
       });
     } else {
       steps.push({ name: step.name, command: step.command, status: "passed" });
@@ -256,13 +256,18 @@ export function verifyProject(
 export function formatVerification(result: VerificationResult): string {
   const icon = { passed: "✓", failed: "✗", skipped: "–" } as const;
   const lines = result.selectedBbCli
-    ? [`bb ${result.selectedBbCli.version}: ${result.selectedBbCli.path} (${result.selectedBbCli.source})`]
+    ? [
+        `bb ${result.selectedBbCli.version}: ${result.selectedBbCli.path} (${result.selectedBbCli.source})`,
+      ]
     : [];
   if (result.error) lines.push(`${result.error.code}: ${result.error.message}`);
-  lines.push(...result.steps.map((step) =>
-    `${icon[step.status]} ${step.name}: ${step.status}`
-    + (step.detail ? `\n  ${step.detail.replaceAll("\n", "\n  ")}` : ""),
-  ));
+  lines.push(
+    ...result.steps.map(
+      (step) =>
+        `${icon[step.status]} ${step.name}: ${step.status}` +
+        (step.detail ? `\n  ${step.detail.replaceAll("\n", "\n  ")}` : ""),
+    ),
+  );
   if (result.diagnostics.length > 0) {
     lines.push("Diagnostics");
     for (const value of result.diagnostics) {
@@ -273,8 +278,4 @@ export function formatVerification(result: VerificationResult): string {
   return lines.join("\n");
 }
 
-export type {
-  CommandRequest,
-  CommandResult,
-  CommandRunner,
-} from "./process.js";
+export type { CommandRequest, CommandResult, CommandRunner } from "./process.js";

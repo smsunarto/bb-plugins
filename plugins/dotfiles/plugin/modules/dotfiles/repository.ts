@@ -4,9 +4,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { TaskResult } from "./contract.js";
-import type {
-  DotfilesRepository,
-} from "./service.js";
+import type { DotfilesRepository } from "./service.js";
 import type { TweakableDefinition } from "./model.js";
 
 const outputCap = 200_000;
@@ -116,9 +114,8 @@ export function createDotfilesRepository({
     const skillsDirectory = join(repoPath, ".dotfiles/.agents/skills");
     if (!existsSync(skillsDirectory)) return [];
     return readdirSync(skillsDirectory, { withFileTypes: true })
-      .filter((entry) =>
-        entry.isDirectory()
-        && existsSync(join(skillsDirectory, entry.name, "SKILL.md")),
+      .filter(
+        (entry) => entry.isDirectory() && existsSync(join(skillsDirectory, entry.name, "SKILL.md")),
       )
       .map((entry) => ({
         path: `.dotfiles/.agents/skills/${entry.name}/SKILL.md`,
@@ -141,11 +138,7 @@ export function createDotfilesRepository({
     discoverSkills,
 
     async gitStatus(repoPath) {
-      const result = await runCommand(
-        "git status --porcelain=v1 -b",
-        repoPath,
-        30_000,
-      );
+      const result = await runCommand("git status --porcelain=v1 -b", repoPath, 30_000);
       if (result.exitCode !== 0) return { branch: "unknown", entries: [] };
       const lines = result.output.split("\n").filter(Boolean);
       const branchLine = lines.find((line) => line.startsWith("## "));
@@ -170,11 +163,7 @@ export function createDotfilesRepository({
     },
 
     async readHeadFile(repoPath, path) {
-      const result = await runCommand(
-        `git show HEAD:${quoteShell(path)}`,
-        repoPath,
-        30_000,
-      );
+      const result = await runCommand(`git show HEAD:${quoteShell(path)}`, repoPath, 30_000);
       return result.exitCode === 0 ? result.output : null;
     },
 
@@ -195,10 +184,7 @@ export function createDotfilesRepository({
     },
 
     removeSkill(repoPath, name) {
-      return runCommand(
-        `npx -y skills remove ${quoteShell(name)} -g -y`,
-        repoPath,
-      );
+      return runCommand(`npx -y skills remove ${quoteShell(name)} -g -y`, repoPath);
     },
 
     dispose() {

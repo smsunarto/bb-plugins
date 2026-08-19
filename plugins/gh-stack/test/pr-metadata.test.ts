@@ -17,9 +17,7 @@ const meta = (title: string, isDraft = false, state = "OPEN"): PrMetadata => ({
   state,
 });
 
-const cacheOf = (
-  entries: [number, PrMetadata, number][],
-): PrMetadataCache =>
+const cacheOf = (entries: [number, PrMetadata, number][]): PrMetadataCache =>
   new Map(entries.map(([number, data, at]) => [number, { data, at }]));
 
 test("fresh entries are served without a read", () => {
@@ -31,12 +29,7 @@ test("fresh entries are served without a read", () => {
 
 test("entries past the freshness window are re-read", () => {
   const cache = cacheOf([[1, meta("one"), 1000]]);
-  const { hits, missing } = partitionPrMetadata(
-    cache,
-    [1, 2],
-    1000 + FRESH_MS + 1,
-    FRESH_MS,
-  );
+  const { hits, missing } = partitionPrMetadata(cache, [1, 2], 1000 + FRESH_MS + 1, FRESH_MS);
   assert.deepEqual(missing, [1, 2]);
   assert.equal(hits.size, 0);
 });
@@ -66,13 +59,7 @@ test("a failed read serves the previous values, marked stale", () => {
 
 test("values past the maximum age are dropped rather than served", () => {
   const cache = cacheOf([[1, meta("ancient"), 0]]);
-  const resolved = applyPrMetadataReads(
-    cache,
-    [1],
-    new Map(),
-    MAX_AGE_MS + 1,
-    MAX_AGE_MS,
-  );
+  const resolved = applyPrMetadataReads(cache, [1], new Map(), MAX_AGE_MS + 1, MAX_AGE_MS);
   assert.equal(resolved.has(1), false);
   assert.equal(cache.has(1), false);
 });
@@ -84,13 +71,7 @@ test("a repeatedly failing read cannot refresh its own stale entry", () => {
     assert.deepEqual(resolved.get(1), { data: meta("kept"), stale: true });
   }
   assert.equal(cache.has(1), true);
-  const expired = applyPrMetadataReads(
-    cache,
-    [1],
-    new Map(),
-    MAX_AGE_MS + 1,
-    MAX_AGE_MS,
-  );
+  const expired = applyPrMetadataReads(cache, [1], new Map(), MAX_AGE_MS + 1, MAX_AGE_MS);
   assert.equal(expired.has(1), false);
   assert.equal(cache.has(1), false);
 });

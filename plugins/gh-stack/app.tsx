@@ -6,13 +6,7 @@
 // then the branches top-first, then the trunk anchor. Every row expands into
 // its changed-file tree with +/− deltas.
 import "./app.css";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   definePluginApp,
   useRealtime,
@@ -36,9 +30,8 @@ import { ChangedFileTree } from "@/components/stack/changed-file-tree";
 import { deriveBranchName } from "@/lib/branch-name";
 
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
-type StackResult = Awaited<ReturnType<Rpc["call"]>> extends infer R
-  ? Extract<R, { stack: unknown }>
-  : never;
+type StackResult =
+  Awaited<ReturnType<Rpc["call"]>> extends infer R ? Extract<R, { stack: unknown }> : never;
 type StackView = NonNullable<StackResult["stack"]>;
 type StackBranch = StackView["branches"][number];
 type ChangeSet = NonNullable<StackResult["pending"]>;
@@ -61,11 +54,7 @@ const MERGE_METHODS: { value: MergeMethod; label: string; effect: string }[] = [
   { value: "rebase", label: "Rebase", effect: "Replay every commit" },
 ];
 
-function showActionToast(outcome: {
-  ok: boolean;
-  message: string;
-  tone?: ActionTone;
-}) {
+function showActionToast(outcome: { ok: boolean; message: string; tone?: ActionTone }) {
   const tone = outcome.tone ?? (outcome.ok ? "success" : "error");
   if (tone === "warning") toast.warning(outcome.message);
   else if (tone === "success") toast.success(outcome.message);
@@ -103,12 +92,10 @@ function branchIcon(branch: StackBranch): { path: string; tone: string } {
   if (!pr) return { path: OCTICONS.dot, tone: "text-muted-foreground" };
   if (branch.isMerged || pr.state === "MERGED")
     return { path: OCTICONS.merge, tone: "text-purple-600 dark:text-purple-400" };
-  if (pr.state === "CLOSED")
-    return { path: OCTICONS.pr, tone: "text-red-600 dark:text-red-400" };
+  if (pr.state === "CLOSED") return { path: OCTICONS.pr, tone: "text-red-600 dark:text-red-400" };
   if (pr.state === "QUEUED")
     return { path: OCTICONS.pr, tone: "text-amber-600 dark:text-amber-400" };
-  if (pr.isDraft)
-    return { path: OCTICONS.prDraft, tone: "text-muted-foreground" };
+  if (pr.isDraft) return { path: OCTICONS.prDraft, tone: "text-muted-foreground" };
   return { path: OCTICONS.pr, tone: "text-green-600 dark:text-green-400" };
 }
 
@@ -154,9 +141,7 @@ function StatusPill({
       <span
         className={pr?.metadataStale ? `${pill} opacity-60` : pill}
         title={
-          pr?.metadataStale
-            ? "GitHub could not be read; this is the last known state."
-            : undefined
+          pr?.metadataStale ? "GitHub could not be read; this is the last known state." : undefined
         }
       >
         {label}
@@ -214,9 +199,7 @@ function BranchChips({ branch }: { branch: StackBranch }) {
   return (
     <>
       {branch.needsRebase ? (
-        <span className={`${chip} border-destructive/50 text-destructive`}>
-          needs rebase
-        </span>
+        <span className={`${chip} border-destructive/50 text-destructive`}>needs rebase</span>
       ) : null}
       {/* Two different facts share one chip. A pending auto-stash is the
           louder one — those changes come back on checkout — so it wins the
@@ -239,14 +222,10 @@ function BranchChips({ branch }: { branch: StackBranch }) {
         </span>
       ) : null}
       {!settled && (branch.aheadOfRemote === null || branch.behindRemote === null) ? (
-        <span className={`${chip} border-border text-muted-foreground`}>
-          remote unknown
-        </span>
+        <span className={`${chip} border-border text-muted-foreground`}>remote unknown</span>
       ) : null}
       {!settled && branch.aheadOfRemote !== null && branch.aheadOfRemote > 0 ? (
-        <span
-          className={`${chip} border-amber-600/50 text-amber-600 dark:text-amber-400`}
-        >
+        <span className={`${chip} border-amber-600/50 text-amber-600 dark:text-amber-400`}>
           {branch.aheadOfRemote} unpushed
         </span>
       ) : null}
@@ -272,21 +251,13 @@ function RailRow({
   children: ReactNode;
 }) {
   return (
-    <div
-      className={`relative rounded-md ${interactive ? "hover:bg-muted/50" : ""}`}
-    >
+    <div className={`relative rounded-md ${interactive ? "hover:bg-muted/50" : ""}`}>
       {accent ? (
-        <div
-          className="absolute -left-1 top-1 bottom-1 w-1 rounded-md bg-primary"
-          aria-hidden
-        />
+        <div className="absolute -left-1 top-1 bottom-1 w-1 rounded-md bg-primary" aria-hidden />
       ) : null}
       <div className="relative grid grid-cols-[16px_1fr] gap-x-2 py-1.5">
         {/* connector segment below the icon, GitHub-exact */}
-        <div
-          className="absolute bottom-0 left-[7px] top-8 w-[2px] bg-border"
-          aria-hidden
-        />
+        <div className="absolute bottom-0 left-[7px] top-8 w-[2px] bg-border" aria-hidden />
         <span className={`mt-0.5 ${iconTone ?? "text-muted-foreground"}`}>
           <Octicon path={icon} />
         </span>
@@ -296,13 +267,7 @@ function RailRow({
   );
 }
 
-function ChangeTree({
-  change,
-  className = "mt-1.5",
-}: {
-  change: ChangeSet;
-  className?: string;
-}) {
+function ChangeTree({ change, className = "mt-1.5" }: { change: ChangeSet; className?: string }) {
   return (
     <div className={`${className} space-y-1`}>
       <ChangedFileTree files={change.files} />
@@ -340,8 +305,7 @@ function BranchRow({
   const title = pr?.title ?? branch.name;
   // Toggling draft over an unread PR would send the wrong direction: the
   // shown value is a guess, so the control waits for a real read.
-  const canToggle =
-    pr !== null && pr.state === "OPEN" && !pr.metadataStale;
+  const canToggle = pr !== null && pr.state === "OPEN" && !pr.metadataStale;
   const canExpand = (branch.diff?.files.length ?? 0) > 0;
   const canCheckout = !branch.isCurrent && !checkoutDisabled;
   const icon = branchIcon(branch);
@@ -527,7 +491,7 @@ function LayerComposer({
               onClick={() => {
                 void onSuggest().then((suggested) => {
                   if (suggested) setName(suggested);
-                    return undefined;
+                  return undefined;
                 });
               }}
             >
@@ -555,13 +519,7 @@ function LayerComposer({
           </Button>
           {/* The manual action stays secondary beside the primary Magic Stack
               path, and disabled state lowers it another step. */}
-          <Button
-            type="submit"
-            size="sm"
-            variant="secondary"
-            className="h-7"
-            disabled={!canSubmit}
-          >
+          <Button type="submit" size="sm" variant="secondary" className="h-7" disabled={!canSubmit}>
             {busy ? busyLabel : submitLabel}
           </Button>
         </div>
@@ -672,17 +630,12 @@ function SettingsDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Stack settings</DialogTitle>
-          <DialogDescription>
-            How this panel names the branches it creates.
-          </DialogDescription>
+          <DialogDescription>How this panel names the branches it creates.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label
-              htmlFor="gh-stack-branch-prefix"
-              className="text-sm font-medium text-foreground"
-            >
+            <label htmlFor="gh-stack-branch-prefix" className="text-sm font-medium text-foreground">
               Branch prefix
             </label>
             <Input
@@ -705,15 +658,11 @@ function SettingsDialog({
 
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <span className="text-sm font-medium text-foreground">
-                Conventional Commits
-              </span>
+              <span className="text-sm font-medium text-foreground">Conventional Commits</span>
               <p className="text-xs text-muted-foreground">
-                Layer and PR titles read{" "}
-                <span className="font-mono">feat(scope): …</span>, with the
-                scope optional. The type leads the branch slug; the scope is
-                not part of it. Suggest and Magic Stack follow the same
-                convention.
+                Layer and PR titles read <span className="font-mono">feat(scope): …</span>, with the
+                scope optional. The type leads the branch slug; the scope is not part of it. Suggest
+                and Magic Stack follow the same convention.
               </p>
             </div>
             <div className="pt-0.5">
@@ -728,19 +677,12 @@ function SettingsDialog({
 
           <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
             <div className="truncate">{exampleTitle}</div>
-            <div className="truncate font-mono text-foreground">
-              {exampleBranch}
-            </div>
+            <div className="truncate font-mono text-foreground">{exampleBranch}</div>
           </div>
         </div>
 
         <DialogFooter className="gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={saving}
-            onClick={() => onOpenChange(false)}
-          >
+          <Button size="sm" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button size="sm" disabled={saving} onClick={() => void save()}>
@@ -786,9 +728,8 @@ function MergeDialog({
             {count === 1 ? "" : "s"} into {base}
           </DialogTitle>
           <DialogDescription>
-            GitHub will atomically merge PR #{topPrNumber} and every eligible
-            PR below it, bottom-to-top. All complete or enqueue together, or
-            none do.
+            GitHub will atomically merge PR #{topPrNumber} and every eligible PR below it,
+            bottom-to-top. All complete or enqueue together, or none do.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -808,14 +749,14 @@ function MergeDialog({
           <p className="text-xs text-muted-foreground">{chosen?.effect}.</p>
           {left > 0 ? (
             <p className="text-xs text-muted-foreground">
-              The {left} blocked layer{left === 1 ? "" : "s"} above stay open.
-              Run Sync afterwards to restack {left === 1 ? "it" : "them"} onto {base}.
+              The {left} blocked layer{left === 1 ? "" : "s"} above stay open. Run Sync afterwards
+              to restack {left === 1 ? "it" : "them"} onto {base}.
             </p>
           ) : null}
           {unpushedCount > 0 ? (
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              {unpushedCount} selected branch{unpushedCount === 1 ? " has" : "es have"}
-              {" "}unpushed commits. Only the GitHub state will merge; Sync first to include them.
+              {unpushedCount} selected branch{unpushedCount === 1 ? " has" : "es have"} unpushed
+              commits. Only the GitHub state will merge; Sync first to include them.
             </p>
           ) : null}
           <p className="text-xs text-muted-foreground">
@@ -859,15 +800,7 @@ function StackPanel({ threadId }: { threadId: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<
-    | "sync"
-    | "submit"
-    | "sync-submit"
-    | "prune"
-    | "merge"
-    | "create"
-    | "magic"
-    | "checkout"
-    | null
+    "sync" | "submit" | "sync-submit" | "prune" | "merge" | "create" | "magic" | "checkout" | null
   >(null);
   // Per-PR, so draft toggles run concurrently: each pill locks only itself,
   // and only for its own round trip. A scalar here would let a second
@@ -887,18 +820,14 @@ function StackPanel({ threadId }: { threadId: string }) {
   // Only the rows the reader has explicitly toggled. Everything else follows
   // the default below — the checked-out layer opens on its own, since its
   // changes are the ones being worked on.
-  const [expansionOverrides, setExpansionOverrides] = useState<
-    Map<string, boolean>
-  >(new Map());
+  const [expansionOverrides, setExpansionOverrides] = useState<Map<string, boolean>>(new Map());
 
   const isExpanded = (branch: StackBranch) =>
     expansionOverrides.get(branch.name) ?? branch.isCurrent;
 
   const toggleExpanded = (branch: StackBranch) => {
     const next = !isExpanded(branch);
-    setExpansionOverrides((current) =>
-      new Map(current).set(branch.name, next),
-    );
+    setExpansionOverrides((current) => new Map(current).set(branch.name, next));
   };
 
   // Cached mode paints instantly from the server's per-thread cache (which
@@ -909,27 +838,29 @@ function StackPanel({ threadId }: { threadId: string }) {
       const fresh = options?.fresh === true;
       if (fresh) setRefreshing(true);
       setFetchError(null);
-      return rpc
-        .call("getStack", fresh ? { threadId, refresh: true } : { threadId })
-        // Responses can resolve out of order (an action's fresh refetch racing
-        // a signal-triggered cached one); never replace a payload with an
-        // older compute. Equal timestamps still apply — a settings save
-        // patches the cached payload without bumping fetchedAt.
-        .then((next) => {
-          setResult((current) =>
-            current && current.fetchedAt > next.fetchedAt ? current : next,
-          );
-          if (fresh) setMutationNeedsRefresh(false);
-          return true;
-        })
-        .catch((error: unknown) => {
-          setFetchError(error instanceof Error ? error.message : String(error));
-          return false;
-        })
-        .finally(() => {
-          setLoading(false);
-          if (fresh) setRefreshing(false);
-        });
+      return (
+        rpc
+          .call("getStack", fresh ? { threadId, refresh: true } : { threadId })
+          // Responses can resolve out of order (an action's fresh refetch racing
+          // a signal-triggered cached one); never replace a payload with an
+          // older compute. Equal timestamps still apply — a settings save
+          // patches the cached payload without bumping fetchedAt.
+          .then((next) => {
+            setResult((current) =>
+              current && current.fetchedAt > next.fetchedAt ? current : next,
+            );
+            if (fresh) setMutationNeedsRefresh(false);
+            return true;
+          })
+          .catch((error: unknown) => {
+            setFetchError(error instanceof Error ? error.message : String(error));
+            return false;
+          })
+          .finally(() => {
+            setLoading(false);
+            if (fresh) setRefreshing(false);
+          })
+      );
     },
     [rpc, threadId],
   );
@@ -981,11 +912,7 @@ function StackPanel({ threadId }: { threadId: string }) {
     setDraftIntents((current) => {
       const next = new Map(current);
       for (const branch of branches) {
-        if (
-          branch.pr &&
-          next.has(branch.pr.number) &&
-          branch.draftReconciliationPending !== true
-        ) {
+        if (branch.pr && next.has(branch.pr.number) && branch.draftReconciliationPending !== true) {
           next.delete(branch.pr.number);
         }
       }
@@ -993,9 +920,7 @@ function StackPanel({ threadId }: { threadId: string }) {
     });
   }, [result]);
 
-  const runAction = async (
-    action: "sync" | "submit" | "sync-submit" | "prune",
-  ) => {
+  const runAction = async (action: "sync" | "submit" | "sync-submit" | "prune") => {
     setBusy(action);
     setMutationNeedsRefresh(true);
     setActionDetail(null);
@@ -1045,11 +970,7 @@ function StackPanel({ threadId }: { threadId: string }) {
 
   // One entry point for both layer modes: init when there is no stack yet,
   // add on top when there is.
-  const addLayer = async (
-    name: string,
-    branch: string,
-    mode: "init" | "add",
-  ): Promise<boolean> => {
+  const addLayer = async (name: string, branch: string, mode: "init" | "add"): Promise<boolean> => {
     setBusy("create");
     setMutationNeedsRefresh(true);
     setActionDetail(null);
@@ -1178,8 +1099,7 @@ function StackPanel({ threadId }: { threadId: string }) {
           ? {
               ...current,
               settings: outcome.settings,
-              branchPrefix:
-                outcome.settings.branchPrefix || current.detectedBranchPrefix,
+              branchPrefix: outcome.settings.branchPrefix || current.detectedBranchPrefix,
             }
           : current,
       );
@@ -1247,8 +1167,7 @@ function StackPanel({ threadId }: { threadId: string }) {
   // Draft toggles deliberately absent: they are GitHub-side writes that
   // reconcile in the background, so they must not lock the panel.
   const anyBusy = busy !== null;
-  const mutationsDisabled =
-    anyBusy || mutationNeedsRefresh || loading || refreshing;
+  const mutationsDisabled = anyBusy || mutationNeedsRefresh || loading || refreshing;
   const notAStack = result?.error?.kind === "not-a-stack";
   // The rail is the whole UI: it composes on any workspace that resolved,
   // whether or not it already holds a stack.
@@ -1290,15 +1209,18 @@ function StackPanel({ threadId }: { threadId: string }) {
       ));
   const syncParts: string[] = [];
   if ((trunkBehind ?? 0) > 0) syncParts.push(`trunk moved (+${trunkBehind})`);
-  if (rebaseCount > 0) syncParts.push(`${rebaseCount} branch${rebaseCount === 1 ? "" : "es"} to restack`);
+  if (rebaseCount > 0)
+    syncParts.push(`${rebaseCount} branch${rebaseCount === 1 ? "" : "es"} to restack`);
   if (unpushedCount > 0) syncParts.push(`${unpushedCount} to push`);
-  if (behindCount > 0) syncParts.push(`${behindCount} branch${behindCount === 1 ? "" : "es"} behind remote`);
+  if (behindCount > 0)
+    syncParts.push(`${behindCount} branch${behindCount === 1 ? "" : "es"} behind remote`);
   const syncNeeded = syncParts.length > 0 || remoteUnknown;
-  const syncSubtitle = syncParts.length > 0
-    ? syncParts.join(" · ")
-    : remoteUnknown
-      ? "remote state unknown"
-      : "up to date";
+  const syncSubtitle =
+    syncParts.length > 0
+      ? syncParts.join(" · ")
+      : remoteUnknown
+        ? "remote state unknown"
+        : "up to date";
   const knownSubmitEffect =
     missingPrCount > 0 && updatePrCount > 0
       ? `opens ${missingPrCount} PR${missingPrCount === 1 ? "" : "s"}, updates ${updatePrCount}`
@@ -1331,13 +1253,14 @@ function StackPanel({ threadId }: { threadId: string }) {
     (branch) => branch.aheadOfRemote !== null && branch.aheadOfRemote > 0,
   ).length;
   const blocker = unmergedBranches[mergeReadyCount];
-  const mergeSubtitle = mergeReadyCount > 0
-    ? `merges the bottom ${mergeReadyCount} of ${mergeCount} ready layer${mergeReadyCount === 1 ? "" : "s"}`
-    : blocker?.pr?.state === "CLOSED"
-      ? `#${blocker.pr.number} is closed and blocks the stack`
-      : blocker?.pr?.isDraft
-        ? `#${blocker.pr.number} is a draft and blocks the stack`
-        : "the bottom layer has no open PR — submit first";
+  const mergeSubtitle =
+    mergeReadyCount > 0
+      ? `merges the bottom ${mergeReadyCount} of ${mergeCount} ready layer${mergeReadyCount === 1 ? "" : "s"}`
+      : blocker?.pr?.state === "CLOSED"
+        ? `#${blocker.pr.number} is closed and blocks the stack`
+        : blocker?.pr?.isDraft
+          ? `#${blocker.pr.number} is a draft and blocks the stack`
+          : "the bottom layer has no open PR — submit first";
 
   return (
     <div className="space-y-4 [&>:first-child]:mb-0">
@@ -1403,22 +1326,20 @@ function StackPanel({ threadId }: { threadId: string }) {
         onSave={saveSettings}
       />
 
-      {fetchError ? (
-        <p className="text-sm text-destructive">{fetchError}</p>
-      ) : null}
+      {fetchError ? <p className="text-sm text-destructive">{fetchError}</p> : null}
 
       {mutationNeedsRefresh && !anyBusy ? (
         <div className="rounded-lg border border-amber-600/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-          The stack changed, but its latest state could not be loaded. Refresh
-          before running another action.
+          The stack changed, but its latest state could not be loaded. Refresh before running
+          another action.
         </div>
       ) : null}
 
       {result?.error ? (
         notAStack ? (
           <p className="text-xs text-muted-foreground">
-            This branch is not part of a stack yet. Name the first layer below,
-            or run <span className="font-mono">gh stack init &lt;branch&gt;</span>.
+            This branch is not part of a stack yet. Name the first layer below, or run{" "}
+            <span className="font-mono">gh stack init &lt;branch&gt;</span>.
           </p>
         ) : (
           <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -1444,9 +1365,7 @@ function StackPanel({ threadId }: { threadId: string }) {
             pending={pending}
             prefix={result?.branchPrefix ?? null}
             conventional={settings.conventionalCommits}
-            onSubmit={(name, branch) =>
-              addLayer(name, branch, stack ? "add" : "init")
-            }
+            onSubmit={(name, branch) => addLayer(name, branch, stack ? "add" : "init")}
             onSuggest={suggestName}
             onMagic={() => void magicStack()}
           />
@@ -1494,14 +1413,8 @@ function StackPanel({ threadId }: { threadId: string }) {
                 disabled={mutationsDisabled || !syncNeeded}
               >
                 <Icon
-                  name={
-                    busy === "sync" || busy === "prune"
-                      ? "Spinner"
-                      : "ArrowReloadHorizontal"
-                  }
-                  className={
-                    busy === "sync" || busy === "prune" ? "animate-spin" : undefined
-                  }
+                  name={busy === "sync" || busy === "prune" ? "Spinner" : "ArrowReloadHorizontal"}
+                  className={busy === "sync" || busy === "prune" ? "animate-spin" : undefined}
                 />
                 {busy === "sync" || busy === "prune" ? "Syncing…" : "Sync"}
               </Button>
@@ -1516,14 +1429,10 @@ function StackPanel({ threadId }: { threadId: string }) {
               >
                 <Icon
                   name={
-                    busy === "submit" || busy === "sync-submit"
-                      ? "Spinner"
-                      : "GitPullRequestArrow"
+                    busy === "submit" || busy === "sync-submit" ? "Spinner" : "GitPullRequestArrow"
                   }
                   className={
-                    busy === "submit" || busy === "sync-submit"
-                      ? "animate-spin"
-                      : undefined
+                    busy === "submit" || busy === "sync-submit" ? "animate-spin" : undefined
                   }
                 />
                 {busy === "submit" || busy === "sync-submit"
@@ -1588,9 +1497,7 @@ function StackPanel({ threadId }: { threadId: string }) {
           base={mergeOffer.base}
           topPrNumber={mergeOffer.throughPrNumber}
           unpushedCount={mergeOffer.unpushedCount}
-          onMerge={(method) =>
-            void mergeStack(method, mergeOffer.throughPrNumber)
-          }
+          onMerge={(method) => void mergeStack(method, mergeOffer.throughPrNumber)}
         />
       ) : null}
 
@@ -1599,9 +1506,9 @@ function StackPanel({ threadId }: { threadId: string }) {
           <DialogHeader>
             <DialogTitle>Delete merged local branches</DialogTitle>
             <DialogDescription>
-              This runs <span className="font-mono">gh stack sync --prune</span>,
-              syncing first and then deleting {prunableCount ?? "the verified"} merged
-              local branch{prunableCount === 1 ? "" : "es"}. Remote branches and PRs remain.
+              This runs <span className="font-mono">gh stack sync --prune</span>, syncing first and
+              then deleting {prunableCount ?? "the verified"} merged local branch
+              {prunableCount === 1 ? "" : "es"}. Remote branches and PRs remain.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

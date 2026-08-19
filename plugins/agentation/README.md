@@ -32,14 +32,14 @@ per agent. The toolbar talks to bb's own origin, so annotating through
 
 ## What you get
 
-| Surface | What it does |
-|---|---|
-| Toolbar | Mounts over the whole bb app, on every route. |
-| Thread composer banner | Shows the staged batch in every open thread and assigns it there. |
-| `Agentation` nav panel | The backlog: triage, reply, resolve, dismiss, and re-stage. |
-| `agentation_*` agent tools | Nine tools for the read → fix → resolve loop. |
-| `bb agentation` | The same operations from a shell. |
-| `agentation` skill | Teaches agents the loop. |
+| Surface                    | What it does                                                      |
+| -------------------------- | ----------------------------------------------------------------- |
+| Toolbar                    | Mounts over the whole bb app, on every route.                     |
+| Thread composer banner     | Shows the staged batch in every open thread and assigns it there. |
+| `Agentation` nav panel     | The backlog: triage, reply, resolve, dismiss, and re-stage.       |
+| `agentation_*` agent tools | Nine tools for the read → fix → resolve loop.                     |
+| `bb agentation`            | The same operations from a shell.                                 |
+| `agentation` skill         | Teaches agents the loop.                                          |
 
 ## Install
 
@@ -92,12 +92,12 @@ panel's Dismissed view, where you can reopen it.
 On top of the AFS fields, each annotation carries bb context, so an agent knows
 where to look before it starts grepping.
 
-| Field | Meaning |
-|---|---|
-| `bb.route` | The bb route the annotation was taken on. |
-| `bb.pluginId` | Owning plugin, or `null` for the bb app shell. |
-| `bb.surface` | `navPanel`, `inline`, or `overlay`. |
-| `bb.threadId` / `bb.projectId` | Source context resolved from the route. |
+| Field                          | Meaning                                        |
+| ------------------------------ | ---------------------------------------------- |
+| `bb.route`                     | The bb route the annotation was taken on.      |
+| `bb.pluginId`                  | Owning plugin, or `null` for the bb app shell. |
+| `bb.surface`                   | `navPanel`, `inline`, or `overlay`.            |
+| `bb.threadId` / `bb.projectId` | Source context resolved from the route.        |
 
 ### Commands
 
@@ -117,8 +117,8 @@ bb agentation toolbar [on|off]                   show or hide the toolbar
 
 ## Configuration
 
-| Setting | Purpose |
-|---|---|
+| Setting                           | Purpose                                     |
+| --------------------------------- | ------------------------------------------- |
 | Days to keep resolved annotations | Retention for the nightly prune. Default 7. |
 
 Toolbar visibility is live state, not a setting. Toggle it with **Show toolbar**

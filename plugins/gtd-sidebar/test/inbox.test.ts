@@ -16,9 +16,7 @@ import {
   visibleInboxThreads,
 } from "../lib/inbox.ts";
 
-function thread(
-  overrides: Partial<PluginSidebarThread> = {},
-): PluginSidebarThread {
+function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return {
     id: "thr_1",
     projectId: "proj_1",
@@ -90,10 +88,7 @@ describe("sortByCreatedAtDescending", () => {
   });
 
   it("does not mutate its input", () => {
-    const input = [
-      thread({ id: "a", createdAt: 1 }),
-      thread({ id: "b", createdAt: 2 }),
-    ];
+    const input = [thread({ id: "a", createdAt: 1 }), thread({ id: "b", createdAt: 2 })];
     sortByCreatedAtDescending(input);
     assert.deepEqual(
       input.map((t) => t.id),
@@ -105,10 +100,7 @@ describe("sortByCreatedAtDescending", () => {
 describe("active sections", () => {
   it("puts quiet work with the user and live work in waiting", () => {
     assert.equal(activeSectionFor(thread()), "next-action");
-    assert.equal(
-      activeSectionFor(thread({ indicator: "runtime" })),
-      "waiting",
-    );
+    assert.equal(activeSectionFor(thread({ indicator: "runtime" })), "waiting");
     assert.equal(
       activeSectionFor(
         thread({
@@ -159,20 +151,12 @@ describe("active sections", () => {
   });
 
   it("does not move a thread for metadata updates within one section", () => {
-    const initial = [
-      thread({ id: "a", updatedAt: 10 }),
-      thread({ id: "b", updatedAt: 20 }),
-    ];
+    const initial = [thread({ id: "a", updatedAt: 10 }), thread({ id: "b", updatedAt: 20 })];
     const first = reconcileActiveSectionOrder(null, initial);
-    const updated = [
-      thread({ id: "a", updatedAt: 999, title: "Renamed" }),
-      initial[1]!,
-    ];
+    const updated = [thread({ id: "a", updatedAt: 999, title: "Renamed" }), initial[1]!];
     const next = reconcileActiveSectionOrder(first, updated);
     assert.deepEqual(
-      partitionActiveSections(updated, next).nextAction.map(
-        (candidate) => candidate.id,
-      ),
+      partitionActiveSections(updated, next).nextAction.map((candidate) => candidate.id),
       ["a", "b"],
     );
   });
@@ -183,31 +167,21 @@ describe("active sections", () => {
       thread({ id: "b", updatedAt: 20, indicator: "runtime" }),
     ];
     const first = reconcileActiveSectionOrder(null, initial);
-    const transitioned = [
-      thread({ id: "a", updatedAt: 30, indicator: "runtime" }),
-      initial[1]!,
-    ];
+    const transitioned = [thread({ id: "a", updatedAt: 30, indicator: "runtime" }), initial[1]!];
     const next = reconcileActiveSectionOrder(first, transitioned);
     assert.deepEqual(
-      partitionActiveSections(transitioned, next).waiting.map(
-        (candidate) => candidate.id,
-      ),
+      partitionActiveSections(transitioned, next).waiting.map((candidate) => candidate.id),
       ["b", "a"],
     );
   });
 
   it("treats a return from pinning or parking as a new entrance", () => {
-    const initial = [
-      thread({ id: "a", updatedAt: 10 }),
-      thread({ id: "b", updatedAt: 20 }),
-    ];
+    const initial = [thread({ id: "a", updatedAt: 10 }), thread({ id: "b", updatedAt: 20 })];
     const first = reconcileActiveSectionOrder(null, initial);
     const withoutA = reconcileActiveSectionOrder(first, [initial[1]!]);
     const returned = reconcileActiveSectionOrder(withoutA, initial);
     assert.deepEqual(
-      partitionActiveSections(initial, returned).nextAction.map(
-        (candidate) => candidate.id,
-      ),
+      partitionActiveSections(initial, returned).nextAction.map((candidate) => candidate.id),
       ["b", "a"],
     );
   });
@@ -219,15 +193,14 @@ describe("active sections", () => {
     ];
     const first = reconcileActiveSectionOrder(null, threads);
     assert.deepEqual(
-      partitionActiveSections(filterByProject(threads, "p2"), first)
-        .nextAction.map((candidate) => candidate.id),
+      partitionActiveSections(filterByProject(threads, "p2"), first).nextAction.map(
+        (candidate) => candidate.id,
+      ),
       ["b"],
     );
     const next = reconcileActiveSectionOrder(first, threads);
     assert.deepEqual(
-      partitionActiveSections(threads, next).nextAction.map(
-        (candidate) => candidate.id,
-      ),
+      partitionActiveSections(threads, next).nextAction.map((candidate) => candidate.id),
       ["a", "b"],
     );
   });
@@ -275,10 +248,7 @@ describe("searchThreadsByTitle", () => {
 
 describe("filtering", () => {
   it("scopes to one project, or to all", () => {
-    const threads = [
-      thread({ id: "a", projectId: "p1" }),
-      thread({ id: "b", projectId: "p2" }),
-    ];
+    const threads = [thread({ id: "a", projectId: "p1" }), thread({ id: "b", projectId: "p2" })];
     assert.deepEqual(
       filterByProject(threads, "p1").map((t) => t.id),
       ["a"],
@@ -287,10 +257,7 @@ describe("filtering", () => {
   });
 
   it("drops archived threads", () => {
-    const threads = [
-      thread({ id: "a" }),
-      thread({ id: "b", isArchived: true }),
-    ];
+    const threads = [thread({ id: "a" }), thread({ id: "b", isArchived: true })];
     assert.deepEqual(
       visibleInboxThreads(threads, new Set()).map((t) => t.id),
       ["a"],
@@ -300,10 +267,7 @@ describe("filtering", () => {
   // Settling archives the thread in bb, so the archive flag alone would empty
   // the settled shelf the moment anything landed on it.
   it("keeps an archived thread the plugin parked", () => {
-    const threads = [
-      thread({ id: "a", isArchived: true }),
-      thread({ id: "b", isArchived: true }),
-    ];
+    const threads = [thread({ id: "a", isArchived: true }), thread({ id: "b", isArchived: true })];
     assert.deepEqual(
       visibleInboxThreads(threads, new Set(["a"])).map((t) => t.id),
       ["a"],

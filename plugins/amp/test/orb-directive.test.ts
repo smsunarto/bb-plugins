@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  findOrbDirectiveRanges,
-  stripOrbDirectives,
-} from "../src/orb-directive.ts";
+import { findOrbDirectiveRanges, stripOrbDirectives } from "../src/orb-directive.ts";
 
 test("findOrbDirectiveRanges finds case-insensitive standalone tokens anywhere", () => {
   assert.deepEqual(findOrbDirectiveRanges("/orb then /ORB\nfinish /oRb"), [
@@ -14,10 +11,7 @@ test("findOrbDirectiveRanges finds case-insensitive standalone tokens anywhere",
 });
 
 test("findOrbDirectiveRanges uses the bridge's exact whitespace boundaries", () => {
-  assert.deepEqual(
-    findOrbDirectiveRanges("/orbital (/orb) path/orb /orb,"),
-    [],
-  );
+  assert.deepEqual(findOrbDirectiveRanges("/orbital (/orb) path/orb /orb,"), []);
 });
 
 test("stripOrbDirectives removes tokens without changing surrounding text", () => {

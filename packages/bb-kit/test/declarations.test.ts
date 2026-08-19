@@ -4,10 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("published declarations", () => {
   it("keep the operations boundary independent of the bb SDK", () => {
-    const operations = readFileSync(
-      join(import.meta.dirname, "../dist/operations.d.ts"),
-      "utf8",
-    );
+    const operations = readFileSync(join(import.meta.dirname, "../dist/operations.d.ts"), "utf8");
     const standardSchema = readFileSync(
       join(import.meta.dirname, "../dist/standard-schema.d.ts"),
       "utf8",

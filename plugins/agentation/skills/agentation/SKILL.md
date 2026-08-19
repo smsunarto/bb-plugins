@@ -36,10 +36,10 @@ annotation you did not actually fix — dismiss it or ask.
 
 The `Where` line is the fastest route to the source.
 
-| `Where` says | The code lives in |
-|---|---|
+| `Where` says      | The code lives in                         |
+| ----------------- | ----------------------------------------- |
 | `plugin \`<id>\`` | that plugin's `app.tsx` and `components/` |
-| `bb app shell` | the bb app itself, not this workspace |
+| `bb app shell`    | the bb app itself, not this workspace     |
 
 `Selector` is a live DOM path — grep it for class names and element structure.
 `React` is the component path; the last segment is usually the component to

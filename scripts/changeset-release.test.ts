@@ -48,9 +48,7 @@ const githubOptions = {
 describe("Changesets release routing", () => {
   test("routes each package to its matching plugin directory", () => {
     expect(releaseTag(plugin())).toBe("gh-stack/v1.2.3");
-    expect(() => releaseTag(plugin({ id: "other" }))).toThrow(
-      "resolves to plugin id",
-    );
+    expect(() => releaseTag(plugin({ id: "other" }))).toThrow("resolves to plugin id");
   });
 
   test("emits only missing releases in the action's NDJSON shape", async () => {
@@ -61,20 +59,19 @@ describe("Changesets release routing", () => {
       manifest: { name: "@smsunarto/bb-plugin-amp", version: "2.0.0" },
     });
     const calls: string[] = [];
-    const events = await missingReleaseEvents(
-      [plugin(), amp],
-      async (tag) => {
-        calls.push(tag);
-        return tag.startsWith("gh-stack/") ? "missing" : "complete";
-      },
-    );
+    const events = await missingReleaseEvents([plugin(), amp], async (tag) => {
+      calls.push(tag);
+      return tag.startsWith("gh-stack/") ? "missing" : "complete";
+    });
 
     expect(calls).toEqual(["gh-stack/v1.2.3", "amp/v2.0.0"]);
-    expect(events).toEqual([{
-      type: "git-tag",
-      tag: "gh-stack/v1.2.3",
-      packageName: "@smsunarto/bb-plugin-gh-stack",
-    }]);
+    expect(events).toEqual([
+      {
+        type: "git-tag",
+        tag: "gh-stack/v1.2.3",
+        packageName: "@smsunarto/bb-plugin-gh-stack",
+      },
+    ]);
   });
 
   test("never emits a private package", async () => {
@@ -85,10 +82,9 @@ describe("Changesets release routing", () => {
         private: true,
       },
     });
-    await expect(missingReleaseEvents(
-      [privatePlugin],
-      async () => "missing",
-    )).rejects.toThrow("private");
+    await expect(missingReleaseEvents([privatePlugin], async () => "missing")).rejects.toThrow(
+      "private",
+    );
   });
 
   test("the shared publish policy excludes only private workspace plugins", () => {
@@ -116,10 +112,12 @@ describe("Changesets release routing", () => {
 describe("GitHub release state", () => {
   test("treats only a missing release as incomplete", async () => {
     const { fetcher, urls } = queuedFetch(new Response(null, { status: 404 }));
-    await expect(githubReleaseState("gh-stack/v1.2.3", {
-      ...githubOptions,
-      fetcher,
-    })).resolves.toBe("missing");
+    await expect(
+      githubReleaseState("gh-stack/v1.2.3", {
+        ...githubOptions,
+        fetcher,
+      }),
+    ).resolves.toBe("missing");
     expect(urls).toEqual([
       "https://api.github.test/repos/smsunarto/bb-plugins/releases/tags/gh-stack%2Fv1.2.3",
     ]);
@@ -130,38 +128,42 @@ describe("GitHub release state", () => {
       Response.json({ tag_name: "gh-stack/v1.2.3", draft: false }),
       Response.json({ ref: "refs/tags/gh-stack/v1.2.3" }),
     );
-    await expect(githubReleaseState("gh-stack/v1.2.3", {
-      ...githubOptions,
-      fetcher,
-    })).resolves.toBe("complete");
+    await expect(
+      githubReleaseState("gh-stack/v1.2.3", {
+        ...githubOptions,
+        fetcher,
+      }),
+    ).resolves.toBe("complete");
   });
 
   test("fails instead of mistaking API errors for missing releases", async () => {
-    const { fetcher } = queuedFetch(
-      Response.json({ message: "rate limited" }, { status: 403 }),
-    );
-    await expect(githubReleaseState("gh-stack/v1.2.3", {
-      ...githubOptions,
-      fetcher,
-    })).rejects.toThrow("failed (403)");
+    const { fetcher } = queuedFetch(Response.json({ message: "rate limited" }, { status: 403 }));
+    await expect(
+      githubReleaseState("gh-stack/v1.2.3", {
+        ...githubOptions,
+        fetcher,
+      }),
+    ).rejects.toThrow("failed (403)");
   });
 
   test("rejects draft releases and completed releases with an invalid tag", async () => {
-    const draft = queuedFetch(
-      Response.json({ tag_name: "gh-stack/v1.2.3", draft: true }),
-    );
-    await expect(githubReleaseState("gh-stack/v1.2.3", {
-      ...githubOptions,
-      fetcher: draft.fetcher,
-    })).rejects.toThrow("is a draft");
+    const draft = queuedFetch(Response.json({ tag_name: "gh-stack/v1.2.3", draft: true }));
+    await expect(
+      githubReleaseState("gh-stack/v1.2.3", {
+        ...githubOptions,
+        fetcher: draft.fetcher,
+      }),
+    ).rejects.toThrow("is a draft");
 
     const missingTag = queuedFetch(
       Response.json({ tag_name: "gh-stack/v1.2.3", draft: false }),
       Response.json({ message: "Not Found" }, { status: 404 }),
     );
-    await expect(githubReleaseState("gh-stack/v1.2.3", {
-      ...githubOptions,
-      fetcher: missingTag.fetcher,
-    })).rejects.toThrow("tag lookup");
+    await expect(
+      githubReleaseState("gh-stack/v1.2.3", {
+        ...githubOptions,
+        fetcher: missingTag.fetcher,
+      }),
+    ).rejects.toThrow("tag lookup");
   });
 });

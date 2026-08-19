@@ -10,7 +10,13 @@ export const CORE_STATE_STYLES: Record<CoreStatus["state"], { dot: string; label
   crashed: { dot: "bg-destructive", label: "Crashed" },
 };
 
-export function StatusBadge({ state, className }: { state: CoreStatus["state"]; className?: string }) {
+export function StatusBadge({
+  state,
+  className,
+}: {
+  state: CoreStatus["state"];
+  className?: string;
+}) {
   const style = CORE_STATE_STYLES[state];
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-sm text-foreground", className)}>

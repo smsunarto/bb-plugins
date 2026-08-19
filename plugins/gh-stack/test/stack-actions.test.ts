@@ -18,12 +18,7 @@ test("prune candidates select only merged metadata or direct PR state", () => {
   const mergedFlagOnly = branch("b3");
   mergedFlagOnly.isMerged = true;
   assert.deepEqual(
-    pruneCandidates([
-      branch("b1", "MERGED"),
-      branch("b2"),
-      mergedFlagOnly,
-      branch("b4", "CLOSED"),
-    ]),
+    pruneCandidates([branch("b1", "MERGED"), branch("b2"), mergedFlagOnly, branch("b4", "CLOSED")]),
     ["b1", "b3"],
   );
 });
@@ -57,14 +52,15 @@ test("merge prefix stops at a missing PR", () => {
 });
 
 test("merge prefix stops at CLOSED and honors a valid pin", () => {
-  const layers = [
-    branch("b1"),
-    branch("b2"),
-    branch("b3", "CLOSED"),
-    branch("b4"),
-  ];
-  assert.deepEqual(mergePrefix(layers).selected.map((item) => item.name), ["b1", "b2"]);
-  assert.deepEqual(mergePrefix(layers, 1).selected.map((item) => item.name), ["b1"]);
+  const layers = [branch("b1"), branch("b2"), branch("b3", "CLOSED"), branch("b4")];
+  assert.deepEqual(
+    mergePrefix(layers).selected.map((item) => item.name),
+    ["b1", "b2"],
+  );
+  assert.deepEqual(
+    mergePrefix(layers, 1).selected.map((item) => item.name),
+    ["b1"],
+  );
 });
 
 test("a missing pin selects nothing", () => {
@@ -83,17 +79,12 @@ test("QUEUED layers are eligible while drafts block the prefix", () => {
 });
 
 test("queue-like states other than QUEUED block the merge prefix", () => {
-  assert.deepEqual(
-    mergePrefix([branch("b1", "DEQUEUED"), branch("b2")]).selected,
-    [],
-  );
+  assert.deepEqual(mergePrefix([branch("b1", "DEQUEUED"), branch("b2")]).selected, []);
 });
 
 test("merged layers are excluded from selection", () => {
   assert.deepEqual(
-    mergePrefix([branch("b1", "MERGED"), branch("b2")]).selected.map(
-      (item) => item.name,
-    ),
+    mergePrefix([branch("b1", "MERGED"), branch("b2")]).selected.map((item) => item.name),
     ["b2"],
   );
   assert.equal(mergePrefix([branch("b1", "MERGED")], 1).pinned, false);

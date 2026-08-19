@@ -1,11 +1,4 @@
-import {
-  chmodSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -50,12 +43,8 @@ export function createFileOracleReportStore(
   return {
     start: (input) => startOracleReport(input, directory),
     append: (reportId, event) => appendOracleTrace(reportId, event, directory),
-    complete: (reportId, content, isError) => completeOracleReport(
-      reportId,
-      content,
-      isError,
-      directory,
-    ),
+    complete: (reportId, content, isError) =>
+      completeOracleReport(reportId, content, isError, directory),
   };
 }
 
@@ -88,9 +77,11 @@ export function appendOracleTrace(
   if (normalized.kind === "tool" && normalized.toolCallId !== null) {
     for (let index = report.trace.length - 1; index >= 0; index--) {
       const candidate = report.trace[index];
-      if (candidate.kind === "tool"
-        && candidate.toolCallId === normalized.toolCallId
-        && candidate.status === "running") {
+      if (
+        candidate.kind === "tool" &&
+        candidate.toolCallId === normalized.toolCallId &&
+        candidate.status === "running"
+      ) {
         runningTool = candidate;
         break;
       }
@@ -102,8 +93,10 @@ export function appendOracleTrace(
   } else {
     report.trace.push(normalized);
   }
-  while (report.trace.length > MAX_TRACE_EVENTS
-    || Buffer.byteLength(JSON.stringify(report.trace), "utf8") > MAX_TRACE_BYTES) {
+  while (
+    report.trace.length > MAX_TRACE_EVENTS ||
+    Buffer.byteLength(JSON.stringify(report.trace), "utf8") > MAX_TRACE_BYTES
+  ) {
     report.trace.shift();
   }
   return writeOracleReport(report, directory);
@@ -118,9 +111,10 @@ export function completeOracleReport(
   const report = loadOracleReport(reportId, directory);
   if (report === null) return false;
   const response = textContent(content);
-  report.response = response !== null && Buffer.byteLength(response, "utf8") <= MAX_RESPONSE_BYTES
-    ? response
-    : "Oracle returned no card-renderable text. Open the native tool result for the complete output.";
+  report.response =
+    response !== null && Buffer.byteLength(response, "utf8") <= MAX_RESPONSE_BYTES
+      ? response
+      : "Oracle returned no card-renderable text. Open the native tool result for the complete output.";
   report.status = isError ? "error" : "completed";
   const completedAt = new Date().toISOString();
   for (const event of report.trace) {
@@ -194,9 +188,7 @@ function normalizeTraceEvent(event: OracleTraceEventInput): OracleTraceEvent | n
 
 function boundedTraceText(value: string): string | null {
   const text = value.trim();
-  return text.length > 0 && Buffer.byteLength(text, "utf8") <= MAX_TRACE_FIELD_BYTES
-    ? text
-    : null;
+  return text.length > 0 && Buffer.byteLength(text, "utf8") <= MAX_TRACE_FIELD_BYTES ? text : null;
 }
 
 function writeOracleReport(report: OracleReport, directory: string): boolean {
@@ -219,25 +211,31 @@ function writeOracleReport(report: OracleReport, directory: string): boolean {
 function parseOracleReport(value: unknown, reportId: string): OracleReport | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const report = value as Record<string, unknown>;
-  if (report.id !== reportId
-    || typeof report.response !== "string"
-    || Buffer.byteLength(report.response, "utf8") > MAX_RESPONSE_BYTES
-    || (report.status !== "running" && report.status !== "completed" && report.status !== "error")
-    || typeof report.createdAt !== "string") return null;
-  const request = typeof report.request === "string"
-    && Buffer.byteLength(report.request, "utf8") <= MAX_REQUEST_BYTES
-    ? report.request
-    : null;
+  if (
+    report.id !== reportId ||
+    typeof report.response !== "string" ||
+    Buffer.byteLength(report.response, "utf8") > MAX_RESPONSE_BYTES ||
+    (report.status !== "running" && report.status !== "completed" && report.status !== "error") ||
+    typeof report.createdAt !== "string"
+  )
+    return null;
+  const request =
+    typeof report.request === "string" &&
+    Buffer.byteLength(report.request, "utf8") <= MAX_REQUEST_BYTES
+      ? report.request
+      : null;
   return {
     id: reportId,
     request,
     response: report.response,
     status: report.status,
     trace: Array.isArray(report.trace)
-      ? report.trace.flatMap((event) => {
-        const parsed = parseTraceEvent(event);
-        return parsed === null ? [] : [parsed];
-      }).slice(-MAX_TRACE_EVENTS)
+      ? report.trace
+          .flatMap((event) => {
+            const parsed = parseTraceEvent(event);
+            return parsed === null ? [] : [parsed];
+          })
+          .slice(-MAX_TRACE_EVENTS)
       : [],
     createdAt: report.createdAt,
   };
@@ -246,19 +244,22 @@ function parseOracleReport(value: unknown, reportId: string): OracleReport | nul
 function parseTraceEvent(value: unknown): OracleTraceEvent | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const event = value as Record<string, unknown>;
-  if (typeof event.id !== "string"
-    || (event.toolCallId != null && typeof event.toolCallId !== "string")
-    || (event.kind !== "thinking" && event.kind !== "message" && event.kind !== "tool")
-    || typeof event.title !== "string"
-    || Buffer.byteLength(event.title, "utf8") > MAX_TRACE_FIELD_BYTES
-    || (event.content !== null && typeof event.content !== "string")
-    || (typeof event.content === "string"
-      && Buffer.byteLength(event.content, "utf8") > MAX_TRACE_FIELD_BYTES)
-    || (event.status !== null
-      && event.status !== "running"
-      && event.status !== "completed"
-      && event.status !== "error")
-    || typeof event.createdAt !== "string") return null;
+  if (
+    typeof event.id !== "string" ||
+    (event.toolCallId != null && typeof event.toolCallId !== "string") ||
+    (event.kind !== "thinking" && event.kind !== "message" && event.kind !== "tool") ||
+    typeof event.title !== "string" ||
+    Buffer.byteLength(event.title, "utf8") > MAX_TRACE_FIELD_BYTES ||
+    (event.content !== null && typeof event.content !== "string") ||
+    (typeof event.content === "string" &&
+      Buffer.byteLength(event.content, "utf8") > MAX_TRACE_FIELD_BYTES) ||
+    (event.status !== null &&
+      event.status !== "running" &&
+      event.status !== "completed" &&
+      event.status !== "error") ||
+    typeof event.createdAt !== "string"
+  )
+    return null;
   return {
     id: event.id,
     toolCallId: typeof event.toolCallId === "string" ? event.toolCallId : null,

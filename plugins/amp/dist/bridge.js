@@ -23371,11 +23371,7 @@ ${directive}
           });
           if (reportId && oracleRoot) {
             state.oracleRootToolIds.delete(result.tool_use_id);
-            state.oracleReports.complete(
-              reportId,
-              result.content,
-              result.is_error === true
-            );
+            state.oracleReports.complete(reportId, result.content, result.is_error === true);
           } else if (reportId) {
             state.oracleReports.append(reportId, {
               kind: "tool",
@@ -23429,10 +23425,12 @@ function toToolContent(content, isError) {
     return output;
   }
   if (typeof content === "string" && content.length > 0) {
-    return [{
-      type: "content",
-      content: { type: "text", text: isError ? wrapCode(content) : content }
-    }];
+    return [
+      {
+        type: "content",
+        content: { type: "text", text: isError ? wrapCode(content) : content }
+      }
+    ];
   }
   return [];
 }
@@ -23453,7 +23451,10 @@ function normalizeBase64(value) {
   if (data.length === 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
   const withoutPadding = data.replace(/=+$/, "");
   if (withoutPadding.length % 4 === 1) return null;
-  const normalized = withoutPadding.padEnd(withoutPadding.length + (4 - withoutPadding.length % 4) % 4, "=");
+  const normalized = withoutPadding.padEnd(
+    withoutPadding.length + (4 - withoutPadding.length % 4) % 4,
+    "="
+  );
   return Buffer.from(normalized, "base64").toString("base64") === normalized ? normalized : null;
 }
 function normalizeImageMimeType(value) {
@@ -23598,14 +23599,7 @@ function safeJson(value) {
 }
 
 // src/oracle-report-store.ts
-import {
-  chmodSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  writeFileSync
-} from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -23623,12 +23617,7 @@ function createFileOracleReportStore(directory = defaultOracleReportDir()) {
   return {
     start: (input) => startOracleReport(input, directory),
     append: (reportId, event) => appendOracleTrace(reportId, event, directory),
-    complete: (reportId, content, isError) => completeOracleReport(
-      reportId,
-      content,
-      isError,
-      directory
-    )
+    complete: (reportId, content, isError) => completeOracleReport(reportId, content, isError, directory)
   };
 }
 function startOracleReport(input, directory = defaultOracleReportDir()) {
@@ -23757,7 +23746,8 @@ function writeOracleReport(report, directory) {
 function parseOracleReport(value, reportId) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const report = value;
-  if (report.id !== reportId || typeof report.response !== "string" || Buffer.byteLength(report.response, "utf8") > MAX_RESPONSE_BYTES || report.status !== "running" && report.status !== "completed" && report.status !== "error" || typeof report.createdAt !== "string") return null;
+  if (report.id !== reportId || typeof report.response !== "string" || Buffer.byteLength(report.response, "utf8") > MAX_RESPONSE_BYTES || report.status !== "running" && report.status !== "completed" && report.status !== "error" || typeof report.createdAt !== "string")
+    return null;
   const request = typeof report.request === "string" && Buffer.byteLength(report.request, "utf8") <= MAX_REQUEST_BYTES ? report.request : null;
   return {
     id: reportId,
@@ -23774,7 +23764,8 @@ function parseOracleReport(value, reportId) {
 function parseTraceEvent(value) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const event = value;
-  if (typeof event.id !== "string" || event.toolCallId != null && typeof event.toolCallId !== "string" || event.kind !== "thinking" && event.kind !== "message" && event.kind !== "tool" || typeof event.title !== "string" || Buffer.byteLength(event.title, "utf8") > MAX_TRACE_FIELD_BYTES || event.content !== null && typeof event.content !== "string" || typeof event.content === "string" && Buffer.byteLength(event.content, "utf8") > MAX_TRACE_FIELD_BYTES || event.status !== null && event.status !== "running" && event.status !== "completed" && event.status !== "error" || typeof event.createdAt !== "string") return null;
+  if (typeof event.id !== "string" || event.toolCallId != null && typeof event.toolCallId !== "string" || event.kind !== "thinking" && event.kind !== "message" && event.kind !== "tool" || typeof event.title !== "string" || Buffer.byteLength(event.title, "utf8") > MAX_TRACE_FIELD_BYTES || event.content !== null && typeof event.content !== "string" || typeof event.content === "string" && Buffer.byteLength(event.content, "utf8") > MAX_TRACE_FIELD_BYTES || event.status !== null && event.status !== "running" && event.status !== "completed" && event.status !== "error" || typeof event.createdAt !== "string")
+    return null;
   return {
     id: event.id,
     toolCallId: typeof event.toolCallId === "string" ? event.toolCallId : null,
@@ -23806,7 +23797,9 @@ import { fileURLToPath } from "node:url";
 var AMP_CLI_SHIM_FAST_ENV = "BB_AMP_FAST";
 var AMP_CLI_SHIM_REAL_CLI_ENV = "BB_AMP_REAL_CLI_PATH";
 function hasFastFeature(args) {
-  return args.some((arg, index) => arg === "--features" && args[index + 1]?.split(",").includes("fast"));
+  return args.some(
+    (arg, index) => arg === "--features" && args[index + 1]?.split(",").includes("fast")
+  );
 }
 function buildAmpCliInvocation(args, sourceEnv) {
   const realCli = sourceEnv[AMP_CLI_SHIM_REAL_CLI_ENV]?.trim();
@@ -24014,7 +24007,9 @@ function convertMcpServers(mcpServers) {
   for (const server of mcpServers) {
     if ("type" in server) {
       if (server.type === "acp") continue;
-      const headers = Object.fromEntries(server.headers.map((header) => [header.name, header.value]));
+      const headers = Object.fromEntries(
+        server.headers.map((header) => [header.name, header.value])
+      );
       config2[server.name] = {
         url: server.url,
         headers: Object.keys(headers).length > 0 ? headers : void 0,
@@ -24065,7 +24060,11 @@ function buildConfigOptions(s) {
       description: "Whether Amp applies its configured permission rules or force-allows all tools.",
       category: "mode",
       currentValue: s.permission,
-      options: PERMISSION_MODES.map((p) => ({ value: p.value, name: p.name, description: p.description }))
+      options: PERMISSION_MODES.map((p) => ({
+        value: p.value,
+        name: p.name,
+        description: p.description
+      }))
     });
   }
   return options;
@@ -24251,11 +24250,7 @@ var AmpBridgeAgent = class {
           `Unknown session ${params.sessionId}: its saved Amp thread and execution target are missing or invalid.`
         );
       }
-      const state = await this.createState(
-        params.cwd,
-        params.mcpServers,
-        binding.executionTarget
-      );
+      const state = await this.createState(params.cwd, params.mcpServers, binding.executionTarget);
       state.executionAttempted = true;
       state.threadId = binding.threadId;
       this.sessions.set(params.sessionId, state);
@@ -24411,10 +24406,9 @@ var AmpBridgeAgent = class {
         return this.promptLocal(sessionId, s, prompt, false);
       }
       if (this.shuttingDown) return { stopReason: "cancelled" };
-      throw new Error(
-        "Amp Local execution ended before it accepted the next prompt",
-        { cause: error51 }
-      );
+      throw new Error("Amp Local execution ended before it accepted the next prompt", {
+        cause: error51
+      });
     }
   }
   async runLocalRuntime(sessionId, s, runtime, fast) {
@@ -24442,14 +24436,7 @@ var AmpBridgeAgent = class {
             } else if (runtimeTerminal) {
               await this.handleIdleLocalMessage(sessionId, s, runtime, message);
               runtime.controller.abort();
-              await this.finishLocalTurn(
-                sessionId,
-                s,
-                runtime,
-                turn,
-                null,
-                RETRY_LOCAL_RUNTIME
-              );
+              await this.finishLocalTurn(sessionId, s, runtime, turn, null, RETRY_LOCAL_RUNTIME);
               if (s.localRuntime === runtime) s.localRuntime = null;
               return;
             } else {
@@ -24458,13 +24445,7 @@ var AmpBridgeAgent = class {
             }
           }
           this.clearLocalTurnTimer(turn);
-          const terminalStop = await this.handleStreamMessage(
-            sessionId,
-            s,
-            "local",
-            turn,
-            message
-          );
+          const terminalStop = await this.handleStreamMessage(sessionId, s, "local", turn, message);
           if (runtimeTerminal) {
             turn.sawRuntimeTerminal = true;
             runtime.input.close();
@@ -24473,13 +24454,9 @@ var AmpBridgeAgent = class {
             turn.sawAssistantStop = true;
             turn.idleTimer = setTimeout(() => {
               turn.idleTimer = null;
-              void this.finishLocalTurn(
-                sessionId,
-                s,
-                runtime,
-                turn,
-                { stopReason: turn.softFailed ? "end_turn" : terminalStop }
-              ).catch((error51) => {
+              void this.finishLocalTurn(sessionId, s, runtime, turn, {
+                stopReason: turn.softFailed ? "end_turn" : terminalStop
+              }).catch((error51) => {
                 console.error("[amp] failed to settle a Local turn", error51);
               });
             }, STEERING_IDLE_MS);
@@ -24559,10 +24536,12 @@ ${AUTH_HINT}`, { cause: error51 });
         s.orbController = null;
       }
       if (!s.threadId) {
-        await this.sendUpdate(this.textChunk(
-          sessionId,
-          "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one."
-        ));
+        await this.sendUpdate(
+          this.textChunk(
+            sessionId,
+            "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one."
+          )
+        );
       }
     }
   }
@@ -24705,10 +24684,12 @@ ${AUTH_HINT}`, { cause: error51 });
       s.consumedSteeringInputs = [];
     }
     if (!s.threadId) {
-      await this.sendUpdate(this.textChunk(
-        sessionId,
-        "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one."
-      ));
+      await this.sendUpdate(
+        this.textChunk(
+          sessionId,
+          "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one."
+        )
+      );
     }
     if (s.restartLocalRuntime) {
       s.restartLocalRuntime = false;
@@ -24751,13 +24732,7 @@ ${AUTH_HINT}`, { cause: error51 }));
       }
       const message = error51 instanceof Error ? error51.message : String(error51 ?? "");
       if (s.cancelled || runtime.controller.signal.aborted || error51 instanceof Error && error51.name === "AbortError" || message.toLowerCase().includes("aborted")) {
-        await this.finishLocalTurn(
-          sessionId,
-          s,
-          runtime,
-          turn,
-          { stopReason: "cancelled" }
-        );
+        await this.finishLocalTurn(sessionId, s, runtime, turn, { stopReason: "cancelled" });
         return;
       }
       const failure = turn.executionError ?? error51;
@@ -24847,7 +24822,9 @@ ${AUTH_HINT}` : "";
     if (runtimeTerminal) {
       runtime.closed = true;
       runtime.input.close();
-      console.error("[amp] received terminal output after the ACP turn settled; restarting Local Amp");
+      console.error(
+        "[amp] received terminal output after the ACP turn settled; restarting Local Amp"
+      );
     }
     if (message.type === "result" && Array.isArray(message.permission_denials) && message.permission_denials.length > 0) {
       await this.reportPermissionDenials(sessionId, "local", message.permission_denials);
@@ -24855,10 +24832,12 @@ ${AUTH_HINT}` : "";
   }
   async reportPermissionDenials(sessionId, executionTarget, denials) {
     const guidance = executionTarget === "orb" ? "Configure permissions in the Amp project settings." : 'Switch the Permissions option to "bypass" or adjust amp.permissions in Amp settings.';
-    await this.sendUpdate(this.textChunk(
-      sessionId,
-      `Amp denied tool calls under its headless permission rules: ${denials.join(", ")}. ${guidance}`
-    ));
+    await this.sendUpdate(
+      this.textChunk(
+        sessionId,
+        `Amp denied tool calls under its headless permission rules: ${denials.join(", ")}. ${guidance}`
+      )
+    );
   }
   reportUsage(report) {
     if (!this.reportExecutionUsage) return;
@@ -24919,14 +24898,7 @@ function parseStoredExecutionTarget(value) {
 
 // src/session-store.ts
 import { createHash, randomUUID as randomUUID2 } from "node:crypto";
-import {
-  mkdirSync as mkdirSync2,
-  readFileSync as readFileSync2,
-  readdirSync,
-  renameSync as renameSync2,
-  rmSync,
-  writeFileSync as writeFileSync2
-} from "node:fs";
+import { mkdirSync as mkdirSync2, readFileSync as readFileSync2, readdirSync, renameSync as renameSync2, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname, join as join2 } from "node:path";
 var MAX_ENTRIES = 200;
@@ -25073,12 +25045,14 @@ function parseEvents(value) {
     if (!isRecord3(event) || typeof event.seq !== "number" || !Number.isInteger(event.seq) || typeof event.type !== "string") {
       return [];
     }
-    return [{
-      seq: event.seq,
-      scope: event.scope,
-      type: event.type,
-      data: event.data
-    }];
+    return [
+      {
+        seq: event.seq,
+        scope: event.scope,
+        type: event.type,
+        data: event.data
+      }
+    ];
   });
 }
 function parseEvent(value) {
@@ -25279,10 +25253,7 @@ async function readBbExecutionPreferences(options = {}) {
   const serverUrl = options.serverUrl ?? process.env.BB_SERVER_URL;
   const threadId = options.threadId ?? process.env.BB_THREAD_ID;
   if (!serverUrl || !threadId) return { permission: "default", fast: false };
-  const eventsUrl = new URL(
-    `/api/v1/threads/${encodeURIComponent(threadId)}/events`,
-    serverUrl
-  );
+  const eventsUrl = new URL(`/api/v1/threads/${encodeURIComponent(threadId)}/events`, serverUrl);
   const fetchFn = options.fetch ?? fetch;
   let cursor = 0;
   let permissionMode = "default";

@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { TaskResult } from "../contract.js";
-import {
-  createDotfilesService,
-  type DotfilesRepository,
-} from "../service.js";
+import { createDotfilesService, type DotfilesRepository } from "../service.js";
 
-function repository(
-  overrides: Partial<DotfilesRepository> = {},
-): DotfilesRepository {
+function repository(overrides: Partial<DotfilesRepository> = {}): DotfilesRepository {
   return {
     getRepoPath: async () => "/dotfiles",
     repoExists: () => true,
@@ -53,18 +48,19 @@ describe("dotfiles service", () => {
     assert.deepEqual(result.groups.at(-1), {
       id: "skills",
       title: "Skills",
-      files: [{
-        path: ".dotfiles/.agents/skills/example/SKILL.md",
-        title: "example",
-        exists: true,
-        dirty: false,
-      }],
+      files: [
+        {
+          path: ".dotfiles/.agents/skills/example/SKILL.md",
+          title: "example",
+          exists: true,
+          dirty: false,
+        },
+      ],
     });
     assert.equal(result.groups[0]?.files[0]?.dirty, true);
     assert.equal(
-      result.groups.flatMap((group) => group.files).find((file) =>
-        file.path === "mise.linux.toml",
-      )?.exists,
+      result.groups.flatMap((group) => group.files).find((file) => file.path === "mise.linux.toml")
+        ?.exists,
       false,
     );
   });
@@ -100,31 +96,40 @@ describe("dotfiles service", () => {
     const conflict = service({
       writeFile: async () => ({ outcome: "conflict" }),
     });
-    assert.deepEqual(await conflict.saveFile({
-      path: ".dotfiles/mcp.json",
-      content: "next",
-      expectedSha256: "old",
-    }), { outcome: "conflict" });
+    assert.deepEqual(
+      await conflict.saveFile({
+        path: ".dotfiles/mcp.json",
+        content: "next",
+        expectedSha256: "old",
+      }),
+      { outcome: "conflict" },
+    );
 
     const written = service();
-    assert.deepEqual(await written.saveFile({
-      path: ".dotfiles/mcp.json",
-      content: "next",
-      expectedSha256: "old",
-    }), {
-      outcome: "written",
-      sha256: "sha-next",
-      renderHint: true,
-    });
-    assert.deepEqual(await written.saveFile({
-      path: ".dotfiles/.gitconfig",
-      content: "next",
-      expectedSha256: "old",
-    }), {
-      outcome: "written",
-      sha256: "sha-next",
-      renderHint: false,
-    });
+    assert.deepEqual(
+      await written.saveFile({
+        path: ".dotfiles/mcp.json",
+        content: "next",
+        expectedSha256: "old",
+      }),
+      {
+        outcome: "written",
+        sha256: "sha-next",
+        renderHint: true,
+      },
+    );
+    assert.deepEqual(
+      await written.saveFile({
+        path: ".dotfiles/.gitconfig",
+        content: "next",
+        expectedSha256: "old",
+      }),
+      {
+        outcome: "written",
+        sha256: "sha-next",
+        renderHint: false,
+      },
+    );
   });
 
   test("maps safe task ids and publishing to fixed commands", async () => {

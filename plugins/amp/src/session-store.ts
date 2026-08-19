@@ -3,21 +3,11 @@
 // state. All operations are best-effort: a broken store must never break a
 // prompt.
 import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { SessionBinding, SessionStore } from "./bridge-core.ts";
-import {
-  parseStoredExecutionTarget,
-  type AmpExecutionTarget,
-} from "./execution-target.ts";
+import { parseStoredExecutionTarget, type AmpExecutionTarget } from "./execution-target.ts";
 
 const MAX_ENTRIES = 200;
 
@@ -46,9 +36,10 @@ export function createFileSessionStore(filePath = defaultSessionStorePath()): Se
     const entry = value as Partial<StoredSession>;
     if (typeof entry.threadId !== "string" || entry.threadId.length === 0) return null;
     if (expectedSessionId !== undefined && entry.sessionId !== expectedSessionId) return null;
-    const executionTarget = entry.executionTarget === undefined
-      ? "local"
-      : parseStoredExecutionTarget(entry.executionTarget);
+    const executionTarget =
+      entry.executionTarget === undefined
+        ? "local"
+        : parseStoredExecutionTarget(entry.executionTarget);
     // Missing means a legacy Local binding. An explicit unknown value is a
     // corrupt execution boundary and must fail closed instead of running Local.
     if (executionTarget === null) return null;
@@ -56,9 +47,10 @@ export function createFileSessionStore(filePath = defaultSessionStorePath()): Se
       sessionId: entry.sessionId,
       threadId: entry.threadId,
       executionTarget,
-      updatedAt: typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt)
-        ? entry.updatedAt
-        : 0,
+      updatedAt:
+        typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt)
+          ? entry.updatedAt
+          : 0,
     };
   }
 

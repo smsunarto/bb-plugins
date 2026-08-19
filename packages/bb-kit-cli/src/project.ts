@@ -1,22 +1,9 @@
-import {
-  existsSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import {
-  Node,
-  Project,
-  SyntaxKind,
-  type Expression,
-  type ObjectLiteralExpression,
-} from "ts-morph";
+import { Node, Project, SyntaxKind, type Expression, type ObjectLiteralExpression } from "ts-morph";
 
-export const OPERATION_IDENTITY_PATTERN =
-  /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
+export const OPERATION_IDENTITY_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
 export const RPC_METHOD_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 export interface PluginManifest {
@@ -153,30 +140,30 @@ export function readLock(root: string): BbKitLock {
   if (!existsSync(path)) return emptyLock();
   const value = JSON.parse(readFileSync(path, "utf8")) as Partial<BbKitLock>;
   if (
-    value.version !== 1
-    || typeof value.operations !== "object"
-    || value.operations === null
-    || (value.migrations !== undefined
-      && (typeof value.migrations !== "object" || value.migrations === null))
+    value.version !== 1 ||
+    typeof value.operations !== "object" ||
+    value.operations === null ||
+    (value.migrations !== undefined &&
+      (typeof value.migrations !== "object" || value.migrations === null))
   ) {
     throw new Error("bb-kit.lock.json has an unsupported format");
   }
   for (const [identity, entry] of Object.entries(value.operations)) {
     if (
-      typeof entry !== "object"
-      || entry === null
-      || !("rpcMethod" in entry)
-      || typeof entry.rpcMethod !== "string"
+      typeof entry !== "object" ||
+      entry === null ||
+      !("rpcMethod" in entry) ||
+      typeof entry.rpcMethod !== "string"
     ) {
       throw new Error(`bb-kit.lock.json has an invalid operation entry for "${identity}"`);
     }
   }
   for (const [key, entry] of Object.entries(value.migrations ?? {})) {
     if (
-      typeof entry !== "object"
-      || entry === null
-      || !("sha256" in entry)
-      || typeof entry.sha256 !== "string"
+      typeof entry !== "object" ||
+      entry === null ||
+      !("sha256" in entry) ||
+      typeof entry.sha256 !== "string"
     ) {
       throw new Error(`bb-kit.lock.json has an invalid migration entry for "${key}"`);
     }
@@ -190,14 +177,10 @@ export function readLock(root: string): BbKitLock {
 
 export function writeLock(root: string, lock: BbKitLock): void {
   const operations = Object.fromEntries(
-    Object.entries(lock.operations).sort(([left], [right]) =>
-      left.localeCompare(right),
-    ),
+    Object.entries(lock.operations).sort(([left], [right]) => left.localeCompare(right)),
   );
   const migrations = Object.fromEntries(
-    Object.entries(lock.migrations).sort(([left], [right]) =>
-      left.localeCompare(right),
-    ),
+    Object.entries(lock.migrations).sort(([left], [right]) => left.localeCompare(right)),
   );
   writeFileSync(
     join(root, "bb-kit.lock.json"),
@@ -208,20 +191,17 @@ export function writeLock(root: string, lock: BbKitLock): void {
 function unwrapExpression(expression: Expression): Expression {
   let current = expression;
   while (
-    Node.isParenthesizedExpression(current)
-    || Node.isAsExpression(current)
-    || Node.isSatisfiesExpression(current)
-    || Node.isTypeAssertion(current)
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isSatisfiesExpression(current) ||
+    Node.isTypeAssertion(current)
   ) {
     current = current.getExpression();
   }
   return current;
 }
 
-function propertyInitializer(
-  object: ObjectLiteralExpression,
-  name: string,
-): Expression | null {
+function propertyInitializer(object: ObjectLiteralExpression, name: string): Expression | null {
   const property = object.getProperty(name);
   if (!property || !Node.isPropertyAssignment(property)) return null;
   return unwrapExpression(property.getInitializerOrThrow());
@@ -293,9 +273,10 @@ function namedOperationImportNames(
   const names = new Set<string>();
   for (const declaration of source.getImportDeclarations()) {
     if (
-      declaration.isTypeOnly()
-      || declaration.getModuleSpecifierValue() !== "@bb-kit/core/operations"
-    ) continue;
+      declaration.isTypeOnly() ||
+      declaration.getModuleSpecifierValue() !== "@bb-kit/core/operations"
+    )
+      continue;
     for (const named of declaration.getNamedImports()) {
       if (!named.isTypeOnly() && named.getName() === importedName) {
         names.add(named.getAliasNode()?.getText() ?? named.getName());
@@ -305,7 +286,9 @@ function namedOperationImportNames(
   return names;
 }
 
-function operationObject(source: ReturnType<Project["addSourceFileAtPath"]>): ObjectLiteralExpression {
+function operationObject(
+  source: ReturnType<Project["addSourceFileAtPath"]>,
+): ObjectLiteralExpression {
   const assignment = source.getExportAssignments().find((value) => !value.isExportEquals());
   const exported = assignment && unwrapExpression(assignment.getExpression());
   if (!exported || !Node.isCallExpression(exported)) {
@@ -313,8 +296,8 @@ function operationObject(source: ReturnType<Project["addSourceFileAtPath"]>): Ob
   }
   const callee = unwrapExpression(exported.getExpression());
   if (
-    !Node.isIdentifier(callee)
-    || !namedOperationImportNames(source, "defineOperation").has(callee.getText())
+    !Node.isIdentifier(callee) ||
+    !namedOperationImportNames(source, "defineOperation").has(callee.getText())
   ) {
     throw new Error("default export must call the direct defineOperation import");
   }
@@ -336,10 +319,9 @@ function noInputImportNames(source: ReturnType<Project["addSourceFileAtPath"]>):
   return namedOperationImportNames(source, "noInput");
 }
 
-function operationMetadata(path: string): Pick<
-  DiscoveredOperation,
-  "kind" | "risk" | "input" | "metadataError"
-> {
+function operationMetadata(
+  path: string,
+): Pick<DiscoveredOperation, "kind" | "risk" | "input" | "metadataError"> {
   const project = new Project({ skipAddingFilesFromTsConfig: true });
   const source = project.addSourceFileAtPath(path);
   let object: ObjectLiteralExpression;
@@ -355,21 +337,16 @@ function operationMetadata(path: string): Pick<
   }
 
   const kindValue = propertyInitializer(object, "kind");
-  const kindLiteral = kindValue && Node.isStringLiteral(kindValue)
-    ? kindValue.getLiteralValue()
-    : null;
-  const kind = kindLiteral === "query" || kindLiteral === "command"
-    ? kindLiteral
-    : "unknown";
+  const kindLiteral =
+    kindValue && Node.isStringLiteral(kindValue) ? kindValue.getLiteralValue() : null;
+  const kind = kindLiteral === "query" || kindLiteral === "command" ? kindLiteral : "unknown";
   const riskValue = propertyInitializer(object, "risk");
-  const riskLiteral = riskValue && Node.isStringLiteral(riskValue)
-    ? riskValue.getLiteralValue()
-    : null;
-  const risk = riskLiteral === "safe"
-    || riskLiteral === "mutating"
-    || riskLiteral === "destructive"
-    ? riskLiteral
-    : null;
+  const riskLiteral =
+    riskValue && Node.isStringLiteral(riskValue) ? riskValue.getLiteralValue() : null;
+  const risk =
+    riskLiteral === "safe" || riskLiteral === "mutating" || riskLiteral === "destructive"
+      ? riskLiteral
+      : null;
 
   try {
     const input = propertyInitializer(object, "input");
@@ -442,7 +419,9 @@ export function discoverProject(root: string): ProjectInfo {
       });
       const migrationsDirectory = join(directory, "migrations");
       const migrations = existsSync(migrationsDirectory)
-        ? readdirSync(migrationsDirectory).filter((entry) => entry.endsWith(".sql")).sort()
+        ? readdirSync(migrationsDirectory)
+            .filter((entry) => entry.endsWith(".sql"))
+            .sort()
         : [];
       const appPath = join(directory, "app.tsx");
       const appSource = existsSync(appPath) ? readFileSync(appPath, "utf8") : "";
@@ -531,11 +510,11 @@ export function operationCatalogSource(
     const identifier = `${toIdentifier(operation.name)}Operation`;
     imports.push(`import ${identifier} from "../operations/${operation.name}.js";`);
     bindings.push(
-      `  ${JSON.stringify(toIdentifier(operation.name))}: {\n`
-      + `    identity: ${JSON.stringify(operation.identity)},\n`
-      + `    wireMethod: ${JSON.stringify(identityLock.rpcMethod)},\n`
-      + `    operation: ${identifier},\n`
-      + "  },",
+      `  ${JSON.stringify(toIdentifier(operation.name))}: {\n` +
+        `    identity: ${JSON.stringify(operation.identity)},\n` +
+        `    wireMethod: ${JSON.stringify(identityLock.rpcMethod)},\n` +
+        `    operation: ${identifier},\n` +
+        "  },",
     );
   }
   return [

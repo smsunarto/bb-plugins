@@ -5,12 +5,12 @@
 ### Minor Changes
 
 - 1e0165e: Rename the plugin from t3sidebar to GTD Sidebar, id `gtd-sidebar`.
-  
+
   bb keys a plugin by the id it derives from the package name, so this installs as
   a separate plugin rather than an update: install `gtd-sidebar`, then uninstall
   `t3sidebar`. Settled and snoozed shelves live in the old plugin's database and
   do not carry over. Releases are now tagged `gtd-sidebar/vX.Y.Z`.
-  
+
   The warm-start cache moves to `gtd-sidebar:v1:*` in `localStorage`, and the
   first successful write removes the `t3sidebar:v1:*` entries — bb's uninstall
   does not clear web storage, and after the rename nothing else ever would.
@@ -24,10 +24,10 @@
   shelf headers and the project scope picker each lose a few pixels with them.
   The meta line sits one full step below the title in both size and tint, and
   cards keep a real gap rather than a hairline.
-  
+
   Add a **Show the agent icon on each card** setting, on by default. Turning it off
   drops the trailing agent glyph and gives the branch that space back.
-  
+
   Keep the project scope picker's track clear. It dropped its border width but kept
   `border-input`, so a theme that keys a field background off that class painted a
   filled well behind a control meant to read as a label.
@@ -47,9 +47,10 @@
 - b3ed493: Require bb 0.38 and take the SDK types from the published `@get-bb/plugin-sdk`
   package. `engines.bb` is now `>=0.38.0 <0.39.0`, so an older bb no longer
   installs these plugins.
-  
+
   Agent Proxy gains a `routingStrategy` setting (`round-robin`, `fill-first`, or
   `weighted-round-robin`) that it writes to the core `config.yaml`. Pick
   `fill-first` to keep several Claude OAuth accounts from rotating away the
   upstream prompt cache.
+
 - 65ececd: Release the runtime, presentation, notification, theme, and thread workflow updates.

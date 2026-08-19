@@ -245,8 +245,14 @@ test("aborting the monitor does not stop the external service", async () => {
   controller.abort();
   await done;
   assert.equal(launchctl.job.loaded, true);
-  assert.equal(launchctl.calls.some((args) => args[0] === "bootout"), false);
-  assert.equal(launchctl.calls.some((args) => args[0] === "disable"), false);
+  assert.equal(
+    launchctl.calls.some((args) => args[0] === "bootout"),
+    false,
+  );
+  assert.equal(
+    launchctl.calls.some((args) => args[0] === "disable"),
+    false,
+  );
 });
 
 test("reads the bounded launchd log tail", () => {
@@ -354,22 +360,27 @@ test("renders and parses a persistent user systemd service", () => {
   assert.match(unit, /Restart=always/);
   assert.match(unit, /UMask=0077/);
   assert.match(unit, /ExecStart="\/home\/test\/Agent Proxy\/proxy" "--config"/);
-  assert.deepEqual(parseSystemctlShow(systemctlOutput({
-    enabled: true,
-    activeState: "active",
-    pid: 8123,
-    restarts: 3,
-    exitStatus: 2,
-    exitCode: 1,
-  })), {
-    loadState: "loaded",
-    activeState: "active",
-    subState: "running",
-    pid: 8123,
-    restarts: 3,
-    exitStatus: 2,
-    exitCode: 1,
-  });
+  assert.deepEqual(
+    parseSystemctlShow(
+      systemctlOutput({
+        enabled: true,
+        activeState: "active",
+        pid: 8123,
+        restarts: 3,
+        exitStatus: 2,
+        exitCode: 1,
+      }),
+    ),
+    {
+      loadState: "loaded",
+      activeState: "active",
+      subState: "running",
+      pid: 8123,
+      restarts: 3,
+      exitStatus: 2,
+      exitCode: 1,
+    },
+  );
 });
 
 test("systemd start is idempotent and stop disables the user service", async () => {
@@ -383,8 +394,14 @@ test("systemd start is idempotent and stop disables the user service", async () 
   systemctl.calls.length = 0;
   const second = await supervisor.start();
   assert.equal(second.pid, first.pid);
-  assert.equal(systemctl.calls.some((args) => args.includes("start")), false);
-  assert.equal(systemctl.calls.some((args) => args.includes("restart")), false);
+  assert.equal(
+    systemctl.calls.some((args) => args.includes("start")),
+    false,
+  );
+  assert.equal(
+    systemctl.calls.some((args) => args.includes("restart")),
+    false,
+  );
 
   const stopped = await supervisor.stop();
   assert.equal(stopped.state, "stopped");
@@ -414,7 +431,10 @@ test("systemd reports failed jobs and does not stop one when monitoring ends", a
   controller.abort();
   await done;
   assert.equal(running.systemctl.job.activeState, "active");
-  assert.equal(running.systemctl.calls.some((args) => args.includes("disable")), false);
+  assert.equal(
+    running.systemctl.calls.some((args) => args.includes("disable")),
+    false,
+  );
 });
 
 test("systemd maps numeric CLD_KILLED exit metadata to a signal", async () => {

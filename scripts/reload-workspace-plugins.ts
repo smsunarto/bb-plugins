@@ -41,9 +41,7 @@ function isWorkspacePluginDir(rootDir: string | undefined): boolean {
 
 // `bb plugin list` reports the id bb derived from each package name, so the
 // workspace side has to derive it the same way.
-const workspaceIds = new Set(
-  workspacePlugins(ROOT).map((plugin) => plugin.id),
-);
+const workspaceIds = new Set(workspacePlugins(ROOT).map((plugin) => plugin.id));
 
 interface InstalledPlugin {
   id: string;

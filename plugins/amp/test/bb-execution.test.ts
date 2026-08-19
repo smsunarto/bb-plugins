@@ -47,11 +47,14 @@ test("uses Amp's normal rules for bb workspace permissions and malformed events"
 });
 
 test("uses Amp's normal rules without bb thread context", async () => {
-  assert.equal(await readBbPermissionMode({
-    serverUrl: "",
-    threadId: "",
-    fetch: async () => responseJson([]),
-  }), "default");
+  assert.equal(
+    await readBbPermissionMode({
+      serverUrl: "",
+      threadId: "",
+      fetch: async () => responseJson([]),
+    }),
+    "default",
+  );
 });
 
 test("reads the latest bb Fast selection from the thread events", async () => {
@@ -60,18 +63,24 @@ test("reads the latest bb Fast selection from the thread events", async () => {
     [[event(1, "full", "fast"), event(2, "full", "standard")], false],
     [[event(1, "full", "unexpected")], false],
   ] as const) {
-    assert.equal(await readBbFastMode({
-      serverUrl: "http://127.0.0.1:38886",
-      threadId: "thread",
-      fetch: async () => responseJson(events),
-    }), expected);
+    assert.equal(
+      await readBbFastMode({
+        serverUrl: "http://127.0.0.1:38886",
+        threadId: "thread",
+        fetch: async () => responseJson(events),
+      }),
+      expected,
+    );
   }
 });
 
 test("uses standard service without bb thread context", async () => {
-  assert.equal(await readBbFastMode({
-    serverUrl: "",
-    threadId: "",
-    fetch: async () => responseJson([]),
-  }), false);
+  assert.equal(
+    await readBbFastMode({
+      serverUrl: "",
+      threadId: "",
+      fetch: async () => responseJson([]),
+    }),
+    false,
+  );
 });

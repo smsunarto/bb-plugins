@@ -6,18 +6,8 @@ export type ActionBranch = {
 
 export type StackMergeMethod = "squash" | "merge" | "rebase";
 
-export function stackMergeArgs(
-  throughPrNumber: number,
-  method: StackMergeMethod,
-): string[] {
-  return [
-    "stack",
-    "merge",
-    String(throughPrNumber),
-    "--yes",
-    "--merge-method",
-    method,
-  ];
+export function stackMergeArgs(throughPrNumber: number, method: StackMergeMethod): string[] {
+  return ["stack", "merge", String(throughPrNumber), "--yes", "--merge-method", method];
 }
 
 export function stackMergeWasQueued(stdout: string, stderr: string): boolean {

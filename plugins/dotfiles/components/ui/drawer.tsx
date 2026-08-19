@@ -4,19 +4,13 @@ import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
-import {
-  getOverlayTriggerClassName,
-  preventOverlayTriggerSelection,
-} from "./overlay-trigger.js";
+import { getOverlayTriggerClassName, preventOverlayTriggerSelection } from "./overlay-trigger.js";
 
 const Drawer = ({
   shouldScaleBackground = false,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
-  <DrawerPrimitive.Root
-    shouldScaleBackground={shouldScaleBackground}
-    {...props}
-  />
+  <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} {...props} />
 );
 Drawer.displayName = "Drawer";
 
@@ -46,10 +40,7 @@ const DrawerOverlay = React.forwardRef<
     // Portaled outside every plugin mount; re-attach the plugin CSS scope
     // when rendered from a plugin slot (see portal-scope.ts).
     {...usePortalScopeProps()}
-    className={cn(
-      "fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]",
-      className,
-    )}
+    className={cn("fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]", className)}
     {...props}
   />
 ));
@@ -70,9 +61,7 @@ const DrawerContent = React.forwardRef<
       )}
       {...props}
     >
-      <DrawerPrimitive.Handle
-        className="mx-auto mt-3 mb-1 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/20"
-      />
+      <DrawerPrimitive.Handle className="mx-auto mt-3 mb-1 h-1 w-10 shrink-0 rounded-full bg-muted-foreground/20" />
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>
@@ -85,10 +74,7 @@ const DrawerTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Title
     ref={ref}
-    className={cn(
-      "text-lg font-semibold leading-none tracking-tight",
-      className,
-    )}
+    className={cn("text-lg font-semibold leading-none tracking-tight", className)}
     {...props}
   />
 ));

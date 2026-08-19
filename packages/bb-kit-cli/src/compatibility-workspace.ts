@@ -71,12 +71,7 @@ interface PlannedWrite {
   readonly after: string;
 }
 
-function diagnostic(
-  code: string,
-  message: string,
-  hint: string,
-  file?: string,
-): Diagnostic {
+function diagnostic(code: string, message: string, hint: string, file?: string): Diagnostic {
   return {
     code,
     severity: "error",
@@ -97,10 +92,7 @@ function jsonObject(path: string): Record<string, unknown> {
     );
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new ProcessError(
-      "compatibility_workspace_invalid",
-      `${path} must contain a JSON object`,
-    );
+    throw new ProcessError("compatibility_workspace_invalid", `${path} must contain a JSON object`);
   }
   return value as Record<string, unknown>;
 }
@@ -123,10 +115,7 @@ function isPluginName(name: string): boolean {
 function workspacePlugins(root: string): WorkspacePlugin[] {
   const pluginsRoot = join(root, "plugins");
   if (!existsSync(pluginsRoot) || !statSync(pluginsRoot).isDirectory()) {
-    throw new ProcessError(
-      "compatibility_workspace_invalid",
-      `${root} has no plugins directory`,
-    );
+    throw new ProcessError("compatibility_workspace_invalid", `${root} has no plugins directory`);
   }
   const plugins: WorkspacePlugin[] = [];
   for (const directory of readdirSync(pluginsRoot).sort()) {
@@ -163,10 +152,11 @@ function sdkDependentPackages(
     if (!existsSync(path)) continue;
     const devDependencies = jsonObject(path).devDependencies;
     if (
-      typeof devDependencies !== "object"
-      || devDependencies === null
-      || Array.isArray(devDependencies)
-    ) continue;
+      typeof devDependencies !== "object" ||
+      devDependencies === null ||
+      Array.isArray(devDependencies)
+    )
+      continue;
     if (!(contract.sdkPackage.name in devDependencies)) continue;
     packages.push({
       relativePath: `packages/${directory}/package.json`,
@@ -182,16 +172,17 @@ export function findWorkspaceRoot(start = process.cwd()): string {
   while (true) {
     const manifestPath = join(current, "package.json");
     if (
-      existsSync(manifestPath)
-      && existsSync(join(current, "plugins"))
-      && existsSync(join(current, "packages", "bb-kit-cli"))
+      existsSync(manifestPath) &&
+      existsSync(join(current, "plugins")) &&
+      existsSync(join(current, "packages", "bb-kit-cli"))
     ) {
       const manifest = jsonObject(manifestPath);
       if (
-        typeof manifest.config === "object"
-        && manifest.config !== null
-        && "bbVersion" in manifest.config
-      ) return current;
+        typeof manifest.config === "object" &&
+        manifest.config !== null &&
+        "bbVersion" in manifest.config
+      )
+        return current;
     }
     const parent = dirname(current);
     if (parent === current) {
@@ -236,10 +227,7 @@ function compareStableVersions(left: string, right: string): number | null {
 
 const PLUGIN_SDK_APP_SHIM = "@get-bb/plugin-sdk/app";
 
-function stringPropertyName(
-  property: Node,
-  constants: ReadonlyMap<string, string>,
-): string | null {
+function stringPropertyName(property: Node, constants: ReadonlyMap<string, string>): string | null {
   if (!Node.isPropertyAssignment(property)) return null;
   const name = property.getNameNode();
   if (Node.isStringLiteral(name) || Node.isNoSubstitutionTemplateLiteral(name)) {
@@ -299,11 +287,10 @@ function frontendHostShims(bbPath: string): string[] {
       entries.push([name, value.getLiteralValue()]);
     }
     if (
-      valid
-      && entries.some(([name, value]) =>
-        name === PLUGIN_SDK_APP_SHIM && value === "pluginSdkApp",
-      )
-    ) candidates.push(entries.map(([name]) => name));
+      valid &&
+      entries.some(([name, value]) => name === PLUGIN_SDK_APP_SHIM && value === "pluginSdkApp")
+    )
+      candidates.push(entries.map(([name]) => name));
   }
   if (candidates.length !== 1) {
     throw new ProcessError(
@@ -312,17 +299,10 @@ function frontendHostShims(bbPath: string): string[] {
     );
   }
   const shims = candidates[0] as string[];
-  return [
-    PLUGIN_SDK_APP_SHIM,
-    ...shims.filter((specifier) => specifier !== PLUGIN_SDK_APP_SHIM),
-  ];
+  return [PLUGIN_SDK_APP_SHIM, ...shims.filter((specifier) => specifier !== PLUGIN_SDK_APP_SHIM)];
 }
 
-function requiredString(
-  value: Record<string, unknown>,
-  key: string,
-  source: string,
-): string {
+function requiredString(value: Record<string, unknown>, key: string, source: string): string {
   const field = value[key];
   if (typeof field !== "string" || field === "") {
     throw new ProcessError(
@@ -333,11 +313,7 @@ function requiredString(
   return field;
 }
 
-function requiredNumber(
-  value: Record<string, unknown>,
-  key: string,
-  source: string,
-): number {
+function requiredNumber(value: Record<string, unknown>, key: string, source: string): number {
   const field = value[key];
   if (typeof field !== "number" || !Number.isSafeInteger(field) || field < 0) {
     throw new ProcessError(
@@ -403,10 +379,10 @@ function defaultCompatibilityProbe(
       "server build metadata",
     );
     if (
-      requiredString(appMetadata, "sdkVersion", "app build metadata") !== sdkVersion
-      || requiredNumber(appMetadata, "sdkMajor", "app build metadata") !== sdkMajor
-      || requiredNumber(appMetadata, "artifactFormatVersion", "app build metadata")
-        !== artifactFormatVersion
+      requiredString(appMetadata, "sdkVersion", "app build metadata") !== sdkVersion ||
+      requiredNumber(appMetadata, "sdkMajor", "app build metadata") !== sdkMajor ||
+      requiredNumber(appMetadata, "artifactFormatVersion", "app build metadata") !==
+        artifactFormatVersion
     ) {
       throw new ProcessError(
         "compatibility_probe_invalid",
@@ -421,9 +397,9 @@ function defaultCompatibilityProbe(
     }
     const devDependencies = manifest.devDependencies;
     if (
-      typeof devDependencies !== "object"
-      || devDependencies === null
-      || Array.isArray(devDependencies)
+      typeof devDependencies !== "object" ||
+      devDependencies === null ||
+      Array.isArray(devDependencies)
     ) {
       throw new ProcessError(
         "compatibility_probe_invalid",
@@ -486,14 +462,13 @@ export function compatibilityContractSource(contract: CompatibilityContract): st
   ].join("\n");
 }
 
-function editJsonText(
-  source: string,
-  path: readonly (string | number)[],
-  value: unknown,
-): string {
-  return applyEdits(source, modify(source, [...path], value, {
-    formattingOptions: { insertSpaces: true, tabSize: 2 },
-  }));
+function editJsonText(source: string, path: readonly (string | number)[], value: unknown): string {
+  return applyEdits(
+    source,
+    modify(source, [...path], value, {
+      formattingOptions: { insertSpaces: true, tabSize: 2 },
+    }),
+  );
 }
 
 function addPlannedWrite(
@@ -518,10 +493,7 @@ function addPlannedWrite(
   writes.set(path, { path, relativePath, before, after });
 }
 
-function planCompatibilityUpgrade(
-  root: string,
-  probed: ProbedCompatibility,
-): PlannedWrite[] {
+function planCompatibilityUpgrade(root: string, probed: ProbedCompatibility): PlannedWrite[] {
   const writes = new Map<string, PlannedWrite>();
   const rootManifestPath = join(root, "package.json");
   const rootManifest = readFileSync(rootManifestPath, "utf8");
@@ -541,11 +513,7 @@ function planCompatibilityUpgrade(
   for (const plugin of workspacePlugins(root)) {
     const manifestPath = join(plugin.root, "package.json");
     let manifestSource = readFileSync(manifestPath, "utf8");
-    manifestSource = editJsonText(
-      manifestSource,
-      ["engines", "bb"],
-      probed.contract.engines.bb,
-    );
+    manifestSource = editJsonText(manifestSource, ["engines", "bb"], probed.contract.engines.bb);
     manifestSource = editJsonText(
       manifestSource,
       ["engines", "bbPluginSdk"],
@@ -587,10 +555,7 @@ function planCompatibilityUpgrade(
   );
 }
 
-function applyTransaction(
-  writes: readonly PlannedWrite[],
-  validate: () => void,
-): void {
+function applyTransaction(writes: readonly PlannedWrite[], validate: () => void): void {
   const createdDirectories: string[] = [];
   const createdDirectorySet = new Set<string>();
   for (const write of writes) {
@@ -648,9 +613,7 @@ function prefixDiagnostics(
 ): Diagnostic[] {
   return diagnostics.map((value) => ({
     ...value,
-    file: value.file
-      ? `plugins/${plugin.directory}/${value.file}`
-      : `plugins/${plugin.directory}`,
+    file: value.file ? `plugins/${plugin.directory}/${value.file}` : `plugins/${plugin.directory}`,
   }));
 }
 
@@ -664,93 +627,109 @@ export function checkWorkspaceCompatibility(
   try {
     rootManifest = jsonObject(join(root, "package.json"));
   } catch (error) {
-    return [diagnostic(
-      "BBKW000",
-      error instanceof Error ? error.message : String(error),
-      "Restore a valid workspace package.json before checking compatibility.",
-      "package.json",
-    )];
+    return [
+      diagnostic(
+        "BBKW000",
+        error instanceof Error ? error.message : String(error),
+        "Restore a valid workspace package.json before checking compatibility.",
+        "package.json",
+      ),
+    ];
   }
-  const config = typeof rootManifest.config === "object" && rootManifest.config !== null
-    ? rootManifest.config as Record<string, unknown>
-    : {};
+  const config =
+    typeof rootManifest.config === "object" && rootManifest.config !== null
+      ? (rootManifest.config as Record<string, unknown>)
+      : {};
   if (config.bbVersion !== contract.bbCliVersion) {
-    diagnostics.push(diagnostic(
-      "BBKW001",
-      `root config.bbVersion is ${JSON.stringify(config.bbVersion)}, expected ${JSON.stringify(contract.bbCliVersion)}`,
-      "Run bb-kit compatibility upgrade with the intended bb executable.",
-      "package.json",
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBKW001",
+        `root config.bbVersion is ${JSON.stringify(config.bbVersion)}, expected ${JSON.stringify(contract.bbCliVersion)}`,
+        "Run bb-kit compatibility upgrade with the intended bb executable.",
+        "package.json",
+      ),
+    );
   }
 
   const contractPath = join(root, CONTRACT_PATH);
   const expectedContractSource = compatibilityContractSource(contract);
   if (!existsSync(contractPath) || readFileSync(contractPath, "utf8") !== expectedContractSource) {
-    diagnostics.push(diagnostic(
-      "BBKW002",
-      "the generated compatibility contract is missing or was edited by hand",
-      "Run bb-kit compatibility upgrade; do not edit the generated contract.",
-      CONTRACT_PATH,
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBKW002",
+        "the generated compatibility contract is missing or was edited by hand",
+        "Run bb-kit compatibility upgrade; do not edit the generated contract.",
+        CONTRACT_PATH,
+      ),
+    );
   }
   let plugins: WorkspacePlugin[];
   try {
     plugins = workspacePlugins(root);
   } catch (error) {
-    diagnostics.push(diagnostic(
-      "BBKW004",
-      error instanceof Error ? error.message : String(error),
-      "Restore valid plugin package manifests before checking compatibility.",
-      "plugins",
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBKW004",
+        error instanceof Error ? error.message : String(error),
+        "Restore valid plugin package manifests before checking compatibility.",
+        "plugins",
+      ),
+    );
     return diagnostics;
   }
   for (const plugin of plugins) {
     const manifestFile = `plugins/${plugin.directory}/package.json`;
     if (plugin.manifest.engines?.bb !== contract.engines.bb) {
-      diagnostics.push(diagnostic(
-        "BBKW005",
-        `${plugin.manifest.name} engines.bb is ${JSON.stringify(plugin.manifest.engines?.bb)}, expected ${JSON.stringify(contract.engines.bb)}`,
-        "Run bb-kit compatibility upgrade; the range floors at the tested bb and excludes the next major.",
-        manifestFile,
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBKW005",
+          `${plugin.manifest.name} engines.bb is ${JSON.stringify(plugin.manifest.engines?.bb)}, expected ${JSON.stringify(contract.engines.bb)}`,
+          "Run bb-kit compatibility upgrade; the range floors at the tested bb and excludes the next major.",
+          manifestFile,
+        ),
+      );
     }
     if (plugin.manifest.engines?.bbPluginSdk !== contract.engines.bbPluginSdk) {
-      diagnostics.push(diagnostic(
-        "BBKW006",
-        `${plugin.manifest.name} engines.bbPluginSdk is ${JSON.stringify(plugin.manifest.engines?.bbPluginSdk)}, expected ${JSON.stringify(contract.engines.bbPluginSdk)}`,
-        "Run bb-kit compatibility upgrade with the intended bb executable.",
-        manifestFile,
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBKW006",
+          `${plugin.manifest.name} engines.bbPluginSdk is ${JSON.stringify(plugin.manifest.engines?.bbPluginSdk)}, expected ${JSON.stringify(contract.engines.bbPluginSdk)}`,
+          "Run bb-kit compatibility upgrade with the intended bb executable.",
+          manifestFile,
+        ),
+      );
     }
-    diagnostics.push(...prefixDiagnostics(
-      plugin,
-      checkSdkDependency(plugin.root, plugin.manifest, contract),
-    ));
+    diagnostics.push(
+      ...prefixDiagnostics(plugin, checkSdkDependency(plugin.root, plugin.manifest, contract)),
+    );
 
     const componentsPath = join(plugin.root, "components.json");
     if (existsSync(componentsPath)) {
       try {
         const components = jsonObject(componentsPath);
-        const registries = typeof components.registries === "object"
-          && components.registries !== null
-          ? components.registries as Record<string, unknown>
-          : {};
+        const registries =
+          typeof components.registries === "object" && components.registries !== null
+            ? (components.registries as Record<string, unknown>)
+            : {};
         if (registries["@bb"] !== contract.registryUrl) {
-          diagnostics.push(diagnostic(
-            "BBKW007",
-            `${plugin.manifest.name} @bb component registry is ${JSON.stringify(registries["@bb"])}, expected ${JSON.stringify(contract.registryUrl)}`,
-            "Run bb-kit compatibility upgrade; vendored component updates must come from the tested bb release.",
-            `plugins/${plugin.directory}/components.json`,
-          ));
+          diagnostics.push(
+            diagnostic(
+              "BBKW007",
+              `${plugin.manifest.name} @bb component registry is ${JSON.stringify(registries["@bb"])}, expected ${JSON.stringify(contract.registryUrl)}`,
+              "Run bb-kit compatibility upgrade; vendored component updates must come from the tested bb release.",
+              `plugins/${plugin.directory}/components.json`,
+            ),
+          );
         }
       } catch (error) {
-        diagnostics.push(diagnostic(
-          "BBKW007",
-          error instanceof Error ? error.message : String(error),
-          "Restore a valid components.json and run bb-kit compatibility upgrade.",
-          `plugins/${plugin.directory}/components.json`,
-        ));
+        diagnostics.push(
+          diagnostic(
+            "BBKW007",
+            error instanceof Error ? error.message : String(error),
+            "Restore a valid components.json and run bb-kit compatibility upgrade.",
+            `plugins/${plugin.directory}/components.json`,
+          ),
+        );
       }
     }
 
@@ -758,22 +737,23 @@ export function checkWorkspaceCompatibility(
       const serverMetadata = join(plugin.root, "dist", "server.meta.json");
       const appMetadata = join(plugin.root, "dist", "app.meta.json");
       if (existsSync(serverMetadata) || existsSync(appMetadata)) {
-        diagnostics.push(...prefixDiagnostics(
-          plugin,
-          checkBuildMetadata(plugin.root, plugin.manifest, contract),
-        ));
+        diagnostics.push(
+          ...prefixDiagnostics(plugin, checkBuildMetadata(plugin.root, plugin.manifest, contract)),
+        );
       }
     }
   }
 
   for (const dependent of sdkDependentPackages(root, contract)) {
     if (dependent.pinned === contract.sdkPackage.version) continue;
-    diagnostics.push(diagnostic(
-      "BBKW008",
-      `devDependencies["${contract.sdkPackage.name}"] is ${JSON.stringify(dependent.pinned)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
-      "Run bb-kit compatibility upgrade; workspace packages build against the same SDK as the plugins.",
-      dependent.relativePath,
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBKW008",
+        `devDependencies["${contract.sdkPackage.name}"] is ${JSON.stringify(dependent.pinned)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
+        "Run bb-kit compatibility upgrade; workspace packages build against the same SDK as the plugins.",
+        dependent.relativePath,
+      ),
+    );
   }
   return diagnostics.sort((left, right) =>
     `${left.file ?? ""}:${left.code}`.localeCompare(`${right.file ?? ""}:${right.code}`),
@@ -828,18 +808,16 @@ export function upgradeCompatibility(
 ): CompatibilityUpgradeResult {
   const { root, selected, probed, writes } = inspectTarget(start, options);
   const rootManifest = jsonObject(join(root, "package.json"));
-  const config = typeof rootManifest.config === "object" && rootManifest.config !== null
-    ? rootManifest.config as Record<string, unknown>
-    : {};
+  const config =
+    typeof rootManifest.config === "object" && rootManifest.config !== null
+      ? (rootManifest.config as Record<string, unknown>)
+      : {};
   const currentVersion = config.bbVersion;
-  const versionComparison = typeof currentVersion === "string"
-    ? compareStableVersions(probed.contract.bbCliVersion, currentVersion)
-    : null;
-  if (
+  const versionComparison =
     typeof currentVersion === "string"
-    && versionComparison !== null
-    && versionComparison < 0
-  ) {
+      ? compareStableVersions(probed.contract.bbCliVersion, currentVersion)
+      : null;
+  if (typeof currentVersion === "string" && versionComparison !== null && versionComparison < 0) {
     throw new ProcessError(
       "compatibility_downgrade_refused",
       `bb-kit will not downgrade the workspace from bb ${currentVersion} to ${probed.contract.bbCliVersion}`,
@@ -871,9 +849,12 @@ export function formatCompatibilityInspection(
   result: CompatibilityInspection | CompatibilityUpgradeResult,
 ): string {
   const updated = "updated" in result ? result.updated : null;
-  const heading = updated === null
-    ? `bb ${result.target.bbCliVersion} compatibility plan`
-    : updated ? `✓ upgraded to bb ${result.target.bbCliVersion}` : `✓ already on bb ${result.target.bbCliVersion}`;
+  const heading =
+    updated === null
+      ? `bb ${result.target.bbCliVersion} compatibility plan`
+      : updated
+        ? `✓ upgraded to bb ${result.target.bbCliVersion}`
+        : `✓ already on bb ${result.target.bbCliVersion}`;
   return [
     heading,
     `  CLI: ${result.selectedBbCli.path} (${result.selectedBbCli.source})`,

@@ -31,9 +31,7 @@ function field(
 
 test("saved settings text does not block toolbar reconciliation", () => {
   assert.equal(
-    toolbarTextFieldIsBusy(
-      field({ value: "https://example.test/hook", settingsField: true }),
-    ),
+    toolbarTextFieldIsBusy(field({ value: "https://example.test/hook", settingsField: true })),
     false,
   );
 });
@@ -55,9 +53,7 @@ test("annotation text and caret remain protected", () => {
   assert.equal(toolbarTextFieldIsBusy(field({ value: "draft" })), true);
   assert.equal(toolbarTextFieldIsBusy(field({ focused: true })), true);
   assert.equal(
-    toolbarTextFieldIsBusy(
-      field({ value: "hidden draft", width: 0, height: 0 }),
-    ),
+    toolbarTextFieldIsBusy(field({ value: "hidden draft", width: 0, height: 0 })),
     false,
   );
 });
@@ -117,10 +113,7 @@ test("concurrent session opens share one request and failures can retry", async 
     }),
     /offline/,
   );
-  assert.equal(
-    await sessions.getOrCreate("/failed", async () => "session-retry"),
-    "session-retry",
-  );
+  assert.equal(await sessions.getOrCreate("/failed", async () => "session-retry"), "session-retry");
 });
 
 test("route revisions reject an obsolete A request after A to B to A", () => {
@@ -164,11 +157,7 @@ test("clear invalidates failed older work and newer intent wins retries", () => 
     false,
     "a failed edit must not overwrite a newer edit or delete",
   );
-  assert.equal(
-    shouldRequeueOperation(5, 2, 4),
-    true,
-    "the latest operation after Clear may retry",
-  );
+  assert.equal(shouldRequeueOperation(5, 2, 4), true, "the latest operation after Clear may retry");
   assert.equal(
     shouldRequeueOperation(5, 2, 5),
     true,
@@ -185,19 +174,11 @@ test("a failed clear can force the unchanged server snapshot to be read", () => 
 
 test("the annotation signature detects edits but ignores key order", () => {
   const before = [{ id: "a", comment: "before", position: { x: 1, y: 2 } }];
-  const reordered = [
-    { position: { y: 2, x: 1 }, comment: "before", id: "a" },
-  ];
+  const reordered = [{ position: { y: 2, x: 1 }, comment: "before", id: "a" }];
   const edited = [{ id: "a", comment: "after", position: { x: 1, y: 2 } }];
 
-  assert.equal(
-    stableAnnotationSignature(before),
-    stableAnnotationSignature(reordered),
-  );
-  assert.notEqual(
-    stableAnnotationSignature(before),
-    stableAnnotationSignature(edited),
-  );
+  assert.equal(stableAnnotationSignature(before), stableAnnotationSignature(reordered));
+  assert.notEqual(stableAnnotationSignature(before), stableAnnotationSignature(edited));
 });
 
 test("the annotation signature treats store defaults as local defaults", () => {
@@ -212,10 +193,7 @@ test("the annotation signature treats store defaults as local defaults", () => {
     },
   ];
 
-  assert.equal(
-    stableAnnotationSignature(local),
-    stableAnnotationSignature(stored),
-  );
+  assert.equal(stableAnnotationSignature(local), stableAnnotationSignature(stored));
 });
 
 test("Agentation callback deltas update the local projection immediately", () => {
@@ -245,13 +223,7 @@ test("Agentation callback deltas update the local projection immediately", () =>
 
 test("a successful delete stays acknowledged until reconcile consumes it", () => {
   assert.deepEqual(
-    [
-      ...recordPushAcknowledgement(
-        new Set(["existing"]),
-        ["added"],
-        ["deleted"],
-      ),
-    ],
+    [...recordPushAcknowledgement(new Set(["existing"]), ["added"], ["deleted"])],
     ["existing", "added", "deleted"],
   );
 });

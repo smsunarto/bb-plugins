@@ -49,9 +49,7 @@ export function createRpcClient<Contract extends PluginRpcContract>(
         },
       );
 
-      const envelope = (await response.json().catch(() => null)) as
-        | RpcEnvelope
-        | null;
+      const envelope = (await response.json().catch(() => null)) as RpcEnvelope | null;
 
       if (!envelope?.ok) {
         throw new PluginRpcCallError(

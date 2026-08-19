@@ -18,14 +18,9 @@ import {
   type AmpUserInputMessage,
 } from "../src/bridge-core.ts";
 import type { AmpStreamMessage } from "../src/translate.ts";
-import type {
-  OracleReportStore,
-  OracleTraceEventInput,
-} from "../src/oracle-report-store.ts";
+import type { OracleReportStore, OracleTraceEventInput } from "../src/oracle-report-store.ts";
 import type { SteeringInputMonitor } from "../src/bb-steering-monitor.ts";
-import {
-  permissionModeFromBb,
-} from "../src/permission-mode.ts";
+import { permissionModeFromBb } from "../src/permission-mode.ts";
 import { AMP_CLI_SHIM_FAST_ENV } from "../src/amp-cli-shim.ts";
 
 const THREAD = "T-test-thread";
@@ -87,9 +82,10 @@ interface RecordedCall {
   options?: AmpExecuteOptions;
 }
 
-function scriptedExecute(
-  script: (call: RecordedCall, index: number) => AmpStreamMessage[],
-): { fn: AmpExecuteFn; calls: RecordedCall[] } {
+function scriptedExecute(script: (call: RecordedCall, index: number) => AmpStreamMessage[]): {
+  fn: AmpExecuteFn;
+  calls: RecordedCall[];
+} {
   const calls: RecordedCall[] = [];
   const fn: AmpExecuteFn = ({ prompt, options, signal }) => {
     const call: RecordedCall = {
@@ -112,7 +108,10 @@ function scriptedExecute(
   return { fn, calls };
 }
 
-function collector(): { updates: SessionNotification[]; client: { sessionUpdate: (n: SessionNotification) => Promise<void> } } {
+function collector(): {
+  updates: SessionNotification[];
+  client: { sessionUpdate: (n: SessionNotification) => Promise<void> };
+} {
   const updates: SessionNotification[] = [];
   return {
     updates,
@@ -190,31 +189,37 @@ test("Orb routing ignores partial words and attached resource contents", () => {
     requestedTarget: null,
     directiveOnly: false,
   });
-  assert.deepEqual(routeAmpPrompt([
-    ...textPrompt("review this file"),
+  assert.deepEqual(
+    routeAmpPrompt([
+      ...textPrompt("review this file"),
+      {
+        type: "resource",
+        resource: { uri: "file:///tmp/example.txt", mimeType: "text/plain", text: "/orb" },
+      },
+    ]),
     {
-      type: "resource",
-      resource: { uri: "file:///tmp/example.txt", mimeType: "text/plain", text: "/orb" },
+      prompt: 'review this file\n<context ref="file:///tmp/example.txt">\n/orb\n</context>\n',
+      requestedTarget: null,
+      directiveOnly: false,
     },
-  ]), {
-    prompt: "review this file\n<context ref=\"file:///tmp/example.txt\">\n/orb\n</context>\n",
-    requestedTarget: null,
-    directiveOnly: false,
-  });
+  );
 });
 
 test("Orb routing ignores bb system instructions and agent-only plugin context", () => {
   const system = "<system_instructions>\nNever write /orb by itself.\n</system_instructions>";
-  const context = "Context for @issue (resolved by plugin \"tracker\"):\n\n/orb";
-  assert.deepEqual(routeAmpPrompt([
-    { type: "text", text: system },
-    { type: "text", text: "work locally" },
-    { type: "text", text: context },
-  ]), {
-    prompt: `${system}work locally${context}`,
-    requestedTarget: null,
-    directiveOnly: false,
-  });
+  const context = 'Context for @issue (resolved by plugin "tracker"):\n\n/orb';
+  assert.deepEqual(
+    routeAmpPrompt([
+      { type: "text", text: system },
+      { type: "text", text: "work locally" },
+      { type: "text", text: context },
+    ]),
+    {
+      prompt: `${system}work locally${context}`,
+      requestedTarget: null,
+      directiveOnly: false,
+    },
+  );
 
   const routed = routeAmpPrompt([
     { type: "text", text: system },
@@ -245,7 +250,10 @@ test("Orb routing fails safe for bb-generated primary text", () => {
 
 test("initialize advertises protocol 1, loadSession, remote MCP, and no image support", async () => {
   const { agent } = await newAgentSession(scriptedExecute(() => []).fn);
-  const response = await agent.initialize({ protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } } });
+  const response = await agent.initialize({
+    protocolVersion: 1,
+    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+  });
   assert.equal(response.protocolVersion, 1);
   assert.equal(response.agentCapabilities?.loadSession, true);
   assert.equal(response.agentCapabilities?.promptCapabilities?.image, false);
@@ -281,9 +289,7 @@ test("prompt streams thought, message, and tool call updates in order and return
       { type: "text", text: "hello" },
       { type: "tool_use", id: "tu-1", name: "Bash", input: { cmd: "ls -la" } },
     ]),
-    userMsg([
-      { type: "tool_result", tool_use_id: "tu-1", content: "file.txt", is_error: false },
-    ]),
+    userMsg([{ type: "tool_result", tool_use_id: "tu-1", content: "file.txt", is_error: false }]),
     assistant([{ type: "text", text: "done" }]),
     success(),
   ]);
@@ -348,11 +354,10 @@ test("bb Fast marks only a new Local Amp thread for the CLI shim", async () => {
 
 test("Orb execution passes the executor and optional Amp project", async () => {
   const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
-  const { agent, sessionId } = await newAgentSession(
-    fn,
-    collector(),
-    { orbProject: " owner/repo ", resolveFastMode: async () => true },
-  );
+  const { agent, sessionId } = await newAgentSession(fn, collector(), {
+    orbProject: " owner/repo ",
+    resolveFastMode: async () => true,
+  });
   await agent.prompt({ sessionId, prompt: textPrompt("go /orb now") });
   await agent.prompt({ sessionId, prompt: textPrompt("continue") });
   assert.equal(calls[0].prompt?.replace(/\s+/gu, " ").trim(), "go now");
@@ -422,18 +427,18 @@ test("an empty /orb directive fails without changing the session target", async 
 
 test("local execution ignores an Orb project override", async () => {
   const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
-  const { agent, sessionId } = await newAgentSession(
-    fn,
-    collector(),
-    { orbProject: "owner/repo" },
-  );
+  const { agent, sessionId } = await newAgentSession(fn, collector(), { orbProject: "owner/repo" });
   await agent.prompt({ sessionId, prompt: textPrompt("go") });
   assert.equal(calls[0].options?.executor, undefined);
   assert.equal(calls[0].options?.project, undefined);
 });
 
 test("captures the Amp thread id and continues it on the next prompt", async () => {
-  const { fn, calls } = scriptedExecute(() => [sysInit(), assistant([{ type: "text", text: "ok" }]), success()]);
+  const { fn, calls } = scriptedExecute(() => [
+    sysInit(),
+    assistant([{ type: "text", text: "ok" }]),
+    success(),
+  ]);
   const { agent, sessionId } = await newAgentSession(fn);
 
   await agent.prompt({ sessionId, prompt: textPrompt("one") });
@@ -519,22 +524,23 @@ test("Local prompts reuse one Amp process and leave its input open between turns
   let executeCalls = 0;
   let inputClosed = false;
   const inputs: AmpUserInputMessage[] = [];
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    executeCalls += 1;
-    assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    for (let turn = 0; ; turn += 1) {
-      const input = await iterator.next();
-      if (input.done) {
-        inputClosed = true;
-        return;
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      executeCalls += 1;
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      for (let turn = 0; ; turn += 1) {
+        const input = await iterator.next();
+        if (input.done) {
+          inputClosed = true;
+          return;
+        }
+        inputs.push(input.value);
+        if (turn === 0) yield sysInit();
+        yield userEcho(inputMessageText(input.value));
+        yield assistantStop(`done ${turn + 1}`);
       }
-      inputs.push(input.value);
-      if (turn === 0) yield sysInit();
-      yield userEcho(inputMessageText(input.value));
-      yield assistantStop(`done ${turn + 1}`);
-    }
-  })();
+    })();
   const { agent, sessionId } = await newAgentSession(execute, collector(), {
     createSteeringMonitor: async () => monitor,
   });
@@ -549,7 +555,10 @@ test("Local prompts reuse one Amp process and leave its input open between turns
   assert.equal(second.stopReason, "end_turn");
   assert.equal(executeCalls, 1);
   assert.deepEqual(inputs.map(inputMessageText), ["first", "second"]);
-  assert.deepEqual(inputs.map((input) => input.steer), [undefined, undefined]);
+  assert.deepEqual(
+    inputs.map((input) => input.steer),
+    [undefined, undefined],
+  );
   assert.equal(inputClosed, false);
 
   await agent.shutdown();
@@ -558,17 +567,18 @@ test("Local prompts reuse one Amp process and leave its input open between turns
 
 test("an unexpected Local output end rejects the turn and restarts cleanly", async () => {
   let executeCalls = 0;
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    const call = executeCalls++;
-    assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    assert.equal((await iterator.next()).done, false);
-    if (call === 0) {
-      yield sysInit();
-      return;
-    }
-    yield assistantStop("recovered");
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      const call = executeCalls++;
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      assert.equal((await iterator.next()).done, false);
+      if (call === 0) {
+        yield sysInit();
+        return;
+      }
+      yield assistantStop("recovered");
+    })();
   const { agent, sessionId } = await newAgentSession(execute);
 
   await assert.rejects(
@@ -588,23 +598,24 @@ async function assertLateLocalTerminalRetries(terminal: AmpStreamMessage): Promi
     releaseLateTerminal = resolve;
   });
   const received: string[] = [];
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    const call = executeCalls++;
-    assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    const input = await iterator.next();
-    assert.equal(input.done, false);
-    received.push(inputMessageText(input.value));
-    if (call === 0) {
-      yield sysInit();
-      yield assistantStop("first done");
-      await lateTerminal;
-      yield terminal;
-      return;
-    }
-    yield userEcho(inputMessageText(input.value));
-    yield assistantStop("second done");
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      const call = executeCalls++;
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      const input = await iterator.next();
+      assert.equal(input.done, false);
+      received.push(inputMessageText(input.value));
+      if (call === 0) {
+        yield sysInit();
+        yield assistantStop("first done");
+        await lateTerminal;
+        yield terminal;
+        return;
+      }
+      yield userEcho(inputMessageText(input.value));
+      yield assistantStop("second done");
+    })();
   const { agent, sessionId } = await newAgentSession(execute);
 
   assert.equal(
@@ -613,10 +624,7 @@ async function assertLateLocalTerminalRetries(terminal: AmpStreamMessage): Promi
   );
   const second = agent.prompt({ sessionId, prompt: textPrompt("second") });
   releaseLateTerminal();
-  assert.equal(
-    (await second).stopReason,
-    "end_turn",
-  );
+  assert.equal((await second).stopReason, "end_turn");
   assert.equal(executeCalls, 2);
   assert.deepEqual(received, ["first", "second"]);
 }
@@ -655,21 +663,22 @@ test("a late Local result closes the idle runtime before awaited reporting", asy
     },
   };
   let executeCalls = 0;
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    const call = executeCalls++;
-    assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    const input = await iterator.next();
-    assert.equal(input.done, false);
-    if (call === 0) {
-      yield sysInit();
-      yield assistantStop("first done");
-      await lateTerminal;
-      yield success(THREAD, { permission_denials: ["stale tool"] });
-      return;
-    }
-    yield assistantStop("second done");
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      const call = executeCalls++;
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      const input = await iterator.next();
+      assert.equal(input.done, false);
+      if (call === 0) {
+        yield sysInit();
+        yield assistantStop("first done");
+        await lateTerminal;
+        yield success(THREAD, { permission_denials: ["stale tool"] });
+        return;
+      }
+      yield assistantStop("second done");
+    })();
   const agent = new AmpBridgeAgent(client, {
     execute,
     store: memorySessionStore(),
@@ -717,22 +726,23 @@ async function assertLateLocalTerminalStopsRetry(action: "cancel" | "shutdown"):
     releaseLateTerminal = resolve;
   });
   let executeCalls = 0;
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    const call = executeCalls++;
-    assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    const input = await iterator.next();
-    assert.equal(input.done, false);
-    if (call === 0) {
-      yield sysInit();
-      yield assistantStop("first done");
-      await lateTerminal;
-      yield success();
-      return;
-    }
-    yield userEcho(inputMessageText(input.value));
-    yield assistantStop("unexpected retry");
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      const call = executeCalls++;
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      const input = await iterator.next();
+      assert.equal(input.done, false);
+      if (call === 0) {
+        yield sysInit();
+        yield assistantStop("first done");
+        await lateTerminal;
+        yield success();
+        return;
+      }
+      yield userEcho(inputMessageText(input.value));
+      yield assistantStop("unexpected retry");
+    })();
   const { agent, sessionId } = await newAgentSession(execute, collector(), {
     createSteeringMonitor: async () => monitor,
   });
@@ -744,9 +754,7 @@ async function assertLateLocalTerminalStopsRetry(action: "cancel" | "shutdown"):
   const second = agent.prompt({ sessionId, prompt: textPrompt("second") });
   releaseLateTerminal();
   await waitUntil(() => cleanupStarted);
-  const stopping = action === "cancel"
-    ? agent.cancel({ sessionId })
-    : agent.shutdown();
+  const stopping = action === "cancel" ? agent.cancel({ sessionId }) : agent.shutdown();
   releaseCleanup();
   await stopping;
 
@@ -764,25 +772,23 @@ test("shutdown during a late Local terminal does not retry the prompt", async ()
 });
 
 test("a runtime error overrides an assistant stop that has not settled", async () => {
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    assert.notEqual(typeof prompt, "string");
-    await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
-    yield sysInit();
-    yield assistantStop("apparently done");
-    yield {
-      type: "result",
-      subtype: "error",
-      is_error: true,
-      error: "late failure",
-      session_id: THREAD,
-    };
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      assert.notEqual(typeof prompt, "string");
+      await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
+      yield sysInit();
+      yield assistantStop("apparently done");
+      yield {
+        type: "result",
+        subtype: "error",
+        is_error: true,
+        error: "late failure",
+        session_id: THREAD,
+      };
+    })();
   const { agent, sessionId } = await newAgentSession(execute);
 
-  await assert.rejects(
-    agent.prompt({ sessionId, prompt: textPrompt("go") }),
-    /late failure/,
-  );
+  await assert.rejects(agent.prompt({ sessionId, prompt: textPrompt("go") }), /late failure/);
 });
 
 test("Local sessions reject overlapping prompts", async () => {
@@ -791,14 +797,15 @@ test("Local sessions reject overlapping prompts", async () => {
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    assert.notEqual(typeof prompt, "string");
-    await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
-    started = true;
-    yield sysInit();
-    await released;
-    yield success();
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      assert.notEqual(typeof prompt, "string");
+      await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
+      started = true;
+      yield sysInit();
+      await released;
+      yield success();
+    })();
   const { agent, sessionId } = await newAgentSession(execute);
 
   const first = agent.prompt({ sessionId, prompt: textPrompt("first") });
@@ -825,11 +832,12 @@ test("Local sessions stay active until turn cleanup completes", async () => {
       await cleanupReleased;
     },
   };
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    assert.notEqual(typeof prompt, "string");
-    await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
-    yield assistantStop("done", "end_turn", "");
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      assert.notEqual(typeof prompt, "string");
+      await (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]().next();
+      yield assistantStop("done", "end_turn", "");
+    })();
   const agent = new AmpBridgeAgent(client, {
     execute,
     store: memorySessionStore(),
@@ -860,14 +868,15 @@ test("cancel closes the active Amp input stream and steering monitor", async () 
   };
   let waitingForMoreInput = false;
   let inputClosed = false;
-  const execute: AmpExecuteFn = ({ prompt }) => (async function* () {
-    assert.notEqual(typeof prompt, "string");
-    const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
-    assert.equal((await iterator.next()).done, false);
-    yield sysInit();
-    waitingForMoreInput = true;
-    inputClosed = (await iterator.next()).done ?? false;
-  })();
+  const execute: AmpExecuteFn = ({ prompt }) =>
+    (async function* () {
+      assert.notEqual(typeof prompt, "string");
+      const iterator = (prompt as AsyncIterable<UserInputMessage>)[Symbol.asyncIterator]();
+      assert.equal((await iterator.next()).done, false);
+      yield sysInit();
+      waitingForMoreInput = true;
+      inputClosed = (await iterator.next()).done ?? false;
+    })();
   const { agent, sessionId } = await newAgentSession(execute, collector(), {
     createSteeringMonitor: async () => monitor,
   });
@@ -931,18 +940,19 @@ test("changing Local execution config restarts the persistent process", async ()
   const options: (AmpExecuteOptions | undefined)[] = [];
   const signals: AbortSignal[] = [];
   let firstInputClosed = false;
-  const execute: AmpExecuteFn = ({ prompt, options: callOptions, signal }) => (async function* () {
-    const call = options.push(callOptions) - 1;
-    assert.notEqual(typeof prompt, "string");
-    assert.ok(signal);
-    signals.push(signal);
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    assert.equal((await iterator.next()).done, false);
-    if (call === 0) yield sysInit();
-    yield assistantStop(`done ${call}`);
-    const next = await iterator.next();
-    if (call === 0) firstInputClosed = next.done ?? false;
-  })();
+  const execute: AmpExecuteFn = ({ prompt, options: callOptions, signal }) =>
+    (async function* () {
+      const call = options.push(callOptions) - 1;
+      assert.notEqual(typeof prompt, "string");
+      assert.ok(signal);
+      signals.push(signal);
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      assert.equal((await iterator.next()).done, false);
+      if (call === 0) yield sysInit();
+      yield assistantStop(`done ${call}`);
+      const next = await iterator.next();
+      if (call === 0) firstInputClosed = next.done ?? false;
+    })();
   const { agent, sessionId } = await newAgentSession(execute);
 
   await agent.prompt({ sessionId, prompt: textPrompt("first") });
@@ -965,15 +975,16 @@ test("connection abort shuts down an idle persistent Local process", async () =>
   const connection = new AbortController();
   let inputClosed = false;
   let executeSignal: AbortSignal | undefined;
-  const execute: AmpExecuteFn = ({ prompt, signal }) => (async function* () {
-    assert.notEqual(typeof prompt, "string");
-    executeSignal = signal;
-    const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
-    assert.equal((await iterator.next()).done, false);
-    yield sysInit();
-    yield assistantStop("done");
-    inputClosed = (await iterator.next()).done ?? false;
-  })();
+  const execute: AmpExecuteFn = ({ prompt, signal }) =>
+    (async function* () {
+      assert.notEqual(typeof prompt, "string");
+      executeSignal = signal;
+      const iterator = (prompt as AsyncIterable<AmpUserInputMessage>)[Symbol.asyncIterator]();
+      assert.equal((await iterator.next()).done, false);
+      yield sysInit();
+      yield assistantStop("done");
+      inputClosed = (await iterator.next()).done ?? false;
+    })();
   const updates = collector();
   const agent = new AmpBridgeAgent(
     { ...updates.client, signal: connection.signal },
@@ -995,8 +1006,20 @@ test("execution errors soft-fail after surfacing a chunk; max turns maps to max_
   const { fn, calls } = scriptedExecute((_call, index) => [
     sysInit(),
     index === 0
-      ? { type: "result", subtype: "error_during_execution", is_error: true, error: "boom", session_id: THREAD }
-      : { type: "result", subtype: "error_max_turns", is_error: true, error: "too many turns", session_id: THREAD },
+      ? {
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          error: "boom",
+          session_id: THREAD,
+        }
+      : {
+          type: "result",
+          subtype: "error_max_turns",
+          is_error: true,
+          error: "too many turns",
+          session_id: THREAD,
+        },
   ]);
   const updates = collector();
   const { agent, sessionId } = await newAgentSession(fn, updates);
@@ -1016,32 +1039,45 @@ test("execution errors soft-fail after surfacing a chunk; max turns maps to max_
 
 test("assistant stop reasons map max tokens and refusal to ACP", async () => {
   let stopReasonCalls = 0;
-  const execute: AmpExecuteFn = ({ signal }) => (async function* () {
-    const index = stopReasonCalls++;
-    for (const message of [
-      sysInit(),
-      {
-        ...assistant([{ type: "text", text: "partial" }]),
-        message: {
-          content: [{ type: "text", text: "partial" }],
-          stop_reason: index === 0 ? "max_tokens" : "refusal",
-        },
-      } as AmpStreamMessage,
-      success(),
-    ]) {
-      signal?.throwIfAborted();
-      yield message;
-    }
-  })();
+  const execute: AmpExecuteFn = ({ signal }) =>
+    (async function* () {
+      const index = stopReasonCalls++;
+      for (const message of [
+        sysInit(),
+        {
+          ...assistant([{ type: "text", text: "partial" }]),
+          message: {
+            content: [{ type: "text", text: "partial" }],
+            stop_reason: index === 0 ? "max_tokens" : "refusal",
+          },
+        } as AmpStreamMessage,
+        success(),
+      ]) {
+        signal?.throwIfAborted();
+        yield message;
+      }
+    })();
   const { agent, sessionId } = await newAgentSession(execute);
-  assert.equal((await agent.prompt({ sessionId, prompt: textPrompt("one") })).stopReason, "max_tokens");
-  assert.equal((await agent.prompt({ sessionId, prompt: textPrompt("two") })).stopReason, "refusal");
+  assert.equal(
+    (await agent.prompt({ sessionId, prompt: textPrompt("one") })).stopReason,
+    "max_tokens",
+  );
+  assert.equal(
+    (await agent.prompt({ sessionId, prompt: textPrompt("two") })).stopReason,
+    "refusal",
+  );
 });
 
 test("auth-looking result errors carry an amp login hint", async () => {
   const { fn } = scriptedExecute(() => [
     sysInit(),
-    { type: "result", subtype: "error_during_execution", is_error: true, error: "Invalid or missing API key", session_id: THREAD },
+    {
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      error: "Invalid or missing API key",
+      session_id: THREAD,
+    },
   ]);
   const updates = collector();
   const { agent, sessionId } = await newAgentSession(fn, updates);
@@ -1058,13 +1094,18 @@ test("config option changes flow into the next execute options", async () => {
   const updates = collector();
   const { agent, sessionId } = await newAgentSession(fn, updates);
 
-  const afterMode = await agent.setSessionConfigOption({ sessionId, configId: CONFIG_MODE, value: "high" });
+  const afterMode = await agent.setSessionConfigOption({
+    sessionId,
+    configId: CONFIG_MODE,
+    value: "high",
+  });
   const modeOption = afterMode.configOptions.find((o) => o.id === CONFIG_MODE);
   assert.equal(modeOption?.currentValue, "high");
   await agent.setSessionConfigOption({ sessionId, configId: CONFIG_REASONING, value: "default" });
   await agent.setSessionConfigOption({ sessionId, configId: CONFIG_PERMISSION, value: "bypass" });
-  const configUpdates = updates.updates.filter((notification) =>
-    notification.update.sessionUpdate === "config_option_update");
+  const configUpdates = updates.updates.filter(
+    (notification) => notification.update.sessionUpdate === "config_option_update",
+  );
   assert.equal(configUpdates.length, 3);
   const syncedPermission = configUpdates[2].update as {
     configOptions: { id: string; currentValue?: string | boolean }[];
@@ -1092,11 +1133,9 @@ test("bb Full starts Local Amp in bypass while Accept Edits forces normal rules"
     ["default", false],
   ] as const) {
     const { fn, calls } = scriptedExecute(() => [sysInit(), success()]);
-    const { agent, sessionId, session } = await newAgentSession(
-      fn,
-      collector(),
-      { resolveInitialPermission: async () => initialPermission },
-    );
+    const { agent, sessionId, session } = await newAgentSession(fn, collector(), {
+      resolveInitialPermission: async () => initialPermission,
+    });
     assert.equal(
       session.configOptions?.find((option) => option.id === CONFIG_PERMISSION)?.currentValue,
       initialPermission,
@@ -1178,15 +1217,18 @@ test("loadSession restores the Orb boundary before continuing", async () => {
   assert.equal(calls[0].options?.continue, "T-orb");
   assert.equal(calls[0].options?.project, undefined);
   assert.equal(calls[0].options?.mcpConfig, undefined);
-  assert.deepEqual(usageReports, [{
-    sessionId: "S-orb",
-    executionTarget: "orb",
-    ampThreadId: "T-orb",
-  }, {
-    sessionId: "S-orb",
-    executionTarget: "orb",
-    ampThreadId: "T-orb",
-  }]);
+  assert.deepEqual(usageReports, [
+    {
+      sessionId: "S-orb",
+      executionTarget: "orb",
+      ampThreadId: "T-orb",
+    },
+    {
+      sessionId: "S-orb",
+      executionTarget: "orb",
+      ampThreadId: "T-orb",
+    },
+  ]);
 });
 
 test("mcp servers from bb are converted and passed to execute", async () => {
@@ -1253,8 +1295,7 @@ test("Orb omits bb MCP without a chat note and reports its actual Amp thread", a
 
   const notes = updates.updates.filter((notification) => {
     const content = (notification.update as { content?: { text?: string } }).content;
-    return content?.text?.includes("Amp Orb uses")
-      || content?.text?.includes("bb-selected tools");
+    return content?.text?.includes("Amp Orb uses") || content?.text?.includes("bb-selected tools");
   });
   assert.equal(notes.length, 0);
   assert.equal(calls[0].options?.mcpConfig, undefined);
@@ -1280,7 +1321,12 @@ test("Orb omits bb MCP without a chat note and reports its actual Amp thread", a
 
 test("convertMcpServers handles remote transports and skips acp ones", () => {
   const config = convertMcpServers([
-    { type: "http", name: "remote", url: "https://mcp.example", headers: [{ name: "a", value: "b" }] },
+    {
+      type: "http",
+      name: "remote",
+      url: "https://mcp.example",
+      headers: [{ name: "a", value: "b" }],
+    },
     { type: "sse", name: "legacy", url: "https://legacy.example/sse", headers: [] },
     { type: "acp", name: "skip-me" },
   ] as never);
@@ -1367,30 +1413,38 @@ test("Oracle emits its card at start and captures nested progress before complet
   const oracleResponse = "## Recommendation\n\nKeep the protocol seam. ✓";
   const { fn } = scriptedExecute(() => [
     sysInit(),
-    assistant([{ type: "tool_use", id: "tu-oracle", name: "oracle", input: { task: "Review it" } }]),
+    assistant([
+      { type: "tool_use", id: "tu-oracle", name: "oracle", input: { task: "Review it" } },
+    ]),
     {
       ...assistant([{ type: "thinking", thinking: "Inspecting the implementation" }]),
       parent_tool_use_id: "tu-oracle",
     },
     {
-      ...assistant([{ type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "src/a.ts" } }]),
+      ...assistant([
+        { type: "tool_use", id: "tu-read", name: "Read", input: { file_path: "src/a.ts" } },
+      ]),
       parent_tool_use_id: "tu-oracle",
     },
     {
-      ...userMsg([{
-        type: "tool_result",
-        tool_use_id: "tu-read",
-        content: "source",
-        is_error: false,
-      }]),
+      ...userMsg([
+        {
+          type: "tool_result",
+          tool_use_id: "tu-read",
+          content: "source",
+          is_error: false,
+        },
+      ]),
       parent_tool_use_id: "tu-oracle",
     },
-    userMsg([{
-      type: "tool_result",
-      tool_use_id: "tu-oracle",
-      content: oracleResponse,
-      is_error: false,
-    }]),
+    userMsg([
+      {
+        type: "tool_result",
+        tool_use_id: "tu-oracle",
+        content: oracleResponse,
+        is_error: false,
+      },
+    ]),
     assistant([{ type: "text", text: "Follow-up analysis." }]),
     success(),
   ]);
@@ -1422,58 +1476,72 @@ test("Oracle emits its card at start and captures nested progress before complet
   await agent.prompt({ sessionId, prompt: textPrompt("ask Oracle") });
 
   assert.deepEqual(started, [{ task: "Review it" }]);
-  assert.deepEqual(appended.map(({ event }) => [event.kind, event.status]), [
-    ["thinking", undefined],
-    ["tool", "running"],
-    ["tool", "completed"],
+  assert.deepEqual(
+    appended.map(({ event }) => [event.kind, event.status]),
+    [
+      ["thinking", undefined],
+      ["tool", "running"],
+      ["tool", "completed"],
+    ],
+  );
+  assert.deepEqual(completed, [
+    {
+      reportId: "11111111-1111-4111-8111-111111111111",
+      content: oracleResponse,
+      isError: false,
+    },
   ]);
-  assert.deepEqual(completed, [{
-    reportId: "11111111-1111-4111-8111-111111111111",
-    content: oracleResponse,
-    isError: false,
-  }]);
 
   const directiveUpdate = updates.updates
     .map((notification) => notification.update as Record<string, unknown>)
     .find((update) => {
       const content = update.content as { text?: string } | undefined;
-      return update.sessionUpdate === "agent_message_chunk" && content?.text?.includes("::amp-oracle{");
+      return (
+        update.sessionUpdate === "agent_message_chunk" && content?.text?.includes("::amp-oracle{")
+      );
     });
   const directive = (directiveUpdate?.content as { text?: string } | undefined)?.text;
-  assert.equal(
-    directive,
-    '\n\n::amp-oracle{reportId="11111111-1111-4111-8111-111111111111"}\n\n',
-  );
+  assert.equal(directive, '\n\n::amp-oracle{reportId="11111111-1111-4111-8111-111111111111"}\n\n');
   const textChunks = updates.updates
-    .map((notification) => notification.update as { sessionUpdate?: string; content?: { text?: string } })
+    .map(
+      (notification) =>
+        notification.update as { sessionUpdate?: string; content?: { text?: string } },
+    )
     .filter((update) => update.sessionUpdate === "agent_message_chunk")
     .map((update) => update.content?.text);
   assert.deepEqual(textChunks.slice(-2), [directive, "Follow-up analysis."]);
 
   const directiveIndex = updates.updates.findIndex((notification) => {
     const update = notification.update as { sessionUpdate?: string; content?: { text?: string } };
-    return update.sessionUpdate === "agent_message_chunk"
-      && update.content?.text?.includes("::amp-oracle{") === true;
+    return (
+      update.sessionUpdate === "agent_message_chunk" &&
+      update.content?.text?.includes("::amp-oracle{") === true
+    );
   });
   const oracleCompleteIndex = updates.updates.findIndex((notification) => {
     const update = notification.update as Record<string, unknown>;
     return update.sessionUpdate === "tool_call_update" && update.toolCallId === "tu-oracle";
   });
-  assert.ok(
-    directiveIndex < oracleCompleteIndex,
-    "the card must render before Oracle finishes",
-  );
+  assert.ok(directiveIndex < oracleCompleteIndex, "the card must render before Oracle finishes");
 
   const toolUpdate = updates.updates
     .map((notification) => notification.update as Record<string, unknown>)
-    .find((update) => update.sessionUpdate === "tool_call_update" && update.toolCallId === "tu-oracle");
-  assert.equal(toolUpdate?.toolCallId, "tu-oracle", "the native tool row remains available as fallback");
+    .find(
+      (update) => update.sessionUpdate === "tool_call_update" && update.toolCallId === "tu-oracle",
+    );
+  assert.equal(
+    toolUpdate?.toolCallId,
+    "tu-oracle",
+    "the native tool row remains available as fallback",
+  );
 });
 
 test("an interrupted Oracle report stops running when its turn ends", async () => {
   const { fn } = scriptedExecute(() => [
     sysInit(),
-    assistant([{ type: "tool_use", id: "tu-oracle-open", name: "oracle", input: { task: "Review it" } }]),
+    assistant([
+      { type: "tool_use", id: "tu-oracle-open", name: "oracle", input: { task: "Review it" } },
+    ]),
     success(),
   ]);
   const updates = collector();
@@ -1493,10 +1561,12 @@ test("an interrupted Oracle report stops running when its turn ends", async () =
 
   await agent.prompt({ sessionId: session.sessionId, prompt: textPrompt("ask Oracle") });
 
-  assert.deepEqual(completed, [{
-    content: "Oracle execution ended before returning a result.",
-    isError: true,
-  }]);
+  assert.deepEqual(completed, [
+    {
+      content: "Oracle execution ended before returning a result.",
+      isError: true,
+    },
+  ]);
 });
 
 test("assistant and tool-result images map to valid ACP content", async () => {
@@ -1520,7 +1590,10 @@ test("assistant and tool-result images map to valid ACP content", async () => {
             source: { type: "base64", data: "dG9vbCBpbWFnZQ==", media_type: "IMAGE/WEBP" },
           },
           { type: "image", source: { type: "url", url: "https://example.com/chart.png" } },
-          { type: "image", source: { type: "base64", data: "not base64!", media_type: "image/png" } },
+          {
+            type: "image",
+            source: { type: "base64", data: "not base64!", media_type: "image/png" },
+          },
         ],
       },
     ]),
@@ -1542,21 +1615,24 @@ test("assistant and tool-result images map to valid ACP content", async () => {
   const toolUpdate = updates.updates
     .map((notification) => notification.update as Record<string, unknown>)
     .find((update) => update.sessionUpdate === "tool_call_update");
-  assert.deepEqual(toolUpdate?.content, [{
-    type: "content",
-    content: {
-      type: "image",
-      data: "dG9vbCBpbWFnZQ==",
-      mimeType: "image/webp",
+  assert.deepEqual(toolUpdate?.content, [
+    {
+      type: "content",
+      content: {
+        type: "image",
+        data: "dG9vbCBpbWFnZQ==",
+        mimeType: "image/webp",
+      },
     },
-  }, {
-    type: "content",
-    content: {
-      type: "resource_link",
-      uri: "https://example.com/chart.png",
-      name: "Image",
+    {
+      type: "content",
+      content: {
+        type: "resource_link",
+        uri: "https://example.com/chart.png",
+        name: "Image",
+      },
     },
-  }]);
+  ]);
 });
 
 test("execute throwing a generic error rejects the prompt", async () => {
@@ -1579,14 +1655,20 @@ test("execute throwing an auth-looking error appends the amp login hint", async 
   const { agent, sessionId } = await newAgentSession(execute);
   await assert.rejects(
     agent.prompt({ sessionId, prompt: textPrompt("x") }),
-    (error: Error) => error.message.includes("401 unauthorized") && error.message.includes("amp login"),
+    (error: Error) =>
+      error.message.includes("401 unauthorized") && error.message.includes("amp login"),
   );
 });
 
 test("system execution errors soft-fail after surfacing an error chunk", async () => {
   const { fn } = scriptedExecute(() => [
     sysInit(),
-    { type: "system", subtype: "error_during_execution", error: "cli exploded", session_id: THREAD },
+    {
+      type: "system",
+      subtype: "error_during_execution",
+      error: "cli exploded",
+      session_id: THREAD,
+    },
     success(),
   ]);
   const updates = collector();
@@ -1607,7 +1689,10 @@ test("non-error_during_execution system errors still reject", async () => {
   ]);
   const updates = collector();
   const { agent, sessionId } = await newAgentSession(fn, updates);
-  await assert.rejects(agent.prompt({ sessionId, prompt: textPrompt("x") }), /unknown system failure/);
+  await assert.rejects(
+    agent.prompt({ sessionId, prompt: textPrompt("x") }),
+    /unknown system failure/,
+  );
   const errorChunk = updates.updates.find((n) => {
     const content = (n.update as { content?: { text?: string } }).content;
     return content?.text === "Error: unknown system failure";
@@ -1618,7 +1703,12 @@ test("non-error_during_execution system errors still reject", async () => {
 test("auth-looking system errors still reject with the amp login hint", async () => {
   const { fn } = scriptedExecute(() => [
     sysInit(),
-    { type: "system", subtype: "error_during_execution", error: "Invalid or missing API key", session_id: THREAD },
+    {
+      type: "system",
+      subtype: "error_during_execution",
+      error: "Invalid or missing API key",
+      session_id: THREAD,
+    },
   ]);
   const updates = collector();
   const { agent, sessionId } = await newAgentSession(fn, updates);
@@ -1634,7 +1724,10 @@ test("empty text and thinking blocks emit no notifications", async () => {
   const { fn } = scriptedExecute(() => [
     sysInit(),
     assistant(""),
-    assistant([{ type: "text", text: "" }, { type: "thinking", thinking: "" }]),
+    assistant([
+      { type: "text", text: "" },
+      { type: "thinking", thinking: "" },
+    ]),
     success(),
   ]);
   const updates = collector();
@@ -1657,7 +1750,9 @@ test("prompt flattens resource_link and embedded resource blocks", async () => {
   });
   assert.ok(calls[0].prompt.includes("look at"));
   assert.ok(calls[0].prompt.includes("\nfile:///work/a.ts\n"));
-  assert.ok(calls[0].prompt.includes('<context ref="file:///work/b.ts">\nconst b = 1;\n</context>'));
+  assert.ok(
+    calls[0].prompt.includes('<context ref="file:///work/b.ts">\nconst b = 1;\n</context>'),
+  );
 });
 
 test("a failing client.sessionUpdate does not abort the prompt stream", async () => {
@@ -1700,7 +1795,10 @@ test("permission denials on a successful result are reported to the user", async
 
 test("maps SDK-generated CLI flags back to the bridge options that produce them", () => {
   assert.equal(unsupportedOptionFrom("error: unknown option '--mcp-config'"), "mcpConfig");
-  assert.equal(unsupportedOptionFrom("error: unknown option ‘--settings-file’"), "dangerouslyAllowAll");
+  assert.equal(
+    unsupportedOptionFrom("error: unknown option ‘--settings-file’"),
+    "dangerouslyAllowAll",
+  );
   assert.equal(unsupportedOptionFrom("error: unknown option '--orb-execute'"), null);
   assert.equal(unsupportedOptionFrom("error: unknown option '--project'"), null);
 });
@@ -1771,19 +1869,6 @@ test("an older CLI rejecting --settings-file retries without permission bypass",
   assert.equal(calls[1]?.dangerouslyAllowAll, undefined);
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 test("mode labels carry Amp's models and effort as a bb-splittable dim badge", async () => {
   // bb renders a trailing parenthesised group dimmed beside the name, the
   // mechanism behind Claude Code's "Opus 5 (1M)" -> `Opus 5 1M`.
@@ -1795,11 +1880,12 @@ test("mode labels carry Amp's models and effort as a bb-splittable dim badge", a
   const mode = (session.configOptions ?? []).find((o) => o.id === CONFIG_MODE) as
     | { options: { value: string; name: string }[] }
     | undefined;
-  const split = Object.fromEntries(
-    (mode?.options ?? []).map((o) => [o.value, bbSplit(o.name)]),
-  );
+  const split = Object.fromEntries((mode?.options ?? []).map((o) => [o.value, bbSplit(o.name)]));
   assert.deepEqual(split.low, { base: "Low", tag: "GPT 5.6 Terra [low] · GPT 5.6 Sol [high]" });
-  assert.deepEqual(split.medium, { base: "Medium", tag: "GPT 5.6 Sol [medium] · GPT 5.6 Sol [high]" });
+  assert.deepEqual(split.medium, {
+    base: "Medium",
+    tag: "GPT 5.6 Sol [medium] · GPT 5.6 Sol [high]",
+  });
   assert.deepEqual(split.high, { base: "High", tag: "GPT 5.6 Sol [x-high] · GPT 5.6 Sol [high]" });
   assert.deepEqual(split.ultra, { base: "Ultra", tag: "Fable 5 [high] · GPT 5.6 Sol [high]" });
 
@@ -1817,7 +1903,10 @@ test("mode values stay the plain ids bb and the CLI use", async () => {
   const mode = (session.configOptions ?? []).find((o) => o.id === CONFIG_MODE) as
     | { currentValue: string; options: { value: string }[] }
     | undefined;
-  assert.deepEqual(mode?.options.map((o) => o.value), ["low", "medium", "high", "ultra"]);
+  assert.deepEqual(
+    mode?.options.map((o) => o.value),
+    ["low", "medium", "high", "ultra"],
+  );
   assert.equal(mode?.currentValue, "medium");
   await agent.setSessionConfigOption({ sessionId, configId: CONFIG_MODE, value: "ultra" });
   await agent.prompt({ sessionId, prompt: textPrompt("go") });

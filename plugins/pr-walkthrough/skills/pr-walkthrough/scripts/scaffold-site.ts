@@ -133,9 +133,11 @@ function copyTree(source: string, destination: string, filterNames: boolean): vo
 }
 
 function main(argv: string[]): number {
-  const parsed = parseCliArgs(argv, ["--content", "--output", "--diff"], [
-    "--include-full-context",
-  ]);
+  const parsed = parseCliArgs(
+    argv,
+    ["--content", "--output", "--diff"],
+    ["--include-full-context"],
+  );
   const contentArg = parsed.values.get("--content");
   const outputArg = parsed.values.get("--output") ?? ".pr-walkthrough/site";
   const diffArg = parsed.values.get("--diff");

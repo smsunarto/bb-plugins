@@ -24,9 +24,7 @@ import { cn } from "@/lib/utils";
  * indicator bb ships tomorrow must fall through to the age label, not blank
  * the slot.
  */
-export function hasStatusGlyph(
-  indicator: PluginSidebarThreadIndicator,
-): boolean {
+export function hasStatusGlyph(indicator: PluginSidebarThreadIndicator): boolean {
   switch (indicator) {
     case "unread-error":
     case "waiting-for-input":
@@ -59,13 +57,7 @@ export function StatusGlyph({
 
   switch (indicator) {
     case "unread-error":
-      return (
-        <Icon
-          name="CircleX"
-          aria-label={aria}
-          className={cn(shared, "text-destructive")}
-        />
-      );
+      return <Icon name="CircleX" aria-label={aria} className={cn(shared, "text-destructive")} />;
     case "waiting-for-input":
       return (
         <Icon
@@ -94,22 +86,13 @@ export function StatusGlyph({
       return <ShineIcon name="Target" label={aria} className={shared} />;
     case "draft":
     case "working-draft":
-      return (
-        <Icon
-          name="Edit"
-          aria-label={aria}
-          className={cn(shared, "text-muted-foreground")}
-        />
-      );
+      return <Icon name="Edit" aria-label={aria} className={cn(shared, "text-muted-foreground")} />;
     case "unread-success":
       // The notification dot, in a box the size of every other glyph, the way
       // bb centers its own trailing indicators. Right-aligned on its own, a
       // 5px dot would sit ~4px off the column the icons share.
       return (
-        <span
-          aria-label={aria}
-          className={cn("flex items-center justify-center", shared)}
-        >
+        <span aria-label={aria} className={cn("flex items-center justify-center", shared)}>
           <span className="size-[5px] rounded-full bg-timeline-accent" />
         </span>
       );

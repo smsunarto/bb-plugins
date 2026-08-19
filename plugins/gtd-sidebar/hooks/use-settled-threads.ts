@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  useRealtime,
-  useRealtimeConnectionState,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
+import { useRealtime, useRealtimeConnectionState, useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import type { gtdSidebarRpcContract } from "@/server";
 import {
@@ -122,10 +118,7 @@ export function useSettledThreads(now: number): SettledThreadsApi {
   }, [connectionState, refresh]);
 
   const threads = useMemo(
-    () =>
-      rows
-        .filter((row) => isWithinSettledWindow(row.settledAt, now))
-        .map(toSidebarThread),
+    () => rows.filter((row) => isWithinSettledWindow(row.settledAt, now)).map(toSidebarThread),
     [now, rows],
   );
 

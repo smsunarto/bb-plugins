@@ -53,8 +53,7 @@ const FORBIDDEN_FILES = [
 const FORBIDDEN_DEPENDENCIES: string[] = [];
 // No font binary ships with the template, so the mono stack must stand on the
 // system fonts alone. A licensed local install is an optional first choice.
-const MONO_STACK_FALLBACK =
-  'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+const MONO_STACK_FALLBACK = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
 const FULL_CONTEXT_MARKER = "src/data/full-context.enabled";
 const GUIDE_PHASES = [
   "foundations",
@@ -319,9 +318,7 @@ function main(argv: string[]): number {
   for (const sectionPath of sourceFiles) {
     if (sectionPath === sourcePath) continue;
     if (countOccurrences(readText(sectionPath), "## Guide") !== 1) {
-      errors.push(
-        `${path.relative(site, sectionPath)} must contain exactly one Guide section`,
-      );
+      errors.push(`${path.relative(site, sectionPath)} must contain exactly one Guide section`);
     }
   }
 
@@ -329,7 +326,10 @@ function main(argv: string[]): number {
   let data: Record<string, unknown> | null = null;
   if (isFile(dataPath)) {
     const generatedInputs = [...sourceFiles];
-    for (const generatedInput of [at("src", "data", "walkthrough.patch"), at(FULL_CONTEXT_MARKER)]) {
+    for (const generatedInput of [
+      at("src", "data", "walkthrough.patch"),
+      at(FULL_CONTEXT_MARKER),
+    ]) {
       if (isFile(generatedInput)) generatedInputs.push(generatedInput);
     }
     if (
@@ -547,9 +547,7 @@ function main(argv: string[]): number {
       errors.push("Changed files must not use the removed evidence label or divider");
     }
 
-    const changedFileTreeText = readText(
-      path.join(walkthroughComponents, "changed-file-tree.tsx"),
-    );
+    const changedFileTreeText = readText(path.join(walkthroughComponents, "changed-file-tree.tsx"));
     for (const marker of [
       "TREE_BORDER_WIDTH",
       "treeContentHeight + TREE_BORDER_WIDTH * 2",
@@ -615,7 +613,12 @@ function main(argv: string[]): number {
     }
 
     const guideDiagramText = readText(path.join(walkthroughComponents, "guide-diagram.tsx"));
-    for (const marker of ["ReactFlow", "fitView", "nodesDraggable={false}", "nodesConnectable={false}"]) {
+    for (const marker of [
+      "ReactFlow",
+      "fitView",
+      "nodesDraggable={false}",
+      "nodesConnectable={false}",
+    ]) {
       if (!guideDiagramText.includes(marker)) {
         errors.push(`read-only Guide diagram is missing ${marker}`);
       }

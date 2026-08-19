@@ -32,10 +32,7 @@ export function fileQueryOptions(rpc: DotfilesRpcClient, path: string) {
   });
 }
 
-export function saveFileMutationOptions(
-  rpc: DotfilesRpcClient,
-  queryClient: QueryClient,
-) {
+export function saveFileMutationOptions(rpc: DotfilesRpcClient, queryClient: QueryClient) {
   return operationMutationOptions({
     rpc,
     operation: dotfilesOperations.saveFile,
@@ -44,10 +41,7 @@ export function saveFileMutationOptions(
   });
 }
 
-export function runTaskMutationOptions(
-  rpc: DotfilesRpcClient,
-  queryClient: QueryClient,
-) {
+export function runTaskMutationOptions(rpc: DotfilesRpcClient, queryClient: QueryClient) {
   return operationMutationOptions({
     rpc,
     operation: dotfilesOperations.runTask,
@@ -56,10 +50,7 @@ export function runTaskMutationOptions(
   });
 }
 
-export function publishMutationOptions(
-  rpc: DotfilesRpcClient,
-  queryClient: QueryClient,
-) {
+export function publishMutationOptions(rpc: DotfilesRpcClient, queryClient: QueryClient) {
   return operationMutationOptions({
     rpc,
     operation: dotfilesOperations.publish,
@@ -68,10 +59,7 @@ export function publishMutationOptions(
   });
 }
 
-export function removeSkillMutationOptions(
-  rpc: DotfilesRpcClient,
-  queryClient: QueryClient,
-) {
+export function removeSkillMutationOptions(rpc: DotfilesRpcClient, queryClient: QueryClient) {
   return operationMutationOptions({
     rpc,
     operation: dotfilesOperations.removeSkill,

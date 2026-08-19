@@ -26,17 +26,8 @@ import {
   threadLabel,
 } from "./format";
 import { latestRunWasManuallyStopped } from "./lifecycle";
-import {
-  NotificationQueue,
-  QUEUE_MAX,
-  type NotificationInput,
-} from "./queue";
-import {
-  playSound,
-  resolveSound,
-  SOUND_OFF,
-  SOUND_OPTIONS,
-} from "./sound";
+import { NotificationQueue, QUEUE_MAX, type NotificationInput } from "./queue";
+import { playSound, resolveSound, SOUND_OFF, SOUND_OPTIONS } from "./sound";
 
 const BODY_MAX_CHARS = 160;
 /** How long a long-poll is held open before returning an empty batch. */
@@ -96,8 +87,7 @@ export default async function plugin(bb: BbPluginApi) {
     agentTool: {
       type: "boolean",
       label: "Give agents a notify_user tool",
-      description:
-        "Lets an agent interrupt you deliberately. Off until you want that.",
+      description: "Lets an agent interrupt you deliberately. Off until you want that.",
       default: false,
     },
   });
@@ -133,9 +123,7 @@ export default async function plugin(bb: BbPluginApi) {
     await notifications.enqueue(item);
     const listening = windowIsListening();
     wakeWaiters();
-    bb.log.debug(
-      `${listening ? "queued" : "held"} — opens ${item.threadId ?? "nothing"}`,
-    );
+    bb.log.debug(`${listening ? "queued" : "held"} — opens ${item.threadId ?? "nothing"}`);
     return listening;
   }
 
@@ -163,10 +151,7 @@ export default async function plugin(bb: BbPluginApi) {
     lastPollAt = Date.now();
     let delivery = await notifications.lease();
     if (delivery.lease === null) {
-      const holdMs = Math.min(
-        POLL_HOLD_MS,
-        delivery.retryAfterMs ?? POLL_HOLD_MS,
-      );
+      const holdMs = Math.min(POLL_HOLD_MS, delivery.retryAfterMs ?? POLL_HOLD_MS);
       await waitForQueue(signal, holdMs);
       // Do not acquire a lease for a response whose client has already gone.
       if (signal.aborted) {
@@ -191,16 +176,11 @@ export default async function plugin(bb: BbPluginApi) {
       leaseId.length > 128 ||
       !Array.isArray(notificationIds) ||
       notificationIds.length > QUEUE_MAX ||
-      notificationIds.some(
-        (id) => !Number.isSafeInteger(id) || (id as number) < 1,
-      )
+      notificationIds.some((id) => !Number.isSafeInteger(id) || (id as number) < 1)
     ) {
       return context.json({ ok: false, error: "invalid acknowledgement" }, 400);
     }
-    const result = await notifications.acknowledge(
-      leaseId,
-      notificationIds as number[],
-    );
+    const result = await notifications.acknowledge(leaseId, notificationIds as number[]);
     const sound = result.play;
     if (sound !== null) {
       // One tone per acknowledged batch, serialized so a group of completed
@@ -244,11 +224,7 @@ export default async function plugin(bb: BbPluginApi) {
     threadId: string | null,
   ): Promise<boolean> {
     const { silent, play } = resolveSound(current.sound);
-    const { title, body } = notificationLines(
-      project,
-      oneLine(threadName, 90),
-      message,
-    );
+    const { title, body } = notificationLines(project, oneLine(threadName, 90), message);
     return enqueue({
       title: oneLine(title, 90),
       body: oneLine(body, BODY_MAX_CHARS),
@@ -447,8 +423,7 @@ export default async function plugin(bb: BbPluginApi) {
       {
         name: "send",
         summary: "Post a notification",
-        usage:
-          'bb notify send "<message>" [--title <text>] [--thread <id>]',
+        usage: 'bb notify send "<message>" [--title <text>] [--thread <id>]',
       },
       {
         name: "test",
@@ -491,8 +466,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
 
       if (command === "test") {
-        const project =
-          ctx.projectId === undefined ? null : await projectName(ctx.projectId);
+        const project = ctx.projectId === undefined ? null : await projectName(ctx.projectId);
         return sent(
           await post(
             project,
@@ -510,8 +484,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
         // Same title shape as an event notification, so a scripted one does
         // not look like it came from somewhere else.
-        const project =
-          ctx.projectId === undefined ? null : await projectName(ctx.projectId);
+        const project = ctx.projectId === undefined ? null : await projectName(ctx.projectId);
         return sent(
           await post(
             project,

@@ -16,9 +16,9 @@ async function temporaryDirectory(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -73,10 +73,7 @@ async function fixtures(): Promise<string> {
   return join(work, "manifest.json");
 }
 
-function runScript(
-  cwd: string,
-  manifest: string,
-): { code: number; output: string } {
+function runScript(cwd: string, manifest: string): { code: number; output: string } {
   try {
     const output = execFileSync("bun", [SCRIPT, manifest], {
       cwd,
@@ -102,19 +99,13 @@ describe("split-layers", () => {
     // Layer one holds only the intermediate shared state.
     expect(git(cwd, ["show", "split/one:src/shared.txt"])).toBe("line one\n");
     expect(git(cwd, ["show", "split/one:src/solo.txt"])).toBe("base solo\n");
-    expect(git(cwd, ["log", "-1", "--format=%s", "split/one"])).toBe(
-      "feat(one): start shared\n",
-    );
+    expect(git(cwd, ["log", "-1", "--format=%s", "split/one"])).toBe("feat(one): start shared\n");
 
     // Layer two finishes both files and matches the snapshot.
-    expect(git(cwd, ["show", "split/two:src/shared.txt"])).toBe(
-      "line one\nline two\n",
-    );
+    expect(git(cwd, ["show", "split/two:src/shared.txt"])).toBe("line one\nline two\n");
     expect(git(cwd, ["show", "split/two:src/solo.txt"])).toBe("final solo\n");
     // Stacked: layer one is an ancestor of layer two.
-    expect(() =>
-      git(cwd, ["merge-base", "--is-ancestor", "split/one", "split/two"]),
-    ).not.toThrow();
+    expect(() => git(cwd, ["merge-base", "--is-ancestor", "split/one", "split/two"])).not.toThrow();
   });
 
   test("refuses a dirty tree before creating anything", async () => {

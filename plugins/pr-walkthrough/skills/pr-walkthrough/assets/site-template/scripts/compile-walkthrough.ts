@@ -217,7 +217,11 @@ function readGitBlob(
   }
 
   const objectType = spawnSync("git", ["-C", repoRoot, "cat-file", "-t", normalizedId]);
-  if (objectType.status !== 0 || !objectType.stdout || objectType.stdout.toString().trim() !== "blob") {
+  if (
+    objectType.status !== 0 ||
+    !objectType.stdout ||
+    objectType.stdout.toString().trim() !== "blob"
+  ) {
     cache.set(normalizedId, null);
     return null;
   }
@@ -642,7 +646,11 @@ export interface DiffFile extends DiffFileSummary {
   newContents?: string;
 }
 
-export function parsePatch(patch: string, prUrl: string, repoRoot: string | null = null): DiffFile[] {
+export function parsePatch(
+  patch: string,
+  prUrl: string,
+  repoRoot: string | null = null,
+): DiffFile[] {
   const files: DiffFile[] = [];
   const blobCache = new Map<string, string | null>();
   let embeddedContextBytes = 0;
@@ -1033,15 +1041,15 @@ function ensureAscii(value: string): string {
 }
 
 function isSystemError(error: unknown): boolean {
-  return (
-    error instanceof Error && typeof (error as NodeJS.ErrnoException).code === "string"
-  );
+  return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === "string";
 }
 
 function main(argv: string[]): number {
-  const parsed = parseCliArgs(argv, ["--input", "--output", "--diff", "--repo"], [
-    "--include-full-context",
-  ]);
+  const parsed = parseCliArgs(
+    argv,
+    ["--input", "--output", "--diff", "--repo"],
+    ["--include-full-context"],
+  );
   const inputPath = parsed.values.get("--input") ?? "src/content/walkthrough";
   const outputPath = parsed.values.get("--output") ?? "src/data/walkthrough.generated.json";
   const diffPath = parsed.values.get("--diff") ?? "src/data/walkthrough.patch";

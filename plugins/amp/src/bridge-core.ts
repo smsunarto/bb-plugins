@@ -36,10 +36,7 @@ import {
   type AmpStreamMessage,
   type TranslationState,
 } from "./translate.ts";
-import {
-  createFileOracleReportStore,
-  type OracleReportStore,
-} from "./oracle-report-store.ts";
+import { createFileOracleReportStore, type OracleReportStore } from "./oracle-report-store.ts";
 import { stripOrbDirectives } from "./orb-directive.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
 import type { SteeringInputMonitor } from "./bb-steering-monitor.ts";
@@ -80,9 +77,7 @@ export interface ExecutionUsageReport {
   ampThreadId: string | null;
 }
 
-export type ExecutionUsageReporter = (
-  report: ExecutionUsageReport,
-) => void | Promise<void>;
+export type ExecutionUsageReporter = (report: ExecutionUsageReport) => void | Promise<void>;
 
 /** Persists the ACP session -> Amp thread execution boundary so session/load
  * can resume safely across bridge restarts. Implementations must never throw. */
@@ -212,7 +207,8 @@ export interface BridgeDeps {
   reportExecutionUsage?: ExecutionUsageReporter;
 }
 
-const AUTH_HINT = "Amp authentication required: run `amp login` once, or set AMP_API_KEY in the provider env, then retry.";
+const AUTH_HINT =
+  "Amp authentication required: run `amp login` once, or set AMP_API_KEY in the provider env, then retry.";
 export const AMP_ACP_LABEL = "via-amp-acp";
 const STEERING_IDLE_MS = 250;
 const RETRY_LOCAL_RUNTIME = Symbol("retry-local-runtime");
@@ -293,20 +289,20 @@ function sameContentBlocks(left: ContentBlock[], right: ContentBlock[]): boolean
 
 function echoedUserText(message: AmpStreamMessage): string | null {
   if (
-    message.type !== "user"
-    || (message.parent_tool_use_id !== undefined && message.parent_tool_use_id !== null)
-    || !Array.isArray(message.message?.content)
+    message.type !== "user" ||
+    (message.parent_tool_use_id !== undefined && message.parent_tool_use_id !== null) ||
+    !Array.isArray(message.message?.content)
   ) {
     return null;
   }
   let text = "";
   for (const block of message.message.content) {
     if (
-      block === null
-      || typeof block !== "object"
-      || Array.isArray(block)
-      || (block as Record<string, unknown>).type !== "text"
-      || typeof (block as Record<string, unknown>).text !== "string"
+      block === null ||
+      typeof block !== "object" ||
+      Array.isArray(block) ||
+      (block as Record<string, unknown>).type !== "text" ||
+      typeof (block as Record<string, unknown>).text !== "string"
     ) {
       return null;
     }
@@ -328,15 +324,15 @@ export function isAuthError(message: string): boolean {
 }
 
 /** ACP McpServer[] (bb sends the stdio shape) -> Amp mcpConfig record. */
-export function convertMcpServers(
-  mcpServers: McpServer[] | undefined | null,
-): MCPConfig {
+export function convertMcpServers(mcpServers: McpServer[] | undefined | null): MCPConfig {
   const config: MCPConfig = {};
   if (!Array.isArray(mcpServers)) return config;
   for (const server of mcpServers) {
     if ("type" in server) {
       if (server.type === "acp") continue;
-      const headers = Object.fromEntries(server.headers.map((header) => [header.name, header.value]));
+      const headers = Object.fromEntries(
+        server.headers.map((header) => [header.name, header.value]),
+      );
       config[server.name] = {
         url: server.url,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
@@ -347,9 +343,10 @@ export function convertMcpServers(
     config[server.name] = {
       command: server.command,
       args: server.args,
-      env: server.env.length > 0
-        ? Object.fromEntries(server.env.map((variable) => [variable.name, variable.value]))
-        : undefined,
+      env:
+        server.env.length > 0
+          ? Object.fromEntries(server.env.map((variable) => [variable.name, variable.value]))
+          : undefined,
     };
   }
   return config;
@@ -391,7 +388,11 @@ function buildConfigOptions(s: SessionState): SessionConfigOption[] {
       description: "Whether Amp applies its configured permission rules or force-allows all tools.",
       category: "mode",
       currentValue: s.permission,
-      options: PERMISSION_MODES.map((p) => ({ value: p.value, name: p.name, description: p.description })),
+      options: PERMISSION_MODES.map((p) => ({
+        value: p.value,
+        name: p.name,
+        description: p.description,
+      })),
     });
   }
   return options;
@@ -404,17 +405,20 @@ export interface RoutedAmpPrompt {
 }
 
 const BB_SYSTEM_INSTRUCTIONS_PATTERN = /^<system_instructions>\n[\s\S]*\n<\/system_instructions>$/u;
-const BB_ATTACHMENT_PLACEHOLDER_PATTERN = /^\[(?:image attachment|image attachment on disk|unreadable image attachment): [\s\S]*\]$/u;
+const BB_ATTACHMENT_PLACEHOLDER_PATTERN =
+  /^\[(?:image attachment|image attachment on disk|unreadable image attachment): [\s\S]*\]$/u;
 const BB_PLUGIN_CONTEXT_PATTERN = /^Context for @[\s\S]+ \(resolved by plugin "[^"]+"\):\n\n/u;
 const BB_AGENT_MESSAGE_PATTERN = /^\[bb message from thread:[^\]]+\]\n\n/u;
 const BB_SYSTEM_MESSAGE_PATTERN = /^\[bb system\]\n\n/u;
 
 function isBbDirectiveIneligibleText(text: string): boolean {
-  return BB_ATTACHMENT_PLACEHOLDER_PATTERN.test(text)
-    || BB_PLUGIN_CONTEXT_PATTERN.test(text)
-    || BB_AGENT_MESSAGE_PATTERN.test(text)
-    || BB_SYSTEM_MESSAGE_PATTERN.test(text)
-    || text === "Please continue.";
+  return (
+    BB_ATTACHMENT_PLACEHOLDER_PATTERN.test(text) ||
+    BB_PLUGIN_CONTEXT_PATTERN.test(text) ||
+    BB_AGENT_MESSAGE_PATTERN.test(text) ||
+    BB_SYSTEM_MESSAGE_PATTERN.test(text) ||
+    text === "Please continue."
+  );
 }
 
 /**
@@ -432,8 +436,8 @@ export function routeAmpPrompt(blocks: ContentBlock[]): RoutedAmpPrompt {
     switch (block.type) {
       case "text": {
         let stripped = block.text;
-        const isLeadingInstructions = index === 0
-          && BB_SYSTEM_INSTRUCTIONS_PATTERN.test(block.text);
+        const isLeadingInstructions =
+          index === 0 && BB_SYSTEM_INSTRUCTIONS_PATTERN.test(block.text);
         if (!directiveCandidateResolved && !isLeadingInstructions) {
           directiveCandidateResolved = true;
           if (!isBbDirectiveIneligibleText(block.text)) {
@@ -494,12 +498,8 @@ export function unsupportedOptionFrom(message: string): keyof AmpExecuteOptions 
 export class AmpBridgeAgent implements Agent {
   private readonly client: BridgeClient;
   private readonly execute: AmpExecuteFn;
-  private readonly createSteeringMonitor:
-    | (() => Promise<SteeringInputMonitor | null>)
-    | undefined;
-  private readonly resolveInitialPermission:
-    | (() => Promise<AmpPermissionMode | null>)
-    | undefined;
+  private readonly createSteeringMonitor: (() => Promise<SteeringInputMonitor | null>) | undefined;
+  private readonly resolveInitialPermission: (() => Promise<AmpPermissionMode | null>) | undefined;
   private readonly resolveFastMode: (() => Promise<boolean>) | undefined;
   private readonly store: SessionStore;
   private readonly oracleReports: OracleReportStore;
@@ -528,7 +528,6 @@ export class AmpBridgeAgent implements Agent {
     // current constructor stack finishes.
     queueMicrotask(() => this.watchConnectionSignal());
   }
-
 
   async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
     return {
@@ -559,7 +558,7 @@ export class AmpBridgeAgent implements Agent {
     let steeringMonitor: SteeringInputMonitor | null = null;
     let permission: AmpPermissionMode = "default";
     try {
-      steeringMonitor = await this.createSteeringMonitor?.() ?? null;
+      steeringMonitor = (await this.createSteeringMonitor?.()) ?? null;
     } catch (error) {
       console.error(
         "[amp] could not initialize bb steering input; queued follow-ups remain available",
@@ -567,7 +566,7 @@ export class AmpBridgeAgent implements Agent {
       );
     }
     try {
-      permission = await this.resolveInitialPermission?.() ?? permission;
+      permission = (await this.resolveInitialPermission?.()) ?? permission;
     } catch (error) {
       console.error("[amp] could not read bb permission; using Amp's normal rules", error);
     }
@@ -619,11 +618,7 @@ export class AmpBridgeAgent implements Agent {
           `Unknown session ${params.sessionId}: its saved Amp thread and execution target are missing or invalid.`,
         );
       }
-      const state = await this.createState(
-        params.cwd,
-        params.mcpServers,
-        binding.executionTarget,
-      );
+      const state = await this.createState(params.cwd, params.mcpServers, binding.executionTarget);
       state.executionAttempted = true;
       state.threadId = binding.threadId;
       this.sessions.set(params.sessionId, state);
@@ -751,7 +746,7 @@ export class AmpBridgeAgent implements Agent {
     if (runtime === null || runtime.closed || runtime.controller.signal.aborted) {
       if (s.threadId === null) {
         try {
-          fast = await this.resolveFastMode?.() ?? false;
+          fast = (await this.resolveFastMode?.()) ?? false;
         } catch (error) {
           console.error("[amp] could not read bb Fast mode; using standard service", error);
         }
@@ -800,10 +795,9 @@ export class AmpBridgeAgent implements Agent {
         return this.promptLocal(sessionId, s, prompt, false);
       }
       if (this.shuttingDown) return { stopReason: "cancelled" };
-      throw new Error(
-        "Amp Local execution ended before it accepted the next prompt",
-        { cause: error },
-      );
+      throw new Error("Amp Local execution ended before it accepted the next prompt", {
+        cause: error,
+      });
     }
   }
 
@@ -825,10 +819,11 @@ export class AmpBridgeAgent implements Agent {
         for await (const message of stream) {
           streamed = true;
           runtime.input.commit();
-          const runtimeTerminal = message.type === "result"
-            || (message.type === "system"
-              && message.subtype !== "init"
-              && typeof message.error === "string");
+          const runtimeTerminal =
+            message.type === "result" ||
+            (message.type === "system" &&
+              message.subtype !== "init" &&
+              typeof message.error === "string");
           const turn = runtime.turn;
           if (turn === null || turn.settled) {
             await this.handleIdleLocalMessage(sessionId, s, runtime, message);
@@ -840,14 +835,7 @@ export class AmpBridgeAgent implements Agent {
             } else if (runtimeTerminal) {
               await this.handleIdleLocalMessage(sessionId, s, runtime, message);
               runtime.controller.abort();
-              await this.finishLocalTurn(
-                sessionId,
-                s,
-                runtime,
-                turn,
-                null,
-                RETRY_LOCAL_RUNTIME,
-              );
+              await this.finishLocalTurn(sessionId, s, runtime, turn, null, RETRY_LOCAL_RUNTIME);
               if (s.localRuntime === runtime) s.localRuntime = null;
               return;
             } else {
@@ -856,13 +844,7 @@ export class AmpBridgeAgent implements Agent {
             }
           }
           this.clearLocalTurnTimer(turn);
-          const terminalStop = await this.handleStreamMessage(
-            sessionId,
-            s,
-            "local",
-            turn,
-            message,
-          );
+          const terminalStop = await this.handleStreamMessage(sessionId, s, "local", turn, message);
           if (runtimeTerminal) {
             turn.sawRuntimeTerminal = true;
             runtime.input.close();
@@ -871,13 +853,9 @@ export class AmpBridgeAgent implements Agent {
             turn.sawAssistantStop = true;
             turn.idleTimer = setTimeout(() => {
               turn.idleTimer = null;
-              void this.finishLocalTurn(
-                sessionId,
-                s,
-                runtime,
-                turn,
-                { stopReason: turn.softFailed ? "end_turn" : terminalStop },
-              ).catch((error) => {
+              void this.finishLocalTurn(sessionId, s, runtime, turn, {
+                stopReason: turn.softFailed ? "end_turn" : terminalStop,
+              }).catch((error) => {
                 console.error("[amp] failed to settle a Local turn", error);
               });
             }, STEERING_IDLE_MS);
@@ -889,16 +867,16 @@ export class AmpBridgeAgent implements Agent {
         const message = error instanceof Error ? error.message : String(error);
         const unsupported = unsupportedOptionFrom(message);
         if (
-          unsupported
-          && !streamed
-          && attempt === 0
-          && !runtime.controller.signal.aborted
-          && !this.unsupported.has(unsupported)
+          unsupported &&
+          !streamed &&
+          attempt === 0 &&
+          !runtime.controller.signal.aborted &&
+          !this.unsupported.has(unsupported)
         ) {
           this.unsupported.add(unsupported);
           console.error(
-            `[amp] this Amp CLI rejects the flag generated by ${String(unsupported)}; dropping it and retrying. `
-            + "Update the Amp CLI to use that control.",
+            `[amp] this Amp CLI rejects the flag generated by ${String(unsupported)}; dropping it and retrying. ` +
+              "Update the Amp CLI to use that control.",
           );
           continue;
         }
@@ -938,21 +916,23 @@ export class AmpBridgeAgent implements Agent {
           }
           if (turn.executionError) throw turn.executionError;
           return {
-            stopReason: s.cancelled
-              ? "cancelled"
-              : (turn.softFailed ? "end_turn" : turn.stopReason),
+            stopReason: s.cancelled ? "cancelled" : turn.softFailed ? "end_turn" : turn.stopReason,
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (s.cancelled || (error instanceof Error && error.name === "AbortError") || message.includes("aborted")) {
+          if (
+            s.cancelled ||
+            (error instanceof Error && error.name === "AbortError") ||
+            message.includes("aborted")
+          ) {
             return { stopReason: "cancelled" };
           }
           const unsupported = unsupportedOptionFrom(message);
           if (unsupported && !streamed && attempt === 0 && !this.unsupported.has(unsupported)) {
             this.unsupported.add(unsupported);
             console.error(
-              `[amp] this Amp CLI rejects the flag generated by ${String(unsupported)}; dropping it and retrying. `
-              + "Update the Amp CLI to use that control.",
+              `[amp] this Amp CLI rejects the flag generated by ${String(unsupported)}; dropping it and retrying. ` +
+                "Update the Amp CLI to use that control.",
             );
             continue;
           }
@@ -981,10 +961,12 @@ export class AmpBridgeAgent implements Agent {
       // tiny — but if the turn ended before any message carried one, the next
       // prompt silently starts a fresh Amp thread. Tell the user.
       if (!s.threadId) {
-        await this.sendUpdate(this.textChunk(
-          sessionId,
-          "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one.",
-        ));
+        await this.sendUpdate(
+          this.textChunk(
+            sessionId,
+            "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one.",
+          ),
+        );
       }
     }
   }
@@ -1112,20 +1094,22 @@ export class AmpBridgeAgent implements Agent {
     if (s.steeringMonitor === null) return;
     const controller = new AbortController();
     turn.steeringController = controller;
-    turn.monitorPromise = s.steeringMonitor.run((blocks) => {
-      if (runtime.turn !== turn || turn.settled) return;
-      const steering = routeAmpPrompt(blocks);
-      // Execution target is fixed by the first prompt. Let bb's queued ACP
-      // fallback report an invalid mid-thread /orb request instead.
-      if (steering.requestedTarget !== null) return;
-      if (!runtime.input.push(steering.prompt, true)) return;
-      this.clearLocalTurnTimer(turn);
-      s.consumedSteeringInputs.push(blocks);
-    }, controller.signal).catch((error) => {
-      if (!controller.signal.aborted) {
-        console.error("[amp] bb steering input monitor stopped", error);
-      }
-    });
+    turn.monitorPromise = s.steeringMonitor
+      .run((blocks) => {
+        if (runtime.turn !== turn || turn.settled) return;
+        const steering = routeAmpPrompt(blocks);
+        // Execution target is fixed by the first prompt. Let bb's queued ACP
+        // fallback report an invalid mid-thread /orb request instead.
+        if (steering.requestedTarget !== null) return;
+        if (!runtime.input.push(steering.prompt, true)) return;
+        this.clearLocalTurnTimer(turn);
+        s.consumedSteeringInputs.push(blocks);
+      }, controller.signal)
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          console.error("[amp] bb steering input monitor stopped", error);
+        }
+      });
   }
 
   private clearLocalTurnTimer(turn: LocalTurn): void {
@@ -1158,10 +1142,12 @@ export class AmpBridgeAgent implements Agent {
       s.consumedSteeringInputs = [];
     }
     if (!s.threadId) {
-      await this.sendUpdate(this.textChunk(
-        sessionId,
-        "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one.",
-      ));
+      await this.sendUpdate(
+        this.textChunk(
+          sessionId,
+          "Note: this turn ended before Amp reported a thread id, so it could not be linked to an Amp thread; the next prompt starts a fresh one.",
+        ),
+      );
     }
 
     if (s.restartLocalRuntime) {
@@ -1212,18 +1198,12 @@ export class AmpBridgeAgent implements Agent {
 
       const message = error instanceof Error ? error.message : String(error ?? "");
       if (
-        s.cancelled
-        || runtime.controller.signal.aborted
-        || (error instanceof Error && error.name === "AbortError")
-        || message.toLowerCase().includes("aborted")
+        s.cancelled ||
+        runtime.controller.signal.aborted ||
+        (error instanceof Error && error.name === "AbortError") ||
+        message.toLowerCase().includes("aborted")
       ) {
-        await this.finishLocalTurn(
-          sessionId,
-          s,
-          runtime,
-          turn,
-          { stopReason: "cancelled" },
-        );
+        await this.finishLocalTurn(sessionId, s, runtime, turn, { stopReason: "cancelled" });
         return;
       }
 
@@ -1251,10 +1231,7 @@ export class AmpBridgeAgent implements Agent {
     }
   }
 
-  private async stopLocalRuntime(
-    s: SessionState,
-    runtime: LocalRuntime,
-  ): Promise<void> {
+  private async stopLocalRuntime(s: SessionState, runtime: LocalRuntime): Promise<void> {
     if (s.localRuntime === runtime) s.localRuntime = null;
     runtime.closed = true;
     runtime.input.close();
@@ -1291,28 +1268,28 @@ export class AmpBridgeAgent implements Agent {
     if (message.type === "assistant" || message.type === "user") {
       const ampStopReason = message.message?.stop_reason;
       if (
-        ampStopReason === "end_turn"
-        || ampStopReason === "max_tokens"
-        || ampStopReason === "refusal"
+        ampStopReason === "end_turn" ||
+        ampStopReason === "max_tokens" ||
+        ampStopReason === "refusal"
       ) {
         turn.stopReason = ampStopReason;
       }
       for (const notification of toSessionUpdates(message, sessionId, turn.translationState)) {
         await this.sendUpdate(notification);
       }
-      return message.type === "assistant"
-          && (ampStopReason === "end_turn"
-            || ampStopReason === "max_tokens"
-            || ampStopReason === "refusal")
+      return message.type === "assistant" &&
+        (ampStopReason === "end_turn" ||
+          ampStopReason === "max_tokens" ||
+          ampStopReason === "refusal")
         ? ampStopReason
         : null;
     }
 
     const isErrorMessage =
-      (message.type === "result" && message.is_error === true)
-      || (message.type === "system"
-        && typeof message.error === "string"
-        && message.subtype !== "init");
+      (message.type === "result" && message.is_error === true) ||
+      (message.type === "system" &&
+        typeof message.error === "string" &&
+        message.subtype !== "init");
     if (isErrorMessage) {
       const error = typeof message.error === "string" ? message.error : "unknown error";
       const hint = isAuthError(error) ? `\n${AUTH_HINT}` : "";
@@ -1332,9 +1309,9 @@ export class AmpBridgeAgent implements Agent {
     }
 
     if (
-      message.type === "result"
-      && Array.isArray(message.permission_denials)
-      && message.permission_denials.length > 0
+      message.type === "result" &&
+      Array.isArray(message.permission_denials) &&
+      message.permission_denials.length > 0
     ) {
       await this.reportPermissionDenials(sessionId, executionTarget, message.permission_denials);
     }
@@ -1347,21 +1324,24 @@ export class AmpBridgeAgent implements Agent {
     runtime: LocalRuntime,
     message: AmpStreamMessage,
   ): Promise<void> {
-    const runtimeTerminal = message.type === "result"
-      || (message.type === "system"
-        && message.subtype !== "init"
-        && typeof message.error === "string");
+    const runtimeTerminal =
+      message.type === "result" ||
+      (message.type === "system" &&
+        message.subtype !== "init" &&
+        typeof message.error === "string");
     if (runtimeTerminal) {
       // Close synchronously before reporting denials: another ACP prompt can
       // arrive while sessionUpdate is in flight and must start a new process.
       runtime.closed = true;
       runtime.input.close();
-      console.error("[amp] received terminal output after the ACP turn settled; restarting Local Amp");
+      console.error(
+        "[amp] received terminal output after the ACP turn settled; restarting Local Amp",
+      );
     }
     if (
-      message.type === "result"
-      && Array.isArray(message.permission_denials)
-      && message.permission_denials.length > 0
+      message.type === "result" &&
+      Array.isArray(message.permission_denials) &&
+      message.permission_denials.length > 0
     ) {
       await this.reportPermissionDenials(sessionId, "local", message.permission_denials);
     }
@@ -1372,13 +1352,16 @@ export class AmpBridgeAgent implements Agent {
     executionTarget: AmpExecutionTarget,
     denials: string[],
   ): Promise<void> {
-    const guidance = executionTarget === "orb"
-      ? "Configure permissions in the Amp project settings."
-      : "Switch the Permissions option to \"bypass\" or adjust amp.permissions in Amp settings.";
-    await this.sendUpdate(this.textChunk(
-      sessionId,
-      `Amp denied tool calls under its headless permission rules: ${denials.join(", ")}. ${guidance}`,
-    ));
+    const guidance =
+      executionTarget === "orb"
+        ? "Configure permissions in the Amp project settings."
+        : 'Switch the Permissions option to "bypass" or adjust amp.permissions in Amp settings.';
+    await this.sendUpdate(
+      this.textChunk(
+        sessionId,
+        `Amp denied tool calls under its headless permission rules: ${denials.join(", ")}. ${guidance}`,
+      ),
+    );
   }
 
   private reportUsage(report: ExecutionUsageReport): void {

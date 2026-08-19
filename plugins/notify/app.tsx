@@ -144,9 +144,7 @@ async function poll(signal: AbortSignal): Promise<void> {
         typeof payload === "object" && payload !== null
           ? (payload as Record<string, unknown>)
           : null;
-      const list = Array.isArray(record?.notifications)
-        ? record.notifications
-        : [];
+      const list = Array.isArray(record?.notifications) ? record.notifications : [];
       const leaseId = typeof record?.leaseId === "string" ? record.leaseId : null;
       if (list.length > 0 && leaseId === null) {
         throw new Error("notification batch has no lease");
@@ -178,9 +176,7 @@ async function poll(signal: AbortSignal): Promise<void> {
 }
 
 async function bridge(signal: AbortSignal): Promise<void> {
-  const desktopBridge = (
-    window as Window & { readonly bbDesktop?: unknown }
-  ).bbDesktop;
+  const desktopBridge = (window as Window & { readonly bbDesktop?: unknown }).bbDesktop;
   // The same content script also mounts in web browsers. Letting one of those
   // poll races claim the queue attributes the alert to that browser and applies
   // its notification settings instead of bb's.

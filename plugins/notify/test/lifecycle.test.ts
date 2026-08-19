@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  latestRunWasManuallyStopped,
-  THREAD_EVENT_PAGE_SIZE,
-} from "../lifecycle.ts";
+import { latestRunWasManuallyStopped, THREAD_EVENT_PAGE_SIZE } from "../lifecycle.ts";
 
 interface Event {
   seq: number;
@@ -17,9 +14,7 @@ function event(seq: number, type: string, data: unknown = {}): Event {
 
 function list(events: Event[]) {
   return async ({ afterSeq, limit }: { afterSeq?: string; limit: string }) =>
-    events
-      .filter((item) => item.seq > Number(afterSeq ?? 0))
-      .slice(0, Number(limit));
+    events.filter((item) => item.seq > Number(afterSeq ?? 0)).slice(0, Number(limit));
 }
 
 test("manual stop of the latest run suppresses its idle notification", async () => {
@@ -52,10 +47,7 @@ test("an old manual stop does not suppress a later completed run", async () => {
 test("non-manual interruptions do not suppress notifications", async () => {
   for (const reason of ["host-daemon-restarted", "provider-turn-idle"]) {
     const stopped = await latestRunWasManuallyStopped(
-      list([
-        event(1, "client/turn/requested"),
-        event(2, "system/thread/interrupted", { reason }),
-      ]),
+      list([event(1, "client/turn/requested"), event(2, "system/thread/interrupted", { reason })]),
     );
     assert.equal(stopped, false, reason);
   }

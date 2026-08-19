@@ -28,11 +28,7 @@ const request = (
   },
 });
 
-const accepted = (
-  seq: number,
-  requestId: string,
-  turnId: string,
-): TestEvent => ({
+const accepted = (seq: number, requestId: string, turnId: string): TestEvent => ({
   seq,
   scope: { kind: "turn", turnId },
   type: "turn/input/accepted",
@@ -54,9 +50,7 @@ test("watches only newly accepted steering for the active turn", async () => {
     accepted(5, "old", "turn-old"),
   ];
   const liveEvents: TestEvent[] = [
-    request(6, "new-turn", { kind: "new-turn" }, [
-      { type: "text", text: "not steering" },
-    ]),
+    request(6, "new-turn", { kind: "new-turn" }, [{ type: "text", text: "not steering" }]),
     accepted(7, "new-turn", "turn-active"),
     request(8, "wrong-turn", { kind: "steer", expectedTurnId: "turn-other" }, [
       { type: "text", text: "wrong turn" },
@@ -88,21 +82,16 @@ test("watches only newly accepted steering for the active turn", async () => {
   const requestedUrls: URL[] = [];
   const fetchFn: typeof fetch = async (input) => {
     const url = new URL(
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input
-          : input.url,
+      typeof input === "string" ? input : input instanceof URL ? input : input.url,
     );
     requestedUrls.push(url);
     const afterSeq = Number(url.searchParams.get("afterSeq") ?? "0");
-    const events = exposeLiveEvents
-      ? [...oldEvents, ...liveEvents]
-      : oldEvents;
+    const events = exposeLiveEvents ? [...oldEvents, ...liveEvents] : oldEvents;
     if (url.pathname.endsWith("/wait")) {
       const type = url.searchParams.get("type");
-      return responseJson(events.find((event) =>
-        event.seq > afterSeq && event.type === type) ?? null);
+      return responseJson(
+        events.find((event) => event.seq > afterSeq && event.type === type) ?? null,
+      );
     }
     const limit = Number(url.searchParams.get("limit") ?? "1000");
     return responseJson(events.filter((event) => event.seq > afterSeq).slice(0, limit));
@@ -123,29 +112,35 @@ test("watches only newly accepted steering for the active turn", async () => {
     controller.abort();
   }, controller.signal);
 
-  assert.deepEqual(received, [[
-    { type: "text", text: "use this" },
-    { type: "text", text: "[image attachment: https://example.test/a.png]" },
-    { type: "text", text: "\n\n" },
-    { type: "text", text: "[image attachment on disk: /tmp/b.png]" },
-    {
-      type: "resource_link",
-      uri: "file:///tmp/context.txt",
-      name: "context.txt",
-    },
-  ]]);
+  assert.deepEqual(received, [
+    [
+      { type: "text", text: "use this" },
+      { type: "text", text: "[image attachment: https://example.test/a.png]" },
+      { type: "text", text: "\n\n" },
+      { type: "text", text: "[image attachment on disk: /tmp/b.png]" },
+      {
+        type: "resource_link",
+        uri: "file:///tmp/context.txt",
+        name: "context.txt",
+      },
+    ],
+  ]);
   assert.equal(requestedUrls[0]?.searchParams.get("afterSeq"), "0");
   assert.ok(
-    requestedUrls.some((url) => url.pathname.endsWith("/wait")
-      && url.searchParams.get("afterSeq") === "5"),
+    requestedUrls.some(
+      (url) => url.pathname.endsWith("/wait") && url.searchParams.get("afterSeq") === "5",
+    ),
     "the monitor must start after the creation-time cursor",
   );
 });
 
 test("does not start without bb thread context", async () => {
-  assert.equal(await createBbSteeringMonitor({
-    serverUrl: "",
-    threadId: "",
-    fetch: async () => responseJson([]),
-  }), null);
+  assert.equal(
+    await createBbSteeringMonitor({
+      serverUrl: "",
+      threadId: "",
+      fetch: async () => responseJson([]),
+    }),
+    null,
+  );
 });

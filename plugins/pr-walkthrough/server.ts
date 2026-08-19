@@ -96,15 +96,7 @@ const walkthroughGuideExcerptSchema = z
 
 const walkthroughGuidePhaseSchema = z
   .object({
-    id: z.enum([
-      "foundations",
-      "apis",
-      "behavior",
-      "integration",
-      "tests",
-      "misc",
-      "generated",
-    ]),
+    id: z.enum(["foundations", "apis", "behavior", "integration", "tests", "misc", "generated"]),
     title: z.string(),
     explanation: z.array(walkthroughGuideBlockSchema),
     diagram: walkthroughGuideDiagramSchema.optional(),
@@ -140,12 +132,8 @@ const walkthroughReviewGroupSchema = z
         })
         .strict(),
     ),
-    links: z.array(
-      z.object({ label: z.string(), url: z.string() }).strict(),
-    ),
-    guide: z
-      .object({ phases: z.array(walkthroughGuidePhaseSchema).min(1) })
-      .strict(),
+    links: z.array(z.object({ label: z.string(), url: z.string() }).strict()),
+    guide: z.object({ phases: z.array(walkthroughGuidePhaseSchema).min(1) }).strict(),
   })
   .strict();
 
@@ -183,24 +171,12 @@ export const walkthroughDataSchema = z
   })
   .strict();
 
-export type WalkthroughGuideBlock = z.infer<
-  typeof walkthroughGuideBlockSchema
->;
-export type WalkthroughGuideComment = z.infer<
-  typeof walkthroughGuideCommentSchema
->;
-export type WalkthroughGuideDiagram = z.infer<
-  typeof walkthroughGuideDiagramSchema
->;
-export type WalkthroughGuideExcerpt = z.infer<
-  typeof walkthroughGuideExcerptSchema
->;
-export type WalkthroughGuidePhase = z.infer<
-  typeof walkthroughGuidePhaseSchema
->;
-export type WalkthroughReviewGroup = z.infer<
-  typeof walkthroughReviewGroupSchema
->;
+export type WalkthroughGuideBlock = z.infer<typeof walkthroughGuideBlockSchema>;
+export type WalkthroughGuideComment = z.infer<typeof walkthroughGuideCommentSchema>;
+export type WalkthroughGuideDiagram = z.infer<typeof walkthroughGuideDiagramSchema>;
+export type WalkthroughGuideExcerpt = z.infer<typeof walkthroughGuideExcerptSchema>;
+export type WalkthroughGuidePhase = z.infer<typeof walkthroughGuidePhaseSchema>;
+export type WalkthroughReviewGroup = z.infer<typeof walkthroughReviewGroupSchema>;
 export type WalkthroughDiffFile = z.infer<typeof walkthroughDiffFileSchema>;
 export type WalkthroughData = z.infer<typeof walkthroughDataSchema>;
 
@@ -213,10 +189,12 @@ export const rpcContract = defineRpcContract({
         path: z.string().min(1).max(1024).optional(),
       })
       .strict(),
-    output: z.object({
-      walkthrough: walkthroughDataSchema.nullable(),
-      error: z.string().nullable(),
-    }).strict(),
+    output: z
+      .object({
+        walkthrough: walkthroughDataSchema.nullable(),
+        error: z.string().nullable(),
+      })
+      .strict(),
   },
 });
 
@@ -240,9 +218,7 @@ export default async function plugin(bb: BbPluginApi) {
 
       const relativeDir = normalizeRelativeDir(path);
       if (relativeDir === null) {
-        return failure(
-          "The walkthrough path must be a workspace-relative directory.",
-        );
+        return failure("The walkthrough path must be a workspace-relative directory.");
       }
 
       const thread = await bb.sdk.threads.get({ threadId });

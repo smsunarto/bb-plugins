@@ -15,9 +15,7 @@ export interface ToolbarTextFieldState {
  * hidden. A saved webhook URL is durable settings state, not an annotation
  * draft, so it only blocks a remount while that field has the caret.
  */
-export function toolbarTextFieldIsBusy(
-  field: ToolbarTextFieldState,
-): boolean {
+export function toolbarTextFieldIsBusy(field: ToolbarTextFieldState): boolean {
   if (field.width === 0 || field.height === 0) return false;
   if (field.settingsField) return field.focused;
   return field.focused || field.value.trim() !== "";
@@ -92,9 +90,7 @@ export function isCurrentRouteRequest(
   currentRoute: string,
   currentRevision: number,
 ): boolean {
-  return (
-    requestRoute === currentRoute && requestRevision === currentRevision
-  );
+  return requestRoute === currentRoute && requestRevision === currentRevision;
 }
 
 /** Run mutations in call order, even when an earlier one is still in flight. */
@@ -155,9 +151,7 @@ export function upsertLocalAnnotation<T extends { id: string }>(
 ): T[] {
   const index = current.findIndex((item) => item.id === annotation.id);
   if (index === -1) return [...current, annotation];
-  return current.map((item, itemIndex) =>
-    itemIndex === index ? annotation : item,
-  );
+  return current.map((item, itemIndex) => (itemIndex === index ? annotation : item));
 }
 
 /** Remove Agentation's callback delta from its persisted local projection. */
@@ -187,9 +181,7 @@ export function recordPushAcknowledgement(
 }
 
 /** Every id in a complete server snapshot is known to be durable there. */
-export function recordSnapshotAcknowledgement(
-  knownToServer: ReadonlySet<string>,
-): Set<string> {
+export function recordSnapshotAcknowledgement(knownToServer: ReadonlySet<string>): Set<string> {
   return new Set(knownToServer);
 }
 

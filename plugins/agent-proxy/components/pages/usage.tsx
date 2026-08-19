@@ -61,7 +61,10 @@ function BucketStrip({ buckets }: { buckets: unknown[] }) {
             key={index}
             title={`${value}`}
             className="min-w-1 flex-1 rounded-sm bg-primary/70"
-            style={{ height: `${Math.max(4, (value / max) * 100)}%`, opacity: value === 0 ? 0.2 : 1 }}
+            style={{
+              height: `${Math.max(4, (value / max) * 100)}%`,
+              opacity: value === 0 ? 0.2 : 1,
+            }}
           />
         ))}
         {/* oxlint-enable react/no-array-index-key */}
@@ -118,8 +121,8 @@ export function UsagePage() {
             </span>
           </CardTitle>
           <CardDescription>
-            The core reports the last ~3.3 hours as 20 fixed 10-minute buckets per provider key. (Durable
-            per-request history was removed from CLIProxyAPI in v6.10.0.)
+            The core reports the last ~3.3 hours as 20 fixed 10-minute buckets per provider key.
+            (Durable per-request history was removed from CLIProxyAPI in v6.10.0.)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -168,7 +171,9 @@ export function UsagePage() {
                       })}
                     </div>
                   ) : (
-                    <pre className="overflow-auto font-mono text-xs text-foreground">{JSON.stringify(byKey)}</pre>
+                    <pre className="overflow-auto font-mono text-xs text-foreground">
+                      {JSON.stringify(byKey)}
+                    </pre>
                   )}
                 </div>
               ))}

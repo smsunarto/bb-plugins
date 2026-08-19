@@ -36,14 +36,14 @@ When one option is known to be safe, make it the normal and only framework path.
 Do not add a `--force` flag, custom range, fallback, or policy selector to avoid
 designing the safe operation.
 
-| Risk | bb-kit policy |
-| --- | --- |
-| An untested bb range can claim false compatibility | Require one generated range: floor at the tested bb, cap at the next major. |
-| A different CLI can mutate generated SDK declarations | Select and validate the exact bb CLI before any project tool runs. |
-| Package scripts can bypass the verification contract | Own a fixed verification sequence; treat scripts as exact aliases. |
-| A package-family prefix can admit an unsupported runtime subpath | Allow exact host-shim specifiers only. |
-| Omitted input can mean `{}`, `null`, or no user input | Use one `noInput` singleton; require a literal example for every other input. |
-| A diagnostic command can accidentally mutate live state | Give `doctor` no RPC, install, reload, or repair path. |
+| Risk                                                             | bb-kit policy                                                                 |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| An untested bb range can claim false compatibility               | Require one generated range: floor at the tested bb, cap at the next major.   |
+| A different CLI can mutate generated SDK declarations            | Select and validate the exact bb CLI before any project tool runs.            |
+| Package scripts can bypass the verification contract             | Own a fixed verification sequence; treat scripts as exact aliases.            |
+| A package-family prefix can admit an unsupported runtime subpath | Allow exact host-shim specifiers only.                                        |
+| Omitted input can mean `{}`, `null`, or no user input            | Use one `noInput` singleton; require a literal example for every other input. |
+| A diagnostic command can accidentally mutate live state          | Give `doctor` no RPC, install, reload, or repair path.                        |
 
 Safe defaults are useful, but an impossible invalid state is better than a
 default plus an escape hatch.
@@ -216,15 +216,15 @@ adds an object for one call site, do not add it.
 No command can prove every layer safely. Each command needs a narrow evidence
 contract.
 
-| Command or loop | Evidence | Allowed effects |
-| --- | --- | --- |
-| `check` | Static plugin invariants | File reads only. |
-| `check --workspace` / `compatibility check` | Cross-package compatibility invariant | File reads only; no bb process. |
-| `compatibility inspect` | Contract derived from a selected stable bb CLI | Temporary scaffold and build; no workspace write. |
-| `verify` | Deterministic tools, exact build, and packed source closure | Project tools and build output; no live bb request. |
-| `doctor` | Connected host, installed source, and manual checklist | Supported read commands only; no RPC or repair. |
-| `invoke` / fixture runner | Explicit loaded-operation behavior | Native RPC after metadata and risk preflight. |
-| Live UI loop | Layout, focus, portals, host CSS, and interaction | Explicit human or browser interaction. |
+| Command or loop                             | Evidence                                                    | Allowed effects                                     |
+| ------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| `check`                                     | Static plugin invariants                                    | File reads only.                                    |
+| `check --workspace` / `compatibility check` | Cross-package compatibility invariant                       | File reads only; no bb process.                     |
+| `compatibility inspect`                     | Contract derived from a selected stable bb CLI              | Temporary scaffold and build; no workspace write.   |
+| `verify`                                    | Deterministic tools, exact build, and packed source closure | Project tools and build output; no live bb request. |
+| `doctor`                                    | Connected host, installed source, and manual checklist      | Supported read commands only; no RPC or repair.     |
+| `invoke` / fixture runner                   | Explicit loaded-operation behavior                          | Native RPC after metadata and risk preflight.       |
+| Live UI loop                                | Layout, focus, portals, host CSS, and interaction           | Explicit human or browser interaction.              |
 
 Do not combine these to reduce command count. A live `verify` would make an
 offline release gate host-dependent. An invoking `doctor` would make “read-only”
@@ -294,16 +294,16 @@ a replacement for deterministic tests; it finds the remaining integration gaps.
 
 ## Lessons from the Dotfiles rewrite
 
-| Observation | bb-kit response | General rule |
-| --- | --- | --- |
-| bb 0.37 and Zod exposed a frontend type mismatch in each consumer. | Add one `useOperationRpc` seam. | Centralize a proven host quirk once. |
-| The generated test command and generated TypeScript environment disagreed. | Generate one `node:test` setup that Bun runs without extra types. | A scaffold must make one complete choice. |
-| The active CLI changed declarations before compatibility failure was reported. | Preflight the exact CLI, own build and verify, and recheck protected outputs after each tool. | Safety policy cannot depend on project scripts. |
-| A host-shimmed package did not support every package subpath. | Lock exact supported specifiers and inspect the packed closure. | Model the host ABI exactly. |
-| Omitted operation input was ambiguous. | Add one `noInput` value and require literal examples for every other schema. | Prefer one valid representation over better guesses. |
-| Offline verification passed while responsive UI defects remained. | Keep a separate doctor, explicit invoke step, and real UI checklist. | State exactly what each check proves. |
-| A release upgrade required edits in many files. | Replace partial refresh tools with one transactional compatibility workflow. | One invariant needs one coordinated writer. |
-| The connected host used a different Dotfiles source than the worktree. | Make doctor report installed source without changing it. | Observe live state before testing it. |
+| Observation                                                                    | bb-kit response                                                                               | General rule                                         |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| bb 0.37 and Zod exposed a frontend type mismatch in each consumer.             | Add one `useOperationRpc` seam.                                                               | Centralize a proven host quirk once.                 |
+| The generated test command and generated TypeScript environment disagreed.     | Generate one `node:test` setup that Bun runs without extra types.                             | A scaffold must make one complete choice.            |
+| The active CLI changed declarations before compatibility failure was reported. | Preflight the exact CLI, own build and verify, and recheck protected outputs after each tool. | Safety policy cannot depend on project scripts.      |
+| A host-shimmed package did not support every package subpath.                  | Lock exact supported specifiers and inspect the packed closure.                               | Model the host ABI exactly.                          |
+| Omitted operation input was ambiguous.                                         | Add one `noInput` value and require literal examples for every other schema.                  | Prefer one valid representation over better guesses. |
+| Offline verification passed while responsive UI defects remained.              | Keep a separate doctor, explicit invoke step, and real UI checklist.                          | State exactly what each check proves.                |
+| A release upgrade required edits in many files.                                | Replace partial refresh tools with one transactional compatibility workflow.                  | One invariant needs one coordinated writer.          |
+| The connected host used a different Dotfiles source than the worktree.         | Make doctor report installed source without changing it.                                      | Observe live state before testing it.                |
 
 ## Deliberate freedoms
 

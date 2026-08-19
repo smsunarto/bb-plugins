@@ -8,22 +8,13 @@ import {
 
 test("only the exact current-branch error is classified as not in a stack", () => {
   assert.equal(
-    isCurrentBranchNotInStack(
-      2,
-      'current branch "feature/cache" is not part of a stack\n',
-    ),
+    isCurrentBranchNotInStack(2, 'current branch "feature/cache" is not part of a stack\n'),
     true,
   );
   assert.equal(isCurrentBranchNotInStack(2, "not a git repository\n"), false);
+  assert.equal(isCurrentBranchNotInStack(2, "failed to load stack state: invalid JSON\n"), false);
   assert.equal(
-    isCurrentBranchNotInStack(2, "failed to load stack state: invalid JSON\n"),
-    false,
-  );
-  assert.equal(
-    isCurrentBranchNotInStack(
-      6,
-      'current branch "main" is not part of a stack\n',
-    ),
+    isCurrentBranchNotInStack(6, 'current branch "main" is not part of a stack\n'),
     false,
   );
 });
@@ -42,8 +33,7 @@ test("sync exit-zero warning output is treated as incomplete", () => {
     /not pushed/i,
   );
   assert.match(
-    partialSuccessWarning("sync", "Branches synced", "Failed to update stack on GitHub") ??
-      "",
+    partialSuccessWarning("sync", "Branches synced", "Failed to update stack on GitHub") ?? "",
     /could not update/i,
   );
   assert.match(
@@ -83,14 +73,8 @@ test("submit exit-zero PR failures are treated as incomplete", () => {
       `warning was treated as success: ${warning}`,
     );
   }
-  assert.equal(
-    partialSuccessWarning("submit", "Pushed and synced 2 branches", ""),
-    null,
-  );
-  assert.equal(
-    partialSuccessWarning("submit", "Disabled auto-merge for PR #12", ""),
-    null,
-  );
+  assert.equal(partialSuccessWarning("submit", "Pushed and synced 2 branches", ""), null);
+  assert.equal(partialSuccessWarning("submit", "Disabled auto-merge for PR #12", ""), null);
 });
 
 test("only recoverable sync states request an agent", () => {

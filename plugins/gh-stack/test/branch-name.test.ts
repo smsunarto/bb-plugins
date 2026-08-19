@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
-import {
-  deriveBranchName,
-  isBranchCandidate,
-  normalizeBranchPrefix,
-} from "../lib/branch-name.ts";
+import { deriveBranchName, isBranchCandidate, normalizeBranchPrefix } from "../lib/branch-name.ts";
 
 test("deriveBranchName applies the same naming policy to UI and server callers", () => {
   assert.equal(deriveBranchName("Add rate limiting to the API", false), "add-rate-limiting-api");
@@ -20,10 +16,7 @@ test("deriveBranchName applies the same naming policy to UI and server callers",
 // The branch carries the type but not the scope: a scope names the area the
 // slug already describes, so repeating it only lengthens the ref.
 test("deriveBranchName keeps the type and drops the scope", () => {
-  assert.equal(
-    deriveBranchName("feat(api): add rate limiting", true),
-    "feat-add-rate-limiting",
-  );
+  assert.equal(deriveBranchName("feat(api): add rate limiting", true), "feat-add-rate-limiting");
   assert.equal(
     deriveBranchName("fix(gh-stack): stop double counting", true),
     "fix-stop-double-counting",
@@ -55,13 +48,7 @@ test("branch candidate preflight rejects flags and unsupported characters", () =
 });
 
 test("git check-ref-format rejects structurally invalid normalized prefixes", () => {
-  const invalidPrefixes = [
-    "foo..bar",
-    "foo//",
-    "foo/.hidden",
-    "foo.lock",
-    "foo.",
-  ];
+  const invalidPrefixes = ["foo..bar", "foo//", "foo/.hidden", "foo.lock", "foo."];
   for (const raw of invalidPrefixes) {
     const normalized = normalizeBranchPrefix(raw);
     if ("error" in normalized) {
@@ -79,8 +66,7 @@ test("git check-ref-format rejects structurally invalid normalized prefixes", ()
   const valid = normalizeBranchPrefix("team/platform");
   assert.ok("prefix" in valid);
   assert.equal(
-    spawnSync("git", ["check-ref-format", "--branch", `${valid.prefix}bb-stack-check`])
-      .status,
+    spawnSync("git", ["check-ref-format", "--branch", `${valid.prefix}bb-stack-check`]).status,
     0,
   );
 });

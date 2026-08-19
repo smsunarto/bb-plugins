@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 var AMP_CLI_SHIM_FAST_ENV = "BB_AMP_FAST";
 var AMP_CLI_SHIM_REAL_CLI_ENV = "BB_AMP_REAL_CLI_PATH";
 function hasFastFeature(args) {
-  return args.some((arg, index) => arg === "--features" && args[index + 1]?.split(",").includes("fast"));
+  return args.some(
+    (arg, index) => arg === "--features" && args[index + 1]?.split(",").includes("fast")
+  );
 }
 function buildAmpCliInvocation(args, sourceEnv) {
   const realCli = sourceEnv[AMP_CLI_SHIM_REAL_CLI_ENV]?.trim();

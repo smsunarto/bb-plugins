@@ -10,8 +10,7 @@ export function sortByCreatedAtDescending<
   T extends { readonly id: string; readonly createdAt: number },
 >(threads: readonly T[]): T[] {
   return [...threads].sort(
-    (left, right) =>
-      right.createdAt - left.createdAt || left.id.localeCompare(right.id),
+    (left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id),
   );
 }
 
@@ -24,12 +23,8 @@ export type ActiveSection = "next-action" | "waiting";
  * still live. Otherwise any foreground or background work means the user is
  * waiting for the agent; a quiet thread is ready for the user's next action.
  */
-export function activeSectionFor(
-  thread: PluginSidebarThread,
-): ActiveSection {
-  return thread.hasPendingInteraction || !isThreadWorking(thread)
-    ? "next-action"
-    : "waiting";
+export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
+  return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
 }
 
 interface ActiveSectionOrderEntry {
@@ -49,10 +44,7 @@ export interface ActiveSectionOrder {
   nextSequence: number;
 }
 
-function compareInitialEntrance(
-  left: PluginSidebarThread,
-  right: PluginSidebarThread,
-): number {
+function compareInitialEntrance(left: PluginSidebarThread, right: PluginSidebarThread): number {
   return (
     left.updatedAt - right.updatedAt ||
     left.createdAt - right.createdAt ||
@@ -103,14 +95,9 @@ export function partitionActiveSections(
   const nextAction: PluginSidebarThread[] = [];
   const waiting: PluginSidebarThread[] = [];
   for (const thread of threads) {
-    (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(
-      thread,
-    );
+    (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(thread);
   }
-  const byEntrance = (
-    left: PluginSidebarThread,
-    right: PluginSidebarThread,
-  ) =>
+  const byEntrance = (left: PluginSidebarThread, right: PluginSidebarThread) =>
     (order.entries.get(left.id)?.sequence ?? Number.MAX_SAFE_INTEGER) -
       (order.entries.get(right.id)?.sequence ?? Number.MAX_SAFE_INTEGER) ||
     left.id.localeCompare(right.id);
@@ -133,9 +120,7 @@ export function searchThreadsByTitle(
 ): PluginSidebarThread[] {
   const normalized = query.trim().toLowerCase();
   if (normalized.length === 0) return [...threads];
-  return threads.filter((thread) =>
-    threadDisplayTitle(thread).toLowerCase().includes(normalized),
-  );
+  return threads.filter((thread) => threadDisplayTitle(thread).toLowerCase().includes(normalized));
 }
 
 export interface ProjectScope {
@@ -166,9 +151,7 @@ export function visibleInboxThreads(
   threads: readonly PluginSidebarThread[],
   parkedThreadIds: ReadonlySet<string>,
 ): PluginSidebarThread[] {
-  return threads.filter(
-    (thread) => !thread.isArchived || parkedThreadIds.has(thread.id),
-  );
+  return threads.filter((thread) => !thread.isArchived || parkedThreadIds.has(thread.id));
 }
 
 /** Pinned first (they are the user's own ordering), then the static sort. */
@@ -197,8 +180,7 @@ export function hideChildrenOfVisibleParents(
 ): PluginSidebarThread[] {
   const visibleIds = new Set(threads.map((thread) => thread.id));
   return threads.filter(
-    (thread) =>
-      thread.parentThreadId === null || !visibleIds.has(thread.parentThreadId),
+    (thread) => thread.parentThreadId === null || !visibleIds.has(thread.parentThreadId),
   );
 }
 

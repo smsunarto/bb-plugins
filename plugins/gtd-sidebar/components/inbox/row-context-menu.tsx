@@ -32,18 +32,12 @@ export function RowContextMenu({
           aria-label="Thread actions"
           className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          <Item onSelect={() => actions.open(thread.id, { split: true })}>
-            Open in split
-          </Item>
+          <Item onSelect={() => actions.open(thread.id, { split: true })}>Open in split</Item>
           <Separator />
-          <Item
-            onSelect={() => void actions.setRead(thread.id, thread.isUnread)}
-          >
+          <Item onSelect={() => void actions.setRead(thread.id, thread.isUnread)}>
             {thread.isUnread ? "Mark read" : "Mark unread"}
           </Item>
-          <Item
-            onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}
-          >
+          <Item onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}>
             {thread.isPinned ? "Unpin" : "Pin"}
           </Item>
           <Separator />

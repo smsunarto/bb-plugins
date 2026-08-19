@@ -34,10 +34,7 @@ function describeKind(annotation: StoredAnnotation): string | null {
 }
 
 /** One annotation as a self-contained markdown section. */
-export function renderAnnotation(
-  annotation: StoredAnnotation,
-  index?: number,
-): string {
+export function renderAnnotation(annotation: StoredAnnotation, index?: number): string {
   const heading =
     index === undefined
       ? `### ${annotation.element} — ${annotation.id}`
@@ -49,14 +46,8 @@ export function renderAnnotation(
   out += line("React", annotation.reactComponents);
   out += line("Source", annotation.sourceFile);
   out += line("Classes", annotation.cssClasses);
-  out += line(
-    "Selected text",
-    annotation.selectedText ? `"${annotation.selectedText}"` : null,
-  );
-  out += line(
-    "Nearby text",
-    annotation.selectedText ? null : annotation.nearbyText?.slice(0, 160),
-  );
+  out += line("Selected text", annotation.selectedText ? `"${annotation.selectedText}"` : null);
+  out += line("Nearby text", annotation.selectedText ? null : annotation.nearbyText?.slice(0, 160));
   out += line("Intent", annotation.intent);
   out += line("Severity", annotation.severity);
   out += line("Status", annotation.status);
@@ -94,9 +85,7 @@ export function renderAnnotations(
     else bySession.set(annotation.sessionId, [annotation]);
   }
 
-  const sessionsById = new Map(
-    (options.sessions ?? []).map((session) => [session.id, session]),
-  );
+  const sessionsById = new Map((options.sessions ?? []).map((session) => [session.id, session]));
 
   let out = `## ${options.title ?? "bb UI feedback"}\n\n`;
   out += `${annotations.length} annotation${annotations.length === 1 ? "" : "s"} across ${bySession.size} page${bySession.size === 1 ? "" : "s"}. Element selectors are live bb DOM paths — pair them with the owning plugin or the bb app source to find the code.\n`;
@@ -128,9 +117,7 @@ export function renderAnnotationAssignment(
 
 /** One line per annotation, for CLI listings and tool summaries. */
 export function renderAnnotationLine(annotation: StoredAnnotation): string {
-  const owner = annotation.bb.pluginId
-    ? `plugin:${annotation.bb.pluginId}`
-    : "bb-shell";
+  const owner = annotation.bb.pluginId ? `plugin:${annotation.bb.pluginId}` : "bb-shell";
   const severity = annotation.severity ? ` [${annotation.severity}]` : "";
   const comment = annotation.comment.replace(/\s+/g, " ").slice(0, 100);
   return `${annotation.id}  ${annotation.status.padEnd(12)} ${owner.padEnd(24)} ${annotation.element.padEnd(10)}${severity} ${comment}`;

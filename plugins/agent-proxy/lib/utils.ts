@@ -17,7 +17,5 @@ export function formatHomePathForDisplay(pathValue: string): string {
     pathValue.match(/^\/Users\/[^/]+(?=\/|$)/)?.[0] ??
     pathValue.match(/^\/home\/[^/]+(?=\/|$)/)?.[0] ??
     pathValue.match(/^\/root(?=\/|$)/)?.[0];
-  return homePrefix === undefined
-    ? pathValue
-    : `~${pathValue.slice(homePrefix.length)}`;
+  return homePrefix === undefined ? pathValue : `~${pathValue.slice(homePrefix.length)}`;
 }

@@ -12,25 +12,15 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  runCli,
-  type CliIo,
-  type CommandRunner,
-} from "../src/index.js";
+import { runCli, type CliIo, type CommandRunner } from "../src/index.js";
 import {
   checkWorkspaceCompatibility,
   compatibilityContractSource,
   inspectCompatibility,
   upgradeCompatibility,
 } from "../src/compatibility-workspace.js";
-import {
-  compatibility,
-  type CompatibilityContract,
-} from "../src/compatibility.js";
-import {
-  commandResult,
-  writeVendoredDeclaration,
-} from "./helpers.js";
+import { compatibility, type CompatibilityContract } from "../src/compatibility.js";
+import { commandResult, writeVendoredDeclaration } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -68,42 +58,60 @@ interface SeedOptions {
   readonly metadata?: boolean;
 }
 
-function seedWorkspace(
-  contract: CompatibilityContract,
-  options: SeedOptions = {},
-): string {
+function seedWorkspace(contract: CompatibilityContract, options: SeedOptions = {}): string {
   const root = mkdtempSync(join(tmpdir(), "bb-kit-workspace-"));
   roots.push(root);
   mkdirSync(join(root, "packages/bb-kit-cli/src"), { recursive: true });
   mkdirSync(join(root, "plugins/example"), { recursive: true });
-  writeFileSync(join(root, "package.json"), `${JSON.stringify({
-    name: "test-workspace",
-    private: true,
-    config: { bbVersion: contract.bbCliVersion },
-    untouched: { root: true },
-  }, null, 2)}\n`);
+  writeFileSync(
+    join(root, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "test-workspace",
+        private: true,
+        config: { bbVersion: contract.bbCliVersion },
+        untouched: { root: true },
+      },
+      null,
+      2,
+    )}\n`,
+  );
   writeFileSync(
     join(root, "packages/bb-kit-cli/src/compatibility-contract.ts"),
     compatibilityContractSource(contract),
   );
-  writeFileSync(join(root, "plugins/example/package.json"), `${JSON.stringify({
-    name: "@acme/bb-plugin-example",
-    version: "0.1.0",
-    untouched: { plugin: true },
-    engines: contract.engines,
-    devDependencies: { [contract.sdkPackage.name]: contract.sdkPackage.version },
-    bb: {
-      server: "./server.ts",
-      ...(options.fullstack ? { app: "./app.tsx" } : {}),
-    },
-  }, null, 2)}\n`);
-  writeFileSync(join(root, "plugins/example/components.json"), `${JSON.stringify({
-    registries: {
-      "@bb": contract.registryUrl,
-      "@acme": "https://example.test/{name}.json",
-    },
-    untouched: true,
-  }, null, 2)}\n`);
+  writeFileSync(
+    join(root, "plugins/example/package.json"),
+    `${JSON.stringify(
+      {
+        name: "@acme/bb-plugin-example",
+        version: "0.1.0",
+        untouched: { plugin: true },
+        engines: contract.engines,
+        devDependencies: { [contract.sdkPackage.name]: contract.sdkPackage.version },
+        bb: {
+          server: "./server.ts",
+          ...(options.fullstack ? { app: "./app.tsx" } : {}),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    join(root, "plugins/example/components.json"),
+    `${JSON.stringify(
+      {
+        registries: {
+          "@bb": contract.registryUrl,
+          "@acme": "https://example.test/{name}.json",
+        },
+        untouched: true,
+      },
+      null,
+      2,
+    )}\n`,
+  );
   if (options.metadata) {
     mkdirSync(join(root, "plugins/example/dist"), { recursive: true });
     const metadata = {
@@ -136,10 +144,12 @@ function fakeBb(
   contract: CompatibilityContract,
 ): { readonly env: NodeJS.ProcessEnv; readonly run: ReturnType<typeof vi.fn<CommandRunner>> } {
   const path = join(root, "selected-bb.js");
-  const slots = Object.fromEntries(contract.hostShims.frontend.map((specifier) => [
-    specifier,
-    specifier.endsWith("plugin-sdk/app") ? "pluginSdkApp" : `host:${specifier}`,
-  ]));
+  const slots = Object.fromEntries(
+    contract.hostShims.frontend.map((specifier) => [
+      specifier,
+      specifier.endsWith("plugin-sdk/app") ? "pluginSdkApp" : `host:${specifier}`,
+    ]),
+  );
   writeFileSync(path, `#!/usr/bin/env node\nconst hostSlots = ${JSON.stringify(slots)};\n`);
   chmodSync(path, 0o755);
   const run = vi.fn<CommandRunner>((request) => {
@@ -149,15 +159,29 @@ function fakeBb(
     if (request.args.join(" ") === "plugin new probe --app") {
       const probe = join(request.cwd, "bb-plugin-probe");
       mkdirSync(probe, { recursive: true });
-      writeFileSync(join(probe, "package.json"), `${JSON.stringify({
-        engines: { bbPluginSdk: contract.engines.bbPluginSdk },
-        devDependencies: {
-          [contract.sdkPackage.name]: contract.sdkPackage.version,
-        },
-      }, null, 2)}\n`);
-      writeFileSync(join(probe, "components.json"), `${JSON.stringify({
-        registries: { "@bb": contract.registryUrl },
-      }, null, 2)}\n`);
+      writeFileSync(
+        join(probe, "package.json"),
+        `${JSON.stringify(
+          {
+            engines: { bbPluginSdk: contract.engines.bbPluginSdk },
+            devDependencies: {
+              [contract.sdkPackage.name]: contract.sdkPackage.version,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      writeFileSync(
+        join(probe, "components.json"),
+        `${JSON.stringify(
+          {
+            registries: { "@bb": contract.registryUrl },
+          },
+          null,
+          2,
+        )}\n`,
+      );
       return commandResult();
     }
     if (request.args.join(" ") === "plugin build .") {
@@ -167,14 +191,8 @@ function fakeBb(
         sdkMajor: contract.pluginSdk.major,
         artifactFormatVersion: contract.pluginSdk.artifactFormatVersion,
       };
-      writeFileSync(
-        join(request.cwd, "dist/server.meta.json"),
-        `${JSON.stringify(metadata)}\n`,
-      );
-      writeFileSync(
-        join(request.cwd, "dist/app.meta.json"),
-        `${JSON.stringify(metadata)}\n`,
-      );
+      writeFileSync(join(request.cwd, "dist/server.meta.json"), `${JSON.stringify(metadata)}\n`);
+      writeFileSync(join(request.cwd, "dist/app.meta.json"), `${JSON.stringify(metadata)}\n`);
       return commandResult();
     }
     return commandResult({ status: 1, stderr: `unexpected command: ${request.args.join(" ")}` });
@@ -247,15 +265,9 @@ describe("workspace compatibility policy", () => {
     writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
 
     const diagnostics = checkWorkspaceCompatibility(root, contract);
-    expect(new Set(diagnostics.map((value) => value.code))).toEqual(new Set([
-      "BBKW001",
-      "BBKW002",
-      "BBKW005",
-      "BBKW006",
-      "BBKW007",
-      "BBK011",
-      "BBK013",
-    ]));
+    expect(new Set(diagnostics.map((value) => value.code))).toEqual(
+      new Set(["BBKW001", "BBKW002", "BBKW005", "BBKW006", "BBKW007", "BBK011", "BBK013"]),
+    );
     expect(diagnostics.find((value) => value.code === "BBKW005")?.message).toContain(
       `expected ${JSON.stringify(contract.engines.bb)}`,
     );
@@ -286,18 +298,27 @@ describe("workspace compatibility policy", () => {
     const root = seedWorkspace(oldContract);
     const dependentPath = join(root, "packages/bb-kit/package.json");
     mkdirSync(join(root, "packages/bb-kit"), { recursive: true });
-    writeFileSync(dependentPath, `${JSON.stringify({
-      name: "@bb-kit/core",
-      devDependencies: { [SDK_PACKAGE]: oldContract.sdkPackage.version },
-      untouched: true,
-    }, null, 2)}\n`);
+    writeFileSync(
+      dependentPath,
+      `${JSON.stringify(
+        {
+          name: "@bb-kit/core",
+          devDependencies: { [SDK_PACKAGE]: oldContract.sdkPackage.version },
+          untouched: true,
+        },
+        null,
+        2,
+      )}\n`,
+    );
 
-    expect(checkWorkspaceCompatibility(root, target)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        code: "BBKW008",
-        file: "packages/bb-kit/package.json",
-      }),
-    ]));
+    expect(checkWorkspaceCompatibility(root, target)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "BBKW008",
+          file: "packages/bb-kit/package.json",
+        }),
+      ]),
+    );
 
     const selected = fakeBb(root, target);
     const result = upgradeCompatibility(root, selected);
@@ -321,12 +342,14 @@ describe("workspace compatibility policy", () => {
     const result = inspectCompatibility(root, selected);
 
     expect(result.target).toEqual(target);
-    expect(result.changes).toEqual(expect.arrayContaining([
-      "package.json",
-      "packages/bb-kit-cli/src/compatibility-contract.ts",
-      "plugins/example/package.json",
-      "plugins/example/components.json",
-    ]));
+    expect(result.changes).toEqual(
+      expect.arrayContaining([
+        "package.json",
+        "packages/bb-kit-cli/src/compatibility-contract.ts",
+        "plugins/example/package.json",
+        "plugins/example/components.json",
+      ]),
+    );
     expect(snapshot(root)).toEqual(before);
     expect(selected.run.mock.calls.map(([request]) => request.args)).toEqual([
       ["--version"],
@@ -349,34 +372,45 @@ describe("workspace compatibility policy", () => {
       config: { bbVersion: string };
       untouched: unknown;
     };
-    expect(rootManifest).toEqual(expect.objectContaining({
-      config: { bbVersion: target.bbCliVersion },
-      untouched: { root: true },
-    }));
+    expect(rootManifest).toEqual(
+      expect.objectContaining({
+        config: { bbVersion: target.bbCliVersion },
+        untouched: { root: true },
+      }),
+    );
     const pluginManifest = JSON.parse(
       readFileSync(join(root, "plugins/example/package.json"), "utf8"),
     ) as { engines: unknown; devDependencies: unknown; untouched: unknown };
-    expect(pluginManifest).toEqual(expect.objectContaining({
-      engines: target.engines,
-      devDependencies: { [SDK_PACKAGE]: target.sdkPackage.version },
-      untouched: { plugin: true },
-    }));
+    expect(pluginManifest).toEqual(
+      expect.objectContaining({
+        engines: target.engines,
+        devDependencies: { [SDK_PACKAGE]: target.sdkPackage.version },
+        untouched: { plugin: true },
+      }),
+    );
     const components = JSON.parse(
       readFileSync(join(root, "plugins/example/components.json"), "utf8"),
     ) as { registries: Record<string, string>; untouched: unknown };
-    expect(components).toEqual(expect.objectContaining({
-      registries: {
-        "@bb": target.registryUrl,
-        "@acme": "https://example.test/{name}.json",
-      },
-      untouched: true,
-    }));
+    expect(components).toEqual(
+      expect.objectContaining({
+        registries: {
+          "@bb": target.registryUrl,
+          "@acme": "https://example.test/{name}.json",
+        },
+        untouched: true,
+      }),
+    );
 
     const second = upgradeCompatibility(root, selected);
     expect(second).toEqual(expect.objectContaining({ updated: false, changes: [] }));
-    expect(selected.run.mock.calls.every(([request]) =>
-      !request.args.some((argument) => ["install", "reload", "enable", "rpc"].includes(argument)),
-    )).toBe(true);
+    expect(
+      selected.run.mock.calls.every(
+        ([request]) =>
+          !request.args.some((argument) =>
+            ["install", "reload", "enable", "rpc"].includes(argument),
+          ),
+      ),
+    ).toBe(true);
   });
 
   it("does not turn upgrade into a downgrade escape hatch", () => {
@@ -386,9 +420,11 @@ describe("workspace compatibility policy", () => {
     const selected = fakeBb(root, old);
     const before = snapshot(root);
 
-    expect(() => upgradeCompatibility(root, selected)).toThrow(expect.objectContaining({
-      code: "compatibility_downgrade_refused",
-    }));
+    expect(() => upgradeCompatibility(root, selected)).toThrow(
+      expect.objectContaining({
+        code: "compatibility_downgrade_refused",
+      }),
+    );
     expect(snapshot(root)).toEqual(before);
   });
 
@@ -407,15 +443,16 @@ describe("workspace compatibility policy", () => {
       "utf8",
     );
 
-    expect(() => upgradeCompatibility(root, selected)).toThrow(expect.objectContaining({
-      code: "compatibility_workspace_unsafe_target",
-    }));
+    expect(() => upgradeCompatibility(root, selected)).toThrow(
+      expect.objectContaining({
+        code: "compatibility_workspace_unsafe_target",
+      }),
+    );
     expect(readFileSync(join(root, "package.json"), "utf8")).toBe(packageBefore);
     expect(readFileSync(join(root, "plugins/example/package.json"), "utf8")).toBe(pluginBefore);
-    expect(readFileSync(
-      join(root, "packages/bb-kit-cli/src/compatibility-contract.ts"),
-      "utf8",
-    )).toBe(contractBefore);
+    expect(
+      readFileSync(join(root, "packages/bb-kit-cli/src/compatibility-contract.ts"), "utf8"),
+    ).toBe(contractBefore);
     expect(existsSync(componentsPath)).toBe(true);
   });
 
@@ -424,26 +461,31 @@ describe("workspace compatibility policy", () => {
     const target = testContract("0.38.2", "0.5.0");
     const root = seedWorkspace(oldContract);
     const pluginPath = join(root, "plugins/example/package.json");
-    writeFileSync(pluginPath, [
-      "{",
-      '  "name": "@acme/bb-plugin-example",',
-      '  "version": "0.1.0",',
-      '  "engines": {',
-      `    "bb": ${JSON.stringify(oldContract.engines.bb)},`,
-      `    "bb": ${JSON.stringify(oldContract.engines.bb)},`,
-      `    "bbPluginSdk": ${JSON.stringify(oldContract.engines.bbPluginSdk)}`,
-      "  },",
-      `  "devDependencies": { ${JSON.stringify(SDK_PACKAGE)}: ${JSON.stringify(oldContract.sdkPackage.version)} },`,
-      '  "bb": { "server": "./server.ts" }',
-      "}",
-      "",
-    ].join("\n"));
+    writeFileSync(
+      pluginPath,
+      [
+        "{",
+        '  "name": "@acme/bb-plugin-example",',
+        '  "version": "0.1.0",',
+        '  "engines": {',
+        `    "bb": ${JSON.stringify(oldContract.engines.bb)},`,
+        `    "bb": ${JSON.stringify(oldContract.engines.bb)},`,
+        `    "bbPluginSdk": ${JSON.stringify(oldContract.engines.bbPluginSdk)}`,
+        "  },",
+        `  "devDependencies": { ${JSON.stringify(SDK_PACKAGE)}: ${JSON.stringify(oldContract.sdkPackage.version)} },`,
+        '  "bb": { "server": "./server.ts" }',
+        "}",
+        "",
+      ].join("\n"),
+    );
     const selected = fakeBb(root, target);
     const before = snapshot(root);
 
-    expect(() => upgradeCompatibility(root, selected)).toThrow(expect.objectContaining({
-      code: "compatibility_upgrade_invalid",
-    }));
+    expect(() => upgradeCompatibility(root, selected)).toThrow(
+      expect.objectContaining({
+        code: "compatibility_upgrade_invalid",
+      }),
+    );
     expect(snapshot(root)).toEqual(before);
   });
 });
@@ -452,39 +494,49 @@ describe("workspace compatibility commands", () => {
   it("exposes both workspace check forms and rejects unsafe upgrade options", async () => {
     const root = seedWorkspace(compatibility, { fullstack: true });
     const check = capture();
-    expect(await runCli(["check", "--workspace", "--json"], {
-      cwd: join(root, "plugins/example"),
-      io: check.io,
-    })).toBe(0);
+    expect(
+      await runCli(["check", "--workspace", "--json"], {
+        cwd: join(root, "plugins/example"),
+        io: check.io,
+      }),
+    ).toBe(0);
     expect(JSON.parse(check.stdout[0] ?? "null")).toEqual([]);
 
     const compatibilityCheck = capture();
-    expect(await runCli(["compatibility", "check", "--json"], {
-      cwd: root,
-      io: compatibilityCheck.io,
-    })).toBe(0);
+    expect(
+      await runCli(["compatibility", "check", "--json"], {
+        cwd: root,
+        io: compatibilityCheck.io,
+      }),
+    ).toBe(0);
     expect(JSON.parse(compatibilityCheck.stdout[0] ?? "null")).toEqual([]);
 
     const selected = fakeBb(root, compatibility);
     const inspect = capture();
-    expect(await runCli(["compatibility", "inspect", "--json"], {
-      cwd: root,
-      io: inspect.io,
-      ...selected,
-    })).toBe(0);
-    expect(JSON.parse(inspect.stdout[0] ?? "null")).toEqual(expect.objectContaining({
-      ok: true,
-      target: compatibility,
-      changes: [],
-    }));
+    expect(
+      await runCli(["compatibility", "inspect", "--json"], {
+        cwd: root,
+        io: inspect.io,
+        ...selected,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(inspect.stdout[0] ?? "null")).toEqual(
+      expect.objectContaining({
+        ok: true,
+        target: compatibility,
+        changes: [],
+      }),
+    );
 
     const unsafe = capture();
     const callsBefore = selected.run.mock.calls.length;
-    expect(await runCli(["compatibility", "upgrade", "--force", "--json"], {
-      cwd: root,
-      io: unsafe.io,
-      ...selected,
-    })).toBe(2);
+    expect(
+      await runCli(["compatibility", "upgrade", "--force", "--json"], {
+        cwd: root,
+        io: unsafe.io,
+        ...selected,
+      }),
+    ).toBe(2);
     expect(JSON.parse(unsafe.stdout[0] ?? "null")).toEqual({
       ok: false,
       error: { code: "usage", message: "unknown option --force" },

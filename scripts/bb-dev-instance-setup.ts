@@ -115,8 +115,9 @@ interface InstalledPlugin {
 export function pluginSources(list: { plugins?: InstalledPlugin[] }): Map<string, string> {
   return new Map(
     (list.plugins ?? [])
-      .filter((plugin): plugin is { id: string; rootDir: string } =>
-        typeof plugin.id === "string" && typeof plugin.rootDir === "string"
+      .filter(
+        (plugin): plugin is { id: string; rootDir: string } =>
+          typeof plugin.id === "string" && typeof plugin.rootDir === "string",
       )
       .map((plugin) => [plugin.id, plugin.rootDir]),
   );
@@ -139,17 +140,13 @@ async function waitForRunningPlugins(
       await runCommand(listArgs),
       "bb plugin list",
     );
-    const status = new Map(
-      (list.plugins ?? []).map((plugin) => [plugin.id, plugin.status]),
-    );
+    const status = new Map((list.plugins ?? []).map((plugin) => [plugin.id, plugin.status]));
     const pending = SCREENSHOT_PREFLIGHT_PLUGINS.filter(
       (plugin) => status.get(plugin.id) !== "running",
     );
     if (pending.length === 0) return;
     if (attempt === attempts - 1) {
-      throw new Error(
-        `plugins did not start: ${pending.map((plugin) => plugin.id).join(", ")}`,
-      );
+      throw new Error(`plugins did not start: ${pending.map((plugin) => plugin.id).join(", ")}`);
     }
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
@@ -168,8 +165,8 @@ export async function setUpBbDevInstance(
   const installed = pluginSources(
     parseJson<{ plugins?: InstalledPlugin[] }>(await runCommand(listArgs), "bb plugin list"),
   );
-  const stale = SCREENSHOT_PREFLIGHT_PLUGINS.filter((plugin) =>
-    installed.get(plugin.id) !== join(SCREENSHOT_ROOT, "plugins", plugin.directory)
+  const stale = SCREENSHOT_PREFLIGHT_PLUGINS.filter(
+    (plugin) => installed.get(plugin.id) !== join(SCREENSHOT_ROOT, "plugins", plugin.directory),
   );
   for (const plugin of stale) {
     // Absolute, because the CLI runs with the pinned worktree as its working

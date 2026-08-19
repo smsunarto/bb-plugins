@@ -115,10 +115,7 @@ export function discardStagedAnnotations(
   })();
 }
 
-export function getAnnotationRouting(
-  db: Database,
-  annotationId: string,
-): AnnotationRouting | null {
+export function getAnnotationRouting(db: Database, annotationId: string): AnnotationRouting | null {
   const row = db
     .prepare(`SELECT * FROM annotation_routing WHERE annotation_id = ?`)
     .get(annotationId) as RoutingRow | undefined;
@@ -138,9 +135,7 @@ export function listAnnotationRoutings(
        WHERE annotation_id IN (${placeholders})`,
     )
     .all(...uniqueIds) as RoutingRow[];
-  return Object.fromEntries(
-    rows.map((row) => [row.annotation_id, toRouting(row)]),
-  );
+  return Object.fromEntries(rows.map((row) => [row.annotation_id, toRouting(row)]));
 }
 
 /**
@@ -221,11 +216,7 @@ export function completeDispatch(db: Database, dispatchId: string): number {
   })();
 }
 
-export function failDispatch(
-  db: Database,
-  dispatchId: string,
-  error: string,
-): number {
+export function failDispatch(db: Database, dispatchId: string, error: string): number {
   return db.transaction(() => {
     const timestamp = nowIso();
     const result = db
@@ -281,10 +272,7 @@ export function recoverInterruptedDispatches(db: Database): number {
   return recovered;
 }
 
-export function restageAnnotation(
-  db: Database,
-  annotationId: string,
-): AnnotationRouting | null {
+export function restageAnnotation(db: Database, annotationId: string): AnnotationRouting | null {
   const timestamp = nowIso();
   const result = db
     .prepare(

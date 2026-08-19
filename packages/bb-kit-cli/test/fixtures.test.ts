@@ -1,10 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,9 +11,7 @@ import {
   runFixtures,
   type CliIo,
 } from "../src/index.js";
-import {
-  makeOperationRequireInput,
-} from "./helpers.js";
+import { makeOperationRequireInput } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -80,27 +72,29 @@ describe("loaded-operation fixtures", () => {
       invoke: { operation: "state.get", input: { id: 2 } },
       expect: { value: 2 },
     });
-    writeFixture(root, "alpha/first.yaml", [
-      "name: first",
-      "seed:",
-      "  - operation: state.seed",
-      "    input:",
-      "      id: 1",
-      "invoke:",
-      "  operation: state.get",
-      "  input:",
-      "    id: 1",
-      "expect: null",
-      "",
-    ].join("\n"));
+    writeFixture(
+      root,
+      "alpha/first.yaml",
+      [
+        "name: first",
+        "seed:",
+        "  - operation: state.seed",
+        "    input:",
+        "      id: 1",
+        "invoke:",
+        "  operation: state.get",
+        "  input:",
+        "    id: 1",
+        "expect: null",
+        "",
+      ].join("\n"),
+    );
     const envelopes = [
       { ok: true, result: { seeded: true } },
       { ok: true, result: null },
       { ok: true, result: { value: 2 } },
     ];
-    const request = vi.fn<typeof fetch>(async () =>
-      rpcResponse(envelopes.shift()),
-    );
+    const request = vi.fn<typeof fetch>(async () => rpcResponse(envelopes.shift()));
 
     await expect(runFixtures(root, { fetch: request })).resolves.toEqual({
       ok: true,
@@ -208,10 +202,12 @@ describe("loaded-operation fixtures", () => {
       invoke: { operation: "state.get" },
       expect: {},
     });
-    const request = vi.fn<typeof fetch>(async () => rpcResponse({
-      ok: true,
-      result: { token: "actual-token", nested: { apiKey: "actual-key" } },
-    }));
+    const request = vi.fn<typeof fetch>(async () =>
+      rpcResponse({
+        ok: true,
+        result: { token: "actual-token", nested: { apiKey: "actual-key" } },
+      }),
+    );
 
     const result = await runFixtures(root, { fetch: request });
     expect(result).toEqual({
@@ -256,13 +252,18 @@ describe("loaded-operation fixtures", () => {
       invoke: { operation: "state.get" },
       expect: {},
     });
-    const request = vi.fn<typeof fetch>(async () => rpcResponse({
-      ok: false,
-      error: {
-        code: "seed_rejected",
-        message: 'token="domain-secret"; Authorization: Bearer bearer-secret',
-      },
-    }, 409));
+    const request = vi.fn<typeof fetch>(async () =>
+      rpcResponse(
+        {
+          ok: false,
+          error: {
+            code: "seed_rejected",
+            message: 'token="domain-secret"; Authorization: Bearer bearer-secret',
+          },
+        },
+        409,
+      ),
+    );
 
     const result = await runFixtures(root, { fetch: request });
     expect(result.scenarios).toEqual([
@@ -293,15 +294,17 @@ describe("loaded-operation fixtures", () => {
     });
 
     const result = await runFixtures(root, { fetch: request });
-    expect(result.scenarios[0]).toEqual(expect.objectContaining({
-      operation: "state.get",
-      status: "failed",
-      stage: "invoke",
-      error: {
-        code: "transport_error",
-        message: "could not reach bb at http://127.0.0.1:38886: network unavailable",
-      },
-    }));
+    expect(result.scenarios[0]).toEqual(
+      expect.objectContaining({
+        operation: "state.get",
+        status: "failed",
+        stage: "invoke",
+        error: {
+          code: "transport_error",
+          message: "could not reach bb at http://127.0.0.1:38886: network unavailable",
+        },
+      }),
+    );
   });
 
   it("preflights destructive scenarios and only runs them after confirmation", async () => {
@@ -326,8 +329,10 @@ describe("loaded-operation fixtures", () => {
     } satisfies Partial<InvocationError>);
     expect(request).not.toHaveBeenCalled();
 
-    await expect(runFixtures(root, { fetch: request, confirm: true })).resolves
-      .toMatchObject({ ok: true, passed: 2 });
+    await expect(runFixtures(root, { fetch: request, confirm: true })).resolves.toMatchObject({
+      ok: true,
+      passed: 2,
+    });
     expect(request).toHaveBeenCalledTimes(2);
   });
 
@@ -343,49 +348,59 @@ describe("loaded-operation fixtures", () => {
     const root = temporaryProject();
     addOperation(root, "state.get", "query");
     const generated = capture();
-    expect(await runCli(
-      ["add", "fixture", "state.get", "happy-path", "--json"],
-      { cwd: root, io: generated.io },
-    )).toBe(0);
+    expect(
+      await runCli(["add", "fixture", "state.get", "happy-path", "--json"], {
+        cwd: root,
+        io: generated.io,
+      }),
+    ).toBe(0);
     expect(JSON.parse(generated.stdout[0] ?? "null")).toEqual({
       ok: true,
       created: ["fixtures/state/happy-path.json"],
     });
-    expect(JSON.parse(readFileSync(
-      join(root, "fixtures/state/happy-path.json"),
-      "utf8",
-    ))).toEqual({
+    expect(JSON.parse(readFileSync(join(root, "fixtures/state/happy-path.json"), "utf8"))).toEqual({
       name: "state.get-happy-path",
       invoke: { operation: "state.get" },
       expect: {},
     });
 
     const second = capture();
-    expect(await runCli(
-      ["add", "fixture", "state.get", "happy-path", "--json"],
-      { cwd: root, io: second.io },
-    )).toBe(0);
+    expect(
+      await runCli(["add", "fixture", "state.get", "happy-path", "--json"], {
+        cwd: root,
+        io: second.io,
+      }),
+    ).toBe(0);
     expect(JSON.parse(second.stdout[0] ?? "null")).toEqual({ ok: true, created: [] });
 
-    const request = vi.fn<typeof fetch>(async () => rpcResponse({
-      ok: true,
-      result: { unexpected: true },
-    }));
+    const request = vi.fn<typeof fetch>(async () =>
+      rpcResponse({
+        ok: true,
+        result: { unexpected: true },
+      }),
+    );
     const run = capture();
-    expect(await runCli(
-      ["fixtures", "run", "state", "--json"],
-      { cwd: root, io: run.io, fetch: request },
-    )).toBe(1);
-    expect(JSON.parse(run.stdout[0] ?? "null")).toEqual(expect.objectContaining({
-      ok: false,
-      total: 1,
-      passed: 0,
-      failed: 1,
-      scenarios: [expect.objectContaining({
-        id: "state.get-happy-path",
-        stage: "expect",
-        status: "failed",
-      })],
-    }));
+    expect(
+      await runCli(["fixtures", "run", "state", "--json"], {
+        cwd: root,
+        io: run.io,
+        fetch: request,
+      }),
+    ).toBe(1);
+    expect(JSON.parse(run.stdout[0] ?? "null")).toEqual(
+      expect.objectContaining({
+        ok: false,
+        total: 1,
+        passed: 0,
+        failed: 1,
+        scenarios: [
+          expect.objectContaining({
+            id: "state.get-happy-path",
+            stage: "expect",
+            status: "failed",
+          }),
+        ],
+      }),
+    );
   });
 });

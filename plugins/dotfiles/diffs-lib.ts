@@ -7,6 +7,4 @@ export {
   type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
-export {
-  FileDiff,
-} from "@pierre/diffs/react";
+export { FileDiff } from "@pierre/diffs/react";

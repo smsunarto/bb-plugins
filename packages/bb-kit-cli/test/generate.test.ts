@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -43,8 +37,7 @@ describe("bb-kit generation", () => {
   it("initializes additively and idempotently", () => {
     const root = temporaryProject();
     const before = readFileSync(join(root, "plugin/server.ts"), "utf8");
-    expect(readFileSync(join(root, "test/scaffold.test.ts"), "utf8"))
-      .toContain('from "node:test"');
+    expect(readFileSync(join(root, "test/scaffold.test.ts"), "utf8")).toContain('from "node:test"');
     const testResult = spawnSync("bun", ["test"], {
       cwd: root,
       encoding: "utf8",
@@ -67,10 +60,12 @@ describe("bb-kit generation", () => {
     const lock = readLock(root);
     expect(lock.operations["approvals.get"]?.rpcMethod).toBe("approvals_get");
     expect(readFileSync(join(root, "plugin/server.ts"), "utf8")).toContain("installApprovals(bb)");
-    expect(readFileSync(join(root, "plugin/modules/approvals/generated/operations.ts"), "utf8"))
-      .toContain('wireMethod: "approvals_get"');
-    expect(readFileSync(join(root, "plugin/modules/approvals/service.ts"), "utf8"))
-      .toContain("TODO: implement approvals.get");
+    expect(
+      readFileSync(join(root, "plugin/modules/approvals/generated/operations.ts"), "utf8"),
+    ).toContain('wireMethod: "approvals_get"');
+    expect(readFileSync(join(root, "plugin/modules/approvals/service.ts"), "utf8")).toContain(
+      "TODO: implement approvals.get",
+    );
     expect(checkProject(root)).toEqual([]);
 
     const server = readFileSync(join(root, "plugin/server.ts"), "utf8");
@@ -86,14 +81,16 @@ describe("bb-kit generation", () => {
     expect(info.modules).toEqual([
       {
         name: "reports",
-        operations: [{
-          identity: "reports.refresh",
-          kind: "command",
-          risk: "mutating",
-          rpcMethod: "reports_refresh",
-          input: { mode: "none" },
-          metadataError: null,
-        }],
+        operations: [
+          {
+            identity: "reports.refresh",
+            kind: "command",
+            risk: "mutating",
+            rpcMethod: "reports_refresh",
+            input: { mode: "none" },
+            metadataError: null,
+          },
+        ],
         migrations: [],
         surfaces: [],
         storage: null,
@@ -136,9 +133,9 @@ describe("bb-kit generation", () => {
         "",
       ].join("\n"),
     );
-    expect(checkProject(namespaceRoot)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK210" }),
-    ]));
+    expect(checkProject(namespaceRoot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK210" })]),
+    );
 
     const reexportRoot = temporaryProject();
     addOperation(reexportRoot, "reports.get", "query");
@@ -160,9 +157,9 @@ describe("bb-kit generation", () => {
         "",
       ].join("\n"),
     );
-    expect(checkProject(reexportRoot)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK210" }),
-    ]));
+    expect(checkProject(reexportRoot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK210" })]),
+    );
 
     const localAliasRoot = temporaryProject();
     addOperation(localAliasRoot, "reports.get", "query");
@@ -180,9 +177,9 @@ describe("bb-kit generation", () => {
         "",
       ].join("\n"),
     );
-    expect(checkProject(localAliasRoot)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK210" }),
-    ]));
+    expect(checkProject(localAliasRoot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK210" })]),
+    );
 
     const wrapperRoot = temporaryProject();
     addOperation(wrapperRoot, "reports.get", "query");
@@ -200,9 +197,9 @@ describe("bb-kit generation", () => {
         "",
       ].join("\n"),
     );
-    expect(checkProject(wrapperRoot)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK210" }),
-    ]));
+    expect(checkProject(wrapperRoot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK210" })]),
+    );
 
     const structuralNullRoot = temporaryProject();
     addOperation(structuralNullRoot, "reports.get", "query");
@@ -219,9 +216,9 @@ describe("bb-kit generation", () => {
         "",
       ].join("\n"),
     );
-    expect(checkProject(structuralNullRoot)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK210" }),
-    ]));
+    expect(checkProject(structuralNullRoot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK210" })]),
+    );
   });
 
   it("reads literal required examples and rejects dynamic metadata", () => {
@@ -268,9 +265,9 @@ describe("bb-kit generation", () => {
         "",
       ].join("\n"),
     );
-    expect(checkProject(dynamicRoot)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK210" }),
-    ]));
+    expect(checkProject(dynamicRoot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK210" })]),
+    );
   });
 
   it("rejects frontend imports of server adapters", () => {
@@ -280,9 +277,9 @@ describe("bb-kit generation", () => {
       join(root, "plugin/modules/reports/panel.tsx"),
       'import "./repository.js";\nexport function Panel() { return null; }\n',
     );
-    expect(checkProject(root)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK104" }),
-    ]));
+    expect(checkProject(root)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "BBK104" })]),
+    );
   });
 
   it("rejects cross-module internals and import cycles", () => {
@@ -301,10 +298,12 @@ describe("bb-kit generation", () => {
       join(root, "plugin/modules/reports/second.ts"),
       'import "./first.js";\nexport const second = true;\n',
     );
-    expect(checkProject(root)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK106" }),
-      expect.objectContaining({ code: "BBK107" }),
-    ]));
+    expect(checkProject(root)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "BBK106" }),
+        expect.objectContaining({ code: "BBK107" }),
+      ]),
+    );
   });
 
   it("rejects module-scope resources and undeclared runtime packages", () => {
@@ -314,10 +313,12 @@ describe("bb-kit generation", () => {
       join(root, "plugin/modules/reports/repository.ts"),
       'import ky from "ky";\nexport const timer = setInterval(() => ky.get("/"), 1000);\n',
     );
-    expect(checkProject(root)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK108" }),
-      expect.objectContaining({ code: "BBK109" }),
-    ]));
+    expect(checkProject(root)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "BBK108" }),
+        expect.objectContaining({ code: "BBK109" }),
+      ]),
+    );
   });
 
   it("locks append-only migrations and detects edits", () => {
@@ -331,23 +332,19 @@ describe("bb-kit generation", () => {
     ]);
     expect(checkProject(root)).toEqual([]);
 
-    writeFileSync(
-      join(root, "plugin/modules/reports/migrations/001-initial.sql"),
-      "select 1;\n",
+    writeFileSync(join(root, "plugin/modules/reports/migrations/001-initial.sql"), "select 1;\n");
+    expect(checkProject(root)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "BBK304" }),
+        expect.objectContaining({ code: "BBK305" }),
+      ]),
     );
-    expect(checkProject(root)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "BBK304" }),
-      expect.objectContaining({ code: "BBK305" }),
-    ]));
     expect(() => addMigration(root, "reports", "initial")).toThrow(/was modified/);
   });
 
   it("refuses unknown composition roots before creating a module", () => {
     const root = temporaryProject();
-    writeFileSync(
-      join(root, "plugin/server.ts"),
-      "export default { setup() {} };\n",
-    );
+    writeFileSync(join(root, "plugin/server.ts"), "export default { setup() {} };\n");
     expect(() => addModule(root, "reports")).toThrow(/composition root/);
     expect(existsSync(join(root, "plugin/modules/reports"))).toBe(false);
   });
@@ -376,19 +373,23 @@ describe("bb-kit generation", () => {
       "plugin/modules/approvals/app.tsx",
     ]);
     expect(addPanel(root, "approvals", "thread")).toEqual([]);
-    expect(readFileSync(join(root, "plugin/modules/approvals/server.ts"), "utf8"))
-      .toContain("bb.storage.migrate(approvalsDatabase, approvalsMigrations)");
-    expect(readFileSync(join(root, "plugin/app.tsx"), "utf8"))
-      .toContain("registerApprovalsApp(app)");
+    expect(readFileSync(join(root, "plugin/modules/approvals/server.ts"), "utf8")).toContain(
+      "bb.storage.migrate(approvalsDatabase, approvalsMigrations)",
+    );
+    expect(readFileSync(join(root, "plugin/app.tsx"), "utf8")).toContain(
+      "registerApprovalsApp(app)",
+    );
     const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
     };
     expect(manifest.dependencies["@tanstack/react-query"]).toBe("^5.101.4");
     expect(checkProject(root)).toEqual([]);
-    expect(inspectProject(root).modules[0]).toEqual(expect.objectContaining({
-      surfaces: ["thread-panel"],
-      storage: "sqlite",
-    }));
+    expect(inspectProject(root).modules[0]).toEqual(
+      expect.objectContaining({
+        surfaces: ["thread-panel"],
+        storage: "sqlite",
+      }),
+    );
     const tsconfigPath = join(root, "tsconfig.json");
     const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as {
       compilerOptions: { paths: Record<string, string[]>; typeRoots?: string[] };
@@ -406,9 +407,7 @@ describe("bb-kit generation", () => {
     tsconfig.compilerOptions.paths["@bb-kit/core/query"] = [
       join(repositoryRoot, "packages/bb-kit/src/query.ts"),
     ];
-    tsconfig.compilerOptions.paths.zod = [
-      join(repositoryRoot, "node_modules/zod/index.d.cts"),
-    ];
+    tsconfig.compilerOptions.paths.zod = [join(repositoryRoot, "node_modules/zod/index.d.cts")];
     tsconfig.compilerOptions.paths.react = [
       join(repositoryRoot, "node_modules/@types/react/index.d.ts"),
     ];
@@ -435,10 +434,9 @@ describe("bb-kit generation", () => {
     lock.operations["approvals.get"] = { rpcMethod: "legacy_approval_get" };
     writeFileSync(join(root, "bb-kit.lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
     addOperation(root, "approvals.get", "query");
-    expect(readFileSync(
-      join(root, "plugin/modules/approvals/generated/operations.ts"),
-      "utf8",
-    )).toContain('wireMethod: "legacy_approval_get"');
+    expect(
+      readFileSync(join(root, "plugin/modules/approvals/generated/operations.ts"), "utf8"),
+    ).toContain('wireMethod: "legacy_approval_get"');
 
     addOperation(root, "foo-bar.get", "query");
     expect(() => addOperation(root, "foo.bar-get", "query")).toThrow(/collides/);

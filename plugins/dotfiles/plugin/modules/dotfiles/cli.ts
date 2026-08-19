@@ -18,10 +18,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function registerDotfilesCli(
-  cli: BbPluginApi["cli"],
-  service: DotfilesService,
-): void {
+export function registerDotfilesCli(cli: BbPluginApi["cli"], service: DotfilesService): void {
   cli.register({
     name: "dotfiles",
     summary: "Manage the tweakable dotfiles repo (list, status, cat, render, check, sync)",
@@ -78,7 +75,9 @@ export function registerDotfilesCli(
                   file.dirty ? "dirty" : "",
                   file.render ? "renders" : "",
                   file.exists ? "" : "MISSING",
-                ].filter(Boolean).join(", ");
+                ]
+                  .filter(Boolean)
+                  .join(", ");
                 lines.push(`  ${file.path}${flags ? `  [${flags}]` : ""}`);
               }
             }
@@ -127,13 +126,13 @@ export function registerDotfilesCli(
             return {
               exitCode: 2,
               stderr:
-                "usage: bb dotfiles <list|status|cat|render|check|sync>\n"
-                + "  list              list tweakable files\n"
-                + "  status            git status of the repo\n"
-                + "  cat <path>        print a tweakable file\n"
-                + "  render            render agent configs and settings overlays\n"
-                + "  check [target]    run validation (location|mise|shell|mcp|python|skills|dotfiles|safety|secrets)\n"
-                + "  sync [--publish]  pull-only sync, or publish with --publish",
+                "usage: bb dotfiles <list|status|cat|render|check|sync>\n" +
+                "  list              list tweakable files\n" +
+                "  status            git status of the repo\n" +
+                "  cat <path>        print a tweakable file\n" +
+                "  render            render agent configs and settings overlays\n" +
+                "  check [target]    run validation (location|mise|shell|mcp|python|skills|dotfiles|safety|secrets)\n" +
+                "  sync [--publish]  pull-only sync, or publish with --publish",
             };
         }
       } catch (error) {

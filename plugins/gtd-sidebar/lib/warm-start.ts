@@ -62,16 +62,10 @@ export const WARM_START_PROVIDERS_KEY = "gtd-sidebar:v1:providers";
  * successful write does it — the same discipline the comment above prescribes
  * for whoever writes v2.
  */
-const RETIRED_KEYS = [
-  "t3sidebar:v1:lifecycle-rows",
-  "t3sidebar:v1:providers",
-] as const;
+const RETIRED_KEYS = ["t3sidebar:v1:lifecycle-rows", "t3sidebar:v1:providers"] as const;
 
 /** The `Storage` methods this needs, so a test can hand it a stub. */
-export type WarmStartStorage = Pick<
-  Storage,
-  "getItem" | "setItem" | "removeItem"
->;
+export type WarmStartStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 /** The provider fields the glyph needs, mirroring `listProviders`' output. */
 export interface WarmStartProvider {
@@ -152,10 +146,7 @@ function defaultStorage(): WarmStartStorage | null {
   }
 }
 
-function readEntry(
-  key: string,
-  storage: WarmStartStorage | null,
-): string | null {
+function readEntry(key: string, storage: WarmStartStorage | null): string | null {
   const remembered = memoryTier.get(key);
   if (remembered !== undefined) return remembered;
   if (storage === null) return null;
@@ -167,11 +158,7 @@ function readEntry(
   }
 }
 
-function writeEntry(
-  key: string,
-  serialized: string,
-  storage: WarmStartStorage | null,
-): void {
+function writeEntry(key: string, serialized: string, storage: WarmStartStorage | null): void {
   memoryTier.set(key, serialized);
   if (storage === null) return;
   // Every mutation in every window publishes, and every window rewrites on the
@@ -258,11 +245,7 @@ function decodeRow(value: unknown): ThreadLifecycleRow | null {
   const settledAt = decodeTimestamp(raw.settledAt);
   const snoozedUntil = decodeTimestamp(raw.snoozedUntil);
   const snoozedAt = decodeTimestamp(raw.snoozedAt);
-  if (
-    settledAt === undefined ||
-    snoozedUntil === undefined ||
-    snoozedAt === undefined
-  ) {
+  if (settledAt === undefined || snoozedUntil === undefined || snoozedAt === undefined) {
     return null;
   }
   return { threadId, settledAt, snoozedUntil, snoozedAt };
@@ -317,9 +300,7 @@ export const MAX_WARM_START_ENTRY_CHARS = 64 * 1024;
  * encoder never writes one, so anything over the cap was written by something
  * that is not this plugin.
  */
-export function decodeWarmStartRows(
-  stored: string | null,
-): ThreadLifecycleRow[] | null {
+export function decodeWarmStartRows(stored: string | null): ThreadLifecycleRow[] | null {
   if (stored === null) return null;
   if (stored.length > MAX_WARM_START_ENTRY_CHARS) return null;
   let parsed: unknown;
@@ -363,14 +344,11 @@ function parkedAt(row: ThreadLifecycleRow): number {
  * a Map is the string "{}", and a plain object keyed by thread id would hoist
  * integer-like keys and answer to `Object.prototype` members.
  */
-export function encodeWarmStartRows(
-  rows: readonly ThreadLifecycleRow[],
-): string {
+export function encodeWarmStartRows(rows: readonly ThreadLifecycleRow[]): string {
   const kept = [...rows]
     .sort(
       (left, right) =>
-        parkedAt(right) - parkedAt(left) ||
-        left.threadId.localeCompare(right.threadId),
+        parkedAt(right) - parkedAt(left) || left.threadId.localeCompare(right.threadId),
     )
     .slice(0, MAX_WARM_START_ROWS);
   return JSON.stringify(
@@ -471,9 +449,7 @@ function decodeProvider(value: unknown): WarmStartProvider | null {
  * handful of entries, so a count cap on top of it would only name a number
  * nothing approaches.
  */
-export function decodeWarmStartProviders(
-  stored: string | null,
-): WarmStartProvider[] | null {
+export function decodeWarmStartProviders(stored: string | null): WarmStartProvider[] | null {
   if (stored === null) return null;
   if (stored.length > MAX_WARM_START_ENTRY_CHARS) return null;
   let parsed: unknown;
@@ -493,9 +469,7 @@ export function decodeWarmStartProviders(
 }
 
 /** Only the three fields the glyph reads, so an added host field is dropped. */
-export function encodeWarmStartProviders(
-  providers: readonly WarmStartProvider[],
-): string {
+export function encodeWarmStartProviders(providers: readonly WarmStartProvider[]): string {
   return JSON.stringify(
     providers.map(({ id, displayName, logoUrl }) => ({
       id,
@@ -522,9 +496,5 @@ export function writeWarmStartProviders(
   providers: readonly WarmStartProvider[],
   storage: WarmStartStorage | null = defaultStorage(),
 ): void {
-  writeEntry(
-    WARM_START_PROVIDERS_KEY,
-    encodeWarmStartProviders(providers),
-    storage,
-  );
+  writeEntry(WARM_START_PROVIDERS_KEY, encodeWarmStartProviders(providers), storage);
 }

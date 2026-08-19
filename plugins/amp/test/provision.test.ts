@@ -15,23 +15,12 @@ import {
   resolveAmpCliLaunch,
   resolveNodeRuntime,
 } from "../lib/provision.ts";
-import {
-  AMP_LEGACY_RED_LOGO_SVG,
-  AMP_LOGO_SVG,
-} from "../src/amp-brand.ts";
+import { AMP_LEGACY_RED_LOGO_SVG, AMP_LOGO_SVG } from "../src/amp-brand.ts";
 import { AMP_ACP_EXECUTOR_ENV } from "../src/execution-target.ts";
 
 const EXPECTED_NATIVE_SKILL_ROOTS = {
-  user: [
-    ".config/agents/skills",
-    ".agents/skills",
-    ".config/amp/skills",
-    ".claude/skills",
-  ],
-  project: [
-    ".agents/skills",
-    ".claude/skills",
-  ],
+  user: [".config/agents/skills", ".agents/skills", ".config/amp/skills", ".claude/skills"],
+  project: [".agents/skills", ".claude/skills"],
 };
 
 function fakeExecutable(directory: string, name: string): string {
@@ -89,16 +78,21 @@ test("reports a missing Amp CLI as null", () => {
 
 test("resolves the configured Amp CLI with its provider environment", () => {
   const { amp, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [{
-      id: AGENT_ID,
-      env: {
-        AMP_CLI_PATH: amp,
-        AMP_API_KEY: "test-key",
-        IGNORED: 7,
-      },
-    }],
-  }));
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [
+        {
+          id: AGENT_ID,
+          env: {
+            AMP_CLI_PATH: amp,
+            AMP_API_KEY: "test-key",
+            IGNORED: 7,
+          },
+        },
+      ],
+    }),
+  );
 
   const launch = resolveAmpCliLaunch(paths, { KEEP_ME: "yes", PATH: "" });
   assert.equal(launch?.command, amp);
@@ -134,10 +128,7 @@ test("managed entry runs node with the bridge bundle and no provider-wide execut
 test("an Electron host is detected and the entry gets ELECTRON_RUN_AS_NODE=1", () => {
   // bb's own binary: Electron only runs a script as node with this flag set;
   // without it the spawn launches the GUI and bb sees a silent ACP agent.
-  const runtime = resolveNodeRuntime(
-    "/Applications/bb.app/Contents/MacOS/bb",
-    "darwin",
-  );
+  const runtime = resolveNodeRuntime("/Applications/bb.app/Contents/MacOS/bb", "darwin");
   assert.equal(runtime.electron, true);
   assert.equal(runtime.node, "/Applications/bb.app/Contents/MacOS/bb");
 
@@ -157,10 +148,7 @@ test("a plain node host is not flagged as Electron", () => {
     node: "/opt/homebrew/bin/node",
     electron: false,
   });
-  assert.equal(
-    resolveNodeRuntime("C:\\Program Files\\nodejs\\node.exe", "win32").electron,
-    false,
-  );
+  assert.equal(resolveNodeRuntime("C:\\Program Files\\nodejs\\node.exe", "win32").electron, false);
 });
 
 test("provisioning writes the Electron flag and drops it again on plain node", () => {
@@ -179,10 +167,13 @@ test("provisioning writes the Electron flag and drops it again on plain node", (
 
 test("fresh install adds one Amp entry without clobbering other config", () => {
   const { launch, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    config: { BB_LOG_LEVEL: "debug" },
-    customAcpAgents: [{ id: "other", displayName: "Other", command: "other" }],
-  }));
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      config: { BB_LOG_LEVEL: "debug" },
+      customAcpAgents: [{ id: "other", displayName: "Other", command: "other" }],
+    }),
+  );
 
   const first = provisionInstallation(paths, launch);
   assert.equal(first.changed, true);
@@ -199,10 +190,7 @@ test("fresh install adds one Amp entry without clobbering other config", () => {
   assert.deepEqual(config.customAcpAgents[1].env, {
     AMP_CLI_PATH: launch.amp,
   });
-  assert.deepEqual(
-    config.customAcpAgents[1].nativeSkillRoots,
-    EXPECTED_NATIVE_SKILL_ROOTS,
-  );
+  assert.deepEqual(config.customAcpAgents[1].nativeSkillRoots, EXPECTED_NATIVE_SKILL_ROOTS);
   assert.equal(readFileSync(paths.logoPath, "utf8"), AMP_LOGO_SVG);
   assert.deepEqual(inspectInstallation(paths), {
     configured: true,
@@ -218,10 +206,7 @@ test("provisioning replaces only the managed legacy red provider logo", () => {
   const result = provisionInstallation(paths, launch);
   assert.equal(result.changed, true);
   assert.equal(readFileSync(paths.logoPath, "utf8"), AMP_LOGO_SVG);
-  assert.equal(
-    result.messages.includes(`updated managed logo at ${paths.logoPath}`),
-    true,
-  );
+  assert.equal(result.messages.includes(`updated managed logo at ${paths.logoPath}`), true);
 });
 
 test("provisioning preserves an existing provider logo", () => {
@@ -232,10 +217,7 @@ test("provisioning preserves an existing provider logo", () => {
 
   const first = provisionInstallation(paths, launch);
   assert.equal(readFileSync(paths.logoPath, "utf8"), customLogo);
-  assert.equal(
-    first.messages.includes(`kept existing logo at ${paths.logoPath}`),
-    true,
-  );
+  assert.equal(first.messages.includes(`kept existing logo at ${paths.logoPath}`), true);
 
   const second = provisionInstallation(paths, launch);
   assert.equal(second.changed, false);
@@ -244,30 +226,33 @@ test("provisioning preserves an existing provider logo", () => {
 
 test("merges an existing Amp entry in place and preserves user-owned fields", () => {
   const { launch, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [{
-      id: AGENT_ID,
-      displayName: "Amp (old)",
-      command: "/old/amp-acp",
-      args: [],
-      env: {
-        AMP_CLI_PATH: "/old/amp",
-        AMP_ACP_CONTINUE_LATEST: "1",
-        [AMP_ACP_EXECUTOR_ENV]: "local",
-        AMP_API_KEY: "test-api-key",
-        XDG_STATE_HOME: "/legacy/state",
-        KEEP_ME: "yes",
-      },
-      logo: "amp-logo.svg",
-      note: "keep",
-    }],
-  }));
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [
+        {
+          id: AGENT_ID,
+          displayName: "Amp (old)",
+          command: "/old/amp-acp",
+          args: [],
+          env: {
+            AMP_CLI_PATH: "/old/amp",
+            AMP_ACP_CONTINUE_LATEST: "1",
+            [AMP_ACP_EXECUTOR_ENV]: "local",
+            AMP_API_KEY: "test-api-key",
+            XDG_STATE_HOME: "/legacy/state",
+            KEEP_ME: "yes",
+          },
+          logo: "amp-logo.svg",
+          note: "keep",
+        },
+      ],
+    }),
+  );
 
   provisionInstallation(paths, launch);
 
-  const agents = JSON.parse(
-    readFileSync(paths.configPath, "utf8"),
-  ).customAcpAgents;
+  const agents = JSON.parse(readFileSync(paths.configPath, "utf8")).customAcpAgents;
   assert.equal(agents.length, 1);
 
   const entry = agents[0];
@@ -287,39 +272,42 @@ test("merges an existing Amp entry in place and preserves user-owned fields", ()
 
 test("removes exact amp-orb entry and merges its env with Amp taking precedence", () => {
   const { launch, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [
-      { id: "other-before", command: "before" },
-      {
-        id: OBSOLETE_ORB_AGENT_ID,
-        displayName: "Amp Orb",
-        command: "/old/orb-bridge",
-        env: {
-          AMP_CLI_PATH: "/old/orb-amp",
-          [AMP_ACP_EXECUTOR_ENV]: "orb",
-          AMP_ACP_ORB_PROJECT: "owner/repo",
-          ORB_ONLY: "orb",
-          SHARED: "orb",
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [
+        { id: "other-before", command: "before" },
+        {
+          id: OBSOLETE_ORB_AGENT_ID,
+          displayName: "Amp Orb",
+          command: "/old/orb-bridge",
+          env: {
+            AMP_CLI_PATH: "/old/orb-amp",
+            [AMP_ACP_EXECUTOR_ENV]: "orb",
+            AMP_ACP_ORB_PROJECT: "owner/repo",
+            ORB_ONLY: "orb",
+            SHARED: "orb",
+          },
+          orbOnlyNote: "preserve",
+          note: "orb",
         },
-        orbOnlyNote: "preserve",
-        note: "orb",
-      },
-      {
-        id: AGENT_ID,
-        displayName: "Amp Local",
-        command: "/old/local-bridge",
-        env: {
-          AMP_CLI_PATH: "/old/local-amp",
-          [AMP_ACP_EXECUTOR_ENV]: "local",
-          AMP_API_KEY: "local-key",
-          LOCAL_ONLY: "local",
-          SHARED: "local",
+        {
+          id: AGENT_ID,
+          displayName: "Amp Local",
+          command: "/old/local-bridge",
+          env: {
+            AMP_CLI_PATH: "/old/local-amp",
+            [AMP_ACP_EXECUTOR_ENV]: "local",
+            AMP_API_KEY: "local-key",
+            LOCAL_ONLY: "local",
+            SHARED: "local",
+          },
+          note: "local",
         },
-        note: "local",
-      },
-      { id: "other-after", command: "after" },
-    ],
-  }));
+        { id: "other-after", command: "after" },
+      ],
+    }),
+  );
 
   assert.deepEqual(inspectInstallation(paths), {
     configured: true,
@@ -329,18 +317,17 @@ test("removes exact amp-orb entry and merges its env with Amp taking precedence"
   const result = provisionInstallation(paths, launch);
   assert.equal(result.changed, true);
   assert.equal(
-    result.messages.some((message) => message.includes("removed obsolete custom ACP agent amp-orb")),
+    result.messages.some((message) =>
+      message.includes("removed obsolete custom ACP agent amp-orb"),
+    ),
     true,
   );
 
-  const agents = JSON.parse(
-    readFileSync(paths.configPath, "utf8"),
-  ).customAcpAgents;
-  assert.deepEqual(agents.map((entry: { id: string }) => entry.id), [
-    "other-before",
-    AGENT_ID,
-    "other-after",
-  ]);
+  const agents = JSON.parse(readFileSync(paths.configPath, "utf8")).customAcpAgents;
+  assert.deepEqual(
+    agents.map((entry: { id: string }) => entry.id),
+    ["other-before", AGENT_ID, "other-after"],
+  );
 
   const entry = agents[1];
   assert.equal(entry.displayName, "Amp");
@@ -362,24 +349,27 @@ test("removes exact amp-orb entry and merges its env with Amp taking precedence"
 
 test("migrates an orb-only entry to Amp in place", () => {
   const { launch, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [
-      { id: "before", command: "before" },
-      {
-        id: OBSOLETE_ORB_AGENT_ID,
-        displayName: "Orb (old)",
-        command: "/old/bridge",
-        env: {
-          [AMP_ACP_EXECUTOR_ENV]: "orb",
-          AMP_ACP_CONTINUE_LATEST: "1",
-          AMP_ACP_ORB_PROJECT: "owner/repo",
-          KEEP_ME: "yes",
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [
+        { id: "before", command: "before" },
+        {
+          id: OBSOLETE_ORB_AGENT_ID,
+          displayName: "Orb (old)",
+          command: "/old/bridge",
+          env: {
+            [AMP_ACP_EXECUTOR_ENV]: "orb",
+            AMP_ACP_CONTINUE_LATEST: "1",
+            AMP_ACP_ORB_PROJECT: "owner/repo",
+            KEEP_ME: "yes",
+          },
+          note: "keep",
         },
-        note: "keep",
-      },
-      { id: "after", command: "after" },
-    ],
-  }));
+        { id: "after", command: "after" },
+      ],
+    }),
+  );
 
   const result = provisionInstallation(paths, launch);
   assert.equal(result.changed, true);
@@ -388,14 +378,11 @@ test("migrates an orb-only entry to Amp in place", () => {
     true,
   );
 
-  const agents = JSON.parse(
-    readFileSync(paths.configPath, "utf8"),
-  ).customAcpAgents;
-  assert.deepEqual(agents.map((entry: { id: string }) => entry.id), [
-    "before",
-    AGENT_ID,
-    "after",
-  ]);
+  const agents = JSON.parse(readFileSync(paths.configPath, "utf8")).customAcpAgents;
+  assert.deepEqual(
+    agents.map((entry: { id: string }) => entry.id),
+    ["before", AGENT_ID, "after"],
+  );
 
   const entry = agents[1];
   assert.equal(entry.displayName, "Amp");
@@ -416,15 +403,16 @@ test("leaves similarly named agents untouched", () => {
     command: "/custom/orbit",
     env: { KEEP_ME: "yes" },
   };
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [similar],
-  }));
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [similar],
+    }),
+  );
 
   provisionInstallation(paths, launch);
 
-  const agents = JSON.parse(
-    readFileSync(paths.configPath, "utf8"),
-  ).customAcpAgents;
+  const agents = JSON.parse(readFileSync(paths.configPath, "utf8")).customAcpAgents;
   assert.equal(agents.length, 2);
   assert.deepEqual(agents[0], similar);
   assert.equal(agents[1].id, AGENT_ID);
@@ -432,20 +420,23 @@ test("leaves similarly named agents untouched", () => {
 
 test("provisioning is idempotent after collapsing legacy entries", () => {
   const { launch, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [
-      {
-        id: AGENT_ID,
-        command: "/old/local",
-        env: { LOCAL_ONLY: "local" },
-      },
-      {
-        id: OBSOLETE_ORB_AGENT_ID,
-        command: "/old/orb",
-        env: { ORB_ONLY: "orb" },
-      },
-    ],
-  }));
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [
+        {
+          id: AGENT_ID,
+          command: "/old/local",
+          env: { LOCAL_ONLY: "local" },
+        },
+        {
+          id: OBSOLETE_ORB_AGENT_ID,
+          command: "/old/orb",
+          env: { ORB_ONLY: "orb" },
+        },
+      ],
+    }),
+  );
 
   const first = provisionInstallation(paths, launch);
   assert.equal(first.changed, true);
@@ -479,10 +470,7 @@ test("the automatic pass upgrades an Amp entry without native skill roots", () =
   assert.equal(needsProvisioning(paths, launch), true);
   provisionInstallation(paths, launch);
   const repaired = JSON.parse(readFileSync(paths.configPath, "utf8"));
-  assert.deepEqual(
-    repaired.customAcpAgents[0].nativeSkillRoots,
-    EXPECTED_NATIVE_SKILL_ROOTS,
-  );
+  assert.deepEqual(repaired.customAcpAgents[0].nativeSkillRoots, EXPECTED_NATIVE_SKILL_ROOTS);
   assert.equal(needsProvisioning(paths, launch), false);
 });
 
@@ -533,17 +521,17 @@ test("the automatic pass rewrites an entry left on an older bridge or runtime", 
     needsProvisioning(paths, { ...launch, bridge: join(root, "v2", "bridge.js") }),
     true,
   );
-  assert.equal(
-    needsProvisioning(paths, { ...launch, node: join(root, "bin", "node22") }),
-    true,
-  );
+  assert.equal(needsProvisioning(paths, { ...launch, node: join(root, "bin", "node22") }), true);
 });
 
 test("the automatic pass migrates an obsolete amp-orb entry", () => {
   const { launch, paths } = fixture();
-  writeFileSync(paths.configPath, JSON.stringify({
-    customAcpAgents: [{ id: OBSOLETE_ORB_AGENT_ID, command: "/old/orb" }],
-  }));
+  writeFileSync(
+    paths.configPath,
+    JSON.stringify({
+      customAcpAgents: [{ id: OBSOLETE_ORB_AGENT_ID, command: "/old/orb" }],
+    }),
+  );
 
   assert.equal(needsProvisioning(paths, launch), true);
 });
@@ -566,10 +554,7 @@ test("refuses non-object config", () => {
   const { launch, paths } = fixture();
   writeFileSync(paths.configPath, JSON.stringify(["not", "an", "object"]));
   assert.throws(() => provisionInstallation(paths, launch));
-  assert.deepEqual(
-    JSON.parse(readFileSync(paths.configPath, "utf8")),
-    ["not", "an", "object"],
-  );
+  assert.deepEqual(JSON.parse(readFileSync(paths.configPath, "utf8")), ["not", "an", "object"]);
 });
 
 test("rejects a missing bridge bundle with a build hint", () => {
@@ -577,8 +562,7 @@ test("rejects a missing bridge bundle with a build hint", () => {
   const missing = join(root, "dist", "nope.js");
   assert.throws(
     () => provisionInstallation(paths, { ...launch, bridge: missing }),
-    (error: unknown) => error instanceof Error
-      && error.message.includes(BRIDGE_BUILD_HINT),
+    (error: unknown) => error instanceof Error && error.message.includes(BRIDGE_BUILD_HINT),
   );
 });
 

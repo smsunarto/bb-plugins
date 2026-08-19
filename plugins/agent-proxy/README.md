@@ -34,11 +34,11 @@ the machine that runs the bb server and gives it a management UI inside bb.
 > (the default) the next bb start or `bb plugin reload` brings the core back. Turn
 > `autostart` off for a stop that survives a reload.
 
-| Client | What Apply does |
-|---|---|
-| **Claude Code** | Merges the base URL and token into `~/.claude/settings.json` after a timestamped backup. Restore reverts only the entries you have not since edited. `~/.claude.json` is never touched. |
-| **Codex** | Gives you a copy-ready command or a generated `CODEX_HOME`. Never edits `~/.codex/config.toml`. |
-| **Anything else** | The plain base URL and API key. |
+| Client            | What Apply does                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Claude Code**   | Merges the base URL and token into `~/.claude/settings.json` after a timestamped backup. Restore reverts only the entries you have not since edited. `~/.claude.json` is never touched. |
+| **Codex**         | Gives you a copy-ready command or a generated `CODEX_HOME`. Never edits `~/.codex/config.toml`.                                                                                         |
+| **Anything else** | The plain base URL and API key.                                                                                                                                                         |
 
 ## Install
 
@@ -88,37 +88,37 @@ plugin fetches or builds on your machine, and OAuth sign-in opens a browser.
 
 ## Endpoints
 
-| Protocol | Base URL |
-|---|---|
-| OpenAI-compatible | `http://127.0.0.1:8317/v1` |
-| Anthropic (`/v1/messages`) | `http://127.0.0.1:8317` |
-| Gemini | `http://127.0.0.1:8317/v1beta` |
+| Protocol                   | Base URL                       |
+| -------------------------- | ------------------------------ |
+| OpenAI-compatible          | `http://127.0.0.1:8317/v1`     |
+| Anthropic (`/v1/messages`) | `http://127.0.0.1:8317`        |
+| Gemini                     | `http://127.0.0.1:8317/v1beta` |
 
 The proxy listens on loopback of the bb server machine only.
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `bb agent-proxy status` | State, pid, port, service manager, definition path, installed and latest version, endpoints |
-| `bb agent-proxy start` | Enable and start the login service |
-| `bb agent-proxy stop` | Stop *and* disable the login service |
-| `bb agent-proxy restart` | Rewrite the definition if it changed, then restart |
-| `bb agent-proxy endpoints` | Print the three base URLs and the local API key |
-| `bb agent-proxy install [ref]` | Install the configured source, or a one-off ref without changing the saved setting |
-| `bb agent-proxy oauth <claude\|codex>` | Start a browser OAuth flow and poll for up to 3 minutes |
-| `bb agent-proxy providers` | Count configured entries per collection, then list auth files |
-| `bb agent-proxy usage` | Print the usage report as JSON |
+| Command                                | What it does                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `bb agent-proxy status`                | State, pid, port, service manager, definition path, installed and latest version, endpoints |
+| `bb agent-proxy start`                 | Enable and start the login service                                                          |
+| `bb agent-proxy stop`                  | Stop _and_ disable the login service                                                        |
+| `bb agent-proxy restart`               | Rewrite the definition if it changed, then restart                                          |
+| `bb agent-proxy endpoints`             | Print the three base URLs and the local API key                                             |
+| `bb agent-proxy install [ref]`         | Install the configured source, or a one-off ref without changing the saved setting          |
+| `bb agent-proxy oauth <claude\|codex>` | Start a browser OAuth flow and poll for up to 3 minutes                                     |
+| `bb agent-proxy providers`             | Count configured entries per collection, then list auth files                               |
+| `bb agent-proxy usage`                 | Print the usage report as JSON                                                              |
 
 ## Settings
 
-| Key | Default | Meaning |
-|---|---|---|
-| `autostart` | `true` | Keep the login service enabled, so the core starts at login and survives bb closing |
-| `port` | `8317` | Listen port. Out-of-range or unparseable values fall back to 8317 |
-| `sourceRepository` | `router-for-me/CLIProxyAPI` | Public GitHub source |
-| `sourceBranch` | `latest` | `latest` resolves to the newest published release; or a branch, tag, or commit |
-| `managementKey` | *(generated)* | Secret. Overrides the auto-generated management key |
+| Key                | Default                     | Meaning                                                                             |
+| ------------------ | --------------------------- | ----------------------------------------------------------------------------------- |
+| `autostart`        | `true`                      | Keep the login service enabled, so the core starts at login and survives bb closing |
+| `port`             | `8317`                      | Listen port. Out-of-range or unparseable values fall back to 8317                   |
+| `sourceRepository` | `router-for-me/CLIProxyAPI` | Public GitHub source                                                                |
+| `sourceBranch`     | `latest`                    | `latest` resolves to the newest published release; or a branch, tag, or commit      |
+| `managementKey`    | _(generated)_               | Secret. Overrides the auto-generated management key                                 |
 
 Autostart applies immediately. The core reads the port and the management key only
 at startup, so a change to either stops the service, rewrites `config.yaml`, and
@@ -129,12 +129,12 @@ is applied on its next start.
 
 Everything lives under `<bb dataDir>/plugins/agent-proxy/`:
 
-| Path | Contents |
-|---|---|
-| `core/auth/` | Your OAuth credentials |
-| `core/secrets/` | Generated API keys |
-| `backups/` | Timestamped copies of any file the plugin edits, taken before it writes |
-| `core/service/core.log` | The log behind the Home page's tail |
+| Path                    | Contents                                                                |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `core/auth/`            | Your OAuth credentials                                                  |
+| `core/secrets/`         | Generated API keys                                                      |
+| `backups/`              | Timestamped copies of any file the plugin edits, taken before it writes |
+| `core/service/core.log` | The log behind the Home page's tail                                     |
 
 Credentials and keys are written `0600` and never leave this directory — the
 service definition holds only paths and service settings.
@@ -143,7 +143,7 @@ service definition holds only paths and service settings.
 
 - **Crash loop right after install** — usually a port conflict. Change `port`, or free 8317.
 - **"Unavailable — is the core running?"** on OAuth, Providers, or Usage — those pages talk to the core's management API, so the core must be up first.
-- **Removed the plugin, service still there** — the operating system owns the process by design. Run `bb agent-proxy stop` *before* you remove the plugin, or delete the definition by hand.
+- **Removed the plugin, service still there** — the operating system owns the process by design. Run `bb agent-proxy stop` _before_ you remove the plugin, or delete the definition by hand.
 - **macOS Gatekeeper kills the binary** — it should not be quarantined, but if it happens: `xattr -d com.apple.quarantine <core/bin/current/cli-proxy-api>`.
 
 ## Develop from source

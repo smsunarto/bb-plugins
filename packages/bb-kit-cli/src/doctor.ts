@@ -103,11 +103,12 @@ function installedPlugin(value: unknown, pluginId: string): PluginListEntry | nu
   if (typeof value !== "object" || value === null) return null;
   const plugins = (value as PluginListOutput).plugins;
   if (!Array.isArray(plugins)) return null;
-  return plugins.find((entry): entry is PluginListEntry =>
-    typeof entry === "object"
-    && entry !== null
-    && (entry as PluginListEntry).id === pluginId
-  ) ?? null;
+  return (
+    plugins.find(
+      (entry): entry is PluginListEntry =>
+        typeof entry === "object" && entry !== null && (entry as PluginListEntry).id === pluginId,
+    ) ?? null
+  );
 }
 
 function appSdkVersion(entry: PluginListEntry | null): string | null {
@@ -143,12 +144,7 @@ export function doctorProject(root: string, options: DoctorOptions = {}): Doctor
   let hostVersion: string | null = null;
   let entry: PluginListEntry | null = null;
   try {
-    selected = selectBbCli(
-      root,
-      options.env ?? process.env,
-      compatibility.bbCliVersion,
-      run,
-    );
+    selected = selectBbCli(root, options.env ?? process.env, compatibility.bbCliVersion, run);
     const versionOutput = readOnlyCommand(
       selected,
       run,
@@ -156,9 +152,10 @@ export function doctorProject(root: string, options: DoctorOptions = {}): Doctor
       ["settings", "version", "--json"],
       "bb settings version --json",
     );
-    hostVersion = typeof versionOutput === "object" && versionOutput !== null
-      ? stringField((versionOutput as HostVersionOutput).currentVersion)
-      : null;
+    hostVersion =
+      typeof versionOutput === "object" && versionOutput !== null
+        ? stringField((versionOutput as HostVersionOutput).currentVersion)
+        : null;
     if (hostVersion === null) {
       errors.push({
         code: "doctor_host_version_unavailable",
@@ -185,9 +182,10 @@ export function doctorProject(root: string, options: DoctorOptions = {}): Doctor
       });
     }
   } catch (error) {
-    const failure = error instanceof ProcessError
-      ? error
-      : new ProcessError("doctor_failed", error instanceof Error ? error.message : String(error));
+    const failure =
+      error instanceof ProcessError
+        ? error
+        : new ProcessError("doctor_failed", error instanceof Error ? error.message : String(error));
     errors.push({ code: failure.code, message: failure.message });
   }
 
@@ -209,12 +207,9 @@ export function doctorProject(root: string, options: DoctorOptions = {}): Doctor
   const installedAppSdkVersion = appSdkVersion(entry);
   const installedAppCompatible = appCompatible(entry);
   if (
-    entry
-    && project.appEntry
-    && (
-      installedAppSdkVersion !== compatibility.pluginSdk.version
-      || installedAppCompatible !== true
-    )
+    entry &&
+    project.appEntry &&
+    (installedAppSdkVersion !== compatibility.pluginSdk.version || installedAppCompatible !== true)
   ) {
     errors.push({
       code: "doctor_plugin_app_incompatible",
@@ -234,7 +229,9 @@ export function doctorProject(root: string, options: DoctorOptions = {}): Doctor
       ? [`Run the read-only query and inspect configured state: ${suggestedQuery}`]
       : ["No read-only invocation is available."]),
     ...(surfaces.has("nav-panel")
-      ? ["Open the plugin navigation panel. Check loading, success, error, and narrow-width states."]
+      ? [
+          "Open the plugin navigation panel. Check loading, success, error, and narrow-width states.",
+        ]
       : []),
     ...(surfaces.has("thread-panel")
       ? ["Open the thread panel action. Check loading, success, error, and narrow-width states."]

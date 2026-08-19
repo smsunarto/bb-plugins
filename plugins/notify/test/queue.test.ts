@@ -35,7 +35,11 @@ function notification(message: string, play: string | null = null): Notification
 
 test("a lease retains notifications until the renderer acknowledges them", async () => {
   const store = new MemoryStore();
-  const queue = new NotificationQueue(store, () => 1_000, () => "lease-1");
+  const queue = new NotificationQueue(
+    store,
+    () => 1_000,
+    () => "lease-1",
+  );
   const id = await queue.enqueue(notification("Done"));
 
   const delivery = await queue.lease();
@@ -77,13 +81,20 @@ test("an unacknowledged lease is redelivered after it expires", async () => {
   now += DELIVERY_LEASE_MS + 1;
   const retried = await queue.lease();
   assert.equal(retried.lease?.id, "lease-2");
-  assert.deepEqual(retried.lease?.notifications.map((item) => item.id), [id]);
+  assert.deepEqual(
+    retried.lease?.notifications.map((item) => item.id),
+    [id],
+  );
 });
 
 test("acknowledgement removes only displayed ids and returns one batch tone", async () => {
   let now = 10_000;
   const store = new MemoryStore();
-  const queue = new NotificationQueue(store, () => now, () => "lease-a");
+  const queue = new NotificationQueue(
+    store,
+    () => now,
+    () => "lease-a",
+  );
   const first = await queue.enqueue(notification("First", "Ping"));
   const second = await queue.enqueue(notification("Second", "Glass"));
   await queue.lease();
@@ -96,22 +107,40 @@ test("acknowledgement removes only displayed ids and returns one batch tone", as
 
   now += DELIVERY_LEASE_MS + 1;
   const remaining = await queue.lease();
-  assert.deepEqual(remaining.lease?.notifications.map((item) => item.id), [second]);
+  assert.deepEqual(
+    remaining.lease?.notifications.map((item) => item.id),
+    [second],
+  );
 });
 
 test("persisted notifications survive a queue instance replacement", async () => {
   const store = new MemoryStore();
-  const beforeReload = new NotificationQueue(store, () => 1_000, () => "old");
+  const beforeReload = new NotificationQueue(
+    store,
+    () => 1_000,
+    () => "old",
+  );
   const id = await beforeReload.enqueue(notification("Held"));
 
-  const afterReload = new NotificationQueue(store, () => 1_000, () => "new");
+  const afterReload = new NotificationQueue(
+    store,
+    () => 1_000,
+    () => "new",
+  );
   const delivery = await afterReload.lease();
-  assert.deepEqual(delivery.lease?.notifications.map((item) => item.id), [id]);
+  assert.deepEqual(
+    delivery.lease?.notifications.map((item) => item.id),
+    [id],
+  );
 });
 
 test("concurrent pollers cannot lease the same notification", async () => {
   const store = new MemoryStore();
-  const queue = new NotificationQueue(store, () => 1_000, () => "only-lease");
+  const queue = new NotificationQueue(
+    store,
+    () => 1_000,
+    () => "only-lease",
+  );
   await queue.enqueue(notification("Once"));
 
   const deliveries = await Promise.all([queue.lease(), queue.lease()]);
@@ -121,7 +150,11 @@ test("concurrent pollers cannot lease the same notification", async () => {
 test("the durable queue stays bounded and expires old news", async () => {
   let now = 1_000;
   const store = new MemoryStore();
-  const queue = new NotificationQueue(store, () => now, () => "lease");
+  const queue = new NotificationQueue(
+    store,
+    () => now,
+    () => "lease",
+  );
   for (let index = 0; index <= QUEUE_MAX; index += 1) {
     await queue.enqueue(notification(`Item ${index}`));
   }

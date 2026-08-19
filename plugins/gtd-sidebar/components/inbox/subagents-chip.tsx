@@ -20,10 +20,7 @@ const MAX_DISCS = 3;
  * bb's in-turn subagents are activity counters on the parent, not threads, so
  * the label deliberately says "children".
  */
-export function SubagentsChip({
-  threadId,
-  isCompactViewport,
-}: PluginThreadHeaderActionProps) {
+export function SubagentsChip({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const { threads } = useSidebarThreads();
   const actions = useSidebarThreadActions();
   const [open, setOpen] = useState(false);
@@ -54,11 +51,7 @@ export function SubagentsChip({
         <>
           {/* Click-away. The header is a short row, so the list itself is
               absolutely positioned rather than inline. */}
-          <span
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
+          <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
           <div
             role="menu"
             aria-label="Child threads"
@@ -66,9 +59,7 @@ export function SubagentsChip({
           >
             <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
               <span className="text-xs font-semibold">Children</span>
-              <span className="ml-auto text-2xs text-muted-foreground">
-                {children.length}
-              </span>
+              <span className="ml-auto text-2xs text-muted-foreground">{children.length}</span>
             </div>
             <ul className="flex flex-col gap-px p-1.5 pt-0.5">
               {children.map((child) => (
@@ -84,17 +75,12 @@ export function SubagentsChip({
                   >
                     <Disc thread={child} />
                     <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-xs">
-                        {threadDisplayTitle(child)}
-                      </span>
+                      <span className="truncate text-xs">{threadDisplayTitle(child)}</span>
                       <span className="truncate text-2xs text-muted-foreground">
                         {child.originKind ?? "thread"}
                       </span>
                     </span>
-                    <StatusGlyph
-                      indicator={child.indicator}
-                      label={child.indicatorLabel}
-                    />
+                    <StatusGlyph indicator={child.indicator} label={child.indicatorLabel} />
                   </button>
                 </li>
               ))}

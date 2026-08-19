@@ -1,8 +1,4 @@
-import {
-  existsSync,
-  readFileSync,
-  readdirSync,
-} from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -47,10 +43,7 @@ export interface FixtureRunResult {
   readonly scenarios: readonly FixtureScenarioResult[];
 }
 
-export interface FixtureRunOptions extends Pick<
-  InvokeOptions,
-  "confirm" | "serverUrl" | "fetch"
-> {
+export interface FixtureRunOptions extends Pick<InvokeOptions, "confirm" | "serverUrl" | "fetch"> {
   readonly module?: string;
 }
 
@@ -73,8 +66,9 @@ export class FixtureError extends Error {
 function fixtureFiles(directory: string): string[] {
   if (!existsSync(directory)) return [];
   const files: string[] = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })
-    .sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...fixtureFiles(path));
     else if (entry.isFile() && /\.(?:json|ya?ml)$/.test(entry.name)) files.push(path);
@@ -88,11 +82,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function assertJson(value: unknown, label: string): void {
   if (
-    value === null
-    || typeof value === "string"
-    || typeof value === "boolean"
-    || (typeof value === "number" && Number.isFinite(value))
-  ) return;
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  )
+    return;
   if (Array.isArray(value)) {
     for (const [index, item] of value.entries()) assertJson(item, `${label}[${index}]`);
     return;
@@ -165,9 +160,7 @@ function loadScenario(root: string, path: string): LoadedScenario {
   if (value.seed !== undefined && !Array.isArray(value.seed)) {
     throw new FixtureError("invalid_fixture", `${file}.seed must be an array`);
   }
-  const seed = (value.seed ?? []).map((step, index) =>
-    fixtureStep(step, `${file}.seed[${index}]`),
-  );
+  const seed = (value.seed ?? []).map((step, index) => fixtureStep(step, `${file}.seed[${index}]`));
   const invoke = fixtureStep(value.invoke, `${file}.invoke`);
   assertJson(value.expect, `${file}.expect`);
   return {
@@ -201,10 +194,7 @@ function redactJson(value: unknown, key = ""): unknown {
   if (Array.isArray(value)) return value.map((item) => redactJson(item));
   if (isRecord(value)) {
     return Object.fromEntries(
-      Object.entries(value).map(([entryKey, item]) => [
-        entryKey,
-        redactJson(item, entryKey),
-      ]),
+      Object.entries(value).map(([entryKey, item]) => [entryKey, redactJson(item, entryKey)]),
     );
   }
   return typeof value === "string" ? redactText(value) : value;
@@ -224,9 +214,7 @@ export async function runFixtures(
   if (files.length === 0) {
     throw new FixtureError(
       "no_fixtures",
-      options.module
-        ? `no fixtures found for module "${options.module}"`
-        : "no fixtures found",
+      options.module ? `no fixtures found for module "${options.module}"` : "no fixtures found",
     );
   }
   const loaded = files.map((path) => loadScenario(root, path));
@@ -278,9 +266,7 @@ export async function runFixtures(
         currentOperation = step.operation;
         await invokeOperation(root, step.operation, {
           ...invocationOptions,
-          ...(Object.hasOwn(step, "input")
-            ? { input: JSON.stringify(step.input) }
-            : {}),
+          ...(Object.hasOwn(step, "input") ? { input: JSON.stringify(step.input) } : {}),
           cwd: root,
         });
       }
@@ -301,7 +287,10 @@ export async function runFixtures(
           operation: scenario.invoke.operation,
           status: "failed",
           stage: "expect",
-          error: { code: "expectation_failed", message: "operation result did not exactly match expect" },
+          error: {
+            code: "expectation_failed",
+            message: "operation result did not exactly match expect",
+          },
           expected: redactJson(scenario.expect),
           actual: redactJson(result.result),
         });
@@ -342,9 +331,10 @@ export async function runFixtures(
 
 export function formatFixtureRun(result: FixtureRunResult): string {
   const icon = { passed: "✓", failed: "✗", skipped: "–" } as const;
-  const lines = result.scenarios.map((scenario) =>
-    `${icon[scenario.status]} ${scenario.id}: ${scenario.status}`
-    + (scenario.error ? ` (${scenario.error.code}: ${scenario.error.message})` : ""),
+  const lines = result.scenarios.map(
+    (scenario) =>
+      `${icon[scenario.status]} ${scenario.id}: ${scenario.status}` +
+      (scenario.error ? ` (${scenario.error.code}: ${scenario.error.message})` : ""),
   );
   lines.push(`${result.passed}/${result.total} fixtures passed`);
   return lines.join("\n");

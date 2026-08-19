@@ -85,20 +85,28 @@ async function initializeBridge(executor?: string): Promise<{
     });
     child.on("error", reject);
     child.on("exit", (code) =>
-      reject(new Error(`bridge exited early (code ${code}): ${Buffer.concat(stderr).toString("utf8")}`)));
-    setTimeout(() => reject(new Error("timed out waiting for initialize response")), 10_000).unref();
+      reject(
+        new Error(`bridge exited early (code ${code}): ${Buffer.concat(stderr).toString("utf8")}`),
+      ),
+    );
+    setTimeout(
+      () => reject(new Error("timed out waiting for initialize response")),
+      10_000,
+    ).unref();
   });
 
-  child.stdin.write(`${JSON.stringify({
-    jsonrpc: "2.0",
-    id: 1,
-    method: "initialize",
-    params: {
-      protocolVersion: 1,
-      clientInfo: { name: "bb", version: "1.0.0" },
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-    },
-  })}\n`);
+  child.stdin.write(
+    `${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: 1,
+        clientInfo: { name: "bb", version: "1.0.0" },
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      },
+    })}\n`,
+  );
 
   try {
     return { parsed: JSON.parse(await responseLine), child };
@@ -108,86 +116,111 @@ async function initializeBridge(executor?: string): Promise<{
   }
 }
 
-test("bundled bridge answers initialize over stdio", { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` }, async () => {
-  const { parsed, child } = await initializeBridge();
-  try {
-    assert.equal(parsed.id, 1);
-    assert.equal(parsed.error, undefined);
-    assert.equal(parsed.result?.protocolVersion, 1);
-    assert.equal(parsed.result?.agentCapabilities?.loadSession, true);
-  } finally {
-    child.kill("SIGKILL");
-  }
-});
+test(
+  "bundled bridge answers initialize over stdio",
+  { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` },
+  async () => {
+    const { parsed, child } = await initializeBridge();
+    try {
+      assert.equal(parsed.id, 1);
+      assert.equal(parsed.error, undefined);
+      assert.equal(parsed.result?.protocolVersion, 1);
+      assert.equal(parsed.result?.agentCapabilities?.loadSession, true);
+    } finally {
+      child.kill("SIGKILL");
+    }
+  },
+);
 
-test("bundled bridge ignores the deprecated executor environment", { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` }, async () => {
-  const { parsed, child } = await initializeBridge("orb");
-  try {
-    assert.equal(parsed.error, undefined);
-    assert.deepEqual(
-      parsed.result?.agentCapabilities?.mcpCapabilities,
-      { http: true, sse: true },
-    );
-  } finally {
-    child.kill("SIGKILL");
-  }
-});
+test(
+  "bundled bridge ignores the deprecated executor environment",
+  { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` },
+  async () => {
+    const { parsed, child } = await initializeBridge("orb");
+    try {
+      assert.equal(parsed.error, undefined);
+      assert.deepEqual(parsed.result?.agentCapabilities?.mcpCapabilities, {
+        http: true,
+        sse: true,
+      });
+    } finally {
+      child.kill("SIGKILL");
+    }
+  },
+);
 
-test("bundled bridge ignores an empty deprecated executor environment", { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` }, async () => {
-  const { parsed, child } = await initializeBridge("");
-  try {
-    assert.equal(parsed.error, undefined);
-    assert.deepEqual(
-      parsed.result?.agentCapabilities?.mcpCapabilities,
-      { http: true, sse: true },
-    );
-  } finally {
-    child.kill("SIGKILL");
-  }
-});
+test(
+  "bundled bridge ignores an empty deprecated executor environment",
+  { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` },
+  async () => {
+    const { parsed, child } = await initializeBridge("");
+    try {
+      assert.equal(parsed.error, undefined);
+      assert.deepEqual(parsed.result?.agentCapabilities?.mcpCapabilities, {
+        http: true,
+        sse: true,
+      });
+    } finally {
+      child.kill("SIGKILL");
+    }
+  },
+);
 
-test("bundled bridge rejects bb's session/new fallback after a missing load", { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` }, async () => {
-  const stateHome = mkdtempSync(join(tmpdir(), "amp-stdio-state-"));
-  const child = spawn(process.execPath, [BRIDGE], {
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...bridgeEnv(),
-      XDG_STATE_HOME: stateHome,
-    },
-  });
-  try {
-    let response = nextResponse(child);
-    child.stdin.write(`${JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: 1,
-        clientInfo: { name: "bb", version: "1.0.0" },
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+test(
+  "bundled bridge rejects bb's session/new fallback after a missing load",
+  { skip: !existsSync(BRIDGE) && `dist/bridge.js not built; ${BRIDGE_BUILD_HINT}` },
+  async () => {
+    const stateHome = mkdtempSync(join(tmpdir(), "amp-stdio-state-"));
+    const child = spawn(process.execPath, [BRIDGE], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...bridgeEnv(),
+        XDG_STATE_HOME: stateHome,
       },
-    })}\n`);
-    assert.equal((await response).error, undefined);
+    });
+    try {
+      let response = nextResponse(child);
+      child.stdin.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: 1,
+            clientInfo: { name: "bb", version: "1.0.0" },
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: false,
+            },
+          },
+        })}\n`,
+      );
+      assert.equal((await response).error, undefined);
 
-    response = nextResponse(child);
-    child.stdin.write(`${JSON.stringify({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "session/load",
-      params: { sessionId: "S-missing", cwd: "/work", mcpServers: [] },
-    })}\n`);
-    assert.ok((await response).error, "the missing session/load must fail");
+      response = nextResponse(child);
+      child.stdin.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "session/load",
+          params: { sessionId: "S-missing", cwd: "/work", mcpServers: [] },
+        })}\n`,
+      );
+      assert.ok((await response).error, "the missing session/load must fail");
 
-    response = nextResponse(child);
-    child.stdin.write(`${JSON.stringify({
-      jsonrpc: "2.0",
-      id: 3,
-      method: "session/new",
-      params: { cwd: "/work", mcpServers: [] },
-    })}\n`);
-    assert.ok((await response).error, "the fallback session/new must also fail");
-  } finally {
-    child.kill("SIGKILL");
-    rmSync(stateHome, { recursive: true, force: true });
-  }
-});
+      response = nextResponse(child);
+      child.stdin.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "session/new",
+          params: { cwd: "/work", mcpServers: [] },
+        })}\n`,
+      );
+      assert.ok((await response).error, "the fallback session/new must also fail");
+    } finally {
+      child.kill("SIGKILL");
+      rmSync(stateHome, { recursive: true, force: true });
+    }
+  },
+);

@@ -1,17 +1,8 @@
-import {
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  initializeProject,
-  verifyProject,
-  type CommandRunner,
-} from "../src/index.js";
+import { initializeProject, verifyProject, type CommandRunner } from "../src/index.js";
 import { checkPackedPackage, packedPaths } from "../src/package.js";
 import { compatibility } from "../src/compatibility.js";
 import {
@@ -55,10 +46,9 @@ describe("package inspection", () => {
       "LICENSE",
     ]);
     expect(() => packedPaths("packed 1KB package.json")).toThrow(/Total files/);
-    expect(() => packedPaths([
-      "packed 1KB package.json",
-      "Total files: 2",
-    ].join("\n"))).toThrow(/listed 1 files but reported 2/);
+    expect(() => packedPaths(["packed 1KB package.json", "Total files: 2"].join("\n"))).toThrow(
+      /listed 1 files but reported 2/,
+    );
   });
 
   it("detects a missing transitive source fallback file", () => {
@@ -87,11 +77,13 @@ describe("project verification", () => {
     seedProjectExecutables(root);
     const run = vi.fn<CommandRunner>(() => commandResult({ stdout: "0.36.0\n" }));
     const result = verifyProject(root, { run, env: testEnvironment() });
-    expect(result).toEqual(expect.objectContaining({
-      ok: false,
-      steps: [],
-      error: expect.objectContaining({ code: "bb_cli_version_mismatch" }),
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        steps: [],
+        error: expect.objectContaining({ code: "bb_cli_version_mismatch" }),
+      }),
+    );
     expect(run).toHaveBeenCalledOnce();
     expect(run.mock.calls[0]?.[0].args).toEqual(["--version"]);
   });
@@ -107,11 +99,16 @@ describe("project verification", () => {
       "dist/server.js",
       "dist/server.meta.json",
     ];
-    const run = vi.fn<CommandRunner>((request) => commandResult({
-      stdout: request.args[0] === "--version"
-        ? `${compatibility.bbCliVersion}\n`
-        : request.args[0] === "pm" ? packOutput(paths) : "",
-    }));
+    const run = vi.fn<CommandRunner>((request) =>
+      commandResult({
+        stdout:
+          request.args[0] === "--version"
+            ? `${compatibility.bbCliVersion}\n`
+            : request.args[0] === "pm"
+              ? packOutput(paths)
+              : "",
+      }),
+    );
     const result = verifyProject(root, { run, env: testEnvironment() });
     expect(result.ok).toBe(true);
     expect(result.diagnostics).toEqual([]);
@@ -135,12 +132,14 @@ describe("project verification", () => {
   it("stops after a failed step and keeps its actionable output", () => {
     const root = temporaryProject();
     seedProjectExecutables(root);
-    const run = vi.fn<CommandRunner>((request) => request.args[0] === "--version"
-      ? commandResult({ stdout: `${compatibility.bbCliVersion}\n` })
-      : commandResult({
-          status: 1,
-          stderr: "lint failed at plugin/server.ts:1 token=secret-value",
-        }));
+    const run = vi.fn<CommandRunner>((request) =>
+      request.args[0] === "--version"
+        ? commandResult({ stdout: `${compatibility.bbCliVersion}\n` })
+        : commandResult({
+            status: 1,
+            stderr: "lint failed at plugin/server.ts:1 token=secret-value",
+          }),
+    );
     const result = verifyProject(root, { run, env: testEnvironment() });
     expect(result.ok).toBe(false);
     expect(result.steps[0]).toEqual({
@@ -164,13 +163,13 @@ describe("project verification", () => {
       return commandResult();
     });
     const result = verifyProject(root, { run, env: testEnvironment() });
-    expect(result).toEqual(expect.objectContaining({
-      ok: false,
-      error: expect.objectContaining({ code: "sdk_declaration_drift" }),
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: "BBK011" }),
-      ]),
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ code: "sdk_declaration_drift" }),
+        diagnostics: expect.arrayContaining([expect.objectContaining({ code: "BBK011" })]),
+      }),
+    );
     expect(result.steps.map((step) => [step.name, step.status])).toEqual([
       ["lint", "failed"],
       ["typecheck", "skipped"],
@@ -203,16 +202,18 @@ describe("project verification", () => {
       return commandResult();
     });
     const result = verifyProject(root, { run, env: testEnvironment() });
-    expect(result).toEqual(expect.objectContaining({
-      ok: false,
-      error: expect.objectContaining({ code: "sdk_declaration_drift" }),
-      diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: "BBK011" }),
-      ]),
-    }));
-    expect(result.steps.at(-1)).toEqual(expect.objectContaining({
-      name: "pack",
-      status: "failed",
-    }));
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ code: "sdk_declaration_drift" }),
+        diagnostics: expect.arrayContaining([expect.objectContaining({ code: "BBK011" })]),
+      }),
+    );
+    expect(result.steps.at(-1)).toEqual(
+      expect.objectContaining({
+        name: "pack",
+        status: "failed",
+      }),
+    );
   });
 });

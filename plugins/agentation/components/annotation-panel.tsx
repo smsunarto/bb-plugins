@@ -5,11 +5,7 @@
 // the reply thread associated with each annotation.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  useBbNavigate,
-  useRealtime,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -41,13 +37,7 @@ const statusTone: Record<AnnotationStatus, string> = {
   dismissed: "text-muted-foreground",
 };
 
-function Pill({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <span
       className={cn(
@@ -63,16 +53,13 @@ function Pill({
 function useAnnotations(filter: FilterId) {
   const rpc = useRpc<typeof rpcContract>();
   const [annotations, setAnnotations] = useState<StoredAnnotation[]>([]);
-  const [routings, setRoutings] = useState<Record<string, AnnotationRouting>>(
-    {},
-  );
+  const [routings, setRoutings] = useState<Record<string, AnnotationRouting>>({});
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const statuses = useMemo(
-    () =>
-      statusFilters.find((entry) => entry.id === filter)?.statuses ?? null,
+    () => statusFilters.find((entry) => entry.id === filter)?.statuses ?? null,
     [filter],
   );
 
@@ -151,39 +138,22 @@ function AnnotationCard({
       `Could not ${action} the annotation`,
     );
 
-  const isClosed =
-    annotation.status === "resolved" || annotation.status === "dismissed";
-  const isAssigned =
-    routing?.state === "assigned" && routing.assignedThreadId !== null;
+  const isClosed = annotation.status === "resolved" || annotation.status === "dismissed";
+  const isAssigned = routing?.state === "assigned" && routing.assignedThreadId !== null;
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-border bg-card p-3",
-        isClosed && "opacity-60",
-      )}
-    >
+    <div className={cn("rounded-lg border border-border bg-card p-3", isClosed && "opacity-60")}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-mono text-xs text-foreground">
-          {annotation.element}
-        </span>
-        <Pill className={statusTone[annotation.status]}>
-          {annotation.status}
-        </Pill>
+        <span className="font-mono text-xs text-foreground">{annotation.element}</span>
+        <Pill className={statusTone[annotation.status]}>{annotation.status}</Pill>
         {routing ? (
           <Pill>
-            {routing.state === "assigned"
-              ? `assigned: ${routing.assignedThreadId}`
-              : routing.state}
+            {routing.state === "assigned" ? `assigned: ${routing.assignedThreadId}` : routing.state}
           </Pill>
         ) : null}
         {annotation.severity ? <Pill>{annotation.severity}</Pill> : null}
         {annotation.intent ? <Pill>{annotation.intent}</Pill> : null}
-        <Pill>
-          {annotation.bb.pluginId
-            ? `plugin: ${annotation.bb.pluginId}`
-            : "bb shell"}
-        </Pill>
+        <Pill>{annotation.bb.pluginId ? `plugin: ${annotation.bb.pluginId}` : "bb shell"}</Pill>
         {annotation.bb.surface ? <Pill>{annotation.bb.surface}</Pill> : null}
       </div>
 
@@ -221,9 +191,7 @@ function AnnotationCard({
               <span
                 className={cn(
                   "font-medium",
-                  message.role === "agent"
-                    ? "text-primary"
-                    : "text-muted-foreground",
+                  message.role === "agent" ? "text-primary" : "text-muted-foreground",
                 )}
               >
                 {message.role}
@@ -280,12 +248,7 @@ function AnnotationCard({
             Reopen
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={isBusy}
-          onClick={() => void mutate("delete")}
-        >
+        <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => void mutate("delete")}>
           Delete
         </Button>
         {routing?.assignedThreadId ? (
@@ -297,8 +260,7 @@ function AnnotationCard({
             Open assigned thread
           </Button>
         ) : null}
-        {annotation.bb.threadId &&
-        annotation.bb.threadId !== routing?.assignedThreadId ? (
+        {annotation.bb.threadId && annotation.bb.threadId !== routing?.assignedThreadId ? (
           <Button
             size="sm"
             variant="ghost"
@@ -372,8 +334,7 @@ function AnnotationCard({
 export function AnnotationPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [filter, setFilter] = useState<FilterId>("open");
-  const { annotations, routings, sessions, isLoading, error, refresh } =
-    useAnnotations(filter);
+  const { annotations, routings, sessions, isLoading, error, refresh } = useAnnotations(filter);
 
   const grouped = useMemo(() => {
     const bySession = new Map<string, StoredAnnotation[]>();
@@ -414,9 +375,8 @@ export function AnnotationPanel() {
           <div className="rounded-lg border border-dashed border-border p-6 text-center">
             <p className="text-sm text-foreground">No annotations here yet.</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Open the Agentation toolbar in the bottom-right corner of bb,
-              click any element — including one drawn by a plugin — and describe
-              what should change.
+              Open the Agentation toolbar in the bottom-right corner of bb, click any element —
+              including one drawn by a plugin — and describe what should change.
             </p>
           </div>
         ) : (
@@ -482,9 +442,7 @@ export function AnnotationPanelHeader() {
 
   return (
     <div className="flex items-center gap-2">
-      {pending > 0 ? (
-        <span className="text-xs text-muted-foreground">{pending} open</span>
-      ) : null}
+      {pending > 0 ? <span className="text-xs text-muted-foreground">{pending} open</span> : null}
       <Button
         size="sm"
         variant="outline"
@@ -492,15 +450,12 @@ export function AnnotationPanelHeader() {
         onClick={() => {
           const next = !enabled;
           setEnabled(next);
-          void rpc
-            .call("setToolbarEnabled", { enabled: next })
-            .catch((cause: unknown) => {
-              setEnabled(!next);
-              toast.error("Could not change the toolbar", {
-                description:
-                  cause instanceof Error ? cause.message : String(cause),
-              });
+          void rpc.call("setToolbarEnabled", { enabled: next }).catch((cause: unknown) => {
+            setEnabled(!next);
+            toast.error("Could not change the toolbar", {
+              description: cause instanceof Error ? cause.message : String(cause),
             });
+          });
         }}
       >
         {enabled === false ? "Show toolbar" : "Hide toolbar"}
@@ -514,19 +469,17 @@ export function AgentationSettingsSection() {
   return (
     <div className="space-y-2 text-sm text-muted-foreground">
       <p>
-        The toolbar mounts over the whole bb app, so it can annotate the shell
-        and any plugin surface. Elements drawn by a plugin are attributed to
-        that plugin automatically.
+        The toolbar mounts over the whole bb app, so it can annotate the shell and any plugin
+        surface. Elements drawn by a plugin are attributed to that plugin automatically.
       </p>
       <p>
-        New annotations enter a shared staging area. Every open thread shows
-        the staged batch above its composer, where you can assign the batch to
-        that thread.
+        New annotations enter a shared staging area. Every open thread shows the staged batch above
+        its composer, where you can assign the batch to that thread.
       </p>
       <p>
-        Agents read assigned feedback with the <code>agentation_*</code> tools
-        or <code>bb agentation pending</code>. Resolving an annotation removes
-        its marker from every open bb window.
+        Agents read assigned feedback with the <code>agentation_*</code> tools or{" "}
+        <code>bb agentation pending</code>. Resolving an annotation removes its marker from every
+        open bb window.
       </p>
     </div>
   );

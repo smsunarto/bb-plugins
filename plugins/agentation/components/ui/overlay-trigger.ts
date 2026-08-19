@@ -17,25 +17,17 @@ const NON_TEXT_INPUT_TYPES = new Set([
   "submit",
 ]);
 
-export const getOverlayTriggerClassName: OverlayTriggerClassNameResolver = (
-  className,
-) => cn(OVERLAY_TRIGGER_CLASS_NAME, className);
+export const getOverlayTriggerClassName: OverlayTriggerClassNameResolver = (className) =>
+  cn(OVERLAY_TRIGGER_CLASS_NAME, className);
 
 function isKeyboardInputElement(element: Element): element is HTMLElement {
   if (element instanceof HTMLTextAreaElement) return true;
   if (element instanceof HTMLInputElement) {
-    return (
-      !element.disabled &&
-      !element.readOnly &&
-      !NON_TEXT_INPUT_TYPES.has(element.type)
-    );
+    return !element.disabled && !element.readOnly && !NON_TEXT_INPUT_TYPES.has(element.type);
   }
   if (!(element instanceof HTMLElement)) return false;
 
-  return (
-    element.isContentEditable ||
-    element.closest("[contenteditable='true']") !== null
-  );
+  return element.isContentEditable || element.closest("[contenteditable='true']") !== null;
 }
 
 /**

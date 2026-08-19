@@ -54,10 +54,15 @@ When this skill runs inside a bb thread with workflow tooling available (the `bb
 2. Launch it with inline source. The skill directory sits outside the thread workspace, so `scriptPath`, `--file`, and `--name` do not resolve; pass the file contents as `script` (tool) or `--script` (CLI), with `args`:
 
    ```json
-   { "skillDir": "<skill-directory>", "request": "<optional user constraints, or omit>", "buildAttempt": 0 }
+   {
+     "skillDir": "<skill-directory>",
+     "request": "<optional user constraints, or omit>",
+     "buildAttempt": 0
+   }
    ```
 
    Put base-branch overrides, PR selection, and emphasis requests from the user into `request`.
+
 3. After a successful launch, emit the returned `previewDirective` exactly once on its own plain line.
 4. Wait for the completion notification. `bb workflows status <run-id>` is the authoritative poll.
 5. Compose the final response from the workflow's return value. Emit the `::pr-walkthrough` directive only when it reports `ready: true`. When it returns `stage: "build"` with an `errorSummary`, report the failure honestly. After fixing the cause, relaunch with `resumeRunId` and set `args.buildAttempt` to the returned `nextBuildAttempt`; this preserves cached Context, Plan, and Author calls while forcing Assemble and later calls to run live. When `ready` is false only because browser validation was unavailable, report rendering as unverified.
@@ -224,7 +229,7 @@ Guide authoring rules:
 - Give each excerpt one `####` title, explanatory Markdown, and one directive in this form: `- Diff: \`unique-kebab-id\` [full/path](selector)`.
 - Select changed lines with comma-separated `L` old/deletion and `R` new/addition references, for example `#L169-L171,L191,R169-R171,R191`. Ranges are inclusive.
 - Account for every textual changed line exactly once across Guide excerpts. Context may repeat, but selected additions and deletions may not overlap or be omitted.
-- `- Context: \`N\`` is optional, defaults to `3`, and accepts `0` through `8`. Context stops before an unselected changed line.
+- `- Context: \`N\``is optional, defaults to`3`, and accepts `0`through`8`. Context stops before an unselected changed line.
 - Add sparse read-only line notes with `- Comment: R169 — explanation` or `L169`. Comment only when the line needs non-obvious rationale; never paraphrase the code.
 - Use `(-)` only for generated or binary whole-file items in **Generated output**, or a zero-line rename/mode-only item in **Imports, formatting, and miscellaneous**.
 - Generated and binary Guide items remain individually viewable but do not count toward Guide completion.

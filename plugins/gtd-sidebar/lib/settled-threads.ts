@@ -11,10 +11,7 @@
  * them into the shape the rest of the list already speaks. These functions are
  * that mapping, kept pure so they can be tested without a bb server.
  */
-import type {
-  PluginSidebarThread,
-  PluginSidebarThreadIndicator,
-} from "@get-bb/plugin-sdk";
+import type { PluginSidebarThread, PluginSidebarThreadIndicator } from "@get-bb/plugin-sdk";
 import type { ThreadLifecycleRow } from "@/lib/lifecycle";
 
 /**
@@ -179,10 +176,7 @@ export function mergeSettledThreads(
 ): PluginSidebarThread[] {
   if (settledThreads.length === 0) return [...hostThreads];
   const hostIds = new Set(hostThreads.map((thread) => thread.id));
-  return [
-    ...hostThreads,
-    ...settledThreads.filter((thread) => !hostIds.has(thread.id)),
-  ];
+  return [...hostThreads, ...settledThreads.filter((thread) => !hostIds.has(thread.id))];
 }
 
 /**

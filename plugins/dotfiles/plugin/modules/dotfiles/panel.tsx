@@ -1,18 +1,10 @@
 import { useState } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
-import {
-  PluginQueryBoundary,
-  useOperationRpc,
-} from "@bb-kit/core/query";
+import { PluginQueryBoundary, useOperationRpc } from "@bb-kit/core/query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import type {
-  ReadFileResult,
-  SaveFileResult,
-  TaskId,
-  TaskResult,
-} from "./contract.js";
+import type { ReadFileResult, SaveFileResult, TaskId, TaskResult } from "./contract.js";
 import { DotfilesEditor } from "./editor.js";
 import { dotfilesOperations } from "./generated/operations.js";
 import {
@@ -56,9 +48,7 @@ function DotfilesPanelBody() {
   const saveFile = useMutation(saveFileMutationOptions(rpc, queryClient));
   const runTaskMutation = useMutation(runTaskMutationOptions(rpc, queryClient));
   const publish = useMutation(publishMutationOptions(rpc, queryClient));
-  const removeSkillMutation = useMutation(
-    removeSkillMutationOptions(rpc, queryClient),
-  );
+  const removeSkillMutation = useMutation(removeSkillMutationOptions(rpc, queryClient));
 
   function selectFile(path: string): void {
     setSelectedPath(path);
@@ -74,10 +64,7 @@ function DotfilesPanelBody() {
     });
   }
 
-  async function save(
-    content: string,
-    expectedSha256: string,
-  ): Promise<SaveFileResult> {
+  async function save(content: string, expectedSha256: string): Promise<SaveFileResult> {
     if (selectedPath === null || file.data === undefined) {
       throw new Error("no file is selected");
     }
@@ -88,9 +75,7 @@ function DotfilesPanelBody() {
         expectedSha256,
       });
       if (result.outcome === "conflict") {
-        toast.error(
-          "File changed on disk since you opened it. Reload, then re-apply your edit.",
-        );
+        toast.error("File changed on disk since you opened it. Reload, then re-apply your edit.");
         return result;
       }
       const nextFile: ReadFileResult = {
@@ -110,17 +95,16 @@ function DotfilesPanelBody() {
 
   async function runTask(task: TaskId | "publish"): Promise<void> {
     if (runningTask !== null) return;
-    if (
-      task === "publish"
-      && !window.confirm("Publish? This rebases onto origin/main and pushes.")
-    ) return;
+    if (task === "publish" && !window.confirm("Publish? This rebases onto origin/main and pushes."))
+      return;
 
     setRunningTask(task);
     setTaskOutput(null);
     try {
-      const result = task === "publish"
-        ? await publish.mutateAsync(null)
-        : await runTaskMutation.mutateAsync({ task });
+      const result =
+        task === "publish"
+          ? await publish.mutateAsync(null)
+          : await runTaskMutation.mutateAsync({ task });
       const outputId = task === "publish" ? "sync" : task;
       setTaskOutput({ id: outputId, ...result });
       if (result.exitCode === 0) {
@@ -137,11 +121,8 @@ function DotfilesPanelBody() {
   }
 
   async function removeSkill(name: string, path: string): Promise<void> {
-    if (
-      !window.confirm(
-        `Remove skill "${name}" via npx skills? This deletes it for every agent.`,
-      )
-    ) return;
+    if (!window.confirm(`Remove skill "${name}" via npx skills? This deletes it for every agent.`))
+      return;
 
     try {
       const result = await removeSkillMutation.mutateAsync({ name });
@@ -236,9 +217,7 @@ function DotfilesPanelBody() {
                     title={item.note}
                   >
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                    {!item.exists && (
-                      <span className="text-xs text-destructive">missing</span>
-                    )}
+                    {!item.exists && <span className="text-xs text-destructive">missing</span>}
                     {item.dirty && (
                       <span
                         className="size-1.5 shrink-0 rounded-full bg-amber-500"

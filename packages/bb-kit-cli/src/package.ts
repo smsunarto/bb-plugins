@@ -9,12 +9,7 @@ interface ManifestTarget {
   readonly tree: boolean;
 }
 
-function diagnostic(
-  code: string,
-  message: string,
-  hint: string,
-  file?: string,
-): Diagnostic {
+function diagnostic(code: string, message: string, hint: string, file?: string): Diagnostic {
   return {
     code,
     severity: "error",
@@ -31,11 +26,9 @@ function packagePath(entry: string): string {
 }
 
 function isPackagePath(path: string): boolean {
-  return path !== ""
-    && path !== "."
-    && !isAbsolute(path)
-    && path !== ".."
-    && !path.startsWith("../");
+  return (
+    path !== "" && path !== "." && !isAbsolute(path) && path !== ".." && !path.startsWith("../")
+  );
 }
 
 /** Parse Bun's dry-run pack listing and reject silent format drift. */
@@ -52,9 +45,7 @@ export function packedPaths(output: string): string[] {
     throw new Error("bun pack output has no Total files summary");
   }
   if (paths.length !== total) {
-    throw new Error(
-      `bun pack listed ${paths.length} files but reported ${total}`,
-    );
+    throw new Error(`bun pack listed ${paths.length} files but reported ${total}`);
   }
   return paths;
 }
@@ -70,16 +61,18 @@ function manifestTargets(manifest: PluginManifest): ManifestTarget[] {
   addFile("bb.server", bb.server);
   addFile("bb.app", bb.app);
 
-  const branding = typeof bb.branding === "object" && bb.branding !== null
-    ? bb.branding as Record<string, unknown>
-    : {};
+  const branding =
+    typeof bb.branding === "object" && bb.branding !== null
+      ? (bb.branding as Record<string, unknown>)
+      : {};
   const icon = branding.icon;
   if (typeof icon === "string" && icon.startsWith("./")) {
     addFile("bb.branding.icon", icon);
   }
-  const logo = typeof branding.logo === "object" && branding.logo !== null
-    ? branding.logo as Record<string, unknown>
-    : {};
+  const logo =
+    typeof branding.logo === "object" && branding.logo !== null
+      ? (branding.logo as Record<string, unknown>)
+      : {};
   addFile("bb.branding.logo.light", logo.light);
   addFile("bb.branding.logo.dark", logo.dark);
 
@@ -91,9 +84,7 @@ function manifestTargets(manifest: PluginManifest): ManifestTarget[] {
   }
   for (const field of ["skills", "commands"] as const) {
     const value = bb[field];
-    const entries = typeof value === "string"
-      ? [value]
-      : Array.isArray(value) ? value : [];
+    const entries = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
     for (const entry of entries) {
       if (typeof entry === "string" && entry.trim() !== "") {
         targets.push({ label: `bb.${field}`, entry, tree: true });
@@ -109,7 +100,9 @@ function resolveSourceImport(root: string, from: string, specifier: string): str
     : join(dirname(from), specifier);
   const withoutCompiledExtension = base.endsWith(".js")
     ? base.slice(0, -3)
-    : base.endsWith(".jsx") ? base.slice(0, -4) : base;
+    : base.endsWith(".jsx")
+      ? base.slice(0, -4)
+      : base;
   const candidates = [
     base,
     `${withoutCompiledExtension}.ts`,
@@ -140,21 +133,21 @@ function sourceClosureDiagnostics(
     if (seen.has(file)) continue;
     seen.add(file);
     if (!packed.has(file)) {
-      diagnostics.push(diagnostic(
-        "BBK405",
-        `packed source fallback omits "${file}"`,
-        "Add the file to package.json files; bb may load shipped source when a bundle is absent or SDK-incompatible.",
-        file,
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBK405",
+          `packed source fallback omits "${file}"`,
+          "Add the file to package.json files; bb may load shipped source when a bundle is absent or SDK-incompatible.",
+          file,
+        ),
+      );
       continue;
     }
     if (/\.(?:css|json)$/.test(file)) continue;
     const absolute = join(root, file);
     if (!existsSync(absolute)) continue;
     const source = readFileSync(absolute, "utf8");
-    for (const match of source.matchAll(
-      /(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']/g,
-    )) {
+    for (const match of source.matchAll(/(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']/g)) {
       const specifier = match[1];
       if (!specifier || (!specifier.startsWith(".") && !specifier.startsWith("@/"))) {
         continue;
@@ -179,24 +172,28 @@ export function checkPackedPackage(
   for (const target of manifestTargets(manifest)) {
     const wanted = packagePath(target.entry);
     if (!isPackagePath(wanted)) {
-      diagnostics.push(diagnostic(
-        "BBK402",
-        `${target.label} target "${target.entry}" is outside the package`,
-        "Use a package-relative path without parent-directory segments.",
-        "package.json",
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBK402",
+          `${target.label} target "${target.entry}" is outside the package`,
+          "Use a package-relative path without parent-directory segments.",
+          "package.json",
+        ),
+      );
       continue;
     }
     const present = target.tree
       ? paths.some((path) => path === wanted || path.startsWith(`${wanted}/`))
       : packed.has(wanted);
     if (!present) {
-      diagnostics.push(diagnostic(
-        "BBK403",
-        `${target.label} target "${target.entry}" is absent from the package`,
-        "Add the target to package.json files before publishing or installing the plugin.",
-        "package.json",
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBK403",
+          `${target.label} target "${target.entry}" is absent from the package`,
+          "Add the target to package.json files before publishing or installing the plugin.",
+          "package.json",
+        ),
+      );
     }
   }
 
@@ -204,21 +201,25 @@ export function checkPackedPackage(
   if (manifest.bb?.app) fixed.push("dist/app.js", "dist/app.meta.json");
   for (const file of fixed) {
     if (!packed.has(file)) {
-      diagnostics.push(diagnostic(
-        "BBK404",
-        `built package is missing "${file}"`,
-        "Run a successful bb plugin build and ensure dist/ is included in package.json files.",
-        "package.json",
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBK404",
+          `built package is missing "${file}"`,
+          "Run a successful bb plugin build and ensure dist/ is included in package.json files.",
+          "package.json",
+        ),
+      );
     }
   }
   if (!packed.has("LICENSE")) {
-    diagnostics.push(diagnostic(
-      "BBK406",
-      "built package has no LICENSE",
-      "Add LICENSE to the package files allowlist.",
-      "package.json",
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBK406",
+        "built package has no LICENSE",
+        "Add LICENSE to the package files allowlist.",
+        "package.json",
+      ),
+    );
   }
   diagnostics.push(...sourceClosureDiagnostics(root, manifest, packed));
   return diagnostics.sort((left, right) =>

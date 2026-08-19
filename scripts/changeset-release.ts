@@ -57,7 +57,7 @@ export async function missingReleaseEvents(
       throw new Error(`${plugin.name} is private and cannot receive a release`);
     }
     const tag = releaseTag(plugin);
-    if (await releaseState(tag) === "missing") {
+    if ((await releaseState(tag)) === "missing") {
       events.push({ type: "git-tag", tag, packageName: plugin.name });
     }
   }
@@ -73,9 +73,7 @@ interface GitHubReleaseOptions {
 
 async function githubError(response: Response, operation: string): Promise<never> {
   const detail = (await response.text()).trim();
-  throw new Error(
-    `GitHub ${operation} failed (${response.status})${detail ? `: ${detail}` : ""}`,
-  );
+  throw new Error(`GitHub ${operation} failed (${response.status})${detail ? `: ${detail}` : ""}`);
 }
 
 /**
@@ -96,16 +94,14 @@ export async function githubReleaseState(
   const repository = repositoryParts.map(encodeURIComponent).join("/");
   const apiUrl = (options.apiUrl ?? "https://api.github.com").replace(/\/$/, "");
   const fetcher = options.fetcher ?? fetch;
-  const request = (path: string): Promise<Response> => fetcher(
-    `${apiUrl}/repos/${repository}/${path}`,
-    {
+  const request = (path: string): Promise<Response> =>
+    fetcher(`${apiUrl}/repos/${repository}/${path}`, {
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${options.token}`,
         "X-GitHub-Api-Version": "2022-11-28",
       },
-    },
-  );
+    });
 
   const encodedTag = encodeURIComponent(tag);
   const releaseResponse = await request(`releases/tags/${encodedTag}`);
@@ -113,7 +109,7 @@ export async function githubReleaseState(
   if (!releaseResponse.ok) {
     return githubError(releaseResponse, `release lookup for ${tag}`);
   }
-  const release = await releaseResponse.json() as {
+  const release = (await releaseResponse.json()) as {
     draft?: unknown;
     tag_name?: unknown;
   };
@@ -128,7 +124,7 @@ export async function githubReleaseState(
   if (!refResponse.ok) {
     return githubError(refResponse, `tag lookup for completed release ${tag}`);
   }
-  const ref = await refResponse.json() as { ref?: unknown };
+  const ref = (await refResponse.json()) as { ref?: unknown };
   if (ref.ref !== `refs/tags/${tag}`) {
     throw new Error(`GitHub returned the wrong tag ref for ${tag}`);
   }
@@ -179,9 +175,8 @@ async function main(): Promise<void> {
   assertChangelogs(plugins);
   const repository = requiredEnvironment("GITHUB_REPOSITORY");
   const token = requiredEnvironment("GITHUB_TOKEN");
-  const events = await missingReleaseEvents(
-    plugins,
-    (tag) => githubReleaseState(tag, {
+  const events = await missingReleaseEvents(plugins, (tag) =>
+    githubReleaseState(tag, {
       repository,
       token,
       apiUrl: process.env.GITHUB_API_URL,
@@ -194,8 +189,7 @@ async function main(): Promise<void> {
   // file even when no event remains, so a successful no-op retry is quiet.
   writeFileSync(
     actionOutput,
-    events.map((event) => JSON.stringify(event)).join("\n") +
-      (events.length > 0 ? "\n" : ""),
+    events.map((event) => JSON.stringify(event)).join("\n") + (events.length > 0 ? "\n" : ""),
     { flag: "a" },
   );
 }

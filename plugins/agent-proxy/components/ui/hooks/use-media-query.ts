@@ -42,19 +42,14 @@ function createMediaQueryRef(query: string): MediaQueryRef | null {
   return ref;
 }
 
-function subscribeMediaQuery(
-  query: string,
-  notify: () => void,
-): () => void {
+function subscribeMediaQuery(query: string, notify: () => void): () => void {
   return createMediaQueryRef(query)?.subscribe(notify) ?? (() => {});
 }
 
 function getMediaQuerySnapshot(query: string): boolean {
   if (typeof window === "undefined") return false;
 
-  return (
-    mediaQueryCache.get(query)?.mql.matches ?? window.matchMedia(query).matches
-  );
+  return mediaQueryCache.get(query)?.mql.matches ?? window.matchMedia(query).matches;
 }
 
 export function useMediaQuery(query: string): boolean {

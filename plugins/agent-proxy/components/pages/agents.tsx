@@ -7,7 +7,12 @@ import { CopyField } from "@/components/copy-field";
 import type { rpcContract } from "../../server";
 
 interface AgentsState {
-  claude: { applied: boolean; canRestore: boolean; settingsPath: string; lastBackup: string | null };
+  claude: {
+    applied: boolean;
+    canRestore: boolean;
+    settingsPath: string;
+    lastBackup: string | null;
+  };
   codex: { codexHomePath: string; generated: boolean; envKey: string };
 }
 
@@ -18,7 +23,11 @@ function shellQuote(value: string): string {
 export function AgentsPage() {
   const rpc = useRpc<typeof rpcContract>();
   const [state, setState] = useState<AgentsState | null>(null);
-  const [endpoints, setEndpoints] = useState<{ openai: string; anthropic: string; apiKey: string } | null>(null);
+  const [endpoints, setEndpoints] = useState<{
+    openai: string;
+    anthropic: string;
+    apiKey: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -65,9 +74,11 @@ export function AgentsPage() {
           </CardTitle>
           <CardDescription>
             Merges ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN into the env block of{" "}
-            <span className="font-mono">{state?.claude.settingsPath ?? "~/.claude/settings.json"}</span>.
-            ~/.claude.json is never touched. Apply records the previous values; Restore reinstates them while
-            preserving any values changed afterward.
+            <span className="font-mono">
+              {state?.claude.settingsPath ?? "~/.claude/settings.json"}
+            </span>
+            . ~/.claude.json is never touched. Apply records the previous values; Restore reinstates
+            them while preserving any values changed afterward.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -112,10 +123,9 @@ export function AgentsPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Codex</CardTitle>
           <CardDescription>
-            Two zero-collision options — ~/.codex/config.toml is never touched, so a generated one stays
-            intact. Either
-            export env vars per invocation, or generate a standalone CODEX_HOME (note: it does not inherit
-            your normal Codex config such as MCP servers).
+            Two zero-collision options — ~/.codex/config.toml is never touched, so a generated one
+            stays intact. Either export env vars per invocation, or generate a standalone CODEX_HOME
+            (note: it does not inherit your normal Codex config such as MCP servers).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">

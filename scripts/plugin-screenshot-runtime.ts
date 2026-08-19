@@ -1,12 +1,7 @@
 import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  chromium,
-  type Browser,
-  type BrowserContext,
-  type Page,
-} from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { workspacePlugins } from "./plugin-package";
 
 export const SCREENSHOT_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -52,10 +47,7 @@ export interface ScreenshotCaptureResult extends ScreenshotSize {
 }
 
 export interface ScreenshotBatch {
-  capture(
-    page: Pick<Page, "screenshot">,
-    request: ScreenshotCaptureRequest,
-  ): Promise<void>;
+  capture(page: Pick<Page, "screenshot">, request: ScreenshotCaptureRequest): Promise<void>;
 }
 
 export type BbCommandRunner = (args: readonly string[]) => Promise<string>;
@@ -106,10 +98,7 @@ interface PluginState {
   status: string;
 }
 
-function pluginStates(
-  output: string,
-  args: readonly string[],
-): Map<string, PluginState> {
+function pluginStates(output: string, args: readonly string[]): Map<string, PluginState> {
   const value = parseBbJson(output, args);
   if (
     typeof value !== "object" ||
@@ -194,17 +183,19 @@ export async function prepareBbForScreenshots(
     return state && state.rootDir !== join(SCREENSHOT_ROOT, "plugins", plugin.directory);
   });
   if (missing.length > 0 || wrongSources.length > 0) {
-    throw new Error([
-      "workspace plugins are not installed from this checkout:",
-      ...missing.map(
-        (plugin) =>
-          `  ${plugin.id}: bb plugin install ./plugins/${plugin.directory}`,
-      ),
-      ...wrongSources.map((plugin) =>
-        `  ${plugin.id}: expected ${join(SCREENSHOT_ROOT, "plugins", plugin.directory)}, found ${initialPlugins.get(plugin.id)!.rootDir}`
-      ),
-      "Install or reinstall them from this checkout, then run the screenshot command again.",
-    ].join("\n"));
+    throw new Error(
+      [
+        "workspace plugins are not installed from this checkout:",
+        ...missing.map(
+          (plugin) => `  ${plugin.id}: bb plugin install ./plugins/${plugin.directory}`,
+        ),
+        ...wrongSources.map(
+          (plugin) =>
+            `  ${plugin.id}: expected ${join(SCREENSHOT_ROOT, "plugins", plugin.directory)}, found ${initialPlugins.get(plugin.id)!.rootDir}`,
+        ),
+        "Install or reinstall them from this checkout, then run the screenshot command again.",
+      ].join("\n"),
+    );
   }
 
   for (const plugin of plugins) {
@@ -222,8 +213,7 @@ export async function prepareBbForScreenshots(
   const finalTheme = activeTheme(await runCommand(themeArgs), themeArgs);
   const finalMissing = plugins.filter((plugin) => !finalPlugins.has(plugin.id));
   const finalDisabled = plugins.filter(
-    (plugin) =>
-      finalPlugins.has(plugin.id) && finalPlugins.get(plugin.id)?.enabled !== true,
+    (plugin) => finalPlugins.has(plugin.id) && finalPlugins.get(plugin.id)?.enabled !== true,
   );
   const finalWrongSources = plugins.filter((plugin) => {
     const state = finalPlugins.get(plugin.id);
@@ -306,10 +296,7 @@ class StagedScreenshotBatch implements ScreenshotBatch {
     return this.#captures.map(({ result }) => result);
   }
 
-  async capture(
-    page: Pick<Page, "screenshot">,
-    request: ScreenshotCaptureRequest,
-  ): Promise<void> {
+  async capture(page: Pick<Page, "screenshot">, request: ScreenshotCaptureRequest): Promise<void> {
     const output = resolve(request.output);
     if (this.#outputs.has(output)) {
       throw new Error(`duplicate screenshot output: ${output}`);
@@ -357,9 +344,7 @@ class StagedScreenshotBatch implements ScreenshotBatch {
   }
 
   async cleanup(): Promise<void> {
-    await Promise.all(
-      this.#captures.map(({ temporary }) => rm(temporary, { force: true })),
-    );
+    await Promise.all(this.#captures.map(({ temporary }) => rm(temporary, { force: true })));
   }
 }
 

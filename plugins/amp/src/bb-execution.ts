@@ -1,7 +1,4 @@
-import {
-  permissionModeFromBb,
-  type AmpPermissionMode,
-} from "./permission-mode.ts";
+import { permissionModeFromBb, type AmpPermissionMode } from "./permission-mode.ts";
 
 const EVENT_PAGE_SIZE = 1_000;
 
@@ -28,10 +25,7 @@ async function readBbExecutionPreferences(
   const threadId = options.threadId ?? process.env.BB_THREAD_ID;
   if (!serverUrl || !threadId) return { permission: "default", fast: false };
 
-  const eventsUrl = new URL(
-    `/api/v1/threads/${encodeURIComponent(threadId)}/events`,
-    serverUrl,
-  );
+  const eventsUrl = new URL(`/api/v1/threads/${encodeURIComponent(threadId)}/events`, serverUrl);
   const fetchFn = options.fetch ?? fetch;
   let cursor = 0;
   let permissionMode: AmpPermissionMode = "default";
@@ -76,8 +70,6 @@ export async function readBbPermissionMode(
 }
 
 /** Whether the latest bb turn requests its premium Fast service tier. */
-export async function readBbFastMode(
-  options: BbExecutionOptions = {},
-): Promise<boolean> {
+export async function readBbFastMode(options: BbExecutionOptions = {}): Promise<boolean> {
   return (await readBbExecutionPreferences(options)).fast;
 }

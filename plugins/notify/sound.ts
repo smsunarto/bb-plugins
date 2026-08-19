@@ -29,11 +29,7 @@ export const SOUND_NAMES = [
 export const SOUND_OFF = "off";
 export const SOUND_SYSTEM = "system default";
 
-export const SOUND_OPTIONS = [
-  SOUND_OFF,
-  SOUND_SYSTEM,
-  ...SOUND_NAMES,
-] as const;
+export const SOUND_OPTIONS = [SOUND_OFF, SOUND_SYSTEM, ...SOUND_NAMES] as const;
 
 export type SoundChoice = (typeof SOUND_OPTIONS)[number];
 

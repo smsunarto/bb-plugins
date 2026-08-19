@@ -55,13 +55,14 @@ export function buildDiff(
   if (lines.length > 1 && lines.at(-1) === "") lines = lines.slice(0, -1);
   const count = lines.length;
   const patch =
-    `--- ${path}\n+++ ${path}\n@@ -1,${count} +1,${count} @@\n`
-    + `${lines.map((line) => ` ${line}`).join("\n")}\n`;
-  const metadata = processFile(patch, {
-    cacheKey: `${path}:unchanged:${workingKey}`,
-    oldFile,
-    newFile,
-  }) ?? null;
+    `--- ${path}\n+++ ${path}\n@@ -1,${count} +1,${count} @@\n` +
+    `${lines.map((line) => ` ${line}`).join("\n")}\n`;
+  const metadata =
+    processFile(patch, {
+      cacheKey: `${path}:unchanged:${workingKey}`,
+      oldFile,
+      newFile,
+    }) ?? null;
   if (metadata && language) metadata.lang = language;
   return metadata;
 }
@@ -72,10 +73,7 @@ export interface DotfilesEditorProps {
   readonly renderHint: boolean;
   readonly isSaving: boolean;
   readonly onReload: () => void;
-  readonly onSave: (
-    content: string,
-    expectedSha256: string,
-  ) => Promise<SaveFileResult>;
+  readonly onSave: (content: string, expectedSha256: string) => Promise<SaveFileResult>;
 }
 
 export function DotfilesEditor({
@@ -145,9 +143,11 @@ export function DotfilesEditor({
       </div>
 
       <div
-        className={diffStyle === "split"
-          ? "grid min-h-0 flex-1 grid-cols-1 lg:grid-rows-[minmax(16rem,2fr)_minmax(16rem,3fr)]"
-          : "grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2"}
+        className={
+          diffStyle === "split"
+            ? "grid min-h-0 flex-1 grid-cols-1 lg:grid-rows-[minmax(16rem,2fr)_minmax(16rem,3fr)]"
+            : "grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2"
+        }
       >
         <section
           className={`flex min-h-64 flex-col border-b border-border lg:min-h-0 ${

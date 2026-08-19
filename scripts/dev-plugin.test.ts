@@ -2,11 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  changedPluginFiles,
-  findInstalledPlugin,
-  snapshotPluginFiles,
-} from "./dev-plugin";
+import { changedPluginFiles, findInstalledPlugin, snapshotPluginFiles } from "./dev-plugin";
 
 const temporaryDirectories: string[] = [];
 
@@ -18,9 +14,9 @@ async function temporaryDirectory(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -45,10 +41,7 @@ describe("snapshotPluginFiles", () => {
 
     const snapshot = await snapshotPluginFiles(root);
 
-    expect([...snapshot.keys()].sort()).toEqual([
-      "components/button.tsx",
-      "server.ts",
-    ]);
+    expect([...snapshot.keys()].sort()).toEqual(["components/button.tsx", "server.ts"]);
   });
 });
 
@@ -65,11 +58,7 @@ describe("changedPluginFiles", () => {
       ["same.ts", "1"],
     ]);
 
-    expect(changedPluginFiles(previous, next)).toEqual([
-      "added.ts",
-      "changed.ts",
-      "removed.ts",
-    ]);
+    expect(changedPluginFiles(previous, next)).toEqual(["added.ts", "changed.ts", "removed.ts"]);
   });
 });
 
@@ -81,10 +70,7 @@ describe("findInstalledPlugin", () => {
 
     expect(await findInstalledPlugin(installed, localRoot)).toBeUndefined();
     expect(
-      await findInstalledPlugin(
-        [...installed, { id: "local", rootDir: localRoot }],
-        localRoot,
-      ),
+      await findInstalledPlugin([...installed, { id: "local", rootDir: localRoot }], localRoot),
     ).toEqual({ id: "local", rootDir: localRoot });
   });
 });

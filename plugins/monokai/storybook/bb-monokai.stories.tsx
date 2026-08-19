@@ -67,8 +67,12 @@ export const Foundations: Story = {
         <h2>Text ladder</h2>
         <div className="sb-text-ladder">
           <p className="sb-foreground">Primary · --foreground · The action and its outcome.</p>
-          <p className="sb-muted-foreground">Secondary · --muted-foreground · Supporting context.</p>
-          <p className="sb-readback-foreground">Muted · --readback-foreground · Readback and metadata.</p>
+          <p className="sb-muted-foreground">
+            Secondary · --muted-foreground · Supporting context.
+          </p>
+          <p className="sb-readback-foreground">
+            Muted · --readback-foreground · Readback and metadata.
+          </p>
           <p className="sb-subtle-foreground">Faint · --subtle-foreground · Where, not what.</p>
         </div>
       </section>
@@ -131,15 +135,29 @@ export const ChromeAndStates: Story = {
               <div className="sb-agent-card rounded-xl border border-border-seam bg-surface-recessed">
                 <span className="sb-label">Active agent surface</span>
                 <h2>Review the palette contract</h2>
-                <p className="sb-muted-foreground">A quiet editor-ground panel with a faint ladder edge.</p>
+                <p className="sb-muted-foreground">
+                  A quiet editor-ground panel with a faint ladder edge.
+                </p>
               </div>
 
               <div className="sb-controls">
-                <button className="sb-button bg-primary" type="button">Primary action</button>
-                <button className="sb-button bg-secondary" type="button">Secondary</button>
-                <input className="sb-field border-input" defaultValue="Focused field" aria-label="Theme field" />
-                <span className="sb-pill"><span style={{ color: "var(--pill-icon)" }}>@</span>theme</span>
-                <span className="sb-tooltip bg-primary"><span role="tooltip">Neutral tooltip</span></span>
+                <button className="sb-button bg-primary" type="button">
+                  Primary action
+                </button>
+                <button className="sb-button bg-secondary" type="button">
+                  Secondary
+                </button>
+                <input
+                  className="sb-field border-input"
+                  defaultValue="Focused field"
+                  aria-label="Theme field"
+                />
+                <span className="sb-pill">
+                  <span style={{ color: "var(--pill-icon)" }}>@</span>theme
+                </span>
+                <span className="sb-tooltip bg-primary">
+                  <span role="tooltip">Neutral tooltip</span>
+                </span>
               </div>
             </div>
 
@@ -197,8 +215,18 @@ export const ContentPalettes: Story = {
 
       <section className="sb-section">
         <h2>Inline code</h2>
-        <pre className="sb-code bb-code-highlight"><code><span style={{ color: "var(--sh-keyword)" }}>const</span>{" "}<span style={{ color: "var(--sh-identifier)" }}>theme</span>{" "}<span style={{ color: "var(--sh-sign)" }}>=</span>{" "}<span style={{ color: "var(--sh-entity)" }}>definePalette</span><span style={{ color: "var(--sh-sign)" }}>(</span><span style={{ color: "var(--sh-string)" }}>"monokai"</span><span style={{ color: "var(--sh-sign)" }}>)</span>;
-<span style={{ color: "var(--sh-comment)" }}>{"// One meaning per hue."}</span></code></pre>
+        <pre className="sb-code bb-code-highlight">
+          <code>
+            <span style={{ color: "var(--sh-keyword)" }}>const</span>{" "}
+            <span style={{ color: "var(--sh-identifier)" }}>theme</span>{" "}
+            <span style={{ color: "var(--sh-sign)" }}>=</span>{" "}
+            <span style={{ color: "var(--sh-entity)" }}>definePalette</span>
+            <span style={{ color: "var(--sh-sign)" }}>(</span>
+            <span style={{ color: "var(--sh-string)" }}>"monokai"</span>
+            <span style={{ color: "var(--sh-sign)" }}>)</span>;
+            <span style={{ color: "var(--sh-comment)" }}>{"// One meaning per hue."}</span>
+          </code>
+        </pre>
       </section>
 
       <section className="sb-section">
@@ -233,7 +261,8 @@ export const ContentPalettes: Story = {
           <div
             className="sb-diff-row"
             style={tokenStyle({
-              "--diff-bg": "color-mix(in srgb, var(--diffs-modified-color-override) 14%, transparent)",
+              "--diff-bg":
+                "color-mix(in srgb, var(--diffs-modified-color-override) 14%, transparent)",
             })}
           >
             <span className="sb-diff-number">21</span>

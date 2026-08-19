@@ -29,18 +29,12 @@ import { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import { execute } from "@ampcode/sdk";
-import {
-  AmpBridgeAgent,
-  type AmpExecuteFn,
-  type ExecutionUsageReport,
-} from "./bridge-core.ts";
+import { AmpBridgeAgent, type AmpExecuteFn, type ExecutionUsageReport } from "./bridge-core.ts";
 import { AMP_ACP_ORB_PROJECT_ENV } from "./execution-target.ts";
 import { createFileSessionStore } from "./session-store.ts";
 import { createBbSteeringMonitor } from "./bb-steering-monitor.ts";
 import { readBbFastMode, readBbPermissionMode } from "./bb-execution.ts";
-import {
-  AMP_CLI_SHIM_REAL_CLI_ENV,
-} from "./amp-cli-shim.ts";
+import { AMP_CLI_SHIM_REAL_CLI_ENV } from "./amp-cli-shim.ts";
 import { buildSessionLinkCommandArgs } from "./amp-thread-link.ts";
 
 const ampCliShim = join(dirname(fileURLToPath(import.meta.url)), "amp-cli-shim.js");

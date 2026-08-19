@@ -71,11 +71,8 @@ function stashSubjects(cwd: string): string {
 }
 
 function handledStashes(cwd: string): string {
-  return git(cwd, [
-    "for-each-ref",
-    "--format=%(objectname)",
-    "refs/bb-gh-stack/stash-state/",
-  ]).stdout;
+  return git(cwd, ["for-each-ref", "--format=%(objectname)", "refs/bb-gh-stack/stash-state/"])
+    .stdout;
 }
 
 test("clean and non-conflicting dirty checkouts do not create stashes", async () => {
@@ -125,10 +122,7 @@ test("conflicting tracked edits are auto-stashed and restored on their owner bra
     const back = await checkoutWithAutoStash("source", deps);
     assert.equal(back.ok, true, back.message);
     assert.equal(currentBranch(cwd), "source");
-    assert.equal(
-      readFileSync(join(cwd, "shared.txt"), "utf8"),
-      "unstaged source work\n",
-    );
+    assert.equal(readFileSync(join(cwd, "shared.txt"), "utf8"), "unstaged source work\n");
     assert.match(git(cwd, ["diff", "--cached", "--name-only"]).stdout, /shared\.txt/);
     assert.match(git(cwd, ["diff", "--name-only"]).stdout, /shared\.txt/);
     assert.equal(readFileSync(join(cwd, "untracked-note.txt"), "utf8"), "never stash me\n");
@@ -256,10 +250,7 @@ test("stash counts read the branch prefix, not the message body", async () => {
   try {
     writeFileSync(join(cwd, "manual.txt"), "hand edit\n");
     gitOk(cwd, ["stash", "push", "-m", "On target: notes about target"]);
-    assert.deepEqual(
-      await stashCountsByBranch(dependencies(cwd)),
-      new Map([["source", 1]]),
-    );
+    assert.deepEqual(await stashCountsByBranch(dependencies(cwd)), new Map([["source", 1]]));
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

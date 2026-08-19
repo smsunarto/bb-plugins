@@ -2,13 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { rpcContract } from "../../server";
 
@@ -70,8 +64,7 @@ export function AdvancedPage() {
     }
   };
 
-  const dirty =
-    saved !== null && (repository !== saved.repository || branch !== saved.branch);
+  const dirty = saved !== null && (repository !== saved.repository || branch !== saved.branch);
 
   // The saved source can already be the defaults. Writing them again would
   // look like a dead button: no field moves and the save toast claims a change
@@ -83,9 +76,7 @@ export function AdvancedPage() {
     saved.repository === saved.defaultRepository &&
     saved.branch === saved.defaultBranch;
   const fieldsAreDefault =
-    saved !== null &&
-    repository === saved.defaultRepository &&
-    branch === saved.defaultBranch;
+    saved !== null && repository === saved.defaultRepository && branch === saved.defaultBranch;
 
   const reset = () => {
     if (saved === null) return;
@@ -136,8 +127,8 @@ export function AdvancedPage() {
             />
             <span className="block text-xs text-muted-foreground">
               Use <span className="font-medium text-foreground">latest</span> for the newest
-              published release, or give a branch, tag, or full commit SHA. Branch names can
-              contain slashes.
+              published release, or give a branch, tag, or full commit SHA. Branch names can contain
+              slashes.
             </span>
           </label>
 
@@ -175,8 +166,8 @@ export function AdvancedPage() {
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>Saving does not replace or restart the running core.</p>
           <p>
-            Use <span className="font-medium text-foreground">Install core</span> on Home to
-            resolve the saved ref, build that exact commit, and atomically switch the binary.
+            Use <span className="font-medium text-foreground">Install core</span> on Home to resolve
+            the saved ref, build that exact commit, and atomically switch the binary.
           </p>
           <p>The repository must keep the CLIProxyAPI Go entrypoint at cmd/server.</p>
         </CardContent>

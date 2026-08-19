@@ -57,8 +57,8 @@ bb plugin install ./plugins/dotfiles
 
 ## Configuration
 
-| Key | Default | Meaning |
-|---|---|---|
+| Key        | Default          | Meaning                                                                              |
+| ---------- | ---------------- | ------------------------------------------------------------------------------------ |
 | `repoPath` | `~/git/dotfiles` | Path to the dotfiles repository **on the bb server host**. A leading `~` is expanded |
 
 ```sh
@@ -95,14 +95,14 @@ panel nor the CLI can reach arbitrary files under the repo root.
 
 ### Commands
 
-| Command | What it does |
-|---|---|
-| `bb dotfiles list` | Every tweakable file, grouped, with `[dirty]`, `[renders]`, and `[MISSING]` flags |
-| `bb dotfiles status` | Branch, then porcelain git status, or `clean` |
-| `bb dotfiles cat <path>` | Print one file from the list |
-| `bb dotfiles render` | Run the repo's `render` task |
-| `bb dotfiles check [target]` | Full validation, or one target |
-| `bb dotfiles sync [--publish]` | Consume-only by default; `--publish` rebases and pushes |
+| Command                        | What it does                                                                      |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `bb dotfiles list`             | Every tweakable file, grouped, with `[dirty]`, `[renders]`, and `[MISSING]` flags |
+| `bb dotfiles status`           | Branch, then porcelain git status, or `clean`                                     |
+| `bb dotfiles cat <path>`       | Print one file from the list                                                      |
+| `bb dotfiles render`           | Run the repo's `render` task                                                      |
+| `bb dotfiles check [target]`   | Full validation, or one target                                                    |
+| `bb dotfiles sync [--publish]` | Consume-only by default; `--publish` rebases and pushes                           |
 
 > [!WARNING]
 > The panel button labelled **sync** is the publishing one: it rebases and pushes. It is
@@ -113,12 +113,12 @@ panel nor the CLI can reach arbitrary files under the repo root.
 
 ## Troubleshooting
 
-| Symptom | Cause |
-|---|---|
-| Every row reads `missing`, branch reads `missing` | `repoPath` does not exist, or the repository does not match the expected layout |
-| A task exits 127 with raw shell text | `mise`, `git`, or `npx` is not on `PATH` in the login shell the plugin resolved |
+| Symptom                                               | Cause                                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Every row reads `missing`, branch reads `missing`     | `repoPath` does not exist, or the repository does not match the expected layout       |
+| A task exits 127 with raw shell text                  | `mise`, `git`, or `npx` is not on `PATH` in the login shell the plugin resolved       |
 | A task appears to hang, then dumps all output at once | Expected. Output is buffered until the command exits. Tasks are killed at 300 seconds |
-| "File changed on disk since you opened it" | The compare-and-swap refused the save. Reload the file and apply your edit again |
+| "File changed on disk since you opened it"            | The compare-and-swap refused the save. Reload the file and apply your edit again      |
 
 The login shell is resolved once, when the plugin loads. It uses `$SHELL` only when that
 ends in `/fish`, then tries `/opt/homebrew/bin/fish`, `/usr/local/bin/fish`, and

@@ -19,9 +19,7 @@ import {
 } from "../lib/warm-start.ts";
 import type { ThreadLifecycleRow } from "../lib/lifecycle.ts";
 
-const row = (
-  overrides: Partial<ThreadLifecycleRow> = {},
-): ThreadLifecycleRow => ({
+const row = (overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow => ({
   threadId: "thr_1",
   settledAt: null,
   snoozedUntil: null,
@@ -67,10 +65,10 @@ describe("decodeWarmStartRows", () => {
   it("round-trips what encodeWarmStartRows wrote", () => {
     const settled = row({ threadId: "a", settledAt: 500 });
     const snoozed = row({ threadId: "b", snoozedUntil: 9_000, snoozedAt: 700 });
-    assert.deepEqual(
-      decodeWarmStartRows(encodeWarmStartRows([settled, snoozed])),
-      [snoozed, settled],
-    );
+    assert.deepEqual(decodeWarmStartRows(encodeWarmStartRows([settled, snoozed])), [
+      snoozed,
+      settled,
+    ]);
   });
 
   it("reads nothing stored as a miss", () => {
@@ -109,14 +107,8 @@ describe("decodeWarmStartRows", () => {
   it("rejects a timestamp the wire could not have produced", () => {
     assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":0}]`), null);
     assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":-1}]`), null);
-    assert.equal(
-      decodeWarmStartRows(`[{"threadId":"a","settledAt":1.5}]`),
-      null,
-    );
-    assert.equal(
-      decodeWarmStartRows(`[{"threadId":"a","settledAt":"500"}]`),
-      null,
-    );
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":1.5}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":"500"}]`), null);
   });
 
   // `1e999` parses to Infinity, which passes `typeof x === "number"` and then
@@ -124,20 +116,12 @@ describe("decodeWarmStartRows", () => {
   // "Infinityd". `-1e999` fails the other way, waking it the moment it is read.
   // NaN is not tested because it cannot arrive — JSON has no literal for it.
   it("rejects a non-finite timestamp", () => {
-    assert.equal(
-      decodeWarmStartRows(`[{"threadId":"a","snoozedUntil":1e999}]`),
-      null,
-    );
-    assert.equal(
-      decodeWarmStartRows(`[{"threadId":"a","snoozedUntil":-1e999}]`),
-      null,
-    );
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","snoozedUntil":1e999}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","snoozedUntil":-1e999}]`), null);
   });
 
   it("reads an absent timestamp as null", () => {
-    assert.deepEqual(decodeWarmStartRows(`[{"threadId":"a"}]`), [
-      row({ threadId: "a" }),
-    ]);
+    assert.deepEqual(decodeWarmStartRows(`[{"threadId":"a"}]`), [row({ threadId: "a" })]);
   });
 
   // Half-accepting is the failure that hurts: settling archives the thread in
@@ -145,9 +129,7 @@ describe("decodeWarmStartRows", () => {
   // thread disappear from the sidebar entirely.
   it("rejects the whole payload when one row is bad", () => {
     assert.equal(
-      decodeWarmStartRows(
-        `[{"threadId":"a","settledAt":500},{"threadId":"b","settledAt":true}]`,
-      ),
+      decodeWarmStartRows(`[{"threadId":"a","settledAt":500},{"threadId":"b","settledAt":true}]`),
       null,
     );
   });
@@ -159,10 +141,7 @@ describe("decodeWarmStartRows", () => {
       row({ threadId: `thr_${index}`, settledAt: index + 1 }),
     );
     assert.equal(decodeWarmStartRows(JSON.stringify(rows)), null);
-    assert.notEqual(
-      decodeWarmStartRows(JSON.stringify(rows.slice(0, MAX_WARM_START_ROWS))),
-      null,
-    );
+    assert.notEqual(decodeWarmStartRows(JSON.stringify(rows.slice(0, MAX_WARM_START_ROWS))), null);
   });
 
   // The parse runs during render, so its cost is bounded before it is paid.
@@ -226,10 +205,7 @@ describe("encodeWarmStartRows", () => {
       }),
     );
     const kept = decodeWarmStartRows(
-      encodeWarmStartRows([
-        ...snoozes,
-        row({ threadId: "settled", settledAt: 8_000 }),
-      ]),
+      encodeWarmStartRows([...snoozes, row({ threadId: "settled", settledAt: 8_000 })]),
     );
     assert.equal(kept?.length, MAX_WARM_START_ROWS);
     assert.equal(kept?.[0].threadId, "settled");
@@ -240,13 +216,9 @@ describe("readWarmStartRows", () => {
   it("serves what was stored", () => {
     resetWarmStartMemoryForTests();
     const store = storage({
-      [WARM_START_ROWS_KEY]: encodeWarmStartRows([
-        row({ threadId: "a", settledAt: 500 }),
-      ]),
+      [WARM_START_ROWS_KEY]: encodeWarmStartRows([row({ threadId: "a", settledAt: 500 })]),
     });
-    assert.deepEqual(readWarmStartRows(store), [
-      row({ threadId: "a", settledAt: 500 }),
-    ]);
+    assert.deepEqual(readWarmStartRows(store), [row({ threadId: "a", settledAt: 500 })]);
   });
 
   it("does not throw when the store does", () => {
@@ -260,9 +232,7 @@ describe("readWarmStartRows", () => {
   it("still serves from memory after the store failed", () => {
     resetWarmStartMemoryForTests();
     writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], brokenStorage);
-    assert.deepEqual(readWarmStartRows(brokenStorage), [
-      row({ threadId: "a", settledAt: 500 }),
-    ]);
+    assert.deepEqual(readWarmStartRows(brokenStorage), [row({ threadId: "a", settledAt: 500 })]);
   });
 
   // Memory before storage is the decision the two tiers rest on: a `setItem`
@@ -277,9 +247,7 @@ describe("readWarmStartRows", () => {
       WARM_START_ROWS_KEY,
       encodeWarmStartRows([row({ threadId: "b", settledAt: 900 })]),
     );
-    assert.deepEqual(readWarmStartRows(store), [
-      row({ threadId: "a", settledAt: 500 }),
-    ]);
+    assert.deepEqual(readWarmStartRows(store), [row({ threadId: "a", settledAt: 500 })]);
   });
 
   // The seed runs inside a render, so a value that cannot be decoded must not
@@ -314,10 +282,9 @@ describe("writeWarmStartRows", () => {
     resetWarmStartMemoryForTests();
     const store = storage();
     writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], store);
-    assert.deepEqual(
-      decodeWarmStartRows(store.entries.get(WARM_START_ROWS_KEY) ?? null),
-      [row({ threadId: "a", settledAt: 500 })],
-    );
+    assert.deepEqual(decodeWarmStartRows(store.entries.get(WARM_START_ROWS_KEY) ?? null), [
+      row({ threadId: "a", settledAt: 500 }),
+    ]);
   });
 
   // The plugin shipped as t3sidebar, and bb installs the renamed one under a
@@ -378,10 +345,7 @@ describe("writeWarmStartRows", () => {
 
     refusing = false;
     writeWarmStartRows(rows, flaky);
-    assert.deepEqual(
-      decodeWarmStartRows(store.entries.get(WARM_START_ROWS_KEY) ?? null),
-      rows,
-    );
+    assert.deepEqual(decodeWarmStartRows(store.entries.get(WARM_START_ROWS_KEY) ?? null), rows);
   });
 });
 
@@ -389,10 +353,7 @@ const provider = { id: "codex", displayName: "Codex", logoUrl: null };
 
 describe("decodeWarmStartProviders", () => {
   it("round-trips providers", () => {
-    assert.deepEqual(
-      decodeWarmStartProviders(encodeWarmStartProviders([provider])),
-      [provider],
-    );
+    assert.deepEqual(decodeWarmStartProviders(encodeWarmStartProviders([provider])), [provider]);
   });
 
   it("reads a miss as null", () => {
@@ -410,14 +371,8 @@ describe("decodeWarmStartProviders", () => {
   // — leaving a `role="img"` element whose accessible name is empty, announced
   // as an image with no name at all.
   it("rejects a provider whose name is blank", () => {
-    assert.equal(
-      decodeWarmStartProviders(`[{"id":"codex","displayName":""}]`),
-      null,
-    );
-    assert.equal(
-      decodeWarmStartProviders(`[{"id":"codex","displayName":"   "}]`),
-      null,
-    );
+    assert.equal(decodeWarmStartProviders(`[{"id":"codex","displayName":""}]`), null);
+    assert.equal(decodeWarmStartProviders(`[{"id":"codex","displayName":"   "}]`), null);
   });
 
   // The glyph paints the logo as a CSS mask and probes it with an `Image`, so
@@ -467,9 +422,7 @@ describe("decodeWarmStartProviders", () => {
 
 describe("encodeWarmStartProviders", () => {
   it("carries only the three fields the glyph reads", () => {
-    const encoded = encodeWarmStartProviders([
-      { ...provider, extra: "leak" } as WarmStartProvider,
-    ]);
+    const encoded = encodeWarmStartProviders([{ ...provider, extra: "leak" } as WarmStartProvider]);
     assert.equal(encoded.includes("leak"), false);
   });
 });
@@ -522,9 +475,7 @@ describe("writeWarmStartProviders", () => {
     writeWarmStartProviders([provider], store);
     assert.equal(store.entries.has(WARM_START_ROWS_KEY), false);
     assert.deepEqual(
-      decodeWarmStartProviders(
-        store.entries.get(WARM_START_PROVIDERS_KEY) ?? null,
-      ),
+      decodeWarmStartProviders(store.entries.get(WARM_START_PROVIDERS_KEY) ?? null),
       [provider],
     );
   });

@@ -4,17 +4,15 @@
  * locally and on the remote. Only the layers that survive make a stack
  * extendable; without one, new work starts a stack of its own.
  */
-export function hasExtendableLayers<
-  T extends { isMerged: boolean; pr?: { state: string } | null },
->(branches: readonly T[]): boolean {
+export function hasExtendableLayers<T extends { isMerged: boolean; pr?: { state: string } | null }>(
+  branches: readonly T[],
+): boolean {
   return branches.some((branch) => !branch.isMerged && branch.pr?.state !== "MERGED");
 }
 
 export type StackLayerCheckout = {
   mergedBranch: string;
-  target:
-    | { kind: "branch"; name: string }
-    | { kind: "trunk"; name: string };
+  target: { kind: "branch"; name: string } | { kind: "trunk"; name: string };
 };
 
 // gh-stack keeps merged branches in its bottom-to-top metadata. The panel
@@ -33,16 +31,12 @@ export function projectStackLayers<T extends { name: string; isMerged: boolean }
     return { visibleBranches, checkout: null };
   }
 
-  const above = branches
-    .slice(currentIndex + 1)
-    .find((branch) => !branch.isMerged);
+  const above = branches.slice(currentIndex + 1).find((branch) => !branch.isMerged);
   return {
     visibleBranches,
     checkout: {
       mergedBranch: currentBranch,
-      target: above
-        ? { kind: "branch", name: above.name }
-        : { kind: "trunk", name: trunk },
+      target: above ? { kind: "branch", name: above.name } : { kind: "trunk", name: trunk },
     },
   };
 }

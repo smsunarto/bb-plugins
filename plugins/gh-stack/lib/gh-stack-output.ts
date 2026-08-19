@@ -14,10 +14,7 @@ function hasExactSyncAbortedOutput(...outputs: string[]): boolean {
 // Positive allowlist for Sync states that need repository-aware recovery.
 // Infrastructure, authentication, timeout, push, and generic CLI failures
 // remain ordinary errors instead of starting an agent turn.
-export function requiresAgentSyncRecovery(
-  code: number,
-  ...outputs: string[]
-): boolean {
+export function requiresAgentSyncRecovery(code: number, ...outputs: string[]): boolean {
   if (code === 3 || code === 7) return true;
   const text = outputs.join("\n");
   return (
@@ -47,10 +44,7 @@ export function partialSuccessWarning(
   if (action === "sync" && /push failed/i.test(output)) {
     return "Sync changed local state, but one or more branches were not pushed.";
   }
-  if (
-    action === "sync" &&
-    /could not resolve branch SHAs\s+—?\s*skipping rebase/i.test(output)
-  ) {
+  if (action === "sync" && /could not resolve branch SHAs\s+—?\s*skipping rebase/i.test(output)) {
     return "Sync skipped a required rebase because branch SHAs could not be resolved.";
   }
   if (

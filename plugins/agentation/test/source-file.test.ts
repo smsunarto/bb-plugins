@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Annotation } from "../lib/afs.ts";
-import {
-  usableSourceFile,
-  withoutBundleSource,
-} from "../lib/annotation-hygiene.ts";
+import { usableSourceFile, withoutBundleSource } from "../lib/annotation-hygiene.ts";
 
 function annotation(sourceFile?: string): Annotation {
   return {
@@ -22,10 +19,7 @@ function annotation(sourceFile?: string): Annotation {
 
 test("a served bundle path is not a source location", () => {
   // Exactly what bb's production build reported for a plugin-drawn button.
-  assert.equal(
-    usableSourceFile("api/v1/plugins/agentation/assets/app.js:10771:17"),
-    false,
-  );
+  assert.equal(usableSourceFile("api/v1/plugins/agentation/assets/app.js:10771:17"), false);
   assert.equal(usableSourceFile("/assets/index-a1b2c3.js:42:8"), false);
   assert.equal(usableSourceFile("http://127.0.0.1:38886/app.js:1:1"), false);
 });

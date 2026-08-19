@@ -19,10 +19,7 @@ interface PendingSteer {
 }
 
 export interface SteeringInputMonitor {
-  run(
-    onInput: (input: ContentBlock[]) => void,
-    signal: AbortSignal,
-  ): Promise<void>;
+  run(onInput: (input: ContentBlock[]) => void, signal: AbortSignal): Promise<void>;
 }
 
 export interface BbSteeringMonitorOptions {
@@ -39,19 +36,21 @@ function parseEvents(value: unknown): BbThreadEvent[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((event) => {
     if (
-      !isRecord(event)
-      || typeof event.seq !== "number"
-      || !Number.isInteger(event.seq)
-      || typeof event.type !== "string"
+      !isRecord(event) ||
+      typeof event.seq !== "number" ||
+      !Number.isInteger(event.seq) ||
+      typeof event.type !== "string"
     ) {
       return [];
     }
-    return [{
-      seq: event.seq,
-      scope: event.scope,
-      type: event.type,
-      data: event.data,
-    }];
+    return [
+      {
+        seq: event.seq,
+        scope: event.scope,
+        type: event.type,
+        data: event.data,
+      },
+    ];
   });
 }
 
@@ -63,9 +62,7 @@ function toContentBlock(value: unknown): ContentBlock | null {
   if (!isRecord(value) || typeof value.type !== "string") return null;
   switch (value.type) {
     case "text":
-      return typeof value.text === "string"
-        ? { type: "text", text: value.text }
-        : null;
+      return typeof value.text === "string" ? { type: "text", text: value.text } : null;
     case "image":
       return typeof value.url === "string"
         ? { type: "text", text: `[image attachment: ${value.url}]` }
@@ -102,9 +99,9 @@ function parseSteer(event: BbThreadEvent): [string, PendingSteer] | null {
   const target = event.data.target;
   if (!isRecord(target)) return null;
   if (
-    (target.kind !== "steer" && target.kind !== "auto")
-    || typeof target.expectedTurnId !== "string"
-    || typeof event.data.requestId !== "string"
+    (target.kind !== "steer" && target.kind !== "auto") ||
+    typeof target.expectedTurnId !== "string" ||
+    typeof event.data.requestId !== "string"
   ) {
     return null;
   }
@@ -126,10 +123,10 @@ function parseAccepted(event: BbThreadEvent): { requestId: string; turnId: strin
     return null;
   }
   if (
-    typeof event.data.clientRequestId !== "string"
-    || !isRecord(event.scope)
-    || event.scope.kind !== "turn"
-    || typeof event.scope.turnId !== "string"
+    typeof event.data.clientRequestId !== "string" ||
+    !isRecord(event.scope) ||
+    event.scope.kind !== "turn" ||
+    typeof event.scope.turnId !== "string"
   ) {
     return null;
   }
@@ -140,8 +137,10 @@ function parseAccepted(event: BbThreadEvent): { requestId: string; turnId: strin
 }
 
 function abortError(error: unknown, signal: AbortSignal): boolean {
-  return signal.aborted
-    || (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"));
+  return (
+    signal.aborted ||
+    (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError"))
+  );
 }
 
 async function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -158,22 +157,14 @@ class BbSteeringMonitor implements SteeringInputMonitor {
   private readonly waitUrl: URL;
   private cursor: number;
 
-  constructor(args: {
-    cursor: number;
-    eventsUrl: URL;
-    fetch: typeof fetch;
-    waitUrl: URL;
-  }) {
+  constructor(args: { cursor: number; eventsUrl: URL; fetch: typeof fetch; waitUrl: URL }) {
     this.cursor = args.cursor;
     this.eventsUrl = args.eventsUrl;
     this.fetch = args.fetch;
     this.waitUrl = args.waitUrl;
   }
 
-  async run(
-    onInput: (input: ContentBlock[]) => void,
-    signal: AbortSignal,
-  ): Promise<void> {
+  async run(onInput: (input: ContentBlock[]) => void, signal: AbortSignal): Promise<void> {
     const pending = new Map<string, PendingSteer>();
     let reportedFailure = false;
     while (!signal.aborted) {
@@ -205,10 +196,7 @@ class BbSteeringMonitor implements SteeringInputMonitor {
     }
   }
 
-  private async listThrough(
-    targetSeq: number,
-    signal: AbortSignal,
-  ): Promise<BbThreadEvent[]> {
+  private async listThrough(targetSeq: number, signal: AbortSignal): Promise<BbThreadEvent[]> {
     const collected: BbThreadEvent[] = [];
     while (this.cursor < targetSeq) {
       const url = new URL(this.eventsUrl);
@@ -242,10 +230,7 @@ class BbSteeringMonitor implements SteeringInputMonitor {
   }
 }
 
-async function latestEventCursor(
-  eventsUrl: URL,
-  fetchFn: typeof fetch,
-): Promise<number> {
+async function latestEventCursor(eventsUrl: URL, fetchFn: typeof fetch): Promise<number> {
   let cursor = 0;
   for (;;) {
     const url = new URL(eventsUrl);

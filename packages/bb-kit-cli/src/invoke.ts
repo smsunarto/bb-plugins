@@ -75,7 +75,10 @@ export function operationInvokeCommand(
     : `${base} --input ${shellQuote(JSON.stringify(operation.input.example))}`;
 }
 
-function findOperation(root: string, identity: string): {
+function findOperation(
+  root: string,
+  identity: string,
+): {
   pluginId: string;
   operation: DiscoveredOperation;
   rpcMethod: string;
@@ -99,11 +102,7 @@ function findOperation(root: string, identity: string): {
   return { pluginId: project.pluginId, operation, rpcMethod: operation.rpcMethod };
 }
 
-function assertInvocable(
-  identity: string,
-  operation: DiscoveredOperation,
-  confirm: boolean,
-): void {
+function assertInvocable(identity: string, operation: DiscoveredOperation, confirm: boolean): void {
   if (operation.kind === "unknown") {
     throw new InvocationError(
       "unknown_operation_kind",
@@ -185,9 +184,7 @@ export async function invokeOperation(
   assertInputState(identity, operation, options.input !== undefined);
 
   const cwd = options.cwd ?? root;
-  const input = operation.input?.mode === "none"
-    ? null
-    : parseInput(options.input as string, cwd);
+  const input = operation.input?.mode === "none" ? null : parseInput(options.input as string, cwd);
   const baseUrl = new URL(
     options.serverUrl ?? process.env.BB_SERVER_URL ?? "http://127.0.0.1:38886",
   );
@@ -216,7 +213,7 @@ export async function invokeOperation(
     );
   }
 
-  const envelope = await response.json().catch(() => null) as RpcEnvelope | null;
+  const envelope = (await response.json().catch(() => null)) as RpcEnvelope | null;
   if (!response.ok || !envelope?.ok) {
     const failure = envelope && !envelope.ok ? envelope.error : undefined;
     throw new InvocationError(

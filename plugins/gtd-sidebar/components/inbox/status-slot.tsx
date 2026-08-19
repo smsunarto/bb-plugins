@@ -20,8 +20,7 @@ export const STATUS_SLOT_CLASS = "flex w-7 shrink-0 items-center justify-end";
  * each one on the same vertical axis, so right-aligning the boxes lines the
  * icons up instead of leaving them one or two pixels apart.
  */
-export const TRAILING_GLYPH_BOX_CLASS =
-  "flex size-3.5 shrink-0 items-center justify-center";
+export const TRAILING_GLYPH_BOX_CLASS = "flex size-3.5 shrink-0 items-center justify-center";
 
 /**
  * Status OR age, never both: the glyph already implies the row is current, and
@@ -36,9 +35,7 @@ export function StatusOrTime({
   now: number;
 }) {
   if (hasStatusGlyph(thread.indicator)) {
-    return (
-      <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />
-    );
+    return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
   return (
     <span className="tabular-nums text-2xs text-muted-foreground">

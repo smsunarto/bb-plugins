@@ -22,9 +22,7 @@ const quiet: ThreadActivitySignals = {
   latestAttentionAt: 0,
 };
 
-const row = (
-  overrides: Partial<ThreadLifecycleRow> = {},
-): ThreadLifecycleRow => ({
+const row = (overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow => ({
   threadId: "thr_1",
   settledAt: null,
   snoozedUntil: null,
@@ -54,41 +52,26 @@ describe("resolveShelf", () => {
   });
 
   it("settles a parked, quiet thread", () => {
-    assert.equal(
-      resolveShelf(row({ settledAt: 500 }), quiet, 1_000),
-      "settled",
-    );
+    assert.equal(resolveShelf(row({ settledAt: 500 }), quiet, 1_000), "settled");
   });
 
   it("brings a settled thread back when it starts working", () => {
     assert.equal(
-      resolveShelf(
-        row({ settledAt: 500 }),
-        { ...quiet, isWorking: true },
-        1_000,
-      ),
+      resolveShelf(row({ settledAt: 500 }), { ...quiet, isWorking: true }, 1_000),
       "active",
     );
   });
 
   it("brings a settled thread back when it asks a question", () => {
     assert.equal(
-      resolveShelf(
-        row({ settledAt: 500 }),
-        { ...quiet, hasPendingInteraction: true },
-        1_000,
-      ),
+      resolveShelf(row({ settledAt: 500 }), { ...quiet, hasPendingInteraction: true }, 1_000),
       "active",
     );
   });
 
   it("un-settles on new attention after the settle", () => {
     assert.equal(
-      resolveShelf(
-        row({ settledAt: 500 }),
-        { ...quiet, latestAttentionAt: 900 },
-        1_000,
-      ),
+      resolveShelf(row({ settledAt: 500 }), { ...quiet, latestAttentionAt: 900 }, 1_000),
       "active",
     );
   });
@@ -101,10 +84,7 @@ describe("resolveShelf", () => {
   });
 
   it("wakes a snoozed thread when the timer elapses", () => {
-    assert.equal(
-      resolveShelf(row({ snoozedUntil: 900, snoozedAt: 500 }), quiet, 1_000),
-      "active",
-    );
+    assert.equal(resolveShelf(row({ snoozedUntil: 900, snoozedAt: 500 }), quiet, 1_000), "active");
   });
 
   // "Something happened" wakes it early — otherwise snooze hides the exact
@@ -141,17 +121,14 @@ describe("resolveShelf", () => {
 });
 
 describe("wokenSettledThreadIds", () => {
-  const signals = (
-    overrides: Partial<ThreadActivitySignals> = {},
-  ): ThreadActivitySignals => ({ ...quiet, ...overrides });
+  const signals = (overrides: Partial<ThreadActivitySignals> = {}): ThreadActivitySignals => ({
+    ...quiet,
+    ...overrides,
+  });
 
   it("leaves a thread that is still settled alone", () => {
     assert.deepEqual(
-      wokenSettledThreadIds(
-        [row({ threadId: "a", settledAt: 500 })],
-        () => signals(),
-        1_000,
-      ),
+      wokenSettledThreadIds([row({ threadId: "a", settledAt: 500 })], () => signals(), 1_000),
       [],
     );
   });
@@ -161,12 +138,8 @@ describe("wokenSettledThreadIds", () => {
   it("reports a settled thread that has come back", () => {
     assert.deepEqual(
       wokenSettledThreadIds(
-        [
-          row({ threadId: "a", settledAt: 500 }),
-          row({ threadId: "b", settledAt: 500 }),
-        ],
-        (threadId) =>
-          threadId === "b" ? signals({ latestAttentionAt: 900 }) : signals(),
+        [row({ threadId: "a", settledAt: 500 }), row({ threadId: "b", settledAt: 500 })],
+        (threadId) => (threadId === "b" ? signals({ latestAttentionAt: 900 }) : signals()),
         1_000,
       ),
       ["b"],
@@ -188,11 +161,7 @@ describe("wokenSettledThreadIds", () => {
   // one's: unsettling a row for a thread that is gone archives nothing.
   it("skips a thread bb no longer reports", () => {
     assert.deepEqual(
-      wokenSettledThreadIds(
-        [row({ threadId: "a", settledAt: 500 })],
-        () => undefined,
-        1_000,
-      ),
+      wokenSettledThreadIds([row({ threadId: "a", settledAt: 500 })], () => undefined, 1_000),
       [],
     );
   });
@@ -206,10 +175,7 @@ describe("rowsMatch", () => {
   // publish any window makes afterwards. Recognising that is what keeps a
   // no-op refresh from re-partitioning the whole sidebar.
   it("matches a list that says what the rows already say", () => {
-    const rows = [
-      row({ threadId: "a", settledAt: 500 }),
-      row({ threadId: "b" }),
-    ];
+    const rows = [row({ threadId: "a", settledAt: 500 }), row({ threadId: "b" })];
     assert.equal(rowsMatch(asMap(rows), [...rows].reverse()), true);
   });
 
@@ -224,10 +190,7 @@ describe("rowsMatch", () => {
 
   it("notices a row that arrived or left", () => {
     assert.equal(rowsMatch(asMap([row({ threadId: "a" })]), []), false);
-    assert.equal(
-      rowsMatch(asMap([row({ threadId: "a" })]), [row({ threadId: "b" })]),
-      false,
-    );
+    assert.equal(rowsMatch(asMap([row({ threadId: "a" })]), [row({ threadId: "b" })]), false);
   });
 });
 
@@ -268,9 +231,7 @@ describe("resolveSnoozePresets", () => {
   // day across a daylight-saving change.
   it("puts tomorrow at 9am on the next calendar day", () => {
     const presets = resolveSnoozePresets(new Date(2026, 0, 5, 23, 30, 0));
-    const tomorrow = new Date(
-      presets.find((preset) => preset.id === "tomorrow")!.snoozedUntil,
-    );
+    const tomorrow = new Date(presets.find((preset) => preset.id === "tomorrow")!.snoozedUntil);
     assert.equal(tomorrow.getDate(), 6);
     assert.equal(tomorrow.getHours(), 9);
   });
@@ -278,9 +239,7 @@ describe("resolveSnoozePresets", () => {
   it("puts next week on the coming Monday", () => {
     // 2026-01-05 is a Monday, so "next week" is the following Monday.
     const presets = resolveSnoozePresets(new Date(2026, 0, 5, 10, 0, 0));
-    const nextWeek = new Date(
-      presets.find((preset) => preset.id === "next-week")!.snoozedUntil,
-    );
+    const nextWeek = new Date(presets.find((preset) => preset.id === "next-week")!.snoozedUntil);
     assert.equal(nextWeek.getDay(), 1);
     assert.equal(nextWeek.getDate(), 12);
   });
@@ -305,9 +264,7 @@ describe("nextWakeDelayMs", () => {
 
 describe("refreshRetryDelayMs", () => {
   it("grows the wait with each attempt", () => {
-    const delays = REFRESH_RETRY_DELAYS_MS.map((_, attempt) =>
-      refreshRetryDelayMs(attempt),
-    );
+    const delays = REFRESH_RETRY_DELAYS_MS.map((_, attempt) => refreshRetryDelayMs(attempt));
     assert.deepEqual(delays, [...REFRESH_RETRY_DELAYS_MS]);
     assert.deepEqual(
       [...delays].sort((left, right) => (left ?? 0) - (right ?? 0)),

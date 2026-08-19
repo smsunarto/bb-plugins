@@ -110,10 +110,7 @@ export function inspectBbCli(
     path = executable(env.BB_CLI);
     source = "BB_CLI";
     if (!path) {
-      throw new ProcessError(
-        "bb_cli_invalid",
-        `BB_CLI is not an executable file: ${env.BB_CLI}`,
-      );
+      throw new ProcessError("bb_cli_invalid", `BB_CLI is not an executable file: ${env.BB_CLI}`);
     }
   } else {
     path = resolvePathExecutable("bb", env);
@@ -141,14 +138,12 @@ export function inspectBbCli(
   delete childEnv.BB_CLI_REEXEC;
   const result = run({ file: path, args: ["--version"], cwd, env: childEnv });
   if (result.error || result.status !== 0) {
-    const detail = result.error?.message
-      || result.stderr.trim()
-      || result.stdout.trim()
-      || "version check failed";
-    throw new ProcessError(
-      "bb_cli_invalid",
-      `could not execute ${path} --version: ${detail}`,
-    );
+    const detail =
+      result.error?.message ||
+      result.stderr.trim() ||
+      result.stdout.trim() ||
+      "version check failed";
+    throw new ProcessError("bb_cli_invalid", `could not execute ${path} --version: ${detail}`);
   }
   const version = result.stdout.trim().split(/\s+/).at(-1) ?? "";
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
@@ -178,10 +173,10 @@ export function selectBbCli(
 }
 
 export function processFailure(result: CommandResult): string {
-  const raw = (result.error?.message
-    ?? result.stderr.trim())
-    || result.stdout.trim()
-    || (result.signal ? `terminated by ${result.signal}` : "command failed");
+  const raw =
+    (result.error?.message ?? result.stderr.trim()) ||
+    result.stdout.trim() ||
+    (result.signal ? `terminated by ${result.signal}` : "command failed");
   const value = redact(raw).split("\n").slice(-20).join("\n");
   return value.length > 4_000 ? value.slice(-4_000) : value;
 }

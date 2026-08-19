@@ -154,10 +154,7 @@ test("sanitizeJson drops what bb's rpc layer would reject", () => {
 test("bb routes resolve to their thread, project, and panel ids", () => {
   assert.equal(threadIdFromRoute("/threads/thr_abc123"), "thr_abc123");
   assert.equal(threadIdFromRoute("/settings/appearance"), null);
-  assert.equal(
-    projectIdFromRoute("/projects/proj_xyz/threads"),
-    "proj_xyz",
-  );
+  assert.equal(projectIdFromRoute("/projects/proj_xyz/threads"), "proj_xyz");
   assert.equal(panelPluginIdFromRoute("/plugins/github/issues"), "github");
   assert.equal(panelPluginIdFromRoute("/threads/thr_abc"), null);
 });

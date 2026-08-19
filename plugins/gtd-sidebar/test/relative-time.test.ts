@@ -21,10 +21,7 @@ describe("relativeTimeLabel", () => {
 
   it("floors rather than rounds, so a label never overstates age", () => {
     assert.equal(relativeTimeLabel(NOW - (59 * MINUTE + 59_000), NOW), "59m");
-    assert.equal(
-      relativeTimeLabel(NOW - (23 * HOUR + 59 * MINUTE), NOW),
-      "23h",
-    );
+    assert.equal(relativeTimeLabel(NOW - (23 * HOUR + 59 * MINUTE), NOW), "23h");
   });
 
   // Clocks disagree across machines, so a thread can carry a timestamp that

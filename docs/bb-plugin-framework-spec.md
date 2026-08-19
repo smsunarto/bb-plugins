@@ -162,24 +162,24 @@ A theme plugin should not receive React Query, SQLite, Hono, forms, and empty ap
 
 The framework, its diagnostics, its documentation, and its agent skills use these terms consistently.
 
-| Term | Meaning |
-| --- | --- |
-| Plugin | One installable bb package. |
-| Module | One cohesive capability inside a plugin. |
-| Model | Domain values, invariants, and pure business rules. |
-| Service | The headless application interface implementing module use cases. |
-| Operation | A typed, headlessly invocable query or command. |
-| Query | A read-only operation. |
-| Command | An operation that may change state or cause effects. |
-| Contract | Validated JSON input and output shared across process boundaries. |
-| Adapter | An RPC, CLI, tool, event, persistence, or UI integration that invokes a service or operation. |
-| Surface | A place where a human or agent interacts with the module, such as a panel, command, or tool. |
-| Composition root | `plugin/server.ts` or `plugin/app.tsx`, where modules are installed explicitly. |
-| Authoritative query | An RPC-backed frontend query whose value comes from durable backend state. |
-| Signal | An ephemeral realtime message that invalidates authoritative queries. |
+| Term                | Meaning                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| Plugin              | One installable bb package.                                                                             |
+| Module              | One cohesive capability inside a plugin.                                                                |
+| Model               | Domain values, invariants, and pure business rules.                                                     |
+| Service             | The headless application interface implementing module use cases.                                       |
+| Operation           | A typed, headlessly invocable query or command.                                                         |
+| Query               | A read-only operation.                                                                                  |
+| Command             | An operation that may change state or cause effects.                                                    |
+| Contract            | Validated JSON input and output shared across process boundaries.                                       |
+| Adapter             | An RPC, CLI, tool, event, persistence, or UI integration that invokes a service or operation.           |
+| Surface             | A place where a human or agent interacts with the module, such as a panel, command, or tool.            |
+| Composition root    | `plugin/server.ts` or `plugin/app.tsx`, where modules are installed explicitly.                         |
+| Authoritative query | An RPC-backed frontend query whose value comes from durable backend state.                              |
+| Signal              | An ephemeral realtime message that invalidates authoritative queries.                                   |
 | Generation resource | A database handle, timer, socket, subprocess, SDK handle, or mutable resource owned by one plugin load. |
-| Source fallback | Shipped plugin source used by bb when a managed bundle is absent or SDK-incompatible. |
-| Recipe | Generated, locally owned source such as a shadcn component or portal helper. |
+| Source fallback     | Shipped plugin source used by bb when a managed bundle is absent or SDK-incompatible.                   |
+| Recipe              | Generated, locally owned source such as a shadcn component or portal helper.                            |
 
 ## Architectural model
 
@@ -211,11 +211,11 @@ MVC remains useful as a separation principle, but `bb-kit` is better described a
 
 MVC correspondence:
 
-| MVC role | bb-kit equivalent |
-| --- | --- |
-| Model | Module model, service, and durable state. |
-| View | React panels, slots, composer contributions, and content scripts. |
-| Controller | RPC handlers, tools, CLI commands, and event handlers. |
+| MVC role          | bb-kit equivalent                                                    |
+| ----------------- | -------------------------------------------------------------------- |
+| Model             | Module model, service, and durable state.                            |
+| View              | React panels, slots, composer contributions, and content scripts.    |
+| Controller        | RPC handlers, tools, CLI commands, and event handlers.               |
 | Transport adapter | Operation contracts, RPC, TanStack Query, and realtime invalidation. |
 
 ## Package graph
@@ -271,29 +271,29 @@ Do not create empty `core`, `server`, `ui`, or `shared` packages merely for symm
 
 ### Default runtime stack
 
-| Concern | Choice | Reason |
-| --- | --- | --- |
-| Host integration | Native `@get-bb/plugin-sdk` and `@get-bb/plugin-sdk/app` | This is the actual interoperability contract. |
-| UI | Host React plus locally owned recipes | Avoid duplicate React and preserve plugin-specific divergence. |
-| Frontend server state | `@tanstack/react-query` | Owns request lifecycle, deduplication, retries, caching, mutations, and invalidation. |
-| RPC validation | Standard Schema V1 | Matches bb's validator-neutral RPC contract. |
-| New-plugin schemas and tools | Zod 4 | Good default and required by typed agent tools, without becoming the framework boundary. |
-| Persistence | Native `bb.storage.kv` and host `better-sqlite3` | Preserves bb lifecycle, namespacing, and source compatibility. |
-| Tests | Vitest and Testing Library | Fast pure, contract, query, and component tests. |
-| UI source | Tailwind, `clsx`, `tailwind-merge`, CVA, copied shadcn/Radix recipes | Compatible with bb's source-owned UI model. |
-| HTTP routing | Hono, only when requested | Fits bb's Web Standard request/response model without burdening every plugin. |
+| Concern                      | Choice                                                               | Reason                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Host integration             | Native `@get-bb/plugin-sdk` and `@get-bb/plugin-sdk/app`             | This is the actual interoperability contract.                                            |
+| UI                           | Host React plus locally owned recipes                                | Avoid duplicate React and preserve plugin-specific divergence.                           |
+| Frontend server state        | `@tanstack/react-query`                                              | Owns request lifecycle, deduplication, retries, caching, mutations, and invalidation.    |
+| RPC validation               | Standard Schema V1                                                   | Matches bb's validator-neutral RPC contract.                                             |
+| New-plugin schemas and tools | Zod 4                                                                | Good default and required by typed agent tools, without becoming the framework boundary. |
+| Persistence                  | Native `bb.storage.kv` and host `better-sqlite3`                     | Preserves bb lifecycle, namespacing, and source compatibility.                           |
+| Tests                        | Vitest and Testing Library                                           | Fast pure, contract, query, and component tests.                                         |
+| UI source                    | Tailwind, `clsx`, `tailwind-merge`, CVA, copied shadcn/Radix recipes | Compatible with bb's source-owned UI model.                                              |
+| HTTP routing                 | Hono, only when requested                                            | Fits bb's Web Standard request/response model without burdening every plugin.            |
 
 ### Toolchain dependencies
 
-| Package | Use |
-| --- | --- |
-| `dependency-cruiser` | Enforce server/browser, layer, module, and cycle constraints. |
-| `ts-morph` | Perform conservative, idempotent TypeScript edits in known composition roots. |
-| `jsonc-parser` | Edit JSON/JSONC while preserving formatting and comments. |
-| `fast-check` | Prove generator idempotency and framework invariants. |
-| `publint` | Validate published package manifests and exports. |
-| `@arethetypeswrong/cli` | Validate emitted declaration resolution. |
-| `@changesets/cli` | Coordinate releases and compatibility-line changes once packages are published. |
+| Package                 | Use                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `dependency-cruiser`    | Enforce server/browser, layer, module, and cycle constraints.                   |
+| `ts-morph`              | Perform conservative, idempotent TypeScript edits in known composition roots.   |
+| `jsonc-parser`          | Edit JSON/JSONC while preserving formatting and comments.                       |
+| `fast-check`            | Prove generator idempotency and framework invariants.                           |
+| `publint`               | Validate published package manifests and exports.                               |
+| `@arethetypeswrong/cli` | Validate emitted declaration resolution.                                        |
+| `@changesets/cli`       | Coordinate releases and compatibility-line changes once packages are published. |
 
 `ts-pattern` may be offered as an optional recipe for exhaustive rendering of discriminated outcomes. Plain exhaustive `switch` statements remain supported.
 
@@ -306,17 +306,17 @@ Do not create empty `core`, `server`, `ui`, or `shared` packages merely for symm
 
 ### Explicitly rejected foundations
 
-| Package or category | Reason |
-| --- | --- |
-| tRPC | Duplicates bb RPC transport, contracts, validation, and errors. |
-| Effect | Adds a language-within-a-language and raises the burden on coding agents. |
-| Redux or Zustand by default | Encourages duplication of authoritative server state. |
-| NestJS or DI containers | Obscures ownership and plugin-generation lifecycle. |
-| Drizzle or Kysely by default | Adds a mandatory persistence abstraction over host-owned SQLite. |
-| Compiled shared UI kit | Risks conflicts with React, Radix portals, host styling, and intentional plugin divergence. |
-| Generic event bus | Obscures bb events, realtime, cancellation, and disposal. |
-| `neverthrow` everywhere | Discriminated unions are simpler and already exhaustive in TypeScript. |
-| Storybook as host verification | Does not reproduce bb routing, CSS, slots, focus, or portal behavior. |
+| Package or category            | Reason                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| tRPC                           | Duplicates bb RPC transport, contracts, validation, and errors.                             |
+| Effect                         | Adds a language-within-a-language and raises the burden on coding agents.                   |
+| Redux or Zustand by default    | Encourages duplication of authoritative server state.                                       |
+| NestJS or DI containers        | Obscures ownership and plugin-generation lifecycle.                                         |
+| Drizzle or Kysely by default   | Adds a mandatory persistence abstraction over host-owned SQLite.                            |
+| Compiled shared UI kit         | Risks conflicts with React, Radix portals, host styling, and intentional plugin divergence. |
+| Generic event bus              | Obscures bb events, realtime, cancellation, and disposal.                                   |
+| `neverthrow` everywhere        | Discriminated unions are simpler and already exhaustive in TypeScript.                      |
+| Storybook as host verification | Does not reproduce bb routing, CSS, slots, focus, or portal behavior.                       |
 
 ## Project layout
 
@@ -398,19 +398,19 @@ Directories are added only when a requested capability requires them.
 
 ## Filesystem contracts
 
-| Path | Responsibility | Allowed dependencies |
-| --- | --- | --- |
-| `contract.ts` | JSON wire schemas and shared transport types | Browser-safe schema and type libraries only. |
-| `model.ts` | Domain values, invariants, and pure rules | Pure module code only. |
-| `service.ts` | Headless queries and commands | Model plus dependency interfaces. |
-| `repository.ts` | Persistence adapter | Model, repository interface, and native bb storage. |
-| `operations/*.ts` | Operation metadata and input/output contract | Contract and browser-safe code. |
-| `server.ts` | Native backend adapters and resource construction | Entire backend side of the module. |
-| `queries.ts` | Query keys and TanStack options | Contract, operation metadata, app SDK, bb-kit query helpers. |
-| `panel.tsx` | React view and local interaction state | Queries, model display types, and UI recipes. |
-| module `app.tsx` | Native app slot/content/composer registration | Frontend module code. |
-| `components/ui/` | Plugin-owned UI source recipes | Frontend code only. |
-| `fixtures/` | Loaded-operation examples and scenarios | JSON/YAML data, no production imports. |
+| Path              | Responsibility                                    | Allowed dependencies                                         |
+| ----------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| `contract.ts`     | JSON wire schemas and shared transport types      | Browser-safe schema and type libraries only.                 |
+| `model.ts`        | Domain values, invariants, and pure rules         | Pure module code only.                                       |
+| `service.ts`      | Headless queries and commands                     | Model plus dependency interfaces.                            |
+| `repository.ts`   | Persistence adapter                               | Model, repository interface, and native bb storage.          |
+| `operations/*.ts` | Operation metadata and input/output contract      | Contract and browser-safe code.                              |
+| `server.ts`       | Native backend adapters and resource construction | Entire backend side of the module.                           |
+| `queries.ts`      | Query keys and TanStack options                   | Contract, operation metadata, app SDK, bb-kit query helpers. |
+| `panel.tsx`       | React view and local interaction state            | Queries, model display types, and UI recipes.                |
+| module `app.tsx`  | Native app slot/content/composer registration     | Frontend module code.                                        |
+| `components/ui/`  | Plugin-owned UI source recipes                    | Frontend code only.                                          |
+| `fixtures/`       | Loaded-operation examples and scenarios           | JSON/YAML data, no production imports.                       |
 
 Required dependency direction:
 
@@ -434,11 +434,11 @@ Cross-module collaboration occurs through an explicitly exported interface, oper
 
 Framework-owned identity comes from paths:
 
-| Path | Derived identity |
-| --- | --- |
-| `plugin/modules/approvals/` | Module `approvals` |
-| `operations/get.ts` | Operation `approvals.get` |
-| `operations/approve.ts` | Operation `approvals.approve` |
+| Path                                       | Derived identity                      |
+| ------------------------------------------ | ------------------------------------- |
+| `plugin/modules/approvals/`                | Module `approvals`                    |
+| `operations/get.ts`                        | Operation `approvals.get`             |
+| `operations/approve.ts`                    | Operation `approvals.approve`         |
 | `fixtures/approvals/approve-conflict.yaml` | Scenario `approvals.approve-conflict` |
 
 Operation files do not repeat a `name` field.
@@ -603,9 +603,7 @@ The helper accepts a narrow structural `rpc.register` host so its published serv
 Capabilities that do not fit an application query or command use native bb directly:
 
 ```ts
-bb.events.on("thread.deleted", ({ thread }) =>
-  repository.removeForThread(thread.id),
-);
+bb.events.on("thread.deleted", ({ thread }) => repository.removeForThread(thread.id));
 
 bb.agents.registerTool({
   name: "approvals_approve",
@@ -644,8 +642,7 @@ Each module owns one canonical key factory:
 ```ts
 export const approvalKeys = {
   all: ["approvals"] as const,
-  detail: (approvalId: string) =>
-    ["approvals", "detail", approvalId] as const,
+  detail: (approvalId: string) => ["approvals", "detail", approvalId] as const,
 };
 ```
 
@@ -682,10 +679,7 @@ const approve = useMutation(
     rpc,
     operation: approvalOperations.approve,
     queryClient,
-    invalidate: ({ input }) => [
-      approvalKeys.all,
-      approvalKeys.detail(input.approvalId),
-    ],
+    invalidate: ({ input }) => [approvalKeys.all, approvalKeys.detail(input.approvalId)],
   }),
 );
 ```
@@ -693,7 +687,7 @@ const approve = useMutation(
 If a command provably does not affect query state, it must say so explicitly:
 
 ```ts
-invalidate: false
+invalidate: false;
 ```
 
 ### Realtime
@@ -704,10 +698,7 @@ Realtime payloads are untrusted, ephemeral signals. They must be validated and t
 useRealtimeInvalidation({
   channel: "approvals-changed",
   schema: approvalChangedSchema,
-  keys: ({ approvalId }) => [
-    approvalKeys.all,
-    approvalKeys.detail(approvalId),
-  ],
+  keys: ({ approvalId }) => [approvalKeys.all, approvalKeys.detail(approvalId)],
   reconnect: [approvalKeys.all],
 });
 ```
@@ -1300,9 +1291,9 @@ The floor rises only through a verified `compatibility upgrade`.
 
 Framework SemVer is independent from bb SDK SemVer and maintains an explicit table:
 
-| bb-kit | bb | Plugin SDK | Status |
-| --- | --- | --- | --- |
-| 0.1.x | 0.37.x | 0.4.1 | Current target |
+| bb-kit     | bb                | Plugin SDK        | Status                        |
+| ---------- | ----------------- | ----------------- | ----------------------------- |
+| 0.1.x      | 0.37.x            | 0.4.1             | Current target                |
 | Later line | Explicitly tested | Explicitly tested | Added only after verification |
 
 Compatibility rules:

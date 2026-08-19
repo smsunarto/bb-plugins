@@ -1,10 +1,10 @@
 # Harden bb-kit after Dotfiles dogfood
 
-| Field | Value |
-|---|---|
-| Status | Implemented; live worktree UI evidence remains pending |
-| Owner | bb-kit maintainers |
-| Updated | 2026-08-13 |
+| Field   | Value                                                  |
+| ------- | ------------------------------------------------------ |
+| Status  | Implemented; live worktree UI evidence remains pending |
+| Owner   | bb-kit maintainers                                     |
+| Updated | 2026-08-13                                             |
 
 ## Summary
 
@@ -58,33 +58,33 @@ This plan incorporates the findings in [`docs/bb-kit-dotfiles-dogfood.md`](../bb
 
 ## Scope
 
-| In scope | Out of scope |
-|---|---|
-| One package-internal `@bb-kit/cli` compatibility constant | Compatibility profiles or new bb lines |
-| Exact bb executable preflight and child environment | Automatic CLI installation or cache search |
-| SDK declaration and build-metadata validation | Binary attestation against platform hashes |
-| Package-local source closure and exact host shims | Complete npm dependency graph analysis |
-| `bb-kit build`, fixed `verify`, and canonical package aliases | Project-selected build or verification commands |
-| `useOperationRpc(catalog)` | General `@bb/plugin-sdk/app` wrapper |
-| Generated `node:test` starter executed by Bun | Bun test typings |
+| In scope                                                                 | Out of scope                                             |
+| ------------------------------------------------------------------------ | -------------------------------------------------------- |
+| One package-internal `@bb-kit/cli` compatibility constant                | Compatibility profiles or new bb lines                   |
+| Exact bb executable preflight and child environment                      | Automatic CLI installation or cache search               |
+| SDK declaration and build-metadata validation                            | Binary attestation against platform hashes               |
+| Package-local source closure and exact host shims                        | Complete npm dependency graph analysis                   |
+| `bb-kit build`, fixed `verify`, and canonical package aliases            | Project-selected build or verification commands          |
+| `useOperationRpc(catalog)`                                               | General `@bb/plugin-sdk/app` wrapper                     |
+| Generated `node:test` starter executed by Bun                            | Bun test typings                                         |
 | Branded `noInput`, required examples, AST discovery, and strict fixtures | Generic schema introspection or input-mode configuration |
-| Read-only `bb-kit doctor`, checklist, and suggested manual query | `verify --live`, doctor RPC, or browser automation |
-| Dotfiles migration as dogfood proof | Unrelated plugin migrations |
+| Read-only `bb-kit doctor`, checklist, and suggested manual query         | `verify --live`, doctor RPC, or browser automation       |
+| Dotfiles migration as dogfood proof                                      | Unrelated plugin migrations                              |
 
 ## Constraints and requirements
 
-| Constraint or requirement | Source | Design effect |
-|---|---|---|
-| bb-kit 0.1 targets exact build CLI 0.37.0, bb 0.37.x, and plugin SDK 0.4.1 | Framework specification and repository `config.bbVersion` | One package-internal immutable constant owns all values. No selection API exists. |
-| bb's SDK is unpublished and pre-1.0 | Framework specification | Keep generated declarations and do not leak SDK server types into bb-kit declarations. |
-| Official bb entrypoints honor absolute `BB_CLI` | Repository workflow | Propagate one selected absolute path to every verification subprocess. |
-| Package build scripts caused the observed wrong-CLI mutation | Dotfiles dogfood and Oracle review | `bb-kit build` directly runs the selected CLI; `verify` never runs the package's build script. |
-| Bun package operations can still run lifecycle code | Oracle review | Recheck protected outputs after every fixed tool and after pack. |
-| Existing repositories use valid watcher and test layouts | Repository inspection and Oracle review | Do not check `dev`; use unscoped `bun test` so Bun owns discovery. |
-| Source fallback can load shipped source | Repository instructions | Check runtime dependencies, local closure, and package contents. |
-| Standard Schema V1 has validation but no generic schema description | `standard-schema.ts` | Use identity-based `noInput`; all other schemas require authored literal JSON examples. |
-| UI behavior needs a real bb surface | Framework specification | Keep `verify` offline; doctor observes and suggests, but never invokes. |
-| Existing Dotfiles work is uncommitted | Current worktree | Preserve all unrelated and prior-session changes during implementation. |
+| Constraint or requirement                                                  | Source                                                    | Design effect                                                                                  |
+| -------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| bb-kit 0.1 targets exact build CLI 0.37.0, bb 0.37.x, and plugin SDK 0.4.1 | Framework specification and repository `config.bbVersion` | One package-internal immutable constant owns all values. No selection API exists.              |
+| bb's SDK is unpublished and pre-1.0                                        | Framework specification                                   | Keep generated declarations and do not leak SDK server types into bb-kit declarations.         |
+| Official bb entrypoints honor absolute `BB_CLI`                            | Repository workflow                                       | Propagate one selected absolute path to every verification subprocess.                         |
+| Package build scripts caused the observed wrong-CLI mutation               | Dotfiles dogfood and Oracle review                        | `bb-kit build` directly runs the selected CLI; `verify` never runs the package's build script. |
+| Bun package operations can still run lifecycle code                        | Oracle review                                             | Recheck protected outputs after every fixed tool and after pack.                               |
+| Existing repositories use valid watcher and test layouts                   | Repository inspection and Oracle review                   | Do not check `dev`; use unscoped `bun test` so Bun owns discovery.                             |
+| Source fallback can load shipped source                                    | Repository instructions                                   | Check runtime dependencies, local closure, and package contents.                               |
+| Standard Schema V1 has validation but no generic schema description        | `standard-schema.ts`                                      | Use identity-based `noInput`; all other schemas require authored literal JSON examples.        |
+| UI behavior needs a real bb surface                                        | Framework specification                                   | Keep `verify` offline; doctor observes and suggests, but never invokes.                        |
+| Existing Dotfiles work is uncommitted                                      | Current worktree                                          | Preserve all unrelated and prior-session changes during implementation.                        |
 
 ## Proposed design
 
@@ -169,18 +169,18 @@ Every successful tool is followed by a protected-output check. `verify` does not
 
 #### Types and state
 
-| Type or schema | Key fields | Responsibility | Invariants | Owner |
-|---|---|---|---|---|
-| `compatibility` | `bbCliVersion`, `engines`, `pluginSdk`, `declarations`, `hostShims` | The only supported bb-kit compatibility line | Immutable; package-internal; no selector, public type, or lock field | `bb-kit-cli/src/compatibility.ts` |
-| `ProtectedDeclaration` | package name, relative path, condition, SHA-256 | Describe one generated SDK declaration | Hash is over raw bytes | `compatibility.ts` |
-| `BuildMetadataExpectation` | SDK major/version, format, plugin identity/version, `builtWith` | Validate `dist/*.meta.json` | Derived from `compatibility` plus manifest | `compatibility.ts` |
-| `CommandRequest` | `file`, `args`, `cwd`, `env` | Make subprocess selection and environment explicit | `file` is not interpreted by a shell | `verify.ts` |
-| `CommandResult` | status, signal, stdout, stderr, structured spawn error | Preserve actionable process failure data | A null status is not reported as a generic exit failure | `verify.ts` |
-| `OperationRpcClientFor<Catalog>` | catalog-derived `call` signature | Hide the frontend SDK generic mismatch | Exact method, input, and output inference remains | `bb-kit/query` |
-| `OperationJsonValue` | Recursive JSON scalar, array, or object | Keep invocation metadata transport-safe without importing bb SDK types | No `undefined`, functions, classes, or cyclic values | `bb-kit/operations` |
-| `typeof noInput` | Frozen Standard Schema V1 singleton for `null`, private unique-symbol brand | Represent an operation that accepts no user input | Runtime classification is identity-only; validator accepts and returns only `null` | `bb-kit/operations` |
-| `DiscoveredOperationInput` | `{ mode: "none" }` or `{ mode: "required", example }` | Carry fail-closed input metadata to CLI commands and fixtures | Only a direct named package import can produce `none` | `bb-kit-cli/project.ts` |
-| `DoctorReport` | compatibility, CLI, host/plugin facts, suggested query, checklist | Stable read-only live preflight result | Contains instructions only; no RPC result state exists | `bb-kit-cli/doctor.ts` |
+| Type or schema                   | Key fields                                                                  | Responsibility                                                         | Invariants                                                                         | Owner                             |
+| -------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------- |
+| `compatibility`                  | `bbCliVersion`, `engines`, `pluginSdk`, `declarations`, `hostShims`         | The only supported bb-kit compatibility line                           | Immutable; package-internal; no selector, public type, or lock field               | `bb-kit-cli/src/compatibility.ts` |
+| `ProtectedDeclaration`           | package name, relative path, condition, SHA-256                             | Describe one generated SDK declaration                                 | Hash is over raw bytes                                                             | `compatibility.ts`                |
+| `BuildMetadataExpectation`       | SDK major/version, format, plugin identity/version, `builtWith`             | Validate `dist/*.meta.json`                                            | Derived from `compatibility` plus manifest                                         | `compatibility.ts`                |
+| `CommandRequest`                 | `file`, `args`, `cwd`, `env`                                                | Make subprocess selection and environment explicit                     | `file` is not interpreted by a shell                                               | `verify.ts`                       |
+| `CommandResult`                  | status, signal, stdout, stderr, structured spawn error                      | Preserve actionable process failure data                               | A null status is not reported as a generic exit failure                            | `verify.ts`                       |
+| `OperationRpcClientFor<Catalog>` | catalog-derived `call` signature                                            | Hide the frontend SDK generic mismatch                                 | Exact method, input, and output inference remains                                  | `bb-kit/query`                    |
+| `OperationJsonValue`             | Recursive JSON scalar, array, or object                                     | Keep invocation metadata transport-safe without importing bb SDK types | No `undefined`, functions, classes, or cyclic values                               | `bb-kit/operations`               |
+| `typeof noInput`                 | Frozen Standard Schema V1 singleton for `null`, private unique-symbol brand | Represent an operation that accepts no user input                      | Runtime classification is identity-only; validator accepts and returns only `null` | `bb-kit/operations`               |
+| `DiscoveredOperationInput`       | `{ mode: "none" }` or `{ mode: "required", example }`                       | Carry fail-closed input metadata to CLI commands and fixtures          | Only a direct named package import can produce `none`                              | `bb-kit-cli/project.ts`           |
+| `DoctorReport`                   | compatibility, CLI, host/plugin facts, suggested query, checklist           | Stable read-only live preflight result                                 | Contains instructions only; no RPC result state exists                             | `bb-kit-cli/doctor.ts`            |
 
 The package-internal constant is not exported from the CLI package entry point:
 
@@ -242,19 +242,19 @@ Host shim entries are exact specifiers, not prefixes. The implementation must co
 
 #### Methods and interfaces
 
-| Method or command | Contract | Errors | Side effects | Consumers |
-|---|---|---|---|---|
-| `resolveBbCli(env): SelectedBbCli` | Require absolute executable `BB_CLI`, or resolve first `bb` on supplied `PATH`; return real absolute path and source | Invalid path, not executable, no PATH match | Filesystem metadata reads only | `verify`, `doctor`, and type-syncing `init` preflight |
-| `run(request: CommandRequest): CommandResult` | Execute without a shell and capture bounded output | Spawn error, signal, non-zero status | Child process | Verification and doctor adapters |
-| `checkSdkDeclarations(root)` | Compare required files with the only canonical hashes | Stable missing/drift diagnostics | File reads only | `check`, `build`, `verify` postconditions |
-| `checkBuildMetadata(root, manifest)` | Validate server metadata and app metadata when `bb.app` exists | File, parse, field mismatch | File reads only | `build` and `verify` after build and pack |
-| `buildProject(root, {run, env})` | Preflight; invoke `<selected-bb> plugin build .` directly; recheck declarations and metadata | Compatibility, spawn, build, drift, metadata | Exact bb child process and generated `dist/` | `bb-kit build`, `verify` |
-| `verifyProject(root, {run, env})` | Run fixed local oxlint, local `tsc --noEmit`, unscoped `bun test`, internal build, and dry-run pack | Structured failed/skipped steps | Fixed tools, build output, Bun test and pack lifecycle | CLI and tests |
-| `useOperationRpc(catalog)` | Call native `useRpc`; return `OperationRpcClientFor<typeof catalog>` | Native RPC rejection at call time | React hook call only | Plugin panels and query option builders |
-| `defineOperation(descriptor)` | Accept exact `noInput` with no example, or another schema with an own finite acyclic JSON `exampleInput` | Invalid schema, missing/extra/non-JSON example | None | Operation modules and generators |
-| `describe <operation>` | Show identity, kind, risk, wire method, discovered input state, and exact invoke command | Unknown or invalid operation metadata | None | Humans and agents |
-| `invoke <operation>` | Omit `--input` only for exact `noInput`; require it for every other schema; reject extra no-input values | Missing, unexpected, malformed, undiscoverable input; risk gate; RPC error | At most one explicit RPC request | Loaded-plugin loop |
-| `doctor` | Read supported CLI/host/plugin facts; print checklist and one manual query suggestion | Compatibility, host, source, or status failure | CLI reads only; zero RPC | Live handoff |
+| Method or command                             | Contract                                                                                                             | Errors                                                                     | Side effects                                           | Consumers                                             |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| `resolveBbCli(env): SelectedBbCli`            | Require absolute executable `BB_CLI`, or resolve first `bb` on supplied `PATH`; return real absolute path and source | Invalid path, not executable, no PATH match                                | Filesystem metadata reads only                         | `verify`, `doctor`, and type-syncing `init` preflight |
+| `run(request: CommandRequest): CommandResult` | Execute without a shell and capture bounded output                                                                   | Spawn error, signal, non-zero status                                       | Child process                                          | Verification and doctor adapters                      |
+| `checkSdkDeclarations(root)`                  | Compare required files with the only canonical hashes                                                                | Stable missing/drift diagnostics                                           | File reads only                                        | `check`, `build`, `verify` postconditions             |
+| `checkBuildMetadata(root, manifest)`          | Validate server metadata and app metadata when `bb.app` exists                                                       | File, parse, field mismatch                                                | File reads only                                        | `build` and `verify` after build and pack             |
+| `buildProject(root, {run, env})`              | Preflight; invoke `<selected-bb> plugin build .` directly; recheck declarations and metadata                         | Compatibility, spawn, build, drift, metadata                               | Exact bb child process and generated `dist/`           | `bb-kit build`, `verify`                              |
+| `verifyProject(root, {run, env})`             | Run fixed local oxlint, local `tsc --noEmit`, unscoped `bun test`, internal build, and dry-run pack                  | Structured failed/skipped steps                                            | Fixed tools, build output, Bun test and pack lifecycle | CLI and tests                                         |
+| `useOperationRpc(catalog)`                    | Call native `useRpc`; return `OperationRpcClientFor<typeof catalog>`                                                 | Native RPC rejection at call time                                          | React hook call only                                   | Plugin panels and query option builders               |
+| `defineOperation(descriptor)`                 | Accept exact `noInput` with no example, or another schema with an own finite acyclic JSON `exampleInput`             | Invalid schema, missing/extra/non-JSON example                             | None                                                   | Operation modules and generators                      |
+| `describe <operation>`                        | Show identity, kind, risk, wire method, discovered input state, and exact invoke command                             | Unknown or invalid operation metadata                                      | None                                                   | Humans and agents                                     |
+| `invoke <operation>`                          | Omit `--input` only for exact `noInput`; require it for every other schema; reject extra no-input values             | Missing, unexpected, malformed, undiscoverable input; risk gate; RPC error | At most one explicit RPC request                       | Loaded-plugin loop                                    |
+| `doctor`                                      | Read supported CLI/host/plugin facts; print checklist and one manual query suggestion                                | Compatibility, host, source, or status failure                             | CLI reads only; zero RPC                               | Live handoff                                          |
 
 `CommandRunner` changes from positional arguments to this request object:
 
@@ -340,19 +340,19 @@ Doctor selects the first query by stable identity for its suggestion. A no-input
 
 #### Modules and ownership
 
-| Module | Owns and hides | Depends on | Interface | Why this split exists |
-|---|---|---|---|---|
-| `compatibility.ts` | Only supported line, hashes, metadata, shims | No project state | Package-internal immutable constant and focused check functions | Prevent policy selection and duplicated compatibility knowledge |
-| `check.ts` | Offline source, manifest, script-alias, operation-metadata diagnostics | Compatibility, AST project discovery | `checkProject` | No process or host access |
-| `build.ts` | Exact bb selection, direct plugin build, protected postconditions | Checker, compatibility, command runner | `buildProject` | One safe owner replaces package-authored build policy |
-| `verify.ts` | Fixed tool sequence and protected postconditions | Checker, build, package inspection, command runner | `verifyProject` | One safe handoff gate without command configuration |
-| `package.ts` | Actual dry-run package authority | Packed paths and manifest | `checkPackedPackage` | Static checks cannot model ignore/pack behavior fully |
-| `operations.ts` | Branded `noInput`, operation state union, runtime JSON checks | Standard Schema type | `noInput`, `defineOperation` | Make invalid operation-input states unrepresentable |
-| `query.ts` | Frontend RPC type seam and Query options | Native app hook, operation types, TanStack Query | `useOperationRpc`, existing options | One justified host compatibility cast |
-| `project.ts` | AST operation discovery and literal JSON extraction | ts-morph/source files, lock | `DiscoveredOperation` | All CLI consumers share one fail-closed metadata source |
-| `fixtures.ts` | Whole-batch input preflight and seed/invoke execution | Discovered metadata, invocation | Fixture parser and runner | Prevent partial mutation before a later invalid step |
-| `invoke.ts` | Input-state enforcement, risk gate, RPC request | Discovered metadata | `invokeOperation` | Keep development invocation out of runtime package |
-| `doctor.ts` | Read-only loaded-host evidence, checklist, suggested manual query | CLI runner and discovery | `doctorProject` | Live facts must not make `verify` nondeterministic or mutating |
+| Module             | Owns and hides                                                         | Depends on                                         | Interface                                                       | Why this split exists                                           |
+| ------------------ | ---------------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| `compatibility.ts` | Only supported line, hashes, metadata, shims                           | No project state                                   | Package-internal immutable constant and focused check functions | Prevent policy selection and duplicated compatibility knowledge |
+| `check.ts`         | Offline source, manifest, script-alias, operation-metadata diagnostics | Compatibility, AST project discovery               | `checkProject`                                                  | No process or host access                                       |
+| `build.ts`         | Exact bb selection, direct plugin build, protected postconditions      | Checker, compatibility, command runner             | `buildProject`                                                  | One safe owner replaces package-authored build policy           |
+| `verify.ts`        | Fixed tool sequence and protected postconditions                       | Checker, build, package inspection, command runner | `verifyProject`                                                 | One safe handoff gate without command configuration             |
+| `package.ts`       | Actual dry-run package authority                                       | Packed paths and manifest                          | `checkPackedPackage`                                            | Static checks cannot model ignore/pack behavior fully           |
+| `operations.ts`    | Branded `noInput`, operation state union, runtime JSON checks          | Standard Schema type                               | `noInput`, `defineOperation`                                    | Make invalid operation-input states unrepresentable             |
+| `query.ts`         | Frontend RPC type seam and Query options                               | Native app hook, operation types, TanStack Query   | `useOperationRpc`, existing options                             | One justified host compatibility cast                           |
+| `project.ts`       | AST operation discovery and literal JSON extraction                    | ts-morph/source files, lock                        | `DiscoveredOperation`                                           | All CLI consumers share one fail-closed metadata source         |
+| `fixtures.ts`      | Whole-batch input preflight and seed/invoke execution                  | Discovered metadata, invocation                    | Fixture parser and runner                                       | Prevent partial mutation before a later invalid step            |
+| `invoke.ts`        | Input-state enforcement, risk gate, RPC request                        | Discovered metadata                                | `invokeOperation`                                               | Keep development invocation out of runtime package              |
+| `doctor.ts`        | Read-only loaded-host evidence, checklist, suggested manual query      | CLI runner and discovery                           | `doctorProject`                                                 | Live facts must not make `verify` nondeterministic or mutating  |
 
 No new package is required.
 
@@ -360,28 +360,28 @@ No new package is required.
 
 ### D1: Safety before authoring convenience
 
-| Option | Benefits | Costs and risks | Constraint fit |
-|---|---|---|---|
-| A — Compatibility and closure first | Prevents silent source mutation and invalid packages | Delays frontend convenience | Best fit; highest-severity observed failure |
-| B — Frontend helper first | Removes a visible cast quickly | Leaves unsafe build path active | Poor fit |
+| Option                              | Benefits                                             | Costs and risks                 | Constraint fit                              |
+| ----------------------------------- | ---------------------------------------------------- | ------------------------------- | ------------------------------------------- |
+| A — Compatibility and closure first | Prevents silent source mutation and invalid packages | Delays frontend convenience     | Best fit; highest-severity observed failure |
+| B — Frontend helper first           | Removes a visible cast quickly                       | Leaves unsafe build path active | Poor fit                                    |
 
 **Decision:** Implement compatibility and package safety first.
 
 ### D2: Hash canonical declarations, do not ship their bytes
 
-| Option | Benefits | Costs and risks | Constraint fit |
-|---|---|---|---|
-| A — Canonical SHA-256 | Small, offline equality proof, CLI remains generator | Byte-sensitive | Best fit |
-| B — Ship declaration bytes | Could support offline repair | Adds about 598 KB, licensing work, and a second apparent authority | Not required |
+| Option                     | Benefits                                             | Costs and risks                                                    | Constraint fit |
+| -------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------ | -------------- |
+| A — Canonical SHA-256      | Small, offline equality proof, CLI remains generator | Byte-sensitive                                                     | Best fit       |
+| B — Ship declaration bytes | Could support offline repair                         | Adds about 598 KB, licensing work, and a second apparent authority | Not required   |
 
 **Decision:** Ship hashes only. Reverse this only if offline generation or repair becomes a requirement.
 
 ### D3: bb-kit owns build and verification
 
-| Option | Benefits | Costs and risks | Constraint fit |
-|---|---|---|---|
-| A — Direct fixed tools | Package scripts cannot bypass the selected CLI or silently skip a gate | Custom build and verification commands are unsupported | Best fit; removes the observed invalid path |
-| B — Run package scripts with protected environment | Preserves customization | Each script remains a policy and mutation escape hatch | Reject; safety depends on cooperation |
+| Option                                             | Benefits                                                               | Costs and risks                                        | Constraint fit                              |
+| -------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
+| A — Direct fixed tools                             | Package scripts cannot bypass the selected CLI or silently skip a gate | Custom build and verification commands are unsupported | Best fit; removes the observed invalid path |
+| B — Run package scripts with protected environment | Preserves customization                                                | Each script remains a policy and mutation escape hatch | Reject; safety depends on cooperation       |
 
 **Decision:** Add `bb-kit build`; make `verify` run fixed tools and the internal build function. Package scripts become exact aliases, not extension points. Continue post-tool checks because Bun lifecycle code remains outside bb-kit's full control.
 
@@ -391,29 +391,29 @@ No new package is required.
 
 ### D5: One canonical no-input state
 
-| Option | Benefits | Costs and risks | Constraint fit |
-|---|---|---|---|
-| A — Branded singleton plus required examples | Identity is exact; invalid missing/extra states fail at definition and discovery | Breaking migration for existing descriptors | Best fit; no guessing or structural ambiguity |
-| B — Optional defaults and summaries | Easy incremental adoption | Preserves ambiguous omitted, `{}`, and `null` states | Reject |
-| C — Infer from validators | Less metadata | Requires schema internals or execution and can misclassify | Reject |
+| Option                                       | Benefits                                                                         | Costs and risks                                            | Constraint fit                                |
+| -------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| A — Branded singleton plus required examples | Identity is exact; invalid missing/extra states fail at definition and discovery | Breaking migration for existing descriptors                | Best fit; no guessing or structural ambiguity |
+| B — Optional defaults and summaries          | Easy incremental adoption                                                        | Preserves ambiguous omitted, `{}`, and `null` states       | Reject                                        |
+| C — Infer from validators                    | Less metadata                                                                    | Requires schema internals or execution and can misclassify | Reject                                        |
 
 **Decision:** Export one `noInput` singleton. Every other schema requires `exampleInput`; `z.null()` means required explicit `null`. Use AST literal extraction, never validator inspection.
 
 ### D6: Doctor stays separate from verify
 
-| Option | Benefits | Costs and risks | Constraint fit |
-|---|---|---|---|
-| A — Separate doctor | `verify` remains offline and reproducible | Two commands in handoff | Best fit |
-| B — `verify --live` | One command | Host-dependent results and risk of accidental mutation | Reject |
+| Option              | Benefits                                  | Costs and risks                                        | Constraint fit |
+| ------------------- | ----------------------------------------- | ------------------------------------------------------ | -------------- |
+| A — Separate doctor | `verify` remains offline and reproducible | Two commands in handoff                                | Best fit       |
+| B — `verify --live` | One command                               | Host-dependent results and risk of accidental mutation | Reject         |
 
 **Decision:** Add `doctor`. A real surface interaction remains manual evidence.
 
 ### D7: Doctor cannot invoke
 
-| Option | Benefits | Costs and risks | Constraint fit |
-|---|---|---|---|
-| A — Observe and suggest only | Mechanical read-only guarantee; no operation classification can cause mutation | User runs one suggested query separately | Best fit |
-| B — Optional query probe | More automatic evidence | “Read-only” depends on metadata and still sends a live RPC | Reject |
+| Option                       | Benefits                                                                       | Costs and risks                                            | Constraint fit |
+| ---------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------- | -------------- |
+| A — Observe and suggest only | Mechanical read-only guarantee; no operation classification can cause mutation | User runs one suggested query separately                   | Best fit       |
+| B — Optional query probe     | More automatic evidence                                                        | “Read-only” depends on metadata and still sends a live RPC | Reject         |
 
 **Decision:** Doctor has no probe option and no RPC dependency. It suggests the first query by stable identity, with the canonical example when required, but never executes it.
 
@@ -432,46 +432,46 @@ No new package is required.
 
 ## Implementation plan
 
-| Slice | Change | Dependencies | Verification | Rollback or forward fix |
-|---|---|---|---|---|
-| 1 | Add package-internal `compatibility.ts`, exact engine checks, declaration hashes, and root-version consistency test; add no selector to lock state | None | Checker fixture accepts canonical files and rejects missing/drifted files; public exports and lock schema expose no policy selector | Revert compatibility consumers as one unit; no project mutation |
-| 2 | Add package-local import resolution and exact host shim checks with separate diagnostics for escape, unresolved import, and unsupported subpath | Slice 1 | Seed all three failures; valid Pierre root/react imports pass | Keep pack check authoritative; narrow false-positive resolver cases |
-| 3 | Replace `CommandRunner` with `CommandRequest`; resolve the exact CLI; pass `env` from `runCli`; preflight type-syncing `init` before it writes files | Slice 1 | Fake runner records selected path and child environment; invalid `BB_CLI` never falls back; wrong CLI leaves a new init target empty | Revert runner API as one unit |
-| 4 | Add `buildProject` and `bb-kit build`; invoke `<selected-bb> plugin build .` directly; check declarations and metadata before and after | Slice 3 | A package-authored build script is not called; wrong 0.36 CLI runs no build; drift and metadata failures identify build | Forward-fix direct invocation; never fall back to package script or auto-restore files |
-| 5 | Change `verify` to fixed project-local oxlint, project-local `tsc --noEmit`, `bun test`, internal build, and dry-run pack; check protected outputs after each; require canonical aliases | Slice 4 | Custom package scripts are not called; wrong CLI runs zero tools; unscoped tests in valid layouts run; each phase drift identifies its owner | Forward-fix tool resolution or ordering; do not add command configuration |
-| 6 | Add `useOperationRpc(catalog)` and type tests against bb 0.37 declarations with Zod 4.4 and exact optional types | None after Slice 1 | No-cast fixture compiles; wrong input/output type assertions fail | Keep old structural `rpc` option accepted during migration |
-| 7 | Migrate Dotfiles panel and query definitions to `useOperationRpc`; remove duplicate client and cast | Slice 6 | Dotfiles typecheck, service tests, build, and live query | Restore local seam temporarily if framework typing regresses |
-| 8 | Generate a `node:test` starter; require canonical aliases; retain no opinion about `dev`; keep `bun test` and Node types aligned | Slice 5 | Fresh backend/fullstack/theme projects typecheck and test without manual edits; watcher fixtures remain valid | Remove only starter generation; do not weaken owned aliases |
-| 9 | Add command-local help independent of operation metadata | None | Every documented command `--help` exits 0 and prints local usage only | Local parser change can revert independently |
-| 10 | Add branded frozen `noInput`, the descriptor input union, runtime JSON checks, and compile-time tests; migrate bb-kit tests and Dotfiles operations | Slice 1 | Exact singleton accepts no example; every other schema requires one; `z.null()` remains required input; invalid JSON fails | Revert contract and consumers together before release; do not add optional metadata |
-| 11 | Replace regex operation metadata with AST discovery; update generated operations, fixture generation/preflight, `describe`, and `invoke` | Slices 9 and 10 | Direct import alias works; wrappers fail closed; strict fixture states pass; missing/extra/malformed input sends zero requests | Forward-fix AST cases; never infer schema behavior or fixture defaults |
-| 12 | Add read-only `doctor` using supported `bb settings version --json` and `bb plugin list --json`; print discovered-surface checklist and one manual query suggestion | Slices 3 and 11 | Host-offline, incompatible, wrong-source, failed-status, no-query, and suggested-query tests; zero RPC in all cases | Report unavailable fields rather than scrape private APIs or add probes |
-| 13 | Update framework specification, package READMEs, generated AGENTS guidance, and dogfood notes | All prior slices | Docs use exact commands and boundaries; generated snapshot tests pass | Documentation-only forward fix |
+| Slice | Change                                                                                                                                                                                   | Dependencies       | Verification                                                                                                                                 | Rollback or forward fix                                                                |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 1     | Add package-internal `compatibility.ts`, exact engine checks, declaration hashes, and root-version consistency test; add no selector to lock state                                       | None               | Checker fixture accepts canonical files and rejects missing/drifted files; public exports and lock schema expose no policy selector          | Revert compatibility consumers as one unit; no project mutation                        |
+| 2     | Add package-local import resolution and exact host shim checks with separate diagnostics for escape, unresolved import, and unsupported subpath                                          | Slice 1            | Seed all three failures; valid Pierre root/react imports pass                                                                                | Keep pack check authoritative; narrow false-positive resolver cases                    |
+| 3     | Replace `CommandRunner` with `CommandRequest`; resolve the exact CLI; pass `env` from `runCli`; preflight type-syncing `init` before it writes files                                     | Slice 1            | Fake runner records selected path and child environment; invalid `BB_CLI` never falls back; wrong CLI leaves a new init target empty         | Revert runner API as one unit                                                          |
+| 4     | Add `buildProject` and `bb-kit build`; invoke `<selected-bb> plugin build .` directly; check declarations and metadata before and after                                                  | Slice 3            | A package-authored build script is not called; wrong 0.36 CLI runs no build; drift and metadata failures identify build                      | Forward-fix direct invocation; never fall back to package script or auto-restore files |
+| 5     | Change `verify` to fixed project-local oxlint, project-local `tsc --noEmit`, `bun test`, internal build, and dry-run pack; check protected outputs after each; require canonical aliases | Slice 4            | Custom package scripts are not called; wrong CLI runs zero tools; unscoped tests in valid layouts run; each phase drift identifies its owner | Forward-fix tool resolution or ordering; do not add command configuration              |
+| 6     | Add `useOperationRpc(catalog)` and type tests against bb 0.37 declarations with Zod 4.4 and exact optional types                                                                         | None after Slice 1 | No-cast fixture compiles; wrong input/output type assertions fail                                                                            | Keep old structural `rpc` option accepted during migration                             |
+| 7     | Migrate Dotfiles panel and query definitions to `useOperationRpc`; remove duplicate client and cast                                                                                      | Slice 6            | Dotfiles typecheck, service tests, build, and live query                                                                                     | Restore local seam temporarily if framework typing regresses                           |
+| 8     | Generate a `node:test` starter; require canonical aliases; retain no opinion about `dev`; keep `bun test` and Node types aligned                                                         | Slice 5            | Fresh backend/fullstack/theme projects typecheck and test without manual edits; watcher fixtures remain valid                                | Remove only starter generation; do not weaken owned aliases                            |
+| 9     | Add command-local help independent of operation metadata                                                                                                                                 | None               | Every documented command `--help` exits 0 and prints local usage only                                                                        | Local parser change can revert independently                                           |
+| 10    | Add branded frozen `noInput`, the descriptor input union, runtime JSON checks, and compile-time tests; migrate bb-kit tests and Dotfiles operations                                      | Slice 1            | Exact singleton accepts no example; every other schema requires one; `z.null()` remains required input; invalid JSON fails                   | Revert contract and consumers together before release; do not add optional metadata    |
+| 11    | Replace regex operation metadata with AST discovery; update generated operations, fixture generation/preflight, `describe`, and `invoke`                                                 | Slices 9 and 10    | Direct import alias works; wrappers fail closed; strict fixture states pass; missing/extra/malformed input sends zero requests               | Forward-fix AST cases; never infer schema behavior or fixture defaults                 |
+| 12    | Add read-only `doctor` using supported `bb settings version --json` and `bb plugin list --json`; print discovered-surface checklist and one manual query suggestion                      | Slices 3 and 11    | Host-offline, incompatible, wrong-source, failed-status, no-query, and suggested-query tests; zero RPC in all cases                          | Report unavailable fields rather than scrape private APIs or add probes                |
+| 13    | Update framework specification, package READMEs, generated AGENTS guidance, and dogfood notes                                                                                            | All prior slices   | Docs use exact commands and boundaries; generated snapshot tests pass                                                                        | Documentation-only forward fix                                                         |
 
 Each slice must leave root typecheck and tests green. Keep milestones reviewable: Slices 1–5 are P0 safety and ownership; 6–8 are authoring P1; 9–11 are operation-contract P1; 12–13 are P2 live handoff and documentation.
 
 ## Verification
 
-| Layer | Scenario | Expected evidence |
-|---|---|---|
-| Unit | Private compatibility constant and declaration conditions | Exact hash and required-file results; no selection state |
-| Unit | CLI path resolution | Absolute real path, no fallback after explicit failure |
-| Unit | Import resolution | Separate stable diagnostics for escape, unresolved path, unsupported shim |
-| Unit | `noInput` identity and JSON example contract | Singleton is identity-only; missing/extra/non-JSON examples fail |
-| Unit | Invocation input selection | Omitted singleton sends `null`; extra singleton input and missing required input stop locally |
-| Type | Zod catalog through `useOperationRpc` | Exact call input/output inference and no app cast |
-| Type | Descriptor input union | Singleton forbids examples; all other schemas require schema-compatible JSON examples |
-| Generator | Fresh projects | `bun run typecheck` and `bun run test` pass |
-| Integration | Direct build ownership | Selected CLI receives `plugin build .`; package build script is never called |
-| Integration | Fixed verification ownership | Exact aliases pass; custom scripts do not run; tests outside a fixed directory are discovered |
-| Integration | Wrong CLI verification | No lint, typecheck, test, build, or pack subprocess runs |
-| Integration | Tool mutates SDK declaration | That phase fails; later steps are skipped |
-| Integration | Wrong build metadata | Build fails despite exit 0 |
-| Integration | Pack lifecycle mutation | Final protected-output check fails |
-| Integration | AST discovery and fixture preflight | Only direct `noInput` import classifies as none; invalid batches make zero RPC requests |
-| Integration | Doctor | Plugin facts, checklist, and suggested query; zero RPC POSTs in every case |
-| Dogfood | Dotfiles | Cast removed; owned `build` and `verify`, canonical input states, `describe`, invoke, and doctor work |
-| Repository | Full gate | Root typecheck, test, lint, pinned build, SDK check, and `git diff --check` |
+| Layer       | Scenario                                                  | Expected evidence                                                                                     |
+| ----------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Unit        | Private compatibility constant and declaration conditions | Exact hash and required-file results; no selection state                                              |
+| Unit        | CLI path resolution                                       | Absolute real path, no fallback after explicit failure                                                |
+| Unit        | Import resolution                                         | Separate stable diagnostics for escape, unresolved path, unsupported shim                             |
+| Unit        | `noInput` identity and JSON example contract              | Singleton is identity-only; missing/extra/non-JSON examples fail                                      |
+| Unit        | Invocation input selection                                | Omitted singleton sends `null`; extra singleton input and missing required input stop locally         |
+| Type        | Zod catalog through `useOperationRpc`                     | Exact call input/output inference and no app cast                                                     |
+| Type        | Descriptor input union                                    | Singleton forbids examples; all other schemas require schema-compatible JSON examples                 |
+| Generator   | Fresh projects                                            | `bun run typecheck` and `bun run test` pass                                                           |
+| Integration | Direct build ownership                                    | Selected CLI receives `plugin build .`; package build script is never called                          |
+| Integration | Fixed verification ownership                              | Exact aliases pass; custom scripts do not run; tests outside a fixed directory are discovered         |
+| Integration | Wrong CLI verification                                    | No lint, typecheck, test, build, or pack subprocess runs                                              |
+| Integration | Tool mutates SDK declaration                              | That phase fails; later steps are skipped                                                             |
+| Integration | Wrong build metadata                                      | Build fails despite exit 0                                                                            |
+| Integration | Pack lifecycle mutation                                   | Final protected-output check fails                                                                    |
+| Integration | AST discovery and fixture preflight                       | Only direct `noInput` import classifies as none; invalid batches make zero RPC requests               |
+| Integration | Doctor                                                    | Plugin facts, checklist, and suggested query; zero RPC POSTs in every case                            |
+| Dogfood     | Dotfiles                                                  | Cast removed; owned `build` and `verify`, canonical input states, `describe`, invoke, and doctor work |
+| Repository  | Full gate                                                 | Root typecheck, test, lint, pinned build, SDK check, and `git diff --check`                           |
 
 ### Required diagnostics
 
@@ -526,16 +526,16 @@ None. Doctor must report a field as unavailable when bb 0.37's supported `plugin
 
 ## Decision log
 
-| ID | Decision | Rationale | Status |
-|---|---|---|---|
-| D1 | Deliver compatibility safety before frontend convenience | Prevent silent source mutation first | Accepted for handoff |
-| D2 | Store canonical declaration hashes, not bytes | Equality proof without a second declaration authority | Accepted for handoff |
-| D3 | bb-kit directly owns build and fixed verification commands | Removes package-authored policy from the unsafe path | Accepted for handoff |
-| D4 | Add only `useOperationRpc(catalog)` | One justified compatibility seam without a shadow SDK | Accepted for handoff |
-| D5 | Use one branded `noInput`; require literal examples everywhere else | Removes omitted, `{}`, and `null` ambiguity | Accepted for handoff |
-| D6 | Keep doctor separate from verify | Preserve deterministic offline verification | Accepted for handoff |
-| D7 | Make doctor mechanically read-only with no RPC | Observation cannot accidentally mutate state | Accepted for handoff |
-| D8 | Preserve dev and test-layout freedom only | These choices do not weaken the owned safety path | Accepted for handoff |
+| ID  | Decision                                                            | Rationale                                             | Status               |
+| --- | ------------------------------------------------------------------- | ----------------------------------------------------- | -------------------- |
+| D1  | Deliver compatibility safety before frontend convenience            | Prevent silent source mutation first                  | Accepted for handoff |
+| D2  | Store canonical declaration hashes, not bytes                       | Equality proof without a second declaration authority | Accepted for handoff |
+| D3  | bb-kit directly owns build and fixed verification commands          | Removes package-authored policy from the unsafe path  | Accepted for handoff |
+| D4  | Add only `useOperationRpc(catalog)`                                 | One justified compatibility seam without a shadow SDK | Accepted for handoff |
+| D5  | Use one branded `noInput`; require literal examples everywhere else | Removes omitted, `{}`, and `null` ambiguity           | Accepted for handoff |
+| D6  | Keep doctor separate from verify                                    | Preserve deterministic offline verification           | Accepted for handoff |
+| D7  | Make doctor mechanically read-only with no RPC                      | Observation cannot accidentally mutate state          | Accepted for handoff |
+| D8  | Preserve dev and test-layout freedom only                           | These choices do not weaken the owned safety path     | Accepted for handoff |
 
 ## Implementation-ready check
 

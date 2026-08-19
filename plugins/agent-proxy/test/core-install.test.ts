@@ -59,7 +59,10 @@ function makeFixture() {
       : Promise.resolve(new Response("not found", { status: 404 }));
 
   const buildSource = async (options: BuildSourceOptions): Promise<void> => {
-    assert.equal(readFileSync(join(options.sourceDir, "go.mod"), "utf8"), "module example.invalid/CLIProxyAPI\n");
+    assert.equal(
+      readFileSync(join(options.sourceDir, "go.mod"), "utf8"),
+      "module example.invalid/CLIProxyAPI\n",
+    );
     assert.equal(options.revision, revision);
     writeFileSync(options.outputPath, `#!/bin/sh\necho fake CLIProxyAPI ${revision.version}\n`);
   };
@@ -253,7 +256,15 @@ test("installCore downloads, validates, builds, and lands atomically", async () 
     },
   });
   assert.equal(version, revision.version);
-  assert.deepEqual(stages, ["downloading", "verifying", "extracting", "building", "installing", "swap", "done"]);
+  assert.deepEqual(stages, [
+    "downloading",
+    "verifying",
+    "extracting",
+    "building",
+    "installing",
+    "swap",
+    "done",
+  ]);
   assert.equal(installedVersion(paths), revision.version);
   assert.ok(existsSync(paths.binPath));
   const mode = (await import("node:fs")).statSync(paths.binPath).mode & 0o777;
@@ -301,7 +312,10 @@ test("archive links are rejected before extraction", async () => {
   const archiveBytes = readFileSync(archivePath);
   const fetchImpl: typeof fetch = () => Promise.resolve(new Response(new Uint8Array(archiveBytes)));
 
-  await assert.rejects(installCore(paths, revision, { fetchImpl, buildSource }), /unsafe link entry/);
+  await assert.rejects(
+    installCore(paths, revision, { fetchImpl, buildSource }),
+    /unsafe link entry/,
+  );
   assert.equal(existsSync(paths.binPath), false);
   rmSync(archiveSrc, { recursive: true, force: true });
 });

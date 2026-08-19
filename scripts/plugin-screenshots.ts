@@ -66,11 +66,7 @@ const SCREENSHOT_FONT_ASSETS = [
   },
 ] as const;
 
-export const SCREENSHOT_EXCLUDED_PLUGINS = [
-  "dotfiles",
-  "notify",
-  "pr-walkthrough",
-] as const;
+export const SCREENSHOT_EXCLUDED_PLUGINS = ["dotfiles", "notify", "pr-walkthrough"] as const;
 
 interface ScreenshotRecipe {
   id: string;
@@ -223,12 +219,60 @@ export const ROOT_SCREENSHOT: ScreenshotRecipe = {
 };
 
 export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
-  { id: "agent-proxy", name: "Agent Proxy", descriptor: "POOL · ROUTE · FAIL OVER", accent: "#21C991", glow: "18% 16%", assets: ["home.png", "agents.png"], content: agentProxy },
-  { id: "agentation", name: "Agentation", descriptor: "POINT · EXPLAIN · SEND", accent: "#3FA266", glow: "18% 20%", assets: ["capture.png", "staging.png"], content: agentation },
-  { id: "amp", name: "Amp", descriptor: "LOCAL WHEN CLOSE · ORB WHEN FAR", accent: "#F25B45", glow: "12% 18%", assets: ["orb-prompt.png", "orb-bar.png", "oracle-card.png"], content: amp },
-  { id: "gh-stack", name: "GitHub Stack", descriptor: "ONE CHANGE · REVIEWABLE LAYERS", accent: "#A78BFA", glow: "50% 14%", assets: ["new-tab.png", "magic-stack-report.png", "magic-stack-result.png"], content: ghStack },
-  { id: "gtd-sidebar", name: "GTD Sidebar", descriptor: "AN INBOX THAT HOLDS STILL", accent: "#F1B467", glow: "18% 12%", assets: ["sidebar.png"], content: gtdSidebar },
-  { id: "monokai", name: "bb Monokai", descriptor: "ONE HUE · ONE MEANING", accent: "#88C0D0", glow: "82% 10%", assets: ["app.png"], content: monokai },
+  {
+    id: "agent-proxy",
+    name: "Agent Proxy",
+    descriptor: "POOL · ROUTE · FAIL OVER",
+    accent: "#21C991",
+    glow: "18% 16%",
+    assets: ["home.png", "agents.png"],
+    content: agentProxy,
+  },
+  {
+    id: "agentation",
+    name: "Agentation",
+    descriptor: "POINT · EXPLAIN · SEND",
+    accent: "#3FA266",
+    glow: "18% 20%",
+    assets: ["capture.png", "staging.png"],
+    content: agentation,
+  },
+  {
+    id: "amp",
+    name: "Amp",
+    descriptor: "LOCAL WHEN CLOSE · ORB WHEN FAR",
+    accent: "#F25B45",
+    glow: "12% 18%",
+    assets: ["orb-prompt.png", "orb-bar.png", "oracle-card.png"],
+    content: amp,
+  },
+  {
+    id: "gh-stack",
+    name: "GitHub Stack",
+    descriptor: "ONE CHANGE · REVIEWABLE LAYERS",
+    accent: "#A78BFA",
+    glow: "50% 14%",
+    assets: ["new-tab.png", "magic-stack-report.png", "magic-stack-result.png"],
+    content: ghStack,
+  },
+  {
+    id: "gtd-sidebar",
+    name: "GTD Sidebar",
+    descriptor: "AN INBOX THAT HOLDS STILL",
+    accent: "#F1B467",
+    glow: "18% 12%",
+    assets: ["sidebar.png"],
+    content: gtdSidebar,
+  },
+  {
+    id: "monokai",
+    name: "bb Monokai",
+    descriptor: "ONE HUE · ONE MEANING",
+    accent: "#88C0D0",
+    glow: "82% 10%",
+    assets: ["app.png"],
+    content: monokai,
+  },
 ] as const;
 
 const DOCUMENTATION_SCREENSHOTS = [ROOT_SCREENSHOT, ...PLUGIN_SCREENSHOTS] as const;
@@ -313,9 +357,10 @@ const STYLES = String.raw`
 export function stageDocument(recipe: ScreenshotRecipe): string {
   const pluginIndex = PLUGIN_SCREENSHOTS.findIndex((candidate) => candidate.id === recipe.id);
   const index = pluginIndex === -1 ? "ALL" : String(pluginIndex + 1).padStart(2, "0");
-  const mark = recipe.logoId === null
-    ? '<span class="collection-mark" aria-hidden="true"></span>'
-    : `<img src="/logo/${recipe.id}" alt="" />`;
+  const mark =
+    recipe.logoId === null
+      ? '<span class="collection-mark" aria-hidden="true"></span>'
+      : `<img src="/logo/${recipe.id}" alt="" />`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -382,9 +427,7 @@ function validateRecipes(): void {
   }
   for (const font of SCREENSHOT_FONT_ASSETS) {
     if (!existsSync(font.path)) {
-      throw new Error(
-        `missing screenshot font: ${relative(ROOT, font.path)} (run bun install)`,
-      );
+      throw new Error(`missing screenshot font: ${relative(ROOT, font.path)} (run bun install)`);
     }
   }
 }
@@ -405,7 +448,9 @@ async function main(): Promise<void> {
   try {
     options = parseScreenshotArguments(process.argv.slice(2));
   } catch (error) {
-    console.error(`plugin-screenshots: ${error instanceof Error ? error.message : String(error)}\n\n${usage()}`);
+    console.error(
+      `plugin-screenshots: ${error instanceof Error ? error.message : String(error)}\n\n${usage()}`,
+    );
     process.exitCode = 2;
     return;
   }
@@ -423,7 +468,8 @@ async function main(): Promise<void> {
     ? options.plugins
     : DOCUMENTATION_SCREENSHOTS.map((recipe) => recipe.id);
   const unknown = requested.filter((id) => !recipeById.has(id));
-  if (unknown.length) throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
+  if (unknown.length)
+    throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
   const recipes = requested.map((id) => recipeById.get(id)!);
 
   await prepareBbForScreenshots();
@@ -461,7 +507,9 @@ async function main(): Promise<void> {
         if (url.pathname !== "/") return new Response("Not found", { status: 404 });
         const recipe = recipeById.get(url.searchParams.get("plugin") ?? "");
         if (!recipe) return new Response("Unknown plugin", { status: 404 });
-        return new Response(stageDocument(recipe), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+        return new Response(stageDocument(recipe), {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
       },
     });
     try {
@@ -478,31 +526,38 @@ async function main(): Promise<void> {
             await page.goto(url, { waitUntil: "load" });
             await page.waitForFunction(() => Reflect.get(window, "__SCREENSHOT_READY__") === true);
             const undersized = await page.locator(".capture img").evaluateAll(
-              (images, dpr) => images.flatMap((image) => {
-                if (!(image instanceof HTMLImageElement)) return [];
-                const box = image.getBoundingClientRect();
-                const required = {
-                  width: Math.ceil(box.width * dpr),
-                  height: Math.ceil(box.height * dpr),
-                };
-                return image.naturalWidth < required.width || image.naturalHeight < required.height
-                  ? [{
-                      source: new URL(image.src).pathname,
-                      actual: `${image.naturalWidth}×${image.naturalHeight}`,
-                      required: `${required.width}×${required.height}`,
-                    }]
-                  : [];
-              }),
+              (images, dpr) =>
+                images.flatMap((image) => {
+                  if (!(image instanceof HTMLImageElement)) return [];
+                  const box = image.getBoundingClientRect();
+                  const required = {
+                    width: Math.ceil(box.width * dpr),
+                    height: Math.ceil(box.height * dpr),
+                  };
+                  return image.naturalWidth < required.width ||
+                    image.naturalHeight < required.height
+                    ? [
+                        {
+                          source: new URL(image.src).pathname,
+                          actual: `${image.naturalWidth}×${image.naturalHeight}`,
+                          required: `${required.width}×${required.height}`,
+                        },
+                      ]
+                    : [];
+                }),
               VIEWPORT.dpr,
             );
             if (undersized.length > 0) {
-              throw new Error([
-                `${recipe.id} has foreground sources below final DPR ${VIEWPORT.dpr}:`,
-                ...undersized.map(
-                  ({ source, actual, required }) => `  ${source}: ${actual}; needs at least ${required}`,
-                ),
-                "Run bun run screenshots:fixtures, then try again.",
-              ].join("\n"));
+              throw new Error(
+                [
+                  `${recipe.id} has foreground sources below final DPR ${VIEWPORT.dpr}:`,
+                  ...undersized.map(
+                    ({ source, actual, required }) =>
+                      `  ${source}: ${actual}; needs at least ${required}`,
+                  ),
+                  "Run bun run screenshots:fixtures, then try again.",
+                ].join("\n"),
+              );
             }
             await batch.capture(page, {
               id: recipe.id,

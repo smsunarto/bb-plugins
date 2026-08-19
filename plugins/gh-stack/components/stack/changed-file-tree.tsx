@@ -3,13 +3,7 @@
 // decorations (files and aggregated folders), non-scrolling row-fitted
 // height, themed against bb host tokens in app.css.
 import type { CSSProperties } from "react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type {
   FileTreeRowDecoration,
   FileTreeRowDecorationContext,
@@ -59,10 +53,7 @@ type RowStats = {
   // counts (binary only), so the row shows nothing instead of "+0 −0".
   // `files` is how many changed files sit below the directory, which is what
   // identifies a row that merely restates the whole diff.
-  dirStats: Map<
-    string,
-    { additions: number; deletions: number; counted: boolean; files: number }
-  >;
+  dirStats: Map<string, { additions: number; deletions: number; counted: boolean; files: number }>;
   total: number;
 };
 
@@ -129,10 +120,7 @@ export function ChangedFileTree({
   const filesRef = useRef(files);
   filesRef.current = files;
   const signature = useMemo(
-    () =>
-      files
-        .map((f) => `${f.status}\0${f.path}\0${f.additions}\0${f.deletions}`)
-        .join("\n"),
+    () => files.map((f) => `${f.status}\0${f.path}\0${f.additions}\0${f.deletions}`).join("\n"),
     [files],
   );
   const { paths, statuses, stats } = useMemo(
@@ -160,8 +148,7 @@ export function ChangedFileTree({
       ).replace(/\/+$/, "");
       if (item.kind === "file") {
         const stat = statsRef.current.fileStats.get(path);
-        if (!stat || (stat.additions === null && stat.deletions === null))
-          return null;
+        if (!stat || (stat.additions === null && stat.deletions === null)) return null;
         return deltaDecoration(stat.additions ?? 0, stat.deletions ?? 0);
       }
       const stat = statsRef.current.dirStats.get(path);
@@ -191,18 +178,10 @@ export function ChangedFileTree({
     unsafeCSS: NON_SCROLLING_TREE_CSS,
   });
 
-  const subscribe = useCallback(
-    (listener: () => void) => model.subscribe(listener),
-    [model],
-  );
+  const subscribe = useCallback((listener: () => void) => model.subscribe(listener), [model]);
   const getVisibleRowCount = useCallback(() => model.getVisibleCount(), [model]);
-  const visibleRowCount = useSyncExternalStore(
-    subscribe,
-    getVisibleRowCount,
-    getVisibleRowCount,
-  );
-  const treeHeight =
-    visibleRowCount * model.getItemHeight() + TREE_BORDER_WIDTH * 2;
+  const visibleRowCount = useSyncExternalStore(subscribe, getVisibleRowCount, getVisibleRowCount);
+  const treeHeight = visibleRowCount * model.getItemHeight() + TREE_BORDER_WIDTH * 2;
 
   useEffect(() => {
     model.resetPaths(paths);
@@ -233,8 +212,7 @@ export function ChangedFileTree({
           "--trees-fg-override": "var(--muted-foreground)",
           // Pierre's dark fallback is #141415 inside its shadow root. Match the
           // surrounding container instead of opening a darker inner well.
-          "--trees-bg-override":
-            "var(--agent-surface-background, var(--surface-recessed-solid))",
+          "--trees-bg-override": "var(--agent-surface-background, var(--surface-recessed-solid))",
           boxSizing: "border-box",
           height: `${treeHeight}px`,
         } as CSSProperties

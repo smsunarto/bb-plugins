@@ -21,10 +21,7 @@ import { SlimRow } from "@/components/inbox/slim-row";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle } from "@/hooks/use-lifecycle";
 import { useSettledThreads } from "@/hooks/use-settled-threads";
-import {
-  mergeSettledThreads,
-  pendingSettledCount,
-} from "@/lib/settled-threads";
+import { mergeSettledThreads, pendingSettledCount } from "@/lib/settled-threads";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
   type ActiveSectionOrder,
@@ -37,10 +34,7 @@ import {
   sortByCreatedAtDescending,
   visibleInboxThreads,
 } from "@/lib/inbox";
-import {
-  readWarmStartProviders,
-  writeWarmStartProviders,
-} from "@/lib/warm-start";
+import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 
 const ALL_PROJECTS = "__all__";
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
@@ -52,32 +46,22 @@ const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
  * ships neither. It filters by the `searchQuery` prop and keeps only the one
  * control the host has no equivalent for: the project scope picker.
  */
-export function ThreadInbox({
-  activeThreadId,
-  onNavigate,
-  searchQuery,
-}: PluginThreadListProps) {
+export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginThreadListProps) {
   const { status, threads: hostThreads, projects } = useSidebarThreads();
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One clock for every card in a render, quantized to the minute so the
   // labels do not disagree and do not churn on unrelated re-renders. It is
   // read first because the settled shelf's day-long window is cut against it.
-  const [nowMinute, setNowMinute] = useState(() =>
-    Math.floor(Date.now() / 60_000),
-  );
+  const [nowMinute, setNowMinute] = useState(() => Math.floor(Date.now() / 60_000));
   useEffect(() => {
-    const timer = setInterval(
-      () => setNowMinute(Math.floor(Date.now() / 60_000)),
-      60_000,
-    );
+    const timer = setInterval(() => setNowMinute(Math.floor(Date.now() / 60_000)), 60_000);
     return () => clearInterval(timer);
   }, []);
   const now = nowMinute * 60_000;
   // The host reports no archived thread, and settling archives one. Everything
   // below — the shelves, the un-settle rule, search, the project scope — reads
   // this merged list so the settled shelf has rows to draw at all.
-  const { threads: settledThreads, rowsPending: settledRowsPending } =
-    useSettledThreads(now);
+  const { threads: settledThreads, rowsPending: settledRowsPending } = useSettledThreads(now);
   const threads = useMemo(
     () => mergeSettledThreads(hostThreads, settledThreads),
     [hostThreads, settledThreads],
@@ -87,16 +71,8 @@ export function ThreadInbox({
   // remount would otherwise draw every glyph from a fallback and swap it a
   // round trip later. Nothing gates on it — a fallback glyph is a different
   // pixel, not a different layout.
-  const [providerInfoById, setProviderInfoById] = useState<
-    ReadonlyMap<string, ProviderGlyphInfo>
-  >(
-    () =>
-      new Map(
-        (readWarmStartProviders() ?? []).map((provider) => [
-          provider.id,
-          provider,
-        ]),
-      ),
+  const [providerInfoById, setProviderInfoById] = useState<ReadonlyMap<string, ProviderGlyphInfo>>(
+    () => new Map((readWarmStartProviders() ?? []).map((provider) => [provider.id, provider])),
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   // Read once here rather than per card, and compared against `false` rather
@@ -112,11 +88,7 @@ export function ThreadInbox({
       try {
         const result = await rpc.call("listProviders", {});
         if (!cancelled) {
-          setProviderInfoById(
-            new Map(
-              result.providers.map((provider) => [provider.id, provider]),
-            ),
-          );
+          setProviderInfoById(new Map(result.providers.map((provider) => [provider.id, provider])));
           writeWarmStartProviders(result.providers);
         }
       } catch {
@@ -143,8 +115,7 @@ export function ThreadInbox({
   const activeUnpinned = useMemo(
     () =>
       visibleInboxThreads(threads, lifecycle.parkedThreadIds).filter(
-        (thread) =>
-          !thread.isPinned && lifecycle.shelfFor(thread) === "active",
+        (thread) => !thread.isPinned && lifecycle.shelfFor(thread) === "active",
       ),
     [lifecycle, threads],
   );
@@ -164,10 +135,7 @@ export function ThreadInbox({
     );
     // Children live in their parent's header chip instead of the flat list;
     // an orphan whose parent is not on screen stays here.
-    const matched = searchThreadsByTitle(
-      hideChildrenOfVisibleParents(scoped),
-      searchQuery,
-    );
+    const matched = searchThreadsByTitle(hideChildrenOfVisibleParents(scoped), searchQuery);
     const active: typeof matched = [];
     const onSnoozeShelf: typeof matched = [];
     const onSettledShelf: typeof matched = [];
@@ -178,17 +146,13 @@ export function ThreadInbox({
       else active.push(thread);
     }
     const split = partitionPinned(active);
-    const activeSections = partitionActiveSections(
-      split.inbox,
-      activeSectionOrder,
-    );
+    const activeSections = partitionActiveSections(split.inbox, activeSectionOrder);
     return {
       pinned: sortByCreatedAtDescending(split.pinned),
       ...activeSections,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozed: [...onSnoozeShelf].sort(
-        (left, right) =>
-          (lifecycle.wakeAtFor(left) ?? 0) - (lifecycle.wakeAtFor(right) ?? 0),
+        (left, right) => (lifecycle.wakeAtFor(left) ?? 0) - (lifecycle.wakeAtFor(right) ?? 0),
       ),
       settled: sortByCreatedAtDescending(onSettledShelf),
     };
@@ -219,14 +183,7 @@ export function ThreadInbox({
       new Set(threads.map((thread) => thread.id)),
       now,
     );
-  }, [
-    lifecycle.parkedRows,
-    now,
-    scope,
-    searchQuery,
-    settledRowsPending,
-    threads,
-  ]);
+  }, [lifecycle.parkedRows, now, scope, searchQuery, settledRowsPending, threads]);
 
   const shelvedTotal =
     pinned.length +
@@ -237,9 +194,7 @@ export function ThreadInbox({
     pendingSettled;
 
   const scopeLabel =
-    scope === ALL_PROJECTS
-      ? "All projects"
-      : (projectNameById.get(scope) ?? "All projects");
+    scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -267,11 +222,7 @@ export function ThreadInbox({
               All projects
             </SelectItem>
             {projects.map((project) => (
-              <SelectItem
-                key={project.id}
-                value={project.id}
-                className="text-xs"
-              >
+              <SelectItem key={project.id} value={project.id} className="text-xs">
                 {project.name}
               </SelectItem>
             ))}
@@ -490,9 +441,7 @@ function ParkedShelf({
               now={now}
               onNavigate={onNavigate}
               onRestore={() =>
-                shelf === "snoozed"
-                  ? lifecycle.unsnooze(thread.id)
-                  : lifecycle.unsettle(thread.id)
+                shelf === "snoozed" ? lifecycle.unsnooze(thread.id) : lifecycle.unsettle(thread.id)
               }
             />
           ))}
@@ -502,22 +451,14 @@ function ParkedShelf({
   );
 }
 
-function Shelf({
-  label,
-  children,
-}: {
-  label: string | null;
-  children: React.ReactNode;
-}) {
+function Shelf({ label, children }: { label: string | null; children: React.ReactNode }) {
   return (
     // A named section is exposed as a landmark region; an unnamed one is not,
     // which is exactly right for the single unlabelled inbox list.
     <section {...(label ? { "aria-label": label } : {})}>
       {label ? (
         <h2 className={cn("flex items-center gap-2 px-2.5 pb-0.5 pt-2")}>
-          <span className="text-2xs font-medium text-muted-foreground/70">
-            {label}
-          </span>
+          <span className="text-2xs font-medium text-muted-foreground/70">{label}</span>
           <span className="h-px flex-1 bg-sidebar-border" />
         </h2>
       ) : null}

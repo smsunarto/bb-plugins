@@ -25,7 +25,10 @@ The UI is already willing to hide the section — `ModelReasoningPicker.tsx` gat
 
 ```ts
 export const ACP_NATIVE_REASONING_EFFORTS: AvailableModel["supportedReasoningEfforts"] = [
-  { reasoningEffort: "medium", description: "Reasoning effort is managed by the connected ACP agent." },
+  {
+    reasoningEffort: "medium",
+    description: "Reasoning effort is managed by the connected ACP agent.",
+  },
 ];
 ```
 
@@ -40,9 +43,9 @@ Supplying the option instead doesn't express "not applicable" either:
 - **Values** must map through `acpNativeValueToReasoningLevel`; unmapped values are skipped, and if all are skipped the fallback applies.
 - **Labels** are looked up by level in `apps/app/src/lib/reasoning-labels.ts` (`REASONING_LABELS`), used by both `useThreadCreationOptions.ts` and `ModelReasoningPicker.tsx`. The agent's `option.name` reaches `supportedReasoningEfforts[].description` in `buildAcpNativeReasoningSupport`, but neither call site renders `description` — both use `REASONING_LABELS[effort.reasoningEffort]`.
 
-So the only real choice is *which* of the eight built-in levels to display. For an agent with no reasoning setting every option is wrong: `Medium` implies a level Amp was never given, `None` implies reasoning is off when it isn't.
+So the only real choice is _which_ of the eight built-in levels to display. For an agent with no reasoning setting every option is wrong: `Medium` implies a level Amp was never given, `None` implies reasoning is off when it isn't.
 
-The fallback's own description — *"Reasoning effort is managed by the connected ACP agent."* — states the correct thing. It's just never shown.
+The fallback's own description — _"Reasoning effort is managed by the connected ACP agent."_ — states the correct thing. It's just never shown.
 
 ## Proposals
 

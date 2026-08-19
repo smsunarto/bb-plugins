@@ -9,17 +9,10 @@ import {
   useRpc,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
-import {
-  isOracleReportId,
-  ORACLE_DIRECTIVE_ID,
-  type OracleReport,
-} from "./src/oracle-directive";
+import { isOracleReportId, ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
 import { findOrbDirectiveRanges } from "./src/orb-directive";
-import {
-  ORB_USAGE_CHANNEL,
-  type OrbUsageView,
-} from "./src/orb-usage";
+import { ORB_USAGE_CHANNEL, type OrbUsageView } from "./src/orb-usage";
 import type { rpcContract } from "./server";
 
 type OracleState =
@@ -29,11 +22,7 @@ type OracleState =
 
 function TraceList({ report }: { report: OracleReport }) {
   if (report.trace.length === 0) {
-    return (
-      <div className="text-xs text-muted-foreground">
-        Oracle is reasoning…
-      </div>
-    );
+    return <div className="text-xs text-muted-foreground">Oracle is reasoning…</div>;
   }
   return (
     <ol className="space-y-2">
@@ -44,7 +33,11 @@ function TraceList({ report }: { report: OracleReport }) {
             <div className="flex items-center gap-2 text-foreground">
               <span className="truncate">{event.title}</span>
               {event.status && (
-                <span className={event.status === "error" ? "text-destructive" : "text-muted-foreground"}>
+                <span
+                  className={
+                    event.status === "error" ? "text-destructive" : "text-muted-foreground"
+                  }
+                >
                   {event.status}
                 </span>
               )}
@@ -86,7 +79,10 @@ function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
           if (lastReport?.status === "running") {
             pollAgain();
           } else {
-            setState({ kind: "error", message: result.error ?? "The Oracle report is unavailable." });
+            setState({
+              kind: "error",
+              message: result.error ?? "The Oracle report is unavailable.",
+            });
           }
         } else {
           lastReport = result.report;
@@ -123,14 +119,19 @@ function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
   return (
     <details className="group my-2 overflow-hidden rounded-md border border-border bg-card" open>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 select-none marker:hidden">
-        <span aria-hidden="true" className="text-primary">✦</span>
+        <span aria-hidden="true" className="text-primary">
+          ✦
+        </span>
         <span className="shrink-0 text-sm font-medium text-foreground">Oracle</span>
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={request}>
           {request}
         </span>
         {running && <span className="shrink-0 text-xs text-primary">Running…</span>}
         {failed && <span className="shrink-0 text-xs text-destructive">Failed</span>}
-        <span aria-hidden="true" className="ml-auto text-muted-foreground transition-transform group-open:rotate-90">
+        <span
+          aria-hidden="true"
+          className="ml-auto text-muted-foreground transition-transform group-open:rotate-90"
+        >
           ›
         </span>
       </summary>
@@ -163,10 +164,12 @@ function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
 }
 
 function isThreadSignal(value: unknown, threadId: string): boolean {
-  return value !== null
-    && typeof value === "object"
-    && !Array.isArray(value)
-    && (value as { threadId?: unknown }).threadId === threadId;
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { threadId?: unknown }).threadId === threadId
+  );
 }
 
 function AmpOrbBanner() {
@@ -200,26 +203,29 @@ function AmpOrbBanner() {
 
   useRealtime(
     ORB_USAGE_CHANNEL,
-    useCallback((payload) => {
-      if (threadId !== null && isThreadSignal(payload, threadId)) void refresh();
-    }, [refresh, threadId]),
+    useCallback(
+      (payload) => {
+        if (threadId !== null && isThreadSignal(payload, threadId)) void refresh();
+      },
+      [refresh, threadId],
+    ),
   );
 
   const connection = useRealtimeConnectionState();
   const previousConnection = useRef(connection);
   useEffect(() => {
-    if (
-      previousConnection.current === "reconnecting"
-      && connection === "connected"
-    ) {
+    if (previousConnection.current === "reconnecting" && connection === "connected") {
       void refresh();
     }
     previousConnection.current = connection;
   }, [connection, refresh]);
 
-  useEffect(() => () => {
-    if (copyResetTimer.current !== null) clearTimeout(copyResetTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (copyResetTimer.current !== null) clearTimeout(copyResetTimer.current);
+    },
+    [],
+  );
 
   if (threadId === null || usage.state === "hidden") return null;
 
@@ -239,12 +245,10 @@ function AmpOrbBanner() {
     <div className="mb-2 rounded-lg border border-border bg-card p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <svg
-            aria-hidden="true"
-            className="amp-orb-brand-logo"
-            viewBox={AMP_LOGO_VIEW_BOX}
-          >
-            {AMP_LOGO_PATHS.map((path) => <path d={path} fill="currentColor" key={path} />)}
+          <svg aria-hidden="true" className="amp-orb-brand-logo" viewBox={AMP_LOGO_VIEW_BOX}>
+            {AMP_LOGO_PATHS.map((path) => (
+              <path d={path} fill="currentColor" key={path} />
+            ))}
           </svg>
           <span className="shrink-0 text-sm font-medium text-foreground">Orb</span>
           <span

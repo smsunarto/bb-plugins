@@ -5,13 +5,13 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly vendor: string;
     readonly validate: (
       value: unknown,
-    ) =>
-      | StandardSchemaV1Result<Output>
-      | Promise<StandardSchemaV1Result<Output>>;
-    readonly types?: {
-      readonly input: Input;
-      readonly output: Output;
-    } | undefined;
+    ) => StandardSchemaV1Result<Output> | Promise<StandardSchemaV1Result<Output>>;
+    readonly types?:
+      | {
+          readonly input: Input;
+          readonly output: Output;
+        }
+      | undefined;
   };
 }
 

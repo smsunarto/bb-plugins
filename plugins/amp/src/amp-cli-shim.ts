@@ -13,9 +13,9 @@ export interface AmpCliInvocation {
 }
 
 function hasFastFeature(args: readonly string[]): boolean {
-  return args.some((arg, index) =>
-    arg === "--features"
-    && args[index + 1]?.split(",").includes("fast"));
+  return args.some(
+    (arg, index) => arg === "--features" && args[index + 1]?.split(",").includes("fast"),
+  );
 }
 
 /**
@@ -37,12 +37,12 @@ export function buildAmpCliInvocation(
   const forwardedArgs = [...args];
   const executeIndex = forwardedArgs.indexOf("--execute");
   if (
-    sourceEnv[AMP_CLI_SHIM_FAST_ENV] === "1"
-    && executeIndex >= 0
-    && !(forwardedArgs[0] === "threads" && forwardedArgs[1] === "continue")
-    && !forwardedArgs.includes("--orb-execute")
-    && !forwardedArgs.includes("--fast")
-    && !hasFastFeature(forwardedArgs)
+    sourceEnv[AMP_CLI_SHIM_FAST_ENV] === "1" &&
+    executeIndex >= 0 &&
+    !(forwardedArgs[0] === "threads" && forwardedArgs[1] === "continue") &&
+    !forwardedArgs.includes("--orb-execute") &&
+    !forwardedArgs.includes("--fast") &&
+    !hasFastFeature(forwardedArgs)
   ) {
     forwardedArgs.splice(executeIndex, 0, "--fast");
   }
@@ -108,9 +108,9 @@ function run(): void {
 }
 
 if (
-  basename(fileURLToPath(import.meta.url)) === "amp-cli-shim.js"
-  && process.argv[1] !== undefined
-  && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  basename(fileURLToPath(import.meta.url)) === "amp-cli-shim.js" &&
+  process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   run();
 }

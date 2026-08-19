@@ -14,13 +14,7 @@
  *   bun run screenshots:fixtures --output-dir /tmp/bb-plugin-fixtures
  */
 import { isAbsolute, join, relative, resolve } from "node:path";
-import {
-  type Browser,
-  type BrowserContext,
-  type Locator,
-  type Page,
-  type Route,
-} from "playwright";
+import { type Browser, type BrowserContext, type Locator, type Page, type Route } from "playwright";
 import {
   createScreenshotContext,
   createScreenshotPage,
@@ -77,27 +71,61 @@ const ORACLE_THREAD_ID = "thr_4c8sv4qav3";
 const STACK_PROJECT_ID = "proj_dhxdkz286e";
 const STACK_THREAD_ID = "thr_cpc9jzpn5j";
 const EXECUTION_OPTIONS = {
-  providers: [{
-    available: true,
-    capabilities: {
-      supportsArchive: false,
-      supportsRename: false,
-      supportsServiceTier: true,
-      supportsUserQuestion: false,
-      supportsFork: false,
-      supportedPermissionModes: ["accept-edits", "full"],
+  providers: [
+    {
+      available: true,
+      capabilities: {
+        supportsArchive: false,
+        supportsRename: false,
+        supportsServiceTier: true,
+        supportsUserQuestion: false,
+        supportsFork: false,
+        supportedPermissionModes: ["accept-edits", "full"],
+      },
+      composerActions: [{ kind: "skills", trigger: "/" }],
+      displayName: "Amp",
+      id: "acp-amp",
+      logoUrl: "/api/v1/system/providers/acp-amp/logo",
     },
-    composerActions: [{ kind: "skills", trigger: "/" }],
-    displayName: "Amp",
-    id: "acp-amp",
-    logoUrl: "/api/v1/system/providers/acp-amp/logo",
-  }],
+  ],
   permissionCeiling: "full",
   models: [
-    { id: "low", model: "low", displayName: "Low", description: "", supportedReasoningEfforts: [], defaultReasoningEffort: "medium", isDefault: false },
-    { id: "medium", model: "medium", displayName: "Medium", description: "", supportedReasoningEfforts: [], defaultReasoningEffort: "medium", isDefault: true },
-    { id: "high", model: "high", displayName: "High", description: "", supportedReasoningEfforts: [], defaultReasoningEffort: "medium", isDefault: false },
-    { id: "ultra", model: "ultra", displayName: "Ultra", description: "", supportedReasoningEfforts: [], defaultReasoningEffort: "medium", isDefault: false },
+    {
+      id: "low",
+      model: "low",
+      displayName: "Low",
+      description: "",
+      supportedReasoningEfforts: [],
+      defaultReasoningEffort: "medium",
+      isDefault: false,
+    },
+    {
+      id: "medium",
+      model: "medium",
+      displayName: "Medium",
+      description: "",
+      supportedReasoningEfforts: [],
+      defaultReasoningEffort: "medium",
+      isDefault: true,
+    },
+    {
+      id: "high",
+      model: "high",
+      displayName: "High",
+      description: "",
+      supportedReasoningEfforts: [],
+      defaultReasoningEffort: "medium",
+      isDefault: false,
+    },
+    {
+      id: "ultra",
+      model: "ultra",
+      displayName: "Ultra",
+      description: "",
+      supportedReasoningEfforts: [],
+      defaultReasoningEffort: "medium",
+      isDefault: false,
+    },
   ],
   selectedOnlyModels: [],
   modelLoadError: null,
@@ -171,17 +199,59 @@ export interface FixtureSpec {
 
 export const PLUGIN_SCREENSHOT_FIXTURES: readonly FixtureSpec[] = [
   { id: "agent-proxy/home", plugin: "agent-proxy", filename: "home.png", width: 596, height: 500 },
-  { id: "agent-proxy/agents", plugin: "agent-proxy", filename: "agents.png", width: 596, height: 500 },
-  { id: "agentation/capture", plugin: "agentation", filename: "capture.png", width: 873, height: 470 },
-  { id: "agentation/staging", plugin: "agentation", filename: "staging.png", width: 749, height: 284 },
+  {
+    id: "agent-proxy/agents",
+    plugin: "agent-proxy",
+    filename: "agents.png",
+    width: 596,
+    height: 500,
+  },
+  {
+    id: "agentation/capture",
+    plugin: "agentation",
+    filename: "capture.png",
+    width: 873,
+    height: 470,
+  },
+  {
+    id: "agentation/staging",
+    plugin: "agentation",
+    filename: "staging.png",
+    width: 749,
+    height: 284,
+  },
   { id: "amp/orb-prompt", plugin: "amp", filename: "orb-prompt.png", width: 774, height: 211 },
   { id: "amp/orb-bar", plugin: "amp", filename: "orb-bar.png", width: 755, height: 263 },
   { id: "amp/oracle-card", plugin: "amp", filename: "oracle-card.png", width: 751, height: 270 },
   { id: "gh-stack/new-tab", plugin: "gh-stack", filename: "new-tab.png", width: 576, height: 418 },
-  { id: "gh-stack/magic-stack-report", plugin: "gh-stack", filename: "magic-stack-report.png", width: 798, height: 598 },
-  { id: "gh-stack/magic-stack-result", plugin: "gh-stack", filename: "magic-stack-result.png", width: 596, height: 1000 },
-  { id: "gtd-sidebar/sidebar", plugin: "gtd-sidebar", filename: "sidebar.png", width: 320, height: 1000 },
-  { id: "gtd-sidebar/enable", plugin: "gtd-sidebar", filename: "enable.png", width: 1512, height: 1000 },
+  {
+    id: "gh-stack/magic-stack-report",
+    plugin: "gh-stack",
+    filename: "magic-stack-report.png",
+    width: 798,
+    height: 598,
+  },
+  {
+    id: "gh-stack/magic-stack-result",
+    plugin: "gh-stack",
+    filename: "magic-stack-result.png",
+    width: 596,
+    height: 1000,
+  },
+  {
+    id: "gtd-sidebar/sidebar",
+    plugin: "gtd-sidebar",
+    filename: "sidebar.png",
+    width: 320,
+    height: 1000,
+  },
+  {
+    id: "gtd-sidebar/enable",
+    plugin: "gtd-sidebar",
+    filename: "enable.png",
+    width: 1512,
+    height: 1000,
+  },
   { id: "monokai/app", plugin: "monokai", filename: "app.png", width: 1512, height: 1000 },
 ] as const;
 
@@ -267,7 +337,8 @@ async function mockAgentProxy(context: BrowserContext): Promise<void> {
       applied: false,
       canRestore: true,
       settingsPath: "/Users/example/.claude/settings.json",
-      lastBackup: "/Users/example/.bb/plugins/agent-proxy/backups/claude-settings.json.2026-08-11T08-00-00-000Z",
+      lastBackup:
+        "/Users/example/.bb/plugins/agent-proxy/backups/claude-settings.json.2026-08-11T08-00-00-000Z",
     },
     codex: {
       codexHomePath: "/Users/example/.bb/plugins/agent-proxy/agents/codex-home",
@@ -292,10 +363,11 @@ function annotationFixture() {
     timestamp: FIXED_TIME.valueOf(),
     x: 86.64,
     y: 606,
-    element: "4 elements: button \"Copy\", button \"Copy\", button \"Copy\", button \"Copy\"",
+    element: '4 elements: button "Copy", button "Copy", button "Copy", button "Copy"',
     boundingBox: { x: 1281.84375, y: 417.125, width: 56.15625, height: 206 },
     cssClasses: "inline-flex, items-center, justify-center, rounded-md, border, px-3, text-xs",
-    computedStyles: "color: rgb(189, 189, 184); background-color: transparent; border-color: rgb(60, 60, 60); font-size: 12px; font-weight: 500; font-family: Inter Variable, Inter, sans-serif; width: 56px; height: 32px",
+    computedStyles:
+      "color: rgb(189, 189, 184); background-color: transparent; border-color: rgb(60, 60, 60); font-size: 12px; font-weight: 500; font-family: Inter Variable, Inter, sans-serif; width: 56px; height: 32px",
     accessibility: "focusable",
     nearbyText: "Copy",
     nearbyElements: "div.min-w-0",
@@ -333,9 +405,8 @@ async function mockAgentation(
       threadId: string | null;
       projectId: string | null;
     };
-    const annotations = options.toolbarAnnotation && input.route === annotation.bb.route
-      ? [annotation]
-      : [];
+    const annotations =
+      options.toolbarAnnotation && input.route === annotation.bb.route ? [annotation] : [];
     await fulfillRpc(route, {
       session: {
         id: "ses_screenshot",
@@ -359,26 +430,26 @@ async function mockAgentation(
       changed: false,
       annotations: options.toolbarAnnotation ? [annotation] : [],
       config: { toolbarEnabled: true },
-    }));
+    }),
+  );
   await context.route("**/api/v1/plugins/agentation/rpc/listStagedAnnotations", (route) =>
-    fulfillRpc(route, { annotations: options.stagedAnnotation ? [annotation] : [] }));
+    fulfillRpc(route, { annotations: options.stagedAnnotation ? [annotation] : [] }),
+  );
 }
 
-function changeSet(
-  additions: number,
-  deletions: number,
-  path: string,
-) {
+function changeSet(additions: number, deletions: number, path: string) {
   return {
     additions,
     deletions,
-    files: [{
-      path,
-      previousPath: null,
-      status: "modified",
-      additions,
-      deletions,
-    }],
+    files: [
+      {
+        path,
+        previousPath: null,
+        status: "modified",
+        additions,
+        deletions,
+      },
+    ],
     truncated: false,
   };
 }
@@ -387,18 +458,51 @@ function stackFixture() {
   const layers = [
     [23, "docs(agents): add commit guidance", 28, 2, ".dotfiles/.agents/instructions/shared.md"],
     [24, "chore(claude): disable generated attribution", 1, 13, ".dotfiles/.claude/settings.json"],
-    [25, "chore(editor): update workspace preferences", 3, 4, ".dotfiles/.config/vscode/settings.json"],
-    [26, "feat(skills): add GitHub Actions authoring guidance", 152, 0, ".dotfiles/.agents/skills/gh-actions-create/SKILL.md"],
-    [27, "docs(skills): keep GitHub issues at the interface", 46, 9, ".dotfiles/.agents/skills/gh-write-issue/SKILL.md"],
-    [28, "docs(skills): clarify BB testing targets", 24, 23, ".dotfiles/.agents/skills/bb-plugin-testing/SKILL.md"],
-    [29, "chore(skills): retire Screen Studio editing guidance", 0, 297, ".dotfiles/.agents/skills/editing-screenstudio/SKILL.md"],
+    [
+      25,
+      "chore(editor): update workspace preferences",
+      3,
+      4,
+      ".dotfiles/.config/vscode/settings.json",
+    ],
+    [
+      26,
+      "feat(skills): add GitHub Actions authoring guidance",
+      152,
+      0,
+      ".dotfiles/.agents/skills/gh-actions-create/SKILL.md",
+    ],
+    [
+      27,
+      "docs(skills): keep GitHub issues at the interface",
+      46,
+      9,
+      ".dotfiles/.agents/skills/gh-write-issue/SKILL.md",
+    ],
+    [
+      28,
+      "docs(skills): clarify BB testing targets",
+      24,
+      23,
+      ".dotfiles/.agents/skills/bb-plugin-testing/SKILL.md",
+    ],
+    [
+      29,
+      "chore(skills): retire Screen Studio editing guidance",
+      0,
+      297,
+      ".dotfiles/.agents/skills/editing-screenstudio/SKILL.md",
+    ],
   ] as const;
   return {
     stack: {
       trunk: "main",
       currentBranch: "scott/chore-retire-screen-studio-guidance",
       branches: layers.map(([number, title, additions, deletions, path]) => ({
-        name: `scott/${title.split(": ")[1]!.replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "")}`,
+        name: `scott/${title
+          .split(": ")[1]!
+          .replaceAll(/[^a-z0-9]+/g, "-")
+          .replaceAll(/^-|-$/g, "")}`,
         isCurrent: number === 29,
         isMerged: false,
         isQueued: false,
@@ -413,29 +517,30 @@ function stackFixture() {
           isDraft: true,
           metadataStale: false,
         },
-        diff: number === 29
-          ? {
-              additions: 0,
-              deletions: 297,
-              files: [
-                {
-                  path: ".dotfiles/.agents/skills/editing-screenstudio/references/demo.md",
-                  previousPath: null,
-                  status: "deleted",
-                  additions: 0,
-                  deletions: 121,
-                },
-                {
-                  path,
-                  previousPath: null,
-                  status: "deleted",
-                  additions: 0,
-                  deletions: 176,
-                },
-              ],
-              truncated: false,
-            }
-          : changeSet(additions, deletions, path),
+        diff:
+          number === 29
+            ? {
+                additions: 0,
+                deletions: 297,
+                files: [
+                  {
+                    path: ".dotfiles/.agents/skills/editing-screenstudio/references/demo.md",
+                    previousPath: null,
+                    status: "deleted",
+                    additions: 0,
+                    deletions: 121,
+                  },
+                  {
+                    path,
+                    previousPath: null,
+                    status: "deleted",
+                    additions: 0,
+                    deletions: 176,
+                  },
+                ],
+                truncated: false,
+              }
+            : changeSet(additions, deletions, path),
         aheadOfRemote: 0,
         behindRemote: 0,
       })),
@@ -456,31 +561,38 @@ function stackFixture() {
 
 async function mockStack(context: BrowserContext): Promise<void> {
   await context.route("**/api/v1/plugins/gh-stack/rpc/getStack", (route) =>
-    fulfillRpc(route, stackFixture()));
+    fulfillRpc(route, stackFixture()),
+  );
 }
 
-async function mockAmp(context: BrowserContext, options: { orb?: boolean; oracle?: boolean }): Promise<void> {
+async function mockAmp(
+  context: BrowserContext,
+  options: { orb?: boolean; oracle?: boolean },
+): Promise<void> {
   if (options.orb) {
     await context.route("**/api/v1/plugins/amp/rpc/getOrbUsage", (route) =>
       fulfillRpc(route, {
         state: "active",
         ampThreadId: "T-019fefe1-f9b0-75c3-ad24-289bd4647cb4",
         syncCommand: "amp sync T-019fefe1-f9b0-75c3-ad24-289bd4647cb4",
-      }));
+      }),
+    );
   }
   if (options.oracle) {
     await context.route("**/api/v1/plugins/amp/rpc/getOracleReport", (route) =>
       fulfillRpc(route, {
         report: {
           id: "11111111-1111-4111-8111-111111111111",
-          request: "Answer this narrowly and directly: what is 2 + 2? Briefly state the result and verify it using elementary arithmetic.",
+          request:
+            "Answer this narrowly and directly: what is 2 + 2? Briefly state the result and verify it using elementary arithmetic.",
           response: "2 + 2 = 4. Starting at 2 and adding two units gives 3, then 4.",
           status: "completed",
           trace: [],
           createdAt: FIXED_TIME.toISOString(),
         },
         error: null,
-      }));
+      }),
+    );
   }
 }
 
@@ -531,7 +643,7 @@ const THREAD_CAPTURE_FIXTURES: Record<string, ThreadCaptureFixture> = {
       { role: "user", text: "/orb consult the oracle on what is 2 + 2" },
       {
         role: "assistant",
-        text: "::amp-oracle{reportId=\"11111111-1111-4111-8111-111111111111\"}\n\nThe Oracle says: **2 + 2 = 4**.",
+        text: '::amp-oracle{reportId="11111111-1111-4111-8111-111111111111"}\n\nThe Oracle says: **2 + 2 = 4**.',
       },
     ],
   },
@@ -591,9 +703,10 @@ function captureThreadMetadata(fixture: ThreadCaptureFixture) {
       name: null,
       projectId: fixture.projectId,
       hostId: "host_screenshot",
-      path: fixture.projectId === STACK_PROJECT_ID
-        ? "/Users/example/git/dotfiles"
-        : "/Users/example/git/bb-plugins",
+      path:
+        fixture.projectId === STACK_PROJECT_ID
+          ? "/Users/example/git/dotfiles"
+          : "/Users/example/git/bb-plugins",
       managed: false,
       isGitRepo: true,
       isWorktree: false,
@@ -638,23 +751,23 @@ function captureTimeline(fixture: ThreadCaptureFixture) {
       role: message.role,
       text: message.text,
       mentions: message.role === "user" ? [] : undefined,
-      attachments: message.role === "user"
-        ? {
-            webImages: 0,
-            localImages: 0,
-            localFiles: 0,
-            imageUrls: [],
-            localImagePaths: [],
-            localFilePaths: [],
-          }
-        : null,
+      attachments:
+        message.role === "user"
+          ? {
+              webImages: 0,
+              localImages: 0,
+              localFiles: 0,
+              imageUrls: [],
+              localImagePaths: [],
+              localFilePaths: [],
+            }
+          : null,
       initiator: message.role === "user" ? "user" : undefined,
       senderThreadId: message.role === "user" ? null : undefined,
       systemMessageKind: message.role === "user" ? "unlabeled" : undefined,
       systemMessageSubject: message.role === "user" ? null : undefined,
-      turnRequest: message.role === "user"
-        ? { isGrouped: false, kind: "message", status: "accepted" }
-        : null,
+      turnRequest:
+        message.role === "user" ? { isGrouped: false, kind: "message", status: "accepted" } : null,
     };
   });
   return {
@@ -677,10 +790,7 @@ function captureTimeline(fixture: ThreadCaptureFixture) {
   };
 }
 
-async function mockThread(
-  context: BrowserContext,
-  fixture: ThreadCaptureFixture,
-): Promise<void> {
+async function mockThread(context: BrowserContext, fixture: ThreadCaptureFixture): Promise<void> {
   const environmentId = `env_${fixture.id.slice(4)}`;
   await context.route(`**/api/v1/environments/${environmentId}/status?**`, (route) =>
     fulfillJson(route, {
@@ -711,38 +821,49 @@ async function mockThread(
           commits: [],
         },
       },
-    }));
+    }),
+  );
   await context.route(`**/api/v1/environments/${environmentId}/pull-request`, (route) =>
-    fulfillJson(route, { outcome: "absent" }));
+    fulfillJson(route, { outcome: "absent" }),
+  );
   const base = `/api/v1/threads/${fixture.id}`;
   const responses = new Map<string, unknown>([
     [base, captureThreadMetadata(fixture)],
     [`${base}/timeline`, captureTimeline(fixture)],
-    [`${base}/conversation-outline`, {
-      items: fixture.messages.map((message, index) => ({
-        id: `${fixture.id}:screenshot:${index + 1}`,
-        role: message.role,
-        preview: message.text.replaceAll(/\s+/g, " ").slice(0, 200),
-        attachmentSummary: null,
-      })),
-      maxSeq: fixture.messages.length,
-    }],
-    [`${base}/default-execution-options`, {
-      model: "medium",
-      permissionMode: "full",
-      reasoningLevel: "medium",
-      serviceTier: "default",
-      source: "client/turn/requested",
-    }],
+    [
+      `${base}/conversation-outline`,
+      {
+        items: fixture.messages.map((message, index) => ({
+          id: `${fixture.id}:screenshot:${index + 1}`,
+          role: message.role,
+          preview: message.text.replaceAll(/\s+/g, " ").slice(0, 200),
+          attachmentSummary: null,
+        })),
+        maxSeq: fixture.messages.length,
+      },
+    ],
+    [
+      `${base}/default-execution-options`,
+      {
+        model: "medium",
+        permissionMode: "full",
+        reasoningLevel: "medium",
+        serviceTier: "default",
+        source: "client/turn/requested",
+      },
+    ],
     [`${base}/interactions`, []],
     [`${base}/prompt-history`, []],
     [`${base}/queued-messages`, []],
     [`${base}/tabs`, { revision: 1, tabs: fixture.tabs ?? [] }],
-    [`${base}/thread-storage/files`, {
-      files: [],
-      truncated: false,
-      storageRootPath: `/Users/example/.bb/thread-storage/${fixture.id}`,
-    }],
+    [
+      `${base}/thread-storage/files`,
+      {
+        files: [],
+        truncated: false,
+        storageRootPath: `/Users/example/.bb/thread-storage/${fixture.id}`,
+      },
+    ],
   ]);
   await context.route(new RegExp(`/api/v1/threads/${fixture.id}(?:[/?]|$)`), async (route) => {
     const request = route.request();
@@ -767,17 +888,19 @@ async function mockNewThreadShell(context: BrowserContext): Promise<void> {
   await context.route("**/api/v1/sidebar-bootstrap", (route) =>
     fulfillJson(route, {
       sections: [],
-      projects: [{
-        id: DEFAULT_PROJECT_ID,
-        kind: "standard",
-        name: "bb-plugins",
-        gitRemoteUrl: "https://github.com/example/bb-plugins.git",
-        createdAt: FIXED_TIME.valueOf() - 86_400_000,
-        updatedAt: FIXED_TIME.valueOf(),
-        sources: [],
-        threads: [],
-        defaultExecutionOptions,
-      }],
+      projects: [
+        {
+          id: DEFAULT_PROJECT_ID,
+          kind: "standard",
+          name: "bb-plugins",
+          gitRemoteUrl: "https://github.com/example/bb-plugins.git",
+          createdAt: FIXED_TIME.valueOf() - 86_400_000,
+          updatedAt: FIXED_TIME.valueOf(),
+          sources: [],
+          threads: [],
+          defaultExecutionOptions,
+        },
+      ],
       personalProject: {
         id: "proj_personal",
         kind: "personal",
@@ -789,11 +912,12 @@ async function mockNewThreadShell(context: BrowserContext): Promise<void> {
         threads: [],
         defaultExecutionOptions,
       },
-    }));
-  await context.route(new RegExp("/api/v1/threads(?:[?]|$)"), (route) =>
-    fulfillJson(route, []));
+    }),
+  );
+  await context.route(new RegExp("/api/v1/threads(?:[?]|$)"), (route) => fulfillJson(route, []));
   await context.route("**/api/v1/projects/proj_personal/prompt-history", (route) =>
-    fulfillJson(route, []));
+    fulfillJson(route, []),
+  );
 }
 
 function sidebarThread(
@@ -920,16 +1044,20 @@ async function mockGtdSidebar(context: BrowserContext): Promise<void> {
     settledSidebarThread("thr_capture_settled_3", "Fix agent proxy reset defaults", 16),
     settledSidebarThread("thr_capture_settled_4", "Update theme color palette", 41),
   ];
-  await context.route("**/api/v1/sidebar-bootstrap", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ sections: [], projects: [project], personalProject }),
-  }));
-  await context.route("**/api/v1/threads", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify(inbox),
-  }));
+  await context.route("**/api/v1/sidebar-bootstrap", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ sections: [], projects: [project], personalProject }),
+    }),
+  );
+  await context.route("**/api/v1/threads", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(inbox),
+    }),
+  );
   await context.route("**/api/v1/plugins/gtd-sidebar/rpc/*", async (route) => {
     const method = new URL(route.request().url()).pathname.split("/").at(-1);
     if (method === "listProviders") {
@@ -940,17 +1068,22 @@ async function mockGtdSidebar(context: BrowserContext): Promise<void> {
       });
     } else if (method === "listLifecycle") {
       await fulfillRpc(route, {
-        rows: inbox.slice(1).map((thread, index) => ({
-          threadId: thread.id,
-          settledAt: null,
-          snoozedUntil: FIXED_TIME.valueOf() + 86_400_000,
-          snoozedAt: FIXED_TIME.valueOf() - (index + 1) * 60_000,
-        })).concat(settledThreads.map((thread) => ({
-          threadId: thread.id,
-          settledAt: thread.settledAt,
-          snoozedUntil: null,
-          snoozedAt: null,
-        }))),
+        rows: inbox
+          .slice(1)
+          .map((thread, index) => ({
+            threadId: thread.id,
+            settledAt: null,
+            snoozedUntil: FIXED_TIME.valueOf() + 86_400_000,
+            snoozedAt: FIXED_TIME.valueOf() - (index + 1) * 60_000,
+          }))
+          .concat(
+            settledThreads.map((thread) => ({
+              threadId: thread.id,
+              settledAt: thread.settledAt,
+              snoozedUntil: null,
+              snoozedAt: null,
+            })),
+          ),
       });
     } else if (method === "listSettledThreads") {
       await fulfillRpc(route, { threads: settledThreads });
@@ -958,10 +1091,7 @@ async function mockGtdSidebar(context: BrowserContext): Promise<void> {
   });
 }
 
-async function createContext(
-  browser: Browser,
-  viewport = APP_VIEWPORT,
-): Promise<BrowserContext> {
+async function createContext(browser: Browser, viewport = APP_VIEWPORT): Promise<BrowserContext> {
   const context = await createScreenshotContext(browser, {
     viewport,
     dpr: DPR,
@@ -979,11 +1109,12 @@ async function createContext(
     },
   );
   await context.route("**/api/v1/system/execution-options?**", (route) =>
-    fulfillJson(route, EXECUTION_OPTIONS));
-  await context.route("**/api/v1/hosts", (route) =>
-    fulfillJson(route, [SCREENSHOT_HOST]));
+    fulfillJson(route, EXECUTION_OPTIONS),
+  );
+  await context.route("**/api/v1/hosts", (route) => fulfillJson(route, [SCREENSHOT_HOST]));
   await context.route("**/api/v1/hosts/host_screenshot/provider-clis/status", (route) =>
-    fulfillJson(route, PROVIDER_CLI_STATUS));
+    fulfillJson(route, PROVIDER_CLI_STATUS),
+  );
   return context;
 }
 
@@ -1027,9 +1158,7 @@ async function navigate(
     throw new Error(`sidebar provider is ${sidebarProvider}; expected ${SIDEBAR_PROVIDER}`);
   }
   await ready.waitFor({ state: "visible" });
-  await page
-    .getByRole("combobox", { name: /^Project scope:/ })
-    .waitFor({ state: "attached" });
+  await page.getByRole("combobox", { name: /^Project scope:/ }).waitFor({ state: "attached" });
   await settle(page, options);
 }
 
@@ -1072,17 +1201,16 @@ async function hideWorkingTreeStatus(page: Page): Promise<void> {
 }
 
 async function assertSidebarNavigation(page: Page): Promise<void> {
-  const expected = [
-    SIDEBAR_BUILTIN_LEAD_LABEL,
-    ...SIDEBAR_PLUGIN_ORDER.map(({ label }) => label),
-  ];
+  const expected = [SIDEBAR_BUILTIN_LEAD_LABEL, ...SIDEBAR_PLUGIN_ORDER.map(({ label }) => label)];
   await page.waitForFunction((orderedLabels) => {
     const rows = document.querySelectorAll(
       '[data-testid="plugin-nav-sidebar-items"] > .bb-sidebar-hover-actions-row',
     );
     const actual = [...rows].map((row) => row.textContent?.trim());
-    return actual.length === orderedLabels.length &&
-      actual.every((label, index) => label === orderedLabels[index]);
+    return (
+      actual.length === orderedLabels.length &&
+      actual.every((label, index) => label === orderedLabels[index])
+    );
   }, expected);
 }
 
@@ -1099,16 +1227,9 @@ function centeredClip(
   };
 }
 
-type WriteCapture = (
-  page: Page,
-  spec: FixtureSpec,
-  clip?: ScreenshotClip,
-) => Promise<void>;
+type WriteCapture = (page: Page, spec: FixtureSpec, clip?: ScreenshotClip) => Promise<void>;
 
-function fixtureWriter(
-  batch: ScreenshotBatch,
-  outputDir: string | null,
-): WriteCapture {
+function fixtureWriter(batch: ScreenshotBatch, outputDir: string | null): WriteCapture {
   return (page, spec, clip) =>
     batch.capture(page, {
       id: spec.id,
@@ -1125,13 +1246,21 @@ async function captureAgentProxy(browser: Browser, writeCapture: WriteCapture): 
     await mockAgentation(context, {});
     const page = await createScreenshotPage(context, { fixedTime: FIXED_TIME });
     const home = specById.get("agent-proxy/home")!;
-    await navigate(page, "/plugins/agent-proxy/agent-proxy", page.getByText("CLIProxyAPI core", { exact: true }));
+    await navigate(
+      page,
+      "/plugins/agent-proxy/agent-proxy",
+      page.getByText("CLIProxyAPI core", { exact: true }),
+    );
     await ensureHostSidebarClosed(page);
     await settle(page);
     await writeCapture(page, home);
 
     const agents = specById.get("agent-proxy/agents")!;
-    await navigate(page, "/plugins/agent-proxy/agent-proxy/agents", page.getByText("Anything OpenAI-compatible", { exact: true }));
+    await navigate(
+      page,
+      "/plugins/agent-proxy/agent-proxy/agents",
+      page.getByText("Anything OpenAI-compatible", { exact: true }),
+    );
     await ensureHostSidebarClosed(page);
     await settle(page);
     await writeCapture(page, agents);
@@ -1187,11 +1316,7 @@ async function captureAgentation(browser: Browser, writeCapture: WriteCapture): 
     const shell = await page.locator(".chat-prompt-box").boundingBox();
     if (!shell) throw new Error("Agentation staging composer has no bounding box");
     const spec = specById.get("agentation/staging")!;
-    await writeCapture(
-      page,
-      spec,
-      centeredClip(shell, spec, APP_VIEWPORT.height - spec.height),
-    );
+    await writeCapture(page, spec, centeredClip(shell, spec, APP_VIEWPORT.height - spec.height));
   } finally {
     await stagingContext.close();
   }
@@ -1212,16 +1337,12 @@ async function captureAmp(browser: Browser, writeCapture: WriteCapture): Promise
     const shell = await page.locator("[data-promptbox-shell]").boundingBox();
     if (!shell) throw new Error("Amp prompt composer has no bounding box");
     const spec = specById.get("amp/orb-prompt")!;
-    await writeCapture(
-      page,
-      spec,
-      {
-        x: Math.round(shell.x + shell.width / 2 - spec.width / 2),
-        y: Math.max(0, Math.round(shell.y - 24)),
-        width: spec.width,
-        height: spec.height,
-      },
-    );
+    await writeCapture(page, spec, {
+      x: Math.round(shell.x + shell.width / 2 - spec.width / 2),
+      y: Math.max(0, Math.round(shell.y - 24)),
+      width: spec.width,
+      height: spec.height,
+    });
   } finally {
     await promptContext.close();
   }
@@ -1243,11 +1364,7 @@ async function captureAmp(browser: Browser, writeCapture: WriteCapture): Promise
     const shell = await page.locator(".chat-prompt-box").boundingBox();
     if (!shell) throw new Error("Amp Orb composer has no bounding box");
     const spec = specById.get("amp/orb-bar")!;
-    await writeCapture(
-      page,
-      spec,
-      centeredClip(shell, spec, APP_VIEWPORT.height - spec.height),
-    );
+    await writeCapture(page, spec, centeredClip(shell, spec, APP_VIEWPORT.height - spec.height));
   } finally {
     await orbContext.close();
   }
@@ -1261,11 +1378,7 @@ async function captureAmp(browser: Browser, writeCapture: WriteCapture): Promise
     const card = page.locator("details").filter({
       hasText: "2 + 2 = 4. Starting at 2 and adding two units gives 3, then 4.",
     });
-    await navigate(
-      page,
-      `/projects/${DEFAULT_PROJECT_ID}/threads/${ORACLE_THREAD_ID}`,
-      card,
-    );
+    await navigate(page, `/projects/${DEFAULT_PROJECT_ID}/threads/${ORACLE_THREAD_ID}`, card);
     await card.evaluate((element) => element.scrollIntoView({ block: "center" }));
     await settle(page);
     const box = await card.boundingBox();
@@ -1322,11 +1435,7 @@ async function captureGhStack(browser: Browser, writeCapture: WriteCapture): Pro
     await mockThread(reportContext, THREAD_CAPTURE_FIXTURES.stack!);
     const page = await createScreenshotPage(reportContext, { fixedTime: FIXED_TIME });
     const heading = page.getByText("Stack submitted", { exact: true });
-    await navigate(
-      page,
-      `/projects/${STACK_PROJECT_ID}/threads/${STACK_THREAD_ID}`,
-      heading,
-    );
+    await navigate(page, `/projects/${STACK_PROJECT_ID}/threads/${STACK_THREAD_ID}`, heading);
     await heading.evaluate((element) => element.scrollIntoView({ block: "center" }));
     await settle(page);
     const box = await heading.boundingBox();
@@ -1334,10 +1443,7 @@ async function captureGhStack(browser: Browser, writeCapture: WriteCapture): Pro
     const spec = specById.get("gh-stack/magic-stack-report")!;
     await writeCapture(page, spec, {
       x: Math.round(box.x + box.width / 2 - spec.width / 2),
-      y: Math.min(
-        APP_VIEWPORT.height - spec.height,
-        Math.max(0, Math.round(box.y - 106)),
-      ),
+      y: Math.min(APP_VIEWPORT.height - spec.height, Math.max(0, Math.round(box.y - 106))),
       width: spec.width,
       height: spec.height,
     });
@@ -1458,7 +1564,9 @@ async function main(): Promise<void> {
   try {
     options = parseScreenshotArguments(process.argv.slice(2));
   } catch (error) {
-    console.error(`plugin-screenshot-fixtures: ${error instanceof Error ? error.message : String(error)}\n\n${usage()}`);
+    console.error(
+      `plugin-screenshot-fixtures: ${error instanceof Error ? error.message : String(error)}\n\n${usage()}`,
+    );
     process.exitCode = 2;
     return;
   }
@@ -1474,7 +1582,8 @@ async function main(): Promise<void> {
   }
   const requested = options.plugins.length ? options.plugins : Object.keys(captures);
   const unknown = requested.filter((plugin) => !(plugin in captures));
-  if (unknown.length > 0) throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
+  if (unknown.length > 0)
+    throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
 
   await prepareBbForScreenshots();
   console.log(

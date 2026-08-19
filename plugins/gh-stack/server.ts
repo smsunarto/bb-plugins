@@ -15,11 +15,7 @@ import {
   type ChangeSet,
   type DiffCounts,
 } from "./lib/git-diff";
-import {
-  deriveBranchName,
-  isBranchCandidate,
-  normalizeBranchPrefix,
-} from "./lib/branch-name";
+import { deriveBranchName, isBranchCandidate, normalizeBranchPrefix } from "./lib/branch-name";
 import {
   isCurrentBranchNotInStack,
   partialSuccessWarning,
@@ -282,9 +278,7 @@ export const rpcContract = defineRpcContract({
   // result is announced on the "stack-updated" realtime channel. With
   // `refresh: true` the call waits for a fresh compute.
   getStack: {
-    input: z
-      .object({ threadId: z.string(), refresh: z.boolean().optional() })
-      .strict(),
+    input: z.object({ threadId: z.string(), refresh: z.boolean().optional() }).strict(),
     output: stackPayloadSchema.extend({
       // Epoch ms of the compute that produced this payload.
       fetchedAt: z.number(),
@@ -304,9 +298,7 @@ export const rpcContract = defineRpcContract({
   // branch against a fresh stack view, so the browser cannot select an
   // arbitrary local ref or a merged layer hidden from the panel.
   checkoutBranch: {
-    input: z
-      .object({ threadId: z.string(), branch: z.string().min(1).max(255) })
-      .strict(),
+    input: z.object({ threadId: z.string(), branch: z.string().min(1).max(255) }).strict(),
     output: actionResultSchema,
   },
   runAction: {
@@ -437,8 +429,7 @@ function mapExitCode(result: GhResult): { kind: StackErrorKind; message: string 
     case 3:
       return {
         kind: "rebase-conflict",
-        message:
-          "Rebase conflict. This needs repository-aware recovery before Sync can finish.",
+        message: "Rebase conflict. This needs repository-aware recovery before Sync can finish.",
       };
     case 7:
       return {
@@ -497,9 +488,7 @@ function parseStackViewResult(result: GhResult): ParsedStackView {
 }
 
 async function readStackView(cwd: string): Promise<ParsedStackView> {
-  return parseStackViewResult(
-    await runGh(["stack", "view", "--json"], cwd, 30_000),
-  );
+  return parseStackViewResult(await runGh(["stack", "view", "--json"], cwd, 30_000));
 }
 
 // Line counts for untracked files are one `wc -l` call; cap it so a huge
@@ -534,11 +523,7 @@ async function currentBranchPrefix(cwd: string): Promise<string | null> {
   return branchPrefixOf([result.stdout.trim()].filter(Boolean));
 }
 
-async function revListCount(
-  cwd: string,
-  left: string,
-  right: string,
-): Promise<number | null> {
+async function revListCount(cwd: string, left: string, right: string): Promise<number | null> {
   if (left.startsWith("-") || right.startsWith("-")) return null;
   const result = await runGit(["rev-list", "--count", `${left}..${right}`, "--"], cwd);
   if (result.code !== 0) return null;
@@ -562,10 +547,7 @@ async function branchChangeSet(
     runGit(["diff", "--name-status", "-z", range, "--"], cwd),
   ]);
   if (numstat.code !== 0 || nameStatus.code !== 0) return null;
-  return buildChangeSet(
-    parseNameStatusZ(nameStatus.stdout),
-    parseNumstatZ(numstat.stdout),
-  );
+  return buildChangeSet(parseNameStatusZ(nameStatus.stdout), parseNumstatZ(numstat.stdout));
 }
 
 // Uncommitted working-tree changes (staged + unstaged + untracked) — these
@@ -579,8 +561,7 @@ async function pendingChangeSet(cwd: string): Promise<ChangeSet | null> {
     return { additions: 0, deletions: 0, files: [], truncated: false };
   }
   const numstat = await runGit(["diff", "--numstat", "-z", "HEAD", "--"], cwd);
-  const counts =
-    numstat.code === 0 ? parseNumstatZ(numstat.stdout) : new Map<string, DiffCounts>();
+  const counts = numstat.code === 0 ? parseNumstatZ(numstat.stdout) : new Map<string, DiffCounts>();
   const untracked = entries
     .filter((entry) => entry.status === "untracked")
     .slice(0, MAX_UNTRACKED_COUNTS);
@@ -614,12 +595,12 @@ function joinDetails(...details: Array<string | null>): string | null {
 }
 
 async function localBranchNames(cwd: string): Promise<string[] | null> {
-  const result = await runGit(
-    ["for-each-ref", "--format=%(refname:strip=2)", "refs/heads"],
-    cwd,
-  );
+  const result = await runGit(["for-each-ref", "--format=%(refname:strip=2)", "refs/heads"], cwd);
   if (result.code !== 0) return null;
-  return result.stdout.split("\n").map((name) => name.trim()).filter(Boolean);
+  return result.stdout
+    .split("\n")
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 async function currentBranchName(cwd: string): Promise<string | null> {
@@ -628,10 +609,7 @@ async function currentBranchName(cwd: string): Promise<string | null> {
 }
 
 async function localBranchExists(cwd: string, branch: string): Promise<boolean | null> {
-  const result = await runGit(
-    ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-    cwd,
-  );
+  const result = await runGit(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd);
   if (result.code === 0) return true;
   // show-ref uses 1 specifically for a well-formed ref that does not exist.
   return result.code === 1 ? false : null;
@@ -679,18 +657,11 @@ async function inspectBranchPostcondition(
   };
 }
 
-async function branchesNotAtUpstream(
-  cwd: string,
-  branches: string[],
-): Promise<string[]> {
+async function branchesNotAtUpstream(cwd: string, branches: string[]): Promise<string[]> {
   const checks = await Promise.all(
     branches.map(async (branch) => {
       const local = await runGit(
-        [
-          "for-each-ref",
-          "--format=%(objectname)%00%(upstream)",
-          `refs/heads/${branch}`,
-        ],
+        ["for-each-ref", "--format=%(objectname)%00%(upstream)", `refs/heads/${branch}`],
         cwd,
       );
       if (local.code !== 0 || !local.stdout.trim()) return branch;
@@ -710,10 +681,7 @@ async function branchesNotAtUpstream(
 const PR_LIST_PAGE = 100;
 const PR_FALLBACK_LIMIT = 5;
 
-async function readPrMetadata(
-  cwd: string,
-  numbers: number[],
-): Promise<Map<number, PrMetadata>> {
+async function readPrMetadata(cwd: string, numbers: number[]): Promise<Map<number, PrMetadata>> {
   const found = new Map<number, PrMetadata>();
   if (numbers.length === 0) return found;
   const wanted = new Set(numbers);
@@ -789,8 +757,7 @@ async function readPullRequestState(
     return {
       state: null,
       error:
-        result.stderr.trim().split("\n").pop() ||
-        `gh pr view exited with code ${result.code}.`,
+        result.stderr.trim().split("\n").pop() || `gh pr view exited with code ${result.code}.`,
       detail,
     };
   }
@@ -840,7 +807,9 @@ function conventionsLines(settings: Settings, detectedPrefix: string | null): st
   const lines: string[] = [];
   const prefix = settings.branchPrefix || detectedPrefix;
   if (prefix) {
-    lines.push(`Name every branch \`${prefix}<slug>\`, matching the prefix this workspace already uses.`);
+    lines.push(
+      `Name every branch \`${prefix}<slug>\`, matching the prefix this workspace already uses.`,
+    );
   }
   if (settings.conventionalCommits) {
     lines.push(
@@ -941,10 +910,7 @@ export default async function plugin(bb: BbPluginApi) {
   // One compute per thread at a time: concurrent callers share the promise.
   const stackInflight = new Map<string, Promise<StackPayload>>();
   const threadWorkspaceKeys = new Map<string, string>();
-  const stackComputeWorkspaceState = new Map<
-    string,
-    { key: string; mutationVersion: number }
-  >();
+  const stackComputeWorkspaceState = new Map<string, { key: string; mutationVersion: number }>();
   const workspaceMutationVersions = new Map<string, number>();
   // gh-stack's own lock covers only metadata persistence. This guard covers
   // the full checkout/rebase/push/PR operation and rejects overlap rather
@@ -984,10 +950,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   function refreshRemoteRefs(workspace: ValidWorkspace): Promise<boolean> {
-    if (
-      activeWorkspaceMutations.has(workspace.key) ||
-      activeRecoveryLease(workspace.key)
-    ) {
+    if (activeWorkspaceMutations.has(workspace.key) || activeRecoveryLease(workspace.key)) {
       return Promise.resolve(false);
     }
     if (Date.now() - (remoteRefreshAt.get(workspace.key) ?? 0) <= REMOTE_FETCH_FRESH_MS) {
@@ -1007,11 +970,7 @@ export default async function plugin(bb: BbPluginApi) {
       let successful = false;
       try {
         if (!activeWorkspaceMutations.has(workspace.key)) {
-          const fetch = await runGit(
-            ["fetch", "--quiet", "origin"],
-            workspace.cwd,
-            20_000,
-          );
+          const fetch = await runGit(["fetch", "--quiet", "origin"], workspace.cwd, 20_000);
           successful = fetch.code === 0;
           if (successful) remoteRefreshAt.set(workspace.key, Date.now());
         }
@@ -1060,8 +1019,7 @@ export default async function plugin(bb: BbPluginApi) {
     return hits;
   }
 
-  const draftIntentKey = (workspaceKey: string, prNumber: number) =>
-    `${workspaceKey}\0${prNumber}`;
+  const draftIntentKey = (workspaceKey: string, prNumber: number) => `${workspaceKey}\0${prNumber}`;
 
   function applyDraftIntents(threadId: string, payload: StackPayload): StackPayload {
     const now = Date.now();
@@ -1105,9 +1063,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function loadSettings(): Promise<Settings> {
     if (settingsCache) return settingsCache;
-    const parsed = settingsSchema.safeParse(
-      await bb.storage.kv.get<unknown>(SETTINGS_KEY),
-    );
+    const parsed = settingsSchema.safeParse(await bb.storage.kv.get<unknown>(SETTINGS_KEY));
     settingsCache = parsed.success ? parsed.data : { ...DEFAULT_SETTINGS };
     return settingsCache;
   }
@@ -1115,17 +1071,12 @@ export default async function plugin(bb: BbPluginApi) {
   // The branch the panel would have previewed for this layer name — same
   // rule, including the fall back to the workspace's own namespace when no
   // prefix is configured.
-  async function deriveWithSettings(
-    threadId: string,
-    name: string,
-  ): Promise<string> {
+  async function deriveWithSettings(threadId: string, name: string): Promise<string> {
     const settings = await loadSettings();
     const slug = deriveBranchName(name, settings.conventionalCommits);
     if (!slug) return "";
     const prefix =
-      settings.branchPrefix ||
-      stackCache.get(threadId)?.payload.detectedBranchPrefix ||
-      "";
+      settings.branchPrefix || stackCache.get(threadId)?.payload.detectedBranchPrefix || "";
     return `${prefix}${slug}`;
   }
 
@@ -1285,7 +1236,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (remoteRefreshInflight.has(workspace.key)) {
       return {
         ok: false,
-        message: "Remote state is refreshing for this repository. Wait for it to finish, then retry.",
+        message:
+          "Remote state is refreshing for this repository. Wait for it to finish, then retry.",
         detail: null,
       };
     }
@@ -1379,10 +1331,7 @@ export default async function plugin(bb: BbPluginApi) {
         };
       }
 
-      const status = await runGit(
-        ["status", "--porcelain=v1", "-z", "-uall"],
-        workspace.cwd,
-      );
+      const status = await runGit(["status", "--porcelain=v1", "-z", "-uall"], workspace.cwd);
       if (status.code !== 0) {
         return {
           ok: false,
@@ -1412,9 +1361,7 @@ export default async function plugin(bb: BbPluginApi) {
       // checkout is picked up by the next panel refresh.
       const target = planned.target;
       const args =
-        target.kind === "branch"
-          ? ["stack", "checkout", "--", target.name]
-          : ["stack", "trunk"];
+        target.kind === "branch" ? ["stack", "checkout", "--", target.name] : ["stack", "trunk"];
       bb.log.info(`running gh ${args.join(" ")} in ${workspace.cwd}`);
       const result = await runGh(args, workspace.cwd, 30_000);
       const checkedOut = await currentBranchName(workspace.cwd);
@@ -1670,13 +1617,8 @@ export default async function plugin(bb: BbPluginApi) {
       }),
     );
     // The stack's own namespace wins over the checked-out branch's.
-    const detected =
-      branchPrefixOf(branches.map((branch) => branch.name)) ?? headPrefix;
-    const projected = projectStackLayers(
-      branches,
-      rawStack.trunk,
-      rawStack.currentBranch,
-    );
+    const detected = branchPrefixOf(branches.map((branch) => branch.name)) ?? headPrefix;
+    const projected = projectStackLayers(branches, rawStack.trunk, rawStack.currentBranch);
     // Direct PR state can be newer than gh stack's metadata. Count only after
     // enrichment, while leaving merged rows hidden from the branch payload.
     const pruneProbes = await Promise.all(
@@ -1762,9 +1704,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (view.error) {
           return { ok: false, message: view.error.message, detail: null };
         }
-        const target = view.stack.branches.find(
-          (candidate) => candidate.name === branch,
-        );
+        const target = view.stack.branches.find((candidate) => candidate.name === branch);
         if (!target) {
           return {
             ok: false,
@@ -1849,17 +1789,16 @@ export default async function plugin(bb: BbPluginApi) {
       // the cached payload (one fresh view only when the cache is cold)
       // instead of paying a full `gh stack view` per click.
       let ownerName =
-        stackCache.get(threadId)?.payload.stack?.branches.find(
-          (branch) => branch.pr?.number === prNumber,
-        )?.name ?? null;
+        stackCache
+          .get(threadId)
+          ?.payload.stack?.branches.find((branch) => branch.pr?.number === prNumber)?.name ?? null;
       if (ownerName === null) {
         const view = await readStackView(cwd);
         if (view.error) {
           return { ok: false, message: view.error.message, detail: null };
         }
         ownerName =
-          view.stack.branches.find((branch) => branch.pr?.number === prNumber)
-            ?.name ?? null;
+          view.stack.branches.find((branch) => branch.pr?.number === prNumber)?.name ?? null;
       }
       if (ownerName === null) {
         return {
@@ -2017,9 +1956,7 @@ export default async function plugin(bb: BbPluginApi) {
               pr: {
                 ...branch.pr,
                 state:
-                  branch.pr.state === "MERGED" || branch.isMerged
-                    ? "MERGED"
-                    : direct.state.state,
+                  branch.pr.state === "MERGED" || branch.isMerged ? "MERGED" : direct.state.state,
               },
             });
           }
@@ -2037,7 +1974,11 @@ export default async function plugin(bb: BbPluginApi) {
           }
           const candidates = candidateNames.filter((_, index) => probes[index] === true);
           if (candidates.length === 0) {
-            return { ok: false, message: "There are no merged local branches to prune.", detail: null };
+            return {
+              ok: false,
+              message: "There are no merged local branches to prune.",
+              detail: null,
+            };
           }
           if (before.stack.currentBranch && candidates.includes(before.stack.currentBranch)) {
             return {
@@ -2152,11 +2093,7 @@ export default async function plugin(bb: BbPluginApi) {
               !result.failedToSpawn &&
               !result.timedOut &&
               requiresAgentSyncRecovery(result.code, result.stdout, result.stderr);
-            if (
-              step === "sync" &&
-              action !== "prune" &&
-              needsAgent
-            ) {
+            if (step === "sync" && action !== "prune" && needsAgent) {
               const lease = {
                 workspaceKey: workspace.key,
                 threadId,
@@ -2169,11 +2106,13 @@ export default async function plugin(bb: BbPluginApi) {
                 await bb.sdk.threads.send({
                   threadId,
                   mode: "auto",
-                  input: [{
-                    type: "text",
-                    mentions: [],
-                    text: syncRecoveryPrompt(action === "sync-submit"),
-                  }],
+                  input: [
+                    {
+                      type: "text",
+                      mentions: [],
+                      text: syncRecoveryPrompt(action === "sync-submit"),
+                    },
+                  ],
                 });
                 return {
                   ok: false,
@@ -2201,7 +2140,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               ok: false,
               message: `${failure}${steps.length > 1 && step === "sync" ? " Submit was not run." : ""}`,
-              tone: warning ? "warning" as const : "error" as const,
+              tone: warning ? ("warning" as const) : ("error" as const),
               detail,
             };
           }
@@ -2226,10 +2165,7 @@ export default async function plugin(bb: BbPluginApi) {
               return {
                 ok: false,
                 message: postconditionDamage ? `${primary} ${postconditionDamage}` : primary,
-                tone:
-                  warning && !postconditionDamage
-                    ? "warning" as const
-                    : "error" as const,
+                tone: warning && !postconditionDamage ? ("warning" as const) : ("error" as const),
                 detail: joinDetails(detail, postconditionDamage),
               };
             }
@@ -2237,7 +2173,7 @@ export default async function plugin(bb: BbPluginApi) {
               return {
                 ok: false,
                 message: `Prune verification failed. Remaining candidates: ${remaining.join(", ") || "none"}. Unexpectedly missing protected refs: ${missing.join(", ") || "none"}.`,
-                tone: missing.length > 0 ? "error" as const : "warning" as const,
+                tone: missing.length > 0 ? ("error" as const) : ("warning" as const),
                 detail,
               };
             }
@@ -2313,7 +2249,8 @@ export default async function plugin(bb: BbPluginApi) {
         if (!prefix.pinned || prefix.selected.length === 0) {
           return {
             ok: false,
-            message: "No contiguous eligible merge prefix matches that request. A closed, draft, merged, missing, or unqueued PR blocks it.",
+            message:
+              "No contiguous eligible merge prefix matches that request. A closed, draft, merged, missing, or unqueued PR blocks it.",
             detail: null,
           };
         }
@@ -2324,8 +2261,7 @@ export default async function plugin(bb: BbPluginApi) {
         for (let index = 0; index < prefix.selected.length; index++) {
           const selected = prefix.selected[index];
           const stackBranch = fresh.stack.branches.find(
-            (branch) =>
-              branch.name === selected.name && branch.pr?.number === selected.pr?.number,
+            (branch) => branch.name === selected.name && branch.pr?.number === selected.pr?.number,
           );
           if (!stackBranch?.pr) {
             return {
@@ -2380,7 +2316,8 @@ export default async function plugin(bb: BbPluginApi) {
         if (submit.timedOut) {
           return {
             ok: false,
-            message: "The stack merge command timed out. Its final outcome is uncertain; refresh to reconcile.",
+            message:
+              "The stack merge command timed out. Its final outcome is uncertain; refresh to reconcile.",
             tone: "warning" as const,
             detail,
           };
@@ -2393,9 +2330,9 @@ export default async function plugin(bb: BbPluginApi) {
           };
         }
         const count = prefix.selected.length;
-        const left = enriched.filter(
-          (branch) => !branch.isMerged && branch.pr?.state !== "MERGED",
-        ).length - count;
+        const left =
+          enriched.filter((branch) => !branch.isMerged && branch.pr?.state !== "MERGED").length -
+          count;
         const rest =
           left > 0
             ? ` The ${left} layer${left === 1 ? "" : "s"} above stay open — run Sync to restack ${left === 1 ? "it" : "them"} onto ${raw.stack.trunk}.`
@@ -2504,10 +2441,7 @@ export default async function plugin(bb: BbPluginApi) {
           localBranchExists(cwd, branch),
         ]);
 
-        async function failAdd(
-          message: string,
-          detail: string | null,
-        ): Promise<ActionResult> {
+        async function failAdd(message: string, detail: string | null): Promise<ActionResult> {
           const postcondition = await inspectBranchPostcondition(cwd, branch);
           const requestedBranchChanged =
             postcondition.stackHasBranch ||
@@ -2695,8 +2629,7 @@ export default async function plugin(bb: BbPluginApi) {
         entry.payload = {
           ...entry.payload,
           settings: next,
-          branchPrefix:
-            next.branchPrefix || entry.payload.detectedBranchPrefix,
+          branchPrefix: next.branchPrefix || entry.payload.detectedBranchPrefix,
         };
         bb.realtime.publish("stack-updated", {
           threadId: cachedThreadId,

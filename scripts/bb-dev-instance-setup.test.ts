@@ -103,10 +103,13 @@ describe("setUpBbDevInstance", () => {
   test("refuses before writing anything when the target is not a dev instance", async () => {
     const calls: string[][] = [];
     await expect(
-      setUpBbDevInstance(async (args) => {
-        calls.push([...args]);
-        return JSON.stringify({ dataDir: "/Users/e/.bb" });
-      }, () => {}),
+      setUpBbDevInstance(
+        async (args) => {
+          calls.push([...args]);
+          return JSON.stringify({ dataDir: "/Users/e/.bb" });
+        },
+        () => {},
+      ),
     ).rejects.toThrow(/refusing/);
     expect(calls).toEqual([["settings", "show", "--json"]]);
   });
@@ -148,25 +151,28 @@ describe("setUpBbDevInstance", () => {
   test("fails when a key does not return to its default", async () => {
     const id = SCREENSHOT_PREFLIGHT_PLUGINS[0]!.id;
     await expect(
-      setUpBbDevInstance(async (args) => {
-        if (args[0] === "settings" && args[1] === "show") return DEV_SETTINGS;
-        if (args[0] === "plugin" && args[1] === "list") {
-          return JSON.stringify({
-            plugins: SCREENSHOT_PREFLIGHT_PLUGINS.map((plugin) => ({
-              id: plugin.id,
-              status: "running",
-              rootDir: join(SCREENSHOT_ROOT, "plugins", plugin.directory),
-            })),
-          });
-        }
-        if (args[0] === "plugin" && args[1] === "config" && args.length === 4) {
-          return JSON.stringify({
-            schema: { tidy: { type: "boolean", default: true } },
-            values: { tidy: args[2] === id ? false : true },
-          });
-        }
-        return JSON.stringify({ ok: true });
-      }, () => {}),
+      setUpBbDevInstance(
+        async (args) => {
+          if (args[0] === "settings" && args[1] === "show") return DEV_SETTINGS;
+          if (args[0] === "plugin" && args[1] === "list") {
+            return JSON.stringify({
+              plugins: SCREENSHOT_PREFLIGHT_PLUGINS.map((plugin) => ({
+                id: plugin.id,
+                status: "running",
+                rootDir: join(SCREENSHOT_ROOT, "plugins", plugin.directory),
+              })),
+            });
+          }
+          if (args[0] === "plugin" && args[1] === "config" && args.length === 4) {
+            return JSON.stringify({
+              schema: { tidy: { type: "boolean", default: true } },
+              values: { tidy: args[2] === id ? false : true },
+            });
+          }
+          return JSON.stringify({ ok: true });
+        },
+        () => {},
+      ),
     ).rejects.toThrow(new RegExp(`did not return to their defaults: ${id}\\.tidy`));
   });
 });

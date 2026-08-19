@@ -1,9 +1,4 @@
-import {
-  chmodSync,
-  mkdirSync,
-  realpathSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { compatibility } from "../src/compatibility.js";
 import type { CommandResult } from "../src/index.js";
@@ -18,9 +13,7 @@ export function testEnvironment(): NodeJS.ProcessEnv {
   return { ...process.env, BB_CLI: fakeBbCli };
 }
 
-export function commandResult(
-  overrides: Partial<CommandResult> = {},
-): CommandResult {
+export function commandResult(overrides: Partial<CommandResult> = {}): CommandResult {
   return {
     status: 0,
     signal: null,
@@ -86,14 +79,8 @@ export function writeBuildMetadata(root: string, app = false): void {
     },
   };
   mkdirSync(join(root, "dist"), { recursive: true });
-  writeFileSync(
-    join(root, "dist/server.meta.json"),
-    `${JSON.stringify(metadata, null, 2)}\n`,
-  );
+  writeFileSync(join(root, "dist/server.meta.json"), `${JSON.stringify(metadata, null, 2)}\n`);
   if (app) {
-    writeFileSync(
-      join(root, "dist/app.meta.json"),
-      `${JSON.stringify(metadata, null, 2)}\n`,
-    );
+    writeFileSync(join(root, "dist/app.meta.json"), `${JSON.stringify(metadata, null, 2)}\n`);
   }
 }

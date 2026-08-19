@@ -8,11 +8,7 @@ import {
   type OperationDescriptor,
   type OperationHost,
 } from "../src/operations.js";
-import {
-  operationMutationOptions,
-  operationQueryOptions,
-  useOperationRpc,
-} from "../src/query.js";
+import { operationMutationOptions, operationQueryOptions, useOperationRpc } from "../src/query.js";
 
 const catalog = defineOperationCatalog({
   get: {

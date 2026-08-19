@@ -53,7 +53,11 @@ export function HomePage() {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center justify-between text-base">
             <span>CLIProxyAPI core</span>
-            {status ? <StatusBadge state={status.state} /> : <span className="text-sm text-muted-foreground">…</span>}
+            {status ? (
+              <StatusBadge state={status.state} />
+            ) : (
+              <span className="text-sm text-muted-foreground">…</span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -90,22 +94,31 @@ export function HomePage() {
                 : "—"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              The proxy stays available when bb is closed. Stop disables the login service until it is started again.
+              The proxy stays available when bb is closed. Stop disables the login service until it
+              is started again.
             </div>
           </div>
           {status?.source.error ? (
-            <div className="text-sm text-destructive">Source setting error: {status.source.error}</div>
+            <div className="text-sm text-destructive">
+              Source setting error: {status.source.error}
+            </div>
           ) : null}
           {status?.state === "crashed" && status.lastExit ? (
             <div className="text-sm text-destructive">
-              Core keeps exiting (code {status.lastExit.code ?? "?"}, launch #{status.crashCount + 1}). Check the
-              log tail below — a port conflict is the usual cause.
+              Core keeps exiting (code {status.lastExit.code ?? "?"}, launch #
+              {status.crashCount + 1}). Check the log tail below — a port conflict is the usual
+              cause.
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
-              disabled={busy !== null || !status || status.state === "not-installed" || status.state === "running"}
+              disabled={
+                busy !== null ||
+                !status ||
+                status.state === "not-installed" ||
+                status.state === "running"
+              }
               onClick={() => void act("start", () => rpc.call("start"))}
             >
               Start
@@ -114,9 +127,7 @@ export function HomePage() {
               size="sm"
               variant="outline"
               disabled={
-                busy !== null ||
-                !status ||
-                !canStopService(status.state, status.service.loaded)
+                busy !== null || !status || !canStopService(status.state, status.service.loaded)
               }
               onClick={() => void act("stop", () => rpc.call("stop"))}
             >
@@ -176,7 +187,9 @@ export function HomePage() {
               Check connectivity
             </Button>
           </div>
-          {connectivity ? <div className="text-xs text-muted-foreground">{connectivity}</div> : null}
+          {connectivity ? (
+            <div className="text-xs text-muted-foreground">{connectivity}</div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -188,7 +201,10 @@ export function HomePage() {
           {status ? (
             <>
               <CopyField label="OpenAI-compatible base URL" value={status.endpoints.openai} />
-              <CopyField label="Anthropic base URL (ANTHROPIC_BASE_URL)" value={status.endpoints.anthropic} />
+              <CopyField
+                label="Anthropic base URL (ANTHROPIC_BASE_URL)"
+                value={status.endpoints.anthropic}
+              />
               <CopyField label="Gemini base URL" value={status.endpoints.gemini} />
               {apiKey ? <CopyField label="Local API key" value={apiKey} masked /> : null}
             </>

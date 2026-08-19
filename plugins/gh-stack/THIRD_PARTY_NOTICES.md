@@ -13,19 +13,19 @@ time through its plugin runtime shim.
 
 ## MIT
 
-| Work | Copyright | Where it is used |
-| --- | --- | --- |
-| [`@hugeicons/core-free-icons`](https://hugeicons.com) | Copyright (c) 2025 Hugeicons | Icon path data in `dist/app.js` |
-| [`@hugeicons/react`](https://github.com/hugeicons/hugeicons) | Copyright (c) 2025 Hugeicons | Icon renderer in `dist/app.js` |
-| Hugeicons free icon set (artwork) | Copyright (c) 2025 Hugeicons | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, and inline glyphs in `dist/app.js` |
-| [`@radix-ui/react-slot`](https://github.com/radix-ui/primitives) | Copyright (c) 2022 WorkOS | `dist/app.js` |
-| [`@radix-ui/react-compose-refs`](https://github.com/radix-ui/primitives) | Copyright (c) 2022 WorkOS | `dist/app.js` (dependency of `react-slot`) |
-| [`clsx`](https://github.com/lukeed/clsx) | Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com) | `dist/app.js` |
-| [`tailwind-merge`](https://github.com/dcastil/tailwind-merge) | Copyright (c) 2021 Dany Castillo | `dist/app.js` |
-| [`preact`](https://preactjs.com) | Copyright (c) 2015-present Jason Miller | `dist/app.js` (dependency of `@pierre/trees`) |
-| [`zod`](https://zod.dev) | Copyright (c) 2025 Colin McDonnell | `dist/server.js` |
-| [shadcn/ui](https://github.com/shadcn-ui/ui) | Copyright (c) 2023 shadcn | The plugin's UI primitives are derived from shadcn/ui and compiled into `dist/app.js` |
-| [headless-tree](https://github.com/lukasbach/headless-tree) | Copyright (c) 2023 Lukas Bach | Code derived from `@headless-tree/core` inside `@pierre/trees`; see the NOTICE below |
+| Work                                                                     | Copyright                                                          | Where it is used                                                                                 |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [`@hugeicons/core-free-icons`](https://hugeicons.com)                    | Copyright (c) 2025 Hugeicons                                       | Icon path data in `dist/app.js`                                                                  |
+| [`@hugeicons/react`](https://github.com/hugeicons/hugeicons)             | Copyright (c) 2025 Hugeicons                                       | Icon renderer in `dist/app.js`                                                                   |
+| Hugeicons free icon set (artwork)                                        | Copyright (c) 2025 Hugeicons                                       | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, and inline glyphs in `dist/app.js` |
+| [`@radix-ui/react-slot`](https://github.com/radix-ui/primitives)         | Copyright (c) 2022 WorkOS                                          | `dist/app.js`                                                                                    |
+| [`@radix-ui/react-compose-refs`](https://github.com/radix-ui/primitives) | Copyright (c) 2022 WorkOS                                          | `dist/app.js` (dependency of `react-slot`)                                                       |
+| [`clsx`](https://github.com/lukeed/clsx)                                 | Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com) | `dist/app.js`                                                                                    |
+| [`tailwind-merge`](https://github.com/dcastil/tailwind-merge)            | Copyright (c) 2021 Dany Castillo                                   | `dist/app.js`                                                                                    |
+| [`preact`](https://preactjs.com)                                         | Copyright (c) 2015-present Jason Miller                            | `dist/app.js` (dependency of `@pierre/trees`)                                                    |
+| [`zod`](https://zod.dev)                                                 | Copyright (c) 2025 Colin McDonnell                                 | `dist/server.js`                                                                                 |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)                             | Copyright (c) 2023 shadcn                                          | The plugin's UI primitives are derived from shadcn/ui and compiled into `dist/app.js`            |
+| [headless-tree](https://github.com/lukasbach/headless-tree)              | Copyright (c) 2023 Lukas Bach                                      | Code derived from `@headless-tree/core` inside `@pierre/trees`; see the NOTICE below             |
 
 Each of the works above is distributed under the MIT License:
 
@@ -53,10 +53,10 @@ SOFTWARE.
 
 ## Apache License 2.0
 
-| Work | Copyright | Where it is used |
-| --- | --- | --- |
+| Work                                                           | Copyright                              | Where it is used           |
+| -------------------------------------------------------------- | -------------------------------------- | -------------------------- |
 | [`@pierre/trees`](https://www.npmjs.com/package/@pierre/trees) | Copyright 2025 Pierre Computer Company | File tree in `dist/app.js` |
-| [`class-variance-authority`](https://github.com/joe-bell/cva) | Copyright 2022 Joe Bell | `dist/app.js` |
+| [`class-variance-authority`](https://github.com/joe-bell/cva)  | Copyright 2022 Joe Bell                | `dist/app.js`              |
 
 Both are licensed under the Apache License, Version 2.0. You may obtain a copy
 of the License at <http://www.apache.org/licenses/LICENSE-2.0>. Unless required

@@ -240,14 +240,11 @@ export class NotificationQueue {
         await this.saveIfChanged(loaded);
         const nextExpiry = state.items.reduce<number | null>((nearest, item) => {
           if (item.lease === null) return nearest;
-          return nearest === null
-            ? item.lease.expiresAt
-            : Math.min(nearest, item.lease.expiresAt);
+          return nearest === null ? item.lease.expiresAt : Math.min(nearest, item.lease.expiresAt);
         }, null);
         return {
           lease: null,
-          retryAfterMs:
-            nextExpiry === null ? null : Math.max(0, nextExpiry - this.now()),
+          retryAfterMs: nextExpiry === null ? null : Math.max(0, nextExpiry - this.now()),
         };
       }
 

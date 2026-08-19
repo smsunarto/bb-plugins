@@ -1,12 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -34,17 +27,10 @@ function env(fast = false): NodeJS.ProcessEnv {
 }
 
 test("injects --fast into marked local SDK executions", () => {
-  const invocation = buildAmpCliInvocation(
-    ["--execute", "--stream-json"],
-    env(true),
-  );
+  const invocation = buildAmpCliInvocation(["--execute", "--stream-json"], env(true));
 
   assert.equal(invocation.command, REAL_CLI);
-  assert.deepEqual(invocation.args, [
-    "--fast",
-    "--execute",
-    "--stream-json",
-  ]);
+  assert.deepEqual(invocation.args, ["--fast", "--execute", "--stream-json"]);
   assert.equal(invocation.env.KEEP_ME, "yes");
   assert.equal(invocation.env[AMP_CLI_SHIM_FAST_ENV], undefined);
   assert.equal(invocation.env[AMP_CLI_SHIM_REAL_CLI_ENV], undefined);
@@ -84,7 +70,9 @@ test("the official SDK preserves Amp steering input", async () => {
   const root = mkdtempSync(join(tmpdir(), "amp-sdk-steering-"));
   const fakeCli = join(root, "amp.mjs");
   const capture = join(root, "capture.json");
-  writeFileSync(fakeCli, `#!/usr/bin/env node
+  writeFileSync(
+    fakeCli,
+    `#!/usr/bin/env node
 import { writeFileSync } from "node:fs";
 if (process.argv.includes("--version")) {
   console.log("0.0.9999999999");
@@ -94,7 +82,8 @@ let input = "";
 for await (const chunk of process.stdin) input += chunk;
 writeFileSync(process.env.CAPTURE_PATH, input);
 console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false }));
-`);
+`,
+  );
   chmodSync(fakeCli, 0o755);
 
   const previous = {
@@ -107,7 +96,8 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
     const prompt = (async function* () {
       yield { ...createUserMessage("change direction"), steer: true as const };
     })();
-    for await (const _message of execute({ prompt })) {}
+    for await (const _message of execute({ prompt })) {
+    }
 
     const captured = JSON.parse(readFileSync(capture, "utf8"));
     assert.equal(captured.steer, true);
@@ -128,7 +118,9 @@ test(
     const root = mkdtempSync(join(tmpdir(), "amp-cli-shim-"));
     const fakeCli = join(root, "amp.mjs");
     const capture = join(root, "capture.json");
-    writeFileSync(fakeCli, `#!/usr/bin/env node
+    writeFileSync(
+      fakeCli,
+      `#!/usr/bin/env node
 import { writeFileSync } from "node:fs";
 if (process.argv.includes("--version")) {
   console.log("0.0.9999999999");
@@ -141,7 +133,8 @@ writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
   realCli: process.env.${AMP_CLI_SHIM_REAL_CLI_ENV},
 }));
 console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false }));
-`);
+`,
+    );
     chmodSync(fakeCli, 0o755);
 
     const previous = {
@@ -156,16 +149,11 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
       for await (const _message of execute({
         prompt: "test",
         options: { env: { [AMP_CLI_SHIM_FAST_ENV]: "1" } },
-      })) {}
+      })) {
+      }
 
       const captured = JSON.parse(readFileSync(capture, "utf8"));
-      assert.deepEqual(captured.args, [
-        "--fast",
-        "--execute",
-        "--stream-json",
-        "--mode",
-        "medium",
-      ]);
+      assert.deepEqual(captured.args, ["--fast", "--execute", "--stream-json", "--mode", "medium"]);
       assert.equal(captured.fast, undefined);
       assert.equal(captured.realCli, undefined);
     } finally {

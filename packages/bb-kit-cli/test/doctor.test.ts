@@ -9,10 +9,7 @@ import {
   type CommandRunner,
 } from "../src/index.js";
 import { compatibility } from "../src/compatibility.js";
-import {
-  commandResult,
-  testEnvironment,
-} from "./helpers.js";
+import { commandResult, testEnvironment } from "./helpers.js";
 
 const roots: string[] = [];
 
@@ -29,12 +26,15 @@ function temporaryProject(): string {
   return root;
 }
 
-function doctorRunner(root: string, overrides: {
-  hostVersion?: string;
-  rootDir?: string;
-  enabled?: boolean;
-  status?: string;
-} = {}): CommandRunner {
+function doctorRunner(
+  root: string,
+  overrides: {
+    hostVersion?: string;
+    rootDir?: string;
+    enabled?: boolean;
+    status?: string;
+  } = {},
+): CommandRunner {
   return (request) => {
     if (request.args[0] === "--version") {
       return commandResult({ stdout: `${compatibility.bbCliVersion}\n` });
@@ -49,21 +49,23 @@ function doctorRunner(root: string, overrides: {
     if (request.args.join(" ") === "plugin list --json") {
       return commandResult({
         stdout: JSON.stringify({
-          plugins: [{
-            id: "example",
-            source: `path:${overrides.rootDir ?? root}`,
-            rootDir: overrides.rootDir ?? root,
-            version: "0.1.0",
-            enabled: overrides.enabled ?? true,
-            status: overrides.status ?? "running",
-            statusDetail: null,
-            app: {
-              bundle: {
-                sdkVersion: compatibility.pluginSdk.version,
-                compatible: true,
+          plugins: [
+            {
+              id: "example",
+              source: `path:${overrides.rootDir ?? root}`,
+              rootDir: overrides.rootDir ?? root,
+              version: "0.1.0",
+              enabled: overrides.enabled ?? true,
+              status: overrides.status ?? "running",
+              statusDetail: null,
+              app: {
+                bundle: {
+                  sdkVersion: compatibility.pluginSdk.version,
+                  compatible: true,
+                },
               },
             },
-          }],
+          ],
         }),
       });
     }
@@ -80,19 +82,21 @@ describe("read-only doctor", () => {
     const root = temporaryProject();
     const run = vi.fn<CommandRunner>(doctorRunner(root));
     const report = doctorProject(root, { run, env: testEnvironment() });
-    expect(report).toEqual(expect.objectContaining({
-      ok: true,
-      host: { version: compatibility.bbCliVersion, compatible: true },
-      plugin: expect.objectContaining({
-        id: "example",
-        found: true,
-        sourceMatches: true,
-        appSdkVersion: compatibility.pluginSdk.version,
-        appCompatible: true,
+    expect(report).toEqual(
+      expect.objectContaining({
+        ok: true,
+        host: { version: compatibility.bbCliVersion, compatible: true },
+        plugin: expect.objectContaining({
+          id: "example",
+          found: true,
+          sourceMatches: true,
+          appSdkVersion: compatibility.pluginSdk.version,
+          appCompatible: true,
+        }),
+        suggestedQuery: "bb-kit invoke reports.get",
+        errors: [],
       }),
-      suggestedQuery: "bb-kit invoke reports.get",
-      errors: [],
-    }));
+    );
     expect(run.mock.calls.map(([request]) => request.args.join(" "))).toEqual([
       "--version",
       "settings version --json",
@@ -107,12 +111,14 @@ describe("read-only doctor", () => {
     const root = temporaryProject();
     const other = mkdtempSync(join(tmpdir(), "bb-kit-doctor-other-"));
     roots.push(other);
-    const run = vi.fn<CommandRunner>(doctorRunner(root, {
-      hostVersion: "1.0.0",
-      rootDir: other,
-      enabled: false,
-      status: "failed",
-    }));
+    const run = vi.fn<CommandRunner>(
+      doctorRunner(root, {
+        hostVersion: "1.0.0",
+        rootDir: other,
+        enabled: false,
+        status: "failed",
+      }),
+    );
     const report = doctorProject(root, { run, env: testEnvironment() });
     expect(report.ok).toBe(false);
     expect(report.errors.map((error) => error.code)).toEqual([

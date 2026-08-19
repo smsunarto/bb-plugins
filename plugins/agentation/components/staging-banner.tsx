@@ -65,10 +65,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
   const connection = useRealtimeConnectionState();
   const previousConnection = useRef(connection);
   useEffect(() => {
-    if (
-      previousConnection.current === "reconnecting" &&
-      connection === "connected"
-    ) {
+    if (previousConnection.current === "reconnecting" && connection === "connected") {
       void refresh();
     }
     previousConnection.current = connection;
@@ -126,11 +123,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
   };
 
   const discardAll = async () => {
-    if (
-      actionInFlight.current ||
-      discardIds === null ||
-      discardIds.length === 0
-    ) {
+    if (actionInFlight.current || discardIds === null || discardIds.length === 0) {
       return;
     }
 
@@ -169,8 +162,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
   if (isLoading || (annotations.length === 0 && error === null)) return null;
 
-  const isMutating =
-    isSending || discardingId !== null || isDiscarding || discardIds !== null;
+  const isMutating = isSending || discardingId !== null || isDiscarding || discardIds !== null;
 
   return (
     <>
@@ -185,9 +177,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                 className="size-4 shrink-0 text-muted-foreground"
                 aria-hidden="true"
               />
-              <p className="text-sm font-medium text-foreground">
-                Annotations
-              </p>
+              <p className="text-sm font-medium text-foreground">Annotations</p>
             </div>
           </div>
 
@@ -207,9 +197,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
               type="button"
               size="sm"
               disabled={isMutating}
-              onClick={() =>
-                error && annotations.length === 0 ? void refresh() : void send()
-              }
+              onClick={() => (error && annotations.length === 0 ? void refresh() : void send())}
             >
               {error && annotations.length === 0 ? null : (
                 <Icon name="ArrowUp" aria-hidden="true" />
@@ -235,10 +223,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
             {annotations.map((annotation) => {
               const isDiscardingAnnotation = discardingId === annotation.id;
               return (
-                <li
-                  key={annotation.id}
-                  className="flex min-w-0 items-center gap-2 text-xs"
-                >
+                <li key={annotation.id} className="flex min-w-0 items-center gap-2 text-xs">
                   <span className="shrink-0 font-mono text-muted-foreground">
                     {annotation.element}
                   </span>
@@ -258,20 +243,14 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                     className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                     disabled={isMutating}
                     aria-label={
-                      isDiscardingAnnotation
-                        ? "Discarding annotation"
-                        : "Discard annotation"
+                      isDiscardingAnnotation ? "Discarding annotation" : "Discard annotation"
                     }
-                    aria-describedby={
-                      `${annotationDescriptionPrefix}-${annotation.id}`
-                    }
+                    aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
                     onClick={() => void discardOne(annotation)}
                   >
                     <Icon
                       name={isDiscardingAnnotation ? "Spinner" : "Trash2"}
-                      className={
-                        isDiscardingAnnotation ? "animate-spin" : undefined
-                      }
+                      className={isDiscardingAnnotation ? "animate-spin" : undefined}
                       aria-hidden="true"
                     />
                   </Button>
@@ -297,9 +276,8 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                   {discardIds.length === 1 ? "" : "s"}?
                 </DialogTitle>
                 <DialogDescription>
-                  This removes their markers from all bb pages and moves the
-                  feedback to the Dismissed review view, where you can recover
-                  it.
+                  This removes their markers from all bb pages and moves the feedback to the
+                  Dismissed review view, where you can recover it.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -317,9 +295,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                   disabled={isDiscarding || error !== null}
                   onClick={() => void discardAll()}
                 >
-                  {isDiscarding
-                    ? "Discarding…"
-                    : `Discard all ${discardIds.length}`}
+                  {isDiscarding ? "Discarding…" : `Discard all ${discardIds.length}`}
                 </Button>
               </DialogFooter>
             </>

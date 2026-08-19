@@ -43,7 +43,6 @@ interface LifecycleDbRow {
   archived_thread_ids: string | null;
 }
 
-
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
 export const gtdSidebarRpcContract = defineRpcContract({
@@ -196,17 +195,13 @@ export default function plugin(bb: BbPluginApi) {
       row.settledAt,
       row.snoozedUntil,
       row.snoozedAt,
-      row.archivedThreadIds.length === 0
-        ? null
-        : JSON.stringify(row.archivedThreadIds),
+      row.archivedThreadIds.length === 0 ? null : JSON.stringify(row.archivedThreadIds),
     );
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: row.threadId });
   };
 
   const clear = (threadId: string): void => {
-    db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(
-      threadId,
-    );
+    db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(threadId);
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
   };
 
@@ -312,11 +307,7 @@ export default function plugin(bb: BbPluginApi) {
       const now = Date.now();
       const settledAtById = new Map(
         readAll()
-          .filter(
-            (row) =>
-              row.settledAt !== null &&
-              isWithinSettledWindow(row.settledAt, now),
-          )
+          .filter((row) => row.settledAt !== null && isWithinSettledWindow(row.settledAt, now))
           .map((row) => [row.threadId, row.settledAt as number]),
       );
       if (settledAtById.size === 0) return { threads: [] };

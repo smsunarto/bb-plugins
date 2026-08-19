@@ -19,15 +19,11 @@ export const meta = {
 //   buildAttempt (optional) — increment after a returned build failure when resuming.
 const skillDir = args && args.skillDir;
 if (!skillDir) {
-  throw new Error(
-    "args.skillDir is required: absolute path to the pr-walkthrough skill directory",
-  );
+  throw new Error("args.skillDir is required: absolute path to the pr-walkthrough skill directory");
 }
 const request = (args && args.request) || "";
 const buildAttempt =
-  args && Number.isInteger(args.buildAttempt) && args.buildAttempt >= 0
-    ? args.buildAttempt
-    : 0;
+  args && Number.isInteger(args.buildAttempt) && args.buildAttempt >= 0 ? args.buildAttempt : 0;
 const requestNote = request
   ? `\n\nUser constraints for this run (respect them):\n${request}\n`
   : "";
@@ -237,9 +233,10 @@ if (failedIndexes.length > 0) {
     failedIndexes.map((index) => () => {
       const group = plan.groups[index];
       const prior = authored[index];
-      const priorNote = prior && prior.problems
-        ? `\n\nA previous attempt reported these problems — resolve them:\n${prior.problems}`
-        : "";
+      const priorNote =
+        prior && prior.problems
+          ? `\n\nA previous attempt reported these problems — resolve them:\n${prior.problems}`
+          : "";
       return agent(`${authorPrompt(group, index)}${priorNote}`, {
         label: `author-retry:${group.id}`,
         phase: "Author",
@@ -250,9 +247,7 @@ if (failedIndexes.length > 0) {
   for (let position = 0; position < failedIndexes.length; position++) {
     authored[failedIndexes[position]] = retried[position];
   }
-  const stillFailed = failedIndexes.filter(
-    (index) => !authored[index] || !authored[index].ok,
-  );
+  const stillFailed = failedIndexes.filter((index) => !authored[index] || !authored[index].ok);
   if (stillFailed.length > 0) {
     throw new Error(
       `Section authoring failed for groups: ${stillFailed

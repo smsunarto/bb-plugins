@@ -6,9 +6,7 @@ import {
   SCREENSHOT_EXCLUDED_PLUGINS,
   stageDocument,
 } from "./plugin-screenshots";
-import {
-  SCREENSHOT_PREFLIGHT_PLUGINS,
-} from "./plugin-screenshot-runtime";
+import { SCREENSHOT_PREFLIGHT_PLUGINS } from "./plugin-screenshot-runtime";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 
@@ -16,11 +14,7 @@ describe("plugin screenshot recipes", () => {
   test("cover the approved plugin heroes exactly once", () => {
     const recipeIds = PLUGIN_SCREENSHOTS.map((recipe) => recipe.id);
 
-    expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual([
-      "dotfiles",
-      "notify",
-      "pr-walkthrough",
-    ]);
+    expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual(["dotfiles", "notify", "pr-walkthrough"]);
     expect(recipeIds).toEqual([
       "agent-proxy",
       "agentation",
@@ -46,24 +40,22 @@ describe("plugin screenshot recipes", () => {
     const captions: string[] = [];
     for (const recipe of [ROOT_SCREENSHOT, ...PLUGIN_SCREENSHOTS]) {
       const document = stageDocument(recipe);
-      expect(document).toContain('width: 1400px; height: 720px');
+      expect(document).toContain("width: 1400px; height: 720px");
       expect(document).toContain(`data-plugin="${recipe.id}"`);
       expect(document).toContain('font-family: "Screenshot Inter"');
       expect(document).toContain('font-family: "Screenshot IBM Plex Mono"');
-      expect(document).toContain(
-        'document.fonts.load(\'400 16px "Screenshot Inter"\')',
-      );
-      expect(document).toContain(
-        'document.fonts.load(\'600 16px "Screenshot IBM Plex Mono"\')',
-      );
-      expect(document).toContain(
-        'document.fonts.load(\'700 16px "Screenshot IBM Plex Mono"\')',
-      );
+      expect(document).toContain("document.fonts.load('400 16px \"Screenshot Inter\"')");
+      expect(document).toContain("document.fonts.load('600 16px \"Screenshot IBM Plex Mono\"')");
+      expect(document).toContain("document.fonts.load('700 16px \"Screenshot IBM Plex Mono\"')");
       expect(document).toContain("window.__SCREENSHOT_READY__ = true");
       expect(document).not.toMatch(/Date\(|Date\.now|Math\.random/);
-      captions.push(...[...document.matchAll(
-        /<(?:figcaption|div class="scene-callout[^"]*")><span>\d+<\/span>([^<]+)<\/(?:figcaption|div)>/g,
-      )].flatMap((match) => match[1] ?? []));
+      captions.push(
+        ...[
+          ...document.matchAll(
+            /<(?:figcaption|div class="scene-callout[^"]*")><span>\d+<\/span>([^<]+)<\/(?:figcaption|div)>/g,
+          ),
+        ].flatMap((match) => match[1] ?? []),
+      );
     }
     expect(captions.length).toBeGreaterThan(0);
     expect(captions.every((text) => !text.endsWith("."))).toBe(true);
@@ -82,9 +74,7 @@ describe("plugin screenshot recipes", () => {
     expect(document).toContain('src="/media/root/app.png"');
     expect(document).toContain('class="collection-mark"');
     expect(document).toContain("BB PLUGINS / <b>ALL</b>");
-    expect(document).toContain(
-      ".root-app .capture-image { object-fit: contain; }",
-    );
+    expect(document).toContain(".root-app .capture-image { object-fit: contain; }");
   });
 
   test("uses one production screenshot in the Monokai hero", () => {
@@ -93,8 +83,6 @@ describe("plugin screenshot recipes", () => {
 
     expect(recipe.assets).toEqual(["app.png"]);
     expect(document.match(/<figure class="capture/g)).toHaveLength(1);
-    expect(document).toContain(
-      ".monokai-app .capture-image { object-fit: contain; }",
-    );
+    expect(document).toContain(".monokai-app .capture-image { object-fit: contain; }");
   });
 });

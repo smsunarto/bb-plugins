@@ -20,7 +20,7 @@
 bb draws itself from CSS custom properties, so a theme is just a stylesheet.
 This plugin adds one: **bb Monokai**, a dark palette built on a five-step
 grounds ramp, a single off-white text ladder, and one accent that always means
-*interactive*.
+_interactive_.
 
 It reaches past the app chrome: the terminal, the diff viewer, the file tree's
 git-status column, inline code, and the syntax tokens inside diffs and file
@@ -70,7 +70,7 @@ Disabling or removing the plugin returns bb to the default palette.
 - bb 0.39+ — the line that lets a theme declare its own code theme
 - bb set to **dark** appearance. The palette only restyles `.dark`; light mode
   keeps bb's defaults.
-- Optional: **Berkeley Mono**. It is *not* bundled. Install it yourself and the
+- Optional: **Berkeley Mono**. It is _not_ bundled. Install it yourself and the
   type stack picks it up. Without it the
   stack falls back to `ui-monospace`, Menlo, then `monospace`. The terminal
   additionally prefers `BerkeleyMono Nerd Font Mono` when present.
@@ -79,23 +79,23 @@ Disabling or removing the plugin returns bb to the default palette.
 
 <picture><img src="docs/media/palette.svg" alt="bb Monokai swatches" width="100%" /></picture>
 
-| Role | Value | Where it lands |
-|---|---|---|
-| Chrome ground | `#141414` | cards, popovers, sidebars, terminal ground |
-| Editor ground | `#181818` | the main pane |
-| Sidebar divider | `#2B2B2B` | solid 1px boundary between navigation and content |
-| User message bubble | `#1E1E1E` | right-aligned user requests |
-| Composer | `#1E1E1E` | prompt input and controls |
-| Well | `#1E1E1E` | recessed and code wells, text fields, selectors; controls use a `#3C3C3C` edge |
-| Raised | `#262626` | hover and active fills |
-| Filled buttons | `#363635` / `#1E1E1E` | borderless primary / `#3C3C3C`-bordered secondary buttons |
-| Selection | `#404040` | text selection, chips |
-| Ink | `#E3E3DD` | the one white; every text tier is an alpha of it |
-| Accent | `#88C0D0` | the only chroma in the chrome — always means interactive |
-| Success / added | `#3FA266` | |
-| Warning / attention | `#F1B467` | |
-| Danger / removed | `#E34671` | |
-| Merged | `#B267E6` | |
+| Role                | Value                 | Where it lands                                                                 |
+| ------------------- | --------------------- | ------------------------------------------------------------------------------ |
+| Chrome ground       | `#141414`             | cards, popovers, sidebars, terminal ground                                     |
+| Editor ground       | `#181818`             | the main pane                                                                  |
+| Sidebar divider     | `#2B2B2B`             | solid 1px boundary between navigation and content                              |
+| User message bubble | `#1E1E1E`             | right-aligned user requests                                                    |
+| Composer            | `#1E1E1E`             | prompt input and controls                                                      |
+| Well                | `#1E1E1E`             | recessed and code wells, text fields, selectors; controls use a `#3C3C3C` edge |
+| Raised              | `#262626`             | hover and active fills                                                         |
+| Filled buttons      | `#363635` / `#1E1E1E` | borderless primary / `#3C3C3C`-bordered secondary buttons                      |
+| Selection           | `#404040`             | text selection, chips                                                          |
+| Ink                 | `#E3E3DD`             | the one white; every text tier is an alpha of it                               |
+| Accent              | `#88C0D0`             | the only chroma in the chrome — always means interactive                       |
+| Success / added     | `#3FA266`             |                                                                                |
+| Warning / attention | `#F1B467`             |                                                                                |
+| Danger / removed    | `#E34671`             |                                                                                |
+| Merged              | `#B267E6`             |                                                                                |
 
 **One meaning per hue.** A color never does two jobs. Text is one white at four
 alphas (100 / 74 / 55 / 30 %), each annotated inline with its measured contrast
@@ -103,15 +103,15 @@ ratio against the ground it sits on.
 
 ## What it restyles
 
-| Surface | Notes |
-|---|---|
-| App chrome | panes, panels, sidebar, menus, buttons, mention pills, focus rings |
-| Terminal | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background |
-| Diff viewer | addition / deletion / modified colors, gutter number grounds and role-colored numbers |
-| Syntax tokens | the Cursor Monokai TextMate layer, in diffs and file previews |
-| File tree | the git-status column — added, untracked, renamed, modified, deleted, ignored |
-| Inline code | the sugar-high token set, measured on the `#1E1E1E` well |
-| Composer stop button | repainted to the danger hue |
+| Surface              | Notes                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                    |
+| Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background       |
+| Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers |
+| Syntax tokens        | the Cursor Monokai TextMate layer, in diffs and file previews                         |
+| File tree            | the git-status column — added, untracked, renamed, modified, deleted, ignored         |
+| Inline code          | the sugar-high token set, measured on the `#1E1E1E` well                              |
+| Composer stop button | repainted to the danger hue                                                           |
 
 ### Syntax tokens
 

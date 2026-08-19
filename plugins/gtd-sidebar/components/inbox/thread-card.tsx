@@ -7,14 +7,8 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
-import {
-  ProviderGlyph,
-  type ProviderGlyphInfo,
-} from "@/components/inbox/provider-glyph";
-import {
-  STATUS_SLOT_CLASS,
-  StatusOrTime,
-} from "@/components/inbox/status-slot";
+import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
+import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
 
@@ -97,9 +91,7 @@ export function ThreadCard({
                 // active row earns the brighter accent foreground, while weight
                 // alone still carries unread.
                 "min-w-0 flex-1 truncate text-sm",
-                isActive
-                  ? "text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground",
+                isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
                 thread.isUnread && "font-medium",
               )}
             >
@@ -121,19 +113,10 @@ export function ThreadCard({
                     if (tomorrow) onSnooze(tomorrow.snoozedUntil);
                   }}
                 />
-                <ParkButton
-                  label="Settle thread"
-                  icon="Check"
-                  onActivate={onSettle}
-                />
+                <ParkButton label="Settle thread" icon="Check" onActivate={onSettle} />
               </span>
             ) : null}
-            <span
-              className={cn(
-                STATUS_SLOT_CLASS,
-                canPark && "group-hover/card:hidden",
-              )}
-            >
+            <span className={cn(STATUS_SLOT_CLASS, canPark && "group-hover/card:hidden")}>
               <StatusOrTime thread={thread} now={now} />
             </span>
           </div>
@@ -149,9 +132,7 @@ export function ThreadCard({
                 bound. The wrapper is the flexible cell either way, so a card
                 missing both still holds the line's right side still. */}
             <span className="flex min-w-0 flex-1 items-center gap-1">
-              {projectName ? (
-                <span className="min-w-0 truncate">{projectName}</span>
-              ) : null}
+              {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
               {projectName && (thread.environment?.branchName || thread.host) ? (
                 <span aria-hidden className="shrink-0 text-muted-foreground/40">
                   ·
@@ -180,16 +161,10 @@ export function ThreadCard({
               ) : null}
             </span>
             {thread.activity.workflows > 0 ? (
-              <ActivityCount
-                label="workflows"
-                count={thread.activity.workflows}
-              />
+              <ActivityCount label="workflows" count={thread.activity.workflows} />
             ) : null}
             {thread.activity.backgroundAgents > 0 ? (
-              <ActivityCount
-                label="background agents"
-                count={thread.activity.backgroundAgents}
-              />
+              <ActivityCount label="background agents" count={thread.activity.backgroundAgents} />
             ) : null}
             {pullRequest ? (
               <a
@@ -216,10 +191,7 @@ export function ThreadCard({
             {/* Drawn for every card or for none, never per thread, so the line
                 keeps a fixed right edge whichever way the setting is set. */}
             {showProviderIcon ? (
-              <ProviderGlyph
-                providerId={thread.providerId}
-                provider={provider}
-              />
+              <ProviderGlyph providerId={thread.providerId} provider={provider} />
             ) : null}
           </div>
         </div>

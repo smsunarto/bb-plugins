@@ -15,12 +15,7 @@
     "node": true,
     "browser": true
   },
-  "ignorePatterns": [
-    "**/dist/**",
-    "**/node_modules/**",
-    "**/vendor/**",
-    "**/*.d.ts"
-  ],
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "**/vendor/**", "**/*.d.ts"],
   "rules": {
     "no-console": "off",
     "typescript/no-explicit-any": "off",

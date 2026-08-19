@@ -103,9 +103,7 @@ export async function fetchSourceRevision(
     ? null
     : await fetchRelease(source.repo, source.ref, fetchImpl, signal);
   const resolved: CoreSource =
-    release && isLatestReleaseRef(source.ref)
-      ? { repo: source.repo, ref: release.tag }
-      : source;
+    release && isLatestReleaseRef(source.ref) ? { repo: source.repo, ref: release.tag } : source;
   const response = await fetchImpl(commitApiUrl(resolved), {
     headers: GH_HEADERS,
     signal: requestSignal(signal, 30_000),
@@ -141,11 +139,7 @@ export function cleanStaleStaging(coreDir: string): void {
   }
 }
 
-function publishReleasePointer(
-  currentLink: string,
-  releaseDir: string,
-  suffix: string,
-): void {
+function publishReleasePointer(currentLink: string, releaseDir: string, suffix: string): void {
   const temporaryLink = `${currentLink}.${suffix}-${randomUUID()}`;
   symlinkSync(releaseDir, temporaryLink, "dir");
   try {
@@ -190,7 +184,9 @@ async function downloadTo(
   if (!response.ok || !response.body) {
     throw new Error(`download failed: HTTP ${response.status} for ${url}`);
   }
-  const body = Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream);
+  const body = Readable.fromWeb(
+    response.body as unknown as import("node:stream/web").ReadableStream,
+  );
   await pipeline(body, createWriteStream(dest), { signal: requestAbort });
 }
 

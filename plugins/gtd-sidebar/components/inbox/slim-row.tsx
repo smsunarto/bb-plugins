@@ -95,9 +95,7 @@ export function SlimRow({
             </span>
             <button
               type="button"
-              aria-label={
-                shelf === "snoozed" ? "Wake thread now" : "Un-settle thread"
-              }
+              aria-label={shelf === "snoozed" ? "Wake thread now" : "Un-settle thread"}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

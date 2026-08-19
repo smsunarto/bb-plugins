@@ -1,6 +1,6 @@
-import { MessageSquareText } from "lucide-react"
+import { MessageSquareText } from "lucide-react";
 
-import type { WalkthroughGuideComment } from "@/data/walkthrough"
+import type { WalkthroughGuideComment } from "@/data/walkthrough";
 
 export function GuideLineComment({ comment }: { comment: WalkthroughGuideComment }) {
   return (
@@ -13,5 +13,5 @@ export function GuideLineComment({ comment }: { comment: WalkthroughGuideComment
       <MessageSquareText className="mt-0.5 size-3.5 shrink-0 text-primary" />
       <p>{comment.body}</p>
     </aside>
-  )
+  );
 }

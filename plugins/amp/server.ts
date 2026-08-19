@@ -18,10 +18,7 @@ import {
   BRIDGE_BUILD_HINT,
   type ProvisionPaths,
 } from "./lib/provision.js";
-import {
-  AMP_AGENT,
-  OBSOLETE_AMP_ORB_AGENT,
-} from "./src/execution-target.js";
+import { AMP_AGENT, OBSOLETE_AMP_ORB_AGENT } from "./src/execution-target.js";
 import { loadOracleReport } from "./src/oracle-report-store.js";
 import {
   findLatestProviderSessionId,
@@ -50,11 +47,13 @@ import {
 const orbUsageViewSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("hidden") }).strict(),
   z.object({ state: z.literal("starting") }).strict(),
-  z.object({
-    state: z.literal("active"),
-    ampThreadId: z.string(),
-    syncCommand: z.string(),
-  }).strict(),
+  z
+    .object({
+      state: z.literal("active"),
+      ampThreadId: z.string(),
+      syncCommand: z.string(),
+    })
+    .strict(),
 ]);
 
 export const rpcContract = defineRpcContract({
@@ -65,22 +64,26 @@ export const rpcContract = defineRpcContract({
   getOracleReport: {
     input: z.object({ reportId: z.string().uuid() }).strict(),
     output: z.object({
-      report: z.object({
-        id: z.string(),
-        request: z.string().nullable(),
-        response: z.string(),
-        status: z.enum(["running", "completed", "error"]),
-        trace: z.array(z.object({
+      report: z
+        .object({
           id: z.string(),
-          toolCallId: z.string().nullable(),
-          kind: z.enum(["thinking", "message", "tool"]),
-          title: z.string(),
-          content: z.string().nullable(),
-          status: z.enum(["running", "completed", "error"]).nullable(),
+          request: z.string().nullable(),
+          response: z.string(),
+          status: z.enum(["running", "completed", "error"]),
+          trace: z.array(
+            z.object({
+              id: z.string(),
+              toolCallId: z.string().nullable(),
+              kind: z.enum(["thinking", "message", "tool"]),
+              title: z.string(),
+              content: z.string().nullable(),
+              status: z.enum(["running", "completed", "error"]).nullable(),
+              createdAt: z.string(),
+            }),
+          ),
           createdAt: z.string(),
-        })),
-        createdAt: z.string(),
-      }).nullable(),
+        })
+        .nullable(),
       error: z.string().nullable(),
     }),
   },
@@ -127,32 +130,27 @@ export default async function plugin(bb: BbPluginApi) {
     });
   }
 
-  async function persistSessionLink(
-    threadId: string,
-    incoming: SessionLinkReport,
-  ): Promise<void> {
+  async function persistSessionLink(threadId: string, incoming: SessionLinkReport): Promise<void> {
     const previous = sessionLinkWriteQueues.get(threadId) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(async () => {
-      const linkKey = ampThreadLinkKey(threadId);
-      const currentLink = parseAmpThreadLinkRecord(
-        await bb.storage.kv.get<unknown>(linkKey),
-      );
-      const mergedLink = mergeAmpThreadLinkRecord(currentLink, incoming);
-      if (JSON.stringify(mergedLink) !== JSON.stringify(currentLink)) {
-        await bb.storage.kv.set(linkKey, mergedLink);
-      }
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const linkKey = ampThreadLinkKey(threadId);
+        const currentLink = parseAmpThreadLinkRecord(await bb.storage.kv.get<unknown>(linkKey));
+        const mergedLink = mergeAmpThreadLinkRecord(currentLink, incoming);
+        if (JSON.stringify(mergedLink) !== JSON.stringify(currentLink)) {
+          await bb.storage.kv.set(linkKey, mergedLink);
+        }
 
-      const usageKey = orbUsageKey(threadId);
-      const currentUsage = parseOrbUsageRecord(
-        await bb.storage.kv.get<unknown>(usageKey),
-      );
-      const mergedUsage = mergeOrbUsageRecord(currentUsage, incoming.usage);
-      if (JSON.stringify(mergedUsage) !== JSON.stringify(currentUsage)) {
-        await bb.storage.kv.set(usageKey, mergedUsage);
-        bb.realtime.publish(ORB_USAGE_CHANNEL, { threadId });
-      }
-      return undefined;
-    });
+        const usageKey = orbUsageKey(threadId);
+        const currentUsage = parseOrbUsageRecord(await bb.storage.kv.get<unknown>(usageKey));
+        const mergedUsage = mergeOrbUsageRecord(currentUsage, incoming.usage);
+        if (JSON.stringify(mergedUsage) !== JSON.stringify(currentUsage)) {
+          await bb.storage.kv.set(usageKey, mergedUsage);
+          bb.realtime.publish(ORB_USAGE_CHANNEL, { threadId });
+        }
+        return undefined;
+      });
     sessionLinkWriteQueues.set(threadId, next);
     try {
       await next;
@@ -167,9 +165,7 @@ export default async function plugin(bb: BbPluginApi) {
     async getOrbUsage({ threadId }) {
       const providerSessionId = await latestAmpProviderSessionId(threadId);
       if (providerSessionId === null) return { state: "hidden" as const };
-      const record = parseOrbUsageRecord(
-        await bb.storage.kv.get<unknown>(orbUsageKey(threadId)),
-      );
+      const record = parseOrbUsageRecord(await bb.storage.kv.get<unknown>(orbUsageKey(threadId)));
       if (record?.providerSessionId !== providerSessionId) {
         return { state: "hidden" as const };
       }
@@ -178,7 +174,11 @@ export default async function plugin(bb: BbPluginApi) {
     getOracleReport({ reportId }) {
       const report = loadOracleReport(reportId);
       return report === null
-        ? { report: null, error: "The Oracle report is unavailable. Open the native tool call to view its output." }
+        ? {
+            report: null,
+            error:
+              "The Oracle report is unavailable. Open the native tool call to view its output.",
+          }
         : { report, error: null };
     },
   });
@@ -214,8 +214,8 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   const AMP_CLI_HINT =
-    "Install the Amp CLI from https://ampcode.com/manual#get-started, "
-    + "run `amp login`, then run `bb plugin reload amp`.";
+    "Install the Amp CLI from https://ampcode.com/manual#get-started, " +
+    "run `amp login`, then run `bb plugin reload amp`.";
 
   /**
    * Write the managed provider entry and pick it up in the running server.
@@ -337,7 +337,10 @@ export default async function plugin(bb: BbPluginApi) {
         try {
           const providerSessionId = await latestAmpProviderSessionId(ctx.threadId);
           if (providerSessionId !== report.providerSessionId) {
-            return { exitCode: 1, stderr: "The Amp session link is not current for this bb thread.\n" };
+            return {
+              exitCode: 1,
+              stderr: "The Amp session link is not current for this bb thread.\n",
+            };
           }
           await persistSessionLink(ctx.threadId, report);
           return { exitCode: 0 };
@@ -363,12 +366,12 @@ export default async function plugin(bb: BbPluginApi) {
       const link = parseAmpThreadLinkRecord(
         await bb.storage.kv.get<unknown>(ampThreadLinkKey(thread.id)),
       );
-      const usage = parseOrbUsageRecord(
-        await bb.storage.kv.get<unknown>(orbUsageKey(thread.id)),
-      );
+      const usage = parseOrbUsageRecord(await bb.storage.kv.get<unknown>(orbUsageKey(thread.id)));
       const ampThreadId = currentAmpThreadId(providerSessionId, link, usage);
       if (ampThreadId === null) {
-        bb.log.warn(`Could not archive the linked Amp thread for bb thread ${thread.id}: no current Amp thread link`);
+        bb.log.warn(
+          `Could not archive the linked Amp thread for bb thread ${thread.id}: no current Amp thread link`,
+        );
         return;
       }
 
@@ -386,7 +389,9 @@ export default async function plugin(bb: BbPluginApi) {
       });
       bb.log.info(`Archived Amp thread ${ampThreadId} with bb thread ${thread.id}`);
     } catch (error) {
-      bb.log.error(`Could not archive the linked Amp thread for bb thread ${thread.id}: ${String(error)}`);
+      bb.log.error(
+        `Could not archive the linked Amp thread for bb thread ${thread.id}: ${String(error)}`,
+      );
     }
   });
 
@@ -452,7 +457,9 @@ export default async function plugin(bb: BbPluginApi) {
       } catch (error) {
         // A thread bb cannot report is left alone: a deleted one is cleared by
         // `thread.deleted`, and a transient failure gets the next pass.
-        bb.log.debug(`Could not read bb thread ${threadId} to mirror its archive state: ${String(error)}`);
+        bb.log.debug(
+          `Could not read bb thread ${threadId} to mirror its archive state: ${String(error)}`,
+        );
         continue;
       }
       if (thread.deletedAt !== null) {
@@ -464,7 +471,9 @@ export default async function plugin(bb: BbPluginApi) {
       const launch = resolveAmpCliLaunch(await paths());
       if (launch === null) {
         // Nothing to retry against, so this is not one of the record's tries.
-        bb.log.warn(`Could not unarchive Amp thread ${record.ampThreadId}: the Amp CLI was not found`);
+        bb.log.warn(
+          `Could not unarchive Amp thread ${record.ampThreadId}: the Amp CLI was not found`,
+        );
         return;
       }
       try {
@@ -475,10 +484,14 @@ export default async function plugin(bb: BbPluginApi) {
         const next = archiveWatchRecordAfterFailure(record);
         if (next === null) {
           await bb.storage.kv.delete(key);
-          bb.log.error(`Gave up unarchiving Amp thread ${record.ampThreadId} for bb thread ${threadId}: ${String(error)}`);
+          bb.log.error(
+            `Gave up unarchiving Amp thread ${record.ampThreadId} for bb thread ${threadId}: ${String(error)}`,
+          );
         } else {
           await bb.storage.kv.set(key, next);
-          bb.log.warn(`Could not unarchive the linked Amp thread for bb thread ${threadId}: ${String(error)}`);
+          bb.log.warn(
+            `Could not unarchive the linked Amp thread for bb thread ${threadId}: ${String(error)}`,
+          );
         }
       }
     }

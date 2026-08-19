@@ -42,48 +42,57 @@ describe("operation catalogs", () => {
   it("uses one frozen, null-only no-input schema", async () => {
     expect(Object.isFrozen(noInput)).toBe(true);
     expect(Object.isFrozen(noInput["~standard"])).toBe(true);
-    await expect(Promise.resolve(noInput["~standard"].validate(null))).resolves.toEqual({ value: null });
+    await expect(Promise.resolve(noInput["~standard"].validate(null))).resolves.toEqual({
+      value: null,
+    });
     await expect(Promise.resolve(noInput["~standard"].validate({}))).resolves.toEqual({
       issues: [{ message: "expected no input" }],
     });
-    expect(defineOperation({
-      kind: "query",
-      input: noInput,
-      output: z.null(),
-    }).input).toBe(noInput);
+    expect(
+      defineOperation({
+        kind: "query",
+        input: noInput,
+        output: z.null(),
+      }).input,
+    ).toBe(noInput);
   });
 
   it("treats structural null schemas as required input and rejects invalid examples", () => {
-    expect(defineOperation({
-      kind: "query",
-      input: z.null(),
-      exampleInput: null,
-      output: z.null(),
-    }).input).not.toBe(noInput);
-    expect(() => defineOperation({
-      kind: "query",
-      input: z.string(),
-      output: z.null(),
-    } as never)).toThrow(/must declare exampleInput/);
-    expect(() => defineOperation({
-      kind: "query",
-      input: noInput,
-      exampleInput: null,
-      output: z.null(),
-    } as never)).toThrow(/must not declare exampleInput/);
-    expect(() => defineOperation({
-      kind: "query",
-      input: z.unknown(),
-      exampleInput: new Date(),
-      output: z.null(),
-    } as never)).toThrow(/finite, acyclic JSON/);
+    expect(
+      defineOperation({
+        kind: "query",
+        input: z.null(),
+        exampleInput: null,
+        output: z.null(),
+      }).input,
+    ).not.toBe(noInput);
+    expect(() =>
+      defineOperation({
+        kind: "query",
+        input: z.string(),
+        output: z.null(),
+      } as never),
+    ).toThrow(/must declare exampleInput/);
+    expect(() =>
+      defineOperation({
+        kind: "query",
+        input: noInput,
+        exampleInput: null,
+        output: z.null(),
+      } as never),
+    ).toThrow(/must not declare exampleInput/);
+    expect(() =>
+      defineOperation({
+        kind: "query",
+        input: z.unknown(),
+        exampleInput: new Date(),
+        output: z.null(),
+      } as never),
+    ).toThrow(/finite, acyclic JSON/);
   });
 
   it("builds a native Standard Schema RPC contract", () => {
-    expect(Object.keys(catalog.rpcContract)).toEqual([
-      "approvals_get",
-      "approvals_approve",
-    ]);
+    expect(Object.keys(catalog.rpcContract)).toEqual(["approvals_get", "approvals_approve"]);
     expect(catalog.get.identity).toBe("approvals.get");
     expect(catalog.approve.wireMethod).toBe("approvals_approve");
   });
@@ -112,9 +121,9 @@ describe("operation catalogs", () => {
     await expect(
       Promise.resolve(registeredHandlers?.approvals_get?.({ id: "A-1" })),
     ).resolves.toEqual({ value: "A-1" });
-    await expect(
-      registeredHandlers?.approvals_approve?.({ id: "A-1" }),
-    ).resolves.toEqual({ approved: true });
+    await expect(registeredHandlers?.approvals_approve?.({ id: "A-1" })).resolves.toEqual({
+      approved: true,
+    });
   });
 
   it("rejects illegal and colliding wire methods before registration", () => {

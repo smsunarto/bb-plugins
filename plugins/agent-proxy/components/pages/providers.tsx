@@ -5,13 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { rpcContract } from "../../server";
 
-type Resource = "claude-api-key" | "codex-api-key" | "gemini-api-key" | "openai-compatibility" | "api-keys";
+type Resource =
+  | "claude-api-key"
+  | "codex-api-key"
+  | "gemini-api-key"
+  | "openai-compatibility"
+  | "api-keys";
 
 const SECTIONS: { resource: Resource; title: string; description: string; lineBased: boolean }[] = [
   {
     resource: "api-keys",
     title: "Proxy access keys",
-    description: "Keys clients use against the local proxy endpoints. One key per line; the plugin-generated key is always preserved.",
+    description:
+      "Keys clients use against the local proxy endpoints. One key per line; the plugin-generated key is always preserved.",
     lineBased: true,
   },
   {
@@ -35,7 +41,8 @@ const SECTIONS: { resource: Resource; title: string; description: string; lineBa
   {
     resource: "openai-compatibility",
     title: "OpenAI-compatible providers",
-    description: "Custom OpenAI-compatible upstreams (JSON array; name, base-url, api-key-entries…).",
+    description:
+      "Custom OpenAI-compatible upstreams (JSON array; name, base-url, api-key-entries…).",
     lineBased: false,
   },
 ];
@@ -107,7 +114,11 @@ function ResourceEditor({ resource, title, description, lineBased }: (typeof SEC
             <Button size="sm" variant="outline" onClick={() => void load()}>
               Reload
             </Button>
-            <Button size="sm" disabled={saving || !dirty || text === null || revision === null} onClick={() => void save()}>
+            <Button
+              size="sm"
+              disabled={saving || !dirty || text === null || revision === null}
+              onClick={() => void save()}
+            >
               {saving ? "Saving…" : "Save"}
             </Button>
           </span>

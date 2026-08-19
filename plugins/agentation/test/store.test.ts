@@ -285,9 +285,7 @@ test("annotations filter by status, plugin, and cursor", () => {
     ["ann_plugin"],
   );
   assert.deepEqual(
-    listAnnotations(db, { sinceSeq: pluginAnnotation.seq }).map(
-      (item) => item.id,
-    ),
+    listAnnotations(db, { sinceSeq: pluginAnnotation.seq }).map((item) => item.id),
     ["ann_shell"],
   );
 });
@@ -313,10 +311,7 @@ test("toolbar session snapshots can read beyond the review cap", () => {
   })();
 
   assert.equal(listAnnotations(db, { sessionId: session.id }).length, 500);
-  assert.equal(
-    listAnnotations(db, { sessionId: session.id, limit: null }).length,
-    501,
-  );
+  assert.equal(listAnnotations(db, { sessionId: session.id, limit: null }).length, 501);
 });
 
 test("counts report every status", () => {

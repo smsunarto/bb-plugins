@@ -30,11 +30,7 @@ test("merged layers are hidden and a merged current layer moves to the nearest a
 
 test("a merged current layer moves to the stack trunk when no active layer remains above", () => {
   const projected = projectStackLayers(
-    [
-      layer("active-below", false, 1),
-      layer("current", true, 2),
-      layer("merged-top", true, 3),
-    ],
+    [layer("active-below", false, 1), layer("current", true, 2), layer("merged-top", true, 3)],
     "develop",
     "current",
   );
@@ -64,11 +60,7 @@ test("all merged layers disappear and the current layer moves to the trunk", () 
 });
 
 test("hiding other merged layers does not move an active or unknown current branch", () => {
-  const branches = [
-    layer("merged", true, 1),
-    layer("active", false, 2),
-    layer("queued", false, 3),
-  ];
+  const branches = [layer("merged", true, 1), layer("active", false, 2), layer("queued", false, 3)];
 
   const active = projectStackLayers(branches, "main", "active");
   assert.deepEqual(

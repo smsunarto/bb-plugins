@@ -62,9 +62,7 @@ export function publishableWorkspacePlugins(root: string): WorkspacePlugin[] {
     const excluded = EXCLUDED.has(plugin.directory);
     const privatePackage = plugin.manifest.private === true;
     if (excluded !== privatePackage) {
-      throw new Error(
-        `${plugin.directory}: EXCLUDED and package.json private must agree`,
-      );
+      throw new Error(`${plugin.directory}: EXCLUDED and package.json private must agree`);
     }
   }
   return plugins.filter((plugin) => !EXCLUDED.has(plugin.directory));
@@ -103,8 +101,7 @@ export function mirrorPackageName(name: string): string | null {
 }
 
 /** Paths that must never reach a tarball, whatever the allowlist says. */
-const FORBIDDEN_PATH =
-  /\.woff2$|\.map$|(^|\/)\.env|node_modules|__pycache__/;
+const FORBIDDEN_PATH = /\.woff2$|\.map$|(^|\/)\.env|node_modules|__pycache__/;
 
 /** A manifest path bb resolves against the installed package root. */
 interface BbTarget {
@@ -290,10 +287,7 @@ export function nonRegistryProtocol(spec: string): string | null {
  *
  * `paths` is the file list npm would pack, package-root-relative.
  */
-export function publishProblems(
-  manifest: PluginManifest,
-  paths: readonly string[],
-): string[] {
+export function publishProblems(manifest: PluginManifest, paths: readonly string[]): string[] {
   const problems: string[] = [];
   const files = new Set(paths);
   const hasTree = (prefix: string): boolean =>
@@ -353,7 +347,11 @@ export function publishProblems(
   }
   for (const field of ["description", "repository", "author"] as const) {
     const value = manifest[field];
-    if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) {
+    if (
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && value.trim() === "")
+    ) {
       problems.push(`manifest has no ${field}, which every published package needs`);
     }
   }
@@ -365,11 +363,7 @@ export function publishProblems(
       'manifest has no `publishConfig.access: "public"` — a scoped package defaults to a restricted publish',
     );
   }
-  for (const field of [
-    "dependencies",
-    "peerDependencies",
-    "optionalDependencies",
-  ] as const) {
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"] as const) {
     for (const [name, spec] of Object.entries(manifest[field] ?? {})) {
       const protocol = nonRegistryProtocol(spec);
       if (protocol !== null) {
@@ -442,11 +436,11 @@ function publishUnder(dir: string, name: string, manifestName: string): void {
 
 function main(): void {
   const dryRun = process.argv.includes("--dry-run");
-  const unknown = process.argv.slice(2).filter(
-    (argument) => argument !== "--dry-run",
-  );
+  const unknown = process.argv.slice(2).filter((argument) => argument !== "--dry-run");
   if (unknown.length > 0) {
-    console.error(`publish: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
+    console.error(
+      `publish: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
+    );
     process.exit(2);
   }
 
@@ -456,9 +450,7 @@ function main(): void {
   };
 
   const targets = publishableWorkspacePlugins(ROOT);
-  console.log(
-    `publishing ${targets.length} plugins (excluded: ${[...EXCLUDED].join(", ")})\n`,
-  );
+  console.log(`publishing ${targets.length} plugins (excluded: ${[...EXCLUDED].join(", ")})\n`);
 
   // A stale dist/ is the failure mode that matters: the tarball is the product,
   // and a version stamp that disagrees with the manifest is refused at install.
@@ -473,12 +465,7 @@ function main(): void {
   run("bun", ["run", "build:framework"], ROOT);
   run(
     "bun",
-    [
-      "run",
-      ...targets.flatMap((plugin) => ["--filter", plugin.name]),
-      "--parallel",
-      "build",
-    ],
+    ["run", ...targets.flatMap((plugin) => ["--filter", plugin.name]), "--parallel", "build"],
     ROOT,
   );
 
@@ -504,7 +491,9 @@ function main(): void {
       if (!existsSync(metaPath)) fail(`${id}: missing dist/${artifact}.meta.json — build first`);
       const meta = JSON.parse(readFileSync(metaPath, "utf8"));
       if (meta.pluginVersion !== version) {
-        fail(`${id}: dist/${artifact}.meta.json stamps ${meta.pluginVersion}, manifest says ${version}`);
+        fail(
+          `${id}: dist/${artifact}.meta.json stamps ${meta.pluginVersion}, manifest says ${version}`,
+        );
       }
     }
 
@@ -517,13 +506,19 @@ function main(): void {
       ...sourceClosureProblems(dir, manifest, paths),
     ];
     if (problems.length > 0) {
-      fail(`${id} cannot be published:\n${problems.map((problem) => `    - ${problem}`).join("\n")}`);
+      fail(
+        `${id} cannot be published:\n${problems.map((problem) => `    - ${problem}`).join("\n")}`,
+      );
     }
 
     plans.push({ plugin, version, paths });
   }
 
-  for (const { plugin: { dir, name }, version, paths } of plans) {
+  for (const {
+    plugin: { dir, name },
+    version,
+    paths,
+  } of plans) {
     // The scoped name, then its unscoped mirror. Each is probed and published
     // on its own, so a mirror added to an already-released version still goes
     // out, and a half-finished run resumes without republishing what landed.

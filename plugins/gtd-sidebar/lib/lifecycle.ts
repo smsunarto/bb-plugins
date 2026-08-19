@@ -96,8 +96,7 @@ export function resolveShelf(
     // A timer that has elapsed wakes the thread; so does anything that
     // happened after the snooze was set.
     const wokeOnTimer = row.snoozedUntil <= now;
-    const wokeOnActivity =
-      row.snoozedAt !== null && signals.latestAttentionAt > row.snoozedAt;
+    const wokeOnActivity = row.snoozedAt !== null && signals.latestAttentionAt > row.snoozedAt;
     if (!wokeOnTimer && !wokeOnActivity) return "snoozed";
     return "active";
   }
@@ -243,10 +242,7 @@ export function resolveSnoozePresets(now: Date): SnoozePreset[] {
  */
 export const MAX_TIMEOUT_MS = 2_147_483_647;
 
-export function nextWakeDelayMs(
-  snoozedUntilValues: readonly number[],
-  now: number,
-): number | null {
+export function nextWakeDelayMs(snoozedUntilValues: readonly number[], now: number): number | null {
   const upcoming = snoozedUntilValues.filter((value) => value > now);
   if (upcoming.length === 0) return null;
   const soonest = Math.min(...upcoming);

@@ -46,8 +46,5 @@ test("a lost ledger keeps feedback rather than dropping it", () => {
 });
 
 test("nothing local means nothing to recover", () => {
-  assert.deepEqual(
-    ids(selectOrphans([], new Set(["a"]), new Set(["a"]))),
-    [],
-  );
+  assert.deepEqual(ids(selectOrphans([], new Set(["a"]), new Set(["a"]))), []);
 });

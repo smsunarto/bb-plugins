@@ -78,10 +78,10 @@ export function formatInfo(result: InspectResult): string {
     lines.push(`  ${module.name}`);
     for (const operation of module.operations) {
       lines.push(
-        `    ${operation.kind.padEnd(7)} ${operation.identity}`
-        + `${operation.risk ? ` [${operation.risk}]` : ""}`
-        + ` → ${operation.rpcMethod ?? "unlocked"}`
-        + ` (${operation.input?.mode ?? "invalid input"})`,
+        `    ${operation.kind.padEnd(7)} ${operation.identity}` +
+          `${operation.risk ? ` [${operation.risk}]` : ""}` +
+          ` → ${operation.rpcMethod ?? "unlocked"}` +
+          ` (${operation.input?.mode ?? "invalid input"})`,
       );
     }
     if (module.migrations.length > 0) {

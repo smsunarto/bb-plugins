@@ -10,23 +10,9 @@ import { z } from "zod";
 
 export const AFS_VERSION = "1.1";
 
-export const annotationIntents = [
-  "fix",
-  "change",
-  "question",
-  "approve",
-] as const;
-export const annotationSeverities = [
-  "blocking",
-  "important",
-  "suggestion",
-] as const;
-export const annotationStatuses = [
-  "pending",
-  "acknowledged",
-  "resolved",
-  "dismissed",
-] as const;
+export const annotationIntents = ["fix", "change", "question", "approve"] as const;
+export const annotationSeverities = ["blocking", "important", "suggestion"] as const;
+export const annotationStatuses = ["pending", "acknowledged", "resolved", "dismissed"] as const;
 export const annotationKinds = ["feedback", "placement", "rearrange"] as const;
 
 export type AnnotationIntent = (typeof annotationIntents)[number];
@@ -35,10 +21,7 @@ export type AnnotationStatus = (typeof annotationStatuses)[number];
 export type AnnotationKind = (typeof annotationKinds)[number];
 
 /** Statuses the browser toolbar stops drawing a marker for. */
-export const closedStatuses: readonly AnnotationStatus[] = [
-  "resolved",
-  "dismissed",
-];
+export const closedStatuses: readonly AnnotationStatus[] = ["resolved", "dismissed"];
 
 const rectSchema = z.object({
   x: z.number(),
@@ -150,11 +133,7 @@ export const storedAnnotationSchema = z.looseObject({
 
 export type StoredAnnotation = z.infer<typeof storedAnnotationSchema>;
 
-export const annotationRoutingStates = [
-  "staged",
-  "sending",
-  "assigned",
-] as const;
+export const annotationRoutingStates = ["staged", "sending", "assigned"] as const;
 
 export const annotationRoutingSchema = z.object({
   annotationId: z.string(),

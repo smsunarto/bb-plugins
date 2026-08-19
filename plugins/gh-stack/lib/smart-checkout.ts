@@ -24,10 +24,7 @@ export type SmartCheckoutDependencies = {
   blockedStashOids?: Set<string>;
 };
 
-type StashInspectionDependencies = Pick<
-  SmartCheckoutDependencies,
-  "runGit" | "blockedStashOids"
->;
+type StashInspectionDependencies = Pick<SmartCheckoutDependencies, "runGit" | "blockedStashOids">;
 
 const AUTO_STASH_PREFIX = "bb-gh-stack:auto-stash:v1:";
 const STASH_STATE_PREFIX = "refs/bb-gh-stack/stash-state/";
@@ -108,9 +105,7 @@ function commandDetail(result: CommandResult): string | null {
 
 function joinDetails(results: CommandResult[]): string | null {
   const details = results
-    .filter(
-      (result) => result.code !== 0 || result.failedToSpawn || result.timedOut,
-    )
+    .filter((result) => result.code !== 0 || result.failedToSpawn || result.timedOut)
     .map(commandDetail)
     .filter((detail): detail is string => detail !== null);
   return details.length > 0 ? details.join("\n\n") : null;
@@ -139,8 +134,7 @@ function isTrackedCheckoutConflict(result: CommandResult): boolean {
   return (
     /your local changes to the following files would be overwritten by (?:checkout|switching branches)/i.test(
       output,
-    ) ||
-    /commit your changes or stash them before you switch branches/i.test(output)
+    ) || /commit your changes or stash them before you switch branches/i.test(output)
   );
 }
 
@@ -148,11 +142,7 @@ async function listOwnedStashes(
   deps: StashInspectionDependencies,
   prefix: string,
 ): Promise<StashList> {
-  const result = await deps.runGit([
-    "stash",
-    "list",
-    "--format=%H%x09%gs",
-  ]);
+  const result = await deps.runGit(["stash", "list", "--format=%H%x09%gs"]);
   if (result.code !== 0) {
     return {
       entries: null,
@@ -169,12 +159,7 @@ async function readStashHead(
   | { oid: string | null; result: CommandResult; error: null }
   | { oid: null; result: CommandResult; error: string }
 > {
-  const result = await deps.runGit([
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    "refs/stash",
-  ]);
+  const result = await deps.runGit(["rev-parse", "--verify", "--quiet", "refs/stash"]);
   const oid = result.stdout.trim();
   if (result.code === 0 && STASH_OID.test(oid)) {
     return { oid, result, error: null };
@@ -247,14 +232,8 @@ async function createAutoStash(
   return { entry, details, error: null };
 }
 
-async function readHandledStashOids(
-  deps: StashInspectionDependencies,
-): Promise<StashState> {
-  const result = await deps.runGit([
-    "for-each-ref",
-    "--format=%(objectname)",
-    STASH_STATE_PREFIX,
-  ]);
+async function readHandledStashOids(deps: StashInspectionDependencies): Promise<StashState> {
+  const result = await deps.runGit(["for-each-ref", "--format=%(objectname)", STASH_STATE_PREFIX]);
   if (result.code !== 0) {
     return {
       oids: null,
@@ -286,11 +265,7 @@ export async function activeAutoStashOwners(
 
   return new Set(
     auto.entries
-      .filter(
-        (entry) =>
-          !state.oids.has(entry.oid) &&
-          !deps.blockedStashOids?.has(entry.oid),
-      )
+      .filter((entry) => !state.oids.has(entry.oid) && !deps.blockedStashOids?.has(entry.oid))
       .map((entry) => entry.owner),
   );
 }
@@ -329,10 +304,7 @@ async function markEntryHandled(
   const stateRef = `${STASH_STATE_PREFIX}${Buffer.from(entry.owner).toString("base64url")}/${entry.transactionId}`;
   // The empty expected value means create-only. A UUID collision cannot
   // overwrite another transaction's state.
-  const update = await deps.runGit(
-    ["update-ref", stateRef, entry.oid, ""],
-    15_000,
-  );
+  const update = await deps.runGit(["update-ref", stateRef, entry.oid, ""], 15_000);
   details.push(update);
   const verify = await deps.runGit(["rev-parse", "--verify", stateRef]);
   details.push(verify);
@@ -358,10 +330,7 @@ async function restoreEntry(
   }
 
   const details: CommandResult[] = [];
-  const apply = await deps.runGit(
-    ["stash", "apply", "--index", entry.oid],
-    30_000,
-  );
+  const apply = await deps.runGit(["stash", "apply", "--index", entry.oid], 30_000);
   details.push(apply);
   if (apply.code !== 0) {
     const handled = await markEntryHandled(entry, deps);
@@ -468,12 +437,7 @@ export async function checkoutWithAutoStash(
   if (actual === target) return finishCheckout(target, null, details, deps);
 
   const fallback = `gh stack checkout exited with code ${initial.code}.`;
-  if (
-    initial.code === 0 ||
-    !source ||
-    actual !== source ||
-    !isTrackedCheckoutConflict(initial)
-  ) {
+  if (initial.code === 0 || !source || actual !== source || !isTrackedCheckoutConflict(initial)) {
     return {
       ok: false,
       message:
@@ -484,12 +448,7 @@ export async function checkoutWithAutoStash(
     };
   }
 
-  const tracked = await deps.runGit([
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=no",
-  ]);
+  const tracked = await deps.runGit(["status", "--porcelain=v1", "-z", "--untracked-files=no"]);
   details.push(tracked);
   if (tracked.code !== 0 || tracked.stdout.length === 0) {
     return {

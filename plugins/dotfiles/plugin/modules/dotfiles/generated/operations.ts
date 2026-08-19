@@ -8,32 +8,32 @@ import runTaskOperation from "../operations/run-task.js";
 import saveFileOperation from "../operations/save-file.js";
 
 export const dotfilesOperations = defineOperationCatalog({
-  "overview": {
+  overview: {
     identity: "dotfiles.overview",
     wireMethod: "dotfiles_overview",
     operation: overviewOperation,
   },
-  "publish": {
+  publish: {
     identity: "dotfiles.publish",
     wireMethod: "dotfiles_publish",
     operation: publishOperation,
   },
-  "readFile": {
+  readFile: {
     identity: "dotfiles.read-file",
     wireMethod: "dotfiles_read_file",
     operation: readFileOperation,
   },
-  "removeSkill": {
+  removeSkill: {
     identity: "dotfiles.remove-skill",
     wireMethod: "dotfiles_remove_skill",
     operation: removeSkillOperation,
   },
-  "runTask": {
+  runTask: {
     identity: "dotfiles.run-task",
     wireMethod: "dotfiles_run_task",
     operation: runTaskOperation,
   },
-  "saveFile": {
+  saveFile: {
     identity: "dotfiles.save-file",
     wireMethod: "dotfiles_save_file",
     operation: saveFileOperation,

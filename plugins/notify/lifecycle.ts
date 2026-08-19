@@ -6,10 +6,7 @@ interface ThreadEvent {
   data: unknown;
 }
 
-type ListThreadEvents = (args: {
-  afterSeq?: string;
-  limit: string;
-}) => Promise<ThreadEvent[]>;
+type ListThreadEvents = (args: { afterSeq?: string; limit: string }) => Promise<ThreadEvent[]>;
 
 function interruptionReason(data: unknown): string | null {
   if (typeof data !== "object" || data === null) return null;
@@ -25,9 +22,7 @@ function interruptionReason(data: unknown): string | null {
  * Comparing it with the latest turn request or start prevents an old manual
  * stop from suppressing a later run that completed normally.
  */
-export async function latestRunWasManuallyStopped(
-  listEvents: ListThreadEvents,
-): Promise<boolean> {
+export async function latestRunWasManuallyStopped(listEvents: ListThreadEvents): Promise<boolean> {
   let afterSeq: number | undefined;
   let latestRunSeq = 0;
   let latestInterruptionSeq = 0;
@@ -40,15 +35,9 @@ export async function latestRunWasManuallyStopped(
     });
 
     for (const event of events) {
-      if (
-        event.type === "client/turn/requested" ||
-        event.type === "turn/started"
-      ) {
+      if (event.type === "client/turn/requested" || event.type === "turn/started") {
         latestRunSeq = Math.max(latestRunSeq, event.seq);
-      } else if (
-        event.type === "system/thread/interrupted" &&
-        event.seq >= latestInterruptionSeq
-      ) {
+      } else if (event.type === "system/thread/interrupted" && event.seq >= latestInterruptionSeq) {
         latestInterruptionSeq = event.seq;
         latestInterruptionReason = interruptionReason(event.data);
       }
@@ -60,8 +49,5 @@ export async function latestRunWasManuallyStopped(
     afterSeq = nextAfterSeq;
   }
 
-  return (
-    latestInterruptionSeq > latestRunSeq &&
-    latestInterruptionReason === "manual-stop"
-  );
+  return latestInterruptionSeq > latestRunSeq && latestInterruptionReason === "manual-stop";
 }

@@ -28,10 +28,7 @@ import {
   type CoreSupervisor,
   type SupervisorSnapshot,
 } from "./lib/core-process.ts";
-import {
-  planRuntimeReconciliation,
-  runtimeConfigFingerprint,
-} from "./lib/runtime-state.ts";
+import { planRuntimeReconciliation, runtimeConfigFingerprint } from "./lib/runtime-state.ts";
 import {
   ManagementClient,
   ManagementError,
@@ -244,14 +241,16 @@ export default async function plugin(bb: BbPluginApi) {
     autostart: {
       type: "boolean",
       label: "Keep the proxy running as a login service",
-      description: "The operating system starts it at login and keeps it running when bb is closed.",
+      description:
+        "The operating system starts it at login and keeps it running when bb is closed.",
       default: true,
     },
     port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
     sourceRepository: {
       type: "string",
       label: "Advanced: core source repository",
-      description: "Public GitHub repository in owner/name form. A github.com URL is also accepted.",
+      description:
+        "Public GitHub repository in owner/name form. A github.com URL is also accepted.",
       default: CORE_REPO,
     },
     sourceBranch: {
@@ -367,7 +366,8 @@ export default async function plugin(bb: BbPluginApi) {
   const pluginAbort = new AbortController();
 
   function enqueue<T>(operation: () => Promise<T> | T): Promise<T> {
-    if (!acceptingOperations) return Promise.reject(new Error("agent-proxy plugin is shutting down"));
+    if (!acceptingOperations)
+      return Promise.reject(new Error("agent-proxy plugin is shutting down"));
     const result = operationTail.then(async () => {
       if (pluginAbort.signal.aborted) throw new Error("agent-proxy plugin is shutting down");
       return operation();
@@ -664,7 +664,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   settings.onChange((next, previous) => {
     const sourceChanged =
-      next.sourceRepository !== previous.sourceRepository || next.sourceBranch !== previous.sourceBranch;
+      next.sourceRepository !== previous.sourceRepository ||
+      next.sourceBranch !== previous.sourceBranch;
     if (sourceChanged) {
       void bb.storage.kv
         .delete(LATEST_CACHE_KEY)
@@ -719,7 +720,10 @@ export default async function plugin(bb: BbPluginApi) {
     return { content: file.content, sha256: file.sha256 };
   }
 
-  async function writeClaudeSettings(content: string, expectedSha256: string | null): Promise<void> {
+  async function writeClaudeSettings(
+    content: string,
+    expectedSha256: string | null,
+  ): Promise<void> {
     const saved = await bb.sdk.files.write({
       path: claudeSettingsPath,
       content,
@@ -787,7 +791,10 @@ export default async function plugin(bb: BbPluginApi) {
       try {
         const client = await managementClient();
         await client.authFiles();
-        return { ok: true, detail: `core is up and the management API accepts the key on port ${port}` };
+        return {
+          ok: true,
+          detail: `core is up and the management API accepts the key on port ${port}`,
+        };
       } catch (error) {
         const detail =
           error instanceof ManagementError
@@ -888,9 +895,7 @@ export default async function plugin(bb: BbPluginApi) {
           throw new Error(`${resource} changed since it was loaded; reload before saving`);
         }
         const next =
-          resource === "api-keys" && !value.includes(localApiKey)
-            ? [localApiKey, ...value]
-            : value;
+          resource === "api-keys" && !value.includes(localApiKey) ? [localApiKey, ...value] : value;
         await client.putResource(resource, next);
         return null;
       });
@@ -931,13 +936,11 @@ export default async function plugin(bb: BbPluginApi) {
           const { content, sha256 } = await readClaudeSettings();
           const target = { baseUrl: endpointsFor(currentPort).anthropic, token: localApiKey };
           const backupPath =
-            content !== null ? timestampedBackup(content, paths.backupsDir, CLAUDE_BACKUP_BASE) : null;
+            content !== null
+              ? timestampedBackup(content, paths.backupsDir, CLAUDE_BACKUP_BASE)
+              : null;
           const state = captureClaudeEnvState(content, target, reconcileClaudeState(content));
-          writeAtomic(
-            paths.claudePendingStatePath,
-            `${JSON.stringify(state, null, 2)}\n`,
-            0o600,
-          );
+          writeAtomic(paths.claudePendingStatePath, `${JSON.stringify(state, null, 2)}\n`, 0o600);
           try {
             await writeClaudeSettings(applyClaudeEnv(content, target), sha256);
           } catch (error) {
@@ -948,7 +951,11 @@ export default async function plugin(bb: BbPluginApi) {
           bb.log.info(`applied proxy env to ${claudeSettingsPath}`);
           return { backupPath };
         }
-        writeAtomic(paths.codexConfigPath, renderCodexConfig(endpointsFor(currentPort).openai), 0o600);
+        writeAtomic(
+          paths.codexConfigPath,
+          renderCodexConfig(endpointsFor(currentPort).openai),
+          0o600,
+        );
         bb.log.info(`generated Codex home at ${paths.codexHomeDir}`);
         return { backupPath: null };
       });
@@ -982,7 +989,9 @@ export default async function plugin(bb: BbPluginApi) {
         } catch {
           // Codex may have created state beside config.toml; preserve it.
         }
-        return { detail: `removed generated config at ${paths.codexConfigPath}; preserved other Codex state` };
+        return {
+          detail: `removed generated config at ${paths.codexConfigPath}; preserved other Codex state`,
+        };
       });
     },
   });
@@ -993,9 +1002,14 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.cli.register({
     name: "agent-proxy",
-    summary: "Manage the local CLIProxyAPI core (status, lifecycle, endpoints, OAuth, providers, usage)",
+    summary:
+      "Manage the local CLIProxyAPI core (status, lifecycle, endpoints, OAuth, providers, usage)",
     commands: [
-      { name: "status", summary: "Core state, versions, and endpoints", usage: "bb agent-proxy status" },
+      {
+        name: "status",
+        summary: "Core state, versions, and endpoints",
+        usage: "bb agent-proxy status",
+      },
       { name: "start", summary: "Start the proxy core", usage: "bb agent-proxy start" },
       { name: "stop", summary: "Stop the proxy core", usage: "bb agent-proxy stop" },
       { name: "restart", summary: "Restart the proxy core", usage: "bb agent-proxy restart" },
@@ -1006,7 +1020,8 @@ export default async function plugin(bb: BbPluginApi) {
       },
       {
         name: "install",
-        summary: "Build and install the CLIProxyAPI core from the configured source (or another ref)",
+        summary:
+          "Build and install the CLIProxyAPI core from the configured source (or another ref)",
         usage: "bb agent-proxy install [ref]",
       },
       {
@@ -1019,7 +1034,11 @@ export default async function plugin(bb: BbPluginApi) {
         summary: "List configured provider credentials and OAuth auth files",
         usage: "bb agent-proxy providers",
       },
-      { name: "usage", summary: "Recent request buckets per provider key", usage: "bb agent-proxy usage" },
+      {
+        name: "usage",
+        summary: "Recent request buckets per provider key",
+        usage: "bb agent-proxy usage",
+      },
     ],
     async run(argv, ctx) {
       const [command, ...rest] = argv;

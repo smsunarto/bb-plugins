@@ -1,8 +1,5 @@
 import { defineOperation } from "@bb-kit/core/operations";
-import {
-  removeSkillInputSchema,
-  removeSkillOutputSchema,
-} from "../contract.js";
+import { removeSkillInputSchema, removeSkillOutputSchema } from "../contract.js";
 
 export default defineOperation({
   kind: "command",

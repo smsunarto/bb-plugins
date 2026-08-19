@@ -205,14 +205,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session {
       `UPDATE sessions
        SET url = ?, title = COALESCE(?, title), thread_id = ?, project_id = ?, updated_at = ?
        WHERE id = ?`,
-    ).run(
-      input.url,
-      input.title,
-      input.threadId,
-      input.projectId,
-      timestamp,
-      existing.id,
-    );
+    ).run(input.url, input.title, input.threadId, input.projectId, timestamp, existing.id);
     return toSession({
       ...existing,
       url: input.url,
@@ -262,9 +255,11 @@ export function getSession(db: Database, sessionId: string): Session | null {
 
 function touchSession(db: Database, sessionId: string): number {
   const seq = nextSeq(db);
-  db.prepare(
-    `UPDATE sessions SET mutation_seq = ?, updated_at = ? WHERE id = ?`,
-  ).run(seq, nowIso(), sessionId);
+  db.prepare(`UPDATE sessions SET mutation_seq = ?, updated_at = ? WHERE id = ?`).run(
+    seq,
+    nowIso(),
+    sessionId,
+  );
   return seq;
 }
 
@@ -384,13 +379,10 @@ function writeAnnotation(db: Database, annotation: StoredAnnotation): void {
   });
 }
 
-export function getAnnotation(
-  db: Database,
-  annotationId: string,
-): StoredAnnotation | null {
-  const row = db
-    .prepare(`SELECT payload FROM annotations WHERE id = ?`)
-    .get(annotationId) as { payload: string } | undefined;
+export function getAnnotation(db: Database, annotationId: string): StoredAnnotation | null {
+  const row = db.prepare(`SELECT payload FROM annotations WHERE id = ?`).get(annotationId) as
+    | { payload: string }
+    | undefined;
   return row ? readAnnotation(row.payload) : null;
 }
 
@@ -408,10 +400,7 @@ export interface UpsertAnnotationInput {
  * never rewinds a status the agent already advanced, and never drops the reply
  * thread.
  */
-export function upsertAnnotation(
-  db: Database,
-  input: UpsertAnnotationInput,
-): StoredAnnotation {
+export function upsertAnnotation(db: Database, input: UpsertAnnotationInput): StoredAnnotation {
   const existing = getAnnotation(db, input.annotation.id);
   const timestamp = nowIso();
   const incoming = sanitizeJson(input.annotation);
@@ -446,10 +435,7 @@ export interface SetStatusInput {
   resolution?: string | null;
 }
 
-export function setAnnotationStatus(
-  db: Database,
-  input: SetStatusInput,
-): StoredAnnotation | null {
+export function setAnnotationStatus(db: Database, input: SetStatusInput): StoredAnnotation | null {
   const existing = getAnnotation(db, input.annotationId);
   if (!existing) return null;
 
@@ -457,8 +443,7 @@ export function setAnnotationStatus(
   const stored: StoredAnnotation = {
     ...existing,
     status: input.status,
-    resolution:
-      input.resolution === undefined ? existing.resolution : input.resolution,
+    resolution: input.resolution === undefined ? existing.resolution : input.resolution,
     updatedAt: timestamp,
     seq: nextSeq(db),
   };
@@ -502,16 +487,13 @@ export function appendThreadMessage(
   return stored;
 }
 
-export function deleteAnnotations(
-  db: Database,
-  annotationIds: string[],
-): number {
+export function deleteAnnotations(db: Database, annotationIds: string[]): number {
   if (annotationIds.length === 0) return 0;
   const sessionIds = new Set<string>();
   for (const id of annotationIds) {
-    const row = db
-      .prepare(`SELECT session_id FROM annotations WHERE id = ?`)
-      .get(id) as { session_id: string } | undefined;
+    const row = db.prepare(`SELECT session_id FROM annotations WHERE id = ?`).get(id) as
+      | { session_id: string }
+      | undefined;
     if (row) sessionIds.add(row.session_id);
   }
 
@@ -527,9 +509,7 @@ export function deleteAnnotations(
 }
 
 export function clearSession(db: Database, sessionId: string): number {
-  const result = db
-    .prepare(`DELETE FROM annotations WHERE session_id = ?`)
-    .run(sessionId);
+  const result = db.prepare(`DELETE FROM annotations WHERE session_id = ?`).run(sessionId);
   touchSession(db, sessionId);
   return result.changes;
 }
@@ -556,9 +536,7 @@ export function listAnnotations(
     params.push(filter.sessionId);
   }
   if (filter.statuses && filter.statuses.length > 0) {
-    clauses.push(
-      `status IN (${filter.statuses.map(() => "?").join(", ")})`,
-    );
+    clauses.push(`status IN (${filter.statuses.map(() => "?").join(", ")})`);
     params.push(...filter.statuses);
   }
   if (filter.pluginId) {
@@ -587,9 +565,7 @@ export function listAnnotations(
   return rows.map((row) => readAnnotation(row.payload));
 }
 
-export function countByStatus(
-  db: Database,
-): Record<AnnotationStatus, number> & { total: number } {
+export function countByStatus(db: Database): Record<AnnotationStatus, number> & { total: number } {
   const rows = db
     .prepare(`SELECT status, COUNT(*) AS count FROM annotations GROUP BY status`)
     .all() as { status: AnnotationStatus; count: number }[];
@@ -615,9 +591,7 @@ export function countByStatus(
  * client can still see.
  */
 export function pruneClosed(db: Database, retentionDays: number): number {
-  const cutoff = new Date(
-    Date.now() - retentionDays * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
   const result = db
     .prepare(
       `DELETE FROM annotations

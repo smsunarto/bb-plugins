@@ -16,10 +16,7 @@ import {
   AMP_AGENT,
   OBSOLETE_AMP_ORB_AGENT,
 } from "../src/execution-target.ts";
-import {
-  AMP_LEGACY_RED_LOGO_SVG,
-  AMP_LOGO_SVG,
-} from "../src/amp-brand.ts";
+import { AMP_LEGACY_RED_LOGO_SVG, AMP_LOGO_SVG } from "../src/amp-brand.ts";
 
 /** Compatibility aliases for the original provider identity. */
 export const AGENT_ID = AMP_AGENT.agentId;
@@ -39,9 +36,9 @@ export const OBSOLETE_ORB_PROVIDER_ID = OBSOLETE_AMP_ORB_AGENT.providerId;
  * package.json "comments" field and test/cli-stub.test.ts).
  */
 export const BRIDGE_BUILD_HINT =
-  "Reinstall the plugin with `bb plugin install npm:@smsunarto/bb-plugin-amp`. "
-  + "From a source checkout, run `bun install` at the repository root "
-  + "(never `npm install` inside the plugin), then `bun run build` in plugins/amp.";
+  "Reinstall the plugin with `bb plugin install npm:@smsunarto/bb-plugin-amp`. " +
+  "From a source checkout, run `bun install` at the repository root " +
+  "(never `npm install` inside the plugin), then `bun run build` in plugins/amp.";
 
 export interface ProvisionPaths {
   dataDir: string;
@@ -88,22 +85,12 @@ interface CustomAgent extends Record<string, unknown> {
 }
 
 const AMP_NATIVE_SKILL_ROOTS = {
-  user: [
-    ".config/agents/skills",
-    ".agents/skills",
-    ".config/amp/skills",
-    ".claude/skills",
-  ],
-  project: [
-    ".agents/skills",
-    ".claude/skills",
-  ],
+  user: [".config/agents/skills", ".agents/skills", ".config/amp/skills", ".claude/skills"],
+  project: [".agents/skills", ".claude/skills"],
 };
 
 function customAgentEnv(agent: CustomAgent | undefined): Record<string, unknown> {
-  return agent?.env !== null
-    && typeof agent?.env === "object"
-    && !Array.isArray(agent.env)
+  return agent?.env !== null && typeof agent?.env === "object" && !Array.isArray(agent.env)
     ? (agent.env as Record<string, unknown>)
     : {};
 }
@@ -143,9 +130,8 @@ function findBinary(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): string | null {
-  const names = platform === "win32"
-    ? [`${binaryName}.exe`, `${binaryName}.cmd`, binaryName]
-    : [binaryName];
+  const names =
+    platform === "win32" ? [`${binaryName}.exe`, `${binaryName}.cmd`, binaryName] : [binaryName];
   const searchDirectories = (env.PATH ?? "").split(delimiter).filter(Boolean);
   searchDirectories.push(...extraDirectories);
   if (platform === "darwin") {
@@ -196,14 +182,15 @@ export function resolveAmpCliLaunch(
     ? (config.customAcpAgents as CustomAgent[])
     : [];
   const configuredEnv = Object.fromEntries(
-    Object.entries(customAgentEnv(
-      agents.find((agent) => agent?.id === AMP_AGENT.agentId),
-    )).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    Object.entries(customAgentEnv(agents.find((agent) => agent?.id === AMP_AGENT.agentId))).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
   );
   const configuredCommand = configuredEnv.AMP_CLI_PATH;
-  const command = configuredCommand && isExecutable(configuredCommand)
-    ? configuredCommand
-    : resolveAmpCli(baseEnv);
+  const command =
+    configuredCommand && isExecutable(configuredCommand)
+      ? configuredCommand
+      : resolveAmpCli(baseEnv);
   if (command === null) return null;
   return {
     command,
@@ -256,9 +243,7 @@ function writeManagedLogo(path: string): "written" | "updated" | "kept" {
  * nativeSkillRoots lets bb index the direct user and project roots that Amp
  * scans itself; it does not change the ACP wire protocol or Amp execution.
  */
-export function managedAgentEntry(
-  launch: BridgeLaunch,
-): Record<string, unknown> {
+export function managedAgentEntry(launch: BridgeLaunch): Record<string, unknown> {
   const env: Record<string, string> = {
     AMP_CLI_PATH: launch.amp,
   };
@@ -282,9 +267,7 @@ export function provisionInstallation(
     throw new Error(`Node executable not found or not executable: ${launch.node}`);
   }
   if (!existsSync(launch.bridge)) {
-    throw new Error(
-      `Bridge bundle not found: ${launch.bridge}. ${BRIDGE_BUILD_HINT}`,
-    );
+    throw new Error(`Bridge bundle not found: ${launch.bridge}. ${BRIDGE_BUILD_HINT}`);
   }
   if (!isExecutable(launch.amp)) {
     throw new Error(`Amp CLI is not executable: ${launch.amp}`);
@@ -301,9 +284,7 @@ export function provisionInstallation(
   const originalAgents = JSON.stringify(agents);
   const configMessages: string[] = [];
   const canonicalIndex = agents.findIndex((agent) => agent?.id === AGENT_ID);
-  const obsoleteIndex = agents.findIndex(
-    (agent) => agent?.id === OBSOLETE_ORB_AGENT_ID,
-  );
+  const obsoleteIndex = agents.findIndex((agent) => agent?.id === OBSOLETE_ORB_AGENT_ID);
   const canonical = canonicalIndex >= 0 ? agents[canonicalIndex] : undefined;
   const obsolete = obsoleteIndex >= 0 ? agents[obsoleteIndex] : undefined;
   const managed = managedAgentEntry(launch);
@@ -342,13 +323,9 @@ export function provisionInstallation(
     configMessages.push(`added custom ACP agent ${AGENT_ID} (${PROVIDER_ID})`);
   }
 
-  const obsoleteCount = agents.filter(
-    (agent) => agent?.id === OBSOLETE_ORB_AGENT_ID,
-  ).length;
+  const obsoleteCount = agents.filter((agent) => agent?.id === OBSOLETE_ORB_AGENT_ID).length;
   if (obsoleteCount > 0) {
-    const retained = agents.filter(
-      (agent) => agent?.id !== OBSOLETE_ORB_AGENT_ID,
-    );
+    const retained = agents.filter((agent) => agent?.id !== OBSOLETE_ORB_AGENT_ID);
     agents.splice(0, agents.length, ...retained);
     configMessages.push(
       `removed obsolete custom ACP agent ${OBSOLETE_ORB_AGENT_ID} (${OBSOLETE_ORB_PROVIDER_ID})`,
@@ -400,10 +377,7 @@ export function needsProvisioning(
     return true;
   }
   if ("permissionCli" in entry) return true;
-  if (
-    JSON.stringify(entry.nativeSkillRoots)
-      !== JSON.stringify(AMP_NATIVE_SKILL_ROOTS)
-  ) {
+  if (JSON.stringify(entry.nativeSkillRoots) !== JSON.stringify(AMP_NATIVE_SKILL_ROOTS)) {
     return true;
   }
   const recordedCli = customAgentEnv(entry).AMP_CLI_PATH;
@@ -420,9 +394,7 @@ export function inspectInstallation(paths: ProvisionPaths): {
     const agents = Array.isArray(config.customAcpAgents)
       ? (config.customAcpAgents as CustomAgent[])
       : [];
-    const configured = agents.some(
-      (agent) => agent?.id === AMP_AGENT.agentId,
-    );
+    const configured = agents.some((agent) => agent?.id === AMP_AGENT.agentId);
     const obsoleteOrbConfigured = agents.some(
       (agent) => agent?.id === OBSOLETE_AMP_ORB_AGENT.agentId,
     );

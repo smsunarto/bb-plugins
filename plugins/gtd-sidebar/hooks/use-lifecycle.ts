@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  useRealtime,
-  useRealtimeConnectionState,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
+import { useRealtime, useRealtimeConnectionState, useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import type { gtdSidebarRpcContract } from "@/server";
 import {
@@ -79,9 +75,7 @@ const SHELF_GATE_MS = 250;
  * move its row without waiting for an unrelated re-render, and re-reading the
  * clock during render would make the classification unstable.
  */
-export function useLifecycle(
-  threads: readonly PluginSidebarThread[],
-): LifecycleApi {
+export function useLifecycle(threads: readonly PluginSidebarThread[]): LifecycleApi {
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One read, at the only moment that can still beat the first paint.
   // `useState` and not `useMemo`: React is free to throw a memo away and run
@@ -193,9 +187,7 @@ export function useLifecycle(
     // would schedule a new snooze far too late.
     const armedAt = Date.now();
     const delay = nextWakeDelayMs(
-      [...rows.values()].flatMap((row) =>
-        row.snoozedUntil === null ? [] : [row.snoozedUntil],
-      ),
+      [...rows.values()].flatMap((row) => (row.snoozedUntil === null ? [] : [row.snoozedUntil])),
       armedAt,
     );
     if (delay === null) return;
@@ -244,15 +236,11 @@ export function useLifecycle(
   return useMemo<LifecycleApi>(() => {
     // One read per mutation: the write publishes on the realtime channel, and
     // that subscription already triggers a refresh for every client.
-    const mutate = async (
-      method: "settle" | "unsettle" | "unsnooze",
-      threadId: string,
-    ) => {
+    const mutate = async (method: "settle" | "unsettle" | "unsnooze", threadId: string) => {
       await rpc.call(method, { threadId });
     };
     return {
-      shelfFor: (thread) =>
-        resolveShelf(rows.get(thread.id), signalsFor(thread), now),
+      shelfFor: (thread) => resolveShelf(rows.get(thread.id), signalsFor(thread), now),
       // A row only ever exists for a parked thread, so its keys are the set.
       parkedThreadIds,
       parkedRows: rows,

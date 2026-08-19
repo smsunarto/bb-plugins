@@ -1,9 +1,5 @@
 import { checkProject, type Diagnostic } from "./check.js";
-import {
-  checkBuildMetadata,
-  checkSdkDependency,
-  compatibility,
-} from "./compatibility.js";
+import { checkBuildMetadata, checkSdkDependency, compatibility } from "./compatibility.js";
 import {
   defaultCommandRunner,
   processFailure,
@@ -29,9 +25,7 @@ export interface BuildOptions {
   readonly env?: Readonly<NodeJS.ProcessEnv>;
 }
 
-function compatibilityFailure(
-  diagnostics: readonly Diagnostic[],
-): BuildResult["error"] {
+function compatibilityFailure(diagnostics: readonly Diagnostic[]): BuildResult["error"] {
   const declaration = diagnostics.find((value) => value.code === "BBK011");
   if (declaration) {
     return {
@@ -64,9 +58,7 @@ export function buildWithSelectedCli(
   });
   const diagnostics = [
     ...checkSdkDependency(root, manifest),
-    ...(result.status === 0 && !result.error
-      ? checkBuildMetadata(root, manifest)
-      : []),
+    ...(result.status === 0 && !result.error ? checkBuildMetadata(root, manifest) : []),
   ];
   if (result.status !== 0 || result.error || diagnostics.length > 0) {
     const compatibilityError = compatibilityFailure(diagnostics);
@@ -74,9 +66,10 @@ export function buildWithSelectedCli(
       ok: false,
       command,
       status: "failed",
-      detail: result.status !== 0 || result.error
-        ? processFailure(result)
-        : "build output failed bb-kit compatibility checks",
+      detail:
+        result.status !== 0 || result.error
+          ? processFailure(result)
+          : "build output failed bb-kit compatibility checks",
       diagnostics,
       selectedBbCli: {
         path: selectedBbCli.path,
@@ -117,17 +110,16 @@ export function buildProject(root: string, options: BuildOptions = {}): BuildRes
   }
   const run = options.run ?? defaultCommandRunner;
   try {
-    const selected = selectBbCli(
-      root,
-      options.env ?? process.env,
-      compatibility.bbCliVersion,
-      run,
-    );
+    const selected = selectBbCli(root, options.env ?? process.env, compatibility.bbCliVersion, run);
     return buildWithSelectedCli(root, selected, run);
   } catch (error) {
-    const failure = error instanceof ProcessError
-      ? error
-      : new ProcessError("build_preflight_failed", error instanceof Error ? error.message : String(error));
+    const failure =
+      error instanceof ProcessError
+        ? error
+        : new ProcessError(
+            "build_preflight_failed",
+            error instanceof Error ? error.message : String(error),
+          );
     return {
       ok: false,
       command,
@@ -142,7 +134,9 @@ export function formatBuild(result: BuildResult): string {
   const lines = [
     `${result.ok ? "✓" : "✗"} build: ${result.status}`,
     ...(result.selectedBbCli
-      ? [`  bb ${result.selectedBbCli.version}: ${result.selectedBbCli.path} (${result.selectedBbCli.source})`]
+      ? [
+          `  bb ${result.selectedBbCli.version}: ${result.selectedBbCli.path} (${result.selectedBbCli.source})`,
+        ]
       : []),
     ...(result.detail ? [`  ${result.detail.replaceAll("\n", "\n  ")}`] : []),
     ...(result.error ? [`  ${result.error.code}: ${result.error.message}`] : []),

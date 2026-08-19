@@ -1,9 +1,5 @@
 import { execFile } from "node:child_process";
-import {
-  isValidAmpThreadId,
-  isValidProviderSessionId,
-  type OrbUsageRecord,
-} from "./orb-usage.ts";
+import { isValidAmpThreadId, isValidProviderSessionId, type OrbUsageRecord } from "./orb-usage.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
 
 export const AMP_THREAD_LINK_KEY_PREFIX = "amp-thread-link:";
@@ -57,10 +53,10 @@ export function parseAmpThreadLinkRecord(value: unknown): AmpThreadLinkRecord | 
 export function parseSessionLinkReport(argv: string[]): SessionLinkReport | null {
   const [command, providerSessionId, executionTarget, ampThreadId, ...extra] = argv;
   if (
-    command !== "link-session"
-    || extra.length > 0
-    || !isValidProviderSessionId(providerSessionId)
-    || (ampThreadId !== undefined && !isValidAmpThreadId(ampThreadId))
+    command !== "link-session" ||
+    extra.length > 0 ||
+    !isValidProviderSessionId(providerSessionId) ||
+    (ampThreadId !== undefined && !isValidAmpThreadId(ampThreadId))
   ) {
     return null;
   }
@@ -91,10 +87,7 @@ export function mergeAmpThreadLinkRecord(
   current: AmpThreadLinkRecord | null,
   incoming: AmpThreadLinkRecord,
 ): AmpThreadLinkRecord {
-  if (
-    current?.providerSessionId === incoming.providerSessionId
-    && current.ampThreadId !== null
-  ) {
+  if (current?.providerSessionId === incoming.providerSessionId && current.ampThreadId !== null) {
     return current;
   }
   return {
@@ -153,9 +146,11 @@ function runAmpArchiveCommand(
           return;
         }
         const detail = stderr.trim() || stdout.trim() || error.message;
-        reject(new Error(`Could not ${action} Amp thread ${ampThreadId}: ${detail}`, {
-          cause: error,
-        }));
+        reject(
+          new Error(`Could not ${action} Amp thread ${ampThreadId}: ${detail}`, {
+            cause: error,
+          }),
+        );
       },
     );
   });
@@ -219,9 +214,9 @@ export function parseAmpArchiveWatchRecord(value: unknown): AmpArchiveWatchRecor
   if (!hasExactKeys(record, ["ampThreadId", "failures"])) return null;
   if (!isValidAmpThreadId(record.ampThreadId)) return null;
   if (
-    typeof record.failures !== "number"
-    || !Number.isInteger(record.failures)
-    || record.failures < 0
+    typeof record.failures !== "number" ||
+    !Number.isInteger(record.failures) ||
+    record.failures < 0
   ) {
     return null;
   }

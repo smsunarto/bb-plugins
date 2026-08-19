@@ -18,18 +18,13 @@ import { join } from "node:path";
 
 /** The package name with any npm scope removed: `@scope/x` → `x`. */
 export function unscopedPackageName(packageName: string): string {
-  return packageName.includes("/")
-    ? (packageName.split("/").at(-1) ?? packageName)
-    : packageName;
+  return packageName.includes("/") ? (packageName.split("/").at(-1) ?? packageName) : packageName;
 }
 
 /** True for `bb-plugin-<id>` and for `@scope/bb-plugin-<id>`. */
-export function isPluginPackageName(
-  packageName: unknown,
-): packageName is string {
+export function isPluginPackageName(packageName: unknown): packageName is string {
   return (
-    typeof packageName === "string" &&
-    unscopedPackageName(packageName).startsWith("bb-plugin-")
+    typeof packageName === "string" && unscopedPackageName(packageName).startsWith("bb-plugin-")
   );
 }
 
@@ -41,9 +36,7 @@ export function derivePluginId(packageName: string): string {
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/^-+|-+$/g, "");
   if (id.length === 0) {
-    throw new Error(
-      `cannot derive a plugin id from package name "${packageName}"`,
-    );
+    throw new Error(`cannot derive a plugin id from package name "${packageName}"`);
   }
   return id;
 }
@@ -101,9 +94,7 @@ export function workspacePlugins(root: string): WorkspacePlugin[] {
     const dir = join(pluginsDir, directory);
     const manifestPath = join(dir, "package.json");
     if (!existsSync(manifestPath)) continue;
-    const manifest = JSON.parse(
-      readFileSync(manifestPath, "utf8"),
-    ) as PluginManifest;
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PluginManifest;
     if (!isPluginPackageName(manifest.name)) continue;
     plugins.push({
       directory,

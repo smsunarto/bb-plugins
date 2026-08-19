@@ -28,12 +28,11 @@ import { Icon } from "../../components/ui/icon.js";
 // Context — separate instance from DropdownMenu / Popover.
 // ---------------------------------------------------------------------------
 
-const ResponsiveDialogContext =
-  React.createContext<ResponsiveOverlayContextValue>({
-    isCompactViewport: false,
-    open: false,
-    onOpenChange: () => {},
-  });
+const ResponsiveDialogContext = React.createContext<ResponsiveOverlayContextValue>({
+  isCompactViewport: false,
+  open: false,
+  onOpenChange: () => {},
+});
 
 function useResponsiveDialog() {
   return React.useContext(ResponsiveDialogContext);
@@ -54,20 +53,12 @@ function Dialog({
   const body = ctx.isCompactViewport ? (
     children
   ) : (
-    <DialogPrimitive.Root
-      open={ctx.open}
-      onOpenChange={ctx.onOpenChange}
-      {...props}
-    >
+    <DialogPrimitive.Root open={ctx.open} onOpenChange={ctx.onOpenChange} {...props}>
       {children}
     </DialogPrimitive.Root>
   );
 
-  return (
-    <ResponsiveDialogContext.Provider value={ctx}>
-      {body}
-    </ResponsiveDialogContext.Provider>
-  );
+  return <ResponsiveDialogContext.Provider value={ctx}>{body}</ResponsiveDialogContext.Provider>;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,9 +120,7 @@ const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
 
     if (isCompactViewport) {
       const Comp = asChild ? Slot : "button";
-      const handleClick: React.MouseEventHandler<HTMLButtonElement> = (
-        event,
-      ) => {
+      const handleClick: React.MouseEventHandler<HTMLButtonElement> = (event) => {
         onClick?.(event);
         if (!event.defaultPrevented) {
           onOpenChange(false);
@@ -145,12 +134,7 @@ const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
     }
 
     return (
-      <DialogPrimitive.Close
-        ref={ref}
-        asChild={asChild}
-        onClick={onClick}
-        {...props}
-      >
+      <DialogPrimitive.Close ref={ref} asChild={asChild} onClick={onClick} {...props}>
         {children}
       </DialogPrimitive.Close>
     );
@@ -185,9 +169,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 // Content
 // ---------------------------------------------------------------------------
 
-type DialogContentProps = React.ComponentPropsWithoutRef<
-  typeof DialogPrimitive.Content
->;
+type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>;
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
   ({ className, children, ...props }, ref) => {
@@ -246,26 +228,14 @@ DialogContent.displayName = "DialogContent";
 // Header / Footer — layout primitives, unchanged.
 // ---------------------------------------------------------------------------
 
-const DialogHeader = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn("flex flex-col space-y-1.5 text-left", className)}
-    {...props}
-  />
+const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn("flex flex-col space-y-1.5 text-left", className)} {...props} />
 );
 DialogHeader.displayName = "DialogHeader";
 
-const DialogFooter = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
+const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
-      className,
-    )}
+    className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
     {...props}
   />
 );
@@ -285,10 +255,7 @@ const DialogTitle = React.forwardRef<
   return (
     <Comp
       ref={ref}
-      className={cn(
-        "text-base font-semibold leading-none tracking-tight",
-        className,
-      )}
+      className={cn("text-base font-semibold leading-none tracking-tight", className)}
       {...props}
     />
   );
@@ -300,16 +267,8 @@ const DialogDescription = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => {
   const { isCompactViewport } = useResponsiveDialog();
-  const Comp = isCompactViewport
-    ? DrawerDescriptionPrimitive
-    : DialogPrimitive.Description;
-  return (
-    <Comp
-      ref={ref}
-      className={cn("text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  );
+  const Comp = isCompactViewport ? DrawerDescriptionPrimitive : DialogPrimitive.Description;
+  return <Comp ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />;
 });
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 

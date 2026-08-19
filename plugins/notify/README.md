@@ -68,12 +68,12 @@ appears under **System Settings → Notifications**.
 
 ## What fires a notification
 
-| Source | Trigger | Opens |
-|---|---|---|
-| `thread.idle` | A thread finished its turn | That thread |
-| `thread.failed` | A thread errored | That thread |
-| `notify_user` tool | An agent decides you need to know now | The agent's thread |
-| `bb notify send` | You or a script | The thread the command ran in — `--thread <id>` overrides |
+| Source             | Trigger                               | Opens                                                     |
+| ------------------ | ------------------------------------- | --------------------------------------------------------- |
+| `thread.idle`      | A thread finished its turn            | That thread                                               |
+| `thread.failed`    | A thread errored                      | That thread                                               |
+| `notify_user` tool | An agent decides you need to know now | The agent's thread                                        |
+| `bb notify send`   | You or a script                       | The thread the command ran in — `--thread <id>` overrides |
 
 A successful turn does not spend a line saying "finished". Only a failure earns
 words, as `Failed — <error>`.
@@ -118,26 +118,26 @@ bb plugin config notify set agentTool true
 
 `bb plugin config notify set <key> <value>` — changes apply live, no reload.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `notifyOnIdle` | `true` | Notify when a thread finishes |
-| `notifyOnFailed` | `true` | Notify when a thread fails |
-| `includeChildThreads` | `false` | Include subagent threads |
-| `includeHiddenThreads` | `false` | Include hidden plugin worker threads |
-| `minRunSeconds` | `0` | Skip threads that finished faster than this. Capped at 30 days |
-| `sound` | `off` | `off`, `system default`, or a named macOS tone |
-| `agentTool` | `false` | Offer the `notify_user` tool to agents |
+| Key                    | Default | Meaning                                                        |
+| ---------------------- | ------- | -------------------------------------------------------------- |
+| `notifyOnIdle`         | `true`  | Notify when a thread finishes                                  |
+| `notifyOnFailed`       | `true`  | Notify when a thread fails                                     |
+| `includeChildThreads`  | `false` | Include subagent threads                                       |
+| `includeHiddenThreads` | `false` | Include hidden plugin worker threads                           |
+| `minRunSeconds`        | `0`     | Skip threads that finished faster than this. Capped at 30 days |
+| `sound`                | `off`   | `off`, `system default`, or a named macOS tone                 |
+| `agentTool`            | `false` | Offer the `notify_user` tool to agents                         |
 
 The defaults are the quiet ones: a notification arrives silently, and no agent
 can interrupt you until you turn the tool on.
 
 ### Sound
 
-| Choice | Notification | Tone |
-|---|---|---|
-| `off` | silent | none |
-| `system default` | audible | macOS picks |
-| `Ping`, `Glass`, … | silenced | `/System/Library/Sounds/<name>.aiff` |
+| Choice             | Notification | Tone                                 |
+| ------------------ | ------------ | ------------------------------------ |
+| `off`              | silent       | none                                 |
+| `system default`   | audible      | macOS picks                          |
+| `Ping`, `Glass`, … | silenced     | `/System/Library/Sounds/<name>.aiff` |
 
 A named tone silences the notification, so macOS does not stack its own default
 underneath the chosen one. The server plays one tone for each acknowledged

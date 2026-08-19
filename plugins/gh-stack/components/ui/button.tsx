@@ -11,16 +11,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          "bg-foreground text-background hover:bg-foreground/90",
-        destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        default: "bg-foreground text-background hover:bg-foreground/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         // --border, not --input: see the note in input.tsx. Every bordered
         // surface in a panel should draw the same line.
-        outline:
-          "border border-border bg-transparent hover:bg-state-hover hover:text-foreground",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        outline: "border border-border bg-transparent hover:bg-state-hover hover:text-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
           "hover:bg-state-hover hover:text-foreground aria-pressed:bg-state-active aria-pressed:text-foreground aria-pressed:hover:bg-state-active data-[state=open]:bg-state-active data-[state=open]:text-foreground data-[state=open]:hover:bg-state-active",
         link: "text-primary underline-offset-4 hover:underline",
@@ -50,11 +46,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-      />
+      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
     );
   },
 );

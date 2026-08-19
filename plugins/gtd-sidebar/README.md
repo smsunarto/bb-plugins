@@ -161,10 +161,10 @@ plugin by its id, so the renamed plugin installs as a separate one: install
 `gtd-sidebar`, then uninstall `t3sidebar`. Shelves do not carry over — settled and
 snoozed state lives in the old plugin's database and goes with it.
 
-| | |
-|---|---|
+|          |                                                                                                                 |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
 | Upstream | [`get-bb/bb` → `examples/plugins/t3sidebar`](https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar) |
-| Commit | `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) |
+| Commit   | `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07)                                                         |
 
 The provider brand marks are vendored SVG geometry from `get-bb/bb` and depict
 third-party brands. A host-served logo always wins over them, rendered as a muted

@@ -22,7 +22,10 @@ export function oneLine(text: string, maxChars: number): string {
   const characters = Array.from(collapsed);
   if (characters.length <= maxChars) return collapsed;
   if (maxChars <= 0) return "";
-  return `${characters.slice(0, maxChars - 1).join("").trimEnd()}…`;
+  return `${characters
+    .slice(0, maxChars - 1)
+    .join("")
+    .trimEnd()}…`;
 }
 
 /** Best available human name for a thread. */
@@ -72,10 +75,8 @@ export function plainText(markdown: string): string {
       // private use area first — otherwise the emphasis rules below would
       // treat `\*not italic\*` as emphasis and eat both asterisks. Restored
       // at the end, once no rule can mistake it for syntax.
-      .replaceAll(
-        /\\([\\`*_{}[\]()#+\-.!>~|])/gu,
-        (_match, char: string) =>
-          String.fromCodePoint(ESCAPE_OFFSET + (char.codePointAt(0) ?? 0)),
+      .replaceAll(/\\([\\`*_{}[\]()#+\-.!>~|])/gu, (_match, char: string) =>
+        String.fromCodePoint(ESCAPE_OFFSET + (char.codePointAt(0) ?? 0)),
       )
       // Fenced and inline code: keep the code, drop the fences.
       .replaceAll(/```[a-z]*\n?/giu, "")

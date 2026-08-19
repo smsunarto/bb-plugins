@@ -116,9 +116,7 @@ export const staticGroups: readonly TweakableGroupDefinition[] = [
   {
     id: "repo",
     title: "Repo policy",
-    files: [
-      { path: "AGENTS.md", title: "AGENTS.md", note: "Repository agent guide" },
-    ],
+    files: [{ path: "AGENTS.md", title: "AGENTS.md", note: "Repository agent guide" }],
   },
 ];
 
@@ -182,19 +180,11 @@ export const publishTask: TaskDefinition = {
 export function groupDefinitions(
   skills: readonly TweakableDefinition[],
 ): readonly TweakableGroupDefinition[] {
-  return [
-    ...staticGroups,
-    { id: "skills", title: "Skills", files: skills },
-  ];
+  return [...staticGroups, { id: "skills", title: "Skills", files: skills }];
 }
 
-export function isAllowedPath(
-  path: string,
-  skills: readonly TweakableDefinition[],
-): boolean {
-  return groupDefinitions(skills).some((group) =>
-    group.files.some((file) => file.path === path),
-  );
+export function isAllowedPath(path: string, skills: readonly TweakableDefinition[]): boolean {
+  return groupDefinitions(skills).some((group) => group.files.some((file) => file.path === path));
 }
 
 export function needsRender(path: string): boolean {

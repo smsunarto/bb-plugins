@@ -22,9 +22,7 @@ test("parseNumstatZ handles text, binary, and renamed files", () => {
 
 test("parseNameStatusZ preserves rename and copy source paths", () => {
   assert.deepEqual(
-    parseNameStatusZ(
-      "M\0plain.ts\0R100\0old.ts\0new.ts\0C90\0source.ts\0copy.ts\0D\0gone.ts\0",
-    ),
+    parseNameStatusZ("M\0plain.ts\0R100\0old.ts\0new.ts\0C90\0source.ts\0copy.ts\0D\0gone.ts\0"),
     [
       { status: "modified", path: "plain.ts", previousPath: null },
       { status: "renamed", path: "new.ts", previousPath: "old.ts" },
@@ -36,9 +34,7 @@ test("parseNameStatusZ preserves rename and copy source paths", () => {
 
 test("parsePorcelainZ handles staged renames and unusual filenames", () => {
   assert.deepEqual(
-    parsePorcelainZ(
-      "R  new name.ts\0old name.ts\0?? line\nbreak.txt\0 M tab\tname.ts\0",
-    ),
+    parsePorcelainZ("R  new name.ts\0old name.ts\0?? line\nbreak.txt\0 M tab\tname.ts\0"),
     [
       { status: "renamed", path: "new name.ts", previousPath: "old name.ts" },
       { status: "untracked", path: "line\nbreak.txt", previousPath: null },
@@ -48,17 +44,12 @@ test("parsePorcelainZ handles staged renames and unusual filenames", () => {
 });
 
 test("buildChangeSet truncates rows without truncating aggregate totals", () => {
-  const entries: DiffEntry[] = Array.from(
-    { length: MAX_DIFF_FILES + 1 },
-    (_, index) => ({
-      status: "modified",
-      path: `file-${index}.ts`,
-      previousPath: null,
-    }),
-  );
-  const counts = new Map(
-    entries.map((entry) => [entry.path, { additions: 1, deletions: 2 }]),
-  );
+  const entries: DiffEntry[] = Array.from({ length: MAX_DIFF_FILES + 1 }, (_, index) => ({
+    status: "modified",
+    path: `file-${index}.ts`,
+    previousPath: null,
+  }));
+  const counts = new Map(entries.map((entry) => [entry.path, { additions: 1, deletions: 2 }]));
   const changeSet = buildChangeSet(entries, counts);
   assert.equal(changeSet.files.length, MAX_DIFF_FILES);
   assert.equal(changeSet.truncated, true);

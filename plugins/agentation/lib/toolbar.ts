@@ -194,10 +194,7 @@ function loadSynced(route: string): Set<string> {
 
 function saveSynced(route: string, ids: Iterable<string>): void {
   try {
-    localStorage.setItem(
-      `${SYNCED_KEY_PREFIX}${route}`,
-      JSON.stringify([...ids]),
-    );
+    localStorage.setItem(`${SYNCED_KEY_PREFIX}${route}`, JSON.stringify([...ids]));
   } catch {
     // Storage full or disabled. Losing the ledger costs a resurrected
     // annotation at worst, never a lost one.
@@ -211,10 +208,7 @@ export async function mountAnnotationToolbar(
 
   // bb resolves system/custom themes before plugin content scripts mount.
   // Seed once; Agentation owns and persists every user change after this.
-  seedAgentationThemeDefault(
-    localStorage,
-    document.documentElement.classList.contains("dark"),
-  );
+  seedAgentationThemeDefault(localStorage, document.documentElement.classList.contains("dark"));
 
   const host = document.createElement("div");
   host.setAttribute("data-bb-agentation-host", "");
@@ -270,10 +264,7 @@ export async function mountAnnotationToolbar(
     // delta now so a fast server echo cannot reconcile against the old row.
     saveAnnotations(
       meta.route,
-      upsertLocalAnnotation(
-        loadAnnotations<Annotation>(meta.route),
-        annotation,
-      ),
+      upsertLocalAnnotation(loadAnnotations<Annotation>(meta.route), annotation),
     );
     localMutationRevision += 1;
     latestRevisionById.set(annotation.id, localMutationRevision);
@@ -293,10 +284,7 @@ export async function mountAnnotationToolbar(
     // that intent before any RPC response can trigger reconciliation.
     saveAnnotations(
       meta.route,
-      deleteLocalAnnotation(
-        loadAnnotations<Annotation>(meta.route),
-        annotation.id,
-      ),
+      deleteLocalAnnotation(loadAnnotations<Annotation>(meta.route), annotation.id),
     );
     localMutationRevision += 1;
     latestRevisionById.set(annotation.id, localMutationRevision);
@@ -404,11 +392,7 @@ export async function mountAnnotationToolbar(
     for (const item of group.upserts) {
       const id = item.annotation.id;
       if (
-        !shouldRequeueOperation(
-          item.revision,
-          clearedThrough,
-          latestRevisionById.get(id) ?? null,
-        )
+        !shouldRequeueOperation(item.revision, clearedThrough, latestRevisionById.get(id) ?? null)
       ) {
         continue;
       }
@@ -440,12 +424,7 @@ export async function mountAnnotationToolbar(
     if (known) {
       if (
         activationRevision !== null &&
-        isCurrentRouteRequest(
-          page.route,
-          activationRevision,
-          meta.route,
-          routeRevision,
-        )
+        isCurrentRouteRequest(page.route, activationRevision, meta.route, routeRevision)
       ) {
         sessionId = known;
       }
@@ -475,12 +454,7 @@ export async function mountAnnotationToolbar(
       // A -> B -> A from the original, now-obsolete A request.
       if (
         activationRevision !== null &&
-        isCurrentRouteRequest(
-          page.route,
-          activationRevision,
-          meta.route,
-          routeRevision,
-        )
+        isCurrentRouteRequest(page.route, activationRevision, meta.route, routeRevision)
       ) {
         sessionId = id;
         if (openedAnnotations !== null) {
@@ -501,9 +475,7 @@ export async function mountAnnotationToolbar(
     }
   }
 
-  async function ensureSession(
-    revision = routeRevision,
-  ): Promise<string | null> {
+  async function ensureSession(revision = routeRevision): Promise<string | null> {
     return sessionFor(meta, revision);
   }
 
@@ -529,9 +501,7 @@ export async function mountAnnotationToolbar(
           focused: document.activeElement === field,
           width: rect.width,
           height: rect.height,
-          settingsField: Boolean(
-            field.closest("[data-agentation-settings-panel]"),
-          ),
+          settingsField: Boolean(field.closest("[data-agentation-settings-panel]")),
         })
       ) {
         return true;
@@ -566,8 +536,7 @@ export async function mountAnnotationToolbar(
     if (toolbarIsBusy()) return "deferred";
 
     const open = annotations.filter(
-      (annotation) =>
-        annotation.status !== "resolved" && annotation.status !== "dismissed",
+      (annotation) => annotation.status !== "resolved" && annotation.status !== "dismissed",
     );
     const local = loadAnnotations<Annotation>(route);
 
@@ -676,12 +645,7 @@ export async function mountAnnotationToolbar(
     });
     if (
       !clearSucceeded &&
-      isCurrentRouteRequest(
-        page.route,
-        activationRevision,
-        meta.route,
-        routeRevision,
-      )
+      isCurrentRouteRequest(page.route, activationRevision, meta.route, routeRevision)
     ) {
       // Agentation cleared its local state before calling us. The server did
       // not change, so an ordinary pull at the old cursor would say unchanged
@@ -735,9 +699,7 @@ export async function mountAnnotationToolbar(
     // A held-back change has no second event coming — the stream already fired
     // for it — so keep checking often until it can be applied.
     const delay =
-      streamHealthy && !reconcileDeferred && sessionId !== null
-        ? IDLE_POLL_MS
-        : FALLBACK_POLL_MS;
+      streamHealthy && !reconcileDeferred && sessionId !== null ? IDLE_POLL_MS : FALLBACK_POLL_MS;
     pollTimer = setTimeout(() => {
       pollTimer = null;
       void pullQueue.request();
@@ -803,15 +765,7 @@ export async function mountAnnotationToolbar(
     // drained before the switch — it will still reach the right session.
     void flush();
     const id = await sessionFor(page, revision);
-    if (
-      !id ||
-      !isCurrentRouteRequest(
-        page.route,
-        revision,
-        meta.route,
-        routeRevision,
-      )
-    ) {
+    if (!id || !isCurrentRouteRequest(page.route, revision, meta.route, routeRevision)) {
       return;
     }
     // A cached session has no fresh snapshot attached. Pull now instead of

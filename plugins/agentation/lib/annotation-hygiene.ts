@@ -48,7 +48,5 @@ export function selectOrphans<T extends { id: string }>(
   knownToServer: ReadonlySet<string>,
   synced: ReadonlySet<string>,
 ): T[] {
-  return local.filter(
-    (item) => !knownToServer.has(item.id) && !synced.has(item.id),
-  );
+  return local.filter((item) => !knownToServer.has(item.id) && !synced.has(item.id));
 }

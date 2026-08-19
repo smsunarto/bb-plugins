@@ -6,18 +6,18 @@ contract before the bb adapter, never after.
 
 ## Layout
 
-| Path | Role |
-|---|---|
-| `CONTRACT.md` | Shared role and palette contract. Amend first. |
-| `scripts/generate-theme.ts` | Palette, role registry, generation, and contract audit. |
-| `scripts/bb-monokai.template.css` | Host selectors with symbolic color roles. |
-| `scripts/code-theme-rules.json` | Vendored scope map for the code theme. Roles, not hexes. |
-| `scripts/code-theme-rules.ts` | Its type and reader. |
-| `scripts/sync-code-theme.ts` | Re-vendors that map from the sibling editor theme. |
-| `themes/bb-monokai.css` | Generated. Never hand-edit. |
-| `themes/bb-monokai-code.json` | Generated Shiki/TextMate theme. Never hand-edit. |
-| `test/theme-contract.test.ts` | Regression coverage for the audit's failure modes. |
-| `storybook/` | Visual component-state review; live bb remains the host integration check. |
+| Path                              | Role                                                                       |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| `CONTRACT.md`                     | Shared role and palette contract. Amend first.                             |
+| `scripts/generate-theme.ts`       | Palette, role registry, generation, and contract audit.                    |
+| `scripts/bb-monokai.template.css` | Host selectors with symbolic color roles.                                  |
+| `scripts/code-theme-rules.json`   | Vendored scope map for the code theme. Roles, not hexes.                   |
+| `scripts/code-theme-rules.ts`     | Its type and reader.                                                       |
+| `scripts/sync-code-theme.ts`      | Re-vendors that map from the sibling editor theme.                         |
+| `themes/bb-monokai.css`           | Generated. Never hand-edit.                                                |
+| `themes/bb-monokai-code.json`     | Generated Shiki/TextMate theme. Never hand-edit.                           |
+| `test/theme-contract.test.ts`     | Regression coverage for the audit's failure modes.                         |
+| `storybook/`                      | Visual component-state review; live bb remains the host integration check. |
 
 ## Loop
 

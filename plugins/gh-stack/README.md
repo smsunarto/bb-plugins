@@ -87,7 +87,7 @@ parent, so you see only what it adds.
 
 **Adding a layer**
 
-Type a PR-style name — *"Add rate limiting to the API"* — and the branch name is
+Type a PR-style name — _"Add rate limiting to the API"_ — and the branch name is
 derived as you type. **Suggest** drafts a title from your changes.
 
 **Magic Stack**
@@ -112,10 +112,10 @@ ready run from the trunk up, stopping at the first draft or closed PR.
 Open the gear at the right edge of the panel header. Both settings are global to
 the plugin, not per repository.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `branchPrefix` | *(empty — detect)* | Namespace prepended to every derived branch. Empty means "match this workspace": the namespace the stack's own branches share, else the checked-out branch's. A missing separator is added (`team` → `team/`); a value that cannot form a branch is rejected |
-| `conventionalCommits` | `false` | Titles read `feat(api): add rate limiting`. The type leads the branch slug and the scope is dropped from it |
+| Key                   | Default            | Meaning                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `branchPrefix`        | _(empty — detect)_ | Namespace prepended to every derived branch. Empty means "match this workspace": the namespace the stack's own branches share, else the checked-out branch's. A missing separator is added (`team` → `team/`); a value that cannot form a branch is rejected |
+| `conventionalCommits` | `false`            | Titles read `feat(api): add rate limiting`. The type leads the branch slug and the scope is dropped from it                                                                                                                                                  |
 
 The popup shows a live example of the branch the composer would build.
 
@@ -123,14 +123,14 @@ The popup shows a live example of the branch the composer would build.
 
 `gh stack` exit codes are mapped to messages rather than surfaced raw:
 
-| Symptom | Meaning |
-|---|---|
-| "not a stack" | The current branch is not part of one. Only reported when `gh` explicitly says so |
-| "rebase conflict" | Exit 3 or 7 — sync stopped mid-rebase |
-| "GitHub API failure" | Exit 4 |
-| "stack file locked" | Exit 8 — another `gh stack` is running |
-| "stacked PRs not enabled" | Exit 9 — enable them on the repository |
-| "gh not found" | The CLI is missing on the **server** host, not your laptop |
+| Symptom                   | Meaning                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| "not a stack"             | The current branch is not part of one. Only reported when `gh` explicitly says so |
+| "rebase conflict"         | Exit 3 or 7 — sync stopped mid-rebase                                             |
+| "GitHub API failure"      | Exit 4                                                                            |
+| "stack file locked"       | Exit 8 — another `gh stack` is running                                            |
+| "stacked PRs not enabled" | Exit 9 — enable them on the repository                                            |
+| "gh not found"            | The CLI is missing on the **server** host, not your laptop                        |
 
 Recoverable sync failures — rebase conflicts, unfinished rebases, local/remote
 divergence, known topology conflicts — are handed to the thread's agent with a

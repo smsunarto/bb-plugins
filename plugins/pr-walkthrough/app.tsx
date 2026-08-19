@@ -44,9 +44,7 @@ function WalkthroughDirective({ attributes }: PluginMessageDirectiveProps) {
   return (
     <div className="my-2 flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2">
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-foreground">
-          {title}
-        </div>
+        <div className="truncate text-sm font-medium text-foreground">{title}</div>
         <div className="truncate text-xs text-muted-foreground">
           Semantic review guide built in this workspace
         </div>
@@ -83,9 +81,7 @@ function GuideBlocks({ blocks }: { blocks: WalkthroughGuideBlock[] }) {
               <Markdown
                 key={index}
                 content={block.items
-                  .map((item, i) =>
-                    block.ordered ? `${i + 1}. ${item}` : `- ${item}`,
-                  )
+                  .map((item, i) => (block.ordered ? `${i + 1}. ${item}` : `- ${item}`))
                   .join("\n")}
               />
             );
@@ -162,14 +158,8 @@ function GuideDiagram({ diagram }: { diagram: WalkthroughGuideDiagram }) {
       <div className="grid gap-2 sm:grid-cols-2">
         {diagram.nodes.map((node) => (
           <div key={node.id} className="rounded-md border border-border p-2">
-            <div className="text-xs font-medium text-foreground">
-              {node.label}
-            </div>
-            {node.detail && (
-              <div className="mt-1 text-xs text-muted-foreground">
-                {node.detail}
-              </div>
-            )}
+            <div className="text-xs font-medium text-foreground">{node.label}</div>
+            {node.detail && <div className="mt-1 text-xs text-muted-foreground">{node.detail}</div>}
           </div>
         ))}
       </div>
@@ -183,9 +173,7 @@ function GuideDiagram({ diagram }: { diagram: WalkthroughGuideDiagram }) {
           </li>
         ))}
       </ul>
-      <figcaption className="text-xs text-muted-foreground">
-        {diagram.summary}
-      </figcaption>
+      <figcaption className="text-xs text-muted-foreground">{diagram.summary}</figcaption>
     </figure>
   );
 }
@@ -201,9 +189,7 @@ function ExcerptSection({
   reviewed: boolean;
   onToggleReviewed: () => void;
 }) {
-  const lineAnnotations = useMemo<
-    DiffLineAnnotation<WalkthroughGuideComment>[]
-  >(
+  const lineAnnotations = useMemo<DiffLineAnnotation<WalkthroughGuideComment>[]>(
     () =>
       excerpt.comments.map((comment) => ({
         lineNumber: comment.lineNumber,
@@ -232,11 +218,7 @@ function ExcerptSection({
           Binary file: {excerpt.path}
         </div>
       ) : (
-        <PatchDiff
-          patch={excerpt.patch}
-          diffStyle={diffStyle}
-          lineAnnotations={lineAnnotations}
-        />
+        <PatchDiff patch={excerpt.patch} diffStyle={diffStyle} lineAnnotations={lineAnnotations} />
       )}
     </section>
   );
@@ -259,35 +241,23 @@ function NormalMode({
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
   const sectionRefs = useRef(new Map<string, HTMLElement>());
 
-  const byPath = useMemo(
-    () => new Map(diffFiles.map((file) => [file.path, file])),
-    [diffFiles],
-  );
+  const byPath = useMemo(() => new Map(diffFiles.map((file) => [file.path, file])), [diffFiles]);
   const files = group.files
     .map((file) => ({ file, diff: byPath.get(file.path) }))
     .filter((entry) => entry.diff !== undefined);
-  const primary = files.filter(
-    (entry) => !entry.diff!.generated && !entry.diff!.binary,
-  );
-  const generated = files.filter(
-    (entry) => entry.diff!.generated || entry.diff!.binary,
-  );
+  const primary = files.filter((entry) => !entry.diff!.generated && !entry.diff!.binary);
+  const generated = files.filter((entry) => entry.diff!.generated || entry.diff!.binary);
   const treeFiles = useMemo(
     () =>
       files
-        .filter(
-          (entry) =>
-            showGenerated || (!entry.diff!.generated && !entry.diff!.binary),
-        )
+        .filter((entry) => showGenerated || (!entry.diff!.generated && !entry.diff!.binary))
         .map((entry) => entry.diff!),
     [files, showGenerated],
   );
 
   const selectPath = (path: string) => {
     setSelectedPath(path);
-    sectionRefs.current
-      .get(path)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    sectionRefs.current.get(path)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const renderEntry = (entry: (typeof files)[number]) => (
@@ -301,21 +271,15 @@ function NormalMode({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-mono text-xs text-foreground">
-            {entry.file.path}
-          </div>
+          <div className="truncate font-mono text-xs text-foreground">{entry.file.path}</div>
           {entry.file.note && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {entry.file.note}
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{entry.file.note}</p>
           )}
         </div>
         <Button
           aria-pressed={reviewedPaths.has(entry.file.path)}
           size="sm"
-          variant={
-            reviewedPaths.has(entry.file.path) ? "secondary" : "outline"
-          }
+          variant={reviewedPaths.has(entry.file.path) ? "secondary" : "outline"}
           onClick={() => onToggleReviewed(entry.file.path)}
         >
           {reviewedPaths.has(entry.file.path) ? "Viewed" : "Mark viewed"}
@@ -336,18 +300,10 @@ function NormalMode({
       {files.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-medium text-foreground">
-              Changed files
-            </h3>
+            <h3 className="text-sm font-medium text-foreground">Changed files</h3>
             {generated.length > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowGenerated(!showGenerated)}
-              >
-                {showGenerated
-                  ? "Hide generated/binary"
-                  : "Show generated/binary"}
+              <Button size="sm" variant="outline" onClick={() => setShowGenerated(!showGenerated)}>
+                {showGenerated ? "Hide generated/binary" : "Show generated/binary"}
               </Button>
             )}
           </div>
@@ -388,11 +344,7 @@ function GuideMode({
     (phase) => phase.excerpts.length > 0 || phase.explanation.length > 0,
   );
   if (phases.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        This group has no authored guide.
-      </p>
-    );
+    return <p className="text-sm text-muted-foreground">This group has no authored guide.</p>;
   }
   return (
     <div className="space-y-6">
@@ -444,9 +396,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
   const [mode, setMode] = useState<"normal" | "guide">("normal");
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
   const [reviewedPaths, setReviewedPaths] = useState<Set<string>>(new Set());
-  const [reviewedExcerptIds, setReviewedExcerptIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [reviewedExcerptIds, setReviewedExcerptIds] = useState<Set<string>>(new Set());
   const [persistenceReady, setPersistenceReady] = useState(false);
   const [persistenceState, setPersistenceState] = useState<PersistenceState>({
     kind: "loading",
@@ -468,10 +418,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
     setPersistenceReady(false);
     setPersistenceState({ kind: "loading" });
     rpc
-      .call(
-        "getWalkthrough",
-        path === undefined ? { threadId } : { threadId, path },
-      )
+      .call("getWalkthrough", path === undefined ? { threadId } : { threadId, path })
       .then((result) => {
         if (result.walkthrough === null) {
           setState({
@@ -508,9 +455,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
     () =>
       new Set(
         walkthrough?.reviewGroups.flatMap((group) =>
-          group.guide.phases.flatMap((phase) =>
-            phase.excerpts.map((excerpt) => excerpt.id),
-          ),
+          group.guide.phases.flatMap((phase) => phase.excerpts.map((excerpt) => excerpt.id)),
         ) ?? [],
       ),
     [walkthrough],
@@ -546,8 +491,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
           new Set(
             Array.isArray(parsed.reviewedPaths)
               ? parsed.reviewedPaths.filter(
-                  (value): value is string =>
-                    typeof value === "string" && validPaths.has(value),
+                  (value): value is string => typeof value === "string" && validPaths.has(value),
                 )
               : [],
           ),
@@ -630,25 +574,16 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
   const group = reviewGroups[Math.min(groupIndex, reviewGroups.length - 1)];
   const diffByPath = new Map(diffFiles.map((file) => [file.path, file]));
   const groupPaths =
-    group?.files
-      .map((file) => file.path)
-      .filter((filePath) => diffByPath.has(filePath)) ?? [];
-  const groupExcerpts =
-    group?.guide.phases.flatMap((phase) => phase.excerpts) ?? [];
-  const requiredExcerpts = groupExcerpts.filter(
-    (excerpt) => excerpt.countsTowardCompletion,
-  );
-  const reviewedFileCount = groupPaths.filter((filePath) =>
-    reviewedPaths.has(filePath),
-  ).length;
+    group?.files.map((file) => file.path).filter((filePath) => diffByPath.has(filePath)) ?? [];
+  const groupExcerpts = group?.guide.phases.flatMap((phase) => phase.excerpts) ?? [];
+  const requiredExcerpts = groupExcerpts.filter((excerpt) => excerpt.countsTowardCompletion);
+  const reviewedFileCount = groupPaths.filter((filePath) => reviewedPaths.has(filePath)).length;
   const reviewedExcerptCount = requiredExcerpts.filter((excerpt) =>
     reviewedExcerptIds.has(excerpt.id),
   ).length;
-  const normalComplete =
-    groupPaths.length > 0 && reviewedFileCount === groupPaths.length;
+  const normalComplete = groupPaths.length > 0 && reviewedFileCount === groupPaths.length;
   const guideComplete =
-    requiredExcerpts.length > 0 &&
-    reviewedExcerptCount === requiredExcerpts.length;
+    requiredExcerpts.length > 0 && reviewedExcerptCount === requiredExcerpts.length;
   const groupReviewed = normalComplete || guideComplete;
 
   const toggleGroupReviewed = () => {
@@ -675,9 +610,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
       <header className="shrink-0 space-y-2 border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">
-              {meta.title}
-            </div>
+            <div className="truncate text-sm font-semibold text-foreground">{meta.title}</div>
             <div className="truncate font-mono text-xs text-muted-foreground">
               {meta.headRef} → {meta.baseRef}
             </div>
@@ -693,9 +626,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                setDiffStyle(diffStyle === "unified" ? "split" : "unified")
-              }
+              onClick={() => setDiffStyle(diffStyle === "unified" ? "split" : "unified")}
             >
               {diffStyle === "unified" ? "Unified" : "Split"}
             </Button>
@@ -729,12 +660,9 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
                   .flatMap((phase) => phase.excerpts)
                   .filter((excerpt) => excerpt.countsTowardCompletion);
                 const reviewed =
-                  (paths.length > 0 &&
-                    paths.every((filePath) => reviewedPaths.has(filePath))) ||
+                  (paths.length > 0 && paths.every((filePath) => reviewedPaths.has(filePath))) ||
                   (excerpts.length > 0 &&
-                    excerpts.every((excerpt) =>
-                      reviewedExcerptIds.has(excerpt.id),
-                    ));
+                    excerpts.every((excerpt) => reviewedExcerptIds.has(excerpt.id)));
                 return reviewed ? " · Reviewed" : "";
               })()}
             </button>
@@ -742,9 +670,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
         </div>
       </header>
       {persistenceState.kind === "failed" && (
-        <output
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground"
-        >
+        <output className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
           <span className="min-w-0 flex-1">
             {persistenceState.stage === "load"
               ? "Saved progress could not be read. Retry or reset it before new progress is saved."
@@ -764,12 +690,9 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="space-y-4 p-4">
             <div className="space-y-2">
-              <h2 className="text-base font-semibold text-foreground">
-                {group.title}
-              </h2>
+              <h2 className="text-base font-semibold text-foreground">{group.title}</h2>
               <p className="text-sm text-muted-foreground">
-                Section {groupIndex + 1} of {reviewGroups.length} ·{" "}
-                {group.objective}
+                Section {groupIndex + 1} of {reviewGroups.length} · {group.objective}
               </p>
               <Markdown content={group.summary} />
               {group.details.map((detail, index) => (
@@ -800,9 +723,7 @@ function ViewerPanel({ threadId, params }: PluginThreadPanelProps) {
                 variant={groupReviewed ? "secondary" : "outline"}
                 onClick={toggleGroupReviewed}
               >
-                {groupReviewed
-                  ? "Reviewed · Normal + Guide"
-                  : "Mark Normal + Guide reviewed"}
+                {groupReviewed ? "Reviewed · Normal + Guide" : "Mark Normal + Guide reviewed"}
               </Button>
             </div>
             {mode === "normal" ? (

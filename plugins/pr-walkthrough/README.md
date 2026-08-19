@@ -39,14 +39,14 @@ approval verdicts. "Reviewed" means you read it.
 
 ## Requirements
 
-| | |
-|---|---|
-| bb | 0.39+ |
-| Bun | builds the plugin, and scaffolds, compiles, and validates the static site |
-| Node.js | 20.9+ |
-| git | on `PATH` |
-| `gh` | optional. The only path to pull-request metadata and review comments. Without it the run falls back to the remote default branch |
-| Browser automation | optional. Without it the run reports rendering as unverified |
+|                    |                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| bb                 | 0.39+                                                                                                                            |
+| Bun                | builds the plugin, and scaffolds, compiles, and validates the static site                                                        |
+| Node.js            | 20.9+                                                                                                                            |
+| git                | on `PATH`                                                                                                                        |
+| `gh`               | optional. The only path to pull-request metadata and review comments. Without it the run falls back to the remote default branch |
+| Browser automation | optional. Without it the run reports rendering as unverified                                                                     |
 
 ## Install
 
@@ -85,9 +85,9 @@ host.
 
 The plugin has no settings.
 
-| | |
-|---|---|
-| Data directory | Defaults to `.pr-walkthrough/site` in the workspace. The directive's `path` attribute can point somewhere else, but it must stay a relative path inside the workspace |
+|                          |                                                                                                                                                                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Data directory           | Defaults to `.pr-walkthrough/site` in the workspace. The directive's `path` attribute can point somewhere else, but it must stay a relative path inside the workspace                                                                                                         |
 | `--include-full-context` | Optional generation flag. It embeds the exact old and new file contents in the static site so the site can expand omitted hunks. That artifact is localhost-only: bind previews to loopback, never `0.0.0.0`, and regenerate without the flag before you host it on a network |
 
 Do not hand-edit the compiled walkthrough JSON. The validator fails when the file is
@@ -95,14 +95,13 @@ older than its inputs.
 
 ## Troubleshooting
 
-| Message or symptom | What to do |
-|---|---|
-| `No compiled walkthrough at ...` | The skill did not finish, or it wrote to a different directory. Ask the agent to run the pr-walkthrough skill again, then retry |
-| `The compiled walkthrough data does not match the expected shape.` | Regenerate the walkthrough with the skill's scaffold step. Do not edit the JSON by hand |
-| `The compiled walkthrough data is not valid JSON.` | Same: regenerate it |
-| `This thread has no workspace environment.` / `The thread's environment has no workspace path.` | Open the walkthrough from a thread that has a workspace |
-| `The walkthrough path must be a workspace-relative directory.` | The directive path is absolute or contains `..`. Regenerate the walkthrough |
-| No **Open walkthrough** card appears | The run reported rendering as unverified, usually because browser automation was unavailable. Open the **PR Walkthrough** panel tab directly |
-| Progress does not persist | The panel shows a status line and a **Retry** / **Reset saved progress** row. Browser storage that cannot be read is never overwritten silently |
-| The panel does not load | `bb plugin logs pr-walkthrough`, then `bb plugin reload pr-walkthrough` |
-
+| Message or symptom                                                                              | What to do                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `No compiled walkthrough at ...`                                                                | The skill did not finish, or it wrote to a different directory. Ask the agent to run the pr-walkthrough skill again, then retry                 |
+| `The compiled walkthrough data does not match the expected shape.`                              | Regenerate the walkthrough with the skill's scaffold step. Do not edit the JSON by hand                                                         |
+| `The compiled walkthrough data is not valid JSON.`                                              | Same: regenerate it                                                                                                                             |
+| `This thread has no workspace environment.` / `The thread's environment has no workspace path.` | Open the walkthrough from a thread that has a workspace                                                                                         |
+| `The walkthrough path must be a workspace-relative directory.`                                  | The directive path is absolute or contains `..`. Regenerate the walkthrough                                                                     |
+| No **Open walkthrough** card appears                                                            | The run reported rendering as unverified, usually because browser automation was unavailable. Open the **PR Walkthrough** panel tab directly    |
+| Progress does not persist                                                                       | The panel shows a status line and a **Retry** / **Reset saved progress** row. Browser storage that cannot be read is never overwritten silently |
+| The panel does not load                                                                         | `bb plugin logs pr-walkthrough`, then `bb plugin reload pr-walkthrough`                                                                         |

@@ -11,9 +11,7 @@ type GitResult = {
 
 type GitRunner = (args: string[], cwd: string) => Promise<GitResult>;
 
-export type WorkspaceKeyResult =
-  | { key: string; error: null }
-  | { key: null; error: string };
+export type WorkspaceKeyResult = { key: string; error: null } | { key: null; error: string };
 
 // A worktree path is not a safe lock identity: linked worktrees share refs
 // and gh-stack metadata. Fail closed unless Git identifies the common dir.

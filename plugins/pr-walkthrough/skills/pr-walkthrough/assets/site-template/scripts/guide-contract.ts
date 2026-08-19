@@ -322,10 +322,7 @@ export function parseGitDiffHeader(line: string): [string, string] {
         const oldField = remainder.slice(0, index + 1);
         const newField = remainder.slice(index + 1).replace(/^\s+/, "");
         if (!newField) return ["", ""];
-        return [
-          stripGitPrefix(decodeGitPath(oldField)),
-          stripGitPrefix(decodeGitPath(newField)),
-        ];
+        return [stripGitPrefix(decodeGitPath(oldField)), stripGitPrefix(decodeGitPath(newField))];
       }
       escaped = character === "\\" && !escaped;
     }
@@ -420,10 +417,24 @@ function indexPatchBlock(block: string): IndexedPatchFile | null {
         oldCursor += 1;
         newCursor += 1;
       } else if (raw.startsWith("-")) {
-        rows.push({ kind: "deletion", raw, oldLine: oldCursor, newLine: null, oldBefore, newBefore });
+        rows.push({
+          kind: "deletion",
+          raw,
+          oldLine: oldCursor,
+          newLine: null,
+          oldBefore,
+          newBefore,
+        });
         oldCursor += 1;
       } else if (raw.startsWith("+")) {
-        rows.push({ kind: "addition", raw, oldLine: null, newLine: newCursor, oldBefore, newBefore });
+        rows.push({
+          kind: "addition",
+          raw,
+          oldLine: null,
+          newLine: newCursor,
+          oldBefore,
+          newBefore,
+        });
         newCursor += 1;
       } else if (raw.startsWith("\\ No newline at end of file")) {
         rows.push({ kind: "no-newline", raw, oldLine: null, newLine: null, oldBefore, newBefore });
@@ -513,9 +524,9 @@ function formatRangeLabel(refs: LineRef[] | null): string {
     ["deletions", "L"],
     ["additions", "R"],
   ] as const) {
-    const numbers = [...new Set(refs.filter((ref) => ref.side === side).map((ref) => ref.lineNumber))].toSorted(
-      (a, b) => a - b,
-    );
+    const numbers = [
+      ...new Set(refs.filter((ref) => ref.side === side).map((ref) => ref.lineNumber)),
+    ].toSorted((a, b) => a - b);
     const ranges: string[] = [];
     let startIndex = 0;
     while (startIndex < numbers.length) {
@@ -525,7 +536,9 @@ function formatRangeLabel(refs: LineRef[] | null): string {
       }
       const start = numbers[startIndex];
       const end = numbers[endIndex];
-      ranges.push(start === end ? `${prefix}${String(start)}` : `${prefix}${String(start)}–${String(end)}`);
+      ranges.push(
+        start === end ? `${prefix}${String(start)}` : `${prefix}${String(start)}–${String(end)}`,
+      );
       startIndex = endIndex + 1;
     }
     if (ranges.length > 0) groups.push(ranges.join(", "));
@@ -809,7 +822,9 @@ function validateDiagram(payload: unknown, context: string): GuideDiagram {
     const index = position + 1;
     const node: unknown = nodes[position];
     if (!isRecord(node) || extraKeys(node, ["id", "label", "detail", "x", "y"]).length > 0) {
-      throw new GuideCompileError(`${context} guide-diagram node ${String(index)} has invalid fields`);
+      throw new GuideCompileError(
+        `${context} guide-diagram node ${String(index)} has invalid fields`,
+      );
     }
     const nodeId = node.id;
     const label = node.label;
@@ -817,7 +832,9 @@ function validateDiagram(payload: unknown, context: string): GuideDiagram {
     const x = node.x;
     const y = node.y;
     if (typeof nodeId !== "string" || !DIAGRAM_NODE_ID.test(nodeId)) {
-      throw new GuideCompileError(`${context} guide-diagram node ${String(index)} needs a stable id`);
+      throw new GuideCompileError(
+        `${context} guide-diagram node ${String(index)} needs a stable id`,
+      );
     }
     if (nodeIds.has(nodeId)) {
       throw new GuideCompileError(`${context} guide-diagram repeats node id ${nodeId}`);
@@ -850,19 +867,27 @@ function validateDiagram(payload: unknown, context: string): GuideDiagram {
     const index = position + 1;
     const edge: unknown = edges[position];
     if (!isRecord(edge) || extraKeys(edge, ["source", "target", "label"]).length > 0) {
-      throw new GuideCompileError(`${context} guide-diagram edge ${String(index)} has invalid fields`);
+      throw new GuideCompileError(
+        `${context} guide-diagram edge ${String(index)} has invalid fields`,
+      );
     }
     const source = edge.source;
     const target = edge.target;
     const label = edge.label;
     if (typeof source !== "string" || !nodeIds.has(source)) {
-      throw new GuideCompileError(`${context} guide-diagram edge ${String(index)} has unknown source`);
+      throw new GuideCompileError(
+        `${context} guide-diagram edge ${String(index)} has unknown source`,
+      );
     }
     if (typeof target !== "string" || !nodeIds.has(target)) {
-      throw new GuideCompileError(`${context} guide-diagram edge ${String(index)} has unknown target`);
+      throw new GuideCompileError(
+        `${context} guide-diagram edge ${String(index)} has unknown target`,
+      );
     }
     if (label !== undefined && label !== null && typeof label !== "string") {
-      throw new GuideCompileError(`${context} guide-diagram edge ${String(index)} label must be text`);
+      throw new GuideCompileError(
+        `${context} guide-diagram edge ${String(index)} label must be text`,
+      );
     }
     const labelText = typeof label === "string" ? label : "";
     const signature = `${source}\u0000${target}\u0000${labelText}`;
@@ -1069,7 +1094,8 @@ function parseExcerpt(
   }
 
   if (inFence) throw new GuideCompileError(`Guide excerpt ${title} has an unterminated code fence`);
-  if (!localId) throw new GuideCompileError(`Guide excerpt ${title} needs exactly one Diff directive`);
+  if (!localId)
+    throw new GuideCompileError(`Guide excerpt ${title} needs exactly one Diff directive`);
   if (!groupPaths.has(path)) {
     throw new GuideCompileError(
       `Guide excerpt ${localId} references a file outside review group ${groupId}: ${path}`,
@@ -1305,7 +1331,9 @@ export function compileGuide(
     const diffFile = diffByPath.get(path);
     const indexed = patchByPath.get(path);
     if (!diffFile || !indexed) {
-      throw new GuideCompileError(`Guide for ${groupId} cannot validate missing patch file ${path}`);
+      throw new GuideCompileError(
+        `Guide for ${groupId} cannot validate missing patch file ${path}`,
+      );
     }
     const specialWholeFile = Boolean(
       diffFile.generated || diffFile.binary || indexed.changedRefs.size === 0,

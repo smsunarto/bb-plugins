@@ -14,10 +14,10 @@ through `AMP_CLI_PATH` and never bundles.
 
 ## MIT
 
-| Work | Copyright | Where it is used |
-| --- | --- | --- |
-| [`zod`](https://zod.dev) | Copyright (c) 2025 Colin McDonnell | `dist/server.js` and `dist/bridge.js` |
-| [Tailwind CSS](https://tailwindcss.com) | Copyright (c) Tailwind Labs, Inc. | Generated utility CSS in `dist/app.css` |
+| Work                                    | Copyright                          | Where it is used                        |
+| --------------------------------------- | ---------------------------------- | --------------------------------------- |
+| [`zod`](https://zod.dev)                | Copyright (c) 2025 Colin McDonnell | `dist/server.js` and `dist/bridge.js`   |
+| [Tailwind CSS](https://tailwindcss.com) | Copyright (c) Tailwind Labs, Inc.  | Generated utility CSS in `dist/app.css` |
 
 Each of the works above is distributed under the MIT License:
 
@@ -45,8 +45,8 @@ SOFTWARE.
 
 ## Apache License 2.0
 
-| Work | Copyright | Where it is used |
-| --- | --- | --- |
+| Work                                                                                | Copyright                                            | Where it is used                       |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------- |
 | [`@agentclientprotocol/sdk`](https://github.com/agentclientprotocol/typescript-sdk) | Copyright 2025 Zed Industries, Inc. and contributors | The ACP agent side of `dist/bridge.js` |
 
 The package ships no NOTICE file. Its licence text follows in full.
@@ -247,10 +247,10 @@ The package ships no NOTICE file. Its licence text follows in full.
 
 ## Amp
 
-| Work | Copyright | Where it is used |
-| --- | --- | --- |
-| [`@ampcode/sdk`](https://www.npmjs.com/package/@ampcode/sdk) | © Sourcegraph Inc. | The Amp execution layer of `dist/bridge.js` |
-| Amp logo mark | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, `dist/server.js`, `dist/app.js`, and the copy written to `<bb data dir>/logos/amp.svg` |
+| Work                                                         | Copyright          | Where it is used                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@ampcode/sdk`](https://www.npmjs.com/package/@ampcode/sdk) | © Sourcegraph Inc. | The Amp execution layer of `dist/bridge.js`                                                                                                          |
+| Amp logo mark                                                | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, `dist/server.js`, `dist/app.js`, and the copy written to `<bb data dir>/logos/amp.svg` |
 
 The following is reproduced from the licence file distributed with
 `@ampcode/sdk`:

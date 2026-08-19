@@ -13,18 +13,18 @@ on your machine at run time, where it keeps its own licence:
 
 ## Summary
 
-| Component | Licence | Ships in |
-| --- | --- | --- |
-| [yaml](https://github.com/eemeli/yaml) | ISC | `dist/server.js` |
-| [zod](https://github.com/colinhacks/zod) | MIT | `dist/server.js` |
-| [clsx](https://github.com/lukeed/clsx) | MIT | `dist/app.js` |
-| [tailwind-merge](https://github.com/dcastil/tailwind-merge) | MIT | `dist/app.js` |
-| [@radix-ui/react-slot](https://github.com/radix-ui/primitives) | MIT | `dist/app.js` |
-| [@radix-ui/react-compose-refs](https://github.com/radix-ui/primitives) | MIT | `dist/app.js` |
-| [class-variance-authority](https://github.com/joe-bell/cva) | Apache-2.0 | `dist/app.js` |
-| [shadcn/ui](https://github.com/shadcn-ui/ui) | MIT | `dist/app.js` |
-| [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) | MIT | `dist/app.css` |
-| [Hugeicons Free](https://github.com/hugeicons/hugeicons-react) | MIT | `assets/*.svg` |
+| Component                                                              | Licence    | Ships in         |
+| ---------------------------------------------------------------------- | ---------- | ---------------- |
+| [yaml](https://github.com/eemeli/yaml)                                 | ISC        | `dist/server.js` |
+| [zod](https://github.com/colinhacks/zod)                               | MIT        | `dist/server.js` |
+| [clsx](https://github.com/lukeed/clsx)                                 | MIT        | `dist/app.js`    |
+| [tailwind-merge](https://github.com/dcastil/tailwind-merge)            | MIT        | `dist/app.js`    |
+| [@radix-ui/react-slot](https://github.com/radix-ui/primitives)         | MIT        | `dist/app.js`    |
+| [@radix-ui/react-compose-refs](https://github.com/radix-ui/primitives) | MIT        | `dist/app.js`    |
+| [class-variance-authority](https://github.com/joe-bell/cva)            | Apache-2.0 | `dist/app.js`    |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)                           | MIT        | `dist/app.js`    |
+| [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss)            | MIT        | `dist/app.css`   |
+| [Hugeicons Free](https://github.com/hugeicons/hugeicons-react)         | MIT        | `assets/*.svg`   |
 
 Notes:
 

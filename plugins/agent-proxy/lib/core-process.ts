@@ -1,11 +1,5 @@
 import { execFile } from "node:child_process";
-import {
-  closeSync,
-  existsSync,
-  fstatSync,
-  openSync,
-  readSync,
-} from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { dirname } from "node:path";
 import { ensureDir, readTextOr, writeAtomic } from "./fsx.ts";
 
@@ -298,7 +292,14 @@ export class LaunchdSupervisor implements CoreSupervisor {
     let job = await this.inspectJob();
     if (job.loaded && definitionChanged) {
       await this.bootout();
-      job = { loaded: false, state: null, pid: null, runs: 0, lastExitCode: null, lastSignal: null };
+      job = {
+        loaded: false,
+        state: null,
+        pid: null,
+        runs: 0,
+        lastExitCode: null,
+        lastSignal: null,
+      };
     }
     if (!job.loaded) {
       await this.runChecked(["bootstrap", this.domainTarget, this.options.plistPath]);
@@ -500,11 +501,9 @@ interface SystemdJobInfo {
 }
 
 function systemdQuote(value: string): string {
-  if (/\r|\n|\0/.test(value)) throw new Error("systemd service values cannot contain control characters");
-  return `"${value
-    .replaceAll("\\", "\\\\")
-    .replaceAll('"', '\\"')
-    .replaceAll("%", "%%")}"`;
+  if (/\r|\n|\0/.test(value))
+    throw new Error("systemd service values cannot contain control characters");
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
 }
 
 export function renderSystemdUserUnit(options: {
@@ -583,12 +582,7 @@ export class SystemdSupervisor implements CoreSupervisor {
   private readonly options: Required<
     Pick<
       SystemdSupervisorOptions,
-      | "monitorIntervalMs"
-      | "probeTimeoutMs"
-      | "logLimit"
-      | "platform"
-      | "now"
-      | "systemctlPath"
+      "monitorIntervalMs" | "probeTimeoutMs" | "logLimit" | "platform" | "now" | "systemctlPath"
     >
   > &
     SystemdSupervisorOptions;
@@ -753,7 +747,9 @@ export class SystemdSupervisor implements CoreSupervisor {
     const parsed = parseSystemctlShow(result.stdout);
     if (parsed.loadState === "not-found") return this.emptyJob();
     const enabledResult = await this.run(["--user", "is-enabled", this.unitTarget]);
-    const enabled = enabledResult.code === 0 && /^(?:enabled|enabled-runtime|linked)/i.test(enabledResult.stdout.trim());
+    const enabled =
+      enabledResult.code === 0 &&
+      /^(?:enabled|enabled-runtime|linked)/i.test(enabledResult.stdout.trim());
     return {
       enabled,
       activeState: parsed.activeState,

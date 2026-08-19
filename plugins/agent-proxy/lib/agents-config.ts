@@ -132,8 +132,7 @@ export function claudeApplied(content: string | null, target: ProxyTarget): bool
     if (typeof env !== "object" || env === null || Array.isArray(env)) return false;
     const record = env as Record<string, unknown>;
     return (
-      record.ANTHROPIC_BASE_URL === target.baseUrl &&
-      record.ANTHROPIC_AUTH_TOKEN === target.token
+      record.ANTHROPIC_BASE_URL === target.baseUrl && record.ANTHROPIC_AUTH_TOKEN === target.token
     );
   } catch {
     return false;

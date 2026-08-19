@@ -455,143 +455,95 @@
       "foreground": "feedback.error"
     },
     {
-      "scope": [
-        "token.info-token"
-      ],
+      "scope": ["token.info-token"],
       "foreground": "feedback.info"
     },
     {
-      "scope": [
-        "token.warn-token"
-      ],
+      "scope": ["token.warn-token"],
       "foreground": "feedback.warning"
     },
     {
-      "scope": [
-        "token.debug-token"
-      ],
+      "scope": ["token.debug-token"],
       "foreground": "feedback.debug"
     },
     {
-      "scope": [
-        "variable.parameter",
-        "variable.language.super",
-        "markup.italic.markdown"
-      ],
+      "scope": ["variable.parameter", "variable.language.super", "markup.italic.markdown"],
       "fontStyle": "italic"
     },
     {
-      "scope": [
-        "meta.embedded",
-        "source.groovy.embedded"
-      ],
+      "scope": ["meta.embedded", "source.groovy.embedded"],
       "foreground": "text.ink",
       "background": "ground.content"
     },
     {
-      "scope": [
-        "comment"
-      ],
+      "scope": ["comment"],
       "foreground": "text.comment60"
     },
     {
-      "scope": [
-        "string"
-      ],
+      "scope": ["string"],
       "foreground": "code.string"
     },
     {
-      "scope": [
-        "punctuation.definition.template-expression",
-        "punctuation.section.embedded"
-      ],
+      "scope": ["punctuation.definition.template-expression", "punctuation.section.embedded"],
       "foreground": "code.keyword"
     },
     {
-      "scope": [
-        "meta.template.expression"
-      ],
+      "scope": ["meta.template.expression"],
       "foreground": "text.ink"
     },
     {
-      "scope": [
-        "constant.numeric"
-      ],
+      "scope": ["constant.numeric"],
       "foreground": "code.constant"
     },
     {
-      "scope": [
-        "constant.language"
-      ],
+      "scope": ["constant.language"],
       "foreground": "code.constant"
     },
     {
-      "scope": [
-        "constant.character",
-        "constant.other"
-      ],
+      "scope": ["constant.character", "constant.other"],
       "foreground": "code.constant"
     },
     {
-      "scope": [
-        "variable"
-      ],
+      "scope": ["variable"],
       "foreground": "text.ink",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "keyword"
-      ],
+      "scope": ["keyword"],
       "foreground": "code.keyword"
     },
     {
-      "scope": [
-        "storage"
-      ],
+      "scope": ["storage"],
       "foreground": "code.keyword",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "storage.type"
-      ],
+      "scope": ["storage.type"],
       "foreground": "code.type",
       "fontStyle": "italic"
     },
     {
-      "scope": [
-        "entity.name.type",
-        "entity.name.class"
-      ],
+      "scope": ["entity.name.type", "entity.name.class"],
       "foreground": "code.type",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.other.inherited-class"
-      ],
+      "scope": ["entity.other.inherited-class"],
       "foreground": "code.type",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.name.function"
-      ],
+      "scope": ["entity.name.function"],
       "foreground": "code.entity",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "variable.parameter"
-      ],
+      "scope": ["variable.parameter"],
       "foreground": "code.parameter",
       "fontStyle": "italic"
     },
     {
-      "scope": [
-        "variable.language.blank"
-      ],
+      "scope": ["variable.language.blank"],
       "foreground": "text.ink30"
     },
     {
@@ -603,53 +555,37 @@
       "fontStyle": "italic underline"
     },
     {
-      "scope": [
-        "entity.name.tag"
-      ],
+      "scope": ["entity.name.tag"],
       "foreground": "code.keyword",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.other.attribute-name"
-      ],
+      "scope": ["entity.other.attribute-name"],
       "foreground": "code.entity",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "support.function"
-      ],
+      "scope": ["support.function"],
       "foreground": "code.entity",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "support.constant"
-      ],
+      "scope": ["support.constant"],
       "foreground": "text.ink",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "support.type",
-        "support.class"
-      ],
+      "scope": ["support.type", "support.class"],
       "foreground": "code.type",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "support.variable",
-        "support.other.variable"
-      ],
+      "scope": ["support.variable", "support.other.variable"],
       "foreground": "text.ink",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "invalid"
-      ],
+      "scope": ["invalid"],
       "foreground": "text.ink",
       "background": "feedback.error",
       "fontStyle": ""
@@ -668,16 +604,12 @@
       "fontStyle": ""
     },
     {
-      "scope": [
-        "invalid.deprecated"
-      ],
+      "scope": ["invalid.deprecated"],
       "foreground": "text.ink",
       "background": "code.constant"
     },
     {
-      "scope": [
-        "invalid.deprecated.html"
-      ],
+      "scope": ["invalid.deprecated.html"],
       "foreground": "code.keyword60",
       "background": "code.constant"
     },
@@ -691,131 +623,86 @@
       "fontStyle": ""
     },
     {
-      "scope": [
-        "meta.diff",
-        "meta.diff.header"
-      ],
+      "scope": ["meta.diff", "meta.diff.header"],
       "foreground": "text.comment60"
     },
     {
-      "scope": [
-        "markup.deleted"
-      ],
+      "scope": ["markup.deleted"],
       "foreground": "code.keyword"
     },
     {
-      "scope": [
-        "markup.inserted"
-      ],
+      "scope": ["markup.inserted"],
       "foreground": "code.entity"
     },
     {
-      "scope": [
-        "markup.changed"
-      ],
+      "scope": ["markup.changed"],
       "foreground": "code.string"
     },
     {
-      "scope": [
-        "constant.numeric.line-number.find-in-files - match"
-      ],
+      "scope": ["constant.numeric.line-number.find-in-files - match"],
       "foreground": "code.constant63"
     },
     {
-      "scope": [
-        "entity.name.filename.find-in-files"
-      ],
+      "scope": ["entity.name.filename.find-in-files"],
       "foreground": "code.string"
     },
     {
-      "scope": [
-        "markup.quote"
-      ],
+      "scope": ["markup.quote"],
       "foreground": "code.keyword"
     },
     {
-      "scope": [
-        "markup.list"
-      ],
+      "scope": ["markup.list"],
       "foreground": "code.string"
     },
     {
-      "scope": [
-        "markup.bold",
-        "markup.italic"
-      ],
+      "scope": ["markup.bold", "markup.italic"],
       "foreground": "code.type"
     },
     {
-      "scope": [
-        "markup.inline.raw"
-      ],
+      "scope": ["markup.inline.raw"],
       "foreground": "code.parameter",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "markup.heading"
-      ],
+      "scope": ["markup.heading"],
       "foreground": "code.entity"
     },
     {
-      "scope": [
-        "markup.heading.setext"
-      ],
+      "scope": ["markup.heading.setext"],
       "foreground": "code.entity",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "token.info-token"
-      ],
+      "scope": ["token.info-token"],
       "foreground": "feedback.info"
     },
     {
-      "scope": [
-        "token.warn-token"
-      ],
+      "scope": ["token.warn-token"],
       "foreground": "feedback.warning"
     },
     {
-      "scope": [
-        "token.error-token"
-      ],
+      "scope": ["token.error-token"],
       "foreground": "feedback.error"
     },
     {
-      "scope": [
-        "token.debug-token"
-      ],
+      "scope": ["token.debug-token"],
       "foreground": "feedback.debug"
     },
     {
-      "scope": [
-        "variable.language"
-      ],
+      "scope": ["variable.language"],
       "foreground": "code.parameter"
     },
     {
-      "scope": [
-        "variable.other"
-      ],
+      "scope": ["variable.other"],
       "foreground": "text.ink"
     },
     {
-      "scope": [
-        "variable.function",
-        "entity.name.command.shell"
-      ],
+      "scope": ["variable.function", "entity.name.command.shell"],
       "foreground": "code.entity",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.name.namespace",
-        "entity.name.module",
-        "entity.name.package"
-      ],
+      "scope": ["entity.name.namespace", "entity.name.module", "entity.name.package"],
       "foreground": "code.type",
       "fontStyle": ""
     },
@@ -857,16 +744,12 @@
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.name.tag.yaml"
-      ],
+      "scope": ["entity.name.tag.yaml"],
       "foreground": "code.entity",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.name.variable.parameter"
-      ],
+      "scope": ["entity.name.variable.parameter"],
       "foreground": "code.parameter",
       "fontStyle": "italic"
     },
@@ -883,47 +766,30 @@
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.name.variable.enum-member",
-        "constant.enum"
-      ],
+      "scope": ["entity.name.variable.enum-member", "constant.enum"],
       "foreground": "code.constant",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "entity.name.label",
-        "variable.other.label"
-      ],
+      "scope": ["entity.name.label", "variable.other.label"],
       "foreground": "code.string",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "constant.regexp"
-      ],
+      "scope": ["constant.regexp"],
       "foreground": "code.string"
     },
     {
-      "scope": [
-        "markup.underline.link",
-        "string.other.link",
-        "constant.other.reference.link"
-      ],
+      "scope": ["markup.underline.link", "string.other.link", "constant.other.reference.link"],
       "foreground": "code.type"
     },
     {
-      "scope": [
-        "markup.raw.block",
-        "markup.fenced_code.block"
-      ],
+      "scope": ["markup.raw.block", "markup.fenced_code.block"],
       "foreground": "code.parameter",
       "fontStyle": ""
     },
     {
-      "scope": [
-        "markup.strikethrough"
-      ],
+      "scope": ["markup.strikethrough"],
       "foreground": "text.ink",
       "fontStyle": "strikethrough"
     },

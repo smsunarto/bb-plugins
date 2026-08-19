@@ -16,10 +16,7 @@ import { parentOf, threadDisplayTitle } from "@/lib/inbox";
  * chip names the parent and opens it. The disc repeats the parent's colour
  * from the list, so the chip points at a thread the user can recognise.
  */
-export function ParentChip({
-  threadId,
-  isCompactViewport,
-}: PluginThreadHeaderActionProps) {
+export function ParentChip({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const { threads } = useSidebarThreads();
   const actions = useSidebarThreadActions();
 

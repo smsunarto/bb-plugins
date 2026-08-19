@@ -74,7 +74,9 @@ export function normalizeCoreRepo(value: string): string {
       url.search !== "" ||
       url.hash !== ""
     ) {
-      throw new Error("repository URL must be an HTTPS github.com URL without credentials or query data");
+      throw new Error(
+        "repository URL must be an HTTPS github.com URL without credentials or query data",
+      );
     }
     candidate = url.pathname;
   }

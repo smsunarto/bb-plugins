@@ -2,10 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Diagnostic } from "./check.js";
 import { compatibility } from "./compatibility-contract.js";
-import {
-  derivePluginId,
-  type PluginManifest,
-} from "./project.js";
+import { derivePluginId, type PluginManifest } from "./project.js";
 
 export { compatibility };
 
@@ -31,12 +28,7 @@ export interface CompatibilityContract {
   readonly registryUrl: string;
 }
 
-function diagnostic(
-  code: string,
-  message: string,
-  hint: string,
-  file: string,
-): Diagnostic {
+function diagnostic(code: string, message: string, hint: string, file: string): Diagnostic {
   return { code, severity: "error", message, hint, file };
 }
 
@@ -45,10 +37,7 @@ function diagnostic(
  * generated, and a leftover copy shadows the npm package's own types, so a
  * plugin that still carries one is pinned to a contract nothing refreshes.
  */
-const supersededDeclarations = [
-  "types/bb-plugin-sdk.d.ts",
-  "types/bb-plugin-sdk-app.d.ts",
-];
+const supersededDeclarations = ["types/bb-plugin-sdk.d.ts", "types/bb-plugin-sdk-app.d.ts"];
 
 export function checkSdkDependency(
   root: string,
@@ -58,21 +47,25 @@ export function checkSdkDependency(
   const diagnostics: Diagnostic[] = [];
   const pinned = manifest.devDependencies?.[contract.sdkPackage.name];
   if (pinned !== contract.sdkPackage.version) {
-    diagnostics.push(diagnostic(
-      "BBK011",
-      `devDependencies["${contract.sdkPackage.name}"] is ${JSON.stringify(pinned)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
-      `Pin the exact SDK package bb ${contract.bbCliVersion} builds against; do not widen it to a range.`,
-      "package.json",
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBK011",
+        `devDependencies["${contract.sdkPackage.name}"] is ${JSON.stringify(pinned)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
+        `Pin the exact SDK package bb ${contract.bbCliVersion} builds against; do not widen it to a range.`,
+        "package.json",
+      ),
+    );
   }
   for (const path of supersededDeclarations) {
     if (!existsSync(join(root, path))) continue;
-    diagnostics.push(diagnostic(
-      "BBK011",
-      `vendored SDK declaration "${path}" shadows ${contract.sdkPackage.name}`,
-      "Run `bb plugin migrate` to drop the vendored declarations and adopt the npm package.",
-      path,
-    ));
+    diagnostics.push(
+      diagnostic(
+        "BBK011",
+        `vendored SDK declaration "${path}" shadows ${contract.sdkPackage.name}`,
+        "Run `bb plugin migrate` to drop the vendored declarations and adopt the npm package.",
+        path,
+      ),
+    );
   }
   return diagnostics;
 }
@@ -80,9 +73,7 @@ export function checkSdkDependency(
 function readMetadata(path: string): Record<string, unknown> | null {
   try {
     const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    return typeof value === "object" && value !== null
-      ? value as Record<string, unknown>
-      : null;
+    return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
   } catch {
     return null;
   }
@@ -95,10 +86,7 @@ export function checkBuildMetadata(
 ): Diagnostic[] {
   const pluginId = derivePluginId(manifest.name);
   const pluginVersion = manifest.version ?? "0.0.0";
-  const files = [
-    "dist/server.meta.json",
-    ...(manifest.bb?.app ? ["dist/app.meta.json"] : []),
-  ];
+  const files = ["dist/server.meta.json", ...(manifest.bb?.app ? ["dist/app.meta.json"] : [])];
   const expected: Readonly<Record<string, unknown>> = {
     sdkMajor: contract.pluginSdk.major,
     sdkVersion: contract.pluginSdk.version,
@@ -112,28 +100,33 @@ export function checkBuildMetadata(
   for (const file of files) {
     const metadata = readMetadata(join(root, file));
     if (!metadata) {
-      diagnostics.push(diagnostic(
-        "BBK013",
-        `build metadata "${file}" is missing or invalid JSON`,
-        `Build with bb ${contract.bbCliVersion}.`,
-        file,
-      ));
+      diagnostics.push(
+        diagnostic(
+          "BBK013",
+          `build metadata "${file}" is missing or invalid JSON`,
+          `Build with bb ${contract.bbCliVersion}.`,
+          file,
+        ),
+      );
       continue;
     }
-    const builtWith = typeof metadata.builtWith === "object" && metadata.builtWith !== null
-      ? metadata.builtWith as Record<string, unknown>
-      : {};
+    const builtWith =
+      typeof metadata.builtWith === "object" && metadata.builtWith !== null
+        ? (metadata.builtWith as Record<string, unknown>)
+        : {};
     for (const [field, wanted] of Object.entries(expected)) {
       const actual = field.startsWith("builtWith.")
         ? builtWith[field.slice("builtWith.".length)]
         : metadata[field];
       if (actual !== wanted) {
-        diagnostics.push(diagnostic(
-          "BBK013",
-          `${file} field ${field} is ${JSON.stringify(actual)}, expected ${JSON.stringify(wanted)}`,
-          `Rebuild with bb ${contract.bbCliVersion}; do not edit metadata by hand.`,
-          file,
-        ));
+        diagnostics.push(
+          diagnostic(
+            "BBK013",
+            `${file} field ${field} is ${JSON.stringify(actual)}, expected ${JSON.stringify(wanted)}`,
+            `Rebuild with bb ${contract.bbCliVersion}; do not edit metadata by hand.`,
+            file,
+          ),
+        );
       }
     }
   }

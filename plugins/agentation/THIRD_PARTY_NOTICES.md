@@ -5,19 +5,19 @@ and generated icon artwork in `assets/`. The upstream works below are included i
 those files. Their licences apply to those parts, in addition to the plugin's own
 [MIT licence](LICENSE).
 
-| Component | Where it is included | Licence |
-|---|---|---|
-| [agentation](https://www.npmjs.com/package/agentation), modified — see [`vendor/README.md`](vendor/README.md) | `dist/app.js`, `vendor/agentation/` | PolyForm Shield 1.0.0 |
-| [class-variance-authority](https://www.npmjs.com/package/class-variance-authority) | `dist/app.js` | Apache-2.0 |
-| [zod](https://www.npmjs.com/package/zod) | `dist/server.js` | MIT |
-| [clsx](https://www.npmjs.com/package/clsx) | `dist/app.js` | MIT |
-| [tailwind-merge](https://www.npmjs.com/package/tailwind-merge) | `dist/app.js` | MIT |
-| [@radix-ui/react-slot](https://www.npmjs.com/package/@radix-ui/react-slot), [@radix-ui/react-dialog](https://www.npmjs.com/package/@radix-ui/react-dialog) | `dist/app.js` | MIT |
-| [vaul](https://www.npmjs.com/package/vaul) | `dist/app.js` | MIT |
-| [sonner](https://www.npmjs.com/package/sonner) | `dist/app.js` | MIT |
-| [@hugeicons/react](https://www.npmjs.com/package/@hugeicons/react), [@hugeicons/core-free-icons](https://www.npmjs.com/package/@hugeicons/core-free-icons) | `dist/app.js`, `assets/*.svg` | MIT |
-| [shadcn/ui](https://github.com/shadcn-ui/ui) | `dist/app.js`, `dist/app.css` | MIT |
-| [bb](https://github.com/get-bb/bb) plugin-registry components | `dist/app.js`, `dist/app.css` | MIT |
+| Component                                                                                                                                                  | Where it is included                | Licence               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------- |
+| [agentation](https://www.npmjs.com/package/agentation), modified — see [`vendor/README.md`](vendor/README.md)                                              | `dist/app.js`, `vendor/agentation/` | PolyForm Shield 1.0.0 |
+| [class-variance-authority](https://www.npmjs.com/package/class-variance-authority)                                                                         | `dist/app.js`                       | Apache-2.0            |
+| [zod](https://www.npmjs.com/package/zod)                                                                                                                   | `dist/server.js`                    | MIT                   |
+| [clsx](https://www.npmjs.com/package/clsx)                                                                                                                 | `dist/app.js`                       | MIT                   |
+| [tailwind-merge](https://www.npmjs.com/package/tailwind-merge)                                                                                             | `dist/app.js`                       | MIT                   |
+| [@radix-ui/react-slot](https://www.npmjs.com/package/@radix-ui/react-slot), [@radix-ui/react-dialog](https://www.npmjs.com/package/@radix-ui/react-dialog) | `dist/app.js`                       | MIT                   |
+| [vaul](https://www.npmjs.com/package/vaul)                                                                                                                 | `dist/app.js`                       | MIT                   |
+| [sonner](https://www.npmjs.com/package/sonner)                                                                                                             | `dist/app.js`                       | MIT                   |
+| [@hugeicons/react](https://www.npmjs.com/package/@hugeicons/react), [@hugeicons/core-free-icons](https://www.npmjs.com/package/@hugeicons/core-free-icons) | `dist/app.js`, `assets/*.svg`       | MIT                   |
+| [shadcn/ui](https://github.com/shadcn-ui/ui)                                                                                                               | `dist/app.js`, `dist/app.css`       | MIT                   |
+| [bb](https://github.com/get-bb/bb) plugin-registry components                                                                                              | `dist/app.js`, `dist/app.css`       | MIT                   |
 
 ## PolyForm Shield License 1.0.0
 

@@ -11,10 +11,7 @@ import {
   SETTLED_WINDOW_MS,
   type SettledThreadRow,
 } from "../lib/settled-threads.ts";
-import {
-  parseArchivedThreadIds,
-  type ThreadLifecycleRow,
-} from "../lib/lifecycle.ts";
+import { parseArchivedThreadIds, type ThreadLifecycleRow } from "../lib/lifecycle.ts";
 
 function row(overrides: Partial<SettledThreadRow> = {}): SettledThreadRow {
   return {
@@ -46,15 +43,11 @@ function row(overrides: Partial<SettledThreadRow> = {}): SettledThreadRow {
   };
 }
 
-function hostThread(
-  overrides: Partial<PluginSidebarThread> = {},
-): PluginSidebarThread {
+function hostThread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return { ...toSidebarThread(row()), isArchived: false, ...overrides };
 }
 
-function lifecycleRow(
-  overrides: Partial<ThreadLifecycleRow> = {},
-): ThreadLifecycleRow {
+function lifecycleRow(overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow {
   return {
     threadId: "thr_1",
     settledAt: null,
@@ -110,9 +103,7 @@ describe("settledIndicator", () => {
   });
 
   it("puts a raised hand above everything else", () => {
-    const result = settledIndicator(
-      row({ hasPendingInteraction: true, status: "active" }),
-    );
+    const result = settledIndicator(row({ hasPendingInteraction: true, status: "active" }));
     assert.equal(result.indicator, "waiting-for-input");
   });
 
@@ -138,14 +129,8 @@ describe("settledIndicator", () => {
 
   it("separates an unread failure from an unread success", () => {
     const unread = { lastReadAt: 100, latestAttentionAt: 200 };
-    assert.equal(
-      settledIndicator(row({ ...unread, status: "error" })).indicator,
-      "unread-error",
-    );
-    assert.equal(
-      settledIndicator(row({ ...unread, status: "idle" })).indicator,
-      "unread-success",
-    );
+    assert.equal(settledIndicator(row({ ...unread, status: "error" })).indicator, "unread-error");
+    assert.equal(settledIndicator(row({ ...unread, status: "idle" })).indicator, "unread-success");
   });
 });
 
@@ -224,11 +209,7 @@ describe("pendingSettledCount", () => {
   // all the shelf has to go on, and a collapsed shelf only ever needed a count.
   it("counts a settled thread the host cannot report", () => {
     assert.equal(
-      pendingSettledCount(
-        [lifecycleRow({ settledAt: now - 1 })],
-        nothingVisible,
-        now,
-      ),
+      pendingSettledCount([lifecycleRow({ settledAt: now - 1 })], nothingVisible, now),
       1,
     );
   });
@@ -294,19 +275,14 @@ describe("pendingSettledCount", () => {
 
   // The hook holds a Map keyed by thread id, and hands over its values.
   it("reads any iterable of rows", () => {
-    const rows = new Map([
-      ["a", lifecycleRow({ threadId: "a", settledAt: now - 1 })],
-    ]);
+    const rows = new Map([["a", lifecycleRow({ threadId: "a", settledAt: now - 1 })]]);
     assert.equal(pendingSettledCount(rows.values(), nothingVisible, now), 1);
   });
 });
 
 describe("parseArchivedThreadIds", () => {
   it("reads back what settle stored", () => {
-    assert.deepEqual(parseArchivedThreadIds('["thr_1","thr_2"]'), [
-      "thr_1",
-      "thr_2",
-    ]);
+    assert.deepEqual(parseArchivedThreadIds('["thr_1","thr_2"]'), ["thr_1", "thr_2"]);
   });
 
   // Rows written before the cascade column, and anything a hand-edited

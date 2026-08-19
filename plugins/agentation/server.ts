@@ -90,9 +90,7 @@ export const rpcContract = defineRpcContract({
     input: z
       .object({
         sessionId: z.string(),
-        upserts: z.array(
-          z.object({ annotation: annotationSchema, bb: bbContextSchema }),
-        ),
+        upserts: z.array(z.object({ annotation: annotationSchema, bb: bbContextSchema })),
         deletedIds: z.array(z.string()),
       })
       .strict(),
@@ -102,9 +100,7 @@ export const rpcContract = defineRpcContract({
     }),
   },
   pullSession: {
-    input: z
-      .object({ sessionId: z.string(), cursor: z.number().int() })
-      .strict(),
+    input: z.object({ sessionId: z.string(), cursor: z.number().int() }).strict(),
     output: z.object({
       cursor: z.number().int(),
       changed: z.boolean(),
@@ -121,9 +117,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ annotations: z.array(storedAnnotationSchema) }),
   },
   discardStagedAnnotations: {
-    input: z
-      .object({ annotationIds: z.array(z.string()).min(1) })
-      .strict(),
+    input: z.object({ annotationIds: z.array(z.string()).min(1) }).strict(),
     output: z.object({
       outcome: z.enum(["discarded", "stale"]),
       discardedIds: z.array(z.string()),
@@ -189,13 +183,7 @@ export const rpcContract = defineRpcContract({
     input: z
       .object({
         annotationId: z.string(),
-        action: z.enum([
-          "acknowledge",
-          "resolve",
-          "dismiss",
-          "reopen",
-          "delete",
-        ]),
+        action: z.enum(["acknowledge", "resolve", "dismiss", "reopen", "delete"]),
         note: z.string().nullable(),
       })
       .strict(),
@@ -205,9 +193,7 @@ export const rpcContract = defineRpcContract({
     }),
   },
   replyToAnnotation: {
-    input: z
-      .object({ annotationId: z.string(), message: z.string().min(1) })
-      .strict(),
+    input: z.object({ annotationId: z.string(), message: z.string().min(1) }).strict(),
     output: z.object({ annotation: storedAnnotationSchema.nullable() }),
   },
 });
@@ -226,9 +212,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   const recoveredDispatches = recoverInterruptedDispatches(db);
   if (recoveredDispatches > 0) {
-    bb.log.warn(
-      `re-staged ${recoveredDispatches} annotations interrupted during delivery`,
-    );
+    bb.log.warn(`re-staged ${recoveredDispatches} annotations interrupted during delivery`);
   }
 
   // Whether the toolbar is showing is live state, not configuration: it is
@@ -272,9 +256,7 @@ export default async function plugin(bb: BbPluginApi) {
 
     bb.realtime.publish("annotations", payload);
 
-    const frame = encoder.encode(
-      `event: change\ndata: ${JSON.stringify(payload)}\n\n`,
-    );
+    const frame = encoder.encode(`event: change\ndata: ${JSON.stringify(payload)}\n\n`);
     // Both loops may delete the entry they are standing on — well defined for
     // a Set, and nothing here removes any other entry.
     for (const controller of streams) {
@@ -288,9 +270,7 @@ export default async function plugin(bb: BbPluginApi) {
     for (const wake of watchers) wake();
   }
 
-  function dropStream(
-    controller: ReadableStreamDefaultController<Uint8Array>,
-  ): void {
+  function dropStream(controller: ReadableStreamDefaultController<Uint8Array>): void {
     const heartbeat = heartbeats.get(controller);
     if (heartbeat) clearInterval(heartbeat);
     heartbeats.delete(controller);
@@ -307,9 +287,7 @@ export default async function plugin(bb: BbPluginApi) {
         self = controller;
         streams.add(controller);
         controller.enqueue(
-          encoder.encode(
-            `event: hello\ndata: ${JSON.stringify({ cursor: currentSeq(db) })}\n\n`,
-          ),
+          encoder.encode(`event: hello\ndata: ${JSON.stringify({ cursor: currentSeq(db) })}\n\n`),
         );
         // An idle stream gets dropped by proxies and by the tunnel used for
         // remote bb access; a comment frame is the cheapest thing that keeps
@@ -494,16 +472,13 @@ export default async function plugin(bb: BbPluginApi) {
           outcome: "stale" as const,
           discardedIds: [],
           remainingCount,
-          message:
-            "The staged annotations changed. Review the current batch and discard it again.",
+          message: "The staged annotations changed. Review the current batch and discard it again.",
         };
       }
 
       broadcast({ type: "annotations", sessionId: null });
 
-      const discardedIds = result.annotations.map(
-        (annotation) => annotation.id,
-      );
+      const discardedIds = result.annotations.map((annotation) => annotation.id);
       return {
         outcome: "discarded" as const,
         discardedIds,
@@ -513,9 +488,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
 
     async sendStagedAnnotations(input) {
-      return sanitizeJson(
-        await sendStagedToThread(input.annotationIds, input.threadId),
-      );
+      return sanitizeJson(await sendStagedToThread(input.annotationIds, input.threadId));
     },
 
     restageAnnotation(input) {
@@ -596,9 +569,7 @@ export default async function plugin(bb: BbPluginApi) {
 
       const routing = getAnnotationRouting(db, input.annotationId);
       if (routing?.state !== "assigned" || !routing.assignedThreadId) {
-        throw new Error(
-          "Stage and send this annotation to a thread before you reply.",
-        );
+        throw new Error("Stage and send this annotation to a thread before you reply.");
       }
 
       const context = renderAnnotation(existing);
@@ -693,13 +664,10 @@ export default async function plugin(bb: BbPluginApi) {
     execute({ sessionId }) {
       const session = getSession(db, sessionId);
       return toolText(
-        renderAnnotations(
-          listAnnotations(db, { sessionId, statuses: openStatuses }),
-          {
-            title: `Open annotations in ${sessionId}`,
-            sessions: session ? [session] : [],
-          },
-        ),
+        renderAnnotations(listAnnotations(db, { sessionId, statuses: openStatuses }), {
+          title: `Open annotations in ${sessionId}`,
+          sessions: session ? [session] : [],
+        }),
       );
     },
   });
@@ -715,28 +683,21 @@ export default async function plugin(bb: BbPluginApi) {
       completed: "Read all pending annotations",
     },
     parameters: z.object({
-      pluginId: z
-        .string()
-        .optional()
-        .describe("Only annotations on this plugin's UI surfaces."),
+      pluginId: z.string().optional().describe("Only annotations on this plugin's UI surfaces."),
     }),
     execute({ pluginId }) {
       return toolText(
-        renderAnnotations(
-          listAnnotations(db, { statuses: openStatuses, pluginId }),
-          {
-            title: "Open bb UI feedback",
-            sessions: listSessions(db, {}),
-          },
-        ),
+        renderAnnotations(listAnnotations(db, { statuses: openStatuses, pluginId }), {
+          title: "Open bb UI feedback",
+          sessions: listSessions(db, {}),
+        }),
       );
     },
   });
 
   bb.agents.registerTool({
     name: "agentation_acknowledge",
-    description:
-      "Mark an annotation as acknowledged so the human can see you have picked it up.",
+    description: "Mark an annotation as acknowledged so the human can see you have picked it up.",
     experimental_statusLabels: {
       pending: "Acknowledging annotation",
       completed: "Acknowledged annotation",
@@ -830,19 +791,14 @@ export default async function plugin(bb: BbPluginApi) {
       completed: "Collected new annotations",
     },
     parameters: z.object({
-      sessionId: z
-        .string()
-        .optional()
-        .describe("Only watch one page's session."),
+      sessionId: z.string().optional().describe("Only watch one page's session."),
       batchWindowSeconds: z
         .number()
         .int()
         .min(0)
         .max(60)
         .optional()
-        .describe(
-          "After the first new annotation, keep collecting for this long. Default 10.",
-        ),
+        .describe("After the first new annotation, keep collecting for this long. Default 10."),
       timeoutSeconds: z
         .number()
         .int()
@@ -863,9 +819,7 @@ export default async function plugin(bb: BbPluginApi) {
           sinceSeq: startCursor,
         });
 
-      const appeared = await waitForChange(timeoutMs, context.signal, () =>
-        fresh().length > 0,
-      );
+      const appeared = await waitForChange(timeoutMs, context.signal, () => fresh().length > 0);
       if (!appeared) {
         return toolText(
           "No new annotations before the timeout. Call agentation_watch_annotations again to keep waiting.",
@@ -1005,13 +959,10 @@ export default async function plugin(bb: BbPluginApi) {
     async run(argv) {
       const [command, ...rest] = argv;
       const flagIndex = rest.indexOf("--plugin");
-      const pluginId =
-        flagIndex >= 0 ? (rest[flagIndex + 1] ?? undefined) : undefined;
+      const pluginId = flagIndex >= 0 ? (rest[flagIndex + 1] ?? undefined) : undefined;
       const json = rest.includes("--json");
       const positional = rest.filter(
-        (value, index) =>
-          !value.startsWith("--") &&
-          !(flagIndex >= 0 && index === flagIndex + 1),
+        (value, index) => !value.startsWith("--") && !(flagIndex >= 0 && index === flagIndex + 1),
       );
 
       const ok = (stdout: string) => ({ exitCode: 0, stdout });
@@ -1079,9 +1030,7 @@ export default async function plugin(bb: BbPluginApi) {
           if (annotationIds.length === 0) return ok("No staged annotations.");
 
           const result = await sendStagedToThread(annotationIds, threadId);
-          return result.outcome === "sent"
-            ? ok(result.message)
-            : fail(result.message);
+          return result.outcome === "sent" ? ok(result.message) : fail(result.message);
         }
 
         case "restage": {
@@ -1158,9 +1107,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
 
         default:
-          return fail(
-            `Unknown command "${command}". Run \`bb agentation help\`.`,
-          );
+          return fail(`Unknown command "${command}". Run \`bb agentation help\`.`);
       }
     },
   });

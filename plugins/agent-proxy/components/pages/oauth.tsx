@@ -8,8 +8,16 @@ import type { rpcContract } from "../../server";
 type AuthFile = Record<string, unknown>;
 
 const PROVIDERS = [
-  { id: "anthropic" as const, title: "Claude", description: "Anthropic account OAuth (claude.ai subscription)" },
-  { id: "codex" as const, title: "Codex", description: "OpenAI/Codex account OAuth (ChatGPT subscription)" },
+  {
+    id: "anthropic" as const,
+    title: "Claude",
+    description: "Anthropic account OAuth (claude.ai subscription)",
+  },
+  {
+    id: "codex" as const,
+    title: "Codex",
+    description: "OpenAI/Codex account OAuth (ChatGPT subscription)",
+  },
 ];
 
 interface FlowState {
@@ -113,7 +121,11 @@ export function OAuthPage() {
                     Waiting for the browser flow to complete…
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => window.open(flow.url, "_blank", "noopener")}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(flow.url, "_blank", "noopener")}
+                    >
                       Re-open page
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setFlow(null)}>
@@ -122,7 +134,11 @@ export function OAuthPage() {
                   </div>
                 </>
               ) : (
-                <Button size="sm" disabled={flow !== null} onClick={() => void startFlow(provider.id)}>
+                <Button
+                  size="sm"
+                  disabled={flow !== null}
+                  onClick={() => void startFlow(provider.id)}
+                >
                   Sign in
                 </Button>
               )}
@@ -139,14 +155,17 @@ export function OAuthPage() {
               Refresh
             </Button>
           </CardTitle>
-          <CardDescription>Credential files in the core's auth directory, with quota state.</CardDescription>
+          <CardDescription>
+            Credential files in the core's auth directory, with quota state.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {files === null ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
           ) : files.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              No authorized accounts yet — run an OAuth flow above (requires the core to be running).
+              No authorized accounts yet — run an OAuth flow above (requires the core to be
+              running).
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -164,9 +183,13 @@ export function OAuthPage() {
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-mono text-xs text-foreground">
                         {name}
-                        {disabled ? <span className="ml-2 text-muted-foreground">(disabled)</span> : null}
+                        {disabled ? (
+                          <span className="ml-2 text-muted-foreground">(disabled)</span>
+                        ) : null}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">{describeQuota(file)}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {describeQuota(file)}
+                      </div>
                     </div>
                     <Button
                       size="sm"

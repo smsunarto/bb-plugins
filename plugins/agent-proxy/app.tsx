@@ -38,7 +38,9 @@ function SidebarIndicator({ status }: { status: CoreStatus | null }) {
       className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-muted-foreground"
       title={style ? `CLIProxyAPI core — ${text}` : "CLIProxyAPI core — loading"}
     >
-      <span className={cn("size-1.5 shrink-0 rounded-full", style?.dot ?? "bg-muted-foreground/40")} />
+      <span
+        className={cn("size-1.5 shrink-0 rounded-full", style?.dot ?? "bg-muted-foreground/40")}
+      />
       <span className="truncate">{text}</span>
     </div>
   );

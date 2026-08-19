@@ -12,28 +12,29 @@ import {
   withScreenshotBatch,
 } from "./plugin-screenshot-runtime";
 
-function pluginList(options: {
-  disabled?: string[];
-  missing?: string[];
-  notRunning?: string[];
-  wrongSource?: string;
-} = {}): string {
+function pluginList(
+  options: {
+    disabled?: string[];
+    missing?: string[];
+    notRunning?: string[];
+    wrongSource?: string;
+  } = {},
+): string {
   const disabled = new Set(options.disabled ?? []);
   const missing = new Set(options.missing ?? []);
   const notRunning = new Set(options.notRunning ?? []);
   return JSON.stringify({
-    plugins: SCREENSHOT_PREFLIGHT_PLUGINS
-      .filter((plugin) => !missing.has(plugin.id))
-      .map((plugin) => ({
+    plugins: SCREENSHOT_PREFLIGHT_PLUGINS.filter((plugin) => !missing.has(plugin.id)).map(
+      (plugin) => ({
         id: plugin.id,
         enabled: !disabled.has(plugin.id),
-        rootDir: plugin.id === options.wrongSource
-          ? `/tmp/other/${plugin.directory}`
-          : join(SCREENSHOT_ROOT, "plugins", plugin.directory),
-        status: disabled.has(plugin.id) || notRunning.has(plugin.id)
-          ? "disabled"
-          : "running",
-      })),
+        rootDir:
+          plugin.id === options.wrongSource
+            ? `/tmp/other/${plugin.directory}`
+            : join(SCREENSHOT_ROOT, "plugins", plugin.directory),
+        status: disabled.has(plugin.id) || notRunning.has(plugin.id) ? "disabled" : "running",
+      }),
+    ),
   });
 }
 
@@ -67,12 +68,17 @@ async function stagedFiles(directory: string): Promise<string[]> {
 
 describe("plugin screenshot arguments", () => {
   test("deduplicates selected plugins and accepts an output directory", () => {
-    expect(parseScreenshotArguments([
-      "--plugin", "amp",
-      "--plugin=amp",
-      "--plugin", "gh-stack",
-      "--output-dir", "/tmp/heroes",
-    ])).toEqual({
+    expect(
+      parseScreenshotArguments([
+        "--plugin",
+        "amp",
+        "--plugin=amp",
+        "--plugin",
+        "gh-stack",
+        "--output-dir",
+        "/tmp/heroes",
+      ]),
+    ).toEqual({
       plugins: ["amp", "gh-stack"],
       outputDir: "/tmp/heroes",
       help: false,
@@ -166,12 +172,7 @@ describe("bb screenshot preflight", () => {
 
     await prepareBbForScreenshots(runCommand);
 
-    expect(calls).toContainEqual([
-      "theme",
-      "set",
-      SCREENSHOT_THEME_ID,
-      "--json",
-    ]);
+    expect(calls).toContainEqual(["theme", "set", SCREENSHOT_THEME_ID, "--json"]);
   });
 
   test("fails when final plugin verification does not converge", async () => {
@@ -183,9 +184,7 @@ describe("bb screenshot preflight", () => {
       return "{}";
     };
 
-    await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow(
-      "not enabled: dotfiles",
-    );
+    await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow("not enabled: dotfiles");
   });
 
   test("fails when a workspace plugin is enabled but not running", async () => {
@@ -197,9 +196,7 @@ describe("bb screenshot preflight", () => {
       return "{}";
     };
 
-    await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow(
-      "not running: agent-proxy",
-    );
+    await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow("not running: agent-proxy");
   });
 
   test("fails when final theme verification does not converge", async () => {
@@ -255,18 +252,20 @@ describe("screenshot batch publication", () => {
       const second = join(directory, "second.png");
       await Promise.all([writeFile(first, "old first"), writeFile(second, "old second")]);
 
-      await expect(withScreenshotBatch(async (batch) => {
-        await batch.capture(screenshotPage(png(20, 10)), {
-          id: "first",
-          output: first,
-          expected: { width: 20, height: 10 },
-        });
-        await batch.capture(screenshotPage(new Error("capture failed")), {
-          id: "second",
-          output: second,
-          expected: { width: 30, height: 15 },
-        });
-      })).rejects.toThrow("capture failed");
+      await expect(
+        withScreenshotBatch(async (batch) => {
+          await batch.capture(screenshotPage(png(20, 10)), {
+            id: "first",
+            output: first,
+            expected: { width: 20, height: 10 },
+          });
+          await batch.capture(screenshotPage(new Error("capture failed")), {
+            id: "second",
+            output: second,
+            expected: { width: 30, height: 15 },
+          });
+        }),
+      ).rejects.toThrow("capture failed");
 
       expect(await readFile(first, "utf8")).toBe("old first");
       expect(await readFile(second, "utf8")).toBe("old second");
@@ -286,12 +285,15 @@ describe("screenshot batch publication", () => {
         const output = join(directory, "output.png");
         await writeFile(output, "old output");
 
-        await expect(withScreenshotBatch((batch) =>
-          batch.capture(screenshotPage(result), {
-            id: name,
-            output,
-            expected: { width: 20, height: 10 },
-          }))).rejects.toThrow(expectedError);
+        await expect(
+          withScreenshotBatch((batch) =>
+            batch.capture(screenshotPage(result), {
+              id: name,
+              output,
+              expected: { width: 20, height: 10 },
+            }),
+          ),
+        ).rejects.toThrow(expectedError);
 
         expect(await readFile(output, "utf8")).toBe("old output");
         expect(await stagedFiles(directory)).toEqual([]);
@@ -307,18 +309,20 @@ describe("screenshot batch publication", () => {
       const output = join(directory, "output.png");
       await writeFile(output, "old output");
 
-      await expect(withScreenshotBatch(async (batch) => {
-        await batch.capture(screenshotPage(png(20, 10)), {
-          id: "first",
-          output,
-          expected: { width: 20, height: 10 },
-        });
-        await batch.capture(screenshotPage(png(20, 10)), {
-          id: "second",
-          output,
-          expected: { width: 20, height: 10 },
-        });
-      })).rejects.toThrow("duplicate screenshot output");
+      await expect(
+        withScreenshotBatch(async (batch) => {
+          await batch.capture(screenshotPage(png(20, 10)), {
+            id: "first",
+            output,
+            expected: { width: 20, height: 10 },
+          });
+          await batch.capture(screenshotPage(png(20, 10)), {
+            id: "second",
+            output,
+            expected: { width: 20, height: 10 },
+          });
+        }),
+      ).rejects.toThrow("duplicate screenshot output");
 
       expect(await readFile(output, "utf8")).toBe("old output");
       expect(await stagedFiles(directory)).toEqual([]);

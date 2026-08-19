@@ -247,9 +247,7 @@ export function renderCodeTheme(rules: readonly CodeThemeRule[]): CodeTheme {
 function stripComments(source: string): string {
   // Preserve newlines so diagnostics still point at the source line. Comments
   // may name foreign upstream defaults; only rendered declarations are audited.
-  return source.replace(/\/\*[\s\S]*?\*\//g, (comment) =>
-    comment.replace(/[^\n]/g, " "),
-  );
+  return source.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
 }
 
 function normalize(value: string): string {
@@ -615,7 +613,12 @@ export function auditTheme(source: string): void {
       violations.push(`${selector}: expected one rule, found ${matches.length}`);
       continue;
     }
-    assertExpected(selector, matches[0].declarations, declarationMap(required.declarations), violations);
+    assertExpected(
+      selector,
+      matches[0].declarations,
+      declarationMap(required.declarations),
+      violations,
+    );
   }
 
   const token = (name: string): string => dark.get(name) ?? "#000000";
@@ -627,7 +630,13 @@ export function auditTheme(source: string): void {
     ["--primary-foreground", "--primary"],
     ["--destructive-foreground", "--destructive"],
   ] as const) {
-    requireContrast(`${foreground} on ${background}`, token(foreground), token(background), 4.5, violations);
+    requireContrast(
+      `${foreground} on ${background}`,
+      token(foreground),
+      token(background),
+      4.5,
+      violations,
+    );
   }
   requireContrast(
     "primary button text",

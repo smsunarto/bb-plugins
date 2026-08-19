@@ -1,15 +1,7 @@
 #!/usr/bin/env bun
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  realpath,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -44,9 +36,7 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException).code;
 }
 
-export async function snapshotPluginFiles(
-  pluginDir: string,
-): Promise<PluginFileSnapshot> {
+export async function snapshotPluginFiles(pluginDir: string): Promise<PluginFileSnapshot> {
   const snapshot: PluginFileSnapshot = new Map();
 
   async function visit(directory: string): Promise<void> {
@@ -71,10 +61,7 @@ export async function snapshotPluginFiles(
       const absolutePath = join(directory, entry.name);
       try {
         const metadata = await stat(absolutePath, { bigint: true });
-        snapshot.set(
-          relative(pluginDir, absolutePath),
-          `${metadata.mtimeNs}:${metadata.size}`,
-        );
+        snapshot.set(relative(pluginDir, absolutePath), `${metadata.mtimeNs}:${metadata.size}`);
       } catch (error) {
         if (errorCode(error) !== "ENOENT") throw error;
       }
@@ -108,9 +95,7 @@ export async function findInstalledPlugin(
   const localDir = await realpath(pluginDir).catch(() => resolve(pluginDir));
   for (const plugin of plugins) {
     if (!plugin.rootDir) continue;
-    const installedDir = await realpath(plugin.rootDir).catch(() =>
-      resolve(plugin.rootDir!),
-    );
+    const installedDir = await realpath(plugin.rootDir).catch(() => resolve(plugin.rootDir!));
     if (installedDir === localDir) return plugin;
   }
   return undefined;
@@ -144,19 +129,12 @@ async function runCommand(
 
 async function main(): Promise<void> {
   const pluginDir = await realpath(process.cwd());
-  const manifest = JSON.parse(
-    await readFile(join(pluginDir, "package.json"), "utf8"),
-  );
-  const pluginName =
-    typeof manifest.name === "string" ? manifest.name : basename(pluginDir);
+  const manifest = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf8"));
+  const pluginName = typeof manifest.name === "string" ? manifest.name : basename(pluginDir);
   const pluginId = derivePluginId(pluginName);
   const hasApp = typeof manifest.bb?.app === "string";
-  const hasThemeGenerator =
-    typeof manifest.scripts?.["generate:theme"] === "string";
-  const lockKey = createHash("sha256")
-    .update(pluginDir)
-    .digest("hex")
-    .slice(0, 16);
+  const hasThemeGenerator = typeof manifest.scripts?.["generate:theme"] === "string";
+  const lockKey = createHash("sha256").update(pluginDir).digest("hex").slice(0, 16);
   // The id, never the package name: a scoped name carries a "/" that would
   // make mkdir() below look for a parent directory nobody created. The hash of
   // the plugin directory already keeps two checkouts apart.
@@ -176,9 +154,7 @@ async function main(): Promise<void> {
   async function readOwner(): Promise<LockOwner | null> {
     try {
       const owner = JSON.parse(await readFile(ownerPath, "utf8"));
-      return typeof owner.pid === "number" && typeof owner.token === "string"
-        ? owner
-        : null;
+      return typeof owner.pid === "number" && typeof owner.token === "string" ? owner : null;
     } catch {
       return null;
     }
@@ -202,9 +178,7 @@ async function main(): Promise<void> {
           owner = await readOwner();
         }
         if (owner && isRunning(owner.pid)) {
-          console.log(
-            `${pluginName} dev watcher is already running (pid ${owner.pid})`,
-          );
+          console.log(`${pluginName} dev watcher is already running (pid ${owner.pid})`);
           return false;
         }
 
@@ -246,16 +220,14 @@ async function main(): Promise<void> {
   try {
     let installedPlugins: InstalledPlugin[];
     try {
-      const { stdout } = await execFileAsync(
-        bb,
-        ["plugin", "list", "--json"],
-        { cwd: pluginDir, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync(bb, ["plugin", "list", "--json"], {
+        cwd: pluginDir,
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      });
       installedPlugins = JSON.parse(stdout).plugins ?? [];
     } catch {
-      throw new Error(
-        "could not reach bb (`bb plugin list --json` failed) — is the app running?",
-      );
+      throw new Error("could not reach bb (`bb plugin list --json` failed) — is the app running?");
     }
 
     const installed = await findInstalledPlugin(installedPlugins, pluginDir);
@@ -280,12 +252,7 @@ async function main(): Promise<void> {
       }
     }
 
-    const typesExitCode = await runCommand(
-      bb,
-      ["plugin", "types", "."],
-      pluginDir,
-      setActiveChild,
-    );
+    const typesExitCode = await runCommand(bb, ["plugin", "types", "."], pluginDir, setActiveChild);
     if (typesExitCode !== 0) {
       throw new Error(`could not refresh SDK types for ${installed.id}`);
     }
@@ -335,12 +302,7 @@ async function main(): Promise<void> {
         snapshot = next;
       }
       if (hasApp) {
-        const buildExitCode = await runCommand(
-          "bun",
-          ["run", "build"],
-          pluginDir,
-          setActiveChild,
-        );
+        const buildExitCode = await runCommand("bun", ["run", "build"], pluginDir, setActiveChild);
         if (stopping) break;
         if (buildExitCode !== 0) {
           console.error(

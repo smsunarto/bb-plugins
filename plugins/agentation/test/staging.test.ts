@@ -135,10 +135,7 @@ test("discard dismisses the displayed snapshot but preserves newer staging", () 
   seed(db, "ann_displayed_2");
   seed(db, "ann_new");
 
-  const result = discardStagedAnnotations(db, [
-    "ann_displayed_1",
-    "ann_displayed_2",
-  ]);
+  const result = discardStagedAnnotations(db, ["ann_displayed_1", "ann_displayed_2"]);
 
   assert.equal(result.outcome, "discarded");
   if (result.outcome !== "discarded") assert.fail("expected discard");

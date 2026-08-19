@@ -5,24 +5,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
-    "types": [
-      "node"
-    ],
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": false
   },
-  "include": [
-    "server.ts",
-    "app.tsx",
-    "format.ts",
-    "lifecycle.ts",
-    "queue.ts",
-    "sound.ts",
-    "test"
-  ]
+  "include": ["server.ts", "app.tsx", "format.ts", "lifecycle.ts", "queue.ts", "sound.ts", "test"]
 }

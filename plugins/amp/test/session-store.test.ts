@@ -83,11 +83,15 @@ test("corrupt record: get returns null and set recovers", () => {
 test("record without an execution target migrates safely to Local", () => {
   const path = tempStorePath();
   mkdirSync(recordsDirectory(path), { recursive: true });
-  writeFileSync(recordPath(path, "S-legacy"), JSON.stringify({
-    sessionId: "S-legacy",
-    threadId: "T-legacy",
-    updatedAt: 1,
-  }), "utf8");
+  writeFileSync(
+    recordPath(path, "S-legacy"),
+    JSON.stringify({
+      sessionId: "S-legacy",
+      threadId: "T-legacy",
+      updatedAt: 1,
+    }),
+    "utf8",
+  );
 
   const store = createFileSessionStore(path);
   assert.deepEqual(store.get("S-legacy"), {
@@ -99,12 +103,16 @@ test("record without an execution target migrates safely to Local", () => {
 test("record with an invalid execution target fails closed", () => {
   const path = tempStorePath();
   mkdirSync(recordsDirectory(path), { recursive: true });
-  writeFileSync(recordPath(path, "S-invalid"), JSON.stringify({
-    sessionId: "S-invalid",
-    threadId: "T-invalid",
-    executionTarget: "remote",
-    updatedAt: 1,
-  }), "utf8");
+  writeFileSync(
+    recordPath(path, "S-invalid"),
+    JSON.stringify({
+      sessionId: "S-invalid",
+      threadId: "T-invalid",
+      executionTarget: "remote",
+      updatedAt: 1,
+    }),
+    "utf8",
+  );
 
   const store = createFileSessionStore(path);
   assert.equal(store.get("S-invalid"), null);
@@ -114,11 +122,15 @@ test("migrates the legacy aggregate without overwriting newer records", () => {
   const path = tempStorePath();
   const existing = createFileSessionStore(path);
   existing.set("S-newer", { threadId: "T-newer", executionTarget: "orb" });
-  writeFileSync(path, JSON.stringify({
-    "S-legacy": { threadId: "T-legacy", updatedAt: 1 },
-    "S-orb": { threadId: "T-orb", executionTarget: "orb", updatedAt: 1 },
-    "S-newer": { threadId: "T-stale", executionTarget: "local", updatedAt: 1 },
-  }), "utf8");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      "S-legacy": { threadId: "T-legacy", updatedAt: 1 },
+      "S-orb": { threadId: "T-orb", executionTarget: "orb", updatedAt: 1 },
+      "S-newer": { threadId: "T-stale", executionTarget: "local", updatedAt: 1 },
+    }),
+    "utf8",
+  );
 
   const migrated = createFileSessionStore(path);
   assert.deepEqual(migrated.get("S-legacy"), {
@@ -140,18 +152,25 @@ test("prunes beyond MAX_ENTRIES, evicting the oldest updatedAt", () => {
   const path = tempStorePath();
   mkdirSync(recordsDirectory(path), { recursive: true });
   for (let index = 0; index < 200; index += 1) {
-    writeFileSync(recordPath(path, `S-${index}`), JSON.stringify({
-      sessionId: `S-${index}`,
-      threadId: `T-${index}`,
-      executionTarget: index % 2 === 0 ? "local" : "orb",
-      updatedAt: index + 1,
-    }), "utf8");
+    writeFileSync(
+      recordPath(path, `S-${index}`),
+      JSON.stringify({
+        sessionId: `S-${index}`,
+        threadId: `T-${index}`,
+        executionTarget: index % 2 === 0 ? "local" : "orb",
+        updatedAt: index + 1,
+      }),
+      "utf8",
+    );
   }
 
   const store = createFileSessionStore(path);
   store.set("S-new", { threadId: "T-new", executionTarget: "orb" });
 
-  assert.equal(readdirSync(recordsDirectory(path)).filter((name) => name.endsWith(".json")).length, 200);
+  assert.equal(
+    readdirSync(recordsDirectory(path)).filter((name) => name.endsWith(".json")).length,
+    200,
+  );
   assert.deepEqual(store.get("S-new"), {
     threadId: "T-new",
     executionTarget: "orb",
@@ -165,39 +184,43 @@ test("prunes beyond MAX_ENTRIES, evicting the oldest updatedAt", () => {
 
 test("concurrent bridge processes preserve every session mapping", async () => {
   const path = tempStorePath();
-  const moduleUrl = pathToFileURL(join(
-    dirname(fileURLToPath(import.meta.url)),
-    "../src/session-store.ts",
-  )).href;
-  const writers = Array.from({ length: 16 }, (_, index) => new Promise<void>((resolve, reject) => {
-    const binding = {
-      threadId: `T-${index}`,
-      executionTarget: index % 2 === 0 ? "local" : "orb",
-    };
-    const source = [
-      `import { createFileSessionStore } from ${JSON.stringify(moduleUrl)};`,
-      `createFileSessionStore(${JSON.stringify(path)}).set(${JSON.stringify(`S-${index}`)}, ${JSON.stringify(binding)});`,
-    ].join("\n");
-    const child = spawn(process.execPath, [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      source,
-    ], {
-      env: { ...process.env, NODE_NO_WARNINGS: "1" },
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    const stderr: Buffer[] = [];
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`session writer exited ${code}: ${Buffer.concat(stderr).toString("utf8")}`));
-      }
-    });
-  }));
+  const moduleUrl = pathToFileURL(
+    join(dirname(fileURLToPath(import.meta.url)), "../src/session-store.ts"),
+  ).href;
+  const writers = Array.from(
+    { length: 16 },
+    (_, index) =>
+      new Promise<void>((resolve, reject) => {
+        const binding = {
+          threadId: `T-${index}`,
+          executionTarget: index % 2 === 0 ? "local" : "orb",
+        };
+        const source = [
+          `import { createFileSessionStore } from ${JSON.stringify(moduleUrl)};`,
+          `createFileSessionStore(${JSON.stringify(path)}).set(${JSON.stringify(`S-${index}`)}, ${JSON.stringify(binding)});`,
+        ].join("\n");
+        const child = spawn(
+          process.execPath,
+          ["--experimental-strip-types", "--input-type=module", "--eval", source],
+          {
+            env: { ...process.env, NODE_NO_WARNINGS: "1" },
+            stdio: ["ignore", "ignore", "pipe"],
+          },
+        );
+        const stderr: Buffer[] = [];
+        child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+        child.on("error", reject);
+        child.on("exit", (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(
+              new Error(`session writer exited ${code}: ${Buffer.concat(stderr).toString("utf8")}`),
+            );
+          }
+        });
+      }),
+  );
 
   await Promise.all(writers);
   const reopened = createFileSessionStore(path);

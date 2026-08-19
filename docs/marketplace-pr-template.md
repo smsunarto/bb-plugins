@@ -100,14 +100,14 @@ Docs: https://github.com/smsunarto/bb-plugins/tree/main/plugins/<plugin-id>
 
 ### Source release
 
-| | |
-|---|---|
-| Repository | `https://github.com/smsunarto/bb-plugins.git` (public) |
-| Subdir | `plugins/<plugin-id>` |
-| Tag prefix | `<plugin-id>/` |
-| Released tag | `<plugin-id>/v<X.Y.Z>` (commit `<short-sha>`) |
-| Entry range | `^<X.Y.Z>` |
-| Engines (from `package.json`) | `bb <range>`, `bbPluginSdk <range>` |
+|                               |                                                        |
+| ----------------------------- | ------------------------------------------------------ |
+| Repository                    | `https://github.com/smsunarto/bb-plugins.git` (public) |
+| Subdir                        | `plugins/<plugin-id>`                                  |
+| Tag prefix                    | `<plugin-id>/`                                         |
+| Released tag                  | `<plugin-id>/v<X.Y.Z>` (commit `<short-sha>`)          |
+| Entry range                   | `^<X.Y.Z>`                                             |
+| Engines (from `package.json`) | `bb <range>`, `bbPluginSdk <range>`                    |
 
 Multi-plugin repo: releases are tagged per plugin via Changesets, so
 `tagPrefix` scopes the semver range to this plugin's tags only. The tag is
@@ -159,13 +159,13 @@ constraint, prior art it forks. Otherwise delete.>
 
 Ready to submit (public, released, id unclaimed upstream):
 
-| Plugin | Entry id | displayName | Latest tag | Range |
-|---|---|---|---|---|
-| Agent Proxy | `agent-proxy` | Agent Proxy | `agent-proxy/v0.2.1` | `^0.2.1` |
-| Amp | `amp` | Amp | `amp/v0.4.0` | `^0.4.0` |
-| GitHub Stack | `gh-stack` | GitHub Stack | `gh-stack/v0.2.1` | `^0.2.1` |
-| Monokai | `monokai` | bb Monokai | `monokai/v0.3.0` | `^0.3.0` |
-| Notify | `notify` | Notify | `notify/v0.2.1` | `^0.2.1` |
+| Plugin       | Entry id      | displayName  | Latest tag           | Range    |
+| ------------ | ------------- | ------------ | -------------------- | -------- |
+| Agent Proxy  | `agent-proxy` | Agent Proxy  | `agent-proxy/v0.2.1` | `^0.2.1` |
+| Amp          | `amp`         | Amp          | `amp/v0.4.0`         | `^0.4.0` |
+| GitHub Stack | `gh-stack`    | GitHub Stack | `gh-stack/v0.2.1`    | `^0.2.1` |
+| Monokai      | `monokai`     | bb Monokai   | `monokai/v0.3.0`     | `^0.3.0` |
+| Notify       | `notify`      | Notify       | `notify/v0.2.1`      | `^0.2.1` |
 
 All five share `subdir: plugins/<id>`, `tagPrefix: <id>/`, and declare
 `bb >=0.39.0 <1.0.0` / `bbPluginSdk >=0.4.8` in their own manifests. Re-read

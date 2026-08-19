@@ -106,7 +106,10 @@ export class ManagementClient {
     const status = result?.status;
     if (status === "ok") return { status: "ok", detail: null };
     if (status === "error") {
-      return { status: "error", detail: typeof result.error === "string" ? result.error : "unknown error" };
+      return {
+        status: "error",
+        detail: typeof result.error === "string" ? result.error : "unknown error",
+      };
     }
     return { status: "pending", detail: null };
   }

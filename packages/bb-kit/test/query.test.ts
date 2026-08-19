@@ -1,17 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import {
-  defineOperation,
-  defineOperationCatalog,
-} from "../src/operations.js";
+import { defineOperation, defineOperationCatalog } from "../src/operations.js";
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({ useRpc: vi.fn() }));
 
-const {
-  operationMutationOptions,
-  operationQueryOptions,
-} = await import("../src/query.js");
+const { operationMutationOptions, operationQueryOptions } = await import("../src/query.js");
 
 const catalog = defineOperationCatalog({
   get: {
@@ -59,33 +53,29 @@ describe("operation query options", () => {
   });
 
   it("rejects commands at the query boundary", () => {
-    expect(() => operationQueryOptions({
-      rpc: { call: async () => ({ value: "unexpected" }) },
-      operation: catalog.update,
-      input: { id: "R-1", value: "unexpected" },
-      queryKey: ["reports", "R-1"] as const,
-    } as never)).toThrow(/requires a query operation/);
+    expect(() =>
+      operationQueryOptions({
+        rpc: { call: async () => ({ value: "unexpected" }) },
+        operation: catalog.update,
+        input: { id: "R-1", value: "unexpected" },
+        queryKey: ["reports", "R-1"] as const,
+      } as never),
+    ).toThrow(/requires a query operation/);
   });
 
   it("invalidates declared keys after a successful command", async () => {
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const rpc = {
-      call: vi.fn(
-        async (
-          _method: "reports_update",
-          input: { id: string; value: string },
-        ) => ({ value: input.value }),
-      ),
+      call: vi.fn(async (_method: "reports_update", input: { id: string; value: string }) => ({
+        value: input.value,
+      })),
     };
     const options = operationMutationOptions({
       rpc,
       operation: catalog.update,
       queryClient,
-      invalidate: ({ input }) => [
-        ["reports"] as const,
-        ["reports", input.id] as const,
-      ],
+      invalidate: ({ input }) => [["reports"] as const, ["reports", input.id] as const],
     });
 
     const input = { id: "R-1", value: "updated" };
@@ -102,11 +92,13 @@ describe("operation query options", () => {
   });
 
   it("rejects queries at the mutation boundary", () => {
-    expect(() => operationMutationOptions({
-      rpc: { call: async () => ({ value: "unexpected" }) },
-      operation: catalog.get,
-      queryClient: new QueryClient(),
-      invalidate: false,
-    } as never)).toThrow(/requires a command operation/);
+    expect(() =>
+      operationMutationOptions({
+        rpc: { call: async () => ({ value: "unexpected" }) },
+        operation: catalog.get,
+        queryClient: new QueryClient(),
+        invalidate: false,
+      } as never),
+    ).toThrow(/requires a command operation/);
   });
 });

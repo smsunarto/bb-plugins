@@ -11,23 +11,11 @@ import {
 } from "./generate.js";
 import { checkProject, formatDiagnostic } from "./check.js";
 import { formatInfo, inspectProject } from "./info.js";
-import {
-  invokeOperation,
-  InvocationError,
-  operationInvokeCommand,
-} from "./invoke.js";
+import { invokeOperation, InvocationError, operationInvokeCommand } from "./invoke.js";
 import { doctorProject, formatDoctor } from "./doctor.js";
 import { discoverProject, findProjectRoot } from "./project.js";
-import {
-  FixtureError,
-  formatFixtureRun,
-  runFixtures,
-} from "./fixtures.js";
-import {
-  formatVerification,
-  verifyProject,
-  type CommandRunner,
-} from "./verify.js";
+import { FixtureError, formatFixtureRun, runFixtures } from "./fixtures.js";
+import { formatVerification, verifyProject, type CommandRunner } from "./verify.js";
 import { ProcessError } from "./process.js";
 import {
   checkWorkspaceCompatibility,
@@ -83,13 +71,15 @@ const USAGE = `Usage:
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
   init: "Usage: bb-kit init [directory] [--kind backend|fullstack|theme] [--skip-install] [--skip-types] [--json]",
   "add module": "Usage: bb-kit add module <name> [--json]",
-  "add operation": "Usage: bb-kit add operation <module.name> --kind query|command [--risk safe|mutating|destructive] [--json]",
+  "add operation":
+    "Usage: bb-kit add operation <module.name> --kind query|command [--risk safe|mutating|destructive] [--json]",
   "add fixture": "Usage: bb-kit add fixture <module.name> <name> [--json]",
   "add migration": "Usage: bb-kit add migration <module> <name> [--json]",
   "add panel": "Usage: bb-kit add panel <module> --location nav|thread [--json]",
   operations: "Usage: bb-kit operations [--json]",
   describe: "Usage: bb-kit describe <module.name> [--json]",
-  invoke: "Usage: bb-kit invoke <module.name> [--input <json|@file>] [--confirm] [--server <url>] [--json]",
+  invoke:
+    "Usage: bb-kit invoke <module.name> [--input <json|@file>] [--confirm] [--server <url>] [--json]",
   "fixtures run": "Usage: bb-kit fixtures run [module] [--confirm] [--server <url>] [--json]",
   info: "Usage: bb-kit info [--json]",
   check: "Usage: bb-kit check [--workspace] [--json]",
@@ -138,22 +128,19 @@ function parseArguments(
   return { positionals, values, flags };
 }
 
-function expectPositionals(
-  parsed: ParsedArguments,
-  minimum: number,
-  maximum = minimum,
-): void {
-  if (
-    parsed.positionals.length < minimum
-    || parsed.positionals.length > maximum
-  ) {
+function expectPositionals(parsed: ParsedArguments, minimum: number, maximum = minimum): void {
+  if (parsed.positionals.length < minimum || parsed.positionals.length > maximum) {
     throw new CliUsageError(
       `expected ${minimum === maximum ? minimum : `${minimum}-${maximum}`} positional arguments`,
     );
   }
 }
 
-function printableError(error: unknown): { code: string; message: string; issues?: readonly unknown[] } {
+function printableError(error: unknown): {
+  code: string;
+  message: string;
+  issues?: readonly unknown[];
+} {
   if (error instanceof InvocationError) {
     return {
       code: error.code,
@@ -206,11 +193,7 @@ export async function runCli(
       return 0;
     }
     if (command === "init") {
-      const parsed = parseArguments(
-        args,
-        ["--kind"],
-        ["--skip-install", "--skip-types"],
-      );
+      const parsed = parseArguments(args, ["--kind"], ["--skip-install", "--skip-types"]);
       expectPositionals(parsed, 0, 1);
       const kind = (parsed.values.get("--kind") ?? "backend") as PluginKind;
       if (!["backend", "fullstack", "theme"].includes(kind)) {
@@ -225,9 +208,12 @@ export async function runCli(
         ...(options.run ? { run: options.run } : {}),
       });
       if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
-      else io.stdout(created.length === 0
-        ? "Already initialized."
-        : `Created:\n${created.map((file) => `  ${file}`).join("\n")}`);
+      else
+        io.stdout(
+          created.length === 0
+            ? "Already initialized."
+            : `Created:\n${created.map((file) => `  ${file}`).join("\n")}`,
+        );
       return 0;
     }
     if (command === "add") {
@@ -238,9 +224,10 @@ export async function runCli(
         const name = parsed.positionals[0] as string;
         const created = addModule(findProjectRoot(cwd), name);
         if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
-        else io.stdout(created.length === 0
-          ? `Module ${name} already exists.`
-          : `Created module ${name}.`);
+        else
+          io.stdout(
+            created.length === 0 ? `Module ${name} already exists.` : `Created module ${name}.`,
+          );
         return 0;
       }
       if (subject === "operation") {
@@ -265,9 +252,12 @@ export async function runCli(
           risk as "safe" | "mutating" | "destructive" | undefined,
         );
         if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
-        else io.stdout(created.length === 0
-          ? `Operation ${identity} already exists.`
-          : `Created operation ${identity}.`);
+        else
+          io.stdout(
+            created.length === 0
+              ? `Operation ${identity} already exists.`
+              : `Created operation ${identity}.`,
+          );
         return 0;
       }
       if (subject === "migration") {
@@ -277,9 +267,12 @@ export async function runCli(
         const name = parsed.positionals[1] as string;
         const created = addMigration(findProjectRoot(cwd), moduleName, name);
         if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
-        else io.stdout(created.length === 0
-          ? `Migration ${moduleName}/${name} already exists.`
-          : `Created migration ${created[0]}.`);
+        else
+          io.stdout(
+            created.length === 0
+              ? `Migration ${moduleName}/${name} already exists.`
+              : `Created migration ${created[0]}.`,
+          );
         return 0;
       }
       if (subject === "fixture") {
@@ -289,9 +282,12 @@ export async function runCli(
         const name = parsed.positionals[1] as string;
         const created = addFixture(findProjectRoot(cwd), identity, name);
         if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
-        else io.stdout(created.length === 0
-          ? `Fixture ${identity}/${name} already exists.`
-          : `Created fixture ${created[0]}.`);
+        else
+          io.stdout(
+            created.length === 0
+              ? `Fixture ${identity}/${name} already exists.`
+              : `Created fixture ${created[0]}.`,
+          );
         return 0;
       }
       if (subject === "panel") {
@@ -304,9 +300,12 @@ export async function runCli(
         }
         const created = addPanel(findProjectRoot(cwd), moduleName, location);
         if (json) io.stdout(JSON.stringify({ ok: true, created }, null, 2));
-        else io.stdout(created.length === 0
-          ? `Panel ${moduleName} already exists.`
-          : `Created ${location} panel for ${moduleName}.`);
+        else
+          io.stdout(
+            created.length === 0
+              ? `Panel ${moduleName} already exists.`
+              : `Created ${location} panel for ${moduleName}.`,
+          );
         return 0;
       }
       throw new CliUsageError("add requires module, operation, fixture, migration, or panel");
@@ -317,11 +316,17 @@ export async function runCli(
       const result = operations(findProjectRoot(cwd));
       if (json) io.stdout(JSON.stringify(result, null, 2));
       else if (result.length === 0) io.stdout("No operations.");
-      else io.stdout(result.map((operation) =>
-        `${operation.kind.padEnd(7)} ${operation.identity}`
-        + `${operation.risk ? ` [${operation.risk}]` : ""}`
-        + ` → ${operation.rpcMethod ?? "unlocked"}`,
-      ).join("\n"));
+      else
+        io.stdout(
+          result
+            .map(
+              (operation) =>
+                `${operation.kind.padEnd(7)} ${operation.identity}` +
+                `${operation.risk ? ` [${operation.risk}]` : ""}` +
+                ` → ${operation.rpcMethod ?? "unlocked"}`,
+            )
+            .join("\n"),
+        );
       return 0;
     }
     if (command === "describe") {
@@ -329,7 +334,8 @@ export async function runCli(
       expectPositionals(parsed, 1);
       const identity = parsed.positionals[0] as string;
       const operation = operations(findProjectRoot(cwd)).find((item) => item.identity === identity);
-      if (!operation) throw new InvocationError("unknown_operation", `unknown operation "${identity}"`);
+      if (!operation)
+        throw new InvocationError("unknown_operation", `unknown operation "${identity}"`);
       if (operation.input === null || operation.metadataError !== null) {
         throw new InvocationError(
           "invalid_operation_metadata",
@@ -337,17 +343,20 @@ export async function runCli(
         );
       }
       if (json) io.stdout(JSON.stringify(operation, null, 2));
-      else io.stdout([
-        `Operation: ${operation.identity}`,
-        `Kind: ${operation.kind}`,
-        ...(operation.risk ? [`Risk: ${operation.risk}`] : []),
-        `RPC method: ${operation.rpcMethod ?? "unlocked"}`,
-        `Input: ${operation.input.mode}`,
-        ...(operation.input.mode === "none"
-          ? ["Wire input: null"]
-          : [`Example input: ${JSON.stringify(operation.input.example)}`]),
-        `Invoke: ${operationInvokeCommand(operation)}`,
-      ].join("\n"));
+      else
+        io.stdout(
+          [
+            `Operation: ${operation.identity}`,
+            `Kind: ${operation.kind}`,
+            ...(operation.risk ? [`Risk: ${operation.risk}`] : []),
+            `RPC method: ${operation.rpcMethod ?? "unlocked"}`,
+            `Input: ${operation.input.mode}`,
+            ...(operation.input.mode === "none"
+              ? ["Wire input: null"]
+              : [`Example input: ${JSON.stringify(operation.input.example)}`]),
+            `Invoke: ${operationInvokeCommand(operation)}`,
+          ].join("\n"),
+        );
       return 0;
     }
     if (command === "invoke") {
@@ -360,7 +369,7 @@ export async function runCli(
         ...(parsed.values.get("--input") === undefined
           ? {}
           : { input: parsed.values.get("--input") as string }),
-        ...(parsed.values.get("--server") ?? env.BB_SERVER_URL
+        ...((parsed.values.get("--server") ?? env.BB_SERVER_URL)
           ? { serverUrl: (parsed.values.get("--server") ?? env.BB_SERVER_URL) as string }
           : {}),
         ...(options.fetch ? { fetch: options.fetch } : {}),
@@ -380,7 +389,7 @@ export async function runCli(
       const result = await runFixtures(findProjectRoot(cwd), {
         ...(parsed.positionals[0] ? { module: parsed.positionals[0] } : {}),
         confirm: parsed.flags.has("--confirm"),
-        ...(parsed.values.get("--server") ?? env.BB_SERVER_URL
+        ...((parsed.values.get("--server") ?? env.BB_SERVER_URL)
           ? { serverUrl: (parsed.values.get("--server") ?? env.BB_SERVER_URL) as string }
           : {}),
         ...(options.fetch ? { fetch: options.fetch } : {}),
@@ -425,9 +434,10 @@ export async function runCli(
         env,
         ...(options.run ? { run: options.run } : {}),
       };
-      const result = subject === "inspect"
-        ? inspectCompatibility(cwd, commandOptions)
-        : upgradeCompatibility(cwd, commandOptions);
+      const result =
+        subject === "inspect"
+          ? inspectCompatibility(cwd, commandOptions)
+          : upgradeCompatibility(cwd, commandOptions);
       io.stdout(json ? JSON.stringify(result, null, 2) : formatCompatibilityInspection(result));
       return 0;
     }
@@ -445,13 +455,10 @@ export async function runCli(
     if (command === "verify") {
       const parsed = parseArguments(args);
       expectPositionals(parsed, 0);
-      const result = verifyProject(
-        findProjectRoot(cwd),
-        {
-          env,
-          ...(options.run ? { run: options.run } : {}),
-        },
-      );
+      const result = verifyProject(findProjectRoot(cwd), {
+        env,
+        ...(options.run ? { run: options.run } : {}),
+      });
       if (json) io.stdout(JSON.stringify(result, null, 2));
       else (result.ok ? io.stdout : io.stderr)(formatVerification(result));
       return result.ok ? 0 : 1;

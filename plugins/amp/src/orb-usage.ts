@@ -25,10 +25,10 @@ export async function findLatestProviderSessionId(
     const identity = await nextIdentity(afterSeq);
     if (identity === null) return latest;
     if (
-      !Number.isSafeInteger(identity.seq)
-      || identity.seq < 0
-      || (afterSeq !== undefined && identity.seq <= Number(afterSeq))
-      || !isValidProviderSessionId(identity.providerSessionId)
+      !Number.isSafeInteger(identity.seq) ||
+      identity.seq < 0 ||
+      (afterSeq !== undefined && identity.seq <= Number(afterSeq)) ||
+      !isValidProviderSessionId(identity.providerSessionId)
     ) {
       return null;
     }
@@ -39,44 +39,48 @@ export async function findLatestProviderSessionId(
 
 export type OrbUsageRecord =
   | Readonly<{
-    providerSessionId: string;
-    state: "local";
-  }>
+      providerSessionId: string;
+      state: "local";
+    }>
   | Readonly<{
-    providerSessionId: string;
-    state: "orb-starting";
-  }>
+      providerSessionId: string;
+      state: "orb-starting";
+    }>
   | Readonly<{
-    providerSessionId: string;
-    state: "orb-active";
-    ampThreadId: string;
-  }>;
+      providerSessionId: string;
+      state: "orb-active";
+      ampThreadId: string;
+    }>;
 
 export type OrbUsageView =
   | Readonly<{ state: "hidden" }>
   | Readonly<{ state: "starting" }>
   | Readonly<{
-    state: "active";
-    ampThreadId: string;
-    syncCommand: string;
-  }>;
+      state: "active";
+      ampThreadId: string;
+      syncCommand: string;
+    }>;
 
 function matchesExactly(value: string, pattern: RegExp): boolean {
   return pattern.exec(value)?.[0] === value;
 }
 
 export function isValidProviderSessionId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= MAX_PROVIDER_SESSION_ID_LENGTH
-    && matchesExactly(value, /^[A-Za-z0-9][A-Za-z0-9._:@+-]*$/u);
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_PROVIDER_SESSION_ID_LENGTH &&
+    matchesExactly(value, /^[A-Za-z0-9][A-Za-z0-9._:@+-]*$/u)
+  );
 }
 
 export function isValidAmpThreadId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length > 2
-    && value.length <= MAX_AMP_THREAD_ID_LENGTH
-    && matchesExactly(value, /^T-[A-Za-z0-9][A-Za-z0-9._-]*$/u);
+  return (
+    typeof value === "string" &&
+    value.length > 2 &&
+    value.length <= MAX_AMP_THREAD_ID_LENGTH &&
+    matchesExactly(value, /^T-[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+  );
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
@@ -116,9 +120,9 @@ export function mergeOrbUsageRecord(
   incoming: OrbUsageRecord,
 ): OrbUsageRecord {
   if (
-    current?.providerSessionId === incoming.providerSessionId
-    && current.state === "orb-active"
-    && incoming.state === "orb-starting"
+    current?.providerSessionId === incoming.providerSessionId &&
+    current.state === "orb-active" &&
+    incoming.state === "orb-starting"
   ) {
     return current;
   }

@@ -1,22 +1,8 @@
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { modify, applyEdits } from "jsonc-parser";
-import {
-  Node,
-  Project,
-  QuoteKind,
-  SyntaxKind,
-} from "ts-morph";
-import {
-  checkSdkDependency,
-  compatibility,
-} from "./compatibility.js";
+import { Node, Project, QuoteKind, SyntaxKind } from "ts-morph";
+import { checkSdkDependency, compatibility } from "./compatibility.js";
 import {
   defaultCommandRunner,
   processFailure,
@@ -77,7 +63,11 @@ function editJson(path: string, jsonPath: (string | number)[], value: unknown): 
 }
 
 function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
-  const id = name.split("/").at(-1)?.replace(/^bb-plugin-/, "") ?? name;
+  const id =
+    name
+      .split("/")
+      .at(-1)
+      ?.replace(/^bb-plugin-/, "") ?? name;
   const app = kind === "fullstack";
   const theme = kind === "theme";
   return {
@@ -86,12 +76,7 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
     description: `${id} plugin for bb`,
     license: "MIT",
     type: "module",
-    files: [
-      "dist/",
-      "plugin/",
-      "README.md",
-      "LICENSE",
-    ],
+    files: ["dist/", "plugin/", "README.md", "LICENSE"],
     engines: compatibility.engines,
     bb: {
       name: id,
@@ -101,11 +86,13 @@ function manifestTemplate(name: string, kind: PluginKind): PluginManifest {
       ...(app ? { app: "./plugin/app.tsx" } : {}),
       ...(theme
         ? {
-            themes: [{
-              id,
-              name: id,
-              css: `./plugin/themes/${id}.css`,
-            }],
+            themes: [
+              {
+                id,
+                name: id,
+                css: `./plugin/themes/${id}.css`,
+              },
+            ],
           }
         : {}),
       skills: [],
@@ -176,10 +163,7 @@ function runCommand(
   }
 }
 
-export function initializeProject(
-  target: string,
-  options: InitOptions = {},
-): string[] {
+export function initializeProject(target: string, options: InitOptions = {}): string[] {
   const root = resolve(target);
   const kind = options.kind ?? "backend";
   const env = options.env ?? process.env;
@@ -192,18 +176,17 @@ export function initializeProject(
       if (parent === preflightDirectory) break;
       preflightDirectory = parent;
     }
-    selectedBbCli = selectBbCli(
-      preflightDirectory,
-      env,
-      compatibility.bbCliVersion,
-      commandRunner,
-    );
+    selectedBbCli = selectBbCli(preflightDirectory, env, compatibility.bbCliVersion, commandRunner);
   }
   const created: string[] = [];
   mkdirSync(root, { recursive: true });
   const packagePath = join(root, "package.json");
   if (!existsSync(packagePath)) {
-    const id = root.split("/").at(-1)?.replace(/^bb-plugin-/, "") ?? "plugin";
+    const id =
+      root
+        .split("/")
+        .at(-1)
+        ?.replace(/^bb-plugin-/, "") ?? "plugin";
     const packageName = options.packageName ?? `bb-plugin-${id}`;
     writeJson(packagePath, manifestTemplate(packageName, kind));
     created.push("package.json");
@@ -213,41 +196,64 @@ export function initializeProject(
     throw new Error("existing package.json is not a bb plugin (missing bb.server)");
   }
   const serverPath = resolve(root, manifest.bb.server);
-  if (writeIfMissing(
-    serverPath,
-    `import type { BbPluginApi } from "@get-bb/plugin-sdk";\n\nexport default function plugin(_bb: BbPluginApi): void {}\n`,
-  )) created.push(relative(root, serverPath));
+  if (
+    writeIfMissing(
+      serverPath,
+      `import type { BbPluginApi } from "@get-bb/plugin-sdk";\n\nexport default function plugin(_bb: BbPluginApi): void {}\n`,
+    )
+  )
+    created.push(relative(root, serverPath));
   if (manifest.bb.app) {
     const appPath = resolve(root, manifest.bb.app);
-    if (writeIfMissing(
-      appPath,
-      `import { definePluginApp } from "@get-bb/plugin-sdk/app";\n\nexport default definePluginApp((_app) => {});\n`,
-    )) created.push(relative(root, appPath));
+    if (
+      writeIfMissing(
+        appPath,
+        `import { definePluginApp } from "@get-bb/plugin-sdk/app";\n\nexport default definePluginApp((_app) => {});\n`,
+      )
+    )
+      created.push(relative(root, appPath));
   }
   if (kind === "theme") {
-    const id = manifest.name.split("/").at(-1)?.replace(/^bb-plugin-/, "") ?? "theme";
+    const id =
+      manifest.name
+        .split("/")
+        .at(-1)
+        ?.replace(/^bb-plugin-/, "") ?? "theme";
     const themePath = join(dirname(serverPath), "themes", `${id}.css`);
     if (writeIfMissing(themePath, `/* ${id} bb theme */\n`)) {
       created.push(relative(root, themePath));
     }
   }
-  if (writeIfMissing(join(root, "tsconfig.json"), `${JSON.stringify(tsconfigTemplate(), null, 2)}\n`)) {
+  if (
+    writeIfMissing(join(root, "tsconfig.json"), `${JSON.stringify(tsconfigTemplate(), null, 2)}\n`)
+  ) {
     created.push("tsconfig.json");
   }
   if (writeIfMissing(join(root, "bb-kit.lock.json"), `${JSON.stringify(emptyLock(), null, 2)}\n`)) {
     created.push("bb-kit.lock.json");
   }
-  if (writeIfMissing(join(root, "README.md"), `# ${manifest.name}\n\nA bb plugin built with bb-kit.\n`)) {
+  if (
+    writeIfMissing(
+      join(root, "README.md"),
+      `# ${manifest.name}\n\nA bb plugin built with bb-kit.\n`,
+    )
+  ) {
     created.push("README.md");
   }
-  if (writeIfMissing(
-    join(root, "test", "scaffold.test.ts"),
-    `import assert from "node:assert/strict";\nimport test from "node:test";\nimport plugin from "../${relative(root, serverPath).replaceAll("\\", "/").replace(/\.ts$/, ".js")}";\n\ntest("plugin scaffold exports its factory", () => {\n  assert.equal(typeof plugin, "function");\n});\n`,
-  )) created.push("test/scaffold.test.ts");
-  if (writeIfMissing(
-    join(root, "AGENTS.md"),
-    `# bb-kit plugin conventions\n\n- Organize behavior under \`plugin/modules/<name>/\`.\n- Keep \`contract.ts\` and \`model.ts\` browser-safe.\n- Frontend code must not import \`server.ts\` or \`repository.ts\`.\n- Implement business behavior as headless operations.\n- RPC is authoritative; realtime signals only invalidate queries.\n- Expected domain outcomes use discriminated unions.\n- Create host resources inside the plugin generation.\n- Import \`noInput\` directly for no-input operations; give every other input a literal JSON \`exampleInput\`.\n- Run \`bb-kit check\` while editing and \`bb-kit verify\` before handoff.\n`,
-  )) created.push("AGENTS.md");
+  if (
+    writeIfMissing(
+      join(root, "test", "scaffold.test.ts"),
+      `import assert from "node:assert/strict";\nimport test from "node:test";\nimport plugin from "../${relative(root, serverPath).replaceAll("\\", "/").replace(/\.ts$/, ".js")}";\n\ntest("plugin scaffold exports its factory", () => {\n  assert.equal(typeof plugin, "function");\n});\n`,
+    )
+  )
+    created.push("test/scaffold.test.ts");
+  if (
+    writeIfMissing(
+      join(root, "AGENTS.md"),
+      `# bb-kit plugin conventions\n\n- Organize behavior under \`plugin/modules/<name>/\`.\n- Keep \`contract.ts\` and \`model.ts\` browser-safe.\n- Frontend code must not import \`server.ts\` or \`repository.ts\`.\n- Implement business behavior as headless operations.\n- RPC is authoritative; realtime signals only invalidate queries.\n- Expected domain outcomes use discriminated unions.\n- Create host resources inside the plugin generation.\n- Import \`noInput\` directly for no-input operations; give every other input a literal JSON \`exampleInput\`.\n- Run \`bb-kit check\` while editing and \`bb-kit verify\` before handoff.\n`,
+    )
+  )
+    created.push("AGENTS.md");
   const ownLicense = resolve(import.meta.dirname, "../LICENSE");
   if (!existsSync(join(root, "LICENSE")) && existsSync(ownLicense)) {
     cpSync(ownLicense, join(root, "LICENSE"));
@@ -294,9 +300,7 @@ function assertCompositionRoot(root: string): void {
   const source = project.addSourceFileAtPath(serverPath);
   const functionDeclaration = source.getFunctions().find((fn) => fn.isDefaultExport());
   if (!functionDeclaration?.getBody()) {
-    throw new Error(
-      `${info.serverEntry} is not a recognized default function composition root`,
-    );
+    throw new Error(`${info.serverEntry} is not a recognized default function composition root`);
   }
   if (functionDeclaration.getParameters().length !== 1) {
     throw new Error(`${info.serverEntry} plugin factory must accept exactly one bb parameter`);
@@ -310,15 +314,13 @@ function addInstallerToRoot(root: string, moduleName: string, moduleServer: stri
   const source = project.addSourceFileAtPath(serverPath);
   const functionDeclaration = source.getFunctions().find((fn) => fn.isDefaultExport());
   if (!functionDeclaration?.getBody()) {
-    throw new Error(
-      `${info.serverEntry} is not a recognized default function composition root`,
-    );
+    throw new Error(`${info.serverEntry} is not a recognized default function composition root`);
   }
   const installer = `install${toIdentifier(moduleName)[0]?.toUpperCase() ?? ""}${toIdentifier(moduleName).slice(1)}`;
   const specifier = `./${relative(dirname(serverPath), moduleServer).replaceAll("\\", "/").replace(/\.ts$/, ".js")}`;
-  const hasImport = source.getImportDeclarations().some((declaration) =>
-    declaration.getModuleSpecifierValue() === specifier,
-  );
+  const hasImport = source
+    .getImportDeclarations()
+    .some((declaration) => declaration.getModuleSpecifierValue() === specifier);
   if (!hasImport) {
     source.addImportDeclaration({ moduleSpecifier: specifier, namedImports: [installer] });
   }
@@ -332,7 +334,10 @@ function addInstallerToRoot(root: string, moduleName: string, moduleServer: stri
   source.saveSync();
 }
 
-function moduleServerSource(root: string, moduleName: string): {
+function moduleServerSource(
+  root: string,
+  moduleName: string,
+): {
   source: ReturnType<Project["addSourceFileAtPath"]>;
   installer: NonNullable<ReturnType<ReturnType<Project["addSourceFileAtPath"]>["getFunction"]>>;
 } {
@@ -373,10 +378,13 @@ function addMigrationsToModuleServer(root: string, moduleName: string): void {
   const migrations = `${identifier}Migrations`;
   const database = `${identifier}Database`;
   const specifier = "./generated/migrations.js";
-  const hasImport = source.getImportDeclarations().some((declaration) =>
-    declaration.getModuleSpecifierValue() === specifier
-    && declaration.getNamedImports().some((namedImport) => namedImport.getName() === migrations),
-  );
+  const hasImport = source
+    .getImportDeclarations()
+    .some(
+      (declaration) =>
+        declaration.getModuleSpecifierValue() === specifier &&
+        declaration.getNamedImports().some((namedImport) => namedImport.getName() === migrations),
+    );
   if (!hasImport) {
     source.addImportDeclaration({ moduleSpecifier: specifier, namedImports: [migrations] });
   }
@@ -403,10 +411,10 @@ function assertAppCompositionRoot(root: string): void {
   const call = assignment?.getExpressionIfKind(SyntaxKind.CallExpression);
   const callback = call?.getArguments()[0];
   if (
-    !callback
-    || (!Node.isArrowFunction(callback) && !Node.isFunctionExpression(callback))
-    || !callback.getBody().isKind(SyntaxKind.Block)
-    || callback.getParameters().length !== 1
+    !callback ||
+    (!Node.isArrowFunction(callback) && !Node.isFunctionExpression(callback)) ||
+    !callback.getBody().isKind(SyntaxKind.Block) ||
+    callback.getParameters().length !== 1
   ) {
     throw new Error(`${info.appEntry} is not a recognized definePluginApp composition root`);
   }
@@ -426,10 +434,12 @@ function addAppInstallerToRoot(root: string, moduleName: string, moduleApp: stri
   }
   const names = moduleNames(moduleName);
   const register = `register${names.installer.slice("install".length)}App`;
-  const specifier = `./${relative(dirname(appPath), moduleApp).replaceAll("\\", "/").replace(/\.tsx$/, ".js")}`;
-  const hasImport = source.getImportDeclarations().some((declaration) =>
-    declaration.getModuleSpecifierValue() === specifier,
-  );
+  const specifier = `./${relative(dirname(appPath), moduleApp)
+    .replaceAll("\\", "/")
+    .replace(/\.tsx$/, ".js")}`;
+  const hasImport = source
+    .getImportDeclarations()
+    .some((declaration) => declaration.getModuleSpecifierValue() === specifier);
   if (!hasImport) {
     source.addImportDeclaration({ moduleSpecifier: specifier, namedImports: [register] });
   }
@@ -467,19 +477,28 @@ export function addModule(rootOrChild: string, moduleName: string): string[] {
   const created: string[] = [];
   mkdirSync(join(directory, "operations"), { recursive: true });
   mkdirSync(join(directory, "generated"), { recursive: true });
-  if (writeIfMissing(
-    join(directory, "generated", "operations.ts"),
-    operationCatalogSource(moduleName, [], info.lock),
-  )) created.push(`${moduleName}/generated/operations.ts`);
-  if (writeIfMissing(
-    join(directory, "service.ts"),
-    `import type { OperationHandlersFor } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\n\nexport const ${names.service} = {} satisfies OperationHandlersFor<typeof ${names.catalog}>;\n`,
-  )) created.push(`${moduleName}/service.ts`);
+  if (
+    writeIfMissing(
+      join(directory, "generated", "operations.ts"),
+      operationCatalogSource(moduleName, [], info.lock),
+    )
+  )
+    created.push(`${moduleName}/generated/operations.ts`);
+  if (
+    writeIfMissing(
+      join(directory, "service.ts"),
+      `import type { OperationHandlersFor } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\n\nexport const ${names.service} = {} satisfies OperationHandlersFor<typeof ${names.catalog}>;\n`,
+    )
+  )
+    created.push(`${moduleName}/service.ts`);
   const moduleServer = join(directory, "server.ts");
-  if (writeIfMissing(
-    moduleServer,
-    `import type { BbPluginApi } from "@get-bb/plugin-sdk";\nimport { registerOperations } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\nimport { ${names.service} } from "./service.js";\n\nexport function ${names.installer}(bb: BbPluginApi): void {\n  registerOperations(bb, ${names.catalog}, ${names.service});\n}\n`,
-  )) created.push(`${moduleName}/server.ts`);
+  if (
+    writeIfMissing(
+      moduleServer,
+      `import type { BbPluginApi } from "@get-bb/plugin-sdk";\nimport { registerOperations } from "@bb-kit/core/operations";\nimport { ${names.catalog} } from "./generated/operations.js";\nimport { ${names.service} } from "./service.js";\n\nexport function ${names.installer}(bb: BbPluginApi): void {\n  registerOperations(bb, ${names.catalog}, ${names.service});\n}\n`,
+    )
+  )
+    created.push(`${moduleName}/server.ts`);
   addInstallerToRoot(root, moduleName, moduleServer);
   editJson(join(root, "package.json"), ["dependencies", "@bb-kit/core"], "^0.1.0");
   editJson(join(root, "package.json"), ["dependencies", "zod"], "^4.4.3");
@@ -510,7 +529,8 @@ function addServiceHandler(root: string, moduleName: string, operationName: stri
   const initializer = declarationInitializer?.isKind(SyntaxKind.SatisfiesExpression)
     ? declarationInitializer.getExpressionIfKind(SyntaxKind.ObjectLiteralExpression)
     : declarationInitializer?.asKind(SyntaxKind.ObjectLiteralExpression);
-  if (!initializer) throw new Error(`${projectPath(root, servicePath)} is not a recognized service object`);
+  if (!initializer)
+    throw new Error(`${projectPath(root, servicePath)} is not a recognized service object`);
   const key = toIdentifier(operationName);
   if (!initializer.getProperty(key)) {
     initializer.addPropertyAssignment({
@@ -542,11 +562,10 @@ export function addOperation(
   const root = findProjectRoot(rootOrChild);
   let info = discoverProject(root);
   const identityLock = readLock(root);
-  const proposedRpcMethod = identityLock.operations[identity]?.rpcMethod
-    ?? defaultWireMethod(identity);
+  const proposedRpcMethod =
+    identityLock.operations[identity]?.rpcMethod ?? defaultWireMethod(identity);
   const identityCollision = Object.entries(identityLock.operations).find(
-    ([otherIdentity, value]) =>
-      otherIdentity !== identity && value.rpcMethod === proposedRpcMethod,
+    ([otherIdentity, value]) => otherIdentity !== identity && value.rpcMethod === proposedRpcMethod,
   );
   if (identityCollision) {
     throw new Error(
@@ -587,11 +606,7 @@ export function addOperation(
   return created;
 }
 
-export function addFixture(
-  rootOrChild: string,
-  identity: string,
-  fixtureName: string,
-): string[] {
+export function addFixture(rootOrChild: string, identity: string, fixtureName: string): string[] {
   if (!FIXTURE_PATTERN.test(fixtureName)) {
     throw new Error("fixture name must be lowercase kebab-case");
   }
@@ -609,14 +624,19 @@ export function addFixture(
     );
   }
   const path = join(root, "fixtures", operation.module, `${fixtureName}.json`);
-  const invoke = operation.input.mode === "none"
-    ? { operation: identity }
-    : { operation: identity, input: operation.input.example };
-  const content = `${JSON.stringify({
-    name: `${identity}-${fixtureName}`,
-    invoke,
-    expect: {},
-  }, null, 2)}\n`;
+  const invoke =
+    operation.input.mode === "none"
+      ? { operation: identity }
+      : { operation: identity, input: operation.input.example };
+  const content = `${JSON.stringify(
+    {
+      name: `${identity}-${fixtureName}`,
+      invoke,
+      expect: {},
+    },
+    null,
+    2,
+  )}\n`;
   return writeIfMissing(path, content) ? [projectPath(root, path)] : [];
 }
 
@@ -639,13 +659,13 @@ export function addMigration(
   if (!module) throw new Error(`could not create module "${moduleName}"`);
   moduleServerSource(root, moduleName);
 
-  const existing = module.migrations.find((filename) =>
-    filename.endsWith(`-${migrationName}.sql`),
-  );
+  const existing = module.migrations.find((filename) => filename.endsWith(`-${migrationName}.sql`));
   const created: string[] = [];
   let filename = existing;
   if (!filename) {
-    const malformed = module.migrations.find((entry) => !/^\d{3}-[a-z0-9][a-z0-9-]*\.sql$/.test(entry));
+    const malformed = module.migrations.find(
+      (entry) => !/^\d{3}-[a-z0-9][a-z0-9-]*\.sql$/.test(entry),
+    );
     if (malformed) {
       throw new Error(`cannot append after malformed migration "${malformed}"`);
     }
@@ -716,23 +736,28 @@ export function addPanel(
   const panelPath = join(module.directory, "panel.tsx");
   const moduleApp = join(module.directory, "app.tsx");
   const props = location === "nav" ? "PluginNavPanelProps" : "PluginThreadPanelProps";
-  const registration = location === "nav"
-    ? `app.slots.navPanel({\n    id: ${JSON.stringify(moduleName)},\n    title: ${JSON.stringify(title)},\n    icon: "Puzzle",\n    path: ${JSON.stringify(moduleName)},\n    component: ${panelName},\n  });`
-    : `app.slots.threadPanelAction({\n    id: ${JSON.stringify(moduleName)},\n    title: ${JSON.stringify(title)},\n    icon: "Puzzle",\n    component: ${panelName},\n  });`;
+  const registration =
+    location === "nav"
+      ? `app.slots.navPanel({\n    id: ${JSON.stringify(moduleName)},\n    title: ${JSON.stringify(title)},\n    icon: "Puzzle",\n    path: ${JSON.stringify(moduleName)},\n    component: ${panelName},\n  });`
+      : `app.slots.threadPanelAction({\n    id: ${JSON.stringify(moduleName)},\n    title: ${JSON.stringify(title)},\n    icon: "Puzzle",\n    component: ${panelName},\n  });`;
   const created: string[] = [];
   if (existsSync(moduleApp)) {
     const source = readFileSync(moduleApp, "utf8");
-    const expectedSlot = location === "nav" ? "app.slots.navPanel(" : "app.slots.threadPanelAction(";
+    const expectedSlot =
+      location === "nav" ? "app.slots.navPanel(" : "app.slots.threadPanelAction(";
     if (!source.includes(expectedSlot)) {
       throw new Error(
         `${projectPath(root, moduleApp)} already registers a different panel location; refusing to replace it`,
       );
     }
   }
-  if (writeIfMissing(
-    panelPath,
-    `import type { ${props} } from "@get-bb/plugin-sdk/app";\nimport { PluginQueryBoundary } from "@bb-kit/core/query";\n\nexport function ${panelName}(_props: ${props}) {\n  return (\n    <PluginQueryBoundary>\n      <main>\n        <h1>${title}</h1>\n        <p>TODO: connect this panel to the module's operations.</p>\n      </main>\n    </PluginQueryBoundary>\n  );\n}\n`,
-  )) created.push(projectPath(root, panelPath));
+  if (
+    writeIfMissing(
+      panelPath,
+      `import type { ${props} } from "@get-bb/plugin-sdk/app";\nimport { PluginQueryBoundary } from "@bb-kit/core/query";\n\nexport function ${panelName}(_props: ${props}) {\n  return (\n    <PluginQueryBoundary>\n      <main>\n        <h1>${title}</h1>\n        <p>TODO: connect this panel to the module's operations.</p>\n      </main>\n    </PluginQueryBoundary>\n  );\n}\n`,
+    )
+  )
+    created.push(projectPath(root, panelPath));
   if (!existsSync(moduleApp)) {
     writeFileSync(
       moduleApp,
@@ -742,10 +767,6 @@ export function addPanel(
   }
   addAppInstallerToRoot(root, moduleName, moduleApp);
   editJson(join(root, "package.json"), ["dependencies", "@bb-kit/core"], "^0.1.0");
-  editJson(
-    join(root, "package.json"),
-    ["dependencies", "@tanstack/react-query"],
-    "^5.101.4",
-  );
+  editJson(join(root, "package.json"), ["dependencies", "@tanstack/react-query"], "^5.101.4");
   return created;
 }

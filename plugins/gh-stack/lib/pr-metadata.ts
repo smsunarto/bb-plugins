@@ -73,10 +73,7 @@ export function applyPrMetadataReads(
 
 // Drop entries for PRs no longer in the stack (merged, pruned), so a
 // long-lived workspace does not accumulate them.
-export function evictAbsentPrMetadata(
-  cache: PrMetadataCache,
-  live: readonly number[],
-): void {
+export function evictAbsentPrMetadata(cache: PrMetadataCache, live: readonly number[]): void {
   const keep = new Set(live);
   for (const number of cache.keys()) {
     if (!keep.has(number)) cache.delete(number);

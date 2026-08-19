@@ -2,12 +2,7 @@
 // aggregation into the wire shape the panel renders. Pure functions, no I/O —
 // server.ts runs the commands and feeds their stdout in here.
 
-export type DiffStatus =
-  | "added"
-  | "deleted"
-  | "modified"
-  | "renamed"
-  | "untracked";
+export type DiffStatus = "added" | "deleted" | "modified" | "renamed" | "untracked";
 
 export type DiffCounts = { additions: number | null; deletions: number | null };
 
@@ -116,10 +111,7 @@ export function parsePorcelainZ(stdout: string): DiffEntry[] {
   return entries;
 }
 
-export function buildChangeSet(
-  entries: DiffEntry[],
-  counts: Map<string, DiffCounts>,
-): ChangeSet {
+export function buildChangeSet(entries: DiffEntry[], counts: Map<string, DiffCounts>): ChangeSet {
   let additions = 0;
   let deletions = 0;
   const files: DiffFile[] = [];

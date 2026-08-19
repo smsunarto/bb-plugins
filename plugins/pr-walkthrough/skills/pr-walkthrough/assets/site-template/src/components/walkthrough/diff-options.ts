@@ -1,8 +1,8 @@
-import type { FileDiffOptions } from "@pierre/diffs"
+import type { FileDiffOptions } from "@pierre/diffs";
 
-import type { WalkthroughDiffFile } from "@/data/walkthrough"
+import type { WalkthroughDiffFile } from "@/data/walkthrough";
 
-export type ReviewDiffStyle = "split" | "unified"
+export type ReviewDiffStyle = "split" | "unified";
 
 export function createDiffOptions<LAnnotation = undefined>(
   diffStyle: ReviewDiffStyle,
@@ -22,7 +22,7 @@ export function createDiffOptions<LAnnotation = undefined>(
       [data-diffs-header="default"] { cursor: pointer; }
       [data-change-icon="change"] { color: var(--diffs-warning-dark); }
     `,
-  }
+  };
 
   if (file?.oldContents !== undefined && file.newContents !== undefined) {
     options.loadDiffFiles = async () => ({
@@ -34,8 +34,8 @@ export function createDiffOptions<LAnnotation = undefined>(
         contents: file.newContents ?? "",
         name: file.path,
       },
-    })
+    });
   }
 
-  return options
+  return options;
 }

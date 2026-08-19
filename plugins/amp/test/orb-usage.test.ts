@@ -115,10 +115,7 @@ test("provider session ids are nonempty, bounded, safe ASCII tokens", () => {
 test("Amp thread ids require T- and reject command injection", () => {
   assert.equal(isValidAmpThreadId("T-a"), true);
   assert.equal(isValidAmpThreadId("T-01J8V3NF8B-X_y.z"), true);
-  assert.equal(
-    isValidAmpThreadId(`T-${"a".repeat(MAX_AMP_THREAD_ID_LENGTH - 2)}`),
-    true,
-  );
+  assert.equal(isValidAmpThreadId(`T-${"a".repeat(MAX_AMP_THREAD_ID_LENGTH - 2)}`), true);
 
   for (const value of [
     "",
@@ -135,11 +132,14 @@ test("Amp thread ids require T- and reject command injection", () => {
     "T-é",
   ]) {
     assert.equal(isValidAmpThreadId(value), false, JSON.stringify(value));
-    assert.equal(parseOrbUsageRecord({
-      providerSessionId: "session-1",
-      state: "orb-active",
-      ampThreadId: value,
-    }), null);
+    assert.equal(
+      parseOrbUsageRecord({
+        providerSessionId: "session-1",
+        state: "orb-active",
+        ampThreadId: value,
+      }),
+      null,
+    );
   }
 });
 
@@ -174,21 +174,30 @@ test("a different provider session can replace an active record", () => {
 
 test("maps durable states to the UI union and emits an exact safe sync command", () => {
   assert.deepEqual(toOrbUsageView(null), { state: "hidden" });
-  assert.deepEqual(toOrbUsageView({
-    providerSessionId: "session-local",
-    state: "local",
-  }), { state: "hidden" });
-  assert.deepEqual(toOrbUsageView({
-    providerSessionId: "session-starting",
-    state: "orb-starting",
-  }), { state: "starting" });
-  assert.deepEqual(toOrbUsageView({
-    providerSessionId: "session-active",
-    state: "orb-active",
-    ampThreadId: "T-actual_123",
-  }), {
-    state: "active",
-    ampThreadId: "T-actual_123",
-    syncCommand: "amp sync T-actual_123",
-  });
+  assert.deepEqual(
+    toOrbUsageView({
+      providerSessionId: "session-local",
+      state: "local",
+    }),
+    { state: "hidden" },
+  );
+  assert.deepEqual(
+    toOrbUsageView({
+      providerSessionId: "session-starting",
+      state: "orb-starting",
+    }),
+    { state: "starting" },
+  );
+  assert.deepEqual(
+    toOrbUsageView({
+      providerSessionId: "session-active",
+      state: "orb-active",
+      ampThreadId: "T-actual_123",
+    }),
+    {
+      state: "active",
+      ampThreadId: "T-actual_123",
+      syncCommand: "amp sync T-actual_123",
+    },
+  );
 });

@@ -1,20 +1,8 @@
 const BRANCH_CANDIDATE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
-const STOPWORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "for",
-  "in",
-  "of",
-  "on",
-  "the",
-  "to",
-  "with",
-]);
+const STOPWORDS = new Set(["a", "an", "and", "for", "in", "of", "on", "the", "to", "with"]);
 
-const CONVENTIONAL_HEAD =
-  /^\s*([A-Za-z]+)\s*(?:\([^)]*\))?\s*!?\s*:\s*(.+)$/;
+const CONVENTIONAL_HEAD = /^\s*([A-Za-z]+)\s*(?:\([^)]*\))?\s*!?\s*:\s*(.+)$/;
 
 function slugify(text: string): string {
   return text
@@ -45,9 +33,7 @@ export function isBranchCandidate(branch: string): boolean {
 // A configured prefix is a branch namespace and ends on a separator
 // ("scott" → "scott/"). Git validates the prefix plus a sentinel component
 // before it is persisted; this function only normalizes the user's input.
-export function normalizeBranchPrefix(
-  raw: string,
-): { prefix: string } | { error: string } {
+export function normalizeBranchPrefix(raw: string): { prefix: string } | { error: string } {
   const trimmed = raw.trim().replace(/^\/+/, "");
   if (!trimmed) return { prefix: "" };
   if (!isBranchCandidate(trimmed) || trimmed.endsWith(".")) {

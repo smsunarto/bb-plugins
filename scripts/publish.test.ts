@@ -78,9 +78,7 @@ describe("publishProblems", () => {
 
     const problems = publishProblems(
       manifest,
-      paths.filter(
-        (path) => path !== "assets/logo-dark.svg" && !path.startsWith("skills/"),
-      ),
+      paths.filter((path) => path !== "assets/logo-dark.svg" && !path.startsWith("skills/")),
     );
 
     expect(problems).toHaveLength(3);
@@ -193,19 +191,21 @@ describe("bbTargets", () => {
       tree: true,
     });
     // Explicitly: the "/*" must not be looked for as a literal file name.
-    expect(publishProblems(
-      {
-        name: "@smsunarto/bb-plugin-example",
-        license: "MIT",
-        files: ["dist/"],
-        description: "x",
-        repository: "x",
-        author: "x",
-        publishConfig: { access: "public" },
-        bb: { server: "./dist/server.js", skills: ["skills/*"] },
-      },
-      ["LICENSE", "dist/server.js", "dist/server.meta.json", "skills/a/SKILL.md"],
-    )).toEqual([]);
+    expect(
+      publishProblems(
+        {
+          name: "@smsunarto/bb-plugin-example",
+          license: "MIT",
+          files: ["dist/"],
+          description: "x",
+          repository: "x",
+          author: "x",
+          publishConfig: { access: "public" },
+          bb: { server: "./dist/server.js", skills: ["skills/*"] },
+        },
+        ["LICENSE", "dist/server.js", "dist/server.meta.json", "skills/a/SKILL.md"],
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -286,8 +286,6 @@ describe("packedPaths", () => {
   });
 
   test("throws rather than returning nothing when the format changes", () => {
-    expect(() => packedPaths("bun pack v2\n\nsome new format\n")).toThrow(
-      /Total files/,
-    );
+    expect(() => packedPaths("bun pack v2\n\nsome new format\n")).toThrow(/Total files/);
   });
 });

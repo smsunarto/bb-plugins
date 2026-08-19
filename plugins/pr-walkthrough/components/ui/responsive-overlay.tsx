@@ -26,9 +26,7 @@ const ResponsiveDrawerDepthContext = React.createContext(0);
 const SONNER_TOASTER_SELECTOR = "[data-sonner-toaster]";
 
 type DrawerContentPointerDownOutsideEvent = Parameters<
-  NonNullable<
-    React.ComponentPropsWithoutRef<typeof DrawerContent>["onPointerDownOutside"]
-  >
+  NonNullable<React.ComponentPropsWithoutRef<typeof DrawerContent>["onPointerDownOutside"]>
 >[0];
 
 function resetDrawerKeyboardStyles(drawerElement: HTMLElement | null): void {
@@ -39,10 +37,7 @@ function resetDrawerKeyboardStyles(drawerElement: HTMLElement | null): void {
 }
 
 function isSonnerToasterPointerTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element &&
-    target.closest(SONNER_TOASTER_SELECTOR) !== null
-  );
+  return target instanceof Element && target.closest(SONNER_TOASTER_SELECTOR) !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,61 +91,29 @@ interface MobileTriggerProps {
 
 export const MobileTrigger = React.forwardRef<
   HTMLButtonElement,
-  MobileTriggerProps &
-    Omit<
-      React.ButtonHTMLAttributes<HTMLButtonElement>,
-      keyof MobileTriggerProps
-    >
->(
-  (
-    {
-      asChild,
-      open,
-      onOpenChange,
-      haspopup,
-      onClick,
-      children,
-      className,
-      ...domProps
-    },
-    ref,
-  ) => {
-    const triggerClassName = getOverlayTriggerClassName(className);
-    const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
-      onClick?.(e);
-      if (!e.defaultPrevented) {
-        if (!open) {
-          blurActiveKeyboardInputBeforeOverlayOpen();
-        }
-        onOpenChange(!open);
+  MobileTriggerProps & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, keyof MobileTriggerProps>
+>(({ asChild, open, onOpenChange, haspopup, onClick, children, className, ...domProps }, ref) => {
+  const triggerClassName = getOverlayTriggerClassName(className);
+  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    onClick?.(e);
+    if (!e.defaultPrevented) {
+      if (!open) {
+        blurActiveKeyboardInputBeforeOverlayOpen();
       }
-    };
-
-    const ariaProps = {
-      "aria-expanded": open,
-      "aria-haspopup": haspopup,
-      "data-state": open ? "open" : "closed",
-    } as const;
-
-    if (asChild) {
-      return (
-        <Slot
-          ref={ref}
-          onClick={handleClick}
-          onMouseDown={preventOverlayTriggerSelection}
-          className={triggerClassName}
-          {...ariaProps}
-          {...domProps}
-        >
-          {children}
-        </Slot>
-      );
+      onOpenChange(!open);
     }
+  };
 
+  const ariaProps = {
+    "aria-expanded": open,
+    "aria-haspopup": haspopup,
+    "data-state": open ? "open" : "closed",
+  } as const;
+
+  if (asChild) {
     return (
-      <button
+      <Slot
         ref={ref}
-        type="button"
         onClick={handleClick}
         onMouseDown={preventOverlayTriggerSelection}
         className={triggerClassName}
@@ -158,10 +121,24 @@ export const MobileTrigger = React.forwardRef<
         {...domProps}
       >
         {children}
-      </button>
+      </Slot>
     );
-  },
-);
+  }
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={handleClick}
+      onMouseDown={preventOverlayTriggerSelection}
+      className={triggerClassName}
+      {...ariaProps}
+      {...domProps}
+    >
+      {children}
+    </button>
+  );
+});
 MobileTrigger.displayName = "MobileTrigger";
 
 // ---------------------------------------------------------------------------
@@ -191,9 +168,7 @@ const RADIX_CONTENT_PROP_NAMES = [
 
 type RadixContentPropName = (typeof RADIX_CONTENT_PROP_NAMES)[number];
 
-const RADIX_CONTENT_KEYS: ReadonlySet<string> = new Set(
-  RADIX_CONTENT_PROP_NAMES,
-);
+const RADIX_CONTENT_KEYS: ReadonlySet<string> = new Set(RADIX_CONTENT_PROP_NAMES);
 
 export function stripRadixContentProps<T extends Record<string, unknown>>(
   props: T,
@@ -271,16 +246,15 @@ export function ResponsiveDrawerShell({
     },
     [onOpenChange, resetClosingKeyboardState],
   );
-  const handleContentAnimationEnd =
-    React.useCallback<React.AnimationEventHandler<HTMLDivElement>>(
-      (event) => {
-        if (event.currentTarget !== event.target) {
-          return;
-        }
-        onContentAnimationEnd?.(open);
-      },
-      [onContentAnimationEnd, open],
-    );
+  const handleContentAnimationEnd = React.useCallback<React.AnimationEventHandler<HTMLDivElement>>(
+    (event) => {
+      if (event.currentTarget !== event.target) {
+        return;
+      }
+      onContentAnimationEnd?.(open);
+    },
+    [onContentAnimationEnd, open],
+  );
   const handleOpenAutoFocus = React.useCallback(
     (event: Event) => {
       if (isPointerCoarse) {
@@ -322,9 +296,7 @@ export function ResponsiveDrawerShell({
         onPointerDownOutside={handlePointerDownOutside}
       >
         <ResponsiveDrawerDepthContext.Provider value={parentDrawerDepth + 1}>
-          {srLabel !== undefined ? (
-            <DrawerTitle className="sr-only">{srLabel}</DrawerTitle>
-          ) : null}
+          {srLabel !== undefined ? <DrawerTitle className="sr-only">{srLabel}</DrawerTitle> : null}
           {children}
         </ResponsiveDrawerDepthContext.Provider>
       </DrawerContent>

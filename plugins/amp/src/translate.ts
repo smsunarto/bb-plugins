@@ -63,9 +63,10 @@ export function toSessionUpdates(
 ): SessionNotification[] {
   const assistant = message.type === "assistant";
   const content = message.message?.content;
-  const parentReportId = typeof message.parent_tool_use_id === "string"
-    ? state.oracleReportByToolId.get(message.parent_tool_use_id)
-    : undefined;
+  const parentReportId =
+    typeof message.parent_tool_use_id === "string"
+      ? state.oracleReportByToolId.get(message.parent_tool_use_id)
+      : undefined;
 
   if (assistant && typeof content === "string") {
     if (parentReportId && content.length > 0) {
@@ -175,11 +176,7 @@ export function toSessionUpdates(
           });
           if (reportId && oracleRoot) {
             state.oracleRootToolIds.delete(result.tool_use_id);
-            state.oracleReports.complete(
-              reportId,
-              result.content,
-              result.is_error === true,
-            );
+            state.oracleReports.complete(reportId, result.content, result.is_error === true);
           } else if (reportId) {
             state.oracleReports.append(reportId, {
               kind: "tool",
@@ -238,19 +235,23 @@ function toToolContent(content: unknown, isError: boolean): ToolCallContent[] {
     return output;
   }
   if (typeof content === "string" && content.length > 0) {
-    return [{
-      type: "content" as const,
-      content: { type: "text" as const, text: isError ? wrapCode(content) : content },
-    }];
+    return [
+      {
+        type: "content" as const,
+        content: { type: "text" as const, text: isError ? wrapCode(content) : content },
+      },
+    ];
   }
   return [];
 }
 
 function toImageContent(block: AmpImageBlock): ContentBlock | null {
   const source = block.source;
-  if (source?.type === "base64"
-    && typeof source.data === "string"
-    && typeof source.media_type === "string") {
+  if (
+    source?.type === "base64" &&
+    typeof source.data === "string" &&
+    typeof source.media_type === "string"
+  ) {
     const data = normalizeBase64(source.data);
     const mimeType = normalizeImageMimeType(source.media_type);
     if (data && mimeType) return { type: "image", data, mimeType };
@@ -268,7 +269,10 @@ function normalizeBase64(value: string): string | null {
   if (data.length === 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
   const withoutPadding = data.replace(/=+$/, "");
   if (withoutPadding.length % 4 === 1) return null;
-  const normalized = withoutPadding.padEnd(withoutPadding.length + ((4 - (withoutPadding.length % 4)) % 4), "=");
+  const normalized = withoutPadding.padEnd(
+    withoutPadding.length + ((4 - (withoutPadding.length % 4)) % 4),
+    "=",
+  );
   return Buffer.from(normalized, "base64").toString("base64") === normalized ? normalized : null;
 }
 

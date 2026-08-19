@@ -48,7 +48,10 @@ test("parseRelease reads the tag and the downloadable assets", () => {
     assets: [
       { name: "checksums.txt", browser_download_url: "https://example.invalid/checksums.txt" },
       { name: "ignored", size: 1 },
-      { name: "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz", browser_download_url: "https://example.invalid/a" },
+      {
+        name: "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz",
+        browser_download_url: "https://example.invalid/a",
+      },
     ],
   });
   assert.equal(release.tag, "v7.2.127");
@@ -67,8 +70,14 @@ test("parseRelease reads the tag and the downloadable assets", () => {
 });
 
 test("release assets are named per platform, with source as the fallback", () => {
-  assert.equal(releaseAssetName("v7.2.127", "darwin", "arm64"), "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz");
-  assert.equal(releaseAssetName("7.2.127", "linux", "x64"), "CLIProxyAPI_7.2.127_linux_amd64.tar.gz");
+  assert.equal(
+    releaseAssetName("v7.2.127", "darwin", "arm64"),
+    "CLIProxyAPI_7.2.127_darwin_aarch64.tar.gz",
+  );
+  assert.equal(
+    releaseAssetName("7.2.127", "linux", "x64"),
+    "CLIProxyAPI_7.2.127_linux_amd64.tar.gz",
+  );
   assert.equal(releaseAssetName("7.2.127", "win32", "x64"), null);
   assert.equal(releaseAssetName("7.2.127", "linux", "ppc64"), null);
 
@@ -83,7 +92,10 @@ test("release assets are named per platform, with source as the fallback", () =>
   });
   // No archive for the platform, and no checksums.txt: both build from source.
   assert.equal(pickReleaseBinary({ tag: "v7.2.127", assets }, "linux", "x64"), null);
-  assert.equal(pickReleaseBinary({ tag: "v7.2.127", assets: [assets[0]!] }, "darwin", "arm64"), null);
+  assert.equal(
+    pickReleaseBinary({ tag: "v7.2.127", assets: [assets[0]!] }, "darwin", "arm64"),
+    null,
+  );
 });
 
 test("parseChecksums reads sha256 lines", () => {
@@ -119,7 +131,10 @@ test("repository settings normalize supported GitHub source forms", () => {
 });
 
 test("branch settings accept Git refs and reject unsafe names", () => {
-  assert.equal(normalizeCoreRef(" fix/claude-advisor-server-tool "), "fix/claude-advisor-server-tool");
+  assert.equal(
+    normalizeCoreRef(" fix/claude-advisor-server-tool "),
+    "fix/claude-advisor-server-tool",
+  );
   assert.equal(normalizeCoreRef(COMMIT), COMMIT);
   for (const invalid of ["", "feature branch", "../main", "main..next", "topic@{1}", ".hidden"]) {
     assert.throws(() => normalizeCoreRef(invalid), /branch or ref/);
