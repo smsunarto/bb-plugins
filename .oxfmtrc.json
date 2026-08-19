@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/vendor/**",
+    "**/*.d.ts",
+    "**/*.template.css",
+    "plugins/monokai/themes/**"
+  ]
+}
