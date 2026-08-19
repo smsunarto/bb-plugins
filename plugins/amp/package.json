@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-amp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Runs Amp locally or in an Orb as one bb provider through a bundled ACP bridge built on the official @ampcode/sdk.",
   "keywords": [
     "bb",
