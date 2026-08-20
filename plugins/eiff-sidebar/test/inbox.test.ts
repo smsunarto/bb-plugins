@@ -5,7 +5,7 @@ import {
   activeSectionFor,
   childrenOf,
   filterByProject,
-  hideChildrenOfVisibleParents,
+  groupIntoFamilies,
   parentOf,
   partitionActiveSections,
   partitionPinned,
@@ -15,6 +15,7 @@ import {
   threadDisplayTitle,
   visibleInboxThreads,
 } from "../lib/inbox.ts";
+import { isThreadWorking, rollUpSignals, type ThreadActivitySignals } from "../lib/lifecycle.ts";
 
 function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return {
@@ -49,6 +50,18 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
     ...overrides,
   };
 }
+
+function signalsFor(candidate: PluginSidebarThread): ThreadActivitySignals {
+  return {
+    hasPendingInteraction: candidate.hasPendingInteraction,
+    isWorking: isThreadWorking(candidate),
+    isUnread: candidate.isUnread,
+    latestAttentionAt: candidate.latestAttentionAt,
+  };
+}
+
+const sectionForThread = (candidate: PluginSidebarThread) =>
+  activeSectionFor(signalsFor(candidate));
 
 describe("sortByCreatedAtDescending", () => {
   it("puts the newest thread first", () => {
@@ -99,10 +112,10 @@ describe("sortByCreatedAtDescending", () => {
 
 describe("active sections", () => {
   it("puts quiet work with the user and live work in waiting", () => {
-    assert.equal(activeSectionFor(thread()), "next-action");
-    assert.equal(activeSectionFor(thread({ indicator: "runtime" })), "waiting");
+    assert.equal(sectionForThread(thread()), "next-action");
+    assert.equal(sectionForThread(thread({ indicator: "runtime" })), "waiting");
     assert.equal(
-      activeSectionFor(
+      sectionForThread(
         thread({
           activity: {
             workflows: 0,
@@ -119,7 +132,7 @@ describe("active sections", () => {
 
   it("puts a pending interaction in next action even with live work", () => {
     assert.equal(
-      activeSectionFor(
+      sectionForThread(
         thread({
           hasPendingInteraction: true,
           activity: {
@@ -135,6 +148,36 @@ describe("active sections", () => {
     );
   });
 
+  it("puts a quiet parent in waiting while a child works", () => {
+    const parent = thread({ id: "parent" });
+    const child = thread({ id: "child", parentThreadId: parent.id, indicator: "runtime" });
+    const familySignals = rollUpSignals(signalsFor(parent), [signalsFor(child)]);
+    assert.equal(activeSectionFor(familySignals), "waiting");
+  });
+
+  it("puts a parent in next action when one child asks while another works", () => {
+    const parent = thread({ id: "parent" });
+    const asking = thread({
+      id: "asking",
+      parentThreadId: parent.id,
+      hasPendingInteraction: true,
+    });
+    const working = thread({ id: "working", parentThreadId: parent.id, indicator: "runtime" });
+    const familySignals = rollUpSignals(signalsFor(parent), [
+      signalsFor(asking),
+      signalsFor(working),
+    ]);
+    assert.equal(activeSectionFor(familySignals), "next-action");
+  });
+
+  it("classifies a childless thread exactly from its own signals", () => {
+    const candidate = thread({ indicator: "runtime" });
+    assert.equal(
+      activeSectionFor(rollUpSignals(signalsFor(candidate), [])),
+      activeSectionFor(signalsFor(candidate)),
+    );
+  });
+
   it("seeds oldest first from update time, creation time, then id", () => {
     const threads = [
       thread({ id: "d", updatedAt: 30, createdAt: 1 }),
@@ -142,8 +185,8 @@ describe("active sections", () => {
       thread({ id: "b", updatedAt: 20, createdAt: 10 }),
       thread({ id: "a", updatedAt: 20, createdAt: 10 }),
     ];
-    const order = reconcileActiveSectionOrder(null, threads);
-    const sections = partitionActiveSections(threads, order);
+    const order = reconcileActiveSectionOrder(null, threads, sectionForThread);
+    const sections = partitionActiveSections(threads, order, sectionForThread);
     assert.deepEqual(
       sections.nextAction.map((candidate) => candidate.id),
       ["a", "b", "c", "d"],
@@ -152,11 +195,13 @@ describe("active sections", () => {
 
   it("does not move a thread for metadata updates within one section", () => {
     const initial = [thread({ id: "a", updatedAt: 10 }), thread({ id: "b", updatedAt: 20 })];
-    const first = reconcileActiveSectionOrder(null, initial);
+    const first = reconcileActiveSectionOrder(null, initial, sectionForThread);
     const updated = [thread({ id: "a", updatedAt: 999, title: "Renamed" }), initial[1]!];
-    const next = reconcileActiveSectionOrder(first, updated);
+    const next = reconcileActiveSectionOrder(first, updated, sectionForThread);
     assert.deepEqual(
-      partitionActiveSections(updated, next).nextAction.map((candidate) => candidate.id),
+      partitionActiveSections(updated, next, sectionForThread).nextAction.map(
+        (candidate) => candidate.id,
+      ),
       ["a", "b"],
     );
   });
@@ -166,22 +211,26 @@ describe("active sections", () => {
       thread({ id: "a", updatedAt: 10 }),
       thread({ id: "b", updatedAt: 20, indicator: "runtime" }),
     ];
-    const first = reconcileActiveSectionOrder(null, initial);
+    const first = reconcileActiveSectionOrder(null, initial, sectionForThread);
     const transitioned = [thread({ id: "a", updatedAt: 30, indicator: "runtime" }), initial[1]!];
-    const next = reconcileActiveSectionOrder(first, transitioned);
+    const next = reconcileActiveSectionOrder(first, transitioned, sectionForThread);
     assert.deepEqual(
-      partitionActiveSections(transitioned, next).waiting.map((candidate) => candidate.id),
+      partitionActiveSections(transitioned, next, sectionForThread).waiting.map(
+        (candidate) => candidate.id,
+      ),
       ["b", "a"],
     );
   });
 
   it("treats a return from pinning or parking as a new entrance", () => {
     const initial = [thread({ id: "a", updatedAt: 10 }), thread({ id: "b", updatedAt: 20 })];
-    const first = reconcileActiveSectionOrder(null, initial);
-    const withoutA = reconcileActiveSectionOrder(first, [initial[1]!]);
-    const returned = reconcileActiveSectionOrder(withoutA, initial);
+    const first = reconcileActiveSectionOrder(null, initial, sectionForThread);
+    const withoutA = reconcileActiveSectionOrder(first, [initial[1]!], sectionForThread);
+    const returned = reconcileActiveSectionOrder(withoutA, initial, sectionForThread);
     assert.deepEqual(
-      partitionActiveSections(initial, returned).nextAction.map((candidate) => candidate.id),
+      partitionActiveSections(initial, returned, sectionForThread).nextAction.map(
+        (candidate) => candidate.id,
+      ),
       ["b", "a"],
     );
   });
@@ -191,16 +240,20 @@ describe("active sections", () => {
       thread({ id: "a", updatedAt: 10, projectId: "p1" }),
       thread({ id: "b", updatedAt: 20, projectId: "p2" }),
     ];
-    const first = reconcileActiveSectionOrder(null, threads);
+    const first = reconcileActiveSectionOrder(null, threads, sectionForThread);
     assert.deepEqual(
-      partitionActiveSections(filterByProject(threads, "p2"), first).nextAction.map(
-        (candidate) => candidate.id,
-      ),
+      partitionActiveSections(
+        filterByProject(threads, "p2"),
+        first,
+        sectionForThread,
+      ).nextAction.map((candidate) => candidate.id),
       ["b"],
     );
-    const next = reconcileActiveSectionOrder(first, threads);
+    const next = reconcileActiveSectionOrder(first, threads, sectionForThread);
     assert.deepEqual(
-      partitionActiveSections(threads, next).nextAction.map((candidate) => candidate.id),
+      partitionActiveSections(threads, next, sectionForThread).nextAction.map(
+        (candidate) => candidate.id,
+      ),
       ["a", "b"],
     );
   });
@@ -292,26 +345,56 @@ describe("filtering", () => {
 });
 
 describe("child threads", () => {
-  it("hides a child whose parent is on screen", () => {
-    const visible = hideChildrenOfVisibleParents([
+  it("flattens a grandchild onto the top ancestor", () => {
+    const families = groupIntoFamilies([
       thread({ id: "parent" }),
       thread({ id: "child", parentThreadId: "parent" }),
+      thread({ id: "grandchild", parentThreadId: "child" }),
     ]);
+    assert.equal(families.length, 1);
+    assert.equal(families[0]?.parent.id, "parent");
     assert.deepEqual(
-      visible.map((t) => t.id),
-      ["parent"],
+      families[0]?.children.map((candidate) => candidate.id),
+      ["child", "grandchild"],
     );
   });
 
-  // An orphan must stay visible: hidden here AND absent from any header chip
-  // would make it unreachable everywhere.
-  it("keeps a child whose parent is not on screen", () => {
-    const visible = hideChildrenOfVisibleParents([
+  it("makes an orphan its own family parent", () => {
+    const families = groupIntoFamilies([
       thread({ id: "child", parentThreadId: "archived-parent" }),
     ]);
+    assert.equal(families[0]?.parent.id, "child");
+    assert.deepEqual(families[0]?.children, []);
+  });
+
+  it("terminates a malformed parent cycle", () => {
+    assert.doesNotThrow(() => {
+      const families = groupIntoFamilies([
+        thread({ id: "a", parentThreadId: "b" }),
+        thread({ id: "b", parentThreadId: "a" }),
+      ]);
+      assert.equal(families.length, 1);
+      assert.deepEqual(
+        [families[0]?.parent.id, ...families[0]!.children.map((candidate) => candidate.id)].sort(),
+        ["a", "b"],
+      );
+    });
+  });
+
+  it("keeps parent order and sorts descendants oldest first", () => {
+    const families = groupIntoFamilies([
+      thread({ id: "second-parent", createdAt: 40 }),
+      thread({ id: "newer-child", parentThreadId: "first-parent", createdAt: 30 }),
+      thread({ id: "first-parent", createdAt: 10 }),
+      thread({ id: "older-child", parentThreadId: "first-parent", createdAt: 20 }),
+    ]);
     assert.deepEqual(
-      visible.map((t) => t.id),
-      ["child"],
+      families.map((family) => family.parent.id),
+      ["second-parent", "first-parent"],
+    );
+    assert.deepEqual(
+      families[1]?.children.map((candidate) => candidate.id),
+      ["older-child", "newer-child"],
     );
   });
 

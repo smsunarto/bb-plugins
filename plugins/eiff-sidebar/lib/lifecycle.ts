@@ -63,6 +63,29 @@ export interface ThreadActivitySignals {
   latestAttentionAt: number;
 }
 
+/** Combine one thread's activity with every descendant that belongs to it. */
+export function rollUpSignals(
+  own: ThreadActivitySignals,
+  descendants: readonly ThreadActivitySignals[],
+): ThreadActivitySignals {
+  let hasPendingInteraction = own.hasPendingInteraction;
+  let isWorking = own.isWorking;
+  let latestAttentionAt = own.latestAttentionAt;
+
+  for (const signals of descendants) {
+    hasPendingInteraction ||= signals.hasPendingInteraction;
+    isWorking ||= signals.isWorking;
+    latestAttentionAt = Math.max(latestAttentionAt, signals.latestAttentionAt);
+  }
+
+  return {
+    hasPendingInteraction,
+    isWorking,
+    isUnread: own.isUnread,
+    latestAttentionAt,
+  };
+}
+
 export type ThreadShelf = "active" | "snoozed" | "settled";
 
 /**

@@ -1,5 +1,5 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import { isThreadWorking } from "./lifecycle.ts";
+import type { ThreadActivitySignals } from "./lifecycle.ts";
 
 /**
  * The static sort for user-controlled shelves: newest thread on top.
@@ -23,8 +23,10 @@ export type ActiveSection = "next-action" | "waiting";
  * still live. Otherwise any foreground or background work means the user is
  * waiting for the agent; a quiet thread is ready for the user's next action.
  */
-export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
-  return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
+export function activeSectionFor(
+  signals: Pick<ThreadActivitySignals, "hasPendingInteraction" | "isWorking">,
+): ActiveSection {
+  return signals.hasPendingInteraction || !signals.isWorking ? "next-action" : "waiting";
 }
 
 interface ActiveSectionOrderEntry {
@@ -55,19 +57,20 @@ function compareInitialEntrance(left: PluginSidebarThread, right: PluginSidebarT
 /**
  * Reconcile every active, unpinned thread against its mounted-list order.
  *
- * Callers must pass the unfiltered active set. Project scope, search, and child
- * hiding affect presentation only and must not look like section exits.
+ * Callers must pass the unfiltered active set. Project scope, search, and
+ * family grouping affect presentation only and must not look like exits.
  */
 export function reconcileActiveSectionOrder(
   current: ActiveSectionOrder | null,
   threads: readonly PluginSidebarThread[],
+  sectionOf: (thread: PluginSidebarThread) => ActiveSection,
 ): ActiveSectionOrder {
   const entries = new Map<string, ActiveSectionOrderEntry>();
   const entrants: PluginSidebarThread[] = [];
   let nextSequence = current?.nextSequence ?? 0;
 
   for (const thread of threads) {
-    const section = activeSectionFor(thread);
+    const section = sectionOf(thread);
     const existing = current?.entries.get(thread.id);
     if (existing?.section === section) entries.set(thread.id, existing);
     else entrants.push(thread);
@@ -76,7 +79,7 @@ export function reconcileActiveSectionOrder(
   entrants.sort(compareInitialEntrance);
   for (const thread of entrants) {
     entries.set(thread.id, {
-      section: activeSectionFor(thread),
+      section: sectionOf(thread),
       sequence: nextSequence++,
     });
   }
@@ -88,6 +91,7 @@ export function reconcileActiveSectionOrder(
 export function partitionActiveSections(
   threads: readonly PluginSidebarThread[],
   order: ActiveSectionOrder,
+  sectionOf: (thread: PluginSidebarThread) => ActiveSection,
 ): {
   nextAction: PluginSidebarThread[];
   waiting: PluginSidebarThread[];
@@ -95,7 +99,7 @@ export function partitionActiveSections(
   const nextAction: PluginSidebarThread[] = [];
   const waiting: PluginSidebarThread[] = [];
   for (const thread of threads) {
-    (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(thread);
+    (sectionOf(thread) === "next-action" ? nextAction : waiting).push(thread);
   }
   const byEntrance = (left: PluginSidebarThread, right: PluginSidebarThread) =>
     (order.entries.get(left.id)?.sequence ?? Number.MAX_SAFE_INTEGER) -
@@ -167,21 +171,89 @@ export function partitionPinned(threads: readonly PluginSidebarThread[]): {
   return { pinned, inbox };
 }
 
+export interface ThreadFamily {
+  parent: PluginSidebarThread;
+  /** Every visible descendant, flattened to one level, oldest first by createdAt. */
+  children: PluginSidebarThread[];
+}
+
 /**
- * Child threads leave the flat list and live in their parent's header chip
- * instead — a flat inbox has nowhere to nest them.
+ * Group visible threads under their highest visible ancestor.
  *
- * A child is only hidden when its parent is actually on screen. An orphan
- * (parent archived, deleted, or filtered out by the project scope) stays in
- * the list, because hiding it would make it unreachable everywhere.
+ * Missing parents intentionally make an orphan its own family. Malformed
+ * cycles collapse onto the first cycle member in input order so grouping can
+ * run during render without throwing or walking forever.
  */
-export function hideChildrenOfVisibleParents(
-  threads: readonly PluginSidebarThread[],
-): PluginSidebarThread[] {
-  const visibleIds = new Set(threads.map((thread) => thread.id));
-  return threads.filter(
-    (thread) => thread.parentThreadId === null || !visibleIds.has(thread.parentThreadId),
-  );
+export function groupIntoFamilies(threads: readonly PluginSidebarThread[]): ThreadFamily[] {
+  const threadById = new Map(threads.map((thread) => [thread.id, thread]));
+  const inputIndex = new Map(threads.map((thread, index) => [thread.id, index]));
+  const rootIdByThreadId = new Map<string, string>();
+
+  const rootIdFor = (thread: PluginSidebarThread): string => {
+    const cached = rootIdByThreadId.get(thread.id);
+    if (cached !== undefined) return cached;
+
+    const path: PluginSidebarThread[] = [];
+    const pathIndex = new Map<string, number>();
+    let current = thread;
+    let rootId: string;
+
+    while (true) {
+      const knownRootId = rootIdByThreadId.get(current.id);
+      if (knownRootId !== undefined) {
+        rootId = knownRootId;
+        break;
+      }
+
+      const cycleStart = pathIndex.get(current.id);
+      if (cycleStart !== undefined) {
+        const cycle = path.slice(cycleStart);
+        rootId = cycle.reduce(
+          (firstId, candidate) =>
+            (inputIndex.get(candidate.id) ?? Number.MAX_SAFE_INTEGER) <
+            (inputIndex.get(firstId) ?? Number.MAX_SAFE_INTEGER)
+              ? candidate.id
+              : firstId,
+          cycle[0]!.id,
+        );
+        break;
+      }
+
+      pathIndex.set(current.id, path.length);
+      path.push(current);
+      const parent =
+        current.parentThreadId === null ? undefined : threadById.get(current.parentThreadId);
+      if (parent === undefined) {
+        rootId = current.id;
+        break;
+      }
+      current = parent;
+    }
+
+    for (const member of path) rootIdByThreadId.set(member.id, rootId);
+    return rootId;
+  };
+
+  for (const thread of threads) rootIdFor(thread);
+
+  const familiesByParentId = new Map<string, ThreadFamily>();
+  for (const thread of threads) {
+    if (rootIdByThreadId.get(thread.id) !== thread.id) continue;
+    familiesByParentId.set(thread.id, { parent: thread, children: [] });
+  }
+
+  for (const thread of threads) {
+    const rootId = rootIdByThreadId.get(thread.id) ?? thread.id;
+    if (rootId === thread.id) continue;
+    familiesByParentId.get(rootId)?.children.push(thread);
+  }
+
+  for (const family of familiesByParentId.values()) {
+    family.children.sort(
+      (left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id),
+    );
+  }
+  return [...familiesByParentId.values()];
 }
 
 /**

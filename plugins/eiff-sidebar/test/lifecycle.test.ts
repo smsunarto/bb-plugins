@@ -6,6 +6,7 @@ import {
   refreshRetryDelayMs,
   resolveShelf,
   resolveSnoozePresets,
+  rollUpSignals,
   rowsMatch,
   snoozeWakeLabel,
   wokenSettledThreadIds,
@@ -30,6 +31,32 @@ const row = (overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow =>
   ...overrides,
 });
 
+describe("rollUpSignals", () => {
+  it("combines pending work and latest attention across descendants", () => {
+    assert.deepEqual(
+      rollUpSignals(quiet, [
+        { ...quiet, isWorking: true, latestAttentionAt: 20 },
+        { ...quiet, hasPendingInteraction: true, latestAttentionAt: 10 },
+      ]),
+      {
+        ...quiet,
+        hasPendingInteraction: true,
+        isWorking: true,
+        latestAttentionAt: 20,
+      },
+    );
+  });
+
+  it("keeps unread local to the parent", () => {
+    assert.equal(rollUpSignals(quiet, [{ ...quiet, isUnread: true }]).isUnread, false);
+    assert.equal(rollUpSignals({ ...quiet, isUnread: true }, [quiet]).isUnread, true);
+  });
+
+  it("leaves a childless thread unchanged", () => {
+    assert.deepEqual(rollUpSignals(quiet, []), quiet);
+  });
+});
+
 describe("canPark", () => {
   it("refuses while the agent is blocked on the user", () => {
     assert.equal(canPark({ ...quiet, hasPendingInteraction: true }), false);
@@ -39,6 +66,10 @@ describe("canPark", () => {
   // than a session status, and parking any of them hides running work.
   it("refuses while any work is running", () => {
     assert.equal(canPark({ ...quiet, isWorking: true }), false);
+  });
+
+  it("refuses a quiet parent while a child is working", () => {
+    assert.equal(canPark(rollUpSignals(quiet, [{ ...quiet, isWorking: true }])), false);
   });
 
   it("allows a quiet thread", () => {
@@ -60,6 +91,11 @@ describe("resolveShelf", () => {
       resolveShelf(row({ settledAt: 500 }), { ...quiet, isWorking: true }, 1_000),
       "active",
     );
+  });
+
+  it("brings a settled parent back when a child starts working", () => {
+    const familySignals = rollUpSignals(quiet, [{ ...quiet, isWorking: true }]);
+    assert.equal(resolveShelf(row({ settledAt: 500 }), familySignals, 1_000), "active");
   });
 
   it("brings a settled thread back when it asks a question", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useRpc,
@@ -26,7 +26,7 @@ import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
   type ActiveSectionOrder,
   filterByProject,
-  hideChildrenOfVisibleParents,
+  groupIntoFamilies,
   partitionActiveSections,
   partitionPinned,
   reconcileActiveSectionOrder,
@@ -34,6 +34,7 @@ import {
   sortByCreatedAtDescending,
   visibleInboxThreads,
 } from "@/lib/inbox";
+import { CrewmateRows } from "@/components/inbox/crewmate-rows";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 
 const ALL_PROJECTS = "__all__";
@@ -109,33 +110,49 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     [projects],
   );
 
-  // Entrance order observes the whole active, unpinned set. Project scope,
-  // search, and child hiding are presentation filters; applying them here
-  // would make hiding and showing a row look like a new section entrance.
+  // Entrance order observes the whole active, unpinned set. Project scope and
+  // search are presentation filters; applying them here would make hiding and
+  // showing a row look like a new section entrance.
+  //
+  // Family parents only, because only a parent holds a row. A crewmate moving
+  // between sections is already felt through its parent's rolled-up section,
+  // and giving it an entry of its own would burn sequence numbers on a row
+  // that never appears.
   const activeUnpinned = useMemo(
     () =>
-      visibleInboxThreads(threads, lifecycle.parkedThreadIds).filter(
-        (thread) => !thread.isPinned && lifecycle.shelfFor(thread) === "active",
-      ),
+      groupIntoFamilies(visibleInboxThreads(threads, lifecycle.parkedThreadIds))
+        .map((family) => family.parent)
+        .filter((thread) => !thread.isPinned && lifecycle.shelfFor(thread) === "active"),
     [lifecycle, threads],
   );
   const activeSectionOrderRef = useRef<ActiveSectionOrder | null>(null);
   const activeSectionOrder = reconcileActiveSectionOrder(
     activeSectionOrderRef.current,
     activeUnpinned,
+    lifecycle.sectionFor,
   );
   activeSectionOrderRef.current = activeSectionOrder;
 
-  const { pinned, nextAction, waiting, snoozed, settled } = useMemo(() => {
+  const { pinned, nextAction, waiting, snoozed, settled, crewmatesByParentId } = useMemo(() => {
     const scoped = filterByProject(
       // Settling archives the thread in bb, so the parked set is what keeps
       // the settled shelf from filtering itself away.
       visibleInboxThreads(threads, lifecycle.parkedThreadIds),
       scope === ALL_PROJECTS ? null : scope,
     );
-    // Children live in their parent's header chip instead of the flat list;
-    // an orphan whose parent is not on screen stays here.
-    const matched = searchThreadsByTitle(hideChildrenOfVisibleParents(scoped), searchQuery);
+    // Only a family parent holds a row; its crewmates ride under it. An orphan
+    // whose parent is off screen becomes its own parent rather than vanishing.
+    const families = groupIntoFamilies(scoped);
+    const crewmates = new Map(families.map((family) => [family.parent.id, family.children]));
+    // A family stays when the parent OR any crewmate matches, and it keeps all
+    // of its crewmates either way. Filtering the rows too would leave a parent
+    // standing over a shorter list than its section counted.
+    const matched = families
+      .filter(
+        (family) =>
+          searchThreadsByTitle([family.parent, ...family.children], searchQuery).length > 0,
+      )
+      .map((family) => family.parent);
     const active: typeof matched = [];
     const onSnoozeShelf: typeof matched = [];
     const onSettledShelf: typeof matched = [];
@@ -146,8 +163,13 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
       else active.push(thread);
     }
     const split = partitionPinned(active);
-    const activeSections = partitionActiveSections(split.inbox, activeSectionOrder);
+    const activeSections = partitionActiveSections(
+      split.inbox,
+      activeSectionOrder,
+      lifecycle.sectionFor,
+    );
     return {
+      crewmatesByParentId: crewmates,
       pinned: sortByCreatedAtDescending(split.pinned),
       ...activeSections,
       // Soonest wake first: "what comes back next" is the shelf's question.
@@ -192,6 +214,35 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     snoozed.length +
     settled.length +
     pendingSettled;
+
+  // A plain function rather than a component, called inline: a component
+  // declared in this body would be a new type on every render, and remounting
+  // the crewmate rows would throw away which folds the user had opened.
+  const renderFamily = (thread: PluginSidebarThread) => (
+    <Fragment key={thread.id}>
+      <ThreadCard
+        thread={thread}
+        provider={providerInfoById.get(thread.providerId)}
+        showProviderIcon={showProviderIcon}
+        projectName={projectNameById.get(thread.projectId) ?? null}
+        isActive={thread.id === activeThreadId}
+        canPark={lifecycle.canPark(thread)}
+        onNavigate={onNavigate}
+        onSettle={() => lifecycle.settle(thread.id)}
+        onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+        now={now}
+      />
+      <CrewmateRows
+        parent={thread}
+        crewmates={crewmatesByParentId.get(thread.id) ?? []}
+        activeThreadId={activeThreadId}
+        showProviderIcon={showProviderIcon}
+        providerInfoById={providerInfoById}
+        projectNameById={projectNameById}
+        onNavigate={onNavigate}
+      />
+    </Fragment>
+  );
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
@@ -271,59 +322,17 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
           <>
             {pinned.length > 0 ? (
               <Shelf label="Pinned">
-                {pinned.map((thread) => (
-                  <ThreadCard
-                    key={thread.id}
-                    thread={thread}
-                    provider={providerInfoById.get(thread.providerId)}
-                    showProviderIcon={showProviderIcon}
-                    projectName={projectNameById.get(thread.projectId) ?? null}
-                    isActive={thread.id === activeThreadId}
-                    canPark={lifecycle.canPark(thread)}
-                    onNavigate={onNavigate}
-                    onSettle={() => lifecycle.settle(thread.id)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
-                    now={now}
-                  />
-                ))}
+                {pinned.map(renderFamily)}
               </Shelf>
             ) : null}
             {nextAction.length > 0 ? (
               <Shelf label="Next Action">
-                {nextAction.map((thread) => (
-                  <ThreadCard
-                    key={thread.id}
-                    thread={thread}
-                    provider={providerInfoById.get(thread.providerId)}
-                    showProviderIcon={showProviderIcon}
-                    projectName={projectNameById.get(thread.projectId) ?? null}
-                    isActive={thread.id === activeThreadId}
-                    canPark={lifecycle.canPark(thread)}
-                    onNavigate={onNavigate}
-                    onSettle={() => lifecycle.settle(thread.id)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
-                    now={now}
-                  />
-                ))}
+                {nextAction.map(renderFamily)}
               </Shelf>
             ) : null}
             {waiting.length > 0 ? (
               <Shelf label="Waiting">
-                {waiting.map((thread) => (
-                  <ThreadCard
-                    key={thread.id}
-                    thread={thread}
-                    provider={providerInfoById.get(thread.providerId)}
-                    showProviderIcon={showProviderIcon}
-                    projectName={projectNameById.get(thread.projectId) ?? null}
-                    isActive={thread.id === activeThreadId}
-                    canPark={lifecycle.canPark(thread)}
-                    onNavigate={onNavigate}
-                    onSettle={() => lifecycle.settle(thread.id)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
-                    now={now}
-                  />
-                ))}
+                {waiting.map(renderFamily)}
               </Shelf>
             ) : null}
             <ParkedShelf

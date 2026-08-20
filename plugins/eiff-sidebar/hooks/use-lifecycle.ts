@@ -7,16 +7,18 @@ import {
   isThreadWorking,
   nextWakeDelayMs,
   resolveShelf,
+  rollUpSignals,
   rowsMatch,
   wokenSettledThreadIds,
   type ThreadActivitySignals,
   type ThreadLifecycleRow,
   type ThreadShelf,
 } from "@/lib/lifecycle";
+import { activeSectionFor, type ActiveSection } from "@/lib/inbox";
 import { readWarmStartRows, writeWarmStartRows } from "@/lib/warm-start";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
 
-function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
+function ownSignalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
   return {
     hasPendingInteraction: thread.hasPendingInteraction,
     isWorking: isThreadWorking(thread),
@@ -27,6 +29,7 @@ function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
 
 export interface LifecycleApi {
   shelfFor(thread: PluginSidebarThread): ThreadShelf;
+  sectionFor(thread: PluginSidebarThread): ActiveSection;
   /**
    * Every thread the plugin has parked. Settling archives a thread in bb, so
    * the list needs this to keep showing the ones it put away itself.
@@ -93,6 +96,42 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
   // un-settles threads: acting on a guess would take bb's archive off a thread
   // and delete a row another window had just replaced.
   const [serverRowsLoaded, setServerRowsLoaded] = useState(false);
+
+  // Build every thread's complete descendant rollup from the unfiltered SDK
+  // list. Presentation scope must never hide work from a parking decision.
+  const familySignals = useMemo(() => {
+    const threadById = new Map(threads.map((thread) => [thread.id, thread]));
+    const ownById = new Map(threads.map((thread) => [thread.id, ownSignalsFor(thread)]));
+    const descendantsById = new Map(
+      threads.map((thread) => [thread.id, [] as ThreadActivitySignals[]]),
+    );
+
+    for (const descendant of threads) {
+      const descendantSignals = ownById.get(descendant.id)!;
+      const visited = new Set([descendant.id]);
+      let parentThreadId = descendant.parentThreadId;
+
+      while (parentThreadId !== null && !visited.has(parentThreadId)) {
+        const parent = threadById.get(parentThreadId);
+        if (parent === undefined) break;
+        descendantsById.get(parentThreadId)!.push(descendantSignals);
+        visited.add(parentThreadId);
+        parentThreadId = parent.parentThreadId;
+      }
+    }
+
+    return new Map(
+      threads.map((thread) => [
+        thread.id,
+        rollUpSignals(ownById.get(thread.id)!, descendantsById.get(thread.id)!),
+      ]),
+    );
+  }, [threads]);
+
+  const rolledSignalsFor = useCallback(
+    (thread: PluginSidebarThread) => familySignals.get(thread.id) ?? ownSignalsFor(thread),
+    [familySignals],
+  );
 
   // A response belonging to a mount that is already gone must not reach the
   // cache. Its `requestSeq` is its own, so nothing in the instance that
@@ -206,13 +245,9 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     // remount, so without this guard a cached row plus fresh activity would
     // destroy a park that another window or device had set in the meantime.
     if (!serverRowsLoaded) return;
-    const threadById = new Map(threads.map((thread) => [thread.id, thread]));
     const woken = wokenSettledThreadIds(
       rows.values(),
-      (threadId) => {
-        const thread = threadById.get(threadId);
-        return thread === undefined ? undefined : signalsFor(thread);
-      },
+      (threadId) => familySignals.get(threadId),
       now,
     );
     for (const threadId of woken) {
@@ -226,7 +261,7 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
         })
         .finally(() => wakingRef.current.delete(threadId));
     }
-  }, [now, rows, rpc, serverRowsLoaded, threads]);
+  }, [familySignals, now, rows, rpc, serverRowsLoaded]);
 
   // Hoisted out of the api object below, which the clock invalidates every
   // minute: this set decides which archived threads stay visible, and a new
@@ -240,13 +275,19 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
       await rpc.call(method, { threadId });
     };
     return {
-      shelfFor: (thread) => resolveShelf(rows.get(thread.id), signalsFor(thread), now),
+      shelfFor: (thread) => resolveShelf(rows.get(thread.id), rolledSignalsFor(thread), now),
+      sectionFor: (thread) => activeSectionFor(rolledSignalsFor(thread)),
       // A row only ever exists for a parked thread, so its keys are the set.
       parkedThreadIds,
       parkedRows: rows,
       shelvesReady,
-      canPark: (thread) => canPark(signalsFor(thread)),
-      wakeAtFor: (thread) => rows.get(thread.id)?.snoozedUntil ?? null,
+      canPark: (thread) => canPark(rolledSignalsFor(thread)),
+      wakeAtFor: (thread) => {
+        const row = rows.get(thread.id);
+        return row !== undefined && resolveShelf(row, rolledSignalsFor(thread), now) === "snoozed"
+          ? row.snoozedUntil
+          : null;
+      },
       settle: (threadId) => void mutate("settle", threadId),
       unsettle: (threadId) => void mutate("unsettle", threadId),
       unsnooze: (threadId) => void mutate("unsnooze", threadId),
@@ -254,5 +295,5 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
         void rpc.call("snooze", { threadId, snoozedUntil });
       },
     };
-  }, [now, parkedThreadIds, rows, rpc, shelvesReady]);
+  }, [now, parkedThreadIds, rolledSignalsFor, rows, rpc, shelvesReady]);
 }

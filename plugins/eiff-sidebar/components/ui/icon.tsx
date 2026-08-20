@@ -2,6 +2,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
   ArrowLeft01Icon,
+  ArrowRight01Icon,
   ArrowTurnBackwardIcon,
   ArrowUp01Icon,
   CancelCircleIcon,
@@ -23,6 +24,7 @@ const ICON_MAP = {
   Check: Tick02Icon,
   ChevronDown: ArrowDown01Icon,
   ChevronLeft: ArrowLeft01Icon,
+  ChevronRight: ArrowRight01Icon,
   ChevronUp: ArrowUp01Icon,
   CircleQuestion: HelpCircleIcon,
   CircleX: CancelCircleIcon,
