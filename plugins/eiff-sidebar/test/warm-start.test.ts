@@ -124,9 +124,8 @@ describe("decodeWarmStartRows", () => {
     assert.deepEqual(decodeWarmStartRows(`[{"threadId":"a"}]`), [row({ threadId: "a" })]);
   });
 
-  // Half-accepting is the failure that hurts: settling archives the thread in
-  // bb, so a dropped row does not make its thread read active, it makes the
-  // thread disappear from the sidebar entirely.
+  // Half-accepting silently loses a parking decision and can still hide a
+  // legacy archived thread.
   it("rejects the whole payload when one row is bad", () => {
     assert.equal(
       decodeWarmStartRows(`[{"threadId":"a","settledAt":500},{"threadId":"b","settledAt":true}]`),

@@ -30,7 +30,8 @@ bb does not provide historical section-entry times, so existing rows seed oldest
 first from their last update time.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
-**settle** it when you are done. Both shelves collapse to one counted header.
+**settle** it when you are done. Both shelves collapse to one counted header, and both are
+fully reversible: neither one archives anything.
 
 ## Install
 
@@ -70,7 +71,13 @@ disable the plugin.
 - **Your Turn** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet. The oldest handoff is first.
 - **Working** — foreground or background agent work is live, on the thread or on any of its crewmates. The oldest wait is first.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
-- **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
+- **Settled** — work you are done with, collapsed to one line. It stays there until you un-settle it or the thread earns new attention, with no time limit.
+
+Settling deliberately does **not** archive the thread in bb. An archived thread's environment starts
+retiring immediately and bb destroys it 306 seconds later, deleting its working directory; after
+that, un-archiving gives you a readable thread with no composer. Settling therefore only hides the
+thread from this sidebar, so "one more thing" still works a week later. The cost is that a settled
+thread stays visible in bb's own built-in list and anywhere else that reads bb's thread list.
 
 An empty section disappears. A pending interaction stays in **Your Turn** even if
 background work is also live, because the user can act now.
@@ -148,16 +155,18 @@ these are settings.
 **My sidebar looks the same after installing.** Choose Eiff Sidebar in Settings →
 Appearance → Sidebar. Installing alone changes nothing.
 
-**A thread I settled is not on the Settled shelf.** The shelf only reaches back 24
-hours. Older work is still settled and still archived — look for it in bb's archived
-view.
+**Right-click Archive is not the same as settling.** Archive is bb's own action and it
+does retire the environment, so a thread archived that way is fully restorable for about
+five minutes and read-only after that. Settle when you want it back later; archive when
+you are certain you do not.
 
 **A snoozed thread came back early.** That is the design: a snoozed thread wakes when
 it starts working or asks you a question.
 
-**Un-settling did not bring the thread back.** Archive and unarchive run on the
-thread's host, which can be offline. When an unarchive fails, bb keeps the thread
-archived and the thread leaves the sidebar until you unarchive it in bb yourself.
+**Un-settling a thread from before this change did not fully bring it back.** Threads
+settled under the old archive-on-settle behaviour were archived, and their environments
+were destroyed five minutes later. Un-settling still unarchives them, so the conversation
+returns and is readable, but the environment is gone and cannot be rebuilt.
 
 **Uninstalling left data behind.** The shelves live in the plugin's own database,
 which bb removes with the plugin — but a copy of them is cached in the browser's

@@ -299,12 +299,10 @@ export const MAX_WARM_START_ENTRY_CHARS = 64 * 1024;
  * every start for most users. So an empty array is a value and null is the
  * miss.
  *
- * One bad row rejects the whole payload. Half-accepting is the failure that
- * hurts: settling archives a thread in bb, so a dropped row does not make its
- * thread read active, it makes the thread vanish from the sidebar entirely.
- * An over-long payload is rejected the same way and for the same reason — the
- * encoder never writes one, so anything over the cap was written by something
- * that is not this plugin.
+ * One bad row rejects the whole payload. Half-accepting would silently lose a
+ * user's parking decision and can still hide a legacy archived thread. An
+ * over-long payload is rejected the same way: the encoder never writes one,
+ * so anything over the cap came from something else.
  */
 export function decodeWarmStartRows(stored: string | null): ThreadLifecycleRow[] | null {
   if (stored === null) return null;

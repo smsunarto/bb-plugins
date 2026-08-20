@@ -3,12 +3,10 @@ import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import {
   isUnread,
-  isWithinSettledWindow,
   mergeSettledThreads,
   pendingSettledCount,
   settledIndicator,
   toSidebarThread,
-  SETTLED_WINDOW_MS,
   type SettledThreadRow,
 } from "../lib/settled-threads.ts";
 import { parseArchivedThreadIds, type ThreadLifecycleRow } from "../lib/lifecycle.ts";
@@ -68,30 +66,6 @@ describe("isUnread", () => {
   });
 });
 
-describe("isWithinSettledWindow", () => {
-  const now = 10 * SETTLED_WINDOW_MS;
-
-  it("keeps a settle from inside the window", () => {
-    assert.equal(isWithinSettledWindow(now - 1, now), true);
-    assert.equal(isWithinSettledWindow(now - SETTLED_WINDOW_MS + 1, now), true);
-  });
-
-  // The row and the archive both stay; only the drawing stops.
-  it("drops a settle older than the window", () => {
-    assert.equal(isWithinSettledWindow(now - SETTLED_WINDOW_MS, now), false);
-    assert.equal(isWithinSettledWindow(now - SETTLED_WINDOW_MS - 1, now), false);
-  });
-
-  // A clock that moved must not swallow a settle the user just made.
-  it("keeps a settle stamped in the future", () => {
-    assert.equal(isWithinSettledWindow(now + SETTLED_WINDOW_MS, now), true);
-  });
-
-  it("is a day by default", () => {
-    assert.equal(SETTLED_WINDOW_MS, 24 * 60 * 60 * 1000);
-  });
-});
-
 describe("settledIndicator", () => {
   // A settled thread is a quiet one — anything else un-settles it — so this is
   // the answer for nearly every row on the shelf.
@@ -135,7 +109,7 @@ describe("settledIndicator", () => {
 });
 
 describe("toSidebarThread", () => {
-  it("marks the thread archived, which is why this path exists", () => {
+  it("marks a legacy backend row archived, which is why this path exists", () => {
     assert.equal(toSidebarThread(row()).isArchived, true);
   });
 
@@ -180,15 +154,23 @@ describe("mergeSettledThreads", () => {
     );
   });
 
-  // The host's view is live and this one is a round trip old: a thread bb has
-  // already unarchived must not be dragged back by a stale copy of itself.
-  it("lets the host win a collision", () => {
+  // The host may report a current settled row while the legacy fetch still has
+  // a stale copy. One thread must produce one list item and one shelf count.
+  it("does not duplicate a thread present in both host and legacy lists", () => {
+    const now = 1_000;
     const merged = mergeSettledThreads(
       [hostThread({ id: "a" })],
       [toSidebarThread(row({ id: "a" }))],
     );
     assert.equal(merged.length, 1);
     assert.equal(merged[0]?.isArchived, false);
+    assert.equal(
+      pendingSettledCount(
+        [lifecycleRow({ threadId: "a", settledAt: 500 })],
+        new Set(merged.map((thread) => thread.id)),
+      ),
+      0,
+    );
   });
 
   it("returns the host list unchanged when nothing is settled", () => {
@@ -201,15 +183,14 @@ describe("mergeSettledThreads", () => {
 });
 
 describe("pendingSettledCount", () => {
-  const now = 10 * SETTLED_WINDOW_MS;
+  const now = 10 * 24 * 60 * 60 * 1000;
   const nothingVisible: ReadonlySet<string> = new Set();
 
-  // The whole reason this exists: settling archives the thread, so bb reports
-  // nothing and `listSettledThreads` is a round trip away. The seeded row is
-  // all the shelf has to go on, and a collapsed shelf only ever needed a count.
-  it("counts a settled thread the host cannot report", () => {
+  // Legacy rows remain archived, so the host reports nothing while
+  // `listSettledThreads` is a round trip away.
+  it("counts a legacy settled thread the host cannot report", () => {
     assert.equal(
-      pendingSettledCount([lifecycleRow({ settledAt: now - 1 })], nothingVisible, now),
+      pendingSettledCount([lifecycleRow({ settledAt: now - 1 })], nothingVisible),
       1,
     );
   });
@@ -222,38 +203,30 @@ describe("pendingSettledCount", () => {
       pendingSettledCount(
         [lifecycleRow({ snoozedUntil: now + 1, snoozedAt: now - 1 })],
         nothingVisible,
-        now,
       ),
       0,
     );
   });
 
-  // A settle whose archive failed, and every thread settled before this plugin
-  // archived anything, stay in the host's list — `resolveShelf` already puts
-  // them on the shelf. Counting them would draw the header one too high for as
-  // long as they sit there, not for one round trip.
+  // Current settles stay in the host list and `resolveShelf` already puts them
+  // on the shelf. Counting them would draw the header one too high.
   it("ignores a settled thread the host still reports", () => {
     assert.equal(
       pendingSettledCount(
         [lifecycleRow({ threadId: "thr_9", settledAt: now - 1 })],
         new Set(["thr_9"]),
-        now,
       ),
       0,
     );
   });
 
-  // Recomputed against a fresh clock for exactly this: a row the cache seeded
-  // hours ago has to leave the header on its own, with no refetch to say so.
-  // A stored count could not do it.
-  it("drops a settle that has aged out of the window", () => {
+  it("keeps counting a legacy settle well past 24 hours", () => {
     assert.equal(
       pendingSettledCount(
-        [lifecycleRow({ settledAt: now - SETTLED_WINDOW_MS })],
+        [lifecycleRow({ settledAt: now - 7 * 24 * 60 * 60 * 1000 })],
         nothingVisible,
-        now,
       ),
-      0,
+      1,
     );
   });
 
@@ -263,20 +236,20 @@ describe("pendingSettledCount", () => {
       lifecycleRow({ threadId: "b", settledAt: now - 2 }),
       lifecycleRow({ threadId: "c", settledAt: now - 3 }),
     ];
-    assert.equal(pendingSettledCount(rows, new Set(["b"]), now), 2);
+    assert.equal(pendingSettledCount(rows, new Set(["b"])), 2);
   });
 
   // A first-ever run, a cleared origin, or storage switched off: the count is
   // zero and the list behaves exactly as it did before any of this. A miss must
   // degrade, never invent a header for a shelf with nothing on it.
   it("counts nothing when no row was seeded", () => {
-    assert.equal(pendingSettledCount([], nothingVisible, now), 0);
+    assert.equal(pendingSettledCount([], nothingVisible), 0);
   });
 
   // The hook holds a Map keyed by thread id, and hands over its values.
   it("reads any iterable of rows", () => {
     const rows = new Map([["a", lifecycleRow({ threadId: "a", settledAt: now - 1 })]]);
-    assert.equal(pendingSettledCount(rows.values(), nothingVisible, now), 1);
+    assert.equal(pendingSettledCount(rows.values(), nothingVisible), 1);
   });
 });
 

@@ -143,13 +143,11 @@ export function filterByProject(
 }
 
 /**
- * Archived threads never belong in the inbox — except the ones this plugin
- * parked, which it archives itself.
+ * Archived threads never belong in the inbox, except legacy settled rows this
+ * plugin archived under its old behavior.
  *
- * Settling a thread archives it in bb, so leaving the flag alone to decide
- * visibility would empty the settled shelf the instant anything landed on it.
- * A parked row is the plugin saying "I put it there", and that outranks the
- * archive it set.
+ * Current settles are unarchived. A parked row still outranks the archive flag
+ * so legacy rows supplied by `listSettledThreads` remain recoverable.
  */
 export function visibleInboxThreads(
   threads: readonly PluginSidebarThread[],

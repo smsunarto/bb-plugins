@@ -86,6 +86,11 @@ describe("resolveShelf", () => {
     assert.equal(resolveShelf(row({ settledAt: 500 }), quiet, 1_000), "settled");
   });
 
+  it("keeps a quiet thread settled indefinitely", () => {
+    const sevenDaysLater = 500 + 7 * 24 * 60 * 60 * 1000;
+    assert.equal(resolveShelf(row({ settledAt: 500 }), quiet, sevenDaysLater), "settled");
+  });
+
   it("brings a settled thread back when it starts working", () => {
     assert.equal(
       resolveShelf(row({ settledAt: 500 }), { ...quiet, isWorking: true }, 1_000),
@@ -169,8 +174,8 @@ describe("wokenSettledThreadIds", () => {
     );
   });
 
-  // The row is what holds bb's archive, so a thread the shelf has already put
-  // back in the inbox has to give the row up too.
+  // A thread the shelf has already put back in the inbox has to give its row up
+  // too. Legacy rows also carry archived ids that the RPC restores.
   it("reports a settled thread that has come back", () => {
     assert.deepEqual(
       wokenSettledThreadIds(
@@ -193,8 +198,7 @@ describe("wokenSettledThreadIds", () => {
     );
   });
 
-  // A thread bb no longer reports is the deletion cleanup's job, not this
-  // one's: unsettling a row for a thread that is gone archives nothing.
+  // A thread bb no longer reports is the deletion cleanup's job, not this one.
   it("skips a thread bb no longer reports", () => {
     assert.deepEqual(
       wokenSettledThreadIds([row({ threadId: "a", settledAt: 500 })], () => undefined, 1_000),

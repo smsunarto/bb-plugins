@@ -11,7 +11,6 @@ import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { parseArchivedThreadIds } from "./lib/lifecycle.ts";
-import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { ThreadPreviewCache } from "./lib/thread-preview-cache.ts";
 
 const migrations = [
@@ -21,9 +20,8 @@ const migrations = [
      snoozed_until  INTEGER,
      snoozed_at     INTEGER
    )`,
-  // bb's archive cascades to child threads and reports every id it took.
-  // Without them, un-settling gives the parent back and leaves its children
-  // archived for good.
+  // Compatibility for rows created when settle archived in bb. That archive
+  // cascaded to child threads, so restoring the legacy row needs every id.
   `ALTER TABLE thread_lifecycle ADD COLUMN archived_thread_ids TEXT`,
 ];
 
@@ -32,7 +30,7 @@ export interface StoredLifecycleRow {
   settledAt: number | null;
   snoozedUntil: number | null;
   snoozedAt: number | null;
-  /** Every id the settle's archive took, this thread's own included. */
+  /** Every id an old settle archived, this thread's own included. */
   archivedThreadIds: string[];
 }
 
@@ -72,13 +70,11 @@ export const eiffSidebarRpcContract = defineRpcContract({
       ),
     }),
   },
-  // The settled shelf's own rows. bb's sidebar view is built from queries
-  // pinned to `archived: false`, so a settled — and therefore archived —
-  // thread never reaches the frontend through the host. It comes through here
-  // instead, and only for the last day: see `SETTLED_WINDOW_MS`. Fields are
-  // deliberately loose (`status`, `originKind` as plain strings) so a new bb
-  // value degrades in the mapper rather than failing output validation and
-  // blanking the shelf.
+  // Legacy settled rows whose threads were archived by an older plugin build.
+  // Current settles stay in the host list and do not come through this path.
+  // Fields are deliberately loose (`status`, `originKind` as plain strings)
+  // so a new bb value degrades in the mapper rather than failing output
+  // validation and blanking the shelf.
   listSettledThreads: {
     input: z.object({}),
     output: z.object({
@@ -224,33 +220,7 @@ export default function plugin(bb: BbPluginApi) {
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
   };
 
-  /**
-   * bb's own archive, kept in step with the settled shelf.
-   *
-   * "Settled" and "archived" are the same statement — this work is done — so
-   * saying it in one place and not the other leaves the built-in sidebar, the
-   * archived filter, and worktree reuse disagreeing with the shelf.
-   *
-   * Returns every id bb took, which for a thread with children is more than
-   * the one asked for. An empty array means the archive did not happen.
-   */
-  const archiveThread = async (threadId: string): Promise<string[]> => {
-    try {
-      const result = await bb.sdk.threads.archive({ threadId });
-      const ids = result.archivedThreadIds ?? [];
-      return ids.includes(threadId) ? ids : [...ids, threadId];
-    } catch (error) {
-      // Archiving reaches the thread's host, which can be offline. The flag is
-      // read — `visibleInboxThreads` drops an archived thread — but the row
-      // outranks it, so a failure here costs the archive and nothing else: the
-      // flag stays false, the row still shelves the thread, and it sits where
-      // the user put it.
-      bb.log.warn(`archive failed for thread ${threadId}: ${String(error)}`);
-      return [];
-    }
-  };
-
-  /** The mirror: every id the settle took, given back one by one. */
+  /** Give every id recorded by a legacy settle back one by one. */
   const unarchiveThreads = async (threadIds: readonly string[]) => {
     for (const threadId of threadIds) {
       try {
@@ -258,23 +228,20 @@ export default function plugin(bb: BbPluginApi) {
       } catch (error) {
         // One child that cannot be reached must not strand the rest, and the
         // parent is the id that matters most — it is the one on the shelf.
-        // This direction is not the benign one `archiveThread` describes: the
-        // callers clear or rewrite the row whatever happens here, so a parent
-        // that stays archived is a thread nothing here still calls settled,
-        // and it leaves the sidebar until bb unarchives it.
+        // The callers clear or rewrite the row whatever happens here, so a
+        // legacy thread that stays archived leaves this sidebar until bb
+        // restores it.
         bb.log.warn(`unarchive failed for thread ${threadId}: ${String(error)}`);
       }
     }
   };
 
   /**
-   * Every id a settle archived, or the thread's own id when the row predates
-   * the cascade column. The fallback is exactly the old behaviour.
+   * Every id a legacy settle recorded. New rows hold no ids, so restoring one
+   * is a no-op and never touches bb's archive.
    */
-  const archivedIdsFor = (threadId: string): string[] => {
-    const stored = readOne(threadId)?.archivedThreadIds ?? [];
-    return stored.length === 0 ? [threadId] : stored;
-  };
+  const archivedIdsFor = (threadId: string): string[] =>
+    readOne(threadId)?.archivedThreadIds ?? [];
 
   /** One page is already generous; the loop is for the account that isn't. */
   const ARCHIVED_PAGE_SIZE = 200;
@@ -316,22 +283,15 @@ export default function plugin(bb: BbPluginApi) {
       return { rows: readAll() };
     },
     /**
-     * The archived threads this plugin settled in the last day, and only
-     * those. A thread the user archived through bb itself has no row here and
-     * stays out of the sidebar, exactly as it did before any of this existed;
-     * one settled longer ago than the window keeps its row and its archive and
-     * simply stops being drawn.
-     *
-     * The window is applied here as well as on the frontend. The frontend's is
-     * the live one — it re-cuts on its own clock, so a row ages off screen
-     * without a refetch — and this one keeps the response proportional to the
-     * shelf instead of to the whole archive.
+     * Archived threads that still carry a settled row from the old behavior.
+     * A thread the user archived through bb itself has no row here and stays
+     * out of this sidebar. There is no age limit: every legacy row remains
+     * recoverable until the user restores it or new attention wakes it.
      */
     async listSettledThreads() {
-      const now = Date.now();
       const settledAtById = new Map(
         readAll()
-          .filter((row) => row.settledAt !== null && isWithinSettledWindow(row.settledAt, now))
+          .filter((row) => row.settledAt !== null)
           .map((row) => [row.threadId, row.settledAt as number]),
       );
       if (settledAtById.size === 0) return { threads: [] };
@@ -389,37 +349,20 @@ export default function plugin(bb: BbPluginApi) {
         snoozedAt: null,
         archivedThreadIds: [],
       });
-      // The row first, then the archive. A settled thread stays on screen
-      // only because its row says so, so archiving first would blink it out
-      // of the list until the row landed.
-      const archivedThreadIds = await archiveThread(threadId);
-      if (archivedThreadIds.length > 0) {
-        // Second write, second publish — and the publish is the point. bb has
-        // just evicted the thread from the host's sidebar view, so this is
-        // what tells the frontend to fetch it back from `listSettledThreads`.
-        // Re-read rather than re-derive: a user who restored the thread while
-        // the archive was in flight must not have their un-settle overwritten
-        // by the settle that started before it.
-        const row = readOne(threadId);
-        if (row !== undefined && row.settledAt !== null) {
-          write({ ...row, archivedThreadIds });
-        }
-      }
       return { ok: true };
     },
     async unsettle({ threadId }) {
-      // The archive first, then the row — the mirror of settle, for the same
-      // reason: clearing the row while the thread is still archived would
-      // drop it out of the sidebar entirely.
+      // Older settled rows may still name threads this plugin archived. Keep
+      // the best-effort restore so those threads can be recovered from the
+      // shelf. Current rows record no ids, making this call a no-op.
       await unarchiveThreads(archivedIdsFor(threadId));
       clear(threadId);
       return { ok: true };
     },
     async snooze({ threadId, snoozedUntil }) {
       const now = Date.now();
-      // Snoozing a settled thread takes the archive back first: a snoozed row
-      // is not on the settled shelf, so the thread has nowhere to be drawn
-      // until bb reports it again.
+      // A legacy settled row may still hold archived ids. Restore those before
+      // replacing it with a current snooze row.
       await unarchiveThreads(archivedIdsFor(threadId));
       write({
         threadId,
@@ -445,11 +388,10 @@ export default function plugin(bb: BbPluginApi) {
   /**
    * The settled shelf's heartbeat.
    *
-   * An archived thread is invisible to the host's sidebar view, so no host
-   * update can tell the frontend that a settled thread started working or
-   * finished a turn. Without this the un-settle rule — new attention brings a
-   * thread back — would never fire again for anything on the shelf. A publish
-   * only asks the frontend to re-read; the decision stays where it was.
+   * Legacy archived threads are invisible to the host's sidebar view, so no
+   * host list update can wake them. This bridge also keeps current settled rows
+   * synced promptly. A publish only asks the frontend to re-read; the decision
+   * stays where it was.
    */
   const republishIfSettled = ({ thread }: { thread: { id: string } }) => {
     if (readOne(thread.id)?.settledAt == null) return;

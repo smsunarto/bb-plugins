@@ -34,13 +34,13 @@ export interface ThreadLifecycleRow {
 }
 
 /**
- * The ids a settle's archive took, read back from the store.
+ * The ids an old settle's archive took, read back from the store.
  *
  * bb's archive cascades to child threads, so un-settling has to give back more
  * than the one id the user acted on. Rows written before that was recorded
  * hold nothing, and a JSON column is only as good as what wrote it — both
- * cases return an empty list, and the caller falls back to the thread's own
- * id, which is exactly what the old behaviour did.
+ * cases return an empty list. Current rows also hold nothing because settling
+ * no longer touches bb's archive.
  */
 export function parseArchivedThreadIds(value: string | null): string[] {
   if (value === null) return [];
@@ -136,12 +136,11 @@ export function resolveShelf(
 
 /**
  * The settled rows that have come back on their own, so the store can let
- * them go — and, with them, bb's archive.
+ * them go.
  *
  * `resolveShelf` un-settles a thread the moment it has something new to say,
  * but that is a reading of the row, not a change to it. Without this the row
- * would sit there settled forever while the thread is back in the inbox, and
- * bb would still call it archived.
+ * would sit there settled forever while the thread is back in the inbox.
  *
  * `signalsFor` returns undefined for a thread bb no longer reports; those
  * rows belong to the `thread.deleted` cleanup instead.

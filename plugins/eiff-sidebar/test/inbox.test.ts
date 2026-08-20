@@ -317,9 +317,8 @@ describe("filtering", () => {
     );
   });
 
-  // Settling archives the thread in bb, so the archive flag alone would empty
-  // the settled shelf the moment anything landed on it.
-  it("keeps an archived thread the plugin parked", () => {
+  // Legacy settled rows still arrive archived and must remain recoverable.
+  it("keeps a legacy archived thread the plugin parked", () => {
     const threads = [thread({ id: "a", isArchived: true }), thread({ id: "b", isArchived: true })];
     assert.deepEqual(
       visibleInboxThreads(threads, new Set(["a"])).map((t) => t.id),

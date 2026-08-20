@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useRpc,
@@ -225,9 +225,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     return pendingSettledCount(
       lifecycle.parkedRows.values(),
       new Set(threads.map((thread) => thread.id)),
-      now,
     );
-  }, [lifecycle.parkedRows, now, scope, searchQuery, settledRowsPending, threads]);
+  }, [lifecycle.parkedRows, scope, searchQuery, settledRowsPending, threads]);
 
   const shelvedTotal =
     pinned.length +
