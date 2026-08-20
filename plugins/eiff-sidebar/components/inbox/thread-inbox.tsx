@@ -36,6 +36,7 @@ import {
 } from "@/lib/inbox";
 import { CrewmateRow, splitCrewmates } from "@/components/inbox/crewmate-rows";
 import { useThreadPreviews } from "@/hooks/use-thread-previews";
+import { isThreadWorking } from "@/lib/lifecycle";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 
 const ALL_PROJECTS = "__all__";
@@ -59,7 +60,27 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     const timer = setInterval(() => setNowMinute(Math.floor(Date.now() / 60_000)), 60_000);
     return () => clearInterval(timer);
   }, []);
-  const now = nowMinute * 60_000;
+  // A working row shows a clock counting up in seconds, which a minute-quantized
+  // value cannot drive: without this the number only moves when something ELSE
+  // in the sidebar changes, so two working threads sit at "0s" until one of them
+  // finishes and re-renders the other.
+  //
+  // The second hand runs ONLY while something is actually working. A sidebar of
+  // quiet threads must not re-render once a second for a number nothing reads,
+  // and `hostThreads` rather than the derived list below because this only asks
+  // whether any work is live at all, which no filter should change.
+  const anyWorking = useMemo(
+    () => hostThreads.some((thread) => isThreadWorking(thread)),
+    [hostThreads],
+  );
+  const [nowSecond, setNowSecond] = useState(() => Math.floor(Date.now() / 1_000));
+  useEffect(() => {
+    if (!anyWorking) return;
+    setNowSecond(Math.floor(Date.now() / 1_000));
+    const timer = setInterval(() => setNowSecond(Math.floor(Date.now() / 1_000)), 1_000);
+    return () => clearInterval(timer);
+  }, [anyWorking]);
+  const now = anyWorking ? nowSecond * 1_000 : nowMinute * 60_000;
   // The host reports no archived thread, and settling archives one. Everything
   // below — the shelves, the un-settle rule, search, the project scope — reads
   // this merged list so the settled shelf has rows to draw at all.
