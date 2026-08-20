@@ -30,6 +30,11 @@ export function ThreadCard({
   isActive,
   canPark,
   showProviderIcon,
+  showHost,
+  preview,
+  finishedCount,
+  finishedExpanded,
+  onToggleFinished,
   onNavigate,
   onSettle,
   onSnooze,
@@ -43,6 +48,21 @@ export function ThreadCard({
   canPark: boolean;
   /** The `showProviderIcon` setting, on by default. */
   showProviderIcon: boolean;
+  /**
+   * Whether the host is worth naming. False when every thread on screen runs
+   * on the same machine, where the name is the same word on every card and
+   * tells the user nothing they cannot already assume.
+   */
+  showHost: boolean;
+  /**
+   * The agent's latest message, already stripped to plain prose. Null while it
+   * is still being fetched, and for a thread the agent has not spoken in yet.
+   */
+  preview: string | null;
+  /** Crewmates folded away behind the count; 0 draws no control. */
+  finishedCount: number;
+  finishedExpanded: boolean;
+  onToggleFinished: () => void;
   onNavigate: () => void;
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
@@ -74,10 +94,54 @@ export function ThreadCard({
     void actions.rename(thread.id, title).catch(() => setDraftTitle(title));
   };
 
+  const trailing = (
+    <>
+            {thread.activity.workflows > 0 ? (
+        <ActivityCount label="workflows" count={thread.activity.workflows} />
+      ) : null}
+      {thread.activity.backgroundAgents > 0 ? (
+        <ActivityCount label="background agents" count={thread.activity.backgroundAgents} />
+      ) : null}
+      {pullRequest ? (
+        <a
+          href={pullRequest.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          title={pullRequest.title}
+          className={cn(
+            "relative shrink-0 font-mono hover:underline",
+            pullRequest.state === "merged"
+              ? "text-[color:var(--pr-merged)]"
+              : pullRequest.attention === "checks_failed" ||
+                  pullRequest.attention === "conflicts"
+                ? "text-destructive-text"
+                : pullRequest.attention === "ready_to_merge"
+                  ? "text-success-foreground"
+                  : "text-muted-foreground",
+          )}
+        >
+          #{pullRequest.number}
+        </a>
+      ) : null}
+      {finishedCount > 0 ? (
+        <FinishedCrewmates
+          count={finishedCount}
+          expanded={finishedExpanded}
+          onToggle={onToggleFinished}
+        />
+      ) : null}
+      {/* Drawn for every card or for none, never per thread, so the line
+          keeps a fixed right edge whichever way the setting is set. */}
+      {showProviderIcon ? (
+        <ProviderGlyph providerId={thread.providerId} provider={provider} />
+      ) : null}
+    </>
+  );
+
   return (
     <RowContextMenu thread={thread} onRename={startRename}>
-      <li className="list-none">
-        <div
+      <div
           className={cn(
             "group/card relative rounded-md px-2.5 py-1.5 transition-colors",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
@@ -166,11 +230,43 @@ export function ThreadCard({
               </span>
             )}
           </div>
+          {/* What the agent last said, in place of the metadata that used to
+              live here. It is the only line on the card that changes while you
+              watch, and it is why this sidebar is worth reading rather than
+              scanning. Three lines once the thread is the one you are in, one
+              line otherwise.
+
+              A thread with nothing said yet falls back to the old project and
+              origin line rather than leaving a blank row. */}
+          {preview ? (
+            <div className="pointer-events-none relative mt-1 flex items-start gap-1.5 text-2xs text-muted-foreground/70">
+              <span
+                className={cn(
+                  "min-w-0 flex-1 overflow-hidden leading-snug",
+                  isActive ? "line-clamp-3" : "line-clamp-1",
+                )}
+              >
+                {preview}
+              </span>
+              {/* Collapsed, this line is the only one drawn, so it carries the
+                  trailing column too. Expanded, the line below takes it back. */}
+              {isActive ? null : <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>}
+            </div>
+          ) : null}
           {/* One step below the title, not half a step: at 10px the size drop
               alone does not carry the hierarchy, so the line also starts at the
               tint the provider glyph already uses. Segments that rank below the
-              project dim further from here. */}
-          <div className="pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
+              project dim further from here.
+
+              Now the second-class line: drawn for the thread you are in, where
+              there is room to say where the work lives, and for a thread with
+              no message yet, where it is all the card has. */}
+          <div
+            className={cn(
+              "pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70",
+              preview && !isActive && "hidden",
+            )}
+          >
             {/* Project and origin share this line now that the title has taken
                 the one above. The project holds its full name and the origin
                 yields: which repository a thread belongs to outranks which
@@ -179,7 +275,7 @@ export function ThreadCard({
                 missing both still holds the line's right side still. */}
             <span className="flex min-w-0 flex-1 items-center gap-1">
               {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
-              {projectName && (thread.environment?.branchName || thread.host) ? (
+              {projectName && (thread.environment?.branchName || (showHost && thread.host)) ? (
                 <span aria-hidden className="shrink-0 text-muted-foreground/40">
                   ·
                 </span>
@@ -200,48 +296,15 @@ export function ThreadCard({
                 <span className="min-w-0 shrink-[9999] truncate font-mono text-muted-foreground/50">
                   {thread.environment.branchName}
                 </span>
-              ) : thread.host ? (
+              ) : showHost && thread.host ? (
                 <span className="min-w-0 shrink-[9999] truncate text-muted-foreground/50">
                   {thread.host.name}
                 </span>
               ) : null}
             </span>
-            {thread.activity.workflows > 0 ? (
-              <ActivityCount label="workflows" count={thread.activity.workflows} />
-            ) : null}
-            {thread.activity.backgroundAgents > 0 ? (
-              <ActivityCount label="background agents" count={thread.activity.backgroundAgents} />
-            ) : null}
-            {pullRequest ? (
-              <a
-                href={pullRequest.url}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(event) => event.stopPropagation()}
-                title={pullRequest.title}
-                className={cn(
-                  "relative shrink-0 font-mono hover:underline",
-                  pullRequest.state === "merged"
-                    ? "text-[color:var(--pr-merged)]"
-                    : pullRequest.attention === "checks_failed" ||
-                        pullRequest.attention === "conflicts"
-                      ? "text-destructive-text"
-                      : pullRequest.attention === "ready_to_merge"
-                        ? "text-success-foreground"
-                        : "text-muted-foreground",
-                )}
-              >
-                #{pullRequest.number}
-              </a>
-            ) : null}
-            {/* Drawn for every card or for none, never per thread, so the line
-                keeps a fixed right edge whichever way the setting is set. */}
-            {showProviderIcon ? (
-              <ProviderGlyph providerId={thread.providerId} provider={provider} />
-            ) : null}
+            {trailing}
           </div>
-        </div>
-      </li>
+      </div>
     </RowContextMenu>
   );
 }
@@ -267,6 +330,48 @@ function ParkButton({
       className="rounded p-0.5 text-muted-foreground hover:text-foreground"
     >
       <Icon name={icon} className="size-3.5" />
+    </button>
+  );
+}
+
+/**
+ * The crewmates that have finished, as a count on the parent rather than a row
+ * of its own.
+ *
+ * A row per fold cost every family with history a third line, which left the
+ * list with no repeating height for the eye to lock onto. Here it costs the
+ * width of two characters on a line that already exists.
+ */
+function FinishedCrewmates({
+  count,
+  expanded,
+  onToggle,
+}: {
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-label={`${count} finished crewmates`}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "pointer-events-auto relative flex shrink-0 items-center gap-0.5 rounded px-0.5",
+        "text-2xs text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground",
+      )}
+    >
+      <Icon
+        name={expanded ? "ChevronDown" : "ChevronRight"}
+        aria-hidden
+        className="size-2.5 shrink-0"
+      />
+      {count}
     </button>
   );
 }

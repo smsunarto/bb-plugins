@@ -34,7 +34,8 @@ import {
   sortByCreatedAtDescending,
   visibleInboxThreads,
 } from "@/lib/inbox";
-import { CrewmateRows } from "@/components/inbox/crewmate-rows";
+import { CrewmateRow, splitCrewmates } from "@/components/inbox/crewmate-rows";
+import { useThreadPreviews } from "@/hooks/use-thread-previews";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 
 const ALL_PROJECTS = "__all__";
@@ -215,33 +216,44 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     settled.length +
     pendingSettled;
 
-  // A plain function rather than a component, called inline: a component
-  // declared in this body would be a new type on every render, and remounting
-  // the crewmate rows would throw away which folds the user had opened.
+  // Every thread on screen running on one machine makes the host name the same
+  // word on every card. It only earns its space once the list is mixed.
+  // Only the threads the list can draw. A snoozed or settled thread is behind
+  // a collapsed header, so fetching its message buys a row nobody is reading.
+  const previews = useThreadPreviews(
+    useMemo(
+      () => visibleInboxThreads(threads, lifecycle.parkedThreadIds),
+      [lifecycle.parkedThreadIds, threads],
+    ),
+  );
+
+  const showHost = useMemo(
+    // Threads without a host are not a second machine. Counting their absence
+    // as one made every list look mixed, which is the whole condition this is
+    // trying to detect.
+    () => new Set(threads.map((t) => t.host?.name).filter((name) => !!name)).size > 1,
+    [threads],
+  );
+
   const renderFamily = (thread: PluginSidebarThread) => (
-    <Fragment key={thread.id}>
-      <ThreadCard
-        thread={thread}
-        provider={providerInfoById.get(thread.providerId)}
-        showProviderIcon={showProviderIcon}
-        projectName={projectNameById.get(thread.projectId) ?? null}
-        isActive={thread.id === activeThreadId}
-        canPark={lifecycle.canPark(thread)}
-        onNavigate={onNavigate}
-        onSettle={() => lifecycle.settle(thread.id)}
-        onSnooze={(until) => lifecycle.snooze(thread.id, until)}
-        now={now}
-      />
-      <CrewmateRows
-        parent={thread}
-        crewmates={crewmatesByParentId.get(thread.id) ?? []}
-        activeThreadId={activeThreadId}
-        showProviderIcon={showProviderIcon}
-        providerInfoById={providerInfoById}
-        projectNameById={projectNameById}
-        onNavigate={onNavigate}
-      />
-    </Fragment>
+    <FamilyRow
+      key={thread.id}
+      thread={thread}
+      crewmates={crewmatesByParentId.get(thread.id) ?? []}
+      provider={providerInfoById.get(thread.providerId)}
+      providerInfoById={providerInfoById}
+      projectNameById={projectNameById}
+      projectName={projectNameById.get(thread.projectId) ?? null}
+      showProviderIcon={showProviderIcon}
+      showHost={showHost}
+      preview={previews.get(thread.id) ?? null}
+      activeThreadId={activeThreadId}
+      canPark={lifecycle.canPark(thread)}
+      onNavigate={onNavigate}
+      onSettle={() => lifecycle.settle(thread.id)}
+      onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+      now={now}
+    />
   );
 
   const scopeLabel =
@@ -460,6 +472,86 @@ function ParkedShelf({
   );
 }
 
+/**
+ * A parent and its crewmates as ONE list item.
+ *
+ * The grouping is the point. When every row was its own item the list gave a
+ * family and two unrelated threads exactly the same 4px, so nothing told the
+ * eye where one piece of work ended and the next began. Space between families
+ * now comes from the list; space inside one is a hairline.
+ */
+function FamilyRow({
+  thread,
+  crewmates,
+  provider,
+  providerInfoById,
+  projectNameById,
+  projectName,
+  showProviderIcon,
+  showHost,
+  preview,
+  activeThreadId,
+  canPark,
+  onNavigate,
+  onSettle,
+  onSnooze,
+  now,
+}: {
+  thread: PluginSidebarThread;
+  crewmates: readonly PluginSidebarThread[];
+  provider?: ProviderGlyphInfo;
+  providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
+  projectNameById: ReadonlyMap<string, string>;
+  projectName: string | null;
+  showProviderIcon: boolean;
+  showHost: boolean;
+  preview: string | null;
+  activeThreadId: string | null;
+  canPark: boolean;
+  onNavigate: () => void;
+  onSettle: () => void;
+  onSnooze: (snoozedUntil: number) => void;
+  now: number;
+}) {
+  const [showFinished, setShowFinished] = useState(false);
+  const { live, finished } = splitCrewmates(crewmates);
+  const shown = showFinished ? [...live, ...finished] : live;
+
+  return (
+    <li className="flex list-none flex-col gap-px">
+      <ThreadCard
+        thread={thread}
+        provider={provider}
+        showProviderIcon={showProviderIcon}
+        showHost={showHost}
+        preview={preview}
+        projectName={projectName}
+        isActive={thread.id === activeThreadId}
+        canPark={canPark}
+        finishedCount={finished.length}
+        finishedExpanded={showFinished}
+        onToggleFinished={() => setShowFinished((open) => !open)}
+        onNavigate={onNavigate}
+        onSettle={onSettle}
+        onSnooze={onSnooze}
+        now={now}
+      />
+      {shown.map((crewmate) => (
+        <CrewmateRow
+          key={crewmate.id}
+          crewmate={crewmate}
+          parent={thread}
+          isActive={crewmate.id === activeThreadId}
+          showProviderIcon={showProviderIcon}
+          provider={providerInfoById.get(crewmate.providerId)}
+          projectName={projectNameById.get(crewmate.projectId) ?? null}
+          onNavigate={onNavigate}
+        />
+      ))}
+    </li>
+  );
+}
+
 function Shelf({ label, children }: { label: string | null; children: React.ReactNode }) {
   return (
     // A named section is exposed as a landmark region; an unnamed one is not,
@@ -474,7 +566,7 @@ function Shelf({ label, children }: { label: string | null; children: React.Reac
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}
-      <ul className="flex flex-col gap-1">{children}</ul>
+      <ul className="flex flex-col gap-1.5">{children}</ul>
     </section>
   );
 }

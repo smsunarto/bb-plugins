@@ -12,6 +12,7 @@ import { z } from "zod";
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { parseArchivedThreadIds } from "./lib/lifecycle.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
+import { ThreadPreviewCache } from "./lib/thread-preview-cache.ts";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -107,6 +108,24 @@ export const eiffSidebarRpcContract = defineRpcContract({
           updatedAt: z.number(),
           lastReadAt: z.number().nullable(),
           latestAttentionAt: z.number(),
+        }),
+      ),
+    }),
+  },
+  previews: {
+    input: z.object({
+      threads: z.array(
+        z.object({
+          threadId: z.string(),
+          updatedAt: z.number(),
+        }),
+      ),
+    }),
+    output: z.object({
+      previews: z.array(
+        z.object({
+          threadId: z.string(),
+          text: z.string().nullable(),
         }),
       ),
     }),
@@ -275,6 +294,11 @@ export default function plugin(bb: BbPluginApi) {
     return collected;
   };
 
+  const previewCache = new ThreadPreviewCache(async (threadId, signal) => {
+    const result = await bb.sdk.threads.output({ threadId, signal });
+    return result.output;
+  });
+
   bb.rpc.register(eiffSidebarRpcContract, {
     // A custom ACP provider already carries its own brand mark, so the sidebar
     // reads it from the host rather than hard-coding a second glyph per agent.
@@ -351,6 +375,9 @@ export default function plugin(bb: BbPluginApi) {
             latestAttentionAt: thread.latestAttentionAt,
           })),
       };
+    },
+    async previews({ threads }) {
+      return { previews: await previewCache.getMany(threads) };
     },
     async settle({ threadId }) {
       // Settling clears any snooze: they are two answers to the same
