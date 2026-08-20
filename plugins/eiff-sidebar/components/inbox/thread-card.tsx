@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
@@ -7,6 +8,7 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { TitleEditor } from "@/components/inbox/title-editor";
 import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
@@ -52,9 +54,28 @@ export function ThreadCard({
   // Opt-in per row: this costs a git-host lookup, and threads sharing a
   // worktree share one.
   const { pullRequest } = useSidebarThreadPullRequest(thread.id);
+  // The text the editor opens with, held apart from `isEditing` so a rename
+  // the host refuses can reopen on what was typed rather than on the title
+  // that is still there.
+  const [draftTitle, setDraftTitle] = useState<string | null>(null);
+  const isEditing = draftTitle !== null;
+
+  const startRename = () => setDraftTitle(threadDisplayTitle(thread));
+
+  const commitRename = (nextTitle: string) => {
+    setDraftTitle(null);
+    const title = nextTitle.trim();
+    // An empty field is a cancel, not a request for an empty title, and a
+    // rename to the name it already has is a wasted round trip.
+    if (!title || title === threadDisplayTitle(thread)) return;
+    // bb's own rename, so the change lands on the thread itself and every
+    // other surface showing it follows. A refusal reopens the editor holding
+    // the text, which is the only signal this row has room to give.
+    void actions.rename(thread.id, title).catch(() => setDraftTitle(title));
+  };
 
   return (
-    <RowContextMenu thread={thread}>
+    <RowContextMenu thread={thread} onRename={startRename}>
       <li className="list-none">
         <div
           className={cn(
@@ -82,24 +103,47 @@ export function ThreadCard({
               });
               onNavigate();
             }}
-            className="absolute inset-0 cursor-pointer rounded-md"
+            // The anchor is the full-bleed layer over the whole card, so it is
+            // what a double-click actually reaches. The first click of the pair
+            // has already opened the thread by the time this runs, which is the
+            // right outcome anyway: you rename the thread you are now reading.
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              startRename();
+            }}
+            className={cn(
+              "absolute inset-0 rounded-md",
+              // Editing hands the row's clicks to the field. Left live, this
+              // layer would sit over the input and swallow every one of them.
+              isEditing ? "pointer-events-none" : "cursor-pointer",
+            )}
           />
           <div className="pointer-events-none relative flex h-5 items-center gap-1.5">
-            <span
-              className={cn(
-                // Keep resting titles on the sidebar's own text ladder. The
-                // active row earns the brighter accent foreground, while weight
-                // alone still carries unread.
-                "min-w-0 flex-1 truncate text-sm",
-                isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
-                thread.isUnread && "font-medium",
-              )}
-            >
-              {threadDisplayTitle(thread)}
-            </span>
+            {isEditing ? (
+              <TitleEditor
+                initialTitle={draftTitle}
+                onCommit={commitRename}
+                onCancel={() => setDraftTitle(null)}
+              />
+            ) : (
+              <span
+                className={cn(
+                  // Keep resting titles on the sidebar's own text ladder. The
+                  // active row earns the brighter accent foreground, while weight
+                  // alone still carries unread.
+                  "min-w-0 flex-1 truncate text-sm",
+                  isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
+                  thread.isUnread && "font-medium",
+                )}
+              >
+                {threadDisplayTitle(thread)}
+              </span>
+            )}
             {/* Status at rest, park actions on hover. Only the status yields,
-                so the title never shifts. */}
-            {canPark ? (
+                so the title never shifts. Editing clears both: the field wants
+                the width, and a park button under the pointer is one misclick
+                away from filing the thread you were renaming. */}
+            {canPark && !isEditing ? (
               <span className="pointer-events-auto hidden items-center gap-0.5 group-hover/card:flex">
                 <ParkButton
                   label="Snooze until tomorrow"
@@ -116,9 +160,11 @@ export function ThreadCard({
                 <ParkButton label="Settle thread" icon="Check" onActivate={onSettle} />
               </span>
             ) : null}
-            <span className={cn(STATUS_SLOT_CLASS, canPark && "group-hover/card:hidden")}>
-              <StatusOrTime thread={thread} now={now} />
-            </span>
+            {isEditing ? null : (
+              <span className={cn(STATUS_SLOT_CLASS, canPark && "group-hover/card:hidden")}>
+                <StatusOrTime thread={thread} now={now} />
+              </span>
+            )}
           </div>
           {/* One step below the title, not half a step: at 10px the size drop
               alone does not carry the hierarchy, so the line also starts at the

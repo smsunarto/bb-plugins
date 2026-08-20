@@ -5,7 +5,7 @@
   <img src="assets/logo.svg" width="72" height="72" alt="" />
 </picture>
 
-# GTD Sidebar
+# Eiff Sidebar
 
 **A thread list organized by who can act next.**
 
@@ -16,10 +16,10 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The GTD Sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The Eiff Sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
 </div>
 
-GTD Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
+Eiff Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
 
 Active threads split into **Next Action** when the user can act and **Waiting** while
 the agent works. Each section is oldest first. A thread that enters a section goes
@@ -34,32 +34,20 @@ You clear the list with two email verbs: **snooze** a thread until a wake time, 
 
 ## Install
 
-**From the marketplace** — add this repository once, then install by name:
+This is a private fork, published nowhere. It installs as a **local path source**,
+so bb reads the files where they sit: edit, rebuild, reload, with no reinstall.
 
 ```sh
-bb marketplace add git:github.com/smsunarto/bb-plugins
-bb plugin install gtd-sidebar
-```
-
-bb resolves the newest `gtd-sidebar/vX.Y.Z` tag and builds the plugin from it against
-your bb, so the bundle always matches the host it runs on. `bb plugin update
-gtd-sidebar` follows the same release line. If another marketplace you have added
-publishes a `gtd-sidebar`, spell it `gtd-sidebar@smsunarto`.
-
-**From source** — clone the repo and install the plugin as a local path
-source. This is also how you install a change that is not released yet:
-
-```sh
-git clone https://github.com/smsunarto/bb-plugins.git
-cd bb-plugins
+cd ~/apps/bb-plugin-eiff-sidebar
 bun install
-bun run --filter '@smsunarto/bb-plugin-gtd-sidebar' build
-bb plugin install ./plugins/gtd-sidebar
+cd plugins/eiff-sidebar
+bb plugin build .
+bb plugin install .
 ```
 
-The source path needs Bun and the `bb` CLI. It installs the plugin as a **local
-path source**, so bb reads the files in place: edit, rebuild, reload, with no
-reinstall.
+Needs Bun and the `bb` CLI. The workspace root carries nine other plugins from
+upstream that this fork does not use; `bun install` there is what makes this one
+build, and nothing else in the tree is installed into bb.
 
 ## Requirements
 
@@ -69,9 +57,9 @@ reinstall.
 ## Usage
 
 Installing does not change your sidebar by itself. Open **Settings → Appearance →
-Sidebar** and choose **GTD Sidebar (inbox)**.
+Sidebar** and choose **Eiff Sidebar (inbox)**.
 
-<picture><img src="docs/media/enable.png" alt="bb's Appearance settings with GTD Sidebar (inbox) chosen for Sidebar" width="100%" /></picture>
+<picture><img src="docs/media/enable.png" alt="bb's Appearance settings with Eiff Sidebar (inbox) chosen for Sidebar" width="100%" /></picture>
 
 bb's own list stays the default, and comes back the moment you switch away or
 disable the plugin.
@@ -95,6 +83,13 @@ branch, activity counts, PR number, and the agent (which you can turn off — se
 thread needs — failed, waiting on you, working, or finished while you were away —
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
 the two park buttons.
+
+**Double-click a card to rename its thread in place**, or pick Rename from the
+right-click menu. Enter commits, Escape cancels, and clicking away also commits.
+It is bb's own rename, so the new name lands on the thread itself and every other
+surface showing it follows. An empty field cancels rather than clearing the title.
+The first click of the double-click has already opened the thread, which is the
+intent anyway: you rename the one you are now reading.
 
 ### A working thread can never be parked
 
@@ -122,7 +117,7 @@ a child, a chip that names the parent and opens it.
 
 ## Configuration
 
-One setting, in **Settings → Plugins → GTD Sidebar**:
+One setting, in **Settings → Plugins → Eiff Sidebar**:
 
 - **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
   glyph and give the branch that space back. Every card follows it together, so the
@@ -134,7 +129,7 @@ these are settings.
 
 ## Troubleshooting
 
-**My sidebar looks the same after installing.** Choose GTD Sidebar in Settings →
+**My sidebar looks the same after installing.** Choose Eiff Sidebar in Settings →
 Appearance → Sidebar. Installing alone changes nothing.
 
 **A thread I settled is not on the Settled shelf.** The shelf only reaches back 24
@@ -150,19 +145,24 @@ archived and the thread leaves the sidebar until you unarchive it in bb yourself
 
 **Uninstalling left data behind.** The shelves live in the plugin's own database,
 which bb removes with the plugin — but a copy of them is cached in the browser's
-`localStorage` under `gtd-sidebar:v1:*` (thread ids, park timestamps, and provider ids,
+`localStorage` under `eiff-sidebar:v1:*` (thread ids, park timestamps, and provider ids,
 names, and logo paths). bb's uninstall does not clear web storage. Clear site data if
 that matters to you.
 
 ## Credits
 
-Forked from bb's own example, and released as `t3sidebar` until 0.3.0. bb keys a
-plugin by its id, so the renamed plugin installs as a separate one: install
-`gtd-sidebar`, then uninstall `t3sidebar`. Shelves do not carry over — settled and
-snoozed state lives in the old plugin's database and goes with it.
+Eiff Sidebar is a private fork of **GTD Sidebar** by **Scott Sunarto**, MIT
+licensed, taken at release `gtd-sidebar/v0.4.1`. Everything the sidebar does was
+his work; this fork adds rename and carries local changes. GTD Sidebar was itself
+forked from bb's own example plugin and shipped as `t3sidebar` until 0.3.0.
+
+bb keys a plugin by its id, so this one installs beside GTD Sidebar rather than
+over it. Snoozed and settled shelves do not carry across: that state lives in each
+plugin's own database and stays with it.
 
 |          |                                                                                                                 |
 | -------- | --------------------------------------------------------------------------------------------------------------- |
+| Fork of | [`smsunarto/bb-plugins` → `plugins/gtd-sidebar`](https://github.com/smsunarto/bb-plugins/tree/main/plugins/gtd-sidebar) at `gtd-sidebar/v0.4.1` (`8bc27b91333e`) |
 | Upstream | [`get-bb/bb` → `examples/plugins/t3sidebar`](https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar) |
 | Commit   | `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07)                                                         |
 
@@ -176,8 +176,20 @@ Install from source as shown under [Install](#install), then check a change
 with:
 
 ```sh
-bun run --filter '@smsunarto/bb-plugin-gtd-sidebar' typecheck
-bun run --filter '@smsunarto/bb-plugin-gtd-sidebar' test
+cd plugins/eiff-sidebar
+bun run typecheck
+bun run test
+bb plugin build . && bb plugin reload eiff-sidebar
 ```
 
-The test script needs Node 22.6+.
+Run them from the plugin directory, not the workspace root: the root scripts
+filter on upstream's `@smsunarto/bb-plugin-*` scope and this fork is unscoped, so
+they skip it. The test script needs Node 22.6+.
+
+To pull an upstream release into the fork, fetch its tag and merge it; the
+directory rename means git matches the files by content rather than by path:
+
+```sh
+git fetch origin --tags
+git merge gtd-sidebar/vX.Y.Z
+```

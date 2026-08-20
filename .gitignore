@@ -31,3 +31,4 @@ __pycache__/
 
 # Commercial font binaries are never redistributed with the site template.
 plugins/pr-walkthrough/skills/pr-walkthrough/assets/site-template/src/app/fonts/*.woff2
+.agent-handoffs/

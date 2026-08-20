@@ -1,6 +1,7 @@
 {
-  "name": "@smsunarto/bb-plugin-gtd-sidebar",
+  "name": "bb-plugin-eiff-sidebar",
   "version": "0.4.1",
+  "private": true,
   "description": "An action-oriented sidebar that groups threads by who can act next.",
   "license": "MIT",
   "author": "Scott Sunarto",
@@ -21,16 +22,13 @@
     "threads",
     "snooze"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "type": "module",
   "engines": {
     "bb": ">=0.39.0 <1.0.0",
     "bbPluginSdk": ">=0.4.8"
   },
   "bb": {
-    "name": "GTD Sidebar",
+    "name": "Eiff Sidebar",
     "description": "An action-oriented sidebar that groups threads by who can act next.",
     "branding": {
       "icon": "./assets/icon.svg",

@@ -49,20 +49,26 @@ import type { ThreadLifecycleRow } from "@/lib/lifecycle";
 // the old entry instead of mis-reading data of the wrong shape; whoever writes
 // v2 should `removeItem` these two on its first successful write, because
 // nothing else on this origin ever will.
-export const WARM_START_ROWS_KEY = "gtd-sidebar:v1:lifecycle-rows";
-export const WARM_START_PROVIDERS_KEY = "gtd-sidebar:v1:providers";
+export const WARM_START_ROWS_KEY = "eiff-sidebar:v1:lifecycle-rows";
+export const WARM_START_PROVIDERS_KEY = "eiff-sidebar:v1:providers";
 
 /**
- * What this plugin wrote under its old name, t3sidebar.
+ * What this plugin wrote under its two earlier names, GTD Sidebar and
+ * t3sidebar.
  *
  * A rename is a prefix retirement with none of a version bump's cover: bb
  * installs the renamed plugin under a new id, so the old install's uninstall
  * never runs and no later version of this file is ever asked for those keys
  * again. Nothing else on the origin will reclaim the space, so the first
- * successful write does it — the same discipline the comment above prescribes
- * for whoever writes v2.
+ * successful write does it. This is the same discipline the comment above
+ * prescribes for whoever writes v2.
  */
-const RETIRED_KEYS = ["t3sidebar:v1:lifecycle-rows", "t3sidebar:v1:providers"] as const;
+const RETIRED_KEYS = [
+  "gtd-sidebar:v1:lifecycle-rows",
+  "gtd-sidebar:v1:providers",
+  "t3sidebar:v1:lifecycle-rows",
+  "t3sidebar:v1:providers",
+] as const;
 
 /** The `Storage` methods this needs, so a test can hand it a stub. */
 export type WarmStartStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -180,10 +186,10 @@ function writeEntry(key: string, serialized: string, storage: WarmStartStorage |
 
 /**
  * Runs once per page, after a write has proven the store accepts writes at
- * all. Doing it on read instead would spend two `removeItem` calls on the
+ * all. Doing it on read instead would spend removal calls on the
  * cold-start path this file exists to keep short, and a store too full to
- * accept the write is one where freeing these two entries is worth the most —
- * so the next write, not this one, is what retries.
+ * accept the write is one where freeing the retired entries is worth the
+ * most. The next write, not this one, is what retries.
  */
 // Reset by resetWarmStartMemoryForTests, which is where every other
 // module-level tier is cleared.
@@ -388,7 +394,7 @@ export function writeWarmStartRows(
  * asked, and asking `window` for the real one would make a pure decode need a
  * DOM. `.invalid` is reserved by RFC 2606, so it can never name a real host.
  */
-const LOGO_URL_BASE = "https://gtd-sidebar.invalid";
+const LOGO_URL_BASE = "https://eiff-sidebar.invalid";
 
 /**
  * A logo the host serves, and nothing else.

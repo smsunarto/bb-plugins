@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRealtime, useRealtimeConnectionState, useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import type { gtdSidebarRpcContract } from "@/server";
+import type { eiffSidebarRpcContract } from "@/server";
 import {
   canPark,
   isThreadWorking,
@@ -76,7 +76,7 @@ const SHELF_GATE_MS = 250;
  * clock during render would make the classification unstable.
  */
 export function useLifecycle(threads: readonly PluginSidebarThread[]): LifecycleApi {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
+  const rpc = useRpc<typeof eiffSidebarRpcContract>();
   // One read, at the only moment that can still beat the first paint.
   // `useState` and not `useMemo`: React is free to throw a memo away and run
   // it again, and a second read would see whatever the origin holds by then.

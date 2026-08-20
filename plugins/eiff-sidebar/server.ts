@@ -1,4 +1,4 @@
-// @smsunarto/bb-plugin-gtd-sidebar backend — the settled / snoozed store.
+// @smsunarto/bb-plugin-eiff-sidebar backend — the settled / snoozed store.
 //
 // This state lives in the plugin's own SQLite database, never on bb's thread.
 // Putting it on the thread would mean a schema change, a wire change, and a
@@ -45,7 +45,7 @@ interface LifecycleDbRow {
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
-export const gtdSidebarRpcContract = defineRpcContract({
+export const eiffSidebarRpcContract = defineRpcContract({
   listProviders: {
     input: z.object({}),
     output: z.object({
@@ -275,7 +275,7 @@ export default function plugin(bb: BbPluginApi) {
     return collected;
   };
 
-  bb.rpc.register(gtdSidebarRpcContract, {
+  bb.rpc.register(eiffSidebarRpcContract, {
     // A custom ACP provider already carries its own brand mark, so the sidebar
     // reads it from the host rather than hard-coding a second glyph per agent.
     async listProviders() {

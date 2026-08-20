@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
@@ -18,11 +18,18 @@ import { cn } from "@/lib/utils";
 export function RowContextMenu({
   thread,
   children,
+  onRename,
 }: {
   thread: PluginSidebarThread;
   children: ReactNode;
+  /** Opens the row's own title field. Absent on rows that do not have one. */
+  onRename?: () => void;
 }) {
   const actions = useSidebarThreadActions();
+  // Radix returns focus to the trigger when the menu closes, which would pull
+  // it straight back out of the field the rename just opened. Only that one
+  // item waives the restore; every other item still wants it.
+  const openingEditor = useRef(false);
 
   return (
     <ContextMenu.Root>
@@ -30,9 +37,24 @@ export function RowContextMenu({
       <ContextMenu.Portal>
         <ContextMenu.Content
           aria-label="Thread actions"
+          onCloseAutoFocus={(event) => {
+            if (!openingEditor.current) return;
+            openingEditor.current = false;
+            event.preventDefault();
+          }}
           className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
           <Item onSelect={() => actions.open(thread.id, { split: true })}>Open in split</Item>
+          {onRename ? (
+            <Item
+              onSelect={() => {
+                openingEditor.current = true;
+                onRename();
+              }}
+            >
+              Rename
+            </Item>
+          ) : null}
           <Separator />
           <Item onSelect={() => void actions.setRead(thread.id, thread.isUnread)}>
             {thread.isUnread ? "Mark read" : "Mark unread"}

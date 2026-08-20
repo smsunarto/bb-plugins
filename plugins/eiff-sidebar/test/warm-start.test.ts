@@ -261,9 +261,9 @@ describe("readWarmStartRows", () => {
 
   it("ignores an entry written under another version's key", () => {
     resetWarmStartMemoryForTests();
-    assert.equal(WARM_START_ROWS_KEY, "gtd-sidebar:v1:lifecycle-rows");
+    assert.equal(WARM_START_ROWS_KEY, "eiff-sidebar:v1:lifecycle-rows");
     const store = storage({
-      "gtd-sidebar:v0:lifecycle-rows": encodeWarmStartRows([
+      "eiff-sidebar:v0:lifecycle-rows": encodeWarmStartRows([
         row({ threadId: "a", settledAt: 500 }),
       ]),
     });
@@ -303,7 +303,19 @@ describe("writeWarmStartRows", () => {
     assert.equal(store.entries.has(WARM_START_ROWS_KEY), true);
   });
 
-  // A store that refused the write is one where freeing those two entries is
+  it("retires the gtd-sidebar keys on the first successful write", () => {
+    resetWarmStartMemoryForTests();
+    const store = storage({
+      "gtd-sidebar:v1:lifecycle-rows": encodeWarmStartRows([row()]),
+      "gtd-sidebar:v1:providers": "[]",
+    });
+    writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], store);
+    assert.equal(store.entries.has("gtd-sidebar:v1:lifecycle-rows"), false);
+    assert.equal(store.entries.has("gtd-sidebar:v1:providers"), false);
+    assert.equal(store.entries.has(WARM_START_ROWS_KEY), true);
+  });
+
+  // A store that refused the write is one where freeing the retired entries is
   // worth the most, so the sweep is not spent on the attempt that failed.
   it("leaves the old keys for the next write when the store refuses", () => {
     resetWarmStartMemoryForTests();
@@ -454,9 +466,9 @@ describe("readWarmStartProviders", () => {
 
   it("ignores an entry written under another version's key", () => {
     resetWarmStartMemoryForTests();
-    assert.equal(WARM_START_PROVIDERS_KEY, "gtd-sidebar:v1:providers");
+    assert.equal(WARM_START_PROVIDERS_KEY, "eiff-sidebar:v1:providers");
     const store = storage({
-      "gtd-sidebar:v0:providers": encodeWarmStartProviders([provider]),
+      "eiff-sidebar:v0:providers": encodeWarmStartProviders([provider]),
     });
     assert.equal(readWarmStartProviders(store), null);
   });

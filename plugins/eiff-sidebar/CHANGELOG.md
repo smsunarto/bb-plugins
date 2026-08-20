@@ -1,4 +1,4 @@
-# @smsunarto/bb-plugin-gtd-sidebar
+# @smsunarto/bb-plugin-eiff-sidebar
 
 ## 0.4.1
 
@@ -10,14 +10,14 @@
 
 ### Minor Changes
 
-- 1e0165e: Rename the plugin from t3sidebar to GTD Sidebar, id `gtd-sidebar`.
+- 1e0165e: Rename the plugin from t3sidebar to Eiff Sidebar, id `eiff-sidebar`.
 
   bb keys a plugin by the id it derives from the package name, so this installs as
-  a separate plugin rather than an update: install `gtd-sidebar`, then uninstall
+  a separate plugin rather than an update: install `eiff-sidebar`, then uninstall
   `t3sidebar`. Settled and snoozed shelves live in the old plugin's database and
-  do not carry over. Releases are now tagged `gtd-sidebar/vX.Y.Z`.
+  do not carry over. Releases are now tagged `eiff-sidebar/vX.Y.Z`.
 
-  The warm-start cache moves to `gtd-sidebar:v1:*` in `localStorage`, and the
+  The warm-start cache moves to `eiff-sidebar:v1:*` in `localStorage`, and the
   first successful write removes the `t3sidebar:v1:*` entries — bb's uninstall
   does not clear web storage, and after the rename nothing else ever would.
 
