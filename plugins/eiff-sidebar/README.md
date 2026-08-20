@@ -16,12 +16,12 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The Eiff Sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The Eiff Sidebar inbox beside its shelf model: Your Turn, Working, Snoozed, and Settled" width="100%" /></picture>
 </div>
 
 Eiff Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
 
-Active threads split into **Next Action** when the user can act and **Waiting** while
+Active threads split into **Your Turn** when the user can act and **Working** while
 the agent works. Each section is oldest first. A thread that enters a section goes
 to its bottom and holds that place until its next handoff.
 
@@ -67,22 +67,30 @@ disable the plugin.
 ### Active and parked sections
 
 - **Pinned** — the user's explicit priority, kept in its own shelf above active work.
-- **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet. The oldest handoff is first.
-- **Waiting** — foreground or background agent work is live. The oldest wait is first.
+- **Your Turn** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet. The oldest handoff is first.
+- **Working** — foreground or background agent work is live, on the thread or on any of its crewmates. The oldest wait is first.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 - **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
 
-An empty section disappears. A pending interaction stays in **Next Action** even if
+An empty section disappears. A pending interaction stays in **Your Turn** even if
 background work is also live, because the user can act now.
 
 ### Cards
 
-Two lines: the title in bold when unread and a status slot, then the project, the
-branch, activity counts, PR number, and the agent (which you can turn off — see
-[Configuration](#configuration)). The status slot shows what the
-thread needs — failed, waiting on you, working, or finished while you were away —
-and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
-the two park buttons.
+Two lines: the title in bold when unread and a status slot, then **the agent's
+latest message**, stripped to plain text. That message updates while the agent
+works, not only when it stops. A thread the agent has not spoken in yet falls back
+to the project and origin line instead of drawing a blank row.
+
+Open a thread and its card expands in place: three lines of the message, and the
+project and branch underneath. Everything else stays one line.
+
+The status slot shows what the thread needs — failed, waiting on you, or finished
+while you were away — and its age (`now`, `7m`, `3d`) when it needs nothing. A
+thread that is **working** shows a clock counting up from its last change instead
+of a spinner, so a step that has been stuck for four minutes looks different from
+one that just started. A failure or a raised hand still wins that slot. Hovering
+swaps it for the two park buttons.
 
 **Double-click a card to rename its thread in place**, or pick Rename from the
 right-click menu. Enter commits, Escape cancels, and clicking away also commits.
@@ -101,12 +109,20 @@ never hidden.
 
 The hover button snoozes until **09:00 tomorrow**.
 
-### Child threads
+### Crewmates
 
-A flat list has nowhere to nest a child, so a child is hidden while its parent is on
-screen. Two chips in the thread header carry the relation instead: on a parent, a
-chip that opens its children and reads **Needs you** when one is blocked on you; on
-a child, a chip that names the parent and opens it.
+Crewmates ride with their parent as thin indented rows, flattened to one level
+however deep the spawning went. Working ones and ones holding a question always
+show; finished ones fold behind a count on the parent's card, and every crewmate
+appears once the parent is the thread you are in.
+
+A parent's section reads its whole family: it sits in **Working** while any
+crewmate works, and moves to **Your Turn** the moment one raises its hand. It also
+cannot be snoozed or settled while a crewmate is running, which matters because
+settling archives, and bb's archive cascades to children.
+
+An orphan whose parent is archived, deleted, or filtered out by the project picker
+stays a top-level row rather than disappearing.
 
 ### The rest
 

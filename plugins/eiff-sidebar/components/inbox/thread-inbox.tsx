@@ -359,12 +359,12 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
               </Shelf>
             ) : null}
             {nextAction.length > 0 ? (
-              <Shelf label="Next Action">
+              <Shelf label="Your Turn">
                 {nextAction.map(renderFamily)}
               </Shelf>
             ) : null}
             {waiting.length > 0 ? (
-              <Shelf label="Waiting">
+              <Shelf label="Working">
                 {waiting.map(renderFamily)}
               </Shelf>
             ) : null}

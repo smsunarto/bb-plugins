@@ -12,7 +12,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "inbox",
     title: "Eiff Sidebar (inbox)",
-    description: "Next Action and Waiting, ordered by section entrance.",
+    description: "Your Turn and Working, ordered by section entrance.",
     component: ThreadInbox,
   });
 
