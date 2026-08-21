@@ -24,10 +24,10 @@ import {
   plainText,
   suppressionReason,
   threadLabel,
-} from "./format";
-import { latestRunWasManuallyStopped } from "./lifecycle";
-import { NotificationQueue, QUEUE_MAX, type NotificationInput } from "./queue";
-import { playSound, resolveSound, SOUND_OFF, SOUND_OPTIONS } from "./sound";
+} from "./server/format";
+import { latestRunWasManuallyStopped } from "./server/lifecycle";
+import { NotificationQueue, QUEUE_MAX, type NotificationInput } from "./server/queue";
+import { playSound, resolveSound, SOUND_OFF, SOUND_OPTIONS } from "./server/sound";
 
 const BODY_MAX_CHARS = 160;
 /** How long a long-poll is held open before returning an empty batch. */

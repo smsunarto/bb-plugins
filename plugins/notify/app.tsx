@@ -12,7 +12,7 @@
 // HTTP route instead, one held request at a time.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
-import { isDesktopNotificationHost, notificationTag } from "./format";
+import { isDesktopNotificationHost, notificationTag } from "./server/format";
 
 const PENDING_URL = "/api/v1/plugins/notify/http/pending";
 const ACK_URL = "/api/v1/plugins/notify/http/ack";

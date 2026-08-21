@@ -8,7 +8,7 @@ import {
   QUEUE_STALE_MS,
   type NotificationInput,
   type NotificationQueueStore,
-} from "../queue.ts";
+} from "./queue.ts";
 
 class MemoryStore implements NotificationQueueStore {
   private readonly values = new Map<string, unknown>();

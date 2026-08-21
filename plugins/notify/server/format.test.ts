@@ -12,7 +12,7 @@ import {
   plainText,
   suppressionReason,
   threadLabel,
-} from "../format.ts";
+} from "./format.ts";
 
 test("notification tags stay unique across turns from the same thread", () => {
   assert.equal(notificationTag(41), "bb-notify-41");

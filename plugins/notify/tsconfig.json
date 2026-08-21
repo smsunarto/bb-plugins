@@ -11,5 +11,5 @@
     "noEmit": true,
     "skipLibCheck": false
   },
-  "include": ["server.ts", "app.tsx", "format.ts", "lifecycle.ts", "queue.ts", "sound.ts", "test"]
+  "include": ["server.ts", "app.tsx", "server"]
 }

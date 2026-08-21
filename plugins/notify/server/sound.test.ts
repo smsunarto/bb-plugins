@@ -7,7 +7,7 @@ import {
   SOUND_OFF,
   SOUND_OPTIONS,
   SOUND_SYSTEM,
-} from "../sound.ts";
+} from "./sound.ts";
 
 test("the settings dropdown offers off, system, then the tones", () => {
   assert.equal(SOUND_OPTIONS[0], SOUND_OFF);

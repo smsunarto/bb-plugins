@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { latestRunWasManuallyStopped, THREAD_EVENT_PAGE_SIZE } from "../lifecycle.ts";
+import { latestRunWasManuallyStopped, THREAD_EVENT_PAGE_SIZE } from "./lifecycle.ts";
 
 interface Event {
   seq: number;
