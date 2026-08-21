@@ -264,6 +264,7 @@ export function PluginQueryBoundary(props: {
   client?: QueryClient;
 }): ReactElement {
   const owned = useRef<QueryClient | undefined>(undefined);
+  const mounted = useRef(false);
   const external = props.client;
   const client = external ?? owned.current ?? (owned.current = new QueryClient());
   useEffect(() => {
@@ -271,7 +272,9 @@ export function PluginQueryBoundary(props: {
       return undefined;
     }
     const ownedClient = owned.current;
+    mounted.current = true;
     return () => {
+      mounted.current = false;
       // Child observers detach LATER in this same unmount commit and
       // re-schedule gcTime timers on the queries and mutations they
       // release, so sweep once, AFTER the commit — clearing here first
@@ -282,7 +285,11 @@ export function PluginQueryBoundary(props: {
       // explicitly — otherwise a five-minute timer outlives the
       // boundary and test processes cannot exit.
       queueMicrotask(() => {
-        if (ownedClient === undefined) {
+        // A StrictMode dev double mount remounts the SAME owned client
+        // before this microtask runs — sweeping then would silently
+        // cancel the live panel's first in-flight query, freezing it on
+        // isPending. Only sweep when the boundary is still unmounted.
+        if (mounted.current || ownedClient === undefined) {
           return;
         }
         for (const mutation of ownedClient.getMutationCache().getAll()) {

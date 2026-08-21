@@ -12,9 +12,9 @@ installDom();
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
 const { createRPC, PluginQueryBoundary } = await import("./query.ts");
-const { cleanup } = await import("@testing-library/react");
-const { QueryClient } = await import("@tanstack/react-query");
-const { createElement, useEffect, useRef, useState } = await import("react");
+const { cleanup, render, screen } = await import("@testing-library/react");
+const { QueryClient, useQuery: useTanStackQuery } = await import("@tanstack/react-query");
+const { StrictMode, createElement, useEffect, useRef, useState } = await import("react");
 type ReactNode = import("react").ReactNode;
 
 const demoRPC = defineRPC({
@@ -216,6 +216,38 @@ test("useClient is the imperative escape hatch", async (t) => {
   await slot.findByText("client:via-client.md");
   assert.deepEqual(slot.rpcCalls, [{ method: "demo_read_file", input: { path: "via-client.md" } }]);
   slot.unmount();
+});
+
+test("an owned client survives a StrictMode double mount", async (t) => {
+  t.after(cleanup);
+  // bb's app root wraps every plugin panel in <StrictMode>, whose dev
+  // double mount runs the boundary's cleanup and re-mount BEFORE the
+  // queued sweep microtask — the sweep must then leave the reclaimed
+  // client alone or it silently cancels the panel's first in-flight
+  // query, freezing it on isPending. Rendered through RTL directly:
+  // strict effects only fire when StrictMode is the ROOT of the render
+  // (nested under providers, as renderSlot mounts things, React 19 only
+  // double-RENDERS), so renderSlot cannot reproduce this. The response
+  // resolves on a timer so it lands after the sweep, like real HTTP.
+  function StrictPanel() {
+    const strict = useTanStackQuery({
+      queryKey: ["strict-mount"],
+      queryFn: () => new Promise((resolve) => setTimeout(() => resolve("ok"), 20)),
+    });
+    return createElement(
+      "div",
+      null,
+      strict.status === "success" ? `strict:${String(strict.data)}` : strict.status,
+    );
+  }
+  render(
+    createElement(
+      StrictMode,
+      null,
+      createElement(PluginQueryBoundary, null, createElement(StrictPanel)),
+    ),
+  );
+  await screen.findByText("strict:ok");
 });
 
 test("PluginQueryBoundary uses a provided client instead of owning one", async (t) => {
