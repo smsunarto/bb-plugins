@@ -1,29 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { invokeCLI } from "@bb-kit/core/cli";
+import { stubClient } from "@bb-kit/core/testing";
 import type { Client } from "../server.ts";
 import { status } from "./status.ts";
 
-function fakeClient(overrides: Partial<Client> = {}): Client {
-  return {
-    overview: async () => ({
-      repoPath: "/dotfiles",
-      repoExists: true,
-      branch: "main",
-      groups: [],
-      gitEntries: [],
-    }),
-    publish: async () => ({ exitCode: 0, output: "published" }),
-    readFile: async () => ({ content: "body", sha256: "sha", headContent: null }),
-    removeSkill: async () => ({ outcome: "not-found" }),
-    runTask: async () => ({ exitCode: 0, output: "ok" }),
-    saveFile: async () => ({ outcome: "conflict" }),
-    ...overrides,
-  };
-}
-
 test("status exits 1 when the repo is missing", async () => {
-  const client = fakeClient({
+  const client = stubClient<Client>({
     overview: async () => ({
       repoPath: "/dotfiles",
       repoExists: false,
@@ -37,7 +20,7 @@ test("status exits 1 when the repo is missing", async () => {
 });
 
 test("status prints the branch and two-column entries", async () => {
-  const client = fakeClient({
+  const client = stubClient<Client>({
     overview: async () => ({
       repoPath: "/dotfiles",
       repoExists: true,
@@ -57,6 +40,15 @@ test("status prints the branch and two-column entries", async () => {
 });
 
 test("status prints clean when there are no entries", async () => {
-  const result = await invokeCLI({ status }, fakeClient(), ["status"]);
+  const client = stubClient<Client>({
+    overview: async () => ({
+      repoPath: "/dotfiles",
+      repoExists: true,
+      branch: "main",
+      groups: [],
+      gitEntries: [],
+    }),
+  });
+  const result = await invokeCLI({ status }, client, ["status"]);
   assert.deepEqual(result, { exitCode: 0, stdout: "branch: main\nclean" });
 });

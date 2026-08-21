@@ -1,29 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { invokeCLI } from "@bb-kit/core/cli";
+import { stubClient } from "@bb-kit/core/testing";
 import type { Client } from "../server.ts";
 import { check } from "./check.ts";
 
-function fakeClient(overrides: Partial<Client> = {}): Client {
-  return {
-    overview: async () => ({
-      repoPath: "/dotfiles",
-      repoExists: true,
-      branch: "main",
-      groups: [],
-      gitEntries: [],
-    }),
-    publish: async () => ({ exitCode: 0, output: "published" }),
-    readFile: async () => ({ content: "body", sha256: "sha", headContent: null }),
-    removeSkill: async () => ({ outcome: "not-found" }),
-    runTask: async () => ({ exitCode: 0, output: "ok" }),
-    saveFile: async () => ({ outcome: "conflict" }),
-    ...overrides,
-  };
-}
+const okOverview: Client["overview"] = async () => ({
+  repoPath: "/dotfiles",
+  repoExists: true,
+  branch: "main",
+  groups: [],
+  gitEntries: [],
+});
 
 test("check exits 1 when the repo is missing", async () => {
-  const client = fakeClient({
+  const client = stubClient<Client>({
     overview: async () => ({
       repoPath: "/dotfiles",
       repoExists: false,
@@ -38,7 +29,8 @@ test("check exits 1 when the repo is missing", async () => {
 
 test("check without a target runs the full check task", async () => {
   const tasks: string[] = [];
-  const client = fakeClient({
+  const client = stubClient<Client>({
+    overview: okOverview,
     runTask: async ({ task }) => {
       tasks.push(task);
       return { exitCode: 0, output: "all green" };
@@ -63,7 +55,8 @@ test("check routes each named target to its check task", async () => {
   };
   for (const [target, task] of Object.entries(routes)) {
     const tasks: string[] = [];
-    const client = fakeClient({
+    const client = stubClient<Client>({
+      overview: okOverview,
       runTask: async (input) => {
         tasks.push(input.task);
         return { exitCode: 0, output: "ok" };
@@ -76,7 +69,8 @@ test("check routes each named target to its check task", async () => {
 });
 
 test("check passes the task exit code and output through", async () => {
-  const client = fakeClient({
+  const client = stubClient<Client>({
+    overview: okOverview,
     runTask: async () => ({ exitCode: 3, output: "2 failures" }),
   });
   const result = await invokeCLI({ check }, client, ["check", "mise"]);
@@ -84,6 +78,7 @@ test("check passes the task exit code and output through", async () => {
 });
 
 test("check with an unknown target exits 2", async () => {
-  const result = await invokeCLI({ check }, fakeClient(), ["check", "nope"]);
+  const client = stubClient<Client>({ overview: okOverview });
+  const result = await invokeCLI({ check }, client, ["check", "nope"]);
   assert.deepEqual(result, { exitCode: 2, stderr: "unknown check target: nope\n" });
 });

@@ -1,29 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { invokeCLI } from "@bb-kit/core/cli";
+import { stubClient } from "@bb-kit/core/testing";
 import type { Client } from "../server.ts";
 import { render } from "./render.ts";
 
-function fakeClient(overrides: Partial<Client> = {}): Client {
-  return {
-    overview: async () => ({
-      repoPath: "/dotfiles",
-      repoExists: true,
-      branch: "main",
-      groups: [],
-      gitEntries: [],
-    }),
-    publish: async () => ({ exitCode: 0, output: "published" }),
-    readFile: async () => ({ content: "body", sha256: "sha", headContent: null }),
-    removeSkill: async () => ({ outcome: "not-found" }),
-    runTask: async () => ({ exitCode: 0, output: "ok" }),
-    saveFile: async () => ({ outcome: "conflict" }),
-    ...overrides,
-  };
-}
+const okOverview: Client["overview"] = async () => ({
+  repoPath: "/dotfiles",
+  repoExists: true,
+  branch: "main",
+  groups: [],
+  gitEntries: [],
+});
 
 test("render exits 1 when the repo is missing", async () => {
-  const client = fakeClient({
+  const client = stubClient<Client>({
     overview: async () => ({
       repoPath: "/dotfiles",
       repoExists: false,
@@ -38,7 +29,8 @@ test("render exits 1 when the repo is missing", async () => {
 
 test("render runs the render task and passes the result through", async () => {
   const tasks: string[] = [];
-  const client = fakeClient({
+  const client = stubClient<Client>({
+    overview: okOverview,
     runTask: async ({ task }) => {
       tasks.push(task);
       return { exitCode: 3, output: "rendered 2 files" };

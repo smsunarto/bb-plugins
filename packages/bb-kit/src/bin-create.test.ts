@@ -78,6 +78,9 @@ test("the scaffold templates bake the derived id into server, ui, and tests", ()
   assert.match(files["ui/rpc.ts"] ?? "", /createRPC<RPC>\("notes"\)/);
   assert.match(files["server.test.ts"] ?? "", /callRpc\("notes_ping"\)/);
   assert.match(files["ui/app.test.ts"] ?? "", /"notes_ping": async/);
+  // The command test must stub through stubClient, or every new
+  // procedure turns it red (TS2741).
+  assert.match(files["cli/status.test.ts"] ?? "", /stubClient<Client>\(\{ ping/);
 });
 
 test("create refuses an existing non-empty directory", () => {

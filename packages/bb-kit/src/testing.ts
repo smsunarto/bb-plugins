@@ -3,6 +3,31 @@ import { createRequire } from "node:module";
 /** Public surface of `@bb-kit/core/testing` (§1, §8). */
 
 /**
+ * Build a full client from only the procedures a test stubs (§8).
+ * Stubbed keys pass through. Any other procedure reads as a function
+ * that throws, naming the procedure, when CALLED — so a command
+ * reaching past its stubs fails loudly instead of awaiting undefined.
+ * `then` and symbol keys read as undefined so the client never becomes
+ * a thenable (mirroring query.ts's clientProxy — "then" would hang
+ * `await client`).
+ */
+export function stubClient<C extends object>(partial: Partial<C>): C {
+  return new Proxy(partial, {
+    get(target, property) {
+      if (typeof property !== "string" || property === "then") {
+        return undefined;
+      }
+      if (property in target) {
+        return (target as Record<string, unknown>)[property];
+      }
+      return () => {
+        throw new Error(`stubClient: procedure "${property}" was called without a stub`);
+      };
+    },
+  }) as unknown as C;
+}
+
+/**
  * Install a jsdom document onto `globalThis` for tier-3 tests (§8).
  * Idempotent — the first call wins, later calls are no-ops (including
  * when some other harness already installed a DOM). Call it BEFORE

@@ -1,29 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { invokeCLI } from "@bb-kit/core/cli";
+import { stubClient } from "@bb-kit/core/testing";
 import type { Client } from "../server.ts";
 import { sync } from "./sync.ts";
 
-function fakeClient(overrides: Partial<Client> = {}): Client {
-  return {
-    overview: async () => ({
-      repoPath: "/dotfiles",
-      repoExists: true,
-      branch: "main",
-      groups: [],
-      gitEntries: [],
-    }),
-    publish: async () => ({ exitCode: 0, output: "published" }),
-    readFile: async () => ({ content: "body", sha256: "sha", headContent: null }),
-    removeSkill: async () => ({ outcome: "not-found" }),
-    runTask: async () => ({ exitCode: 0, output: "ok" }),
-    saveFile: async () => ({ outcome: "conflict" }),
-    ...overrides,
-  };
-}
+const okOverview: Client["overview"] = async () => ({
+  repoPath: "/dotfiles",
+  repoExists: true,
+  branch: "main",
+  groups: [],
+  gitEntries: [],
+});
 
 test("sync exits 1 when the repo is missing", async () => {
-  const client = fakeClient({
+  const client = stubClient<Client>({
     overview: async () => ({
       repoPath: "/dotfiles",
       repoExists: false,
@@ -38,7 +29,8 @@ test("sync exits 1 when the repo is missing", async () => {
 
 test("sync without --publish runs the pull-only task", async () => {
   const calls: string[] = [];
-  const client = fakeClient({
+  const client = stubClient<Client>({
+    overview: okOverview,
     publish: async () => {
       calls.push("publish");
       return { exitCode: 0, output: "published" };
@@ -55,7 +47,8 @@ test("sync without --publish runs the pull-only task", async () => {
 
 test("sync --publish publishes instead of pulling", async () => {
   const calls: string[] = [];
-  const client = fakeClient({
+  const client = stubClient<Client>({
+    overview: okOverview,
     publish: async () => {
       calls.push("publish");
       return { exitCode: 1, output: "push rejected" };
