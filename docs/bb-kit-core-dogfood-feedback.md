@@ -118,6 +118,21 @@ not evaluated at all — see the last section. Timings are from this host and ar
    Reproduced on a fresh scaffold: `add query` plus the printed wiring makes the scaffolded test
    fail TS2741. `@bb-kit/core/testing` exports only `installDom`. Fix: ship a typed
    `stubClient<C>(partial)` that fills missing procedures with throwing stubs.
+6. **The test harness cannot reproduce StrictMode effects, and that blind spot shipped a real
+   bug.** bb's app root renders every plugin panel under `<StrictMode>`
+   (`apps/app/src/main.tsx:57` in bb 0.39). Its dev double mount ran `PluginQueryBoundary`'s
+   cleanup and remounted the SAME owned client before the queued sweep microtask fired, so the
+   sweep cleared the live client — silently cancelling the panel's first in-flight query and
+   freezing it on `isPending` with no error, no retry, and exactly one POST on the wire. All 104
+   framework tests and 29 plugin tests passed anyway, because React 19 grants strict effects only
+   to StrictMode at the ROOT of the render, and the SDK's `renderSlot` always nests the component
+   under its providers (verified against react 19.2.8 and SDK 0.4.8 `dist/testing/app.js:1190`).
+   The bug is fixed (commit `d41a72f`: a mounted flag skips the sweep when the boundary remounted
+   first) and the regression test renders through RTL directly with root-level StrictMode. The
+   blind spot stands: nothing rendered through `renderSlot` exercises the double-mount path, so
+   any future mount/cleanup pairing in the framework or a plugin needs its own RTL-direct test.
+   Fix: document the limitation in the spec's testing section, and consider a
+   `renderSlot({strict: true})` mode that mounts StrictMode above the harness providers.
 
 ### Warts
 
