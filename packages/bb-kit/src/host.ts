@@ -6,7 +6,7 @@ import type { MaybePromise } from "./procedure.ts";
  * `definePlugin` needs from bb, spelled without importing SDK types so
  * the emitted declarations never reference `@get-bb/plugin-sdk`. The
  * real `BbPluginApi` assigns to `HostSeam` cast-free (verified against
- * SDK 0.4.6 in host.test.ts) — `register` is method syntax on purpose,
+ * SDK 0.4.8 in host.test.ts) — `register` is method syntax on purpose,
  * so parameters compare bivariantly.
  */
 

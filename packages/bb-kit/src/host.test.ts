@@ -4,7 +4,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { HostSeam, HostCLISeam, HostRPCSeam } from "./host.ts";
 
 // THE load-bearing §2/§6 check: the real host API assigns to the
-// structural seam CAST-FREE against SDK 0.4.6 declarations. Kept inside
+// structural seam CAST-FREE against SDK 0.4.8 declarations. Kept inside
 // a never-invoked function — there is no runtime BbPluginApi value.
 function assertSeamAssignable(bb: BbPluginApi): HostSeam {
   return bb;
