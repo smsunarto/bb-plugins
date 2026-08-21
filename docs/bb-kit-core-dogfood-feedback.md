@@ -31,7 +31,7 @@ not evaluated at all — see the last section. Timings are from this host and ar
 - Success output prints the wire-name table on every run. The table is a live review artifact of
   the plugin's public RPC surface.
 - Degradation is honest. Without a toolchain it prints `could not resolve TypeScript 7 ... install
-  devDependencies first (parse-dependent rules skipped)` instead of a false pass.
+devDependencies first (parse-dependent rules skipped)` instead of a false pass.
 - A missing sibling test warns but never fails the gate. Wiring, naming, and manifest breaks are
   hard errors. That severity split matches how authors actually work.
 
@@ -39,7 +39,7 @@ not evaluated at all — see the last section. Timings are from this host and ar
 
 - `defineRPC` rejects duplicate wire names, reserved keys, and bad name patterns when the module
   loads, and the error names the exact conflict: `procedures "readUrl" and "readURL" both derive
-  the wire name "p_read_url"` (`rpc.ts:92-111`).
+the wire name "p_read_url"` (`rpc.ts:92-111`).
 - The in-process client validates input before the handler and output after it. Both paths throw a
   typed `RPCValidationError` carrying `stage` and `issues` (`rpc.ts:155-203`).
 - The query layer defends the cache: derived `queryKey`/`queryFn` are spread last so caller options
