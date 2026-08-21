@@ -243,6 +243,18 @@ The handler's `input` parameter is the
 schema's _output_ type; the return value is the output schema's _input_
 type (async or not) — mirroring the host's own validation direction.
 
+A handler that returns a literal-discriminated union needs an explicit
+return annotation. Without one, the discriminant literals widen to
+`string` in the inferred return
+(`Promise<{ outcome: string; … } | { outcome: string; … }>`), the
+handler matches neither overload, and the TS2769 misdirects: its "last
+overload" block blames the _no-input_ overload's arity — "Target
+signature provides too few arguments. Expected 2 or more, but got 1." —
+when the real mismatch is the widened return type. Annotating the
+handler `: Promise<Result>` restores contextual typing of the literals
+and compiles clean (reproduced on tsc 7.0.2; dotfiles carries the fix in
+`rpc/save-file.ts:13-16` and `rpc/remove-skill.ts:13`).
+
 `input` is optional in the definition — but the _returned_ Procedure type
 carries it required-or-absent, never optional. `defineQuery` and
 `defineMutation` are two overloads: with `input`, the result type has a
@@ -865,6 +877,17 @@ form is required because the SDK's app facade binds
 handlers are keyed by wire names (they fake the wire, not the RPC),
 which is fine: wire names are public API and `bb-kit check` prints the
 table.
+
+Tier 3 cannot reproduce StrictMode _effects_. React 19 grants strict
+effects — the dev double mount — only when `<StrictMode>` is the root of
+the render, and `renderSlot` always nests the component under its
+providers, so it only double-renders (verified against react 19.2.8 and
+SDK 0.4.8, `dist/testing/app.js:1190`). bb's app root does wrap every
+panel in root-level StrictMode, so a mount/cleanup pairing can pass
+every renderSlot test and still break in the app — commit `d41a72f`
+fixed exactly such a shipped bug. Double-mount-sensitive behavior needs
+an RTL-direct test with root-level `<StrictMode>`; the precedent is
+`query.test.ts`'s "an owned client survives a StrictMode double mount".
 
 All three tiers run under plain `node`. Per ADR-0006, the consuming
 repo's CI must exercise exactly that published-consumer path — even
