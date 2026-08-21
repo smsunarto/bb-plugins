@@ -41,6 +41,7 @@ function seed(db: Database.Database, id = "ann_1") {
     route: session.route,
     pluginId: null,
     surface: null,
+    surfaceId: null,
     threadId: session.threadId,
     projectId: session.projectId,
     routeLabel: "thread thr_source",

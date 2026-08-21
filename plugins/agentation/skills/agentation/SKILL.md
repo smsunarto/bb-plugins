@@ -1,14 +1,15 @@
 ---
 name: agentation
-description: Read and act on visual feedback the human left on the bb interface with the Agentation toolbar — annotations that name a bb route, the owning plugin, and a DOM selector. Use when the user says they annotated, marked up, or left feedback on the UI, when they ask you to address annotation N, or when they ask for watch mode, hands-free mode, or a UI critique loop.
+description: Read and act on visual feedback the human left on the bb interface with the Agentation toolbar — annotations that name a bb route, the owning plugin, its SDK UI registration, and a DOM selector. Use when the user says they annotated, marked up, or left feedback on the UI, when they ask you to address annotation N, or when they ask for watch mode, hands-free mode, or a UI critique loop.
 ---
 
 # Agentation
 
 The human points at part of the bb interface and writes what should change. Each
 annotation carries the bb route, the owning plugin id when the element was drawn
-by a plugin, the DOM selector, and — for React trees — the component path. Your
-job is to turn that into a code change and close the loop.
+by a plugin, the public SDK registration and item id when detectable, the DOM
+selector, and — for React trees — the component path. Your job is to turn that
+into a code change and close the loop.
 
 Annotations first enter a shared staging area. The human assigns a staged batch
 from the composer banner in the thread that should own it. The capture route is
@@ -34,16 +35,19 @@ annotation you did not actually fix — dismiss it or ask.
 
 ## Locating the code
 
-The `Where` line is the fastest route to the source.
+The `Where` and `Plugin UI` lines are the fastest route to the source.
 
-| `Where` says      | The code lives in                         |
-| ----------------- | ----------------------------------------- |
-| `plugin \`<id>\`` | that plugin's `app.tsx` and `components/` |
-| `bb app shell`    | the bb app itself, not this workspace     |
+| Location says     | The code lives in                                      |
+| ----------------- | ------------------------------------------------------ |
+| `plugin \`<id>\`` | that plugin's `app.tsx` registration and `components/` |
+| `bb app shell`    | the bb app itself, not this workspace                  |
 
-`Selector` is a live DOM path — grep it for class names and element structure.
-`React` is the component path; the last segment is usually the component to
-open. `Source` is a file path when the toolbar could recover one.
+For plugin-owned UI, start with the exact registration named on `Plugin UI` in
+the plugin's `app.tsx`. Its optional `registration` id narrows the match when a
+plugin contributes several items to the same surface. Then use `Selector`, a
+live DOM path, for class names and element structure. `React` is the component
+path; the last segment is usually the component to open. `Source` is a file path
+when the toolbar could recover one.
 
 An annotation on the bb app shell is only actionable inside a bb checkout. If the
 workspace is not one, say so and reply on the annotation rather than guessing.

@@ -20,9 +20,9 @@
 Agentation puts a visual feedback toolbar over the whole bb interface — the app
 shell and any surface another plugin drew. Click an element, write what should
 change, and the annotation records the DOM selector, the React component path,
-the bb route, and the plugin that owns the element. An agent reads that, fixes
-the code, and resolves the annotation. The marker disappears from every open bb
-window.
+the bb route, the plugin that owns the element, and its public SDK UI
+registration. An agent reads that, fixes the code, and resolves the annotation.
+The marker disappears from every open bb window.
 
 It is built on [Agentation](https://www.agentation.com) and its
 [AFS 1.1](https://www.agentation.com/schema) annotation format. Agent tools are
@@ -97,6 +97,7 @@ where to look before it starts grepping.
 | `bb.route`                     | The bb route the annotation was taken on.      |
 | `bb.pluginId`                  | Owning plugin, or `null` for the bb app shell. |
 | `bb.surface`                   | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_threadList`, or `threadPanelAction.component`; `inline` / `overlay` for trusted custom content. |
+| `bb.surfaceId`                 | Registration/item id exposed by the surface, such as `inbox`; omitted on older annotations or when bb does not expose one. |
 | `bb.threadId` / `bb.projectId` | Source context resolved from the route.        |
 
 ### Commands

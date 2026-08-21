@@ -99,6 +99,7 @@ test("every bb plugin component boundary maps to its public SDK surface", () => 
     assert.deepEqual(pluginUiSurfaceFor(asElement(target), "/"), {
       pluginId: "example-plugin",
       surface,
+      surfaceId: "example",
     });
   }
 });
@@ -115,6 +116,7 @@ test("an unknown future component boundary remains useful without a code update"
   assert.deepEqual(pluginUiSurfaceFor(asElement(target), "/"), {
     pluginId: "future-plugin",
     surface: "futurePreview",
+    surfaceId: "preview",
   });
 });
 
@@ -126,6 +128,7 @@ test("composer paint and host-rendered actions carry their owning plugin", () =>
   assert.deepEqual(pluginUiSurfaceFor(asElement(richText), "/threads/thr_1"), {
     pluginId: "amp",
     surface: "composer.richText",
+    surfaceId: null,
   });
 
   const composerAction = new FakeElement({
@@ -135,6 +138,7 @@ test("composer paint and host-rendered actions carry their owning plugin", () =>
   assert.deepEqual(pluginUiSurfaceFor(asElement(composerAction), "/threads/thr_1"), {
     pluginId: "review",
     surface: "composer.actions",
+    surfaceId: null,
   });
 });
 
@@ -155,7 +159,11 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
           },
         },
       ),
-      expected: { pluginId: "gh-stack", surface: "threadPanelAction.run" },
+      expected: {
+        pluginId: "gh-stack",
+        surface: "threadPanelAction.run",
+        surfaceId: "stack",
+      },
     },
     {
       element: withFiber(
@@ -175,6 +183,7 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
       expected: {
         pluginId: "planner",
         surface: "experimental_newThreadPanelAction.run",
+        surfaceId: "plan",
       },
     },
     {
@@ -192,7 +201,11 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
           },
         },
       ),
-      expected: { pluginId: "support", surface: "messageAction" },
+      expected: {
+        pluginId: "support",
+        surface: "messageAction",
+        surfaceId: "send-to-inbox",
+      },
     },
   ] as const;
 
@@ -219,6 +232,7 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
   assert.deepEqual(pluginUiSurfaceFor(asElement(footer), "/"), {
     pluginId: "connect",
     surface: "sidebarFooterAction",
+    surfaceId: "remote-access",
   });
 });
 
@@ -230,6 +244,7 @@ test("manual plugin roots retain precise header and route fallbacks", () => {
   assert.deepEqual(pluginUiSurfaceFor(asElement(header), "/plugins/notes/notes"), {
     pluginId: "notes",
     surface: "navPanel.headerContent",
+    surfaceId: null,
   });
 
   const body = new FakeElement();
@@ -237,10 +252,12 @@ test("manual plugin roots retain precise header and route fallbacks", () => {
   assert.deepEqual(pluginUiSurfaceFor(asElement(body), "/plugins/notes/notes"), {
     pluginId: "notes",
     surface: "navPanel",
+    surfaceId: null,
   });
 
   assert.deepEqual(pluginUiSurfaceFor(null, "/"), {
     pluginId: null,
     surface: null,
+    surfaceId: null,
   });
 });

@@ -50,6 +50,8 @@ export const bbContextSchema = z.object({
   pluginId: z.string().nullable(),
   /** Public plugin UI API (`navPanel`, `composer.banners`, …) when detectable. */
   surface: z.string().nullable(),
+  /** Registration/item id exposed by the plugin UI boundary, e.g. `inbox`. */
+  surfaceId: z.string().nullable().optional(),
   threadId: z.string().nullable(),
   projectId: z.string().nullable(),
   /** Human label for the route, used in listings. */

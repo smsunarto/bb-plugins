@@ -30,6 +30,7 @@ function bbContext(overrides: Partial<BbContext> = {}): BbContext {
     route: "/threads/thr_abc",
     pluginId: null,
     surface: null,
+    surfaceId: null,
     threadId: "thr_abc",
     projectId: null,
     routeLabel: "thread thr_abc",
@@ -124,6 +125,7 @@ test("an annotation keeps the surface it was captured on across edits", () => {
       route: "/plugins/github/issues",
       pluginId: "github",
       surface: "navPanel",
+      surfaceId: "issues",
       threadId: null,
     }),
   });
@@ -132,12 +134,13 @@ test("an annotation keeps the surface it was captured on across edits", () => {
   const edited = upsertAnnotation(db, {
     sessionId: session.id,
     annotation: annotation({ comment: "Now says the wrong count" }),
-    bb: bbContext({ pluginId: null, surface: null }),
+    bb: bbContext({ pluginId: null, surface: null, surfaceId: null }),
   });
 
   assert.equal(edited.comment, "Now says the wrong count");
   assert.equal(edited.bb.pluginId, "github");
   assert.equal(edited.bb.surface, "navPanel");
+  assert.equal(edited.bb.surfaceId, "issues");
 });
 
 test("an edit never rewinds a status the agent already advanced", () => {

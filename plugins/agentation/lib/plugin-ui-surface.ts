@@ -8,36 +8,15 @@
 // agent should inspect instead of the old catch-all `inline` label.
 
 import { panelPluginIdFromRoute } from "./route.ts";
+import { PUBLIC_SURFACE_BY_SLOT_KIND } from "./plugin-ui-surface-map.ts";
+
+export { PUBLIC_SURFACE_BY_SLOT_KIND } from "./plugin-ui-surface-map.ts";
 
 export interface PluginUiSurfaceContext {
   pluginId: string | null;
   surface: string | null;
+  surfaceId: string | null;
 }
-
-/**
- * bb's renderer names its component boundaries without experimental prefixes
- * or registration member names. Keep the translation beside the annotation
- * code so the stored value matches the public SDK API shown to plugin authors.
- */
-export const PUBLIC_SURFACE_BY_SLOT_KIND = {
-  composerAction: "composer.actions",
-  composerBanner: "composer.banners",
-  composerPlusMenuItem: "composer.plusMenu",
-  fileOpener: "fileOpener",
-  homepageSection: "homepageSection",
-  messageDirective: "messageDirective",
-  navPanel: "navPanel",
-  navPanelFixedTab: "navPanel.experimental_fixedTabs",
-  navPanelHeaderContent: "navPanel.headerContent",
-  navPanelSidebarAccessory: "navPanel.experimental_sidebarAccessory",
-  newThreadPanelAction: "experimental_newThreadPanelAction.component",
-  pendingInteraction: "pendingInteraction",
-  providerIcon: "experimental_providerIcon",
-  settingsSection: "settingsSection",
-  threadHeaderAction: "experimental_threadHeaderAction",
-  threadList: "experimental_threadList",
-  threadPanelAction: "threadPanelAction.component",
-} as const satisfies Readonly<Record<string, string>>;
 
 type ReactFiber = {
   memoizedProps?: unknown;
@@ -95,7 +74,11 @@ function componentBoundaryFor(element: Element): PluginUiSurfaceContext | null {
     const pluginId = nonEmptyString(props?.pluginId);
     const slotKind = nonEmptyString(props?.slotKind);
     if (pluginId && slotKind) {
-      return { pluginId, surface: publicSurface(slotKind) };
+      return {
+        pluginId,
+        surface: publicSurface(slotKind),
+        surfaceId: nonEmptyString(props?.slotId),
+      };
     }
     fiber = fiber.return ?? null;
     depth += 1;
@@ -169,6 +152,13 @@ function labelMatches(record: PluginRecord, labels: Set<string>): boolean {
   );
 }
 
+function prefixedRegistrationId(record: PluginRecord, prefix: string): string | null {
+  const expectedPrefix = `${prefix}:${record.pluginId}:`;
+  return record.id?.startsWith(expectedPrefix)
+    ? nonEmptyString(record.id.slice(expectedPrefix.length))
+    : null;
+}
+
 function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null {
   const labels = targetLabels(element);
   const records = pluginRecordsFromFiber(element);
@@ -183,7 +173,13 @@ function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null 
         record.id !== undefined &&
         footerTestId === `plugin-sidebar-footer-action-${record.pluginId}-${record.id}`,
     );
-    if (action) return { pluginId: action.pluginId, surface: "sidebarFooterAction" };
+    if (action) {
+      return {
+        pluginId: action.pluginId,
+        surface: "sidebarFooterAction",
+        surfaceId: action.id ?? null,
+      };
+    }
   }
 
   const panelAction = records.find(
@@ -192,7 +188,11 @@ function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null 
       labelMatches(record, labels),
   );
   if (panelAction) {
-    return { pluginId: panelAction.pluginId, surface: "threadPanelAction.run" };
+    return {
+      pluginId: panelAction.pluginId,
+      surface: "threadPanelAction.run",
+      surfaceId: prefixedRegistrationId(panelAction, "plugin-action"),
+    };
   }
 
   const newThreadPanelAction = records.find(
@@ -204,6 +204,7 @@ function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null 
     return {
       pluginId: newThreadPanelAction.pluginId,
       surface: "experimental_newThreadPanelAction.run",
+      surfaceId: prefixedRegistrationId(newThreadPanelAction, "plugin-new-thread-action"),
     };
   }
 
@@ -218,7 +219,11 @@ function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null 
       labelMatches(record, labels),
   );
   if (messageAction) {
-    return { pluginId: messageAction.pluginId, surface: "messageAction" };
+    return {
+      pluginId: messageAction.pluginId,
+      surface: "messageAction",
+      surfaceId: messageAction.key?.split("/")[1] ?? null,
+    };
   }
 
   return null;
@@ -243,7 +248,7 @@ function navPanelRowFor(element: Element): PluginUiSurfaceContext | null {
     element;
   const icon = row.querySelector<HTMLElement>("[data-plugin-icon-asset]");
   const pluginId = pluginIdFromAssetUrl(icon?.getAttribute("data-plugin-icon-asset") ?? null);
-  return pluginId ? { pluginId, surface: "navPanel" } : null;
+  return pluginId ? { pluginId, surface: "navPanel", surfaceId: null } : null;
 }
 
 /**
@@ -257,7 +262,7 @@ export function pluginUiSurfaceFor(
   element: Element | null,
   route: string,
 ): PluginUiSurfaceContext {
-  if (!element) return { pluginId: null, surface: null };
+  if (!element) return { pluginId: null, surface: null, surfaceId: null };
 
   const boundary = componentBoundaryFor(element);
   if (boundary) return boundary;
@@ -265,14 +270,14 @@ export function pluginUiSurfaceFor(
   const richTextDecoration = element.closest<HTMLElement>("[data-bb-plugin-decoration]");
   const richTextPluginId = richTextDecoration?.getAttribute("data-bb-plugin-decoration") ?? null;
   if (richTextPluginId) {
-    return { pluginId: richTextPluginId, surface: "composer.richText" };
+    return { pluginId: richTextPluginId, surface: "composer.richText", surfaceId: null };
   }
 
   const composerAction = element.closest<HTMLElement>("[data-plugin-composer-action-plugin]");
   const composerActionPluginId =
     composerAction?.getAttribute("data-plugin-composer-action-plugin") ?? null;
   if (composerActionPluginId) {
-    return { pluginId: composerActionPluginId, surface: "composer.actions" };
+    return { pluginId: composerActionPluginId, surface: "composer.actions", surfaceId: null };
   }
 
   const hostAction = hostRenderedActionFor(element);
@@ -283,16 +288,16 @@ export function pluginUiSurfaceFor(
 
   const owner = element.closest<HTMLElement>("[data-bb-plugin]");
   const pluginId = owner?.getAttribute("data-bb-plugin") ?? null;
-  if (!pluginId) return { pluginId: null, surface: null };
+  if (!pluginId) return { pluginId: null, surface: null, surfaceId: null };
 
   if (element.closest("[data-testid='app-page-header-content-row']")) {
-    return { pluginId, surface: "navPanel.headerContent" };
+    return { pluginId, surface: "navPanel.headerContent", surfaceId: null };
   }
   if (element.closest("[data-bb-portaled-overlay]")) {
-    return { pluginId, surface: "overlay" };
+    return { pluginId, surface: "overlay", surfaceId: null };
   }
   if (panelPluginIdFromRoute(route) === pluginId) {
-    return { pluginId, surface: "navPanel" };
+    return { pluginId, surface: "navPanel", surfaceId: null };
   }
-  return { pluginId, surface: "inline" };
+  return { pluginId, surface: "inline", surfaceId: null };
 }
