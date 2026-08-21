@@ -114,6 +114,7 @@ test("defineRPC rejects the reserved keys useClient and then", () => {
     /"useClient" is a reserved procedure key/,
   );
   assert.throws(
+    // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point: defineRPC must reject this key
     () => defineRPC({ namespace: "ok", procedures: { then: ping } }),
     /"then" is a reserved procedure key/,
   );

@@ -48,9 +48,9 @@ function boundary(children: ReactNode) {
 
 function typeChecks() {
   // @ts-expect-error — a Mutation accessor has no useQuery
-  rpc.saveFile.useQuery;
+  void rpc.saveFile.useQuery;
   // @ts-expect-error — a Query accessor has no useMutation
-  rpc.overview.useMutation;
+  void rpc.overview.useMutation;
   // @ts-expect-error — a with-input Query REQUIRES its input
   rpc.readFile.useQuery();
   // @ts-expect-error — a no-input useQuery takes options, not an input
