@@ -11,5 +11,5 @@
     "noEmit": true,
     "skipLibCheck": false
   },
-  "include": ["server.ts", "app.tsx", "server"]
+  "include": ["server.ts", "app.tsx", "server", "rpc", "cli"]
 }

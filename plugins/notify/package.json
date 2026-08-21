@@ -53,13 +53,13 @@
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "server.ts",
-    "app.tsx",
-    "format.ts",
-    "lifecycle.ts",
-    "queue.ts",
-    "sound.ts"
+    "server/",
+    "rpc/",
+    "cli/",
+    "app.tsx"
   ],
   "dependencies": {
+    "@bb-kit/core": "0.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -69,13 +69,17 @@
     "@types/react": "^19.0.0",
     "better-sqlite3": "^12.0.0",
     "hono": "^4.11.9",
+    "tsx": "4.23.12",
     "typescript": "^7.0.0"
   },
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
     "build": "bb plugin build .",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "test": "node --test --import tsx",
+    "check": "node --import tsx ../../packages/bb-kit/src/bin.ts check",
+    "verify": "oxlint && tsc --noEmit && node --test --import tsx && node --import tsx ../../packages/bb-kit/src/bin.ts check && bb plugin build . && bun pm pack --dry-run",
     "clean": "rm -rf dist"
   }
 }
