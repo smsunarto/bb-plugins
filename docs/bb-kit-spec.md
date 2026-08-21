@@ -869,6 +869,9 @@ table.
 All three tiers run under plain `node`. Per ADR-0006, the consuming
 repo's CI must exercise exactly that published-consumer path — even
 where, as in bb-plugins itself, the repo's own dev loop uses Bun.
+The bin itself is node-only too: TS 7's sync API reads a Node stdout
+internal absent in Bun, so the bin refuses under bun with one line and
+exit 1 — a bun repo's scripts must invoke it through `node`.
 
 ## 9. Not being rebuilt
 
