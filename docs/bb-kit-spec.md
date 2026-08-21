@@ -1,6 +1,6 @@
 # bb-kit framework spec
 
-Status: implemented — `packages/bb-kit` is the built thing (106/106
+Status: implemented — `packages/bb-kit` is the built thing (109/109
 tests, 2026-08-21), and this spec now documents it.
 Baseline: bb 0.39 · `@get-bb/plugin-sdk` 0.4.8 · Node ≥ 22.19 (bb's own
 engines floor), verified against the pinned dev worktree
@@ -37,7 +37,7 @@ on purpose: the subpath is the unit.
 | `./rpc`     | server, CLI, tests | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, types `ClientFor`, `RPCContext`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
 | `./cli`     | server, tests      | `defineCommand`, `invokeCLI`, `CLIError`, types `CLIResult`, `CLIContext`                                                                                                                              |
 | `./query`   | browser            | `createRPC`, `PluginQueryBoundary`                                                                                                                                                                     |
-| `./testing` | tests              | `installDom`                                                                                                                                                                                           |
+| `./testing` | tests              | `installDom`, `stubClient`                                                                                                                                                                             |
 
 bin: `bb-kit` — `create` / `add` / `check`, nothing else (§7; ADR-0009,
 ADR-0010).
@@ -861,15 +861,19 @@ those are the plugin's own scripts and the consuming repo's business.
 
 How the three tiers (ADR-0005) map onto this API:
 
-| Tier           | Harness                                             | bb-kit involvement                                                                                                                                                                                                                           |
-| -------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 unit         | none                                                | call a handler directly, or `createClient(rpc, fakeContext)`; CLI via `invokeCLI({ cat }, fakeClient, argv)` — a full-`Client` command takes a full fake (or `as unknown as Client`); a `Pick`-annotated one keeps a minimal, cast-free fake |
-| 2 integration  | `@get-bb/plugin-sdk/testing` `createFakePluginHost` | run the default-export factory against the fake host; invoke registered RPC/CLI through it                                                                                                                                                   |
-| 3 UI component | `@get-bb/plugin-sdk/testing/app` under jsdom        | `installDom()` first, then `loadPluginApp` + `renderSlot`                                                                                                                                                                                    |
+| Tier           | Harness                                             | bb-kit involvement                                                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 unit         | none                                                | call a handler directly, or `createClient(rpc, fakeContext)`; CLI via `invokeCLI({ cat }, fakeClient, argv)` — a full-`Client` command takes `stubClient<Client>({ … })` with only the procedures the test exercises; a `Pick`-annotated one keeps a minimal, cast-free fake |
+| 2 integration  | `@get-bb/plugin-sdk/testing` `createFakePluginHost` | run the default-export factory against the fake host; invoke registered RPC/CLI through it                                                                                                                                                                                   |
+| 3 UI component | `@get-bb/plugin-sdk/testing/app` under jsdom        | `installDom()` first, then `loadPluginApp` + `renderSlot`                                                                                                                                                                                                                    |
 
-`installDom()` is `./testing`'s only export: idempotent, installs jsdom
-globals (`window`, `document`, …) onto `globalThis`, and fails with a
-clear message naming the `jsdom` devDependency if it cannot resolve it.
+`./testing` exports two helpers. `installDom()` is idempotent, installs
+jsdom globals (`window`, `document`, …) onto `globalThis`, and fails
+with a clear message naming the `jsdom` devDependency if it cannot
+resolve it. `stubClient<Client>(partial)` builds a full client for
+tier-1 CLI tests from only the procedures a test stubs — any other
+procedure throws, naming itself, when called, so a command reaching
+past its stubs fails loud instead of awaiting `undefined`.
 The SDK's `renderSlot` assumes a DOM exists and provides none (its own
 docs assume a vitest jsdom environment; under `node --test` this call is
 the equivalent).
