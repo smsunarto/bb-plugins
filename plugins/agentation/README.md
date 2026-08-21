@@ -96,7 +96,7 @@ where to look before it starts grepping.
 | ------------------------------ | ---------------------------------------------- |
 | `bb.route`                     | The bb route the annotation was taken on.      |
 | `bb.pluginId`                  | Owning plugin, or `null` for the bb app shell. |
-| `bb.surface`                   | `navPanel`, `inline`, or `overlay`.            |
+| `bb.surface`                   | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_threadList`, or `threadPanelAction.component`; `inline` / `overlay` for trusted custom content. |
 | `bb.threadId` / `bb.projectId` | Source context resolved from the route.        |
 
 ### Commands
