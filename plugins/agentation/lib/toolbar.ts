@@ -174,7 +174,48 @@ function saveSynced(route: string, ids: Iterable<string>): void {
   }
 }
 
-export async function mountAnnotationToolbar(
+/**
+ * bb tracks plugin content-script callbacks while they run so an imperative
+ * script cannot move nodes React already owns. Agentation deliberately owns a
+ * separate React root and portal, so start that root on the next animation
+ * frame, after the content-script callback has returned to the host. React's
+ * own DOM work then runs outside the foreign-mutation guard while every event,
+ * timer, and disposer remains owned by this plugin instance.
+ */
+export function mountAnnotationToolbar(
+  context: PluginContentScriptContext,
+): PluginContentScriptDisposer {
+  let disposed = false;
+  let frame: number | null = requestAnimationFrame(() => {
+    frame = null;
+    void mountAnnotationToolbarRoot(context)
+      .then((disposeRoot) => {
+        if (disposed) {
+          void disposeRoot();
+          return undefined;
+        }
+        rootDisposer = disposeRoot;
+        return undefined;
+      })
+      .catch((error: unknown) => {
+        console.warn("[agentation] Could not mount annotation toolbar:", error);
+      });
+  });
+  let rootDisposer: PluginContentScriptDisposer | null = null;
+
+  return () => {
+    disposed = true;
+    if (frame !== null) {
+      cancelAnimationFrame(frame);
+      frame = null;
+    }
+    const disposeRoot = rootDisposer;
+    rootDisposer = null;
+    return disposeRoot?.();
+  };
+}
+
+async function mountAnnotationToolbarRoot(
   context: PluginContentScriptContext,
 ): Promise<PluginContentScriptDisposer> {
   const rpc = createRpcClient<typeof rpcContract>(context.pluginId);
