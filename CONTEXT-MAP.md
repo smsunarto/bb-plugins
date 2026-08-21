@@ -8,5 +8,5 @@
 ## Relationships
 
 - **bb-kit → plugins**: each plugin under `plugins/` adopts bb-kit's
-  language as it migrates (dotfiles first); until then a plugin keeps its
-  own local vocabulary.
+  language as it migrates (dotfiles migrated first — done on this
+  branch); until then a plugin keeps its own local vocabulary.

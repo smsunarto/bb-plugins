@@ -24,7 +24,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 │   ├── bb-kit/
 │   │   ├── CONTEXT.md
 │   │   └── docs/adr/                  ← context-specific decisions
-│   └── bb-kit-cli/
+│   └── bb-kit-cli/                    ← compatibility tooling only
 │       ├── CONTEXT.md
 │       └── docs/adr/
 └── plugins/

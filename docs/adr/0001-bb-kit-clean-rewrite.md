@@ -22,3 +22,9 @@ written greenfield. Do not merge that branch either.
   vendored copy is deleted when dotfiles migrates to the new framework, which
   is the first dogfood milestone.
 - `docs/bb-plugin-framework-spec.md` describes bb-kit 0.1 and is superseded.
+
+## Status
+
+The exit criterion is satisfied as of the `bb-kit-clean-rewrite` branch
+(2026-08-20): `plugins/dotfiles` migrated onto the new `@bb-kit/core`, and
+the vendored runtime under `plugins/dotfiles/plugin/lib/bb-kit/` is deleted.
