@@ -46,6 +46,7 @@ function packageJson(name: string, id: string): string {
       type: "module",
       engines: { node: ">=22.19.0" },
       scripts: {
+        check: "bb-kit check",
         test: "node --test --import tsx",
         typecheck: "tsc",
       },

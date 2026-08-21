@@ -2,29 +2,32 @@
 
 Scaffold, inspect, and check opinionated bb plugins.
 
+The bin installs as `bb-kit-compat` — the `bb-kit` name belongs to the
+`@bb-kit/core` framework in `packages/bb-kit`.
+
 The [bb-kit design principles](../../docs/bb-kit-design-principles.md) explain
 why the CLI removes unsafe choices instead of exposing policy configuration.
 
 ```sh
-bb-kit init my-plugin --kind fullstack
-bb-kit add module approvals
-bb-kit add operation approvals.get --kind query
-bb-kit add operation approvals.approve --kind command --risk destructive
-bb-kit add fixture approvals.get happy-path
-bb-kit add migration approvals initial
-bb-kit add panel approvals --location thread
-bb-kit operations
-bb-kit invoke approvals.get --input '{"approvalId":"A-1"}'
-bb-kit fixtures run approvals
-bb-kit info
-bb-kit check
-bb-kit check --workspace
-bb-kit compatibility inspect
-bb-kit compatibility check
-bb-kit compatibility upgrade
-bb-kit build
-bb-kit verify
-bb-kit doctor
+bb-kit-compat init my-plugin --kind fullstack
+bb-kit-compat add module approvals
+bb-kit-compat add operation approvals.get --kind query
+bb-kit-compat add operation approvals.approve --kind command --risk destructive
+bb-kit-compat add fixture approvals.get happy-path
+bb-kit-compat add migration approvals initial
+bb-kit-compat add panel approvals --location thread
+bb-kit-compat operations
+bb-kit-compat invoke approvals.get --input '{"approvalId":"A-1"}'
+bb-kit-compat fixtures run approvals
+bb-kit-compat info
+bb-kit-compat check
+bb-kit-compat check --workspace
+bb-kit-compat compatibility inspect
+bb-kit-compat compatibility check
+bb-kit-compat compatibility upgrade
+bb-kit-compat build
+bb-kit-compat verify
+bb-kit-compat doctor
 ```
 
 Generators are additive, idempotent, and edit only recognized TypeScript

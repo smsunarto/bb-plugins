@@ -14,7 +14,7 @@
   },
   "type": "module",
   "bin": {
-    "bb-kit": "./bin/bb-kit.mjs"
+    "bb-kit-compat": "./bin/bb-kit.mjs"
   },
   "files": [
     "bin/",

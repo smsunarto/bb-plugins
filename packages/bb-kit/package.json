@@ -17,12 +17,13 @@
     "node": ">=22.19.0"
   },
   "files": [
+    "bin/",
     "dist/",
     "README.md",
     "LICENSE"
   ],
   "bin": {
-    "bb-kit": "./dist/bin.js"
+    "bb-kit": "./bin/bb-kit.mjs"
   },
   "exports": {
     "./plugin": {

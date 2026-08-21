@@ -20,7 +20,7 @@
       "name": "@bb-kit/core",
       "version": "0.1.0",
       "bin": {
-        "bb-kit": "./dist/bin.js",
+        "bb-kit": "./bin/bb-kit.mjs",
       },
       "dependencies": {
         "commander": "^13.1.0",
@@ -58,7 +58,7 @@
       "name": "@bb-kit/cli",
       "version": "0.1.0",
       "bin": {
-        "bb-kit": "./bin/bb-kit.mjs",
+        "bb-kit-compat": "./bin/bb-kit.mjs",
       },
       "dependencies": {
         "jsonc-parser": "^3.3.1",

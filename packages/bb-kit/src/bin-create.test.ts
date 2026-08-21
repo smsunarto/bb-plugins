@@ -63,6 +63,7 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
   assert.deepEqual(bb["branding"], { icon: "./assets/icon.svg" });
   assert.deepEqual(bb["skills"], []);
   const scripts = pkg["scripts"] as Record<string, unknown>;
+  assert.equal(scripts["check"], "bb-kit check");
   assert.equal(scripts["test"], "node --test --import tsx");
 });
 
