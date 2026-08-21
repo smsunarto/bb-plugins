@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import process from "node:process";
-import { runAdd } from "./bin-add.ts";
-import { runCheck } from "./bin-check.ts";
-import { runCreate } from "./bin-create.ts";
-import type { BinResult } from "./bin-shared.ts";
+import { runAdd } from "./bin/add.ts";
+import { runCheck } from "./bin/check.ts";
+import { runCreate } from "./bin/create.ts";
+import type { BinResult } from "./bin/shared.ts";
 
 // TS 7's sync API reads `child.stdout._handle.fd`, a Node internal
 // absent in Bun, so a bun-run `check` fails and then hangs on the

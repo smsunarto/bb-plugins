@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { InstallOutcome } from "./bin-create.ts";
-import { runCreate } from "./bin-create.ts";
+import type { InstallOutcome } from "./create.ts";
+import { runCreate } from "./create.ts";
 import { SCAFFOLD_DEPENDENCIES, SCAFFOLD_DEV_DEPENDENCIES, scaffoldFiles } from "./scaffold.ts";
 
 const okInstall = (): InstallOutcome => ({ status: 0, output: "" });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runAdd } from "./bin-add.ts";
+import { runAdd } from "./add.ts";
 
 function pluginRoot(name = "bb-plugin-notes"): string {
   const cwd = mkdtempSync(join(tmpdir(), "bb-kit-add-"));

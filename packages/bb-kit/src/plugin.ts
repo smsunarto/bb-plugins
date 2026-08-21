@@ -1,13 +1,18 @@
-import type { AnyRPC, MaybePromise } from "./procedure.ts";
-import { runtimeProcedures } from "./procedure.ts";
-import type { StandardSchemaV1 } from "./standard-schema.ts";
+import type { AnyRPC, MaybePromise } from "./internal/procedure.ts";
+import { runtimeProcedures } from "./internal/procedure.ts";
+import type { StandardSchemaV1 } from "./internal/standard-schema.ts";
 import type { ClientFor, RPCContext } from "./rpc.ts";
 import { createClient } from "./rpc.ts";
-import { noInputSchema } from "./no-input.ts";
-import { kebabName, wireName } from "./wire-name.ts";
-import type { CLICommand, CLIContext, CLIResult, SubcommandDefinition } from "./program.ts";
-import { buildProgram, commandDefinitions, runProgram } from "./program.ts";
-import type { HostSeam } from "./host.ts";
+import { noInputSchema } from "./internal/no-input.ts";
+import { kebabName, wireName } from "./internal/wire-name.ts";
+import type {
+  CLICommand,
+  CLIContext,
+  CLIResult,
+  SubcommandDefinition,
+} from "./internal/program.ts";
+import { buildProgram, commandDefinitions, runProgram } from "./internal/program.ts";
+import type { HostSeam } from "./internal/host.ts";
 
 /**
  * The composition root (§2, §6, ADR-0012). Fuses the RPC, the curated

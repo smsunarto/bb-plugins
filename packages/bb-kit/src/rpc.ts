@@ -3,7 +3,7 @@ import type {
   SchemaOutput,
   StandardSchemaV1,
   StandardSchemaV1Issue,
-} from "./standard-schema.ts";
+} from "./internal/standard-schema.ts";
 import type {
   AnyRPC,
   MaybePromise,
@@ -12,14 +12,14 @@ import type {
   RPCProcedures,
   RuntimeProcedure,
   UnionToIntersection,
-} from "./procedure.ts";
-import { runtimeProcedures } from "./procedure.ts";
-import { noInputSchema } from "./no-input.ts";
-import { wireName } from "./wire-name.ts";
+} from "./internal/procedure.ts";
+import { runtimeProcedures } from "./internal/procedure.ts";
+import { noInputSchema } from "./internal/no-input.ts";
+import { wireName } from "./internal/wire-name.ts";
 
 /** Public surface of `@bb-kit/core/rpc` (§1, §3). */
-export { wireName } from "./wire-name.ts";
-export type { StandardSchemaV1, SchemaInput, SchemaOutput } from "./standard-schema.ts";
+export { wireName } from "./internal/wire-name.ts";
+export type { StandardSchemaV1, SchemaInput, SchemaOutput } from "./internal/standard-schema.ts";
 
 /**
  * The object-only I/O pin (ADR-0014): procedure schemas must be zod-v4

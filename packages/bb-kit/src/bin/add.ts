@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BinResult } from "./bin-shared.ts";
-import { UNIT_NAME_PATTERN, camelName } from "./bin-shared.ts";
+import type { BinResult } from "./shared.ts";
+import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "./wire-name.ts";
+import { wireName } from "../internal/wire-name.ts";
 
 /**
  * `bb-kit add <query|mutation|command> <name>` (§7): write one unit file

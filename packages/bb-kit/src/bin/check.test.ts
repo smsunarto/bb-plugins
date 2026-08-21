@@ -12,8 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCheck, isValidSemverRange } from "./bin-check.ts";
-import { runCreate } from "./bin-create.ts";
+import { runCheck, isValidSemverRange } from "./check.ts";
+import { runCreate } from "./create.ts";
 
 /**
  * Fixtures are real `create` scaffolds in $TMPDIR. check parses with the
@@ -24,6 +24,7 @@ import { runCreate } from "./bin-create.ts";
 
 const REPO_MODULES = join(
   dirname(fileURLToPath(import.meta.url)),
+  "..",
   "..",
   "..",
   "..",

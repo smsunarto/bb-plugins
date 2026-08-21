@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { BinResult } from "./bin-shared.ts";
+import type { BinResult } from "./shared.ts";
 import { scaffoldFiles } from "./scaffold.ts";
 
 /**

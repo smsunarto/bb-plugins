@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UNIT_NAME_PATTERN, camelName } from "./bin-shared.ts";
+import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
 
 test("camelName follows the camelization pin (§3)", () => {
   assert.equal(camelName("ping"), "ping");

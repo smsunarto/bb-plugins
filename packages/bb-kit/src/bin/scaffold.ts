@@ -1,10 +1,10 @@
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "./wire-name.ts";
+import { wireName } from "../internal/wire-name.ts";
 
 /**
  * The scaffold templates behind `bb-kit create` (§7). One function, no
  * I/O: `scaffoldFiles(packageName)` returns every file as text, keyed by
- * its path inside the new plugin directory. `bin-create.ts` writes them;
+ * its path inside the new plugin directory. `create.ts` writes them;
  * tests assert on them directly.
  *
  * Every template uses the real published surfaces — @bb-kit/core

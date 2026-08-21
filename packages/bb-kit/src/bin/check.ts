@@ -2,10 +2,10 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { isAbsolute, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BinResult } from "./bin-shared.ts";
-import { UNIT_NAME_PATTERN, camelName } from "./bin-shared.ts";
+import type { BinResult } from "./shared.ts";
+import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { kebabName, wireName } from "./wire-name.ts";
+import { kebabName, wireName } from "../internal/wire-name.ts";
 
 /**
  * `bb-kit check` (§7): static verification of the six rules — wiring
