@@ -1,7 +1,18 @@
+import { z } from "zod";
 import { defineQuery } from "@bb-kit/core/rpc";
 import type { Context } from "../server/context.ts";
-import { readFileInputSchema, readFileOutputSchema } from "../server/contract.ts";
-import { isAllowedPath } from "../server/model.ts";
+import { isAllowedPath } from "../server/domain.ts";
+
+const readFileInputSchema = z.object({ path: z.string() }).strict();
+const readFileOutputSchema = z
+  .object({
+    content: z.string(),
+    sha256: z.string(),
+    headContent: z.string().nullable(),
+  })
+  .strict();
+
+export type ReadFileResult = z.infer<typeof readFileOutputSchema>;
 
 export const readFile = defineQuery({
   input: readFileInputSchema,

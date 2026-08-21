@@ -141,8 +141,8 @@ bun run verify     # lint + typecheck + tests + check + build + pack dry-run
 
 The plugin is written on `@bb-kit/core`. `server.ts` at the plugin root is the
 composition root: it defines the RPC namespace, the CLI, and the client type. `server/`
-holds the context, contract, model, and repository. `rpc/` and `cli/` hold one unit per
-file, with a test file beside each unit; the six RPC wire names are derived from the
+holds the context, shared domain values, and repository. `rpc/` and `cli/` hold one unit
+per file, with a test file beside each unit; the six RPC wire names are derived from the
 namespace and procedure keys and are a stable public contract. `ui/` holds the panel
 app. The repository watcher builds and reloads the plugin after each source change.
 

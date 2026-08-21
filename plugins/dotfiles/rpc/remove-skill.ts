@@ -1,11 +1,24 @@
+import { z } from "zod";
 import { defineMutation } from "@bb-kit/core/rpc";
 import type { Context } from "../server/context.ts";
-import {
-  type RemoveSkillResult,
-  removeSkillInputSchema,
-  removeSkillOutputSchema,
-} from "../server/contract.ts";
-import { isValidSkillName } from "../server/model.ts";
+
+const removeSkillInputSchema = z.object({ name: z.string() }).strict();
+const removeSkillOutputSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("completed"),
+      exitCode: z.number().int(),
+      output: z.string(),
+    })
+    .strict(),
+  z.object({ outcome: z.literal("not-found") }).strict(),
+]);
+
+type RemoveSkillResult = z.infer<typeof removeSkillOutputSchema>;
+
+function isValidSkillName(name: string): boolean {
+  return /^[a-z0-9][a-z0-9-]*$/.test(name);
+}
 
 export const removeSkill = defineMutation({
   input: removeSkillInputSchema,

@@ -1,11 +1,27 @@
+import { z } from "zod";
 import { defineMutation } from "@bb-kit/core/rpc";
 import type { Context } from "../server/context.ts";
-import {
-  type SaveFileResult,
-  saveFileInputSchema,
-  saveFileOutputSchema,
-} from "../server/contract.ts";
-import { isAllowedPath, needsRender } from "../server/model.ts";
+import { isAllowedPath, needsRender } from "../server/domain.ts";
+
+const saveFileInputSchema = z
+  .object({
+    path: z.string(),
+    content: z.string(),
+    expectedSha256: z.string(),
+  })
+  .strict();
+const saveFileOutputSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("written"),
+      sha256: z.string(),
+      renderHint: z.boolean(),
+    })
+    .strict(),
+  z.object({ outcome: z.literal("conflict") }).strict(),
+]);
+
+export type SaveFileResult = z.infer<typeof saveFileOutputSchema>;
 
 export const saveFile = defineMutation({
   input: saveFileInputSchema,

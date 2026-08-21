@@ -1,7 +1,6 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import type { Context } from "../server/context.ts";
-import { taskResultSchema } from "../server/contract.ts";
-import { publishTask } from "../server/model.ts";
+import { publishTask, taskResultSchema } from "../server/domain.ts";
 
 export const publish = defineMutation({
   output: taskResultSchema,

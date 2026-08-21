@@ -1,6 +1,6 @@
 import { CLIError, defineCommand } from "@bb-kit/core/cli";
 import type { Client } from "../server.ts";
-import type { TaskId } from "../server/contract.ts";
+import type { TaskId } from "../server/domain.ts";
 
 const checkTasks: Readonly<Record<string, TaskId>> = {
   location: "check:location",

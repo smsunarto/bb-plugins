@@ -1,4 +1,99 @@
-import type { TaskId, TweakableGroup } from "./contract.ts";
+// Shared domain values and wire types. Browser-safe: imports only zod,
+// so ui/ may value-import from here.
+import { z } from "zod";
+
+// ---- tasks ----------------------------------------------------------
+
+export const taskIds = [
+  "render",
+  "check",
+  "check:location",
+  "check:mise",
+  "check:shell",
+  "check:mcp",
+  "check:python",
+  "check:skills",
+  "check:dotfiles",
+  "check:safety",
+  "check:secrets",
+  "apply:dry",
+  "sync:pull",
+] as const;
+
+export const taskIdSchema = z.enum(taskIds);
+export type TaskId = z.infer<typeof taskIdSchema>;
+
+export interface TaskDefinition {
+  readonly command: string;
+  readonly summary: string;
+}
+
+export const taskDefinitions: Readonly<Record<TaskId, TaskDefinition>> = {
+  render: {
+    command: "mise run render",
+    summary: "Render agent configs and settings overlays",
+  },
+  check: { command: "mise run check", summary: "Full repository validation" },
+  "check:location": {
+    command: "mise run check:location",
+    summary: "Validate the canonical checkout path",
+  },
+  "check:mise": {
+    command: "mise run check:mise",
+    summary: "Validate mise and mappings",
+  },
+  "check:shell": {
+    command: "mise run check:shell",
+    summary: "Validate shell syntax",
+  },
+  "check:mcp": {
+    command: "mise run check:mcp",
+    summary: "Validate MCP JSON and renderer",
+  },
+  "check:python": {
+    command: "mise run check:python",
+    summary: "Validate the shared Python runtime and tools",
+  },
+  "check:skills": {
+    command: "mise run check:skills",
+    summary: "Validate skill manifests",
+  },
+  "check:dotfiles": {
+    command: "mise run check:dotfiles",
+    summary: "Validate dotfile mappings apply",
+  },
+  "check:safety": {
+    command: "mise run check:safety",
+    summary: "Reject unsafe forced apply workflows",
+  },
+  "check:secrets": {
+    command: "mise run check:secrets",
+    summary: "Reject legacy tracked secret injection",
+  },
+  "apply:dry": {
+    command: "mise dotfiles apply --dry-run --verbose",
+    summary: "Preview dotfile application",
+  },
+  "sync:pull": {
+    command: "mise run sync:pull",
+    summary: "Consume-only sync (fast-forward and apply)",
+  },
+};
+
+export const publishTask: TaskDefinition = {
+  command: "mise run sync",
+  summary: "Publish: rebase, push, re-apply, and render",
+};
+
+export const taskResultSchema = z
+  .object({
+    exitCode: z.number().int(),
+    output: z.string(),
+  })
+  .strict();
+export type TaskResult = z.infer<typeof taskResultSchema>;
+
+// ---- tweakables -----------------------------------------------------
 
 export interface TweakableDefinition {
   readonly path: string;
@@ -13,12 +108,7 @@ export interface TweakableGroupDefinition {
   readonly files: readonly TweakableDefinition[];
 }
 
-export interface TaskDefinition {
-  readonly command: string;
-  readonly summary: string;
-}
-
-export const staticGroups: readonly TweakableGroupDefinition[] = [
+const staticGroups: readonly TweakableGroupDefinition[] = [
   {
     id: "agents",
     title: "Agent config",
@@ -120,63 +210,6 @@ export const staticGroups: readonly TweakableGroupDefinition[] = [
   },
 ];
 
-export const taskDefinitions: Readonly<Record<TaskId, TaskDefinition>> = {
-  render: {
-    command: "mise run render",
-    summary: "Render agent configs and settings overlays",
-  },
-  check: { command: "mise run check", summary: "Full repository validation" },
-  "check:location": {
-    command: "mise run check:location",
-    summary: "Validate the canonical checkout path",
-  },
-  "check:mise": {
-    command: "mise run check:mise",
-    summary: "Validate mise and mappings",
-  },
-  "check:shell": {
-    command: "mise run check:shell",
-    summary: "Validate shell syntax",
-  },
-  "check:mcp": {
-    command: "mise run check:mcp",
-    summary: "Validate MCP JSON and renderer",
-  },
-  "check:python": {
-    command: "mise run check:python",
-    summary: "Validate the shared Python runtime and tools",
-  },
-  "check:skills": {
-    command: "mise run check:skills",
-    summary: "Validate skill manifests",
-  },
-  "check:dotfiles": {
-    command: "mise run check:dotfiles",
-    summary: "Validate dotfile mappings apply",
-  },
-  "check:safety": {
-    command: "mise run check:safety",
-    summary: "Reject unsafe forced apply workflows",
-  },
-  "check:secrets": {
-    command: "mise run check:secrets",
-    summary: "Reject legacy tracked secret injection",
-  },
-  "apply:dry": {
-    command: "mise dotfiles apply --dry-run --verbose",
-    summary: "Preview dotfile application",
-  },
-  "sync:pull": {
-    command: "mise run sync:pull",
-    summary: "Consume-only sync (fast-forward and apply)",
-  },
-};
-
-export const publishTask: TaskDefinition = {
-  command: "mise run sync",
-  summary: "Publish: rebase, push, re-apply, and render",
-};
-
 export function groupDefinitions(
   skills: readonly TweakableDefinition[],
 ): readonly TweakableGroupDefinition[] {
@@ -193,22 +226,12 @@ export function needsRender(path: string): boolean {
   );
 }
 
-export function isValidSkillName(name: string): boolean {
-  return /^[a-z0-9][a-z0-9-]*$/.test(name);
-}
+// ---- git ------------------------------------------------------------
 
-export function toOverviewGroup(
-  group: TweakableGroupDefinition,
-  exists: (path: string) => boolean,
-  dirtyPaths: ReadonlySet<string>,
-): TweakableGroup {
-  return {
-    id: group.id,
-    title: group.title,
-    files: group.files.map((file) => ({
-      ...file,
-      exists: exists(file.path),
-      dirty: dirtyPaths.has(file.path),
-    })),
-  };
-}
+export const gitEntrySchema = z
+  .object({
+    status: z.string(),
+    path: z.string(),
+  })
+  .strict();
+export type GitEntry = z.infer<typeof gitEntrySchema>;

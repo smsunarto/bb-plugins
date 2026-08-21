@@ -7,7 +7,8 @@ import {
   type FileContents,
   type FileDiffMetadata,
 } from "../diffs-lib.ts";
-import type { ReadFileResult, SaveFileResult } from "../server/contract.ts";
+import type { ReadFileResult } from "../rpc/read-file.ts";
+import type { SaveFileResult } from "../rpc/save-file.ts";
 
 const languageOverrides: Readonly<Record<string, string>> = {
   ".gitconfig": "ini",

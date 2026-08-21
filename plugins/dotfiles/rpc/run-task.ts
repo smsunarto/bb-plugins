@@ -1,7 +1,9 @@
+import { z } from "zod";
 import { defineMutation } from "@bb-kit/core/rpc";
 import type { Context } from "../server/context.ts";
-import { runTaskInputSchema, taskResultSchema } from "../server/contract.ts";
-import { taskDefinitions } from "../server/model.ts";
+import { taskDefinitions, taskIdSchema, taskResultSchema } from "../server/domain.ts";
+
+const runTaskInputSchema = z.object({ task: taskIdSchema }).strict();
 
 export const runTask = defineMutation({
   input: runTaskInputSchema,

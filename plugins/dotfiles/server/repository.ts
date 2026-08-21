@@ -3,8 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { GitEntry, TaskResult } from "./contract.ts";
-import type { TweakableDefinition } from "./model.ts";
+import type { GitEntry, TaskResult, TweakableDefinition } from "./domain.ts";
 
 const outputCap = 200_000;
 const defaultTimeoutMs = 300_000;

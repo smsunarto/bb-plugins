@@ -4,7 +4,9 @@ import { PluginQueryBoundary } from "@bb-kit/core/query";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import type { ReadFileResult, SaveFileResult, TaskId, TaskResult } from "../server/contract.ts";
+import type { ReadFileResult } from "../rpc/read-file.ts";
+import type { SaveFileResult } from "../rpc/save-file.ts";
+import type { TaskId, TaskResult } from "../server/domain.ts";
 import { DotfilesEditor } from "./editor.tsx";
 import { rpc } from "./rpc.ts";
 

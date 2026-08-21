@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Context } from "../server/context.ts";
-import type { TaskResult } from "../server/contract.ts";
+import type { TaskResult } from "../server/domain.ts";
 import { createFakeRepository } from "../server/fake-repository.ts";
 import { runTask } from "./run-task.ts";
 
