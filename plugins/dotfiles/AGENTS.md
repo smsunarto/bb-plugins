@@ -1,11 +1,30 @@
-# bb-kit plugin conventions
+# Dotfiles plugin conventions
 
-- Organize behavior under `plugin/modules/<name>/`.
-- Keep `contract.ts` and `model.ts` browser-safe.
-- Frontend code must not import `server.ts` or `repository.ts`.
-- Implement business behavior as headless operations.
-- RPC is authoritative; realtime signals only invalidate queries.
-- Expected domain outcomes use discriminated unions.
-- Create host resources inside the plugin generation.
-- Import `noInput` directly for no-input operations; give every other input a literal JSON `exampleInput`.
+Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/cli`, `/query`, `/testing`).
+
+## Layout
+
+- `server.ts` at the plugin root is the composition root. It exports `rpc` (the
+  `defineRPC` result), `type RPC`, `type Client`, and a default `definePlugin(...)`.
+- `server/` holds `context.ts`, `contract.ts`, `model.ts`, `repository.ts`, and
+  `fake-repository.ts`. Keep `contract.ts` and `model.ts` browser-safe.
+- `rpc/` and `cli/` hold one unit per file: kebab-case basename, exactly one value
+  export named the camelCase of the basename. No helper files directly in either
+  directory — the checker treats every direct child as a unit. Duplicate shared
+  micro-logic inline instead.
+- `ui/` holds the app (`ui/app.tsx`).
+
+## Tests and checks
+
+- Tests are sibling `<unit>.test.ts` files, run by `node --test --import tsx`
+  (`bun run test`).
+- `bun run check` runs the `@bb-kit/core` checker from source.
 - Run `bun run typecheck` while editing and `bun run verify` before handoff.
+
+## Wire names
+
+The six RPC wire names are a public contract and must survive byte-identical:
+`dotfiles_overview`, `dotfiles_publish`, `dotfiles_read_file`,
+`dotfiles_remove_skill`, `dotfiles_run_task`, `dotfiles_save_file`. They derive
+from namespace `dotfiles` plus the procedure keys `overview`, `publish`,
+`readFile`, `removeSkill`, `runTask`, `saveFile` — do not rename either side.

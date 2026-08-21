@@ -36,8 +36,8 @@
         "dark": "./assets/logo-dark.svg"
       }
     },
-    "server": "./plugin/server.ts",
-    "app": "./plugin/app.tsx",
+    "server": "./server.ts",
+    "app": "./ui/app.tsx",
     "skills": []
   },
   "files": [
@@ -49,12 +49,18 @@
     "assets/",
     "README.md",
     "LICENSE",
-    "plugin/",
-    "lib/",
+    "server.ts",
+    "server/",
+    "rpc/",
+    "cli/",
+    "ui/",
     "components/",
+    "hooks/",
+    "lib/",
     "diffs-lib.ts"
   ],
   "dependencies": {
+    "@bb-kit/core": "0.1.0",
     "@hugeicons/core-free-icons": "^4.1.3",
     "@hugeicons/react": "^1.1.6",
     "@pierre/diffs": "^1.3.4",
@@ -62,18 +68,22 @@
     "@tanstack/react-query": "^5.101.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.8",
     "@radix-ui/react-dialog": "^1.1.19",
+    "@testing-library/react": "16.3.2",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "better-sqlite3": "^12.0.0",
+    "cron-parser": "^5.5.0",
     "hono": "^4.11.9",
-    "sonner": "^2.0.7",
+    "jsdom": "25.0.1",
+    "tsx": "4.23.12",
     "typescript": "^7.0.0",
     "vaul": "^1.1.2"
   },
@@ -82,8 +92,9 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "verify": "oxlint && tsc --noEmit && bun test && bb plugin build . && bun pm pack --dry-run",
+    "test": "node --test --import tsx",
+    "check": "node --import tsx ../../packages/bb-kit/src/bin.ts check",
+    "verify": "oxlint && tsc --noEmit && node --test --import tsx && node --import tsx ../../packages/bb-kit/src/bin.ts check && bb plugin build . && bun pm pack --dry-run",
     "clean": "rm -rf dist"
   }
 }

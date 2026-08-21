@@ -133,16 +133,18 @@ bun install
 bun run dev        # watch + rebuild against the dev bb instance
 bun run lint
 bun run typecheck
-bun test
+bun run test       # node --test --import tsx
+bun run check      # @bb-kit/core static wiring check
 bun run build      # bb plugin build . — needs the bb CLI on PATH
-bun run verify     # lint + typecheck + tests + build + pack dry-run
+bun run verify     # lint + typecheck + tests + check + build + pack dry-run
 ```
 
-The plugin is one bb-kit vertical module under `plugin/modules/dotfiles/`. Its six
-operations are the source of truth for native RPC registration and TanStack Query
-calls; `bb-kit.lock.json` keeps their wire names stable. Overview and publish use the
-canonical `noInput`; the other operations have required literal examples. The
-repository watcher builds and reloads the plugin after each source change.
+The plugin is written on `@bb-kit/core`. `server.ts` at the plugin root is the
+composition root: it defines the RPC namespace, the CLI, and the client type. `server/`
+holds the context, contract, model, and repository. `rpc/` and `cli/` hold one unit per
+file, with a test file beside each unit; the six RPC wire names are derived from the
+namespace and procedure keys and are a stable public contract. `ui/` holds the panel
+app. The repository watcher builds and reloads the plugin after each source change.
 
 The build and verify scripts call the bb CLI directly (`bb plugin build .`), so a
 bb 0.39 checkout must be on PATH. Run the query and UI checklist against the dev

@@ -1,24 +1,25 @@
 {
   "compilerOptions": {
-    "strict": true,
-    "target": "ES2022",
-    "module": "ESNext",
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "preserve",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM"],
     "types": ["node"],
-    "paths": {
-      "@/*": ["./*"]
-    },
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
     "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
     "useUnknownInCatchVariables": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
-    "noEmit": true,
-    "skipLibCheck": false
-  },
-  "include": ["plugin", "diffs-lib.ts", "test"]
+    "paths": {
+      "@/*": ["./*"]
+    }
+  }
 }
