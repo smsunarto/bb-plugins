@@ -1,13 +1,15 @@
 # bb-kit framework spec
 
-Status: draft for review — the contract the clean rewrite implements.
-Baseline: bb 0.38 · `@get-bb/plugin-sdk` 0.4.6 · Node ≥ 22.19 (bb's own
+Status: implemented — `packages/bb-kit` is the built thing (106/106
+tests, 2026-08-21), and this spec now documents it.
+Baseline: bb 0.39 · `@get-bb/plugin-sdk` 0.4.8 · Node ≥ 22.19 (bb's own
 engines floor), verified against the pinned dev worktree
-(`~/.bb/worktrees/dev/bb`) on 2026-08-17. Decisions live in
-`docs/adr/0001`–`0014`, vocabulary in `packages/bb-kit/CONTEXT.md`, the
-authoring loop in `docs/bb-kit-dev-workflow.md`. Supersedes
-`docs/bb-plugin-framework-spec.md` (bb-kit 0.1). No code exists until this
-spec is confirmed.
+(`~/.bb/worktrees/dev/bb`, `desktop-v0.39.0`) on 2026-08-21. In-body
+verification citations (SDK 0.4.6, bb 0.38, in §5–§6) record the version
+they were verified against and are historical, not stale. Decisions live
+in `docs/adr/0001`–`0014`, vocabulary in `packages/bb-kit/CONTEXT.md`,
+the authoring loop in `docs/bb-kit-dev-workflow.md`. Supersedes
+`docs/bb-plugin-framework-spec.md` (bb-kit 0.1).
 
 The map: §1 the package, §2 the plugin it produces, §3–§5 the three API
 surfaces (`./rpc`, `./cli`, `./query`), §6 how it all lands on bb, §7 the
@@ -788,8 +790,11 @@ not a stub. What it writes:
   `scripts.typecheck` is what verifies these flags — without it the
   tsconfig is honored by editors but checked nowhere; `check` still
   never typechecks (the out-of-scope clause below).
-- Dependencies: runtime `zod`; devDependencies, exact-pinned:
-  `@get-bb/plugin-sdk`, `@bb-kit/core`, `typescript`, `tsx`, `jsdom`,
+- Dependencies: runtime `zod` and `@bb-kit/core` — the framework is a
+  runtime dependency of a plugin, never a dev one, because bb loads
+  plugin source in place and the framework imports resolve at run time;
+  devDependencies, exact-pinned:
+  `@get-bb/plugin-sdk`, `typescript`, `tsx`, `jsdom`,
   `react`, `react-dom`, `@tanstack/react-query`,
   `@testing-library/react`, `better-sqlite3`, `hono`, `cron-parser` —
   the last three because `createFakePluginHost` imports them at module

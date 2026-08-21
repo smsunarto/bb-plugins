@@ -13,14 +13,23 @@ import { wireName } from "./wire-name.ts";
  */
 
 /**
- * Exact devDependency pins (§7): the SDK, the framework, and the
- * SDK-testing transitives (better-sqlite3/hono/cron-parser are imported
- * at module top by `@get-bb/plugin-sdk/testing`). @types/react is an
- * OPTIONAL peer of @testing-library/react, so npm will not auto-install
- * it — it must be explicit for `tsc` to see React's JSX types.
+ * Exact runtime pins (§7): `zod`, and the framework itself — bb loads
+ * plugin source in place, so `@bb-kit/core` imports resolve at run time
+ * and a devDependency pin would break an installed plugin.
+ */
+export const SCAFFOLD_DEPENDENCIES: Readonly<Record<string, string>> = {
+  "@bb-kit/core": "0.1.0",
+  zod: "4.4.3",
+};
+
+/**
+ * Exact devDependency pins (§7): the SDK and the SDK-testing
+ * transitives (better-sqlite3/hono/cron-parser are imported at module
+ * top by `@get-bb/plugin-sdk/testing`). @types/react is an OPTIONAL
+ * peer of @testing-library/react, so npm will not auto-install it — it
+ * must be explicit for `tsc` to see React's JSX types.
  */
 export const SCAFFOLD_DEV_DEPENDENCIES: Readonly<Record<string, string>> = {
-  "@bb-kit/core": "0.1.0",
   "@get-bb/plugin-sdk": "0.4.8",
   "@tanstack/react-query": "5.101.4",
   "@testing-library/react": "16.3.2",
@@ -58,7 +67,7 @@ function packageJson(name: string, id: string): string {
         branding: { icon: "./assets/icon.svg" },
         skills: [],
       },
-      dependencies: { zod: "4.4.3" },
+      dependencies: SCAFFOLD_DEPENDENCIES,
       devDependencies: SCAFFOLD_DEV_DEPENDENCIES,
     },
     null,

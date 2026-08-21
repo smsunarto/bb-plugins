@@ -7,7 +7,7 @@ import { scaffoldFiles } from "./scaffold.ts";
 /**
  * `bb-kit create <name>` (§7): scaffold a complete, working plugin into
  * a NEW directory (the package name minus any npm scope), install its
- * devDependencies, and print the derived plugin id. Refuses to touch an
+ * dependencies, and print the derived plugin id. Refuses to touch an
  * existing non-empty directory — create never edits (ADR-0009).
  */
 
@@ -66,7 +66,7 @@ export function runCreate(name: string, options: CreateOptions): BinResult {
     stdout += `  ${relativePath}\n`;
   }
 
-  stdout += "\ninstalling devDependencies (npm install)...\n";
+  stdout += "\ninstalling dependencies (npm install)...\n";
   const install = options.install ?? npmInstall;
   let outcome: InstallOutcome = { status: 1, output: "" };
   for (let attempt = 1; attempt <= 3; attempt += 1) {

@@ -20,6 +20,21 @@ routine loop.
 
 ## Start a plugin
 
+`@bb-kit/core` 0.1.0 is not on npm yet: the npx form below 404s, and
+`create`'s install step fails on the same unpublished pin (the scaffold
+itself lands intact). Until the publish, invoke the bin from this repo —
+`tsx` must resolve from the cwd; after a `build`, `node
+packages/bb-kit/dist/bin.js` works from any cwd — and satisfy the
+`@bb-kit/core` pin locally (a `file:` version plus
+`npm install --install-links` is the verified route):
+
+```sh
+node --import tsx packages/bb-kit/src/bin.ts create my-plugin  # repo root
+cd my-plugin
+```
+
+Once 0.1.0 is published, this becomes the post-publish form:
+
 ```sh
 npx @bb-kit/core create my-plugin
 cd my-plugin
@@ -38,7 +53,7 @@ app each arrive with a passing sibling test. The tree is the flat layout
 my-plugin/
   package.json     # "test": "node --test --import tsx"; "typecheck": "tsc";
                    # bb.app → ./ui/app.tsx; bb.branding.icon → ./assets/icon.svg;
-                   # exact @get-bb/plugin-sdk + @bb-kit/core devDependencies
+                   # exact @bb-kit/core dependency + @get-bb/plugin-sdk devDependency
   tsconfig.json    # nodenext + allowImportingTsExtensions + noEmit —
                    # .ts-suffixed imports typecheck; nothing ever emits
   server.ts        # composition root — the only wiring file
@@ -67,8 +82,9 @@ my-plugin/
 when you need more. The UI ships by default;
 CLI-first is a testing order — prove behaviour through RPC and CLI before
 wrestling with UI correctness — not an omission. Because `create` pins
-`@bb-kit/core` as a devDependency, every later framework command is
-`npx bb-kit …`.
+`@bb-kit/core` under `dependencies` — a runtime dependency, since bb
+loads plugin source in place and the framework imports resolve at run
+time — every later framework command is `npx bb-kit …`.
 
 ## The inner loop
 
@@ -91,8 +107,9 @@ headless tiers, none needing a bb instance (ADR-0005):
 
 The scaffold pins the harnesses' peers (tsx, react, react-dom,
 @tanstack/react-query, @testing-library/react, jsdom, better-sqlite3,
-hono, cron-parser) as devDependencies — and `zod` as a runtime
-dependency — so tiers 2 and 3 run on the first `npm test` too; the
+hono, cron-parser) as devDependencies — and `zod` plus `@bb-kit/core`
+as runtime dependencies — so tiers 2 and 3 run on the first `npm test`
+too; the
 spec's §7 owns the authoritative manifest. Write the test in the
 sibling file, watch it go green, move on.
 

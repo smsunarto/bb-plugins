@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { InstallOutcome } from "./bin-create.ts";
 import { runCreate } from "./bin-create.ts";
-import { SCAFFOLD_DEV_DEPENDENCIES, scaffoldFiles } from "./scaffold.ts";
+import { SCAFFOLD_DEPENDENCIES, SCAFFOLD_DEV_DEPENDENCIES, scaffoldFiles } from "./scaffold.ts";
 
 const okInstall = (): InstallOutcome => ({ status: 0, output: "" });
 const freshDir = (): string => mkdtempSync(join(tmpdir(), "bb-kit-create-"));
@@ -54,8 +54,12 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
   assert.equal(pkg["type"], "module");
   assert.equal(pkg["private"], true);
   assert.deepEqual(pkg["engines"], { node: ">=22.19.0" });
-  assert.deepEqual(pkg["dependencies"], { zod: "4.4.3" });
+  assert.deepEqual(pkg["dependencies"], SCAFFOLD_DEPENDENCIES);
   assert.deepEqual(pkg["devDependencies"], SCAFFOLD_DEV_DEPENDENCIES);
+  // The framework rides under dependencies — bb loads plugin source in
+  // place, so @bb-kit/core imports resolve at run time (§7).
+  assert.ok((pkg["dependencies"] as Record<string, string>)["@bb-kit/core"]);
+  assert.ok(!(pkg["devDependencies"] as Record<string, string>)["@bb-kit/core"]);
   const bb = pkg["bb"] as Record<string, unknown>;
   assert.equal(bb["name"], "notes");
   assert.equal(bb["server"], "./server.ts");
