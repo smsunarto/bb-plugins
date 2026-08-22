@@ -2,7 +2,7 @@
 
 ## Contexts
 
-- [bb-kit](./packages/bb-kit/CONTEXT.md) — the framework a bb plugin is
+- [bb-kit](./packages/bb-kit-core/CONTEXT.md) — the framework a bb plugin is
   written in
 
 ## Relationships

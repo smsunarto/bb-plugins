@@ -16,7 +16,24 @@
         "typescript": "^7.0.0",
       },
     },
-    "packages/bb-kit": {
+    "packages/bb-kit-cli": {
+      "name": "@bb-kit/cli",
+      "version": "0.1.0",
+      "bin": {
+        "bb-kit-compat": "./bin/bb-kit.mjs",
+      },
+      "dependencies": {
+        "jsonc-parser": "^3.3.1",
+        "ts-morph": "^28.0.0",
+        "yaml": "^2.8.1",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^7.0.0",
+        "vitest": "^4.1.10",
+      },
+    },
+    "packages/bb-kit-core": {
       "name": "@bb-kit/core",
       "version": "0.1.0",
       "bin": {
@@ -53,23 +70,6 @@
         "react",
         "typescript",
       ],
-    },
-    "packages/bb-kit-cli": {
-      "name": "@bb-kit/cli",
-      "version": "0.1.0",
-      "bin": {
-        "bb-kit-compat": "./bin/bb-kit.mjs",
-      },
-      "dependencies": {
-        "jsonc-parser": "^3.3.1",
-        "ts-morph": "^28.0.0",
-        "yaml": "^2.8.1",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^7.0.0",
-        "vitest": "^4.1.10",
-      },
     },
     "plugins/agent-proxy": {
       "name": "@smsunarto/bb-plugin-agent-proxy",
@@ -341,7 +341,7 @@
 
     "@bb-kit/cli": ["@bb-kit/cli@workspace:packages/bb-kit-cli"],
 
-    "@bb-kit/core": ["@bb-kit/core@workspace:packages/bb-kit"],
+    "@bb-kit/core": ["@bb-kit/core@workspace:packages/bb-kit-core"],
 
     "@changesets/apply-release-plan": ["@changesets/apply-release-plan@8.0.0", "", { "dependencies": { "@changesets/config": "^4.0.0", "@changesets/format": "^0.1.1", "@changesets/git": "^4.0.0", "@changesets/should-skip-package": "^1.0.0", "@changesets/types": "^7.0.0", "import-meta-resolve": "^4.2.0", "jsonc-parser": "^3.3.1", "semver": "^7.8.1" } }, "sha512-kUd2pbf1w5/AYmBMb0Tt+rkIPCjFJdT0SZMrkOjJT/WV/QbtmvkyB5jkV0oaNPheavprZk+SfUiozUti7TIL2w=="],
 

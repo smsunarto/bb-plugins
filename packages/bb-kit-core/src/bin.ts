@@ -10,7 +10,7 @@ import type { BinResult } from "./bin/shared.ts";
 // orphaned compiler child. Refuse before any command can spawn it.
 if (process.versions["bun"] !== undefined) {
   process.stderr.write(
-    "bb-kit must run under node, not bun — use the `bb-kit` bin or `node --import tsx packages/bb-kit/src/bin.ts <command>` (TS 7's sync toolchain reads Node internals absent in Bun)\n",
+    "bb-kit must run under node, not bun — use the `bb-kit` bin or `node --import tsx packages/bb-kit-core/src/bin.ts <command>` (TS 7's sync toolchain reads Node internals absent in Bun)\n",
   );
   process.exit(1);
 }

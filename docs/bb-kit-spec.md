@@ -1,13 +1,13 @@
 # bb-kit framework spec
 
-Status: implemented — `packages/bb-kit` is the built thing (109/109
+Status: implemented — `packages/bb-kit-core` is the built thing (109/109
 tests, 2026-08-21), and this spec now documents it.
 Baseline: bb 0.39 · `@get-bb/plugin-sdk` 0.4.8 · Node ≥ 22.19 (bb's own
 engines floor), verified against the pinned dev worktree
 (`~/.bb/worktrees/dev/bb`, `desktop-v0.39.0`) on 2026-08-21. In-body
 verification citations (SDK 0.4.6, bb 0.38, in §5–§6) record the version
 they were verified against and are historical, not stale. Decisions live
-in `docs/adr/0001`–`0014`, vocabulary in `packages/bb-kit/CONTEXT.md`,
+in `docs/adr/0001`–`0014`, vocabulary in `packages/bb-kit-core/CONTEXT.md`,
 the authoring loop in `docs/bb-kit-dev-workflow.md`. Supersedes
 `docs/bb-plugin-framework-spec.md` (bb-kit 0.1).
 

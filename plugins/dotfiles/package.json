@@ -93,8 +93,8 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx",
-    "check": "node --import tsx ../../packages/bb-kit/src/bin.ts check",
-    "verify": "oxlint && tsc --noEmit && node --test --import tsx && node --import tsx ../../packages/bb-kit/src/bin.ts check && bb plugin build . && bun pm pack --dry-run",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin.ts check",
+    "verify": "oxlint && tsc --noEmit && node --test --import tsx && node --import tsx ../../packages/bb-kit-core/src/bin.ts check && bb plugin build . && bun pm pack --dry-run",
     "clean": "rm -rf dist"
   }
 }

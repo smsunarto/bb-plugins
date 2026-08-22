@@ -24,12 +24,12 @@ routine loop.
 `create`'s install step fails on the same unpublished pin (the scaffold
 itself lands intact). Until the publish, invoke the bin from this repo —
 `tsx` must resolve from the cwd; after a `build`, `node
-packages/bb-kit/dist/bin.js` works from any cwd — and satisfy the
+packages/bb-kit-core/dist/bin.js` works from any cwd — and satisfy the
 `@bb-kit/core` pin locally (a `file:` version plus
 `npm install --install-links` is the verified route):
 
 ```sh
-node --import tsx packages/bb-kit/src/bin.ts create my-plugin  # repo root
+node --import tsx packages/bb-kit-core/src/bin.ts create my-plugin  # repo root
 cd my-plugin
 ```
 
