@@ -92,3 +92,9 @@ The `bb <plugin-id> rpc <procedure>` command family every plugin's CLI
 mounts automatically — one subcommand per Procedure, taking and printing
 JSON objects. Framework-owned; not a CLI command.
 _Avoid_: auto-commands, generated CLI
+
+**Agent tool**:
+A capability a plugin exposes to the coding agent driving a thread; the
+agent invokes it by name with schema-validated input. Tool names are
+public API, unique across every installed plugin.
+_Avoid_: MCP tool, model tool
