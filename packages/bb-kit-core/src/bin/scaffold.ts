@@ -42,7 +42,7 @@ export const SCAFFOLD_DEV_DEPENDENCIES: Readonly<Record<string, string>> = {
   react: "19.2.8",
   "react-dom": "19.2.8",
   tsx: "4.23.12",
-  typescript: "7.0.2",
+  typescript: "6.0.3",
 };
 
 function packageJson(name: string, id: string): string {

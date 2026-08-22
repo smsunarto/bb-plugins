@@ -19,7 +19,8 @@ import { runCreate } from "./create.ts";
  * Fixtures are real `create` scaffolds in $TMPDIR. check parses with the
  * PLUGIN'S OWN typescript and reads the plugin's own SDK policy, so both
  * are symlinked from this repo's node_modules — the symlink's real path
- * makes the TS 7 native binary and the SDK's imports resolve there.
+ * makes the plugin's `typescript` module and the SDK's imports resolve
+ * there.
  */
 
 const REPO_MODULES = join(
@@ -84,7 +85,7 @@ test("a wrong unit export name fails rule 1", async () => {
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /rpc\/ping\.ts.*exactly one value export named "ping" \(found: pong\)/,
+    /rpc\/ping\.ts:6 — must have exactly one value export named "ping" \(found: pong\)/,
   );
 });
 
@@ -169,11 +170,45 @@ test("a missing sibling test is a warning, not a failure (rule 6)", async () => 
   assert.match(result.stdout, /check passed with 1 warning\n$/);
 });
 
+test("a unit file the tsconfig include omits still parses via server.ts's import", async () => {
+  const root = makeFixture();
+  const tsconfigPath = join(root, "tsconfig.json");
+  const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as Record<string, unknown>;
+  tsconfig["include"] = ["server.ts", "cli/**/*", "server/**/*", "ui/**/*"];
+  writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.stderr, "");
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /check passed\n$/);
+});
+
+test("an unparseable tsconfig.json is a toolchain failure, not a crash", async () => {
+  const root = makeFixture();
+  writeFileSync(join(root, "tsconfig.json"), "{{ broken\n");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /tsconfig\.json did not load as a TypeScript project: .* \(parse-dependent rules skipped\)/,
+  );
+});
+
+test("a tsconfig config-level error (broken extends) fails check", async () => {
+  const root = makeFixture();
+  const tsconfigPath = join(root, "tsconfig.json");
+  const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as Record<string, unknown>;
+  tsconfig["extends"] = "./missing-base.json";
+  writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /tsconfig\.json has config errors: Cannot read file/);
+});
+
 test("a missing typescript is a toolchain failure, not a crash", async () => {
   const root = makeFixture("bb-plugin-notes", { link: false });
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /could not resolve TypeScript 7 from the plugin/);
+  assert.match(result.stderr, /could not resolve TypeScript from the plugin/);
 });
 
 test("isValidSemverRange accepts npm ranges and rejects junk", () => {

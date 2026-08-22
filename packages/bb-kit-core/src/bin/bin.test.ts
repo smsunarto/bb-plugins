@@ -1,26 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runCreate } from "./create.ts";
 
-const binPath = join(dirname(fileURLToPath(import.meta.url)), "bin.ts");
+const here = dirname(fileURLToPath(import.meta.url));
+const binPath = join(here, "bin.ts");
+const REPO_MODULES = join(here, "..", "..", "..", "..", "node_modules");
 const bunOnPath = spawnSync("bun", ["--version"], { stdio: "ignore" }).error === undefined;
 
 test(
-  "the bin refuses to run under bun with one stderr line and exit 1",
+  "bun can run check end to end now that parsing is in-process",
   { skip: bunOnPath ? false : "bun is not on PATH" },
   () => {
-    // The timeout bounds a regression: without the guard, a bun-run
-    // `check` fails and then hangs on the orphaned TS 7 child.
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "bb-kit-bin-")));
+    const created = runCreate("bb-plugin-notes", {
+      cwd: parent,
+      install: () => ({ status: 0, output: "" }),
+    });
+    assert.equal(created.exitCode, 0, created.stderr);
+    const root = join(parent, "bb-plugin-notes");
+    mkdirSync(join(root, "node_modules", "@get-bb"), { recursive: true });
+    symlinkSync(
+      join(REPO_MODULES, "@get-bb", "plugin-sdk"),
+      join(root, "node_modules", "@get-bb", "plugin-sdk"),
+    );
+    symlinkSync(join(REPO_MODULES, "typescript"), join(root, "node_modules", "typescript"));
     const result = spawnSync("bun", [binPath, "check"], {
+      cwd: root,
       encoding: "utf8",
-      timeout: 15_000,
+      timeout: 60_000,
     });
     assert.equal(result.error, undefined);
-    assert.equal(result.status, 1);
-    assert.equal(result.stdout, "");
-    assert.match(result.stderr, /^bb-kit must run under node, not bun — .*\n$/);
-    assert.equal(result.stderr.split("\n").length, 2, "the refusal is exactly one line");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /wire names \(namespace "notes"\):/);
+    assert.match(result.stdout, /check passed\n$/);
   },
 );
