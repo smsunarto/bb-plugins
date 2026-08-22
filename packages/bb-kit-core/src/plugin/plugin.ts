@@ -1,17 +1,13 @@
-import type { AnyRPC, MaybePromise } from "../internal/procedure.ts";
-import { runtimeProcedures } from "../internal/procedure.ts";
-import type { StandardSchemaV1 } from "../internal/standard-schema.ts";
+import type { AnyRPC } from "../rpc/procedure.ts";
+import { runtimeProcedures } from "../rpc/procedure.ts";
+import type { MaybePromise } from "../internal/types.ts";
+import type { StandardSchemaV1 } from "../rpc/standard-schema.ts";
 import type { ClientFor, RPCContext } from "../rpc/rpc.ts";
 import { createClient } from "../rpc/rpc.ts";
-import { noInputSchema } from "../internal/no-input.ts";
-import { kebabName, wireName } from "../internal/wire-name.ts";
-import type {
-  CLICommand,
-  CLIContext,
-  CLIResult,
-  SubcommandDefinition,
-} from "../internal/program.ts";
-import { buildProgram, commandDefinitions, runProgram } from "../internal/program.ts";
+import { noInputSchema } from "../rpc/no-input.ts";
+import { kebabName, wireName } from "../rpc/wire-name.ts";
+import type { CLICommand, CLIContext, CLIResult, SubcommandDefinition } from "../cli/runner.ts";
+import { buildProgram, commandDefinitions, runProgram } from "../cli/runner.ts";
 import type { HostSeam } from "./host.ts";
 
 /**
@@ -109,9 +105,8 @@ function rpcSubtreeDefinition(
   rpc: AnyRPC,
   client: Record<string, (input?: unknown) => Promise<unknown>>,
 ): SubcommandDefinition {
-  const procedures = runtimeProcedures(rpc);
-  const children = Object.keys(procedures).map((key): SubcommandDefinition => {
-    const kind = procedures[key]?.kind ?? "query";
+  const children = Object.keys(rpc.procedures).map((key): SubcommandDefinition => {
+    const kind = rpc.procedures[key]?.kind ?? "query";
     return {
       name: kebabName(key),
       summary: `(${kind})`,

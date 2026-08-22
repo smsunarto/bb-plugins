@@ -3,23 +3,22 @@ import type {
   SchemaOutput,
   StandardSchemaV1,
   StandardSchemaV1Issue,
-} from "../internal/standard-schema.ts";
+} from "./standard-schema.ts";
 import type {
   AnyRPC,
-  MaybePromise,
   ProcedureNoInput,
   ProcedureWithInput,
   RPCProcedures,
   RuntimeProcedure,
-  UnionToIntersection,
-} from "../internal/procedure.ts";
-import { runtimeProcedures } from "../internal/procedure.ts";
-import { noInputSchema } from "../internal/no-input.ts";
-import { wireName } from "../internal/wire-name.ts";
+} from "./procedure.ts";
+import { runtimeProcedures } from "./procedure.ts";
+import { noInputSchema } from "./no-input.ts";
+import { wireName } from "./wire-name.ts";
+import type { MaybePromise, UnionToIntersection } from "../internal/types.ts";
 
 /** Public surface of `@bb-kit/core/rpc` (§1, §3). */
-export { wireName } from "../internal/wire-name.ts";
-export type { StandardSchemaV1, SchemaInput, SchemaOutput } from "../internal/standard-schema.ts";
+export { wireName } from "./wire-name.ts";
+export type { StandardSchemaV1, SchemaInput, SchemaOutput } from "./standard-schema.ts";
 
 /**
  * The object-only I/O pin (ADR-0014): procedure schemas must be zod-v4
@@ -97,7 +96,7 @@ export function defineRPC<N extends string, P extends RPCProcedures>(definition:
     if (!PROCEDURE_KEY_PATTERN.test(key)) {
       throw new Error(`invalid procedure key "${key}": must match /^[a-z][a-zA-Z0-9]*$/`);
     }
-    // "useClient" is the ./query escape hatch on the createRPC proxy and
+    // "useClient" is the ./rpc/query escape hatch on the createRPC proxy and
     // "then" is guarded there to keep the client proxy non-thenable — a
     // procedure under either name would be unreachable from ui/.
     if (key === "useClient" || key === "then") {

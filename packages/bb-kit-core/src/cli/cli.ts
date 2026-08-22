@@ -1,10 +1,10 @@
-import type { CLICommand, CLIContext, CLIResult } from "../internal/program.ts";
-import { commandDefinitions, runProgram } from "../internal/program.ts";
-import type { UnionToIntersection } from "../internal/procedure.ts";
+import type { CLICommand, CLIContext, CLIResult } from "./runner.ts";
+import { commandDefinitions, runProgram } from "./runner.ts";
+import type { UnionToIntersection } from "../internal/types.ts";
 
 /** Public surface of `@bb-kit/core/cli` (§1, §4). */
-export { CLIError } from "../internal/program.ts";
-export type { CLIResult, CLIContext } from "../internal/program.ts";
+export { CLIError } from "./runner.ts";
+export type { CLIResult, CLIContext } from "./runner.ts";
 
 /**
  * Declare a CLI command. `D` — what the command demands of the client —

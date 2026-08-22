@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { BinResult } from "./shared.ts";
 import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "../internal/wire-name.ts";
+import { wireName } from "../rpc/wire-name.ts";
 
 /**
  * `bb-kit add <query|mutation|command> <name>` (§7): write one unit file

@@ -34,13 +34,13 @@
       "types": "./dist/rpc/rpc.d.ts",
       "import": "./dist/rpc/rpc.js"
     },
+    "./rpc/query": {
+      "types": "./dist/rpc/query.d.ts",
+      "import": "./dist/rpc/query.js"
+    },
     "./cli": {
       "types": "./dist/cli/cli.d.ts",
       "import": "./dist/cli/cli.js"
-    },
-    "./query": {
-      "types": "./dist/query/query.d.ts",
-      "import": "./dist/query/query.js"
     },
     "./testing": {
       "types": "./dist/testing/testing.d.ts",

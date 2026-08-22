@@ -1,6 +1,6 @@
 # Dotfiles plugin conventions
 
-Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/cli`, `/query`, `/testing`).
+Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/rpc/query`, `/cli`, `/testing`).
 
 ## Layout
 

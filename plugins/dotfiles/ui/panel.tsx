@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary } from "@bb-kit/core/query";
+import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";

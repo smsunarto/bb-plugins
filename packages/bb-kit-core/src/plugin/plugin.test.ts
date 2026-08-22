@@ -5,7 +5,7 @@ import { definePlugin } from "./plugin.ts";
 import { defineMutation, defineQuery, defineRPC } from "../rpc/rpc.ts";
 import type { ClientFor } from "../rpc/rpc.ts";
 import { defineCommand } from "../cli/cli.ts";
-import { noInputSchema } from "../internal/no-input.ts";
+import { noInputSchema } from "../rpc/no-input.ts";
 import type { HostSeam } from "./host.ts";
 
 type Ctx = { prefix: string };

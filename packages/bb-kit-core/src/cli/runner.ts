@@ -1,5 +1,5 @@
 import { Command, CommanderError } from "commander";
-import type { MaybePromise } from "./procedure.ts";
+import type { MaybePromise } from "../internal/types.ts";
 
 /**
  * The shared commander runner (§4). `invokeCLI` and the `definePlugin`
@@ -66,58 +66,23 @@ export type SubcommandDefinition = {
 
 export type ProgramOptions = { name?: string; summary?: string };
 
-type OutputSink = { out: string; err: string; result: CLIResult | undefined };
-
-/**
- * Build a commander program. Settings (exitOverride, output capture)
- * are installed BEFORE subcommands are created so `parent.command()`
- * copies them down via commander's `copyInheritedSettings`. `configure`
- * runs here — at registration for the metadata build, and again on
- * every invocation.
- */
-export function buildProgram(
-  definitions: readonly SubcommandDefinition[],
-  options: ProgramOptions,
-  sink?: OutputSink,
-): Command {
-  const program = new Command(options.name ?? "cli");
-  program.exitOverride();
-  if (options.summary !== undefined) {
-    program.description(options.summary);
-  }
-  if (sink) {
-    program.configureOutput({
-      writeOut: (str) => {
-        sink.out += str;
-      },
-      writeErr: (str) => {
-        sink.err += str;
-      },
-    });
-  }
-  for (const definition of definitions) {
-    addSubcommand(program, definition, sink);
-  }
-  return program;
-}
-
-function addSubcommand(parent: Command, definition: SubcommandDefinition, sink?: OutputSink): void {
-  const sub = parent.command(definition.name);
-  sub.summary(definition.summary);
-  definition.configure?.(sub);
-  const action = definition.action;
-  if (action) {
-    // Installed AFTER configure: overwrites any user-supplied .action().
-    sub.action(async () => {
-      const result = await action(sub);
-      if (sink) {
-        sink.result = result;
-      }
-    });
-  }
-  for (const child of definition.children ?? []) {
-    addSubcommand(sub, child, sink);
-  }
+/** Map curated commands to subcommand definitions (shared by both tiers). */
+export function commandDefinitions<D>(
+  commands: Readonly<Record<string, CLICommand<D>>>,
+  deps: D,
+  context: CLIContext,
+): SubcommandDefinition[] {
+  return Object.entries(commands).map(([name, command]) => ({
+    name,
+    summary: command.summary,
+    configure: command.configure,
+    action: (sub: Command) =>
+      command.run(deps, {
+        args: sub.processedArgs as string[],
+        options: sub.opts(),
+        context,
+      }),
+  }));
 }
 
 /**
@@ -161,21 +126,63 @@ export async function runProgram(
   }
 }
 
-/** Map curated commands to subcommand definitions (shared by both tiers). */
-export function commandDefinitions<D>(
-  commands: Readonly<Record<string, CLICommand<D>>>,
-  deps: D,
-  context: CLIContext,
-): SubcommandDefinition[] {
-  return Object.entries(commands).map(([name, command]) => ({
-    name,
-    summary: command.summary,
-    configure: command.configure,
-    action: (sub: Command) =>
-      command.run(deps, {
-        args: sub.processedArgs as string[],
-        options: sub.opts(),
-        context,
-      }),
-  }));
+type OutputSink = { out: string; err: string; result: CLIResult | undefined };
+
+/**
+ * Build a commander program. Settings (exitOverride, output capture)
+ * are installed BEFORE subcommands are created so `parent.command()`
+ * copies them down via commander's `copyInheritedSettings`. `configure`
+ * runs here — at registration for the metadata build, and again on
+ * every invocation.
+ */
+export function buildProgram(
+  definitions: readonly SubcommandDefinition[],
+  options: ProgramOptions,
+  sink?: OutputSink,
+): Command {
+  const program = new Command(options.name ?? "cli");
+  program.exitOverride();
+  if (options.summary !== undefined) {
+    program.description(options.summary);
+  }
+  if (sink) {
+    program.configureOutput({
+      writeOut: (str) => {
+        sink.out += str;
+      },
+      writeErr: (str) => {
+        sink.err += str;
+      },
+    });
+  }
+  const onResult =
+    sink &&
+    ((result: CLIResult): void => {
+      sink.result = result;
+    });
+  for (const definition of definitions) {
+    addSubcommand(program, definition, onResult);
+  }
+  return program;
+}
+
+function addSubcommand(
+  parent: Command,
+  definition: SubcommandDefinition,
+  onResult?: (result: CLIResult) => void,
+): void {
+  const sub = parent.command(definition.name);
+  sub.summary(definition.summary);
+  definition.configure?.(sub);
+  const action = definition.action;
+  if (action) {
+    // Installed AFTER configure: overwrites any user-supplied .action().
+    sub.action(async () => {
+      const result = await action(sub);
+      onResult?.(result);
+    });
+  }
+  for (const child of definition.children ?? []) {
+    addSubcommand(sub, child, onResult);
+  }
 }

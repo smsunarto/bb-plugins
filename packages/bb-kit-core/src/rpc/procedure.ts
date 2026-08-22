@@ -1,12 +1,11 @@
 import type { SchemaInput, SchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
+import type { MaybePromise } from "../internal/types.ts";
 
 /**
- * Internal shapes shared by `./rpc`, `./cli`, and `./plugin`. Not a
- * public subpath: the exports map blocks deep imports, so nothing here
- * is API.
+ * Internal shapes behind the rpc domain (`./rpc`, `./rpc/query`), also
+ * deep-imported by `./plugin`'s composition root. Not a public subpath:
+ * the exports map blocks deep imports, so nothing here is API.
  */
-
-export type MaybePromise<T> = T | Promise<T>;
 
 export type ProcedureKind = "query" | "mutation";
 
@@ -72,10 +71,3 @@ export type RuntimeProcedure = {
 export function runtimeProcedures(rpc: AnyRPC): Record<string, RuntimeProcedure> {
   return rpc.procedures as unknown as Record<string, RuntimeProcedure>;
 }
-
-/** `A | B` → `A & B`. One private helper, shared by `./rpc` and `./cli`. */
-export type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (
-  x: infer I,
-) => void
-  ? I
-  : never;

@@ -14,12 +14,12 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { AnyRPC } from "../internal/procedure.ts";
-import type { SchemaInput, SchemaOutput, StandardSchemaV1 } from "../internal/standard-schema.ts";
-import type { ClientFor } from "../rpc/rpc.ts";
-import { wireName } from "../internal/wire-name.ts";
+import type { AnyRPC } from "./procedure.ts";
+import type { SchemaInput, SchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
+import type { ClientFor } from "./rpc.ts";
+import { wireName } from "./wire-name.ts";
 
-/** Public surface of `@bb-kit/core/query` (§1, §5). */
+/** Public surface of `@bb-kit/core/rpc/query` (§1, §5). */
 
 /**
  * TanStack's query options minus what the accessor owns (`queryKey`,

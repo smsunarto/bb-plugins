@@ -1,5 +1,5 @@
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "../internal/wire-name.ts";
+import { wireName } from "../rpc/wire-name.ts";
 
 /**
  * The scaffold templates behind `bb-kit create` (§7). One function, no
@@ -218,7 +218,7 @@ const CLI_STATUS_TEST_TS = [
 
 function uiRPCTs(id: string): string {
   return [
-    'import { createRPC } from "@bb-kit/core/query";',
+    'import { createRPC } from "@bb-kit/core/rpc/query";',
     'import type { RPC } from "../server.ts";',
     "",
     "/** The namespace, written ONCE in ui/ (§5) — import `rpc` everywhere. */",
@@ -232,7 +232,7 @@ function uiRPCTs(id: string): string {
 
 function uiAppTsx(id: string): string {
   return [
-    'import { PluginQueryBoundary } from "@bb-kit/core/query";',
+    'import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";',
     'import { definePluginApp } from "@get-bb/plugin-sdk/app";',
     'import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";',
     'import { rpc } from "./rpc.ts";',

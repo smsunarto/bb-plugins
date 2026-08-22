@@ -12,7 +12,7 @@ the authoring loop in `docs/bb-kit-dev-workflow.md`. Supersedes
 `docs/bb-plugin-framework-spec.md` (bb-kit 0.1).
 
 The map: §1 the package, §2 the plugin it produces, §3–§5 the three API
-surfaces (`./rpc`, `./cli`, `./query`), §6 how it all lands on bb, §7 the
+surfaces (`./rpc`, `./cli`, `./rpc/query`), §6 how it all lands on bb, §7 the
 `bb-kit` bin, §8 testing, §9–§10 what the rewrite deliberately leaves
 behind. History — what bb-kit 0.1 or the reconsider branch did, and why
 the rewrite differs — is set off in `> Aside:` blockquotes; skip every one
@@ -31,13 +31,13 @@ on purpose: the subpath is the unit.
 > Aside: the reconsider branch aliased `.` to the rpc module, which read
 > as arbitrary.
 
-| Subpath     | Runs in            | Exports                                                                                                                                                                                                |
-| ----------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `./plugin`  | server, tests      | `definePlugin`                                                                                                                                                                                         |
-| `./rpc`     | server, CLI, tests | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, types `ClientFor`, `RPCContext`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
-| `./cli`     | server, tests      | `defineCommand`, `invokeCLI`, `CLIError`, types `CLIResult`, `CLIContext`                                                                                                                              |
-| `./query`   | browser            | `createRPC`, `PluginQueryBoundary`                                                                                                                                                                     |
-| `./testing` | tests              | `installDom`, `stubClient`                                                                                                                                                                             |
+| Subpath       | Runs in            | Exports                                                                                                                                                                                                |
+| ------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `./plugin`    | server, tests      | `definePlugin`                                                                                                                                                                                         |
+| `./rpc`       | server, CLI, tests | `defineQuery`, `defineMutation`, `defineRPC`, `createClient`, `wireName`, `RPCValidationError`, types `ClientFor`, `RPCContext`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
+| `./cli`       | server, tests      | `defineCommand`, `invokeCLI`, `CLIError`, types `CLIResult`, `CLIContext`                                                                                                                              |
+| `./rpc/query` | browser            | `createRPC`, `PluginQueryBoundary`                                                                                                                                                                     |
+| `./testing`   | tests              | `installDom`, `stubClient`                                                                                                                                                                             |
 
 bin: `bb-kit` — `create` / `add` / `check`, nothing else (§7; ADR-0009,
 ADR-0010).
@@ -56,7 +56,7 @@ scaffold (§7 owns the authoritative scaffold manifest):
   version. bb-kit imports only its `/app` subpath at UI runtime and
   `/internal/host-policy` inside `check`.
 - `react` ≥ 19 and `@tanstack/react-query` ^5 — needed only when
-  `./query` is imported.
+  `./rpc/query` is imported.
 - `jsdom` — only when `installDom` is called.
 - `typescript` — only by `bb-kit check`.
 
@@ -341,7 +341,7 @@ name (`readUrl` / `readURL`).
 
 There is exactly one derivation: the runtime `wireName(namespace, key)`
 function. It lives in one internal module; `./rpc` re-exports it and
-`./query` imports it directly — the Runs-in column in §1 describes
+`./rpc/query` imports it directly — the Runs-in column in §1 describes
 consumer import sites, not module reachability. `check` prints the
 derived wire-name table.
 
@@ -578,11 +578,11 @@ ergonomics; the subtree is deliberately boring.
   touched by `add`, not mounted by `invokeCLI`. Tier-2 tests reach it
   through the fake host like any registered CLI.
 
-## 5. `./query`
+## 5. `./rpc/query`
 
 ```ts
 // ui/rpc.ts — scaffolded; the only place in ui/ the namespace is written
-import { createRPC } from "@bb-kit/core/query";
+import { createRPC } from "@bb-kit/core/rpc/query";
 import type { RPC } from "../server.ts";
 
 export const rpc = createRPC<RPC>("dotfiles");

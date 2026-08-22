@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildProgram, runProgram } from "./program.ts";
-import type { SubcommandDefinition } from "./program.ts";
+import { buildProgram, runProgram } from "./runner.ts";
+import type { SubcommandDefinition } from "./runner.ts";
 
 test("runProgram builds a FRESH program per invocation", async () => {
   let builds = 0;
