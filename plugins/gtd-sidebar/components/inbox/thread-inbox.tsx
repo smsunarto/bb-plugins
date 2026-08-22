@@ -35,9 +35,11 @@ import {
   visibleInboxThreads,
 } from "@/lib/inbox";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
+import { resolveSidebarBranchLabel } from "@/lib/gitbutler";
 
 const ALL_PROJECTS = "__all__";
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
+const GITBUTLER_REFRESH_MS = 30_000;
 
 /**
  * The sidebar's scrolling list: cards grouped by who can act next.
@@ -81,6 +83,60 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
   // the glyph. That way the common case never flashes it on and off.
   const { values: settingValues } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon !== false;
+
+  const gitButlerEnvironmentIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          threads.flatMap((thread) => {
+            const environment = thread.environment;
+            return environment?.workspaceDisplayKind === "other" && environment.id !== null
+              ? [environment.id]
+              : [];
+          }),
+        ),
+      ].sort(),
+    [threads],
+  );
+  const gitButlerEnvironmentKey = gitButlerEnvironmentIds.join("\u0000");
+  const [gitButlerLabels, setGitButlerLabels] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+
+  useEffect(() => {
+    if (gitButlerEnvironmentKey.length === 0) {
+      setGitButlerLabels(new Map());
+      return;
+    }
+
+    const environmentIds = gitButlerEnvironmentKey.split("\u0000");
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const result = await rpc.call("listEnvironmentBranches", { environmentIds });
+        if (!cancelled) {
+          setGitButlerLabels(
+            new Map(
+              result.environments.map((environment) => [
+                environment.environmentId,
+                environment.label,
+              ]),
+            ),
+          );
+        }
+      } catch {
+        // Keep the last known virtual branch. The host may reconnect before
+        // the next bounded refresh, and bb's own label remains the fallback.
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(() => void refresh(), GITBUTLER_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [gitButlerEnvironmentKey, rpc]);
 
   useEffect(() => {
     let cancelled = false;
@@ -278,6 +334,11 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
+                    branchName={resolveSidebarBranchLabel(
+                      thread.environment?.branchName ?? null,
+                      thread.environment?.id ?? null,
+                      gitButlerLabels,
+                    )}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
                     onNavigate={onNavigate}
@@ -297,6 +358,11 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
+                    branchName={resolveSidebarBranchLabel(
+                      thread.environment?.branchName ?? null,
+                      thread.environment?.id ?? null,
+                      gitButlerLabels,
+                    )}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
                     onNavigate={onNavigate}
@@ -316,6 +382,11 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
+                    branchName={resolveSidebarBranchLabel(
+                      thread.environment?.branchName ?? null,
+                      thread.environment?.id ?? null,
+                      gitButlerLabels,
+                    )}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
                     onNavigate={onNavigate}

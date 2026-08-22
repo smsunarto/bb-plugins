@@ -25,6 +25,7 @@ export function ThreadCard({
   thread,
   provider,
   projectName,
+  branchName,
   isActive,
   canPark,
   showProviderIcon,
@@ -36,6 +37,8 @@ export function ThreadCard({
   thread: PluginSidebarThread;
   provider?: ProviderGlyphInfo;
   projectName: string | null;
+  /** bb's branch, or GitButler's virtual-branch summary for its workspace. */
+  branchName: string | null;
   isActive: boolean;
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
@@ -134,7 +137,7 @@ export function ThreadCard({
                 missing both still holds the line's right side still. */}
             <span className="flex min-w-0 flex-1 items-center gap-1">
               {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
-              {projectName && (thread.environment?.branchName || thread.host) ? (
+              {projectName && (branchName || thread.host) ? (
                 <span aria-hidden className="shrink-0 text-muted-foreground/40">
                   ·
                 </span>
@@ -151,9 +154,9 @@ export function ThreadCard({
                   A thread without a worktree still runs somewhere, so the
                   machine takes the branch's place rather than leaving the
                   segment blank. */}
-              {thread.environment?.branchName ? (
+              {branchName ? (
                 <span className="min-w-0 shrink-[9999] truncate font-mono text-muted-foreground/50">
-                  {thread.environment.branchName}
+                  {branchName}
                 </span>
               ) : thread.host ? (
                 <span className="min-w-0 shrink-[9999] truncate text-muted-foreground/50">

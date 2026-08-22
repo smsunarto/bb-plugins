@@ -12,6 +12,7 @@ import { z } from "zod";
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { parseArchivedThreadIds } from "./lib/lifecycle.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
+import { gitButlerHostContract } from "./lib/gitbutler.ts";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -46,6 +47,17 @@ interface LifecycleDbRow {
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
 export const gtdSidebarRpcContract = defineRpcContract({
+  listEnvironmentBranches: {
+    input: z.object({ environmentIds: z.array(z.string().trim().min(1)).max(100) }),
+    output: z.object({
+      environments: z.array(
+        z.object({
+          environmentId: z.string(),
+          label: z.string(),
+        }),
+      ),
+    }),
+  },
   listProviders: {
     input: z.object({}),
     output: z.object({
@@ -128,6 +140,7 @@ export const gtdSidebarRpcContract = defineRpcContract({
 export const LIFECYCLE_CHANNEL = "lifecycle";
 
 export default function plugin(bb: BbPluginApi) {
+  const gitButlerHost = bb.hosts.experimental_client({ contract: gitButlerHostContract });
   // Declared, never read here. The card is the only consumer and it reads the
   // value through `useSettings()`, so this exists to put the toggle in the
   // plugin's settings form and give it its default.
@@ -276,6 +289,38 @@ export default function plugin(bb: BbPluginApi) {
   };
 
   bb.rpc.register(gtdSidebarRpcContract, {
+    async listEnvironmentBranches({ environmentIds }) {
+      const environments = await Promise.all(
+        [...new Set(environmentIds)].map(async (environmentId) => {
+          try {
+            const environment = await bb.sdk.environments.get({ environmentId });
+            // GitButler owns the primary checkout. Linked worktrees keep their
+            // real Git branch and must not inherit the primary workspace's
+            // virtual branches. `branchName` is not a guard here: bb records it
+            // when an environment is created, so it can predate GitButler.
+            if (!environment.isGitRepo || environment.isWorktree || environment.path === null) {
+              return null;
+            }
+
+            const summary = await gitButlerHost.call(
+              "branchSummary",
+              { cwd: environment.path },
+              { hostId: environment.hostId },
+            );
+            if (summary.label === null) return null;
+            return {
+              environmentId,
+              label: summary.label,
+            };
+          } catch {
+            // The card keeps bb's own branch label when the environment or its
+            // host is unavailable. A sidebar enhancement must not blank rows.
+            return null;
+          }
+        }),
+      );
+      return { environments: environments.filter((environment) => environment !== null) };
+    },
     // A custom ACP provider already carries its own brand mark, so the sidebar
     // reads it from the host rather than hard-coding a second glyph per agent.
     async listProviders() {
