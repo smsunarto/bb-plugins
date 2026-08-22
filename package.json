@@ -61,7 +61,7 @@
     "oxfmt": "^0.64.0",
     "oxlint": "^1.77.0",
     "playwright": "1.62.1",
-    "typescript": "^7.0.0"
+    "typescript": "^6.0.0"
   },
   "patchedDependencies": {
     "@ampcode/sdk@0.1.0-20260729105907-g72d5ca3": "patches/@ampcode+sdk@0.1.0-20260729105907-g72d5ca3.patch"
