@@ -7,16 +7,26 @@
 // the same wherever an agent meets it.
 
 import type { Session, StoredAnnotation } from "./afs.ts";
+import { pluginUiSurfacePromptContext } from "./plugin-ui-surface-map.ts";
 
 function line(label: string, value: string | null | undefined): string {
   return value ? `**${label}:** ${value}\n` : "";
 }
 
 function locationOf(annotation: StoredAnnotation): string {
-  const { pluginId, surface, route } = annotation.bb;
-  if (!pluginId) return `bb app shell · ${route}`;
-  const surfaceLabel = surface ? ` (${surface})` : "";
-  return `plugin \`${pluginId}\`${surfaceLabel} · ${route}`;
+  const { pluginId, route, routeLabel } = annotation.bb;
+  const routeContext = routeLabel ? ` \`${route}\` (${routeLabel})` : ` \`${route}\``;
+  if (!pluginId) return `bb app shell · route${routeContext}`;
+  return `plugin \`${pluginId}\` · route${routeContext}`;
+}
+
+function pluginUiOf(annotation: StoredAnnotation): string | null {
+  const { pluginId, surface, surfaceId } = annotation.bb;
+  if (!pluginId || !surface) return null;
+
+  const context = pluginUiSurfacePromptContext(surface);
+  const registrationId = surfaceId ? ` · registration \`${surfaceId}\`` : "";
+  return `\`${context.registration}\`${registrationId} — ${context.role}. Start at this registration in plugin \`${pluginId}\`'s \`app.tsx\`, then follow its component or run handler.`;
 }
 
 function describeKind(annotation: StoredAnnotation): string | null {
@@ -42,6 +52,7 @@ export function renderAnnotation(annotation: StoredAnnotation, index?: number): 
 
   let out = `${heading}\n`;
   out += line("Where", locationOf(annotation));
+  out += line("Plugin UI", pluginUiOf(annotation));
   out += line("Selector", `\`${annotation.elementPath}\``);
   out += line("React", annotation.reactComponents);
   out += line("Source", annotation.sourceFile);
@@ -88,7 +99,7 @@ export function renderAnnotations(
   const sessionsById = new Map((options.sessions ?? []).map((session) => [session.id, session]));
 
   let out = `## ${options.title ?? "bb UI feedback"}\n\n`;
-  out += `${annotations.length} annotation${annotations.length === 1 ? "" : "s"} across ${bySession.size} page${bySession.size === 1 ? "" : "s"}. Element selectors are live bb DOM paths — pair them with the owning plugin or the bb app source to find the code.\n`;
+  out += `${annotations.length} annotation${annotations.length === 1 ? "" : "s"} across ${bySession.size} page${bySession.size === 1 ? "" : "s"}. For plugin UI, start from the named SDK registration in the owning plugin's \`app.tsx\`, then use the selector and React path to narrow the rendered component.\n`;
 
   for (const [sessionId, sessionAnnotations] of bySession) {
     const session = sessionsById.get(sessionId);

@@ -48,8 +48,10 @@ export const bbContextSchema = z.object({
   route: z.string(),
   /** Owning plugin id when the element sat inside a plugin surface. */
   pluginId: z.string().nullable(),
-  /** Plugin surface kind (`navPanel`, `threadPanel`, …) when detectable. */
+  /** Public plugin UI API (`navPanel`, `composer.banners`, …) when detectable. */
   surface: z.string().nullable(),
+  /** Registration/item id exposed by the plugin UI boundary, e.g. `inbox`. */
+  surfaceId: z.string().nullable().optional(),
   threadId: z.string().nullable(),
   projectId: z.string().nullable(),
   /** Human label for the route, used in listings. */

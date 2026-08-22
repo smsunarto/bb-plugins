@@ -34,10 +34,10 @@ import { selectOrphans, withoutBundleSource } from "./annotation-hygiene.ts";
 import { createRpcClient } from "./plugin-rpc.ts";
 import {
   labelForRoute,
-  panelPluginIdFromRoute,
   projectIdFromRoute,
   threadIdFromRoute,
 } from "./route.ts";
+import { pluginUiSurfaceFor } from "./plugin-ui-surface.ts";
 import { seedAgentationThemeDefault } from "./theme.ts";
 import {
   createCoalescingQueue,
@@ -124,33 +124,6 @@ function pageMeta(): PageMeta {
   };
 }
 
-/**
- * Which bb surface an element belongs to.
- *
- * bb wraps every plugin-rendered subtree in `<div data-bb-plugin-root
- * data-bb-plugin="<id>">`, including portalled overlays, so the nearest such
- * ancestor is an exact answer to "whose code draws this?" — the difference
- * between feedback an agent can act on and a selector with no home.
- */
-function surfaceFor(
-  element: Element | null,
-  route: string,
-): { pluginId: string | null; surface: string | null } {
-  if (!element) return { pluginId: null, surface: null };
-
-  const owner = element.closest<HTMLElement>("[data-bb-plugin]");
-  const pluginId = owner?.getAttribute("data-bb-plugin") ?? null;
-  if (!pluginId) return { pluginId: null, surface: null };
-
-  if (element.closest("[data-bb-portaled-overlay]")) {
-    return { pluginId, surface: "overlay" };
-  }
-  if (panelPluginIdFromRoute(route) === pluginId) {
-    return { pluginId, surface: "navPanel" };
-  }
-  return { pluginId, surface: "inline" };
-}
-
 /** Ignore clicks on the toolbar's own chrome when tracking the last target. */
 function isToolbarChrome(element: Element | null): boolean {
   return Boolean(
@@ -201,7 +174,48 @@ function saveSynced(route: string, ids: Iterable<string>): void {
   }
 }
 
-export async function mountAnnotationToolbar(
+/**
+ * bb tracks plugin content-script callbacks while they run so an imperative
+ * script cannot move nodes React already owns. Agentation deliberately owns a
+ * separate React root and portal, so start that root on the next animation
+ * frame, after the content-script callback has returned to the host. React's
+ * own DOM work then runs outside the foreign-mutation guard while every event,
+ * timer, and disposer remains owned by this plugin instance.
+ */
+export function mountAnnotationToolbar(
+  context: PluginContentScriptContext,
+): PluginContentScriptDisposer {
+  let disposed = false;
+  let frame: number | null = requestAnimationFrame(() => {
+    frame = null;
+    void mountAnnotationToolbarRoot(context)
+      .then((disposeRoot) => {
+        if (disposed) {
+          void disposeRoot();
+          return undefined;
+        }
+        rootDisposer = disposeRoot;
+        return undefined;
+      })
+      .catch((error: unknown) => {
+        console.warn("[agentation] Could not mount annotation toolbar:", error);
+      });
+  });
+  let rootDisposer: PluginContentScriptDisposer | null = null;
+
+  return () => {
+    disposed = true;
+    if (frame !== null) {
+      cancelAnimationFrame(frame);
+      frame = null;
+    }
+    const disposeRoot = rootDisposer;
+    rootDisposer = null;
+    return disposeRoot?.();
+  };
+}
+
+async function mountAnnotationToolbarRoot(
   context: PluginContentScriptContext,
 ): Promise<PluginContentScriptDisposer> {
   const rpc = createRpcClient<typeof rpcContract>(context.pluginId);
@@ -247,11 +261,12 @@ export async function mountAnnotationToolbar(
   let stream: EventSource | null = null;
 
   function contextForNewAnnotation(): BbContext {
-    const { pluginId, surface } = surfaceFor(lastTarget, meta.route);
+    const { pluginId, surface, surfaceId } = pluginUiSurfaceFor(lastTarget, meta.route);
     return {
       route: meta.route,
       pluginId,
       surface,
+      surfaceId,
       threadId: meta.threadId,
       projectId: meta.projectId,
       routeLabel: labelForRoute(meta.route),

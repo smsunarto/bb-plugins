@@ -32,6 +32,7 @@ function stored(overrides: Partial<StoredAnnotation> = {}): StoredAnnotation {
       route: "/plugins/github/issues",
       pluginId: "github",
       surface: "navPanel",
+      surfaceId: "issues",
       threadId: null,
       projectId: null,
       routeLabel: "github panel",
@@ -46,9 +47,37 @@ function stored(overrides: Partial<StoredAnnotation> = {}): StoredAnnotation {
 
 test("an annotation on a plugin surface names the owning plugin", () => {
   const output = renderAnnotation(stored());
-  assert.match(output, /plugin `github` \(navPanel\)/);
+  assert.match(output, /plugin `github` · route `\/plugins\/github\/issues` \(github panel\)/);
+  assert.match(output, /\*\*Plugin UI:\*\* `app\.slots\.navPanel` · registration `issues`/);
+  assert.match(output, /the plugin-owned route panel/);
+  assert.match(output, /plugin `github`'s `app\.tsx`/);
   assert.match(output, /body > main > button\.cta/);
   assert.match(output, /The label wraps at 320px/);
+});
+
+test("a thread-list annotation points an agent to the exact GTD registration", () => {
+  const output = renderAnnotation(
+    stored({
+      bb: {
+        route: "/",
+        pluginId: "gtd-sidebar",
+        surface: "experimental_threadList",
+        surfaceId: "inbox",
+        threadId: null,
+        projectId: null,
+        routeLabel: "home",
+      },
+      reactComponents: "<PluginSlotBoundary> <InboxThreadList>",
+    }),
+  );
+
+  assert.match(output, /\*\*Where:\*\* plugin `gtd-sidebar` · route `\/` \(home\)/);
+  assert.match(
+    output,
+    /\*\*Plugin UI:\*\* `app\.slots\.experimental_threadList` · registration `inbox`/,
+  );
+  assert.match(output, /replacing bb's sidebar thread list/);
+  assert.match(output, /Start at this registration in plugin `gtd-sidebar`'s `app\.tsx`/);
 });
 
 test("an annotation on the shell says so instead of naming a plugin", () => {
@@ -58,6 +87,7 @@ test("an annotation on the shell says so instead of naming a plugin", () => {
         route: "/",
         pluginId: null,
         surface: null,
+        surfaceId: null,
         threadId: null,
         projectId: null,
         routeLabel: "home",
