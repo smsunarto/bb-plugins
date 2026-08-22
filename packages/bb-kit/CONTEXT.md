@@ -26,6 +26,9 @@ The directory of Procedures — one per file, its test beside it.
 **`cli/`**:
 The directory of CLI commands — one per file, its test beside it.
 
+**`tools/`**:
+The directory of Agent tools — one per file, its test beside it.
+
 **`ui/`**:
 Everything browser-bound; `ui/app.tsx` is the app entry. An import
 outside `ui/` never reaches the browser bundle.
@@ -95,6 +98,20 @@ _Avoid_: auto-commands, generated CLI
 
 **Agent tool**:
 A capability a plugin exposes to the coding agent driving a thread; the
-agent invokes it by name with schema-validated input. Tool names are
-public API, unique across every installed plugin.
+agent invokes it by name with schema-validated input. Defined with
+`defineTool`, one per file in `tools/`.
 _Avoid_: MCP tool, model tool
+
+**Tool name**:
+The public name an Agent tool answers to, derived as
+`snake(namespace)_snake(key)` — the same rule as Wire names. Public API —
+renaming one is a breaking change — and unique across every installed
+plugin.
+_Avoid_: tool id
+
+**Session**:
+One agent run the host assembles inside a thread. A plugin's enablement
+and instructions callbacks receive the Session's facts (thread, project,
+environment, provider); their choices apply when the next Session
+starts, never mid-run.
+_Avoid_: resolution, agent run
