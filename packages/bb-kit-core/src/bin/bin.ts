@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 import process from "node:process";
-import { runAdd } from "./bin/add.ts";
-import { runCheck } from "./bin/check.ts";
-import { runCreate } from "./bin/create.ts";
-import type { BinResult } from "./bin/shared.ts";
+import { runAdd } from "./add.ts";
+import { runCheck } from "./check.ts";
+import { runCreate } from "./create.ts";
+import type { BinResult } from "./shared.ts";
 
 // TS 7's sync API reads `child.stdout._handle.fd`, a Node internal
 // absent in Bun, so a bun-run `check` fails and then hangs on the
 // orphaned compiler child. Refuse before any command can spawn it.
 if (process.versions["bun"] !== undefined) {
   process.stderr.write(
-    "bb-kit must run under node, not bun — use the `bb-kit` bin or `node --import tsx packages/bb-kit-core/src/bin.ts <command>` (TS 7's sync toolchain reads Node internals absent in Bun)\n",
+    "bb-kit must run under node, not bun — use the `bb-kit` bin or `node --import tsx packages/bb-kit-core/src/bin/bin.ts <command>` (TS 7's sync toolchain reads Node internals absent in Bun)\n",
   );
   process.exit(1);
 }

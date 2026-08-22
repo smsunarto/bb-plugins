@@ -29,7 +29,7 @@ packages/bb-kit-core/dist/bin.js` works from any cwd — and satisfy the
 `npm install --install-links` is the verified route):
 
 ```sh
-node --import tsx packages/bb-kit-core/src/bin.ts create my-plugin  # repo root
+node --import tsx packages/bb-kit-core/src/bin/bin.ts create my-plugin  # repo root
 cd my-plugin
 ```
 

@@ -37,7 +37,7 @@ Every migration pays these, regardless of plugin size:
   no test files and no root helpers.
 - Scripts: add `lint`, `check`, `verify` (copy them from notify or
   dotfiles). The checker runs from source:
-  `node --import tsx ../../packages/bb-kit-core/src/bin.ts check`.
+  `node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check`.
   Never run the checker under bun — TS7's sync API reads a stream handle
   bun does not provide.
 
@@ -147,7 +147,7 @@ are claims, not evidence.
 
 ```
 bunx oxfmt . && bunx oxlint . && bunx tsc --noEmit && bun run test
-node --import tsx ../../packages/bb-kit-core/src/bin.ts check
+node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check
 bb plugin build .
 bun pm pack --dry-run
 ```
