@@ -38,8 +38,11 @@ Every migration pays these, regardless of plugin size:
 - Scripts: add `lint`, `check`, `verify` (copy them from notify or
   dotfiles). The checker runs from source:
   `node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check`.
-  Never run the checker under bun — TS7's sync API reads a stream handle
-  bun does not provide.
+  The checker parses in-process with the plugin's own TypeScript
+  (ADR-0018), so bun can run it too — node stays the documented path
+  (ADR-0006). A tsconfig that does not load — broken JSON or a
+  config-level error such as a bad `extends` — now fails check, where
+  the TS7 checker silently recovered.
 
 ## The shape the checker enforces
 

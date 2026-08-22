@@ -26,12 +26,14 @@ not evaluated at all — see the last section. Timings are from this host and ar
 
 - `bb-kit check` is static. It parses sources through the plugin's own TypeScript 7 compiler and
   never imports plugin code (`bin-check.ts:16-21`). It is safe on broken or untrusted trees.
+  (Now TypeScript 6, parsed in-process — ADR-0018.)
 - Errors are rule-tagged with file:line, and the message names both sides of a conflict:
   `RPC namespace "other-name" must equal derivePluginID(package.json name) = "probe-plugin"`.
 - Success output prints the wire-name table on every run. The table is a live review artifact of
   the plugin's public RPC surface.
 - Degradation is honest. Without a toolchain it prints `could not resolve TypeScript 7 ... install
-devDependencies first (parse-dependent rules skipped)` instead of a false pass.
+devDependencies first (parse-dependent rules skipped)` instead of a false pass. (The TS6 move
+reworded the message — ADR-0018.)
 - A missing sibling test warns but never fails the gate. Wiring, naming, and manifest breaks are
   hard errors. That severity split matches how authors actually work.
 
@@ -103,7 +105,8 @@ the wire name "p_read_url"` (`rpc.ts:92-111`).
    and the spec invites bun repos with no warning. The hang was reproduced by three migration
    agents. This review pass did not re-run it because bun invocations of the checker are banned on
    this host. Fix: refuse with one line when `process.versions.bun` is set, force exit after a
-   toolchain failure, and correct `AGENTS.md` and spec §10.
+   toolchain failure, and correct `AGENTS.md` and spec §10. (Fixed as written, then overtaken:
+   ADR-0018's in-process TS6 parse removed the failure mode and the guard, and bun now runs check.)
 4. **Four doc statements are now false.** The spec header still says "No code exists until this
    spec is confirmed". The doc baseline reads bb 0.38 / SDK 0.4.6 while the code pins bb ≥0.39 /
    SDK 0.4.8. Docs and scaffold call `@bb-kit/core` a devDependency while dotfiles ships it under
