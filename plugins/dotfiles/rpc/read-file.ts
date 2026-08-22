@@ -3,20 +3,15 @@ import { defineQuery } from "@bb-kit/core/rpc";
 import type { Context } from "../server/context.ts";
 import { isAllowedPath } from "../server/domain.ts";
 
-const readFileInputSchema = z.object({ path: z.string() }).strict();
-const readFileOutputSchema = z
-  .object({
-    content: z.string(),
-    sha256: z.string(),
-    headContent: z.string().nullable(),
-  })
-  .strict();
-
-export type ReadFileResult = z.infer<typeof readFileOutputSchema>;
-
 export const readFile = defineQuery({
-  input: readFileInputSchema,
-  output: readFileOutputSchema,
+  input: z.object({ path: z.string() }).strict(),
+  output: z
+    .object({
+      content: z.string(),
+      sha256: z.string(),
+      headContent: z.string().nullable(),
+    })
+    .strict(),
   handler: async ({ repository }: Context, { path }) => {
     const repoPath = await repository.getRepoPath();
     // Allowlist guard, duplicated with save-file.ts on purpose: rpc/
@@ -32,3 +27,5 @@ export const readFile = defineQuery({
     return { ...file, headContent };
   },
 });
+
+export type ReadFileResult = z.infer<typeof readFile.output>;
