@@ -27,24 +27,24 @@
   },
   "exports": {
     "./plugin": {
-      "types": "./dist/plugin.d.ts",
-      "import": "./dist/plugin.js"
+      "types": "./dist/plugin/plugin.d.ts",
+      "import": "./dist/plugin/plugin.js"
     },
     "./rpc": {
-      "types": "./dist/rpc.d.ts",
-      "import": "./dist/rpc.js"
+      "types": "./dist/rpc/rpc.d.ts",
+      "import": "./dist/rpc/rpc.js"
     },
     "./cli": {
-      "types": "./dist/cli.d.ts",
-      "import": "./dist/cli.js"
+      "types": "./dist/cli/cli.d.ts",
+      "import": "./dist/cli/cli.js"
     },
     "./query": {
-      "types": "./dist/query.d.ts",
-      "import": "./dist/query.js"
+      "types": "./dist/query/query.d.ts",
+      "import": "./dist/query/query.js"
     },
     "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
+      "types": "./dist/testing/testing.d.ts",
+      "import": "./dist/testing/testing.js"
     }
   },
   "scripts": {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { z } from "zod";
 import { runtimeProcedures } from "./procedure.ts";
 import type { AnyProcedure, UnionToIntersection } from "./procedure.ts";
-import { defineQuery, defineRPC } from "../rpc.ts";
+import { defineQuery, defineRPC } from "../rpc/rpc.ts";
 
 type Expect<T extends true> = T;
 type Equal<A, B> =

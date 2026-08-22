@@ -1,5 +1,5 @@
-import type { StandardSchemaV1 } from "./standard-schema.ts";
-import type { MaybePromise } from "./procedure.ts";
+import type { StandardSchemaV1 } from "../internal/standard-schema.ts";
+import type { MaybePromise } from "../internal/procedure.ts";
 
 /**
  * The structural host seam (§2, §6): the two registration surfaces

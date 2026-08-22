@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { installDom } from "./testing.ts";
-import { defineMutation, defineQuery, defineRPC } from "./rpc.ts";
+import { installDom } from "../testing/testing.ts";
+import { defineMutation, defineQuery, defineRPC } from "../rpc/rpc.ts";
 
 // Tier-3 order (§8): DOM first, then the SDK test runtime, then any
 // module that imports @get-bb/plugin-sdk/app — the app facade binds
