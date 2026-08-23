@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useRpc,
@@ -6,7 +6,7 @@ import {
   type PluginSidebarThread,
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -27,7 +27,9 @@ import {
   type ActiveSectionOrder,
   filterByProject,
   groupIntoFamilies,
+  isDrafthouseTalkThread,
   partitionActiveSections,
+  partitionDrafthouseTalkSessions,
   partitionPinned,
   reconcileActiveSectionOrder,
   searchThreadsByTitle,
@@ -144,7 +146,12 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     () =>
       groupIntoFamilies(visibleInboxThreads(threads, lifecycle.parkedThreadIds))
         .map((family) => family.parent)
-        .filter((thread) => !thread.isPinned && lifecycle.shelfFor(thread) === "active"),
+        .filter(
+          (thread) =>
+            !thread.isPinned &&
+            !isDrafthouseTalkThread(thread) &&
+            lifecycle.shelfFor(thread) === "active",
+        ),
     [lifecycle, threads],
   );
   const activeSectionOrderRef = useRef<ActiveSectionOrder | null>(null);
@@ -155,7 +162,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
   );
   activeSectionOrderRef.current = activeSectionOrder;
 
-  const { pinned, nextAction, waiting, snoozed, settled, crewmatesByParentId } = useMemo(() => {
+  const { pinned, nextAction, waiting, talkSessions, snoozed, settled, crewmatesByParentId } =
+    useMemo(() => {
     const scoped = filterByProject(
       // Settling archives the thread in bb, so the parked set is what keeps
       // the settled shelf from filtering itself away.
@@ -184,7 +192,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
       else if (shelf === "settled") onSettledShelf.push(thread);
       else active.push(thread);
     }
-    const split = partitionPinned(active);
+    const routed = partitionDrafthouseTalkSessions(active);
+    const split = partitionPinned(routed.actionThreads);
     const activeSections = partitionActiveSections(
       split.inbox,
       activeSectionOrder,
@@ -194,6 +203,9 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
       crewmatesByParentId: crewmates,
       pinned: sortByCreatedAtDescending(split.pinned),
       ...activeSections,
+      // Talk Rooms are conversations, not action items. Newest first makes the
+      // room opened most recently the quickest one to get back to.
+      talkSessions: sortByCreatedAtDescending(routed.talkSessions),
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozed: [...onSnoozeShelf].sort(
         (left, right) => (lifecycle.wakeAtFor(left) ?? 0) - (lifecycle.wakeAtFor(right) ?? 0),
@@ -232,6 +244,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
     pinned.length +
     nextAction.length +
     waiting.length +
+    talkSessions.length +
     snoozed.length +
     settled.length +
     pendingSettled;
@@ -353,18 +366,23 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
         ) : (
           <>
             {pinned.length > 0 ? (
-              <Shelf label="Pinned">
+              <Shelf label="Pinned" icon="Pin" tone="neutral">
                 {pinned.map(renderFamily)}
               </Shelf>
             ) : null}
             {nextAction.length > 0 ? (
-              <Shelf label="Your Turn">
+              <Shelf label="Your Turn" icon="Inbox" tone="attention">
                 {nextAction.map(renderFamily)}
               </Shelf>
             ) : null}
             {waiting.length > 0 ? (
-              <Shelf label="Working">
+              <Shelf label="Working" icon="Workflow" tone="working">
                 {waiting.map(renderFamily)}
+              </Shelf>
+            ) : null}
+            {talkSessions.length > 0 ? (
+              <Shelf label="Talk sessions" icon="Chat" tone="talk">
+                {talkSessions.map(renderFamily)}
               </Shelf>
             ) : null}
             <ParkedShelf
@@ -444,6 +462,9 @@ function ParkedShelf({
 }) {
   const count = threads.length + pendingCount;
   if (count === 0) return null;
+  const heading = shelf === "snoozed"
+    ? { icon: "Clock" as const, tone: "snoozed" as const }
+    : { icon: "Check" as const, tone: "settled" as const };
   return (
     <section aria-label={label}>
       <button
@@ -456,10 +477,11 @@ function ParkedShelf({
         // and the whole header is the hit target for collapsing the shelf.
         className="mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 pb-0.5 text-left"
       >
-        <span className="text-2xs font-medium text-muted-foreground/70">
-          {expanded ? label : `${label} (${count})`}
-        </span>
-        <span className="h-px flex-1 bg-sidebar-border" />
+        <ShelfHeading
+          label={expanded ? label : `${label} (${count})`}
+          icon={heading.icon}
+          tone={heading.tone}
+        />
         <span className={TRAILING_GLYPH_BOX_CLASS}>
           <Icon
             name="ChevronDown"
@@ -572,15 +594,57 @@ function FamilyRow({
   );
 }
 
-function Shelf({ label, children }: { label: string | null; children: React.ReactNode }) {
+type ShelfTone = "neutral" | "attention" | "working" | "talk" | "snoozed" | "settled";
+
+// Shelf color is navigation, not status. Deriving it from bb's semantic theme
+// tokens keeps the distinction across light, dark, and custom themes.
+const SHELF_TONE_TOKEN = {
+  neutral: "var(--muted-foreground)",
+  attention: "var(--attention)",
+  working: "var(--timeline-accent)",
+  talk: "var(--pr-merged)",
+  snoozed: "var(--warning-text)",
+  settled: "var(--success)",
+} as const satisfies Record<ShelfTone, string>;
+
+function ShelfHeading({ label, icon, tone }: { label: string; icon: IconName; tone: ShelfTone }) {
+  const token = SHELF_TONE_TOKEN[tone];
+  const labelStyle = {
+    color: `color-mix(in oklab, ${token} 78%, var(--muted-foreground))`,
+  } satisfies CSSProperties;
+  const dividerStyle = {
+    background: `linear-gradient(90deg, color-mix(in oklab, ${token} 48%, var(--sidebar-border)), var(--sidebar-border))`,
+  } satisfies CSSProperties;
+
+  return (
+    <>
+      <span className="flex shrink-0 items-center gap-1.5" style={labelStyle}>
+        <Icon name={icon} className="size-3" aria-hidden="true" />
+        <span className="text-2xs font-medium">{label}</span>
+      </span>
+      <span aria-hidden="true" className="h-px min-w-2 flex-1" style={dividerStyle} />
+    </>
+  );
+}
+
+function Shelf({
+  label,
+  icon,
+  tone,
+  children,
+}: {
+  label: string | null;
+  icon: IconName;
+  tone: ShelfTone;
+  children: React.ReactNode;
+}) {
   return (
     // A named section is exposed as a landmark region; an unnamed one is not,
     // which is exactly right for the single unlabelled inbox list.
     <section {...(label ? { "aria-label": label } : {})}>
       {label ? (
         <h2 className={cn("flex items-center gap-2 px-2.5 pb-0.5 pt-2")}>
-          <span className="text-2xs font-medium text-muted-foreground/70">{label}</span>
-          <span className="h-px flex-1 bg-sidebar-border" />
+          <ShelfHeading label={label} icon={icon} tone={tone} />
         </h2>
       ) : null}
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a

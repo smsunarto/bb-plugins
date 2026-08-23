@@ -1,8 +1,8 @@
 // @smsunarto/bb-plugin-eiff-sidebar — an action-oriented replacement for bb's
 // sidebar thread list, and a reference for `app.slots.experimental_threadList`.
 //
-// Active threads are grouped by who acts next. Each section holds entrance
-// order, oldest first, so a new handoff always arrives at the bottom.
+// Active threads are grouped by who acts next. Drafthouse Talk Rooms stay in
+// their own section so ongoing conversations do not read as action items.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
@@ -12,7 +12,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "inbox",
     title: "Eiff Sidebar (inbox)",
-    description: "Your Turn and Working, ordered by section entrance.",
+    description: "Your Turn, Working, and Drafthouse Talk sessions.",
     component: ThreadInbox,
   });
 

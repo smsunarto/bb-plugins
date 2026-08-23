@@ -6,8 +6,10 @@ import {
   childrenOf,
   filterByProject,
   groupIntoFamilies,
+  isDrafthouseTalkThread,
   parentOf,
   partitionActiveSections,
+  partitionDrafthouseTalkSessions,
   partitionPinned,
   reconcileActiveSectionOrder,
   searchThreadsByTitle,
@@ -255,6 +257,74 @@ describe("active sections", () => {
         (candidate) => candidate.id,
       ),
       ["a", "b"],
+    );
+  });
+});
+
+describe("Drafthouse Talk sessions", () => {
+  it("recognizes a Talk Room by its Drafthouse title", () => {
+    assert.equal(
+      isDrafthouseTalkThread(
+        thread({
+          projectId: "proj_sugihazqbr",
+          title: "202608231000 The Ghost of Diotrephes — Talk Room",
+        }),
+      ),
+      true,
+    );
+  });
+
+  it("keeps a renamed Talk Room through its fallback marker", () => {
+    assert.equal(
+      isDrafthouseTalkThread(
+        thread({
+          projectId: "proj_sugihazqbr",
+          title: "A shorter name",
+          titleFallback: "[dh-room:202608231000 The Ghost of Diotrephes] Drafthouse talk room.",
+        }),
+      ),
+      true,
+    );
+  });
+
+  it("does not capture similarly named work outside Drafthouse", () => {
+    assert.equal(
+      isDrafthouseTalkThread(
+        thread({
+          projectId: "proj_1",
+          title: "Plan a Talk Room",
+          titleFallback: "[dh-room:not-really] Drafthouse talk room.",
+        }),
+      ),
+      false,
+    );
+  });
+
+  it("does not capture other threads in the Drafthouse project", () => {
+    assert.equal(
+      isDrafthouseTalkThread(
+        thread({ projectId: "proj_sugihazqbr", title: "Review Drafthouse tooling" }),
+      ),
+      false,
+    );
+  });
+
+  it("routes a Talk Room only to Talk sessions", () => {
+    const normal = thread({ id: "normal" });
+    const talk = thread({
+      id: "talk",
+      projectId: "proj_sugihazqbr",
+      title: "202608231000 The Ghost of Diotrephes — Talk Room",
+    });
+
+    const result = partitionDrafthouseTalkSessions([normal, talk]);
+    assert.deepEqual(
+      result.talkSessions.map((candidate) => candidate.id),
+      ["talk"],
+    );
+    assert.deepEqual(
+      result.actionThreads.map((candidate) => candidate.id),
+      ["normal"],
     );
   });
 });

@@ -16,6 +16,47 @@ export function sortByCreatedAtDescending<
 
 export type ActiveSection = "next-action" | "waiting";
 
+/** The dedicated bb project Drafthouse uses for one thread per Talk Room. */
+export const DRAFTHOUSE_TALK_PROJECT_ID = "proj_sugihazqbr";
+
+const DRAFTHOUSE_TALK_TITLE_SUFFIX = " — Talk Room";
+const DRAFTHOUSE_TALK_FALLBACK = /^\[dh-room:([^\]]+)\]/;
+
+/**
+ * Drafthouse Talk Room threads carry two identifiers.
+ *
+ * The visible title is the normal path. The opening prompt also becomes the
+ * fallback title, so a manually renamed room still stays in this section.
+ * Requiring Drafthouse's project keeps an unrelated "Talk Room" title from
+ * being captured.
+ */
+export function isDrafthouseTalkThread(thread: PluginSidebarThread): boolean {
+  if (thread.projectId !== DRAFTHOUSE_TALK_PROJECT_ID) return false;
+
+  const title = thread.title?.trim() ?? "";
+  if (title.endsWith(DRAFTHOUSE_TALK_TITLE_SUFFIX)) {
+    return title.slice(0, -DRAFTHOUSE_TALK_TITLE_SUFFIX.length).trim().length > 0;
+  }
+
+  const fallback = thread.titleFallback?.trim() ?? "";
+  return DRAFTHOUSE_TALK_FALLBACK.test(fallback);
+}
+
+/** Route active Talk Rooms away from the two action-oriented sections. */
+export function partitionDrafthouseTalkSessions(
+  threads: readonly PluginSidebarThread[],
+): {
+  talkSessions: PluginSidebarThread[];
+  actionThreads: PluginSidebarThread[];
+} {
+  const talkSessions: PluginSidebarThread[] = [];
+  const actionThreads: PluginSidebarThread[] = [];
+  for (const thread of threads) {
+    (isDrafthouseTalkThread(thread) ? talkSessions : actionThreads).push(thread);
+  }
+  return { talkSessions, actionThreads };
+}
+
 /**
  * The active section whose next move can change the thread.
  *

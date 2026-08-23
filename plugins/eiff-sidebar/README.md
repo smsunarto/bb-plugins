@@ -25,6 +25,10 @@ Active threads split into **Your Turn** when the user can act and **Working** wh
 the agent works. Each section is oldest first. A thread that enters a section goes
 to its bottom and holds that place until its next handoff.
 
+Drafthouse Talk Rooms stay in a separate **Talk sessions** section. Their live
+status still appears on each card, but they never clutter **Your Turn** or
+**Working**. The newest Talk Room appears first.
+
 While the sidebar stays mounted, this is exact entrance order. After an app reload,
 bb does not provide historical section-entry times, so existing rows seed oldest
 first from their last update time.
@@ -70,6 +74,7 @@ disable the plugin.
 - **Pinned** — the user's explicit priority, kept in its own shelf above active work.
 - **Your Turn** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet. The oldest handoff is first.
 - **Working** — foreground or background agent work is live, on the thread or on any of its crewmates. The oldest wait is first.
+- **Talk sessions** — active Talk Rooms opened by the Obsidian Drafthouse plugin, newest first.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 - **Settled** — work you are done with, collapsed to one line. It stays there until you un-settle it or the thread earns new attention, with no time limit.
 
