@@ -29,7 +29,7 @@
     }
   },
   "scripts": {
-    "build": "bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts src/cli.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "typecheck": "bun ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
     "test": "bun run build && bun test test",
     "clean": "rm -rf dist"

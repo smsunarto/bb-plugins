@@ -1,9 +1,7 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "strict": true,
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "lib": ["ES2022"],
     "types": ["node"],
     "noUncheckedIndexedAccess": true,
@@ -12,8 +10,7 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
-    "skipLibCheck": false,
-    "noEmit": true
+    "skipLibCheck": false
   },
   "include": ["src", "test"]
 }

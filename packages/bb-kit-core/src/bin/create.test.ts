@@ -83,6 +83,15 @@ test("the scaffold templates bake the derived id into server, ui, and tests", ()
   assert.match(files["cli/status.test.ts"] ?? "", /stubClient<Client>\(\{ ping/);
 });
 
+test("the scaffold uses Bun-compatible TypeScript module semantics", () => {
+  const tsconfig = scaffoldFiles("@acme/bb-plugin-notes").files["tsconfig.json"] ?? "";
+  assert.match(tsconfig, /"module": "preserve"/);
+  assert.match(tsconfig, /"moduleDetection": "force"/);
+  assert.match(tsconfig, /"moduleResolution": "bundler"/);
+  assert.match(tsconfig, /"allowImportingTsExtensions": true/);
+  assert.match(tsconfig, /"verbatimModuleSyntax": true/);
+});
+
 test("create refuses an existing non-empty directory", () => {
   const cwd = freshDir();
   mkdirSync(join(cwd, "bb-plugin-taken"));

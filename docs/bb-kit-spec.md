@@ -1,7 +1,7 @@
 # bb-kit framework spec
 
-Status: implemented — `packages/bb-kit-core` is the built thing (109/109
-tests, 2026-08-21), and this spec now documents it.
+Status: implemented — `packages/bb-kit-core` is the built thing, its test
+suite passes, and this spec documents it.
 Baseline: bb 0.39 · `@get-bb/plugin-sdk` 0.4.8 · Node ≥ 22.19 (bb's own
 engines floor), verified against the pinned dev worktree
 (`~/.bb/worktrees/dev/bb`, `desktop-v0.39.0`) on 2026-08-21. In-body
@@ -64,6 +64,10 @@ Standard Schema v1 is a vendored ~30-line type interface, not a
 dependency; bb-kit never depends on zod — the plugin does. bb-kit's
 emitted declarations never reference SDK types (§6). Source is
 erasable-syntax TypeScript (ADR-0006).
+
+The package build uses Bun to emit Node-targeted ESM bundles and source
+maps. It keeps package imports external. TypeScript still typechecks the
+source and emits declarations because Bun's bundler does neither job.
 
 ## 2. The plugin bb-kit produces
 
@@ -778,7 +782,8 @@ not a stub. What it writes:
   every tier: the sibling tier-1 tests, a tier-2 test running the
   default-export factory, and the tier-3 render test.
 - A `tsconfig.json`, because the scaffold's `.ts`-suffixed relative
-  imports do not typecheck without one: `module: "nodenext"`,
+  imports do not typecheck without one: `module: "preserve"`,
+  `moduleResolution: "bundler"`, `moduleDetection: "force"`, and
   `allowImportingTsExtensions: true` with `noEmit: true` — true to life,
   since a plugin never emits (bb loads `server.ts` from source, tests run
   through the tsx loader, `bb plugin build` bundles the UI; ADR-0011

@@ -24,7 +24,7 @@ routine loop.
 `create`'s install step fails on the same unpublished pin (the scaffold
 itself lands intact). Until the publish, invoke the bin from this repo —
 `tsx` must resolve from the cwd; after a `build`, `node
-packages/bb-kit-core/dist/bin.js` works from any cwd — and satisfy the
+packages/bb-kit-core/dist/bin/bin.js` works from any cwd — and satisfy the
 `@bb-kit/core` pin locally (a `file:` version plus
 `npm install --install-links` is the verified route):
 
@@ -54,8 +54,8 @@ my-plugin/
   package.json     # "test": "node --test --import tsx"; "typecheck": "tsc";
                    # bb.app → ./ui/app.tsx; bb.branding.icon → ./assets/icon.svg;
                    # exact @bb-kit/core dependency + @get-bb/plugin-sdk devDependency
-  tsconfig.json    # nodenext + allowImportingTsExtensions + noEmit —
-                   # .ts-suffixed imports typecheck; nothing ever emits
+  tsconfig.json    # preserve + bundler resolution + noEmit — .ts-suffixed
+                   # imports typecheck; nothing ever emits
   server.ts        # composition root — the only wiring file
   server.test.ts   # tier-2: the default-export factory against the fake host
   rpc/
