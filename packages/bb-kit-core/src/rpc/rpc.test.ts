@@ -1,8 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { createClient, defineMutation, defineQuery, defineRPC, RPCValidationError } from "./rpc.ts";
-import type { ClientFor, RPCContext } from "./rpc.ts";
+import {
+  createClient,
+  defineMutation,
+  defineQuery,
+  defineRPC,
+  kebabName,
+  noInputSchema,
+  RPCValidationError,
+  runtimeProcedures,
+  wireName,
+} from "./rpc.ts";
+import type {
+  AnyProcedure,
+  ClientFor,
+  RPCContext,
+  SchemaInput,
+  SchemaOutput,
+  StandardSchemaV1,
+} from "./rpc.ts";
+import type { UnionToIntersection } from "../utils/types.ts";
 
 type Expect<T extends true> = T;
 type Equal<A, B> =
@@ -86,6 +104,99 @@ function typeOnly(client: Client) {
   void defineQuery({ input: z.number(), output: z.object({}), handler: () => ({}) });
 }
 void typeOnly;
+
+// ---- Standard Schema v1 (vendored) ----------------------------------
+
+const schema = z.object({ path: z.string() });
+
+// zod 4 schemas satisfy the vendored interface directly, no adapter.
+const asStandard: StandardSchemaV1<{ path: string }, { path: string }> = schema;
+void asStandard;
+
+type _input = Expect<Equal<SchemaInput<typeof schema>, { path: string }>>;
+type _output = Expect<Equal<SchemaOutput<typeof schema>, { path: string }>>;
+
+test("Standard Schema validate accepts a conforming value", async () => {
+  const result = await schema["~standard"].validate({ path: "a.txt" });
+  assert.ok(!result.issues);
+  assert.deepEqual(result.value, { path: "a.txt" });
+});
+
+test("Standard Schema validate reports issues for a non-conforming value", async () => {
+  const result = await schema["~standard"].validate(5);
+  assert.ok(result.issues);
+  assert.ok(result.issues.length > 0);
+  assert.equal(typeof result.issues[0]?.message, "string");
+});
+
+// ---- no-input schema (vendored) -------------------------------------
+
+test("noInputSchema accepts null (SDK hooks and fake host deliver null)", async () => {
+  const result = await noInputSchema["~standard"].validate(null);
+  assert.ok(!result.issues);
+  assert.equal(result.value, null);
+});
+
+test("noInputSchema accepts undefined (empty POST body)", async () => {
+  const result = await noInputSchema["~standard"].validate(undefined);
+  assert.ok(!result.issues);
+  assert.equal(result.value, undefined);
+});
+
+test("noInputSchema rejects everything else", async () => {
+  for (const value of [{}, "", 0, false, []]) {
+    const result = await noInputSchema["~standard"].validate(value);
+    assert.ok(result.issues, `expected issues for ${JSON.stringify(value)}`);
+    assert.equal(result.issues[0]?.message, "this procedure takes no input");
+  }
+});
+
+test("noInputSchema vendor is bb-kit", () => {
+  assert.equal(noInputSchema["~standard"].vendor, "bb-kit");
+});
+
+// ---- wire-name derivation -------------------------------------------
+
+test("wire names: pinned derivations", () => {
+  assert.equal(wireName("audit-log", "readEntry"), "audit_log_read_entry");
+  assert.equal(wireName("audit-log", "readURL"), "audit_log_read_url");
+  // Acronym-unaware on purpose: URLPath does NOT split.
+  assert.equal(wireName("audit-log", "readURLPath"), "audit_log_read_urlpath");
+  assert.equal(wireName("dotfiles", "overview"), "dotfiles_overview");
+});
+
+test("wire names: digit boundaries", () => {
+  // lower/digit followed by upper gets an underscore.
+  assert.equal(wireName("vault", "save2FA"), "vault_save2_fa");
+});
+
+test("kebab names for the rpc subtree", () => {
+  assert.equal(kebabName("overview"), "overview");
+  assert.equal(kebabName("readFile"), "read-file");
+  assert.equal(kebabName("readURL"), "read-url");
+  assert.equal(kebabName("readURLPath"), "read-urlpath");
+});
+
+// ---- procedure shapes -----------------------------------------------
+
+type _u2i = Expect<Equal<UnionToIntersection<{ a: 1 } | { b: 2 }>, { a: 1 } & { b: 2 }>>;
+
+const overview = defineQuery({
+  output: z.object({ ok: z.boolean() }),
+  handler: () => ({ ok: true }),
+});
+
+// A concrete procedure satisfies the loose AnyProcedure shape
+// (method-syntax bivariance) without a cast.
+const asAny: AnyProcedure = overview;
+void asAny;
+
+test("runtimeProcedures is a view over the same procedure objects", () => {
+  const rpc = defineRPC({ namespace: "demo", procedures: { overview } });
+  const runtime = runtimeProcedures(rpc);
+  assert.deepEqual(Object.keys(runtime), ["overview"]);
+  assert.equal(runtime.overview, overview as unknown);
+});
 
 // ---- defineRPC define-time validation -------------------------------
 

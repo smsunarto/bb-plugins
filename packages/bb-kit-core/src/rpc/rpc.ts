@@ -1,24 +1,119 @@
+import type { MaybePromise, UnionToIntersection } from "../utils/types.ts";
+import { noInputSchema } from "./rpc-standard-schema.ts";
 import type {
   SchemaInput,
   SchemaOutput,
   StandardSchemaV1,
   StandardSchemaV1Issue,
-} from "./standard-schema.ts";
-import type {
-  AnyRPC,
-  ProcedureNoInput,
-  ProcedureWithInput,
-  RPCProcedures,
-  RuntimeProcedure,
-} from "./procedure.ts";
-import { runtimeProcedures } from "./procedure.ts";
-import { noInputSchema } from "./no-input.ts";
-import { wireName } from "./wire-name.ts";
-import type { MaybePromise, UnionToIntersection } from "../internal/types.ts";
+} from "./rpc-standard-schema.ts";
 
-/** Public surface of `@bb-kit/core/rpc` (§1, §3). */
-export { wireName } from "./wire-name.ts";
-export type { StandardSchemaV1, SchemaInput, SchemaOutput } from "./standard-schema.ts";
+export type {
+  SchemaInput,
+  SchemaOutput,
+  StandardSchemaV1,
+  StandardSchemaV1Issue,
+  StandardSchemaV1Result,
+} from "./rpc-standard-schema.ts";
+export { noInputSchema } from "./rpc-standard-schema.ts";
+
+// ── Wire-name derivation ─────────────────────────────────────────────
+
+/**
+ * Wire-name derivation (§3, ADR-0008). A Wire name is public API —
+ * renaming one is a breaking change — so the derivation is pinned:
+ * `-` becomes `_`, an underscore lands between a lowercase/digit and the
+ * uppercase that follows it, then everything lowercases. Deliberately
+ * acronym-unaware: `readURLPath` → `read_urlpath`, not `read_url_path`.
+ */
+const BOUNDARY = /([a-z0-9])([A-Z])/g;
+
+function snakeName(value: string): string {
+  return value.replaceAll("-", "_").replace(BOUNDARY, "$1_$2").toLowerCase();
+}
+
+/** The kebab form of a procedure key, for the RPC subtree (ADR-0013). */
+export function kebabName(key: string): string {
+  return key.replace(BOUNDARY, "$1-$2").toLowerCase();
+}
+
+/** The public Wire name of a procedure: `snake(namespace)_snake(key)`. */
+export function wireName(namespace: string, key: string): string {
+  return `${snakeName(namespace)}_${snakeName(key)}`;
+}
+
+// ── Procedure shapes ─────────────────────────────────────────────────
+
+/**
+ * Internal shapes behind the rpc domain (`./rpc`, `./rpc/query`), also
+ * deep-imported by `./plugin`'s composition root.
+ */
+
+export type ProcedureKind = "query" | "mutation";
+
+/**
+ * The precise shape `defineQuery`/`defineMutation` return for a
+ * procedure that declares an input. `handler` is method syntax so the
+ * concrete shape satisfies `AnyProcedure` bivariantly; the `input`
+ * property is REQUIRED here and ABSENT on `ProcedureNoInput` — never
+ * optional, which would silently kill input typechecking (§3).
+ */
+export type ProcedureWithInput<
+  K extends ProcedureKind,
+  Context,
+  In extends StandardSchemaV1,
+  Out extends StandardSchemaV1,
+> = {
+  readonly kind: K;
+  readonly input: In;
+  readonly output: Out;
+  handler(context: Context, input: SchemaOutput<In>): MaybePromise<SchemaInput<Out>>;
+};
+
+/** The shape for a procedure with no input: no `input` key at all. */
+export type ProcedureNoInput<K extends ProcedureKind, Context, Out extends StandardSchemaV1> = {
+  readonly kind: K;
+  readonly output: Out;
+  handler(context: Context): MaybePromise<SchemaInput<Out>>;
+};
+
+/**
+ * The loose shape every concrete Procedure satisfies. `handler` is
+ * declared in method syntax on purpose: its parameters compare
+ * bivariantly, so concrete procedures with narrower context and input
+ * types still satisfy `Record<string, AnyProcedure>` (§3).
+ */
+export type AnyProcedure = {
+  readonly kind: ProcedureKind;
+  readonly output: StandardSchemaV1;
+  handler(context: never, ...rest: never[]): unknown;
+};
+
+export type RPCProcedures = Record<string, AnyProcedure>;
+
+/** The shape `defineRPC` produces; `definePlugin`'s `rpc` constraint. */
+export type AnyRPC = {
+  namespace: string;
+  procedures: RPCProcedures;
+};
+
+/**
+ * The runtime view of a procedure — what `createClient` and the entry
+ * factory actually call. Reached by one contained cast from the precise
+ * generic types; `input` is present exactly when the procedure declares
+ * one.
+ */
+export type RuntimeProcedure = {
+  kind: ProcedureKind;
+  input?: StandardSchemaV1;
+  output: StandardSchemaV1;
+  handler: (context: unknown, input?: unknown) => unknown;
+};
+
+export function runtimeProcedures(rpc: AnyRPC): Record<string, RuntimeProcedure> {
+  return rpc.procedures as unknown as Record<string, RuntimeProcedure>;
+}
+
+// ── Public RPC API ───────────────────────────────────────────────────
 
 /**
  * The object-only I/O pin (ADR-0014): procedure schemas must be zod-v4
@@ -125,18 +220,18 @@ export type ClientFor<R extends AnyRPC> = {
     input: infer In extends StandardSchemaV1;
     output: infer Out extends StandardSchemaV1;
   }
-    ? (input: SchemaInput<In>) => Promise<SchemaOutput<Out>>
-    : R["procedures"][K] extends { output: infer Out extends StandardSchemaV1 }
-      ? () => Promise<SchemaOutput<Out>>
-      : never;
+  ? (input: SchemaInput<In>) => Promise<SchemaOutput<Out>>
+  : R["procedures"][K] extends { output: infer Out extends StandardSchemaV1 }
+  ? () => Promise<SchemaOutput<Out>>
+  : never;
 };
 
 type ContextDemand<P> = P extends {
   handler(context: infer C, ...rest: never[]): unknown;
 }
   ? unknown extends C
-    ? never // an unannotated handler demands nothing
-    : C
+  ? never // an unannotated handler demands nothing
+  : C
   : never;
 
 /**

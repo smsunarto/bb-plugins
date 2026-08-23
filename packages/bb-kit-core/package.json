@@ -35,8 +35,8 @@
       "import": "./dist/rpc/rpc.js"
     },
     "./rpc/query": {
-      "types": "./dist/rpc/query.d.ts",
-      "import": "./dist/rpc/query.js"
+      "types": "./dist/rpc/query/query.d.ts",
+      "import": "./dist/rpc/query/query.js"
     },
     "./cli": {
       "types": "./dist/cli/cli.d.ts",

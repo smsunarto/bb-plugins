@@ -6,7 +6,7 @@ import type * as TS from "typescript";
 import type { BinResult } from "./shared.ts";
 import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { kebabName, wireName } from "../rpc/wire-name.ts";
+import { kebabName, wireName } from "../rpc/rpc.ts";
 
 /**
  * `bb-kit check` (§7): static verification of the six rules — wiring

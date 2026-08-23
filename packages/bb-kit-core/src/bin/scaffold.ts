@@ -1,5 +1,5 @@
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "../rpc/wire-name.ts";
+import { wireName } from "../rpc/rpc.ts";
 
 /**
  * The scaffold templates behind `bb-kit create` (§7). One function, no

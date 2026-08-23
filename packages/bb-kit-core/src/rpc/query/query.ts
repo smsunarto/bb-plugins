@@ -14,10 +14,8 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { AnyRPC } from "./procedure.ts";
-import type { SchemaInput, SchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
-import type { ClientFor } from "./rpc.ts";
-import { wireName } from "./wire-name.ts";
+import type { AnyRPC, ClientFor, SchemaInput, SchemaOutput, StandardSchemaV1 } from "../rpc.ts";
+import { wireName } from "../rpc.ts";
 
 /** Public surface of `@bb-kit/core/rpc/query` (§1, §5). */
 
@@ -60,23 +58,23 @@ type MutationHooksWithInput<In, Out> = {
  */
 type ProcedureHooks<P> = P extends { kind: "query" }
   ? P extends {
-      input: infer In extends StandardSchemaV1;
-      output: infer Out extends StandardSchemaV1;
-    }
-    ? QueryHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
-    : P extends { output: infer Out extends StandardSchemaV1 }
-      ? QueryHooksNoInput<SchemaOutput<Out>>
-      : never
+    input: infer In extends StandardSchemaV1;
+    output: infer Out extends StandardSchemaV1;
+  }
+  ? QueryHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
+  : P extends { output: infer Out extends StandardSchemaV1 }
+  ? QueryHooksNoInput<SchemaOutput<Out>>
+  : never
   : P extends { kind: "mutation" }
-    ? P extends {
-        input: infer In extends StandardSchemaV1;
-        output: infer Out extends StandardSchemaV1;
-      }
-      ? MutationHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
-      : P extends { output: infer Out extends StandardSchemaV1 }
-        ? MutationHooksNoInput<SchemaOutput<Out>>
-        : never
-    : never;
+  ? P extends {
+    input: infer In extends StandardSchemaV1;
+    output: infer Out extends StandardSchemaV1;
+  }
+  ? MutationHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
+  : P extends { output: infer Out extends StandardSchemaV1 }
+  ? MutationHooksNoInput<SchemaOutput<Out>>
+  : never
+  : never;
 
 type RPCHooks<R extends AnyRPC> = {
   readonly [K in keyof R["procedures"]]: ProcedureHooks<R["procedures"][K]>;

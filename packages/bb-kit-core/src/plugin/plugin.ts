@@ -1,11 +1,6 @@
-import type { AnyRPC } from "../rpc/procedure.ts";
-import { runtimeProcedures } from "../rpc/procedure.ts";
-import type { MaybePromise } from "../internal/types.ts";
-import type { StandardSchemaV1 } from "../rpc/standard-schema.ts";
-import type { ClientFor, RPCContext } from "../rpc/rpc.ts";
-import { createClient } from "../rpc/rpc.ts";
-import { noInputSchema } from "../rpc/no-input.ts";
-import { kebabName, wireName } from "../rpc/wire-name.ts";
+import type { AnyRPC, ClientFor, RPCContext, StandardSchemaV1 } from "../rpc/rpc.ts";
+import { createClient, kebabName, noInputSchema, runtimeProcedures, wireName } from "../rpc/rpc.ts";
+import type { MaybePromise } from "../utils/types.ts";
 import type { CLICommand, CLIContext, CLIResult, SubcommandDefinition } from "../cli/runner.ts";
 import { buildProgram, commandDefinitions, runProgram } from "../cli/runner.ts";
 import type { HostSeam } from "./host.ts";

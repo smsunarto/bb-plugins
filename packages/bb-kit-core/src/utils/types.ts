@@ -1,6 +1,6 @@
 /**
  * Type helpers shared across domains — the only module under
- * `internal/`. Everything here is imported by more than one of `rpc/`,
+ * `utils/`. Everything here is imported by more than one of `rpc/`,
  * `cli/`, and `plugin/`; none of it is public API (the exports map
  * blocks deep imports).
  */

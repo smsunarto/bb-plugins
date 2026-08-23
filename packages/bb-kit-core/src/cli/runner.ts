@@ -1,5 +1,5 @@
 import { Command, CommanderError } from "commander";
-import type { MaybePromise } from "../internal/types.ts";
+import type { MaybePromise } from "../utils/types.ts";
 
 /**
  * The shared commander runner (§4). `invokeCLI` and the `definePlugin`

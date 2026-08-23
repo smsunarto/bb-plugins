@@ -1,6 +1,6 @@
 import type { CLICommand, CLIContext, CLIResult } from "./runner.ts";
 import { commandDefinitions, runProgram } from "./runner.ts";
-import type { UnionToIntersection } from "../internal/types.ts";
+import type { UnionToIntersection } from "../utils/types.ts";
 
 /** Public surface of `@bb-kit/core/cli` (§1, §4). */
 export { CLIError } from "./runner.ts";
