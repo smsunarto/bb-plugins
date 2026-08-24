@@ -80,8 +80,13 @@ any element, including a plugin's own surface. Select several to annotate them
 together, write what should change, and press **Add**.
 
 **2. Send it to a thread** — the annotation lands in a shared staging area, and
-every open thread shows the same batch above its composer. Press **Send N to this
-thread** in the one that should own the work.
+every open thread shows the same batch above its composer. Send one annotation
+from its row, or press **Send all** to send the full batch.
+
+Choose **When sending to an active thread** in Agentation settings. **Default**
+follows bb's **Steer running threads on Enter** setting. **Queue** waits behind
+an active turn. **Steer** adds the feedback to the active turn. All three start
+an idle thread.
 
 Use the row action to discard one staged annotation, or **Discard all** to
 discard the batch shown, after confirmation. Discarded feedback moves to the
