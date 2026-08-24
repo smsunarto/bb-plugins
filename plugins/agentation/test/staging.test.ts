@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 
 import type { Annotation, BbContext } from "../lib/afs.ts";
 import {
+  advanceTurnAssignments,
   claimStagedAnnotations,
   completeDispatch,
   discardStagedAnnotations,
@@ -11,7 +12,9 @@ import {
   getAnnotationRouting,
   listStagedAnnotations,
   recoverInterruptedDispatches,
+  recoverInterruptedTurnAssignments,
   restageAnnotation,
+  restageTurnAssignments,
 } from "../lib/staging.ts";
 import {
   getAnnotation,
@@ -287,6 +290,74 @@ test("an assigned annotation can be staged again", () => {
   const routing = restageAnnotation(db, "ann_1");
   assert.equal(routing?.state, "staged");
   assert.equal(routing?.assignedThreadId, null);
+});
+
+test("an unresolved annotation reappears after its assigned turn", () => {
+  const db = freshDb();
+  seed(db);
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_target",
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-finish" });
+
+  assert.deepEqual(listStagedAnnotations(db), []);
+  assert.equal(restageTurnAssignments(db, "thr_target"), 1);
+  assert.deepEqual(
+    listStagedAnnotations(db).map((annotation) => annotation.id),
+    ["ann_1"],
+  );
+});
+
+test("a queued annotation waits for its own turn instead of the active turn", () => {
+  const db = freshDb();
+  seed(db);
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_target",
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-start" });
+
+  assert.equal(restageTurnAssignments(db, "thr_target"), 0);
+  assert.equal(getAnnotationRouting(db, "ann_1")?.state, "assigned");
+  assert.equal(advanceTurnAssignments(db, "thr_target"), 1);
+  assert.equal(restageTurnAssignments(db, "thr_target"), 1);
+  assert.equal(getAnnotationRouting(db, "ann_1")?.state, "staged");
+});
+
+test("resolving an assigned annotation prevents it from reappearing", () => {
+  const db = freshDb();
+  seed(db);
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_target",
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-finish" });
+
+  setAnnotationStatus(db, {
+    annotationId: "ann_1",
+    status: "resolved",
+    by: "agent",
+  });
+  assert.equal(getAnnotationRouting(db, "ann_1"), null);
+  assert.equal(restageTurnAssignments(db, "thr_target"), 0);
+});
+
+test("restart recovery returns open turn assignments to staging", () => {
+  const db = freshDb();
+  seed(db);
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_target",
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-start" });
+
+  assert.equal(recoverInterruptedTurnAssignments(db), 1);
+  assert.equal(getAnnotationRouting(db, "ann_1")?.state, "staged");
 });
 
 test("closed annotations leave the staged list and reopen as staged", () => {

@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  followsBbDeliveryDefault,
-  threadSendMode,
-} from "../lib/delivery.ts";
+import { followsBbDeliveryDefault, threadSendMode, turnAssignmentPhase } from "../lib/delivery.ts";
 
 test("queue waits behind an active thread", () => {
   assert.equal(threadSendMode("Queue", true), "queue-if-active");
@@ -32,4 +29,13 @@ test("only default reads bb's delivery preference", () => {
   assert.equal(followsBbDeliveryDefault("default"), true);
   assert.equal(followsBbDeliveryDefault("Queue"), false);
   assert.equal(followsBbDeliveryDefault("Steer"), false);
+});
+
+test("a queued active-thread assignment waits for the queued turn to start", () => {
+  assert.equal(turnAssignmentPhase("active", "queue-if-active"), "awaiting-start");
+});
+
+test("steering and idle-thread assignments wait for the next turn finish", () => {
+  assert.equal(turnAssignmentPhase("active", "steer-if-active"), "awaiting-finish");
+  assert.equal(turnAssignmentPhase("idle", "queue-if-active"), "awaiting-finish");
 });

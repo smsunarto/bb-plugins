@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   annotationMatchesMentionQuery,
+  annotationMentionItemId,
   annotationMentionLabel,
   annotationSourceLabel,
+  parseAnnotationMentionItemId,
   threadDisplayTitle,
 } from "../lib/staging-display.ts";
 
@@ -118,4 +120,16 @@ test("annotation mention search covers ids, feedback, owners, and routes", () =>
   assert.equal(annotationMatchesMentionQuery(mentionAnnotation, "agentation"), true);
   assert.equal(annotationMatchesMentionQuery(mentionAnnotation, "thr_source"), true);
   assert.equal(annotationMatchesMentionQuery(mentionAnnotation, "missing"), false);
+});
+
+test("an annotation mention carries its destination thread through resolution", () => {
+  const itemId = annotationMentionItemId("ann/1", "thr/target");
+  assert.deepEqual(parseAnnotationMentionItemId(itemId), {
+    annotationId: "ann/1",
+    threadId: "thr/target",
+  });
+  assert.deepEqual(parseAnnotationMentionItemId("1787554470191"), {
+    annotationId: "1787554470191",
+    threadId: null,
+  });
 });

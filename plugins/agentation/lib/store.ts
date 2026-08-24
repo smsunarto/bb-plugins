@@ -122,6 +122,29 @@ export const migrations: string[] = [
      DELETE FROM annotation_routing
      WHERE annotation_id = NEW.id AND state = 'staged';
    END`,
+  `CREATE TABLE IF NOT EXISTS annotation_turn_assignments (
+     annotation_id TEXT PRIMARY KEY,
+     thread_id TEXT NOT NULL,
+     phase TEXT NOT NULL CHECK (phase IN ('awaiting-start', 'awaiting-finish')),
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS annotation_turn_assignments_thread_idx
+     ON annotation_turn_assignments (thread_id, phase, updated_at)`,
+  `CREATE TRIGGER IF NOT EXISTS annotations_turn_assignment_after_delete
+   AFTER DELETE ON annotations
+   BEGIN
+     DELETE FROM annotation_turn_assignments WHERE annotation_id = OLD.id;
+   END`,
+  `CREATE TRIGGER IF NOT EXISTS annotations_unassign_after_close
+   AFTER UPDATE OF status ON annotations
+   WHEN OLD.status IN ('pending', 'acknowledged')
+     AND NEW.status IN ('resolved', 'dismissed')
+   BEGIN
+     DELETE FROM annotation_turn_assignments WHERE annotation_id = NEW.id;
+     DELETE FROM annotation_routing
+     WHERE annotation_id = NEW.id AND state = 'assigned';
+   END`,
 ];
 
 function nowIso(): string {
