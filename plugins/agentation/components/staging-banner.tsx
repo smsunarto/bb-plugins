@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
+  useComposer,
   useComposerView,
   useRealtime,
   useRealtimeConnectionState,
@@ -18,13 +19,56 @@ import {
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import type { StoredAnnotation } from "@/lib/afs.ts";
+import {
+  annotationMentionLabel,
+  annotationMentionLabelParts,
+  annotationSourceLabel,
+} from "@/lib/staging-display.ts";
 import type { rpcContract } from "@/server.ts";
+
+function MentionAnnotationButton({
+  annotation,
+  descriptionId,
+  disabled,
+  location,
+}: {
+  annotation: StoredAnnotation;
+  descriptionId: string;
+  disabled: boolean;
+  location: string;
+}) {
+  const composer = useComposer();
+
+  return (
+    <Button
+      type="button"
+      size="icon"
+      variant="ghost"
+      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+      disabled={disabled}
+      aria-label="Mention annotation in composer"
+      aria-describedby={descriptionId}
+      onClick={() => {
+        composer.insertMention({
+          provider: "annotation",
+          id: annotation.id,
+          label: annotationMentionLabel(annotation, location),
+        });
+        composer.focus();
+      }}
+    >
+      <Icon name="AtSign" aria-hidden="true" />
+    </Button>
+  );
+}
 
 function StagedAnnotations({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [annotations, setAnnotations] = useState<StoredAnnotation[]>([]);
+  const [threadTitles, setThreadTitles] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [sendingId, setSendingId] = useState<string | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
   const [discardIds, setDiscardIds] = useState<string[] | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
@@ -39,12 +83,14 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
       const result = await rpc.call("listStagedAnnotations");
       if (sequence !== refreshSequence.current) return;
       setAnnotations(result.annotations);
+      setThreadTitles(result.threadTitles);
       setError(null);
     } catch (cause) {
       if (sequence !== refreshSequence.current) return;
       // Never leave actions enabled against a list the server failed to
       // verify. A successful later refresh replaces this empty snapshot.
       setAnnotations([]);
+      setThreadTitles({});
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (sequence === refreshSequence.current) setIsLoading(false);
@@ -71,14 +117,14 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
     previousConnection.current = connection;
   }, [connection, refresh]);
 
-  const send = async () => {
+  const sendAnnotations = async (annotationIds: string[], sendingAnnotationId: string | null) => {
     if (actionInFlight.current) return;
-    const annotationIds = annotations.map((annotation) => annotation.id);
     if (annotationIds.length === 0) return;
 
     actionInFlight.current = true;
     refreshSequence.current += 1;
-    setIsSending(true);
+    if (sendingAnnotationId === null) setIsSending(true);
+    else setSendingId(sendingAnnotationId);
     try {
       const result = await rpc.call("sendStagedAnnotations", {
         annotationIds,
@@ -89,12 +135,18 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
       else toast.warning(result.message);
       await refresh();
     } catch (cause) {
-      toast.error("Could not send the staged annotations", {
-        description: cause instanceof Error ? cause.message : String(cause),
-      });
+      toast.error(
+        annotationIds.length === 1
+          ? "Could not send the staged annotation"
+          : "Could not send the staged annotations",
+        {
+          description: cause instanceof Error ? cause.message : String(cause),
+        },
+      );
       await refresh();
     } finally {
-      setIsSending(false);
+      if (sendingAnnotationId === null) setIsSending(false);
+      else setSendingId(null);
       actionInFlight.current = false;
     }
   };
@@ -162,13 +214,12 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
   if (isLoading || (annotations.length === 0 && error === null)) return null;
 
-  const isMutating = isSending || discardingId !== null || isDiscarding || discardIds !== null;
+  const isMutating =
+    isSending || sendingId !== null || discardingId !== null || isDiscarding || discardIds !== null;
 
   return (
     <>
-      {/* Bare composer banners use a display:contents host wrapper, so the
-          component owns its gap from the native thread-context control below. */}
-      <div className="mb-2 rounded-lg border border-border bg-card p-3">
+      <div className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 pb-3 pt-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -197,16 +248,19 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
               type="button"
               size="sm"
               disabled={isMutating}
-              onClick={() => (error && annotations.length === 0 ? void refresh() : void send())}
+              onClick={() =>
+                error && annotations.length === 0
+                  ? void refresh()
+                  : void sendAnnotations(
+                      annotations.map((annotation) => annotation.id),
+                      null,
+                    )
+              }
             >
               {error && annotations.length === 0 ? null : (
                 <Icon name="ArrowUp" aria-hidden="true" />
               )}
-              {error && annotations.length === 0
-                ? "Retry"
-                : isSending
-                  ? "Sending…"
-                  : `Send ${annotations.length} to this thread`}
+              {error && annotations.length === 0 ? "Retry" : isSending ? "Sending…" : "Send all"}
             </Button>
           </div>
         </div>
@@ -217,25 +271,61 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
           </p>
         ) : (
           <ul
-            className="mt-2 max-h-40 space-y-1 overflow-y-auto border-t border-border pt-2"
-            aria-busy={discardingId !== null}
+            className="mt-2 max-h-40 space-y-1 overflow-x-hidden overflow-y-auto border-t border-border pt-2"
+            aria-busy={isSending || sendingId !== null || discardingId !== null}
           >
             {annotations.map((annotation) => {
+              const isSendingAnnotation = sendingId === annotation.id;
               const isDiscardingAnnotation = discardingId === annotation.id;
+              const location = annotationSourceLabel(annotation.bb, threadTitles);
+              const label = annotationMentionLabel(annotation, location);
+              const labelParts = annotationMentionLabelParts(annotation, location);
               return (
-                <li key={annotation.id} className="flex min-w-0 items-center gap-2 text-xs">
-                  <span className="shrink-0 font-mono text-muted-foreground">
-                    {annotation.element}
+                <li key={annotation.id} className="flex w-full min-w-0 items-center gap-2 text-xs">
+                  <span id={`${annotationDescriptionPrefix}-${annotation.id}`} className="sr-only">
+                    {label}
                   </span>
                   <span
-                    id={`${annotationDescriptionPrefix}-${annotation.id}`}
-                    className="truncate text-foreground"
+                    className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden"
+                    aria-hidden="true"
                   >
-                    {annotation.comment}
+                    <span className="max-w-[30%] shrink-0 truncate text-muted-foreground">
+                      [{labelParts.location}]
+                    </span>
+                    <span className="max-w-[30%] shrink-0 truncate font-mono text-[11px] text-foreground/80">
+                      {labelParts.target}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground/50">→</span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                      {labelParts.comment}
+                    </span>
                   </span>
-                  <span className="ml-auto max-w-32 shrink-0 truncate text-muted-foreground">
-                    {annotation.bb.routeLabel ?? annotation.bb.route}
-                  </span>
+                  <MentionAnnotationButton
+                    annotation={annotation}
+                    descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
+                    disabled={isMutating}
+                    location={location}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                    disabled={isMutating}
+                    aria-label={
+                      isSendingAnnotation
+                        ? "Sending annotation to this thread"
+                        : "Send annotation to this thread"
+                    }
+                    aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
+                    onClick={() => void sendAnnotations([annotation.id], annotation.id)}
+                  >
+                    <Icon
+                      name={isSendingAnnotation ? "Spinner" : "ArrowUp"}
+                      className={isSendingAnnotation ? "animate-spin" : undefined}
+                      aria-hidden="true"
+                    />
+                  </Button>
                   <Button
                     type="button"
                     size="icon"

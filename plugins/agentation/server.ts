@@ -27,9 +27,16 @@ import {
 } from "./lib/afs.ts";
 import { projectIdFromRoute, threadIdFromRoute } from "./lib/route.ts";
 import {
+  annotationMatchesMentionQuery,
+  annotationMentionLabel,
+  annotationSourceLabel,
+  threadDisplayTitle,
+} from "./lib/staging-display.ts";
+import {
   renderAnnotation,
   renderAnnotationAssignment,
   renderAnnotationLine,
+  renderAnnotationMentionContext,
   renderAnnotations,
 } from "./lib/markdown.ts";
 import {
@@ -60,6 +67,11 @@ import {
   recoverInterruptedDispatches,
   restageAnnotation as restageStoredAnnotation,
 } from "./lib/staging.ts";
+import {
+  annotationDeliveryModes,
+  followsBbDeliveryDefault,
+  threadSendMode,
+} from "./lib/delivery.ts";
 
 const openStatuses: AnnotationStatus[] = ["pending", "acknowledged"];
 
@@ -114,7 +126,10 @@ export const rpcContract = defineRpcContract({
   },
   listStagedAnnotations: {
     input: z.null(),
-    output: z.object({ annotations: z.array(storedAnnotationSchema) }),
+    output: z.object({
+      annotations: z.array(storedAnnotationSchema),
+      threadTitles: z.record(z.string(), z.string()),
+    }),
   },
   discardStagedAnnotations: {
     input: z.object({ annotationIds: z.array(z.string()).min(1) }).strict(),
@@ -200,6 +215,14 @@ export const rpcContract = defineRpcContract({
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
+    deliveryMode: {
+      type: "select",
+      label: "When sending to an active thread",
+      description:
+        "Default follows bb's “Steer running threads on Enter” setting. Queue and Steer override it. Idle threads always start immediately.",
+      options: [...annotationDeliveryModes],
+      default: "Default",
+    },
     retentionDays: {
       type: "string",
       label: "Days to keep resolved annotations",
@@ -214,6 +237,34 @@ export default async function plugin(bb: BbPluginApi) {
   if (recoveredDispatches > 0) {
     bb.log.warn(`re-staged ${recoveredDispatches} annotations interrupted during delivery`);
   }
+
+  bb.ui.registerMentionProvider({
+    id: "annotation",
+    label: "Annotations",
+    async search({ query }) {
+      const annotations = listAnnotations(db, { limit: null })
+        .filter((annotation) => annotationMatchesMentionQuery(annotation, query))
+        .slice(0, 25);
+      const threadTitles = await resolveThreadTitles(annotations);
+
+      return annotations.map((annotation) => ({
+        id: annotation.id,
+        title: annotationMentionLabel(
+          annotation,
+          annotationSourceLabel(annotation.bb, threadTitles),
+        ),
+        subtitle: `${annotation.element} · ${annotation.bb.routeLabel ?? annotation.bb.route}`,
+        icon: "ChatFeedback",
+      }));
+    },
+    resolve(annotationId) {
+      const annotation = getAnnotation(db, annotationId);
+      if (!annotation) throw new Error(`Annotation ${annotationId} no longer exists.`);
+      return {
+        context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId)),
+      };
+    },
+  });
 
   // Whether the toolbar is showing is live state, not configuration: it is
   // toggled from the panel and the CLI mid-session, and plugin settings are
@@ -356,9 +407,13 @@ export default async function plugin(bb: BbPluginApi) {
     );
 
     try {
+      const values = await settings.get();
+      const steerActiveThreadOnEnter = followsBbDeliveryDefault(values.deliveryMode)
+        ? (await bb.sdk.system.config()).generalSettings.steerActiveThreadOnEnter
+        : false;
       await bb.sdk.threads.send({
         threadId,
-        mode: "auto",
+        mode: threadSendMode(values.deliveryMode, steerActiveThreadOnEnter),
         input: [{ type: "text", text: instruction, mentions: [] }],
       });
 
@@ -381,6 +436,31 @@ export default async function plugin(bb: BbPluginApi) {
       bb.log.warn(`delivery to ${threadId} failed: ${detail}`);
       throw error;
     }
+  }
+
+  async function resolveThreadTitles(
+    annotations: readonly z.infer<typeof storedAnnotationSchema>[],
+  ): Promise<Record<string, string>> {
+    const threadIds = [
+      ...new Set(
+        annotations.flatMap((annotation) =>
+          annotation.bb.threadId ? [annotation.bb.threadId] : [],
+        ),
+      ),
+    ];
+
+    const entries = await Promise.all(
+      threadIds.map(async (threadId) => {
+        try {
+          const thread = await bb.sdk.threads.get({ threadId });
+          return [threadId, threadDisplayTitle(thread)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return Object.fromEntries(entries.filter((entry) => entry !== null));
   }
 
   // -------------------------------------------------------------------------
@@ -457,8 +537,12 @@ export default async function plugin(bb: BbPluginApi) {
       return { cursor: sessionCursor(db, input.sessionId), removed };
     },
 
-    listStagedAnnotations() {
-      return sanitizeJson({ annotations: listStagedAnnotations(db) });
+    async listStagedAnnotations() {
+      const annotations = listStagedAnnotations(db);
+      return sanitizeJson({
+        annotations,
+        threadTitles: await resolveThreadTitles(annotations),
+      });
     },
 
     discardStagedAnnotations(input) {

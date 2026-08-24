@@ -126,6 +126,15 @@ export function renderAnnotationAssignment(
   return `${markdown}\n\nThe annotations above are the complete batch assigned to this thread. Work only on these annotation IDs. Do not call \`agentation_get_all_pending\`; it can include feedback assigned to other threads. Resolve each item with the \`agentation_resolve\` tool once it is fixed, or use \`agentation_reply\` if you need a decision from me.`;
 }
 
+/** Fresh agent-only context for one annotation mention in the composer. */
+export function renderAnnotationMentionContext(
+  annotation: StoredAnnotation,
+  session: Session | null,
+): string {
+  const page = session ? `${session.route} (${session.id})` : annotation.sessionId;
+  return `## Agentation annotation reference\n\n**Page:** ${page}\n\n${renderAnnotation(annotation)}\n\nThis mention points to Agentation annotation \`${annotation.id}\`. Use that ID with the Agentation tools if the user asks you to act on it.`;
+}
+
 /** One line per annotation, for CLI listings and tool summaries. */
 export function renderAnnotationLine(annotation: StoredAnnotation): string {
   const owner = annotation.bb.pluginId ? `plugin:${annotation.bb.pluginId}` : "bb-shell";

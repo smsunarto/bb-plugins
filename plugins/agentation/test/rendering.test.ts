@@ -6,6 +6,7 @@ import {
   renderAnnotation,
   renderAnnotationAssignment,
   renderAnnotationLine,
+  renderAnnotationMentionContext,
   renderAnnotations,
 } from "../lib/markdown.ts";
 import {
@@ -158,6 +159,14 @@ test("a thread assignment is self-contained and preserves React context", () => 
   assert.match(output, /complete batch assigned to this thread/);
   assert.match(output, /Work only on these annotation IDs/);
   assert.match(output, /Do not call `agentation_get_all_pending`/);
+});
+
+test("an annotation mention resolves to current agent-only context", () => {
+  const output = renderAnnotationMentionContext(stored(), null);
+
+  assert.match(output, /## Agentation annotation reference/);
+  assert.match(output, /### button — ann_1/);
+  assert.match(output, /points to Agentation annotation `ann_1`/);
 });
 
 test("the one-line form carries id, status, and owner", () => {
