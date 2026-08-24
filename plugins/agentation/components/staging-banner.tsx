@@ -20,6 +20,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import type { StoredAnnotation } from "@/lib/afs.ts";
 import {
+  annotationMentionItemId,
   annotationMentionLabel,
   annotationMentionLabelParts,
   annotationSourceLabel,
@@ -31,11 +32,13 @@ function MentionAnnotationButton({
   descriptionId,
   disabled,
   location,
+  threadId,
 }: {
   annotation: StoredAnnotation;
   descriptionId: string;
   disabled: boolean;
   location: string;
+  threadId: string;
 }) {
   const composer = useComposer();
 
@@ -51,7 +54,7 @@ function MentionAnnotationButton({
       onClick={() => {
         composer.insertMention({
           provider: "annotation",
-          id: annotation.id,
+          id: annotationMentionItemId(annotation.id, threadId),
           label: annotationMentionLabel(annotation, location),
         });
         composer.focus();
@@ -305,6 +308,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                     descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
                     disabled={isMutating}
                     location={location}
+                    threadId={threadId}
                   />
                   <Button
                     type="button"

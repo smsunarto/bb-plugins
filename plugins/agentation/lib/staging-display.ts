@@ -1,5 +1,7 @@
 import type { BbContext, StoredAnnotation } from "./afs.ts";
 
+const annotationMentionItemPrefix = "v1/";
+
 export interface ThreadTitleParts {
   title: string | null;
   titleFallback: string | null;
@@ -51,6 +53,35 @@ export function annotationMentionLabel(
 ): string {
   const parts = annotationMentionLabelParts(annotation, location);
   return `[${parts.location}] ${parts.target} → ${parts.comment}`;
+}
+
+export function annotationMentionItemId(annotationId: string, threadId: string | null): string {
+  if (!threadId) return annotationId;
+  return `${annotationMentionItemPrefix}${encodeURIComponent(annotationId)}/${encodeURIComponent(threadId)}`;
+}
+
+export function parseAnnotationMentionItemId(itemId: string): {
+  annotationId: string;
+  threadId: string | null;
+} {
+  if (!itemId.startsWith(annotationMentionItemPrefix)) {
+    return { annotationId: itemId, threadId: null };
+  }
+
+  const encoded = itemId.slice(annotationMentionItemPrefix.length);
+  const divider = encoded.indexOf("/");
+  if (divider < 1 || divider === encoded.length - 1) {
+    return { annotationId: itemId, threadId: null };
+  }
+
+  try {
+    return {
+      annotationId: decodeURIComponent(encoded.slice(0, divider)),
+      threadId: decodeURIComponent(encoded.slice(divider + 1)),
+    };
+  } catch {
+    return { annotationId: itemId, threadId: null };
+  }
 }
 
 function truncateLabelPart(value: string, maxLength: number): string {

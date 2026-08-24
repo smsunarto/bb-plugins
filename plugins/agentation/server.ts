@@ -27,9 +27,11 @@ import {
 } from "./lib/afs.ts";
 import { projectIdFromRoute, threadIdFromRoute } from "./lib/route.ts";
 import {
+  annotationMentionItemId,
   annotationMatchesMentionQuery,
   annotationMentionLabel,
   annotationSourceLabel,
+  parseAnnotationMentionItemId,
   threadDisplayTitle,
 } from "./lib/staging-display.ts";
 import {
@@ -57,6 +59,7 @@ import {
   upsertAnnotation,
 } from "./lib/store.ts";
 import {
+  advanceTurnAssignments,
   claimStagedAnnotations,
   completeDispatch,
   discardStagedAnnotations,
@@ -65,12 +68,15 @@ import {
   listAnnotationRoutings,
   listStagedAnnotations,
   recoverInterruptedDispatches,
+  recoverInterruptedTurnAssignments,
   restageAnnotation as restageStoredAnnotation,
+  restageTurnAssignments,
 } from "./lib/staging.ts";
 import {
   annotationDeliveryModes,
   followsBbDeliveryDefault,
   threadSendMode,
+  turnAssignmentPhase,
 } from "./lib/delivery.ts";
 
 const openStatuses: AnnotationStatus[] = ["pending", "acknowledged"];
@@ -237,18 +243,22 @@ export default async function plugin(bb: BbPluginApi) {
   if (recoveredDispatches > 0) {
     bb.log.warn(`re-staged ${recoveredDispatches} annotations interrupted during delivery`);
   }
+  const recoveredTurnAssignments = recoverInterruptedTurnAssignments(db);
+  if (recoveredTurnAssignments > 0) {
+    bb.log.warn(`re-staged ${recoveredTurnAssignments} annotations interrupted during a turn`);
+  }
 
   bb.ui.registerMentionProvider({
     id: "annotation",
     label: "Annotations",
-    async search({ query }) {
+    async search({ query, threadId }) {
       const annotations = listAnnotations(db, { limit: null })
         .filter((annotation) => annotationMatchesMentionQuery(annotation, query))
         .slice(0, 25);
       const threadTitles = await resolveThreadTitles(annotations);
 
       return annotations.map((annotation) => ({
-        id: annotation.id,
+        id: annotationMentionItemId(annotation.id, threadId),
         title: annotationMentionLabel(
           annotation,
           annotationSourceLabel(annotation.bb, threadTitles),
@@ -257,9 +267,11 @@ export default async function plugin(bb: BbPluginApi) {
         icon: "ChatFeedback",
       }));
     },
-    resolve(annotationId) {
+    async resolve(itemId) {
+      const { annotationId, threadId } = parseAnnotationMentionItemId(itemId);
       const annotation = getAnnotation(db, annotationId);
       if (!annotation) throw new Error(`Annotation ${annotationId} no longer exists.`);
+      if (threadId) await assignMentionToThread(annotationId, threadId);
       return {
         context: renderAnnotationMentionContext(annotation, getSession(db, annotation.sessionId)),
       };
@@ -320,6 +332,56 @@ export default async function plugin(bb: BbPluginApi) {
 
     for (const wake of watchers) wake();
   }
+
+  async function composerTurnPhase(
+    threadId: string,
+  ): Promise<"awaiting-start" | "awaiting-finish"> {
+    try {
+      const [thread, config] = await Promise.all([
+        bb.sdk.threads.get({ threadId }),
+        bb.sdk.system.config(),
+      ]);
+      const mode = threadSendMode("Default", config.generalSettings.steerActiveThreadOnEnter);
+      return turnAssignmentPhase(thread.status, mode);
+    } catch (error) {
+      bb.log.warn(
+        `could not inspect ${threadId} before assigning an annotation mention: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return "awaiting-finish";
+    }
+  }
+
+  async function assignMentionToThread(annotationId: string, threadId: string): Promise<void> {
+    const phase = await composerTurnPhase(threadId);
+    const claim = claimStagedAnnotations(db, { annotationIds: [annotationId], threadId });
+    if (claim.outcome === "stale") return;
+
+    completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
+    broadcast({ type: "routing", sessionId: null });
+    bb.log.info(`assigned mentioned annotation ${annotationId} to ${threadId}`);
+  }
+
+  function publishRestagedAfterTurn(threadId: string, includeAwaitingStart = false): void {
+    const count = restageTurnAssignments(db, threadId, { includeAwaitingStart });
+    if (count === 0) return;
+    broadcast({ type: "routing", sessionId: null });
+    bb.log.info(
+      `re-staged ${count} unresolved annotation${count === 1 ? "" : "s"} after ${threadId} finished`,
+    );
+  }
+
+  bb.events.on("thread.active", ({ thread }) => {
+    advanceTurnAssignments(db, thread.id);
+  });
+  bb.events.on("thread.idle", ({ thread }) => {
+    publishRestagedAfterTurn(thread.id);
+  });
+  bb.events.on("thread.failed", ({ thread }) => {
+    publishRestagedAfterTurn(thread.id, true);
+  });
+  bb.events.on("thread.deleted", ({ thread }) => {
+    publishRestagedAfterTurn(thread.id, true);
+  });
 
   function dropStream(controller: ReadableStreamDefaultController<Uint8Array>): void {
     const heartbeat = heartbeats.get(controller);
@@ -411,13 +473,17 @@ export default async function plugin(bb: BbPluginApi) {
       const steerActiveThreadOnEnter = followsBbDeliveryDefault(values.deliveryMode)
         ? (await bb.sdk.system.config()).generalSettings.steerActiveThreadOnEnter
         : false;
+      const thread = await bb.sdk.threads.get({ threadId });
+      const mode = threadSendMode(values.deliveryMode, steerActiveThreadOnEnter);
       await bb.sdk.threads.send({
         threadId,
-        mode: threadSendMode(values.deliveryMode, steerActiveThreadOnEnter),
+        mode,
         input: [{ type: "text", text: instruction, mentions: [] }],
       });
 
-      completeDispatch(db, claim.dispatch.id);
+      completeDispatch(db, claim.dispatch.id, {
+        reappearAfterTurn: turnAssignmentPhase(thread.status, mode),
+      });
       broadcast({ type: "routing", sessionId: null });
       bb.log.info(
         `assigned ${claim.dispatch.annotations.length} staged annotations to ${threadId}`,

@@ -81,7 +81,9 @@ together, write what should change, and press **Add**.
 
 **2. Send it to a thread** — the annotation lands in a shared staging area, and
 every open thread shows the same batch above its composer. Send one annotation
-from its row, or press **Send all** to send the full batch.
+from its row, mention it in the composer, or press **Send all** to send the full
+batch. A mention removes that annotation from staging when the message is sent.
+If the agent finishes without resolving it, the annotation returns to staging.
 
 Choose **When sending to an active thread** in Agentation settings. **Default**
 follows bb's **Steer running threads on Enter** setting. **Queue** waits behind
@@ -97,13 +99,13 @@ panel's Dismissed view, where you can reopen it.
 On top of the AFS fields, each annotation carries bb context, so an agent knows
 where to look before it starts grepping.
 
-| Field                          | Meaning                                        |
-| ------------------------------ | ---------------------------------------------- |
-| `bb.route`                     | The bb route the annotation was taken on.      |
-| `bb.pluginId`                  | Owning plugin, or `null` for the bb app shell. |
+| Field                          | Meaning                                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bb.route`                     | The bb route the annotation was taken on.                                                                                                                                |
+| `bb.pluginId`                  | Owning plugin, or `null` for the bb app shell.                                                                                                                           |
 | `bb.surface`                   | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_threadList`, or `threadPanelAction.component`; `inline` / `overlay` for trusted custom content. |
-| `bb.surfaceId`                 | Registration/item id exposed by the surface, such as `inbox`; omitted on older annotations or when bb does not expose one. |
-| `bb.threadId` / `bb.projectId` | Source context resolved from the route.        |
+| `bb.surfaceId`                 | Registration/item id exposed by the surface, such as `inbox`; omitted on older annotations or when bb does not expose one.                                               |
+| `bb.threadId` / `bb.projectId` | Source context resolved from the route.                                                                                                                                  |
 
 ### Commands
 

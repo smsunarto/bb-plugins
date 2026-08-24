@@ -15,3 +15,12 @@ export function threadSendMode(
   if (normalizedMode === "queue") return "queue-if-active";
   return steerActiveThreadOnEnter ? "steer-if-active" : "queue-if-active";
 }
+
+export function turnAssignmentPhase(
+  threadStatus: string,
+  sendMode: "queue-if-active" | "steer-if-active",
+): "awaiting-start" | "awaiting-finish" {
+  return threadStatus === "active" && sendMode === "queue-if-active"
+    ? "awaiting-start"
+    : "awaiting-finish";
+}
