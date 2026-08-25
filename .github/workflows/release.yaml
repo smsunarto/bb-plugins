@@ -23,6 +23,8 @@ jobs:
       packages: ${{ steps.plan.outputs.packages }}
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           bb-cli: "false"
@@ -43,6 +45,8 @@ jobs:
         package: ${{ fromJSON(needs.plan.outputs.packages) }}
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
+        with:
+          persist-credentials: true
       - uses: ./.github/actions/setup
         with:
           bb-cli: "false"
@@ -133,9 +137,12 @@ jobs:
         id: changesets
         uses: changesets/action/publish@v2
         with:
+          github-token: ${{ github.token }}
           script: bun run release
           create-github-releases: true
           push-git-tags: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       # `scripts/publish.ts` rewrites each manifest for the unscoped mirror and
       # must restore the original bytes, including after a failed publish.
