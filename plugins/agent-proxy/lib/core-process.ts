@@ -500,10 +500,16 @@ interface SystemdJobInfo {
   exitCode: number | null;
 }
 
-function systemdQuote(value: string): string {
+function systemdValue(value: string): string {
   if (/\r|\n|\0/.test(value))
     throw new Error("systemd service values cannot contain control characters");
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
+  return value.replaceAll("%", "%%");
+}
+
+// Quoting is only defined for command-line directives such as ExecStart=;
+// plain assignments like WorkingDirectory= take their value literally.
+function systemdQuote(value: string): string {
+  return `"${systemdValue(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
 export function renderSystemdUserUnit(options: {
@@ -513,7 +519,7 @@ export function renderSystemdUserUnit(options: {
   logPath: string;
 }): string {
   const command = [options.binPath, "--config", options.configPath].map(systemdQuote).join(" ");
-  const logTarget = systemdQuote(`append:${options.logPath}`);
+  const logTarget = systemdValue(`append:${options.logPath}`);
   return `[Unit]
 Description=Agent Proxy (${options.label})
 After=network-online.target
@@ -522,7 +528,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=${command}
-WorkingDirectory=${systemdQuote(dirname(options.configPath))}
+WorkingDirectory=${systemdValue(dirname(options.configPath))}
 UMask=0077
 Restart=always
 RestartSec=2
