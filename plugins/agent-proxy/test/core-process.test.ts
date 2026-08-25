@@ -360,6 +360,17 @@ test("renders and parses a persistent user systemd service", () => {
   assert.match(unit, /Restart=always/);
   assert.match(unit, /UMask=0077/);
   assert.match(unit, /ExecStart="\/home\/test\/Agent Proxy\/proxy" "--config"/);
+  assert.match(unit, /^WorkingDirectory=\/home\/test\/Agent Proxy$/m);
+  assert.match(unit, /^StandardOutput=append:\/home\/test\/Agent Proxy\/core\.log$/m);
+  assert.match(unit, /^StandardError=append:\/home\/test\/Agent Proxy\/core\.log$/m);
+  const percentUnit = renderSystemdUserUnit({
+    label: "com.example.proxy",
+    binPath: "/home/test/100% sure/proxy",
+    configPath: "/home/test/100% sure/config.yaml",
+    logPath: "/home/test/100% sure/core.log",
+  });
+  assert.match(percentUnit, /^WorkingDirectory=\/home\/test\/100%% sure$/m);
+  assert.match(percentUnit, /^StandardOutput=append:\/home\/test\/100%% sure\/core\.log$/m);
   assert.deepEqual(
     parseSystemctlShow(
       systemctlOutput({
