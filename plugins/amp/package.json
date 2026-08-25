@@ -27,8 +27,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.39.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.8"
+    "bb": ">=0.39.1 <1.0.0",
+    "bbPluginSdk": ">=0.4.12"
   },
   "bb": {
     "name": "Amp",
@@ -42,6 +42,7 @@
     },
     "server": "./server.ts",
     "app": "./app.tsx",
+    "host": "./host.ts",
     "skills": []
   },
   "files": [
@@ -50,6 +51,8 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/host.js",
+    "dist/host.meta.json",
     "dist/bridge.js",
     "dist/amp-cli-shim.js",
     "assets/",
@@ -59,16 +62,17 @@
     "server.ts",
     "app.tsx",
     "app.css",
+    "host.ts",
     "lib/",
     "src/"
   ],
   "dependencies": {
+    "@get-bb/plugin-sdk": "0.4.16",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",
     "@ampcode/sdk": "0.1.0-20260729105907-g72d5ca3",
-    "@get-bb/plugin-sdk": "0.4.8",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "esbuild": "^0.25.0",
