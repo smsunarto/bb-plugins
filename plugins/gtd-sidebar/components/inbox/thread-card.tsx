@@ -75,7 +75,8 @@ export function ThreadCard({
             href="#"
             aria-label={threadDisplayTitle(thread)}
             {...splitProps}
-            onClick={(event) => {
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
               event.preventDefault();
               actions.open(thread.id, {
                 split: event.metaKey || event.ctrlKey,
@@ -213,7 +214,7 @@ function ParkButton({
     <button
       type="button"
       aria-label={label}
-      onClick={(event) => {
+      onPointerDown={(event) => {
         event.preventDefault();
         event.stopPropagation();
         onActivate();
