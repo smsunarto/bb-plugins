@@ -1,5 +1,11 @@
 # @smsunarto/bb-plugin-gtd-sidebar
 
+## 0.4.2
+
+### Patch Changes
+
+- 14254e6: Show the applied GitButler virtual branch instead of `gitbutler/workspace` on thread cards. When several virtual branches are applied, show their count rather than guessing one.
+
 ## 0.4.1
 
 ### Patch Changes

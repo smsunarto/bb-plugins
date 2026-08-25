@@ -1,5 +1,11 @@
 # @smsunarto/bb-plugin-agentation
 
+## 0.2.3
+
+### Patch Changes
+
+- 5f445aa: Enrich annotations with the exact public bb plugin UI surface and registration id that own the selected element, including component slots, composer contributions, and host-rendered plugin actions. Render source-oriented prompt guidance that points agents to the matching SDK registration in the plugin frontend. Keep the global React toolbar compatible with bb's foreign-DOM mutation guard.
+
 ## 0.2.2
 
 ### Patch Changes
