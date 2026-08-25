@@ -28,6 +28,10 @@ const themeColors = {
   light: "oklch(44% 0 0)",
   dark: "oklch(78% 0 0)",
 } as const;
+// BB paints installed compact assets as currentColor masks, and bb 0.40 does
+// the same for marketplace SVGs. BB 0.39 renders marketplace SVGs as images,
+// so use a neutral fallback that stays visible on both light and dark cards.
+const compactFallbackColor = "#767676";
 // A filled brand mark needs flat hex, not the stroked glyphs' currentColor.
 const brandColors = { light: "#666666", dark: "#B8B8B8" } as const;
 
@@ -202,14 +206,14 @@ async function expectedFiles(plugin: CustomPlugin): Promise<Map<string, string>>
   if (entry.brand !== undefined) {
     const { brand } = entry;
     return new Map([
-      [join(directory, "icon.svg"), brandSvg(brand, "#000")],
+      [join(directory, "icon.svg"), brandSvg(brand, compactFallbackColor)],
       [join(directory, "logo.svg"), brandSvg(brand, brandColors.light)],
       [join(directory, "logo-dark.svg"), brandSvg(brand, brandColors.dark)],
     ]);
   }
   const nodes = entry.nodes as readonly IconNode[];
   return new Map([
-    [join(directory, "icon.svg"), svg(nodes, "#000", false)],
+    [join(directory, "icon.svg"), svg(nodes, compactFallbackColor, false)],
     [join(directory, "logo.svg"), svg(nodes, themeColors.light, true)],
     [join(directory, "logo-dark.svg"), svg(nodes, themeColors.dark, true)],
   ]);
