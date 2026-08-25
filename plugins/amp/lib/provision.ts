@@ -1,6 +1,5 @@
 import {
   accessSync,
-  chmodSync,
   constants,
   existsSync,
   mkdirSync,
@@ -9,24 +8,13 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { homedir } from "node:os";
-import {
-  AMP_ACP_EXECUTOR_ENV,
-  AMP_AGENT,
-  OBSOLETE_AMP_ORB_AGENT,
-} from "../src/execution-target.ts";
-import { AMP_LEGACY_RED_LOGO_SVG, AMP_LOGO_SVG } from "../src/amp-brand.ts";
-
-/** Compatibility aliases for the original provider identity. */
-export const AGENT_ID = AMP_AGENT.agentId;
-export const PROVIDER_ID = AMP_AGENT.providerId;
-export const OBSOLETE_ORB_AGENT_ID = OBSOLETE_AMP_ORB_AGENT.agentId;
-export const OBSOLETE_ORB_PROVIDER_ID = OBSOLETE_AMP_ORB_AGENT.providerId;
+import { AMP_AGENT } from "../src/execution-target.ts";
 
 /**
  * The one repair hint every "bridge bundle is missing" message must use, so the
- * CLI status line and the provisioning error must never disagree.
+ * CLI status line and the registration error must never disagree.
  *
  * `npm install` inside a source checkout of the plugin is actively harmful:
  * that tree is a Bun workspace, and the root package.json `overrides` entry
@@ -39,29 +27,6 @@ export const BRIDGE_BUILD_HINT =
   "Reinstall the plugin with `bb plugin install npm:@smsunarto/bb-plugin-amp`. " +
   "From a source checkout, run `bun install` at the repository root " +
   "(never `npm install` inside the plugin), then `bun run build` in plugins/amp.";
-
-export interface ProvisionPaths {
-  dataDir: string;
-  configPath: string;
-  logoPath: string;
-}
-
-/** Everything needed to launch the bundled ACP bridge. */
-export interface BridgeLaunch {
-  /** Executable that runs the bridge (process.execPath at provision time). */
-  node: string;
-  /**
-   * True when `node` is an Electron binary (bb's own) rather than a plain node.
-   * Electron only behaves like node when ELECTRON_RUN_AS_NODE=1 is set; without
-   * it, spawning bb's binary with a script argument launches the GUI instead of
-   * running the bridge, and bb's ACP client sees a silent agent.
-   */
-  electron: boolean;
-  /** Absolute path to the bundled bridge, <plugin dir>/dist/bridge.js. */
-  bridge: string;
-  /** Amp CLI executable, passed to the bridge via AMP_CLI_PATH. */
-  amp: string;
-}
 
 /**
  * Decide which executable runs the bridge. The plugin host's own executable is
@@ -79,41 +44,15 @@ export function resolveNodeRuntime(
   return { node: execPath, electron: !isPlainNode };
 }
 
-interface CustomAgent extends Record<string, unknown> {
-  id?: unknown;
-  env?: unknown;
-}
-
-const AMP_NATIVE_SKILL_ROOTS = {
+/**
+ * The direct user and project skill roots that Amp scans itself, declared on
+ * the launch spec so bb can index them; they do not change the ACP wire
+ * protocol or Amp execution.
+ */
+export const AMP_NATIVE_SKILL_ROOTS = {
   user: [".config/agents/skills", ".agents/skills", ".config/amp/skills", ".claude/skills"],
   project: [".agents/skills", ".claude/skills"],
 };
-
-function customAgentEnv(agent: CustomAgent | undefined): Record<string, unknown> {
-  return agent?.env !== null && typeof agent?.env === "object" && !Array.isArray(agent.env)
-    ? (agent.env as Record<string, unknown>)
-    : {};
-}
-
-function mergeManagedEnv(
-  existingEnv: Record<string, unknown>,
-  managedEnv: Record<string, unknown>,
-  electron: boolean,
-): Record<string, unknown> {
-  const merged: Record<string, unknown> = {
-    ...existingEnv,
-    ...managedEnv,
-  };
-  // Removed bridge option: do not leave the old provider-wide continuation
-  // behavior enabled in previously provisioned entries.
-  delete merged.AMP_ACP_CONTINUE_LATEST;
-  // `/orb` now selects execution per Amp thread. Remove the obsolete
-  // provider-wide discriminator from both migrated entries.
-  delete merged[AMP_ACP_EXECUTOR_ENV];
-  // Drop a stale run-as-node flag left by a previous Electron-hosted setup.
-  if (!electron) delete merged.ELECTRON_RUN_AS_NODE;
-  return merged;
-}
 
 function isExecutable(path: string): boolean {
   try {
@@ -148,7 +87,7 @@ function findBinary(
 
 /**
  * Resolve the Amp CLI. The bundled bridge drives it through @ampcode/sdk,
- * which honors the AMP_CLI_PATH env var set on the managed entry.
+ * which honors the AMP_CLI_PATH env var set on the registered launch spec.
  */
 export function resolveAmpCli(
   env: NodeJS.ProcessEnv,
@@ -172,31 +111,22 @@ export interface AmpCliLaunch {
   env: NodeJS.ProcessEnv;
 }
 
-/** Resolve the same Amp executable and environment that the managed ACP entry uses. */
+/**
+ * Resolve the same Amp executable and environment that the registered launch
+ * spec names. `ampCliPath` is the path the registration resolved at load; a
+ * stale or null one falls back to a fresh lookup.
+ */
 export function resolveAmpCliLaunch(
-  paths: ProvisionPaths,
+  ampCliPath: string | null,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): AmpCliLaunch | null {
-  const config = readConfig(paths.configPath);
-  const agents: CustomAgent[] = Array.isArray(config.customAcpAgents)
-    ? (config.customAcpAgents as CustomAgent[])
-    : [];
-  const configuredEnv = Object.fromEntries(
-    Object.entries(customAgentEnv(agents.find((agent) => agent?.id === AMP_AGENT.agentId))).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
-  );
-  const configuredCommand = configuredEnv.AMP_CLI_PATH;
   const command =
-    configuredCommand && isExecutable(configuredCommand)
-      ? configuredCommand
-      : resolveAmpCli(baseEnv);
+    ampCliPath !== null && isExecutable(ampCliPath) ? ampCliPath : resolveAmpCli(baseEnv);
   if (command === null) return null;
   return {
     command,
     env: {
       ...baseEnv,
-      ...configuredEnv,
       AMP_CLI_PATH: command,
     },
   };
@@ -211,202 +141,128 @@ function readConfig(configPath: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function writeAtomic(path: string, content: string, mode?: number): void {
+function writeAtomic(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.bb-plugin-amp-${process.pid}.tmp`;
   try {
     writeFileSync(temporary, content, "utf8");
-    if (mode !== undefined) chmodSync(temporary, mode);
     renameSync(temporary, path);
   } finally {
     rmSync(temporary, { force: true });
   }
 }
 
-function writeManagedLogo(path: string): "written" | "updated" | "kept" {
-  if (!existsSync(path)) {
-    writeAtomic(path, AMP_LOGO_SVG);
-    return "written";
-  }
-  if (readFileSync(path, "utf8") !== AMP_LEGACY_RED_LOGO_SVG) return "kept";
-  writeAtomic(path, AMP_LOGO_SVG);
-  return "updated";
+export interface LegacyConfigPaths {
+  configPath: string;
+  logoPath: string;
 }
+
+const MANAGED_ENTRY_KEYS = new Set([
+  "id",
+  "displayName",
+  "command",
+  "args",
+  "env",
+  "logo",
+  "nativeSkillRoots",
+]);
+const MANAGED_ENV_KEYS = new Set(["AMP_CLI_PATH", "ELECTRON_RUN_AS_NODE"]);
+const MANAGED_LOGO = "logos/amp.svg";
 
 /**
- * Managed customAcpAgents entry: node runs the bundled bridge, which speaks
- * ACP to bb and drives the Amp CLI (AMP_CLI_PATH) via @ampcode/sdk.
+ * Which parts of a legacy customAcpAgents "amp" entry a user customized.
  *
- * No nativeReasoning block: Amp owns the default effort for each mode, and the
- * bridge deliberately omits a thought_level selector until bb can represent
- * that agent-managed default alongside explicit SDK effort overrides.
- * nativeSkillRoots lets bb index the direct user and project roots that Amp
- * scans itself; it does not change the ACP wire protocol or Amp execution.
+ * Empty means the entry is purely plugin-managed and safe to remove. The match
+ * is by SHAPE, not string equality: every installed plugin version rewrote the
+ * bridge path with its own plugin-cache location, and the command is a plain
+ * node on some machines and bb's Electron binary on others, so neither is
+ * compared against current values. Anything the old provisioning never wrote —
+ * an extra entry key, an extra env var, a changed logo, skill roots, or
+ * display name — is a customization worth preserving.
  */
-export function managedAgentEntry(launch: BridgeLaunch): Record<string, unknown> {
-  const env: Record<string, string> = {
-    AMP_CLI_PATH: launch.amp,
-  };
-  if (launch.electron) env.ELECTRON_RUN_AS_NODE = "1";
-  return {
-    id: AMP_AGENT.agentId,
-    displayName: AMP_AGENT.displayName,
-    command: launch.node,
-    args: [launch.bridge],
-    env,
-    logo: "logos/amp.svg",
-    nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
-  };
-}
-
-export function provisionInstallation(
-  paths: ProvisionPaths,
-  launch: BridgeLaunch,
-): { changed: boolean; messages: string[] } {
-  if (!isExecutable(launch.node)) {
-    throw new Error(`Node executable not found or not executable: ${launch.node}`);
+export function legacyEntryDeviations(entry: Record<string, unknown>): string[] {
+  const deviations: string[] = [];
+  for (const key of Object.keys(entry)) {
+    if (!MANAGED_ENTRY_KEYS.has(key)) deviations.push(key);
   }
-  if (!existsSync(launch.bridge)) {
-    throw new Error(`Bridge bundle not found: ${launch.bridge}. ${BRIDGE_BUILD_HINT}`);
-  }
-  if (!isExecutable(launch.amp)) {
-    throw new Error(`Amp CLI is not executable: ${launch.amp}`);
-  }
-  mkdirSync(paths.dataDir, { recursive: true });
-  // The logo is a user-visible preference once installed. Migrate only the
-  // exact legacy red asset that this plugin wrote; preserve customized logos.
-  const logoResult = writeManagedLogo(paths.logoPath);
-
-  const config = readConfig(paths.configPath);
-  const agents: CustomAgent[] = Array.isArray(config.customAcpAgents)
-    ? [...(config.customAcpAgents as CustomAgent[])]
-    : [];
-  const originalAgents = JSON.stringify(agents);
-  const configMessages: string[] = [];
-  const canonicalIndex = agents.findIndex((agent) => agent?.id === AGENT_ID);
-  const obsoleteIndex = agents.findIndex((agent) => agent?.id === OBSOLETE_ORB_AGENT_ID);
-  const canonical = canonicalIndex >= 0 ? agents[canonicalIndex] : undefined;
-  const obsolete = obsoleteIndex >= 0 ? agents[obsoleteIndex] : undefined;
-  const managed = managedAgentEntry(launch);
-  const updated: CustomAgent = {
-    ...obsolete,
-    ...canonical,
-    ...managed,
-    env: mergeManagedEnv(
-      {
-        ...customAgentEnv(obsolete),
-        ...customAgentEnv(canonical),
-      },
-      managed.env as Record<string, unknown>,
-      launch.electron,
-    ),
-  };
-  // bb's internal ACP launch type has permissionCli, but customAcpAgents does
-  // not accept it. Remove entries written by the short-lived bridge workaround;
-  // the bridge reads the resolved permission from bb's thread event instead.
-  delete updated.permissionCli;
-
-  if (canonicalIndex >= 0) {
-    agents[canonicalIndex] = updated;
-    configMessages.push(
-      JSON.stringify(updated) === JSON.stringify(canonical)
-        ? `custom ACP agent ${AGENT_ID} already up to date`
-        : `updated custom ACP agent ${AGENT_ID}`,
-    );
-  } else if (obsoleteIndex >= 0) {
-    agents[obsoleteIndex] = updated;
-    configMessages.push(
-      `migrated custom ACP agent ${OBSOLETE_ORB_AGENT_ID} to ${AGENT_ID} (${PROVIDER_ID})`,
-    );
-  } else {
-    agents.push(updated);
-    configMessages.push(`added custom ACP agent ${AGENT_ID} (${PROVIDER_ID})`);
-  }
-
-  const obsoleteCount = agents.filter((agent) => agent?.id === OBSOLETE_ORB_AGENT_ID).length;
-  if (obsoleteCount > 0) {
-    const retained = agents.filter((agent) => agent?.id !== OBSOLETE_ORB_AGENT_ID);
-    agents.splice(0, agents.length, ...retained);
-    configMessages.push(
-      `removed obsolete custom ACP agent ${OBSOLETE_ORB_AGENT_ID} (${OBSOLETE_ORB_PROVIDER_ID})`,
-    );
-  }
-
-  const configChanged = JSON.stringify(agents) !== originalAgents;
-  if (configChanged) {
-    config.customAcpAgents = agents;
-    writeAtomic(paths.configPath, `${JSON.stringify(config, null, "\t")}\n`);
-  }
-  return {
-    changed: logoResult !== "kept" || configChanged,
-    messages: [
-      logoResult === "written"
-        ? `wrote ${paths.logoPath}`
-        : logoResult === "updated"
-          ? `updated managed logo at ${paths.logoPath}`
-          : `kept existing logo at ${paths.logoPath}`,
-      ...configMessages,
-    ],
-  };
-}
-
-/**
- * Whether the managed entry should be written without the user asking.
- *
- * True when the entry is absent, still carries the obsolete Orb id, lacks the
- * managed native skill roots, or names a runtime, bridge, or Amp CLI that this
- * installation can no longer run. A working entry is left alone, so an added
- * env var or a hand-picked Amp binary survives every restart. An unreadable
- * config throws so the background service can report the failure without
- * modifying the file.
- */
-export function needsProvisioning(
-  paths: ProvisionPaths,
-  launch: Pick<BridgeLaunch, "node" | "bridge">,
-): boolean {
-  const config = readConfig(paths.configPath);
-  const agents: CustomAgent[] = Array.isArray(config.customAcpAgents)
-    ? (config.customAcpAgents as CustomAgent[])
-    : [];
-  if (agents.some((agent) => agent?.id === OBSOLETE_ORB_AGENT_ID)) return true;
-  const entry = agents.find((agent) => agent?.id === AGENT_ID);
-  if (entry === undefined) return true;
-  if (entry.command !== launch.node) return true;
   const args = entry.args;
-  if (!Array.isArray(args) || args.length !== 1 || args[0] !== launch.bridge) {
-    return true;
+  if (
+    !Array.isArray(args) ||
+    args.length !== 1 ||
+    typeof args[0] !== "string" ||
+    basename(args[0]) !== "bridge.js"
+  ) {
+    deviations.push("args");
   }
-  if ("permissionCli" in entry) return true;
-  if (JSON.stringify(entry.nativeSkillRoots) !== JSON.stringify(AMP_NATIVE_SKILL_ROOTS)) {
-    return true;
+  const env = entry.env;
+  if (env !== undefined) {
+    if (env === null || typeof env !== "object" || Array.isArray(env)) {
+      deviations.push("env");
+    } else {
+      for (const key of Object.keys(env)) {
+        if (!MANAGED_ENV_KEYS.has(key)) deviations.push(`env.${key}`);
+      }
+    }
   }
-  const recordedCli = customAgentEnv(entry).AMP_CLI_PATH;
-  return typeof recordedCli !== "string" || !isExecutable(recordedCli);
+  if (entry.displayName !== undefined && entry.displayName !== AMP_AGENT.displayName) {
+    deviations.push("displayName");
+  }
+  if (entry.logo !== undefined && entry.logo !== MANAGED_LOGO) {
+    deviations.push("logo");
+  }
+  if (
+    entry.nativeSkillRoots !== undefined &&
+    JSON.stringify(entry.nativeSkillRoots) !== JSON.stringify(AMP_NATIVE_SKILL_ROOTS)
+  ) {
+    deviations.push("nativeSkillRoots");
+  }
+  return deviations;
 }
 
-export function inspectInstallation(paths: ProvisionPaths): {
-  configured: boolean;
-  obsoleteOrbConfigured: boolean;
-  error?: string;
-} {
+export type LegacyEntryInspection =
+  | { entry: "absent" }
+  | { entry: "managed" }
+  | { entry: "customized"; deviations: string[] };
+
+/** Report the legacy entry's state without modifying anything. */
+export function inspectLegacyAmpEntry(configPath: string): LegacyEntryInspection {
+  const config = readConfig(configPath);
+  const agents = Array.isArray(config.customAcpAgents)
+    ? (config.customAcpAgents as Record<string, unknown>[])
+    : [];
+  const entry = agents.find((agent) => agent?.id === AMP_AGENT.agentId);
+  if (entry === undefined) return { entry: "absent" };
+  const deviations = legacyEntryDeviations(entry);
+  return deviations.length === 0 ? { entry: "managed" } : { entry: "customized", deviations };
+}
+
+export type LegacyCleanupResult =
+  | { kind: "clean" }
+  | { kind: "removed" }
+  | { kind: "kept"; deviations: string[] };
+
+/**
+ * Remove the legacy plugin-managed customAcpAgents entry, once. A legacy entry
+ * shadows the plugin registration with the same id, so removal is required,
+ * not cosmetic — but only a purely plugin-managed entry is touched; a
+ * customized one is reported and left for the user. Idempotent: with no "amp"
+ * entry left, nothing is read beyond the config and nothing is written.
+ */
+export function cleanupLegacyAmpEntry(paths: LegacyConfigPaths): LegacyCleanupResult {
+  const config = readConfig(paths.configPath);
+  const agents = Array.isArray(config.customAcpAgents)
+    ? (config.customAcpAgents as Record<string, unknown>[])
+    : [];
+  const entry = agents.find((agent) => agent?.id === AMP_AGENT.agentId);
+  if (entry === undefined) return { kind: "clean" };
+  const deviations = legacyEntryDeviations(entry);
+  if (deviations.length > 0) return { kind: "kept", deviations };
+  config.customAcpAgents = agents.filter((agent) => agent !== entry);
+  writeAtomic(paths.configPath, `${JSON.stringify(config, null, "\t")}\n`);
   try {
-    const config = readConfig(paths.configPath);
-    const agents = Array.isArray(config.customAcpAgents)
-      ? (config.customAcpAgents as CustomAgent[])
-      : [];
-    const configured = agents.some((agent) => agent?.id === AMP_AGENT.agentId);
-    const obsoleteOrbConfigured = agents.some(
-      (agent) => agent?.id === OBSOLETE_AMP_ORB_AGENT.agentId,
-    );
-    return {
-      configured,
-      obsoleteOrbConfigured,
-    };
-  } catch (error) {
-    return {
-      configured: false,
-      obsoleteOrbConfigured: false,
-      error: String(error),
-    };
+    rmSync(paths.logoPath, { force: true });
+  } catch {
+    // The config write is what matters; a leftover logo file is inert.
   }
+  return { kind: "removed" };
 }
