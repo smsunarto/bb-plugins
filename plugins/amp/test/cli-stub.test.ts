@@ -11,7 +11,7 @@ import test from "node:test";
 //   if (localAmpCommand) return localAmpCommand;
 //   for (const resolver of [resolveCliFromEnvironment, ...])  // AMP_CLI_PATH
 //
-// So a real @ampcode/cli silently outranks the CLI this plugin provisions, and
+// So a real @ampcode/cli silently outranks the CLI this plugin resolves, and
 // the bridge would drive a different Amp build than the user configured. The
 // workspace root overrides it with vendor/ampcode-cli-stub, which declares no
 // bin.amp -- resolveLocalAmpPackageCommand() returns null and AMP_CLI_PATH
