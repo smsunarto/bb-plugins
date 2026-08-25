@@ -1,17 +1,22 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { isAbsolute, join, normalize } from "node:path";
+import { isAbsolute, join, normalize, posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import type * as TS from "typescript";
 import type { BinResult } from "./shared.ts";
-import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
+import {
+  UNIT_NAME_PATTERN,
+  camelName,
+  compositionRootFromPkg,
+  resolveImport,
+  unitDir,
+} from "./shared.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { kebabName, wireName } from "../rpc/rpc.ts";
 
 /**
  * `bb-kit check` (§7): static verification of the six rules — wiring
- * bijection and naming (1), namespace = plugin id (2), wire-name
- * uniqueness plus the full table (3), manifest paths and engines (4),
+ * bijection and naming (1), definePlugin id = derived plugin id (2), the name
+ * table (3), manifest paths and engines (4),
  * composition and host CLI policy (5), sibling tests (warn-only, 6).
  *
  * check EXECUTES no plugin code. Parsing goes through the plugin's own
@@ -72,7 +77,7 @@ function loadProject(
       return { failure: `tsconfig.json has config errors: ${detail}` };
     }
     // The program spans the tsconfig's files WITH imports resolved, so a
-    // unit file the include list omits but server.ts imports still
+    // unit file the include list omits but the composition root imports still
     // enters it — membership is program membership, as it was under the
     // TS7 project. noLib and types: [] keep the default lib and @types
     // packages out; only syntactic diagnostics are ever read.
@@ -148,7 +153,10 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   }
 
   // ---- unit inventory, rule 1 basenames, rule 6 sibling tests -------
-  const listUnits = (dir: "rpc" | "cli"): string[] => {
+  const compositionRoot = compositionRootFromPkg(pkg) ?? "server/server.ts";
+  const rpcDir = unitDir(compositionRoot, "rpc");
+  const cliDir = unitDir(compositionRoot, "cli");
+  const listUnits = (dir: string): string[] => {
     const absolute = join(cwd, dir);
     if (!existsSync(absolute)) {
       return [];
@@ -162,8 +170,8 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       .sort()
       .map((name) => `${dir}/${name}`);
   };
-  const rpcUnits = listUnits("rpc");
-  const cliUnits = listUnits("cli");
+  const rpcUnits = listUnits(rpcDir);
+  const cliUnits = listUnits(cliDir);
   const unitFiles = new Set([...rpcUnits, ...cliUnits]);
   for (const unit of unitFiles) {
     const base = unitBasename(unit);
@@ -183,7 +191,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     fail(`${failure} (parse-dependent rules skipped)`);
   }
 
-  let namespace: string | undefined;
+  let pluginId: string | undefined;
   if (project) {
     const ts = project.ts;
     const stringText = (node: TS.Node | undefined): string | undefined =>
@@ -271,7 +279,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           found[0]?.line,
         );
       }
-      if (unit.startsWith("cli/")) {
+      if (unit.startsWith(`${cliDir}/`)) {
         warnConfigureAction(unit, sourceFile);
       }
     }
@@ -302,8 +310,8 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       }
     }
 
-    // ---- server.ts composition (rules 1, 2, 3, 5) -----------------
-    const serverRelative = "server.ts";
+    // ---- composition root (rules 1, 2, 3, 5) ----------------------
+    const serverRelative = compositionRootFromPkg(pkg);
     let proceduresRead = false;
     let commandsRead = false;
     const procedureEntries: { key: string; line: number; valueName?: string }[] = [];
@@ -311,8 +319,10 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     const imports = new Map<string, { specifier: string; imported: string; line: number }>();
     const wired = new Set<string>();
 
-    if (!existsSync(join(cwd, serverRelative))) {
-      fail("server.ts not found — rule 5", serverRelative);
+    if (serverRelative === undefined) {
+      fail("bb.server is required — rule 5", "package.json");
+    } else if (!existsSync(join(cwd, serverRelative))) {
+      fail(`${serverRelative} not found — rule 5`, serverRelative);
     } else {
       const sourceFile = parseChecked(serverRelative);
       if (sourceFile) {
@@ -346,7 +356,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             }
           }
         }
-        // Top-level initializers, to chase `const rpc = defineRPC(...)`.
+        // Top-level initializers, to chase `const rpc = { ping }`.
         const topInitializers = new Map<string, TS.Expression>();
         for (const statement of sourceFile.statements) {
           if (!ts.isVariableStatement(statement)) {
@@ -474,11 +484,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               valueName = key;
             } else if (ts.isPropertyAssignment(property)) {
               const value = unwrap(property.initializer);
-              if (
-                value !== undefined &&
-                ts.isObjectLiteralExpression(value) &&
-                what === "commands"
-              ) {
+              if (value !== undefined && ts.isObjectLiteralExpression(value) && what === "cli") {
                 fail(
                   "commands must be flat — nesting is not supported (rule 5)",
                   serverRelative,
@@ -501,7 +507,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
 
         const exportAssignment = sourceFile.statements.find(ts.isExportAssignment);
         if (exportAssignment === undefined) {
-          fail("server.ts has no default export — rule 5", serverRelative);
+          fail(`${serverRelative} has no default export — rule 5`, serverRelative);
         } else {
           const exportLine = lineOfNode(sourceFile, exportAssignment);
           const pluginCall = resolveCall(exportAssignment.expression, "definePlugin");
@@ -513,46 +519,34 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               exportLine,
             );
           } else {
-            // rpc → defineRPC → namespace + procedures
-            const rpcValue = propertyValue(getProperty(argument, "rpc"));
-            const rpcCall = resolveCall(rpcValue, "defineRPC");
-            const rpcArgument = rpcCall ? resolveObjectLiteral(rpcCall.arguments[0]) : undefined;
-            if (rpcArgument === undefined) {
+            const idProperty = getProperty(argument, "pluginId");
+            pluginId = stringText(unwrap(propertyValue(idProperty)));
+            if (pluginId === undefined) {
               fail(
-                'definePlugin\'s "rpc" must resolve to a defineRPC({ ... }) call for check to read it',
+                "definePlugin's pluginId must be a string literal for check to verify it — rule 2",
+                serverRelative,
+                lineOfNode(sourceFile, idProperty ?? argument),
+              );
+            }
+            // rpc → object literal (inline or `const rpc = { ... }`)
+            const rpcValue = propertyValue(getProperty(argument, "rpc"));
+            const rpcObject = resolveObjectLiteral(rpcValue);
+            if (rpcObject === undefined) {
+              fail(
+                'definePlugin\'s "rpc" must resolve to an object literal for check to read it',
                 serverRelative,
                 exportLine,
               );
             } else {
-              const namespaceProperty = getProperty(rpcArgument, "namespace");
-              namespace = stringText(unwrap(propertyValue(namespaceProperty)));
-              if (namespace === undefined) {
-                fail(
-                  "the namespace must be a string literal for check to verify it — rule 2",
-                  serverRelative,
-                  lineOfNode(sourceFile, namespaceProperty ?? rpcArgument),
-                );
-              }
-              const proceduresObject = resolveObjectLiteral(
-                propertyValue(getProperty(rpcArgument, "procedures")),
-              );
-              if (proceduresObject === undefined) {
-                fail(
-                  'defineRPC needs a "procedures" object literal — rule 1',
-                  serverRelative,
-                  lineOfNode(sourceFile, rpcArgument),
-                );
-              } else {
-                collectEntries(proceduresObject, procedureEntries, "procedures");
-                proceduresRead = true;
-              }
+              collectEntries(rpcObject, procedureEntries, "rpc");
+              proceduresRead = true;
             }
-            // cli → commands
+            // cli → object literal (inline or `const cli = { ... }`)
             const cliProperty = getProperty(argument, "cli");
             if (cliProperty === undefined) {
               if (cliUnits.length > 0) {
                 fail(
-                  "cli/ has unit files but definePlugin has no cli entry — rule 5",
+                  `${cliDir}/ has unit files but definePlugin has no cli entry — rule 5`,
                   serverRelative,
                   exportLine,
                 );
@@ -561,17 +555,14 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               }
             } else {
               const cliObject = resolveObjectLiteral(propertyValue(cliProperty));
-              const commandsObject = cliObject
-                ? resolveObjectLiteral(propertyValue(getProperty(cliObject, "commands")))
-                : undefined;
-              if (commandsObject === undefined) {
+              if (cliObject === undefined) {
                 fail(
-                  'the cli entry must be an object literal with a "commands" object literal — rule 5',
+                  'the "cli" entry must resolve to an object literal',
                   serverRelative,
                   lineOfNode(sourceFile, cliProperty),
                 );
               } else {
-                collectEntries(commandsObject, commandEntries, "commands");
+                collectEntries(cliObject, commandEntries, "cli");
                 commandsRead = true;
               }
             }
@@ -586,19 +577,19 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         ): string | undefined => {
           const binding = imports.get(valueName);
           if (binding === undefined) {
-            fail(`"${valueName}" is not imported in server.ts — rule 1`, serverRelative, line);
+            fail(`"${valueName}" is not imported in ${serverRelative} — rule 1`, serverRelative, line);
             return undefined;
           }
-          const match = /^\.\/(rpc|cli)\/[^/]+\.tsx?$/.exec(binding.specifier);
-          if (match === null || match[1] !== expectDir) {
+          const relative = resolveImport(serverRelative, binding.specifier);
+          const expectedDir = unitDir(serverRelative, expectDir);
+          if (posix.dirname(relative) !== expectedDir || !/\.tsx?$/.test(relative)) {
             fail(
-              `"${valueName}" imports "${binding.specifier}" — a ./${expectDir}/ unit file was expected (rule 1)`,
+              `"${valueName}" imports "${binding.specifier}" — a ${expectedDir}/ unit file was expected (rule 1)`,
               serverRelative,
               line,
             );
             return undefined;
           }
-          const relative = binding.specifier.slice(2);
           if (!unitFiles.has(relative)) {
             fail(
               `"${valueName}" resolves to ${relative}, which is not a unit file on disk — rule 1`,
@@ -610,23 +601,16 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           return relative;
         };
         for (const entry of procedureEntries) {
-          if (kebabName(entry.key) === "help") {
-            fail(
-              `procedure key "${entry.key}" kebab-cases to "help", colliding with the rpc subtree's help — rule 5`,
-              serverRelative,
-              entry.line,
-            );
-          }
           if (entry.valueName === undefined) {
             continue;
           }
           const relative = resolveEntryFile(entry.valueName, entry.line, "rpc");
           if (relative !== undefined) {
             // "exactly once": a second key wiring the same unit file
-            // breaks injectivity even when the wire names differ.
+            // breaks injectivity even when the public names differ.
             if (wired.has(relative)) {
               fail(
-                `procedure key "${entry.key}" wires ${relative}, which is already wired — rule 1`,
+                `RPC key "${entry.key}" wires ${relative}, which is already wired — rule 1`,
                 serverRelative,
                 entry.line,
               );
@@ -658,44 +642,29 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         if (proceduresRead) {
           for (const unit of rpcUnits) {
             if (!wired.has(unit)) {
-              fail("not wired into server.ts procedures — rule 1", unit);
+              fail(`not wired into ${serverRelative} rpc — rule 1`, unit);
             }
           }
         }
         if (commandsRead) {
           for (const unit of cliUnits) {
             if (!wired.has(unit)) {
-              fail("not wired into server.ts cli.commands — rule 1", unit);
+              fail(`not wired into ${serverRelative} cli — rule 1`, unit);
             }
           }
         }
-        // rule 2: namespace equals the derived plugin id.
-        if (namespace !== undefined && id !== undefined && namespace !== id) {
+        // rule 2: definePlugin pluginId equals the derived plugin id.
+        if (pluginId !== undefined && id !== undefined && pluginId !== id) {
           fail(
-            `RPC namespace "${namespace}" must equal derivePluginID(package.json name) = "${id}" — rule 2`,
+            `plugin id "${pluginId}" must equal derivePluginID(package.json name) = "${id}" — rule 2`,
             serverRelative,
           );
         }
-        // rule 3: unique wire names, and the full table.
-        if (namespace !== undefined && proceduresRead) {
-          const byWire = new Map<string, string>();
-          const rows: string[] = [];
-          for (const entry of procedureEntries) {
-            const wire = wireName(namespace, entry.key);
-            const prior = byWire.get(wire);
-            if (prior !== undefined) {
-              fail(
-                `procedures "${prior}" and "${entry.key}" both produce wire name "${wire}" — rule 3`,
-                serverRelative,
-                entry.line,
-              );
-            } else {
-              byWire.set(wire, entry.key);
-            }
-            rows.push(`  ${wire}  <- ${entry.key}`);
-          }
+        // rule 3: the name table. The public name is the key.
+        if (proceduresRead) {
+          const rows = procedureEntries.map((entry) => `  ${entry.key}`);
           if (rows.length > 0) {
-            table = `wire names (namespace "${namespace}"):\n${rows.join("\n")}\n`;
+            table = `RPC names:\n${rows.join("\n")}\n`;
           }
         }
       }
@@ -703,7 +672,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   }
 
   // ---- rule 5: host CLI policy, from the plugin's own SDK -----------
-  const cliName = namespace ?? id;
+  const cliName = pluginId ?? id;
   if (cliName !== undefined) {
     try {
       const policyPath = requireFromPlugin.resolve("@get-bb/plugin-sdk/internal/host-policy");

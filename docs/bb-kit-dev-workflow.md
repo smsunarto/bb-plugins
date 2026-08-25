@@ -52,22 +52,21 @@ app each arrive with a passing sibling test. The tree is the flat layout
 ```
 my-plugin/
   package.json     # "test": "node --test --import tsx"; "typecheck": "tsc";
-                   # bb.app → ./ui/app.tsx; bb.branding.icon → ./assets/icon.svg;
+                   # bb.server → ./server/server.ts; bb.app → ./app/app.tsx;
+                   # bb.branding.icon → ./assets/icon.svg;
                    # exact @bb-kit/core dependency + @get-bb/plugin-sdk devDependency
   tsconfig.json    # preserve + bundler resolution + noEmit — .ts-suffixed
                    # imports typecheck; nothing ever emits
-  server.ts        # composition root — the only wiring file
-  server.test.ts   # tier-2: the default-export factory against the fake host
-  rpc/
-    ping.ts        # a defineQuery
-    ping.test.ts
-  cli/
-    status.ts      # a defineCommand over the typed RPC client
-    status.test.ts
   server/
-    context.ts     # createContext(bb) assembles the one Context handlers
-                   # annotate — `{}` until the plugin grows dependencies
-  ui/
+    server.ts      # composition root — the only wiring file (bb.server)
+    server.test.ts # tier-2: the default-export factory against the fake host
+    rpc/
+      ping.ts      # a defineQuery
+      ping.test.ts
+    cli/
+      status.ts    # a defineCommand over the typed RPC client
+      status.test.ts
+  app/
     app.tsx        # the app entry (bb.app)
     app.test.ts    # tier-3: renderSlot under jsdom
     rpc.ts         # the RPC hooks, bound once via createRPC — the only
@@ -77,9 +76,8 @@ my-plugin/
   README.md
 ```
 
-`server/` ships with `context.ts` alone — `definePlugin`'s required
-`context` entry is `createContext`, passed point-free — and grows only
-when you need more. The UI ships by default;
+`server/` is present in a fresh scaffold as the composition root
+(`server/server.ts`). Add siblings when you need helpers (git, a queue). The UI ships by default;
 CLI-first is a testing order — prove behaviour through RPC and CLI before
 wrestling with UI correctness — not an omission. Because `create` pins
 `@bb-kit/core` under `dependencies` — a runtime dependency, since bb
@@ -95,7 +93,7 @@ npm test -- --watch
 `scripts.test` is `node --test --import tsx`. Discovery is Node's own
 default — every `**/*.test.ts`, subdirectories included, no globs, no
 config. The tsx loader is there for one reason: Node strips types but
-does not transform JSX, so it carries any import that reaches `ui/`.
+does not transform JSX, so it carries any import that reaches `app/`.
 Test files stay `.ts` — a `.test.tsx` is never discovered. Three
 headless tiers, none needing a bb instance (ADR-0005):
 
@@ -116,15 +114,15 @@ sibling file, watch it go green, move on.
 ## Growing the surface
 
 ```sh
-npx bb-kit add query <name>      # a read procedure, in rpc/
-npx bb-kit add mutation <name>   # a write procedure, in rpc/
-npx bb-kit add command <name>    # a CLI command, in cli/
+npx bb-kit add query <name>      # a Query, in server/rpc/
+npx bb-kit add mutation <name>   # a Mutation, in server/rpc/
+npx bb-kit add command <name>    # a Command, in server/cli/
 ```
 
 `add` writes the new file and its sibling test, then prints the exact
-wiring lines — the import plus the map key, into `defineRPC`'s
-procedures or `definePlugin`'s commands — for you (or your agent) to
-paste into `server.ts`. It never edits your files (ADR-0009).
+wiring lines — the import plus the map key, into `definePlugin`'s
+`rpc` or `cli` — for you (or your agent) to paste into
+`server/server.ts`. It never edits your files (ADR-0009).
 
 ```sh
 npx bb-kit check
@@ -132,9 +130,8 @@ npx bb-kit check
 
 `check` fails until the wiring exists, so a forgotten paste cannot ship.
 It also catches manifest breakage (entry targets, engines pins) and
-duplicate wire names. Wire names derive from the RPC namespace and
-procedure key and are public API — renaming one is a breaking change
-(ADR-0008).
+duplicate RPC names. Those names are the `rpc` map keys and are
+public API — renaming one is a breaking change (ADR-0008).
 
 ## The live loop
 
@@ -187,7 +184,7 @@ Monorepo plugins add `--subdirectory` (or `--plugin`) and `--tag-prefix`.
 
 ## Never in the loop
 
-- No agent-browser or Playwright for routine verification.
-- No generated catalogs, no lock file, nothing to regenerate.
-- No committed `dist/`; building is the host's job at install.
-- No `npm publish` while the plugin SDK's major is 0.
+* No agent-browser or Playwright for routine verification.
+* No generated catalogs, no lock file, nothing to regenerate.
+* No committed `dist/`; building is the host's job at install.
+* No `npm publish` while the plugin SDK's major is 0.

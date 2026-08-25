@@ -64,9 +64,6 @@
     "typescript": "*"
   },
   "peerDependenciesMeta": {
-    "@get-bb/plugin-sdk": {
-      "optional": true
-    },
     "@tanstack/react-query": {
       "optional": true
     },

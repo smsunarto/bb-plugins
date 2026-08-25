@@ -36,8 +36,8 @@
         "dark": "./assets/logo-dark.svg"
       }
     },
-    "server": "./server.ts",
-    "app": "./ui/app.tsx",
+    "server": "./server/server.ts",
+    "app": "./app/app.tsx",
     "skills": []
   },
   "files": [
@@ -49,15 +49,8 @@
     "assets/",
     "README.md",
     "LICENSE",
-    "server.ts",
     "server/",
-    "rpc/",
-    "cli/",
-    "ui/",
-    "components/",
-    "hooks/",
-    "lib/",
-    "diffs-lib.ts"
+    "app/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.1.0",

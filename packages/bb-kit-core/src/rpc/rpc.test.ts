@@ -5,16 +5,13 @@ import {
   createClient,
   defineMutation,
   defineQuery,
-  defineRPC,
-  kebabName,
   noInputSchema,
   RPCValidationError,
   runtimeProcedures,
-  wireName,
 } from "./rpc.ts";
 import type {
   AnyProcedure,
-  ClientFor,
+  Client,
   RPCContext,
   SchemaInput,
   SchemaOutput,
@@ -52,12 +49,8 @@ const broken = defineQuery({
   handler: () => ({ n: "nope" as unknown as number }),
 });
 
-const demo = defineRPC({
-  namespace: "demo",
-  procedures: { echo, ping, bump, broken },
-});
+const demo = { echo, ping, bump, broken };
 type Demo = typeof demo;
-type Client = ClientFor<Demo>;
 
 // ---- type-level pins ------------------------------------------------
 
@@ -69,17 +62,14 @@ type _mutationKind = Expect<Equal<(typeof bump)["kind"], "mutation">>;
 type _hasInput = Expect<Equal<"input" extends keyof typeof echo ? true : false, true>>;
 type _lacksInput = Expect<Equal<"input" extends keyof typeof ping ? true : false, false>>;
 
-// namespace stays literal-typed.
-type _namespace = Expect<Equal<Demo["namespace"], "demo">>;
-
-// ClientFor: with-input takes the input schema's INPUT type, no-input
+// Client: with-input takes the input schema's INPUT type, no-input
 // takes nothing; results are the output schema's OUTPUT type.
-type _withInputParams = Expect<Equal<Parameters<Client["echo"]>, [{ path: string }]>>;
-type _noInputParams = Expect<Equal<Parameters<Client["ping"]>, []>>;
-type _result = Expect<Equal<Awaited<ReturnType<Client["echo"]>>, { ok: boolean; path: string }>>;
+type _withInputParams = Expect<Equal<Parameters<Client<Demo>["echo"]>, [{ path: string }]>>;
+type _noInputParams = Expect<Equal<Parameters<Client<Demo>["ping"]>, []>>;
+type _result = Expect<Equal<Awaited<ReturnType<Client<Demo>["echo"]>>, { ok: boolean; path: string }>>;
 
 // A defaulted field is optional on the CLIENT side (schema input type).
-function inputDirection(client: Client) {
+function inputDirection(client: Client<Demo>) {
   void client.bump({});
   void client.bump({ by: 5 });
 }
@@ -90,10 +80,10 @@ void inputDirection;
 type _context = Expect<MutuallyAssignable<RPCContext<Demo>, Ctx & Fs>>;
 
 // The {} floor when nothing demands anything.
-const bare = defineRPC({ namespace: "bare", procedures: { bump } });
+const bare = { bump };
 type _floor = Expect<MutuallyAssignable<RPCContext<typeof bare>, {}>>;
 
-function typeOnly(client: Client) {
+function typeOnly(client: Client<Demo>) {
   // @ts-expect-error a with-input procedure requires its input
   void client.echo();
   // @ts-expect-error a no-input procedure takes no argument
@@ -147,34 +137,12 @@ test("noInputSchema rejects everything else", async () => {
   for (const value of [{}, "", 0, false, []]) {
     const result = await noInputSchema["~standard"].validate(value);
     assert.ok(result.issues, `expected issues for ${JSON.stringify(value)}`);
-    assert.equal(result.issues[0]?.message, "this procedure takes no input");
+    assert.equal(result.issues[0]?.message, "this RPC takes no input");
   }
 });
 
 test("noInputSchema vendor is bb-kit", () => {
   assert.equal(noInputSchema["~standard"].vendor, "bb-kit");
-});
-
-// ---- wire-name derivation -------------------------------------------
-
-test("wire names: pinned derivations", () => {
-  assert.equal(wireName("audit-log", "readEntry"), "audit_log_read_entry");
-  assert.equal(wireName("audit-log", "readURL"), "audit_log_read_url");
-  // Acronym-unaware on purpose: URLPath does NOT split.
-  assert.equal(wireName("audit-log", "readURLPath"), "audit_log_read_urlpath");
-  assert.equal(wireName("dotfiles", "overview"), "dotfiles_overview");
-});
-
-test("wire names: digit boundaries", () => {
-  // lower/digit followed by upper gets an underscore.
-  assert.equal(wireName("vault", "save2FA"), "vault_save2_fa");
-});
-
-test("kebab names for the rpc subtree", () => {
-  assert.equal(kebabName("overview"), "overview");
-  assert.equal(kebabName("readFile"), "read-file");
-  assert.equal(kebabName("readURL"), "read-url");
-  assert.equal(kebabName("readURLPath"), "read-urlpath");
 });
 
 // ---- procedure shapes -----------------------------------------------
@@ -192,60 +160,38 @@ const asAny: AnyProcedure = overview;
 void asAny;
 
 test("runtimeProcedures is a view over the same procedure objects", () => {
-  const rpc = defineRPC({ namespace: "demo", procedures: { overview } });
+  const rpc = { overview };
   const runtime = runtimeProcedures(rpc);
   assert.deepEqual(Object.keys(runtime), ["overview"]);
   assert.equal(runtime.overview, overview as unknown);
 });
 
-// ---- defineRPC define-time validation -------------------------------
+// ---- RPC key validation (createClient) ------------------------------
 
-test("defineRPC rejects an invalid namespace", () => {
+test("createClient rejects an invalid RPC key", () => {
   assert.throws(
-    () => defineRPC({ namespace: "Bad", procedures: {} }),
-    /invalid RPC namespace "Bad"/,
+    () => createClient({ ReadFile: ping }, { root: "/" }),
+    /invalid RPC key "ReadFile"/,
   );
-  assert.throws(() => defineRPC({ namespace: "-x", procedures: {} }), /invalid RPC namespace/);
+  assert.throws(() => createClient({ "read-file": ping }, { root: "/" }), /invalid RPC key/);
 });
 
-test("defineRPC rejects an invalid procedure key", () => {
+test("createClient rejects the reserved keys useClient and then", () => {
   assert.throws(
-    () => defineRPC({ namespace: "ok", procedures: { ReadFile: ping } }),
-    /invalid procedure key "ReadFile"/,
+    () => createClient({ useClient: ping }, { root: "/" }),
+    /"useClient" is a reserved RPC key/,
   );
   assert.throws(
-    () => defineRPC({ namespace: "ok", procedures: { "read-file": ping } }),
-    /invalid procedure key/,
+    // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point: createClient must reject this key
+    () => createClient({ then: ping }, { root: "/" }),
+    /"then" is a reserved RPC key/,
   );
-});
-
-test("defineRPC rejects the reserved keys useClient and then", () => {
-  assert.throws(
-    () => defineRPC({ namespace: "ok", procedures: { useClient: ping } }),
-    /"useClient" is a reserved procedure key/,
-  );
-  assert.throws(
-    // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point: defineRPC must reject this key
-    () => defineRPC({ namespace: "ok", procedures: { then: ping } }),
-    /"then" is a reserved procedure key/,
-  );
-});
-
-test("defineRPC rejects duplicate wire names", () => {
-  assert.throws(
-    () => defineRPC({ namespace: "ok", procedures: { readUrl: ping, readURL: ping } }),
-    /both derive the wire name "ok_read_url"/,
-  );
-});
-
-test("defineRPC freezes the value", () => {
-  assert.ok(Object.isFrozen(demo));
-  assert.ok(Object.isFrozen(demo.procedures));
 });
 
 // ---- createClient ---------------------------------------------------
 
 const client = createClient(demo, { prefix: "p:", root: "/" });
+type _createClientReturnsClient = Expect<Equal<typeof client, Client<Demo>>>;
 
 test("with-input call validates, runs the handler, returns the parsed output", async () => {
   assert.deepEqual(await client.echo({ path: "x" }), { ok: true, path: "p:x" });
@@ -277,7 +223,7 @@ test("input given to a no-input procedure is rejected by the vendored schema", a
   await assert.rejects(loose({}), (error: unknown) => {
     assert.ok(error instanceof RPCValidationError);
     assert.equal(error.stage, "input");
-    assert.equal(error.issues[0]?.message, "this procedure takes no input");
+    assert.equal(error.issues[0]?.message, "this RPC takes no input");
     return true;
   });
 });

@@ -1,15 +1,20 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BinResult } from "./shared.ts";
-import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
-import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "../rpc/rpc.ts";
+import {
+  UNIT_NAME_PATTERN,
+  camelName,
+  compositionRootFromPkg,
+  relativeImport,
+  unitDir,
+} from "./shared.ts";
 
 /**
  * `bb-kit add <query|mutation|command> <name>` (§7): write one unit file
  * and its sibling test, then PRINT the wiring lines — add never edits
- * server.ts (ADR-0009). The name is the kebab-case filename; the value
+ * the composition root (ADR-0009). The name is the kebab-case filename; the value
  * export is its camelization, so `check` rule 1 holds by construction.
+ * Printed import specifiers are relative to `bb.server`.
  */
 
 export type AddOptions = { cwd: string };
@@ -21,7 +26,7 @@ function queryTemplate(exportName: string): string {
   return [
     'import { defineQuery } from "@bb-kit/core/rpc";',
     'import { z } from "zod";',
-    'import type { Context } from "../server/context.ts";',
+    'import type { Context } from "@bb-kit/core/plugin";',
     "",
     `export const ${exportName} = defineQuery({`,
     "  output: z.object({ ok: z.boolean() }),",
@@ -35,7 +40,7 @@ function mutationTemplate(exportName: string): string {
   return [
     'import { defineMutation } from "@bb-kit/core/rpc";',
     'import { z } from "zod";',
-    'import type { Context } from "../server/context.ts";',
+    'import type { Context } from "@bb-kit/core/plugin";',
     "",
     `export const ${exportName} = defineMutation({`,
     "  input: z.object({ value: z.string() }),",
@@ -49,12 +54,12 @@ function mutationTemplate(exportName: string): string {
 function procedureTestTemplate(name: string, exportName: string, kind: AddKind): string {
   const call =
     kind === "mutation"
-      ? `${exportName}.handler({} as Context, { value: "x" })`
-      : `${exportName}.handler({} as Context)`;
+      ? `${exportName}.handler(stubHostContext(), { value: "x" })`
+      : `${exportName}.handler(stubHostContext())`;
   return [
     'import { test } from "node:test";',
     'import assert from "node:assert/strict";',
-    'import type { Context } from "../server/context.ts";',
+    'import { stubHostContext } from "@bb-kit/core/testing";',
     `import { ${exportName} } from "./${name}.ts";`,
     "",
     `test("${name} answers", async () => {`,
@@ -66,12 +71,12 @@ function procedureTestTemplate(name: string, exportName: string, kind: AddKind):
 
 function commandTemplate(name: string, exportName: string): string {
   return [
-    'import { defineCommand } from "@bb-kit/core/cli";',
-    'import type { Client } from "../server.ts";',
+    'import { defineCommand, type CommandContext } from "@bb-kit/core/cli";',
+    'import type { Context } from "@bb-kit/core/plugin";',
     "",
     `export const ${exportName} = defineCommand({`,
     `  summary: "TODO: describe ${name}",`,
-    "  run: async (_client: Client) => {",
+    "  run: async (_context: CommandContext<Context>) => {",
     `    return { exitCode: 0, stdout: "${name}: TODO\\n" };`,
     "  },",
     "});",
@@ -83,14 +88,10 @@ function commandTestTemplate(name: string, exportName: string): string {
   return [
     'import { test } from "node:test";',
     'import assert from "node:assert/strict";',
-    'import { invokeCLI } from "@bb-kit/core/cli";',
-    'import { stubClient } from "@bb-kit/core/testing";',
-    'import type { Client } from "../server.ts";',
     `import { ${exportName} } from "./${name}.ts";`,
     "",
     `test("${name} runs", async () => {`,
-    "  const client = stubClient<Client>({});",
-    `  const result = await invokeCLI({ "${name}": ${exportName} }, client, ["${name}"]);`,
+    `  const result = await ${exportName}.invoke();`,
     "  assert.equal(result.exitCode, 0);",
     "});",
     "",
@@ -123,22 +124,17 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   }
 
   const isProcedure = kind === "query" || kind === "mutation";
-  let wire: string | undefined;
-  if (isProcedure) {
-    // Procedures print their wire name, which needs the plugin id.
-    try {
-      const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { name?: unknown };
-      if (typeof pkg.name !== "string") {
-        throw new Error('package.json has no "name"');
-      }
-      wire = wireName(derivePluginID(pkg.name), camelName(name));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { exitCode: 1, stdout: "", stderr: `${message}\n` };
-    }
+  const publicName = isProcedure ? camelName(name) : undefined;
+
+  let compositionRoot = "server/server.ts";
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as Record<string, unknown>;
+    compositionRoot = compositionRootFromPkg(pkg) ?? compositionRoot;
+  } catch {
+    // Unparseable JSON still writes beside the scaffold default.
   }
 
-  const dir = isProcedure ? "rpc" : "cli";
+  const dir = unitDir(compositionRoot, isProcedure ? "rpc" : "cli");
   const unitRelative = `${dir}/${name}.ts`;
   const testRelative = `${dir}/${name}.test.ts`;
   for (const relative of [unitRelative, testRelative]) {
@@ -166,15 +162,17 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   writeFileSync(join(options.cwd, unitRelative), unitContent);
   writeFileSync(join(options.cwd, testRelative), testContent);
 
+  const importSpecifier = relativeImport(compositionRoot, unitRelative);
+
   const lines = [`created ${unitRelative}`, `created ${testRelative}`, ""];
-  lines.push("wire it in server.ts — the import:", "");
-  lines.push(`  import { ${exportName} } from "./${unitRelative}";`, "");
+  lines.push(`wire it in ${compositionRoot} — the import:`, "");
+  lines.push(`  import { ${exportName} } from "${importSpecifier}";`, "");
   if (isProcedure) {
-    lines.push("and the procedures entry:", "", `  ${exportName},`, "");
-    lines.push(`wire name: ${wire}`);
+    lines.push("and the rpc entry:", "", `  ${exportName},`, "");
+    lines.push(`name: ${publicName}`);
   } else {
     const entry = name === exportName ? `${exportName},` : `"${name}": ${exportName},`;
-    lines.push("and the cli.commands entry:", "", `  ${entry}`, "");
+    lines.push("and the cli entry:", "", `  ${entry}`, "");
     lines.push(`(the commands key must stay "${name}" — check rule 1 pins it to the filename)`);
   }
   return { exitCode: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };

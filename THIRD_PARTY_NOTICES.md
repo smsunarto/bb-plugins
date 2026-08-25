@@ -19,7 +19,7 @@ Three separate bodies of code arrive from bb, all under the MIT licence:
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | The whole **GTD Sidebar** plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) | `plugins/gtd-sidebar/`                      |
 | Provider brand-mark **geometry**, lifted from bb's own icon components                                                                       | `plugins/gtd-sidebar/lib/provider-marks.ts` |
-| shadcn/ui-derived components, vendored through bb's own plugin component registry and marked `/* shadcn/ui-derived */`                       | `plugins/*/components/ui/`                  |
+| shadcn/ui-derived components, vendored through bb's own plugin component registry and marked `/* shadcn/ui-derived */`                       | `plugins/**/components/ui/`                 |
 
 ```
 MIT License

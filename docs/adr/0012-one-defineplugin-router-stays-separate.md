@@ -41,14 +41,14 @@ tsc 5.9.3, the Register degradation on 7.0.2.
 
 ## Consequences
 
-- There is no separate CLI name. The CLI mounts as the router
+* There is no separate CLI name. The CLI mounts as the router
   namespace, which is already the plugin id; a plugin id that collides
   with a host-reserved name cannot mount a CLI at all.
-- `invokeCLI` takes the plain command map; tier-1 CLI tests never build
+* `invokeCLI` takes the plain command map; tier-1 CLI tests never build
   the plugin value.
-- Registration lives inside the returned factory, so it cannot drift
+* Registration lives inside the returned factory, so it cannot drift
   into timers or request handlers unless `setup` puts it there.
-- ADR-0009 is untouched: `add` still prints one import and one map key,
+* ADR-0009 is untouched: `add` still prints one import and one map key,
   now into `definePlugin`'s `commands`.
 
 ## Amended 2026-08-17
@@ -82,3 +82,26 @@ command demanding Client-plus-extra procedures then compiles silently.
 Only the type's syntax matters — command object literals may still
 write `async run(…) {…}`. `definePlugin`'s own `context`/`setup` seam
 keeps method syntax on purpose: bivariance is wanted there.
+
+## Amended 2026-08-24
+
+Commands no longer take Client. They take CommandContext and call
+`.handler(context[, input])`. That breaks the CLI-unit cycle that
+forced the RPC map onto a separate `export const rpc` line.
+
+The RPC value may now be inlined in `definePlugin({ rpc: { ping, … } })`.
+`definePlugin` returns `DefinedPlugin<R>`, a callable factory
+intersected with `{ readonly rpc: R }`. UI type-only imports the
+default export and reads the map as `(typeof plugin)["rpc"]`.
+
+```ts
+import type plugin from "../server/server.ts";
+export const rpc = createRPC<(typeof plugin)["rpc"]>();
+```
+
+`import type Plugin from` then `Plugin["rpc"]` fails (TS2749). Use
+`typeof plugin` then `["rpc"]`.
+
+Annotating `Client` from the plugin value in a CLI unit still cycles
+(TS2456 / TS7022). That original finding stands. Do not reintroduce
+`Pick<Client, …>` where `Client` is derived from `typeof plugin`.

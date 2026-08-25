@@ -1,13 +1,12 @@
-// The notify_user agent tool: a deliberate interruption an agent can send
-// when the user has likely walked away. Posts through the context directly —
-// the same path as an event notification.
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
-import { BODY_MAX_CHARS, type Context } from "./context.ts";
-import { oneLine, plainText, threadLabel } from "./format.ts";
+import { deliver } from "./delivery.ts";
+import { BODY_MAX_CHARS, oneLine, plainText, threadLabel } from "./format.ts";
+import { projectName } from "./project-names.ts";
+import { pluginSettings } from "./settings.ts";
 
-export function registerAgentTool(bb: BbPluginApi, context: Context): void {
+export function registerAgentTool(bb: BbPluginApi): void {
   bb.agents.registerTool({
     name: "notify_user",
     description:
@@ -18,10 +17,6 @@ export function registerAgentTool(bb: BbPluginApi, context: Context): void {
       pending: "Notifying the user",
       completed: "Notified the user",
     },
-    // No title parameter: the heading is always `<project> · <thread>`, the
-    // same as an event notification. An agent-supplied headline would make
-    // one row of the notification list look unlike all the others, and it is
-    // information the reader already has.
     parameters: z.object({
       message: z.string().min(1).describe("One line the user will act on."),
     }),
@@ -31,16 +26,16 @@ export function registerAgentTool(bb: BbPluginApi, context: Context): void {
       try {
         const thread = await bb.sdk.threads.get({ threadId: ctx.threadId });
         heading = threadLabel(thread);
-        project = await context.projectName(thread.projectId);
+        project = await projectName(bb, thread.projectId);
       } catch {
         // Thread lookup is decoration only — still send the notification.
       }
-      const listening = await context.post(
+      const listening = await deliver(bb, {
         project,
         heading,
-        oneLine(plainText(message), BODY_MAX_CHARS),
-        ctx.threadId,
-      );
+        message: oneLine(plainText(message), BODY_MAX_CHARS),
+        threadId: ctx.threadId,
+      });
       return listening
         ? "Notification queued; a BB window is listening."
         : "No BB window is open; the notification will appear when one is.";
@@ -48,7 +43,7 @@ export function registerAgentTool(bb: BbPluginApi, context: Context): void {
   });
 
   bb.agents.configure(() => ({
-    tools: context.settings().agentTool ? ["notify_user"] : [],
+    tools: pluginSettings(bb).agentTool ? ["notify_user"] : [],
     skills: [],
   }));
 }

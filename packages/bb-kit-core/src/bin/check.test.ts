@@ -62,90 +62,60 @@ test("a fresh scaffold passes with the wire table", async () => {
   const result = await runCheck({ cwd: root });
   assert.equal(result.stderr, "");
   assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /wire names \(namespace "notes"\):\n {2}notes_ping {2}<- ping/);
+  assert.match(result.stdout, /RPC names:\n {2}ping\n/);
   assert.match(result.stdout, /check passed\n$/);
 });
 
 test("an unwired unit file breaks the bijection (rule 1)", async () => {
   const root = makeFixture();
-  writeFileSync(join(root, "rpc", "extra.ts"), "export const extra = 1;\n");
-  writeFileSync(join(root, "rpc", "extra.test.ts"), "export {};\n");
+  writeFileSync(join(root, "server", "rpc", "extra.ts"), "export const extra = 1;\n");
+  writeFileSync(join(root, "server", "rpc", "extra.test.ts"), "export {};\n");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(
-    result.stderr,
-    /error: rpc\/extra\.ts — not wired into server\.ts procedures — rule 1/,
-  );
+  assert.match(result.stderr, /error: server\/rpc\/extra\.ts — not wired into server\/server.ts rpc — rule 1/);
 });
 
 test("a wrong unit export name fails rule 1", async () => {
   const root = makeFixture();
-  edit(root, "rpc/ping.ts", "export const ping =", "export const pong =");
+  edit(root, "server/rpc/ping.ts", "export const ping =", "export const pong =");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /rpc\/ping\.ts:6 — must have exactly one value export named "ping" \(found: pong\)/,
+    /server\/rpc\/ping\.ts:6 — must have exactly one value export named "ping" \(found: pong\)/,
   );
 });
 
 test("two keys wiring one unit file break the bijection (rule 1)", async () => {
   const root = makeFixture();
-  edit(root, "server.ts", "procedures: { ping },", "procedures: { ping, pingAlias: ping },");
+  edit(root, "server/server.ts", "rpc: { ping },", "rpc: { ping, pingAlias: ping },");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /procedure key "pingAlias" wires rpc\/ping\.ts, which is already wired — rule 1/,
-  );
-});
-
-test("a procedure key that kebab-cases to help fails rule 5", async () => {
-  const root = makeFixture();
-  edit(root, "server.ts", "procedures: { ping },", "procedures: { ping, help: ping },");
-  const result = await runCheck({ cwd: root });
-  assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /procedure key "help" kebab-cases to "help"/);
-});
-
-test("two keys with one wire name fail rule 3", async () => {
-  const root = makeFixture();
-  edit(
-    root,
-    "server.ts",
-    "procedures: { ping },",
-    "procedures: { ping, readUrl: ping, read_url: ping },",
-  );
-  const result = await runCheck({ cwd: root });
-  assert.equal(result.exitCode, 1);
-  assert.match(
-    result.stderr,
-    /procedures "readUrl" and "read_url" both produce wire name "notes_read_url" — rule 3/,
+    /RPC key "pingAlias" wires server\/rpc\/ping\.ts, which is already wired — rule 1/,
   );
 });
 
 test("a commands key that is not the unit basename fails rule 1", async () => {
   const root = makeFixture();
-  edit(root, "server.ts", "commands: { status }", "commands: { stat: status }");
+  edit(root, "server/server.ts", "cli: { status }", "cli: { stat: status }");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /commands key "stat" must equal the unit's kebab basename "status"/);
 });
 
-test("a namespace that is not the plugin id fails rule 2", async () => {
+test("a definePlugin id that is not the derived plugin id fails rule 2", async () => {
   const root = makeFixture();
-  edit(root, "server.ts", 'namespace: "notes",', 'namespace: "other",');
+  edit(root, "server/server.ts", 'pluginId: "notes",', 'pluginId: "other",');
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(
-    result.stderr,
-    /RPC namespace "other" must equal derivePluginID.* = "notes" — rule 2/,
-  );
+  assert.match(result.stderr, /plugin id "other" must equal derivePluginID.* = "notes" — rule 2/);
 });
 
 test("a manifest path that does not exist fails rule 4", async () => {
   const root = makeFixture();
-  edit(root, "package.json", '"server": "./server.ts",', '"server": "./missing.ts",');
+  edit(root, "package.json", '"server": "./server/server.ts",', '"server": "./missing.ts",');
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /bb\.server "\.\/missing\.ts" does not exist — rule 4/);
@@ -160,21 +130,21 @@ test("a reserved plugin CLI name fails rule 5", async () => {
 
 test("a missing sibling test is a warning, not a failure (rule 6)", async () => {
   const root = makeFixture();
-  rmSync(join(root, "rpc", "ping.test.ts"));
+  rmSync(join(root, "server", "rpc", "ping.test.ts"));
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
   assert.match(
     result.stderr,
-    /warning: rpc\/ping\.ts — no sibling test rpc\/ping\.test\.ts — rule 6/,
+    /warning: server\/rpc\/ping\.ts — no sibling test server\/rpc\/ping\.test\.ts — rule 6/,
   );
   assert.match(result.stdout, /check passed with 1 warning\n$/);
 });
 
-test("a unit file the tsconfig include omits still parses via server.ts's import", async () => {
+test("a unit file the tsconfig include omits still parses via the composition root's import", async () => {
   const root = makeFixture();
   const tsconfigPath = join(root, "tsconfig.json");
   const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as Record<string, unknown>;
-  tsconfig["include"] = ["server.ts", "cli/**/*", "server/**/*", "ui/**/*"];
+  tsconfig["include"] = ["server/server.ts", "server/server.test.ts", "server/cli/**/*", "app/**/*"];
   writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
   const result = await runCheck({ cwd: root });
   assert.equal(result.stderr, "");

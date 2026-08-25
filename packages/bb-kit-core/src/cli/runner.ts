@@ -1,19 +1,28 @@
 import { Command, CommanderError } from "commander";
-import type { MaybePromise } from "../utils/types.ts";
+import type { MaybePromise, UnionToIntersection } from "../utils/types.ts";
 
 /**
- * The shared commander runner (§4). `invokeCLI` and the `definePlugin`
- * dispatcher both build a FRESH program per invocation through
- * `runProgram`, so the behavior table lives in exactly one place.
+ * The shared commander runner (§4). A command's `invoke` and the
+ * `definePlugin` dispatcher both build a FRESH program per invocation
+ * through `runProgram`, so the behavior table lives in exactly one place.
  * Internal — `./cli` re-exports the public subset.
  */
 
-/** What the host passes to `run` (bb's own field names). */
+/** What the host passes per invocation (bb's `PluginCliContext` fields). */
 export type CLIContext = {
   cwd?: string;
   threadId?: string;
   projectId?: string;
   signal?: AbortSignal;
+};
+
+/**
+ * What a Command's `run` receives: the plugin Context plus required
+ * `cli`. RPC handlers stay typed against the base Context; the extra
+ * `cli` property is type-level only.
+ */
+export type CommandContext<C extends object = {}> = C & {
+  cli: CLIContext;
 };
 
 /** The buffered result shape bb's server-side CLI protocol expects. */
@@ -23,18 +32,17 @@ export type CLIResult = {
   stderr?: string;
 };
 
-/** What a command's `run` receives alongside its dependencies. */
+/** What a command's `run` receives alongside its context. */
 export type CLIInvocation = {
   /** Positional values — strings under commander's default parsers. */
   args: string[];
   options: Record<string, unknown>;
-  context: CLIContext;
 };
 
 /**
- * A CLI command definition. `run` is a PROPERTY on purpose: properties
+ * A command definition. `run` is a PROPERTY on purpose: properties
  * compare contravariantly under strictFunctionTypes, so a command
- * demanding more than the plugin's client provides is rejected at the
+ * demanding more than the plugin's context provides is rejected at the
  * `definePlugin` call (method syntax would compare bivariantly and let
  * superset demands slip through).
  */
@@ -42,8 +50,24 @@ export type CLICommand<D> = {
   summary: string;
   /** Declare arguments/options here; a user-supplied `.action()` is inert. */
   configure?: (command: Command) => void;
-  run: (rpc: D, invocation: CLIInvocation) => MaybePromise<CLIResult>;
+  run: (context: D, invocation: CLIInvocation) => MaybePromise<CLIResult>;
 };
+
+export type CommandMap<D> = Record<string, CLICommand<D>> & Partial<Record<"rpc" | "help", never>>;
+
+/** The universal bound: `run` is contravariant, so every map assigns. */
+export type AnyCommandMap = CommandMap<never>;
+
+type CommandDemand<Cmd> = Cmd extends { run: (context: infer D, invocation: never) => unknown }
+  ? unknown extends D
+    ? never // unannotated commands demand nothing
+    : D
+  : never;
+
+/** What a command map collectively demands. Mirrors `RPCContext`. */
+export type CommandsContext<C> = [CommandDemand<C[keyof C]>] extends [never]
+  ? {}
+  : UnionToIntersection<CommandDemand<C[keyof C]>>;
 
 /** Throw from `run` to exit with a chosen code (defaults to 1). */
 export class CLIError extends Error {
@@ -69,18 +93,16 @@ export type ProgramOptions = { name?: string; summary?: string };
 /** Map curated commands to subcommand definitions (shared by both tiers). */
 export function commandDefinitions<D>(
   commands: Readonly<Record<string, CLICommand<D>>>,
-  deps: D,
-  context: CLIContext,
+  context: D,
 ): SubcommandDefinition[] {
   return Object.entries(commands).map(([name, command]) => ({
     name,
     summary: command.summary,
     configure: command.configure,
     action: (sub: Command) =>
-      command.run(deps, {
+      command.run(context, {
         args: sub.processedArgs as string[],
         options: sub.opts(),
-        context,
       }),
   }));
 }

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { installDom } from "../../testing/testing.ts";
-import { defineMutation, defineQuery, defineRPC } from "../rpc.ts";
+import { defineMutation, defineQuery } from "../rpc.ts";
 
 // Tier-3 order (§8): DOM first, then the SDK test runtime, then any
 // module that imports @get-bb/plugin-sdk/app — the app facade binds
@@ -17,28 +17,25 @@ const { QueryClient, useQuery: useTanStackQuery } = await import("@tanstack/reac
 const { StrictMode, createElement, useEffect, useRef, useState } = await import("react");
 type ReactNode = import("react").ReactNode;
 
-const demoRPC = defineRPC({
-  namespace: "demo",
-  procedures: {
-    overview: defineQuery({
-      output: z.object({ total: z.number() }),
-      handler: () => ({ total: 0 }),
-    }),
-    readFile: defineQuery({
-      input: z.object({ path: z.string() }),
-      output: z.object({ content: z.string() }),
-      handler: (_context: unknown, input) => ({ content: input.path }),
-    }),
-    saveFile: defineMutation({
-      input: z.object({ path: z.string() }),
-      output: z.object({ saved: z.boolean() }),
-      handler: () => ({ saved: true }),
-    }),
-  },
-});
+const demoRPC = {
+  overview: defineQuery({
+    output: z.object({ total: z.number() }),
+    handler: () => ({ total: 0 }),
+  }),
+  readFile: defineQuery({
+    input: z.object({ path: z.string() }),
+    output: z.object({ content: z.string() }),
+    handler: (_context: unknown, input) => ({ content: input.path }),
+  }),
+  saveFile: defineMutation({
+    input: z.object({ path: z.string() }),
+    output: z.object({ saved: z.boolean() }),
+    handler: () => ({ saved: true }),
+  }),
+};
 
 type DemoRPC = typeof demoRPC;
-const rpc = createRPC<DemoRPC>("demo");
+const rpc = createRPC<DemoRPC>();
 
 function boundary(children: ReactNode) {
   return () => createElement(PluginQueryBoundary, null, children);
@@ -55,8 +52,6 @@ function typeChecks() {
   rpc.readFile.useQuery();
   // @ts-expect-error — a no-input useQuery takes options, not an input
   rpc.overview.useQuery({ path: "x" });
-  // @ts-expect-error — the namespace argument is the RPC's literal
-  createRPC<DemoRPC>("not-demo");
   const key: readonly unknown[] = rpc.readFile.queryKey({ path: "a" });
   return key;
 }
@@ -64,7 +59,7 @@ void typeChecks;
 
 // ---- runtime, through the SDK tier-3 harness ------------------------
 
-test("no-input useQuery calls the wire name with null input", async (t) => {
+test("no-input useQuery calls the RPC name with null input", async (t) => {
   // Unmount even on failure — a lingering QueryClient's gcTime timers
   // (5 minutes) would otherwise keep the test child process alive.
   t.after(cleanup);
@@ -79,11 +74,11 @@ test("no-input useQuery calls the wire name with null input", async (t) => {
   const slot = renderSlot(
     { component: boundary(createElement(OverviewPanel)) },
     {},
-    { rpc: { demo_overview: () => ({ total: 7 }) } },
+    { rpc: { overview: () => ({ total: 7 }) } },
   );
   await slot.findByText("total:7");
-  assert.deepEqual(slot.rpcCalls, [{ method: "demo_overview", input: null }]);
-  assert.deepEqual(rpc.overview.queryKey(), ["demo", "overview"]);
+  assert.deepEqual(slot.rpcCalls, [{ method: "overview", input: null }]);
+  assert.deepEqual(rpc.overview.queryKey(), ["overview"]);
   slot.unmount();
 });
 
@@ -100,16 +95,12 @@ test("with-input useQuery(input) sends the input and derives the key", async (t)
   const slot = renderSlot(
     { component: boundary(createElement(ReadFilePanel)) },
     {},
-    { rpc: { demo_read_file: (input) => ({ content: (input as { path: string }).path }) } },
+    { rpc: { readFile: (input) => ({ content: (input as { path: string }).path }) } },
   );
   await slot.findByText("content:notes.md");
-  assert.deepEqual(slot.rpcCalls, [{ method: "demo_read_file", input: { path: "notes.md" } }]);
-  assert.deepEqual(rpc.readFile.queryKey({ path: "notes.md" }), [
-    "demo",
-    "readFile",
-    { path: "notes.md" },
-  ]);
-  assert.deepEqual(rpc.readFile.queryKey(), ["demo", "readFile"]);
+  assert.deepEqual(slot.rpcCalls, [{ method: "readFile", input: { path: "notes.md" } }]);
+  assert.deepEqual(rpc.readFile.queryKey({ path: "notes.md" }), ["readFile", { path: "notes.md" }]);
+  assert.deepEqual(rpc.readFile.queryKey(), ["readFile"]);
   slot.unmount();
 });
 
@@ -122,7 +113,7 @@ test("no-input useQuery(options) reads a sole options object as options", async 
   const slot = renderSlot(
     { component: boundary(createElement(DisabledPanel)) },
     {},
-    { rpc: { demo_overview: () => ({ total: 0 }) } },
+    { rpc: { overview: () => ({ total: 0 }) } },
   );
   await slot.findByText("disabled:pending:idle");
   assert.equal(slot.rpcCalls.length, 0);
@@ -144,7 +135,7 @@ test("useQuery(input, options) passes options through to TanStack", async (t) =>
     {},
     {
       rpc: {
-        demo_read_file: () => {
+        readFile: () => {
           throw new Error("nope");
         },
       },
@@ -179,10 +170,10 @@ test("useMutation sends variables over the wire", async (t) => {
   const slot = renderSlot(
     { component: boundary(createElement(SavePanel)) },
     {},
-    { rpc: { demo_save_file: () => ({ saved: true }) } },
+    { rpc: { saveFile: () => ({ saved: true }) } },
   );
   await slot.findByText("saved:true");
-  assert.deepEqual(slot.rpcCalls, [{ method: "demo_save_file", input: { path: "out.md" } }]);
+  assert.deepEqual(slot.rpcCalls, [{ method: "saveFile", input: { path: "out.md" } }]);
   slot.unmount();
 });
 
@@ -213,10 +204,10 @@ test("useClient is the imperative escape hatch", async (t) => {
   const slot = renderSlot(
     { component: boundary(createElement(ClientPanel)) },
     {},
-    { rpc: { demo_read_file: (input) => ({ content: (input as { path: string }).path }) } },
+    { rpc: { readFile: (input) => ({ content: (input as { path: string }).path }) } },
   );
   await slot.findByText("client:via-client.md");
-  assert.deepEqual(slot.rpcCalls, [{ method: "demo_read_file", input: { path: "via-client.md" } }]);
+  assert.deepEqual(slot.rpcCalls, [{ method: "readFile", input: { path: "via-client.md" } }]);
   slot.unmount();
 });
 
@@ -255,7 +246,7 @@ test("an owned client survives a StrictMode double mount", async (t) => {
 test("PluginQueryBoundary uses a provided client instead of owning one", async (t) => {
   t.after(cleanup);
   const provided = new QueryClient();
-  provided.setQueryData(["demo", "overview"], { total: 42 });
+  provided.setQueryData(["overview"], { total: 42 });
   function SeededPanel() {
     const overview = rpc.overview.useQuery({ staleTime: Infinity });
     return createElement(
@@ -276,7 +267,7 @@ test("PluginQueryBoundary uses a provided client instead of owning one", async (
   assert.equal(slot.rpcCalls.length, 0);
   slot.unmount();
   // Ownership stayed with the caller — the seeded data survives unmount.
-  assert.deepEqual(provided.getQueryData(["demo", "overview"]), { total: 42 });
+  assert.deepEqual(provided.getQueryData(["overview"]), { total: 42 });
   // Drop the external client's gcTime timers so the process can exit.
   provided.clear();
 });

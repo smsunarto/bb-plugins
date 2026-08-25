@@ -19,16 +19,15 @@ test("create writes the full scaffold tree and prints the plugin id", () => {
   const expected = [
     "package.json",
     "tsconfig.json",
-    "server.ts",
-    "server.test.ts",
-    "server/context.ts",
-    "rpc/ping.ts",
-    "rpc/ping.test.ts",
-    "cli/status.ts",
-    "cli/status.test.ts",
-    "ui/rpc.ts",
-    "ui/app.tsx",
-    "ui/app.test.ts",
+    "server/server.ts",
+    "server/server.test.ts",
+    "server/rpc/ping.ts",
+    "server/rpc/ping.test.ts",
+    "server/cli/status.ts",
+    "server/cli/status.test.ts",
+    "app/rpc.ts",
+    "app/app.tsx",
+    "app/app.test.ts",
     "assets/icon.svg",
     "README.md",
   ];
@@ -62,8 +61,8 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
   assert.ok(!(pkg["devDependencies"] as Record<string, string>)["@bb-kit/core"]);
   const bb = pkg["bb"] as Record<string, unknown>;
   assert.equal(bb["name"], "notes");
-  assert.equal(bb["server"], "./server.ts");
-  assert.equal(bb["app"], "./ui/app.tsx");
+  assert.equal(bb["server"], "./server/server.ts");
+  assert.equal(bb["app"], "./app/app.tsx");
   assert.deepEqual(bb["branding"], { icon: "./assets/icon.svg" });
   assert.deepEqual(bb["skills"], []);
   const scripts = pkg["scripts"] as Record<string, unknown>;
@@ -71,16 +70,22 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
   assert.equal(scripts["test"], "node --test --import tsx");
 });
 
-test("the scaffold templates bake the derived id into server, ui, and tests", () => {
+test("the scaffold templates bake the derived id into server, app, and tests", () => {
   const { id, files } = scaffoldFiles("@acme/bb-plugin-notes");
   assert.equal(id, "notes");
-  assert.match(files["server.ts"] ?? "", /namespace: "notes"/);
-  assert.match(files["ui/rpc.ts"] ?? "", /createRPC<RPC>\("notes"\)/);
-  assert.match(files["server.test.ts"] ?? "", /callRpc\("notes_ping"\)/);
-  assert.match(files["ui/app.test.ts"] ?? "", /"notes_ping": async/);
-  // The command test must stub through stubClient, or every new
-  // procedure turns it red (TS2741).
-  assert.match(files["cli/status.test.ts"] ?? "", /stubClient<Client>\(\{ ping/);
+  assert.match(files["server/server.ts"] ?? "", /pluginId: "notes"/);
+  assert.match(files["server/server.ts"] ?? "", /rpc: \{ ping \}/);
+  assert.equal((files["server/server.ts"] ?? "").includes("export const rpc"), false);
+  assert.equal((files["server/server.ts"] ?? "").includes("export type RPC"), false);
+  assert.equal((files["server/server.ts"] ?? "").includes("ClientFor"), false);
+  assert.equal((files["server/server.ts"] ?? "").includes("export type Client"), false);
+  assert.match(files["server/server.ts"] ?? "", /from "\.\/rpc\/ping.ts"/);
+  assert.match(files["app/rpc.ts"] ?? "", /from "\.\.\/server\/server.ts"/);
+  assert.match(files["app/rpc.ts"] ?? "", /\["rpc"\]/);
+  assert.match(files["app/rpc.ts"] ?? "", /createRPC<\(typeof plugin\)\["rpc"\]>\(\)/);
+  assert.match(files["server/server.test.ts"] ?? "", /callRpc\("ping"\)/);
+  assert.match(files["app/app.test.ts"] ?? "", /rpc: \{ ping: async/);
+  assert.match(files["server/cli/status.test.ts"] ?? "", /status\.invoke\(\{\}\)/);
 });
 
 test("the scaffold uses Bun-compatible TypeScript module semantics", () => {
@@ -110,7 +115,7 @@ test("an install failure exits 1 but leaves the scaffold intact", () => {
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /npm install failed — the scaffold is intact/);
-  assert.ok(existsSync(join(cwd, "bb-plugin-offline", "server.ts")));
+  assert.ok(existsSync(join(cwd, "bb-plugin-offline", "server/server.ts")));
 });
 
 test("transient npm failures retry up to three times", () => {

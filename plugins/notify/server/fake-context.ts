@@ -1,70 +1,69 @@
-// An all-green fake Context for unit tests. Every method succeeds and stays
-// inert; `posts` records what `post` was asked to deliver. Override any field
-// through the `overrides` parameter to steer one behavior per test.
-import type { Context, Settings } from "./context.ts";
-import { NotificationQueue, type NotificationQueueStore } from "./queue.ts";
+import { stubHostContext } from "@bb-kit/core/testing";
+import type { Context } from "@bb-kit/core/plugin";
+import { notificationQueue } from "./delivery.ts";
+import { bindSettings, fakeSettings, type Settings } from "./settings.ts";
 
-export interface FakeContext extends Context {
-  /** Every notification handed to `post`, in order. */
-  readonly posts: readonly {
-    project: string | null;
-    threadName: string;
-    message: string;
-    threadId: string | null;
-  }[];
-}
+export { fakeSettings };
 
-/** The default settings the fake reports; override per field as needed. */
-export function fakeSettings(overrides: Partial<Settings> = {}): Settings {
-  return {
-    notifyOnIdle: true,
-    notifyOnFailed: true,
-    includeChildThreads: false,
-    includeHiddenThreads: false,
-    minRunSeconds: "0",
-    sound: "off",
-    agentTool: false,
-    ...overrides,
+export type FakeContextOptions = {
+  listening?: boolean;
+  settings?: Partial<Settings>;
+  projectName?: (projectId: string) => Promise<string | null>;
+};
+
+export function createFakeContext(options: FakeContextOptions = {}): Context {
+  const settings = fakeSettings(options.settings);
+  const storage = { kv: memoryKv() };
+  const sdk = {
+    projects: {
+      get: async ({ projectId }: { projectId: string }) => {
+        const name =
+          options.projectName === undefined ? null : await options.projectName(projectId);
+        if (name === null) throw new Error("missing project");
+        return { name };
+      },
+    },
+    threads: {
+      events: {
+        list: async () => [],
+      },
+    },
   };
+  const bb = {
+    sdk,
+    log: {
+      info() {},
+      debug() {},
+      warn() {},
+    },
+    storage,
+  };
+  const context = stubHostContext({
+    bb: bb as unknown as Context["bb"],
+  });
+  if (options.listening !== false) {
+    notificationQueue(context.bb).markPoll();
+  }
+  bindSettings(context.bb, () => settings);
+  return context;
 }
 
-function memoryStore(): NotificationQueueStore {
+export async function queuedNotifications(context: Context) {
+  const batch = await notificationQueue(context.bb).queue.lease();
+  return batch.lease?.notifications ?? [];
+}
+
+function memoryKv() {
   const map = new Map<string, unknown>();
   return {
-    get: <T>(key: string) => Promise.resolve(map.get(key) as T | undefined),
-    set: (key: string, value: unknown) => {
+    get: async <T>(key: string): Promise<T | undefined> => map.get(key) as T | undefined,
+    set: async (key: string, value: unknown) => {
       map.set(key, value);
-      return Promise.resolve();
     },
-  };
-}
-
-export function createFakeContext(overrides: Partial<Context> = {}): FakeContext {
-  const posts: {
-    project: string | null;
-    threadName: string;
-    message: string;
-    threadId: string | null;
-  }[] = [];
-  const settings = fakeSettings();
-  return {
-    posts,
-    settings: () => settings,
-    notifications: new NotificationQueue(memoryStore()),
-    windowIsListening: () => true,
-    pollingCount: () => 1,
-    markPoll: () => {},
-    waitForQueue: () => Promise.resolve(),
-    queueSound: () => {},
-    post: (project, threadName, message, threadId) => {
-      posts.push({ project, threadName, message, threadId });
-      return Promise.resolve(true);
+    delete: async (key: string) => {
+      map.delete(key);
     },
-    projectName: () => Promise.resolve(null),
-    rememberStart: () => {},
-    clearStart: () => {},
-    forget: () => {},
-    notifyThread: () => Promise.resolve(),
-    ...overrides,
+    list: async (prefix?: string) =>
+      [...map.keys()].filter((key) => prefix === undefined || key.startsWith(prefix)),
   };
 }

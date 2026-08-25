@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installDom, stubClient } from "./testing.ts";
+import { installDom, stubClient, stubHostContext } from "./testing.ts";
 
 type DomGlobals = {
   window?: Record<string, unknown>;
@@ -36,21 +36,39 @@ type FakeClient = {
   missing: () => Promise<{ ok: boolean }>;
 };
 
-test("stubClient passes a stubbed procedure through with its result", async () => {
+test("stubClient passes a stubbed RPC through with its result", async () => {
   const client = stubClient<FakeClient>({
     ping: async ({ n }) => ({ pong: n + 1 }),
   });
   assert.deepEqual(await client.ping({ n: 41 }), { pong: 42 });
 });
 
-test("stubClient throws the naming error when an unstubbed procedure is called", () => {
+test("stubClient throws the naming error when an unstubbed RPC is called", () => {
   const client = stubClient<FakeClient>({});
-  // Accessing the procedure is fine — only calling it throws.
+  // Accessing the RPC is fine — only calling it throws.
   const missing = client.missing;
   assert.equal(typeof missing, "function");
   assert.throws(missing, {
-    message: 'stubClient: procedure "missing" was called without a stub',
+    message: 'stubClient: RPC "missing" was called without a stub',
   });
+});
+
+test("stubHostContext supplies bb with sdk and a kv storage stub", async () => {
+  const host = stubHostContext();
+  assert.equal(Object.keys(host).join(), "bb");
+  assert.equal(Object.isFrozen(host), true);
+  assert.equal(await host.bb.storage.kv.get("missing"), undefined);
+  await host.bb.storage.kv.set("k", 1);
+  await host.bb.storage.kv.delete("k");
+  assert.deepEqual(await host.bb.storage.kv.list(), []);
+});
+
+test("stubHostContext mints a fresh bb per call and preserves a passed one", () => {
+  assert.notEqual(stubHostContext().bb, stubHostContext().bb);
+  const bb = { sdk: { tag: 1 }, storage: { kv: {} } };
+  const host = stubHostContext({ bb: bb as never });
+  assert.equal(host.bb, bb);
+  assert.equal(host.bb.sdk, bb.sdk);
 });
 
 test("stubClient is await-safe — then and symbol keys read as undefined", async () => {

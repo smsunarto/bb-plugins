@@ -27,6 +27,6 @@ anyway, so the author-side runtime is purely a dev-loop choice.
   framework's test vocabulary.
 - JSX is the one thing Node cannot strip (verified 2026-08-17): scaffolds
   wire the `tsx` loader into `scripts.test` (`node --test --import tsx`)
-  so tests can import `ui/*.tsx`. Test-time and in-memory only — still no
+  so tests can import `app/*.tsx`. Test-time and in-memory only — still no
   build step, no artifacts. Test files stay `.test.ts`; a `.test.tsx` is
   never discovered by Node's default glob.

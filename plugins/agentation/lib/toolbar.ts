@@ -32,11 +32,7 @@ import type {
 import type { BbContext, StoredAnnotation } from "./afs.ts";
 import { selectOrphans, withoutBundleSource } from "./annotation-hygiene.ts";
 import { createRpcClient } from "./plugin-rpc.ts";
-import {
-  labelForRoute,
-  projectIdFromRoute,
-  threadIdFromRoute,
-} from "./route.ts";
+import { labelForRoute, projectIdFromRoute, threadIdFromRoute } from "./route.ts";
 import { pluginUiSurfaceFor } from "./plugin-ui-surface.ts";
 import { seedAgentationThemeDefault } from "./theme.ts";
 import {

@@ -1,37 +1,44 @@
 import type { CLICommand, CLIContext, CLIResult } from "./runner.ts";
 import { commandDefinitions, runProgram } from "./runner.ts";
-import type { UnionToIntersection } from "../utils/types.ts";
 
 /** Public surface of `@bb-kit/core/cli` (§1, §4). */
 export { CLIError } from "./runner.ts";
-export type { CLIResult, CLIContext } from "./runner.ts";
+export type { CLICommand, CLIContext, CLIResult, CommandContext } from "./runner.ts";
+
+type ContextOf<D> = D extends object ? Partial<D> : D;
+
+export type DefinedCommand<D> = CLICommand<D> & {
+  /**
+   * Tier-1 invocation, parallel to an RPC's `handler(context, input)`.
+   * First argument is the plugin context (partial in tests).
+   * `argv` is the command's own arguments. `options.cli` is the host
+   * invocation overlay.
+   */
+  invoke: (
+    context?: ContextOf<D>,
+    argv?: readonly string[],
+    options?: { cli?: CLIContext },
+  ) => Promise<CLIResult>;
+};
+
+const INVOKE = "command";
 
 /**
- * Declare a CLI command. `D` — what the command demands of the client —
- * infers from `run`'s first-parameter annotation; unannotated, it stays
- * `unknown` and the command accepts any client.
+ * Declare a command. `D` — what the command demands of the plugin
+ * context — infers from `run`'s first-parameter annotation; unannotated,
+ * it stays `unknown` and the command accepts any context.
  */
-export function defineCommand<D = unknown>(command: CLICommand<D>): CLICommand<D> {
-  return command;
-}
-
-type DependenciesOf<C> = C extends CLICommand<infer D> ? D : never;
-
-/**
- * Tier-1 direct invocation (§4): run commands against explicit
- * dependencies, no host involved. `deps` is the intersection of the
- * commands' declared dependencies, in non-inference position. Never
- * mounts the RPC subtree.
- */
-export async function invokeCLI<C extends Record<string, CLICommand<any>>>(
-  commands: C,
-  deps: UnionToIntersection<DependenciesOf<C[keyof C]>>,
-  argv: readonly string[],
-  options: { context?: CLIContext; name?: string; summary?: string } = {},
-): Promise<CLIResult> {
-  const context = options.context ?? {};
-  return runProgram(() => commandDefinitions(commands, deps, context), argv, {
-    name: options.name,
-    summary: options.summary,
-  });
+export function defineCommand<D = unknown>(command: CLICommand<D>): DefinedCommand<D> {
+  return {
+    ...command,
+    invoke(pluginContext, argv = [], options = {}) {
+      const cli = options.cli ?? {};
+      const context = { ...pluginContext, cli } as D;
+      return runProgram(
+        () => commandDefinitions({ [INVOKE]: command }, context),
+        [INVOKE, ...argv],
+        {},
+      );
+    },
+  };
 }

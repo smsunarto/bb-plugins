@@ -35,9 +35,7 @@ const REACT_FIBER_PREFIXES = ["__reactFiber$", "__reactInternalInstance$"] as co
 const MAX_FIBER_DEPTH = 80;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -60,9 +58,9 @@ function fiberFromElement(element: Element): ReactFiber | null {
 }
 
 function publicSurface(slotKind: string): string {
-  return PUBLIC_SURFACE_BY_SLOT_KIND[
-    slotKind as keyof typeof PUBLIC_SURFACE_BY_SLOT_KIND
-  ] ?? slotKind;
+  return (
+    PUBLIC_SURFACE_BY_SLOT_KIND[slotKind as keyof typeof PUBLIC_SURFACE_BY_SLOT_KIND] ?? slotKind
+  );
 }
 
 /** The nearest bb plugin component boundary in this element's React ancestry. */
@@ -163,9 +161,7 @@ function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null 
   const labels = targetLabels(element);
   const records = pluginRecordsFromFiber(element);
 
-  const footer = element.closest<HTMLElement>(
-    "[data-testid^='plugin-sidebar-footer-action-']",
-  );
+  const footer = element.closest<HTMLElement>("[data-testid^='plugin-sidebar-footer-action-']");
   const footerTestId = footer?.getAttribute("data-testid") ?? null;
   if (footerTestId) {
     const action = records.find(
@@ -258,10 +254,7 @@ function navPanelRowFor(element: Element): PluginUiSurfaceContext | null {
  * fallbacks preserve attribution for hand-written trusted content and future
  * bb surfaces that do not yet expose a component boundary.
  */
-export function pluginUiSurfaceFor(
-  element: Element | null,
-  route: string,
-): PluginUiSurfaceContext {
+export function pluginUiSurfaceFor(element: Element | null, route: string): PluginUiSurfaceContext {
   if (!element) return { pluginId: null, surface: null, surfaceId: null };
 
   const boundary = componentBoundaryFor(element);

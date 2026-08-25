@@ -1,40 +1,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { definePlugin } from "./plugin.ts";
-import { defineMutation, defineQuery, defineRPC } from "../rpc/rpc.ts";
-import type { ClientFor } from "../rpc/rpc.ts";
-import { defineCommand } from "../cli/cli.ts";
-import { noInputSchema } from "../rpc/rpc.ts";
+import { definePlugin, type Context } from "./plugin.ts";
+import { defineCommand, type CommandContext } from "../cli/cli.ts";
+import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
 import type { HostSeam } from "./host.ts";
-
-type Ctx = { prefix: string };
 
 const echo = defineQuery({
   input: z.object({ path: z.string() }),
   output: z.object({ path: z.string() }),
-  handler: (context: Ctx, input) => ({ path: context.prefix + input.path }),
+  handler: (_context: Context, input) => ({ path: input.path }),
 });
 
 const ping = defineQuery({
   output: z.object({ pong: z.boolean() }),
-  handler: (_context: Ctx) => ({ pong: true }),
+  handler: (_context: Context) => ({ pong: true }),
 });
 
 const readURL = defineMutation({
   input: z.object({ url: z.string() }),
   output: z.object({ ok: z.boolean() }),
-  handler: (_context: Ctx, _input) => ({ ok: true }),
+  handler: (_context: Context, _input) => ({ ok: true }),
 });
 
-const demo = defineRPC({ namespace: "demo-ns", procedures: { echo, ping, readURL } });
-type DemoClient = ClientFor<typeof demo>;
+const demo = { echo, ping, readURL };
 
 const status = defineCommand({
   summary: "Show status",
-  run: async (client: DemoClient, { context }) => {
-    const result = await client.ping();
-    return { exitCode: 0, stdout: `pong=${result.pong} cwd=${context.cwd ?? ""}\n` };
+  run: async (context: CommandContext<Context>) => {
+    const result = await ping.handler(context);
+    return { exitCode: 0, stdout: `pong=${result.pong} cwd=${context.cli.cwd ?? ""}\n` };
   },
 });
 
@@ -46,7 +42,7 @@ type CLIRegistration = Parameters<HostSeam["cli"]["register"]>[0];
 
 function fakeHost() {
   const captured: { order: string[]; rpc?: RPCArgs; cli?: CLIRegistration } = { order: [] };
-  const bb: HostSeam = {
+  const bb: HostSeam & { sdk: { tag: string }; storage: { kv: object } } = {
     rpc: {
       register(contract, handlers) {
         captured.order.push("rpc");
@@ -59,25 +55,24 @@ function fakeHost() {
         captured.cli = registration;
       },
     },
+    sdk: { tag: "sdk" },
+    storage: { kv: {} },
   };
-  return { bb, captured };
+  return { bb: bb as unknown as BbPluginApi, captured };
 }
 
 async function loadPlugin() {
   const { bb, captured } = fakeHost();
-  let setupExtras: { client: DemoClient; context: Ctx } | undefined;
   const plugin = definePlugin({
+    pluginId: "demo-ns",
     rpc: demo,
-    cli: { summary: "Demo plugin", commands: { status } },
-    // Async on purpose: the factory must await it.
-    context: async () => ({ prefix: "p:" }),
-    setup(_bb, extras) {
+    cli: { status },
+    setup() {
       captured.order.push("setup");
-      setupExtras = extras;
     },
   });
   await plugin(bb);
-  return { captured, setupExtras };
+  return { bb, captured };
 }
 
 test("registration order: rpc, cli, then setup", async () => {
@@ -85,52 +80,80 @@ test("registration order: rpc, cli, then setup", async () => {
   assert.deepEqual(captured.order, ["rpc", "cli", "setup"]);
 });
 
-test("contract uses wire names; no-input procedures get the vendored schema", async () => {
+test("contract uses public names; no-input RPCs get the vendored schema", async () => {
   const { captured } = await loadPlugin();
   const contract = captured.rpc?.contract ?? {};
-  assert.deepEqual(Object.keys(contract).sort(), [
-    "demo_ns_echo",
-    "demo_ns_ping",
-    "demo_ns_read_url",
-  ]);
-  assert.equal(contract["demo_ns_ping"]?.input, noInputSchema);
-  assert.notEqual(contract["demo_ns_echo"]?.input, noInputSchema);
+  assert.deepEqual(Object.keys(contract).sort(), ["echo", "ping", "readURL"]);
+  assert.equal(contract.ping?.input, noInputSchema);
+  assert.notEqual(contract.echo?.input, noInputSchema);
 });
 
 test("wire handlers invoke the procedure directly with the context (no re-validation)", async () => {
   const { captured } = await loadPlugin();
   const handlers = captured.rpc?.handlers ?? {};
-  assert.deepEqual(await handlers["demo_ns_echo"]?.({ path: "x" }), { path: "p:x" });
-  assert.deepEqual(await handlers["demo_ns_ping"]?.(null), { pong: true });
+  assert.deepEqual(await handlers.echo?.({ path: "x" }), { path: "x" });
+  assert.deepEqual(await handlers.ping?.(null), { pong: true });
 });
 
-test("cli registration: namespace as name, summary, metadata for every command", async () => {
+test("cli registration: plugin id as name, summary, metadata for every command", async () => {
   const { captured } = await loadPlugin();
   assert.equal(captured.cli?.name, "demo-ns");
-  assert.equal(captured.cli?.summary, "Demo plugin");
+  assert.equal(captured.cli?.summary, "CLI for the demo-ns plugin");
   const commands = captured.cli?.commands ?? [];
   const byName = new Map(commands.map((command) => [command.name, command]));
   assert.deepEqual([...byName.keys()].sort(), ["rpc", "status"]);
   assert.equal(byName.get("status")?.summary, "Show status");
-  assert.equal(byName.get("rpc")?.summary, "Call a procedure (JSON object in, JSON object out)");
+  assert.equal(byName.get("rpc")?.summary, "Call an RPC (JSON object in, JSON object out)");
   assert.equal(typeof byName.get("status")?.usage, "string");
 });
 
 test("omitted cli: default summary, only the rpc subtree", async () => {
   const { bb, captured } = fakeHost();
-  await definePlugin({ rpc: demo, context: () => ({ prefix: "q:" }) })(bb);
-  assert.equal(captured.cli?.summary, "RPC access for the demo-ns plugin");
+  await definePlugin({ pluginId: "demo-ns", rpc: demo })(bb);
+  assert.equal(captured.cli?.summary, "CLI for the demo-ns plugin");
   assert.deepEqual(
     (captured.cli?.commands ?? []).map((command) => command.name),
     ["rpc"],
   );
 });
 
-test("setup receives the validating client and the resolved context", async () => {
-  const { setupExtras } = await loadPlugin();
-  assert.ok(setupExtras);
-  assert.deepEqual(setupExtras.context, { prefix: "p:" });
-  assert.deepEqual(await setupExtras.client.ping(), { pong: true });
+test("setup receives the host", async () => {
+  const { bb } = fakeHost();
+  let setupBb: BbPluginApi | undefined;
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    setup(received) {
+      setupBb = received;
+    },
+  })(bb);
+  assert.equal(setupBb, bb);
+});
+
+test("definePlugin return is callable and carries the rpc map by identity", async () => {
+  const { bb } = fakeHost();
+  const plugin = definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+  });
+  assert.equal(plugin.rpc, demo);
+  await plugin(bb);
+});
+
+test("definePlugin rejects an invalid id", () => {
+  assert.throws(() => definePlugin({ pluginId: "Bad", rpc: demo }), /invalid plugin id "Bad"/);
+  assert.throws(() => definePlugin({ pluginId: "-x", rpc: demo }), /invalid plugin id/);
+});
+
+test("definePlugin rejects an invalid RPC key", () => {
+  assert.throws(
+    () =>
+      definePlugin({
+        pluginId: "demo-ns",
+        rpc: { ReadFile: ping },
+      }),
+    /invalid RPC key "ReadFile"/,
+  );
 });
 
 test("reserved command names throw at define time", () => {
@@ -139,9 +162,9 @@ test("reserved command names throw at define time", () => {
     assert.throws(
       () =>
         definePlugin({
+          pluginId: "demo-ns",
           rpc: demo,
-          cli: { summary: "x", commands: { [key]: loose } },
-          context: (): Ctx => ({ prefix: "" }),
+          cli: { [key]: loose },
         }),
       new RegExp(`"${key}" is a reserved command name`),
     );
@@ -157,7 +180,7 @@ async function dispatcher() {
   return registration;
 }
 
-test("curated command runs with the client and the invocation context", async () => {
+test("curated command runs with the plugin context and the invocation context", async () => {
   const cli = await dispatcher();
   assert.deepEqual(await cli.run(["status"], { cwd: "/w" }), {
     exitCode: 0,
@@ -169,13 +192,13 @@ test("rpc subtree: with-input happy path prints compact JSON", async () => {
   const cli = await dispatcher();
   assert.deepEqual(await cli.run(["rpc", "echo", '{"path":"a"}'], {}), {
     exitCode: 0,
-    stdout: '{"path":"p:a"}\n',
+    stdout: '{"path":"a"}\n',
   });
 });
 
-test("rpc subtree: kebab-cased procedure names", async () => {
+test("rpc subtree: names match the public RPC name", async () => {
   const cli = await dispatcher();
-  assert.deepEqual(await cli.run(["rpc", "read-url", '{"url":"u"}'], {}), {
+  assert.deepEqual(await cli.run(["rpc", "readURL", '{"url":"u"}'], {}), {
     exitCode: 0,
     stdout: '{"ok":true}\n',
   });
@@ -229,7 +252,7 @@ test("rpc --help lists procedures with their kinds", async () => {
   const result = await cli.run(["rpc", "--help"], {});
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout ?? "", /echo/);
-  assert.match(result.stdout ?? "", /read-url/);
+  assert.match(result.stdout ?? "", /readURL/);
   assert.match(result.stdout ?? "", /\(query\)/);
   assert.match(result.stdout ?? "", /\(mutation\)/);
 });
@@ -246,18 +269,81 @@ test("empty argv is exit 2 with help; help command is exit 0", async () => {
 // ---- type-level pins ------------------------------------------------
 
 function typeOnly() {
-  const greedy = defineCommand({
-    summary: "wants more than the client provides",
-    run: (_client: DemoClient & { extra(): void }) => ({ exitCode: 0 }),
+  const greedyCommand = defineCommand({
+    summary: "wants more than the preset provides",
+    run: (_context: { extra(): void }) => ({ exitCode: 0 }),
   });
   void definePlugin({
+    pluginId: "demo-ns",
     rpc: demo,
-    // @ts-expect-error a command demanding a superset of the client is rejected
-    cli: { summary: "x", commands: { greedy } },
-    context: (): Ctx => ({ prefix: "" }),
+    // @ts-expect-error a command demanding a field outside the preset is rejected
+    cli: { greedy: greedyCommand },
   });
-  // @ts-expect-error the context factory must satisfy the handlers' demand
-  void definePlugin({ rpc: demo, context: () => ({}) });
-  void definePlugin({ rpc: demo, context: (): Ctx => ({ prefix: "" }) });
+  const usesCli = defineCommand({
+    summary: "reads cli from CommandContext",
+    run: (context: CommandContext<Context>) => ({
+      exitCode: 0,
+      stdout: context.cli.cwd ?? "",
+    }),
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    cli: { usesCli },
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    // @ts-expect-error leftover wrapper { summary, commands } is a type error
+    cli: { summary: "x", commands: { status } },
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    // @ts-expect-error reserved key rpc is a type error
+    cli: { rpc: status },
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    // @ts-expect-error authors cannot supply a context factory
+    context: () => ({ prefix: "" }),
+  });
+  const greedyRPC = defineQuery({
+    output: z.object({ pong: z.boolean() }),
+    handler: (_context: { repository: unknown }) => ({ pong: true }),
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    // @ts-expect-error a handler may not demand a field outside the preset
+    rpc: { greedy: greedyRPC },
+  });
+  const greedyHostField = defineQuery({
+    output: z.object({ pong: z.boolean() }),
+    handler: (_context: { sdk: unknown }) => ({ pong: true }),
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    // @ts-expect-error sdk lives on bb, not on Context
+    rpc: { greedy: greedyHostField },
+  });
+  const wantsCliOnRPC = defineQuery({
+    output: z.object({ pong: z.boolean() }),
+    handler: (_context: CommandContext<Context>) => ({ pong: true }),
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    // @ts-expect-error cli is a Command field, not an RPC field
+    rpc: { ping: wantsCliOnRPC },
+  });
+  void definePlugin({ pluginId: "demo-ns", rpc: demo });
+  const plugin = definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+  });
+  type PluginRPC = (typeof plugin)["rpc"];
+  const fromPlugin: PluginRPC = demo;
+  const toDemo: typeof demo = fromPlugin;
+  void toDemo;
 }
 void typeOnly;

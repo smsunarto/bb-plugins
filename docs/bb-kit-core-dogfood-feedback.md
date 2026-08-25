@@ -33,7 +33,7 @@ not evaluated at all — see the last section. Timings are from this host and ar
   the plugin's public RPC surface.
 - Degradation is honest. Without a toolchain it prints `could not resolve TypeScript 7 ... install
 devDependencies first (parse-dependent rules skipped)` instead of a false pass. (The TS6 move
-reworded the message — ADR-0018.)
+  reworded the message — ADR-0018.)
 - A missing sibling test warns but never fails the gate. Wiring, naming, and manifest breaks are
   hard errors. That severity split matches how authors actually work.
 

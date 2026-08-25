@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  pluginUiSurfaceFor,
-  PUBLIC_SURFACE_BY_SLOT_KIND,
-} from "../lib/plugin-ui-surface.ts";
+import { pluginUiSurfaceFor, PUBLIC_SURFACE_BY_SLOT_KIND } from "../lib/plugin-ui-surface.ts";
 
 type Fiber = {
   memoizedProps?: unknown;
@@ -145,20 +142,17 @@ test("composer paint and host-rendered actions carry their owning plugin", () =>
 test("host-rendered action descriptors distinguish launchers, messages, and the footer", () => {
   const cases = [
     {
-      element: withFiber(
-        new FakeElement({ attributes: { "aria-label": "GitHub Stack" } }),
-        {
-          memoizedProps: {
-            actions: [
-              {
-                id: "plugin-action:gh-stack:stack",
-                pluginId: "gh-stack",
-                title: "GitHub Stack",
-              },
-            ],
-          },
+      element: withFiber(new FakeElement({ attributes: { "aria-label": "GitHub Stack" } }), {
+        memoizedProps: {
+          actions: [
+            {
+              id: "plugin-action:gh-stack:stack",
+              pluginId: "gh-stack",
+              title: "GitHub Stack",
+            },
+          ],
         },
-      ),
+      }),
       expected: {
         pluginId: "gh-stack",
         surface: "threadPanelAction.run",
@@ -166,20 +160,17 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
       },
     },
     {
-      element: withFiber(
-        new FakeElement({ attributes: { "aria-label": "Plan work" } }),
-        {
-          memoizedProps: {
-            actions: [
-              {
-                id: "plugin-new-thread-action:planner:plan",
-                pluginId: "planner",
-                title: "Plan work",
-              },
-            ],
-          },
+      element: withFiber(new FakeElement({ attributes: { "aria-label": "Plan work" } }), {
+        memoizedProps: {
+          actions: [
+            {
+              id: "plugin-new-thread-action:planner:plan",
+              pluginId: "planner",
+              title: "Plan work",
+            },
+          ],
         },
-      ),
+      }),
       expected: {
         pluginId: "planner",
         surface: "experimental_newThreadPanelAction.run",
@@ -187,20 +178,17 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
       },
     },
     {
-      element: withFiber(
-        new FakeElement({ attributes: { "aria-label": "Send to inbox" } }),
-        {
-          memoizedProps: {
-            pluginActions: [
-              {
-                key: "support/send-to-inbox/3",
-                label: "Send to inbox",
-                pluginId: "support",
-              },
-            ],
-          },
+      element: withFiber(new FakeElement({ attributes: { "aria-label": "Send to inbox" } }), {
+        memoizedProps: {
+          pluginActions: [
+            {
+              key: "support/send-to-inbox/3",
+              label: "Send to inbox",
+              pluginId: "support",
+            },
+          ],
         },
-      ),
+      }),
       expected: {
         pluginId: "support",
         surface: "messageAction",
@@ -210,7 +198,10 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
   ] as const;
 
   for (const entry of cases) {
-    assert.deepEqual(pluginUiSurfaceFor(asElement(entry.element), "/threads/thr_1"), entry.expected);
+    assert.deepEqual(
+      pluginUiSurfaceFor(asElement(entry.element), "/threads/thr_1"),
+      entry.expected,
+    );
   }
 
   const footer = withFiber(
@@ -222,9 +213,7 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
     }),
     {
       memoizedProps: {
-        actions: [
-          { id: "remote-access", pluginId: "connect", title: "Remote access" },
-        ],
+        actions: [{ id: "remote-access", pluginId: "connect", title: "Remote access" }],
       },
     },
   );

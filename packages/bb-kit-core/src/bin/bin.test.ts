@@ -36,7 +36,7 @@ test(
     });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /wire names \(namespace "notes"\):/);
+    assert.match(result.stdout, /RPC names:\n {2}ping\n/);
     assert.match(result.stdout, /check passed\n$/);
   },
 );

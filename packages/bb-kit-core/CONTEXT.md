@@ -2,8 +2,8 @@
 
 The framework a bb plugin is written in: the shapes a plugin is made of
 and the names they answer to. One context; the consuming plugins under
-`plugins/` sit outside it. The concern directories (`rpc/`, `cli/`,
-`ui/`, `server/`) have no collective term — prose says "directories";
+`plugins/` sit outside it. The concern directories (`app/`, `server/`)
+have no collective term — prose says "directories";
 avoid "slot" and "surface". In identifiers, an acronym is always fully
 capitalized — `CLI`, `RPC`, `ID`, `URL` — never `Cli`, `Rpc`, `Id`;
 host-owned names (`pluginId`, `BbPluginApi`) stay as bb spells them.
@@ -13,105 +13,110 @@ host-owned names (`pluginId`, `BbPluginApi`) stay as bb spells them.
 **Plugin**:
 One npm package that bb installs and runs. The package root is the plugin
 root.
-_Avoid_: extension, app
+*Avoid*: extension, app
 
 **Composition root**:
-`server.ts` — the one file that wires Procedures, the RPC, and CLI
-commands together, and the only file a generator may ask a human to edit.
-_Avoid_: entrypoint, index
+`server/server.ts` — the one file that wires RPCs and Commands together, and
+the only file a generator may ask a human to edit. It is `bb.server`.
+*Avoid*: entrypoint, index
 
-**`rpc/`**:
-The directory of Procedures — one per file, its test beside it.
+**`server/rpc/`**:
+The directory of RPCs beside the composition root — one per file, its
+test beside it. Follows `dirname(bb.server)`, so a root `server.ts`
+keeps units in `rpc/`.
 
-**`cli/`**:
-The directory of CLI commands — one per file, its test beside it.
+**`server/cli/`**:
+The directory of Commands beside the composition root — one per file,
+its test beside it. Same `dirname(bb.server)` rule as `server/rpc/`.
 
 **`tools/`**:
 The directory of Agent tools — one per file, its test beside it.
 
-**`ui/`**:
-Everything browser-bound; `ui/app.tsx` is the app entry. An import
-outside `ui/` never reaches the browser bundle.
+**`app/`**:
+Everything browser-bound; `app/app.tsx` is the app entry. An import
+outside `app/` never reaches the browser bundle.
 
 **`server/`**:
-Optional internal support code (context assembly, repositories, domain
-modules). Not part of the plugin's public surface.
-
-**Procedure**:
-One remotely callable unit, defined in its own file. Either a Query or a
-Mutation.
-_Avoid_: endpoint, handler, method
-
-**Query**:
-A Procedure that reads. Declared with `defineQuery`.
-_Avoid_: read, getter, fetch
-
-**Mutation**:
-A Procedure that writes. Declared with `defineMutation`. "Command" always
-means a CLI command, never a Procedure.
-_Avoid_: command, action
+The server concern. `server/server.ts` is the composition root. Interned
+collaborators, domain modules, `rpc/`, and `cli/` are siblings. A plugin
+without a backend omits the directory.
 
 **RPC**:
-The namespaced map of a plugin's Procedures, composed in the composition
-root with `defineRPC`.
-_Avoid_: router, registry, catalog
+One remotely callable unit, defined in its own file. Either a Query or a
+Mutation. A plugin's RPCs are the `rpc` map on `definePlugin`. The
+public name is the map key — camelCase, matching the host (`readFile`).
+Renaming one is a breaking change. The host isolates methods by plugin
+id on the path; the name is not prefixed.
+*Avoid*: procedure, endpoint, handler, method, wire name
 
-**Namespace**:
-The RPC map's prefix for Wire names. Always equal to the plugin id.
-_Avoid_: scope, prefix
+**Query**:
+An RPC that reads. Declared with `defineQuery`.
+*Avoid*: read, getter, fetch
 
-**Wire name**:
-The public name a Procedure answers to over RPC, derived as
-`snake(namespace)_snake(key)`. Public API — renaming one is a breaking
-change.
-_Avoid_: wire method, RPC name, method name
+**Mutation**:
+An RPC that writes. Declared with `defineMutation`.
+*Avoid*: command, action
+
+**Plugin id**:
+The id declared on `definePlugin` as `pluginId`. Equals
+`derivePluginID(package.json name)`. The CLI mounts as `bb <pluginId>`.
+Not a prefix of an RPC's public name.
+*Avoid*: namespace, scope, prefix
 
 **Client**:
-The typed client for a plugin's RPC — what CLI commands and the RPC
-subtree reach Procedures through. In the UI it is the imperative escape
-hatch — the RPC hooks are the normal path.
-_Avoid_: caller, stub
+The typed client for a plugin's RPCs — what the RPC subtree and the UI
+imperative escape hatch reach them through. Commands do not take a
+client; they take CommandContext and call RPC handlers. The RPC hooks
+are the normal UI path.
+*Avoid*: caller, stub
 
 **Context**:
-The dependencies a plugin's handlers receive — one `Context` type,
-assembled in `server/context.ts` by its exported `createContext`.
-_Avoid_: ctx, deps, environment
+The frozen host preset every handler receives: `{ bb }`.
+The type is `Context` from `@bb-kit/core/plugin`, whose `bb` is
+`BbPluginApi`. Host capabilities (`sdk`, `storage`, …) live on `bb`.
+`definePlugin` builds it from the host; there is no author factory
+and no Extra fields. `cli` is a Command overlay, not a Context field.
+Plugins import `Context`; they do not alias it.
+*Avoid*: ctx, deps, environment
+
+**CommandContext**:
+What a Command's `run` receives: the plugin Context plus required
+`cli` (the host invocation facts: `cwd`, `threadId`, `projectId`,
+`signal`). RPC handlers stay typed against Context.
+*Avoid*: CLI context (for the whole object)
 
 **RPC hooks**:
-The per-Procedure React hooks UI code reaches Procedures through — a
-Query's `useQuery`, a Mutation's `useMutation` — bound once, with the
-Namespace, in `ui/rpc.ts`.
-_Avoid_: query hooks
+The per-RPC React hooks UI code reaches RPCs through — a Query's
+`useQuery`, a Mutation's `useMutation` — bound once in `app/rpc.ts`.
+*Avoid*: query hooks
 
-**CLI command**:
-One `defineCommand` unit in `cli/`, wired into `definePlugin`'s
-command map in the composition root and executed by bb's plugin CLI
-host. The only "command"
-in this context; a Procedure that writes is a Mutation.
-_Avoid_: subcommand
+**Command**:
+One `defineCommand` unit in `server/cli/`, wired into `definePlugin`'s command
+map. The only "command" in this context; an RPC that writes is a
+Mutation.
+*Avoid*: CLI command, subcommand
 
 **RPC subtree**:
-The `bb <plugin-id> rpc <procedure>` command family every plugin's CLI
-mounts automatically — one subcommand per Procedure, taking and printing
-JSON objects. Framework-owned; not a CLI command.
-_Avoid_: auto-commands, generated CLI
+The `bb <plugin-id> rpc <name>` family every plugin mounts
+automatically — one entry per RPC, taking and printing JSON objects.
+Framework-owned; not a Command.
+*Avoid*: auto-commands, generated CLI
 
 **Agent tool**:
 A capability a plugin exposes to the coding agent driving a thread; the
 agent invokes it by name with schema-validated input. Defined with
 `defineTool`, one per file in `tools/`.
-_Avoid_: MCP tool, model tool
+*Avoid*: MCP tool, model tool
 
 **Tool name**:
-The public name an Agent tool answers to, derived as
-`snake(namespace)_snake(key)` — the same rule as Wire names. Public API —
-renaming one is a breaking change — and unique across every installed
-plugin.
-_Avoid_: tool id
+The public name an Agent tool answers to. Unique across every installed
+plugin — the host does not isolate tools by path the way it isolates
+RPCs. Public API; renaming one is a breaking change.
+*Avoid*: tool id
 
 **Session**:
 One agent run the host assembles inside a thread. A plugin's enablement
 and instructions callbacks receive the Session's facts (thread, project,
 environment, provider); their choices apply when the next Session
 starts, never mid-run.
-_Avoid_: resolution, agent run
+*Avoid*: resolution, agent run

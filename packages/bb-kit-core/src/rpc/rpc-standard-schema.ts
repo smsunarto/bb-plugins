@@ -41,7 +41,7 @@ export type SchemaOutput<S extends StandardSchemaV1> = NonNullable<
 
 /**
  * The vendored no-input schema (§3), registered with the host for
- * procedures that declare no `input`. It accepts null (what the SDK
+ * RPCs that declare no `input`. It accepts null (what the SDK
  * hooks and fake host deliver) and undefined (an empty POST body), and
  * rejects everything else.
  */
@@ -53,7 +53,7 @@ export const noInputSchema: StandardSchemaV1<null | undefined, null | undefined>
       if (value === null || value === undefined) {
         return { value };
       }
-      return { issues: [{ message: "this procedure takes no input" }] };
+      return { issues: [{ message: "this RPC takes no input" }] };
     },
   },
 };

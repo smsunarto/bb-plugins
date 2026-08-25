@@ -1,5 +1,5 @@
 // Shared domain values and wire types. Browser-safe: imports only zod,
-// so ui/ may value-import from here.
+// so app/ may value-import from here.
 import { z } from "zod";
 
 // ---- tasks ----------------------------------------------------------

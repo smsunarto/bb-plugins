@@ -1,5 +1,4 @@
 import { derivePluginID } from "./derive-plugin-id.ts";
-import { wireName } from "../rpc/rpc.ts";
 
 /**
  * The scaffold templates behind `bb-kit create` (§7). One function, no
@@ -62,8 +61,8 @@ function packageJson(name: string, id: string): string {
       bb: {
         name: id,
         description: "A bb plugin.",
-        server: "./server.ts",
-        app: "./ui/app.tsx",
+        server: "./server/server.ts",
+        app: "./app/app.tsx",
         branding: { icon: "./assets/icon.svg" },
         skills: [],
       },
@@ -104,26 +103,13 @@ const TSCONFIG = `${JSON.stringify(
 function serverTs(id: string): string {
   return [
     'import { definePlugin } from "@bb-kit/core/plugin";',
-    'import { defineRPC, type ClientFor } from "@bb-kit/core/rpc";',
     'import { status } from "./cli/status.ts";',
     'import { ping } from "./rpc/ping.ts";',
-    'import { createContext } from "./server/context.ts";',
-    "",
-    "export const rpc = defineRPC({",
-    `  namespace: "${id}",`,
-    "  procedures: { ping },",
-    "});",
-    "",
-    "/** The contract type ui/rpc.ts and cli/ commands bind against. */",
-    "export type RPC = typeof rpc;",
-    "",
-    "/** The full client type cli/ commands annotate (§2, §4). */",
-    "export type Client = ClientFor<RPC>;",
     "",
     "export default definePlugin({",
-    "  rpc,",
-    `  cli: { summary: "${id} commands", commands: { status } },`,
-    "  context: createContext,",
+    `  pluginId: "${id}",`,
+    "  rpc: { ping },",
+    "  cli: { status },",
     "});",
     "",
   ].join("\n");
@@ -139,7 +125,7 @@ function serverTestTs(id: string): string {
     'test("the plugin registers its RPC and CLI against the fake host", async () => {',
     `  const { bb, harness } = createFakePluginHost({ pluginId: "${id}" });`,
     "  await plugin(bb);",
-    `  assert.deepEqual(await harness.callRpc("${wireName(id, "ping")}"), { pong: true });`,
+    `  assert.deepEqual(await harness.callRpc("ping"), { pong: true });`,
     '  const status = await harness.runCli(["status"]);',
     "  assert.equal(status.exitCode, 0);",
     "  assert.match(status.stdout, /pong=true/);",
@@ -148,25 +134,10 @@ function serverTestTs(id: string): string {
   ].join("\n");
 }
 
-const SERVER_CONTEXT_TS = [
-  'import type { BbPluginApi } from "@get-bb/plugin-sdk";',
-  "",
-  "/**",
-  " * The one Context every handler annotates (§3). Grow it here — a",
-  " * database handle, a config value — and every handler sees the change.",
-  " */",
-  "export type Context = {};",
-  "",
-  "export function createContext(_bb: BbPluginApi): Context {",
-  "  return {};",
-  "}",
-  "",
-].join("\n");
-
 const RPC_PING_TS = [
   'import { defineQuery } from "@bb-kit/core/rpc";',
   'import { z } from "zod";',
-  'import type { Context } from "../server/context.ts";',
+  'import type { Context } from "@bb-kit/core/plugin";',
   "",
   "/** The scaffold's example Query — replace it with your first real one. */",
   "export const ping = defineQuery({",
@@ -179,23 +150,25 @@ const RPC_PING_TS = [
 const RPC_PING_TEST_TS = [
   'import { test } from "node:test";',
   'import assert from "node:assert/strict";',
+  'import { stubHostContext } from "@bb-kit/core/testing";',
   'import { ping } from "./ping.ts";',
   "",
   'test("ping answers pong", async () => {',
-  "  assert.deepEqual(await ping.handler({}), { pong: true });",
+  "  assert.deepEqual(await ping.handler(stubHostContext()), { pong: true });",
   "});",
   "",
 ].join("\n");
 
 const CLI_STATUS_TS = [
-  'import { defineCommand } from "@bb-kit/core/cli";',
-  'import type { Client } from "../server.ts";',
+  'import { defineCommand, type CommandContext } from "@bb-kit/core/cli";',
+  'import type { Context } from "@bb-kit/core/plugin";',
+  'import { ping } from "../rpc/ping.ts";',
   "",
   "/** The scaffold's example command — replace it with your first real one. */",
   "export const status = defineCommand({",
   '  summary: "Show plugin status",',
-  "  run: async (client: Client) => {",
-  "    const result = await client.ping();",
+  "  run: async (context: CommandContext<Context>) => {",
+  "    const result = await ping.handler(context);",
   "    return { exitCode: 0, stdout: `pong=${result.pong}\\n` };",
   "  },",
   "});",
@@ -205,36 +178,26 @@ const CLI_STATUS_TS = [
 const CLI_STATUS_TEST_TS = [
   'import { test } from "node:test";',
   'import assert from "node:assert/strict";',
-  'import { invokeCLI } from "@bb-kit/core/cli";',
-  'import { stubClient } from "@bb-kit/core/testing";',
-  'import type { Client } from "../server.ts";',
   'import { status } from "./status.ts";',
   "",
   'test("status prints the ping result", async () => {',
-  "  // stubClient fills the rest of Client with throwing stubs, so this",
-  "  // test stays green as new procedures land.",
-  "  const client = stubClient<Client>({ ping: async () => ({ pong: true }) });",
-  '  const result = await invokeCLI({ status }, client, ["status"]);',
+  "  const result = await status.invoke({});",
   '  assert.deepEqual(result, { exitCode: 0, stdout: "pong=true\\n" });',
   "});",
   "",
 ].join("\n");
 
-function uiRPCTs(id: string): string {
+function appRPCTs(_id: string): string {
   return [
     'import { createRPC } from "@bb-kit/core/rpc/query";',
-    'import type { RPC } from "../server.ts";',
+    'import type plugin from "../server/server.ts";',
     "",
-    "/** The namespace, written ONCE in ui/ (§5) — import `rpc` everywhere. */",
-    "// Single-argument useQuery(x) treats x as procedure input unless every",
-    "// key of x is a TanStack option name; use useQuery(input, {}) to force",
-    "// the input reading when that heuristic could misfire.",
-    `export const rpc = createRPC<RPC>("${id}");`,
+    'export const rpc = createRPC<(typeof plugin)["rpc"]>();',
     "",
   ].join("\n");
 }
 
-function uiAppTsx(id: string): string {
+function appTsx(id: string): string {
   return [
     'import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";',
     'import { definePluginApp } from "@get-bb/plugin-sdk/app";',
@@ -273,7 +236,7 @@ function uiAppTsx(id: string): string {
   ].join("\n");
 }
 
-function uiAppTestTs(id: string): string {
+function appTestTs(_id: string): string {
   return [
     'import { test } from "node:test";',
     'import assert from "node:assert/strict";',
@@ -291,7 +254,7 @@ function uiAppTestTs(id: string): string {
     "  const slot = renderSlot(",
     "    panel,",
     '    { subPath: "" },',
-    `    { rpc: { "${wireName(id, "ping")}": async () => ({ pong: true }) } },`,
+    `    { rpc: { ping: async () => ({ pong: true }) } },`,
     "  );",
     '  await slot.findByText("pong: true");',
     "  slot.unmount();",
@@ -325,7 +288,7 @@ function readme(name: string, id: string, dirName: string): string {
     "```",
     "",
     "Add a unit with `npx bb-kit add query|mutation|command <kebab-name>`;",
-    "it prints the exact lines to wire into server.ts. Generators never",
+    "it prints the exact lines to wire into server/server.ts. Generators never",
     "edit existing files.",
     "",
     "## Install into bb (tag-and-install)",
@@ -356,16 +319,15 @@ export function scaffoldFiles(packageName: string): {
   const files: Record<string, string> = {
     "package.json": packageJson(packageName, id),
     "tsconfig.json": TSCONFIG,
-    "server.ts": serverTs(id),
-    "server.test.ts": serverTestTs(id),
-    "server/context.ts": SERVER_CONTEXT_TS,
-    "rpc/ping.ts": RPC_PING_TS,
-    "rpc/ping.test.ts": RPC_PING_TEST_TS,
-    "cli/status.ts": CLI_STATUS_TS,
-    "cli/status.test.ts": CLI_STATUS_TEST_TS,
-    "ui/rpc.ts": uiRPCTs(id),
-    "ui/app.tsx": uiAppTsx(id),
-    "ui/app.test.ts": uiAppTestTs(id),
+    "server/server.ts": serverTs(id),
+    "server/server.test.ts": serverTestTs(id),
+    "server/rpc/ping.ts": RPC_PING_TS,
+    "server/rpc/ping.test.ts": RPC_PING_TEST_TS,
+    "server/cli/status.ts": CLI_STATUS_TS,
+    "server/cli/status.test.ts": CLI_STATUS_TEST_TS,
+    "app/rpc.ts": appRPCTs(id),
+    "app/app.tsx": appTsx(id),
+    "app/app.test.ts": appTestTs(id),
     "assets/icon.svg": ICON_SVG,
     "README.md": readme(packageName, id, dirName),
   };

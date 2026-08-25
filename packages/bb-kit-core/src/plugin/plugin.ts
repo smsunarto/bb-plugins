@@ -1,45 +1,114 @@
-import type { AnyRPC, ClientFor, RPCContext, StandardSchemaV1 } from "../rpc/rpc.ts";
-import { createClient, kebabName, noInputSchema, runtimeProcedures, wireName } from "../rpc/rpc.ts";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { RPCContext, RPCProcedures, StandardSchemaV1 } from "../rpc/rpc.ts";
+import { assertRPCKeys, createClient, noInputSchema, runtimeProcedures } from "../rpc/rpc.ts";
 import type { MaybePromise } from "../utils/types.ts";
-import type { CLICommand, CLIContext, CLIResult, SubcommandDefinition } from "../cli/runner.ts";
+import type {
+  AnyCommandMap,
+  CLIContext,
+  CLIResult,
+  CommandContext,
+  CommandMap,
+  CommandsContext,
+  SubcommandDefinition,
+} from "../cli/runner.ts";
 import { buildProgram, commandDefinitions, runProgram } from "../cli/runner.ts";
-import type { HostSeam } from "./host.ts";
+import { hostContext, type Context } from "./host.ts";
+
+export type { HostSeam } from "./host.ts";
+export { hostContext } from "./host.ts";
+export type { Context } from "./host.ts";
+
+declare const outsidePreset: unique symbol;
+
+/** `"bb"`. Derived from Context, never spelled twice. */
+type PresetField = keyof Context;
 
 /**
- * The composition root (§2, §6, ADR-0012). Fuses the RPC, the curated
- * CLI commands, and the context factory into one entry factory bb's
- * server.ts default-exports. `context` and `setup` are METHOD syntax on
- * purpose — bivariant parameters let a `BbPluginApi`-annotated callback
- * accept against the narrower structural seam.
+ * Diagnostic only. An RPC map whose handlers demand a field the frozen
+ * preset does not have fails to assign to this, and TypeScript prints
+ * the offending keys inside the type name.
+ */
+export type HandlerDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
+  readonly [outsidePreset]: Keys;
+};
+
+/** Same, for Commands. Commands additionally get `cli`. */
+export type CommandDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
+  readonly [outsidePreset]: Keys;
+};
+
+type OutsidePreset<Demand, Allowed extends PropertyKey> = Exclude<keyof Demand, Allowed>;
+
+type RPCFieldCheck<R extends RPCProcedures> = [OutsidePreset<RPCContext<R>, PresetField>] extends [
+  never,
+]
+  ? unknown
+  : { rpc: HandlerDemandsFieldOutsideThePreset<OutsidePreset<RPCContext<R>, PresetField>> };
+
+type CommandFieldCheck<C> = [OutsidePreset<CommandsContext<C>, PresetField | "cli">] extends [never]
+  ? unknown
+  : {
+      cli: CommandDemandsFieldOutsideThePreset<
+        OutsidePreset<CommandsContext<C>, PresetField | "cli">
+      >;
+    };
+
+/**
+ * Intersected into `definePlugin`'s parameter. Resolves to `unknown`
+ * when every demand is a preset field, and to a re-declaration of
+ * `rpc` / `cli` with the diagnostic type otherwise.
+ */
+export type ClosedContext<R extends RPCProcedures, C> = RPCFieldCheck<R> & CommandFieldCheck<C>;
+
+const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+export type DefinedPlugin<R extends RPCProcedures> = ((bb: BbPluginApi) => Promise<void>) & {
+  readonly rpc: R;
+};
+
+/**
+ * The composition root (§2, §6, ADR-0012). Fuses the plugin id, the
+ * RPC map, and the curated Commands into one DefinedPlugin. That
+ * value is the entry factory bb's server.ts default-exports, plus the
+ * map as `.rpc` so UI can type-only import that default. There is no
+ * author `context` callback — the factory always builds the frozen
+ * `{ bb }` preset from the host. `setup` is METHOD
+ * syntax on purpose — bivariant parameters let a callback annotated
+ * with a test fake still assign against `BbPluginApi`.
  */
 export function definePlugin<
-  R extends AnyRPC,
-  Cx extends RPCContext<R>,
-  C extends Record<string, CLICommand<ClientFor<R>>> = Record<never, never>,
->(definition: {
-  rpc: R;
-  cli?: { summary: string; commands: C };
-  context(bb: HostSeam): MaybePromise<Cx>;
-  setup?(bb: HostSeam, extras: { client: ClientFor<R>; context: Cx }): MaybePromise<void>;
-}): (bb: HostSeam) => Promise<void> {
-  const { rpc } = definition;
-  const curated: Record<string, CLICommand<ClientFor<R>>> = definition.cli?.commands ?? {};
+  R extends RPCProcedures,
+  C extends AnyCommandMap = Record<never, never>,
+>(
+  definition: {
+    pluginId: string;
+    rpc: R;
+    cli?: C;
+    setup?(bb: BbPluginApi): MaybePromise<void>;
+  } & ClosedContext<R, C>,
+): DefinedPlugin<R> {
+  const { pluginId, rpc } = definition;
+  if (!PLUGIN_ID_PATTERN.test(pluginId)) {
+    throw new Error(`invalid plugin id "${pluginId}": must match /^[a-z0-9][a-z0-9-]*$/`);
+  }
+  assertRPCKeys(rpc);
+  const curated = definition.cli ?? {};
   for (const key of Object.keys(curated)) {
     if (key === "rpc" || key === "help") {
       throw new Error(`"${key}" is a reserved command name`);
     }
   }
-  const id = rpc.namespace;
-  const summary = definition.cli?.summary ?? `RPC access for the ${id} plugin`;
+  const summary = `CLI for the ${pluginId} plugin`;
 
-  return async (bb: HostSeam): Promise<void> => {
+  const factory = async (bb: BbPluginApi): Promise<void> => {
     // Order (§6): context → client → rpc.register → cli.register → setup.
-    const context = await definition.context(bb);
+    const context = hostContext(bb);
     const client = createClient(rpc, context as RPCContext<R>);
 
-    // rpc.register: wire-named contract; handlers invoke the procedure
-    // handlers DIRECTLY (the host validates the wire, the client the
-    // in-process path — no call is validated twice).
+    // rpc.register: contract keyed by the map key (the public
+    // name); handlers invoke the RPC handlers DIRECTLY (the host
+    // validates the name, the client the in-process path — no call is
+    // validated twice).
     const procedures = runtimeProcedures(rpc);
     const contract: Record<string, { input: StandardSchemaV1; output: StandardSchemaV1 }> = {};
     const handlers: Record<string, (input: unknown) => Promise<unknown>> = {};
@@ -48,12 +117,11 @@ export function definePlugin<
       if (!procedure) {
         continue;
       }
-      const wire = wireName(id, key);
-      contract[wire] = {
+      contract[key] = {
         input: procedure.input ?? noInputSchema,
         output: procedure.output,
       };
-      handlers[wire] = procedure.input
+      handlers[key] = procedure.input
         ? async (input: unknown) => procedure.handler(context, input)
         : async () => procedure.handler(context);
     }
@@ -65,45 +133,49 @@ export function definePlugin<
       string,
       (input?: unknown) => Promise<unknown>
     >;
-    const makeDefinitions = (cliContext: CLIContext): SubcommandDefinition[] => [
-      ...commandDefinitions<ClientFor<R>>(curated, client, cliContext),
+    const makeDefinitions = (cli: CLIContext): SubcommandDefinition[] => [
+      ...commandDefinitions(
+        curated as CommandMap<CommandContext<Context>>,
+        Object.freeze({ ...context, cli }),
+      ),
       rpcSubtreeDefinition(rpc, runtimeClient),
     ];
     // One metadata build at registration; a configure that throws here
     // propagates out of the factory (the plugin does not load).
-    const metadataProgram = buildProgram(makeDefinitions({}), { name: id, summary });
+    const metadataProgram = buildProgram(makeDefinitions({}), { name: pluginId, summary });
     const commands = metadataProgram.commands.map((command) => ({
       name: command.name(),
       summary: command.summary(),
       usage: command.usage(),
     }));
     bb.cli.register({
-      name: id,
+      name: pluginId,
       summary,
       commands,
-      run: (argv, ctx) => runProgram(() => makeDefinitions(ctx), argv, { name: id, summary }),
+      run: (argv, ctx) => runProgram(() => makeDefinitions(ctx), argv, { name: pluginId, summary }),
     });
 
     if (definition.setup) {
-      await definition.setup(bb, { client, context });
+      await definition.setup(bb);
     }
   };
+  return Object.assign(factory, { rpc });
 }
 
 /**
  * The always-mounted `rpc` subtree (ADR-0013): one subcommand per
- * procedure under its kebab-cased key, one optional JSON-object
+ * RPC under its public name, one optional JSON-object
  * positional, dispatched through the validating client. Success prints
  * compact JSON to stdout; every failure is exit 1 on stderr.
  */
 function rpcSubtreeDefinition(
-  rpc: AnyRPC,
+  procedures: RPCProcedures,
   client: Record<string, (input?: unknown) => Promise<unknown>>,
 ): SubcommandDefinition {
-  const children = Object.keys(rpc.procedures).map((key): SubcommandDefinition => {
-    const kind = rpc.procedures[key]?.kind ?? "query";
+  const children = Object.keys(procedures).map((key): SubcommandDefinition => {
+    const kind = procedures[key]?.kind ?? "query";
     return {
-      name: kebabName(key),
+      name: key,
       summary: `(${kind})`,
       configure: (command) => {
         command.argument("[input]", "JSON object input");
@@ -127,7 +199,7 @@ function rpcSubtreeDefinition(
         try {
           const call = client[key];
           if (!call) {
-            return { exitCode: 1, stderr: `unknown procedure "${key}"\n` };
+            return { exitCode: 1, stderr: `unknown RPC "${key}"\n` };
           }
           const result = input === undefined ? await call() : await call(input);
           return { exitCode: 0, stdout: `${JSON.stringify(result)}\n` };
@@ -140,7 +212,7 @@ function rpcSubtreeDefinition(
   });
   return {
     name: "rpc",
-    summary: "Call a procedure (JSON object in, JSON object out)",
+    summary: "Call an RPC (JSON object in, JSON object out)",
     children,
   };
 }

@@ -14,8 +14,13 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { AnyRPC, ClientFor, SchemaInput, SchemaOutput, StandardSchemaV1 } from "../rpc.ts";
-import { wireName } from "../rpc.ts";
+import type {
+  Client,
+  RPCProcedures,
+  SchemaInput,
+  SchemaOutput,
+  StandardSchemaV1,
+} from "../rpc.ts";
 
 /** Public surface of `@bb-kit/core/rpc/query` (§1, §5). */
 
@@ -51,36 +56,36 @@ type MutationHooksWithInput<In, Out> = {
 };
 
 /**
- * The per-procedure accessor, discriminated on the `kind` field (§5):
+ * The per-RPC accessor, discriminated on the `kind` field (§5):
  * a Query exposes `useQuery`/`queryKey`, a Mutation only `useMutation`.
  * Input presence carries through — a with-input `useQuery` REQUIRES its
  * input, a no-input one has no input parameter at all.
  */
 type ProcedureHooks<P> = P extends { kind: "query" }
   ? P extends {
-    input: infer In extends StandardSchemaV1;
-    output: infer Out extends StandardSchemaV1;
-  }
-  ? QueryHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
-  : P extends { output: infer Out extends StandardSchemaV1 }
-  ? QueryHooksNoInput<SchemaOutput<Out>>
-  : never
+      input: infer In extends StandardSchemaV1;
+      output: infer Out extends StandardSchemaV1;
+    }
+    ? QueryHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
+    : P extends { output: infer Out extends StandardSchemaV1 }
+      ? QueryHooksNoInput<SchemaOutput<Out>>
+      : never
   : P extends { kind: "mutation" }
-  ? P extends {
-    input: infer In extends StandardSchemaV1;
-    output: infer Out extends StandardSchemaV1;
-  }
-  ? MutationHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
-  : P extends { output: infer Out extends StandardSchemaV1 }
-  ? MutationHooksNoInput<SchemaOutput<Out>>
-  : never
-  : never;
+    ? P extends {
+        input: infer In extends StandardSchemaV1;
+        output: infer Out extends StandardSchemaV1;
+      }
+      ? MutationHooksWithInput<SchemaInput<In>, SchemaOutput<Out>>
+      : P extends { output: infer Out extends StandardSchemaV1 }
+        ? MutationHooksNoInput<SchemaOutput<Out>>
+        : never
+    : never;
 
-type RPCHooks<R extends AnyRPC> = {
-  readonly [K in keyof R["procedures"]]: ProcedureHooks<R["procedures"][K]>;
+type RPCHooks<P extends RPCProcedures> = {
+  readonly [K in keyof P]: ProcedureHooks<P[K]>;
 } & {
   /** The imperative escape hatch (§5): the typed client, per render. */
-  useClient(): ClientFor<R>;
+  useClient(): Client<P>;
 };
 
 type RPCTransport = { call(method: string, input?: unknown): Promise<unknown> };
@@ -166,9 +171,9 @@ function isQueryOptionsObject(value: unknown): value is object {
   return keys.length > 0 && keys.every((key) => QUERY_OPTION_KEYS.has(key));
 }
 
-/** §5 derivation: `[namespace, key]`, plus the input when one is given. */
-function deriveQueryKey(namespace: string, key: string, input: unknown): QueryKey {
-  return input === undefined ? [namespace, key] : [namespace, key, input];
+/** §5 derivation: `[key]`, plus the input when one is given. */
+function deriveQueryKey(key: string, input: unknown): QueryKey {
+  return input === undefined ? [key] : [key, input];
 }
 
 type RuntimeProcedureHooks = {
@@ -177,11 +182,10 @@ type RuntimeProcedureHooks = {
   useMutation(options?: unknown): UseMutationResult<unknown, Error, unknown>;
 };
 
-function procedureHooks(namespace: string, key: string): RuntimeProcedureHooks {
-  const wire = wireName(namespace, key);
+function procedureHooks(key: string): RuntimeProcedureHooks {
   return {
     queryKey(...args) {
-      return deriveQueryKey(namespace, key, args[0]);
+      return deriveQueryKey(key, args[0]);
     },
     useQuery(...args) {
       const transport = useTransport();
@@ -189,48 +193,48 @@ function procedureHooks(namespace: string, key: string): RuntimeProcedureHooks {
       // The derived fields come LAST — options can never override them.
       return useTanStackQuery({
         ...options,
-        queryKey: deriveQueryKey(namespace, key, input),
-        queryFn: () => transport.call(wire, input ?? null),
+        queryKey: deriveQueryKey(key, input),
+        queryFn: () => transport.call(key, input ?? null),
       });
     },
     useMutation(options) {
       const transport = useTransport();
       return useTanStackMutation({
         ...(options as object | undefined),
-        mutationFn: (variables: unknown) => transport.call(wire, variables ?? null),
+        mutationFn: (variables: unknown) => transport.call(key, variables ?? null),
       });
     },
   };
 }
 
-function clientProxy(namespace: string, transport: RPCTransport): Record<string, unknown> {
+function clientProxy(transport: RPCTransport): Record<string, unknown> {
   return new Proxy({} as Record<string, unknown>, {
     get(_target, property) {
       // "then" would make the client a thenable and hang `await client`.
       if (typeof property !== "string" || property === "then") {
         return undefined;
       }
-      return (input?: unknown) => transport.call(wireName(namespace, property), input ?? null);
+      return (input?: unknown) => transport.call(property, input ?? null);
     },
   });
 }
 
 /**
- * Bind the RPC's hook accessors to their namespace ONCE — ui/rpc.ts
- * calls this at module scope and every component imports the result
- * (§5). The pluginId is host-internal; binding here is what keeps it
- * out of every call site. Named createRPC, not useRPC: the factory is
- * not a hook, only the accessors it returns are.
+ * Bind the RPC's hook accessors ONCE — app/rpc.ts calls this at module
+ * scope and every component imports the result (§5). The host
+ * pluginId stays host-internal; `useRpc` supplies it at render.
+ * Named createRPC, not useRPC: the factory is not a hook, only the
+ * accessors it returns are.
  *
  * The runtime is one proxy — `RPC` is a type, so any string key yields
- * an accessor whose calls hit `wireName(namespace, key)` (no-input
+ * an accessor whose calls hit that key (no-input
  * calls send `null`, matching the SDK's `input ?? null`).
  */
-export function createRPC<R extends AnyRPC>(namespace: R["namespace"]): RPCHooks<R> {
+export function createRPC<P extends RPCProcedures>(): RPCHooks<P> {
   const bundles = new Map<string, RuntimeProcedureHooks>();
-  const useClient = (): ClientFor<R> => {
+  const useClient = (): Client<P> => {
     const transport = useTransport();
-    return useMemo(() => clientProxy(namespace, transport) as unknown as ClientFor<R>, [transport]);
+    return useMemo(() => clientProxy(transport) as unknown as Client<P>, [transport]);
   };
   return new Proxy({} as Record<string | symbol, unknown>, {
     get(_target, property) {
@@ -242,12 +246,12 @@ export function createRPC<R extends AnyRPC>(namespace: R["namespace"]): RPCHooks
       }
       let bundle = bundles.get(property);
       if (bundle === undefined) {
-        bundle = procedureHooks(namespace, property);
+        bundle = procedureHooks(property);
         bundles.set(property, bundle);
       }
       return bundle;
     },
-  }) as RPCHooks<R>;
+  }) as RPCHooks<P>;
 }
 
 /**
