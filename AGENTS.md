@@ -32,12 +32,11 @@ The pinned bb release lives in root `package.json` → `config.bbVersion`. Local
 * Vendored shadcn-model source (`components/ui/`, `lib/`, `hooks/`) is plugin-owned. bb-kit plugins nest those folders under `app/`; other plugins keep them at the plugin root. Edit them freely; the copies are currently identical across plugins but divergence is allowed and deliberate — do not build machinery that assumes byte equality.
 * The root `package.json` `overrides` entry replacing `@ampcode/cli` with the stub in `plugins/amp/vendor/` is load-bearing (rationale in the root `comments` field). Never remove or relocate it; `plugins/amp/test/cli-stub.test.ts` guards it.
 * `bunfig.toml` pins Bun's **hoisted** linker on purpose. The isolated linker breaks workspace-root subpath imports.
-* `plugins/pr-walkthrough/skills/pr-walkthrough/assets/site-template` is a payload template with its own nested `.gitignore`; its build output is not tracked.
 * `scripts/split-layers.ts` builds stacked review branches from a manifest and a snapshot of finished work, byte-comparing the top of the stack against the snapshot when it is done. It is a tool that is available, not a workflow that is required — see Conduct.
 * Declare runtime imports (for example `zod` in the composition root) in `dependencies`, not `devDependencies`. Repo-wide tools (`typescript`, `oxlint`) stay at the root.
 * `plugins/amp` pins zod v3 to match its ACP/`@ampcode/sdk` stack. Do not "align" it with the other plugins' zod v4.
 * The repo is MIT. Every `plugins/<id>/LICENSE` is a byte-identical copy of the root `LICENSE`, because a root file is not inside a leaf npm tarball — edit the root and re-copy, never one plugin alone. `scripts/licenses.test.ts` fails on drift, on a missing `license` field, and on a `files` array that omits `LICENSE`. Third-party terms live in the root `THIRD_PARTY_NOTICES.md`, which covers the whole tree, and in a per-plugin `plugins/<id>/THIRD_PARTY_NOTICES.md` that covers only what that package's tarball actually ships. Add to both whenever code or artwork arrives from elsewhere.
-* Not everything here is published. `plugins/dotfiles` and `plugins/pr-walkthrough` are `private: true` and must stay out of the `publish:npm` target list (`scripts/publish.ts` → `EXCLUDED`). They remain in the workspace and in the build fan-out. The root README lists `dotfiles` with a "not published to npm" note and omits `pr-walkthrough` entirely; keep that in step with `EXCLUDED`.
+* `plugins/dotfiles` is `private: true` and must stay out of the `publish:npm` target list (`scripts/publish.ts` → `EXCLUDED`). It remains in the workspace and build fan-out. The root README lists it with a "not published to npm" note; keep that in step with `EXCLUDED`.
 
 ## Testing and verification
 
@@ -51,7 +50,7 @@ The pinned bb release lives in root `package.json` → `config.bbVersion`. Local
 
 * **Verify on the dev instance, then ask before the live bb loads it.** The user's bb is the tool they work in, so a reload there interrupts them and can break a plugin they are relying on. Work on the dev instance until the evidence is real, report it, and ask; reload without the shim only on a yes. `dist/` is shared between the two instances — both install the workspace plugins as path sources into the same checkout — so a build is already half a promotion, and leaving a broken one on disk puts unverified code where their bb reads it.
 * Do not split work into a stack unless asked. One branch and one commit is the default, and a single commit covering a whole session's work is a fine answer. Reach for `gh-stack` or `scripts/split-layers.ts` only when the user asks for a stack, or when a change is genuinely too large to review in one pass — and say so before splitting rather than assuming. Splitting after the fact costs more than it returns: hunk-level surgery on interleaved edits is slow and error-prone, and a mechanical rename that touches every package is one concern, not twenty.
-* Nested `AGENTS.md` files (for example `plugins/pr-walkthrough/AGENTS.md`) add plugin-specific rules and take precedence within their scope.
+* Nested `AGENTS.md` files (for example `plugins/dotfiles/AGENTS.md`) add plugin-specific rules and take precedence within their scope.
 
 ## Agent skills
 

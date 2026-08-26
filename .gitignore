@@ -26,8 +26,4 @@ __pycache__/
 .bb/*
 !.bb/plugins.json
 .claude/
-.pr-walkthrough/
 .scratch/
-
-# Commercial font binaries are never redistributed with the site template.
-plugins/pr-walkthrough/skills/pr-walkthrough/assets/site-template/src/app/fonts/*.woff2

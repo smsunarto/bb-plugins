@@ -44,8 +44,7 @@
 
 import type { ThreadLifecycleRow } from "@/lib/lifecycle";
 
-// Version first, matching `pr-walkthrough:v1:` — the repo's other storage
-// user — and so a whole version can be retired by prefix scan. A bump retires
+// Put the version first so a whole version can be retired by prefix scan. A bump retires
 // the old entry instead of mis-reading data of the wrong shape; whoever writes
 // v2 should `removeItem` these two on its first successful write, because
 // nothing else on this origin ever will.

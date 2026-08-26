@@ -138,11 +138,11 @@ describe("bb screenshot preflight", () => {
     const calls: string[][] = [];
     const runCommand = async (args: readonly string[]): Promise<string> => {
       calls.push([...args]);
-      return pluginList({ missing: ["pr-walkthrough"] });
+      return pluginList({ missing: ["gtd-sidebar"] });
     };
 
     await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow(
-      "pr-walkthrough: bb plugin install ./plugins/pr-walkthrough",
+      "gtd-sidebar: bb plugin install ./plugins/gtd-sidebar",
     );
     expect(calls).toEqual([["plugin", "list", "--json"]]);
   });

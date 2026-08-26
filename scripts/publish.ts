@@ -43,11 +43,10 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  * Not published:
  * - dotfiles: personal tooling written against one repository layout, and its
  *   README says so. Publishing it would invite installs it cannot serve.
- * - pr-walkthrough: not ready for a public release.
- * Both also carry `"private": true`, which npm itself refuses to publish; this
- * set keeps them out of the gate rather than letting them fail it.
+ * It also carries `"private": true`, which npm itself refuses to publish; this
+ * set keeps it out of the gate rather than letting it fail there.
  */
-export const EXCLUDED = new Set(["dotfiles", "pr-walkthrough"]);
+export const EXCLUDED = new Set(["dotfiles"]);
 
 /**
  * The workspace packages that may be published and receive GitHub Releases.

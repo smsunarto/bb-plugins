@@ -14,7 +14,7 @@ describe("plugin screenshot recipes", () => {
   test("cover the approved plugin heroes exactly once", () => {
     const recipeIds = PLUGIN_SCREENSHOTS.map((recipe) => recipe.id);
 
-    expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual(["dotfiles", "notify", "pr-walkthrough"]);
+    expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual(["dotfiles", "notify"]);
     expect(recipeIds).toEqual([
       "agent-proxy",
       "agentation",

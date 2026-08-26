@@ -1,5 +1,4 @@
-/* Theme the bundled Pierre Trees against the bb host theme tokens (same
-   treatment as bb-plugin-pr-walkthrough). Git status colors fall back to
+/* Theme the bundled Pierre Trees against the bb host theme tokens. Git status colors fall back to
    conventional green/red/yellow when the host does not define diff
    variables. */
 .diff-file-tree {

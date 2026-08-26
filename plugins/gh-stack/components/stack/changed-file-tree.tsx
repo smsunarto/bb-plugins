@@ -1,5 +1,4 @@
-// Vendored from bb-plugin-pr-walkthrough's changed-file-tree, adapted for the
-// stack panel: a read-only Pierre Trees file tree with per-row +/− delta
+// Read-only Pierre Trees file tree adapted for the stack panel, with per-row +/− delta
 // decorations (files and aggregated folders), non-scrolling row-fitted
 // height, themed against bb host tokens in app.css.
 import type { CSSProperties } from "react";

@@ -40,7 +40,7 @@ A decision that binds the whole workspace (build fan-out, manifest shape, licens
 
 ## Relation to `AGENTS.md`
 
-Root `AGENTS.md` holds the workflow and the workspace invariants. Nested `AGENTS.md` files (for example `plugins/pr-walkthrough/AGENTS.md`) take precedence within their scope. Domain docs are separate: `CONTEXT.md` holds the ubiquitous language for a context, and ADRs hold the decision record. Do not duplicate invariants from `AGENTS.md` into a `CONTEXT.md`.
+Root `AGENTS.md` holds the workflow and the workspace invariants. Nested `AGENTS.md` files (for example `plugins/dotfiles/AGENTS.md`) take precedence within their scope. Domain docs are separate: `CONTEXT.md` holds the ubiquitous language for a context, and ADRs hold the decision record. Do not duplicate invariants from `AGENTS.md` into a `CONTEXT.md`.
 
 ## Use the glossary's vocabulary
 

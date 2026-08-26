@@ -114,10 +114,4 @@ the `@fontsource-variable/inter` and `@fontsource/ibm-plex-mono` development
 dependencies. Both fonts use the SIL Open Font License 1.1. Their binaries are
 not committed to this repository or shipped in a plugin tarball.
 
-The PR Walkthrough site template asks for **Berkeley Mono** through `local()`
-sources only, so it is used only where the reader has already licensed and
-installed it, and otherwise falls back to the system monospace stack. Berkeley
-Mono is a commercial font from Berkeley Graphics; a licence is required to
-install it, and none is required to use this template.
-
 Sources: <https://github.com/rsms/inter>, <https://github.com/IBM/plex>

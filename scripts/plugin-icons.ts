@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   BellIcon,
   ChatFeedbackIcon,
-  GitPullRequestIcon,
   Layers01Icon,
   PanelLeftIcon,
   ServerStack01Icon,
@@ -149,10 +148,6 @@ const customIcons = {
   notify: {
     name: "Bell",
     nodes: BellIcon,
-  },
-  "pr-walkthrough": {
-    name: "GitPullRequest",
-    nodes: GitPullRequestIcon,
   },
   // Upstream t3sidebar, which this plugin was forked from, declares BB's named
   // "PanelLeft" icon; Hugeicons ships the same glyph, so the rename keeps that

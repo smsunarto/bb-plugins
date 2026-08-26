@@ -182,8 +182,8 @@ Not submittable as-is:
   Sawyer Hood's entry; submittable once a `gtd-sidebar/vX.Y.Z` tag exists. Ours
   is a fork of bb's own example, which makes a distinct id the right answer
   regardless.
-- **dotfiles**, **pr-walkthrough** — `private: true`; pr-walkthrough still
-  declares itself work in progress.
+- **dotfiles** — `private: true` because it targets one personal repository
+  layout.
 
 ## Workflow
 

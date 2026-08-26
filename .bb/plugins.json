@@ -34,10 +34,6 @@
     {
       "name": "notify",
       "source": "./plugins/notify"
-    },
-    {
-      "name": "pr-walkthrough",
-      "source": "./plugins/pr-walkthrough"
     }
   ]
 }
