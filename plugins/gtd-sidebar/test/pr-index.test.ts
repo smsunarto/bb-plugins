@@ -363,4 +363,33 @@ describe("resolveThreadPullRequests", () => {
     assert.equal(resolved.get("thr_1")?.number, 2421);
     assert.equal(resolved.get("thr_1")?.state, "merged");
   });
+
+  it("looks up owner/repo#N from the title even when the checkout is another repository", async () => {
+    const lookups: string[] = [];
+    const resolved = await resolveThreadPullRequests(
+      [query({ title: "see other/repo#123 for context", branchName: "local-notes" })],
+      {
+        now: 5_000,
+        restRemaining: 4_000,
+        getCache: () => undefined,
+        putCache: () => {},
+        getRepo: async () => ({ owner: "acme", repo: "app" }),
+        listOpenPulls: async () => [pull({ number: 99, headRef: "feat/unrelated" })],
+        listRecentClosedPulls: async () => [],
+        getPull: async (repo, number) => {
+          lookups.push(`${repo.owner}/${repo.repo}#${number}`);
+          return pull({
+            number,
+            title: "the cited one",
+            url: `https://github.com/${repo.owner}/${repo.repo}/pull/${number}`,
+            headRef: "feat/cited",
+          });
+        },
+        log: { info() {}, warn() {} },
+      },
+    );
+    assert.deepEqual(lookups, ["other/repo#123"]);
+    assert.equal(resolved.get("thr_1")?.number, 123);
+    assert.equal(resolved.get("thr_1")?.url, "https://github.com/other/repo/pull/123");
+  });
 });

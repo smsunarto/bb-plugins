@@ -154,4 +154,18 @@ describe("matchingGithubHook", () => {
     assert.equal(isTrycloudflareWebhookUrl(previous), true);
     assert.equal(isTrycloudflareWebhookUrl(next), true);
   });
+
+  it("does not claim an unrelated trycloudflare hook", () => {
+    const found = matchingManagedGithubHook(
+      [
+        {
+          id: 8,
+          config: { url: "https://someone-else.trycloudflare.com/github-webhook" },
+          events: ["pull_request"],
+        },
+      ],
+      "https://ours.trycloudflare.com/github-webhook",
+    );
+    assert.equal(found, null);
+  });
 });

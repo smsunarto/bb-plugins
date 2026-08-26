@@ -163,7 +163,26 @@ export async function maintainCloudflareWebhookTunnel(args: {
           error: null,
         });
         args.log.info(`github webhooks: trycloudflare ${url}`);
-        await Promise.race([tunnel.wait, waitUntilAborted(run.signal)]);
+        const stopped = await Promise.race([
+          tunnel.wait.then((code) => ({ kind: "exit" as const, code })),
+          waitUntilAborted(run.signal).then(() => ({ kind: "abort" as const })),
+        ]);
+        if (
+          stopped.kind === "exit" &&
+          !run.signal.aborted &&
+          !args.signal.aborted
+        ) {
+          const message = `cloudflared exited ${stopped.code}`;
+          args.log.warn(`github webhook tunnel: ${message}`);
+          args.onStatus({
+            enabled: true,
+            state: "error",
+            url: null,
+            origin: null,
+            error: message,
+          });
+          await sleep(retryDelayMs, args.signal);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (!run.signal.aborted && !args.signal.aborted) {

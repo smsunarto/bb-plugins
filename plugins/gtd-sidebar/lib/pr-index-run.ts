@@ -57,8 +57,13 @@ function numberedHint(
   stale: CachedPullRow | undefined,
 ): { number: number; repo: GithubRepo } | null {
   const fromTitle = parsePrRefFromTitle(query.title);
-  const owner = repo?.owner ?? stale?.owner ?? fromTitle?.owner ?? null;
-  const name = repo?.repo ?? stale?.repo ?? fromTitle?.repo ?? null;
+  // An explicit `owner/repo#N` names that repository, even when this thread's
+  // checkout is somewhere else. Cache-number precedence is only for a bare `#N`.
+  if (fromTitle !== null && fromTitle.owner !== null && fromTitle.repo !== null) {
+    return { number: fromTitle.number, repo: { owner: fromTitle.owner, repo: fromTitle.repo } };
+  }
+  const owner = repo?.owner ?? stale?.owner ?? null;
+  const name = repo?.repo ?? stale?.repo ?? null;
   // Cache number first: titles often cite a parent PR (`outside the #2255 sweep`)
   // while this thread's own PR is already known.
   const number = stale?.number ?? fromTitle?.number ?? null;

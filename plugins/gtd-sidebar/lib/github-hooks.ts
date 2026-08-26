@@ -35,19 +35,16 @@ export async function ensureGithubRepoHook(
   }
   const needsUrl = existing.url !== url;
   const needsEvents = !eventsMatch(existing.events, GITHUB_WEBHOOK_EVENTS);
-  if (!needsUrl && !needsEvents) return "unchanged";
+  // GitHub never echoes the secret, so an uninstall that minted a new KV
+  // secret would otherwise leave deliveries failing HMAC while we report
+  // unchanged. Always PATCH config (url + secret) when we already own the hook.
   const patched = await githubRestJson(
     gh,
     `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/hooks/${existing.id}`,
     15_000,
-    {
-      method: "PATCH",
-      body: needsUrl
-        ? createBody
-        : { events: [...GITHUB_WEBHOOK_EVENTS], active: true },
-    },
+    { method: "PATCH", body: createBody },
   );
   if (patched.exitCode === 403) return "denied";
   if (patched.exitCode !== 0) return "error";
-  return "updated";
+  return needsUrl || needsEvents ? "updated" : "unchanged";
 }

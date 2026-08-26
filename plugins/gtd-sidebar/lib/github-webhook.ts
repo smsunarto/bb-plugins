@@ -221,8 +221,8 @@ export function matchingGithubHook(
 }
 
 /**
- * Find the hook we manage: exact URL, then the previous trycloudflare URL,
- * then any trycloudflare `/github-webhook` left behind after a restart.
+ * Find the hook we manage: the current URL, or the previous URL this plugin
+ * persisted. Do not claim some other integration's trycloudflare hook.
  */
 export function matchingManagedGithubHook(
   hooks: unknown,
@@ -232,22 +232,7 @@ export function matchingManagedGithubHook(
   const exact = matchingGithubHook(hooks, url);
   if (exact !== null) return exact;
   if (typeof previousUrl === "string" && previousUrl.length > 0 && previousUrl !== url) {
-    const previous = matchingGithubHook(hooks, previousUrl);
-    if (previous !== null) return previous;
-  }
-  if (!Array.isArray(hooks)) return null;
-  for (const entry of hooks) {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
-    const record = entry as Record<string, unknown>;
-    const id = record.id;
-    const config = record.config;
-    if (typeof id !== "number" || typeof config !== "object" || config === null) continue;
-    const hookUrl = (config as Record<string, unknown>).url;
-    if (typeof hookUrl !== "string" || !isTrycloudflareWebhookUrl(hookUrl)) continue;
-    const events = Array.isArray(record.events)
-      ? record.events.filter((event): event is string => typeof event === "string")
-      : [];
-    return { id, events, url: hookUrl };
+    return matchingGithubHook(hooks, previousUrl);
   }
   return null;
 }

@@ -87,18 +87,21 @@ export function useThreadPullRequests(
 
   const payloadRef = useRef(payload);
   payloadRef.current = payload;
+  const refreshGeneration = useRef(0);
 
   const refresh = useRef<() => Promise<void>>(async () => {});
   refresh.current = async () => {
     const current = payloadRef.current;
+    const generation = ++refreshGeneration.current;
     if (current.length === 0) {
-      setByThreadId(new Map());
+      if (generation === refreshGeneration.current) setByThreadId(new Map());
       return;
     }
     try {
       const result = await rpc.call("listThreadPullRequests", {
         threads: current,
       });
+      if (generation !== refreshGeneration.current) return;
       setByThreadId(
         new Map(
           result.pullRequests.map((row) => [

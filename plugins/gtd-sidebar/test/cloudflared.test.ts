@@ -142,4 +142,38 @@ describe("maintainCloudflareWebhookTunnel", () => {
     assert.ok(statuses.includes("checking"));
     assert.ok(statuses.includes("missing-cloudflared"));
   });
+
+  it("backs off when cloudflared exits after going live", async () => {
+    const run = new AbortController();
+    const liveAt: number[] = [];
+    const statuses: string[] = [];
+    const done = maintainCloudflareWebhookTunnel({
+      signal: run.signal,
+      readSettings: async () => ({ enabled: true, configuredOrigin: "" }),
+      onSettingsChange: () => () => undefined,
+      handle: async () => ({ status: 200, body: { ok: true } }),
+      onLive: () => {
+        liveAt.push(Date.now());
+        if (liveAt.length >= 2) run.abort();
+      },
+      onStopped: () => undefined,
+      onStatus: (status) => {
+        statuses.push(status.state);
+      },
+      log: { info: () => undefined, warn: () => undefined },
+      resolveBin: async () => "/opt/homebrew/bin/cloudflared",
+      startListener: async () => ({ port: 9, close: async () => undefined }),
+      startTunnel: async () => ({
+        origin: "https://unit-test.trycloudflare.com",
+        wait: Promise.resolve(1),
+        stop: () => undefined,
+      }),
+      retryDelayMs: 50,
+    });
+    await done;
+    assert.ok(statuses.includes("live"));
+    assert.ok(statuses.includes("error"));
+    assert.equal(liveAt.length, 2);
+    assert.ok(liveAt[1]! - liveAt[0]! >= 40);
+  });
 });
