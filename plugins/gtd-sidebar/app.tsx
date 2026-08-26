@@ -7,6 +7,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
 import { SubagentsChip } from "@/components/inbox/subagents-chip";
+import { GithubWebhookSettings } from "@/components/github-webhook-settings";
 
 export default definePluginApp((app) => {
   app.slots.experimental_threadList({
@@ -33,5 +34,12 @@ export default definePluginApp((app) => {
     id: "children",
     title: "Child threads",
     component: SubagentsChip,
+  });
+
+  app.slots.settingsSection({
+    id: "github-webhooks",
+    title: "GitHub webhooks",
+    description: "Realtime PR badges through a webhook-only Cloudflare tunnel.",
+    component: GithubWebhookSettings,
   });
 });

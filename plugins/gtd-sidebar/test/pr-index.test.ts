@@ -21,6 +21,8 @@ const pull = (overrides: Partial<RestPull> = {}): RestPull => ({
   state: "open",
   merged: false,
   headRef: "feat/curl-dump-header",
+  mergeableState: "unknown",
+  autoMerge: false,
   ...overrides,
 });
 
@@ -77,6 +79,7 @@ describe("matchPullForBranch", () => {
     const pulls = [pull(), pull({ number: 13, headRef: "other", state: "open" })];
     assert.equal(matchPullForBranch(pulls, "feat/curl-dump-header")?.number, 12);
     assert.equal(matchPullForBranch(pulls, "gitbutler/workspace"), null);
+    assert.equal(matchPullForBranch(pulls, "3 GitButler branches"), null);
     assert.equal(matchPullForBranch(pulls, null), null);
   });
 });
@@ -87,6 +90,14 @@ describe("sidebarPrFromRest", () => {
     assert.equal(sidebarPrFromRest(pull({ draft: true })).attention, "draft");
     assert.equal(sidebarPrFromRest(pull({ merged: true, state: "closed" })).state, "merged");
     assert.equal(sidebarPrFromRest(pull()).attention, "none");
+  });
+
+  it("maps GitHub mergeable_state onto bb attention", () => {
+    assert.equal(sidebarPrFromRest(pull({ mergeableState: "clean" })).attention, "ready_to_merge");
+    assert.equal(sidebarPrFromRest(pull({ mergeableState: "dirty" })).attention, "conflicts");
+    assert.equal(sidebarPrFromRest(pull({ mergeableState: "unstable" })).attention, "checks_failed");
+    assert.equal(sidebarPrFromRest(pull({ mergeableState: "blocked" })).attention, "blocked");
+    assert.equal(sidebarPrFromRest(pull({ autoMerge: true })).attention, "queued");
   });
 });
 
@@ -158,7 +169,7 @@ describe("resolveThreadPullRequests", () => {
         getPull: async () => {
           throw new Error("should not look up a numbered PR");
         },
-        listClosedPullsByHead: async () => [],
+        listRecentClosedPulls: async () => [],
         log: { info() {}, warn() {} },
       },
     );
@@ -183,7 +194,7 @@ describe("resolveThreadPullRequests", () => {
         getPull: async () => {
           throw new Error("should not look up a numbered PR");
         },
-        listClosedPullsByHead: async () => [],
+        listRecentClosedPulls: async () => [],
         log: { info() {}, warn() {} },
       },
     );
@@ -216,7 +227,7 @@ describe("resolveThreadPullRequests", () => {
       getPull: async () => {
         throw new Error("should not look up a numbered PR");
       },
-      listClosedPullsByHead: async () => [],
+      listRecentClosedPulls: async () => [],
       log: { info() {}, warn() {} },
     });
     assert.equal(resolved.get("thr_1")?.source, "cache");
@@ -241,9 +252,7 @@ describe("resolveThreadPullRequests", () => {
             merged: true,
             headRef: "feat/shipped",
           }),
-        listClosedPullsByHead: async () => {
-          throw new Error("numbered lookup should win");
-        },
+        listRecentClosedPulls: async () => [],
         log: { info() {}, warn() {} },
       },
     );
@@ -253,7 +262,7 @@ describe("resolveThreadPullRequests", () => {
     assert.equal(resolved.get("thr_1")?.source, "rest");
   });
 
-  it("does not cache a title fallback as open", async () => {
+  it("does not treat a title #number as an open PR after REST listed the repo", async () => {
     const cached: CachedPullRow[] = [];
     const resolved = await resolveThreadPullRequests(
       [query({ title: "acme/app#2406 shipped" })],
@@ -267,11 +276,91 @@ describe("resolveThreadPullRequests", () => {
         getRepo: async () => ({ owner: "acme", repo: "app" }),
         listOpenPulls: async () => [],
         getPull: async () => null,
-        listClosedPullsByHead: async () => [],
+        listRecentClosedPulls: async () => [],
         log: { info() {}, warn() {} },
       },
     );
-    assert.equal(resolved.get("thr_1")?.source, "title");
-    assert.equal(cached.length, 0);
+    assert.equal(resolved.get("thr_1"), undefined);
+    assert.equal(cached.length, 1);
+    assert.equal(cached[0]?.number, null);
+  });
+
+  it("colours a merged PR from the closed list even when the title cites a parent", async () => {
+    const resolved = await resolveThreadPullRequests(
+      [
+        query({
+          title: "docs(webapp): say why curlwright is outside the #2255 flag sweep",
+          branchName: "gitbutler/workspace",
+        }),
+      ],
+      {
+        now: 5_000,
+        restRemaining: 4_000,
+        getCache: () => ({
+          environmentId: "env_1",
+          owner: "acme",
+          repo: "app",
+          number: 2450,
+          title: "docs(webapp): say why curlwright is outside the #2255 flag sweep",
+          url: "https://github.com/acme/app/pull/2450",
+          state: "open",
+          attention: "none",
+          fetchedAt: 1_000,
+        }),
+        putCache: () => {},
+        getRepo: async () => ({ owner: "acme", repo: "app" }),
+        listOpenPulls: async () => [pull({ number: 2255, headRef: "feat/parent", title: "parent" })],
+        listRecentClosedPulls: async () => [
+          pull({
+            number: 2450,
+            title: "docs",
+            url: "https://github.com/acme/app/pull/2450",
+            state: "closed",
+            merged: true,
+            headRef: "bb/curlwright-note",
+          }),
+        ],
+        getPull: async () => {
+          throw new Error("closed list should match the cached number");
+        },
+        log: { info() {}, warn() {} },
+      },
+    );
+    assert.equal(resolved.get("thr_1")?.number, 2450);
+    assert.equal(resolved.get("thr_1")?.state, "merged");
+    assert.equal(resolved.get("thr_1")?.source, "rest");
+  });
+
+  it("does not keep a stale open colour after the PR leaves the open list", async () => {
+    const resolved = await resolveThreadPullRequests([query({ title: "no number here" })], {
+      now: 5_000,
+      restRemaining: 4_000,
+      getCache: () => ({
+        environmentId: "env_1",
+        owner: "acme",
+        repo: "app",
+        number: 2421,
+        title: "old",
+        url: "https://github.com/acme/app/pull/2421",
+        state: "open",
+        attention: "none",
+        fetchedAt: 1_000,
+      }),
+      putCache: () => {},
+      getRepo: async () => ({ owner: "acme", repo: "app" }),
+      listOpenPulls: async () => [],
+      listRecentClosedPulls: async () => [],
+      getPull: async (_repo, number) =>
+        pull({
+          number,
+          title: "merged now",
+          url: "https://github.com/acme/app/pull/2421",
+          state: "closed",
+          merged: true,
+        }),
+      log: { info() {}, warn() {} },
+    });
+    assert.equal(resolved.get("thr_1")?.number, 2421);
+    assert.equal(resolved.get("thr_1")?.state, "merged");
   });
 });

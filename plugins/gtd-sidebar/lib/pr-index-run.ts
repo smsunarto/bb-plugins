@@ -1,10 +1,11 @@
 import { parsePrRefFromTitle, type GithubRepo } from "./github-repo.ts";
 import {
   isCacheFresh,
-  matchPullForBranch,
-  MAX_CLOSED_HEAD_LOOKUPS_PER_TICK,
+  matchPullForBranches,
+  matchPullForNumber,
   MAX_PR_LOOKUPS_PER_TICK,
   MAX_REPOS_PER_TICK,
+  mergeListedPulls,
   MIN_REST_REMAINING,
   sidebarPrFromCache,
   sidebarPrFromRest,
@@ -18,6 +19,8 @@ export interface ThreadPrQuery {
   threadId: string;
   environmentId: string | null;
   branchName: string | null;
+  /** Extra git refs to try (GitButler virtual branch, bb's own branch). */
+  branchNames?: readonly string[];
   title: string;
 }
 
@@ -28,13 +31,24 @@ export interface PrIndexDeps {
   putCache(row: CachedPullRow): void;
   getRepo(environmentId: string): Promise<GithubRepo | null>;
   listOpenPulls(repo: GithubRepo): Promise<RestPull[]>;
+  listRecentClosedPulls(repo: GithubRepo): Promise<RestPull[]>;
   getPull(repo: GithubRepo, number: number): Promise<RestPull | null>;
-  listClosedPullsByHead(repo: GithubRepo, branchName: string): Promise<RestPull[]>;
   log: { info(message: string): void; warn(message: string): void };
 }
 
 function cacheableChoice(chosen: SidebarPullRequest | null): boolean {
   return chosen === null || chosen.source === "rest";
+}
+
+function queryBranchNames(query: ThreadPrQuery): string[] {
+  const names: string[] = [];
+  for (const name of [query.branchName, ...(query.branchNames ?? [])]) {
+    if (typeof name !== "string") continue;
+    const trimmed = name.trim();
+    if (trimmed.length === 0) continue;
+    names.push(trimmed);
+  }
+  return [...new Set(names)];
 }
 
 function numberedHint(
@@ -43,11 +57,40 @@ function numberedHint(
   stale: CachedPullRow | undefined,
 ): { number: number; repo: GithubRepo } | null {
   const fromTitle = parsePrRefFromTitle(query.title);
-  const owner = fromTitle?.owner ?? repo?.owner ?? stale?.owner ?? null;
-  const name = fromTitle?.repo ?? repo?.repo ?? stale?.repo ?? null;
-  const number = fromTitle?.number ?? stale?.number ?? null;
+  const owner = repo?.owner ?? stale?.owner ?? fromTitle?.owner ?? null;
+  const name = repo?.repo ?? stale?.repo ?? fromTitle?.repo ?? null;
+  // Cache number first: titles often cite a parent PR (`outside the #2255 sweep`)
+  // while this thread's own PR is already known.
+  const number = stale?.number ?? fromTitle?.number ?? null;
   if (owner === null || name === null || number === null) return null;
   return { number, repo: { owner, repo: name } };
+}
+
+function matchFromListedPulls(
+  pulls: readonly RestPull[],
+  query: ThreadPrQuery,
+  stale: CachedPullRow | undefined,
+): RestPull | null {
+  const byBranch = matchPullForBranches(pulls, queryBranchNames(query));
+  if (byBranch !== null) return byBranch;
+  const byCacheNumber = matchPullForNumber(pulls, stale?.number ?? null);
+  if (byCacheNumber !== null) return byCacheNumber;
+  if (stale?.number != null) return null;
+  const fromTitle = parsePrRefFromTitle(query.title);
+  return matchPullForNumber(pulls, fromTitle?.number ?? null);
+}
+
+function usableStaleCache(
+  stale: CachedPullRow | undefined,
+  listedThisTick: boolean,
+): SidebarPullRequest | null {
+  const pr = stale === undefined ? null : sidebarPrFromCache(stale);
+  if (pr === null) return null;
+  if (!listedThisTick) return pr;
+  if (pr.state === "merged" || pr.state === "closed") return pr;
+  // An open/draft row that is not on this tick's open+closed lists is a lie:
+  // #2450 stayed grey after merge because the pre-merge cache was reused.
+  return null;
 }
 
 export async function resolveThreadPullRequests(
@@ -104,12 +147,20 @@ export async function resolveThreadPullRequests(
       if (repos.length >= MAX_REPOS_PER_TICK) break;
     }
     for (const repo of repos) {
+      const key = `${repo.owner}/${repo.repo}`;
+      let open: RestPull[] = [];
+      let closed: RestPull[] = [];
       try {
-        const pulls = await deps.listOpenPulls(repo);
-        pullsByRepo.set(`${repo.owner}/${repo.repo}`, pulls);
+        open = await deps.listOpenPulls(repo);
       } catch (error) {
-        deps.log.warn(`REST pulls for ${repo.owner}/${repo.repo} failed: ${String(error)}`);
+        deps.log.warn(`REST open pulls for ${key} failed: ${String(error)}`);
       }
+      try {
+        closed = await deps.listRecentClosedPulls(repo);
+      } catch (error) {
+        deps.log.warn(`REST closed pulls for ${key} failed: ${String(error)}`);
+      }
+      pullsByRepo.set(key, mergeListedPulls(open, closed));
     }
     deps.log.info(
       `pr-index listed ${pullsByRepo.size} repos for ${pending.length} threads (REST remaining ${deps.restRemaining ?? "unknown"})`,
@@ -122,7 +173,6 @@ export async function resolveThreadPullRequests(
 
   const pullByNumber = new Map<string, RestPull | null>();
   let numberedLookups = 0;
-  let closedHeadLookups = 0;
 
   const lookupNumbered = async (
     repo: GithubRepo,
@@ -146,44 +196,25 @@ export async function resolveThreadPullRequests(
   for (const query of pending) {
     const repo =
       query.environmentId === null ? null : (repoByEnvironment.get(query.environmentId) ?? null);
-    const pulls = repo === null ? [] : (pullsByRepo.get(`${repo.owner}/${repo.repo}`) ?? []);
-    const matched = matchPullForBranch(pulls, query.branchName);
-    const fromRest = matched === null ? null : sidebarPrFromRest(matched);
+    const repoKey = repo === null ? null : `${repo.owner}/${repo.repo}`;
+    const listedThisTick = repoKey !== null && pullsByRepo.has(repoKey);
+    const pulls = repoKey === null ? [] : (pullsByRepo.get(repoKey) ?? []);
     const stale = query.environmentId === null ? undefined : deps.getCache(query.environmentId);
+    const listed = matchFromListedPulls(pulls, query, stale);
+    const fromList = listed === null ? null : sidebarPrFromRest(listed);
     const hint = numberedHint(query, repo, stale);
 
     let fromLookup: SidebarPullRequest | null = null;
-    if (fromRest === null && hint !== null) {
+    if (fromList === null && hint !== null) {
       const pulled = await lookupNumbered(hint.repo, hint.number);
       fromLookup = pulled === null ? null : sidebarPrFromRest(pulled);
     }
 
-    let fromClosedHead: SidebarPullRequest | null = null;
-    if (
-      fromRest === null &&
-      fromLookup === null &&
-      repo !== null &&
-      query.branchName !== null &&
-      query.branchName.trim().length > 0 &&
-      query.branchName.trim() !== "gitbutler/workspace" &&
-      canSpendRest &&
-      closedHeadLookups < MAX_CLOSED_HEAD_LOOKUPS_PER_TICK
-    ) {
-      closedHeadLookups += 1;
-      try {
-        const closed = await deps.listClosedPullsByHead(repo, query.branchName.trim());
-        const closedMatch = matchPullForBranch(closed, query.branchName);
-        fromClosedHead = closedMatch === null ? null : sidebarPrFromRest(closedMatch);
-      } catch (error) {
-        deps.log.warn(
-          `REST closed pulls for ${repo.owner}/${repo.repo} ${query.branchName} failed: ${String(error)}`,
-        );
-      }
-    }
-
-    const fromTitle = sidebarPrFromTitle(query.title, hint?.repo ?? repo);
-    const fromStale = stale === undefined ? null : sidebarPrFromCache(stale);
-    const chosen = fromRest ?? fromLookup ?? fromClosedHead ?? fromStale ?? fromTitle;
+    const fromTitle = listedThisTick
+      ? null
+      : sidebarPrFromTitle(query.title, hint?.repo ?? repo);
+    const fromStale = usableStaleCache(stale, listedThisTick);
+    const chosen = fromList ?? fromLookup ?? fromStale ?? fromTitle;
 
     if (query.environmentId !== null && cacheableChoice(chosen)) {
       deps.putCache({

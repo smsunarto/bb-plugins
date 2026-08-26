@@ -96,13 +96,16 @@ thread needs — failed, waiting on you, working, or finished while you were awa
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
 the two park buttons.
 
-The PR number uses the same colours bb uses elsewhere: muted grey for an open
-PR, a paler grey for a **draft**, amber for a PR in the **merge queue**, purple
-for merged, red for closed or failing. Badges come from one open REST list per
-repository (not per-card GraphQL). A PR that has merged or closed drops off that
-list, so the next tick looks it up by number (from the title or the last cache)
-instead of treating the title as still open. Title text and the local cache are
-the fallback when GitHub is rate-limited. Click a number to open the PR in bb's
+The PR number uses the same colours bb uses elsewhere: green for an open
+PR, muted grey for a **draft**, amber for a PR in the **merge queue**, purple
+for merged, red for closed or failing. Badges hydrate with one REST list per
+repository when the inbox mounts (not per-card GraphQL). After that, GitHub
+webhooks update the cache and the sidebar over realtime when GitHub can reach
+this machine. Turn on **GitHub webhooks via Cloudflare** (requires
+`cloudflared` on PATH) to open a trycloudflare tunnel to a webhook-only local
+port — not the bb API, and not a bb connect URL, which GitHub cannot sign in
+to. The inbox still hydrates on mount and reconciles every 10 minutes. A PR that has merged or closed is matched from the recent
+closed list or looked up by number. Click a number to open the PR in bb's
 in-app browser on that thread. Hold any modifier key (or click when the in-app
 browser is unavailable) to open it in the system browser instead.
 
@@ -143,11 +146,18 @@ a child, a chip that names the parent and opens it.
 
 ## Configuration
 
-One setting, in **Settings → Plugins → GTD Sidebar**:
+Settings live in **Settings → Plugins → GTD Sidebar**:
 
 - **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
   glyph and give the branch that space back. Every card follows it together, so the
   meta line keeps a straight right edge either way.
+- **GitHub webhooks via Cloudflare** — off. When on, the plugin checks for
+  `cloudflared` (`brew install cloudflared`) and opens a trycloudflare HTTPS
+  tunnel to a listener that only accepts signed GitHub webhook POSTs. The public
+  address changes whenever bb restarts, and GitHub hooks are updated to match.
+- **GitHub webhook public URL** — optional override if you already have an
+  unauthenticated HTTPS origin that forwards to this bb. Leave empty to use the
+  Cloudflare tunnel. `*.getbb.app` URLs cannot receive GitHub POSTs.
 
 The snooze presets assume a 09:00 morning, an 18:00 evening, and a week starting
 Monday, in your local timezone. The settled shelf reaches back 24 hours. None of
@@ -167,7 +177,8 @@ it starts working, asks you a question, or its GitHub pull request changed.
 
 **Snoozed PRs never wake on GitHub activity.** The watch needs the GitHub CLI
 logged in on the machine that runs bb (`gh auth status`). It also skips an hour
-when GitHub reports too few GraphQL points remaining.
+when GitHub reports too few GraphQL points remaining. For realtime badge updates,
+turn on **GitHub webhooks via Cloudflare** and keep `cloudflared` installed.
 
 **Un-settling did not bring the thread back.** Archive and unarchive run on the
 thread's host, which can be offline. When an unarchive fails, bb keeps the thread

@@ -15,8 +15,7 @@ export const PR_CACHE_FRESH_MS = 15 * 60 * 1000;
 export const PR_MISS_CACHE_MS = 5 * 60 * 1000;
 export const MIN_REST_REMAINING = 80;
 export const MAX_REPOS_PER_TICK = 12;
-export const MAX_PR_LOOKUPS_PER_TICK = 20;
-export const MAX_CLOSED_HEAD_LOOKUPS_PER_TICK = 8;
+export const MAX_PR_LOOKUPS_PER_TICK = 40;
 
 export interface SidebarPullRequest {
   number: number;
@@ -35,6 +34,9 @@ export interface RestPull {
   state: "open" | "closed";
   merged: boolean;
   headRef: string;
+  /** GitHub `mergeable_state`, or "unknown" when the list omits it. */
+  mergeableState: string;
+  autoMerge: boolean;
 }
 
 export interface CachedPullRow {
@@ -105,6 +107,8 @@ export function parseRestPull(raw: unknown): RestPull | null {
     state,
     merged: record.merged === true || (record.merged_at != null && record.merged_at !== ""),
     headRef: typeof headRef === "string" ? headRef : "",
+    mergeableState: typeof record.mergeable_state === "string" ? record.mergeable_state : "unknown",
+    autoMerge: record.auto_merge != null,
   };
 }
 
@@ -125,10 +129,60 @@ export function matchPullForBranch(
   if (branchName === null || branchName.trim().length === 0) return null;
   const wanted = branchName.trim();
   if (wanted === "gitbutler/workspace") return null;
+  if (/^\d+ GitButler branches$/u.test(wanted)) return null;
   const matches = pulls.filter((pull) => pull.headRef === wanted);
   if (matches.length === 0) return null;
   const open = matches.find((pull) => pull.state === "open");
   return open ?? matches[0] ?? null;
+}
+
+export function matchPullForBranches(
+  pulls: readonly RestPull[],
+  branchNames: readonly string[],
+): RestPull | null {
+  for (const branchName of branchNames) {
+    const matched = matchPullForBranch(pulls, branchName);
+    if (matched !== null) return matched;
+  }
+  return null;
+}
+
+export function matchPullForNumber(
+  pulls: readonly RestPull[],
+  number: number | null | undefined,
+): RestPull | null {
+  if (number === null || number === undefined) return null;
+  return pulls.find((pull) => pull.number === number) ?? null;
+}
+
+/** Closed first, then open, so an open PR with the same number wins. */
+export function mergeListedPulls(
+  open: readonly RestPull[],
+  closed: readonly RestPull[],
+): RestPull[] {
+  const byNumber = new Map<number, RestPull>();
+  for (const pull of closed) byNumber.set(pull.number, pull);
+  for (const pull of open) byNumber.set(pull.number, pull);
+  return [...byNumber.values()];
+}
+
+export function restPullAttention(pull: RestPull): string {
+  if (pull.merged) return "merged";
+  if (pull.state === "closed") return "closed";
+  if (pull.draft || pull.mergeableState === "draft") return "draft";
+  if (pull.autoMerge) return "queued";
+  switch (pull.mergeableState) {
+    case "dirty":
+      return "conflicts";
+    case "unstable":
+      return "checks_failed";
+    case "blocked":
+      return "blocked";
+    case "clean":
+      return "ready_to_merge";
+    default:
+      return "none";
+  }
 }
 
 export function sidebarPrFromRest(pull: RestPull): SidebarPullRequest {
@@ -139,20 +193,12 @@ export function sidebarPrFromRest(pull: RestPull): SidebarPullRequest {
       : pull.state === "closed"
         ? "closed"
         : "open";
-  const attention =
-    state === "merged"
-      ? "merged"
-      : state === "closed"
-        ? "closed"
-        : state === "draft"
-          ? "draft"
-          : "none";
   return {
     number: pull.number,
     title: pull.title,
     url: pull.url,
     state,
-    attention,
+    attention: restPullAttention(pull),
     source: "rest",
   };
 }

@@ -13,6 +13,7 @@ import { z } from "zod";
 import { parseArchivedThreadIds } from "./lib/lifecycle.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { gitButlerHostContract } from "./lib/gitbutler.ts";
+import { randomBytes } from "node:crypto";
 import { createGhRunner, githubGraphql, githubRestJson, resolveGhPath } from "./lib/gh-cli.ts";
 import { formatAgentWakeMessage, canonicalPullRequestUrl } from "./lib/pr-watch.ts";
 import { pollSnoozedPullRequests, type StoredPrWatch } from "./lib/pr-watch-run.ts";
@@ -20,11 +21,27 @@ import {
   parseRestPull,
   parseRestPulls,
   parseRestRateLimit,
+  sidebarPrFromRest,
   type CachedPullRow,
   type RestPull,
 } from "./lib/pr-index.ts";
 import { resolveThreadPullRequests } from "./lib/pr-index-run.ts";
 import { upsertBrowserTab, type InAppBrowserTab } from "./lib/open-in-app-browser.ts";
+import { LIFECYCLE_CHANNEL, PR_INDEX_CHANNEL, WEBHOOK_TUNNEL_CHANNEL } from "./lib/channels.ts";
+import { ensureGithubRepoHook } from "./lib/github-hooks.ts";
+import {
+  parseRepoFromPayload,
+  parseWebhookPull,
+  resolveWebhookDeliveryUrl,
+  SNOOZE_WAKE_EVENTS,
+  verifyGithubSignature,
+  webhookPrNumbers,
+} from "./lib/github-webhook.ts";
+import {
+  maintainCloudflareWebhookTunnel,
+  WEBHOOK_TUNNEL_STATUS_OFF,
+  type WebhookTunnelStatus,
+} from "./lib/github-webhook-tunnel.ts";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -202,6 +219,7 @@ export const gtdSidebarRpcContract = defineRpcContract({
                 threadId: z.string().trim().min(1),
                 environmentId: z.string().trim().min(1).nullable(),
                 branchName: z.string().nullable(),
+                branchNames: z.array(z.string().trim().min(1)).max(8).optional(),
                 title: z.string(),
               })
               .strict(),
@@ -268,17 +286,34 @@ export const gtdSidebarRpcContract = defineRpcContract({
       })
       .strict(),
   },
+  githubWebhookTunnelStatus: {
+    input: z.object({}).strict(),
+    output: z
+      .object({
+        enabled: z.boolean(),
+        state: z.enum([
+          "off",
+          "checking",
+          "missing-cloudflared",
+          "starting",
+          "live",
+          "error",
+        ]),
+        url: z.string().nullable(),
+        origin: z.string().nullable(),
+        error: z.string().nullable(),
+      })
+      .strict(),
+  },
 });
 
-/** Channel the frontend re-reads on. */
-export const LIFECYCLE_CHANNEL = "lifecycle";
+export { LIFECYCLE_CHANNEL, PR_INDEX_CHANNEL, WEBHOOK_TUNNEL_CHANNEL } from "./lib/channels.ts";
+const WEBHOOK_SECRET_KEY = "github-webhook-secret";
+const WEBHOOK_LAST_URL_KEY = "github-webhook-last-url";
 
 export default function plugin(bb: BbPluginApi) {
   const gitButlerHost = bb.hosts.experimental_client({ contract: gitButlerHostContract });
-  // Declared, never read here. The card is the only consumer and it reads the
-  // value through `useSettings()`, so this exists to put the toggle in the
-  // plugin's settings form and give it its default.
-  bb.settings.define({
+  const pluginSettings = bb.settings.define({
     showProviderIcon: {
       type: "boolean",
       label: "Show the agent icon on each card",
@@ -293,6 +328,19 @@ export default function plugin(bb: BbPluginApi) {
         "Show the lookup source (rest, cache, title) next to each PR number. Off unless you are diagnosing a missing badge.",
       default: false,
     },
+    githubWebhooksViaCloudflare: {
+      type: "boolean",
+      label: "GitHub webhooks via Cloudflare",
+      description:
+        "When on, check for cloudflared and open a trycloudflare HTTPS tunnel to a webhook-only local port (not the bb API). GitHub can then push PR status instead of waiting for the 10-minute reconcile. The public address changes when bb restarts.",
+      default: false,
+    },
+    githubWebhookBaseUrl: {
+      type: "string",
+      label: "GitHub webhook public URL (optional)",
+      description:
+        "Leave empty unless you already have an unauthenticated HTTPS origin that forwards to this bb. bb connect URLs (*.getbb.app) cannot receive GitHub POSTs. When the Cloudflare setting is on, this is ignored unless it is a real public origin.",
+    },
   });
 
   const db = bb.storage.database();
@@ -303,6 +351,127 @@ export default function plugin(bb: BbPluginApi) {
   let resolvedGhPath: string | null | undefined;
   const restPullsInFlight = new Map<string, Promise<ReturnType<typeof parseRestPulls>>>();
   const restPullGetInFlight = new Map<string, Promise<RestPull | null>>();
+  const hookEnsuredAt = new Map<string, number>();
+  const HOOK_ENSURE_TTL_MS = 60 * 60 * 1000;
+  let liveTunnelOrigin: string | null = null;
+  let hookPreviousUrl: string | null = null;
+  let tunnelStatus: WebhookTunnelStatus = WEBHOOK_TUNNEL_STATUS_OFF;
+
+  const webhookSecret = async (): Promise<string> => {
+    const stored = await bb.storage.kv.get<string>(WEBHOOK_SECRET_KEY);
+    if (typeof stored === "string" && stored.length >= 16) return stored;
+    const generated = randomBytes(32).toString("hex");
+    await bb.storage.kv.set(WEBHOOK_SECRET_KEY, generated);
+    return generated;
+  };
+
+  const webhookPublicUrl = async (): Promise<string | null> => {
+    const values = await pluginSettings.get();
+    const configured =
+      typeof values.githubWebhookBaseUrl === "string" ? values.githubWebhookBaseUrl.trim() : "";
+    const envOrigin = process.env.BB_PUBLIC_URL?.trim() ?? "";
+    return resolveWebhookDeliveryUrl({
+      configuredOrigin: configured.length > 0 ? configured : envOrigin,
+      tunnelOrigin: liveTunnelOrigin,
+      pluginId: bb.pluginId,
+    });
+  };
+
+  const listIndexedRepos = (): Array<{ owner: string; repo: string }> =>
+    db
+      .prepare(
+        `SELECT DISTINCT owner, repo
+           FROM thread_pr_index
+          WHERE owner IS NOT NULL AND repo IS NOT NULL`,
+      )
+      .all() as Array<{ owner: string; repo: string }>;
+
+  const applyPullToIndex = (owner: string, repo: string, pull: RestPull, now: number) => {
+    const sidebar = sidebarPrFromRest(pull);
+    db.prepare(
+      `UPDATE thread_pr_index
+          SET title = ?, url = ?, state = ?, attention = ?, fetched_at = ?
+        WHERE owner = ? AND repo = ? AND number = ?`,
+    ).run(
+      sidebar.title,
+      sidebar.url,
+      sidebar.state,
+      sidebar.attention,
+      now,
+      owner,
+      repo,
+      sidebar.number,
+    );
+    const updated = db
+      .prepare(
+        `SELECT environment_id, owner, repo, number, title, url, state, attention
+           FROM thread_pr_index
+          WHERE owner = ? AND repo = ? AND number = ?`,
+      )
+      .all(owner, repo, sidebar.number) as Array<{
+      environment_id: string;
+      owner: string;
+      repo: string;
+      number: number;
+      title: string;
+      url: string;
+      state: string;
+      attention: string;
+    }>;
+    return updated.map((row) => ({
+      environmentId: row.environment_id,
+      owner: row.owner,
+      repo: row.repo,
+      number: row.number,
+      title: row.title,
+      url: row.url,
+      state: row.state,
+      attention: row.attention,
+      source: "rest" as const,
+    }));
+  };
+
+  let hookEnsureQueue = Promise.resolve();
+  const ensureRepoHooks = (repos: ReadonlyArray<{ owner: string; repo: string }>) => {
+    hookEnsureQueue = hookEnsureQueue
+      .then(async () => {
+        const url = await webhookPublicUrl();
+        if (url === null) return;
+        if (resolvedGhPath === undefined) {
+          resolvedGhPath = await resolveGhPath(shutdown.signal);
+        }
+        if (resolvedGhPath === null) return;
+        const gh = createGhRunner(shutdown.signal, resolvedGhPath);
+        const secret = await webhookSecret();
+        const now = Date.now();
+        for (const repo of repos) {
+          const key = `${repo.owner}/${repo.repo}`;
+          const last = hookEnsuredAt.get(key);
+          if (last !== undefined && now - last < HOOK_ENSURE_TTL_MS) continue;
+          try {
+            const result = await ensureGithubRepoHook(gh, repo, url, secret, hookPreviousUrl);
+            if (result === "denied") {
+              bb.log.warn(`github webhook denied for ${key} (need admin:repo_hook)`);
+              hookEnsuredAt.set(key, now + 23 * 60 * 60 * 1000);
+              continue;
+            }
+            if (result === "error") {
+              bb.log.warn(`github webhook ensure failed for ${key}`);
+              continue;
+            }
+            hookEnsuredAt.set(key, now);
+            if (result !== "unchanged") {
+              bb.log.info(`github webhook ${result} for ${key}`);
+            }
+          } catch (error) {
+            bb.log.warn(`github webhook ensure ${key}: ${String(error)}`);
+          }
+        }
+      })
+      .catch((error) => {
+        bb.log.warn(`github webhook ensure: ${String(error)}`);
+      });
+  };
 
   const readAll = (): StoredLifecycleRow[] =>
     (
@@ -450,6 +619,105 @@ export default function plugin(bb: BbPluginApi) {
     }
     return collected;
   };
+
+  const wakeSnoozedForPullUrl = async (url: string, reason: string) => {
+    const canonical = canonicalPullRequestUrl(url);
+    if (canonical === null) return;
+    const watched = db
+      .prepare(`SELECT thread_id FROM snoozed_pr_watch WHERE pr_url = ?`)
+      .all(canonical) as Array<{ thread_id: string }>;
+    const now = Date.now();
+    for (const { thread_id: threadId } of watched) {
+      const row = readOne(threadId);
+      if (row === undefined || row.snoozedUntil === null || row.snoozedUntil <= now) continue;
+      clear(threadId);
+      try {
+        await bb.sdk.threads.send({
+          threadId,
+          mode: "auto",
+          input: [{ type: "text", text: reason, mentions: [] }],
+        });
+      } catch (error) {
+        bb.log.warn(`webhook unsnooze send ${threadId} failed: ${String(error)}`);
+      }
+    }
+  };
+
+  const deliverGithubWebhook = async (input: {
+    raw: string;
+    event: string;
+    signature: string | undefined;
+  }): Promise<{ status: number; body: unknown }> => {
+    const secret = await webhookSecret();
+    if (!verifyGithubSignature(secret, input.raw, input.signature)) {
+      return { status: 401, body: { ok: false, error: "invalid signature" } };
+    }
+    if (input.event === "ping") {
+      bb.log.info("github webhook ping");
+      return { status: 200, body: { ok: true, ping: true } };
+    }
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(input.raw) as unknown;
+    } catch {
+      return { status: 400, body: { ok: false, error: "invalid json" } };
+    }
+    const repo = parseRepoFromPayload(payload);
+    const direct = parseWebhookPull(payload);
+    const now = Date.now();
+    const rows = [];
+    if (direct !== null) {
+      rows.push(...applyPullToIndex(direct.owner, direct.repo, direct.pull, now));
+      if (SNOOZE_WAKE_EVENTS.has(input.event)) {
+        await wakeSnoozedForPullUrl(direct.pull.url, `GitHub ${input.event} on ${direct.pull.url}`);
+      }
+    } else if (repo !== null) {
+      if (resolvedGhPath === undefined) {
+        resolvedGhPath = await resolveGhPath(shutdown.signal);
+      }
+      const gh = resolvedGhPath === null ? null : createGhRunner(shutdown.signal, resolvedGhPath);
+      const numbers = webhookPrNumbers(input.event, payload);
+      for (const number of numbers) {
+        if (gh === null) break;
+        const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls/${number}`;
+        const listed = await githubRestJson(gh, path);
+        const pull = listed.exitCode === 0 ? parseRestPull(listed.raw) : null;
+        if (pull === null) continue;
+        rows.push(...applyPullToIndex(repo.owner, repo.repo, pull, now));
+        if (SNOOZE_WAKE_EVENTS.has(input.event)) {
+          await wakeSnoozedForPullUrl(pull.url, `GitHub ${input.event} on ${pull.url}`);
+        }
+      }
+    }
+    if (rows.length === 0) {
+      bb.realtime.publish(PR_INDEX_CHANNEL, { refresh: true });
+    } else {
+      bb.realtime.publish(PR_INDEX_CHANNEL, { rows });
+    }
+    const target =
+      direct !== null
+        ? ` ${direct.owner}/${direct.repo}#${direct.pull.number}`
+        : repo !== null
+          ? ` ${repo.owner}/${repo.repo}`
+          : "";
+    bb.log.info(`github webhook ${input.event}${target} updated ${rows.length}`);
+    return { status: 200, body: { ok: true, updated: rows.length } };
+  };
+
+  bb.http.route(
+    "POST",
+    "/github-webhook",
+    async (c) => {
+      const raw = await c.req.raw.text();
+      const result = await deliverGithubWebhook({
+        raw,
+        event: c.req.header("x-github-event") ?? "",
+        signature: c.req.header("x-hub-signature-256"),
+      });
+      return c.json(result.body, result.status as 200 | 400 | 401);
+    },
+    { auth: "none" },
+  );
 
   bb.rpc.register(gtdSidebarRpcContract, {
     async listEnvironmentBranches({ environmentIds }) {
@@ -621,10 +889,9 @@ export default function plugin(bb: BbPluginApi) {
           restPullGetInFlight.set(key, pending);
           return pending;
         },
-        listClosedPullsByHead: async (repo, branchName) => {
+        listRecentClosedPulls: async (repo) => {
           if (gh === null) return [];
-          const head = `${repo.owner}:${branchName}`;
-          const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls?state=closed&head=${encodeURIComponent(head)}&per_page=5`;
+          const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls?state=closed&sort=updated&direction=desc&per_page=100`;
           const listed = await githubRestJson(gh, path);
           if (listed.exitCode !== 0) {
             throw new Error(listed.stderr.trim() || `gh api ${path} exited ${listed.exitCode}`);
@@ -633,6 +900,8 @@ export default function plugin(bb: BbPluginApi) {
         },
         log: bb.log,
       });
+
+      ensureRepoHooks(listIndexedRepos());
 
       return {
         pullRequests: [...resolved.entries()].map(([threadId, pullRequest]) => ({
@@ -771,6 +1040,9 @@ export default function plugin(bb: BbPluginApi) {
       }
       return { ok: true };
     },
+    async githubWebhookTunnelStatus() {
+      return tunnelStatus;
+    },
     async openThreadBrowserTab({ tab, threadId }) {
       const browserTab: InAppBrowserTab = { ...tab, kind: "browser" };
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -837,6 +1109,63 @@ export default function plugin(bb: BbPluginApi) {
       skipUntilMs: typeof stored.skipUntilMs === "number" ? stored.skipUntilMs : null,
     };
   };
+
+  bb.background.service("github-webhook-tunnel", {
+    async start(signal) {
+      const combined = new AbortController();
+      const stop = () => combined.abort();
+      signal.addEventListener("abort", stop);
+      shutdown.signal.addEventListener("abort", stop);
+      try {
+        await maintainCloudflareWebhookTunnel({
+          signal: combined.signal,
+          readSettings: async () => {
+            const values = await pluginSettings.get();
+            return {
+              enabled: values.githubWebhooksViaCloudflare === true,
+              configuredOrigin:
+                typeof values.githubWebhookBaseUrl === "string"
+                  ? values.githubWebhookBaseUrl.trim()
+                  : "",
+            };
+          },
+          onSettingsChange: (listener) => {
+            pluginSettings.onChange((next, prev) => {
+              if (
+                next.githubWebhooksViaCloudflare !== prev.githubWebhooksViaCloudflare ||
+                next.githubWebhookBaseUrl !== prev.githubWebhookBaseUrl
+              ) {
+                listener();
+              }
+            });
+            return () => undefined;
+          },
+          handle: deliverGithubWebhook,
+          onLive: ({ origin, url }) => {
+            void (async () => {
+              const previous = await bb.storage.kv.get<string>(WEBHOOK_LAST_URL_KEY);
+              hookPreviousUrl = typeof previous === "string" && previous !== url ? previous : null;
+              liveTunnelOrigin = origin;
+              await bb.storage.kv.set(WEBHOOK_LAST_URL_KEY, url);
+              hookEnsuredAt.clear();
+              ensureRepoHooks(listIndexedRepos());
+            })();
+          },
+          onStopped: () => {
+            liveTunnelOrigin = null;
+          },
+          onStatus: (status) => {
+            tunnelStatus = status;
+            bb.realtime.publish(WEBHOOK_TUNNEL_CHANNEL, status);
+          },
+          log: bb.log,
+        });
+      } finally {
+        signal.removeEventListener("abort", stop);
+        shutdown.signal.removeEventListener("abort", stop);
+      }
+    },
+  });
 
   bb.background.schedule("pr-watch", "0 * * * *", async () => {
     if (shutdown.signal.aborted) return;

@@ -3,15 +3,15 @@ import { describe, it } from "node:test";
 import { prNumberClassName, prNumberLabel } from "../lib/pr-status.ts";
 
 describe("prNumberClassName", () => {
-  it("colours a draft grey, distinct from an open PR", () => {
+  it("colours a draft muted and an open PR with bb's success token", () => {
     assert.equal(
       prNumberClassName({ state: "draft", attention: "draft" }),
-      "text-muted-foreground/50",
+      "text-muted-foreground",
     );
-    assert.equal(prNumberClassName({ state: "open", attention: "none" }), "text-muted-foreground");
+    assert.equal(prNumberClassName({ state: "open", attention: "none" }), "text-success");
     assert.equal(
       prNumberClassName({ state: "open", attention: "ready_to_merge" }),
-      "text-success-foreground",
+      "text-success",
     );
   });
 

@@ -12,14 +12,14 @@ export interface PrNumberAppearance {
 }
 
 const MERGED = "text-[color:var(--pr-merged)]";
-/** Quiet open PRs stay on the meta line's own grey so they cannot vanish into a theme token. */
-const OPEN = "text-muted-foreground";
-/** Draft is the same grey, washed out, so it stays visible and distinct. */
-const DRAFT = "text-muted-foreground/50";
+/** bb paints open PRs with `text-success`, not the meta line's grey. */
+const OPEN = "text-success";
+/** Draft is muted, matching bb's draft token. */
+const DRAFT = "text-muted-foreground";
 const QUEUE = "text-[color:var(--attention)]";
 const DANGER = "text-destructive-text";
 const PENDING = "text-[color:var(--warning-text)]";
-const READY = "text-success-foreground";
+const READY = "text-success";
 
 export function prNumberClassName(pr: PrNumberAppearance): string {
   switch (pr.attention) {

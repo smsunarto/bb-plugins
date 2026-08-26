@@ -1,4 +1,8 @@
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const GH_CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 
@@ -56,18 +60,34 @@ export async function githubRestJson(
   gh: GhRunner,
   path: string,
   timeoutMs = 20_000,
+  init?: { method?: string; body?: unknown },
 ): Promise<{ raw: unknown; stdout: string; stderr: string; exitCode: number }> {
-  const result = await gh.run(["api", "--hostname", "github.com", path], timeoutMs);
-  let raw: unknown = null;
-  const trimmed = result.stdout.trim();
-  if (trimmed.length > 0) {
-    try {
-      raw = JSON.parse(trimmed);
-    } catch {
-      raw = null;
-    }
+  const args = ["api", "--hostname", "github.com"];
+  if (init?.method !== undefined && init.method !== "GET") {
+    args.push("--method", init.method);
   }
-  return { raw, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+  let inputPath: string | null = null;
+  if (init?.body !== undefined) {
+    inputPath = join(tmpdir(), `gtd-gh-${randomBytes(8).toString("hex")}.json`);
+    await writeFile(inputPath, JSON.stringify(init.body), "utf8");
+    args.push("--input", inputPath);
+  }
+  args.push(path);
+  try {
+    const result = await gh.run(args, timeoutMs);
+    let raw: unknown = null;
+    const trimmed = result.stdout.trim();
+    if (trimmed.length > 0) {
+      try {
+        raw = JSON.parse(trimmed);
+      } catch {
+        raw = null;
+      }
+    }
+    return { raw, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+  } finally {
+    if (inputPath !== null) await unlink(inputPath).catch(() => undefined);
+  }
 }
 
 export async function githubGraphql(
