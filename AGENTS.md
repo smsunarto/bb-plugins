@@ -49,7 +49,6 @@ The pinned bb release lives in root `package.json` → `config.bbVersion`. Local
 
 ## Conduct
 
-* Do not commit or push unless asked. Preserve unrelated changes.
 * **Verify on the dev instance, then ask before the live bb loads it.** The user's bb is the tool they work in, so a reload there interrupts them and can break a plugin they are relying on. Work on the dev instance until the evidence is real, report it, and ask; reload without the shim only on a yes. `dist/` is shared between the two instances — both install the workspace plugins as path sources into the same checkout — so a build is already half a promotion, and leaving a broken one on disk puts unverified code where their bb reads it.
 * Do not split work into a stack unless asked. One branch and one commit is the default, and a single commit covering a whole session's work is a fine answer. Reach for `gh-stack` or `scripts/split-layers.ts` only when the user asks for a stack, or when a change is genuinely too large to review in one pass — and say so before splitting rather than assuming. Splitting after the fact costs more than it returns: hunk-level surgery on interleaved edits is slow and error-prone, and a mechanical rename that touches every package is one concern, not twenty.
 * Nested `AGENTS.md` files (for example `plugins/pr-walkthrough/AGENTS.md`) add plugin-specific rules and take precedence within their scope.
