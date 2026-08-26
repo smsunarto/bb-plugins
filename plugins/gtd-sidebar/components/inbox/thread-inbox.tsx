@@ -36,6 +36,7 @@ import {
 } from "@/lib/inbox";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 import { resolveSidebarBranchLabel } from "@/lib/gitbutler";
+import { useThreadPullRequests } from "@/hooks/use-thread-pull-requests";
 
 const ALL_PROJECTS = "__all__";
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
@@ -83,6 +84,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
   // the glyph. That way the common case never flashes it on and off.
   const { values: settingValues } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon !== false;
+  const debugPullRequests = settingValues?.debugPullRequests === true;
 
   const gitButlerEnvironmentIds = useMemo(
     () =>
@@ -159,6 +161,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
   }, [rpc]);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
+
+  const pullRequestByThreadId = useThreadPullRequests(threads, gitButlerLabels);
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -333,6 +337,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     thread={thread}
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
+                    debugPullRequests={debugPullRequests}
+                    pullRequest={pullRequestByThreadId.get(thread.id) ?? null}
                     projectName={projectNameById.get(thread.projectId) ?? null}
                     branchName={resolveSidebarBranchLabel(
                       thread.environment?.branchName ?? null,
@@ -343,7 +349,9 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     canPark={lifecycle.canPark(thread)}
                     onNavigate={onNavigate}
                     onSettle={() => lifecycle.settle(thread.id)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+                    onSnooze={(until, pullRequestUrl) =>
+                      lifecycle.snooze(thread.id, until, pullRequestUrl)
+                    }
                     now={now}
                   />
                 ))}
@@ -357,6 +365,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     thread={thread}
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
+                    debugPullRequests={debugPullRequests}
+                    pullRequest={pullRequestByThreadId.get(thread.id) ?? null}
                     projectName={projectNameById.get(thread.projectId) ?? null}
                     branchName={resolveSidebarBranchLabel(
                       thread.environment?.branchName ?? null,
@@ -367,7 +377,9 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     canPark={lifecycle.canPark(thread)}
                     onNavigate={onNavigate}
                     onSettle={() => lifecycle.settle(thread.id)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+                    onSnooze={(until, pullRequestUrl) =>
+                      lifecycle.snooze(thread.id, until, pullRequestUrl)
+                    }
                     now={now}
                   />
                 ))}
@@ -381,6 +393,8 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     thread={thread}
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
+                    debugPullRequests={debugPullRequests}
+                    pullRequest={pullRequestByThreadId.get(thread.id) ?? null}
                     projectName={projectNameById.get(thread.projectId) ?? null}
                     branchName={resolveSidebarBranchLabel(
                       thread.environment?.branchName ?? null,
@@ -391,7 +405,9 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     canPark={lifecycle.canPark(thread)}
                     onNavigate={onNavigate}
                     onSettle={() => lifecycle.settle(thread.id)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+                    onSnooze={(until, pullRequestUrl) =>
+                      lifecycle.snooze(thread.id, until, pullRequestUrl)
+                    }
                     now={now}
                   />
                 ))}

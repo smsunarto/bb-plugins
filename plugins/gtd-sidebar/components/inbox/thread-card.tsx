@@ -1,7 +1,7 @@
 import {
-  experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
+  useRpc,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -11,6 +11,15 @@ import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provid
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
+import {
+  createInAppBrowserTab,
+  isDesktopInAppBrowserAvailable,
+  revealInAppBrowserTab,
+  shouldDeferToSystemBrowser,
+} from "@/lib/open-in-app-browser";
+import { prNumberClassName, prNumberLabel } from "@/lib/pr-status";
+import type { SidebarPullRequest } from "@/lib/pr-index";
+import type { gtdSidebarRpcContract } from "@/server";
 
 /**
  * One thread as a two-line card: title and status, then project, branch and
@@ -33,6 +42,8 @@ export function ThreadCard({
   onSettle,
   onSnooze,
   now,
+  debugPullRequests,
+  pullRequest,
 }: {
   thread: PluginSidebarThread;
   provider?: ProviderGlyphInfo;
@@ -46,15 +57,15 @@ export function ThreadCard({
   showProviderIcon: boolean;
   onNavigate: () => void;
   onSettle: () => void;
-  onSnooze: (snoozedUntil: number) => void;
+  onSnooze: (snoozedUntil: number, pullRequestUrl: string | null) => void;
   /** Quantized clock, so every card in one render agrees on "now". */
   now: number;
+  debugPullRequests: boolean;
+  pullRequest: SidebarPullRequest | null;
 }) {
   const actions = useSidebarThreadActions();
+  const rpc = useRpc<typeof gtdSidebarRpcContract>();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
-  // Opt-in per row: this costs a git-host lookup, and threads sharing a
-  // worktree share one.
-  const { pullRequest } = useSidebarThreadPullRequest(thread.id);
 
   return (
     <RowContextMenu thread={thread}>
@@ -114,7 +125,7 @@ export function ThreadCard({
                     // pick silently becomes "Next week" every afternoon.
                     const presets = resolveSnoozePresets(new Date());
                     const tomorrow = presets.find((p) => p.id === "tomorrow");
-                    if (tomorrow) onSnooze(tomorrow.snoozedUntil);
+                    if (tomorrow) onSnooze(tomorrow.snoozedUntil, pullRequest?.url ?? null);
                   }}
                 />
                 <ParkButton label="Settle thread" icon="Check" onActivate={onSettle} />
@@ -175,21 +186,44 @@ export function ThreadCard({
                 href={pullRequest.url}
                 target="_blank"
                 rel="noreferrer"
-                onClick={(event) => event.stopPropagation()}
-                title={pullRequest.title}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (
+                    shouldDeferToSystemBrowser(event) ||
+                    !isDesktopInAppBrowserAvailable()
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const tab = createInAppBrowserTab({
+                    environmentId: thread.environment?.id ?? null,
+                    title: pullRequest.title,
+                    url: pullRequest.url,
+                  });
+                  revealInAppBrowserTab({ tab, threadId: thread.id });
+                  void rpc
+                    .call("openThreadBrowserTab", { tab, threadId: thread.id })
+                    .then((result) => {
+                      if (result.tab.id !== tab.id) {
+                        revealInAppBrowserTab({ tab: result.tab, threadId: thread.id });
+                      }
+                    })
+                    .catch(() => {
+                      // The local reveal still stands. A failed persist must
+                      // not bounce the click out to the system browser.
+                    });
+                  actions.open(thread.id);
+                }}
+                title={`${prNumberLabel(pullRequest)}: ${pullRequest.title}`}
                 className={cn(
-                  "relative shrink-0 font-mono hover:underline",
-                  pullRequest.state === "merged"
-                    ? "text-[color:var(--pr-merged)]"
-                    : pullRequest.attention === "checks_failed" ||
-                        pullRequest.attention === "conflicts"
-                      ? "text-destructive-text"
-                      : pullRequest.attention === "ready_to_merge"
-                        ? "text-success-foreground"
-                        : "text-muted-foreground",
+                  "pointer-events-auto relative shrink-0 font-mono hover:underline",
+                  prNumberClassName(pullRequest),
                 )}
               >
                 #{pullRequest.number}
+                {debugPullRequests ? (
+                  <span className="text-muted-foreground/70">·{pullRequest.source}</span>
+                ) : null}
               </a>
             ) : null}
             {/* Drawn for every card or for none, never per thread, so the line

@@ -57,7 +57,7 @@ export interface LifecycleApi {
   wakeAtFor(thread: PluginSidebarThread): number | null;
   settle(threadId: string): void;
   unsettle(threadId: string): void;
-  snooze(threadId: string, snoozedUntil: number): void;
+  snooze(threadId: string, snoozedUntil: number, pullRequestUrl?: string | null): void;
   unsnooze(threadId: string): void;
 }
 
@@ -250,8 +250,12 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
       settle: (threadId) => void mutate("settle", threadId),
       unsettle: (threadId) => void mutate("unsettle", threadId),
       unsnooze: (threadId) => void mutate("unsnooze", threadId),
-      snooze: (threadId, snoozedUntil) => {
-        void rpc.call("snooze", { threadId, snoozedUntil });
+      snooze: (threadId, snoozedUntil, pullRequestUrl) => {
+        void rpc.call("snooze", {
+          threadId,
+          snoozedUntil,
+          ...(pullRequestUrl ? { pullRequestUrl } : {}),
+        });
       },
     };
   }, [now, parkedThreadIds, rows, rpc, shelvesReady]);

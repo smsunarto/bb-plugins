@@ -8,6 +8,15 @@ export const gitButlerHostContract = defineRpcContract({
       label: z.string().nullable(),
     }),
   },
+  githubRepoContext: {
+    input: z.object({ cwd: z.string().trim().min(1) }).strict(),
+    output: z
+      .object({
+        owner: z.string().nullable(),
+        repo: z.string().nullable(),
+      })
+      .strict(),
+  },
 });
 
 export interface GitButlerBranchSummary {

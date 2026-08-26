@@ -13,6 +13,18 @@ import { z } from "zod";
 import { parseArchivedThreadIds } from "./lib/lifecycle.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { gitButlerHostContract } from "./lib/gitbutler.ts";
+import { createGhRunner, githubGraphql, githubRestJson, resolveGhPath } from "./lib/gh-cli.ts";
+import { formatAgentWakeMessage, canonicalPullRequestUrl } from "./lib/pr-watch.ts";
+import { pollSnoozedPullRequests, type StoredPrWatch } from "./lib/pr-watch-run.ts";
+import {
+  parseRestPull,
+  parseRestPulls,
+  parseRestRateLimit,
+  type CachedPullRow,
+  type RestPull,
+} from "./lib/pr-index.ts";
+import { resolveThreadPullRequests } from "./lib/pr-index-run.ts";
+import { upsertBrowserTab, type InAppBrowserTab } from "./lib/open-in-app-browser.ts";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -25,7 +37,25 @@ const migrations = [
   // Without them, un-settling gives the parent back and leaves its children
   // archived for good.
   `ALTER TABLE thread_lifecycle ADD COLUMN archived_thread_ids TEXT`,
+  `CREATE TABLE IF NOT EXISTS snoozed_pr_watch (
+     thread_id       TEXT PRIMARY KEY,
+     pr_url          TEXT NOT NULL,
+     snapshot_json   TEXT,
+     last_polled_at  INTEGER
+   )`,
+  `CREATE TABLE IF NOT EXISTS thread_pr_index (
+     environment_id  TEXT PRIMARY KEY,
+     owner           TEXT,
+     repo            TEXT,
+     number          INTEGER,
+     title           TEXT,
+     url             TEXT,
+     state           TEXT,
+     attention       TEXT,
+     fetched_at      INTEGER NOT NULL
+   )`,
 ];
+const PR_WATCH_RATE_LIMIT_KEY = "pr-watch:rate-limit";
 
 export interface StoredLifecycleRow {
   threadId: string;
@@ -45,6 +75,31 @@ interface LifecycleDbRow {
 }
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
+
+function asPersistedBrowserTab(
+  candidate: {
+    environmentId?: unknown;
+    id: string;
+    kind: string;
+    title?: unknown;
+    url?: string;
+  },
+  fallback: InAppBrowserTab,
+): InAppBrowserTab {
+  if (candidate.kind !== "browser" || typeof candidate.url !== "string") return fallback;
+  const title = candidate.title;
+  const environmentId = candidate.environmentId;
+  return {
+    environmentId:
+      typeof environmentId === "string" || environmentId === null
+        ? environmentId
+        : fallback.environmentId,
+    id: candidate.id,
+    kind: "browser",
+    title: typeof title === "string" && title.length > 0 ? title : fallback.title,
+    url: candidate.url,
+  };
+}
 
 export const gtdSidebarRpcContract = defineRpcContract({
   listEnvironmentBranches: {
@@ -130,10 +185,89 @@ export const gtdSidebarRpcContract = defineRpcContract({
       threadId: z.string().trim().min(1),
       // Absolute wake time, so a snooze means the same thing on every device.
       snoozedUntil: z.number().int().positive(),
+      // Optional. The hourly GitHub watch uses it so the first poll does not
+      // have to call `gh pr view` for a thread the card already identified.
+      pullRequestUrl: z.string().url().optional(),
     }),
     output: z.object({ ok: z.boolean() }),
   },
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
+  listThreadPullRequests: {
+    input: z
+      .object({
+        threads: z
+          .array(
+            z
+              .object({
+                threadId: z.string().trim().min(1),
+                environmentId: z.string().trim().min(1).nullable(),
+                branchName: z.string().nullable(),
+                title: z.string(),
+              })
+              .strict(),
+          )
+          .max(100),
+      })
+      .strict(),
+    output: z.object({
+      pullRequests: z.array(
+        z.object({
+          threadId: z.string(),
+          number: z.number().int().positive(),
+          title: z.string(),
+          url: z.string(),
+          state: z.string(),
+          attention: z.string(),
+          source: z.enum(["rest", "cache", "title"]),
+        }),
+      ),
+    }),
+  },
+  logPrDebug: {
+    input: z
+      .object({
+        threadId: z.string().trim().min(1),
+        environmentId: z.string().nullable(),
+        isLoading: z.boolean(),
+        hasPullRequest: z.boolean(),
+        number: z.number().int().positive().nullable(),
+        state: z.string().nullable(),
+        attention: z.string().nullable(),
+      })
+      .strict(),
+    output: z.object({ ok: z.boolean() }),
+  },
+  // Persist a browser tab on the thread so the host's panel reconcile does
+  // not wipe the localStorage reveal the card writes on click.
+  openThreadBrowserTab: {
+    input: z
+      .object({
+        threadId: z.string().trim().min(1),
+        tab: z
+          .object({
+            environmentId: z.string().min(1).nullable(),
+            id: z.string().min(1),
+            kind: z.literal("browser"),
+            title: z.string().min(1).nullable(),
+            url: z.string().min(1),
+          })
+          .strict(),
+      })
+      .strict(),
+    output: z
+      .object({
+        tab: z
+          .object({
+            environmentId: z.string().min(1).nullable(),
+            id: z.string().min(1),
+            kind: z.literal("browser"),
+            title: z.string().min(1).nullable(),
+            url: z.string().min(1),
+          })
+          .strict(),
+      })
+      .strict(),
+  },
 });
 
 /** Channel the frontend re-reads on. */
@@ -152,10 +286,23 @@ export default function plugin(bb: BbPluginApi) {
         "The trailing glyph naming the agent a thread runs on. Turn it off to give the branch that space back.",
       default: true,
     },
+    debugPullRequests: {
+      type: "boolean",
+      label: "Debug GitHub PR badges",
+      description:
+        "Show the lookup source (rest, cache, title) next to each PR number. Off unless you are diagnosing a missing badge.",
+      default: false,
+    },
   });
 
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
+
+  const shutdown = new AbortController();
+  bb.onDispose(() => shutdown.abort());
+  let resolvedGhPath: string | null | undefined;
+  const restPullsInFlight = new Map<string, Promise<ReturnType<typeof parseRestPulls>>>();
+  const restPullGetInFlight = new Map<string, Promise<RestPull | null>>();
 
   const readAll = (): StoredLifecycleRow[] =>
     (
@@ -215,7 +362,23 @@ export default function plugin(bb: BbPluginApi) {
 
   const clear = (threadId: string): void => {
     db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(threadId);
+    db.prepare(`DELETE FROM snoozed_pr_watch WHERE thread_id = ?`).run(threadId);
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
+  };
+
+  const rememberPullRequestUrl = (threadId: string, url: string | undefined): void => {
+    const canonical = url === undefined ? null : canonicalPullRequestUrl(url);
+    if (canonical === null) return;
+    db.prepare(
+      `INSERT INTO snoozed_pr_watch (thread_id, pr_url, snapshot_json, last_polled_at)
+       VALUES (?, ?, NULL, 0)
+       ON CONFLICT(thread_id) DO UPDATE SET
+         snapshot_json = CASE
+           WHEN snoozed_pr_watch.pr_url = excluded.pr_url THEN snoozed_pr_watch.snapshot_json
+           ELSE NULL
+         END,
+         pr_url = excluded.pr_url`,
+    ).run(threadId, canonical);
   };
 
   /**
@@ -336,6 +499,148 @@ export default function plugin(bb: BbPluginApi) {
     async listLifecycle() {
       return { rows: readAll() };
     },
+    async listThreadPullRequests({ threads }) {
+      if (resolvedGhPath === undefined) {
+        resolvedGhPath = await resolveGhPath(shutdown.signal);
+      }
+      const gh = resolvedGhPath === null ? null : createGhRunner(shutdown.signal, resolvedGhPath);
+      let restRemaining: number | null = null;
+      if (gh !== null) {
+        const limit = await githubRestJson(gh, "rate_limit", 8_000);
+        restRemaining = parseRestRateLimit(limit.raw)?.restRemaining ?? null;
+      }
+
+      const readPrCache = (environmentId: string): CachedPullRow | undefined => {
+        const row = db
+          .prepare(
+            `SELECT environment_id, owner, repo, number, title, url, state, attention, fetched_at
+               FROM thread_pr_index
+              WHERE environment_id = ?`,
+          )
+          .get(environmentId) as
+          | {
+              environment_id: string;
+              owner: string | null;
+              repo: string | null;
+              number: number | null;
+              title: string | null;
+              url: string | null;
+              state: string | null;
+              attention: string | null;
+              fetched_at: number;
+            }
+          | undefined;
+        if (row === undefined) return undefined;
+        return {
+          environmentId: row.environment_id,
+          owner: row.owner,
+          repo: row.repo,
+          number: row.number,
+          title: row.title,
+          url: row.url,
+          state: row.state,
+          attention: row.attention,
+          fetchedAt: row.fetched_at,
+        };
+      };
+
+      const resolved = await resolveThreadPullRequests(threads, {
+        now: Date.now(),
+        restRemaining,
+        getCache: readPrCache,
+        putCache: (row) => {
+          db.prepare(
+            `INSERT INTO thread_pr_index
+               (environment_id, owner, repo, number, title, url, state, attention, fetched_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(environment_id) DO UPDATE SET
+               owner = excluded.owner,
+               repo = excluded.repo,
+               number = excluded.number,
+               title = excluded.title,
+               url = excluded.url,
+               state = excluded.state,
+               attention = excluded.attention,
+               fetched_at = excluded.fetched_at`,
+          ).run(
+            row.environmentId,
+            row.owner,
+            row.repo,
+            row.number,
+            row.title,
+            row.url,
+            row.state,
+            row.attention,
+            row.fetchedAt,
+          );
+        },
+        getRepo: async (environmentId) => {
+          const environment = await bb.sdk.environments.get({ environmentId });
+          if (!environment.isGitRepo || environment.path === null) return null;
+          const context = await gitButlerHost.call(
+            "githubRepoContext",
+            { cwd: environment.path },
+            { hostId: environment.hostId },
+          );
+          if (context.owner === null || context.repo === null) return null;
+          return { owner: context.owner, repo: context.repo };
+        },
+        listOpenPulls: async (repo) => {
+          if (gh === null) return [];
+          const key = `${repo.owner}/${repo.repo}`;
+          const inflight = restPullsInFlight.get(key);
+          if (inflight !== undefined) return inflight;
+          const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls?state=open&per_page=100`;
+          const pending = (async () => {
+            const listed = await githubRestJson(gh, path);
+            if (listed.exitCode !== 0) {
+              throw new Error(listed.stderr.trim() || `gh api ${path} exited ${listed.exitCode}`);
+            }
+            return parseRestPulls(listed.raw);
+          })().finally(() => {
+            restPullsInFlight.delete(key);
+          });
+          restPullsInFlight.set(key, pending);
+          return pending;
+        },
+        getPull: async (repo, number) => {
+          if (gh === null) return null;
+          const key = `${repo.owner}/${repo.repo}#${number}`;
+          const inflight = restPullGetInFlight.get(key);
+          if (inflight !== undefined) return inflight;
+          const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls/${number}`;
+          const pending = (async () => {
+            const listed = await githubRestJson(gh, path);
+            if (listed.exitCode !== 0) {
+              throw new Error(listed.stderr.trim() || `gh api ${path} exited ${listed.exitCode}`);
+            }
+            return parseRestPull(listed.raw);
+          })().finally(() => {
+            restPullGetInFlight.delete(key);
+          });
+          restPullGetInFlight.set(key, pending);
+          return pending;
+        },
+        listClosedPullsByHead: async (repo, branchName) => {
+          if (gh === null) return [];
+          const head = `${repo.owner}:${branchName}`;
+          const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls?state=closed&head=${encodeURIComponent(head)}&per_page=5`;
+          const listed = await githubRestJson(gh, path);
+          if (listed.exitCode !== 0) {
+            throw new Error(listed.stderr.trim() || `gh api ${path} exited ${listed.exitCode}`);
+          }
+          return parseRestPulls(listed.raw);
+        },
+        log: bb.log,
+      });
+
+      return {
+        pullRequests: [...resolved.entries()].map(([threadId, pullRequest]) => ({
+          threadId,
+          ...pullRequest,
+        })),
+      };
+    },
     /**
      * The archived threads this plugin settled in the last day, and only
      * those. A thread the user archived through bb itself has no row here and
@@ -433,7 +738,7 @@ export default function plugin(bb: BbPluginApi) {
       clear(threadId);
       return { ok: true };
     },
-    async snooze({ threadId, snoozedUntil }) {
+    async snooze({ threadId, snoozedUntil, pullRequestUrl }) {
       const now = Date.now();
       // Snoozing a settled thread takes the archive back first: a snoozed row
       // is not on the settled shelf, so the thread has nowhere to be drawn
@@ -446,11 +751,53 @@ export default function plugin(bb: BbPluginApi) {
         snoozedAt: now,
         archivedThreadIds: [],
       });
+      rememberPullRequestUrl(threadId, pullRequestUrl);
       return { ok: true };
     },
     async unsnooze({ threadId }) {
       clear(threadId);
       return { ok: true };
+    },
+    async logPrDebug(payload) {
+      const env = payload.environmentId ?? "none";
+      if (payload.hasPullRequest) {
+        bb.log.info(
+          `pr-debug ${payload.threadId} env=${env} #${payload.number} state=${payload.state} attention=${payload.attention}`,
+        );
+      } else {
+        bb.log.info(
+          `pr-debug ${payload.threadId} env=${env} loading=${payload.isLoading} pullRequest=null`,
+        );
+      }
+      return { ok: true };
+    },
+    async openThreadBrowserTab({ tab, threadId }) {
+      const browserTab: InAppBrowserTab = { ...tab, kind: "browser" };
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const current = await bb.sdk.threads.tabs.get({ threadId });
+        const persistable = current.tabs.filter((candidate) => candidate.kind !== "side-chat");
+        const next = upsertBrowserTab(persistable, browserTab);
+        const opened = asPersistedBrowserTab(next.tab, browserTab);
+        const alreadyThere = persistable.some((candidate) => candidate.id === opened.id);
+        if (alreadyThere) {
+          return { tab: opened };
+        }
+        try {
+          await bb.sdk.threads.tabs.update({
+            expectedRevision: current.revision,
+            tabs: next.tabs,
+            threadId,
+          });
+          return { tab: opened };
+        } catch (error) {
+          const status =
+            typeof error === "object" && error !== null && "status" in error
+              ? error.status
+              : null;
+          if (status !== 409 || attempt === 2) throw error;
+        }
+      }
+      return { tab: browserTab };
     },
   });
 
@@ -476,4 +823,105 @@ export default function plugin(bb: BbPluginApi) {
   bb.events.on("thread.active", republishIfSettled);
   bb.events.on("thread.idle", republishIfSettled);
   bb.events.on("thread.failed", republishIfSettled);
+
+  const readRateLimitHint = async (): Promise<{
+    remaining: number | null;
+    skipUntilMs: number | null;
+  }> => {
+    const stored = await bb.storage.kv.get<{ remaining?: unknown; skipUntilMs?: unknown }>(
+      PR_WATCH_RATE_LIMIT_KEY,
+    );
+    if (stored === undefined) return { remaining: null, skipUntilMs: null };
+    return {
+      remaining: typeof stored.remaining === "number" ? stored.remaining : null,
+      skipUntilMs: typeof stored.skipUntilMs === "number" ? stored.skipUntilMs : null,
+    };
+  };
+
+  bb.background.schedule("pr-watch", "0 * * * *", async () => {
+    if (shutdown.signal.aborted) return;
+    const ghPath = await resolveGhPath(shutdown.signal);
+    if (ghPath === null) {
+      bb.log.info("snoozed PR watch skipped: GitHub CLI not found on PATH");
+      return;
+    }
+
+    const gh = createGhRunner(shutdown.signal, ghPath);
+    const hint = await readRateLimitHint();
+    const now = Date.now();
+    const result = await pollSnoozedPullRequests({
+      now,
+      store: {
+        listSnoozed: () =>
+          readAll()
+            .filter((row) => row.snoozedUntil !== null)
+            .map((row) => ({
+              threadId: row.threadId,
+              snoozedUntil: row.snoozedUntil as number,
+            })),
+        getWatch: (threadId) => {
+          const row = db
+            .prepare(
+              `SELECT thread_id, pr_url, snapshot_json
+                 FROM snoozed_pr_watch
+                WHERE thread_id = ?`,
+            )
+            .get(threadId) as
+            | { thread_id: string; pr_url: string; snapshot_json: string | null }
+            | undefined;
+          if (row === undefined) return undefined;
+          return {
+            threadId: row.thread_id,
+            prUrl: row.pr_url,
+            snapshotJson: row.snapshot_json,
+          } satisfies StoredPrWatch;
+        },
+        upsertWatch: (row) => {
+          db.prepare(
+            `INSERT INTO snoozed_pr_watch
+               (thread_id, pr_url, snapshot_json, last_polled_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(thread_id) DO UPDATE SET
+               pr_url = excluded.pr_url,
+               snapshot_json = excluded.snapshot_json,
+               last_polled_at = excluded.last_polled_at`,
+          ).run(row.threadId, row.prUrl, row.snapshotJson, row.lastPolledAt);
+        },
+      },
+      graphql: (query) => githubGraphql(gh, query),
+      resolvePrUrl: async (threadId) => {
+        const thread = await bb.sdk.threads.get({ threadId });
+        if (thread.environmentId === null) return null;
+        const pullRequest = await bb.sdk.environments.pullRequest({
+          environmentId: thread.environmentId,
+        });
+        if (pullRequest.outcome !== "available") return null;
+        return pullRequest.pullRequest.url;
+      },
+      wakeThread: async (threadId, snapshot, changes) => {
+        // Clear the shelf first so a successful agent turn cannot land back
+        // on Snoozed when it goes idle. Then start a turn with what changed.
+        clear(threadId);
+        await bb.sdk.threads.send({
+          threadId,
+          mode: "auto",
+          input: [
+            {
+              type: "text",
+              text: formatAgentWakeMessage(snapshot, changes),
+              mentions: [],
+            },
+          ],
+        });
+      },
+      log: bb.log,
+      remainingHint: hint.remaining,
+      skipUntilMs: hint.skipUntilMs,
+    });
+
+    await bb.storage.kv.set(PR_WATCH_RATE_LIMIT_KEY, {
+      remaining: result.remaining,
+      skipUntilMs: result.skipUntilMs,
+    });
+  });
 }

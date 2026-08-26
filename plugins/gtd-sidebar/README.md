@@ -96,6 +96,16 @@ thread needs — failed, waiting on you, working, or finished while you were awa
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
 the two park buttons.
 
+The PR number uses the same colours bb uses elsewhere: muted grey for an open
+PR, a paler grey for a **draft**, amber for a PR in the **merge queue**, purple
+for merged, red for closed or failing. Badges come from one open REST list per
+repository (not per-card GraphQL). A PR that has merged or closed drops off that
+list, so the next tick looks it up by number (from the title or the last cache)
+instead of treating the title as still open. Title text and the local cache are
+the fallback when GitHub is rate-limited. Click a number to open the PR in bb's
+in-app browser on that thread. Hold any modifier key (or click when the in-app
+browser is unavailable) to open it in the system browser instead.
+
 ### A working thread can never be parked
 
 Workflows, background agents, background commands, plan mode, and goals all count as
@@ -105,6 +115,17 @@ never hidden.
 ### Snoozing
 
 The hover button snoozes until **09:00 tomorrow**.
+
+Once an hour the plugin asks GitHub about every snoozed thread that has a pull
+request — one GraphQL query, not one call per PR. If comments, reviews, checks,
+or deployments moved, it unsnoozes the thread and sends the agent a turn naming
+what changed. The first observation is only a baseline, so a PR that already had
+comments does not wake the moment you snooze it.
+
+The watch uses the GitHub CLI (`gh auth login`) on the bb server. It skips the
+hour when GitHub's GraphQL budget is too low and waits for GitHub's own reset
+instead of retrying. Threads snoozed without a known PR are resolved a few at a
+time so a cold shelf cannot burst the REST rate limit.
 
 ### Child threads
 
@@ -142,7 +163,11 @@ hours. Older work is still settled and still archived — look for it in bb's ar
 view.
 
 **A snoozed thread came back early.** That is the design: a snoozed thread wakes when
-it starts working or asks you a question.
+it starts working, asks you a question, or its GitHub pull request changed.
+
+**Snoozed PRs never wake on GitHub activity.** The watch needs the GitHub CLI
+logged in on the machine that runs bb (`gh auth status`). It also skips an hour
+when GitHub reports too few GraphQL points remaining.
 
 **Un-settling did not bring the thread back.** Archive and unarchive run on the
 thread's host, which can be offline. When an unarchive fails, bb keeps the thread
