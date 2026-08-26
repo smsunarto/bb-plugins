@@ -45,13 +45,29 @@ export function checkSdkDependency(
   contract: CompatibilityContract = compatibility,
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const pinned = manifest.devDependencies?.[contract.sdkPackage.name];
-  if (pinned !== contract.sdkPackage.version) {
+  const pins: ReadonlyArray<readonly [string, string | undefined]> = [
+    ["dependencies", manifest.dependencies?.[contract.sdkPackage.name]],
+    ["devDependencies", manifest.devDependencies?.[contract.sdkPackage.name]],
+  ];
+  const declared = pins.filter(([, version]) => version !== undefined);
+  const hint = `Pin the exact SDK package bb ${contract.bbCliVersion} builds against; do not widen it to a range.`;
+  if (declared.length === 0) {
     diagnostics.push(
       diagnostic(
         "BBK011",
-        `devDependencies["${contract.sdkPackage.name}"] is ${JSON.stringify(pinned)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
-        `Pin the exact SDK package bb ${contract.bbCliVersion} builds against; do not widen it to a range.`,
+        `neither dependencies nor devDependencies pins "${contract.sdkPackage.name}", expected ${JSON.stringify(contract.sdkPackage.version)}`,
+        hint,
+        "package.json",
+      ),
+    );
+  }
+  for (const [field, version] of declared) {
+    if (version === contract.sdkPackage.version) continue;
+    diagnostics.push(
+      diagnostic(
+        "BBK011",
+        `${field}["${contract.sdkPackage.name}"] is ${JSON.stringify(version)}, expected ${JSON.stringify(contract.sdkPackage.version)}`,
+        hint,
         "package.json",
       ),
     );

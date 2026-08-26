@@ -23,8 +23,8 @@
   "type": "module",
   "private": true,
   "engines": {
-    "bb": ">=0.39.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.8"
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.21"
   },
   "bb": {
     "name": "Dotfiles",
@@ -66,7 +66,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.8",
+    "@get-bb/plugin-sdk": "0.4.21",
     "@radix-ui/react-dialog": "^1.1.19",
     "@testing-library/react": "16.3.2",
     "@types/better-sqlite3": "^7.6.12",

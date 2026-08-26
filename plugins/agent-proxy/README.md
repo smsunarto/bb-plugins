@@ -9,7 +9,7 @@
 
 **Pool several Claude Code and Codex subscriptions, and load-balance across them.**
 
-![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
+![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![service](https://img.shields.io/badge/runs%20as-login%20service-F1B467?style=flat-square)
 

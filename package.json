@@ -22,7 +22,7 @@
     "esbuild"
   ],
   "config": {
-    "bbVersion": "0.39.0"
+    "bbVersion": "0.40.0"
   },
   "scripts": {
     "postinstall": "cd node_modules/better-sqlite3 && node ../.bin/prebuild-install",

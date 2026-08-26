@@ -156,7 +156,7 @@ function fakeBb(
     if (request.args.length === 1 && request.args[0] === "--version") {
       return commandResult({ stdout: `bb ${contract.bbCliVersion}\n` });
     }
-    if (request.args.join(" ") === "plugin new probe --app") {
+    if (request.args.join(" ") === "plugin new probe") {
       const probe = join(request.cwd, "bb-plugin-probe");
       mkdirSync(probe, { recursive: true });
       writeFileSync(
@@ -292,6 +292,21 @@ describe("workspace compatibility policy", () => {
     ]);
   });
 
+  it("accepts the SDK pin under dependencies", () => {
+    const contract = testContract("0.38.2", "0.5.0");
+    const root = seedWorkspace(contract);
+    const manifestPath = join(root, "plugins/example/package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    manifest.dependencies = { [SDK_PACKAGE]: "0.5.0" };
+    delete manifest.devDependencies[SDK_PACKAGE];
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    expect(checkWorkspaceCompatibility(root, contract)).toEqual([]);
+  });
+
   it("carries workspace packages that build against the SDK", () => {
     const oldContract = testContract("0.37.0", "0.4.1");
     const target = testContract("0.38.2", "0.5.0");
@@ -353,7 +368,7 @@ describe("workspace compatibility policy", () => {
     expect(snapshot(root)).toEqual(before);
     expect(selected.run.mock.calls.map(([request]) => request.args)).toEqual([
       ["--version"],
-      ["plugin", "new", "probe", "--app"],
+      ["plugin", "new", "probe"],
       ["plugin", "build", "."],
     ]);
   });
