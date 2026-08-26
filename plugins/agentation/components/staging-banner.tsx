@@ -78,6 +78,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
   const [error, setError] = useState<string | null>(null);
   const refreshSequence = useRef(0);
   const actionInFlight = useRef(false);
+  const discardAllTriggerRef = useRef<HTMLButtonElement>(null);
   const annotationDescriptionPrefix = useId();
 
   const refresh = useCallback(async () => {
@@ -219,25 +220,40 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
   const isMutating =
     isSending || sendingId !== null || discardingId !== null || isDiscarding || discardIds !== null;
+  const stagedLabel = `${annotations.length} staged`;
 
   return (
     <>
-      <div className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 pb-3 pt-2">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Icon
-                name="ChatFeedback"
-                className="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-medium text-foreground">Annotations</p>
-            </div>
+      {/* Bare composer banners use a display:contents host wrapper, so the
+          component owns its gap from the native thread-context control below. */}
+      <section
+        className="mb-2 rounded-lg border border-border bg-card px-2 py-1"
+        aria-label="Staged annotations"
+      >
+        <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="mr-auto flex min-w-0 items-center gap-2">
+            <Icon
+              name="ChatFeedback"
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <p className="truncate text-sm font-medium text-foreground">Annotations</p>
+            <span
+              className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+              aria-label={
+                error && annotations.length === 0
+                  ? "Staged annotation count unavailable"
+                  : `${stagedLabel} annotation${annotations.length === 1 ? "" : "s"}`
+              }
+            >
+              {error && annotations.length === 0 ? "Unavailable" : stagedLabel}
+            </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
-            {annotations.length > 0 ? (
+          <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
+            {annotations.length > 1 ? (
               <Button
+                ref={discardAllTriggerRef}
                 type="button"
                 size="sm"
                 variant="ghost"
@@ -260,21 +276,32 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                     )
               }
             >
-              {error && annotations.length === 0 ? null : (
+              {error && annotations.length === 0 ? null : isSending ? (
+                <Icon name="Spinner" className="motion-safe:animate-spin" aria-hidden="true" />
+              ) : (
                 <Icon name="ArrowUp" aria-hidden="true" />
               )}
-              {error && annotations.length === 0 ? "Retry" : isSending ? "Sending…" : "Send all"}
+              {error && annotations.length === 0
+                ? "Retry"
+                : isSending
+                  ? "Sending…"
+                  : "Send to thread"}
             </Button>
           </div>
         </div>
 
         {error ? (
-          <p className="mt-2 text-xs text-destructive" role="alert">
-            {error}
-          </p>
+          <div
+            className="mt-1 grid min-h-8 min-w-0 grid-cols-[1rem_minmax(0,1fr)] items-center gap-2 rounded-md bg-muted px-1.5 py-1 text-xs text-destructive"
+            role="alert"
+          >
+            <Icon name="CircleX" className="size-4" aria-hidden="true" />
+            <p className="min-w-0 break-words">{error}</p>
+          </div>
         ) : (
           <ul
-            className="mt-2 max-h-40 space-y-1 overflow-x-hidden overflow-y-auto border-t border-border pt-2"
+            className="mt-1 max-h-40 space-y-0.5 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+            aria-label="Feedback ready to send"
             aria-busy={isSending || sendingId !== null || discardingId !== null}
           >
             {annotations.map((annotation) => {
@@ -284,25 +311,32 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
               const label = annotationMentionLabel(annotation, location);
               const labelParts = annotationMentionLabelParts(annotation, location);
               return (
-                <li key={annotation.id} className="flex w-full min-w-0 items-center gap-2 text-xs">
+                <li
+                  key={annotation.id}
+                  className="grid min-h-8 min-w-0 grid-cols-[1rem_minmax(0,1fr)_2rem_2rem_2rem] items-center gap-1 rounded-md bg-muted px-1.5 text-xs"
+                >
                   <span id={`${annotationDescriptionPrefix}-${annotation.id}`} className="sr-only">
                     {label}
                   </span>
                   <span
-                    className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden"
+                    className="flex size-4 items-center justify-center"
                     aria-hidden="true"
                   >
-                    <span className="max-w-[30%] shrink-0 truncate text-muted-foreground">
-                      [{labelParts.location}]
-                    </span>
-                    <span className="max-w-[30%] shrink-0 truncate font-mono text-[11px] text-foreground/80">
-                      {labelParts.target}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground/50">→</span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                      {labelParts.comment}
-                    </span>
+                    <span className="size-1.5 rounded-full bg-muted-foreground" />
                   </span>
+                  <div className="min-w-0 leading-4" aria-hidden="true">
+                    <p className="truncate text-sm text-foreground" title={labelParts.comment}>
+                      {labelParts.comment}
+                    </p>
+                    <p
+                      className="truncate text-xs text-muted-foreground"
+                      title={`${labelParts.location} · ${labelParts.target}`}
+                    >
+                      {labelParts.location}
+                      <span className="px-1">·</span>
+                      {labelParts.target}
+                    </p>
+                  </div>
                   <MentionAnnotationButton
                     annotation={annotation}
                     descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
@@ -334,7 +368,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
                     disabled={isMutating}
                     aria-label={
                       isDiscardingAnnotation ? "Discarding annotation" : "Discard annotation"
@@ -344,7 +378,9 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                   >
                     <Icon
                       name={isDiscardingAnnotation ? "Spinner" : "Trash2"}
-                      className={isDiscardingAnnotation ? "animate-spin" : undefined}
+                      className={
+                        isDiscardingAnnotation ? "motion-safe:animate-spin" : undefined
+                      }
                       aria-hidden="true"
                     />
                   </Button>
@@ -353,7 +389,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
             })}
           </ul>
         )}
-      </div>
+      </section>
 
       <Dialog
         open={discardIds !== null}
@@ -361,7 +397,12 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
           if (!open) closeDiscardAll();
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            setTimeout(() => discardAllTriggerRef.current?.focus(), 0);
+          }}
+        >
           {discardIds !== null ? (
             <>
               <DialogHeader>
