@@ -250,7 +250,7 @@ The package ships no NOTICE file. Its licence text follows in full.
 | Work                                                         | Copyright          | Where it is used                                                                                                                                     |
 | ------------------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@ampcode/sdk`](https://www.npmjs.com/package/@ampcode/sdk) | © Sourcegraph Inc. | The Amp execution layer of `dist/bridge.js`                                                                                                          |
-| Amp logo mark                                                | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, `dist/server.js`, `dist/app.js`, and the copy written to `<bb data dir>/logos/amp.svg` |
+| Amp logo mark                                                | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, and `dist/app.js` |
 
 The following is reproduced from the licence file distributed with
 `@ampcode/sdk`:

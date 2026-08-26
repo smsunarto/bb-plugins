@@ -9,7 +9,7 @@
 
 **Run [Amp](https://ampcode.com) in a bb thread, like any built-in provider.**
 
-![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
+![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![needs Amp CLI](https://img.shields.io/badge/needs-Amp%20CLI-F1B467?style=flat-square)
 
@@ -59,9 +59,11 @@ bb plugin install ./plugins/amp
 
 ## Requirements
 
-- bb 0.39+, on macOS or Linux
+- bb 0.40+ or a current bb nightly, on macOS or Linux. The plugin registers
+  its provider through bb's plugin API, which bb 0.39 stable predates
 - The **Amp CLI**, installed ([get started](https://ampcode.com/manual#get-started))
-  and authenticated with `amp login`, or `AMP_API_KEY` set on the provider entry.
+  and authenticated with `amp login`, or `AMP_API_KEY` exported in the
+  environment bb runs in.
   The plugin locates and drives the CLI; it cannot install or sign in to it for you
 - An Amp account
 
@@ -139,8 +141,9 @@ workspace, plus Amp's direct user roots under `~/.config/agents`, `~/.agents`,
 `~/.config/amp`, and `~/.claude`.
 
 Amp still loads built-in and hosted skills, the recursive Claude plugin cache,
-and directories configured through `amp.skills.path` itself. bb's static custom
-ACP root registration does not index those sources.
+and directories configured through `amp.skills.path` itself. The static skill
+roots on the provider registration do not cover those sources, so bb does not
+index them.
 
 ### Current transport limits
 
@@ -164,18 +167,16 @@ A healthy install does not need this command.
 
 | Command         | What it does                                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, node runtime, config entry, logo, and provider registration |
+| `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, node runtime, provider registration, legacy config entry, and auth |
 
 ```console
 $ bb amp status
 Amp CLI: /Users/you/.local/bin/amp
 bridge bundle: /path/to/plugins/amp/dist/bridge.js
-node runtime: /Applications/bb.app/Contents/MacOS/bb (Electron; entry sets ELECTRON_RUN_AS_NODE=1)
-config entry acp-amp: present
-obsolete config entry acp-amp-orb: absent
-logo: present
+node runtime: /Applications/bb.app/Contents/MacOS/bb (Electron; the launch spec sets ELECTRON_RUN_AS_NODE=1)
 bb provider acp-amp: registered
-auth: handled by the Amp CLI — run `amp login` once, or set AMP_API_KEY in the entry env
+legacy config entry amp: absent
+auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in your environment
 ```
 
 ## Troubleshooting
@@ -184,11 +185,11 @@ auth: handled by the Amp CLI — run `amp login` once, or set AMP_API_KEY in the
 | ---------------------------------- | -------------------------------------------------------------------------------------------- |
 | Plugin shows "needs configuration" | Install the Amp CLI, run `amp login`, then `bb plugin reload amp`                            |
 | Amp is not in the provider list    | `bb amp status` names the broken link                                                        |
-| Auth errors in a thread            | `amp login`, or add `AMP_API_KEY` to the provider entry's `env`                              |
+| Auth errors in a thread            | `amp login`, or export `AMP_API_KEY` in the environment bb runs in                           |
 | "Could not find a usable Amp CLI"  | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp` |
 | Local tool calls rejected          | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits** |
 | Orb tool calls rejected            | Change the permission settings in the Amp project                                            |
-| Orb opens the wrong repository     | Add `AMP_ACP_ORB_PROJECT` to the provider entry and start a new thread with `/orb`           |
+| Orb opens the wrong repository     | Export `AMP_ACP_ORB_PROJECT` in the environment bb runs in, then start a new thread with `/orb` |
 | `/orb` is rejected in a thread     | That Amp thread is already Local. Start a new bb thread with `/orb` in its first prompt      |
 | `Unknown session <id>` on resume   | The session mapping was pruned or removed. Start a new thread                                |
 

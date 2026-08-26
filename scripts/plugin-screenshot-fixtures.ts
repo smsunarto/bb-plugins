@@ -77,7 +77,7 @@ const EXECUTION_OPTIONS = {
       capabilities: {
         supportsArchive: false,
         supportsRename: false,
-        supportsServiceTier: true,
+        supportsServiceTier: false,
         supportsUserQuestion: false,
         supportsFork: false,
         supportedPermissionModes: ["accept-edits", "full"],
@@ -86,6 +86,12 @@ const EXECUTION_OPTIONS = {
       displayName: "Amp",
       id: "acp-amp",
       logoUrl: "/api/v1/system/providers/acp-amp/logo",
+      reasoningLevels: [
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium" },
+        { id: "high", label: "High" },
+        { id: "ultra", label: "Ultra" },
+      ],
     },
   ],
   permissionCeiling: "full",

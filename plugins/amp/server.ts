@@ -1,6 +1,6 @@
-// Registers Amp as a custom ACP provider in bb via the plugin's own bundled
-// ACP bridge (dist/bridge.js), which drives the Amp CLI through the official
-// @ampcode/sdk. No third-party adapter required.
+// Registers Amp as a bb provider (bb.providers.register) backed by the
+// plugin's own bundled ACP bridge (dist/bridge.js), which drives the Amp CLI
+// through the official @ampcode/sdk. No third-party adapter required.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -8,17 +8,18 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { buildAmpProviderDeclaration } from "./lib/declaration.js";
 import {
-  inspectInstallation,
-  needsProvisioning,
-  provisionInstallation,
+  cleanupLegacyAmpEntry,
+  inspectLegacyAmpEntry,
   resolveAmpCli,
   resolveAmpCliLaunch,
   resolveNodeRuntime,
   BRIDGE_BUILD_HINT,
-  type ProvisionPaths,
+  type LegacyCleanupResult,
+  type LegacyConfigPaths,
 } from "./lib/provision.js";
-import { AMP_AGENT, OBSOLETE_AMP_ORB_AGENT } from "./src/execution-target.js";
+import { AMP_AGENT } from "./src/execution-target.js";
 import { loadOracleReport } from "./src/oracle-report-store.js";
 import {
   findLatestProviderSessionId,
@@ -105,6 +106,9 @@ const BRIDGE_PATH = existsSync(join(MODULE_DIR, "bridge.js"))
 
 export default async function plugin(bb: BbPluginApi) {
   bb.log.info("loaded");
+
+  /** Amp CLI path the registration resolved; the archive mirror reuses it. */
+  let ampCliPath: string | null = null;
 
   const sessionLinkWriteQueues = new Map<string, Promise<void>>();
 
@@ -193,49 +197,45 @@ export default async function plugin(bb: BbPluginApi) {
     return process.env.BB_DATA_DIR ?? join(homedir(), ".bb");
   }
 
-  async function paths(): Promise<ProvisionPaths> {
+  async function legacyPaths(): Promise<LegacyConfigPaths> {
     const dataDir = await resolveDataDir();
     return {
-      dataDir,
       configPath: join(dataDir, "config.json"),
       logoPath: join(dataDir, "logos", "amp.svg"),
     };
-  }
-
-  async function reloadConfig(): Promise<void> {
-    try {
-      await bb.sdk.system.reloadConfig();
-    } catch (error) {
-      throw new Error(
-        `The provider config was written, but bb could not reload it: ${String(error)}. Restart bb.`,
-        { cause: error },
-      );
-    }
   }
 
   const AMP_CLI_HINT =
     "Install the Amp CLI from https://ampcode.com/manual#get-started, " +
     "run `amp login`, then run `bb plugin reload amp`.";
 
-  /**
-   * Write the managed provider entry and pick it up in the running server.
-   */
-  async function applyProvision(amp: string): Promise<string[]> {
-    const runtime = resolveNodeRuntime(process.execPath);
-    const result = provisionInstallation(await paths(), {
-      node: runtime.node,
-      electron: runtime.electron,
-      bridge: BRIDGE_PATH,
-      amp,
-    });
-    const messages = [...result.messages];
-    if (result.changed) {
-      await reloadConfig();
-      messages.push("reloaded running bb server config");
-    } else {
-      messages.push("configuration is already up to date");
+  // A leftover customAcpAgents "amp" entry from the provisioning era shadows
+  // this registration, so a purely plugin-managed one is removed here; a
+  // customized one is the user's and only reported.
+  async function removeLegacyEntry(): Promise<void> {
+    const resolvedPaths = await legacyPaths();
+    let result: LegacyCleanupResult;
+    try {
+      result = cleanupLegacyAmpEntry(resolvedPaths);
+    } catch (error) {
+      bb.log.warn(`Could not inspect ${resolvedPaths.configPath}: ${String(error)}`);
+      return;
     }
-    return messages;
+    if (result.kind === "removed") {
+      bb.log.info(`removed the legacy customAcpAgents entry ${AMP_AGENT.agentId}`);
+      try {
+        await bb.sdk.system.reloadConfig();
+      } catch (error) {
+        bb.log.error(
+          `The legacy entry was removed, but bb could not reload its config: ${String(error)}. Restart bb.`,
+        );
+      }
+    } else if (result.kind === "kept") {
+      bb.log.warn(
+        `left the customized customAcpAgents entry ${AMP_AGENT.agentId} (${result.deviations.join(", ")}); ` +
+          "it overrides the plugin registration, and bb is retiring customAcpAgents; see `bb amp status`",
+      );
+    }
   }
 
   // Register the provider on first load, so installing the plugin is the whole
@@ -244,63 +244,47 @@ export default async function plugin(bb: BbPluginApi) {
   // without throwing simply stops. Every prerequisite this cannot supply — the
   // Amp CLI, the bundle — is reported as needs-configuration rather than as a
   // load failure, so the plugin stays installed and says what is missing.
-  bb.background.service("provision", {
+  bb.background.service("register", {
     async start() {
-      let resolvedPaths: ProvisionPaths;
-      try {
-        resolvedPaths = await paths();
-      } catch (error) {
-        bb.log.warn(`Could not locate the bb data directory: ${String(error)}`);
-        return;
-      }
       if (!existsSync(BRIDGE_PATH)) {
         bb.status.needsConfiguration(
           `The bridge bundle is missing at ${BRIDGE_PATH}. ${BRIDGE_BUILD_HINT}`,
         );
         return;
       }
-      let provisioningRequired: boolean;
-      try {
-        provisioningRequired = needsProvisioning(resolvedPaths, {
-          node: process.execPath,
-          bridge: BRIDGE_PATH,
-        });
-      } catch (error) {
-        const message = `Could not inspect ${resolvedPaths.configPath}: ${String(error)}`;
-        bb.log.error(message);
-        bb.status.needsConfiguration(
-          `${message}. Fix the config or its permissions, then run \`bb plugin reload amp\`.`,
-        );
-        return;
-      }
-      if (!provisioningRequired) return;
       const amp = resolveAmpCli(process.env);
       if (amp === null) {
         bb.status.needsConfiguration(`The Amp CLI was not found. ${AMP_CLI_HINT}`);
         return;
       }
+      ampCliPath = amp;
+      const runtime = resolveNodeRuntime(process.execPath);
       try {
-        for (const message of await applyProvision(amp)) bb.log.info(message);
+        bb.providers.register(
+          buildAmpProviderDeclaration({
+            node: runtime.node,
+            electron: runtime.electron,
+            bridge: BRIDGE_PATH,
+            amp,
+          }),
+        );
       } catch (error) {
         bb.log.error(`Could not register the Amp provider: ${String(error)}`);
         bb.status.needsConfiguration(
           `Could not register the Amp provider: ${String(error)}. Fix the problem, then run \`bb plugin reload amp\`.`,
         );
+        return;
       }
+      await removeLegacyEntry();
     },
   });
 
   async function statusLines(): Promise<string[]> {
-    const resolvedPaths = await paths();
-    const installation = inspectInstallation(resolvedPaths);
-    const amp = resolveAmpCli(process.env);
+    const amp = ampCliPath ?? resolveAmpCli(process.env);
     const lines = [
       `Amp CLI: ${amp ?? "NOT FOUND"}`,
       `bridge bundle: ${existsSync(BRIDGE_PATH) ? BRIDGE_PATH : `MISSING (${BRIDGE_PATH}); ${BRIDGE_BUILD_HINT}`}`,
-      `node runtime: ${process.execPath}${resolveNodeRuntime(process.execPath).electron ? " (Electron; entry sets ELECTRON_RUN_AS_NODE=1)" : ""}`,
-      `config entry ${AMP_AGENT.providerId}: ${installation.configured ? "present" : "missing"}`,
-      `obsolete config entry ${OBSOLETE_AMP_ORB_AGENT.providerId}: ${installation.obsoleteOrbConfigured ? "present; run bb plugin reload amp to migrate" : "absent"}`,
-      `logo: ${existsSync(resolvedPaths.logoPath) ? "present" : "missing"}`,
+      `node runtime: ${process.execPath}${resolveNodeRuntime(process.execPath).electron ? " (Electron; the launch spec sets ELECTRON_RUN_AS_NODE=1)" : ""}`,
     ];
     try {
       const providers = await bb.sdk.providers.list();
@@ -310,10 +294,28 @@ export default async function plugin(bb: BbPluginApi) {
     } catch (error) {
       lines.push(`bb provider ${AMP_AGENT.providerId}: unknown (${String(error)})`);
     }
+    const resolvedPaths = await legacyPaths();
+    try {
+      const legacy = inspectLegacyAmpEntry(resolvedPaths.configPath);
+      if (legacy.entry === "managed") {
+        lines.push(
+          `legacy config entry ${AMP_AGENT.agentId}: present (plugin-managed); run \`bb plugin reload amp\` to remove it`,
+        );
+      } else if (legacy.entry === "customized") {
+        lines.push(
+          `legacy config entry ${AMP_AGENT.agentId}: present with customized ${legacy.deviations.join(", ")} — ` +
+            "it overrides the plugin registration, and bb is retiring customAcpAgents; " +
+            "move the customization into your environment, then delete the entry",
+        );
+      } else {
+        lines.push(`legacy config entry ${AMP_AGENT.agentId}: absent`);
+      }
+    } catch (error) {
+      lines.push(`legacy config entry ${AMP_AGENT.agentId}: unknown (${String(error)})`);
+    }
     lines.push(
-      "auth: handled by the Amp CLI — run `amp login` once, or set AMP_API_KEY in the entry env",
+      "auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in your environment",
     );
-    if (installation.error) lines.push(`config error: ${installation.error}`);
     return lines;
   }
 
@@ -375,7 +377,7 @@ export default async function plugin(bb: BbPluginApi) {
         return;
       }
 
-      const launch = resolveAmpCliLaunch(await paths());
+      const launch = resolveAmpCliLaunch(ampCliPath);
       if (launch === null) {
         bb.log.warn(`Could not archive Amp thread ${ampThreadId}: the Amp CLI was not found`);
         return;
@@ -468,7 +470,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       if (thread.archivedAt !== null) continue;
 
-      const launch = resolveAmpCliLaunch(await paths());
+      const launch = resolveAmpCliLaunch(ampCliPath);
       if (launch === null) {
         // Nothing to retry against, so this is not one of the record's tries.
         bb.log.warn(

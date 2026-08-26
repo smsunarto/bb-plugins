@@ -4,15 +4,9 @@ export const AMP_AGENT = {
   displayName: "Amp",
 } as const;
 
-/** Exact legacy identity removed by automatic provisioning after the one-provider migration. */
-export const OBSOLETE_AMP_ORB_AGENT = {
-  agentId: "amp-orb",
-  providerId: "acp-amp-orb",
-} as const;
-
 export type AmpExecutionTarget = "local" | "orb";
 
-/** Deprecated provider-wide setting removed from managed entries during provisioning. */
+/** Deprecated provider-wide setting; the bridge ignores it (test/bridge-stdio.test.ts proves that). */
 export const AMP_ACP_EXECUTOR_ENV = "AMP_ACP_EXECUTOR";
 
 /** Optional Amp project override for Orb. Omit it to infer from cwd Git remotes. */

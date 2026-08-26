@@ -1,5 +1,3 @@
-export const AMP_LOGO_GRAY = "#8A8A8A";
-
 export const AMP_LOGO_VIEW_BOX = "0 0 21 21";
 
 export const AMP_LOGO_PATHS = [
@@ -7,15 +5,3 @@ export const AMP_LOGO_PATHS = [
   "M17.4074 12.7414L19.9078 12.0575L17.4167 2.56897L8.07873 0.0399246L7.4138 2.5948L15.2992 4.73685L17.4074 12.7414Z",
   "M13.8184 16.3883L16.3188 15.7044L13.8276 6.21588L4.48971 3.68683L3.82477 6.24171L11.7101 8.38376L13.8184 16.3883Z",
 ] as const;
-
-function renderAmpLogo(fill: string): string {
-  return `<svg width="21" height="21" viewBox="${AMP_LOGO_VIEW_BOX}" fill="none" xmlns="http://www.w3.org/2000/svg">
-${AMP_LOGO_PATHS.map((path) => `<path d="${path}" fill="${fill}"/>`).join("\n")}
-</svg>
-`;
-}
-
-export const AMP_LOGO_SVG = renderAmpLogo(AMP_LOGO_GRAY);
-
-/** Exact logo written by plugin versions before grayscale branding. */
-export const AMP_LEGACY_RED_LOGO_SVG = renderAmpLogo("#F34E3F");

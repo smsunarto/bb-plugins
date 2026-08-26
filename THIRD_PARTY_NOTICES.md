@@ -57,7 +57,7 @@ user has chosen to install, which is nominative use.
 
 | Mark                                                 | Where                                                                                                                                                                                                           | Owner                   |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Amp                                                  | `plugins/amp/assets/*.svg` and `plugins/amp/src/amp-brand.ts`, used for plugin branding, rendered in the Orb banner, and written to `<bb data dir>/logos/amp.svg` when the plugin provisions its provider entry | Sourcegraph             |
+| Amp                                                  | `plugins/amp/assets/*.svg` and `plugins/amp/src/amp-brand.ts`, used for plugin branding and rendered in the Orb banner                                                                                          | Sourcegraph             |
 | OpenAI, Claude, Cursor, Grok, opencode, Pi, oh-my-pi | `plugins/gtd-sidebar/lib/provider-marks.ts`                                                                                                                                                                     | their respective owners |
 
 In bb provider chrome, a host-served logo always takes precedence over vendored

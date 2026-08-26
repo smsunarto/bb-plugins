@@ -9,7 +9,7 @@
 > The original report below is retained as historical context for bb's fallback
 > Reasoning row.
 
-**Environment:** bb 0.35.1, macOS. Custom ACP provider registered via `customAcpAgents`.
+**Environment:** bb 0.35.1, macOS. Custom ACP provider registered via `customAcpAgents` (the mechanism this plugin used before it moved to `bb.providers.register`).
 
 ## Summary
 
@@ -61,7 +61,7 @@ Any one of these unblocks it; roughly in order of preference.
 
 ## Repro
 
-1. Register any ACP agent under `customAcpAgents`.
+1. Register any ACP agent under `customAcpAgents` (or through a plugin's `bb.providers.register` on newer bb).
 2. Have `session/new` return a `category: "model"` config option and **no** `thought_level` option.
 3. Open the model picker — a **Reasoning** section appears with a single selectable "Medium".
 4. Selecting it changes nothing: the agent is never told, and has nothing to apply.
