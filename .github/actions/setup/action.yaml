@@ -50,10 +50,8 @@ runs:
         sudo apt-get install -y -qq --no-install-recommends build-essential python3
         npm install -g node-gyp
 
-    # Not a convenience: `bun run build` shells out to `bb plugin build .` for
-    # every plugin, and compatibility:check locks every manifest and generated
-    # declaration to this exact release. Floating on latest would fail as soon
-    # as bb shipped a new compatibility line.
+    # `bun run build` runs `bb plugin build .` for every plugin. Install the
+    # repository's pinned bb release so CI builds with one known CLI version.
     - name: Install pinned bb CLI
       if: inputs.bb-cli == 'true'
       shell: bash

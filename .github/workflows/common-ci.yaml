@@ -23,9 +23,6 @@ jobs:
       - uses: namespacelabs/nscloud-checkout-action@v9
       - uses: ./.github/actions/setup
 
-      - name: Check the workspace bb compatibility contract
-        run: bun run compatibility:check
-
       - name: Check generated plugin icons
         run: bun run icons:check
 

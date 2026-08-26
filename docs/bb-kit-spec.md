@@ -50,8 +50,8 @@ enforcing ours.
 
 **Dependencies.** `commander` ^13 is the only runtime dependency.
 `@get-bb/plugin-sdk` is a required peer: `./plugin`'s `Context` is
-`BbPluginApi`, and the workspace `compatibility:upgrade` keeps the
-exact pin in lockstep with every plugin. The remaining peers are
+`BbPluginApi`. The workspace pins the framework's development dependency
+and every plugin dependency to one tested SDK version. The remaining peers are
 optional, each satisfied by the scaffold (§7 owns the authoritative
 scaffold manifest):
 
@@ -679,9 +679,9 @@ which is the whole reason `PluginQueryBoundary` exists (§5).
 
 `./rpc` and `./cli` never import `@get-bb/plugin-sdk`. `./plugin` does:
 `Context.bb` is `BbPluginApi`, and `definePlugin`'s factory takes that
-type. The SDK is a required peer of `@bb-kit/core`, pinned to the same
-exact version the workspace `compatibility:upgrade` writes into every
-plugin. `HostSeam` is still the structural registration subset
+type. The SDK is a required peer of `@bb-kit/core`. The framework development
+dependency and every plugin dependency use the same tested version.
+`HostSeam` is still the structural registration subset
 (`rpc.register` / `cli.register`) so a slim test fake can register
 without constructing the rest of the host object; `BbPluginApi`
 assigns to it cast-free (verified in `host.test.ts`). `setup` is

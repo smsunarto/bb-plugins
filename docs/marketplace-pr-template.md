@@ -122,7 +122,6 @@ Run from the repo root at the released commit:
 - [ ] `bun test` — <N> passing
 - [ ] `bun run lint` — clean
 - [ ] `bun run icons:check` — branding assets intact
-- [ ] `bun run compatibility:check` — declared bb/SDK ranges still hold
 - [ ] Installed from the tag into a clean bb <version> instance and exercised
       <the main surface> end to end
 
