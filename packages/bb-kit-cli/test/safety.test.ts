@@ -54,6 +54,10 @@ describe("private compatibility contract", () => {
       "@radix-ui/react-tooltip",
       "sonner",
       "vaul",
+      "clsx",
+      "tailwind-merge",
+      "class-variance-authority",
+      "@bb/shared-ui/icon",
     ]);
   });
 });

@@ -9,7 +9,7 @@
 
 **Real macOS notifications — bb's icon, bb's name, and a click that opens the thread.**
 
-![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
+![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
 ![macOS](https://img.shields.io/badge/platform-macOS-3FA266?style=flat-square)
 ![desktop app](https://img.shields.io/badge/needs-bb%20window-F1B467?style=flat-square)
 
@@ -64,7 +64,7 @@ appears under **System Settings → Notifications**.
   notifications that nothing collects before they expire. Web browser tabs do
   not collect the desktop notification queue.
 - Notification permission granted to bb.
-- bb 0.39+.
+- bb 0.40+.
 
 ## What fires a notification
 

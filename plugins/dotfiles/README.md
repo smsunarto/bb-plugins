@@ -10,7 +10,7 @@
 **Browse, edit, and sync one dotfiles repo from a bb panel.**
 
 ![personal](https://img.shields.io/badge/status-personal%20%C2%B7%20unsupported-E34671?style=flat-square)
-![bb 0.39+](https://img.shields.io/badge/bb-0.39%2B-88C0D0?style=flat-square)
+![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 
 </div>
@@ -37,7 +37,7 @@ run validation checks, preview an apply, pull published changes, or publish loca
 
 ## Requirements
 
-* bb 0.39+
+* bb 0.40+
 * macOS or Linux. There is no Windows path
 * `git` and `mise` on `PATH` inside the bb server host's login shell
 * A dotfiles repository matching the layout this plugin expects, with the matching
@@ -147,7 +147,7 @@ procedures keys and are a stable public contract. `app/` holds the panel
 app. The repository watcher builds and reloads the plugin after each source change.
 
 The build and verify scripts call the bb CLI directly (`bb plugin build .`), so a
-bb 0.39 checkout must be on PATH. Run the query and UI checklist against the dev
+bb 0.40 checkout must be on PATH. Run the query and UI checklist against the dev
 instance after the plugin is installed and running.
 
 BB supplies the read-only Pierre diff runtime. The text editor is plugin-owned because

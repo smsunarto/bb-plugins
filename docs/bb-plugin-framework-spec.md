@@ -1268,10 +1268,10 @@ Where bb's generated declarations or current toolchain cannot satisfy one of the
 
 ## bb and SDK compatibility
 
-bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. As of bb 0.39.0:
+bb's plugin SDK is pre-1.0, so minor SDK versions may be breaking. As of bb 0.40.0:
 
-- This repository targets bb 0.39.0 and plugin SDK protocol 0.4.8.
-- The SDK ships as `@get-bb/plugin-sdk` on the public npm registry, pinned exactly in each plugin's `devDependencies`.
+- This repository targets bb 0.40.0 and plugin SDK protocol 0.4.21.
+- The SDK ships as `@get-bb/plugin-sdk` on the public npm registry, pinned exactly in each plugin's `devDependencies`, or `dependencies` when the plugin imports the SDK at runtime.
 - Before 0.38 it was the unpublished `@bb/plugin-sdk`, represented locally by declarations `bb plugin new` vendored into `types/`. bb 0.38 stops generating those and `bb plugin migrate` deletes them; the host still shims the legacy `@bb/plugin-sdk/app` specifier for already-built frontends.
 - The published package includes the `./testing` and `./testing/app` harness exports.
 - `bb-app` is the distributable source of the matching bb CLI/build behavior.
@@ -1282,8 +1282,8 @@ the next major:
 ```json
 {
   "engines": {
-    "bb": ">=0.39.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.8"
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.21"
   }
 }
 ```

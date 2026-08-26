@@ -82,7 +82,7 @@ export abstract class Registry<T extends ThemeSource> {
   }
 }
 
-const version = "0.39.0";
+const version = "0.40.0";
 const parsed = SEMVER.exec(version)?.slice(1, 4).map(Number) ?? [0, 0, 0];
 const supported = parsed[0] === 0 && parsed[1] >= 38;
 

@@ -255,11 +255,38 @@ function stringConstants(source: ReturnType<Project["createSourceFile"]>): Map<s
   return constants;
 }
 
-function frontendHostShims(bbPath: string): string[] {
+/**
+ * The object literal a declaration initializes, seeing through the
+ * `Object.freeze(...)` bb wraps its shim map in since 0.40.
+ */
+function initializedObjectLiteral(initializer: Node | undefined): Node | null {
+  if (!initializer) return null;
+  if (Node.isObjectLiteralExpression(initializer)) return initializer;
+  if (!Node.isCallExpression(initializer)) return null;
+  const [argument] = initializer.getArguments();
+  if (!argument || !Node.isObjectLiteralExpression(argument)) return null;
+  return initializer.getExpression().getText() === "Object.freeze" ? argument : null;
+}
+
+/**
+ * Every file the shim map may live in: the bb entry point, plus the
+ * `bb-chunks/` siblings bb 0.40 code-splits its CLI into.
+ */
+function bbBundleFiles(bbPath: string): string[] {
+  const chunkDir = join(dirname(bbPath), "bb-chunks");
+  if (!existsSync(chunkDir) || !statSync(chunkDir).isDirectory()) return [bbPath];
+  const chunks = readdirSync(chunkDir)
+    .filter((entry) => entry.endsWith(".js"))
+    .sort()
+    .map((entry) => join(chunkDir, entry));
+  return [bbPath, ...chunks];
+}
+
+function shimMapsIn(path: string): string[][] {
   let source: ReturnType<Project["createSourceFile"]>;
   try {
     const project = new Project({ skipAddingFilesFromTsConfig: true });
-    source = project.createSourceFile("selected-bb.js", readFileSync(bbPath, "utf8"));
+    source = project.createSourceFile("selected-bb.js", readFileSync(path, "utf8"));
   } catch (error) {
     throw new ProcessError(
       "compatibility_probe_invalid",
@@ -269,11 +296,11 @@ function frontendHostShims(bbPath: string): string[] {
   const constants = stringConstants(source);
   const candidates: string[][] = [];
   for (const declaration of source.getVariableDeclarations()) {
-    const initializer = declaration.getInitializer();
-    if (!initializer || !Node.isObjectLiteralExpression(initializer)) continue;
+    const literal = initializedObjectLiteral(declaration.getInitializer());
+    if (!literal || !Node.isObjectLiteralExpression(literal)) continue;
     const entries: Array<[string, string]> = [];
     let valid = true;
-    for (const property of initializer.getProperties()) {
+    for (const property of literal.getProperties()) {
       if (!Node.isPropertyAssignment(property)) {
         valid = false;
         break;
@@ -292,6 +319,11 @@ function frontendHostShims(bbPath: string): string[] {
     )
       candidates.push(entries.map(([name]) => name));
   }
+  return candidates;
+}
+
+function frontendHostShims(bbPath: string): string[] {
+  const candidates = bbBundleFiles(bbPath).flatMap(shimMapsIn);
   if (candidates.length !== 1) {
     throw new ProcessError(
       "compatibility_probe_invalid",
@@ -332,7 +364,7 @@ function defaultCompatibilityProbe(
   try {
     const scaffoldResult = run({
       file: selected.path,
-      args: ["plugin", "new", "probe", "--app"],
+      args: ["plugin", "new", "probe"],
       cwd: temporaryRoot,
       env: selected.env,
     });

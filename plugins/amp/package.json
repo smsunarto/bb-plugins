@@ -27,8 +27,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.39.1 <1.0.0",
-    "bbPluginSdk": ">=0.4.12"
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.21"
   },
   "bb": {
     "name": "Amp",
@@ -67,7 +67,7 @@
     "src/"
   ],
   "dependencies": {
-    "@get-bb/plugin-sdk": "0.4.16",
+    "@get-bb/plugin-sdk": "0.4.21",
     "zod": "^4.3.6"
   },
   "devDependencies": {
