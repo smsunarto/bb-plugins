@@ -88,7 +88,7 @@ export type DefinedPlugin<R extends RPCProcedures> = ((bb: BbPluginApi) => Promi
 };
 
 /**
- * The composition root (§2, §6, ADR-0012). Fuses the plugin id, the
+ * The composition root (§2, §7, ADR-0012). Fuses the plugin id, the
  * RPC map, and the curated Commands into one DefinedPlugin. That
  * value is the entry factory bb's server.ts default-exports, plus the
  * map as `.rpc` so UI can type-only import that default. There is no
@@ -134,7 +134,7 @@ export function definePlugin<
   const summary = `CLI for the ${pluginId} plugin`;
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
-    // Order (§6): context → client → rpc.register → cli.register → agents → setup.
+    // Order (§7): context → client → rpc.register → cli.register → agents → setup.
     const context = hostContext(bb);
     const client = createClient(rpc, context as RPCContext<R>);
 

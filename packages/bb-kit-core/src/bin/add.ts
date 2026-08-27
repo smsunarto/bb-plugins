@@ -12,7 +12,7 @@ import { derivePluginID } from "./derive-plugin-id.ts";
 import { toolName } from "../tools/tools.ts";
 
 /**
- * `bb-kit add <query|mutation|command|tool> <name>` (§7): write one unit file
+ * `bb-kit add <query|mutation|command|tool> <name>` (§8): write one unit file
  * and its sibling test, then PRINT the wiring lines — add never edits
  * the composition root (ADR-0009). The name is the kebab-case filename; the value
  * export is its camelization, so `check` rule 1 holds by construction.

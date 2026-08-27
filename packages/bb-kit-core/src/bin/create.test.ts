@@ -56,7 +56,7 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
   assert.deepEqual(pkg["dependencies"], SCAFFOLD_DEPENDENCIES);
   assert.deepEqual(pkg["devDependencies"], SCAFFOLD_DEV_DEPENDENCIES);
   // The framework rides under dependencies — bb loads plugin source in
-  // place, so @bb-kit/core imports resolve at run time (§7).
+  // place, so @bb-kit/core imports resolve at run time (§8).
   assert.ok((pkg["dependencies"] as Record<string, string>)["@bb-kit/core"]);
   assert.ok(!(pkg["devDependencies"] as Record<string, string>)["@bb-kit/core"]);
   const bb = pkg["bb"] as Record<string, unknown>;

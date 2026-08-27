@@ -1,7 +1,7 @@
 import { derivePluginID } from "./derive-plugin-id.ts";
 
 /**
- * The scaffold templates behind `bb-kit create` (§7). One function, no
+ * The scaffold templates behind `bb-kit create` (§8). One function, no
  * I/O: `scaffoldFiles(packageName)` returns every file as text, keyed by
  * its path inside the new plugin directory. `create.ts` writes them;
  * tests assert on them directly.
@@ -12,7 +12,7 @@ import { derivePluginID } from "./derive-plugin-id.ts";
  */
 
 /**
- * Exact runtime pins (§7): `zod`, and the framework itself — bb loads
+ * Exact runtime pins (§8): `zod`, and the framework itself — bb loads
  * plugin source in place, so `@bb-kit/core` imports resolve at run time
  * and a devDependency pin would break an installed plugin.
  */
@@ -22,7 +22,7 @@ export const SCAFFOLD_DEPENDENCIES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Exact devDependency pins (§7): the SDK and the SDK-testing
+ * Exact devDependency pins (§8): the SDK and the SDK-testing
  * transitives (better-sqlite3/hono/cron-parser are imported at module
  * top by `@get-bb/plugin-sdk/testing`). @types/react is an OPTIONAL
  * peer of @testing-library/react, so npm will not auto-install it — it

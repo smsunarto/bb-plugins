@@ -5,7 +5,7 @@ import type { BinResult } from "./shared.ts";
 import { scaffoldFiles } from "./scaffold.ts";
 
 /**
- * `bb-kit create <name>` (§7): scaffold a complete, working plugin into
+ * `bb-kit create <name>` (§8): scaffold a complete, working plugin into
  * a NEW directory (the package name minus any npm scope), install its
  * dependencies, and print the derived plugin id. Refuses to touch an
  * existing non-empty directory — create never edits (ADR-0009).

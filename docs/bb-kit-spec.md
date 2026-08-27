@@ -5,15 +5,16 @@ suite passes, and this spec documents it.
 Baseline: bb 0.39 · `@get-bb/plugin-sdk` 0.4.8 · Node ≥ 22.19 (bb's own
 engines floor), verified against the pinned dev worktree
 (`~/.bb/worktrees/dev/bb`, `desktop-v0.39.0`) on 2026-08-21. In-body
-verification citations (SDK 0.4.6, bb 0.38, in §5–§6) record the version
+verification citations (SDK 0.4.6, bb 0.38, bb-app 0.40.0, in §5–§7) record the version
 they were verified against and are historical, not stale. Decisions live
-in `docs/adr/0001`–`0014`, vocabulary in `packages/bb-kit-core/CONTEXT.md`,
+in `docs/adr/0001`–`0018`, vocabulary in `packages/bb-kit-core/CONTEXT.md`,
 the authoring loop in `docs/bb-kit-dev-workflow.md`. Supersedes
 `docs/bb-plugin-framework-spec.md` (bb-kit 0.1).
 
-The map: §1 the package, §2 the plugin it produces, §3–§5 the three API
-surfaces (`./rpc`, `./cli`, `./rpc/query`), §6 how it all lands on bb, §7 the
-`bb-kit` bin, §8 testing, §9–§10 what the rewrite deliberately leaves
+The map: §1 the package, §2 the plugin it produces, §3–§6 the four API
+surfaces (`./rpc`, `./cli`, `./rpc/query`, `./tools`), §7 how it all
+lands on bb, §8 the
+`bb-kit` bin, §9 testing, §10–§11 what the rewrite deliberately leaves
 behind. History — what bb-kit 0.1 or the reconsider branch did, and why
 the rewrite differs — is set off in `> Aside:` blockquotes; skip every one
 and the contract still reads whole.
@@ -36,15 +37,16 @@ on purpose: the subpath is the unit.
 | `./plugin`    | server, tests      | `definePlugin`, `hostContext`, types `DefinedPlugin`, `Context`, `HostSeam`                                                                                                                 |
 | `./rpc`       | server, CLI, tests | `defineQuery`, `defineMutation`, `createClient`, `RPCValidationError`, types `Client`, `RPCContext`, `RPCProcedures`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
 | `./cli`       | server, tests      | `defineCommand`, `CLIError`, types `CLIResult`, `CLIContext`, `CommandContext`, `DefinedCommand`                                                                                            |
-| `./rpc/query` | browser            | `createRPC`, `PluginQueryBoundary`                                                                                                                                                          |
+| `./rpc/query` | browser            | `createRPC`, `PluginQueryBoundary`
+| `./tools`     | server, tests      | `defineTool`, `toolName`, types `DefinedTool`, `ToolContext`, `ToolInvocation`, `ToolResult`, `ToolPresentation`, `ToolMap`, `Session`                                                                                                                                                          |
 | `./testing`   | tests              | `installDom`, `stubClient`, `stubHostContext`                                                                                                                                               |
 
-bin: `bb-kit` — `create` / `add` / `check`, nothing else (§7; ADR-0009,
+bin: `bb-kit` — `create` / `add` / `check`, nothing else (§8; ADR-0009,
 ADR-0010).
 
 **Naming.** An acronym in an identifier is always fully capitalized —
 `RPC`, `CLI`, `ID`, `URL` — never `Rpc`, `Cli`, `Id`. Host-owned names
-cross the seam (§6) verbatim (`BbPluginApi`, `pluginId`, the `CLIContext`
+cross the seam (§7) verbatim (`BbPluginApi`, `pluginId`, the `CLIContext`
 fields), because mirroring bb's spelling matters more at the seam than
 enforcing ours.
 
@@ -52,7 +54,7 @@ enforcing ours.
 `@get-bb/plugin-sdk` is a required peer: `./plugin`'s `Context` is
 `BbPluginApi`. The workspace pins the framework's development dependency
 and every plugin dependency to one tested SDK version. The remaining peers are
-optional, each satisfied by the scaffold (§7 owns the authoritative
+optional, each satisfied by the scaffold (§8 owns the authoritative
 scaffold manifest):
 
 * `@get-bb/plugin-sdk` — wide 0.x range; the plugin and bb-kit pin the
@@ -74,8 +76,9 @@ source and emits declarations because Bun's bundler does neither job.
 ## 2. The plugin bb-kit produces
 
 Package root is the plugin root. Concern directories `app/` and
-`server/`; RPCs and Commands live beside the composition root in
-`server/rpc/` and `server/cli/`, one file per unit, with its test
+`server/`; RPCs, Commands, and
+Agent tools live beside the composition root in `server/rpc/`,
+`server/cli/`, and `server/tools/`, one file per unit, with its test
 beside it. `server/server.ts` is the composition root and the only file a
 generator ever asks a human to edit (ADR-0007, ADR-0009). Full tree and
 scripts: `docs/bb-kit-dev-workflow.md`.
@@ -98,22 +101,24 @@ export default definePlugin({
 });
 ```
 
-The unit imports are named imports: a unit — one RPC or Command,
-alone in its file (§3, §4) — declares one identifier that
+The unit imports are named imports: a unit — one RPC, Command, or Agent tool,
+alone in its file (§3, §4, §6) — declares one identifier that
 becomes the rpc or commands key by shorthand, so the name is written
 once, at the definition, and tsc checks the chain everywhere else. The
 one exception is a hyphenated CLI command, keyed by its quoted kebab
-name (§4) — that string is guarded by `check` (§7 rule 1), not tsc.
+name (§4) — that string is guarded by `check` (§8 rule 1), not tsc. A
+hyphenated Agent tool keys by its underscored basename, guarded the
+same way (§6).
 
 `definePlugin` returns `DefinedPlugin<R>`. That value is the async
 factory bb calls with the host API and awaits (bb loads the `bb.server`
 entry from source via jiti, on a 30 s budget). It also carries the RPC map
 as `.rpc`. It is one of a plugin's two default exports, both
-host-required (§3); the other is the app in `app/app.tsx` (§6). The
+host-required (§3); the other is the app in `app/app.tsx` (§7). The
 entries:
 
 * `pluginId` — the plugin id. Must match `/^[a-z0-9][a-z0-9-]*$/` and
-  equal `derivePluginID(package.json name)` (`check` rule 2, §7). The
+  equal `derivePluginID(package.json name)` (`check` rule 2, §8). The
   CLI mounts as `bb <pluginId>`.
 * `rpc` — required even for a CLI-only plugin: it is the RPC map the
   host registers, and the subtree under `bb <pluginId> rpc` (§4).
@@ -123,6 +128,10 @@ entries:
   still mounts. There is no CLI `name` field: the CLI mounts as
   `pluginId`. The host summary is always
   `"CLI for the <pluginId> plugin"`.
+* `agents?` is the optional Agent-tool entry (§6): `tools`, a keyed map
+  of `defineTool` units, plus optional `skills` and `instructions`. The
+  public tool name derives from the plugin id and the map key. It is
+  never typed here.
 * `setup?` — optional; the escape hatch out of declarative wiring,
   `setup(bb)`, awaited after registration. Settings,
   `bb.status.needsConfiguration`, and `bb.onDispose` are plain SDK
@@ -132,9 +141,9 @@ entries:
   handlers. `setup` receives `bb`. It does not receive the preset or
   a client.
 
-`definePlugin` constrains RPC and Command demands to preset keys
-(`bb`; Commands also get `cli`). A handler that
-names any other field is a type error on `rpc:` / `cli:`, and the
+`definePlugin` constrains RPC, Command, and tool demands to preset keys
+(`bb`; Commands also get `cli`, tools `tool`). A handler that
+names any other field is a type error on `rpc:` / `cli:` / `agents:`, and the
 diagnostic names the key. The factory freezes the preset so extras
 cannot be assigned onto it.
 
@@ -195,7 +204,7 @@ export const saveFile = defineMutation({
 ```
 
 An RPC file has exactly one value export, named the camelization of
-its filename (`check` fails on a mismatch, §7; `export type` is
+its filename (`check` fails on a mismatch, §8; `export type` is
 unrestricted). Camelization is pinned: split the
 basename on `-`, uppercase the first letter of every segment after the
 first, join — no acronym awareness, and a segment that starts with a
@@ -206,7 +215,7 @@ the definition and travels by import
 shorthand into the rpc key (§2) — one compiler-checked chain. A default export would leave the file
 anonymous and hand the naming to every import site; default exports
 exist only where the host requires them: the `definePlugin` factory in
-`server/server.ts` and the app in `app/app.tsx` (§6).
+`server/server.ts` and the app in `app/app.tsx` (§7).
 
 `defineQuery` and `defineMutation` accept the same shape. The split says
 what a reader needs — a Query reads, a Mutation writes; the TanStack/tRPC
@@ -266,7 +275,7 @@ method takes no argument, and bb-kit registers a vendored no-input schema
 with the host. That schema accepts `null` *and* `undefined` — the SDK's
 app hooks and fake host deliver `null` for a missing input, but the
 server route leaves a truly empty POST body as `undefined`, and the
-endpoint is public API (§6), so hand-crafted empty-body calls must pass
+endpoint is public API (§7), so hand-crafted empty-body calls must pass
 too.
 
 > Aside: this replaces the branch's `noInput` singleton — the brand, the
@@ -274,7 +283,7 @@ too.
 > every call site, and the alias-detection rules all delete.
 
 RPCs carry no `exampleInput` field — the fixtures subsystem it
-fed is not being rebuilt (§9).
+fed is not being rebuilt (§10).
 
 ### Context
 
@@ -297,7 +306,7 @@ whole intersection to `unknown`, and `definePlugin` silently accepts
 anything. With no annotated handler at all, `RPCContext` degrades to
 `{}` — the scaffold's first compile depends on that floor.
 
-Tier-1 tests (§8, ADR-0005) stub `bb` through `stubHostContext`.
+Tier-1 tests (§9, ADR-0005) stub `bb` through `stubHostContext`.
 That function goes through `hostContext`. `sdk` and `storage` live
 on `bb`.
 
@@ -320,7 +329,7 @@ The public name is the `rpc` map key — camelCase, matching the host
 (`getConfiguration`, `listIssues`). `read-file.ts` exports `readFile`
 and answers as `readFile`. Public names are API, unlocked, rename =
 breaking change (ADR-0008). An explicit entry (`{ readURL: readUrl }`)
-is legal (§7 rule 1 requires each entry to resolve to a unit file, not
+is legal (§8 rule 1 requires each entry to resolve to a unit file, not
 to be spelled by shorthand); that key is then the public name.
 
 `check` prints the name table. The Runs-in column in §1 describes
@@ -455,7 +464,7 @@ a keyed map of Commands, the same kind of value as `rpc`.
 * Commands are flat, one level, because bb's registration metadata is one
   level.
 * `rpc` and `help` are reserved command keys — a define-time error and
-  a `check` failure (§7): `rpc` is the subtree's mount point (below),
+  a `check` failure (§8): `rpc` is the subtree's mount point (below),
   and commander 13.1.0 both throws a cryptic plain `Error` on a
   duplicate subcommand and silently lets an explicit `help` shadow its
   implicit help (both verified).
@@ -504,7 +513,7 @@ subtree included.
 The rule is the host's, enforced by the real policy in tier-2 tests —
 the SDK's fake host shares `internal/host-policy` with production, so a
 reserved name fails `npm test`, not the install; `check` catches it
-statically first (§7).
+statically first (§8).
 
 A command's `invoke(context?, argv?, options?)` is the tier-1 test
 helper, parallel to an RPC's `handler(context, input)`. The first
@@ -636,14 +645,138 @@ invalidation-only — realtime data is never authoritative.
 > vocabulary — with one owner of server state, the contrast the terms
 > drew is gone.
 
-## 6. The host seam
+## 6. `./tools`
 
-What bb-kit compiles down to, per the verified bb 0.38 contract:
+An Agent tool is a capability the plugin hands the coding agent driving
+a thread. The agent invokes it by name with schema-validated input.
+Tools follow §3's unit convention: one file per tool in
+`server/tools/`, its test beside it, one value export named the
+camelization of the filename.
+
+```ts
+// server/tools/user.ts
+import { defineTool } from "@bb-kit/core/tools";
+import { z } from "zod";
+import type { Context } from "@bb-kit/core/plugin";
+import { readSettings } from "../settings.ts";
+
+export const user = defineTool({
+  description: "Post a desktop notification the user will see.",
+  instructions: "notify_user posts a native desktop notification.",
+  presentation: {
+    label: { pending: "Notifying the user", completed: "Notified the user" },
+  },
+  parameters: z.object({
+    message: z.string().min(1).describe("One line the user will act on."),
+  }),
+  enabled: (context: Context) => readSettings(context.bb).agentTool,
+  execute: async (context, input) => {
+    // context.tool carries the per-call { threadId, projectId, signal }
+    return notify(context.bb, input.message);
+  },
+});
+```
+
+Wired in the composition root (§2):
+
+```ts
+agents: { tools: { user } },
+```
+
+**Names.** The `agents.tools` key must match `/^[a-z][a-z0-9_]*$/`. A
+bad key throws when `definePlugin` composes the plugin, and `check`
+pins each key to the unit's underscored basename (§8 rule 1).
+`server/tools/user.ts` keys as `user`, `server/tools/sync-all.ts` as
+`sync_all`. The public name is derived, never typed. One function,
+`toolName(pluginId, key)`, owns the derivation. It replaces every `-`
+in the plugin id with `_` and joins id and key with `_`, so plugin
+`notify` plus key `user` publishes `notify_user`. The factory registers
+with that function, and `check` prints its name table from the same one
+(§8 rule 3), so the printed contract is the registered name.
+
+Tool names are global. Unlike RPC methods, the host applies no
+per-plugin namespace. It stores registered names verbatim and rejects a
+cross-plugin collision at registration (verified against bb-app 0.40.0
+source, 2026-08-26). The derivation is not injective. Plugin `a-b` with
+key `c` and plugin `a` with key `b_c` both derive `a_b_c`. That
+ambiguity is accepted because the host's registration-time rejection
+catches any real collision. Tool names are public API, and renaming one
+is a breaking change (ADR-0008).
+
+**The surface.** `defineTool` takes `description`, optional
+`instructions` and `presentation`, `parameters`, optional `enabled`,
+and `execute`. `description`, `instructions`, and `presentation` cross
+the seam verbatim (§7). `parameters` is a zod object schema (ADR-0016),
+pinned by the same structural `JSONObjectSchema` type as procedure I/O
+(§3), so bb-kit never imports zod here either. The host converts the
+schema with its own zod, advertises it to the model, and validates
+every call before `execute` runs. Invalid arguments return to the model
+without touching plugin code, and `execute` receives the parsed output,
+typed. bb-kit never validates a tool call itself. The return value is
+the host's own `ToolResult`, a plain string or content parts, passed
+through verbatim.
+
+`execute(context, input)` follows the Command shape (§4). The first
+parameter is `ToolContext<Context>`, the plugin Context plus a required
+`tool` field carrying the per-call host facts (`ToolInvocation`, the
+`{ threadId, projectId, signal }` above). Host plumbing folds into the
+context under one key. The payload stays a parameter. The factory
+freezes the overlay per call, exactly as the CLI dispatcher freezes
+`cli` (§4).
+
+**Selection.** `enabled(context, session)` and a function-valued
+`agents.skills` selector keep an explicit second parameter. The
+`Session` is the payload of the question being asked (list this tool,
+these skills, for this session?), not plumbing, so it stays an
+argument. `Session` is the host's per-resolution configure context,
+crossing the seam verbatim like `Context.bb` (§7).
+`agents.instructions(context, resolution)` answers a different
+question, so its second parameter differs. It receives the host's
+`{ threadId, projectId }` resolution, not the Session.
+
+The whole configure chain is synchronous. The host feeds the provider's
+raw return into a synchronous normalizer, so `enabled` and a skills
+selector return plain values, never Promises. A Promise there would
+fail the plugin's selection closed (verified against the bb host
+source, 2026-08-26).
+
+**The synthesized configure.** bb-kit registers a single `configure`
+provider only when some tool declares `enabled` or the plugin declares
+`agents.skills` (ADR-0017). It lists every ungated tool, every gated
+tool whose predicate returned true, and the skills selection, `[]` when
+`agents.skills` is absent. With neither declared, no configure
+registers, and the host's all-on default stays in force. There is no
+try/catch around the predicate. A throw propagates, and the host fails
+that plugin's selection closed, exactly as a hand-written configure
+would. The host resolves configure at thread start and turn submit,
+after `setup` has run, so a predicate reading settings bound in `setup`
+is safe.
+
+**Skills.** A static `agents.skills` list selects a subset of the
+manifest's skill enumeration, not necessarily all of it. The
+enumeration is every top-level directory holding a `SKILL.md` under the
+manifest's `bb.skills` roots, and the wire identifier is the directory
+basename. One unknown name makes the host reject the plugin's entire
+selection at resolution, tools included, with only a warn log. `check`
+rule 7 catches the static mistakes (§8). A function-valued selector
+resolves per session, so `check` skips it.
+
+**Entry path.** `bb-kit add tool <name>` writes the unit and its
+sibling test, then prints the wiring and the derived public name (§8).
+`create` ships no sample tool on purpose. A scaffolded Query is inert
+until something calls it, but a scaffolded tool is live agent surface
+in every installer's sessions, under a globally unique name.
+
+## 7. The host seam
+
+What bb-kit compiles down to, per the verified bb 0.38 contract (the
+`agents` row against bb-app 0.40.0):
 
 | bb-kit                             | Host call                                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `definePlugin` factory, `rpc` half | one `bb.rpc.register(contract, handlers)` — methods keyed by public name, Standard Schema `{ input, output }`, served at `POST /api/v1/plugins/<id>/rpc/<method>`                                                                                                                                                          |
 | `definePlugin` factory, `cli` half | one `bb.cli.register({ name, summary, commands, run })` — `name` is `definePlugin`'s `pluginId`; always called, so the RPC subtree (§4) mounts even without a `cli` entry                                                                                                                                                  |
+| `definePlugin` factory, `agents` half | one `bb.agents.registerTool({ name, description, instructions, presentation, parameters, execute })` per tool under the derived name (§6); one `bb.agents.configure(provider)` only when gating or a skills selection exists; one `bb.agents.contributeInstructions(provider)` only when `agents.instructions` exists |
 | `app/app.tsx` default export        | `definePluginApp(setup)` from `@get-bb/plugin-sdk/app`, bundled by `bb plugin build` when `bb.app` is declared                                                                                                                                                                                                             |
 | `bb-kit create` manifest           | `package.json` with the `bb` section: `{ name, description, server: "./server/server.ts", app: "./app/app.tsx", branding: { icon: "./assets/icon.svg" }, skills: [] }` — `branding` is required by the host's manifest schema (an `icon` or `logo.light`, plugin-owned paths must be `.svg`), so `create` ships a placeholder icon |
 
@@ -682,7 +815,8 @@ which is the whole reason `PluginQueryBoundary` exists (§5).
 type. The SDK is a required peer of `@bb-kit/core`. The framework development
 dependency and every plugin dependency use the same tested version.
 `HostSeam` is still the structural registration subset
-(`rpc.register` / `cli.register`) so a slim test fake can register
+(`rpc.register` / `cli.register` / the three `agents` methods) so a
+slim test fake can register
 without constructing the rest of the host object; `BbPluginApi`
 assigns to it cast-free (verified in `host.test.ts`). `setup` is
 METHOD syntax so a test-annotated callback still assigns against
@@ -698,7 +832,7 @@ host — never in plugin handler code.
 > itself so plugins cannot pick a different `Host`.
 
 The factory registers everything before it resolves — context assembly
-(awaited when async), the `rpc.register` and `cli.register` calls, then
+(awaited when async), the `rpc.register`, `cli.register`, and `agents` calls, then
 `setup`. The host accepts late registration (its liveness check only
 trips when a load *fails*), but `definePlugin` owns the factory, so
 registration cannot drift into timers or request handlers unless
@@ -707,7 +841,7 @@ registration cannot drift into timers or request handlers unless
 under this discipline, and identically in tier-2 tests, because the fake
 host shares the production policy module.
 
-## 7. The `bb-kit` bin
+## 8. The `bb-kit` bin
 
 Three commands (ADR-0009, ADR-0010). All output is plain text with
 file:line references. `check` has exactly two diagnostic levels: failures
@@ -721,7 +855,7 @@ that depend on it are skipped.
 Scaffolds the tree in `docs/bb-kit-dev-workflow.md` — a working plugin,
 not a stub. What it writes:
 
-* The manifest as in §6, branding included, with the placeholder
+* The manifest as in §7, branding included, with the placeholder
   `assets/icon.svg`.
 * A `README.md` that teaches the tag-and-install release flow (ADR-0011).
 * `scripts.test = "node --test --import tsx"` and
@@ -760,16 +894,19 @@ lowercase, map every character outside `[a-z0-9-]` to `-`, trim leading
 and trailing `-`, error if nothing remains. `create` prints the derived
 id.
 
-### `add query|mutation|command <name>`
+### `add query|mutation|command|tool <name>`
 
 `<name>` must be kebab-case (`/^[a-z][a-z0-9-]*$/`); anything else is
 rejected. Writes the unit beside `bb.server` — `server/rpc/<name>.ts` +
-`server/rpc/<name>.test.ts` in the scaffold (or `server/cli/…`) — from
+`server/rpc/<name>.test.ts` in the scaffold (or `server/cli/…`, `server/tools/…`) — from
 templates — the unit declared `export const <camel(name)> = …` (§3) —
 then prints the exact wiring lines: the named import and the key. For an
 RPC the key is the import shorthand itself, plus the derived wire
 name; for a Command the key is `<name>` verbatim — quoted and valued
-by the camelized export when `<name>` is hyphenated (§4).
+by the camelized export when `<name>` is hyphenated (§4). For a tool
+the key is the underscored basename (`sync-all` → `sync_all`), valued
+by the camelized export when they differ, plus the derived public name
+(§6).
 
 `add` never edits an existing file, never overwrites, never touches
 `server/server.ts` (ADR-0009). Until the author pastes the wiring, `check`
@@ -780,45 +917,62 @@ fails.
 Static analysis only: parses with the plugin's own `typescript`, resolves
 policy from the plugin's own SDK, executes nothing.
 
-1. Wiring is bijective: every non-test file in the `rpc/` and `cli/`
-   directories beside `bb.server` is
-   imported and keyed in that file, and every rpc/commands entry
-   resolves to such a file. Each such file has a kebab basename
+1. Wiring is bijective: every non-test file in the `rpc/`, `cli/`, and
+   `tools/` directories beside `bb.server` is
+   imported and keyed in that file, and every rpc, commands, and
+   agents.tools entry resolves to such a file. Each such file has a kebab basename
    (`add`'s `/^[a-z][a-z0-9-]*$/`; a violation is a failure, keeping
    camelization total over everything this rule judges) and exactly one
    value export, named the camelization of its filename (§3);
    `export type` is unrestricted. A `commands` key must equal the kebab
    basename of the file it resolves to — the guard behind §2's
    quoted-key exception; RPC keys are not so pinned (§3's
-   explicit-entry clause).
+   explicit-entry clause). An `agents.tools` key must equal the
+   underscored basename of the file it resolves to (§6).
 2. `definePlugin`'s `pluginId` equals `derivePluginID(package.json name)`.
-3. Prints the RPC name table (the public name is the `rpc` map key).
+3. Prints the RPC name table (the public name is the `rpc` map key) and
+   the tool name table, derived by the same `toolName` the factory
+   registers with (§6).
 4. Manifest sanity: `bb.server` / `bb.app` / branding / theme / skills
    paths exist, are relative, stay inside the package, and do not point
    at build output; `engines` values are valid semver ranges.
 5. Composition: the default export is a single `definePlugin` call, with
    a `cli` entry when the `cli/` directory beside `bb.server` contains
-   command files; the CLI name — the
+   command files, and an `agents` entry when the `tools/` directory
+   contains tool files; the CLI name — the
    plugin id — matches the SDK's policy pattern and is not reserved
    (both resolved from the plugin's own SDK's `internal/host-policy` —
    the §1 clause); commands are flat; no `commands` key is `rpc` or
    `help`. Warns on
-   `.action(` inside a `configure` body.
+   `.action(` inside a `configure` body, and on `.agents.configure(`
+   beside an `agents` entry, since the host rejects the repeat
+   registration whenever bb-kit also synthesizes one (ADR-0017).
 6. Warns on a missing sibling test beside any non-test file in those
    unit directories — warn-only because the one-file-one-test layout is bb-kit's
    own doctrine (ADR-0007) while test policy is otherwise the plugin's
    business (ADR-0009).
+7. Agent tools against host policy: each derived tool name must match
+   the SDK's `AGENT_TOOL_NAME_PATTERN` and stay off
+   `RESERVED_AGENT_TOOL_NAMES` (both resolved from the plugin's own
+   SDK's `internal/host-policy`, like rule 5). A plugin with a gated
+   tool and manifest skills must declare `agents.skills`, because the
+   synthesized configure would otherwise send `skills: []` and turn
+   the manifest's skills off (ADR-0017). A static `agents.skills` list
+   must hold string literals only, at most 256 entries (the host's
+   selection cap), no duplicates, and only names from the manifest's
+   skill enumeration (§6). A function-valued selector resolves per
+   session and is skipped.
 
 Out of scope forever: lint, typecheck, running tests, workspace policy —
 those are the plugin's own scripts and the consuming repo's business.
 
-## 8. Test tiers
+## 9. Test tiers
 
 How the three tiers (ADR-0005) map onto this API:
 
 | Tier           | Harness                                             | bb-kit involvement                                                                                                                                              |
 | -------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 unit         | none                                                | call a handler directly, or `createClient(rpc, fakeContext)`; a Command via `cat.invoke(context, argv, { cli })` — `context` is a partial of the plugin Context |
+| 1 unit         | none                                                | call a handler directly, or `createClient(rpc, fakeContext)`; a Command via `cat.invoke(context, argv, { cli })` — `context` is a partial of the plugin Context; a tool via `user.execute({ ...context, tool }, input)` with a stubbed `tool` |
 | 2 integration  | `@get-bb/plugin-sdk/testing` `createFakePluginHost` | run the default-export factory against the fake host; invoke registered RPC/CLI through it                                                                      |
 | 3 UI component | `@get-bb/plugin-sdk/testing/app` under jsdom        | `installDom()` first, then `loadPluginApp` + `renderSlot`                                                                                                       |
 
@@ -861,7 +1015,7 @@ plugin's own `typescript` (the scaffold pins 6.0.3; ADR-0018), so bun
 can run the bin too — `node` stays the documented invocation
 (ADR-0006).
 
-## 9. Not being rebuilt
+## 10. Not being rebuilt
 
 Each cut names its scar (decisions in ADRs 0002, 0008, 0009):
 
@@ -892,7 +1046,7 @@ Each cut names its scar (decisions in ADRs 0002, 0008, 0009):
 * **`bb-kit dev`** — the inner loop is `npm test -- --watch`; the live
   loop is bb's own `bb plugin dev` (ADR-0010).
 
-## 10. Deltas from the reconsider branch
+## 11. Deltas from the reconsider branch
 
 The branch (`bb/reconsider-bb-kit-plugin-directory-thr_ss2vds65gf`) is an
 idea mine, not a source (ADR-0001). What the rewrite changes against it:

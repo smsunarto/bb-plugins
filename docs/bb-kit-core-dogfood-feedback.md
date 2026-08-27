@@ -105,7 +105,7 @@ the wire name "p_read_url"` (`rpc.ts:92-111`).
    and the spec invites bun repos with no warning. The hang was reproduced by three migration
    agents. This review pass did not re-run it because bun invocations of the checker are banned on
    this host. Fix: refuse with one line when `process.versions.bun` is set, force exit after a
-   toolchain failure, and correct `AGENTS.md` and spec §10. (Fixed as written, then overtaken:
+   toolchain failure, and correct `AGENTS.md` and spec §11. (Fixed as written, then overtaken:
    ADR-0018's in-process TS6 parse removed the failure mode and the guard, and bun now runs check.)
 4. **Four doc statements are now false.** The spec header still says "No code exists until this
    spec is confirmed". The doc baseline reads bb 0.38 / SDK 0.4.6 while the code pins bb ≥0.39 /

@@ -16,7 +16,7 @@ import { derivePluginID } from "./derive-plugin-id.ts";
 import { TOOL_KEY_PATTERN, toolName } from "../tools/tools.ts";
 
 /**
- * `bb-kit check` (§7): static verification of the seven rules — wiring
+ * `bb-kit check` (§8): static verification of the seven rules — wiring
  * bijection and naming (1), definePlugin id = derived plugin id (2), the name
  * table (3), manifest paths and engines (4),
  * composition and host CLI policy (5), sibling tests (warn-only, 6),

@@ -16,7 +16,7 @@ root.
 *Avoid*: extension, app
 
 **Composition root**:
-`server/server.ts` — the one file that wires RPCs and Commands together, and
+`server/server.ts` — the one file that wires RPCs, Commands, and Agent tools together, and
 the only file a generator may ask a human to edit. It is `bb.server`.
 *Avoid*: entrypoint, index
 
@@ -29,8 +29,10 @@ keeps units in `rpc/`.
 The directory of Commands beside the composition root — one per file,
 its test beside it. Same `dirname(bb.server)` rule as `server/rpc/`.
 
-**`tools/`**:
-The directory of Agent tools — one per file, its test beside it.
+**`server/tools/`**:
+The directory of Agent tools beside the composition root — one per
+file, its test beside it. Same `dirname(bb.server)` rule as
+`server/rpc/`.
 
 **`app/`**:
 Everything browser-bound; `app/app.tsx` is the app entry. An import
@@ -38,7 +40,7 @@ outside `app/` never reaches the browser bundle.
 
 **`server/`**:
 The server concern. `server/server.ts` is the composition root. Interned
-collaborators, domain modules, `rpc/`, and `cli/` are siblings. A plugin
+collaborators, domain modules, `rpc/`, `cli/`, and `tools/` are siblings. A plugin
 without a backend omits the directory.
 
 **RPC**:
@@ -105,18 +107,30 @@ Framework-owned; not a Command.
 **Agent tool**:
 A capability a plugin exposes to the coding agent driving a thread; the
 agent invokes it by name with schema-validated input. Defined with
-`defineTool`, one per file in `tools/`.
+`defineTool`, one per file in `server/tools/`.
 *Avoid*: MCP tool, model tool
 
 **Tool name**:
-The public name an Agent tool answers to. Unique across every installed
+The public name an Agent tool answers to. Derived by one function,
+`toolName`. It replaces every `-` in the plugin id with `_` and appends
+`_` plus the `agents.tools` key, the unit's underscored basename.
+`notify` plus `user` publishes `notify_user`; authors never type it.
+Unique across every installed
 plugin — the host does not isolate tools by path the way it isolates
 RPCs. Public API; renaming one is a breaking change.
 *Avoid*: tool id
 
 **Session**:
-One agent run the host assembles inside a thread. A plugin's enablement
-and instructions callbacks receive the Session's facts (thread, project,
-environment, provider); their choices apply when the next Session
-starts, never mid-run.
-*Avoid*: resolution, agent run
+One agent run the host assembles inside a thread, and the payload of
+configure resolution. `enabled` and a function-valued `agents.skills`
+selector receive it as their second parameter; their choices apply when
+the next Session starts, never mid-run. `agents.instructions` does not
+receive the Session; its second parameter is the Resolution.
+*Avoid*: agent run
+
+**Resolution**:
+The `{ threadId, projectId }` pair the host hands to
+`agents.instructions` each time it resolves a thread's instructions.
+Not the Session; it carries none of the Session's environment or
+provider facts.
+*Avoid*: session (for this parameter)

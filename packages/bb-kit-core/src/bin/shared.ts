@@ -1,5 +1,5 @@
 /**
- * Shared bin helpers (§7). `add` and `check` share one name gate and one
+ * Shared bin helpers (§8). `add` and `check` share one name gate and one
  * camelization so rule 1's "camelization of its filename" can never drift
  * from what `add` generates. Path math follows `bb.server`, so a nested
  * composition root (`server/server.ts`) and a root one (`server.ts`)
@@ -9,7 +9,7 @@
 
 import { posix } from "node:path";
 
-/** `add`'s kebab-case gate — also rule 1's basename judgment (§7). */
+/** `add`'s kebab-case gate — also rule 1's basename judgment (§8). */
 export const UNIT_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 /**

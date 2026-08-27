@@ -1,5 +1,5 @@
 /**
- * Derive a plugin id from an npm package name (§7). Pinned algorithm:
+ * Derive a plugin id from an npm package name (§8). Pinned algorithm:
  * strip the npm scope, strip a leading `bb-plugin-` prefix
  * (case-sensitive, before lowercasing), lowercase, map every character
  * outside `[a-z0-9-]` to `-`, trim leading and trailing `-`, and error

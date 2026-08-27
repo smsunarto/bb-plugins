@@ -4,7 +4,7 @@
  * Vendored Standard Schema v1 (https://standardschema.dev) — the
  * validator-neutral interface zod 4 schemas implement directly. A ~30-line
  * type interface, not a dependency (§1): bb-kit never depends on zod, and
- * the emitted declarations never reference SDK types (§6).
+ * the emitted declarations never reference SDK types (§7).
  */
 export interface StandardSchemaV1<Input = unknown, Output = Input> {
   readonly "~standard": {

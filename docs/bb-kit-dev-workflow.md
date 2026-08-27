@@ -108,7 +108,7 @@ The scaffold pins the harnesses' peers (tsx, react, react-dom,
 hono, cron-parser) as devDependencies — and `zod` plus `@bb-kit/core`
 as runtime dependencies — so tiers 2 and 3 run on the first `npm test`
 too; the
-spec's §7 owns the authoritative manifest. Write the test in the
+spec's §8 owns the authoritative manifest. Write the test in the
 sibling file, watch it go green, move on.
 
 ## Growing the surface
@@ -117,21 +117,32 @@ sibling file, watch it go green, move on.
 npx bb-kit add query <name>      # a Query, in server/rpc/
 npx bb-kit add mutation <name>   # a Mutation, in server/rpc/
 npx bb-kit add command <name>    # a Command, in server/cli/
+npx bb-kit add tool <name>       # an Agent tool, in server/tools/
 ```
 
 `add` writes the new file and its sibling test, then prints the exact
 wiring lines — the import plus the map key, into `definePlugin`'s
-`rpc` or `cli` — for you (or your agent) to paste into
+`rpc`, `cli`, or `agents.tools` — for you (or your agent) to paste into
 `server/server.ts`. It never edits your files (ADR-0009).
+
+For a tool, `add` also prints the derived public name. `toolName` joins
+the underscored plugin id and the map key, so plugin `notify` plus key
+`user` publishes `notify_user`. The scaffold ships no sample tool on
+purpose. A scaffolded Query is inert until something calls it, but a
+scaffolded tool is live agent surface in every installer's sessions, so
+`add tool` is the entry path.
 
 ```sh
 npx bb-kit check
 ```
 
 `check` fails until the wiring exists, so a forgotten paste cannot ship.
-It also catches manifest breakage (entry targets, engines pins) and
-duplicate RPC names. Those names are the `rpc` map keys and are
-public API — renaming one is a breaking change (ADR-0008).
+It also catches manifest breakage (entry targets, engines pins),
+duplicate RPC names, and the agent-tool rules (derived names against
+the host policy, skills selections against the manifest). The RPC names
+are the `rpc` map keys, the tool names derive from the plugin id and
+the `agents.tools` keys, and both are public API — renaming one is a
+breaking change (ADR-0008).
 
 ## The live loop
 

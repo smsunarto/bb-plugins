@@ -10,7 +10,7 @@ import {
   type HostSeam,
 } from "./host.ts";
 
-// THE load-bearing §2/§6 check: the real host API assigns to the
+// THE load-bearing §2/§7 check: the real host API assigns to the
 // structural seam CAST-FREE against SDK 0.4.21 declarations. Kept inside
 // a never-invoked function — there is no runtime BbPluginApi value.
 function assertSeamAssignable(bb: BbPluginApi): HostSeam {

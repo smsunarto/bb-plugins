@@ -6,7 +6,7 @@ import { runCreate } from "./create.ts";
 import type { BinResult } from "./shared.ts";
 
 /**
- * The bb-kit bin (§7): `create <name>`, `add <kind> <name>`, `check`.
+ * The bb-kit bin (§8): `create <name>`, `add <kind> <name>`, `check`.
  * Dispatch only — every command lives in its own module and returns a
  * BinResult, so tests drive the commands without executing this file.
  * Usage mistakes exit 2; command failures exit 1.
