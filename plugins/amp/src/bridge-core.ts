@@ -24,26 +24,23 @@ import type {
   SetSessionConfigOptionResponse,
   StopReason,
 } from "@agentclientprotocol/sdk";
-import {
-  createUserMessage,
-  type AmpOptions,
-  type MCPConfig,
-  type UserInputMessage,
-} from "@ampcode/sdk";
+import type { MCPConfig } from "@ampcode/sdk";
 import { finishOpenOracleReports, toSessionUpdates, type TranslationState } from "./translate.ts";
-import {
-  isAuthError,
-  parseAmpBatch,
-  parseUnsupportedFlag,
-  type AmpEventBatch,
-  type AmpMcpServerStatus,
-} from "./bridge/events.ts";
+import { isAuthError, type AmpEventBatch, type AmpMcpServerStatus } from "./bridge/events.ts";
 import { createFileOracleReportStore, type OracleReportStore } from "./oracle-report-store.ts";
 import { stripOrbDirectives } from "./orb-directive.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
 import type { SteeringInputMonitor } from "./bb-steering-monitor.ts";
 import type { AmpPermissionMode } from "./permission-mode.ts";
-import { AMP_CLI_SHIM_FAST_ENV } from "./amp-cli-shim.ts";
+import {
+  createAmpConversation,
+  createRetryState,
+  runOrb,
+  type AmpConversation,
+  type AmpConversationDeps,
+  type AmpExecuteFn,
+  type SessionShape,
+} from "./bridge/conversation.ts";
 
 /** Minimal slice of AgentSideConnection the core needs; injected for tests. */
 export interface BridgeClient {
@@ -51,22 +48,16 @@ export interface BridgeClient {
   signal?: AbortSignal;
 }
 
-/** Keep the injected seam testable while deriving its option contract from
- * the exact @ampcode/sdk version this plugin pins. */
-export type AmpExecuteOptions = AmpOptions;
-
-/** Amp's stream-JSON input accepts `steer`, but the pinned SDK's public type
- * does not expose it yet. A steered message runs at Amp's next interruption
- * point instead of waiting for the current agent turn to finish. */
-export type AmpUserInputMessage = UserInputMessage & { steer?: true };
-
-export type AmpExecutePrompt = string | AsyncIterable<AmpUserInputMessage>;
-
-export type AmpExecuteFn = (args: {
-  prompt: AmpExecutePrompt;
-  signal?: AbortSignal;
-  options?: AmpExecuteOptions;
-}) => AsyncIterable<unknown>;
+// Amp-vocabulary execution types and the unsupported-option probe moved to
+// bridge/conversation.ts in U3; re-exported because the ACP surface and its
+// tests import them from this module.
+export {
+  unsupportedOptionFrom,
+  type AmpExecuteOptions,
+  type AmpExecutePrompt,
+  type AmpExecuteFn,
+  type AmpUserInputMessage,
+} from "./bridge/conversation.ts";
 
 export interface SessionBinding {
   threadId: string;
@@ -173,8 +164,7 @@ interface LocalTurn extends TurnOutputState {
 
 interface LocalRuntime {
   /** One long-lived SDK execution owns Amp-managed processes across ACP turns. */
-  controller: AbortController;
-  input: MultiTurnPrompt;
+  conversation: AmpConversation;
   pump: Promise<void>;
   turn: LocalTurn | null;
   closed: boolean;
@@ -187,7 +177,7 @@ interface SessionState {
   executionAttempted: boolean;
   threadId: string | null;
   localRuntime: LocalRuntime | null;
-  orbController: AbortController | null;
+  orbController: { abort(): void } | null;
   steeringMonitor: SteeringInputMonitor | null;
   consumedSteeringInputs: ContentBlock[][];
   restartLocalRuntime: boolean;
@@ -214,76 +204,6 @@ const AUTH_HINT =
 export const AMP_ACP_LABEL = "via-amp-acp";
 const STEERING_IDLE_MS = 250;
 const RETRY_LOCAL_RUNTIME = Symbol("retry-local-runtime");
-
-class MultiTurnPrompt {
-  private readonly prompts: AmpUserInputMessage[] = [];
-  private readonly waiters = new Set<() => void>();
-  private baseIndex = 0;
-  private deliveredIndex = 0;
-  private replayable = true;
-  private closed = false;
-
-  push(prompt: string, steer = false): boolean {
-    if (this.closed) return false;
-    const message = createUserMessage(prompt) as AmpUserInputMessage;
-    this.prompts.push(steer ? { ...message, steer: true } : message);
-    this.wake();
-    return true;
-  }
-
-  /** Once Amp emits output, startup succeeded and no option retry can replay
-   * accepted input. Drop delivered messages as the persistent stream advances. */
-  commit(): void {
-    if (!this.replayable) return;
-    this.replayable = false;
-    this.prune(this.deliveredIndex);
-  }
-
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.wake();
-  }
-
-  async *stream(signal: AbortSignal): AsyncGenerator<AmpUserInputMessage> {
-    let index = this.baseIndex;
-    while (!signal.aborted) {
-      while (index < this.baseIndex + this.prompts.length) {
-        const prompt = this.prompts[index - this.baseIndex]!;
-        index += 1;
-        this.deliveredIndex = Math.max(this.deliveredIndex, index);
-        if (!this.replayable) this.prune(index);
-        yield prompt;
-      }
-      if (this.closed) return;
-      await this.wait(signal);
-    }
-  }
-
-  private wait(signal: AbortSignal): Promise<void> {
-    return new Promise((resolve) => {
-      if (signal.aborted || this.closed) return resolve();
-      const finish = () => {
-        this.waiters.delete(finish);
-        signal.removeEventListener("abort", finish);
-        resolve();
-      };
-      this.waiters.add(finish);
-      signal.addEventListener("abort", finish, { once: true });
-    });
-  }
-
-  private wake(): void {
-    for (const waiter of this.waiters) waiter();
-  }
-
-  private prune(index: number): void {
-    const count = Math.min(index - this.baseIndex, this.prompts.length);
-    if (count <= 0) return;
-    this.prompts.splice(0, count);
-    this.baseIndex += count;
-  }
-}
 
 function sameContentBlocks(left: ContentBlock[], right: ContentBlock[]): boolean {
   return isDeepStrictEqual(left, right);
@@ -439,30 +359,6 @@ export function routeAmpPrompt(blocks: ContentBlock[]): RoutedAmpPrompt {
   };
 }
 
-/**
- * Amp CLI flags the SDK may emit, mapped back to the execute() option that
- * produces them. An Amp CLI older than the SDK rejects unknown flags at argv
- * parse time ("error: unknown option '--effort'"), which would otherwise fail
- * every turn; the bridge drops the offending option and retries instead.
- */
-const FLAG_TO_OPTION: Record<string, keyof AmpExecuteOptions> = {
-  effort: "effort",
-  label: "labels",
-  "mcp-config": "mcpConfig",
-  mode: "mode",
-  "settings-file": "dangerouslyAllowAll",
-  "stream-json-thinking": "thinking",
-  "no-archive-after-execute": "noArchiveAfterExecute",
-  "dangerously-allow-all": "dangerouslyAllowAll",
-};
-
-/** Option name behind an "unknown option --x" CLI error, if we know one. */
-export function unsupportedOptionFrom(message: string): keyof AmpExecuteOptions | null {
-  const flag = parseUnsupportedFlag(message);
-  if (flag === null) return null;
-  return FLAG_TO_OPTION[flag] ?? null;
-}
-
 export class AmpBridgeAgent implements Agent {
   private readonly client: BridgeClient;
   private readonly execute: AmpExecuteFn;
@@ -476,8 +372,8 @@ export class AmpBridgeAgent implements Agent {
   /** bb retries a failed session/load with session/new on the same process.
    * Latch the failure so a missing Orb boundary can never fall back to Local. */
   private failedLoad: Error | null = null;
-  /** Options this Amp CLI rejected; dropped from every later turn. */
-  private readonly unsupported = new Set<keyof AmpExecuteOptions>();
+  /** Options this Amp CLI rejected; dropped from every later spawn. */
+  private readonly retry = createRetryState();
   private shuttingDown = false;
   readonly sessions = new Map<string, SessionState>();
 
@@ -711,7 +607,7 @@ export class AmpBridgeAgent implements Agent {
     let runtime = s.localRuntime;
     let fast = false;
     let startRuntime = false;
-    if (runtime === null || runtime.closed || runtime.controller.signal.aborted) {
+    if (runtime === null || runtime.closed || runtime.conversation.aborted) {
       if (s.threadId === null) {
         try {
           fast = (await this.resolveFastMode?.()) ?? false;
@@ -724,10 +620,8 @@ export class AmpBridgeAgent implements Agent {
         s.cancelled = false;
         return { stopReason: "cancelled" };
       }
-      const controller = new AbortController();
       runtime = {
-        controller,
-        input: new MultiTurnPrompt(),
+        conversation: this.createLocalConversation(s, fast),
         pump: Promise.resolve(),
         turn: null,
         closed: false,
@@ -739,7 +633,7 @@ export class AmpBridgeAgent implements Agent {
     const turn = this.createLocalTurn(prompt, !startRuntime);
     runtime.turn = turn;
     this.startSteeringMonitor(sessionId, s, runtime, turn);
-    if (!runtime.input.push(prompt)) {
+    if (runtime.conversation.closed) {
       await this.finishLocalTurn(
         sessionId,
         s,
@@ -749,11 +643,16 @@ export class AmpBridgeAgent implements Agent {
         new Error("Amp input closed before the prompt could be sent"),
       );
       await this.stopLocalRuntime(s, runtime);
-    } else if (startRuntime) {
-      runtime.pump = this.runLocalRuntime(sessionId, s, runtime, fast);
-      void runtime.pump.catch((error) => {
-        console.error("[amp] Local output pump stopped unexpectedly", error);
-      });
+    } else {
+      // Settlement is driven by the output pump; the delivered promise's
+      // close-time rejection is noise here.
+      void runtime.conversation.send(prompt).catch(() => {});
+      if (startRuntime) {
+        runtime.pump = this.runLocalRuntime(sessionId, s, runtime);
+        void runtime.pump.catch((error) => {
+          console.error("[amp] Local output pump stopped unexpectedly", error);
+        });
+      }
     }
     try {
       return await turn.promise;
@@ -773,86 +672,56 @@ export class AmpBridgeAgent implements Agent {
     sessionId: string,
     s: SessionState,
     runtime: LocalRuntime,
-    fast: boolean,
   ): Promise<void> {
-    for (let attempt = 0; ; attempt += 1) {
-      let streamed = false;
-      const attemptInputController = new AbortController();
-      try {
-        const stream = this.execute({
-          prompt: runtime.input.stream(attemptInputController.signal),
-          signal: runtime.controller.signal,
-          options: this.buildExecuteOptions(s, fast),
-        });
-        for await (const message of stream) {
-          streamed = true;
-          runtime.input.commit();
-          const batch = parseAmpBatch(message);
-          const turn = runtime.turn;
-          if (turn === null || turn.settled) {
+    // Startup retries for unsupported CLI flags happen inside the
+    // conversation; this pump only sees batches from an accepted spawn.
+    try {
+      for await (const batch of runtime.conversation.batches()) {
+        const turn = runtime.turn;
+        if (turn === null || turn.settled) {
+          await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
+          continue;
+        }
+        if (turn.awaitingInputEcho) {
+          const echoed = batch.events.some(
+            (event) => event.kind === "userEcho" && event.text === turn.prompt,
+          );
+          if (echoed) {
+            turn.awaitingInputEcho = false;
+          } else if (batch.terminal) {
+            await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
+            runtime.conversation.abort("restart");
+            await this.finishLocalTurn(sessionId, s, runtime, turn, null, RETRY_LOCAL_RUNTIME);
+            if (s.localRuntime === runtime) s.localRuntime = null;
+            return;
+          } else {
             await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
             continue;
           }
-          if (turn.awaitingInputEcho) {
-            const echoed = batch.events.some(
-              (event) => event.kind === "userEcho" && event.text === turn.prompt,
-            );
-            if (echoed) {
-              turn.awaitingInputEcho = false;
-            } else if (batch.terminal) {
-              await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
-              runtime.controller.abort();
-              await this.finishLocalTurn(sessionId, s, runtime, turn, null, RETRY_LOCAL_RUNTIME);
-              if (s.localRuntime === runtime) s.localRuntime = null;
-              return;
-            } else {
-              await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
-              continue;
-            }
-          }
-          this.clearLocalTurnTimer(turn);
-          const terminalStop = await this.handleStreamMessage(sessionId, s, "local", turn, batch);
-          if (batch.terminal) {
-            turn.sawRuntimeTerminal = true;
-            runtime.input.close();
-          }
-          if (terminalStop !== null && runtime.turn === turn && !turn.settled) {
-            turn.sawAssistantStop = true;
-            turn.idleTimer = setTimeout(() => {
-              turn.idleTimer = null;
-              void this.finishLocalTurn(sessionId, s, runtime, turn, {
-                stopReason: turn.softFailed ? "end_turn" : terminalStop,
-              }).catch((error) => {
-                console.error("[amp] failed to settle a Local turn", error);
-              });
-            }, STEERING_IDLE_MS);
-          }
         }
-        await this.finishLocalRuntime(sessionId, s, runtime, null);
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const unsupported = unsupportedOptionFrom(message);
-        if (
-          unsupported &&
-          !streamed &&
-          attempt === 0 &&
-          !runtime.controller.signal.aborted &&
-          !this.unsupported.has(unsupported)
-        ) {
-          this.unsupported.add(unsupported);
-          console.error(
-            `[amp] this Amp CLI rejects the flag generated by ${String(unsupported)}; dropping it and retrying. ` +
-              "Update the Amp CLI to use that control.",
-          );
-          continue;
+        this.clearLocalTurnTimer(turn);
+        const terminalStop = await this.handleStreamMessage(sessionId, s, "local", turn, batch);
+        if (batch.terminal) {
+          turn.sawRuntimeTerminal = true;
+          runtime.conversation.closeInput();
         }
-        await this.finishLocalRuntime(sessionId, s, runtime, error);
-        return;
-      } finally {
-        attemptInputController.abort();
+        if (terminalStop !== null && runtime.turn === turn && !turn.settled) {
+          turn.sawAssistantStop = true;
+          turn.idleTimer = setTimeout(() => {
+            turn.idleTimer = null;
+            void this.finishLocalTurn(sessionId, s, runtime, turn, {
+              stopReason: turn.softFailed ? "end_turn" : terminalStop,
+            }).catch((error) => {
+              console.error("[amp] failed to settle a Local turn", error);
+            });
+          }, STEERING_IDLE_MS);
+        }
       }
+    } catch (error) {
+      await this.finishLocalRuntime(sessionId, s, runtime, error);
+      return;
     }
+    await this.finishLocalRuntime(sessionId, s, runtime, null);
   }
 
   private async promptOrb(
@@ -863,52 +732,38 @@ export class AmpBridgeAgent implements Agent {
     if (s.active) throw new Error("Amp received overlapping prompts for one session");
     s.cancelled = false;
     s.active = true;
-    const controller = new AbortController();
-    s.orbController = controller;
+    // Startup retries for unsupported CLI flags happen inside runOrb.
+    const run = runOrb({
+      prompt,
+      project: !s.threadId && this.orbProject !== undefined ? this.orbProject : null,
+      continueFrom: s.threadId,
+      shape: this.sessionShape(s, false),
+      labels: [AMP_ACP_LABEL],
+      deps: this.conversationDeps(),
+    });
+    s.orbController = run;
     const turn = this.createTurnOutputState();
     try {
-      // Two attempts at most: the retry only fires when an older Amp CLI rejects
-      // an option before streaming anything, so no output can be duplicated.
-      for (let attempt = 0; ; attempt++) {
-        let streamed = false;
-        try {
-          const stream = this.execute({
-            prompt,
-            signal: controller.signal,
-            options: this.buildExecuteOptions(s, false),
-          });
-          for await (const message of stream) {
-            streamed = true;
-            await this.handleStreamMessage(sessionId, s, "orb", turn, parseAmpBatch(message));
-          }
-          if (turn.executionError) throw turn.executionError;
-          return {
-            stopReason: s.cancelled ? "cancelled" : turn.softFailed ? "end_turn" : turn.stopReason,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (
-            s.cancelled ||
-            (error instanceof Error && error.name === "AbortError") ||
-            message.includes("aborted")
-          ) {
-            return { stopReason: "cancelled" };
-          }
-          const unsupported = unsupportedOptionFrom(message);
-          if (unsupported && !streamed && attempt === 0 && !this.unsupported.has(unsupported)) {
-            this.unsupported.add(unsupported);
-            console.error(
-              `[amp] this Amp CLI rejects the flag generated by ${String(unsupported)}; dropping it and retrying. ` +
-                "Update the Amp CLI to use that control.",
-            );
-            continue;
-          }
-          if (isAuthError(message)) {
-            throw new Error(`${message}\n${AUTH_HINT}`, { cause: error });
-          }
-          throw error;
-        }
+      for await (const batch of run.batches()) {
+        await this.handleStreamMessage(sessionId, s, "orb", turn, batch);
       }
+      if (turn.executionError) throw turn.executionError;
+      return {
+        stopReason: s.cancelled ? "cancelled" : turn.softFailed ? "end_turn" : turn.stopReason,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        s.cancelled ||
+        (error instanceof Error && error.name === "AbortError") ||
+        message.includes("aborted")
+      ) {
+        return { stopReason: "cancelled" };
+      }
+      if (isAuthError(message)) {
+        throw new Error(`${message}\n${AUTH_HINT}`, { cause: error });
+      }
+      throw error;
     } finally {
       finishOpenOracleReports(
         turn.translationState,
@@ -919,7 +774,7 @@ export class AmpBridgeAgent implements Agent {
       // Only clear state we still own: if a client ever overlapped prompts on
       // one session (bb serializes them today), a stale prompt finishing late
       // must not null the newer prompt's controller and break session/cancel.
-      if (s.orbController === controller) {
+      if (s.orbController === run) {
         s.active = false;
         s.cancelled = false;
         s.orbController = null;
@@ -946,8 +801,7 @@ export class AmpBridgeAgent implements Agent {
     if (runtime !== null && runtime.turn !== null) {
       this.clearLocalTurnTimer(runtime.turn);
       runtime.turn.steeringController?.abort();
-      runtime.input.close();
-      runtime.controller.abort();
+      runtime.conversation.abort("interrupt");
       return;
     }
     s.orbController?.abort();
@@ -963,8 +817,7 @@ export class AmpBridgeAgent implements Agent {
       if (runtime !== null) {
         if (s.localRuntime === runtime) s.localRuntime = null;
         runtime.closed = true;
-        runtime.input.close();
-        runtime.controller.abort();
+        runtime.conversation.abort("release");
         pending.push(runtime.pump);
       }
       s.orbController?.abort();
@@ -984,35 +837,45 @@ export class AmpBridgeAgent implements Agent {
     else signal.addEventListener("abort", shutdown, { once: true });
   }
 
-  private buildExecuteOptions(s: SessionState, fast: boolean): AmpExecuteOptions {
-    const options: AmpExecuteOptions = {
-      cwd: s.cwd,
-      mode: s.mode,
-      thinking: true,
-      noArchiveAfterExecute: true,
-      env: {
-        TERM: "dumb",
-        ...(fast && !s.threadId ? { [AMP_CLI_SHIM_FAST_ENV]: "1" } : {}),
-      },
+  /** Spawn configuration for one Local conversation. The shape snapshots
+   * session controls at spawn time; execute options are process-wide, so a
+   * mid-turn config change restarts the runtime instead of mutating this. */
+  private createLocalConversation(s: SessionState, fast: boolean): AmpConversation {
+    return createAmpConversation({
+      shape: this.sessionShape(s, fast),
+      continueFrom: s.threadId,
+      mcpConfig: s.mcpConfig,
       labels: [AMP_ACP_LABEL],
-    };
-    if (s.executionTarget === "orb") {
-      options.executor = "orb";
-      // `project` selects the repository for a new Orb thread. A continued
-      // thread already owns that selection, so do not send both controls.
-      if (!s.threadId && this.orbProject !== undefined) {
-        options.project = this.orbProject;
-      }
-    } else {
+      deps: this.conversationDeps(),
+    });
+  }
+
+  private sessionShape(s: SessionState, fast: boolean): SessionShape {
+    return {
+      cwd: s.cwd,
+      // Validated against AMP_MODES by setSessionConfigOption.
+      mode: s.mode as SessionShape["mode"],
       // Always override the persisted Amp setting. bb Full force-allows all
       // tools; Accept Edits keeps Amp's normal rules and explicitly turns
       // off a user-level amp.dangerouslyAllowAll=true setting.
-      options.dangerouslyAllowAll = s.permission === "bypass";
-      if (Object.keys(s.mcpConfig).length > 0) options.mcpConfig = s.mcpConfig;
-    }
-    if (s.threadId) options.continue = s.threadId;
-    for (const key of this.unsupported) delete options[key];
-    return options;
+      dangerouslyAllowAll: s.permission === "bypass",
+      fast,
+      // ACP sessions carry no disallowed-tool list; the native session
+      // layer (U5) fills these from BridgeExecutionOptions.
+      denied: [],
+      // The ACP path compares runtimes, not shapes; U5 computes digests.
+      mcpConfigDigest: "",
+    };
+  }
+
+  private conversationDeps(): AmpConversationDeps {
+    return {
+      execute: this.execute,
+      // The ACP host wires the CLI path through process.env (bridge.ts).
+      ampCliPath: null,
+      env: { TERM: "dumb" },
+      retry: this.retry,
+    };
   }
 
   private createTurnOutputState(): TurnOutputState {
@@ -1068,7 +931,8 @@ export class AmpBridgeAgent implements Agent {
         // Execution target is fixed by the first prompt. Let bb's queued ACP
         // fallback report an invalid mid-thread /orb request instead.
         if (steering.requestedTarget !== null) return;
-        if (!runtime.input.push(steering.prompt, true)) return;
+        if (runtime.conversation.closed) return;
+        void runtime.conversation.send(steering.prompt, { steer: true }).catch(() => {});
         this.clearLocalTurnTimer(turn);
         s.consumedSteeringInputs.push(blocks);
       }, controller.signal)
@@ -1121,8 +985,7 @@ export class AmpBridgeAgent implements Agent {
       s.restartLocalRuntime = false;
       if (s.localRuntime === runtime) s.localRuntime = null;
       runtime.closed = true;
-      runtime.input.close();
-      runtime.controller.abort();
+      runtime.conversation.abort("restart");
     }
     const cancelled = s.cancelled || this.shuttingDown;
     runtime.turn = null;
@@ -1152,12 +1015,12 @@ export class AmpBridgeAgent implements Agent {
     runtime: LocalRuntime,
     error: unknown,
   ): Promise<void> {
-    runtime.input.close();
+    runtime.conversation.closeInput();
     runtime.closed = true;
     try {
       const turn = runtime.turn;
       if (turn === null || turn.settled) {
-        if (error !== null && !runtime.controller.signal.aborted) {
+        if (error !== null && !runtime.conversation.aborted) {
           console.error("[amp] Local execution stopped while idle", error);
         }
         return;
@@ -1166,7 +1029,7 @@ export class AmpBridgeAgent implements Agent {
       const message = error instanceof Error ? error.message : String(error ?? "");
       if (
         s.cancelled ||
-        runtime.controller.signal.aborted ||
+        runtime.conversation.aborted ||
         (error instanceof Error && error.name === "AbortError") ||
         message.toLowerCase().includes("aborted")
       ) {
@@ -1201,8 +1064,7 @@ export class AmpBridgeAgent implements Agent {
   private async stopLocalRuntime(s: SessionState, runtime: LocalRuntime): Promise<void> {
     if (s.localRuntime === runtime) s.localRuntime = null;
     runtime.closed = true;
-    runtime.input.close();
-    runtime.controller.abort();
+    runtime.conversation.abort("release");
     await runtime.pump;
   }
 
@@ -1282,7 +1144,7 @@ export class AmpBridgeAgent implements Agent {
       // Close synchronously before reporting denials: another ACP prompt can
       // arrive while sessionUpdate is in flight and must start a new process.
       runtime.closed = true;
-      runtime.input.close();
+      runtime.conversation.closeInput();
       console.error(
         "[amp] received terminal output after the ACP turn settled; restarting Local Amp",
       );
