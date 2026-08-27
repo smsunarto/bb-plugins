@@ -3,8 +3,6 @@ import type { Context } from "@bb-kit/core/plugin";
 import { notificationQueue } from "./delivery.ts";
 import { bindSettings, fakeSettings, type Settings } from "./settings.ts";
 
-export { fakeSettings };
-
 export type FakeContextOptions = {
   listening?: boolean;
   settings?: Partial<Settings>;
