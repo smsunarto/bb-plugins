@@ -17,23 +17,23 @@ const user = defineTool({
   instructions: "One line the user will act on.",
   presentation: { label: { pending: "Notifying", completed: "Notified" } },
   parameters: z.object({ message: z.string() }),
-  execute(context: ToolContext<Ctx>, input) {
-    return `${context.prefix}${input.message}`;
+  execute(ctx: ToolContext<Ctx>, input) {
+    return `${ctx.prefix}${input.message}`;
   },
 });
 
 const snapshot = defineTool({
   description: "Read a path",
   parameters: z.object({ path: z.string() }),
-  execute(context: ToolContext<Fs>, input) {
-    return context.root + input.path;
+  execute(ctx: ToolContext<Fs>, input) {
+    return ctx.root + input.path;
   },
 });
 
 const gated = defineTool({
   description: "Gated by an enabled predicate",
   parameters: z.object({}),
-  enabled: (context: Ctx) => context.prefix.length > 0,
+  enabled: (ctx: Ctx) => ctx.prefix.length > 0,
   execute: () => "ran",
 });
 
@@ -49,11 +49,11 @@ const plain = defineTool({
 type _input = Expect<Equal<Parameters<(typeof user)["execute"]>[1], { message: string }>>;
 
 // The overlay folds the per-call host facts under one key.
-function overlayFields(context: ToolContext<Ctx>): void {
-  void context.prefix;
-  void context.tool.threadId;
-  void context.tool.projectId;
-  void context.tool.signal;
+function overlayFields(ctx: ToolContext<Ctx>): void {
+  void ctx.prefix;
+  void ctx.tool.threadId;
+  void ctx.tool.projectId;
+  void ctx.tool.signal;
 }
 void overlayFields;
 

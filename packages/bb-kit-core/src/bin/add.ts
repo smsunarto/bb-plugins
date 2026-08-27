@@ -28,11 +28,12 @@ function queryTemplate(exportName: string): string {
   return [
     'import { defineQuery } from "@bb-kit/core/rpc";',
     'import { z } from "zod";',
-    'import type { Context } from "@bb-kit/core/plugin";',
     "",
     `export const ${exportName} = defineQuery({`,
     "  output: z.object({ ok: z.boolean() }),",
-    "  handler: (_context: Context) => ({ ok: true }),",
+    "  async execute(_ctx) {",
+    "    return { ok: true };",
+    "  },",
     "});",
     "",
   ].join("\n");
@@ -42,12 +43,13 @@ function mutationTemplate(exportName: string): string {
   return [
     'import { defineMutation } from "@bb-kit/core/rpc";',
     'import { z } from "zod";',
-    'import type { Context } from "@bb-kit/core/plugin";',
     "",
     `export const ${exportName} = defineMutation({`,
     "  input: z.object({ value: z.string() }),",
     "  output: z.object({ ok: z.boolean() }),",
-    "  handler: (_context: Context, _input) => ({ ok: true }),",
+    "  async execute(_ctx, { value: _value }) {",
+    "    return { ok: true };",
+    "  },",
     "});",
     "",
   ].join("\n");
@@ -56,8 +58,8 @@ function mutationTemplate(exportName: string): string {
 function procedureTestTemplate(name: string, exportName: string, kind: AddKind): string {
   const call =
     kind === "mutation"
-      ? `${exportName}.handler(stubHostContext(), { value: "x" })`
-      : `${exportName}.handler(stubHostContext())`;
+      ? `${exportName}.execute(stubHostContext(), { value: "x" })`
+      : `${exportName}.execute(stubHostContext())`;
   return [
     'import { test } from "node:test";',
     'import assert from "node:assert/strict";',
@@ -73,12 +75,11 @@ function procedureTestTemplate(name: string, exportName: string, kind: AddKind):
 
 function commandTemplate(name: string, exportName: string): string {
   return [
-    'import { defineCommand, type CommandContext } from "@bb-kit/core/cli";',
-    'import type { Context } from "@bb-kit/core/plugin";',
+    'import { defineCommand } from "@bb-kit/core/cli";',
     "",
     `export const ${exportName} = defineCommand({`,
     `  summary: "TODO: describe ${name}",`,
-    "  run: async (_context: CommandContext<Context>) => {",
+    "  async execute(_ctx) {",
     `    return { exitCode: 0, stdout: "${name}: TODO\\n" };`,
     "  },",
     "});",
@@ -109,7 +110,7 @@ function toolTemplate(name: string, exportName: string): string {
     `export const ${exportName} = defineTool({`,
     `  description: "TODO: describe ${name} for the agent",`,
     "  parameters: z.object({ value: z.string() }),",
-    `  execute: (_context: ToolContext<Context>, _input) => "${name}: TODO",`,
+    `  execute: (_ctx: ToolContext<Context>, _input) => "${name}: TODO",`,
     "});",
     "",
   ].join("\n");
@@ -123,11 +124,11 @@ function toolTestTemplate(name: string, exportName: string): string {
     `import { ${exportName} } from "./${name}.ts";`,
     "",
     `test("${name} executes", async () => {`,
-    "  const context = {",
+    "  const ctx = {",
     "    ...stubHostContext(),",
     '    tool: { threadId: "t", projectId: "p", signal: new AbortController().signal },',
     "  };",
-    `  assert.equal(await ${exportName}.execute(context, { value: "x" }), "${name}: TODO");`,
+    `  assert.equal(await ${exportName}.execute(ctx, { value: "x" }), "${name}: TODO");`,
     "});",
     "",
   ].join("\n");

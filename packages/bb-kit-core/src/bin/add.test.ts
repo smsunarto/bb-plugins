@@ -20,7 +20,7 @@ test("add query writes the unit and sibling test and prints the wiring", () => {
   assert.equal(result.exitCode, 0);
   const unit = readFileSync(join(cwd, "server/rpc/read-url.ts"), "utf8");
   assert.match(unit, /export const readUrl = defineQuery\(/);
-  assert.match(unit, /handler: \(_context: Context\)/);
+  assert.match(unit, /async execute\(_ctx\)/);
   const sibling = readFileSync(join(cwd, "server/rpc/read-url.test.ts"), "utf8");
   assert.match(sibling, /import { readUrl } from ".\/read-url.ts";/);
   assert.match(result.stdout, /wire it in server\/server.ts/);
@@ -37,7 +37,7 @@ test("add mutation takes an input and tests with one", () => {
   assert.match(unit, /export const save2fa = defineMutation\(/);
   assert.match(unit, /input: z.object\(/);
   const sibling = readFileSync(join(cwd, "server/rpc/save-2fa.test.ts"), "utf8");
-  assert.match(sibling, /save2fa.handler\(stubHostContext\(\), { value: "x" }\)/);
+  assert.match(sibling, /save2fa.execute\(stubHostContext\(\), { value: "x" }\)/);
   assert.match(result.stdout, /name: save2fa/);
 });
 
@@ -109,7 +109,7 @@ test("add tool writes the unit and prints the derived name", () => {
   assert.match(unit, /export const beacon = defineTool\(/);
   assert.match(unit, /parameters: z.object\(/);
   const sibling = readFileSync(join(cwd, "server/tools/beacon.test.ts"), "utf8");
-  assert.match(sibling, /beacon\.execute\(context, { value: "x" }\)/);
+  assert.match(sibling, /beacon\.execute\(ctx, { value: "x" }\)/);
   assert.match(sibling, /signal: new AbortController\(\)\.signal/);
   assert.match(result.stdout, /and the agents\.tools entry:/);
   assert.match(result.stdout, /\n {2}beacon,\n/);

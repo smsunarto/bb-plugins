@@ -1,3 +1,4 @@
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { MaybePromise, UnionToIntersection } from "../utils/types.ts";
 import { noInputSchema } from "./rpc-standard-schema.ts";
 import type {
@@ -27,7 +28,7 @@ export type ProcedureKind = "query" | "mutation";
 
 /**
  * The precise shape `defineQuery`/`defineMutation` return for an
- * RPC that declares an input. `handler` is method syntax so the
+ * RPC that declares an input. `execute` is method syntax so the
  * concrete shape satisfies `AnyProcedure` bivariantly; the `input`
  * property is REQUIRED here and ABSENT on `ProcedureNoInput` — never
  * optional, which would silently kill input typechecking (§3).
@@ -41,18 +42,26 @@ export type ProcedureWithInput<
   readonly kind: K;
   readonly input: In;
   readonly output: Out;
-  handler(context: Context, input: SchemaOutput<In>): MaybePromise<SchemaInput<Out>>;
+  execute(ctx: Context, args: SchemaOutput<In>): MaybePromise<SchemaInput<Out>>;
 };
 
 /** The shape for an RPC with no input: no `input` key at all. */
 export type ProcedureNoInput<K extends ProcedureKind, Context, Out extends StandardSchemaV1> = {
   readonly kind: K;
   readonly output: Out;
-  handler(context: Context): MaybePromise<SchemaInput<Out>>;
+  execute(ctx: Context): MaybePromise<SchemaInput<Out>>;
 };
 
 /**
- * The loose shape every concrete RPC satisfies. `handler` is
+ * What an RPC `execute` receives as `ctx`. Inlined so `rpc/` does
+ * not import `plugin/`. Same shape as `Context` from `./plugin`.
+ */
+type HandlerContext = {
+  readonly bb: BbPluginApi;
+};
+
+/**
+ * The loose shape every concrete RPC satisfies. `execute` is
  * declared in method syntax on purpose: its parameters compare
  * bivariantly, so concrete RPCs with narrower context and input
  * types still satisfy `Record<string, AnyProcedure>` (§3).
@@ -60,7 +69,7 @@ export type ProcedureNoInput<K extends ProcedureKind, Context, Out extends Stand
 export type AnyProcedure = {
   readonly kind: ProcedureKind;
   readonly output: StandardSchemaV1;
-  handler(context: never, ...rest: never[]): unknown;
+  execute(ctx: never, ...rest: never[]): unknown;
 };
 
 export type RPCProcedures = Record<string, AnyProcedure>;
@@ -75,7 +84,7 @@ export type RuntimeProcedure = {
   kind: ProcedureKind;
   input?: StandardSchemaV1;
   output: StandardSchemaV1;
-  handler: (context: unknown, input?: unknown) => unknown;
+  execute: (ctx: unknown, input?: unknown) => unknown;
 };
 
 export function runtimeProcedures(procedures: RPCProcedures): Record<string, RuntimeProcedure> {
@@ -89,7 +98,7 @@ export function runtimeProcedures(procedures: RPCProcedures): Record<string, Run
  * object schemas, enforced structurally through zod's `_zod.output`
  * channel. A `z.string()` fails the `defineQuery` constraint with a
  * TS2769 naming this type. Kept separate from `StandardSchemaV1`, which
- * still carries the handler I/O types.
+ * still carries the input/output types.
  */
 export interface JSONObjectSchema {
   _zod: { output: Record<string, unknown> };
@@ -100,40 +109,32 @@ type ObjectSchema = StandardSchemaV1 & JSONObjectSchema;
 /**
  * Declare a Query. Two overloads — with-input first — so the
  * returned type carries `input` required-or-absent, never optional
- * (§3). `Context` infers from the handler's first-parameter annotation
- * and stays `unknown` when unannotated.
+ * (§3). `execute` is a PROPERTY so extra context fields are
+ * rejected here. Authors write `async execute(ctx, { keys })`.
  */
-export function defineQuery<
-  Context,
-  In extends ObjectSchema,
-  Out extends ObjectSchema,
->(definition: {
+export function defineQuery<In extends ObjectSchema, Out extends ObjectSchema>(definition: {
   input: In;
   output: Out;
-  handler(context: Context, input: SchemaOutput<In>): MaybePromise<SchemaInput<Out>>;
-}): ProcedureWithInput<"query", Context, In, Out>;
-export function defineQuery<Context, Out extends ObjectSchema>(definition: {
+  execute: (ctx: HandlerContext, args: SchemaOutput<In>) => MaybePromise<SchemaInput<Out>>;
+}): ProcedureWithInput<"query", HandlerContext, In, Out>;
+export function defineQuery<Out extends ObjectSchema>(definition: {
   output: Out;
-  handler(context: Context): MaybePromise<SchemaInput<Out>>;
-}): ProcedureNoInput<"query", Context, Out>;
+  execute: (ctx: HandlerContext) => MaybePromise<SchemaInput<Out>>;
+}): ProcedureNoInput<"query", HandlerContext, Out>;
 export function defineQuery(definition: object): any {
   return { kind: "query", ...definition };
 }
 
 /** Declare a Mutation. Identical shape to `defineQuery` (§3). */
-export function defineMutation<
-  Context,
-  In extends ObjectSchema,
-  Out extends ObjectSchema,
->(definition: {
+export function defineMutation<In extends ObjectSchema, Out extends ObjectSchema>(definition: {
   input: In;
   output: Out;
-  handler(context: Context, input: SchemaOutput<In>): MaybePromise<SchemaInput<Out>>;
-}): ProcedureWithInput<"mutation", Context, In, Out>;
-export function defineMutation<Context, Out extends ObjectSchema>(definition: {
+  execute: (ctx: HandlerContext, args: SchemaOutput<In>) => MaybePromise<SchemaInput<Out>>;
+}): ProcedureWithInput<"mutation", HandlerContext, In, Out>;
+export function defineMutation<Out extends ObjectSchema>(definition: {
   output: Out;
-  handler(context: Context): MaybePromise<SchemaInput<Out>>;
-}): ProcedureNoInput<"mutation", Context, Out>;
+  execute: (ctx: HandlerContext) => MaybePromise<SchemaInput<Out>>;
+}): ProcedureNoInput<"mutation", HandlerContext, Out>;
 export function defineMutation(definition: object): any {
   return { kind: "mutation", ...definition };
 }
@@ -161,7 +162,7 @@ export function assertRPCKeys(procedures: RPCProcedures): void {
 /**
  * The typed client for an RPC map (§3, spec formulation). A
  * caller passes the input schema's INPUT type and receives the output
- * schema's OUTPUT type, the mirror of the handler's view.
+ * schema's OUTPUT type, the mirror of the execute's view.
  */
 export type Client<P extends RPCProcedures> = {
   [K in keyof P]: P[K] extends {
@@ -175,17 +176,19 @@ export type Client<P extends RPCProcedures> = {
 };
 
 type ContextDemand<P> = P extends {
-  handler(context: infer C, ...rest: never[]): unknown;
+  execute(ctx: infer C, ...rest: never[]): unknown;
 }
   ? unknown extends C
-    ? never // an unannotated handler demands nothing
+    ? never // an unannotated execute demands nothing
     : C
   : never;
 
 /**
- * What the RPC's handlers collectively demand of the context (§3):
- * the intersection of every annotated first parameter, `{}` when
- * nothing demands anything (the scaffold's first-compile floor).
+ * What RPCs collectively demand of the context (§3):
+ * the intersection of every annotated first parameter. `defineQuery`
+ * / `defineMutation` pin `{ bb }`, so a map of those demands `{ bb }`.
+ * An unannotated hand-rolled execute is filtered out; `{}` when
+ * nothing demands anything.
  */
 export type RPCContext<P extends RPCProcedures> = [ContextDemand<P[keyof P]>] extends [never]
   ? {}
@@ -205,13 +208,13 @@ export class RPCValidationError extends Error {
 
 /**
  * Build the validating in-process client (§3): input is validated
- * before the handler runs (no-input RPCs against the vendored
+ * before the execute runs (no-input RPCs against the vendored
  * no-input schema), the result after. Both failures throw
  * `RPCValidationError`.
  */
 export function createClient<P extends RPCProcedures>(
   procedures: P,
-  context: RPCContext<P>,
+  ctx: RPCContext<P>,
 ): Client<P> {
   assertRPCKeys(procedures);
   const runtime = runtimeProcedures(procedures);
@@ -221,14 +224,14 @@ export function createClient<P extends RPCProcedures>(
     if (!procedure) {
       continue;
     }
-    client[key] = (input?: unknown) => callProcedure(procedure, context, input);
+    client[key] = (input?: unknown) => callProcedure(procedure, ctx, input);
   }
   return client as unknown as Client<P>;
 }
 
 async function callProcedure(
   procedure: RuntimeProcedure,
-  context: unknown,
+  ctx: unknown,
   input: unknown,
 ): Promise<unknown> {
   const inputSchema = procedure.input ?? noInputSchema;
@@ -237,8 +240,8 @@ async function callProcedure(
     throw new RPCValidationError("input", parsed.issues);
   }
   const raw = procedure.input
-    ? await procedure.handler(context, parsed.value)
-    : await procedure.handler(context);
+    ? await procedure.execute(ctx, parsed.value)
+    : await procedure.execute(ctx);
   const validated = await procedure.output["~standard"].validate(raw);
   if (validated.issues) {
     throw new RPCValidationError("output", validated.issues);

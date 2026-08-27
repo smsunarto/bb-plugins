@@ -2,15 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { RPCContext, RPCProcedures, StandardSchemaV1 } from "../rpc/rpc.ts";
 import { assertRPCKeys, createClient, noInputSchema, runtimeProcedures } from "../rpc/rpc.ts";
 import type { MaybePromise } from "../utils/types.ts";
-import type {
-  AnyCommandMap,
-  CLIContext,
-  CLIResult,
-  CommandContext,
-  CommandMap,
-  CommandsContext,
-  SubcommandDefinition,
-} from "../cli/runner.ts";
+import type { CommandContext, CommandMap, CommandResult, ProgramDefinition } from "../cli/runner.ts";
 import { buildProgram, commandDefinitions, runProgram } from "../cli/runner.ts";
 import type { Session, ToolMap, ToolsContext } from "../tools/tools.ts";
 import { assertToolKeys, runtimeTools, toolName } from "../tools/tools.ts";
@@ -26,16 +18,11 @@ declare const outsidePreset: unique symbol;
 type PresetField = keyof Context;
 
 /**
- * Diagnostic only. An RPC map whose handlers demand a field the frozen
+ * Diagnostic only. An RPC map whose execute demands a field the frozen
  * preset does not have fails to assign to this, and TypeScript prints
  * the offending keys inside the type name.
  */
 export type HandlerDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
-  readonly [outsidePreset]: Keys;
-};
-
-/** Same, for Commands. Commands additionally get `cli`. */
-export type CommandDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
   readonly [outsidePreset]: Keys;
 };
 
@@ -51,14 +38,6 @@ type RPCFieldCheck<R extends RPCProcedures> = [OutsidePreset<RPCContext<R>, Pres
 ]
   ? unknown
   : { rpc: HandlerDemandsFieldOutsideThePreset<OutsidePreset<RPCContext<R>, PresetField>> };
-
-type CommandFieldCheck<C> = [OutsidePreset<CommandsContext<C>, PresetField | "cli">] extends [never]
-  ? unknown
-  : {
-      cli: CommandDemandsFieldOutsideThePreset<
-        OutsidePreset<CommandsContext<C>, PresetField | "cli">
-      >;
-    };
 
 type ToolFieldCheck<T extends ToolMap> = [
   OutsidePreset<ToolsContext<T>, PresetField | "tool">,
@@ -77,9 +56,8 @@ type ToolFieldCheck<T extends ToolMap> = [
  */
 export type ClosedContext<
   R extends RPCProcedures,
-  C,
   T extends ToolMap = Record<never, never>,
-> = RPCFieldCheck<R> & CommandFieldCheck<C> & ToolFieldCheck<T>;
+> = RPCFieldCheck<R> & ToolFieldCheck<T>;
 
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -99,7 +77,7 @@ export type DefinedPlugin<R extends RPCProcedures> = ((bb: BbPluginApi) => Promi
  */
 export function definePlugin<
   R extends RPCProcedures,
-  C extends AnyCommandMap = Record<never, never>,
+  C extends CommandMap = Record<never, never>,
   T extends ToolMap = Record<never, never>,
 >(
   definition: {
@@ -108,14 +86,14 @@ export function definePlugin<
     cli?: C;
     agents?: {
       tools: T;
-      skills?: string[] | ((context: Context, session: Session) => string[]);
+      skills?: string[] | ((ctx: Context, session: Session) => string[]);
       instructions?(
-        context: Context,
+        ctx: Context,
         resolution: { threadId: string; projectId: string },
       ): string | null;
     };
     setup?(bb: BbPluginApi): MaybePromise<void>;
-  } & ClosedContext<R, C, T>,
+  } & ClosedContext<R, T>,
 ): DefinedPlugin<R> {
   const { pluginId, rpc } = definition;
   if (!PLUGIN_ID_PATTERN.test(pluginId)) {
@@ -135,11 +113,11 @@ export function definePlugin<
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
     // Order (§7): context → client → rpc.register → cli.register → agents → setup.
-    const context = hostContext(bb);
-    const client = createClient(rpc, context as RPCContext<R>);
+    const ctx = hostContext(bb);
+    const client = createClient(rpc, ctx as RPCContext<R>);
 
     // rpc.register: contract keyed by the map key (the public
-    // name); handlers invoke the RPC handlers DIRECTLY (the host
+    // name); handlers invoke RPC execute DIRECTLY (the host
     // validates the name, the client the in-process path — no call is
     // validated twice).
     const procedures = runtimeProcedures(rpc);
@@ -155,8 +133,8 @@ export function definePlugin<
         output: procedure.output,
       };
       handlers[key] = procedure.input
-        ? async (input: unknown) => procedure.handler(context, input)
-        : async () => procedure.handler(context);
+        ? async (input: unknown) => procedure.execute(ctx, input)
+        : async () => procedure.execute(ctx);
     }
     bb.rpc.register(contract, handlers);
 
@@ -166,11 +144,8 @@ export function definePlugin<
       string,
       (input?: unknown) => Promise<unknown>
     >;
-    const makeDefinitions = (cli: CLIContext): SubcommandDefinition[] => [
-      ...commandDefinitions(
-        curated as CommandMap<CommandContext<Context>>,
-        Object.freeze({ ...context, cli }),
-      ),
+    const makeDefinitions = (overlay: Omit<CommandContext, "bb">): ProgramDefinition[] => [
+      ...commandDefinitions(curated, Object.freeze({ ...ctx, ...overlay })),
       rpcSubtreeDefinition(rpc, runtimeClient),
     ];
     // One metadata build at registration; a configure that throws here
@@ -185,7 +160,8 @@ export function definePlugin<
       name: pluginId,
       summary,
       commands,
-      run: (argv, ctx) => runProgram(() => makeDefinitions(ctx), argv, { name: pluginId, summary }),
+      run: (argv, overlay) =>
+        runProgram(() => makeDefinitions(overlay), argv, { name: pluginId, summary }),
     });
 
     // agents (ADR-0015): one registration per tool under the derived
@@ -210,7 +186,7 @@ export function definePlugin<
           // The host already validated params against `parameters`; the
           // overlay freeze mirrors the cli one above.
           execute: (params, invocation) =>
-            tool.execute(Object.freeze({ ...context, tool: invocation }), params),
+            tool.execute(Object.freeze({ ...ctx, tool: invocation }), params),
         });
       }
 
@@ -227,11 +203,11 @@ export function definePlugin<
             if (!tool) {
               return false;
             }
-            return tool.enabled === undefined || tool.enabled(context, session);
+            return tool.enabled === undefined || tool.enabled(ctx, session);
           });
           let selectedSkills: string[] = [];
           if (skills !== undefined) {
-            selectedSkills = Array.isArray(skills) ? skills : skills(context, session);
+            selectedSkills = Array.isArray(skills) ? skills : skills(ctx, session);
           }
           return {
             tools: selected.map((key) => toolName(pluginId, key)),
@@ -242,7 +218,7 @@ export function definePlugin<
 
       if (agents.instructions !== undefined) {
         const instructions = agents.instructions;
-        host.agents.contributeInstructions((resolution) => instructions(context, resolution));
+        host.agents.contributeInstructions((resolution) => instructions(ctx, resolution));
       }
     }
 
@@ -254,7 +230,7 @@ export function definePlugin<
 }
 
 /**
- * The always-mounted `rpc` subtree (ADR-0013): one subcommand per
+ * The always-mounted `rpc` subtree (ADR-0013): one entry per
  * RPC under its public name, one optional JSON-object
  * positional, dispatched through the validating client. Success prints
  * compact JSON to stdout; every failure is exit 1 on stderr.
@@ -262,17 +238,17 @@ export function definePlugin<
 function rpcSubtreeDefinition(
   procedures: RPCProcedures,
   client: Record<string, (input?: unknown) => Promise<unknown>>,
-): SubcommandDefinition {
-  const children = Object.keys(procedures).map((key): SubcommandDefinition => {
+): ProgramDefinition {
+  const children = Object.keys(procedures).map((key): ProgramDefinition => {
     const kind = procedures[key]?.kind ?? "query";
     return {
       name: key,
       summary: `(${kind})`,
-      configure: (command) => {
-        command.argument("[input]", "JSON object input");
+      configure: (cmd) => {
+        cmd.argument("[input]", "JSON object input");
       },
-      action: async (command): Promise<CLIResult> => {
-        const raw = command.processedArgs[0] as string | undefined;
+      action: async (cmd): Promise<CommandResult> => {
+        const raw = cmd.processedArgs[0] as string | undefined;
         let input: unknown;
         if (raw !== undefined) {
           let parsed: unknown;

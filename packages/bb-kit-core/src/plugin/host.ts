@@ -67,7 +67,7 @@ export type HostAgentsSeam = {
 export type HostSeam = HostRPCSeam & HostCLISeam & HostAgentsSeam;
 
 /**
- * Frozen host preset every handler receives. Plugins import this; they
+ * Frozen host preset every execute receives. Plugins import this; they
  * do not apply a Host generic and they do not keep a local alias.
  * Host capabilities (`sdk`, `storage`, …) live on `bb`.
  */
@@ -78,7 +78,7 @@ export type Context = {
 /**
  * The only place `{ bb }` is derived from the host. Production and
  * `@bb-kit/core/testing` both go through it. The result is frozen so
- * extras cannot be assigned onto it. Freezing is shallow. `context.bb`
+ * extras cannot be assigned onto it. Freezing is shallow. `ctx.bb`
  * is the host's own object and stays live.
  */
 export function hostContext(bb: BbPluginApi): Context {

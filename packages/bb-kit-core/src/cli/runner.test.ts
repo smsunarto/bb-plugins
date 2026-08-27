@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildProgram, runProgram } from "./runner.ts";
-import type { SubcommandDefinition } from "./runner.ts";
+import type { ProgramDefinition } from "./runner.ts";
 
 test("runProgram builds a FRESH program per invocation", async () => {
   let builds = 0;
-  const makeDefinitions = (): SubcommandDefinition[] => {
+  const makeDefinitions = (): ProgramDefinition[] => {
     builds += 1;
     return [{ name: "noop", summary: "Do nothing", action: () => ({ exitCode: 0 }) }];
   };
@@ -15,7 +15,7 @@ test("runProgram builds a FRESH program per invocation", async () => {
 });
 
 test("nested children dispatch and expose metadata", async () => {
-  const definitions: SubcommandDefinition[] = [
+  const definitions: ProgramDefinition[] = [
     {
       name: "outer",
       summary: "Outer group",
@@ -47,7 +47,7 @@ test("nested children dispatch and expose metadata", async () => {
 });
 
 test("a user-supplied .action() in configure is inert", async () => {
-  const definitions: SubcommandDefinition[] = [
+  const definitions: ProgramDefinition[] = [
     {
       name: "cmd",
       summary: "s",

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   createClient,
@@ -24,33 +25,40 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
-type Ctx = { prefix: string };
-type Fs = { root: string };
-
 const echo = defineQuery({
   input: z.object({ path: z.string() }),
   output: z.object({ ok: z.boolean(), path: z.string() }),
-  handler: (context: Ctx, input) => ({ ok: true, path: context.prefix + input.path }),
+  execute(_ctx, { path }) {
+    return { ok: true, path: `p:${path}` };
+  },
 });
 
 const ping = defineQuery({
   output: z.object({ pong: z.boolean() }),
-  handler: (context: Fs) => ({ pong: context.root.length >= 0 }),
+  execute() {
+    return { pong: true };
+  },
 });
 
 const bump = defineMutation({
   input: z.object({ by: z.number().default(2) }),
   output: z.object({ value: z.number() }),
-  handler: (_context, input) => ({ value: input.by }),
+  execute(_ctx, { by }) {
+    return { value: by };
+  },
 });
 
 const broken = defineQuery({
   output: z.object({ n: z.number() }),
-  handler: () => ({ n: "nope" as unknown as number }),
+  execute() {
+    return { n: "nope" as unknown as number };
+  },
 });
 
 const demo = { echo, ping, bump, broken };
 type Demo = typeof demo;
+
+const host = { bb: {} as BbPluginApi };
 
 // ---- type-level pins ------------------------------------------------
 
@@ -75,13 +83,11 @@ function inputDirection(client: Client<Demo>) {
 }
 void inputDirection;
 
-// RPCContext: intersection of annotated demands; an unannotated handler
-// (bump, broken) demands nothing and is filtered out.
-type _context = Expect<MutuallyAssignable<RPCContext<Demo>, Ctx & Fs>>;
+// defineQuery pins `{ bb }`, so RPCContext of those maps is `{ bb }`.
+type _ctx = Expect<MutuallyAssignable<RPCContext<Demo>, { readonly bb: BbPluginApi }>>;
 
-// The {} floor when nothing demands anything.
 const bare = { bump };
-type _floor = Expect<MutuallyAssignable<RPCContext<typeof bare>, {}>>;
+type _floor = Expect<MutuallyAssignable<RPCContext<typeof bare>, { readonly bb: BbPluginApi }>>;
 
 function typeOnly(client: Client<Demo>) {
   // @ts-expect-error a with-input procedure requires its input
@@ -89,9 +95,14 @@ function typeOnly(client: Client<Demo>) {
   // @ts-expect-error a no-input procedure takes no argument
   void client.ping({});
   // @ts-expect-error a non-object schema violates JSONObjectSchema (ADR-0014)
-  void defineQuery({ output: z.string(), handler: () => "x" });
+  void defineQuery({ output: z.string(), execute: () => "x" });
   // @ts-expect-error input schemas must be object schemas too
-  void defineQuery({ input: z.number(), output: z.object({}), handler: () => ({}) });
+  void defineQuery({ input: z.number(), output: z.object({}), execute: () => ({}) });
+  defineQuery({
+    output: z.object({ pong: z.boolean() }),
+    // @ts-expect-error execute demanding a field outside the preset is rejected
+    execute: (_ctx: { extra(): void }) => ({ pong: true }),
+  });
 }
 void typeOnly;
 
@@ -151,7 +162,9 @@ type _u2i = Expect<Equal<UnionToIntersection<{ a: 1 } | { b: 2 }>, { a: 1 } & { 
 
 const overview = defineQuery({
   output: z.object({ ok: z.boolean() }),
-  handler: () => ({ ok: true }),
+  execute() {
+    return { ok: true };
+  },
 });
 
 // A concrete procedure satisfies the loose AnyProcedure shape
@@ -170,34 +183,34 @@ test("runtimeProcedures is a view over the same procedure objects", () => {
 
 test("createClient rejects an invalid RPC key", () => {
   assert.throws(
-    () => createClient({ ReadFile: ping }, { root: "/" }),
+    () => createClient({ ReadFile: ping }, host),
     /invalid RPC key "ReadFile"/,
   );
-  assert.throws(() => createClient({ "read-file": ping }, { root: "/" }), /invalid RPC key/);
+  assert.throws(() => createClient({ "read-file": ping }, host), /invalid RPC key/);
 });
 
 test("createClient rejects the reserved keys useClient and then", () => {
   assert.throws(
-    () => createClient({ useClient: ping }, { root: "/" }),
+    () => createClient({ useClient: ping }, host),
     /"useClient" is a reserved RPC key/,
   );
   assert.throws(
     // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point: createClient must reject this key
-    () => createClient({ then: ping }, { root: "/" }),
+    () => createClient({ then: ping }, host),
     /"then" is a reserved RPC key/,
   );
 });
 
 // ---- createClient ---------------------------------------------------
 
-const client = createClient(demo, { prefix: "p:", root: "/" });
+const client = createClient(demo, host);
 type _createClientReturnsClient = Expect<Equal<typeof client, Client<Demo>>>;
 
-test("with-input call validates, runs the handler, returns the parsed output", async () => {
+test("with-input call validates, runs execute, returns the parsed output", async () => {
   assert.deepEqual(await client.echo({ path: "x" }), { ok: true, path: "p:x" });
 });
 
-test("input defaults apply before the handler sees the input", async () => {
+test("input defaults apply before execute sees the input", async () => {
   assert.deepEqual(await client.bump({}), { value: 2 });
   assert.deepEqual(await client.bump({ by: 7 }), { value: 7 });
 });
@@ -228,7 +241,7 @@ test("input given to a no-input procedure is rejected by the vendored schema", a
   });
 });
 
-test("a handler result failing the output schema throws at stage output", async () => {
+test("an execute result failing the output schema throws at stage output", async () => {
   await assert.rejects(client.broken(), (error: unknown) => {
     assert.ok(error instanceof RPCValidationError);
     assert.equal(error.stage, "output");
@@ -237,7 +250,7 @@ test("a handler result failing the output schema throws at stage output", async 
   });
 });
 
-test("createClient accepts the {} floor for an undemanding RPC", async () => {
-  const bareClient = createClient(bare, {});
+test("createClient accepts a defineQuery map with the pinned { bb } context", async () => {
+  const bareClient = createClient(bare, host);
   assert.deepEqual(await bareClient.bump({}), { value: 2 });
 });

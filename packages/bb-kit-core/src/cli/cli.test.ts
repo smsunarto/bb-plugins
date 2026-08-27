@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CLIError, defineCommand } from "./cli.ts";
-import type { CLIContext, CommandContext } from "./cli.ts";
+import { CommandError, defineCommand } from "./cli.ts";
+import type { CommandContext } from "./cli.ts";
 import { commandDefinitions, runProgram } from "./runner.ts";
 
 const require = createRequire(import.meta.url);
@@ -24,7 +24,7 @@ const greet = defineCommand({
   configure: (command) => {
     command.argument("<name>", "who to greet").option("--shout", "uppercase the greeting");
   },
-  run: (_context, { args, options }) => {
+  execute(_ctx, { args, options }) {
     const name = args[0] ?? "";
     const text = options["shout"] ? name.toUpperCase() : name;
     return { exitCode: 0, stdout: `hello ${text}\n` };
@@ -32,24 +32,25 @@ const greet = defineCommand({
 });
 
 const fail = defineCommand({
-  summary: "Fail with a CLIError",
-  run: () => {
-    throw new CLIError("nope", { exitCode: 3 });
+  summary: "Fail with a CommandError",
+  execute() {
+    throw new CommandError("nope", { exitCode: 3 });
   },
 });
 
 const boom = defineCommand({
   summary: "Throw a plain Error",
-  run: () => {
+  execute() {
     throw new Error("kaboom");
   },
 });
 
 const commands = { greet, fail, boom };
 const program = { name: "demo", summary: "Demo CLI" };
+const unusedHost = {} as CommandContext;
 
 function invokeProgram(argv: readonly string[]) {
-  return runProgram(() => commandDefinitions(commands, {}), argv, program);
+  return runProgram(() => commandDefinitions(commands, unusedHost), argv, program);
 }
 
 test("empty argv: exit 2 with help on stderr", async () => {
@@ -109,15 +110,15 @@ test("unknown command: exit 2", async () => {
   assert.match(result.stderr ?? "", /unknown command/);
 });
 
-test("CLIError carries its exit code, message to stderr", async () => {
+test("CommandError carries its exit code, message to stderr", async () => {
   const result = await fail.invoke();
   assert.deepEqual(result, { exitCode: 3, stderr: "nope\n" });
 });
 
-test("CLIError defaults to exit 1", () => {
-  const error = new CLIError("plain");
+test("CommandError defaults to exit 1", () => {
+  const error = new CommandError("plain");
   assert.equal(error.exitCode, 1);
-  assert.equal(error.name, "CLIError");
+  assert.equal(error.name, "CommandError");
 });
 
 test("other throws: exit 1 with the message", async () => {
@@ -125,49 +126,30 @@ test("other throws: exit 1 with the message", async () => {
   assert.deepEqual(result, { exitCode: 1, stderr: "kaboom\n" });
 });
 
-test("cli overlay reaches the command; default is {}", async () => {
-  let seen: CLIContext | undefined;
+test("host overlay reaches the command; omitted fields are undefined", async () => {
+  let seen: { cwd?: string; threadId?: string; projectId?: string } | undefined;
   const record = defineCommand({
-    summary: "Record the cli overlay",
-    run: (context: CommandContext) => {
-      seen = context.cli;
+    summary: "Record the host overlay",
+    execute(ctx) {
+      seen = { cwd: ctx.cwd, threadId: ctx.threadId, projectId: ctx.projectId };
       return { exitCode: 0 };
     },
   });
-  const cli: CLIContext = { cwd: "/w", threadId: "t1", projectId: "p1" };
-  await record.invoke({}, [], { cli });
-  assert.equal(seen, cli);
+  await record.invoke({ cwd: "/w", threadId: "t1", projectId: "p1" });
+  assert.deepEqual(seen, { cwd: "/w", threadId: "t1", projectId: "p1" });
   await record.invoke();
-  assert.deepEqual(seen, {});
-});
-
-test("plugin context reaches the command; missing methods throw", async () => {
-  const needsDb = defineCommand({
-    summary: "Uses a db",
-    run: (context: { db: string }) => ({ exitCode: 0, stdout: `${context.db}\n` }),
-  });
-  const result = await needsDb.invoke({ db: "postgres" });
-  assert.deepEqual(result, { exitCode: 0, stdout: "postgres\n" });
-
-  const usesPing = defineCommand({
-    summary: "Calls ping",
-    run: async (context: { ping: () => Promise<string> }) => ({
-      exitCode: 0,
-      stdout: await context.ping(),
-    }),
-  });
-  const missing = await usesPing.invoke();
-  assert.equal(missing.exitCode, 1);
-  assert.match(missing.stderr ?? "", /is not a function/);
+  assert.deepEqual(seen, { cwd: undefined, threadId: undefined, projectId: undefined });
 });
 
 function typeOnly() {
-  const needsDb = defineCommand({
+  defineCommand({
     summary: "a",
-    run: (_context: { db: string }) => ({ exitCode: 0 }),
+    execute: (_ctx: CommandContext) => ({ exitCode: 0 }),
   });
-  void needsDb.invoke({ db: "x" });
-  // @ts-expect-error db must be a string
-  void needsDb.invoke({ db: 1 });
+  defineCommand({
+    summary: "a",
+    // @ts-expect-error a command demanding a field outside CommandContext is rejected
+    execute: (_ctx: { extra(): void }) => ({ exitCode: 0 }),
+  });
 }
 void typeOnly;

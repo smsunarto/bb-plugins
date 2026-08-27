@@ -1,5 +1,6 @@
 import { Command, CommanderError } from "commander";
-import type { MaybePromise, UnionToIntersection } from "../utils/types.ts";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { MaybePromise } from "../utils/types.ts";
 
 /**
  * The shared commander runner (§4). A command's `invoke` and the
@@ -8,101 +9,84 @@ import type { MaybePromise, UnionToIntersection } from "../utils/types.ts";
  * Internal — `./cli` re-exports the public subset.
  */
 
-/** What the host passes per invocation (bb's `PluginCliContext` fields). */
-export type CLIContext = {
+/**
+ * What a Command's `execute` receives as `ctx`: the plugin Context plus
+ * host overlay fields. Parsed argv is the second argument. RPC execute
+ * stays typed against the base Context; extra Command fields are
+ * type-level only.
+ */
+export type CommandContext = {
+  readonly bb: BbPluginApi;
   cwd?: string;
   threadId?: string;
   projectId?: string;
   signal?: AbortSignal;
 };
 
-/**
- * What a Command's `run` receives: the plugin Context plus required
- * `cli`. RPC handlers stay typed against the base Context; the extra
- * `cli` property is type-level only.
- */
-export type CommandContext<C extends object = {}> = C & {
-  cli: CLIContext;
-};
-
-/** The buffered result shape bb's server-side CLI protocol expects. */
-export type CLIResult = {
-  exitCode: number;
-  stdout?: string;
-  stderr?: string;
-};
-
-/** What a command's `run` receives alongside its context. */
-export type CLIInvocation = {
+/** Parsed argv. The payload `execute` receives, parallel to a tool's input. */
+export type CommandInput = {
   /** Positional values — strings under commander's default parsers. */
   args: string[];
   options: Record<string, unknown>;
 };
 
-/**
- * A command definition. `run` is a PROPERTY on purpose: properties
- * compare contravariantly under strictFunctionTypes, so a command
- * demanding more than the plugin's context provides is rejected at the
- * `definePlugin` call (method syntax would compare bivariantly and let
- * superset demands slip through).
- */
-export type CLICommand<D> = {
-  summary: string;
-  /** Declare arguments/options here; a user-supplied `.action()` is inert. */
-  configure?: (command: Command) => void;
-  run: (context: D, invocation: CLIInvocation) => MaybePromise<CLIResult>;
+/** What a Command's `execute` returns, and what the host CLI protocol buffers. */
+export type CommandResult = {
+  exitCode: number;
+  stdout?: string;
+  stderr?: string;
 };
 
-export type CommandMap<D> = Record<string, CLICommand<D>> & Partial<Record<"rpc" | "help", never>>;
+/**
+ * The object passed to `defineCommand`. `execute` is a PROPERTY on
+ * purpose: properties compare contravariantly under strictFunctionTypes,
+ * so a command demanding more than CommandContext provides is rejected
+ * at `defineCommand` (method syntax would compare bivariantly and let
+ * superset demands slip through). Authors still write `async execute(ctx, { args, options })`.
+ */
+export type CommandDefinition = {
+  summary: string;
+  /** Declare arguments/options here; a user-supplied `.action()` is inert. */
+  configure?: (cmd: Command) => void;
+  execute: (ctx: CommandContext, input: CommandInput) => MaybePromise<CommandResult>;
+};
 
-/** The universal bound: `run` is contravariant, so every map assigns. */
-export type AnyCommandMap = CommandMap<never>;
+export type CommandMap = Record<string, CommandDefinition> & Partial<Record<"rpc" | "help", never>>;
 
-type CommandDemand<Cmd> = Cmd extends { run: (context: infer D, invocation: never) => unknown }
-  ? unknown extends D
-    ? never // unannotated commands demand nothing
-    : D
-  : never;
-
-/** What a command map collectively demands. Mirrors `RPCContext`. */
-export type CommandsContext<C> = [CommandDemand<C[keyof C]>] extends [never]
-  ? {}
-  : UnionToIntersection<CommandDemand<C[keyof C]>>;
-
-/** Throw from `run` to exit with a chosen code (defaults to 1). */
-export class CLIError extends Error {
+/** Throw from `execute` to exit with a chosen code (defaults to 1). */
+export class CommandError extends Error {
   readonly exitCode: number;
   constructor(message: string, options?: { exitCode?: number }) {
     super(message);
-    this.name = "CLIError";
+    this.name = "CommandError";
     this.exitCode = options?.exitCode ?? 1;
   }
 }
 
-/** One subcommand of the program `runProgram` builds. */
-export type SubcommandDefinition = {
+/** One node of the program `runProgram` builds. */
+export type ProgramDefinition = {
   name: string;
   summary: string;
-  configure?: (command: Command) => void;
-  action?: (command: Command) => MaybePromise<CLIResult>;
-  children?: SubcommandDefinition[];
+  configure?: (cmd: Command) => void;
+  action?: (cmd: Command) => MaybePromise<CommandResult>;
+  children?: ProgramDefinition[];
 };
 
 export type ProgramOptions = { name?: string; summary?: string };
 
-/** Map curated commands to subcommand definitions (shared by both tiers). */
-export function commandDefinitions<D>(
-  commands: Readonly<Record<string, CLICommand<D>>>,
-  context: D,
-): SubcommandDefinition[] {
+/** Map curated Commands to program nodes (shared by both tiers). */
+export function commandDefinitions(
+  commands: Readonly<Record<string, CommandDefinition>>,
+  ctx: CommandContext,
+): ProgramDefinition[] {
   return Object.entries(commands).map(([name, command]) => ({
     name,
     summary: command.summary,
     configure: command.configure,
-    action: (sub: Command) =>
-      command.run(context, {
-        args: sub.processedArgs as string[],
-        options: sub.opts(),
+    action: (cmd: Command) =>
+      command.execute(ctx, {
+        args: cmd.processedArgs as string[],
+        options: cmd.opts(),
       }),
   }));
 }
@@ -113,14 +97,14 @@ export function commandDefinitions<D>(
  * - `--help` / `help`     → exit 0, help on stdout
  * - unknown command or
  *   parse error           → exit 2, commander's message on stderr
- * - thrown CLIError       → its exitCode, message on stderr
+ * - thrown CommandError   → its exitCode, message on stderr
  * - anything else thrown  → exit 1, message on stderr
  */
 export async function runProgram(
-  makeDefinitions: () => SubcommandDefinition[],
+  makeDefinitions: () => ProgramDefinition[],
   argv: readonly string[],
   options: ProgramOptions,
-): Promise<CLIResult> {
+): Promise<CommandResult> {
   const sink: OutputSink = { out: "", err: "", result: undefined };
   try {
     const program = buildProgram(makeDefinitions(), options, sink);
@@ -140,7 +124,7 @@ export async function runProgram(
       }
       return { exitCode: 2, stderr: sink.err || `${error.message}\n` };
     }
-    if (error instanceof CLIError) {
+    if (error instanceof CommandError) {
       return { exitCode: error.exitCode, stderr: `${error.message}\n` };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -148,7 +132,7 @@ export async function runProgram(
   }
 }
 
-type OutputSink = { out: string; err: string; result: CLIResult | undefined };
+type OutputSink = { out: string; err: string; result: CommandResult | undefined };
 
 /**
  * Build a commander program. Settings (exitOverride, output capture)
@@ -158,7 +142,7 @@ type OutputSink = { out: string; err: string; result: CLIResult | undefined };
  * every invocation.
  */
 export function buildProgram(
-  definitions: readonly SubcommandDefinition[],
+  definitions: readonly ProgramDefinition[],
   options: ProgramOptions,
   sink?: OutputSink,
 ): Command {
@@ -179,19 +163,19 @@ export function buildProgram(
   }
   const onResult =
     sink &&
-    ((result: CLIResult): void => {
+    ((result: CommandResult): void => {
       sink.result = result;
     });
   for (const definition of definitions) {
-    addSubcommand(program, definition, onResult);
+    addNode(program, definition, onResult);
   }
   return program;
 }
 
-function addSubcommand(
+function addNode(
   parent: Command,
-  definition: SubcommandDefinition,
-  onResult?: (result: CLIResult) => void,
+  definition: ProgramDefinition,
+  onResult?: (result: CommandResult) => void,
 ): void {
   const sub = parent.command(definition.name);
   sub.summary(definition.summary);
@@ -205,6 +189,6 @@ function addSubcommand(
     });
   }
   for (const child of definition.children ?? []) {
-    addSubcommand(sub, child, onResult);
+    addNode(sub, child, onResult);
   }
 }

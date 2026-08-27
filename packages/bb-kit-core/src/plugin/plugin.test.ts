@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { definePlugin, type Context } from "./plugin.ts";
-import { defineCommand, type CommandContext } from "../cli/cli.ts";
+import { defineCommand } from "../cli/cli.ts";
 import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
 import { defineTool, type Session, type ToolContext } from "../tools/tools.ts";
 import type { HostSeam } from "./host.ts";
@@ -11,27 +11,33 @@ import type { HostSeam } from "./host.ts";
 const echo = defineQuery({
   input: z.object({ path: z.string() }),
   output: z.object({ path: z.string() }),
-  handler: (_context: Context, input) => ({ path: input.path }),
+  execute(_ctx, { path }) {
+    return { path };
+  },
 });
 
 const ping = defineQuery({
   output: z.object({ pong: z.boolean() }),
-  handler: (_context: Context) => ({ pong: true }),
+  execute() {
+    return { pong: true };
+  },
 });
 
 const readURL = defineMutation({
   input: z.object({ url: z.string() }),
   output: z.object({ ok: z.boolean() }),
-  handler: (_context: Context, _input) => ({ ok: true }),
+  execute() {
+    return { ok: true };
+  },
 });
 
 const demo = { echo, ping, readURL };
 
 const status = defineCommand({
   summary: "Show status",
-  run: async (context: CommandContext<Context>) => {
-    const result = await ping.handler(context);
-    return { exitCode: 0, stdout: `pong=${result.pong} cwd=${context.cli.cwd ?? ""}\n` };
+  async execute(ctx) {
+    const result = await ping.execute(ctx);
+    return { exitCode: 0, stdout: `pong=${result.pong} cwd=${ctx.cwd ?? ""}\n` };
   },
 });
 
@@ -180,7 +186,7 @@ test("definePlugin rejects an invalid RPC key", () => {
 });
 
 test("reserved command names throw at define time", () => {
-  const loose = defineCommand({ summary: "x", run: () => ({ exitCode: 0 }) });
+  const loose = defineCommand({ summary: "x", execute: () => ({ exitCode: 0 }) });
   for (const key of ["rpc", "help"]) {
     assert.throws(
       () =>
@@ -298,8 +304,8 @@ const notifyUser = defineTool({
   description: "Post a notification",
   parameters: z.object({ message: z.string() }),
   enabled: () => toolGate,
-  execute(context: ToolContext<Context>, input) {
-    seenToolContexts.push(context);
+  execute(ctx: ToolContext<Context>, input) {
+    seenToolContexts.push(ctx);
     return `sent:${input.message}`;
   },
 });
@@ -355,13 +361,13 @@ test("registered execute freezes the overlay context and returns the tool result
     { threadId: "t1", projectId: "p1", signal },
   );
   assert.equal(result, "sent:hi");
-  const context = seenToolContexts[0] as {
+  const ctx = seenToolContexts[0] as {
     bb: unknown;
     tool: { threadId: string; projectId: string; signal: AbortSignal };
   };
-  assert.equal(context.bb, bb);
-  assert.deepEqual(context.tool, { threadId: "t1", projectId: "p1", signal });
-  assert.equal(Object.isFrozen(context), true);
+  assert.equal(ctx.bb, bb);
+  assert.deepEqual(ctx.tool, { threadId: "t1", projectId: "p1", signal });
+  assert.equal(Object.isFrozen(ctx), true);
 });
 
 test("a gated tool synthesizes one configure listing derived names for passing predicates", async () => {
@@ -425,8 +431,8 @@ test("agents.instructions wires contributeInstructions with the plugin context",
     rpc: demo,
     agents: {
       tools: { inventory },
-      instructions(context, resolution) {
-        return context.bb ? `${resolution.threadId}/${resolution.projectId}` : null;
+      instructions(ctx, resolution) {
+        return ctx.bb ? `${resolution.threadId}/${resolution.projectId}` : null;
       },
     },
   })(bb);
@@ -448,27 +454,24 @@ test("invalid tool keys throw at define time", () => {
 // ---- type-level pins ------------------------------------------------
 
 function typeOnly() {
-  const greedyCommand = defineCommand({
+  defineCommand({
     summary: "wants more than the preset provides",
-    run: (_context: { extra(): void }) => ({ exitCode: 0 }),
+    // @ts-expect-error a command demanding a field outside CommandContext is rejected
+    execute: (_ctx: { extra(): void }) => ({ exitCode: 0 }),
+  });
+  const usesHostFields = defineCommand({
+    summary: "reads cwd from CommandContext",
+    execute(ctx) {
+      return {
+        exitCode: 0,
+        stdout: ctx.cwd ?? "",
+      };
+    },
   });
   void definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
-    // @ts-expect-error a command demanding a field outside the preset is rejected
-    cli: { greedy: greedyCommand },
-  });
-  const usesCli = defineCommand({
-    summary: "reads cli from CommandContext",
-    run: (context: CommandContext<Context>) => ({
-      exitCode: 0,
-      stdout: context.cli.cwd ?? "",
-    }),
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    cli: { usesCli },
+    cli: { usesHostFields },
   });
   void definePlugin({
     pluginId: "demo-ns",
@@ -486,39 +489,27 @@ function typeOnly() {
     pluginId: "demo-ns",
     rpc: demo,
     // @ts-expect-error authors cannot supply a context factory
-    context: () => ({ prefix: "" }),
+    ctx: () => ({ prefix: "" }),
   });
-  const greedyRPC = defineQuery({
+  defineQuery({
     output: z.object({ pong: z.boolean() }),
-    handler: (_context: { repository: unknown }) => ({ pong: true }),
+    // @ts-expect-error execute demanding a field outside the preset is rejected
+    execute: (_ctx: { extra(): void }) => ({ pong: true }),
   });
-  void definePlugin({
-    pluginId: "demo-ns",
-    // @ts-expect-error a handler may not demand a field outside the preset
-    rpc: { greedy: greedyRPC },
-  });
-  const greedyHostField = defineQuery({
+  defineQuery({
     output: z.object({ pong: z.boolean() }),
-    handler: (_context: { sdk: unknown }) => ({ pong: true }),
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
     // @ts-expect-error sdk lives on bb, not on Context
-    rpc: { greedy: greedyHostField },
+    execute: (_ctx: { sdk: unknown }) => ({ pong: true }),
   });
-  const wantsCliOnRPC = defineQuery({
+  defineQuery({
     output: z.object({ pong: z.boolean() }),
-    handler: (_context: CommandContext<Context>) => ({ pong: true }),
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
-    // @ts-expect-error cli is a Command field, not an RPC field
-    rpc: { ping: wantsCliOnRPC },
+    // @ts-expect-error CommandContext fields are not RPC fields
+    execute: (_ctx: { cwd: string }) => ({ pong: true }),
   });
   const greedyTool = defineTool({
     description: "wants more than the preset provides",
     parameters: z.object({}),
-    execute: (_context: ToolContext<{ extra(): void }>) => "x",
+    execute: (_ctx: ToolContext<{ extra(): void }>) => "x",
   });
   void definePlugin({
     pluginId: "demo-ns",

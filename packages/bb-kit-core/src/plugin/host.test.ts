@@ -23,10 +23,10 @@ function assertContext(bb: BbPluginApi): Context {
 }
 void assertContext;
 
-function assertContextFields(context: Context): void {
-  void context.bb.pluginId;
-  void context.bb.sdk.threads;
-  void context.bb.storage.kv.get;
+function assertContextFields(ctx: Context): void {
+  void ctx.bb.pluginId;
+  void ctx.bb.sdk.threads;
+  void ctx.bb.storage.kv.get;
 }
 void assertContextFields;
 
@@ -52,12 +52,12 @@ test("the seam file stays type-only (nothing to run)", () => {
 
 test("hostContext freezes { bb } and keeps bb live", () => {
   const bb = { sdk: { tag: 1 }, storage: { tag: 2 } } as unknown as BbPluginApi;
-  const context = hostContext(bb);
-  assert.equal(context.bb, bb);
-  assert.equal("sdk" in context, false);
-  assert.equal("storage" in context, false);
-  assert.equal(Object.isFrozen(context), true);
+  const ctx = hostContext(bb);
+  assert.equal(ctx.bb, bb);
+  assert.equal("sdk" in ctx, false);
+  assert.equal("storage" in ctx, false);
+  assert.equal(Object.isFrozen(ctx), true);
   assert.throws(() => {
-    Object.assign(context, { extra: true });
+    Object.assign(ctx, { extra: true });
   });
 });

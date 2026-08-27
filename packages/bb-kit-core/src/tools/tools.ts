@@ -22,8 +22,9 @@ export type ToolPresentation = PluginAgentToolPresentation;
 
 /**
  * What a tool's `execute` receives: the plugin Context plus the
- * per-call host facts under one key — the CommandContext twin. Host
- * plumbing folds into the context; the payload stays a parameter.
+ * per-call host facts under one key. Host plumbing folds into the
+ * context; the payload stays a parameter. Commands keep parsed argv
+ * as their second argument the same way.
  */
 export type ToolContext<C> = C & { tool: ToolInvocation };
 
@@ -42,8 +43,8 @@ export type DefinedTool<Context, In extends ObjectSchema> = {
   readonly instructions?: string;
   readonly presentation?: ToolPresentation;
   readonly parameters: In;
-  enabled?(context: Context, session: Session): boolean;
-  execute(context: ToolContext<Context>, input: SchemaOutput<In>): MaybePromise<ToolResult>;
+  enabled?(ctx: Context, session: Session): boolean;
+  execute(ctx: ToolContext<Context>, input: SchemaOutput<In>): MaybePromise<ToolResult>;
 };
 
 /**
@@ -57,8 +58,8 @@ export function defineTool<Context, In extends ObjectSchema>(definition: {
   instructions?: string;
   presentation?: ToolPresentation;
   parameters: In;
-  enabled?(context: Context, session: Session): boolean;
-  execute(context: ToolContext<Context>, input: SchemaOutput<In>): MaybePromise<ToolResult>;
+  enabled?(ctx: Context, session: Session): boolean;
+  execute(ctx: ToolContext<Context>, input: SchemaOutput<In>): MaybePromise<ToolResult>;
 }): DefinedTool<Context, In> {
   return definition;
 }
@@ -74,8 +75,8 @@ export type AnyTool = {
   readonly instructions?: string;
   readonly presentation?: ToolPresentation;
   readonly parameters: StandardSchemaV1;
-  enabled?(context: never, session: never): boolean;
-  execute(context: never, ...rest: never[]): unknown;
+  enabled?(ctx: never, session: never): boolean;
+  execute(ctx: never, ...rest: never[]): unknown;
 };
 
 export type ToolMap = Record<string, AnyTool>;
@@ -90,8 +91,8 @@ export type RuntimeTool = {
   instructions?: string;
   presentation?: ToolPresentation;
   parameters: StandardSchemaV1;
-  enabled?: (context: unknown, session: Session) => boolean;
-  execute: (context: unknown, input: unknown) => MaybePromise<ToolResult>;
+  enabled?: (ctx: unknown, session: Session) => boolean;
+  execute: (ctx: unknown, input: unknown) => MaybePromise<ToolResult>;
 };
 
 export function runtimeTools(tools: ToolMap): Record<string, RuntimeTool> {
@@ -124,7 +125,7 @@ export function toolName(pluginId: string, key: string): string {
 }
 
 type ToolDemand<T> = T extends {
-  execute(context: infer C, ...rest: never[]): unknown;
+  execute(ctx: infer C, ...rest: never[]): unknown;
 }
   ? ToolContext<unknown> extends C
     ? never // a tool demanding only the overlay demands nothing
@@ -132,7 +133,7 @@ type ToolDemand<T> = T extends {
   : never;
 
 /**
- * What a tool map collectively demands of the context. Mirrors
+ * What a tool map collectively demands of the ctx. Mirrors
  * `RPCContext`; one extraction arm suffices because `DefinedTool` ties
  * `execute` and `enabled` to the same Context parameter, so a demand
  * annotated only on `enabled` still reaches `execute`'s declared type.

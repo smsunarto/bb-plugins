@@ -20,17 +20,19 @@ type ReactNode = import("react").ReactNode;
 const demoRPC = {
   overview: defineQuery({
     output: z.object({ total: z.number() }),
-    handler: () => ({ total: 0 }),
+    execute: () => ({ total: 0 }),
   }),
   readFile: defineQuery({
     input: z.object({ path: z.string() }),
     output: z.object({ content: z.string() }),
-    handler: (_context: unknown, input) => ({ content: input.path }),
+    execute(_ctx, { path }) {
+      return { content: path };
+    },
   }),
   saveFile: defineMutation({
     input: z.object({ path: z.string() }),
     output: z.object({ saved: z.boolean() }),
-    handler: () => ({ saved: true }),
+    execute: () => ({ saved: true }),
   }),
 };
 

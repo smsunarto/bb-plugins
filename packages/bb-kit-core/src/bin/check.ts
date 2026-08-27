@@ -310,7 +310,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           const index = slice.indexOf(".action(");
           if (index !== -1) {
             warn(
-              "`.action(` inside a configure body — return a CLIResult from run instead; a commander action bypasses the CLI result contract",
+              "`.action(` inside a configure body — return a CommandResult from execute instead; a commander action bypasses the Command result contract",
               relativePath,
               lineAt(sourceFile, node.pos + index),
             );

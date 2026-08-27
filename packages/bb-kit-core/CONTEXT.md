@@ -68,24 +68,36 @@ Not a prefix of an RPC's public name.
 **Client**:
 The typed client for a plugin's RPCs — what the RPC subtree and the UI
 imperative escape hatch reach them through. Commands do not take a
-client; they take CommandContext and call RPC handlers. The RPC hooks
+client; they take CommandContext and call RPC `.execute`. The RPC hooks
 are the normal UI path.
 *Avoid*: caller, stub
 
 **Context**:
-The frozen host preset every handler receives: `{ bb }`.
+The frozen host preset every execute receives: `{ bb }`.
 The type is `Context` from `@bb-kit/core/plugin`, whose `bb` is
 `BbPluginApi`. Host capabilities (`sdk`, `storage`, …) live on `bb`.
 `definePlugin` builds it from the host; there is no author factory
-and no Extra fields. `cli` is a Command overlay, not a Context field.
+and no Extra fields. Host overlay fields live on CommandContext.
+Parsed argv is `CommandInput`, the second argument of `execute`.
 Plugins import `Context`; they do not alias it.
-*Avoid*: ctx, deps, environment
+The binding is `ctx`.
+*Avoid*: deps, environment
 
 **CommandContext**:
-What a Command's `run` receives: the plugin Context plus required
-`cli` (the host invocation facts: `cwd`, `threadId`, `projectId`,
-`signal`). RPC handlers stay typed against Context.
+What a Command's `execute` receives as `ctx`: the plugin Context and the
+host invocation fields (`cwd`, `threadId`, `projectId`, `signal`).
+Inferred from `defineCommand`. Authors do not annotate it.
+Parsed argv is CommandInput, not CommandContext. RPC `execute` infers
+Context; authors do not annotate it. The payload is keyed fields, not
+`input.`.
+The binding is `ctx`.
 *Avoid*: CLI context (for the whole object)
+
+**CommandInput**:
+The second argument of a Command's `execute`: `{ args, options }`.
+`args` is positional values (strings under default parsers). `options`
+is `command.opts()`. Parallel to a tool's input payload.
+*Avoid*: putting argv on ctx
 
 **RPC hooks**:
 The per-RPC React hooks UI code reaches RPCs through — a Query's
@@ -93,10 +105,21 @@ The per-RPC React hooks UI code reaches RPCs through — a Query's
 *Avoid*: query hooks
 
 **Command**:
-One `defineCommand` unit in `server/cli/`, wired into `definePlugin`'s command
-map. The only "command" in this context; an RPC that writes is a
-Mutation.
-*Avoid*: CLI command, subcommand
+One `defineCommand` unit in `server/cli/`, wired into `definePlugin`'s
+`cli` map. The only "command" in this context; an RPC that writes is a
+Mutation. `execute` returns CommandResult. Throw CommandError to exit with
+a chosen code.
+*Avoid*: CLI command, subcommand, CLICommand
+
+**CommandResult**:
+What a Command's `execute` returns: `{ exitCode, stdout?, stderr? }`.
+The host CLI protocol uses this same shape.
+*Avoid*: CLIResult
+
+**CommandError**:
+Thrown from `execute` to exit with a chosen code.
+`new CommandError(message, { exitCode = 1 })`.
+*Avoid*: CLIError
 
 **RPC subtree**:
 The `bb <plugin-id> rpc <name>` family every plugin mounts

@@ -1,41 +1,32 @@
-import type { CLICommand, CLIContext, CLIResult } from "./runner.ts";
+import type { CommandContext, CommandDefinition, CommandResult } from "./runner.ts";
 import { commandDefinitions, runProgram } from "./runner.ts";
 
 /** Public surface of `@bb-kit/core/cli` (§1, §4). */
-export { CLIError } from "./runner.ts";
-export type { CLICommand, CLIContext, CLIResult, CommandContext } from "./runner.ts";
+export { CommandError } from "./runner.ts";
+export type { CommandDefinition, CommandInput, CommandResult, CommandContext } from "./runner.ts";
 
-type ContextOf<D> = D extends object ? Partial<D> : D;
-
-export type DefinedCommand<D> = CLICommand<D> & {
+export type DefinedCommand = CommandDefinition & {
   /**
-   * Tier-1 invocation, parallel to an RPC's `handler(context, input)`.
-   * First argument is the plugin context (partial in tests).
-   * `argv` is the command's own arguments. `options.cli` is the host
-   * invocation overlay.
+   * Tier-1 invocation, parallel to an RPC's `execute(ctx[, args])`.
+   * First argument is the plugin context plus host overlay fields
+   * (partial in tests). `argv` is the command's own arguments.
    */
-  invoke: (
-    context?: ContextOf<D>,
-    argv?: readonly string[],
-    options?: { cli?: CLIContext },
-  ) => Promise<CLIResult>;
+  invoke: (ctx?: Partial<CommandContext>, argv?: readonly string[]) => Promise<CommandResult>;
 };
 
 const INVOKE = "command";
 
 /**
- * Declare a command. `D` — what the command demands of the plugin
- * context — infers from `run`'s first-parameter annotation; unannotated,
- * it stays `unknown` and the command accepts any context.
+ * Declare a command. `execute` takes `CommandContext` then
+ * `CommandInput`. Extra fields the preset does not provide are
+ * rejected here.
  */
-export function defineCommand<D = unknown>(command: CLICommand<D>): DefinedCommand<D> {
+export function defineCommand(command: CommandDefinition): DefinedCommand {
   return {
     ...command,
-    invoke(pluginContext, argv = [], options = {}) {
-      const cli = options.cli ?? {};
-      const context = { ...pluginContext, cli } as D;
+    invoke(ctx = {}, argv = []) {
       return runProgram(
-        () => commandDefinitions({ [INVOKE]: command }, context),
+        () => commandDefinitions({ [INVOKE]: command }, ctx as CommandContext),
         [INVOKE, ...argv],
         {},
       );

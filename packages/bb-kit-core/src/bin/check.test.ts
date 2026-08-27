@@ -165,7 +165,7 @@ test("a wrong unit export name fails rule 1", async () => {
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /server\/rpc\/ping\.ts:6 — must have exactly one value export named "ping" \(found: pong\)/,
+    /server\/rpc\/ping\.ts:5 — must have exactly one value export named "ping" \(found: pong\)/,
   );
 });
 
