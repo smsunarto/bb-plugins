@@ -3,14 +3,10 @@
 ## Dev loop
 
 - Start `bun run dev` before the first plugin edit. Leave it running.
-- Close a change by naming what to exercise in bb.
-- Do not tell the user to run `bb plugin build` or `bb plugin reload`.
-- For a fast check, run `bun run --filter '@smsunarto/bb-plugin-<id>' typecheck` or `test`.
-- Before handoff, run root `typecheck`, `test`, and `lint`.
-- Run `build` when the change touches a manifest, frontend bundle, build input, dependency, or workspace tooling.
-- Use `bun run reload <id>` and `build:reload` only for recovery.
-- Run `bun install` after a checkout or a lockfile change.
-- Run `bun run clean` only to diagnose stale `dist/`.
+- Close a change by naming what to exercise in bb. Never prescribe `bb plugin build` or `bb plugin reload`.
+- Before handoff, run root `typecheck`, `test`, and `lint`. Also run `build` when a manifest, frontend bundle, build input, dependency, or workspace tooling changed.
+- Use `reload` and `build:reload` only for recovery.
+- Use `clean` only to diagnose stale `dist/`.
 
 ## Traps
 
@@ -26,6 +22,7 @@
 - `dist/` is shared between the two instances.
 - When you capture plugin screenshots, follow the `bb-plugin-screenshots` skill.
 - Point `BB_SERVER_URL` at the dev App port, not the Server port.
+- Put helpers beside the composition root. `check` treats every `.ts` file in `rpc/`, `cli/`, and `tools/` as a wired unit.
 
 ## Agent docs
 
