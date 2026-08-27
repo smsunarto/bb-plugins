@@ -9,7 +9,6 @@ const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 test("the plugin imports only the public SDK and its declared dependencies", () => {
   const report = scanPublicSdkOnly(PLUGIN_ROOT, {
     allow: [
-      /^@ampcode\/sdk$/,
       /^bun:test$/,
       /^zod$/,
       /^react$/,

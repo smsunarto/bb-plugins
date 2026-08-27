@@ -18,8 +18,8 @@
 <picture><img src="docs/media/hero.png" alt="Amp in bb: an /orb prompt to run in Amp&#39;s remote sandbox, the Orb session bar with its amp sync command, and an Oracle card" width="100%" /></picture>
 
 This plugin registers Amp as a native bb provider. The executable side is the
-plugin's own provider bridge — its `bb.host` artifact — which drives the Amp
-CLI through the official `@ampcode/sdk` and a stream-json shim. Amp appears
+plugin's own provider bridge — its `bb.host` artifact — which spawns the Amp
+CLI directly and drives it over its stream-json execute wire. Amp appears
 in bb's provider list, runs against your bb environment by default, and can run
 in an [Amp Orb](https://ampcode.com) cloud sandbox instead when you ask for one.
 
@@ -166,12 +166,12 @@ A healthy install does not need this command.
 
 | Command         | What it does                                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `bb amp status` | Print every link in the chain: Amp CLI, CLI shim, provider registration, legacy config entry, and auth |
+| `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, provider registration, legacy config entry, and auth |
 
 ```console
 $ bb amp status
 Amp CLI: /Users/you/.local/bin/amp
-CLI shim: /path/to/plugins/amp/dist/amp-cli-shim.js
+bridge bundle: /path/to/plugins/amp/dist/host.js
 bb provider acp-amp: registered
 legacy config entry amp: absent
 auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in your environment
@@ -194,13 +194,12 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 ## Develop from source
 
 Install from source as shown under [Install](#install). `bun run build` in
-`plugins/amp` produces `dist/amp-cli-shim.js` alongside `dist/server.js`,
-`dist/app.js`, and `dist/host.js` (the provider bridge).
+`plugins/amp` produces `dist/server.js`, `dist/app.js`, and `dist/host.js`
+(the provider bridge).
 
-Never run `npm install` inside `plugins/amp`. The root `overrides` entry that
-keeps the real `@ampcode/cli` out of the tree only applies at the workspace
-root, and a leaf install makes `@ampcode/sdk` prefer a CLI the plugin did not
-configure.
+Never run `npm install` inside `plugins/amp`. The source checkout is a Bun
+workspace, and a leaf npm install writes a second lockfile and `node_modules`
+that shadow the workspace install.
 
 `bb plugin install .` and `bb plugin dev` rebuild the frontend in place from the
 published manifest entry, which drops the authored rules from `dist/app.css`.

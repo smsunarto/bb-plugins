@@ -17,11 +17,8 @@ import { AMP_AGENT } from "../src/execution-target.ts";
  * CLI status line and the registration error must never disagree.
  *
  * `npm install` inside a source checkout of the plugin is actively harmful:
- * that tree is a Bun workspace, and the root package.json `overrides` entry
- * that swaps @ampcode/cli for the local stub only applies at the workspace
- * root. A leaf install pulls in the real @ampcode/cli, which @ampcode/sdk
- * resolves BEFORE AMP_CLI_PATH, silently breaking CLI resolution (see the root
- * package.json "comments" field and test/cli-stub.test.ts).
+ * that tree is a Bun workspace, and a leaf npm install writes a second
+ * lockfile and node_modules that shadow the workspace install.
  */
 export const BRIDGE_BUILD_HINT =
   "Reinstall the plugin with `bb plugin install npm:@smsunarto/bb-plugin-amp`. " +

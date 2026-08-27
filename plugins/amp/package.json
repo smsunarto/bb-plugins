@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-amp",
   "version": "0.4.1",
-  "description": "Amp (ampcode.com) as a bb provider: a native provider bridge driving the Amp CLI through the official SDK, with Oracle and Orb surfaces",
+  "description": "Amp (ampcode.com) as a bb provider: a native provider bridge spawning the Amp CLI directly, with Oracle and Orb surfaces",
   "keywords": [
     "bb",
     "bb-plugin",
@@ -67,10 +67,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@ampcode/sdk": "0.1.0-20260729105907-g72d5ca3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "esbuild": "^0.25.0",
     "typescript": "^7.0.0"
   },
   "scripts": {
