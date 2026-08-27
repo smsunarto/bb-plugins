@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createFakeContext, queuedNotifications } from "../fake-context.ts";
+import { createFakeContext, shownNotifications } from "../fake-context.ts";
 import { send } from "./send.ts";
 
 test("send resolves the project and posts through delivery", async () => {
@@ -20,13 +20,11 @@ test("send resolves the project and posts through delivery", async () => {
   });
   assert.deepEqual(result, { listening: true });
   assert.deepEqual(lookups, ["p1"]);
-  assert.deepEqual(await queuedNotifications(ctx), [
+  assert.deepEqual(shownNotifications(ctx), [
     {
-      id: 1,
       title: "CI",
       body: "[Acme] Build finished",
-      threadId: "th_1",
-      silent: true,
+      soundName: null,
     },
   ]);
 });
@@ -35,9 +33,7 @@ test("send defaults the title, thread, and project", async () => {
   const ctx = createFakeContext();
   const result = await send.execute(ctx, { message: "hello" });
   assert.deepEqual(result, { listening: true });
-  assert.deepEqual(await queuedNotifications(ctx), [
-    { id: 1, title: "bb", body: "hello", threadId: null, silent: true },
-  ]);
+  assert.deepEqual(shownNotifications(ctx), [{ title: "bb", body: "hello", soundName: null }]);
 });
 
 test("send input rejects a whitespace-only message and trims a padded one", () => {
@@ -46,9 +42,9 @@ test("send input rejects a whitespace-only message and trims a padded one", () =
   assert.equal(send.input.parse({ message: "  hi  " }).message, "hi");
 });
 
-test("send reports a held notification when no window listens", async () => {
-  const ctx = createFakeContext({ listening: false });
+test("send reports native delivery failure", async () => {
+  const ctx = createFakeContext({ available: false });
   const result = await send.execute(ctx, { message: "hello" });
   assert.deepEqual(result, { listening: false });
-  assert.equal((await queuedNotifications(ctx)).length, 1);
+  assert.equal(shownNotifications(ctx).length, 1);
 });

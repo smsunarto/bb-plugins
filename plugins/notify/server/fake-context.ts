@@ -1,18 +1,20 @@
 import { stubHostContext } from "@bb-kit/core/testing";
 import type { Context } from "@bb-kit/core/plugin";
-import { notificationQueue } from "./delivery.ts";
+import { bindNotificationSender, type NativeNotification } from "./delivery.ts";
 import { bindSettings, fakeSettings, type Settings } from "./settings.ts";
 
 export type FakeContextOptions = {
-  listening?: boolean;
+  available?: boolean;
   settings?: Partial<Settings>;
   projectName?: (projectId: string) => Promise<string | null>;
   thread?: { title: string | null; titleFallback: string | null; projectId: string };
 };
 
+const callsByHost = new WeakMap<object, NativeNotification[]>();
+
 export function createFakeContext(options: FakeContextOptions = {}): Context {
   const settings = fakeSettings(options.settings);
-  const storage = { kv: memoryKv() };
+  const calls: NativeNotification[] = [];
   const sdk = {
     projects: {
       get: async ({ projectId }: { projectId: string }) => {
@@ -39,34 +41,21 @@ export function createFakeContext(options: FakeContextOptions = {}): Context {
       debug() {},
       warn() {},
     },
-    storage,
   };
   const ctx = stubHostContext({
     bb: bb as unknown as Context["bb"],
   });
-  if (options.listening !== false) {
-    notificationQueue(ctx.bb).markPoll();
-  }
+  callsByHost.set(ctx.bb, calls);
+  bindNotificationSender(ctx.bb, async (notification) => {
+    calls.push(notification);
+    if (options.available === false) {
+      throw new Error("notification unavailable");
+    }
+  });
   bindSettings(ctx.bb, () => settings);
   return ctx;
 }
 
-export async function queuedNotifications(ctx: Context) {
-  const batch = await notificationQueue(ctx.bb).queue.lease();
-  return batch.lease?.notifications ?? [];
-}
-
-function memoryKv() {
-  const map = new Map<string, unknown>();
-  return {
-    get: async <T>(key: string): Promise<T | undefined> => map.get(key) as T | undefined,
-    set: async (key: string, value: unknown) => {
-      map.set(key, value);
-    },
-    delete: async (key: string) => {
-      map.delete(key);
-    },
-    list: async (prefix?: string) =>
-      [...map.keys()].filter((key) => prefix === undefined || key.startsWith(prefix)),
-  };
+export function shownNotifications(ctx: Context): NativeNotification[] {
+  return callsByHost.get(ctx.bb) ?? [];
 }

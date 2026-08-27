@@ -1,33 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createFakeContext, queuedNotifications } from "../fake-context.ts";
+import { createFakeContext, shownNotifications } from "../fake-context.ts";
 import { send } from "./send.ts";
 
-test("send posts the message and prints the queued line", async () => {
+test("send posts the message and prints the sent line", async () => {
   const ctx = createFakeContext({
     projectName: (projectId) => Promise.resolve(projectId === "p1" ? "Acme" : null),
+    thread: { title: null, titleFallback: null, projectId: "p1" },
   });
   const result = await send.execute(
     { ...ctx, threadId: "outer", projectId: "p1" },
     { message: "hello there", title: "T", thread: "th-1" },
   );
-  assert.deepEqual(result, { exitCode: 0, stdout: "Queued — a BB window is listening.\n" });
-  assert.deepEqual(await queuedNotifications(ctx), [
-    { id: 1, title: "T", body: "[Acme] hello there", threadId: "th-1", silent: true },
+  assert.deepEqual(result, {
+    exitCode: 0,
+    stdout: "Sent through macOS Notification Center.\n",
+  });
+  assert.deepEqual(shownNotifications(ctx), [
+    { title: "T", body: "[Acme] hello there", soundName: null },
   ]);
 });
 
-test("send falls back to the invoking thread and prints the held line", async () => {
-  const ctx = createFakeContext({ listening: false });
+test("send falls back to the invoking thread and reports failure", async () => {
+  const ctx = createFakeContext({ available: false });
   const result = await send.execute({ ...ctx, threadId: "th-invoker" }, { message: "hi" });
   assert.deepEqual(result, {
-    exitCode: 0,
-    stdout: "Held — no BB window is open. It will appear when one is.\n",
+    exitCode: 1,
+    stdout: "Could not send the macOS notification.\n",
   });
-  assert.deepEqual(await queuedNotifications(ctx), [
-    { id: 1, title: "bb", body: "hi", threadId: "th-invoker", silent: true },
-  ]);
+  assert.deepEqual(shownNotifications(ctx), [{ title: "bb", body: "hi", soundName: null }]);
 });
 
 test("send's input rejects an invalid thread", async () => {

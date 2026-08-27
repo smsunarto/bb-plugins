@@ -6,11 +6,8 @@ import { test as testCommand } from "./command/test.ts";
 import { send } from "./rpc/send.ts";
 import { status } from "./rpc/status.ts";
 import { user } from "./tools/user.ts";
-import { notificationQueue } from "./delivery.ts";
 import { registerEvents } from "./events.ts";
-import { playSound } from "./sound.ts";
 import { projectNames } from "./project-names.ts";
-import { registerRoutes } from "./routes.ts";
 import { runTracker } from "./run-tracker.ts";
 import { bindSettings, SETTINGS_BLOCK } from "./settings.ts";
 
@@ -28,19 +25,11 @@ export default definePlugin({
       bb.log.info("settings changed");
     });
 
-    let soundPlayback = Promise.resolve();
-    const queueSound = (name: string) => {
-      soundPlayback = soundPlayback.then(() => playSound(name));
-    };
-
-    registerRoutes(bb, queueSound);
     registerEvents(bb);
 
-    bb.onDispose(async () => {
-      notificationQueue(bb).release();
+    bb.onDispose(() => {
       runTracker(bb).clear();
       projectNames(bb).clear();
-      await soundPlayback;
     });
   },
 });

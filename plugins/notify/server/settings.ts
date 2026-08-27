@@ -55,7 +55,7 @@ export const SETTINGS_BLOCK = {
     type: "select" as const,
     label: "Sound",
     description:
-      "off is silent. system default lets macOS choose. A named tone silences the notification and plays that tone instead, so the two do not stack.",
+      "off is silent. system default lets macOS choose. A named tone asks Notification Center to play that sound.",
     options: [...SOUND_OPTIONS],
     default: SETTINGS_DEFAULTS.sound,
   },

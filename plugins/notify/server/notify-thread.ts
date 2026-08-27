@@ -1,6 +1,13 @@
 import type { Context } from "@bb-kit/core/plugin";
 import { deliver } from "./delivery.ts";
-import { BODY_MAX_CHARS, oneLine, parseSeconds, plainText, suppressionReason, threadLabel } from "./format.ts";
+import {
+  BODY_MAX_CHARS,
+  oneLine,
+  parseSeconds,
+  plainText,
+  suppressionReason,
+  threadLabel,
+} from "./format.ts";
 import { latestRunWasManuallyStopped } from "./lifecycle.ts";
 import { projectName } from "./project-names.ts";
 import { runTracker } from "./run-tracker.ts";
@@ -58,7 +65,6 @@ export async function notifyThread(
       project,
       heading: threadLabel(thread),
       message: outcome === "failed" ? `Failed — ${said}` : said,
-      threadId: thread.id,
     });
   });
 }

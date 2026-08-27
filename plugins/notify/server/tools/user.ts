@@ -36,10 +36,9 @@ export const user = defineTool({
       project,
       heading,
       message: oneLine(plainText(message), BODY_MAX_CHARS),
-      threadId: ctx.tool.threadId,
     });
     return listening
-      ? "Notification queued; a BB window is listening."
-      : "No BB window is open; the notification will appear when one is.";
+      ? "Notification sent through macOS Notification Center."
+      : "The macOS notification could not be sent.";
   },
 });

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { PluginAgentConfigurationContext } from "@get-bb/plugin-sdk";
+import { bindNotificationSender } from "./delivery.ts";
 import plugin from "./server.ts";
 
 function session(): PluginAgentConfigurationContext {
@@ -60,15 +61,14 @@ test("server.ts registers notify_user and gates it on the agentTool setting", as
   assert.deepEqual(after.skills, []);
 });
 
-test("notify_user delivers through the real host object and reports the held state", async () => {
+test("notify_user delivers through the real host object", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "notify" });
   await plugin(bb);
   await harness.setSettings({ agentTool: true });
+  bindNotificationSender(bb, async () => {});
 
-  // The fake host has no /pending long-poll, so delivery holds the
-  // notification and the tool reports the no-window contract string.
   const result = await harness.callAgentTool("notify_user", { message: "Build finished" });
-  assert.equal(result, "No BB window is open; the notification will appear when one is.");
+  assert.equal(result, "Notification sent through macOS Notification Center.");
 });
 
 test("invalid arguments are rejected by the host's parse step, not plugin code", async () => {

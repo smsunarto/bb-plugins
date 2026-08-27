@@ -4,8 +4,7 @@ import { z } from "zod";
 import { send as sendRpc } from "../rpc/send.ts";
 import { isThreadId } from "../format.ts";
 
-/** Post a notification. An agent running this from inside a thread gets a
- * notification that opens that thread, without naming it. */
+/** Post a notification. Thread context supplies the project label. */
 export const send = defineCommand({
   summary: "Post a notification",
   input: z.object({
@@ -16,10 +15,9 @@ export const send = defineCommand({
     title: argv.option(z.string().optional(), {
       description: "heading shown instead of bb",
     }),
-    thread: argv.option(
-      z.string().refine(isThreadId, "not a thread id").optional(),
-      { description: "thread the notification opens" },
-    ),
+    thread: argv.option(z.string().refine(isThreadId, "not a thread id").optional(), {
+      description: "thread the notification opens",
+    }),
   }),
   async execute(ctx, { message, title, thread }) {
     const input: { message: string; title?: string; threadId?: string; projectId?: string } = {
@@ -28,10 +26,12 @@ export const send = defineCommand({
     if (title !== undefined) input.title = title;
     const threadId = thread ?? ctx.threadId;
     if (threadId !== undefined) input.threadId = threadId;
-    if (ctx.projectId !== undefined) input.projectId = ctx.projectId;
+    if (thread === undefined && ctx.projectId !== undefined) {
+      input.projectId = ctx.projectId;
+    }
     const { listening } = await sendRpc.execute(ctx, input);
     return listening
-      ? { exitCode: 0, stdout: "Queued — a BB window is listening.\n" }
-      : { exitCode: 0, stdout: "Held — no BB window is open. It will appear when one is.\n" };
+      ? { exitCode: 0, stdout: "Sent through macOS Notification Center.\n" }
+      : { exitCode: 1, stdout: "Could not send the macOS notification.\n" };
   },
 });

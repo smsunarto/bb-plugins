@@ -1,16 +1,12 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 
-import { notificationQueue } from "../delivery.ts";
 import { parseSeconds } from "../format.ts";
 import { pluginSettings } from "../settings.ts";
 
-/** Whether a BB window is listening, the held count, and the filters. */
+/** The notification filters and delivery settings. */
 export const status = defineQuery({
   output: z.object({
-    listening: z.boolean(),
-    polling: z.number(),
-    held: z.number(),
     notifyOnIdle: z.boolean(),
     notifyOnFailed: z.boolean(),
     includeChildThreads: z.boolean(),
@@ -19,13 +15,9 @@ export const status = defineQuery({
     sound: z.string(),
     agentTool: z.boolean(),
   }),
-  async execute(ctx) {
+  execute(ctx) {
     const settings = pluginSettings(ctx.bb);
-    const snapshot = await notificationQueue(ctx.bb).snapshot();
     return {
-      listening: snapshot.listening,
-      polling: snapshot.polling,
-      held: snapshot.held,
       notifyOnIdle: settings.notifyOnIdle,
       notifyOnFailed: settings.notifyOnFailed,
       includeChildThreads: settings.includeChildThreads,

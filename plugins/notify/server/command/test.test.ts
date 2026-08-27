@@ -1,7 +1,7 @@
 import { test as testCase } from "node:test";
 import assert from "node:assert/strict";
 
-import { createFakeContext, queuedNotifications } from "../fake-context.ts";
+import { createFakeContext, shownNotifications } from "../fake-context.ts";
 import { test } from "./test.ts";
 
 testCase("test posts the sample notification from the invoking thread", async () => {
@@ -9,32 +9,31 @@ testCase("test posts the sample notification from the invoking thread", async ()
     projectName: (projectId) => Promise.resolve(projectId === "p1" ? "Acme" : null),
   });
   const result = await test.execute({ ...ctx, threadId: "th-1", projectId: "p1" });
-  assert.deepEqual(result, { exitCode: 0, stdout: "Queued — a BB window is listening.\n" });
-  assert.deepEqual(await queuedNotifications(ctx), [
+  assert.deepEqual(result, {
+    exitCode: 0,
+    stdout: "Sent through macOS Notification Center.\n",
+  });
+  assert.deepEqual(shownNotifications(ctx), [
     {
-      id: 1,
       title: "bb notify",
-      body: "[Acme] Notifications are working. Click to open the thread this came from.",
-      threadId: "th-1",
-      silent: true,
+      body: "[Acme] Notifications are working, even with every BB window closed.",
+      soundName: null,
     },
   ]);
 });
 
-testCase("test prints the held line outside a thread", async () => {
-  const ctx = createFakeContext({ listening: false });
+testCase("test reports native delivery failure outside a thread", async () => {
+  const ctx = createFakeContext({ available: false });
   const result = await test.execute(ctx);
   assert.deepEqual(result, {
-    exitCode: 0,
-    stdout: "Held — no BB window is open. It will appear when one is.\n",
+    exitCode: 1,
+    stdout: "Could not send the macOS notification.\n",
   });
-  assert.deepEqual(await queuedNotifications(ctx), [
+  assert.deepEqual(shownNotifications(ctx), [
     {
-      id: 1,
       title: "bb notify",
-      body: "Notifications are working. Click to open the thread this came from.",
-      threadId: null,
-      silent: true,
+      body: "Notifications are working, even with every BB window closed.",
+      soundName: null,
     },
   ]);
 });

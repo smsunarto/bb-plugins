@@ -9,16 +9,6 @@ export const MAX_RUN_SECONDS = 30 * 24 * 60 * 60;
 /** Notification bodies are clipped to this many characters. */
 export const BODY_MAX_CHARS = 160;
 
-/** A unique tag keeps a later turn from replacing an earlier macOS alert. */
-export function notificationTag(id: number): string {
-  return `bb-notify-${id}`;
-}
-
-/** Only the signed desktop app can post a notification attributed to bb. */
-export function isDesktopNotificationHost(desktopBridge: unknown): boolean {
-  return desktopBridge !== undefined;
-}
-
 /** Notification bodies are one line: collapse whitespace, then clip. */
 export function oneLine(text: string, maxChars: number): string {
   const collapsed = text.replace(/\s+/gu, " ").trim();
@@ -41,7 +31,7 @@ export function threadLabel(thread: {
 }
 
 /**
- * Split a notification into the two fields the web Notification API gives us.
+ * Split a notification into macOS Notification Center's title and body.
  *
  * The thread is what identifies the notification, so it takes the title — the
  * one line macOS renders in bold. The project is context rather than news, so

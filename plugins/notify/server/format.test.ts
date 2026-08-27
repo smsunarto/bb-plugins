@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  isDesktopNotificationHost,
   isThreadId,
   MAX_RUN_SECONDS,
   notificationLines,
-  notificationTag,
   oneLine,
   parseSeconds,
   parseSendArgs,
@@ -13,16 +11,6 @@ import {
   suppressionReason,
   threadLabel,
 } from "./format.ts";
-
-test("notification tags stay unique across turns from the same thread", () => {
-  assert.equal(notificationTag(41), "bb-notify-41");
-  assert.notEqual(notificationTag(41), notificationTag(42));
-});
-
-test("only a desktop bridge qualifies as a notification host", () => {
-  assert.ok(!isDesktopNotificationHost(undefined));
-  assert.ok(isDesktopNotificationHost({ platform: "macos" }));
-});
 
 test("oneLine collapses whitespace and leaves short text alone", () => {
   assert.equal(oneLine("  a\n\n b\tc  ", 40), "a b c");
