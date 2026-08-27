@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import test from "node:test";
+import { test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { createUserMessage, execute } from "@ampcode/sdk";
 import {

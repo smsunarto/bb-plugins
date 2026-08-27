@@ -1,7 +1,5 @@
-// Must be first: bb SDK modules expect a CJS-style global require.
-import "./helpers/global-require.ts";
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "bun:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { experimental_scanPublicSdkOnly as scanPublicSdkOnly } from "@get-bb/plugin-sdk/testing";
@@ -12,6 +10,7 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
   const report = scanPublicSdkOnly(PLUGIN_ROOT, {
     allow: [
       /^@ampcode\/sdk$/,
+      /^bun:test$/,
       /^zod$/,
       /^react$/,
       // The scanner extends its allowlist for `*.test.*` files only; the

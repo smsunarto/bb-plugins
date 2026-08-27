@@ -1,9 +1,8 @@
 // U4 gate, round-trip half: `startToolProxy` binds a real loopback socket and
 // the test acts as the MCP child, driving `handleMcpRequest` from the exact
 // env block Amp would hand the spawned server.
-import "./helpers/global-require.ts";
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "bun:test";
 import {
   AMP_BRIDGE_MCP_SERVER_NAME,
   handleMcpRequest,
@@ -105,133 +104,123 @@ describe("bridge tool proxy (U4)", () => {
   });
 
   it("round trips initialize, tools/list, and a tools/call to the bridge", async () => {
-    const calls: ProxiedToolCall[] = [];
-    await withProxy(
-      proxyArgs({
-        callTool: (call) => {
-          calls.push(call);
-          return Promise.resolve({ content: "hello from bb", isError: false });
-        },
-      }),
-      async (proxy) => {
-        const env = childEnvFor(proxy);
-        const { writes, write } = makeChildWriter();
-
-        await handleMcpRequest(
-          env,
-          { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
-          write,
-        );
-        assert.deepEqual(writes[0]?.result?.serverInfo, {
-          name: AMP_BRIDGE_MCP_SERVER_NAME,
-          version: "1.0.0",
-        });
-        assert.equal(writes[0]?.result?.protocolVersion, "2025-06-18");
-
-        await handleMcpRequest(env, { id: 2, method: "tools/list" }, write);
-        const listed = writes[1]?.result?.tools;
-        assert.ok(Array.isArray(listed));
-        assert.deepEqual(
-          listed.map((tool: { name: string }) => tool.name),
-          ["my_tool", "ask_user"],
-        );
-
-        await handleMcpRequest(
-          env,
-          { id: 3, method: "tools/call", params: { name: "my_tool", arguments: { city: "Oslo" } } },
-          write,
-        );
-        assert.equal(calls.length, 1);
-        assert.equal(calls[0]?.tool, "my_tool");
-        assert.deepEqual(calls[0]?.arguments, { city: "Oslo" });
-        assert.match(calls[0]?.callId ?? "", /^amp-mcp-my_tool-/u);
-        assert.deepEqual(writes[2]?.result, {
-          content: [{ type: "text", text: "hello from bb" }],
-        });
-
-        await handleMcpRequest(
-          env,
-          { id: 4, method: "tools/call", params: { name: "nope" } },
-          write,
-        );
-        assert.equal(writes[3]?.error?.code, -32602);
-
-        await handleMcpRequest(env, { id: 5, method: "prompts/list" }, write);
-        assert.equal(writes[4]?.error?.code, -32601);
-      },
+    const callTool = mock((_call: ProxiedToolCall) =>
+      Promise.resolve({ content: "hello from bb", isError: false }),
     );
+    await withProxy(proxyArgs({ callTool }), async (proxy) => {
+      const env = childEnvFor(proxy);
+      const child = makeChildWriter();
+
+      await handleMcpRequest(
+        env,
+        { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } },
+        child.write,
+      );
+      assert.deepEqual(child.writes[0]?.result?.serverInfo, {
+        name: AMP_BRIDGE_MCP_SERVER_NAME,
+        version: "1.0.0",
+      });
+      assert.equal(child.writes[0]?.result?.protocolVersion, "2025-06-18");
+
+      await handleMcpRequest(env, { id: 2, method: "tools/list" }, child.write);
+      const listed = child.writes[1]?.result?.tools;
+      assert.ok(Array.isArray(listed));
+      assert.deepEqual(
+        listed.map((tool: { name: string }) => tool.name),
+        ["my_tool", "ask_user"],
+      );
+
+      await handleMcpRequest(
+        env,
+        { id: 3, method: "tools/call", params: { name: "my_tool", arguments: { city: "Oslo" } } },
+        child.write,
+      );
+      assert.equal(callTool.mock.calls.length, 1);
+      const call = callTool.mock.calls[0]?.[0];
+      assert.equal(call?.tool, "my_tool");
+      assert.deepEqual(call?.arguments, { city: "Oslo" });
+      assert.match(call?.callId ?? "", /^amp-mcp-my_tool-/u);
+      assert.deepEqual(child.writes[2]?.result, {
+        content: [{ type: "text", text: "hello from bb" }],
+      });
+
+      await handleMcpRequest(
+        env,
+        { id: 4, method: "tools/call", params: { name: "nope" } },
+        child.write,
+      );
+      assert.equal(child.writes[3]?.error?.code, -32602);
+
+      await handleMcpRequest(env, { id: 5, method: "prompts/list" }, child.write);
+      assert.equal(child.writes[4]?.error?.code, -32601);
+    });
   });
 
   it("rejects a tampered token as an error result", () =>
     withProxy(proxyArgs(), async (proxy) => {
       const env: McpChildEnvironment = { ...childEnvFor(proxy), token: "deadbeef" };
-      const { writes, write } = makeChildWriter();
+      const child = makeChildWriter();
       await handleMcpRequest(
         env,
         { id: 1, method: "tools/call", params: { name: "my_tool", arguments: {} } },
-        write,
+        child.write,
       );
-      assert.equal(writes[0]?.result?.isError, true);
-      assert.deepEqual(writes[0]?.result?.content, [
+      assert.equal(child.writes[0]?.result?.isError, true);
+      assert.deepEqual(child.writes[0]?.result?.content, [
         { type: "text", text: "Invalid dynamic tool request" },
       ]);
     }));
 
   it("turns callTool failures and junk results into isError results", async () => {
-    let junk = false;
-    await withProxy(
-      proxyArgs({
-        callTool: () => (junk ? Promise.resolve(42) : Promise.reject(new Error("boom"))),
-      }),
-      async (proxy) => {
-        const env = childEnvFor(proxy);
-        const { writes, write } = makeChildWriter();
+    const callTool = mock<StartToolProxyArgs["callTool"]>();
+    callTool.mockRejectedValueOnce(new Error("boom"));
+    callTool.mockResolvedValueOnce(42 as never);
+    await withProxy(proxyArgs({ callTool }), async (proxy) => {
+      const env = childEnvFor(proxy);
+      const child = makeChildWriter();
 
-        await handleMcpRequest(
-          env,
-          { id: 1, method: "tools/call", params: { name: "my_tool", arguments: {} } },
-          write,
-        );
-        assert.equal(writes[0]?.result?.isError, true);
-        assert.deepEqual(writes[0]?.result?.content, [{ type: "text", text: "boom" }]);
+      await handleMcpRequest(
+        env,
+        { id: 1, method: "tools/call", params: { name: "my_tool", arguments: {} } },
+        child.write,
+      );
+      assert.equal(child.writes[0]?.result?.isError, true);
+      assert.deepEqual(child.writes[0]?.result?.content, [{ type: "text", text: "boom" }]);
 
-        junk = true;
-        await handleMcpRequest(
-          env,
-          { id: 2, method: "tools/call", params: { name: "my_tool", arguments: {} } },
-          write,
-        );
-        assert.equal(writes[1]?.result?.isError, true);
-        assert.deepEqual(writes[1]?.result?.content, [
-          { type: "text", text: 'Tool "my_tool" returned an unrecognized result' },
-        ]);
-      },
-    );
+      await handleMcpRequest(
+        env,
+        { id: 2, method: "tools/call", params: { name: "my_tool", arguments: {} } },
+        child.write,
+      );
+      assert.equal(child.writes[1]?.result?.isError, true);
+      assert.deepEqual(child.writes[1]?.result?.content, [
+        { type: "text", text: 'Tool "my_tool" returned an unrecognized result' },
+      ]);
+    });
   });
 
   it("heartbeats notifications/progress while a call waits", async () => {
-    await withProxy(
-      proxyArgs({
-        callTool: () =>
-          new Promise((resolve) => setTimeout(() => resolve({ content: "done" }), 40)),
-      }),
-      async (proxy) => {
-        const env: McpChildEnvironment = { ...childEnvFor(proxy), progressIntervalMs: 5 };
-        const { writes, write } = makeChildWriter();
-        await handleMcpRequest(
-          env,
-          {
-            id: 1,
-            method: "tools/call",
-            params: { name: "my_tool", arguments: {}, _meta: { progressToken: "tok-1" } },
-          },
-          write,
-        );
-        const progress = writes.filter((message) => message.method === "notifications/progress");
-        assert.ok(progress.length >= 1, "expected at least one progress notification");
-        const last = writes.at(-1);
-        assert.deepEqual(last?.result?.content, [{ type: "text", text: "done" }]);
-      },
+    const callTool = mock<StartToolProxyArgs["callTool"]>(
+      () => new Promise((resolve) => setTimeout(() => resolve({ content: "done" }), 40)),
     );
+    await withProxy(proxyArgs({ callTool }), async (proxy) => {
+      const env: McpChildEnvironment = { ...childEnvFor(proxy), progressIntervalMs: 5 };
+      const child = makeChildWriter();
+      await handleMcpRequest(
+        env,
+        {
+          id: 1,
+          method: "tools/call",
+          params: { name: "my_tool", arguments: {}, _meta: { progressToken: "tok-1" } },
+        },
+        child.write,
+      );
+      const progress = child.writes.filter(
+        (message) => message.method === "notifications/progress",
+      );
+      assert.ok(progress.length >= 1, "expected at least one progress notification");
+      const last = child.writes.at(-1);
+      assert.deepEqual(last?.result?.content, [{ type: "text", text: "done" }]);
+    });
   });
 });

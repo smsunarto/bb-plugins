@@ -5,10 +5,8 @@
 //
 // Four of the SDK's eight conformance cells are recorded; the other four do
 // not exist for this provider (see parity-fixture.ts).
-// Must be first: bb SDK modules expect a CJS-style global require.
-import "./helpers/global-require.ts";
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "bun:test";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,14 +30,9 @@ import {
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOST_MODULE = join(PLUGIN_ROOT, "dist", "host.js");
 const RECORDINGS_ROOT = join(PLUGIN_ROOT, "test", "recordings");
+const parityTest = existsSync(HOST_MODULE) ? test : test.skip;
 
-test("the built bridge replays the recorded parity cells", async (t) => {
-  if (!existsSync(HOST_MODULE)) {
-    // Same self-skip the retired stdio test used: recordings replay the
-    // built artifact, and an unbuilt checkout has nothing to replay.
-    t.skip(`dist/host.js is unbuilt — run \`bun run build\`, then rerun for parity coverage`);
-    return;
-  }
+parityTest("the built bridge replays the recorded parity cells", async () => {
   // The recordings reference fixed paths (the fake CLI, the workspace cwd);
   // recreate them so the replayed bridge can spawn its provider for real.
   prepareParityRoot();

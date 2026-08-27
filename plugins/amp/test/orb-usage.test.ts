@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "bun:test";
 import { threadLinkToOrbUsageView } from "../src/orb-usage.ts";
 
 test("local execution hides the banner", () => {
