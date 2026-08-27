@@ -1,19 +1,15 @@
+import { mock, type Mock } from "bun:test";
 import { bindGit, type DotfilesGit, type ManagedDotfilesGit } from "./git.ts";
 
-/** The all-green fake plus the command strings `run` received, in order. */
 export interface FakeDotfilesGit extends DotfilesGit {
-  readonly commands: readonly string[];
+  readonly run: Mock<DotfilesGit["run"]>;
 }
 
-/**
- * All-green defaults for every git method (repoPath "/dotfiles"),
- * with each `run` command recorded on `commands`. Override the methods a
- * test cares about.
- */
 export function createFakeGit(overrides: Partial<DotfilesGit> = {}): FakeDotfilesGit {
-  const commands: string[] = [];
+  const run = mock<DotfilesGit["run"]>(
+    overrides.run ?? (async () => ({ exitCode: 0, output: "ok" })),
+  );
   return {
-    commands,
     getRepoPath: async () => "/dotfiles",
     repoExists: () => true,
     pathExists: () => true,
@@ -22,12 +18,9 @@ export function createFakeGit(overrides: Partial<DotfilesGit> = {}): FakeDotfile
     readFile: async () => ({ content: "working", sha256: "sha-working" }),
     readHeadFile: async () => "head",
     writeFile: async () => ({ outcome: "written", sha256: "sha-next" }),
-    run: async (_repoPath, command) => {
-      commands.push(command);
-      return { exitCode: 0, output: "ok" };
-    },
     removeSkill: async () => ({ exitCode: 0, output: "removed" }),
     ...overrides,
+    run,
   };
 }
 

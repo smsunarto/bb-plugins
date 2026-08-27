@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 import { createFakeContext } from "../fake-context.ts";
 import { removeSkill } from "./remove-skill.ts";
@@ -9,7 +9,7 @@ test("makes stale skill removal an expected outcome", async () => {
     outcome: "not-found",
   });
 
-  const logs: string[] = [];
+  const log = mock<(message: string) => void>();
   const existing = createFakeContext(
     {
       discoverSkills: () => [
@@ -19,18 +19,14 @@ test("makes stale skill removal an expected outcome", async () => {
         },
       ],
     },
-    {
-      log: (message) => {
-        logs.push(message);
-      },
-    },
+    { log },
   );
   assert.deepEqual(await removeSkill.execute(existing, { name: "example" }), {
     outcome: "completed",
     exitCode: 0,
     output: "removed",
   });
-  assert.deepEqual(logs, ["removing skill example via npx skills"]);
+  assert.deepEqual(log.mock.calls, [["removing skill example via npx skills"]]);
   await assert.rejects(
     async () => removeSkill.execute(existing, { name: "../example" }),
     /invalid skill name/,

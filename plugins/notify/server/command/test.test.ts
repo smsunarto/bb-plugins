@@ -1,4 +1,4 @@
-import { test as testCase } from "node:test";
+import { test as testCase } from "bun:test";
 import assert from "node:assert/strict";
 
 import { createFakeContext, shownNotifications } from "../fake-context.ts";

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { CommandError } from "@bb-kit/core/command";
 
@@ -17,15 +17,13 @@ test("render throws when the repo is missing", async () => {
 });
 
 test("render runs the render task and passes the result through", async () => {
-  const commands: string[] = [];
-  const result = await render.execute(
-    createFakeContext({
-      run: async (_repoPath, command) => {
-        commands.push(command);
-        return { exitCode: 3, output: "rendered 2 files" };
-      },
-    }),
-  );
+  const ctx = createFakeContext({
+    run: async () => ({ exitCode: 3, output: "rendered 2 files" }),
+  });
+  const result = await render.execute(ctx);
   assert.deepEqual(result, { exitCode: 3, stdout: "rendered 2 files" });
-  assert.deepEqual(commands, ["mise run render"]);
+  assert.deepEqual(
+    ctx.git.run.mock.calls.map(([, command]) => command),
+    ["mise run render"],
+  );
 });

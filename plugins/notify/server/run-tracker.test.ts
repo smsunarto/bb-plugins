@@ -1,20 +1,15 @@
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
 import { createRunTracker } from "./run-tracker.ts";
 
 test("notifyOnce reserves the dedupe slot before deliver and rolls it back on throw", async () => {
   const tracker = createRunTracker(() => 1_000);
-  let calls = 0;
-  await assert.rejects(
-    () =>
-      tracker.notifyOnce("th", 0, async () => {
-        calls += 1;
-        throw new Error("persist failed");
-      }),
-    /persist failed/,
-  );
-  assert.equal(calls, 1);
+  const deliver = mock(async () => {
+    throw new Error("persist failed");
+  });
+  await assert.rejects(() => tracker.notifyOnce("th", 0, deliver), /persist failed/);
+  assert.equal(deliver.mock.calls.length, 1);
   const second = await tracker.notifyOnce("th", 0, async () => "ok");
   assert.deepEqual(second, { delivered: true, value: "ok" });
 });

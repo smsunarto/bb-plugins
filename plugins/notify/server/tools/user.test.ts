@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
 import { createFakeContext, shownNotifications } from "../fake-context.ts";
@@ -9,20 +9,17 @@ function invocation(threadId: string) {
 }
 
 test("notify_user titles with the thread, tags the project, and strips markdown", async () => {
-  const lookups: string[] = [];
+  const projectName = mock(async () => "Acme");
   const ctx = createFakeContext({
     thread: { title: "Fix CI", titleFallback: null, projectId: "p1" },
-    projectName: (projectId) => {
-      lookups.push(projectId);
-      return Promise.resolve("Acme");
-    },
+    projectName,
   });
   const result = await user.execute(
     { ...ctx, tool: invocation("th_1") },
     { message: "**Build** finished" },
   );
   assert.equal(result, "Notification sent through macOS Notification Center.");
-  assert.deepEqual(lookups, ["p1"]);
+  assert.deepEqual(projectName.mock.calls, [["p1"]]);
   assert.deepEqual(shownNotifications(ctx), [
     { title: "Fix CI", body: "[Acme] Build finished", soundName: null },
   ]);

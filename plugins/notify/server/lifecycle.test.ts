@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import { latestRunWasManuallyStopped, THREAD_EVENT_PAGE_SIZE } from "./lifecycle.ts";
 
 interface Event {
@@ -60,13 +60,14 @@ test("the event log is paged until a manual stop is found", async () => {
   events[0] = event(1, "client/turn/requested");
   events.at(-1)!.type = "system/thread/interrupted";
   events.at(-1)!.data = { reason: "manual-stop" };
-  const afterSeqs: Array<string | undefined> = [];
-
-  const stopped = await latestRunWasManuallyStopped(async (args) => {
-    afterSeqs.push(args.afterSeq);
+  const listEvents = mock(async (args: { afterSeq?: string; limit: string }) => {
     return list(events)(args);
   });
+  const stopped = await latestRunWasManuallyStopped(listEvents);
 
   assert.equal(stopped, true);
-  assert.deepEqual(afterSeqs, [undefined, String(THREAD_EVENT_PAGE_SIZE)]);
+  assert.deepEqual(
+    listEvents.mock.calls.map(([args]) => args.afterSeq),
+    [undefined, String(THREAD_EVENT_PAGE_SIZE)],
+  );
 });

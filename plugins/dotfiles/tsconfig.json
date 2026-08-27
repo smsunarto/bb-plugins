@@ -3,7 +3,7 @@
   "compilerOptions": {
     "target": "es2023",
     "lib": ["es2023", "dom", "dom.iterable"],
-    "types": ["node"],
+    "types": ["node", "bun-types/test"],
     "jsx": "react-jsx",
     "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,

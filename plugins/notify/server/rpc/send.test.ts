@@ -1,16 +1,13 @@
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
 import { createFakeContext, shownNotifications } from "../fake-context.ts";
 import { send } from "./send.ts";
 
 test("send resolves the project and posts through delivery", async () => {
-  const lookups: string[] = [];
+  const projectName = mock(async () => "Acme");
   const ctx = createFakeContext({
-    projectName: (projectId) => {
-      lookups.push(projectId);
-      return Promise.resolve("Acme");
-    },
+    projectName,
   });
   const result = await send.execute(ctx, {
     message: "**Build** finished",
@@ -19,7 +16,7 @@ test("send resolves the project and posts through delivery", async () => {
     projectId: "p1",
   });
   assert.deepEqual(result, { listening: true });
-  assert.deepEqual(lookups, ["p1"]);
+  assert.deepEqual(projectName.mock.calls, [["p1"]]);
   assert.deepEqual(shownNotifications(ctx), [
     {
       title: "CI",

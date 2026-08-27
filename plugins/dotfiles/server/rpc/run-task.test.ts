@@ -1,28 +1,23 @@
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 import type { TaskResult } from "../domain.ts";
 import { createFakeContext } from "../fake-context.ts";
 import { runTask } from "./run-task.ts";
 
 test("maps safe task ids to fixed commands", async () => {
-  const commands: string[] = [];
-  const logs: string[] = [];
+  const log = mock<(message: string) => void>();
   const result: TaskResult = { exitCode: 0, output: "done" };
   const ctx = createFakeContext(
     {
-      run: async (_repoPath, command) => {
-        commands.push(command);
-        return result;
-      },
+      run: async () => result,
     },
-    {
-      log: (message) => {
-        logs.push(message);
-      },
-    },
+    { log },
   );
 
   assert.deepEqual(await runTask.execute(ctx, { task: "check:skills" }), result);
-  assert.deepEqual(commands, ["mise run check:skills"]);
-  assert.deepEqual(logs, ["running task check:skills: mise run check:skills"]);
+  assert.deepEqual(
+    ctx.git.run.mock.calls.map(([, command]) => command),
+    ["mise run check:skills"],
+  );
+  assert.deepEqual(log.mock.calls, [["running task check:skills: mise run check:skills"]]);
 });

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { createFakeContext } from "../fake-context.ts";
 import { readFile } from "./read-file.ts";

@@ -1,12 +1,12 @@
-import { test } from "node:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
-import { deliver, macOsNotificationArguments, type NativeNotification } from "./delivery.ts";
+import { deliver, macOsNotificationArguments, type NotificationSender } from "./delivery.ts";
 import { createFakeContext } from "./fake-context.ts";
 
 test("deliver formats one direct macOS notification", async () => {
   const ctx = createFakeContext({ settings: { sound: "Glass" } });
-  const calls: NativeNotification[] = [];
+  const send = mock<NotificationSender>(async () => {});
   const sent = await deliver(
     ctx.bb,
     {
@@ -14,30 +14,27 @@ test("deliver formats one direct macOS notification", async () => {
       heading: "Build",
       message: "finished",
     },
-    async (notification) => {
-      calls.push(notification);
-    },
+    send,
   );
 
   assert.equal(sent, true);
-  assert.deepEqual(calls, [
-    {
-      title: "Build",
-      body: "[Acme] finished",
-      soundName: "Glass",
-    },
+  assert.deepEqual(send.mock.calls, [
+    [
+      {
+        title: "Build",
+        body: "[Acme] finished",
+        soundName: "Glass",
+      },
+    ],
   ]);
 });
 
 test("deliver reports a native sender failure without queueing", async () => {
   const ctx = createFakeContext();
-  const sent = await deliver(
-    ctx.bb,
-    { project: null, heading: "bb", message: "hello" },
-    async () => {
-      throw new Error("denied");
-    },
-  );
+  const send = mock<NotificationSender>(async () => {
+    throw new Error("denied");
+  });
+  const sent = await deliver(ctx.bb, { project: null, heading: "bb", message: "hello" }, send);
   assert.equal(sent, false);
 });
 

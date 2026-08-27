@@ -73,6 +73,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "better-sqlite3": "^12.0.0",
+    "bun-types": "^1.4.0",
     "cron-parser": "^5.5.0",
     "hono": "^4.11.9",
     "jsdom": "25.0.1",
@@ -85,9 +86,9 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --import tsx",
+    "test": "bun test --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
-    "verify": "oxlint && tsc --noEmit && node --test --import tsx && node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check && bb plugin build . && bun pm pack --dry-run",
+    "verify": "oxlint && tsc --noEmit && bun test --timeout=30000 && node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check && bb plugin build . && bun pm pack --dry-run",
     "clean": "rm -rf dist"
   }
 }

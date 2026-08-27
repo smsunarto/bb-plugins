@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { CommandError } from "@bb-kit/core/command";
 
@@ -20,7 +20,10 @@ test("check without a target runs the full check task", async () => {
   const ctx = createFakeContext();
   const result = await check.execute(ctx, {});
   assert.deepEqual(result, { exitCode: 0, stdout: "ok" });
-  assert.deepEqual(ctx.git.commands, ["mise run check"]);
+  assert.deepEqual(
+    ctx.git.run.mock.calls.map(([, command]) => command),
+    ["mise run check"],
+  );
 });
 
 test("check routes each named target to its check task", async () => {
@@ -39,7 +42,10 @@ test("check routes each named target to its check task", async () => {
     const ctx = createFakeContext();
     const result = await check.execute(ctx, { target });
     assert.deepEqual(result, { exitCode: 0, stdout: "ok" });
-    assert.deepEqual(ctx.git.commands, [command]);
+    assert.deepEqual(
+      ctx.git.run.mock.calls.map(([, calledCommand]) => calledCommand),
+      [command],
+    );
   }
 });
 

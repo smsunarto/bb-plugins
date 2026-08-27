@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "bun:test";
 import { resolveSound, SOUND_NAMES, SOUND_OFF, SOUND_OPTIONS, SOUND_SYSTEM } from "./sound.ts";
 
 test("the settings dropdown offers off, system, then the tones", () => {
