@@ -72,8 +72,8 @@ export function createUserMessage(text: string): AmpUserInputMessage {
 /** Which execute option produced a given optional CLI flag. The conversation
  *  layer's unsupported-flag retry uses this to drop exactly that option.
  *  `--orb-execute` is deliberately absent: a CLI that cannot run Orb must
- *  fail, not silently execute locally. `--execute`/`--stream-json` are the
- *  wire itself and cannot be dropped. */
+ *  fail, not silently execute locally. `--execute`/`--stream-json`/
+ *  `--stream-json-input` are the wire itself and cannot be dropped. */
 const DROPPABLE_FLAGS: Readonly<Record<string, keyof AmpExecuteOptions>> = {
   fast: "fast",
   "stream-json-thinking": "thinking",
@@ -98,12 +98,20 @@ export interface AmpArgvPaths {
 /** The execute-wire argv, in the order the Amp CLI has always received it.
  *  Faithful to its inputs: the caller decides which temp files exist. Unlike
  *  the retired SDK driver it never defaults `--mode` — the conversation layer
- *  always sets one, and an unset option must stay droppable. */
-export function buildAmpArgv(options: AmpExecuteOptions, paths: AmpArgvPaths = {}): string[] {
+ *  always sets one, and an unset option must stay droppable.
+ *  `streamJsonInput` must mirror how the caller feeds stdin: without the
+ *  flag the CLI reads stdin as raw prompt text until EOF, so framed input
+ *  on a held-open stdin hits the CLI's 30s stdin read timeout. */
+export function buildAmpArgv(
+  options: AmpExecuteOptions,
+  paths: AmpArgvPaths = {},
+  streamJsonInput = false,
+): string[] {
   const argv: string[] = [];
   if (options.continue !== undefined) argv.push("threads", "continue", options.continue);
   if (options.fast === true) argv.push("--fast");
   argv.push("--execute", options.thinking === true ? "--stream-json-thinking" : "--stream-json");
+  if (streamJsonInput) argv.push("--stream-json-input");
   if (options.executor === "orb") {
     argv.push("--orb-execute");
     if (options.project !== undefined) argv.push("--project", options.project);
@@ -205,7 +213,7 @@ async function* runAmp(
         writeFileSync(paths.mcpConfigFile, JSON.stringify(options.mcpConfig), { mode: 0o600 });
       }
     }
-    const argv = buildAmpArgv(options, paths);
+    const argv = buildAmpArgv(options, paths, typeof prompt !== "string");
     const nodeScript = /\.(cjs|mjs|js)$/i.test(cliPath);
     child = spawn(nodeScript ? process.execPath : cliPath, nodeScript ? [cliPath, ...argv] : argv, {
       cwd: options.cwd ?? process.cwd(),

@@ -17,6 +17,19 @@ test("buildAmpArgv emits the bare execute wire by default", () => {
   assert.deepEqual(buildAmpArgv({}), ["--execute", "--stream-json"]);
 });
 
+test("buildAmpArgv adds --stream-json-input for framed stdin", () => {
+  assert.deepEqual(buildAmpArgv({}, {}, true), [
+    "--execute",
+    "--stream-json",
+    "--stream-json-input",
+  ]);
+  assert.deepEqual(buildAmpArgv({ thinking: true }, {}, true), [
+    "--execute",
+    "--stream-json-thinking",
+    "--stream-json-input",
+  ]);
+});
+
 test("buildAmpArgv orders every local flag the conversation can set", () => {
   const argv = buildAmpArgv(
     {
@@ -89,8 +102,9 @@ test("every optional flag the builder can emit maps back to an option for the dr
       { settingsFile: "/s", mcpConfigFile: "/m" },
     ),
     ...buildAmpArgv({ executor: "orb", project: "p" }),
+    ...buildAmpArgv({}, {}, true),
   ];
-  const undroppable = new Set(["execute", "stream-json", "orb-execute"]);
+  const undroppable = new Set(["execute", "stream-json", "stream-json-input", "orb-execute"]);
   for (const arg of emitted) {
     if (!arg.startsWith("--")) continue;
     const flag = arg.slice(2);
@@ -109,6 +123,8 @@ test("optionForFlag maps the wire names and fails closed on the rest", () => {
   assert.equal(optionForFlag("orb-execute"), null);
   // The retired SDK-era mapping carried a dead effort entry; it stays dead.
   assert.equal(optionForFlag("effort"), null);
+  // Framed stdin is the wire itself; a CLI rejecting it must error, not retry.
+  assert.equal(optionForFlag("stream-json-input"), null);
   assert.equal(optionForFlag("definitely-not-a-flag"), null);
 });
 
@@ -285,6 +301,9 @@ test("steering messages reach the CLI stdin verbatim, steer flag included", asyn
     yield { ...createUserMessage("second"), steer: true };
   }
   const messages = await collect(f.execute({ prompt: input(), options: { env: f.env } }));
+  // A framed prompt must announce itself, or real amp reads stdin as raw
+  // text until EOF and times out against the held-open steering stdin.
+  assert.ok((messages[0] as FakeHead).argv.includes("--stream-json-input"));
   const echoes = messages.filter(
     (m): m is { type: "echo"; message: AmpUserInputMessage } =>
       typeof m === "object" && m !== null && (m as { type?: string }).type === "echo",
