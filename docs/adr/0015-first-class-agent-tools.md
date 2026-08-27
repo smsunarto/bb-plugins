@@ -46,3 +46,19 @@ The experimental provider-registration API
   work.
 - notify's `server/agent-tool.ts` registrar migrates onto the new
   concern.
+
+## Amended 2026-08-26
+
+Two corrections, verified against bb-app 0.40.0 source. First, the
+collision claim above ("on a collision silently drops the later
+registration to a status detail") was wrong. The host stores registered
+tool names verbatim, applies no namespace, and rejects a cross-plugin
+collision at registration. The dropped-registration wording described a
+defensive dedupe inside the host, not the registration contract.
+
+Second, the decided naming rule is now built. One function,
+`toolName(pluginId, key)`, owns the derivation. It replaces every `-`
+in the plugin id with `_` and joins id and key with `_`. Authors never
+type the prefix. The factory registers with that function and the
+checker prints its name table from the same one, so the printed
+contract is the registered name.

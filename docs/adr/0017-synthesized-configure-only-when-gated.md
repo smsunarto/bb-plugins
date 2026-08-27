@@ -52,3 +52,19 @@ framework must keep faithful); modeling the second instructions path
   must equal the manifest enumeration.
 - Ungated, undeclared plugins register no configure and cannot hit
   this concern's failure modes.
+
+## Amended 2026-08-26
+
+Two corrections against the implemented API. First, the `session`
+naming above is loose for `contributeInstructions`. The host hands that
+provider a per-resolution `{ threadId, projectId }` pair, never the
+configure Session. The implemented API names the parameter
+`resolution`, as `agents.instructions(context, resolution)`. `enabled`
+and a function-valued `agents.skills` selector do receive the Session
+as their second parameter.
+
+Second, the checker consequence above says a static list must equal the
+manifest enumeration. The built rule checks a subset instead. The host
+accepts a deliberate partial selection, so the checker fails on an
+unknown name, a duplicate, or more than 256 entries, not on a missing
+one.
