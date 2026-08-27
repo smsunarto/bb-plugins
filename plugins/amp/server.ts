@@ -18,7 +18,7 @@ import {
   type LegacyCleanupResult,
   type LegacyConfigPaths,
 } from "./lib/provision.js";
-import { AMP_THREAD_LINK_KIND } from "./src/bridge/shapes.js";
+import { AMP_THREAD_LINK_KIND } from "./src/bridge/kinds.js";
 import { AMP_AGENT } from "./src/execution-target.js";
 import { loadOracleReport } from "./src/oracle-report-store.js";
 import { threadLinkToOrbUsageView } from "./src/orb-usage.js";
