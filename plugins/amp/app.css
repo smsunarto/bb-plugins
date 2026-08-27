@@ -1,7 +1,8 @@
 /* Keep the Orb state accents red while the Amp mark stays theme-neutral. */
 .amp-orb-directive-highlight,
 .amp-orb-status-pill,
-.amp-orb-copy-button {
+.amp-orb-copy-button,
+.amp-orb-toggle {
   --amp-brand-red: #f34e3f;
 }
 
@@ -98,6 +99,60 @@
   background: transparent;
   color: var(--muted-foreground);
   opacity: 0.5;
+}
+
+.amp-orb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: transparent;
+  padding: 0.12rem 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.amp-orb-toggle:hover {
+  background: color-mix(in oklch, var(--amp-brand-red) 8%, transparent);
+  color: var(--amp-brand-red);
+}
+
+.amp-orb-toggle:focus-visible {
+  outline: 2px solid var(--amp-brand-red);
+  outline-offset: -2px;
+}
+
+.amp-orb-toggle[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--amp-brand-red) 35%, transparent);
+  background: color-mix(in oklch, var(--amp-brand-red) 8%, transparent);
+  color: var(--amp-brand-red);
+}
+
+.amp-orb-toggle:disabled {
+  cursor: default;
+  background: transparent;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.amp-orb-toggle-logo {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: 0 0 auto;
+}
+
+/* The gate keeps this wrapper mounted as its DOM anchor while the button
+   unmounts; display:contents keeps the empty wrapper out of the action row's
+   flex layout. */
+.amp-orb-toggle-slot {
+  display: contents;
 }
 
 .amp-orb-directive-highlight::before,

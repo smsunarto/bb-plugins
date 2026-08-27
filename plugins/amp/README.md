@@ -74,7 +74,9 @@ optional.
 ### Local and Orb
 
 Amp runs against the bb environment's working directory. To use Amp Orb instead,
-put `/orb` in the **first** prompt of a new thread:
+press the **Orb** toggle in the composer when you start a new thread. The toggle
+shows only while Amp is the selected provider. It keeps a `/orb` token in the
+prompt, and typing the token yourself does the same thing:
 
 ```
 /orb refactor the payment retry logic

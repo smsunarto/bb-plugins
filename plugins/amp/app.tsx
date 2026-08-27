@@ -2,7 +2,9 @@ import "./app.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   definePluginApp,
+  experimental_useProviders,
   Markdown,
+  useComposer,
   useComposerView,
   useRpc,
   type PluginMessageDirectiveProps,
@@ -10,7 +12,8 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { isOracleReportId, ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
-import { findOrbDirectiveRanges } from "./src/orb-directive";
+import { AMP_AGENT } from "./src/execution-target";
+import { findOrbDirectiveRanges, stripOrbDirectives } from "./src/orb-directive";
 import type { OrbUsageView } from "./src/orb-usage";
 import type { rpcContract } from "./server";
 
@@ -297,6 +300,111 @@ function AmpOrbBanner() {
   );
 }
 
+/** True while this composer's model picker shows the Amp provider. The plugin
+ *  composer view carries no selected-provider signal (SDK 0.4.21), so the gate
+ *  reads the id-bearing markers the host paints into the picker trigger and
+ *  compares them against Amp's directory record (`experimental_useProviders`).
+ *  Two markers cover the trigger's two renders: the selected provider's icon
+ *  as a `data-provider-logo=<logoUrl>` mask span, and the trigger label's
+ *  `title="<displayName>: …"`, which is the only marker left when Fast mode
+ *  swaps the icon for its Zap glyph. Titled nodes inside the toggle's own
+ *  slot are ignored so the button cannot latch itself visible. Scoped to the
+ *  surrounding `[data-app-composer]` so split panes gate independently; the
+ *  picker's popover portals to <body>, so browsing other providers never
+ *  flips the gate. The gate stays hidden while the provider directory loads,
+ *  and a missing directory record fails open to the ungated behavior rather
+ *  than hiding the toggle from Amp users. */
+function useAmpComposerGate(): {
+  setAnchor: (node: HTMLElement | null) => void;
+  visible: boolean;
+} {
+  const providersState = experimental_useProviders();
+  const ampProvider =
+    providersState.providers.find((provider) => provider.id === AMP_AGENT.providerId) ?? null;
+  const ampLogoUrl = ampProvider?.logoUrl ?? null;
+  const ampDisplayName = ampProvider?.displayName ?? null;
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (anchor === null || providersState.status === "loading") return;
+    const composerRoot = anchor.closest("[data-app-composer]");
+    if (composerRoot === null || (ampLogoUrl === null && ampDisplayName === null)) {
+      setVisible(true);
+      return;
+    }
+    const check = () => {
+      const logoSelected =
+        ampLogoUrl !== null &&
+        Array.from(composerRoot.querySelectorAll("[data-provider-logo]")).some(
+          (mark) => mark.getAttribute("data-provider-logo") === ampLogoUrl,
+        );
+      const titleSelected =
+        ampDisplayName !== null &&
+        Array.from(composerRoot.querySelectorAll("[title]")).some(
+          (node) =>
+            node.closest(".amp-orb-toggle-slot") === null &&
+            (node.getAttribute("title") ?? "").startsWith(`${ampDisplayName}:`),
+        );
+      setVisible(logoSelected || titleSelected);
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(composerRoot, {
+      attributeFilter: ["data-provider-logo", "title"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+    return () => observer.disconnect();
+  }, [anchor, ampLogoUrl, ampDisplayName, providersState.status]);
+  return { setAnchor, visible };
+}
+
+/** New-thread composer action, rendered only while Amp is the selected
+ *  provider (useAmpComposerGate); the wrapper span stays mounted as the
+ *  gate's DOM anchor while the button unmounts. A pressed toggle keeps a
+ *  `/orb` token in the draft; the bridge routes off the token, so the button,
+ *  a hand-typed token, and CLI-sent prompts share one grammar. Pressed state
+ *  derives from the draft rather than local state, so typing or deleting the
+ *  token moves the button too. */
+function OrbToggleAction() {
+  const composer = useComposer();
+  const view = useComposerView();
+  const gate = useAmpComposerGate();
+  const pressed = findOrbDirectiveRanges(view.draft.text).length > 0;
+  const toggle = () => {
+    composer.updateText((current) =>
+      pressed
+        ? stripOrbDirectives(current).text.replace(/^ /u, "")
+        : current.length === 0
+          ? "/orb "
+          : `/orb ${current}`,
+    );
+    composer.focus();
+  };
+  return (
+    <span className="amp-orb-toggle-slot" ref={gate.setAnchor}>
+      {gate.visible ? (
+        <button
+          aria-pressed={pressed}
+          className="amp-orb-toggle"
+          disabled={view.run.isSubmitting}
+          onClick={toggle}
+          title="Run this thread in an Amp Orb cloud sandbox"
+          type="button"
+        >
+          <svg aria-hidden="true" className="amp-orb-toggle-logo" viewBox={AMP_LOGO_VIEW_BOX}>
+            {AMP_LOGO_PATHS.map((path) => (
+              <path d={path} fill="currentColor" key={path} />
+            ))}
+          </svg>
+          Orb
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 export default definePluginApp((app) => {
   app.composer.customize({
     id: "orb-directive-effect",
@@ -309,6 +417,16 @@ export default definePluginApp((app) => {
         },
       ],
     },
+  });
+
+  // The composer-action slot has no selected-provider signal, so the toggle
+  // gates itself on the host DOM (useAmpComposerGate). It stays scoped to new
+  // threads: the Orb flip is first-prompt-only, and the thread-scope banner
+  // above covers the rest.
+  app.composer.customize({
+    id: "orb-toggle",
+    scopes: ["new-thread"],
+    actions: [{ id: "orb-toggle", component: OrbToggleAction }],
   });
 
   app.composer.customize({
