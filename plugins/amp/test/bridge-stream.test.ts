@@ -12,6 +12,7 @@ import {
   type OracleReports,
   type ProjectionContext,
 } from "../src/bridge/project.ts";
+import { startToolProxy } from "../src/bridge/tool-proxy.ts";
 import {
   createThreadWriter,
   usageBreakdown,
@@ -449,5 +450,58 @@ describe("bridge stream (U2)", () => {
       method: "amp/noise",
       params: { hello: 1 },
     });
+  });
+});
+
+// U4 gate, row half: the ids a real `startToolProxy` mints are exactly the
+// ids the projection maps to a `server: "bb"` tool row.
+describe("bridge tool proxy stream (U4)", () => {
+  it('proxy-minted tool ids drive the server "bb" row', async () => {
+    const proxy = await startToolProxy({
+      tools: [{ name: "my_tool", description: "A bb tool", inputSchema: { type: "object" } }],
+      threadId: THREAD_ID,
+      entryPath: "/artifact/host.js",
+      callTool: () => Promise.resolve({ content: "" }),
+    });
+    try {
+      const { messages, writer } = makeHarness();
+      const scribe = writer.scribe();
+      const { oracle } = makeOracle();
+      const ctx: ProjectionContext = {
+        scribe,
+        open: new Map(),
+        rows: new Map(),
+        oracleByCallId: new Map(),
+        oracle,
+        bbToolIds: proxy.toolIds,
+        cwd: "/repo",
+        addUsage: () => {},
+        raw: () => {},
+      };
+      const ampEvents: AmpEvent[] = [
+        {
+          kind: "toolStart",
+          callId: "bb-1",
+          tool: "mcp__bb-bridge__my_tool",
+          input: { arg: 1 },
+          parent: null,
+        },
+        {
+          kind: "toolEnd",
+          callId: "bb-1",
+          output: { text: "ok", structured: null },
+          failed: false,
+          parent: null,
+        },
+      ];
+      for (const event of ampEvents) projectAmpEvent(event, ctx);
+      scribe.settle("completed");
+      const items = completedItems(assemble(messages).events);
+      const [toolCall] = items.filter((item: any) => item.type === "toolCall") as any[];
+      assert.ok(toolCall, "bb tool row assembled");
+      assert.equal(toolCall.server, "bb");
+    } finally {
+      proxy.close();
+    }
   });
 });
