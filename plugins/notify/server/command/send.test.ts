@@ -15,10 +15,10 @@ test("send posts the message and prints the sent line", async () => {
   );
   assert.deepEqual(result, {
     exitCode: 0,
-    stdout: "Sent through macOS Notification Center.\n",
+    stdout: "Notification shown by BB.\n",
   });
   assert.deepEqual(shownNotifications(ctx), [
-    { title: "T", body: "[Acme] hello there", soundName: null },
+    { title: "T", body: "[Acme] hello there", threadId: "th-1", silent: true, play: null },
   ]);
 });
 
@@ -27,9 +27,12 @@ test("send falls back to the invoking thread and reports failure", async () => {
   const result = await send.execute({ ...ctx, threadId: "th-invoker" }, { message: "hi" });
   assert.deepEqual(result, {
     exitCode: 1,
-    stdout: "Could not send the macOS notification.\n",
+    stdout:
+      "Notification not shown. Keep a BB desktop window open and check notification permission.\n",
   });
-  assert.deepEqual(shownNotifications(ctx), [{ title: "bb", body: "hi", soundName: null }]);
+  assert.deepEqual(shownNotifications(ctx), [
+    { title: "bb", body: "hi", threadId: "th-invoker", silent: true, play: null },
+  ]);
 });
 
 test("send's input rejects an invalid thread", async () => {

@@ -34,9 +34,6 @@ async function wasManuallyStopped(bb: Context["bb"], threadId: string): Promise<
   }
 }
 
-/**
- * Product rule for a finished or failed thread. Events call this. Not an RPC.
- */
 export async function notifyThread(
   bb: Context["bb"],
   thread: NotifiableThread,
@@ -65,6 +62,7 @@ export async function notifyThread(
       project,
       heading: threadLabel(thread),
       message: outcome === "failed" ? `Failed — ${said}` : said,
+      threadId: thread.id,
     });
   });
 }

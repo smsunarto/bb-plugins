@@ -1,54 +1,45 @@
 import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
-import { deliver, macOsNotificationArguments, type NotificationSender } from "./delivery.ts";
+import { deliver, type NotificationOfferer } from "./delivery.ts";
 import { createFakeContext } from "./fake-context.ts";
 
-test("deliver formats one direct macOS notification", async () => {
+test("deliver formats one renderer notification", async () => {
   const ctx = createFakeContext({ settings: { sound: "Glass" } });
-  const send = mock<NotificationSender>(async () => {});
+  const offer = mock<NotificationOfferer>(async () => "shown");
   const sent = await deliver(
     ctx.bb,
     {
       project: "Acme",
       heading: "Build",
       message: "finished",
+      threadId: "th_1",
     },
-    send,
+    offer,
   );
 
   assert.equal(sent, true);
-  assert.deepEqual(send.mock.calls, [
+  assert.deepEqual(offer.mock.calls, [
     [
       {
         title: "Build",
         body: "[Acme] finished",
-        soundName: "Glass",
+        threadId: "th_1",
+        silent: true,
+        play: "Glass",
       },
     ],
   ]);
 });
 
-test("deliver reports a native sender failure without queueing", async () => {
+test("deliver reports unavailable and failed renderer outcomes", async () => {
   const ctx = createFakeContext();
-  const send = mock<NotificationSender>(async () => {
-    throw new Error("denied");
-  });
-  const sent = await deliver(ctx.bb, { project: null, heading: "bb", message: "hello" }, send);
-  assert.equal(sent, false);
-});
-
-test("macOS delivery passes untrusted text as argv, not AppleScript", () => {
-  const title = `Build "quoted"`;
-  const body = `done\nend run\ndo shell script "false"`;
-  const args = macOsNotificationArguments({
-    title,
-    body,
-    soundName: "Ping",
-  });
-
-  assert.equal(args[0], "-e");
-  assert.ok(!args[1]?.includes(title));
-  assert.ok(!args[1]?.includes(body));
-  assert.deepEqual(args.slice(2), [title, body, "Ping"]);
+  const input = {
+    project: null,
+    heading: "bb",
+    message: "hello",
+    threadId: null,
+  };
+  assert.equal(await deliver(ctx.bb, input, async () => "unavailable"), false);
+  assert.equal(await deliver(ctx.bb, input, async () => "failed"), false);
 });

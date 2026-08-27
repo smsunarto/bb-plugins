@@ -8,8 +8,10 @@ import { status } from "./rpc/status.ts";
 import { user } from "./tools/user.ts";
 import { registerEvents } from "./events.ts";
 import { projectNames } from "./project-names.ts";
+import { registerRendererMailboxRoutes, rendererMailbox } from "./renderer-mailbox.ts";
 import { runTracker } from "./run-tracker.ts";
 import { bindSettings, SETTINGS_BLOCK } from "./settings.ts";
+import { playSound } from "./sound.ts";
 
 export default definePlugin({
   pluginId: "notify",
@@ -25,11 +27,19 @@ export default definePlugin({
       bb.log.info("settings changed");
     });
 
+    let soundPlayback = Promise.resolve();
+    registerRendererMailboxRoutes(bb, {
+      queueSound(name) {
+        soundPlayback = soundPlayback.then(() => playSound(name));
+      },
+    });
     registerEvents(bb);
 
-    bb.onDispose(() => {
+    bb.onDispose(async () => {
+      rendererMailbox(bb).dispose();
       runTracker(bb).clear();
       projectNames(bb).clear();
+      await soundPlayback;
     });
   },
 });

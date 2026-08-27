@@ -2,10 +2,10 @@ import { mock, type Mock } from "bun:test";
 import { stubHostContext } from "@bb-kit/core/testing";
 import type { Context } from "@bb-kit/core/plugin";
 import {
-  bindNotificationSender,
-  type NativeNotification,
-  type NotificationSender,
+  bindNotificationOfferer,
+  type NotificationOfferer,
 } from "./delivery.ts";
+import type { NotificationOffer } from "./renderer-mailbox.ts";
 import { bindSettings, fakeSettings, type Settings } from "./settings.ts";
 
 export type FakeContextOptions = {
@@ -15,7 +15,7 @@ export type FakeContextOptions = {
   thread?: { title: string | null; titleFallback: string | null; projectId: string };
 };
 
-const sendersByHost = new WeakMap<object, Mock<NotificationSender>>();
+const offersByHost = new WeakMap<object, Mock<NotificationOfferer>>();
 
 export function createFakeContext(options: FakeContextOptions = {}): Context {
   const settings = fakeSettings(options.settings);
@@ -49,17 +49,15 @@ export function createFakeContext(options: FakeContextOptions = {}): Context {
   const ctx = stubHostContext({
     bb: bb as unknown as Context["bb"],
   });
-  const sender = mock<NotificationSender>(async () => {
-    if (options.available === false) {
-      throw new Error("notification unavailable");
-    }
-  });
-  sendersByHost.set(ctx.bb, sender);
-  bindNotificationSender(ctx.bb, sender);
+  const offer = mock<NotificationOfferer>(async () =>
+    options.available === false ? "unavailable" : "shown",
+  );
+  offersByHost.set(ctx.bb, offer);
+  bindNotificationOfferer(ctx.bb, offer);
   bindSettings(ctx.bb, () => settings);
   return ctx;
 }
 
-export function shownNotifications(ctx: Context): NativeNotification[] {
-  return sendersByHost.get(ctx.bb)?.mock.calls.map(([notification]) => notification) ?? [];
+export function shownNotifications(ctx: Context): NotificationOffer[] {
+  return offersByHost.get(ctx.bb)?.mock.calls.map(([notification]) => notification) ?? [];
 }

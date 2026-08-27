@@ -21,7 +21,9 @@ test("send resolves the project and posts through delivery", async () => {
     {
       title: "CI",
       body: "[Acme] Build finished",
-      soundName: null,
+      threadId: "th_1",
+      silent: true,
+      play: null,
     },
   ]);
 });
@@ -30,7 +32,9 @@ test("send defaults the title, thread, and project", async () => {
   const ctx = createFakeContext();
   const result = await send.execute(ctx, { message: "hello" });
   assert.deepEqual(result, { listening: true });
-  assert.deepEqual(shownNotifications(ctx), [{ title: "bb", body: "hello", soundName: null }]);
+  assert.deepEqual(shownNotifications(ctx), [
+    { title: "bb", body: "hello", threadId: null, silent: true, play: null },
+  ]);
 });
 
 test("send input rejects a whitespace-only message and trims a padded one", () => {
@@ -39,7 +43,7 @@ test("send input rejects a whitespace-only message and trims a padded one", () =
   assert.equal(send.input.parse({ message: "  hi  " }).message, "hi");
 });
 
-test("send reports native delivery failure", async () => {
+test("send reports renderer unavailability", async () => {
   const ctx = createFakeContext({ available: false });
   const result = await send.execute(ctx, { message: "hello" });
   assert.deepEqual(result, { listening: false });

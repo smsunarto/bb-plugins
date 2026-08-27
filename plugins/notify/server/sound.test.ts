@@ -10,19 +10,19 @@ test("the settings dropdown offers off, system, then the tones", () => {
 });
 
 test("resolveSound maps silence, default, and named tones", () => {
-  assert.equal(resolveSound(SOUND_OFF), null);
-  assert.equal(resolveSound(SOUND_SYSTEM), "default");
-  assert.equal(resolveSound("Ping"), "Ping");
+  assert.deepEqual(resolveSound(SOUND_OFF), { silent: true, play: null });
+  assert.deepEqual(resolveSound(SOUND_SYSTEM), { silent: false, play: null });
+  assert.deepEqual(resolveSound("Ping"), { silent: true, play: "Ping" });
 });
 
 test("resolveSound rejects values outside the allowlist", () => {
-  assert.equal(resolveSound("Nonesuch"), null);
-  assert.equal(resolveSound(""), null);
-  assert.equal(resolveSound("ping"), null);
+  assert.deepEqual(resolveSound("Nonesuch"), { silent: true, play: null });
+  assert.deepEqual(resolveSound(""), { silent: true, play: null });
+  assert.deepEqual(resolveSound("ping"), { silent: true, play: null });
 });
 
 test("every listed tone resolves to itself", () => {
   for (const name of SOUND_NAMES) {
-    assert.equal(resolveSound(name), name);
+    assert.deepEqual(resolveSound(name), { silent: true, play: name });
   }
 });

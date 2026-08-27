@@ -4,7 +4,6 @@ import { z } from "zod";
 import { send as sendRpc } from "../rpc/send.ts";
 import { isThreadId } from "../format.ts";
 
-/** Post a notification. Thread context supplies the project label. */
 export const send = defineCommand({
   summary: "Post a notification",
   input: z.object({
@@ -31,7 +30,10 @@ export const send = defineCommand({
     }
     const { listening } = await sendRpc.execute(ctx, input);
     return listening
-      ? { exitCode: 0, stdout: "Sent through macOS Notification Center.\n" }
-      : { exitCode: 1, stdout: "Could not send the macOS notification.\n" };
+      ? { exitCode: 0, stdout: "Notification shown by BB.\n" }
+      : {
+          exitCode: 1,
+          stdout: "Notification not shown. Keep a BB desktop window open and check notification permission.\n",
+        };
   },
 });

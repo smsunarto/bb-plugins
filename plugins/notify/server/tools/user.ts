@@ -30,15 +30,16 @@ export const user = defineTool({
       heading = threadLabel(thread);
       project = await projectName(ctx.bb, thread.projectId);
     } catch {
-      // Thread lookup is decoration only — still send the notification.
+      // Thread lookup only supplies labels. Its failure must not block delivery.
     }
     const listening = await deliver(ctx.bb, {
       project,
       heading,
       message: oneLine(plainText(message), BODY_MAX_CHARS),
+      threadId: ctx.tool.threadId,
     });
     return listening
-      ? "Notification sent through macOS Notification Center."
-      : "The macOS notification could not be sent.";
+      ? "Notification shown by BB."
+      : "Notification not shown. Keep a BB desktop window open and check notification permission.";
   },
 });

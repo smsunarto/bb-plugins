@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-notify",
   "version": "0.2.2",
-  "description": "macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
+  "description": "BB-branded macOS notifications when a thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/notify",
@@ -30,7 +30,7 @@
   },
   "bb": {
     "name": "Notify",
-    "description": "macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
+    "description": "BB-branded macOS notifications when a thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -39,16 +39,21 @@
       }
     },
     "server": "./server/server.ts",
+    "app": "./app/app.tsx",
     "skills": []
   },
   "files": [
     "dist/server.js",
     "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
     "assets/",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "server/"
+    "server/",
+    "app/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.1.0",

@@ -20,7 +20,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   agentTool: false,
 };
 
-/** The settings block `setup` passes to `bb.settings.define`. */
 export const SETTINGS_BLOCK = {
   notifyOnIdle: {
     type: "boolean" as const,
@@ -55,7 +54,7 @@ export const SETTINGS_BLOCK = {
     type: "select" as const,
     label: "Sound",
     description:
-      "off is silent. system default lets macOS choose. A named tone asks Notification Center to play that sound.",
+      "off is silent. system default lets macOS choose. A named tone silences the notification and plays that tone after BB shows it.",
     options: [...SOUND_OPTIONS],
     default: SETTINGS_DEFAULTS.sound,
   },
@@ -73,7 +72,6 @@ export function fakeSettings(overrides: Partial<Settings> = {}): Settings {
 
 const readers = new WeakMap<object, () => Settings>();
 
-/** Bind the live settings reader. `setup` does this after `define`; tests bind a snapshot. */
 export function bindSettings(bb: object, read: () => Settings): void {
   readers.set(bb, read);
 }

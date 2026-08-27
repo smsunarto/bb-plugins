@@ -5,7 +5,7 @@ import { deliver } from "../delivery.ts";
 import { BODY_MAX_CHARS, isThreadId, oneLine, plainText } from "../format.ts";
 import { projectName } from "../project-names.ts";
 
-/** Post a notification. `listening` remains the public success field. */
+/** The public response keeps `listening` for compatibility. It means a renderer acknowledged the notification. */
 export const send = defineMutation({
   input: z.object({
     message: z.string().trim().min(1),
@@ -26,7 +26,7 @@ export const send = defineMutation({
         const thread = await ctx.bb.sdk.threads.get({ threadId });
         resolvedProjectId = thread.projectId;
       } catch {
-        // Project text is decoration only. Delivery does not depend on it.
+        // Thread lookup only supplies the project label. Its failure must not block delivery.
       }
     }
     const project =
@@ -35,6 +35,7 @@ export const send = defineMutation({
       project,
       heading: title ?? "bb",
       message: oneLine(plainText(message), BODY_MAX_CHARS),
+      threadId: threadId ?? null,
     });
     return { listening };
   },

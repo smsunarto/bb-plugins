@@ -1,4 +1,8 @@
-/** The macOS system sounds, plus the two non-tone choices. */
+import { execFile } from "node:child_process";
+import { access, constants } from "node:fs/promises";
+
+const SOUND_DIR = "/System/Library/Sounds";
+
 export const SOUND_NAMES = [
   "Basso",
   "Blow",
@@ -21,8 +25,23 @@ export const SOUND_SYSTEM = "system default";
 
 export const SOUND_OPTIONS = [SOUND_OFF, SOUND_SYSTEM, ...SOUND_NAMES] as const;
 
-/** Translate a setting into AppleScript's sound name. */
-export function resolveSound(choice: string): string | null {
-  if (choice === SOUND_SYSTEM) return "default";
-  return SOUND_NAMES.find((name) => name === choice) ?? null;
+export function resolveSound(choice: string): { silent: boolean; play: string | null } {
+  if (choice === SOUND_SYSTEM) return { silent: false, play: null };
+  const named = SOUND_NAMES.find((name) => name === choice);
+  if (named === undefined) return { silent: true, play: null };
+  return { silent: true, play: named };
+}
+
+export async function playSound(name: string): Promise<void> {
+  const known = SOUND_NAMES.find((candidate) => candidate === name);
+  if (known === undefined) return;
+  const file = `${SOUND_DIR}/${known}.aiff`;
+  try {
+    await access(file, constants.R_OK);
+  } catch {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    execFile("/usr/bin/afplay", [file], { timeout: 10_000 }, () => resolve());
+  });
 }

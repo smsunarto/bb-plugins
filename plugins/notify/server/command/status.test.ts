@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createFakeContext } from "../fake-context.ts";
 import { status } from "./status.ts";
 
-test("status prints direct delivery and every filter", async () => {
+test("status prints renderer delivery and every filter", async () => {
   const ctx = createFakeContext({
     settings: {
       notifyOnIdle: true,
@@ -20,7 +20,7 @@ test("status prints direct delivery and every filter", async () => {
   assert.deepEqual(result, {
     exitCode: 0,
     stdout:
-      "delivery:   macOS Notification Center\n" +
+      "delivery:   open BB desktop window\n" +
       "on idle:    true\n" +
       "on failed:  false\n" +
       "children:   false\n" +

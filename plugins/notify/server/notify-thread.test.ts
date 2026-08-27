@@ -23,7 +23,7 @@ test("notifyThread posts a finished thread", async () => {
   });
   await notifyThread(ctx.bb, thread(), "finished", "done");
   assert.deepEqual(shownNotifications(ctx), [
-    { title: "Work", body: "[Acme] done", soundName: null },
+    { title: "Work", body: "[Acme] done", threadId: "th_1", silent: true, play: null },
   ]);
 });
 
