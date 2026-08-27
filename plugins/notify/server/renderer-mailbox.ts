@@ -22,10 +22,10 @@ export type DeliveryEnvelope = Readonly<{
 
 export type RendererAck = Readonly<{
   id: string;
-  outcome: "shown" | "failed";
+  outcome: "shown" | "suppressed" | "failed";
 }>;
 
-export type OfferResult = "shown" | "unavailable" | "failed";
+export type OfferResult = "shown" | "suppressed" | "unavailable" | "failed";
 
 export type AcknowledgementResult = Readonly<{
   accepted: boolean;
@@ -58,14 +58,16 @@ type InFlightOffer = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-export function createRendererMailbox(options: {
-  ackTimeoutMs?: number;
-  handoffWindowMs?: number;
-  handoffCapacity?: number;
-  longPollMs?: number;
-  createId?: () => string;
-  now?: () => number;
-} = {}): RendererMailbox {
+export function createRendererMailbox(
+  options: {
+    ackTimeoutMs?: number;
+    handoffWindowMs?: number;
+    handoffCapacity?: number;
+    longPollMs?: number;
+    createId?: () => string;
+    now?: () => number;
+  } = {},
+): RendererMailbox {
   const ackTimeoutMs = options.ackTimeoutMs ?? 5_000;
   const handoffWindowMs = options.handoffWindowMs ?? 500;
   const handoffCapacity = options.handoffCapacity ?? 8;
@@ -181,10 +183,7 @@ export function createRendererMailbox(options: {
       });
     },
     acknowledge(ack) {
-      const record = finishInFlight(
-        ack.id,
-        ack.outcome === "shown" ? "shown" : "failed",
-      );
+      const record = finishInFlight(ack.id, ack.outcome);
       return {
         accepted: record !== null,
         play: ack.outcome === "shown" ? (record?.play ?? null) : null,
@@ -215,7 +214,7 @@ export function rendererMailbox(bb: object): RendererMailbox {
 
 const ackSchema = z.object({
   id: z.string().min(1).max(128),
-  outcome: z.enum(["shown", "failed"]),
+  outcome: z.enum(["shown", "suppressed", "failed"]),
 });
 
 const openSchema = z.object({

@@ -32,14 +32,17 @@ export const user = defineTool({
     } catch {
       // Thread lookup only supplies labels. Its failure must not block delivery.
     }
-    const listening = await deliver(ctx.bb, {
+    const outcome = await deliver(ctx.bb, {
       project,
       heading,
       message: oneLine(plainText(message), BODY_MAX_CHARS),
       threadId: ctx.tool.threadId,
     });
-    return listening
-      ? "Notification shown by BB."
-      : "Notification not shown. Keep a BB desktop window open and check notification permission.";
+    if (outcome === "shown") return "Notification shown by BB.";
+    if (outcome === "suppressed") {
+      return "Notification suppressed because the user is already viewing this thread.";
+    }
+    if (outcome === "failed") return "Notification not shown. BB could not create it.";
+    return "Notification not shown. Keep a BB desktop window open and check notification permission.";
   },
 });

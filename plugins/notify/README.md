@@ -22,6 +22,11 @@ An open BB desktop window posts each notification through the Web Notification
 API. macOS therefore attributes the notification to BB. Click it to open the
 thread that produced it.
 
+Notify does not create an alert when its thread is already selected in a
+visible, focused BB window. If an alert appears while BB is in the background,
+Notify closes it when that thread becomes focused. Alerts without a thread stay
+open until you dismiss them.
+
 ## Install
 
 Add this repository once, then install Notify:
@@ -118,8 +123,8 @@ you stopped manually, and collapses duplicate events for three seconds.
 - Notify posts only while an open BB desktop window listens.
 - A 500 ms in-memory handoff covers notifications that arrive together. It is
   bounded and never persists across a plugin reload or server restart.
-- The renderer acknowledges shown or failed outcomes. Notify never replays an
-  unacknowledged alert.
+- The renderer acknowledges shown, suppressed, or failed outcomes. Notify never
+  replays an unacknowledged alert.
 - Notification bodies are plain text. Notify removes common Markdown syntax.
 
 ## Troubleshooting

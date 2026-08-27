@@ -40,3 +40,24 @@ test("send's input rejects an invalid thread", async () => {
   assert.ok(parsed.issues);
   assert.match(parsed.issues.map((issue) => issue.message).join("; "), /not a thread id/);
 });
+
+test("send reports a suppressed target without claiming it was shown", async () => {
+  const ctx = createFakeContext({ outcome: "suppressed" });
+  const result = await send.execute(
+    { ...ctx, threadId: "th-invoker" },
+    { message: "hi", thread: "th-invoker" },
+  );
+  assert.deepEqual(result, {
+    exitCode: 0,
+    stdout: "Notification suppressed because the thread is already in view.\n",
+  });
+});
+
+test("send distinguishes a renderer failure from renderer unavailability", async () => {
+  const ctx = createFakeContext({ outcome: "failed" });
+  const result = await send.execute(ctx, { message: "hi" });
+  assert.deepEqual(result, {
+    exitCode: 1,
+    stdout: "Notification not shown. BB could not create it.\n",
+  });
+});

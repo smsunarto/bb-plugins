@@ -130,3 +130,16 @@ test("a shown acknowledgement returns the named sound once", async () => {
   assert.equal(await offered, "shown");
   mailbox.dispose();
 });
+
+test("a suppressed acknowledgement resolves without releasing its named sound", async () => {
+  const mailbox = createRendererMailbox({ createId: () => "suppressed" });
+  const waiting = mailbox.wait(new AbortController().signal);
+  const offered = mailbox.offer({ ...notification("suppressed"), play: "Glass" });
+  await waiting;
+  assert.deepEqual(mailbox.acknowledge({ id: "suppressed", outcome: "suppressed" }), {
+    accepted: true,
+    play: null,
+  });
+  assert.equal(await offered, "suppressed");
+  mailbox.dispose();
+});

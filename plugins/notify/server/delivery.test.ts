@@ -7,7 +7,7 @@ import { createFakeContext } from "./fake-context.ts";
 test("deliver formats one renderer notification", async () => {
   const ctx = createFakeContext({ settings: { sound: "Glass" } });
   const offer = mock<NotificationOfferer>(async () => "shown");
-  const sent = await deliver(
+  const outcome = await deliver(
     ctx.bb,
     {
       project: "Acme",
@@ -18,7 +18,7 @@ test("deliver formats one renderer notification", async () => {
     offer,
   );
 
-  assert.equal(sent, true);
+  assert.equal(outcome, "shown");
   assert.deepEqual(offer.mock.calls, [
     [
       {
@@ -32,7 +32,7 @@ test("deliver formats one renderer notification", async () => {
   ]);
 });
 
-test("deliver reports unavailable and failed renderer outcomes", async () => {
+test("deliver preserves suppressed, unavailable, and failed renderer outcomes", async () => {
   const ctx = createFakeContext();
   const input = {
     project: null,
@@ -40,6 +40,13 @@ test("deliver reports unavailable and failed renderer outcomes", async () => {
     message: "hello",
     threadId: null,
   };
-  assert.equal(await deliver(ctx.bb, input, async () => "unavailable"), false);
-  assert.equal(await deliver(ctx.bb, input, async () => "failed"), false);
+  assert.equal(await deliver(ctx.bb, input, async () => "suppressed"), "suppressed");
+  assert.equal(await deliver(ctx.bb, input, async () => "unavailable"), "unavailable");
+  assert.equal(await deliver(ctx.bb, input, async () => "failed"), "failed");
+  assert.equal(
+    await deliver(ctx.bb, input, async () => {
+      throw new Error("renderer disconnected");
+    }),
+    "failed",
+  );
 });

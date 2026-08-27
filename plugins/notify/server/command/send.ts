@@ -28,12 +28,21 @@ export const send = defineCommand({
     if (thread === undefined && ctx.projectId !== undefined) {
       input.projectId = ctx.projectId;
     }
-    const { listening } = await sendRpc.execute(ctx, input);
-    return listening
-      ? { exitCode: 0, stdout: "Notification shown by BB.\n" }
-      : {
-          exitCode: 1,
-          stdout: "Notification not shown. Keep a BB desktop window open and check notification permission.\n",
-        };
+    const { outcome } = await sendRpc.execute(ctx, input);
+    if (outcome === "shown") return { exitCode: 0, stdout: "Notification shown by BB.\n" };
+    if (outcome === "suppressed") {
+      return {
+        exitCode: 0,
+        stdout: "Notification suppressed because the thread is already in view.\n",
+      };
+    }
+    if (outcome === "failed") {
+      return { exitCode: 1, stdout: "Notification not shown. BB could not create it.\n" };
+    }
+    return {
+      exitCode: 1,
+      stdout:
+        "Notification not shown. Keep a BB desktop window open and check notification permission.\n",
+    };
   },
 });

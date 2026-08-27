@@ -1,11 +1,7 @@
 import type { Context } from "@bb-kit/core/plugin";
 
 import { BODY_MAX_CHARS, notificationLines, oneLine } from "./format.ts";
-import {
-  type NotificationOffer,
-  type OfferResult,
-  rendererMailbox,
-} from "./renderer-mailbox.ts";
+import { type NotificationOffer, type OfferResult, rendererMailbox } from "./renderer-mailbox.ts";
 import { pluginSettings } from "./settings.ts";
 import { resolveSound } from "./sound.ts";
 
@@ -28,7 +24,7 @@ export async function deliver(
   bb: Context["bb"],
   input: PostInput,
   offer: NotificationOfferer = offerOverrides.get(bb) ?? rendererMailbox(bb).offer,
-): Promise<boolean> {
+): Promise<OfferResult> {
   const { title, body } = notificationLines(
     input.project,
     oneLine(input.heading, 90),
@@ -45,13 +41,15 @@ export async function deliver(
     });
     if (result === "shown") {
       bb.log.debug("notification acknowledged by the BB renderer");
-      return true;
+    } else if (result === "suppressed") {
+      bb.log.debug("notification suppressed because its thread is already in view");
+    } else if (result === "failed") {
+      bb.log.warn("the BB renderer could not show the notification");
     }
-    if (result === "failed") bb.log.warn("the BB renderer could not show the notification");
-    return false;
+    return result;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     bb.log.warn(`notification delivery failed: ${detail}`);
-    return false;
+    return "failed";
   }
 }

@@ -1,15 +1,13 @@
 import { mock, type Mock } from "bun:test";
 import { stubHostContext } from "@bb-kit/core/testing";
 import type { Context } from "@bb-kit/core/plugin";
-import {
-  bindNotificationOfferer,
-  type NotificationOfferer,
-} from "./delivery.ts";
-import type { NotificationOffer } from "./renderer-mailbox.ts";
+import { bindNotificationOfferer, type NotificationOfferer } from "./delivery.ts";
+import type { NotificationOffer, OfferResult } from "./renderer-mailbox.ts";
 import { bindSettings, fakeSettings, type Settings } from "./settings.ts";
 
 export type FakeContextOptions = {
   available?: boolean;
+  outcome?: OfferResult;
   settings?: Partial<Settings>;
   projectName?: (projectId: string) => Promise<string | null>;
   thread?: { title: string | null; titleFallback: string | null; projectId: string };
@@ -49,8 +47,8 @@ export function createFakeContext(options: FakeContextOptions = {}): Context {
   const ctx = stubHostContext({
     bb: bb as unknown as Context["bb"],
   });
-  const offer = mock<NotificationOfferer>(async () =>
-    options.available === false ? "unavailable" : "shown",
+  const offer = mock<NotificationOfferer>(
+    async () => options.outcome ?? (options.available === false ? "unavailable" : "shown"),
   );
   offersByHost.set(ctx.bb, offer);
   bindNotificationOfferer(ctx.bb, offer);

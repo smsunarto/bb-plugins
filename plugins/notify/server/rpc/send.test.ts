@@ -15,7 +15,7 @@ test("send resolves the project and posts through delivery", async () => {
     threadId: "th_1",
     projectId: "p1",
   });
-  assert.deepEqual(result, { listening: true });
+  assert.deepEqual(result, { listening: true, outcome: "shown" });
   assert.deepEqual(projectName.mock.calls, [["p1"]]);
   assert.deepEqual(shownNotifications(ctx), [
     {
@@ -31,7 +31,7 @@ test("send resolves the project and posts through delivery", async () => {
 test("send defaults the title, thread, and project", async () => {
   const ctx = createFakeContext();
   const result = await send.execute(ctx, { message: "hello" });
-  assert.deepEqual(result, { listening: true });
+  assert.deepEqual(result, { listening: true, outcome: "shown" });
   assert.deepEqual(shownNotifications(ctx), [
     { title: "bb", body: "hello", threadId: null, silent: true, play: null },
   ]);
@@ -46,6 +46,18 @@ test("send input rejects a whitespace-only message and trims a padded one", () =
 test("send reports renderer unavailability", async () => {
   const ctx = createFakeContext({ available: false });
   const result = await send.execute(ctx, { message: "hello" });
-  assert.deepEqual(result, { listening: false });
+  assert.deepEqual(result, { listening: false, outcome: "unavailable" });
   assert.equal(shownNotifications(ctx).length, 1);
+});
+
+test("send maps suppressed to listening while preserving the truthful outcome", async () => {
+  const ctx = createFakeContext({ outcome: "suppressed" });
+  const result = await send.execute(ctx, { message: "hello", threadId: "th_1" });
+  assert.deepEqual(result, { listening: true, outcome: "suppressed" });
+});
+
+test("send maps failed to not listening while preserving the truthful outcome", async () => {
+  const ctx = createFakeContext({ outcome: "failed" });
+  const result = await send.execute(ctx, { message: "hello" });
+  assert.deepEqual(result, { listening: false, outcome: "failed" });
 });

@@ -18,6 +18,7 @@ export const send = defineMutation({
   }),
   output: z.object({
     listening: z.boolean(),
+    outcome: z.enum(["shown", "suppressed", "unavailable", "failed"]),
   }),
   async execute(ctx, { message, title, threadId, projectId }) {
     let resolvedProjectId = projectId;
@@ -31,12 +32,12 @@ export const send = defineMutation({
     }
     const project =
       resolvedProjectId === undefined ? null : await projectName(ctx.bb, resolvedProjectId);
-    const listening = await deliver(ctx.bb, {
+    const outcome = await deliver(ctx.bb, {
       project,
       heading: title ?? "bb",
       message: oneLine(plainText(message), BODY_MAX_CHARS),
       threadId: threadId ?? null,
     });
-    return { listening };
+    return { listening: outcome === "shown" || outcome === "suppressed", outcome };
   },
 });

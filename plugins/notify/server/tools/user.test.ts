@@ -43,3 +43,15 @@ test("notify_user reports that no renderer is available", async () => {
   );
   assert.equal(shownNotifications(ctx).length, 1);
 });
+
+test("notify_user reports suppression without claiming it showed a notification", async () => {
+  const ctx = createFakeContext({ outcome: "suppressed" });
+  const result = await user.execute({ ...ctx, tool: invocation("th_1") }, { message: "hello" });
+  assert.equal(result, "Notification suppressed because the user is already viewing this thread.");
+});
+
+test("notify_user distinguishes a renderer failure from renderer unavailability", async () => {
+  const ctx = createFakeContext({ outcome: "failed" });
+  const result = await user.execute({ ...ctx, tool: invocation("th_1") }, { message: "hello" });
+  assert.equal(result, "Notification not shown. BB could not create it.");
+});
