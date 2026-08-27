@@ -1102,6 +1102,62 @@
       "settings": {
         "foreground": "#e3e3dd8c"
       }
+    },
+    {
+      "scope": [
+        "tag"
+      ],
+      "settings": {
+        "foreground": "#fe5d86",
+        "fontStyle": ""
+      }
+    },
+    {
+      "scope": [
+        "attribute.name"
+      ],
+      "settings": {
+        "foreground": "#51dae9",
+        "fontStyle": ""
+      }
+    },
+    {
+      "scope": [
+        "attribute.value"
+      ],
+      "settings": {
+        "foreground": "#f7d05c",
+        "fontStyle": ""
+      }
+    },
+    {
+      "scope": [
+        "attribute.value.number",
+        "attribute.value.hex",
+        "attribute.value.unit",
+        "attribute.value.number.css",
+        "attribute.value.number.scss",
+        "attribute.value.number.less",
+        "attribute.value.hex.css",
+        "attribute.value.hex.scss",
+        "attribute.value.hex.less",
+        "attribute.value.unit.css",
+        "attribute.value.unit.scss",
+        "attribute.value.unit.less"
+      ],
+      "settings": {
+        "foreground": "#a895fe",
+        "fontStyle": ""
+      }
+    },
+    {
+      "scope": [
+        "delimiter"
+      ],
+      "settings": {
+        "foreground": "#e3e3dd",
+        "fontStyle": ""
+      }
     }
   ]
 }
