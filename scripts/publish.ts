@@ -4,7 +4,7 @@
  * npm is no longer the only channel a monorepo plugin can reach. bb 0.38 added
  * a subdirectory selector to the git source, so `git:<url>@semver:<prefix>:*`
  * plus a directory installs one plugin out of this repository, and the release
- * tag is now the blessed path (docs/adr/0011-git-first-distribution.md). npm
+ * tag is now the blessed path. npm
  * stays published alongside it: it is the one channel that fetches a single
  * tarball instead of cloning the whole repository, and it is what an existing
  * `npm:` install updates from.
