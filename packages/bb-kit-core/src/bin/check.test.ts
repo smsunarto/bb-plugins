@@ -446,3 +446,43 @@ test("more than 256 agents.skills entries fail rule 7", async () => {
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /the host caps a selection at 256 ids \(rule 7\)/);
 });
+
+test("a cli unit that imports commander fails", async () => {
+  const root = makeFixture();
+  edit(
+    root,
+    "server/cli/status.ts",
+    'import { defineCommand } from "@bb-kit/core/cli";',
+    'import { Command } from "commander";\nimport { defineCommand } from "@bb-kit/core/cli";',
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /cli units must not import commander/);
+});
+
+test("a bound field wrapped in .optional() fails", async () => {
+  const root = makeFixture();
+  writeFileSync(
+    join(root, "server/cli/status.ts"),
+    [
+      'import { argv, defineCommand } from "@bb-kit/core/cli";',
+      'import { z } from "zod";',
+      'import { ping } from "../rpc/ping.ts";',
+      "",
+      "export const status = defineCommand({",
+      '  summary: "Show plugin status",',
+      "  input: z.object({",
+      "    path: argv.argument(z.string()).optional(),",
+      "  }),",
+      "  async execute(ctx, _input) {",
+      "    const result = await ping.execute(ctx);",
+      "    return { exitCode: 0, stdout: `pong=${result.pong}\\n` };",
+      "  },",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /argv binding must be outermost/);
+});

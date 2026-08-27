@@ -178,10 +178,11 @@ const CLI_STATUS_TS = [
 const CLI_STATUS_TEST_TS = [
   'import { test } from "node:test";',
   'import assert from "node:assert/strict";',
+  'import { stubHostContext } from "@bb-kit/core/testing";',
   'import { status } from "./status.ts";',
   "",
   'test("status prints the ping result", async () => {',
-  "  const result = await status.invoke({});",
+  "  const result = await status.execute(stubHostContext());",
   '  assert.deepEqual(result, { exitCode: 0, stdout: "pong=true\\n" });',
   "});",
   "",

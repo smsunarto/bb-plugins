@@ -287,7 +287,8 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         );
       }
       if (unit.startsWith(`${cliDir}/`)) {
-        warnConfigureAction(unit, sourceFile);
+        failCommanderImport(unit, sourceFile);
+        failInnerOptionalBinding(unit, sourceFile);
       }
       if (
         unit.startsWith(`${toolsDir}/`) &&
@@ -298,23 +299,49 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       }
     }
 
-    // ---- rule 5 warn: `.action(` inside a configure body
-    function warnConfigureAction(relativePath: string, sourceFile: TS.SourceFile): void {
+    // Unsupported argv (encoded here, not as a second syntax): short flags,
+    // renames, --no-*, repeatable options, nested objects as flags, more
+    // than one rest, rest that is not last. Runtime rejects missing
+    // bindings and a non-final words field.
+    function failCommanderImport(relativePath: string, sourceFile: TS.SourceFile): void {
+      for (const statement of sourceFile.statements) {
+        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+          continue;
+        }
+        if (statement.moduleSpecifier.text === "commander") {
+          fail(
+            "cli units must not import commander — declare argv bindings on the input object",
+            relativePath,
+            lineOfNode(sourceFile, statement),
+          );
+        }
+      }
+    }
+
+    function isArgvHelperCall(node: TS.Expression): boolean {
+      if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
+        return false;
+      }
+      const helpers = new Set(["argument", "optionalArgument", "words", "option", "flag"]);
+      if (!helpers.has(node.expression.name.text)) {
+        return false;
+      }
+      return ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "argv";
+    }
+
+    function failInnerOptionalBinding(relativePath: string, sourceFile: TS.SourceFile): void {
       const visit = (node: TS.Node): undefined => {
         if (
-          (ts.isPropertyAssignment(node) || ts.isMethodDeclaration(node)) &&
-          ts.isIdentifier(node.name) &&
-          node.name.text === "configure"
+          ts.isCallExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === "optional" &&
+          isArgvHelperCall(node.expression.expression)
         ) {
-          const slice = sourceFile.text.slice(node.pos, node.end);
-          const index = slice.indexOf(".action(");
-          if (index !== -1) {
-            warn(
-              "`.action(` inside a configure body — return a CommandResult from execute instead; a commander action bypasses the Command result contract",
-              relativePath,
-              lineAt(sourceFile, node.pos + index),
-            );
-          }
+          fail(
+            "argv binding must be outermost — wrap the schema in .optional() before argv.option/optionalArgument (bind then .optional() strips the brand)",
+            relativePath,
+            lineOfNode(sourceFile, node),
+          );
         }
         node.forEachChild(visit);
         return undefined;

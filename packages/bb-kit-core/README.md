@@ -24,9 +24,10 @@ export default definePlugin({
 `definePlugin` returns a callable factory that also carries the map as
 `.rpc`. UI type-only imports the default export and binds
 `createRPC<(typeof plugin)["rpc"]>()`. Commands take `CommandContext`
-and `CommandInput`, then call `.execute(ctx[, args])`. RPC `execute`
-infers Context and takes keyed args. The validating `Client` still
-serves the `rpc` subtree.
+and, when they declare `input`, the schema output of that object. Then
+they call RPC `.execute(ctx[, args])`. RPC `execute` infers Context and
+takes keyed args. The validating `Client` still serves the `rpc`
+subtree.
 
 ## Getting started
 
@@ -46,7 +47,7 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@bb-kit/core/plugin`    | `definePlugin`, `hostContext`, types `DefinedPlugin`, `Context`, `HostSeam`                                                                                                                 |
 | `@bb-kit/core/rpc`       | `defineQuery`, `defineMutation`, `createClient`, `RPCValidationError`, types `Client`, `RPCContext`, `RPCProcedures`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
-| `@bb-kit/core/cli`       | `defineCommand`, `CommandError`, types `CommandDefinition`, `CommandInput`, `CommandResult`, `CommandContext`, `DefinedCommand`                                                                                            |
+| `@bb-kit/core/cli`       | `defineCommand`, `argv`, `CommandError`, types `CommandResult`, `CommandContext`                                                                                                                                         |
 | `@bb-kit/core/rpc/query` | `createRPC`, `PluginQueryBoundary` (browser)                                                                                                                                                |
 | `@bb-kit/core/testing`   | `installDom`, `stubClient`, `stubHostContext`                                                                                                                                               |
 

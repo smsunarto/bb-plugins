@@ -78,7 +78,8 @@ The type is `Context` from `@bb-kit/core/plugin`, whose `bb` is
 `BbPluginApi`. Host capabilities (`sdk`, `storage`, …) live on `bb`.
 `definePlugin` builds it from the host; there is no author factory
 and no Extra fields. Host overlay fields live on CommandContext.
-Parsed argv is `CommandInput`, the second argument of `execute`.
+The second argument of a Command's `execute` is the schema output of
+its argv-bound input object. Host `cli.run` is the only string parser.
 Plugins import `Context`; they do not alias it.
 The binding is `ctx`.
 *Avoid*: deps, environment
@@ -87,17 +88,18 @@ The binding is `ctx`.
 What a Command's `execute` receives as `ctx`: the plugin Context and the
 host invocation fields (`cwd`, `threadId`, `projectId`, `signal`).
 Inferred from `defineCommand`. Authors do not annotate it.
-Parsed argv is CommandInput, not CommandContext. RPC `execute` infers
+The second argument is the schema output, not CommandContext. RPC `execute` infers
 Context; authors do not annotate it. The payload is keyed fields, not
-`input.`.
+`{ args, options }`.
 The binding is `ctx`.
 *Avoid*: CLI context (for the whole object)
 
-**CommandInput**:
-The second argument of a Command's `execute`: `{ args, options }`.
-`args` is positional values (strings under default parsers). `options`
-is `command.opts()`. Parallel to a tool's input payload.
-*Avoid*: putting argv on ctx
+**Command input**:
+The second argument of a Command's `execute` when the command declares
+`input`. Each field is branded with one argv binding
+(`argv.argument`, `optionalArgument`, `words`, `option`, `flag`).
+Tests call `execute(ctx, parsed)`. Host `cli.run(argv)` parses strings.
+*Avoid*: `{ args, options }`, commander `configure`, `.invoke`
 
 **RPC hooks**:
 The per-RPC React hooks UI code reaches RPCs through — a Query's

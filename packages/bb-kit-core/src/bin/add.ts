@@ -91,10 +91,11 @@ function commandTestTemplate(name: string, exportName: string): string {
   return [
     'import { test } from "node:test";',
     'import assert from "node:assert/strict";',
+    'import { stubHostContext } from "@bb-kit/core/testing";',
     `import { ${exportName} } from "./${name}.ts";`,
     "",
     `test("${name} runs", async () => {`,
-    `  const result = await ${exportName}.invoke();`,
+    `  const result = await ${exportName}.execute(stubHostContext());`,
     "  assert.equal(result.exitCode, 0);",
     "});",
     "",

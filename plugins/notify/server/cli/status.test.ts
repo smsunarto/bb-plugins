@@ -44,7 +44,7 @@ test("status prints every line, aligned, for a listening window", async () => {
     delivery.waitForQueue(ac.signal, 60_000),
     delivery.waitForQueue(ac.signal, 60_000),
   ];
-  const result = await status.invoke(ctx);
+  const result = await status.execute(ctx);
   ac.abort();
   await Promise.all(waiting);
   assert.deepEqual(result, {
@@ -75,7 +75,7 @@ test("status prints the closed-window and disabled-tool wording", async () => {
       agentTool: false,
     },
   });
-  const result = await status.invoke(ctx);
+  const result = await status.execute(ctx);
   assert.deepEqual(result, {
     exitCode: 0,
     stdout:

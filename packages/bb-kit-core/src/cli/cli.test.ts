@@ -3,15 +3,14 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CommandError, defineCommand } from "./cli.ts";
+import { z } from "zod";
+import { argv, CommandError, defineCommand } from "./cli.ts";
 import type { CommandContext } from "./cli.ts";
 import { commandDefinitions, runProgram } from "./runner.ts";
 
 const require = createRequire(import.meta.url);
 
 test("commander resolves to the major version this package pins (^13)", () => {
-  // commander's exports map hides ./package.json — resolve the entry
-  // module and read the manifest beside it.
   const entry = require.resolve("commander");
   const manifest = JSON.parse(readFileSync(join(dirname(entry), "package.json"), "utf8")) as {
     version: string;
@@ -21,12 +20,12 @@ test("commander resolves to the major version this package pins (^13)", () => {
 
 const greet = defineCommand({
   summary: "Greet someone",
-  configure: (command) => {
-    command.argument("<name>", "who to greet").option("--shout", "uppercase the greeting");
-  },
-  execute(_ctx, { args, options }) {
-    const name = args[0] ?? "";
-    const text = options["shout"] ? name.toUpperCase() : name;
+  input: z.object({
+    name: argv.argument(z.string(), { description: "who to greet" }),
+    shout: argv.flag(z.boolean().default(false), { description: "uppercase the greeting" }),
+  }),
+  execute(_ctx, { name, shout }) {
+    const text = shout ? name.toUpperCase() : name;
     return { exitCode: 0, stdout: `hello ${text}\n` };
   },
 });
@@ -45,12 +44,26 @@ const boom = defineCommand({
   },
 });
 
-const commands = { greet, fail, boom };
+const send = defineCommand({
+  summary: "Post a notification",
+  input: z.object({
+    message: argv.words(z.string().min(1), {
+      fallbackOption: true,
+      description: "notification text",
+    }),
+    title: argv.option(z.string().optional(), { description: "heading" }),
+  }),
+  execute(_ctx, { message, title }) {
+    return { exitCode: 0, stdout: `${title ?? ""}:${message}\n` };
+  },
+});
+
+const commands = { greet, fail, boom, send };
 const program = { name: "demo", summary: "Demo CLI" };
 const unusedHost = {} as CommandContext;
 
-function invokeProgram(argv: readonly string[]) {
-  return runProgram(() => commandDefinitions(commands, unusedHost), argv, program);
+function invokeProgram(argvTokens: readonly string[]) {
+  return runProgram(() => commandDefinitions(commands, unusedHost), argvTokens, program);
 }
 
 test("empty argv: exit 2 with help on stderr", async () => {
@@ -82,25 +95,33 @@ test("subcommand --help: exit 0, inherited settings capture the output", async (
   assert.match(result.stdout ?? "", /who to greet/);
 });
 
-test("a run result flows through, args and options are plumbed", async () => {
-  assert.deepEqual(await greet.invoke({}, ["world"]), {
+test("execute receives schema output; host runProgram parses argv", async () => {
+  assert.deepEqual(await greet.execute(unusedHost, { name: "world", shout: false }), {
     exitCode: 0,
     stdout: "hello world\n",
   });
-  assert.deepEqual(await greet.invoke({}, ["world", "--shout"]), {
+  assert.deepEqual(await greet.execute(unusedHost, { name: "world", shout: true }), {
+    exitCode: 0,
+    stdout: "hello WORLD\n",
+  });
+  assert.deepEqual(await invokeProgram(["greet", "world"]), {
+    exitCode: 0,
+    stdout: "hello world\n",
+  });
+  assert.deepEqual(await invokeProgram(["greet", "world", "--shout"]), {
     exitCode: 0,
     stdout: "hello WORLD\n",
   });
 });
 
 test("missing required argument: exit 2 with commander's error", async () => {
-  const result = await greet.invoke();
+  const result = await invokeProgram(["greet"]);
   assert.equal(result.exitCode, 2);
   assert.match(result.stderr ?? "", /missing required argument/);
 });
 
 test("excess arguments: exit 2", async () => {
-  const result = await greet.invoke({}, ["a", "b"]);
+  const result = await invokeProgram(["greet", "a", "b"]);
   assert.equal(result.exitCode, 2);
 });
 
@@ -111,7 +132,7 @@ test("unknown command: exit 2", async () => {
 });
 
 test("CommandError carries its exit code, message to stderr", async () => {
-  const result = await fail.invoke();
+  const result = await invokeProgram(["fail"]);
   assert.deepEqual(result, { exitCode: 3, stderr: "nope\n" });
 });
 
@@ -122,8 +143,37 @@ test("CommandError defaults to exit 1", () => {
 });
 
 test("other throws: exit 1 with the message", async () => {
-  const result = await boom.invoke();
+  const result = await invokeProgram(["boom"]);
   assert.deepEqual(result, { exitCode: 1, stderr: "kaboom\n" });
+});
+
+test("schema failures exit 2", async () => {
+  const result = await invokeProgram(["send"]);
+  assert.equal(result.exitCode, 2);
+  assert.match(result.stderr ?? "", /invalid arguments/);
+});
+
+test("words joins rest tokens; --message is the fallback; positional wins", async () => {
+  assert.deepEqual(await invokeProgram(["send", "build", "is", "done"]), {
+    exitCode: 0,
+    stdout: ":build is done\n",
+  });
+  assert.deepEqual(await invokeProgram(["send", "--message", "hi"]), {
+    exitCode: 0,
+    stdout: ":hi\n",
+  });
+  assert.deepEqual(await invokeProgram(["send", "--message=hi"]), {
+    exitCode: 0,
+    stdout: ":hi\n",
+  });
+  assert.deepEqual(await invokeProgram(["send", "positional", "--message", "flag"]), {
+    exitCode: 0,
+    stdout: ":positional\n",
+  });
+  assert.deepEqual(await invokeProgram(["send", "  hi  ", "--title", "T"]), {
+    exitCode: 0,
+    stdout: "T:hi\n",
+  });
 });
 
 test("host overlay reaches the command; omitted fields are undefined", async () => {
@@ -135,9 +185,9 @@ test("host overlay reaches the command; omitted fields are undefined", async () 
       return { exitCode: 0 };
     },
   });
-  await record.invoke({ cwd: "/w", threadId: "t1", projectId: "p1" });
+  await record.execute({ cwd: "/w", threadId: "t1", projectId: "p1" } as CommandContext);
   assert.deepEqual(seen, { cwd: "/w", threadId: "t1", projectId: "p1" });
-  await record.invoke();
+  await record.execute({} as CommandContext);
   assert.deepEqual(seen, { cwd: undefined, threadId: undefined, projectId: undefined });
 });
 
@@ -148,8 +198,54 @@ function typeOnly() {
   });
   defineCommand({
     summary: "a",
+    // @ts-expect-error a field without an argv binding is rejected
+    input: z.object({
+      path: z.string(),
+    }),
+    execute: (_ctx: CommandContext, _input: { path: string }) => ({ exitCode: 0 }),
+  });
+  defineCommand({
+    summary: "a",
+    // @ts-expect-error extra key without a binding is rejected
+    input: z.object({
+      path: argv.argument(z.string()),
+      extra: z.string(),
+    }),
+    execute: (_ctx: CommandContext, _input: { path: string; extra: string }) => ({ exitCode: 0 }),
+  });
+  defineCommand({
+    summary: "a",
+    input: z.object({
+      // @ts-expect-error option cannot fill a required string
+      path: argv.option(z.string()),
+    }),
+    execute: (_ctx: CommandContext, _input: { path: string }) => ({ exitCode: 0 }),
+  });
+  defineCommand({
+    summary: "a",
     // @ts-expect-error a command demanding a field outside CommandContext is rejected
     execute: (_ctx: { extra(): void }) => ({ exitCode: 0 }),
+  });
+  // @ts-expect-error with-input execute must take ctx and input
+  defineCommand({
+    summary: "a",
+    input: z.object({
+      path: argv.argument(z.string()),
+    }),
+    execute: (_ctx: CommandContext) => ({ exitCode: 0 }),
+  });
+  defineCommand({
+    summary: "a",
+    // @ts-expect-error no-input execute must not take a second argument
+    execute: (_ctx: CommandContext, _input: { path: string }) => ({ exitCode: 0 }),
+  });
+  defineCommand({
+    summary: "a",
+    // @ts-expect-error bind then .optional() strips the argv brand
+    input: z.object({
+      path: argv.argument(z.string()).optional(),
+    }),
+    execute: (_ctx: CommandContext, _input: { path?: string }) => ({ exitCode: 0 }),
   });
 }
 void typeOnly;

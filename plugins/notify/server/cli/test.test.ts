@@ -8,7 +8,7 @@ testCase("test posts the sample notification from the invoking thread", async ()
   const ctx = createFakeContext({
     projectName: (projectId) => Promise.resolve(projectId === "p1" ? "Acme" : null),
   });
-  const result = await test.invoke({ ...ctx, threadId: "th-1", projectId: "p1" });
+  const result = await test.execute({ ...ctx, threadId: "th-1", projectId: "p1" });
   assert.deepEqual(result, { exitCode: 0, stdout: "Queued — a BB window is listening.\n" });
   assert.deepEqual(await queuedNotifications(ctx), [
     {
@@ -23,7 +23,7 @@ testCase("test posts the sample notification from the invoking thread", async ()
 
 testCase("test prints the held line outside a thread", async () => {
   const ctx = createFakeContext({ listening: false });
-  const result = await test.invoke(ctx);
+  const result = await test.execute(ctx);
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "Held — no BB window is open. It will appear when one is.\n",

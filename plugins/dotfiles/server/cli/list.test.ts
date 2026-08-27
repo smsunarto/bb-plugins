@@ -1,16 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { CommandError } from "@bb-kit/core/cli";
 
 import { createFakeContext } from "../fake-context.ts";
 import { list } from "./list.ts";
 
-test("list exits 1 when the repo is missing", async () => {
-  const result = await list.invoke(createFakeContext({ repoExists: () => false }));
-  assert.deepEqual(result, { exitCode: 1, stderr: "dotfiles repo not found at /dotfiles\n" });
+test("list throws when the repo is missing", async () => {
+  await assert.rejects(
+    () => Promise.resolve(list.execute(createFakeContext({ repoExists: () => false }))),
+    (error: unknown) => {
+      assert.ok(error instanceof CommandError);
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles");
+      return true;
+    },
+  );
 });
 
 test("list prints grouped files with bracketed flag suffixes", async () => {
-  const result = await list.invoke(
+  const result = await list.execute(
     createFakeContext({
       pathExists: (_repoPath, path) => path !== "mise.linux.toml",
       gitStatus: async () => ({

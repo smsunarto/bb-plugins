@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { definePlugin, type Context } from "./plugin.ts";
-import { defineCommand } from "../cli/cli.ts";
+import { argv, defineCommand } from "../cli/cli.ts";
 import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
 import { defineTool, type Session, type ToolContext } from "../tools/tools.ts";
 import type { HostSeam } from "./host.ts";
@@ -38,6 +38,29 @@ const status = defineCommand({
   async execute(ctx) {
     const result = await ping.execute(ctx);
     return { exitCode: 0, stdout: `pong=${result.pong} cwd=${ctx.cwd ?? ""}\n` };
+  },
+});
+
+const cat = defineCommand({
+  summary: "Print a path",
+  input: z.object({
+    path: argv.argument(z.string(), { description: "repo-relative path" }),
+  }),
+  execute(_ctx, { path }) {
+    return { exitCode: 0, stdout: `${path}\n` };
+  },
+});
+
+const send = defineCommand({
+  summary: "Post a notification",
+  input: z.object({
+    message: argv.words(z.string().min(1), {
+      fallbackOption: true,
+      description: "notification text",
+    }),
+  }),
+  execute(_ctx, { message }) {
+    return { exitCode: 0, stdout: `${message}\n` };
   },
 });
 
@@ -95,7 +118,7 @@ async function loadPlugin() {
   const plugin = definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
-    cli: { status },
+    cli: { status, cat, send },
     setup() {
       captured.order.push("setup");
     },
@@ -130,7 +153,7 @@ test("cli registration: plugin id as name, summary, metadata for every command",
   assert.equal(captured.cli?.summary, "CLI for the demo-ns plugin");
   const commands = captured.cli?.commands ?? [];
   const byName = new Map(commands.map((command) => [command.name, command]));
-  assert.deepEqual([...byName.keys()].sort(), ["rpc", "status"]);
+  assert.deepEqual([...byName.keys()].sort(), ["cat", "rpc", "send", "status"]);
   assert.equal(byName.get("status")?.summary, "Show status");
   assert.equal(byName.get("rpc")?.summary, "Call an RPC (JSON object in, JSON object out)");
   assert.equal(typeof byName.get("status")?.usage, "string");
@@ -186,7 +209,7 @@ test("definePlugin rejects an invalid RPC key", () => {
 });
 
 test("reserved command names throw at define time", () => {
-  const loose = defineCommand({ summary: "x", execute: () => ({ exitCode: 0 }) });
+  const loose = defineCommand({ summary: "x", execute: (_ctx) => ({ exitCode: 0 }) });
   for (const key of ["rpc", "help"]) {
     assert.throws(
       () =>
@@ -214,6 +237,25 @@ test("curated command runs with the plugin context and the invocation context", 
   assert.deepEqual(await cli.run(["status"], { cwd: "/w" }), {
     exitCode: 0,
     stdout: "pong=true cwd=/w\n",
+  });
+});
+
+test("host cli.run: missing required argument is exit 2", async () => {
+  const cli = await dispatcher();
+  const missing = await cli.run(["cat"], {});
+  assert.equal(missing.exitCode, 2);
+  assert.match(missing.stderr ?? "", /missing required argument/);
+});
+
+test("host cli.run: words join rest tokens and --message is the fallback", async () => {
+  const cli = await dispatcher();
+  assert.deepEqual(await cli.run(["send", "build", "is", "done"], {}), {
+    exitCode: 0,
+    stdout: "build is done\n",
+  });
+  assert.deepEqual(await cli.run(["send", "--message", "hi"], {}), {
+    exitCode: 0,
+    stdout: "hi\n",
   });
 });
 
