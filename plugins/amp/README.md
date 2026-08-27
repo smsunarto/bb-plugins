@@ -17,10 +17,9 @@
 
 <picture><img src="docs/media/hero.png" alt="Amp in bb: an /orb prompt to run in Amp&#39;s remote sandbox, the Orb session bar with its amp sync command, and an Oracle card" width="100%" /></picture>
 
-bb talks to coding agents over the [Agent Client Protocol](https://agentclientprotocol.com).
-This plugin makes Amp one of them.
-
-It ships its own ACP bridge, built on the official `@ampcode/sdk`. Amp appears
+This plugin registers Amp as a native bb provider. The executable side is the
+plugin's own provider bridge — its `bb.host` artifact — which drives the Amp
+CLI through the official `@ampcode/sdk` and a stream-json shim. Amp appears
 in bb's provider list, runs against your bb environment by default, and can run
 in an [Amp Orb](https://ampcode.com) cloud sandbox instead when you ask for one.
 
@@ -114,7 +113,7 @@ labelled with the "With ChatGPT Sub" routing as
 
 ### Permissions
 
-bb's resolved thread permission controls Local Amp when the ACP session starts:
+bb's resolved thread permission controls Local Amp when the session starts:
 
 - **Full** force-allows every Amp tool call (`amp.dangerouslyAllowAll`).
 - **Accept Edits** explicitly disables Amp's force-all setting and uses Amp's
@@ -153,7 +152,7 @@ Two bb controls cannot yet reach the official Amp SDK and are not simulated:
   the first Amp prompt, but the SDK has no system/developer instruction input.
 - Image input is disabled because the SDK's `UserInputMessage` accepts text only.
 
-These need upstream bb ACP and Amp SDK transport support before this plugin can
+These need upstream Amp SDK transport support before this plugin can
 preserve their native meaning.
 
 ### The Oracle card
@@ -167,13 +166,12 @@ A healthy install does not need this command.
 
 | Command         | What it does                                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, node runtime, provider registration, legacy config entry, and auth |
+| `bb amp status` | Print every link in the chain: Amp CLI, CLI shim, provider registration, legacy config entry, and auth |
 
 ```console
 $ bb amp status
 Amp CLI: /Users/you/.local/bin/amp
-bridge bundle: /path/to/plugins/amp/dist/bridge.js
-node runtime: /Applications/bb.app/Contents/MacOS/bb (Electron; the launch spec sets ELECTRON_RUN_AS_NODE=1)
+CLI shim: /path/to/plugins/amp/dist/amp-cli-shim.js
 bb provider acp-amp: registered
 legacy config entry amp: absent
 auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in your environment
@@ -196,8 +194,8 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 ## Develop from source
 
 Install from source as shown under [Install](#install). `bun run build` in
-`plugins/amp` produces `dist/bridge.js` and `dist/amp-cli-shim.js` alongside
-`dist/server.js` and `dist/app.js`.
+`plugins/amp` produces `dist/amp-cli-shim.js` alongside `dist/server.js`,
+`dist/app.js`, and `dist/host.js` (the provider bridge).
 
 Never run `npm install` inside `plugins/amp`. The root `overrides` entry that
 keeps the real `@ampcode/cli` out of the tree only applies at the workspace
@@ -214,5 +212,6 @@ bun run test                # needs Node ≥ 22.6
 ```
 
 Unit tests drive the bridge with scripted async generators, so they need no Amp
-CLI and no network. The stdio test spawns the real `dist/bridge.js` and does a
-JSON-RPC `initialize` round-trip, skipping itself when the bundle is unbuilt.
+CLI and no network. The parity test replays the recordings under
+`test/recordings/` through the real `dist/host.js` against a deterministic fake
+Amp CLI, skipping itself when the bundle is unbuilt.

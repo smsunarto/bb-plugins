@@ -69,7 +69,7 @@ vendored Amp mark as an Amp-red status accent.
 ## `@ampcode/sdk`
 
 `plugins/amp` depends on `@ampcode/sdk`, published by Sourcegraph under the **Amp
-Commercial License**, and bundles it into `dist/bridge.js`. That code is
+Commercial License**, and bundles it into `dist/host.js`. That code is
 Sourcegraph's and stays under the Amp Commercial License, not MIT; the licence
 permits the redistribution `@smsunarto/bb-plugin-amp` performs.
 

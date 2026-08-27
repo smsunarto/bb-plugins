@@ -1,14 +1,12 @@
 {
   "name": "@smsunarto/bb-plugin-amp",
   "version": "0.4.1",
-  "description": "Runs Amp locally or in an Orb as one bb provider through a bundled ACP bridge built on the official @ampcode/sdk.",
+  "description": "Amp (ampcode.com) as a bb provider: a native provider bridge driving the Amp CLI through the official SDK, with Oracle and Orb surfaces",
   "keywords": [
     "bb",
     "bb-plugin",
     "amp",
     "ampcode",
-    "acp",
-    "agent-client-protocol",
     "coding-agent"
   ],
   "license": "MIT",
@@ -32,7 +30,7 @@
   },
   "bb": {
     "name": "Amp",
-    "description": "Runs Amp locally or in an Orb as one bb provider through a bundled ACP bridge built on the official @ampcode/sdk.",
+    "description": "Runs Amp threads in bb through the plugin's native provider bridge",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -53,7 +51,6 @@
     "dist/app.css",
     "dist/host.js",
     "dist/host.meta.json",
-    "dist/bridge.js",
     "dist/amp-cli-shim.js",
     "assets/",
     "README.md",
@@ -71,7 +68,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "^1.2.1",
     "@ampcode/sdk": "0.1.0-20260729105907-g72d5ca3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
