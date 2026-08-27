@@ -18,6 +18,19 @@ const OPEN = "text-success";
 const DRAFT = "text-muted-foreground";
 const QUEUE = "text-[color:var(--attention)]";
 const DANGER = "text-destructive-text";
+/**
+ * Conflicts are the one red the user has to act on locally — a rebase, not a
+ * re-run or a re-review. Striking the number through separates it from the
+ * other danger states at a glance.
+ *
+ * The card's own `hover:underline` sets the same property and Tailwind emits
+ * it after this rule, so hovering would otherwise trade the strikethrough —
+ * the one thing carrying the conflict — for an underline. `!` is what settles
+ * that: the two utilities are siblings on one element, so neither source order
+ * nor tailwind-merge (different groups, it keeps both) decides it for us.
+ */
+const CONFLICTS =
+  "text-destructive-text line-through hover:[text-decoration-line:underline_line-through]!";
 const PENDING = "text-[color:var(--warning-text)]";
 const READY = "text-success";
 
@@ -25,9 +38,10 @@ export function prNumberClassName(pr: PrNumberAppearance): string {
   switch (pr.attention) {
     case "merged":
       return MERGED;
+    case "conflicts":
+      return CONFLICTS;
     case "closed":
     case "checks_failed":
-    case "conflicts":
     case "changes_requested":
     case "blocked":
     case "review_requested":

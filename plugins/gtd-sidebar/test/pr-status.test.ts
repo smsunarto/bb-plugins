@@ -9,10 +9,7 @@ describe("prNumberClassName", () => {
       "text-muted-foreground",
     );
     assert.equal(prNumberClassName({ state: "open", attention: "none" }), "text-success");
-    assert.equal(
-      prNumberClassName({ state: "open", attention: "ready_to_merge" }),
-      "text-success",
-    );
+    assert.equal(prNumberClassName({ state: "open", attention: "ready_to_merge" }), "text-success");
   });
 
   it("colours a merge-queue PR with the attention token", () => {
@@ -31,9 +28,12 @@ describe("prNumberClassName", () => {
       prNumberClassName({ state: "open", attention: "checks_failed" }),
       "text-destructive-text",
     );
+  });
+
+  it("strikes a conflicting PR through so it reads apart from the other reds", () => {
     assert.equal(
       prNumberClassName({ state: "open", attention: "conflicts" }),
-      "text-destructive-text",
+      "text-destructive-text line-through hover:[text-decoration-line:underline_line-through]!",
     );
   });
 

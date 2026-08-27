@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isCacheFresh,
   matchPullForBranch,
+  needsMergeStateLookup,
   parseRestPull,
   parseRestPulls,
   PR_CACHE_FRESH_MS,
@@ -95,7 +96,10 @@ describe("sidebarPrFromRest", () => {
   it("maps GitHub mergeable_state onto bb attention", () => {
     assert.equal(sidebarPrFromRest(pull({ mergeableState: "clean" })).attention, "ready_to_merge");
     assert.equal(sidebarPrFromRest(pull({ mergeableState: "dirty" })).attention, "conflicts");
-    assert.equal(sidebarPrFromRest(pull({ mergeableState: "unstable" })).attention, "checks_failed");
+    assert.equal(
+      sidebarPrFromRest(pull({ mergeableState: "unstable" })).attention,
+      "checks_failed",
+    );
     assert.equal(sidebarPrFromRest(pull({ mergeableState: "blocked" })).attention, "blocked");
     assert.equal(sidebarPrFromRest(pull({ autoMerge: true })).attention, "queued");
   });
@@ -140,6 +144,17 @@ describe("isCacheFresh", () => {
       fetchedAt: 1_000,
     };
     assert.equal(isCacheFresh(row, 1_001), false);
+  });
+});
+
+describe("needsMergeStateLookup", () => {
+  it("asks for a numbered GET only when the list left the state unknown", () => {
+    assert.equal(needsMergeStateLookup(pull()), true);
+    assert.equal(needsMergeStateLookup(pull({ mergeableState: "clean" })), false);
+    assert.equal(needsMergeStateLookup(pull({ draft: true })), false);
+    assert.equal(needsMergeStateLookup(pull({ autoMerge: true })), false);
+    assert.equal(needsMergeStateLookup(pull({ state: "closed" })), false);
+    assert.equal(needsMergeStateLookup(pull({ merged: true })), false);
   });
 });
 
@@ -200,6 +215,71 @@ describe("resolveThreadPullRequests", () => {
     );
     assert.equal(resolved.get("thr_1")?.source, "title");
     assert.equal(resolved.get("thr_1")?.number, 12);
+  });
+
+  it("buys the merge state the open list omits, so a blocked PR is not green", async () => {
+    // `/repos/.../pulls` has no `mergeable_state`, so every listed open PR
+    // arrived as "unknown" -> attention "none" -> the open-PR green. #377 was
+    // blocked with failing checks and still read as healthy.
+    const lookedUp: number[] = [];
+    const resolved = await resolveThreadPullRequests([query()], {
+      now: 5_000,
+      restRemaining: 4_000,
+      getCache: () => undefined,
+      putCache: () => {},
+      getRepo: async () => ({ owner: "acme", repo: "app" }),
+      listOpenPulls: async () => [pull({ mergeableState: "unknown" })],
+      getPull: async (_repo, number) => {
+        lookedUp.push(number);
+        return pull({ number, mergeableState: "blocked" });
+      },
+      listRecentClosedPulls: async () => [],
+      log: { info() {}, warn() {} },
+    });
+    assert.deepEqual(lookedUp, [12]);
+    assert.equal(resolved.get("thr_1")?.attention, "blocked");
+  });
+
+  it("keeps the listed pull when the numbered lookup fails", async () => {
+    const resolved = await resolveThreadPullRequests([query()], {
+      now: 5_000,
+      restRemaining: 4_000,
+      getCache: () => undefined,
+      putCache: () => {},
+      getRepo: async () => ({ owner: "acme", repo: "app" }),
+      listOpenPulls: async () => [pull()],
+      getPull: async () => {
+        throw new Error("REST refused");
+      },
+      listRecentClosedPulls: async () => [],
+      log: { info() {}, warn() {} },
+    });
+    assert.equal(resolved.get("thr_1")?.number, 12);
+    assert.equal(resolved.get("thr_1")?.attention, "none");
+  });
+
+  it("spends no lookup on states the list already decides", async () => {
+    const resolved = await resolveThreadPullRequests(
+      [query(), query({ threadId: "thr_2", branchName: "feat/queued" })],
+      {
+        now: 5_000,
+        restRemaining: 4_000,
+        getCache: () => undefined,
+        putCache: () => {},
+        getRepo: async () => ({ owner: "acme", repo: "app" }),
+        listOpenPulls: async () => [
+          pull({ draft: true }),
+          pull({ number: 13, headRef: "feat/queued", autoMerge: true }),
+        ],
+        getPull: async () => {
+          throw new Error("should not look up a numbered PR");
+        },
+        listRecentClosedPulls: async () => [],
+        log: { info() {}, warn() {} },
+      },
+    );
+    assert.equal(resolved.get("thr_1")?.attention, "draft");
+    assert.equal(resolved.get("thr_2")?.attention, "queued");
   });
 
   it("serves a stale cache when REST is skipped and the title has no number", async () => {
@@ -264,22 +344,19 @@ describe("resolveThreadPullRequests", () => {
 
   it("does not treat a title #number as an open PR after REST listed the repo", async () => {
     const cached: CachedPullRow[] = [];
-    const resolved = await resolveThreadPullRequests(
-      [query({ title: "acme/app#2406 shipped" })],
-      {
-        now: 5_000,
-        restRemaining: 4_000,
-        getCache: () => undefined,
-        putCache: (row) => {
-          cached.push(row);
-        },
-        getRepo: async () => ({ owner: "acme", repo: "app" }),
-        listOpenPulls: async () => [],
-        getPull: async () => null,
-        listRecentClosedPulls: async () => [],
-        log: { info() {}, warn() {} },
+    const resolved = await resolveThreadPullRequests([query({ title: "acme/app#2406 shipped" })], {
+      now: 5_000,
+      restRemaining: 4_000,
+      getCache: () => undefined,
+      putCache: (row) => {
+        cached.push(row);
       },
-    );
+      getRepo: async () => ({ owner: "acme", repo: "app" }),
+      listOpenPulls: async () => [],
+      getPull: async () => null,
+      listRecentClosedPulls: async () => [],
+      log: { info() {}, warn() {} },
+    });
     assert.equal(resolved.get("thr_1"), undefined);
     assert.equal(cached.length, 1);
     assert.equal(cached[0]?.number, null);
@@ -309,7 +386,9 @@ describe("resolveThreadPullRequests", () => {
         }),
         putCache: () => {},
         getRepo: async () => ({ owner: "acme", repo: "app" }),
-        listOpenPulls: async () => [pull({ number: 2255, headRef: "feat/parent", title: "parent" })],
+        listOpenPulls: async () => [
+          pull({ number: 2255, headRef: "feat/parent", title: "parent" }),
+        ],
         listRecentClosedPulls: async () => [
           pull({
             number: 2450,

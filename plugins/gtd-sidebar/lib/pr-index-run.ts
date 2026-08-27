@@ -7,6 +7,7 @@ import {
   MAX_REPOS_PER_TICK,
   mergeListedPulls,
   MIN_REST_REMAINING,
+  needsMergeStateLookup,
   sidebarPrFromCache,
   sidebarPrFromRest,
   sidebarPrFromTitle,
@@ -205,7 +206,14 @@ export async function resolveThreadPullRequests(
     const listedThisTick = repoKey !== null && pullsByRepo.has(repoKey);
     const pulls = repoKey === null ? [] : (pullsByRepo.get(repoKey) ?? []);
     const stale = query.environmentId === null ? undefined : deps.getCache(query.environmentId);
-    const listed = matchFromListedPulls(pulls, query, stale);
+    let listed = matchFromListedPulls(pulls, query, stale);
+    // The list route leaves `mergeable_state` out, so a listed open PR carries
+    // no attention at all and paints green. Buy the real state with a numbered
+    // GET; the lookup cache and per-tick cap keep the cost bounded.
+    if (listed !== null && repo !== null && needsMergeStateLookup(listed)) {
+      const detailed = await lookupNumbered(repo, listed.number);
+      if (detailed !== null) listed = detailed;
+    }
     const fromList = listed === null ? null : sidebarPrFromRest(listed);
     const hint = numberedHint(query, repo, stale);
 

@@ -243,3 +243,19 @@ export function parseRestRateLimit(raw: unknown): {
   if (typeof restRemaining !== "number" || typeof graphqlRemaining !== "number") return null;
   return { restRemaining, graphqlRemaining };
 }
+
+/**
+ * True when only a numbered GET can decide this pull's attention.
+ *
+ * `/repos/.../pulls` omits `mergeable_state` — GitHub computes it lazily and
+ * serves it from the single-PR route alone. Everything read off the list
+ * therefore arrived as "unknown", collapsed to attention "none", and painted
+ * green: #377 showed as a healthy open PR while it was blocked with failing
+ * checks. Draft, merged, closed and auto-merge are all decidable from the list
+ * itself, so they never spend the extra call.
+ */
+export function needsMergeStateLookup(pull: RestPull): boolean {
+  if (pull.merged || pull.state === "closed") return false;
+  if (pull.draft || pull.autoMerge) return false;
+  return pull.mergeableState === "unknown";
+}

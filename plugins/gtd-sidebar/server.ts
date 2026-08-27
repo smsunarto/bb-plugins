@@ -18,6 +18,7 @@ import { createGhRunner, githubGraphql, githubRestJson, resolveGhPath } from "./
 import { formatAgentWakeMessage, canonicalPullRequestUrl } from "./lib/pr-watch.ts";
 import { pollSnoozedPullRequests, type StoredPrWatch } from "./lib/pr-watch-run.ts";
 import {
+  needsMergeStateLookup,
   parseRestPull,
   parseRestPulls,
   parseRestRateLimit,
@@ -386,6 +387,22 @@ export default function plugin(bb: BbPluginApi) {
       )
       .all() as Array<{ owner: string; repo: string }>;
 
+  /** The numbered GET, the only REST route that carries `mergeable_state`. */
+  const fetchPullDetail = async (
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<RestPull | null> => {
+    if (resolvedGhPath === undefined) {
+      resolvedGhPath = await resolveGhPath(shutdown.signal);
+    }
+    if (resolvedGhPath === null) return null;
+    const gh = createGhRunner(shutdown.signal, resolvedGhPath);
+    const path = `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
+    const fetched = await githubRestJson(gh, path);
+    return fetched.exitCode === 0 ? parseRestPull(fetched.raw) : null;
+  };
+
   const applyPullToIndex = (owner: string, repo: string, pull: RestPull, now: number) => {
     const sidebar = sidebarPrFromRest(pull);
     db.prepare(
@@ -667,21 +684,23 @@ export default function plugin(bb: BbPluginApi) {
     const now = Date.now();
     const rows = [];
     if (direct !== null) {
-      rows.push(...applyPullToIndex(direct.owner, direct.repo, direct.pull, now));
+      let pull = direct.pull;
+      // `pull_request_review` and `issue_comment` embed a shortened pull with
+      // no `mergeable_state`, and a fresh `synchronize` has not recomputed it
+      // yet. Publishing that verbatim repaints a blocked PR green until the
+      // next ten-minute reconcile, so buy the real state now.
+      if (needsMergeStateLookup(pull)) {
+        const detailed = await fetchPullDetail(direct.owner, direct.repo, pull.number);
+        if (detailed !== null) pull = detailed;
+      }
+      rows.push(...applyPullToIndex(direct.owner, direct.repo, pull, now));
       if (SNOOZE_WAKE_EVENTS.has(input.event)) {
-        await wakeSnoozedForPullUrl(direct.pull.url, `GitHub ${input.event} on ${direct.pull.url}`);
+        await wakeSnoozedForPullUrl(pull.url, `GitHub ${input.event} on ${pull.url}`);
       }
     } else if (repo !== null) {
-      if (resolvedGhPath === undefined) {
-        resolvedGhPath = await resolveGhPath(shutdown.signal);
-      }
-      const gh = resolvedGhPath === null ? null : createGhRunner(shutdown.signal, resolvedGhPath);
       const numbers = webhookPrNumbers(input.event, payload);
       for (const number of numbers) {
-        if (gh === null) break;
-        const path = `repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/pulls/${number}`;
-        const listed = await githubRestJson(gh, path);
-        const pull = listed.exitCode === 0 ? parseRestPull(listed.raw) : null;
+        const pull = await fetchPullDetail(repo.owner, repo.repo, number);
         if (pull === null) continue;
         rows.push(...applyPullToIndex(repo.owner, repo.repo, pull, now));
         if (SNOOZE_WAKE_EVENTS.has(input.event)) {
