@@ -16,14 +16,16 @@
 import { z } from "zod";
 import type { BridgeExecutionOptions } from "@get-bb/plugin-sdk/provider-bridge";
 import type { SessionShape } from "./conversation.ts";
+import type { AmpPermissionRule } from "./execute.ts";
+
+export type { AmpPermissionRule } from "./execute.ts";
 
 /** Provider-flavored knobs bb passes through untouched in `providerOptions`. */
 export const ampProviderOptionsSchema = z
   .object({
-    /** Absolute path of the amp-cli-shim entry (test seam). */
+    /** Absolute path of the Amp CLI the bridge spawns (registration-resolved,
+     * and the test seam). */
     ampCliPath: z.string().min(1).optional(),
-    /** Real Amp CLI the shim re-executes. */
-    ampRealCliPath: z.string().min(1).optional(),
     /** Amp project for new Orb threads. */
     orbProject: z.string().min(1).optional(),
   })
@@ -67,13 +69,8 @@ export function toMessageOptions(options: BridgeExecutionOptions): {
   };
 }
 
-export interface AmpPermissionRule {
-  readonly tool: string;
-  readonly action: "reject";
-}
-
-/** bb `disallowedTools` → Amp `permissions` rules (verified shape:
- * @ampcode/sdk `AmpOptionsSchema` permissions entries `{ tool, action }`). */
+/** bb `disallowedTools` → `amp.permissions` rules for the settings file the
+ * owned execute layer writes (`{ tool, action: "reject" }` per entry). */
 export function toAmpPermissions(disallowed: readonly string[]): AmpPermissionRule[] {
   return disallowed.map((tool) => ({ tool, action: "reject" }));
 }

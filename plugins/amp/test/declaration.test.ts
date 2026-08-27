@@ -11,8 +11,7 @@ import { AMP_NATIVE_SKILL_ROOTS } from "../lib/provision.ts";
 import { AMP_ORACLE_KIND, AMP_THREAD_LINK_KIND } from "../src/bridge/shapes.ts";
 
 const PATHS: AmpProviderPaths = {
-  ampCliPath: "/plugin/dist/amp-cli-shim.js",
-  ampRealCliPath: "/usr/local/bin/amp",
+  ampCliPath: "/usr/local/bin/amp",
 };
 
 test("the declaration passes the SDK validator", () => {
@@ -111,8 +110,5 @@ test("deriveProviderOptions returns the closed-over paths", () => {
     permissionMode: "full",
     settings: {},
   });
-  assert.deepEqual(options, {
-    ampCliPath: PATHS.ampCliPath,
-    ampRealCliPath: PATHS.ampRealCliPath,
-  });
+  assert.deepEqual(options, { ampCliPath: PATHS.ampCliPath });
 });

@@ -82,8 +82,8 @@ export class NoActiveTurnError extends Error {}
 export interface SessionDeps {
   createConversation(args: { shape: SessionShape; continueFrom: string | null }): AmpConversation;
   runOrb(args: { prompt: string; shape: SessionShape; continueFrom: string | null }): OrbRun;
-  /** One-shot `amp threads …` CLI invocation (archive, rename); the SDK
-   * exports no helpers for these. */
+  /** One-shot `amp threads …` CLI invocation (archive, rename), outside
+   * the execute wire. */
   threadCommand(argv: readonly string[]): Promise<{ ok: boolean; stderr: string }>;
   /** Oracle report persistence for the projection (deviation (h): the sketch
    * passed only `finishOracleReport`, but `ProjectionContext` needs

@@ -49,7 +49,6 @@ interface CellDriver {
 const OPTIONS = {
   providerOptions: {
     ampCliPath: join(PARITY_ROOT, "fake-amp.mjs"),
-    ampRealCliPath: join(PARITY_ROOT, "fake-amp.mjs"),
   },
   approvalReviewer: null,
   permissionEscalation: null,

@@ -86,8 +86,8 @@ function findBinary(
 }
 
 /**
- * Resolve the Amp CLI. The bundled bridge drives it through @ampcode/sdk,
- * which honors the AMP_CLI_PATH env var set on the registered launch spec.
+ * Resolve the Amp CLI. The bundled bridge spawns it directly; the
+ * registration passes this resolved path down in providerOptions.
  */
 export function resolveAmpCli(
   env: NodeJS.ProcessEnv,

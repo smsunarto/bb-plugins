@@ -8,7 +8,6 @@
 import assert from "node:assert/strict";
 import { mock, test } from "bun:test";
 import { setImmediate as tick } from "node:timers/promises";
-import { AMP_CLI_SHIM_FAST_ENV } from "../src/amp-cli-shim.ts";
 import {
   createAmpConversation,
   createRetryState,
@@ -43,7 +42,6 @@ function mockExecute(scripts: ReadonlyArray<AmpExecuteFn>) {
 function depsFor(execute: AmpExecuteFn, overrides: Record<string, unknown> = {}) {
   return {
     execute,
-    ampCliPath: null,
     env: { TERM: "dumb" },
     retry: createRetryState(),
     ...overrides,
@@ -147,7 +145,7 @@ test("createAmpConversation builds the spawn bag from the shape", async () => {
     continueFrom: null,
     mcpConfig: { srv: { command: "x" } } as never,
     labels: ["via-amp-acp"],
-    deps: depsFor(execute, { ampCliPath: "/shim/amp" }),
+    deps: depsFor(execute),
   });
   const sent = conversation.send("hi");
   const received = await drain(conversation.batches());
@@ -165,10 +163,9 @@ test("createAmpConversation builds the spawn bag from the shape", async () => {
   assert.deepEqual(options.mcpConfig, { srv: { command: "x" } });
   assert.deepEqual(options.permissions, [{ tool: "hammer", action: "reject" }]);
   assert.equal(options.continue, undefined);
+  assert.equal(options.fast, true);
   const env = options.env as Record<string, string>;
   assert.equal(env.TERM, "dumb");
-  assert.equal(env.AMP_CLI_PATH, "/shim/amp");
-  assert.equal(env[AMP_CLI_SHIM_FAST_ENV], "1");
 });
 
 test("createAmpConversation continues a thread without the fast marker", async () => {
@@ -195,8 +192,7 @@ test("createAmpConversation continues a thread without the fast marker", async (
   assert.equal("labels" in options, false);
   assert.equal("mcpConfig" in options, false);
   assert.equal("permissions" in options, false);
-  const env = options.env as Record<string, string>;
-  assert.equal(env[AMP_CLI_SHIM_FAST_ENV], undefined);
+  assert.equal("fast" in options, false);
 });
 
 test("createAmpConversation drops an unsupported option and replays the prompt", async () => {

@@ -1,8 +1,8 @@
 // Registers Amp as a bb provider (bb.providers.register). The executable
 // implementation is the plugin's own provider bridge — the
 // `experimental_providerBridge` export of the `bb.host` artifact — which
-// drives the Amp CLI through the official @ampcode/sdk and a stream-json
-// shim. No separate bridge process, no launch spec.
+// spawns the Amp CLI directly and drives it over its stream-json execute
+// wire. No separate bridge process, no launch spec.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -70,18 +70,17 @@ export const rpcContract = defineRpcContract({
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 /**
- * Where the CLI shim sits relative to whichever module bb loaded.
+ * Where the bridge bundle sits relative to whichever module bb loaded.
  *
  * bb picks the entry by install kind: a path source runs `server.ts` from the
  * plugin root, while a managed npm install runs the prebuilt `dist/server.js`
- * (plugin-runtime.ts `resolveServerEntry`). So `import.meta.url` is the root in
- * one case and `dist/` in the other, and a single hard-coded
- * `dist/amp-cli-shim.js` resolves to `dist/dist/amp-cli-shim.js` on every npm
- * install.
+ * (plugin-runtime.ts `resolveServerEntry`). So `import.meta.url` is the root
+ * in one case and `dist/` in the other. Diagnostics only: registration does
+ * not gate on it, because a path-source dev flow may build it later.
  */
-const SHIM_PATH = existsSync(join(MODULE_DIR, "amp-cli-shim.js"))
-  ? join(MODULE_DIR, "amp-cli-shim.js")
-  : join(MODULE_DIR, "dist", "amp-cli-shim.js");
+const HOST_BUNDLE = existsSync(join(MODULE_DIR, "host.js"))
+  ? join(MODULE_DIR, "host.js")
+  : join(MODULE_DIR, "dist", "host.js");
 
 /** How many extension-state rows to scan for the latest `amp/thread-link`.
  *  Other kinds may interleave; the thread-link row is normally first. */
@@ -179,17 +178,11 @@ export default async function plugin(bb: BbPluginApi) {
   // Register the provider on first load, so installing the plugin is the whole
   // install. A background service is the seam for it: bb starts one after the
   // factory resolves, when `bb.sdk` is bound, and a service that returns
-  // without throwing simply stops. Every prerequisite this cannot supply — the
-  // Amp CLI, the shim bundle — is reported as needs-configuration rather than
-  // as a load failure, so the plugin stays installed and says what is missing.
+  // without throwing simply stops. The one prerequisite this cannot supply —
+  // the Amp CLI — is reported as needs-configuration rather than as a load
+  // failure, so the plugin stays installed and says what is missing.
   bb.background.service("register", {
     async start() {
-      if (!existsSync(SHIM_PATH)) {
-        bb.status.needsConfiguration(
-          `The Amp CLI shim is missing at ${SHIM_PATH}. ${BRIDGE_BUILD_HINT}`,
-        );
-        return;
-      }
       const amp = resolveAmpCli(process.env);
       if (amp === null) {
         bb.status.needsConfiguration(`The Amp CLI was not found. ${AMP_CLI_HINT}`);
@@ -197,9 +190,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       ampCliPath = amp;
       try {
-        bb.providers.register(
-          buildAmpProviderDeclaration({ ampCliPath: SHIM_PATH, ampRealCliPath: amp }),
-        );
+        bb.providers.register(buildAmpProviderDeclaration({ ampCliPath: amp }));
       } catch (error) {
         bb.log.error(`Could not register the Amp provider: ${String(error)}`);
         bb.status.needsConfiguration(
@@ -215,7 +206,7 @@ export default async function plugin(bb: BbPluginApi) {
     const amp = ampCliPath ?? resolveAmpCli(process.env);
     const lines = [
       `Amp CLI: ${amp ?? "NOT FOUND"}`,
-      `CLI shim: ${existsSync(SHIM_PATH) ? SHIM_PATH : `MISSING (${SHIM_PATH}); ${BRIDGE_BUILD_HINT}`}`,
+      `bridge bundle: ${existsSync(HOST_BUNDLE) ? HOST_BUNDLE : `MISSING (${HOST_BUNDLE}); ${BRIDGE_BUILD_HINT}`}`,
     ];
     try {
       const providers = await bb.sdk.providers.list();
@@ -256,7 +247,7 @@ export default async function plugin(bb: BbPluginApi) {
     commands: [
       {
         name: "status",
-        summary: "Check the Amp CLI, the shim bundle, bb config, and provider registrations",
+        summary: "Check the Amp CLI, the bridge bundle, bb config, and provider registrations",
         usage: "amp status",
       },
     ],

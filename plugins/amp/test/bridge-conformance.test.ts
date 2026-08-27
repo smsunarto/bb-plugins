@@ -69,7 +69,8 @@ test("the amp bridge passes the SDK conformance suite", async () => {
   writeFileSync(fakeCli, FAKE_CLI, "utf8");
   chmodSync(fakeCli, 0o755);
 
-  // The Amp SDK resolves its CLI from process.env, not from execute options.
+  // The bridge falls back to the ambient AMP_CLI_PATH when providerOptions
+  // name no CLI; that is how this run wires in the fake CLI.
   const previousCliPath = process.env.AMP_CLI_PATH;
   process.env.AMP_CLI_PATH = fakeCli;
   const output = captureBridgeJsonRpcOutput();

@@ -8,11 +8,9 @@
  * below, which must run at module evaluation because the MCP child is plain
  * `node <artifact> --mcp-stdio` and nothing calls `start()` there.
  */
-import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execute } from "@ampcode/sdk";
 import {
   BRIDGE_JSON_RPC_ERRORS,
   BRIDGE_REQUEST_METHODS,
@@ -37,7 +35,6 @@ import {
   type BridgeExecutionOptions,
   type DynamicTool,
 } from "@get-bb/plugin-sdk/provider-bridge";
-import { AMP_CLI_SHIM_REAL_CLI_ENV } from "../amp-cli-shim.ts";
 import { createFileOracleReportStore } from "../oracle-report-store.ts";
 import { createSessionStore } from "../session-store.ts";
 import { installStderrGuard } from "../stderr-guard.ts";
@@ -47,6 +44,7 @@ import {
   runOrb,
   type AmpConversationDeps,
 } from "./conversation.ts";
+import { createAmpExecute } from "./execute.ts";
 import { readProviderOptions } from "./options.ts";
 import type { OracleReports } from "./project.ts";
 import {
@@ -101,7 +99,6 @@ interface BridgeState {
 }
 
 let state: BridgeState | null = null;
-let processGuardsInstalled = false;
 const sessions = new Map<string, ManagedSession>();
 
 const io = createBridgeIo();
@@ -136,59 +133,29 @@ function providerOptionsOf(options: BridgeExecutionOptions): unknown {
   return (options as { providerOptions?: unknown }).providerOptions;
 }
 
-interface CliEnvironment {
-  /** Shim path also merged into the child env as AMP_CLI_PATH, or null when
-   * the ambient process env carries the CLI location. */
-  ampCliPath: string | null;
-  /** Extra child env on top of process.env. */
-  env: Record<string, string>;
-}
-
-/**
- * The Amp SDK resolves its CLI from `process.env.AMP_CLI_PATH` only, so a
- * providerOptions override must land there, not just in execute options.
- */
-function cliEnvironment(options: BridgeExecutionOptions): CliEnvironment {
-  const providerOptions = readProviderOptions(providerOptionsOf(options));
-  const env: Record<string, string> = {};
-  if (providerOptions.ampRealCliPath !== undefined) {
-    env[AMP_CLI_SHIM_REAL_CLI_ENV] = providerOptions.ampRealCliPath;
-  }
-  if (providerOptions.ampCliPath !== undefined) {
-    process.env.AMP_CLI_PATH = providerOptions.ampCliPath;
-    return { ampCliPath: providerOptions.ampCliPath, env };
-  }
-  return { ampCliPath: null, env };
-}
-
-/** ACP-era parity: an ambient AMP_CLI_PATH pointing at the real CLI is
- * re-pointed through the bundled shim when one sits beside this artifact. */
-function repointThroughShim(): void {
-  const shim = join(dirname(fileURLToPath(import.meta.url)), "amp-cli-shim.js");
+/** Sessionless requests (archive or rename with no open session) carry no
+ * providerOptions; the ambient env is the only CLI source they have. */
+function ambientCliPath(): string {
   const configured = process.env.AMP_CLI_PATH?.trim();
-  if (
-    configured !== undefined &&
-    configured.length > 0 &&
-    configured !== shim &&
-    existsSync(shim)
-  ) {
-    process.env[AMP_CLI_SHIM_REAL_CLI_ENV] = configured;
-    process.env.AMP_CLI_PATH = shim;
-  }
+  return configured !== undefined && configured.length > 0 ? configured : "amp";
 }
 
-/** One-shot `amp threads …` invocation; the SDK exports no helpers for
- * archive or rename, so this shells out to the same CLI executions use. */
-function threadCommand(extraEnv: Record<string, string>) {
+/** The Amp CLI a session spawns: the registration's providerOptions win over
+ * the ambient AMP_CLI_PATH, with bare `amp` on PATH as the last resort. */
+function resolveCliPath(options: BridgeExecutionOptions): string {
+  return readProviderOptions(providerOptionsOf(options)).ampCliPath ?? ambientCliPath();
+}
+
+/** One-shot `amp threads …` invocation (archive, rename), outside the
+ * execute wire. */
+function threadCommand(cliPath: string) {
   return (argv: readonly string[]): Promise<{ ok: boolean; stderr: string }> =>
     new Promise((resolve) => {
-      const configured = process.env.AMP_CLI_PATH?.trim();
-      const cli = configured !== undefined && configured.length > 0 ? configured : "amp";
-      const nodeWrapped = /\.(cjs|js|mjs)$/.test(cli);
+      const nodeWrapped = /\.(cjs|js|mjs)$/.test(cliPath);
       const child = spawn(
-        nodeWrapped ? process.execPath : cli,
-        nodeWrapped ? [cli, ...argv] : [...argv],
-        { env: { ...process.env, ...extraEnv }, stdio: ["ignore", "ignore", "pipe"] },
+        nodeWrapped ? process.execPath : cliPath,
+        nodeWrapped ? [cliPath, ...argv] : [...argv],
+        { env: process.env, stdio: ["ignore", "ignore", "pipe"] },
       );
       let stderr = "";
       child.stderr.on("data", (chunk: Buffer) => {
@@ -254,7 +221,7 @@ async function openSession(args: {
   dynamicTools: readonly DynamicTool[];
   options: BridgeExecutionOptions;
 }): Promise<ManagedSession> {
-  const cli = cliEnvironment(args.options);
+  const cliPath = resolveCliPath(args.options);
   const scope = {};
   let proxy: ToolProxy | null = null;
   if (args.dynamicTools.length > 0) {
@@ -282,9 +249,8 @@ async function openSession(args: {
     },
   });
   const deps: AmpConversationDeps = {
-    execute,
-    ampCliPath: cli.ampCliPath,
-    env: cli.env,
+    execute: createAmpExecute({ cliPath }),
+    env: {},
     retry: createRetryState(),
   };
   const mcpConfig = proxy?.config ?? null;
@@ -311,7 +277,7 @@ async function openSession(args: {
           labels: [AMP_ACP_LABEL],
           deps,
         }),
-      threadCommand: threadCommand(cli.env),
+      threadCommand: threadCommand(cliPath),
       oracle: args.bridge.oracle,
     },
   });
@@ -345,7 +311,7 @@ async function archiveThread(
     io.sendResult(id, {});
     return;
   }
-  const result = await threadCommand({})(archiveArgv(record.ampThreadId, archived));
+  const result = await threadCommand(ambientCliPath())(archiveArgv(record.ampThreadId, archived));
   if (!result.ok) throw new Error(`amp threads archive failed: ${result.stderr.trim()}`);
   io.sendResult(id, {});
 }
@@ -596,7 +562,7 @@ const handlers: Record<string, RequestHandler> = {
       io.sendResult(id, {});
       return;
     }
-    const result = await threadCommand({})([
+    const result = await threadCommand(ambientCliPath())([
       "threads",
       "rename",
       record.ampThreadId,
@@ -651,28 +617,10 @@ export function handleLine(line: string): void {
   });
 }
 
-function installProcessGuards(): void {
-  if (processGuardsInstalled) return;
-  processGuardsInstalled = true;
-  // The Amp SDK writes to its child's stdin without an error listener, so a
-  // dying CLI surfaces as an EPIPE uncaughtException. Ignore exactly that;
-  // anything else keeps the default crash (the daemon restarts the bridge).
-  process.on("uncaughtException", (error: NodeJS.ErrnoException) => {
-    if (error.code === "EPIPE") {
-      console.error("[bridge] ignored child stdin EPIPE");
-      return;
-    }
-    console.error("[bridge] uncaught exception", error);
-    process.exit(1);
-  });
-}
-
 export const experimental_providerBridge = experimental_defineProviderBridge({
   handleLine,
   start(context) {
     installStderrGuard();
-    installProcessGuards();
-    repointThroughShim();
     state = {
       store: createSessionStore({ dir: join(context.dataDir, "sessions") }),
       oracle: createOracleReports(),

@@ -51,7 +51,6 @@
     "dist/app.css",
     "dist/host.js",
     "dist/host.meta.json",
-    "dist/amp-cli-shim.js",
     "assets/",
     "README.md",
     "LICENSE",
@@ -78,8 +77,7 @@
     "dev": "bun ../../scripts/dev-plugin.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000 test/*.test.ts",
-    "build:bridge": "esbuild src/amp-cli-shim.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --entry-names=[name] --banner:js=\"import { createRequire as __bbCreateRequire } from 'node:module'; const require = __bbCreateRequire(import.meta.url);\"",
-    "build": "bun run build:bridge && bb plugin build .",
+    "build": "bb plugin build .",
     "clean": "rm -rf dist"
   }
 }

@@ -48,7 +48,7 @@ export type AmpErrorSubtype =
   | "auth_required"
   | "unknown";
 
-/** Token usage as Amp reports it (@ampcode/sdk `Usage`). Provider-owned:
+/** Token usage as Amp reports it on the execute wire. Provider-owned:
  * mapping to the SDK usage breakdown happens in the timeline writer. */
 export interface AmpUsage {
   readonly inputTokens: number;

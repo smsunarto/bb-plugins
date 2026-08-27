@@ -1,64 +1,32 @@
 /**
  * `src/bridge/conversation.ts` — the Amp process supervisor.
  *
- * Owns everything that talks to the Amp SDK's `execute()`: the multi-turn
- * stdin stream, the spawn option bag, the unsupported-flag drop-and-retry,
- * and the Orb variant. Emits parsed `AmpEventBatch`es and nothing else; turn
- * settlement, timelines, and ACP/native vocabulary stay in the callers.
+ * Owns everything above the owned execute layer (`execute.ts`): the
+ * multi-turn stdin stream, the spawn option bag, the unsupported-flag
+ * drop-and-retry, and the Orb variant. Emits parsed `AmpEventBatch`es and
+ * nothing else; turn settlement, timelines, and ACP/native vocabulary stay
+ * in the callers.
  *
  * Extracted from `bridge-core.ts` (U3). The behavior contract is
  * `test/bridge-core.test.ts` passing unedited against this extraction.
  */
+import { parseAmpBatch, parseUnsupportedFlag, type AmpEventBatch } from "./events.ts";
 import {
   createUserMessage,
-  type AmpOptions,
+  optionForFlag,
+  type AmpExecuteFn,
+  type AmpExecuteOptions,
+  type AmpUserInputMessage,
   type MCPConfig,
-  type UserInputMessage,
-} from "@ampcode/sdk";
-import { AMP_CLI_SHIM_FAST_ENV } from "../amp-cli-shim.ts";
-import { parseAmpBatch, parseUnsupportedFlag, type AmpEventBatch } from "./events.ts";
+} from "./execute.ts";
 import { toAmpPermissions } from "./options.ts";
 
-/** Keep the injected seam testable while deriving its option contract from
- * the exact @ampcode/sdk version this plugin pins. */
-export type AmpExecuteOptions = AmpOptions;
-
-/** Amp's stream-JSON input accepts `steer`, but the pinned SDK's public type
- * does not expose it yet. A steered message runs at Amp's next interruption
- * point instead of waiting for the current agent turn to finish. */
-export type AmpUserInputMessage = UserInputMessage & { steer?: true };
-
-export type AmpExecutePrompt = string | AsyncIterable<AmpUserInputMessage>;
-
-export type AmpExecuteFn = (args: {
-  prompt: AmpExecutePrompt;
-  signal?: AbortSignal;
-  options?: AmpExecuteOptions;
-}) => AsyncIterable<unknown>;
-
-/**
- * Amp CLI flags the SDK may emit, mapped back to the execute() option that
- * produces them. An Amp CLI older than the SDK rejects unknown flags at argv
- * parse time ("error: unknown option '--effort'"), which would otherwise fail
- * every turn; the supervisor drops the offending option and retries instead.
- */
-const FLAG_TO_OPTION: Record<string, keyof AmpExecuteOptions> = {
-  effort: "effort",
-  label: "labels",
-  "mcp-config": "mcpConfig",
-  mode: "mode",
-  "settings-file": "dangerouslyAllowAll",
-  "stream-json-thinking": "thinking",
-  "no-archive-after-execute": "noArchiveAfterExecute",
-  "dangerously-allow-all": "dangerouslyAllowAll",
-};
-
-/** Option name behind an "unknown option --x" CLI error, if we know one. */
-export function unsupportedOptionFrom(message: string): keyof AmpExecuteOptions | null {
-  const flag = parseUnsupportedFlag(message);
-  if (flag === null) return null;
-  return FLAG_TO_OPTION[flag] ?? null;
-}
+export type {
+  AmpExecuteFn,
+  AmpExecuteOptions,
+  AmpExecutePrompt,
+  AmpUserInputMessage,
+} from "./execute.ts";
 
 /** Options this Amp CLI rejected; dropped from every later spawn. Shared
  * process-lifetime across conversations, so one probe covers all sessions
@@ -154,7 +122,7 @@ function closedError(): Error {
 
 /**
  * Multi-turn stdin for one Amp process. Two retained queues:
- * - `pending`: pushed, not yet handed to the SDK's input generator;
+ * - `pending`: pushed, not yet handed to an attempt's input generator;
  * - `provisional`: handed to a startup attempt that has produced no output
  *   yet, so an unsupported-flag retry can `replay()` it.
  * Once the process produces output (`commit()`), handed-off input resolves
@@ -260,11 +228,7 @@ export class MultiTurnPrompt {
 
 export interface AmpConversationDeps {
   execute: AmpExecuteFn;
-  /** Absolute amp-cli-shim path merged into the child env as AMP_CLI_PATH,
-   * or null when the ambient process env already carries it (the ACP host
-   * wires it through process.env in bridge.ts). */
-  ampCliPath: string | null;
-  /** Base child env; the fast-mode marker is layered on top. */
+  /** Extra child env merged over the bridge's own environment. */
   env: Readonly<Record<string, string>>;
   retry: MutableRetryState;
 }
@@ -298,9 +262,9 @@ export interface AmpConversation {
   /** True after abort(); lets callers tell teardown from Amp ending on its
    * own. */
   readonly aborted: boolean;
-  /** End the input stream without aborting the SDK execution. */
+  /** End the input stream without aborting the execution. */
   closeInput(): void;
-  /** Close input and abort the SDK execution. */
+  /** Close input and abort the execution. */
   abort(reason: "interrupt" | "release" | "restart"): void;
 }
 
@@ -327,15 +291,13 @@ export function createAmpConversation(args: AmpConversationArgs): AmpConversatio
       mode: shape.mode,
       thinking: true,
       noArchiveAfterExecute: true,
-      env: {
-        ...deps.env,
-        ...(deps.ampCliPath === null ? {} : { AMP_CLI_PATH: deps.ampCliPath }),
-        ...(shape.fast && continueFrom === null ? { [AMP_CLI_SHIM_FAST_ENV]: "1" } : {}),
-      },
+      env: { ...deps.env },
       // Always override the persisted Amp setting: an explicit false turns
       // off a user-level amp.dangerouslyAllowAll=true.
       dangerouslyAllowAll: shape.dangerouslyAllowAll,
     };
+    // Fast mode binds at thread creation; a continued thread keeps its tier.
+    if (shape.fast && continueFrom === null) options.fast = true;
     if (labels !== null) options.labels = [...labels];
     if (mcpConfig !== null && Object.keys(mcpConfig).length > 0) options.mcpConfig = mcpConfig;
     if (shape.denied.length > 0) options.permissions = toAmpPermissions(shape.denied);
@@ -369,7 +331,7 @@ export function createAmpConversation(args: AmpConversationArgs): AmpConversatio
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const flag = parseUnsupportedFlag(message);
-        const unsupported = flag === null ? null : (FLAG_TO_OPTION[flag] ?? null);
+        const unsupported = flag === null ? null : optionForFlag(flag);
         if (
           flag !== null &&
           unsupported !== null &&
@@ -460,10 +422,7 @@ export function runOrb(args: OrbRunArgs): OrbRun {
       mode: shape.mode,
       thinking: true,
       noArchiveAfterExecute: true,
-      env: {
-        ...deps.env,
-        ...(deps.ampCliPath === null ? {} : { AMP_CLI_PATH: deps.ampCliPath }),
-      },
+      env: { ...deps.env },
       executor: "orb",
     };
     if (labels !== null) options.labels = [...labels];
@@ -492,7 +451,7 @@ export function runOrb(args: OrbRunArgs): OrbRun {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const flag = parseUnsupportedFlag(message);
-        const unsupported = flag === null ? null : (FLAG_TO_OPTION[flag] ?? null);
+        const unsupported = flag === null ? null : optionForFlag(flag);
         if (
           flag !== null &&
           unsupported !== null &&

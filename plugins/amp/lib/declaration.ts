@@ -25,10 +25,8 @@ export type AmpThreadLinkState = z.infer<typeof threadLinkStateSchema>;
  *  closes over them: it is synchronous and sits on the turn-submit path, so
  *  it must not resolve anything itself. */
 export interface AmpProviderPaths {
-  /** The stream-json shim the bridge hands to @ampcode/sdk as AMP_CLI_PATH. */
+  /** The Amp CLI the bridge spawns, for executions and thread commands. */
   ampCliPath: string;
-  /** The real Amp CLI, for thread commands (archive, rename) and the shim. */
-  ampRealCliPath: string;
 }
 
 /**
@@ -82,9 +80,6 @@ export function buildAmpProviderDeclaration(paths: AmpProviderPaths): PluginProv
     models: { scope: "host" },
     env: { passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY"] },
     experimental_nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
-    deriveProviderOptions: () => ({
-      ampCliPath: paths.ampCliPath,
-      ampRealCliPath: paths.ampRealCliPath,
-    }),
+    deriveProviderOptions: () => ({ ampCliPath: paths.ampCliPath }),
   };
 }
