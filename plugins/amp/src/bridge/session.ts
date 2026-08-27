@@ -26,6 +26,7 @@ import {
 import type { AmpEventBatch } from "./events.ts";
 import { toSessionShape } from "./options.ts";
 import { projectAmpEvent, type OracleReports, type ProjectionContext } from "./project.ts";
+import { AMP_THREAD_LINK_KIND } from "./shapes.ts";
 import { usageBreakdown, type ThreadWriter, type TurnScribe } from "./timeline.ts";
 
 /** How long the pump lingers after Amp's terminal line before settling the
@@ -221,12 +222,35 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
     },
   });
 
+  let threadLinkAnnounced = false;
+  /** Publish the bb-to-Amp thread mapping as `amp/thread-link` state: once
+   * when the Amp thread id first arrives, and once per session for a record
+   * that already has one (an ACP-era thread gets its state on its next
+   * turn). Always called mid-turn, so the delta rides the turn envelope. */
+  const announceThreadLink = (): void => {
+    threadLinkAnnounced = true;
+    writer.emit([
+      {
+        kind: "extension.state",
+        extensionKind: AMP_THREAD_LINK_KIND,
+        payload: {
+          ampThreadId: record.ampThreadId,
+          executionTarget: record.executionTarget,
+          syncCommand:
+            record.executionTarget === "orb" && record.ampThreadId !== null
+              ? `amp sync ${record.ampThreadId}`
+              : null,
+        },
+      },
+    ]);
+  };
+
   const persistAmpThreadId = (ampThreadId: string): void => {
     if (record.ampThreadId !== null) return;
     record.ampThreadId = ampThreadId;
     // Write-through so a crash right now still resumes into the Amp thread.
-    // The amp/thread-link state emission joins this in U6.
     void store.write(providerThreadId, { ...record }).catch(() => {});
+    announceThreadLink();
   };
 
   const idleWindow = (turn: ActiveTurn): Promise<boolean> =>
@@ -417,6 +441,7 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
       const text = promptText(turnArgs.input);
       const scribe = writer.scribe();
       const ctx = projection(scribe);
+      if (!threadLinkAnnounced && record.ampThreadId !== null) announceThreadLink();
       const turn: ActiveTurn = {
         scribe,
         done: Promise.resolve(),

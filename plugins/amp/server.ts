@@ -1,49 +1,27 @@
-// Registers Amp as a bb provider (bb.providers.register) backed by the
-// plugin's own bundled ACP bridge (dist/bridge.js), which drives the Amp CLI
-// through the official @ampcode/sdk. No third-party adapter required.
+// Registers Amp as a bb provider (bb.providers.register). The executable
+// implementation is the plugin's own provider bridge — the
+// `experimental_providerBridge` export of the `bb.host` artifact — which
+// drives the Amp CLI through the official @ampcode/sdk and a stream-json
+// shim. No separate bridge process, no launch spec.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { buildAmpProviderDeclaration } from "./lib/declaration.js";
+import { buildAmpProviderDeclaration, threadLinkStateSchema } from "./lib/declaration.js";
 import {
   cleanupLegacyAmpEntry,
   inspectLegacyAmpEntry,
   resolveAmpCli,
-  resolveAmpCliLaunch,
-  resolveNodeRuntime,
   BRIDGE_BUILD_HINT,
   type LegacyCleanupResult,
   type LegacyConfigPaths,
 } from "./lib/provision.js";
+import { AMP_THREAD_LINK_KIND } from "./src/bridge/shapes.js";
 import { AMP_AGENT } from "./src/execution-target.js";
 import { loadOracleReport } from "./src/oracle-report-store.js";
-import {
-  findLatestProviderSessionId,
-  mergeOrbUsageRecord,
-  ORB_USAGE_CHANNEL,
-  orbUsageKey,
-  parseOrbUsageRecord,
-  toOrbUsageView,
-} from "./src/orb-usage.js";
-import {
-  AMP_ARCHIVE_WATCH_KEY_PREFIX,
-  ampArchiveWatchKey,
-  ampThreadLinkKey,
-  archiveAmpThread,
-  archiveWatchRecordAfterFailure,
-  currentAmpThreadId,
-  mergeAmpThreadLinkRecord,
-  parseAmpArchiveWatchRecord,
-  parseAmpThreadLinkRecord,
-  parseSessionLinkReport,
-  unarchiveAmpThread,
-  watchedThreadIdsToConfirm,
-  type SessionLinkReport,
-} from "./src/amp-thread-link.js";
+import { threadLinkToOrbUsageView } from "./src/orb-usage.js";
 
 const orbUsageViewSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("hidden") }).strict(),
@@ -92,88 +70,48 @@ export const rpcContract = defineRpcContract({
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 /**
- * Where the bridge bundle sits relative to whichever module bb loaded.
+ * Where the CLI shim sits relative to whichever module bb loaded.
  *
  * bb picks the entry by install kind: a path source runs `server.ts` from the
  * plugin root, while a managed npm install runs the prebuilt `dist/server.js`
  * (plugin-runtime.ts `resolveServerEntry`). So `import.meta.url` is the root in
- * one case and `dist/` in the other, and a single hard-coded `dist/bridge.js`
- * resolves to `dist/dist/bridge.js` on every npm install.
+ * one case and `dist/` in the other, and a single hard-coded
+ * `dist/amp-cli-shim.js` resolves to `dist/dist/amp-cli-shim.js` on every npm
+ * install.
  */
-const BRIDGE_PATH = existsSync(join(MODULE_DIR, "bridge.js"))
-  ? join(MODULE_DIR, "bridge.js")
-  : join(MODULE_DIR, "dist", "bridge.js");
+const SHIM_PATH = existsSync(join(MODULE_DIR, "amp-cli-shim.js"))
+  ? join(MODULE_DIR, "amp-cli-shim.js")
+  : join(MODULE_DIR, "dist", "amp-cli-shim.js");
+
+/** How many extension-state rows to scan for the latest `amp/thread-link`.
+ *  Other kinds may interleave; the thread-link row is normally first. */
+const THREAD_LINK_SCAN_LIMIT = 50;
 
 export default async function plugin(bb: BbPluginApi) {
   bb.log.info("loaded");
 
-  /** Amp CLI path the registration resolved; the archive mirror reuses it. */
+  /** Amp CLI path the registration resolved; `bb amp status` reuses it. */
   let ampCliPath: string | null = null;
-
-  const sessionLinkWriteQueues = new Map<string, Promise<void>>();
-
-  async function latestAmpProviderSessionId(threadId: string): Promise<string | null> {
-    const thread = await bb.sdk.threads.get({ threadId });
-    if (thread.providerId !== AMP_AGENT.providerId) return null;
-
-    return findLatestProviderSessionId(async (afterSeq) => {
-      const row = await bb.sdk.threads.events.wait({
-        threadId,
-        type: "thread/identity",
-        waitMs: "0",
-        ...(afterSeq === undefined ? {} : { afterSeq }),
-      });
-      if (row === null) return null;
-      if (row.type !== "thread/identity") {
-        return { providerSessionId: "", seq: -1 };
-      }
-      return {
-        providerSessionId: row.data.providerThreadId,
-        seq: row.seq,
-      };
-    });
-  }
-
-  async function persistSessionLink(threadId: string, incoming: SessionLinkReport): Promise<void> {
-    const previous = sessionLinkWriteQueues.get(threadId) ?? Promise.resolve();
-    const next = previous
-      .catch(() => undefined)
-      .then(async () => {
-        const linkKey = ampThreadLinkKey(threadId);
-        const currentLink = parseAmpThreadLinkRecord(await bb.storage.kv.get<unknown>(linkKey));
-        const mergedLink = mergeAmpThreadLinkRecord(currentLink, incoming);
-        if (JSON.stringify(mergedLink) !== JSON.stringify(currentLink)) {
-          await bb.storage.kv.set(linkKey, mergedLink);
-        }
-
-        const usageKey = orbUsageKey(threadId);
-        const currentUsage = parseOrbUsageRecord(await bb.storage.kv.get<unknown>(usageKey));
-        const mergedUsage = mergeOrbUsageRecord(currentUsage, incoming.usage);
-        if (JSON.stringify(mergedUsage) !== JSON.stringify(currentUsage)) {
-          await bb.storage.kv.set(usageKey, mergedUsage);
-          bb.realtime.publish(ORB_USAGE_CHANNEL, { threadId });
-        }
-        return undefined;
-      });
-    sessionLinkWriteQueues.set(threadId, next);
-    try {
-      await next;
-    } finally {
-      if (sessionLinkWriteQueues.get(threadId) === next) {
-        sessionLinkWriteQueues.delete(threadId);
-      }
-    }
-  }
 
   bb.rpc.register(rpcContract, {
     async getOrbUsage({ threadId }) {
-      const providerSessionId = await latestAmpProviderSessionId(threadId);
-      if (providerSessionId === null) return { state: "hidden" as const };
-      const record = parseOrbUsageRecord(await bb.storage.kv.get<unknown>(orbUsageKey(threadId)));
-      if (record?.providerSessionId !== providerSessionId) {
-        return { state: "hidden" as const };
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (thread.providerId !== AMP_AGENT.providerId) return { state: "hidden" as const };
+      const rows = await bb.sdk.threads.events.list({
+        threadId,
+        types: ["thread/extensionState/updated"],
+        order: "desc",
+        limit: String(THREAD_LINK_SCAN_LIMIT),
+      });
+      for (const row of rows) {
+        if (row.type !== "thread/extensionState/updated") continue;
+        if (row.data.kind !== AMP_THREAD_LINK_KIND) continue;
+        // Ingest already validated the payload against this same schema; a
+        // miss here means the schemas drifted, and hiding is the safe answer.
+        const link = threadLinkStateSchema.safeParse(row.data.payload);
+        return link.success ? threadLinkToOrbUsageView(link.data) : { state: "hidden" as const };
       }
-      return toOrbUsageView(record);
+      return { state: "hidden" as const };
     },
     getOracleReport({ reportId }) {
       const report = loadOracleReport(reportId);
@@ -242,13 +180,13 @@ export default async function plugin(bb: BbPluginApi) {
   // install. A background service is the seam for it: bb starts one after the
   // factory resolves, when `bb.sdk` is bound, and a service that returns
   // without throwing simply stops. Every prerequisite this cannot supply — the
-  // Amp CLI, the bundle — is reported as needs-configuration rather than as a
-  // load failure, so the plugin stays installed and says what is missing.
+  // Amp CLI, the shim bundle — is reported as needs-configuration rather than
+  // as a load failure, so the plugin stays installed and says what is missing.
   bb.background.service("register", {
     async start() {
-      if (!existsSync(BRIDGE_PATH)) {
+      if (!existsSync(SHIM_PATH)) {
         bb.status.needsConfiguration(
-          `The bridge bundle is missing at ${BRIDGE_PATH}. ${BRIDGE_BUILD_HINT}`,
+          `The Amp CLI shim is missing at ${SHIM_PATH}. ${BRIDGE_BUILD_HINT}`,
         );
         return;
       }
@@ -258,15 +196,9 @@ export default async function plugin(bb: BbPluginApi) {
         return;
       }
       ampCliPath = amp;
-      const runtime = resolveNodeRuntime(process.execPath);
       try {
         bb.providers.register(
-          buildAmpProviderDeclaration({
-            node: runtime.node,
-            electron: runtime.electron,
-            bridge: BRIDGE_PATH,
-            amp,
-          }),
+          buildAmpProviderDeclaration({ ampCliPath: SHIM_PATH, ampRealCliPath: amp }),
         );
       } catch (error) {
         bb.log.error(`Could not register the Amp provider: ${String(error)}`);
@@ -283,8 +215,7 @@ export default async function plugin(bb: BbPluginApi) {
     const amp = ampCliPath ?? resolveAmpCli(process.env);
     const lines = [
       `Amp CLI: ${amp ?? "NOT FOUND"}`,
-      `bridge bundle: ${existsSync(BRIDGE_PATH) ? BRIDGE_PATH : `MISSING (${BRIDGE_PATH}); ${BRIDGE_BUILD_HINT}`}`,
-      `node runtime: ${process.execPath}${resolveNodeRuntime(process.execPath).electron ? " (Electron; the launch spec sets ELECTRON_RUN_AS_NODE=1)" : ""}`,
+      `CLI shim: ${existsSync(SHIM_PATH) ? SHIM_PATH : `MISSING (${SHIM_PATH}); ${BRIDGE_BUILD_HINT}`}`,
     ];
     try {
       const providers = await bb.sdk.providers.list();
@@ -321,36 +252,16 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.cli.register({
     name: "amp",
-    summary: "Inspect the Amp ACP provider integration.",
+    summary: "Inspect the Amp provider integration.",
     commands: [
       {
         name: "status",
-        summary: "Check the Amp CLI, bridge bundle, bb config, assets, and provider registrations",
+        summary: "Check the Amp CLI, the shim bundle, bb config, and provider registrations",
         usage: "amp status",
       },
     ],
-    async run(argv, ctx) {
+    async run(argv) {
       const command = argv[0] ?? "status";
-      if (command === "link-session") {
-        const report = parseSessionLinkReport(argv);
-        if (ctx.threadId === undefined || report === null) {
-          return { exitCode: 2, stderr: "Invalid Amp session link report.\n" };
-        }
-        try {
-          const providerSessionId = await latestAmpProviderSessionId(ctx.threadId);
-          if (providerSessionId !== report.providerSessionId) {
-            return {
-              exitCode: 1,
-              stderr: "The Amp session link is not current for this bb thread.\n",
-            };
-          }
-          await persistSessionLink(ctx.threadId, report);
-          return { exitCode: 0 };
-        } catch (error) {
-          bb.log.warn(`Could not link Amp session usage: ${String(error)}`);
-          return { exitCode: 1, stderr: "Could not update the Amp session link.\n" };
-        }
-      }
       if (command === "status") {
         return { exitCode: 0, stdout: `${(await statusLines()).join("\n")}\n` };
       }
@@ -358,164 +269,14 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  bb.events.on("thread.archived", async ({ thread }) => {
-    if (thread.providerId !== AMP_AGENT.providerId) return;
-    try {
-      await sessionLinkWriteQueues.get(thread.id)?.catch(() => undefined);
-      const providerSessionId = await latestAmpProviderSessionId(thread.id);
-      if (providerSessionId === null) return;
-
-      const link = parseAmpThreadLinkRecord(
-        await bb.storage.kv.get<unknown>(ampThreadLinkKey(thread.id)),
-      );
-      const usage = parseOrbUsageRecord(await bb.storage.kv.get<unknown>(orbUsageKey(thread.id)));
-      const ampThreadId = currentAmpThreadId(providerSessionId, link, usage);
-      if (ampThreadId === null) {
-        bb.log.warn(
-          `Could not archive the linked Amp thread for bb thread ${thread.id}: no current Amp thread link`,
-        );
-        return;
-      }
-
-      const launch = resolveAmpCliLaunch(ampCliPath);
-      if (launch === null) {
-        bb.log.warn(`Could not archive Amp thread ${ampThreadId}: the Amp CLI was not found`);
-        return;
-      }
-      await archiveAmpThread(launch.command, ampThreadId, launch.env);
-      // Remember what was taken. Unarchiving is the one half of this mirror bb
-      // cannot announce, so the restore is driven from this row instead.
-      await bb.storage.kv.set(ampArchiveWatchKey(thread.id), {
-        ampThreadId,
-        failures: 0,
-      });
-      bb.log.info(`Archived Amp thread ${ampThreadId} with bb thread ${thread.id}`);
-    } catch (error) {
-      bb.log.error(
-        `Could not archive the linked Amp thread for bb thread ${thread.id}: ${String(error)}`,
-      );
-    }
-  });
-
+  // ACP-era kv rows (thread links, orb usage, archive watches). New state
+  // lives on the thread's own extension-state events, which leave with the
+  // thread; this sweep only clears leftovers from before the migration.
   bb.events.on("thread.deleted", async ({ thread }) => {
     await Promise.all([
-      bb.storage.kv.delete(ampThreadLinkKey(thread.id)),
-      bb.storage.kv.delete(orbUsageKey(thread.id)),
-      bb.storage.kv.delete(ampArchiveWatchKey(thread.id)),
+      bb.storage.kv.delete(`amp-thread-link:${thread.id}`),
+      bb.storage.kv.delete(`orb-usage:${thread.id}`),
+      bb.storage.kv.delete(`amp-archive-watch:${thread.id}`),
     ]);
-    bb.realtime.publish(ORB_USAGE_CHANNEL, { threadId: thread.id });
-  });
-
-  /** One page is already generous; the loop is for the account that isn't. */
-  const ARCHIVED_PAGE_SIZE = 200;
-  const ARCHIVED_PAGE_LIMIT = 50;
-
-  async function listArchivedThreadIds(signal: AbortSignal): Promise<Set<string>> {
-    const ids = new Set<string>();
-    for (let page = 0; page < ARCHIVED_PAGE_LIMIT; page++) {
-      const rows = await bb.sdk.threads.list({
-        archived: true,
-        // A side chat is hidden, and a hidden thread missing from this listing
-        // would read as restored.
-        includeHidden: true,
-        limit: ARCHIVED_PAGE_SIZE,
-        offset: page * ARCHIVED_PAGE_SIZE,
-        signal,
-      });
-      for (const row of rows) ids.add(row.id);
-      if (rows.length < ARCHIVED_PAGE_SIZE) break;
-    }
-    return ids;
-  }
-
-  /**
-   * Give an Amp thread back when its bb thread stops being archived.
-   *
-   * bb archives through GTD Sidebar's settle, its own sidebar menu, and its
-   * archived view, and every one of those fires `thread.archived`. None of them
-   * fires anything on the way back — the plugin event map has no unarchive —
-   * so the restore is polled rather than received, and the listing above is one
-   * query however many threads are being watched.
-   */
-  async function restoreUnarchivedAmpThreads(signal: AbortSignal): Promise<void> {
-    const watchKeys = await bb.storage.kv.list(AMP_ARCHIVE_WATCH_KEY_PREFIX);
-    if (watchKeys.length === 0) return;
-
-    const archivedThreadIds = await listArchivedThreadIds(signal);
-    for (const threadId of watchedThreadIdsToConfirm(watchKeys, archivedThreadIds)) {
-      if (signal.aborted) return;
-      const key = ampArchiveWatchKey(threadId);
-      const record = parseAmpArchiveWatchRecord(await bb.storage.kv.get<unknown>(key));
-      if (record === null) {
-        await bb.storage.kv.delete(key);
-        continue;
-      }
-
-      // The listing is capped and drops deleted threads, so it can only ever
-      // suggest a restore. The thread itself decides.
-      let thread;
-      try {
-        thread = await bb.sdk.threads.get({ threadId, signal });
-      } catch (error) {
-        // A thread bb cannot report is left alone: a deleted one is cleared by
-        // `thread.deleted`, and a transient failure gets the next pass.
-        bb.log.debug(
-          `Could not read bb thread ${threadId} to mirror its archive state: ${String(error)}`,
-        );
-        continue;
-      }
-      if (thread.deletedAt !== null) {
-        await bb.storage.kv.delete(key);
-        continue;
-      }
-      if (thread.archivedAt !== null) continue;
-
-      const launch = resolveAmpCliLaunch(ampCliPath);
-      if (launch === null) {
-        // Nothing to retry against, so this is not one of the record's tries.
-        bb.log.warn(
-          `Could not unarchive Amp thread ${record.ampThreadId}: the Amp CLI was not found`,
-        );
-        return;
-      }
-      try {
-        await unarchiveAmpThread(launch.command, record.ampThreadId, launch.env);
-        await bb.storage.kv.delete(key);
-        bb.log.info(`Unarchived Amp thread ${record.ampThreadId} with bb thread ${threadId}`);
-      } catch (error) {
-        const next = archiveWatchRecordAfterFailure(record);
-        if (next === null) {
-          await bb.storage.kv.delete(key);
-          bb.log.error(
-            `Gave up unarchiving Amp thread ${record.ampThreadId} for bb thread ${threadId}: ${String(error)}`,
-          );
-        } else {
-          await bb.storage.kv.set(key, next);
-          bb.log.warn(
-            `Could not unarchive the linked Amp thread for bb thread ${threadId}: ${String(error)}`,
-          );
-        }
-      }
-    }
-  }
-
-  const ARCHIVE_MIRROR_INTERVAL_MS = 20_000;
-
-  bb.background.service("archive-mirror", {
-    async start(signal) {
-      while (!signal.aborted) {
-        try {
-          await restoreUnarchivedAmpThreads(signal);
-        } catch (error) {
-          if (signal.aborted) return;
-          bb.log.warn(`Could not mirror unarchived bb threads to Amp: ${String(error)}`);
-        }
-        try {
-          await delay(ARCHIVE_MIRROR_INTERVAL_MS, undefined, { signal });
-        } catch {
-          return;
-        }
-      }
-    },
   });
 }
