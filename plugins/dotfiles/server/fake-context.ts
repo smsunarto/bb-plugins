@@ -11,11 +11,11 @@ export function createFakeContext(
   git: Partial<DotfilesGit> = {},
   options: { log?: (message: string) => void } = {},
 ): FakeContext {
-  const context = stubHostContext();
-  const bb = context.bb as { log?: { info(message: string): void } };
+  const ctx = stubHostContext();
+  const bb = ctx.bb as { log?: { info(message: string): void } };
   bb.log = { info: options.log ?? (() => {}) };
   return {
-    ...context,
-    git: provideFakeGit(context.bb, git),
+    ...ctx,
+    git: provideFakeGit(ctx.bb, git),
   };
 }

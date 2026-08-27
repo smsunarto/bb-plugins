@@ -8,7 +8,7 @@ test("maps publishing to the fixed sync command", async () => {
   const commands: string[] = [];
   const logs: string[] = [];
   const result: TaskResult = { exitCode: 0, output: "done" };
-  const context = createFakeContext(
+  const ctx = createFakeContext(
     {
       run: async (_repoPath, command) => {
         commands.push(command);
@@ -22,7 +22,7 @@ test("maps publishing to the fixed sync command", async () => {
     },
   );
 
-  assert.deepEqual(await publish.handler(context), result);
+  assert.deepEqual(await publish.execute(ctx), result);
   assert.deepEqual(commands, ["mise run sync"]);
   assert.deepEqual(logs, ["running publish: mise run sync"]);
 });

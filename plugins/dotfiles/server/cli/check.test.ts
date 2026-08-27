@@ -10,10 +10,10 @@ test("check exits 1 when the repo is missing", async () => {
 });
 
 test("check without a target runs the full check task", async () => {
-  const context = createFakeContext();
-  const result = await check.invoke(context);
+  const ctx = createFakeContext();
+  const result = await check.invoke(ctx);
   assert.deepEqual(result, { exitCode: 0, stdout: "ok" });
-  assert.deepEqual(context.git.commands, ["mise run check"]);
+  assert.deepEqual(ctx.git.commands, ["mise run check"]);
 });
 
 test("check routes each named target to its check task", async () => {
@@ -29,10 +29,10 @@ test("check routes each named target to its check task", async () => {
     secrets: "mise run check:secrets",
   };
   for (const [target, command] of Object.entries(routes)) {
-    const context = createFakeContext();
-    const result = await check.invoke(context, [target]);
+    const ctx = createFakeContext();
+    const result = await check.invoke(ctx, [target]);
     assert.deepEqual(result, { exitCode: 0, stdout: "ok" });
-    assert.deepEqual(context.git.commands, [command]);
+    assert.deepEqual(ctx.git.commands, [command]);
   }
 });
 

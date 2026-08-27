@@ -10,9 +10,7 @@ export interface FakeDotfilesGit extends DotfilesGit {
  * with each `run` command recorded on `commands`. Override the methods a
  * test cares about.
  */
-export function createFakeGit(
-  overrides: Partial<DotfilesGit> = {},
-): FakeDotfilesGit {
+export function createFakeGit(overrides: Partial<DotfilesGit> = {}): FakeDotfilesGit {
   const commands: string[] = [];
   return {
     commands,
@@ -33,11 +31,8 @@ export function createFakeGit(
   };
 }
 
-/** Bind a fake git collaborator to a host so `gitFor(context.bb)` finds it. */
-export function provideFakeGit(
-  bb: object,
-  overrides: Partial<DotfilesGit> = {},
-): FakeDotfilesGit {
+/** Bind a fake git collaborator to a host so `gitFor(ctx.bb)` finds it. */
+export function provideFakeGit(bb: object, overrides: Partial<DotfilesGit> = {}): FakeDotfilesGit {
   const fake = createFakeGit(overrides);
   bindGit(bb, Object.assign(fake, { dispose() {} }) as ManagedDotfilesGit);
   return fake;

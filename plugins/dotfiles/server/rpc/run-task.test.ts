@@ -8,7 +8,7 @@ test("maps safe task ids to fixed commands", async () => {
   const commands: string[] = [];
   const logs: string[] = [];
   const result: TaskResult = { exitCode: 0, output: "done" };
-  const context = createFakeContext(
+  const ctx = createFakeContext(
     {
       run: async (_repoPath, command) => {
         commands.push(command);
@@ -22,7 +22,7 @@ test("maps safe task ids to fixed commands", async () => {
     },
   );
 
-  assert.deepEqual(await runTask.handler(context, { task: "check:skills" }), result);
+  assert.deepEqual(await runTask.execute(ctx, { task: "check:skills" }), result);
   assert.deepEqual(commands, ["mise run check:skills"]);
   assert.deepEqual(logs, ["running task check:skills: mise run check:skills"]);
 });

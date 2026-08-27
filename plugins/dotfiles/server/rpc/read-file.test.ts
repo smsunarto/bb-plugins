@@ -4,15 +4,15 @@ import { createFakeContext } from "../fake-context.ts";
 import { readFile } from "./read-file.ts";
 
 test("reads only registered files", async () => {
-  const context = createFakeContext();
+  const ctx = createFakeContext();
 
-  assert.deepEqual(await readFile.handler(context, { path: ".dotfiles/mcp.json" }), {
+  assert.deepEqual(await readFile.execute(ctx, { path: ".dotfiles/mcp.json" }), {
     content: "working",
     sha256: "sha-working",
     headContent: "head",
   });
   await assert.rejects(
-    async () => readFile.handler(context, { path: ".ssh/id_ed25519" }),
+    async () => readFile.execute(ctx, { path: ".ssh/id_ed25519" }),
     /not a tweakable file/,
   );
 });

@@ -7,9 +7,9 @@ Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/rpc/query`, `/cli
 * `server/server.ts` is the composition root. It
   default-exports `definePlugin(...)`. The return carries `.rpc`. UI
   type-only imports that default and reads `(typeof plugin)["rpc"]`.
-  Commands take `Context` from `@bb-kit/core/plugin` and call RPC
-  `.handler(context[, input])`. A Command that needs host invocation
-  facts annotates `CommandContext<Context>` and reads `context.cli`.
+  RPC `execute` infers `ctx` and takes keyed args. Commands take inferred
+  CommandContext and `{ args, options }`, then call RPC
+  `.execute(ctx[, args])`.
 * `server/` also holds `domain.ts`, `git.ts`,
   `fake-git.ts`, and `fake-context.ts`. `domain.ts` carries only the genuinely shared values
   (task table, tweakable groups, allowlist, shared schemas); keep it

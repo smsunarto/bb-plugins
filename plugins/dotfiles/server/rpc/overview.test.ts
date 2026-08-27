@@ -4,7 +4,7 @@ import { createFakeContext } from "../fake-context.ts";
 import { overview } from "./overview.ts";
 
 test("builds the overview from static files, discovered skills, and git state", async () => {
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     discoverSkills: () => [
       {
         path: ".dotfiles/.agents/skills/example/SKILL.md",
@@ -18,7 +18,7 @@ test("builds the overview from static files, discovered skills, and git state", 
     pathExists: (_repoPath, path) => path !== "mise.linux.toml",
   });
 
-  const result = await overview.handler(context);
+  const result = await overview.execute(ctx);
 
   assert.equal(result.repoPath, "/dotfiles");
   assert.equal(result.repoExists, true);
@@ -44,14 +44,14 @@ test("builds the overview from static files, discovered skills, and git state", 
 });
 
 test("returns a stable missing-repository overview", async () => {
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     repoExists: () => false,
     discoverSkills: () => {
       throw new Error("must not scan a missing repository");
     },
   });
 
-  const result = await overview.handler(context);
+  const result = await overview.execute(ctx);
 
   assert.equal(result.repoExists, false);
   assert.equal(result.branch, "missing");

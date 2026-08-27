@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { defineQuery } from "@bb-kit/core/rpc";
-import type { Context } from "@bb-kit/core/plugin";
 import { isAllowedPath } from "../domain.ts";
 import { gitFor } from "../git.ts";
 
@@ -13,8 +12,8 @@ export const readFile = defineQuery({
       headContent: z.string().nullable(),
     })
     .strict(),
-  handler: async (context: Context, { path }) => {
-    const git = gitFor(context.bb);
+  async execute(ctx, { path }) {
+    const git = gitFor(ctx.bb);
     const repoPath = await git.getRepoPath();
     // Allowlist guard, duplicated with save-file.ts on purpose: rpc/
     // holds only units, so shared micro-logic stays inline.

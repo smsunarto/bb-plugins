@@ -1,14 +1,13 @@
-import { CLIError, defineCommand } from "@bb-kit/core/cli";
+import { CommandError, defineCommand } from "@bb-kit/core/cli";
 
 import { overview } from "../rpc/overview.ts";
-import type { Context } from "@bb-kit/core/plugin";
 
 export const list = defineCommand({
   summary: "List tweakable files with dirty markers",
-  run: async (context: Context) => {
-    const snapshot = await overview.handler(context);
+  async execute(ctx) {
+    const snapshot = await overview.execute(ctx);
     if (!snapshot.repoExists) {
-      throw new CLIError(`dotfiles repo not found at ${snapshot.repoPath}`);
+      throw new CommandError(`dotfiles repo not found at ${snapshot.repoPath}`);
     }
     const lines: string[] = [];
     for (const group of snapshot.groups) {

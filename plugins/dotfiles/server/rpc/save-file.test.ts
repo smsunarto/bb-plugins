@@ -8,7 +8,7 @@ test("returns explicit save conflict and render outcomes", async () => {
     writeFile: async () => ({ outcome: "conflict" }),
   });
   assert.deepEqual(
-    await saveFile.handler(conflict, {
+    await saveFile.execute(conflict, {
       path: ".dotfiles/mcp.json",
       content: "next",
       expectedSha256: "old",
@@ -18,7 +18,7 @@ test("returns explicit save conflict and render outcomes", async () => {
 
   const written = createFakeContext();
   assert.deepEqual(
-    await saveFile.handler(written, {
+    await saveFile.execute(written, {
       path: ".dotfiles/mcp.json",
       content: "next",
       expectedSha256: "old",
@@ -30,7 +30,7 @@ test("returns explicit save conflict and render outcomes", async () => {
     },
   );
   assert.deepEqual(
-    await saveFile.handler(written, {
+    await saveFile.execute(written, {
       path: ".dotfiles/.gitconfig",
       content: "next",
       expectedSha256: "old",
@@ -44,11 +44,11 @@ test("returns explicit save conflict and render outcomes", async () => {
 });
 
 test("saves only registered files", async () => {
-  const context = createFakeContext();
+  const ctx = createFakeContext();
 
   await assert.rejects(
     async () =>
-      saveFile.handler(context, {
+      saveFile.execute(ctx, {
         path: ".ssh/id_ed25519",
         content: "next",
         expectedSha256: "old",

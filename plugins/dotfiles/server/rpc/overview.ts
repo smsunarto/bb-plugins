@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { defineQuery } from "@bb-kit/core/rpc";
-import type { Context } from "@bb-kit/core/plugin";
 import {
   gitEntrySchema,
   groupDefinitions,
@@ -53,8 +52,8 @@ export const overview = defineQuery({
       gitEntries: z.array(gitEntrySchema),
     })
     .strict(),
-  handler: async (context: Context) => {
-    const git = gitFor(context.bb);
+  async execute(ctx) {
+    const git = gitFor(ctx.bb);
     const repoPath = await git.getRepoPath();
     const repoExists = git.repoExists(repoPath);
     const skills = repoExists ? git.discoverSkills(repoPath) : [];
