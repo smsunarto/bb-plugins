@@ -1,1 +1,1 @@
-export { experimental_acpProviderBridge as experimental_providerBridge } from "@get-bb/plugin-sdk/provider-bridge/acp";
+export { experimental_providerBridge } from "./src/bridge/entry.ts";

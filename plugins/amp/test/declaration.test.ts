@@ -4,7 +4,6 @@ import { validatePluginProviderDeclaration } from "@get-bb/plugin-sdk/internal/h
 import { experimental_acpLaunchSpecSchema } from "@get-bb/plugin-sdk/provider-bridge/acp";
 import { buildAmpProviderDeclaration, type BridgeLaunch } from "../lib/declaration.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "../lib/provision.ts";
-import { AMP_MODES, CONFIG_MODE } from "../src/bridge-core.ts";
 
 const PLAIN_NODE: BridgeLaunch = {
   node: "/usr/local/bin/node",
@@ -75,8 +74,11 @@ test("nativeReasoning mirrors the bridge's mode config", () => {
     supportedLevels: string[];
     defaultLevel: string;
   };
-  assert.equal(reasoning.configId, CONFIG_MODE);
-  const bridgeModes: string[] = AMP_MODES.map((mode) => mode.value);
+  // Pinned literals: the bridge-side copy of these values left with
+  // bridge-core.ts; lib/declaration.ts owns them now and this test pins
+  // the wire values the app relies on.
+  assert.equal(reasoning.configId, "amp-mode");
+  const bridgeModes: string[] = ["low", "medium", "high", "ultra"];
   assert.deepEqual(reasoning.supportedLevels, bridgeModes);
   assert.ok(bridgeModes.includes(reasoning.defaultLevel));
   assert.equal(reasoning.defaultLevel, "medium");
