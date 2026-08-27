@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { hostContext, type Context, type HostSeam, type HostCLISeam, type HostRPCSeam } from "./host.ts";
+import {
+  hostContext,
+  type Context,
+  type HostAgentsSeam,
+  type HostCLISeam,
+  type HostRPCSeam,
+  type HostSeam,
+} from "./host.ts";
 
 // THE load-bearing §2/§6 check: the real host API assigns to the
 // structural seam CAST-FREE against SDK 0.4.21 declarations. Kept inside
@@ -23,10 +30,17 @@ function assertContextFields(context: Context): void {
 }
 void assertContextFields;
 
+function assertAgentsSeamFields(bb: HostSeam): void {
+  void bb.agents.registerTool;
+  void bb.agents.configure;
+  void bb.agents.contributeInstructions;
+}
+void assertAgentsSeamFields;
+
 type Expect<T extends true> = T;
 type _composition = Expect<
-  [HostSeam] extends [HostRPCSeam & HostCLISeam]
-    ? [HostRPCSeam & HostCLISeam] extends [HostSeam]
+  [HostSeam] extends [HostRPCSeam & HostCLISeam & HostAgentsSeam]
+    ? [HostRPCSeam & HostCLISeam & HostAgentsSeam] extends [HostSeam]
       ? true
       : false
     : false

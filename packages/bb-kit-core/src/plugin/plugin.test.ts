@@ -55,6 +55,11 @@ function fakeHost() {
         captured.cli = registration;
       },
     },
+    agents: {
+      registerTool() {},
+      configure() {},
+      contributeInstructions() {},
+    },
     sdk: { tag: "sdk" },
     storage: { kv: {} },
   };

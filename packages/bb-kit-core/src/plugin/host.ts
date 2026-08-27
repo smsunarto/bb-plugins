@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { StandardSchemaV1 } from "../rpc/rpc.ts";
+import type { Session, ToolInvocation, ToolPresentation, ToolResult } from "../tools/tools.ts";
 import type { MaybePromise } from "../utils/types.ts";
 
 /**
@@ -33,7 +34,37 @@ export type HostCLISeam = {
   };
 };
 
-export type HostSeam = HostRPCSeam & HostCLISeam;
+/**
+ * The agents surface. `parameters` is pinned to the vendored standard
+ * schema — the SDK's own overloads name zod, which bb-kit never
+ * imports; the runtime value is a zod object schema the host validates
+ * per call. `configure` is synchronous end to end: the host normalizes
+ * the provider's raw return before any await, so a Promise there would
+ * fail the selection closed.
+ */
+export type HostAgentsSeam = {
+  agents: {
+    registerTool(registration: {
+      name: string;
+      description: string;
+      instructions?: string;
+      presentation?: ToolPresentation;
+      parameters: StandardSchemaV1;
+      execute(params: unknown, ctx: ToolInvocation): MaybePromise<ToolResult>;
+    }): void;
+    configure(
+      provider: (context: Session) => {
+        tools: (string | { name: string; parameters: Record<string, unknown> })[];
+        skills: string[];
+      },
+    ): void;
+    contributeInstructions(
+      provider: (ctx: { threadId: string; projectId: string }) => string | null,
+    ): void;
+  };
+};
+
+export type HostSeam = HostRPCSeam & HostCLISeam & HostAgentsSeam;
 
 /**
  * Frozen host preset every handler receives. Plugins import this; they
