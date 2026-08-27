@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { definePlugin, type Context } from "./plugin.ts";
-import { argv, defineCommand } from "../cli/cli.ts";
+import { argv, defineCommand } from "../command/command.ts";
 import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
 import { defineTool, type Session, type ToolContext } from "../tools/tools.ts";
 import type { HostSeam } from "./host.ts";
@@ -118,7 +118,7 @@ async function loadPlugin() {
   const plugin = definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
-    cli: { status, cat, send },
+    command: { status, cat, send },
     setup() {
       captured.order.push("setup");
     },
@@ -159,7 +159,7 @@ test("cli registration: plugin id as name, summary, metadata for every command",
   assert.equal(typeof byName.get("status")?.usage, "string");
 });
 
-test("omitted cli: default summary, only the rpc subtree", async () => {
+test("omitted command: default summary, only the rpc subtree", async () => {
   const { bb, captured } = fakeHost();
   await definePlugin({ pluginId: "demo-ns", rpc: demo })(bb);
   assert.equal(captured.cli?.summary, "CLI for the demo-ns plugin");
@@ -216,7 +216,7 @@ test("reserved command names throw at define time", () => {
         definePlugin({
           pluginId: "demo-ns",
           rpc: demo,
-          cli: { [key]: loose },
+          command: { [key]: loose },
         }),
       new RegExp(`"${key}" is a reserved command name`),
     );
@@ -378,7 +378,7 @@ test("factory order: rpc, cli, agents, then setup", async () => {
   await definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
-    cli: { status },
+    command: { status },
     agents: { tools: { inventory } },
     setup() {
       captured.order.push("setup");
@@ -513,19 +513,19 @@ function typeOnly() {
   void definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
-    cli: { usesHostFields },
+    command: { usesHostFields },
   });
   void definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
     // @ts-expect-error leftover wrapper { summary, commands } is a type error
-    cli: { summary: "x", commands: { status } },
+    command: { summary: "x", commands: { status } },
   });
   void definePlugin({
     pluginId: "demo-ns",
     rpc: demo,
     // @ts-expect-error reserved key rpc is a type error
-    cli: { rpc: status },
+    command: { rpc: status },
   });
   void definePlugin({
     pluginId: "demo-ns",

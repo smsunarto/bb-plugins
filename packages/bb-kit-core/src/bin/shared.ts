@@ -64,7 +64,7 @@ export function resolveImport(fromFile: string, specifier: string): string {
  * Unit directory beside the composition root. `server/server.ts` →
  * `server/rpc`; a root `server.ts` → `rpc`.
  */
-export function unitDir(compositionRoot: string, kind: "rpc" | "cli" | "tools"): string {
+export function unitDir(compositionRoot: string, kind: "rpc" | "command" | "tools"): string {
   const dir = posix.dirname(compositionRoot);
   return dir === "." ? kind : posix.join(dir, kind);
 }

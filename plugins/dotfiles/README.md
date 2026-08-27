@@ -37,13 +37,13 @@ run validation checks, preview an apply, pull published changes, or publish loca
 
 ## Requirements
 
-* bb 0.40+
-* macOS or Linux. There is no Windows path
-* `git` and `mise` on `PATH` inside the bb server host's login shell
-* A dotfiles repository matching the layout this plugin expects, with the matching
+- bb 0.40+
+- macOS or Linux. There is no Windows path
+- `git` and `mise` on `PATH` inside the bb server host's login shell
+- A dotfiles repository matching the layout this plugin expects, with the matching
   `mise` task set
-* `npx` and network access, only for the Remove-skill control
-* Bun, to build the plugin from the checkout
+- `npx` and network access, only for the Remove-skill control
+- Bun, to build the plugin from the checkout
 
 ## Install
 
@@ -74,17 +74,17 @@ groups and every task name are fixed, so a differently shaped repo still reads
 
 Open the **Dotfiles** panel in bb, or run `bb dotfiles`.
 
-* **File list.** Five fixed groups — agent config, settings overlays, shell, mise, repo
+- **File list.** Five fixed groups — agent config, settings overlays, shell, mise, repo
   policy — plus a Skills group scanned from the repo, so a new skill appears with no
   code change. Dirty files get an amber dot; absent files get a red `missing` badge.
-* **Text editor and live diff.** The editor owns the working file while the diff compares
+- **Text editor and live diff.** The editor owns the working file while the diff compares
   it with `git show HEAD:<path>`. Unified and Split views update while you type, and a
   view toggle does not lose unsaved edits.
-* **Compare-and-swap saves.** The sha256 recorded when the file was opened is passed to
+- **Compare-and-swap saves.** The sha256 recorded when the file was opened is passed to
   the write. If the file changed on disk, the save is refused instead of merged.
-* **Stale-render warning.** Saving a file that feeds a generated consumer shows an amber
+- **Stale-render warning.** Saving a file that feeds a generated consumer shows an amber
   line. Use the header's **render** action; render or publish clears the warning.
-* **Task runner.** Fourteen tasks, five of them header buttons. Output is capped at
+- **Task runner.** Fourteen tasks, five of them header buttons. Output is capped at
   200,000 characters, and a task is killed after 300 seconds.
 
 Symlinked sources are live as soon as you save them. Settings overlays, MCP config, and
@@ -141,7 +141,7 @@ bun run verify     # lint + typecheck + tests + check + build + pack dry-run
 
 The plugin is written on `@bb-kit/core`. `server/server.ts` is the
 composition root: it declares the plugin id, the RPC, and the CLI. `server/`
-holds shared domain values and `git.ts`. `server/rpc/` and `server/cli/` hold one unit
+holds shared domain values and `git.ts`. `server/rpc/` and `server/command/` hold one unit
 per file, with a test file beside each unit; the six RPC names are the
 procedures keys and are a stable public contract. `app/` holds the panel
 app. The repository watcher builds and reloads the plugin after each source change.

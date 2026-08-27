@@ -4,8 +4,8 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { argv, CommandError, defineCommand } from "./cli.ts";
-import type { CommandContext } from "./cli.ts";
+import { argv, CommandError, defineCommand } from "./command.ts";
+import type { CommandContext } from "./command.ts";
 import { commandDefinitions, runProgram } from "./runner.ts";
 
 const require = createRequire(import.meta.url);

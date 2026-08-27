@@ -158,7 +158,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   // ---- unit inventory, rule 1 basenames, rule 6 sibling tests -------
   const compositionRoot = compositionRootFromPkg(pkg) ?? "server/server.ts";
   const rpcDir = unitDir(compositionRoot, "rpc");
-  const cliDir = unitDir(compositionRoot, "cli");
+  const commandDir = unitDir(compositionRoot, "command");
   const toolsDir = unitDir(compositionRoot, "tools");
   const listUnits = (dir: string): string[] => {
     const absolute = join(cwd, dir);
@@ -175,9 +175,9 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       .map((name) => `${dir}/${name}`);
   };
   const rpcUnits = listUnits(rpcDir);
-  const cliUnits = listUnits(cliDir);
+  const commandUnits = listUnits(commandDir);
   const toolsUnits = listUnits(toolsDir);
-  const unitFiles = new Set([...rpcUnits, ...cliUnits, ...toolsUnits]);
+  const unitFiles = new Set([...rpcUnits, ...commandUnits, ...toolsUnits]);
   for (const unit of unitFiles) {
     const base = unitBasename(unit);
     if (!UNIT_NAME_PATTERN.test(base)) {
@@ -286,7 +286,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           found[0]?.line,
         );
       }
-      if (unit.startsWith(`${cliDir}/`)) {
+      if (unit.startsWith(`${commandDir}/`)) {
         failCommanderImport(unit, sourceFile);
         failInnerOptionalBinding(unit, sourceFile);
       }
@@ -310,7 +310,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         }
         if (statement.moduleSpecifier.text === "commander") {
           fail(
-            "cli units must not import commander — declare argv bindings on the input object",
+            "command units must not import commander — declare argv bindings on the input object",
             relativePath,
             lineOfNode(sourceFile, statement),
           );
@@ -553,7 +553,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               valueName = key;
             } else if (ts.isPropertyAssignment(property)) {
               const value = unwrap(property.initializer);
-              if (value !== undefined && ts.isObjectLiteralExpression(value) && what === "cli") {
+              if (value !== undefined && ts.isObjectLiteralExpression(value) && what === "command") {
                 fail(
                   "commands must be flat — nesting is not supported (rule 5)",
                   serverRelative,
@@ -610,12 +610,12 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               collectEntries(rpcObject, procedureEntries, "rpc");
               proceduresRead = true;
             }
-            // cli → object literal (inline or `const cli = { ... }`)
-            const cliProperty = getProperty(argument, "cli");
-            if (cliProperty === undefined) {
-              if (cliUnits.length > 0) {
+            // command → object literal (inline or `const command = { ... }`)
+            const commandProperty = getProperty(argument, "command");
+            if (commandProperty === undefined) {
+              if (commandUnits.length > 0) {
                 fail(
-                  `${cliDir}/ has unit files but definePlugin has no cli entry — rule 5`,
+                  `${commandDir}/ has unit files but definePlugin has no command entry — rule 5`,
                   serverRelative,
                   exportLine,
                 );
@@ -623,15 +623,15 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
                 commandsRead = true;
               }
             } else {
-              const cliObject = resolveObjectLiteral(propertyValue(cliProperty));
-              if (cliObject === undefined) {
+              const commandObject = resolveObjectLiteral(propertyValue(commandProperty));
+              if (commandObject === undefined) {
                 fail(
-                  'the "cli" entry must resolve to an object literal',
+                  'the "command" entry must resolve to an object literal',
                   serverRelative,
-                  lineOfNode(sourceFile, cliProperty),
+                  lineOfNode(sourceFile, commandProperty),
                 );
               } else {
-                collectEntries(cliObject, commandEntries, "cli");
+                collectEntries(commandObject, commandEntries, "command");
                 commandsRead = true;
               }
             }
@@ -690,7 +690,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         const resolveEntryFile = (
           valueName: string,
           line: number,
-          expectDir: "rpc" | "cli" | "tools",
+          expectDir: "rpc" | "command" | "tools",
         ): string | undefined => {
           const binding = imports.get(valueName);
           if (binding === undefined) {
@@ -746,7 +746,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           if (entry.valueName === undefined) {
             continue;
           }
-          const relative = resolveEntryFile(entry.valueName, entry.line, "cli");
+          const relative = resolveEntryFile(entry.valueName, entry.line, "command");
           if (relative !== undefined) {
             wired.add(relative);
             const base = unitBasename(relative);
@@ -792,9 +792,9 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           }
         }
         if (commandsRead) {
-          for (const unit of cliUnits) {
+          for (const unit of commandUnits) {
             if (!wired.has(unit)) {
-              fail(`not wired into ${serverRelative} cli — rule 1`, unit);
+              fail(`not wired into ${serverRelative} command — rule 1`, unit);
             }
           }
         }

@@ -2,9 +2,9 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { RPCContext, RPCProcedures, StandardSchemaV1 } from "../rpc/rpc.ts";
 import { assertRPCKeys, createClient, noInputSchema, runtimeProcedures } from "../rpc/rpc.ts";
 import type { MaybePromise } from "../utils/types.ts";
-import type { CommandContext, CommandMap } from "../cli/command.ts";
-import type { CommandResult, ProgramDefinition } from "../cli/runner.ts";
-import { buildProgram, commandDefinitions, runProgram } from "../cli/runner.ts";
+import type { CommandContext, CommandMap, CommandResult } from "../command/command.ts";
+import type { ProgramDefinition } from "../command/runner.ts";
+import { buildProgram, commandDefinitions, runProgram } from "../command/runner.ts";
 import type { Session, ToolMap, ToolsContext } from "../tools/tools.ts";
 import { assertToolKeys, runtimeTools, toolName } from "../tools/tools.ts";
 import { hostContext, type Context, type HostAgentsSeam } from "./host.ts";
@@ -53,7 +53,7 @@ type ToolFieldCheck<T extends ToolMap> = [
 /**
  * Intersected into `definePlugin`'s parameter. Resolves to `unknown`
  * when every demand is a preset field, and to a re-declaration of
- * `rpc` / `cli` / `agents` with the diagnostic type otherwise.
+ * `rpc` / `command` / `agents` with the diagnostic type otherwise.
  */
 export type ClosedContext<
   R extends RPCProcedures,
@@ -84,7 +84,7 @@ export function definePlugin<
   definition: {
     pluginId: string;
     rpc: R;
-    cli?: C;
+    command?: C;
     agents?: {
       tools: T;
       skills?: string[] | ((ctx: Context, session: Session) => string[]);
@@ -101,7 +101,7 @@ export function definePlugin<
     throw new Error(`invalid plugin id "${pluginId}": must match /^[a-z0-9][a-z0-9-]*$/`);
   }
   assertRPCKeys(rpc);
-  const curated = definition.cli ?? {};
+  const curated = definition.command ?? {};
   for (const key of Object.keys(curated)) {
     if (key === "rpc" || key === "help") {
       throw new Error(`"${key}" is a reserved command name`);
@@ -185,7 +185,7 @@ export function definePlugin<
           ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
           parameters: tool.parameters,
           // The host already validated params against `parameters`; the
-          // overlay freeze mirrors the cli one above.
+          // overlay freeze mirrors the command one above.
           execute: (params, invocation) =>
             tool.execute(Object.freeze({ ...ctx, tool: invocation }), params),
         });

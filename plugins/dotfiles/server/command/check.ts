@@ -1,4 +1,4 @@
-import { argv, CommandError, defineCommand } from "@bb-kit/core/cli";
+import { argv, CommandError, defineCommand } from "@bb-kit/core/command";
 import { z } from "zod";
 
 import { overview } from "../rpc/overview.ts";

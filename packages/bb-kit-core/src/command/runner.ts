@@ -9,9 +9,6 @@ import {
   type CommandResult,
 } from "./command.ts";
 
-export { CommandError } from "./command.ts";
-export type { CommandContext, CommandMap, CommandResult } from "./command.ts";
-
 /** One node of the program `runProgram` builds. Internal — commander stays here. */
 export type ProgramDefinition = {
   name: string;

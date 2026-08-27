@@ -1,4 +1,4 @@
-import { CommandError, defineCommand } from "@bb-kit/core/cli";
+import { CommandError, defineCommand } from "@bb-kit/core/command";
 
 import { overview } from "../rpc/overview.ts";
 import { runTask } from "../rpc/run-task.ts";

@@ -1,10 +1,10 @@
 import { definePlugin } from "@bb-kit/core/plugin";
-import { cat } from "./cli/cat.ts";
-import { check } from "./cli/check.ts";
-import { list } from "./cli/list.ts";
-import { render } from "./cli/render.ts";
-import { status } from "./cli/status.ts";
-import { sync } from "./cli/sync.ts";
+import { cat } from "./command/cat.ts";
+import { check } from "./command/check.ts";
+import { list } from "./command/list.ts";
+import { render } from "./command/render.ts";
+import { status } from "./command/status.ts";
+import { sync } from "./command/sync.ts";
 import { overview } from "./rpc/overview.ts";
 import { publish } from "./rpc/publish.ts";
 import { readFile } from "./rpc/read-file.ts";
@@ -16,7 +16,7 @@ import { bindGit, createDotfilesGit } from "./git.ts";
 export default definePlugin({
   pluginId: "dotfiles",
   rpc: { overview, publish, readFile, removeSkill, runTask, saveFile },
-  cli: { cat, check, list, render, status, sync },
+  command: { cat, check, list, render, status, sync },
   async setup(bb) {
     const settings = bb.settings.define({
       repoPath: {

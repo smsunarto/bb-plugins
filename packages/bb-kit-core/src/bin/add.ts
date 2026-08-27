@@ -75,7 +75,7 @@ function procedureTestTemplate(name: string, exportName: string, kind: AddKind):
 
 function commandTemplate(name: string, exportName: string): string {
   return [
-    'import { defineCommand } from "@bb-kit/core/cli";',
+    'import { defineCommand } from "@bb-kit/core/command";',
     "",
     `export const ${exportName} = defineCommand({`,
     `  summary: "TODO: describe ${name}",`,
@@ -175,7 +175,7 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
     // Unparseable JSON still writes beside the scaffold default.
   }
 
-  const dir = unitDir(compositionRoot, isProcedure ? "rpc" : isTool ? "tools" : "cli");
+  const dir = unitDir(compositionRoot, isProcedure ? "rpc" : isTool ? "tools" : "command");
   const unitRelative = `${dir}/${name}.ts`;
   const testRelative = `${dir}/${name}.test.ts`;
   for (const relative of [unitRelative, testRelative]) {
@@ -229,7 +229,7 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
     }
   } else {
     const entry = name === exportName ? `${exportName},` : `"${name}": ${exportName},`;
-    lines.push("and the cli entry:", "", `  ${entry}`, "");
+    lines.push("and the command entry:", "", `  ${entry}`, "");
     lines.push(`(the commands key must stay "${name}" — check rule 1 pins it to the filename)`);
   }
   return { exitCode: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };

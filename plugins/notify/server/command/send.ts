@@ -1,4 +1,4 @@
-import { argv, defineCommand } from "@bb-kit/core/cli";
+import { argv, defineCommand } from "@bb-kit/core/command";
 import { z } from "zod";
 
 import { send as sendRpc } from "../rpc/send.ts";

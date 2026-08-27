@@ -38,9 +38,9 @@
       "types": "./dist/rpc/query/query.d.ts",
       "import": "./dist/rpc/query/query.js"
     },
-    "./cli": {
-      "types": "./dist/cli/cli.d.ts",
-      "import": "./dist/cli/cli.js"
+    "./command": {
+      "types": "./dist/command/command.d.ts",
+      "import": "./dist/command/command.js"
     },
     "./tools": {
       "types": "./dist/tools/tools.d.ts",
@@ -52,7 +52,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/bin/bin.ts src/plugin/plugin.ts src/rpc/rpc.ts src/rpc/query/query.ts src/cli/cli.ts src/tools/tools.ts src/testing/testing.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
+    "build": "bun build src/bin/bin.ts src/plugin/plugin.ts src/rpc/rpc.ts src/rpc/query/query.ts src/command/command.ts src/tools/tools.ts src/testing/testing.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --import tsx",
     "clean": "rm -rf dist"

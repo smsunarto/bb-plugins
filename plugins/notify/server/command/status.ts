@@ -1,4 +1,4 @@
-import { defineCommand } from "@bb-kit/core/cli";
+import { defineCommand } from "@bb-kit/core/command";
 
 import { status as statusRpc } from "../rpc/status.ts";
 

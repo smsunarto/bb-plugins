@@ -25,7 +25,7 @@ The directory of RPCs beside the composition root — one per file, its
 test beside it. Follows `dirname(bb.server)`, so a root `server.ts`
 keeps units in `rpc/`.
 
-**`server/cli/`**:
+**`server/command/`**:
 The directory of Commands beside the composition root — one per file,
 its test beside it. Same `dirname(bb.server)` rule as `server/rpc/`.
 
@@ -40,7 +40,7 @@ outside `app/` never reaches the browser bundle.
 
 **`server/`**:
 The server concern. `server/server.ts` is the composition root. Interned
-collaborators, domain modules, `rpc/`, `cli/`, and `tools/` are siblings. A plugin
+collaborators, domain modules, `rpc/`, `command/`, and `tools/` are siblings. A plugin
 without a backend omits the directory.
 
 **RPC**:
@@ -107,8 +107,8 @@ The per-RPC React hooks UI code reaches RPCs through — a Query's
 *Avoid*: query hooks
 
 **Command**:
-One `defineCommand` unit in `server/cli/`, wired into `definePlugin`'s
-`cli` map. The only "command" in this context; an RPC that writes is a
+One `defineCommand` unit in `server/command/`, wired into `definePlugin`'s
+`command` map. The only "command" in this context; an RPC that writes is a
 Mutation. `execute` returns CommandResult. Throw CommandError to exit with
 a chosen code.
 *Avoid*: CLI command, subcommand, CLICommand

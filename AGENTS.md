@@ -22,7 +22,7 @@
 - `dist/` is shared between the two instances.
 - When you capture plugin screenshots, follow the `bb-plugin-screenshots` skill.
 - Point `BB_SERVER_URL` at the dev App port, not the Server port.
-- Put helpers beside the composition root. `check` treats every `.ts` file in `rpc/`, `cli/`, and `tools/` as a wired unit.
+- Put helpers beside the composition root. `check` treats every `.ts` file in `rpc/`, `command/`, and `tools/` as a wired unit.
 
 ## Agent docs
 

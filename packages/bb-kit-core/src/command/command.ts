@@ -3,6 +3,8 @@ import type { JSONObjectSchema, SchemaOutput, StandardSchemaV1 } from "../rpc/rp
 import type { MaybePromise } from "../utils/types.ts";
 import { assertCommandInput, type BoundField, type CommandInputSchema } from "./argv.ts";
 
+export { argv } from "./argv.ts";
+
 /**
  * Plugin Context plus host overlay fields. Parsed argv is the second
  * execute argument, not these fields.

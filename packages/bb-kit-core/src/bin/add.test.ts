@@ -45,9 +45,9 @@ test("add command wires by kebab key when the name is hyphenated", () => {
   const cwd = pluginRoot();
   const result = runAdd("command", "sync-all", { cwd });
   assert.equal(result.exitCode, 0);
-  const unit = readFileSync(join(cwd, "server/cli/sync-all.ts"), "utf8");
+  const unit = readFileSync(join(cwd, "server/command/sync-all.ts"), "utf8");
   assert.match(unit, /export const syncAll = defineCommand\(/);
-  const sibling = readFileSync(join(cwd, "server/cli/sync-all.test.ts"), "utf8");
+  const sibling = readFileSync(join(cwd, "server/command/sync-all.test.ts"), "utf8");
   assert.match(sibling, /syncAll\.execute\(stubHostContext\(\)\)/);
   assert.match(result.stdout, /"sync-all": syncAll,/);
   assert.match(result.stdout, /must stay "sync-all"/);

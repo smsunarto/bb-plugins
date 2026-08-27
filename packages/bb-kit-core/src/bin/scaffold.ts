@@ -103,13 +103,13 @@ const TSCONFIG = `${JSON.stringify(
 function serverTs(id: string): string {
   return [
     'import { definePlugin } from "@bb-kit/core/plugin";',
-    'import { status } from "./cli/status.ts";',
+    'import { status } from "./command/status.ts";',
     'import { ping } from "./rpc/ping.ts";',
     "",
     "export default definePlugin({",
     `  pluginId: "${id}",`,
     "  rpc: { ping },",
-    "  cli: { status },",
+    "  command: { status },",
     "});",
     "",
   ].join("\n");
@@ -161,7 +161,7 @@ const RPC_PING_TEST_TS = [
 ].join("\n");
 
 const CLI_STATUS_TS = [
-  'import { defineCommand } from "@bb-kit/core/cli";',
+  'import { defineCommand } from "@bb-kit/core/command";',
   'import { ping } from "../rpc/ping.ts";',
   "",
   "/** The scaffold's example command — replace it with your first real one. */",
@@ -324,8 +324,8 @@ export function scaffoldFiles(packageName: string): {
     "server/server.test.ts": serverTestTs(id),
     "server/rpc/ping.ts": RPC_PING_TS,
     "server/rpc/ping.test.ts": RPC_PING_TEST_TS,
-    "server/cli/status.ts": CLI_STATUS_TS,
-    "server/cli/status.test.ts": CLI_STATUS_TEST_TS,
+    "server/command/status.ts": CLI_STATUS_TS,
+    "server/command/status.test.ts": CLI_STATUS_TEST_TS,
     "app/rpc.ts": appRPCTs(id),
     "app/app.tsx": appTsx(id),
     "app/app.test.ts": appTestTs(id),

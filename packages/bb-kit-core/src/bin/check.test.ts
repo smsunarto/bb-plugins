@@ -88,7 +88,12 @@ function wireAgents(root: string, base: string, entry: string): void {
     'import { definePlugin } from "@bb-kit/core/plugin";',
     `import { definePlugin } from "@bb-kit/core/plugin";\nimport { ${camelName(base)} } from "./tools/${base}.ts";`,
   );
-  edit(root, "server/server.ts", "cli: { status },", `cli: { status },\n  agents: ${entry},`);
+  edit(
+    root,
+    "server/server.ts",
+    "command: { status },",
+    `command: { status },\n  agents: ${entry},`,
+  );
 }
 
 function addManifestSkill(root: string, name: string): void {
@@ -182,7 +187,7 @@ test("two keys wiring one unit file break the bijection (rule 1)", async () => {
 
 test("a commands key that is not the unit basename fails rule 1", async () => {
   const root = makeFixture();
-  edit(root, "server/server.ts", "cli: { status }", "cli: { stat: status }");
+  edit(root, "server/server.ts", "command: { status }", "command: { stat: status }");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /commands key "stat" must equal the unit's kebab basename "status"/);
@@ -230,7 +235,7 @@ test("a unit file the tsconfig include omits still parses via the composition ro
   tsconfig["include"] = [
     "server/server.ts",
     "server/server.test.ts",
-    "server/cli/**/*",
+    "server/command/**/*",
     "app/**/*",
   ];
   writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
@@ -447,25 +452,25 @@ test("more than 256 agents.skills entries fail rule 7", async () => {
   assert.match(result.stderr, /the host caps a selection at 256 ids \(rule 7\)/);
 });
 
-test("a cli unit that imports commander fails", async () => {
+test("a command unit that imports commander fails", async () => {
   const root = makeFixture();
   edit(
     root,
-    "server/cli/status.ts",
-    'import { defineCommand } from "@bb-kit/core/cli";',
-    'import { Command } from "commander";\nimport { defineCommand } from "@bb-kit/core/cli";',
+    "server/command/status.ts",
+    'import { defineCommand } from "@bb-kit/core/command";',
+    'import { Command } from "commander";\nimport { defineCommand } from "@bb-kit/core/command";',
   );
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /cli units must not import commander/);
+  assert.match(result.stderr, /command units must not import commander/);
 });
 
 test("a bound field wrapped in .optional() fails", async () => {
   const root = makeFixture();
   writeFileSync(
-    join(root, "server/cli/status.ts"),
+    join(root, "server/command/status.ts"),
     [
-      'import { argv, defineCommand } from "@bb-kit/core/cli";',
+      'import { argv, defineCommand } from "@bb-kit/core/command";',
       'import { z } from "zod";',
       'import { ping } from "../rpc/ping.ts";',
       "",

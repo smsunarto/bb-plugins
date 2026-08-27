@@ -13,7 +13,7 @@ interface LoginShell {
   readonly args: readonly string[];
 }
 
-/** Everything the rpc and cli handlers consume — the DI seam for tests. */
+/** Everything the rpc and command handlers consume — the DI seam for tests. */
 export interface DotfilesGit {
   getRepoPath(): Promise<string>;
   repoExists(repoPath: string): boolean;

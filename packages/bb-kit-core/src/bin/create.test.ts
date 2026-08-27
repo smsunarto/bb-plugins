@@ -23,8 +23,8 @@ test("create writes the full scaffold tree and prints the plugin id", () => {
     "server/server.test.ts",
     "server/rpc/ping.ts",
     "server/rpc/ping.test.ts",
-    "server/cli/status.ts",
-    "server/cli/status.test.ts",
+    "server/command/status.ts",
+    "server/command/status.test.ts",
     "app/rpc.ts",
     "app/app.tsx",
     "app/app.test.ts",
@@ -85,7 +85,7 @@ test("the scaffold templates bake the derived id into server, app, and tests", (
   assert.match(files["app/rpc.ts"] ?? "", /createRPC<\(typeof plugin\)\["rpc"\]>\(\)/);
   assert.match(files["server/server.test.ts"] ?? "", /callRpc\("ping"\)/);
   assert.match(files["app/app.test.ts"] ?? "", /rpc: \{ ping: async/);
-  assert.match(files["server/cli/status.test.ts"] ?? "", /status\.execute\(stubHostContext\(\)\)/);
+  assert.match(files["server/command/status.test.ts"] ?? "", /status\.execute\(stubHostContext\(\)\)/);
 });
 
 test("the scaffold uses Bun-compatible TypeScript module semantics", () => {

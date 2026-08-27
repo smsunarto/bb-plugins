@@ -7,7 +7,7 @@ type WithoutUndefined<T> = Exclude<T, undefined>;
 type ZodField = StandardSchemaV1 & { readonly _zod: object };
 
 declare const commandFieldBinding: unique symbol;
-// Shared across bun entry bundles (cli.js vs plugin.js). A unique Symbol() would not match.
+// Shared across bun entry bundles (command.js vs plugin.js). A unique Symbol() would not match.
 const ARGV_BRAND = Symbol.for("bb-kit.argv");
 
 type FieldHelp = {

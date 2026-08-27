@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CommandError } from "@bb-kit/core/cli";
+import { CommandError } from "@bb-kit/core/command";
 
 import { createFakeContext } from "../fake-context.ts";
 import { list } from "./list.ts";

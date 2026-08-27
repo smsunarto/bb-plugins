@@ -12,12 +12,12 @@ object in, JSON object out.
 // server/server.ts
 import { definePlugin } from "@bb-kit/core/plugin";
 import { overview } from "./rpc/overview.ts";
-import { status } from "./cli/status.ts";
+import { status } from "./command/status.ts";
 
 export default definePlugin({
   pluginId: "my-plugin",
   rpc: { overview },
-  cli: { status },
+  command: { status },
 });
 ```
 
@@ -37,7 +37,7 @@ cd my-plugin
 npm test
 ```
 
-`create` scaffolds a working plugin with RPCs, CLI, UI, and passing
+`create` scaffolds a working plugin with RPCs, Commands, UI, and passing
 tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 `npx bb-kit check` verifies the wiring.
 
@@ -47,7 +47,7 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@bb-kit/core/plugin`    | `definePlugin`, `hostContext`, types `DefinedPlugin`, `Context`, `HostSeam`                                                                                                                 |
 | `@bb-kit/core/rpc`       | `defineQuery`, `defineMutation`, `createClient`, `RPCValidationError`, types `Client`, `RPCContext`, `RPCProcedures`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
-| `@bb-kit/core/cli`       | `defineCommand`, `argv`, `CommandError`, types `CommandResult`, `CommandContext`                                                                                                                                         |
+| `@bb-kit/core/command`   | `defineCommand`, `argv`, `CommandError`, types `CommandResult`, `CommandContext`                                                                          |
 | `@bb-kit/core/rpc/query` | `createRPC`, `PluginQueryBoundary` (browser)                                                                                                                                                |
 | `@bb-kit/core/testing`   | `installDom`, `stubClient`, `stubHostContext`                                                                                                                                               |
 
