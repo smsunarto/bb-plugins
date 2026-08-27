@@ -72,12 +72,16 @@ export type RuntimeCommand = {
   execute: (ctx: CommandContext, input?: unknown) => MaybePromise<CommandResult>;
 };
 
-export function runtimeCommands(commands: Readonly<Record<string, AnyCommand>>): Record<string, RuntimeCommand> {
+export function runtimeCommands(
+  commands: Readonly<Record<string, AnyCommand>>,
+): Record<string, RuntimeCommand> {
   return commands as Record<string, RuntimeCommand>;
 }
 
-type ExecuteArity<Execute extends (...args: never[]) => unknown, Allowed extends number> = number extends
-  Parameters<Execute>["length"]
+type ExecuteArity<
+  Execute extends (...args: never[]) => unknown,
+  Allowed extends number,
+> = number extends Parameters<Execute>["length"]
   ? never
   : Parameters<Execute>["length"] extends Allowed
     ? unknown
@@ -101,9 +105,7 @@ export function defineCommand<
     readonly execute: Execute;
   } & ExecuteArity<Execute, 2>,
 ): CommandWithInput<Input & { readonly shape: BoundShape<Input["shape"]> }>;
-export function defineCommand<
-  Execute extends (ctx: CommandContext) => MaybePromise<CommandResult>,
->(
+export function defineCommand<Execute extends (ctx: CommandContext) => MaybePromise<CommandResult>>(
   definition: {
     readonly summary: string;
     readonly input?: never;

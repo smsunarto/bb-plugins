@@ -326,7 +326,9 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       if (!helpers.has(node.expression.name.text)) {
         return false;
       }
-      return ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "argv";
+      return (
+        ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "argv"
+      );
     }
 
     function failInnerOptionalBinding(relativePath: string, sourceFile: TS.SourceFile): void {
@@ -553,7 +555,11 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               valueName = key;
             } else if (ts.isPropertyAssignment(property)) {
               const value = unwrap(property.initializer);
-              if (value !== undefined && ts.isObjectLiteralExpression(value) && what === "command") {
+              if (
+                value !== undefined &&
+                ts.isObjectLiteralExpression(value) &&
+                what === "command"
+              ) {
                 fail(
                   "commands must be flat — nesting is not supported (rule 5)",
                   serverRelative,

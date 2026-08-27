@@ -2,10 +2,7 @@
 export const PROJECT_NAME_TTL_MS = 5 * 60_000;
 
 export type ProjectNames = {
-  name(
-    projectId: string,
-    fetch: () => Promise<{ name: string }>,
-  ): Promise<string | null>;
+  name(projectId: string, fetch: () => Promise<{ name: string }>): Promise<string | null>;
   clear(): void;
 };
 
@@ -47,7 +44,5 @@ export async function projectName(
   },
   projectId: string,
 ): Promise<string | null> {
-  return projectNames(bb).name(projectId, () =>
-    bb.sdk.projects.get({ projectId }),
-  );
+  return projectNames(bb).name(projectId, () => bb.sdk.projects.get({ projectId }));
 }

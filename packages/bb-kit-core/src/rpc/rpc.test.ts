@@ -74,7 +74,9 @@ type _lacksInput = Expect<Equal<"input" extends keyof typeof ping ? true : false
 // takes nothing; results are the output schema's OUTPUT type.
 type _withInputParams = Expect<Equal<Parameters<Client<Demo>["echo"]>, [{ path: string }]>>;
 type _noInputParams = Expect<Equal<Parameters<Client<Demo>["ping"]>, []>>;
-type _result = Expect<Equal<Awaited<ReturnType<Client<Demo>["echo"]>>, { ok: boolean; path: string }>>;
+type _result = Expect<
+  Equal<Awaited<ReturnType<Client<Demo>["echo"]>>, { ok: boolean; path: string }>
+>;
 
 // A defaulted field is optional on the CLIENT side (schema input type).
 function inputDirection(client: Client<Demo>) {
@@ -182,18 +184,12 @@ test("runtimeProcedures is a view over the same procedure objects", () => {
 // ---- RPC key validation (createClient) ------------------------------
 
 test("createClient rejects an invalid RPC key", () => {
-  assert.throws(
-    () => createClient({ ReadFile: ping }, host),
-    /invalid RPC key "ReadFile"/,
-  );
+  assert.throws(() => createClient({ ReadFile: ping }, host), /invalid RPC key "ReadFile"/);
   assert.throws(() => createClient({ "read-file": ping }, host), /invalid RPC key/);
 });
 
 test("createClient rejects the reserved keys useClient and then", () => {
-  assert.throws(
-    () => createClient({ useClient: ping }, host),
-    /"useClient" is a reserved RPC key/,
-  );
+  assert.throws(() => createClient({ useClient: ping }, host), /"useClient" is a reserved RPC key/);
   assert.throws(
     // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point: createClient must reject this key
     () => createClient({ then: ping }, host),

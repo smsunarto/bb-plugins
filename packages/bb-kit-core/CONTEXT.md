@@ -13,12 +13,12 @@ host-owned names (`pluginId`, `BbPluginApi`) stay as bb spells them.
 **Plugin**:
 One npm package that bb installs and runs. The package root is the plugin
 root.
-*Avoid*: extension, app
+_Avoid_: extension, app
 
 **Composition root**:
 `server/server.ts` — the one file that wires RPCs, Commands, and Agent tools together, and
 the only file a generator may ask a human to edit. It is `bb.server`.
-*Avoid*: entrypoint, index
+_Avoid_: entrypoint, index
 
 **`server/rpc/`**:
 The directory of RPCs beside the composition root — one per file, its
@@ -49,28 +49,28 @@ Mutation. A plugin's RPCs are the `rpc` map on `definePlugin`. The
 public name is the map key — camelCase, matching the host (`readFile`).
 Renaming one is a breaking change. The host isolates methods by plugin
 id on the path; the name is not prefixed.
-*Avoid*: procedure, endpoint, handler, method, wire name
+_Avoid_: procedure, endpoint, handler, method, wire name
 
 **Query**:
 An RPC that reads. Declared with `defineQuery`.
-*Avoid*: read, getter, fetch
+_Avoid_: read, getter, fetch
 
 **Mutation**:
 An RPC that writes. Declared with `defineMutation`.
-*Avoid*: command, action
+_Avoid_: command, action
 
 **Plugin id**:
 The id declared on `definePlugin` as `pluginId`. Equals
 `derivePluginID(package.json name)`. The CLI mounts as `bb <pluginId>`.
 Not a prefix of an RPC's public name.
-*Avoid*: namespace, scope, prefix
+_Avoid_: namespace, scope, prefix
 
 **Client**:
 The typed client for a plugin's RPCs — what the RPC subtree and the UI
 imperative escape hatch reach them through. Commands do not take a
 client; they take CommandContext and call RPC `.execute`. The RPC hooks
 are the normal UI path.
-*Avoid*: caller, stub
+_Avoid_: caller, stub
 
 **Context**:
 The frozen host preset every execute receives: `{ bb }`.
@@ -82,7 +82,7 @@ The second argument of a Command's `execute` is the schema output of
 its argv-bound input object. Host `cli.run` is the only string parser.
 Plugins import `Context`; they do not alias it.
 The binding is `ctx`.
-*Avoid*: deps, environment
+_Avoid_: deps, environment
 
 **CommandContext**:
 What a Command's `execute` receives as `ctx`: the plugin Context and the
@@ -92,48 +92,48 @@ The second argument is the schema output, not CommandContext. RPC `execute` infe
 Context; authors do not annotate it. The payload is keyed fields, not
 `{ args, options }`.
 The binding is `ctx`.
-*Avoid*: CLI context (for the whole object)
+_Avoid_: CLI context (for the whole object)
 
 **Command input**:
 The second argument of a Command's `execute` when the command declares
 `input`. Each field is branded with one argv binding
 (`argv.argument`, `optionalArgument`, `words`, `option`, `flag`).
 Tests call `execute(ctx, parsed)`. Host `cli.run(argv)` parses strings.
-*Avoid*: `{ args, options }`, commander `configure`, `.invoke`
+_Avoid_: `{ args, options }`, commander `configure`, `.invoke`
 
 **RPC hooks**:
 The per-RPC React hooks UI code reaches RPCs through — a Query's
 `useQuery`, a Mutation's `useMutation` — bound once in `app/rpc.ts`.
-*Avoid*: query hooks
+_Avoid_: query hooks
 
 **Command**:
 One `defineCommand` unit in `server/command/`, wired into `definePlugin`'s
 `command` map. The only "command" in this context; an RPC that writes is a
 Mutation. `execute` returns CommandResult. Throw CommandError to exit with
 a chosen code.
-*Avoid*: CLI command, subcommand, CLICommand
+_Avoid_: CLI command, subcommand, CLICommand
 
 **CommandResult**:
 What a Command's `execute` returns: `{ exitCode, stdout?, stderr? }`.
 The host CLI protocol uses this same shape.
-*Avoid*: CLIResult
+_Avoid_: CLIResult
 
 **CommandError**:
 Thrown from `execute` to exit with a chosen code.
 `new CommandError(message, { exitCode = 1 })`.
-*Avoid*: CLIError
+_Avoid_: CLIError
 
 **RPC subtree**:
 The `bb <plugin-id> rpc <name>` family every plugin mounts
 automatically — one entry per RPC, taking and printing JSON objects.
 Framework-owned; not a Command.
-*Avoid*: auto-commands, generated CLI
+_Avoid_: auto-commands, generated CLI
 
 **Agent tool**:
 A capability a plugin exposes to the coding agent driving a thread; the
 agent invokes it by name with schema-validated input. Defined with
 `defineTool`, one per file in `server/tools/`.
-*Avoid*: MCP tool, model tool
+_Avoid_: MCP tool, model tool
 
 **Tool name**:
 The public name an Agent tool answers to. Derived by one function,
@@ -143,7 +143,7 @@ The public name an Agent tool answers to. Derived by one function,
 Unique across every installed
 plugin — the host does not isolate tools by path the way it isolates
 RPCs. Public API; renaming one is a breaking change.
-*Avoid*: tool id
+_Avoid_: tool id
 
 **Session**:
 One agent run the host assembles inside a thread, and the payload of
@@ -151,11 +151,11 @@ configure resolution. `enabled` and a function-valued `agents.skills`
 selector receive it as their second parameter; their choices apply when
 the next Session starts, never mid-run. `agents.instructions` does not
 receive the Session; its second parameter is the Resolution.
-*Avoid*: agent run
+_Avoid_: agent run
 
 **Resolution**:
 The `{ threadId, projectId }` pair the host hands to
 `agents.instructions` each time it resolves a thread's instructions.
 Not the Session; it carries none of the Session's environment or
 provider facts.
-*Avoid*: session (for this parameter)
+_Avoid_: session (for this parameter)

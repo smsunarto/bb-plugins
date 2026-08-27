@@ -91,15 +91,18 @@ test("buildAmpArgv carries the fast+mode sequence the shim used to splice", () =
 });
 
 test("buildAmpArgv builds the orb wire", () => {
-  assert.deepEqual(buildAmpArgv({ executor: "orb", project: "my-project", thinking: true, mode: "high" }), [
-    "--execute",
-    "--stream-json-thinking",
-    "--orb-execute",
-    "--project",
-    "my-project",
-    "--mode",
-    "high",
-  ]);
+  assert.deepEqual(
+    buildAmpArgv({ executor: "orb", project: "my-project", thinking: true, mode: "high" }),
+    [
+      "--execute",
+      "--stream-json-thinking",
+      "--orb-execute",
+      "--project",
+      "my-project",
+      "--mode",
+      "high",
+    ],
+  );
 });
 
 test("every optional flag the builder can emit maps back to an option for the drop-retry", () => {
@@ -194,7 +197,9 @@ test("buildAmpSettings prefers AMP_SETTINGS_FILE and fails loudly when it is bro
 
   const broken = join(root, "broken.json");
   writeFileSync(broken, "{ not json");
-  assert.throws(() => buildAmpSettings({ dangerouslyAllowAll: true }, { AMP_SETTINGS_FILE: broken }));
+  assert.throws(() =>
+    buildAmpSettings({ dangerouslyAllowAll: true }, { AMP_SETTINGS_FILE: broken }),
+  );
 });
 
 test("appendBoundedStderr keeps a bounded tail and says it truncated", () => {
@@ -239,8 +244,11 @@ test("buildAmpSettings rejects an explicit settings file that is not an object",
 test("buildAmpSettings skips an unparseable settings.jsonc and prefers settings.json", () => {
   const configHome = scratch("amp-settings-");
   mkdirSync(join(configHome, "amp"), { recursive: true });
-  writeFileSync(join(configHome, "amp", "settings.jsonc"), "// jsonc comment\n{ \"amp.a\": 1 }");
-  const jsoncSkipped = buildAmpSettings({ dangerouslyAllowAll: true }, { XDG_CONFIG_HOME: configHome });
+  writeFileSync(join(configHome, "amp", "settings.jsonc"), '// jsonc comment\n{ "amp.a": 1 }');
+  const jsoncSkipped = buildAmpSettings(
+    { dangerouslyAllowAll: true },
+    { XDG_CONFIG_HOME: configHome },
+  );
   assert.deepEqual(jsoncSkipped, { "amp.dangerouslyAllowAll": true });
 
   writeFileSync(join(configHome, "amp", "settings.jsonc"), JSON.stringify({ "amp.b": 2 }));

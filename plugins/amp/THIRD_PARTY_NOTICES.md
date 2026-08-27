@@ -45,9 +45,9 @@ SOFTWARE.
 
 ## Amp
 
-| Work                                                         | Copyright          | Where it is used                                                                                                                                     |
-| ------------------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Amp logo mark                                                | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, and `dist/app.js` |
+| Work          | Copyright          | Where it is used                                                                |
+| ------------- | ------------------ | ------------------------------------------------------------------------------- |
+| Amp logo mark | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, and `dist/app.js` |
 
 "Amp" and the Amp logo are marks of Sourcegraph Inc. This plugin is not
 affiliated with or endorsed by Sourcegraph Inc.

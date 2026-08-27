@@ -55,10 +55,10 @@ Two files carry third-party brand artwork. **No licence above grants trademark
 rights**, and none is claimed here. Both are used only to identify the product a
 user has chosen to install, which is nominative use.
 
-| Mark                                                 | Where                                                                                                                                                                                                           | Owner                   |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Amp                                                  | `plugins/amp/assets/*.svg` and `plugins/amp/src/amp-brand.ts`, used for plugin branding and rendered in the Orb banner                                                                                          | Sourcegraph             |
-| OpenAI, Claude, Cursor, Grok, opencode, Pi, oh-my-pi | `plugins/gtd-sidebar/lib/provider-marks.ts`                                                                                                                                                                     | their respective owners |
+| Mark                                                 | Where                                                                                                                  | Owner                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Amp                                                  | `plugins/amp/assets/*.svg` and `plugins/amp/src/amp-brand.ts`, used for plugin branding and rendered in the Orb banner | Sourcegraph             |
+| OpenAI, Claude, Cursor, Grok, opencode, Pi, oh-my-pi | `plugins/gtd-sidebar/lib/provider-marks.ts`                                                                            | their respective owners |
 
 In bb provider chrome, a host-served logo always takes precedence over vendored
 geometry and is rendered as a muted silhouette. The Amp Orb banner uses the

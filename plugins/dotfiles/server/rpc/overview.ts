@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { defineQuery } from "@bb-kit/core/rpc";
-import {
-  gitEntrySchema,
-  groupDefinitions,
-  type TweakableGroupDefinition,
-} from "../domain.ts";
+import { gitEntrySchema, groupDefinitions, type TweakableGroupDefinition } from "../domain.ts";
 import { gitFor } from "../git.ts";
 
 function toOverviewGroup(
@@ -57,9 +53,7 @@ export const overview = defineQuery({
     const repoPath = await git.getRepoPath();
     const repoExists = git.repoExists(repoPath);
     const skills = repoExists ? git.discoverSkills(repoPath) : [];
-    const status = repoExists
-      ? await git.gitStatus(repoPath)
-      : { branch: "missing", entries: [] };
+    const status = repoExists ? await git.gitStatus(repoPath) : { branch: "missing", entries: [] };
     const dirtyPaths = new Set(status.entries.map((entry) => entry.path));
     return {
       repoPath,
