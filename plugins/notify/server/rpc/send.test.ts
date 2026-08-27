@@ -6,13 +6,13 @@ import { send } from "./send.ts";
 
 test("send resolves the project and posts through delivery", async () => {
   const lookups: string[] = [];
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     projectName: (projectId) => {
       lookups.push(projectId);
       return Promise.resolve("Acme");
     },
   });
-  const result = await send.handler(context, {
+  const result = await send.execute(ctx, {
     message: "**Build** finished",
     title: "CI",
     threadId: "th_1",
@@ -20,7 +20,7 @@ test("send resolves the project and posts through delivery", async () => {
   });
   assert.deepEqual(result, { listening: true });
   assert.deepEqual(lookups, ["p1"]);
-  assert.deepEqual(await queuedNotifications(context), [
+  assert.deepEqual(await queuedNotifications(ctx), [
     {
       id: 1,
       title: "CI",
@@ -32,10 +32,10 @@ test("send resolves the project and posts through delivery", async () => {
 });
 
 test("send defaults the title, thread, and project", async () => {
-  const context = createFakeContext();
-  const result = await send.handler(context, { message: "hello" });
+  const ctx = createFakeContext();
+  const result = await send.execute(ctx, { message: "hello" });
   assert.deepEqual(result, { listening: true });
-  assert.deepEqual(await queuedNotifications(context), [
+  assert.deepEqual(await queuedNotifications(ctx), [
     { id: 1, title: "bb", body: "hello", threadId: null, silent: true },
   ]);
 });
@@ -47,8 +47,8 @@ test("send input rejects a whitespace-only message and trims a padded one", () =
 });
 
 test("send reports a held notification when no window listens", async () => {
-  const context = createFakeContext({ listening: false });
-  const result = await send.handler(context, { message: "hello" });
+  const ctx = createFakeContext({ listening: false });
+  const result = await send.execute(ctx, { message: "hello" });
   assert.deepEqual(result, { listening: false });
-  assert.equal((await queuedNotifications(context)).length, 1);
+  assert.equal((await queuedNotifications(ctx)).length, 1);
 });

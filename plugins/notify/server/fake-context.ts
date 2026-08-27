@@ -43,18 +43,18 @@ export function createFakeContext(options: FakeContextOptions = {}): Context {
     },
     storage,
   };
-  const context = stubHostContext({
+  const ctx = stubHostContext({
     bb: bb as unknown as Context["bb"],
   });
   if (options.listening !== false) {
-    notificationQueue(context.bb).markPoll();
+    notificationQueue(ctx.bb).markPoll();
   }
-  bindSettings(context.bb, () => settings);
-  return context;
+  bindSettings(ctx.bb, () => settings);
+  return ctx;
 }
 
-export async function queuedNotifications(context: Context) {
-  const batch = await notificationQueue(context.bb).queue.lease();
+export async function queuedNotifications(ctx: Context) {
+  const batch = await notificationQueue(ctx.bb).queue.lease();
   return batch.lease?.notifications ?? [];
 }
 

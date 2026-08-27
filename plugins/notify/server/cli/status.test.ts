@@ -6,7 +6,7 @@ import { createFakeContext } from "../fake-context.ts";
 import { status } from "./status.ts";
 
 test("status prints every line, aligned, for a listening window", async () => {
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     settings: {
       notifyOnIdle: true,
       notifyOnFailed: false,
@@ -17,7 +17,7 @@ test("status prints every line, aligned, for a listening window", async () => {
       agentTool: true,
     },
   });
-  const delivery = notificationQueue(context.bb);
+  const delivery = notificationQueue(ctx.bb);
   await delivery.queue.enqueue({
     title: "t",
     body: "b",
@@ -44,7 +44,7 @@ test("status prints every line, aligned, for a listening window", async () => {
     delivery.waitForQueue(ac.signal, 60_000),
     delivery.waitForQueue(ac.signal, 60_000),
   ];
-  const result = await status.invoke(context);
+  const result = await status.invoke(ctx);
   ac.abort();
   await Promise.all(waiting);
   assert.deepEqual(result, {
@@ -63,7 +63,7 @@ test("status prints every line, aligned, for a listening window", async () => {
 });
 
 test("status prints the closed-window and disabled-tool wording", async () => {
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     listening: false,
     settings: {
       notifyOnIdle: true,
@@ -75,7 +75,7 @@ test("status prints the closed-window and disabled-tool wording", async () => {
       agentTool: false,
     },
   });
-  const result = await status.invoke(context);
+  const result = await status.invoke(ctx);
   assert.deepEqual(result, {
     exitCode: 0,
     stdout:

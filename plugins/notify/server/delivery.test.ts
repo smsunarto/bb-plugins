@@ -5,8 +5,8 @@ import { notificationQueue } from "./delivery.ts";
 import { createFakeContext } from "./fake-context.ts";
 
 test("enqueue wakes a held nextBatch without waiting out the poll", async () => {
-  const context = createFakeContext({ listening: false });
-  const delivery = notificationQueue(context.bb);
+  const ctx = createFakeContext({ listening: false });
+  const delivery = notificationQueue(ctx.bb);
   const ac = new AbortController();
   const pending = delivery.nextBatch(ac.signal);
   while (delivery.pollingCount() === 0) {

@@ -6,8 +6,8 @@ import { createFakeContext } from "../fake-context.ts";
 import { status } from "./status.ts";
 
 test("status reports the window, the queue, and the filters", async () => {
-  const context = createFakeContext();
-  const delivery = notificationQueue(context.bb);
+  const ctx = createFakeContext();
+  const delivery = notificationQueue(ctx.bb);
   await delivery.queue.enqueue({
     title: "t",
     body: "b",
@@ -17,7 +17,7 @@ test("status reports the window, the queue, and the filters", async () => {
   });
   const ac = new AbortController();
   const waiting = delivery.waitForQueue(ac.signal, 60_000);
-  const result = await status.handler(context);
+  const result = await status.execute(ctx);
   ac.abort();
   await waiting;
   assert.deepEqual(result, {
@@ -35,7 +35,7 @@ test("status reports the window, the queue, and the filters", async () => {
 });
 
 test("status parses minRunSeconds and reflects a closed window", async () => {
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     listening: false,
     settings: {
       notifyOnIdle: false,
@@ -44,7 +44,7 @@ test("status parses minRunSeconds and reflects a closed window", async () => {
       agentTool: true,
     },
   });
-  const result = await status.handler(context);
+  const result = await status.execute(ctx);
   assert.equal(result.listening, false);
   assert.equal(result.polling, 0);
   assert.equal(result.held, 0);

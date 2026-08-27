@@ -1,13 +1,12 @@
 import { defineCommand } from "@bb-kit/core/cli";
 
 import { status as statusRpc } from "../rpc/status.ts";
-import type { Context } from "@bb-kit/core/plugin";
 
 /** Print the listening state and every filter, one aligned line each. */
 export const status = defineCommand({
   summary: "Show whether a BB window is listening, and the filters",
-  run: async (context: Context) => {
-    const s = await statusRpc.handler(context);
+  async execute(ctx) {
+    const s = await statusRpc.execute(ctx);
     const lines = [
       `window:     ${s.listening ? `listening (${s.polling} polling)` : "none open — notifications will wait"}`,
       `held:       ${s.held}`,

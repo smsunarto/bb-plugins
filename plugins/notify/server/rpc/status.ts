@@ -1,7 +1,6 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 
-import type { Context } from "@bb-kit/core/plugin";
 import { notificationQueue } from "../delivery.ts";
 import { parseSeconds } from "../format.ts";
 import { pluginSettings } from "../settings.ts";
@@ -20,9 +19,9 @@ export const status = defineQuery({
     sound: z.string(),
     agentTool: z.boolean(),
   }),
-  handler: async (context: Context) => {
-    const settings = pluginSettings(context.bb);
-    const snapshot = await notificationQueue(context.bb).snapshot();
+  async execute(ctx) {
+    const settings = pluginSettings(ctx.bb);
+    const snapshot = await notificationQueue(ctx.bb).snapshot();
     return {
       listening: snapshot.listening,
       polling: snapshot.polling,

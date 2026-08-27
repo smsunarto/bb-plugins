@@ -18,37 +18,37 @@ function thread(overrides: Partial<NotifiableThread> = {}): NotifiableThread {
 }
 
 test("notifyThread posts a finished thread", async () => {
-  const context = createFakeContext({
+  const ctx = createFakeContext({
     projectName: async () => "Acme",
   });
-  await notifyThread(context.bb, thread(), "finished", "done");
-  assert.deepEqual(await queuedNotifications(context), [
+  await notifyThread(ctx.bb, thread(), "finished", "done");
+  assert.deepEqual(await queuedNotifications(ctx), [
     { id: 1, title: "Work", body: "[Acme] done", threadId: "th_1", silent: true },
   ]);
 });
 
 test("notifyThread suppresses hidden threads", async () => {
-  const context = createFakeContext();
-  await notifyThread(context.bb, thread({ visibility: "hidden" }), "finished", "done");
-  assert.deepEqual(await queuedNotifications(context), []);
+  const ctx = createFakeContext();
+  await notifyThread(ctx.bb, thread({ visibility: "hidden" }), "finished", "done");
+  assert.deepEqual(await queuedNotifications(ctx), []);
 });
 
 test("notifyThread dedupes two events in the same window", async () => {
-  const context = createFakeContext();
+  const ctx = createFakeContext();
   bindRunTracker(
-    context.bb,
+    ctx.bb,
     createRunTracker(() => 1_000),
   );
-  await notifyThread(context.bb, thread(), "finished", "first");
-  await notifyThread(context.bb, thread(), "failed", "second");
-  assert.equal((await queuedNotifications(context)).length, 1);
+  await notifyThread(ctx.bb, thread(), "finished", "first");
+  await notifyThread(ctx.bb, thread(), "failed", "second");
+  assert.equal((await queuedNotifications(ctx)).length, 1);
 });
 
 test("notifyThread skips a run shorter than minRunSeconds", async () => {
-  const context = createFakeContext({ settings: { minRunSeconds: "10" } });
+  const ctx = createFakeContext({ settings: { minRunSeconds: "10" } });
   const tracker = createRunTracker(() => 1_000);
-  bindRunTracker(context.bb, tracker);
+  bindRunTracker(ctx.bb, tracker);
   tracker.started("th_1");
-  await notifyThread(context.bb, thread(), "finished", "too fast");
-  assert.deepEqual(await queuedNotifications(context), []);
+  await notifyThread(ctx.bb, thread(), "finished", "too fast");
+  assert.deepEqual(await queuedNotifications(ctx), []);
 });

@@ -1,7 +1,6 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 
-import type { Context } from "@bb-kit/core/plugin";
 import { deliver } from "../delivery.ts";
 import { BODY_MAX_CHARS, isThreadId, oneLine, plainText } from "../format.ts";
 import { projectName } from "../project-names.ts";
@@ -20,13 +19,13 @@ export const send = defineMutation({
   output: z.object({
     listening: z.boolean(),
   }),
-  handler: async (context: Context, input) => {
-    const project = input.projectId ? await projectName(context.bb, input.projectId) : null;
-    const listening = await deliver(context.bb, {
+  async execute(ctx, { message, title, threadId, projectId }) {
+    const project = projectId ? await projectName(ctx.bb, projectId) : null;
+    const listening = await deliver(ctx.bb, {
       project,
-      heading: input.title ?? "bb",
-      message: oneLine(plainText(input.message), BODY_MAX_CHARS),
-      threadId: input.threadId ?? null,
+      heading: title ?? "bb",
+      message: oneLine(plainText(message), BODY_MAX_CHARS),
+      threadId: threadId ?? null,
     });
     return { listening };
   },

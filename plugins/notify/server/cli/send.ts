@@ -1,7 +1,6 @@
-import { defineCommand, type CommandContext } from "@bb-kit/core/cli";
+import { defineCommand } from "@bb-kit/core/cli";
 
 import { send as sendRpc } from "../rpc/send.ts";
-import type { Context } from "@bb-kit/core/plugin";
 import { isThreadId } from "../format.ts";
 
 const USAGE = 'usage: bb notify send "<message>" [--title <text>] [--thread <id>]\n';
@@ -13,7 +12,7 @@ export const send = defineCommand({
   configure: (command) => {
     // Variadic so unquoted multi-word messages join, as the old parser did.
     // Optional at the commander level because --message is an accepted
-    // alternative; run() rejects the truly message-less invocation with the
+    // alternative; execute() rejects the truly message-less invocation with the
     // usage line.
     command
       .argument("[message...]", "notification text (markdown is stripped)")
@@ -21,7 +20,7 @@ export const send = defineCommand({
       .option("--title <text>", "heading shown instead of bb")
       .option("--thread <id>", "thread the notification opens");
   },
-  run: async (context: CommandContext<Context>, { args, options }) => {
+  async execute(ctx, { args, options }) {
     const {
       message: messageFlag,
       title,
@@ -46,10 +45,10 @@ export const send = defineCommand({
       message,
     };
     if (title !== undefined) input.title = title;
-    const threadId = thread ?? context.cli.threadId;
+    const threadId = thread ?? ctx.threadId;
     if (threadId !== undefined) input.threadId = threadId;
-    if (context.cli.projectId !== undefined) input.projectId = context.cli.projectId;
-    const { listening } = await sendRpc.handler(context, input);
+    if (ctx.projectId !== undefined) input.projectId = ctx.projectId;
+    const { listening } = await sendRpc.execute(ctx, input);
     return listening
       ? { exitCode: 0, stdout: "Queued — a BB window is listening.\n" }
       : { exitCode: 0, stdout: "Held — no BB window is open. It will appear when one is.\n" };

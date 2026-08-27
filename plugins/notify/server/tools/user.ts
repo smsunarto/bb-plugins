@@ -21,22 +21,22 @@ export const user = defineTool({
   parameters: z.object({
     message: z.string().min(1).describe("One line the user will act on."),
   }),
-  enabled: (context: Context) => pluginSettings(context.bb).agentTool,
-  async execute(context, { message }) {
+  enabled: (ctx: Context) => pluginSettings(ctx.bb).agentTool,
+  async execute(ctx, { message }) {
     let heading = "bb";
     let project: string | null = null;
     try {
-      const thread = await context.bb.sdk.threads.get({ threadId: context.tool.threadId });
+      const thread = await ctx.bb.sdk.threads.get({ threadId: ctx.tool.threadId });
       heading = threadLabel(thread);
-      project = await projectName(context.bb, thread.projectId);
+      project = await projectName(ctx.bb, thread.projectId);
     } catch {
       // Thread lookup is decoration only — still send the notification.
     }
-    const listening = await deliver(context.bb, {
+    const listening = await deliver(ctx.bb, {
       project,
       heading,
       message: oneLine(plainText(message), BODY_MAX_CHARS),
-      threadId: context.tool.threadId,
+      threadId: ctx.tool.threadId,
     });
     return listening
       ? "Notification queued; a BB window is listening."

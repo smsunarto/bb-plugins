@@ -6,9 +6,9 @@ Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/rpc/query`, `/cli
 
 * `server/server.ts` is the composition root. The default export is
   a `definePlugin(...)` call whose `rpc` entry is the `{ send, status }` object
-  literal. Commands take `Context` from `@bb-kit/core/plugin` and call RPC
-  `.handler(context[, input])`. A Command that needs host invocation facts
-  annotates `CommandContext<Context>` and reads `context.cli`.
+  literal. RPC `execute` infers `ctx` and takes keyed args. Commands take inferred
+  CommandContext and `{ args, options }`, then call RPC
+  `.execute(ctx[, args])`.
 * Process state lives under `server/` beside that file: `delivery.ts` (queue + waiters, interned by the host),
   `run-tracker.ts`, `project-names.ts`, `notify-thread.ts` (product rule, not
   an RPC), `routes.ts`, `events.ts`, and the helpers
