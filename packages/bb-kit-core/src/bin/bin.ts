@@ -15,7 +15,7 @@ import type { BinResult } from "./shared.ts";
 const USAGE = [
   "usage:",
   "  bb-kit create <package-name>        scaffold a new plugin directory",
-  "  bb-kit add <query|mutation|command> <kebab-name>",
+  "  bb-kit add <query|mutation|command|tool> <kebab-name>",
   "                                      generate one unit + sibling test",
   "  bb-kit check                        verify wiring, naming, and manifest",
   "",

@@ -8,9 +8,11 @@ import {
   relativeImport,
   unitDir,
 } from "./shared.ts";
+import { derivePluginID } from "./derive-plugin-id.ts";
+import { toolName } from "../tools/tools.ts";
 
 /**
- * `bb-kit add <query|mutation|command> <name>` (§7): write one unit file
+ * `bb-kit add <query|mutation|command|tool> <name>` (§7): write one unit file
  * and its sibling test, then PRINT the wiring lines — add never edits
  * the composition root (ADR-0009). The name is the kebab-case filename; the value
  * export is its camelization, so `check` rule 1 holds by construction.
@@ -19,7 +21,7 @@ import {
 
 export type AddOptions = { cwd: string };
 
-const ADD_KINDS = ["query", "mutation", "command"] as const;
+const ADD_KINDS = ["query", "mutation", "command", "tool"] as const;
 export type AddKind = (typeof ADD_KINDS)[number];
 
 function queryTemplate(exportName: string): string {
@@ -98,12 +100,45 @@ function commandTestTemplate(name: string, exportName: string): string {
   ].join("\n");
 }
 
+function toolTemplate(name: string, exportName: string): string {
+  return [
+    'import { defineTool, type ToolContext } from "@bb-kit/core/tools";',
+    'import { z } from "zod";',
+    'import type { Context } from "@bb-kit/core/plugin";',
+    "",
+    `export const ${exportName} = defineTool({`,
+    `  description: "TODO: describe ${name} for the agent",`,
+    "  parameters: z.object({ value: z.string() }),",
+    `  execute: (_context: ToolContext<Context>, _input) => "${name}: TODO",`,
+    "});",
+    "",
+  ].join("\n");
+}
+
+function toolTestTemplate(name: string, exportName: string): string {
+  return [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import { stubHostContext } from "@bb-kit/core/testing";',
+    `import { ${exportName} } from "./${name}.ts";`,
+    "",
+    `test("${name} executes", async () => {`,
+    "  const context = {",
+    "    ...stubHostContext(),",
+    '    tool: { threadId: "t", projectId: "p", signal: new AbortController().signal },',
+    "  };",
+    `  assert.equal(await ${exportName}.execute(context, { value: "x" }), "${name}: TODO");`,
+    "});",
+    "",
+  ].join("\n");
+}
+
 export function runAdd(kind: string, name: string, options: AddOptions): BinResult {
   if (!(ADD_KINDS as readonly string[]).includes(kind)) {
     return {
       exitCode: 2,
       stdout: "",
-      stderr: `unknown kind "${kind}" — expected query, mutation, or command\n`,
+      stderr: `unknown kind "${kind}" — expected query, mutation, command, or tool\n`,
     };
   }
   if (!UNIT_NAME_PATTERN.test(name)) {
@@ -124,17 +159,21 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   }
 
   const isProcedure = kind === "query" || kind === "mutation";
+  const isTool = kind === "tool";
   const publicName = isProcedure ? camelName(name) : undefined;
 
   let compositionRoot = "server/server.ts";
+  let packageName: string | undefined;
   try {
     const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as Record<string, unknown>;
     compositionRoot = compositionRootFromPkg(pkg) ?? compositionRoot;
+    const rawName = pkg["name"];
+    packageName = typeof rawName === "string" ? rawName : undefined;
   } catch {
     // Unparseable JSON still writes beside the scaffold default.
   }
 
-  const dir = unitDir(compositionRoot, isProcedure ? "rpc" : "cli");
+  const dir = unitDir(compositionRoot, isProcedure ? "rpc" : isTool ? "tools" : "cli");
   const unitRelative = `${dir}/${name}.ts`;
   const testRelative = `${dir}/${name}.test.ts`;
   for (const relative of [unitRelative, testRelative]) {
@@ -153,10 +192,14 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
       ? queryTemplate(exportName)
       : kind === "mutation"
         ? mutationTemplate(exportName)
-        : commandTemplate(name, exportName);
+        : isTool
+          ? toolTemplate(name, exportName)
+          : commandTemplate(name, exportName);
   const testContent = isProcedure
     ? procedureTestTemplate(name, exportName, kind as AddKind)
-    : commandTestTemplate(name, exportName);
+    : isTool
+      ? toolTestTemplate(name, exportName)
+      : commandTestTemplate(name, exportName);
 
   mkdirSync(join(options.cwd, dir), { recursive: true });
   writeFileSync(join(options.cwd, unitRelative), unitContent);
@@ -170,6 +213,18 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   if (isProcedure) {
     lines.push("and the rpc entry:", "", `  ${exportName},`, "");
     lines.push(`name: ${publicName}`);
+  } else if (isTool) {
+    const key = name.replaceAll("-", "_");
+    const entry = key === exportName ? `${exportName},` : `${key}: ${exportName},`;
+    lines.push("and the agents.tools entry:", "", `  ${entry}`, "");
+    lines.push(`(the agents.tools key must stay "${key}" — check rule 1 pins it to the filename)`);
+    if (packageName !== undefined) {
+      try {
+        lines.push(`name: ${toolName(derivePluginID(packageName), key)}`);
+      } catch {
+        // An underivable package name — check rule 2 reports it.
+      }
+    }
   } else {
     const entry = name === exportName ? `${exportName},` : `"${name}": ${exportName},`;
     lines.push("and the cli entry:", "", `  ${entry}`, "");

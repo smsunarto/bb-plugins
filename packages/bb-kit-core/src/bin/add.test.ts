@@ -100,3 +100,27 @@ test("add never overwrites an existing unit (ADR-0009)", () => {
   assert.match(again.stderr, /already exists — add never overwrites/);
   assert.equal(readFileSync(join(cwd, "server/rpc/ping.ts"), "utf8"), before);
 });
+
+test("add tool writes the unit and prints the derived name", () => {
+  const cwd = pluginRoot();
+  const result = runAdd("tool", "beacon", { cwd });
+  assert.equal(result.exitCode, 0);
+  const unit = readFileSync(join(cwd, "server/tools/beacon.ts"), "utf8");
+  assert.match(unit, /export const beacon = defineTool\(/);
+  assert.match(unit, /parameters: z.object\(/);
+  const sibling = readFileSync(join(cwd, "server/tools/beacon.test.ts"), "utf8");
+  assert.match(sibling, /beacon\.execute\(context, { value: "x" }\)/);
+  assert.match(sibling, /signal: new AbortController\(\)\.signal/);
+  assert.match(result.stdout, /and the agents\.tools entry:/);
+  assert.match(result.stdout, /\n {2}beacon,\n/);
+  assert.match(result.stdout, /name: notes_beacon/);
+});
+
+test("add tool pins the underscored key when the name is hyphenated", () => {
+  const cwd = pluginRoot();
+  const result = runAdd("tool", "two-word", { cwd });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /\n {2}two_word: twoWord,\n/);
+  assert.match(result.stdout, /must stay "two_word"/);
+  assert.match(result.stdout, /name: notes_two_word/);
+});

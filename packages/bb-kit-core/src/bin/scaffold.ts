@@ -287,7 +287,7 @@ function readme(name: string, id: string, dirName: string): string {
     "npx bb-kit check   # static wiring + manifest verification",
     "```",
     "",
-    "Add a unit with `npx bb-kit add query|mutation|command <kebab-name>`;",
+    "Add a unit with `npx bb-kit add query|mutation|command|tool <kebab-name>`;",
     "it prints the exact lines to wire into server/server.ts. Generators never",
     "edit existing files.",
     "",
