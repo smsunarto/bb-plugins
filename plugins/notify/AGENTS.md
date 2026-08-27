@@ -11,9 +11,9 @@ Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/rpc/query`, `/cli
   annotates `CommandContext<Context>` and reads `context.cli`.
 * Process state lives under `server/` beside that file: `delivery.ts` (queue + waiters, interned by the host),
   `run-tracker.ts`, `project-names.ts`, `notify-thread.ts` (product rule, not
-  an RPC), `routes.ts`, `events.ts`, `agent-tool.ts`, and the helpers
+  an RPC), `routes.ts`, `events.ts`, and the helpers
   `format.ts`, `lifecycle.ts`, `queue.ts`, `sound.ts`, `settings.ts`.
-* `server/rpc/` and `server/cli/` hold one unit per file: kebab-case basename, exactly one value
+* `server/rpc/`, `server/cli/`, and `server/tools/` hold one unit per file: kebab-case basename, exactly one value
   export named the camelCase of the basename. No helper files directly in either
   directory — the checker treats every direct child as a unit. Per-RPC
   schemas live module-private inside their unit; `export type` is unrestricted.
@@ -30,6 +30,12 @@ Built on `@bb-kit/core` (subpath imports: `/plugin`, `/rpc`, `/rpc/query`, `/cli
 
 The two RPC names are a public contract and must survive byte-identical:
 `send`, `status`. Do not rename them.
+
+## Agent tool name
+
+The `notify_user` name is a public contract, derived from the plugin id
+(`notify`) plus the underscored basename of `server/tools/user.ts` (`user`).
+Renaming either is a breaking change.
 
 ## Behavior contracts
 

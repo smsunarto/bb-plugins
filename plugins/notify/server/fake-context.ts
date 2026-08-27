@@ -9,6 +9,7 @@ export type FakeContextOptions = {
   listening?: boolean;
   settings?: Partial<Settings>;
   projectName?: (projectId: string) => Promise<string | null>;
+  thread?: { title: string | null; titleFallback: string | null; projectId: string };
 };
 
 export function createFakeContext(options: FakeContextOptions = {}): Context {
@@ -24,6 +25,10 @@ export function createFakeContext(options: FakeContextOptions = {}): Context {
       },
     },
     threads: {
+      get: async () => {
+        if (options.thread === undefined) throw new Error("missing thread");
+        return options.thread;
+      },
       events: {
         list: async () => [],
       },

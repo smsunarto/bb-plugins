@@ -1,0 +1,45 @@
+import { defineTool } from "@bb-kit/core/tools";
+import { z } from "zod";
+
+import type { Context } from "@bb-kit/core/plugin";
+import { deliver } from "../delivery.ts";
+import { BODY_MAX_CHARS, oneLine, plainText, threadLabel } from "../format.ts";
+import { projectName } from "../project-names.ts";
+import { pluginSettings } from "../settings.ts";
+
+export const user = defineTool({
+  description:
+    "Post a desktop notification on the user's machine. Use it when the user has likely walked away and something needs them now: a long job finished, or you are blocked on a decision. Do not use it for routine progress while they are watching.",
+  instructions:
+    "notify_user posts a native desktop notification titled with the project and thread. Keep the message under 120 characters, lead with what the user would act on, and write plain prose — markdown syntax is stripped, not rendered.",
+  presentation: {
+    label: {
+      pending: "Notifying the user",
+      completed: "Notified the user",
+    },
+  },
+  parameters: z.object({
+    message: z.string().min(1).describe("One line the user will act on."),
+  }),
+  enabled: (context: Context) => pluginSettings(context.bb).agentTool,
+  async execute(context, { message }) {
+    let heading = "bb";
+    let project: string | null = null;
+    try {
+      const thread = await context.bb.sdk.threads.get({ threadId: context.tool.threadId });
+      heading = threadLabel(thread);
+      project = await projectName(context.bb, thread.projectId);
+    } catch {
+      // Thread lookup is decoration only — still send the notification.
+    }
+    const listening = await deliver(context.bb, {
+      project,
+      heading,
+      message: oneLine(plainText(message), BODY_MAX_CHARS),
+      threadId: context.tool.threadId,
+    });
+    return listening
+      ? "Notification queued; a BB window is listening."
+      : "No BB window is open; the notification will appear when one is.";
+  },
+});

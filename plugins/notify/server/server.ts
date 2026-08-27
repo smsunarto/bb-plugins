@@ -5,7 +5,7 @@ import { status as statusCommand } from "./cli/status.ts";
 import { test as testCommand } from "./cli/test.ts";
 import { send } from "./rpc/send.ts";
 import { status } from "./rpc/status.ts";
-import { registerAgentTool } from "./agent-tool.ts";
+import { user } from "./tools/user.ts";
 import { notificationQueue } from "./delivery.ts";
 import { registerEvents } from "./events.ts";
 import { playSound } from "./sound.ts";
@@ -18,6 +18,7 @@ export default definePlugin({
   pluginId: "notify",
   rpc: { send, status },
   cli: { send: sendCommand, status: statusCommand, test: testCommand },
+  agents: { tools: { user } },
   async setup(bb) {
     const settings = bb.settings.define(SETTINGS_BLOCK);
     let current = await settings.get();
@@ -34,7 +35,6 @@ export default definePlugin({
 
     registerRoutes(bb, queueSound);
     registerEvents(bb);
-    registerAgentTool(bb);
 
     bb.onDispose(async () => {
       notificationQueue(bb).release();
