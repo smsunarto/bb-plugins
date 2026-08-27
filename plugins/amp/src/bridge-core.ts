@@ -30,12 +30,14 @@ import {
   type MCPConfig,
   type UserInputMessage,
 } from "@ampcode/sdk";
+import { finishOpenOracleReports, toSessionUpdates, type TranslationState } from "./translate.ts";
 import {
-  finishOpenOracleReports,
-  toSessionUpdates,
-  type AmpStreamMessage,
-  type TranslationState,
-} from "./translate.ts";
+  isAuthError,
+  parseAmpBatch,
+  parseUnsupportedFlag,
+  type AmpEventBatch,
+  type AmpMcpServerStatus,
+} from "./bridge/events.ts";
 import { createFileOracleReportStore, type OracleReportStore } from "./oracle-report-store.ts";
 import { stripOrbDirectives } from "./orb-directive.ts";
 import type { AmpExecutionTarget } from "./execution-target.ts";
@@ -64,7 +66,7 @@ export type AmpExecuteFn = (args: {
   prompt: AmpExecutePrompt;
   signal?: AbortSignal;
   options?: AmpExecuteOptions;
-}) => AsyncIterable<AmpStreamMessage>;
+}) => AsyncIterable<unknown>;
 
 export interface SessionBinding {
   threadId: string;
@@ -287,41 +289,7 @@ function sameContentBlocks(left: ContentBlock[], right: ContentBlock[]): boolean
   return isDeepStrictEqual(left, right);
 }
 
-function echoedUserText(message: AmpStreamMessage): string | null {
-  if (
-    message.type !== "user" ||
-    (message.parent_tool_use_id !== undefined && message.parent_tool_use_id !== null) ||
-    !Array.isArray(message.message?.content)
-  ) {
-    return null;
-  }
-  let text = "";
-  for (const block of message.message.content) {
-    if (
-      block === null ||
-      typeof block !== "object" ||
-      Array.isArray(block) ||
-      (block as Record<string, unknown>).type !== "text" ||
-      typeof (block as Record<string, unknown>).text !== "string"
-    ) {
-      return null;
-    }
-    text += (block as { text: string }).text;
-  }
-  return text;
-}
-
-export function isAuthError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("invalid or missing api key") ||
-    lower.includes("run 'amp login'") ||
-    lower.includes("authentication") ||
-    lower.includes("unauthorized") ||
-    lower.includes("no api key found") ||
-    (lower.includes("api key") && (lower.includes("missing") || lower.includes("invalid")))
-  );
-}
+export { isAuthError };
 
 /** ACP McpServer[] (bb sends the stdio shape) -> Amp mcpConfig record. */
 export function convertMcpServers(mcpServers: McpServer[] | undefined | null): MCPConfig {
@@ -490,9 +458,9 @@ const FLAG_TO_OPTION: Record<string, keyof AmpExecuteOptions> = {
 
 /** Option name behind an "unknown option --x" CLI error, if we know one. */
 export function unsupportedOptionFrom(message: string): keyof AmpExecuteOptions | null {
-  const match = /unknown option\s+['"`‘’]?--([a-z0-9-]+)/i.exec(message);
-  if (!match) return null;
-  return FLAG_TO_OPTION[match[1].toLowerCase()] ?? null;
+  const flag = parseUnsupportedFlag(message);
+  if (flag === null) return null;
+  return FLAG_TO_OPTION[flag] ?? null;
 }
 
 export class AmpBridgeAgent implements Agent {
@@ -819,33 +787,32 @@ export class AmpBridgeAgent implements Agent {
         for await (const message of stream) {
           streamed = true;
           runtime.input.commit();
-          const runtimeTerminal =
-            message.type === "result" ||
-            (message.type === "system" &&
-              message.subtype !== "init" &&
-              typeof message.error === "string");
+          const batch = parseAmpBatch(message);
           const turn = runtime.turn;
           if (turn === null || turn.settled) {
-            await this.handleIdleLocalMessage(sessionId, s, runtime, message);
+            await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
             continue;
           }
           if (turn.awaitingInputEcho) {
-            if (echoedUserText(message) === turn.prompt) {
+            const echoed = batch.events.some(
+              (event) => event.kind === "userEcho" && event.text === turn.prompt,
+            );
+            if (echoed) {
               turn.awaitingInputEcho = false;
-            } else if (runtimeTerminal) {
-              await this.handleIdleLocalMessage(sessionId, s, runtime, message);
+            } else if (batch.terminal) {
+              await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
               runtime.controller.abort();
               await this.finishLocalTurn(sessionId, s, runtime, turn, null, RETRY_LOCAL_RUNTIME);
               if (s.localRuntime === runtime) s.localRuntime = null;
               return;
             } else {
-              await this.handleIdleLocalMessage(sessionId, s, runtime, message);
+              await this.handleIdleLocalMessage(sessionId, s, runtime, batch);
               continue;
             }
           }
           this.clearLocalTurnTimer(turn);
-          const terminalStop = await this.handleStreamMessage(sessionId, s, "local", turn, message);
-          if (runtimeTerminal) {
+          const terminalStop = await this.handleStreamMessage(sessionId, s, "local", turn, batch);
+          if (batch.terminal) {
             turn.sawRuntimeTerminal = true;
             runtime.input.close();
           }
@@ -912,7 +879,7 @@ export class AmpBridgeAgent implements Agent {
           });
           for await (const message of stream) {
             streamed = true;
-            await this.handleStreamMessage(sessionId, s, "orb", turn, message);
+            await this.handleStreamMessage(sessionId, s, "orb", turn, parseAmpBatch(message));
           }
           if (turn.executionError) throw turn.executionError;
           return {
@@ -1244,10 +1211,10 @@ export class AmpBridgeAgent implements Agent {
     s: SessionState,
     executionTarget: AmpExecutionTarget,
     turn: TurnOutputState,
-    message: AmpStreamMessage,
+    batch: AmpEventBatch,
   ): Promise<StopReason | null> {
-    if (!s.threadId && typeof message.session_id === "string" && message.session_id.length > 0) {
-      s.threadId = message.session_id;
+    if (!s.threadId && batch.ampThreadId !== null) {
+      s.threadId = batch.ampThreadId;
       this.store.set(sessionId, {
         threadId: s.threadId,
         executionTarget,
@@ -1260,76 +1227,58 @@ export class AmpBridgeAgent implements Agent {
       console.error(`[amp] thread ${s.threadId}`);
     }
 
-    if (message.type === "system" && message.subtype === "init") {
-      const warning = this.mcpStatusWarning(s, message);
-      if (warning) await this.sendUpdate(this.textChunk(sessionId, warning));
-    }
-
-    if (message.type === "assistant" || message.type === "user") {
-      const ampStopReason = message.message?.stop_reason;
-      if (
-        ampStopReason === "end_turn" ||
-        ampStopReason === "max_tokens" ||
-        ampStopReason === "refusal"
-      ) {
-        turn.stopReason = ampStopReason;
-      }
-      for (const notification of toSessionUpdates(message, sessionId, turn.translationState)) {
-        await this.sendUpdate(notification);
-      }
-      return message.type === "assistant" &&
-        (ampStopReason === "end_turn" ||
-          ampStopReason === "max_tokens" ||
-          ampStopReason === "refusal")
-        ? ampStopReason
-        : null;
-    }
-
-    const isErrorMessage =
-      (message.type === "result" && message.is_error === true) ||
-      (message.type === "system" &&
-        typeof message.error === "string" &&
-        message.subtype !== "init");
-    if (isErrorMessage) {
-      const error = typeof message.error === "string" ? message.error : "unknown error";
-      const hint = isAuthError(error) ? `\n${AUTH_HINT}` : "";
-      await this.sendUpdate(this.textChunk(sessionId, `Error: ${error}${hint}`));
-      if (message.subtype === "error_max_turns") {
-        turn.stopReason = "max_turn_requests";
-      } else if (message.subtype === "error_during_execution") {
-        if (isAuthError(error)) {
-          turn.executionError = new Error(error);
-        } else {
-          turn.softFailed = true;
+    let terminalStop: StopReason | null = null;
+    for (const event of batch.events) {
+      switch (event.kind) {
+        case "init": {
+          const warning = this.mcpStatusWarning(s, event.mcpServers);
+          if (warning) await this.sendUpdate(this.textChunk(sessionId, warning));
+          break;
         }
-      } else {
-        turn.executionError = new Error(error);
+        case "assistantStop":
+          turn.stopReason = event.reason;
+          terminalStop = event.reason;
+          break;
+        case "resultError": {
+          // Error classification (auth, unsupported flag, turn limit) lives in
+          // bridge/events.ts; this switch only decides how the turn settles.
+          const hint = isAuthError(event.message) ? `\n${AUTH_HINT}` : "";
+          await this.sendUpdate(this.textChunk(sessionId, `Error: ${event.message}${hint}`));
+          if (event.subtype === "error_max_turns") {
+            turn.stopReason = "max_turn_requests";
+          } else if (event.subtype === "error_during_execution") {
+            turn.softFailed = true;
+          } else {
+            turn.executionError = new Error(event.message);
+          }
+          break;
+        }
+        case "resultOk":
+          if (event.denials.length > 0) {
+            await this.reportPermissionDenials(sessionId, executionTarget, event.denials);
+          }
+          break;
+        case "userEcho":
+        case "usage":
+        case "raw":
+          break;
+        default:
+          for (const notification of toSessionUpdates(event, sessionId, turn.translationState)) {
+            await this.sendUpdate(notification);
+          }
+          break;
       }
-      return null;
     }
-
-    if (
-      message.type === "result" &&
-      Array.isArray(message.permission_denials) &&
-      message.permission_denials.length > 0
-    ) {
-      await this.reportPermissionDenials(sessionId, executionTarget, message.permission_denials);
-    }
-    return null;
+    return terminalStop;
   }
 
   private async handleIdleLocalMessage(
     sessionId: string,
     _s: SessionState,
     runtime: LocalRuntime,
-    message: AmpStreamMessage,
+    batch: AmpEventBatch,
   ): Promise<void> {
-    const runtimeTerminal =
-      message.type === "result" ||
-      (message.type === "system" &&
-        message.subtype !== "init" &&
-        typeof message.error === "string");
-    if (runtimeTerminal) {
+    if (batch.terminal) {
       // Close synchronously before reporting denials: another ACP prompt can
       // arrive while sessionUpdate is in flight and must start a new process.
       runtime.closed = true;
@@ -1338,19 +1287,17 @@ export class AmpBridgeAgent implements Agent {
         "[amp] received terminal output after the ACP turn settled; restarting Local Amp",
       );
     }
-    if (
-      message.type === "result" &&
-      Array.isArray(message.permission_denials) &&
-      message.permission_denials.length > 0
-    ) {
-      await this.reportPermissionDenials(sessionId, "local", message.permission_denials);
+    for (const event of batch.events) {
+      if ((event.kind === "resultOk" || event.kind === "resultError") && event.denials.length > 0) {
+        await this.reportPermissionDenials(sessionId, "local", event.denials);
+      }
     }
   }
 
   private async reportPermissionDenials(
     sessionId: string,
     executionTarget: AmpExecutionTarget,
-    denials: string[],
+    denials: readonly string[],
   ): Promise<void> {
     const guidance =
       executionTarget === "orb"
@@ -1391,13 +1338,9 @@ export class AmpBridgeAgent implements Agent {
     };
   }
 
-  private mcpStatusWarning(s: SessionState, message: AmpStreamMessage): string | null {
-    if (!Array.isArray(message.mcp_servers)) return null;
+  private mcpStatusWarning(s: SessionState, servers: readonly AmpMcpServerStatus[]): string | null {
     const issues: string[] = [];
-    for (const value of message.mcp_servers) {
-      if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
-      const server = value as Record<string, unknown>;
-      if (typeof server.name !== "string" || typeof server.status !== "string") continue;
+    for (const server of servers) {
       if (!MCP_ATTENTION_STATUSES.has(server.status)) continue;
       const key = `${server.name}\0${server.status}`;
       if (s.reportedMcpStatuses.has(key)) continue;

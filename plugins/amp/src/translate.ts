@@ -1,7 +1,7 @@
-// Pure translation from @ampcode/sdk stream-json messages to ACP
-// session/update notifications. Ported from the upstream ACP reference
-// adapter and trimmed for bb: user text chunks are dropped (bb treats user_message_chunk
-// as noise) and only update kinds bb renders are emitted.
+// Pure translation from parsed Amp bridge events (src/bridge/events.ts) to
+// ACP session/update notifications. Ported from the upstream ACP reference
+// adapter and trimmed for bb: user text is dropped (bb treats
+// user_message_chunk as noise) and only update kinds bb renders are emitted.
 import type {
   ContentBlock,
   SessionNotification,
@@ -11,43 +11,12 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { oracleDirective } from "./oracle-directive.ts";
 import type { OracleReportStore } from "./oracle-report-store.ts";
-
-/** One NDJSON line from `amp --execute --stream-json`, parsed. Kept loose:
- * the SDK yields output unvalidated and real streams carry blocks (thinking,
- * system errors) that its TypeScript types omit. */
-export interface AmpStreamMessage {
-  type: string;
-  session_id?: string;
-  subtype?: string;
-  is_error?: boolean;
-  error?: string;
-  result?: string;
-  permission_denials?: string[];
-  mcp_servers?: unknown;
-  parent_tool_use_id?: string | null;
-  message?: {
-    content?: unknown;
-    stop_reason?: "end_turn" | "tool_use" | "max_tokens" | "refusal" | null;
-  };
-  [key: string]: unknown;
-}
-
-interface AmpToolResultBlock {
-  type: "tool_result";
-  tool_use_id: string;
-  content: unknown;
-  is_error?: boolean;
-}
-
-interface AmpImageBlock {
-  type: "image";
-  source?: {
-    type?: unknown;
-    data?: unknown;
-    media_type?: unknown;
-    url?: unknown;
-  };
-}
+import {
+  parseAmpImageBlock,
+  type AmpEvent,
+  type AmpImageContent,
+  type AmpToolOutput,
+} from "./bridge/events.ts";
 
 export interface TranslationState {
   toolNamesById: Map<string, string>;
@@ -57,141 +26,121 @@ export interface TranslationState {
 }
 
 export function toSessionUpdates(
-  message: AmpStreamMessage,
+  event: AmpEvent,
   sessionId: string,
   state: TranslationState,
 ): SessionNotification[] {
-  const assistant = message.type === "assistant";
-  const content = message.message?.content;
-  const parentReportId =
-    typeof message.parent_tool_use_id === "string"
-      ? state.oracleReportByToolId.get(message.parent_tool_use_id)
-      : undefined;
-
-  if (assistant && typeof content === "string") {
-    if (parentReportId && content.length > 0) {
-      state.oracleReports.append(parentReportId, {
-        kind: "message",
-        title: "Oracle",
-        content,
+  switch (event.kind) {
+    case "text": {
+      const parentReportId = parentReport(event.parent, state);
+      if (parentReportId) {
+        state.oracleReports.append(parentReportId, {
+          kind: "message",
+          title: "Oracle",
+          content: event.text,
+        });
+      }
+      return [chunk(sessionId, event.text)];
+    }
+    case "thinking": {
+      const parentReportId = parentReport(event.parent, state);
+      if (parentReportId) {
+        state.oracleReports.append(parentReportId, {
+          kind: "thinking",
+          title: "Thinking",
+          content: event.text,
+        });
+      }
+      return [
+        {
+          sessionId,
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: event.text } as ContentBlock,
+          },
+        },
+      ];
+    }
+    case "image":
+      return [chunk(sessionId, ampImageToAcp(event.image))];
+    case "toolStart": {
+      const output: SessionNotification[] = [];
+      const parentReportId = parentReport(event.parent, state);
+      state.toolNamesById.set(event.callId, event.tool);
+      const metadata = toolCallMetadata(event.tool, event.input);
+      if (parentReportId) {
+        state.oracleReportByToolId.set(event.callId, parentReportId);
+        state.oracleReports.append(parentReportId, {
+          kind: "tool",
+          toolCallId: event.callId,
+          title: metadata.title,
+          status: "running",
+        });
+      }
+      output.push({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: event.callId,
+          status: "pending",
+          title: metadata.title,
+          kind: metadata.kind,
+          locations: metadata.locations.length > 0 ? metadata.locations : undefined,
+          rawInput: safeJson(event.input),
+          content: [],
+        },
       });
+      if (event.tool.toLowerCase() === "oracle") {
+        const reportId = state.oracleReports.start(event.input);
+        const directive = reportId === null ? null : oracleDirective(reportId);
+        if (reportId !== null) {
+          state.oracleReportByToolId.set(event.callId, reportId);
+          state.oracleRootToolIds.add(event.callId);
+        }
+        if (directive) output.push(chunk(sessionId, `\n\n${directive}\n\n`));
+      }
+      return output;
     }
-    return content.length > 0 ? [chunk(sessionId, content)] : [];
-  }
-  if (!Array.isArray(content)) return [];
-
-  const output: SessionNotification[] = [];
-  for (const block of content as Record<string, unknown>[]) {
-    switch (block.type) {
-      case "text":
-        if (assistant && typeof block.text === "string" && block.text.length > 0) {
-          if (parentReportId) {
-            state.oracleReports.append(parentReportId, {
-              kind: "message",
-              title: "Oracle",
-              content: block.text,
-            });
-          }
-          output.push(chunk(sessionId, block.text));
-        }
-        break;
-      case "thinking":
-        if (assistant && typeof block.thinking === "string" && block.thinking.length > 0) {
-          if (parentReportId) {
-            state.oracleReports.append(parentReportId, {
-              kind: "thinking",
-              title: "Thinking",
-              content: block.thinking,
-            });
-          }
-          output.push({
-            sessionId,
-            update: {
-              sessionUpdate: "agent_thought_chunk",
-              content: { type: "text", text: block.thinking } as ContentBlock,
-            },
-          });
-        }
-        break;
-      case "image":
-        if (assistant) {
-          const content = toImageContent(block as unknown as AmpImageBlock);
-          if (content) output.push(chunk(sessionId, content));
-        }
-        break;
-      case "tool_use":
-        if (assistant && typeof block.id === "string") {
-          const name = typeof block.name === "string" ? block.name : "Tool";
-          state.toolNamesById.set(block.id, name);
-          const metadata = toolCallMetadata(name, block.input);
-          if (parentReportId) {
-            state.oracleReportByToolId.set(block.id, parentReportId);
-            state.oracleReports.append(parentReportId, {
-              kind: "tool",
-              toolCallId: block.id,
-              title: metadata.title,
-              status: "running",
-            });
-          }
-          output.push({
-            sessionId,
-            update: {
-              sessionUpdate: "tool_call",
-              toolCallId: block.id,
-              status: "pending",
-              title: metadata.title,
-              kind: metadata.kind,
-              locations: metadata.locations.length > 0 ? metadata.locations : undefined,
-              rawInput: safeJson(block.input),
-              content: [],
-            },
-          });
-          if (name.toLowerCase() === "oracle") {
-            const reportId = state.oracleReports.start(block.input);
-            const directive = reportId === null ? null : oracleDirective(reportId);
-            if (reportId !== null) {
-              state.oracleReportByToolId.set(block.id, reportId);
-              state.oracleRootToolIds.add(block.id);
-            }
-            if (directive) output.push(chunk(sessionId, `\n\n${directive}\n\n`));
-          }
-        }
-        break;
-      case "tool_result":
-        if (!assistant && typeof block.tool_use_id === "string") {
-          const result = block as unknown as AmpToolResultBlock;
-          const toolName = state.toolNamesById.get(result.tool_use_id);
-          const reportId = state.oracleReportByToolId.get(result.tool_use_id) ?? parentReportId;
-          const oracleRoot = state.oracleRootToolIds.has(result.tool_use_id);
-          state.toolNamesById.delete(result.tool_use_id);
-          state.oracleReportByToolId.delete(result.tool_use_id);
-          output.push({
-            sessionId,
-            update: {
-              sessionUpdate: "tool_call_update",
-              toolCallId: result.tool_use_id,
-              status: result.is_error ? "failed" : "completed",
-              content: toToolContent(result.content, result.is_error === true),
-            },
-          });
-          if (reportId && oracleRoot) {
-            state.oracleRootToolIds.delete(result.tool_use_id);
-            state.oracleReports.complete(reportId, result.content, result.is_error === true);
-          } else if (reportId) {
-            state.oracleReports.append(reportId, {
-              kind: "tool",
-              toolCallId: result.tool_use_id,
-              title: toolName ?? "Tool",
-              status: result.is_error ? "error" : "completed",
-            });
-          }
-        }
-        break;
-      default:
-        break;
+    case "toolEnd": {
+      const toolName = state.toolNamesById.get(event.callId);
+      const reportId =
+        state.oracleReportByToolId.get(event.callId) ?? parentReport(event.parent, state);
+      const oracleRoot = state.oracleRootToolIds.has(event.callId);
+      state.toolNamesById.delete(event.callId);
+      state.oracleReportByToolId.delete(event.callId);
+      const output: SessionNotification[] = [
+        {
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: event.callId,
+            status: event.failed ? "failed" : "completed",
+            content: toToolContent(event.output, event.failed),
+          },
+        },
+      ];
+      if (reportId && oracleRoot) {
+        state.oracleRootToolIds.delete(event.callId);
+        state.oracleReports.complete(
+          reportId,
+          event.output.structured ?? event.output.text,
+          event.failed,
+        );
+      } else if (reportId) {
+        state.oracleReports.append(reportId, {
+          kind: "tool",
+          toolCallId: event.callId,
+          title: toolName ?? "Tool",
+          status: event.failed ? "error" : "completed",
+        });
+      }
+      return output;
     }
+    default:
+      // init / userEcho / assistantStop / usage / resultOk / resultError /
+      // raw carry no renderable content; the bridge core handles them.
+      return [];
   }
-  return output;
 }
 
 export function finishOpenOracleReports(state: TranslationState, reason: string): void {
@@ -205,6 +154,10 @@ export function finishOpenOracleReports(state: TranslationState, reason: string)
   state.oracleReportByToolId.clear();
 }
 
+function parentReport(parent: string | null, state: TranslationState): string | undefined {
+  return parent === null ? undefined : state.oracleReportByToolId.get(parent);
+}
+
 function chunk(sessionId: string, content: ContentBlock | string): SessionNotification {
   return {
     sessionId,
@@ -215,70 +168,45 @@ function chunk(sessionId: string, content: ContentBlock | string): SessionNotifi
   };
 }
 
-function toToolContent(content: unknown, isError: boolean): ToolCallContent[] {
-  if (Array.isArray(content)) {
-    const output: ToolCallContent[] = [];
-    for (const entry of content) {
+function toToolContent(output: AmpToolOutput, isError: boolean): ToolCallContent[] {
+  if (Array.isArray(output.structured)) {
+    const entries: ToolCallContent[] = [];
+    for (const entry of output.structured) {
       if (!isRecord(entry)) continue;
       if (entry.type === "text" && typeof entry.text === "string") {
-        output.push({
+        entries.push({
           type: "content",
           content: { type: "text", text: isError ? wrapCode(entry.text) : entry.text },
         });
         continue;
       }
       if (entry.type === "image") {
-        const image = toImageContent(entry as unknown as AmpImageBlock);
-        if (image) output.push({ type: "content", content: image });
+        const image = parseAmpImageBlock(entry);
+        if (image !== null) entries.push({ type: "content", content: ampImageToAcp(image) });
       }
     }
-    return output;
+    return entries;
   }
-  if (typeof content === "string" && content.length > 0) {
+  if (output.structured === null && output.text.length > 0) {
     return [
       {
         type: "content" as const,
-        content: { type: "text" as const, text: isError ? wrapCode(content) : content },
+        content: {
+          type: "text" as const,
+          text: isError ? wrapCode(output.text) : output.text,
+        },
       },
     ];
   }
   return [];
 }
 
-function toImageContent(block: AmpImageBlock): ContentBlock | null {
-  const source = block.source;
-  if (
-    source?.type === "base64" &&
-    typeof source.data === "string" &&
-    typeof source.media_type === "string"
-  ) {
-    const data = normalizeBase64(source.data);
-    const mimeType = normalizeImageMimeType(source.media_type);
-    if (data && mimeType) return { type: "image", data, mimeType };
-  }
-  if (source?.type === "url" && typeof source.url === "string" && source.url.trim().length > 0) {
-    // ACP image content requires base64 bytes. Preserve URL-only images as
-    // links instead of manufacturing an invalid empty image payload.
-    return { type: "resource_link", uri: source.url.trim(), name: "Image" };
-  }
-  return null;
-}
-
-function normalizeBase64(value: string): string | null {
-  const data = value.replaceAll(/\s/g, "");
-  if (data.length === 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
-  const withoutPadding = data.replace(/=+$/, "");
-  if (withoutPadding.length % 4 === 1) return null;
-  const normalized = withoutPadding.padEnd(
-    withoutPadding.length + ((4 - (withoutPadding.length % 4)) % 4),
-    "=",
-  );
-  return Buffer.from(normalized, "base64").toString("base64") === normalized ? normalized : null;
-}
-
-function normalizeImageMimeType(value: string): string | null {
-  const mimeType = value.split(";", 1)[0].trim().toLowerCase();
-  return /^image\/[a-z0-9][a-z0-9.+-]*$/.test(mimeType) ? mimeType : null;
+/** ACP image content requires base64 bytes. URL-only images become links
+ * instead of an invalid empty image payload. */
+function ampImageToAcp(image: AmpImageContent): ContentBlock {
+  return "base64" in image
+    ? { type: "image", data: image.base64, mimeType: image.mimeType }
+    : { type: "resource_link", uri: image.url, name: "Image" };
 }
 
 function wrapCode(text: string): string {
