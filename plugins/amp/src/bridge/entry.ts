@@ -35,6 +35,7 @@ import {
   type BridgeExecutionOptions,
   type DynamicTool,
 } from "@get-bb/plugin-sdk/provider-bridge";
+import { AMP_WIRE_MODELS } from "./model-catalog.ts";
 import { createFileOracleReportStore } from "../oracle-report-store.ts";
 import { createSessionStore } from "../session-store.ts";
 import { installStderrGuard } from "../stderr-guard.ts";
@@ -332,9 +333,10 @@ const handlers: Record<string, RequestHandler> = {
       invalidParams(id, BRIDGE_REQUEST_METHODS.modelList, parsed.error.issues);
       return;
     }
-    // Amp owns model choice through its mode; bb's reasoning ladder maps to
-    // it in options.ts. No model list to offer.
-    io.sendResult(id, { models: [], selectedOnlyModels: [] });
+    // One model whose reasoning efforts are Amp's modes; options.ts maps the
+    // level onto --mode. This live answer replaces the declaration's
+    // cold-cache fallback, so both read src/bridge/model-catalog.ts.
+    io.sendResult(id, { models: AMP_WIRE_MODELS, selectedOnlyModels: [] });
   },
 
   [BRIDGE_REQUEST_METHODS.providerHealth]: (id, params) => {

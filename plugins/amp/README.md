@@ -107,9 +107,9 @@ nothing recorded and are not restored.
 
 ### Modes
 
-Amp's four modes — low, medium, high, ultra — appear in bb's model picker, each
-labelled with the "With ChatGPT Sub" routing as
-`<agent> [<effort>] · <oracle> [<effort>]`.
+bb's picker offers one Amp model. Its reasoning levels — Low, Medium, High,
+Ultra — are Amp's four modes, and the selected level becomes `--mode` on the
+spawned CLI (`src/bridge/options.ts`).
 
 ### Permissions
 
