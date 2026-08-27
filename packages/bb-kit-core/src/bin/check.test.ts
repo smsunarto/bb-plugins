@@ -10,10 +10,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runCheck, isValidSemverRange } from "./check.ts";
 import { runCreate } from "./create.ts";
+import { UNIT_NAME_PATTERN, camelName } from "./shared.ts";
 
 /**
  * Fixtures are real `create` scaffolds in $TMPDIR. check parses with the
@@ -57,6 +59,84 @@ function edit(root: string, relative: string, from: string, to: string): void {
   writeFileSync(path, after);
 }
 
+/** A tools unit whose export is camel(base), optionally gated. */
+function addToolUnit(root: string, base: string, { enabled = false } = {}): void {
+  mkdirSync(join(root, "server", "tools"), { recursive: true });
+  writeFileSync(
+    join(root, "server", "tools", `${base}.ts`),
+    [
+      'import { defineTool } from "@bb-kit/core/tools";',
+      'import { z } from "zod";',
+      "",
+      `export const ${camelName(base)} = defineTool({`,
+      '  description: "d",',
+      "  parameters: z.object({}),",
+      ...(enabled ? ["  enabled: () => true,"] : []),
+      '  execute: () => "ok",',
+      "});",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(join(root, "server", "tools", `${base}.test.ts`), "export {};\n");
+}
+
+/** Import the unit into server.ts and add the given agents entry. */
+function wireAgents(root: string, base: string, entry: string): void {
+  edit(
+    root,
+    "server/server.ts",
+    'import { definePlugin } from "@bb-kit/core/plugin";',
+    `import { definePlugin } from "@bb-kit/core/plugin";\nimport { ${camelName(base)} } from "./tools/${base}.ts";`,
+  );
+  edit(root, "server/server.ts", "cli: { status },", `cli: { status },\n  agents: ${entry},`);
+}
+
+function addManifestSkill(root: string, name: string): void {
+  mkdirSync(join(root, "skills", name), { recursive: true });
+  writeFileSync(join(root, "skills", name, "SKILL.md"), `# ${name}\n`);
+}
+
+// The reserved-name test keys off the REAL host policy; when the
+// installed SDK stops exporting it, the test skips instead of pinning
+// a stale copy.
+const requireHere = createRequire(import.meta.url);
+let reservedAgentToolNames: readonly string[] | undefined;
+try {
+  const policyPath = requireHere.resolve("@get-bb/plugin-sdk/internal/host-policy");
+  const policy = (await import(pathToFileURL(policyPath).href)) as {
+    RESERVED_AGENT_TOOL_NAMES?: readonly string[];
+  };
+  reservedAgentToolNames = policy.RESERVED_AGENT_TOOL_NAMES;
+} catch {
+  reservedAgentToolNames = undefined;
+}
+
+/** A reserved name splittable into a valid plugin id + tool key. */
+function reservedSplit(
+  names: readonly string[],
+): { name: string; prefix: string; base: string } | undefined {
+  for (const name of names) {
+    const sep = name.indexOf("_");
+    if (sep <= 0) {
+      continue;
+    }
+    const prefix = name.slice(0, sep);
+    const key = name.slice(sep + 1);
+    const base = key.replaceAll("_", "-");
+    if (!/^[a-z][a-z0-9]*$/.test(prefix) || !UNIT_NAME_PATTERN.test(base)) {
+      continue;
+    }
+    if (base.replaceAll("-", "_") !== key) {
+      continue;
+    }
+    return { name, prefix, base };
+  }
+  return undefined;
+}
+
+const reservedCandidate =
+  reservedAgentToolNames === undefined ? undefined : reservedSplit(reservedAgentToolNames);
+
 test("a fresh scaffold passes with the wire table", async () => {
   const root = makeFixture();
   const result = await runCheck({ cwd: root });
@@ -72,7 +152,10 @@ test("an unwired unit file breaks the bijection (rule 1)", async () => {
   writeFileSync(join(root, "server", "rpc", "extra.test.ts"), "export {};\n");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /error: server\/rpc\/extra\.ts — not wired into server\/server.ts rpc — rule 1/);
+  assert.match(
+    result.stderr,
+    /error: server\/rpc\/extra\.ts — not wired into server\/server.ts rpc — rule 1/,
+  );
 });
 
 test("a wrong unit export name fails rule 1", async () => {
@@ -144,7 +227,12 @@ test("a unit file the tsconfig include omits still parses via the composition ro
   const root = makeFixture();
   const tsconfigPath = join(root, "tsconfig.json");
   const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as Record<string, unknown>;
-  tsconfig["include"] = ["server/server.ts", "server/server.test.ts", "server/cli/**/*", "app/**/*"];
+  tsconfig["include"] = [
+    "server/server.ts",
+    "server/server.test.ts",
+    "server/cli/**/*",
+    "app/**/*",
+  ];
   writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
   const result = await runCheck({ cwd: root });
   assert.equal(result.stderr, "");
@@ -197,4 +285,164 @@ test("isValidSemverRange accepts npm ranges and rejects junk", () => {
   for (const range of ["not a version", ">=abc", "1.2.3.4.5"]) {
     assert.ok(!isValidSemverRange(range), range);
   }
+});
+
+test("a wired tools unit passes and the table derives the public name", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.stderr, "");
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /RPC names:\n {2}ping\n/);
+  assert.match(result.stdout, /Tool names:\n {2}notes_beacon\n/);
+});
+
+test("an agents.tools key that is not the underscored basename fails rule 1", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "two-word");
+  wireAgents(root, "two-word", "{ tools: { two_words: twoWord } }");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /agents\.tools key "two_words" must equal the unit's underscored basename "two_word" — rule 1/,
+  );
+});
+
+test("a tools unit with no agents entry fails rule 5", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /server\/tools\/ has unit files but definePlugin has no agents entry — rule 5/,
+  );
+});
+
+test("an unwired tools unit breaks the bijection (rule 1)", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  addToolUnit(root, "extra");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /server\/tools\/extra\.ts — not wired into server\/server\.ts agents — rule 1/,
+  );
+});
+
+test("a hand .agents.configure( beside an agents entry warns (rule 5)", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  edit(
+    root,
+    "server/server.ts",
+    "});",
+    "  async setup(bb) {\n    bb.agents.configure(() => ({ tools: [], skills: [] }));\n  },\n});",
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(
+    result.stderr,
+    /warning: server\/server\.ts:\d+ — `\.agents\.configure\(` beside an agents entry/,
+  );
+});
+
+test(
+  "a derived tool name on the host's reserved list fails rule 7",
+  {
+    skip:
+      reservedCandidate === undefined
+        ? "the installed SDK exports no splittable RESERVED_AGENT_TOOL_NAMES"
+        : false,
+  },
+  async () => {
+    assert.ok(reservedCandidate);
+    const root = makeFixture(`bb-plugin-${reservedCandidate.prefix}`);
+    addToolUnit(root, reservedCandidate.base);
+    wireAgents(
+      root,
+      reservedCandidate.base,
+      `{ tools: { ${reservedCandidate.base.replaceAll("-", "_")}: ${camelName(reservedCandidate.base)} } }`,
+    );
+    const result = await runCheck({ cwd: root });
+    assert.equal(result.exitCode, 1);
+    assert.match(
+      result.stderr,
+      new RegExp(`agent tool name "${reservedCandidate.name}" is reserved by bb — rule 7`),
+    );
+  },
+);
+
+test("a gated tool with manifest skills and no agents.skills fails rule 7", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon", { enabled: true });
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  const before = await runCheck({ cwd: root });
+  assert.equal(before.stderr, "");
+  assert.equal(before.exitCode, 0);
+  addManifestSkill(root, "how-to");
+  edit(root, "package.json", '"skills": []', '"skills": ["./skills"]');
+  const failing = await runCheck({ cwd: root });
+  assert.equal(failing.exitCode, 1);
+  assert.match(failing.stderr, /synthesized configure sends skills: \[\]/);
+  edit(
+    root,
+    "server/server.ts",
+    "agents: { tools: { beacon } },",
+    'agents: { tools: { beacon }, skills: ["how-to"] },',
+  );
+  const after = await runCheck({ cwd: root });
+  assert.equal(after.stderr, "");
+  assert.equal(after.exitCode, 0);
+});
+
+test("a static agents.skills name outside the manifest fails rule 7", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  addManifestSkill(root, "how-to");
+  edit(root, "package.json", '"skills": []', '"skills": ["./skills"]');
+  wireAgents(root, "beacon", '{ tools: { beacon }, skills: ["nope"] }');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /agents\.skills "nope" is not a skill the manifest enumerates \(how-to\)/,
+  );
+});
+
+test("a duplicate agents.skills entry fails rule 7", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  addManifestSkill(root, "how-to");
+  edit(root, "package.json", '"skills": []', '"skills": ["./skills"]');
+  wireAgents(root, "beacon", '{ tools: { beacon }, skills: ["how-to", "how-to"] }');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /agents\.skills repeats "how-to" — rule 7/);
+});
+
+test("a function-valued agents.skills selector is skipped (rule 7)", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon", { enabled: true });
+  addManifestSkill(root, "how-to");
+  edit(root, "package.json", '"skills": []', '"skills": ["./skills"]');
+  wireAgents(root, "beacon", "{ tools: { beacon }, skills: () => [] }");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.stderr, "");
+  assert.equal(result.exitCode, 0);
+});
+
+test("more than 256 agents.skills entries fail rule 7", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  const skills = Array.from({ length: 257 }, (_, index) => `"s${index}"`).join(", ");
+  wireAgents(root, "beacon", `{ tools: { beacon }, skills: [${skills}] }`);
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /the host caps a selection at 256 ids \(rule 7\)/);
 });

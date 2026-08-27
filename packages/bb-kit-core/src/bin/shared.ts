@@ -35,7 +35,9 @@ export function pluginRelative(path: string): string {
 }
 
 /** `bb.server` as a plugin-root-relative file, or undefined if the manifest lacks it. */
-export function compositionRootFromPkg(pkg: Record<string, unknown> | undefined): string | undefined {
+export function compositionRootFromPkg(
+  pkg: Record<string, unknown> | undefined,
+): string | undefined {
   const bb = pkg?.["bb"];
   if (bb === undefined || bb === null || typeof bb !== "object" || Array.isArray(bb)) {
     return undefined;
@@ -62,7 +64,7 @@ export function resolveImport(fromFile: string, specifier: string): string {
  * Unit directory beside the composition root. `server/server.ts` →
  * `server/rpc`; a root `server.ts` → `rpc`.
  */
-export function unitDir(compositionRoot: string, kind: "rpc" | "cli"): string {
+export function unitDir(compositionRoot: string, kind: "rpc" | "cli" | "tools"): string {
   const dir = posix.dirname(compositionRoot);
   return dir === "." ? kind : posix.join(dir, kind);
 }

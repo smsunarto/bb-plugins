@@ -8,16 +8,19 @@ import {
   UNIT_NAME_PATTERN,
   camelName,
   compositionRootFromPkg,
+  pluginRelative,
   resolveImport,
   unitDir,
 } from "./shared.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
+import { TOOL_KEY_PATTERN, toolName } from "../tools/tools.ts";
 
 /**
- * `bb-kit check` (§7): static verification of the six rules — wiring
+ * `bb-kit check` (§7): static verification of the seven rules — wiring
  * bijection and naming (1), definePlugin id = derived plugin id (2), the name
  * table (3), manifest paths and engines (4),
- * composition and host CLI policy (5), sibling tests (warn-only, 6).
+ * composition and host CLI policy (5), sibling tests (warn-only, 6),
+ * agent tool names and skills selection against the host policy (7).
  *
  * check EXECUTES no plugin code. Parsing goes through the plugin's own
  * TypeScript — the plugin's `typescript` package (a plain CJS library;
@@ -156,6 +159,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   const compositionRoot = compositionRootFromPkg(pkg) ?? "server/server.ts";
   const rpcDir = unitDir(compositionRoot, "rpc");
   const cliDir = unitDir(compositionRoot, "cli");
+  const toolsDir = unitDir(compositionRoot, "tools");
   const listUnits = (dir: string): string[] => {
     const absolute = join(cwd, dir);
     if (!existsSync(absolute)) {
@@ -172,7 +176,8 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   };
   const rpcUnits = listUnits(rpcDir);
   const cliUnits = listUnits(cliDir);
-  const unitFiles = new Set([...rpcUnits, ...cliUnits]);
+  const toolsUnits = listUnits(toolsDir);
+  const unitFiles = new Set([...rpcUnits, ...cliUnits, ...toolsUnits]);
   for (const unit of unitFiles) {
     const base = unitBasename(unit);
     if (!UNIT_NAME_PATTERN.test(base)) {
@@ -192,6 +197,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   }
 
   let pluginId: string | undefined;
+  const derivedToolNames: { name: string; line: number }[] = [];
   if (project) {
     const ts = project.ts;
     const stringText = (node: TS.Node | undefined): string | undefined =>
@@ -223,6 +229,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     };
 
     // ---- rule 1 per unit: exactly one value export, camel(filename)
+    let gatedToolUnit: string | undefined;
     for (const unit of unitFiles) {
       const sourceFile = parseChecked(unit);
       if (!sourceFile) {
@@ -282,6 +289,13 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       if (unit.startsWith(`${cliDir}/`)) {
         warnConfigureAction(unit, sourceFile);
       }
+      if (
+        unit.startsWith(`${toolsDir}/`) &&
+        gatedToolUnit === undefined &&
+        declaresEnabled(sourceFile)
+      ) {
+        gatedToolUnit = unit;
+      }
     }
 
     // ---- rule 5 warn: `.action(` inside a configure body
@@ -310,12 +324,40 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       }
     }
 
-    // ---- composition root (rules 1, 2, 3, 5) ----------------------
+    // ---- rule 7b gating: any `enabled` property in a tools unit ----
+    // The runtime keys configure synthesis on the same field; a static
+    // property scan is the parse-only twin.
+    function declaresEnabled(sourceFile: TS.SourceFile): boolean {
+      let found = false;
+      const visit = (node: TS.Node): undefined => {
+        if (
+          (ts.isPropertyAssignment(node) ||
+            ts.isShorthandPropertyAssignment(node) ||
+            ts.isMethodDeclaration(node)) &&
+          ts.isIdentifier(node.name) &&
+          node.name.text === "enabled"
+        ) {
+          found = true;
+        }
+        node.forEachChild(visit);
+        return undefined;
+      };
+      for (const statement of sourceFile.statements) {
+        visit(statement);
+      }
+      return found;
+    }
+
+    // ---- composition root (rules 1, 2, 3, 5, 7) --------------------
     const serverRelative = compositionRootFromPkg(pkg);
     let proceduresRead = false;
     let commandsRead = false;
+    let toolsRead = false;
+    let agentsPresent = false;
+    let skillsProperty: TS.ObjectLiteralElementLike | undefined;
     const procedureEntries: { key: string; line: number; valueName?: string }[] = [];
     const commandEntries: { key: string; line: number; valueName?: string }[] = [];
+    const toolEntries: { key: string; line: number; valueName?: string }[] = [];
     const imports = new Map<string, { specifier: string; imported: string; line: number }>();
     const wired = new Set<string>();
 
@@ -566,6 +608,54 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
                 commandsRead = true;
               }
             }
+            // agents → tools object literal (inline or hoisted)
+            const agentsProperty = getProperty(argument, "agents");
+            if (agentsProperty === undefined) {
+              if (toolsUnits.length > 0) {
+                fail(
+                  `${toolsDir}/ has unit files but definePlugin has no agents entry — rule 5`,
+                  serverRelative,
+                  exportLine,
+                );
+              } else {
+                toolsRead = true;
+              }
+            } else {
+              agentsPresent = true;
+              const agentsObject = resolveObjectLiteral(propertyValue(agentsProperty));
+              if (agentsObject === undefined) {
+                fail(
+                  'the "agents" entry must resolve to an object literal',
+                  serverRelative,
+                  lineOfNode(sourceFile, agentsProperty),
+                );
+              } else {
+                const toolsProperty = getProperty(agentsObject, "tools");
+                const toolsObject = resolveObjectLiteral(propertyValue(toolsProperty));
+                if (toolsObject === undefined) {
+                  fail(
+                    'the agents "tools" entry must resolve to an object literal',
+                    serverRelative,
+                    lineOfNode(sourceFile, toolsProperty ?? agentsObject),
+                  );
+                } else {
+                  collectEntries(toolsObject, toolEntries, "tools");
+                  toolsRead = true;
+                }
+                skillsProperty = getProperty(agentsObject, "skills");
+              }
+              // bb-kit synthesizes the plugin's single configure from
+              // `enabled` and `agents.skills` (ADR-0017); a hand
+              // registration beside the agents entry overrides it.
+              const configureIndex = sourceFile.text.indexOf(".agents.configure(");
+              if (configureIndex !== -1) {
+                warn(
+                  "`.agents.configure(` beside an agents entry — bb-kit synthesizes configure, and a second registration overrides the synthesized selection (ADR-0017)",
+                  serverRelative,
+                  lineAt(sourceFile, configureIndex),
+                );
+              }
+            }
           }
         }
 
@@ -573,11 +663,15 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         const resolveEntryFile = (
           valueName: string,
           line: number,
-          expectDir: "rpc" | "cli",
+          expectDir: "rpc" | "cli" | "tools",
         ): string | undefined => {
           const binding = imports.get(valueName);
           if (binding === undefined) {
-            fail(`"${valueName}" is not imported in ${serverRelative} — rule 1`, serverRelative, line);
+            fail(
+              `"${valueName}" is not imported in ${serverRelative} — rule 1`,
+              serverRelative,
+              line,
+            );
             return undefined;
           }
           const relative = resolveImport(serverRelative, binding.specifier);
@@ -638,6 +732,30 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             }
           }
         }
+        for (const entry of toolEntries) {
+          if (!TOOL_KEY_PATTERN.test(entry.key)) {
+            fail(
+              `agents.tools key "${entry.key}" must match ${TOOL_KEY_PATTERN} — rule 1`,
+              serverRelative,
+              entry.line,
+            );
+          }
+          if (entry.valueName === undefined) {
+            continue;
+          }
+          const relative = resolveEntryFile(entry.valueName, entry.line, "tools");
+          if (relative !== undefined) {
+            wired.add(relative);
+            const expectedKey = unitBasename(relative).replaceAll("-", "_");
+            if (entry.key !== expectedKey) {
+              fail(
+                `agents.tools key "${entry.key}" must equal the unit's underscored basename "${expectedKey}" — rule 1`,
+                serverRelative,
+                entry.line,
+              );
+            }
+          }
+        }
         // Bijection: every unit file wired exactly once (rule 1).
         if (proceduresRead) {
           for (const unit of rpcUnits) {
@@ -653,6 +771,13 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             }
           }
         }
+        if (toolsRead) {
+          for (const unit of toolsUnits) {
+            if (!wired.has(unit)) {
+              fail(`not wired into ${serverRelative} agents — rule 1`, unit);
+            }
+          }
+        }
         // rule 2: definePlugin pluginId equals the derived plugin id.
         if (pluginId !== undefined && id !== undefined && pluginId !== id) {
           fail(
@@ -665,6 +790,96 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           const rows = procedureEntries.map((entry) => `  ${entry.key}`);
           if (rows.length > 0) {
             table = `RPC names:\n${rows.join("\n")}\n`;
+          }
+        }
+        // rule 3: tool names — derived by the same toolName the factory
+        // registers with, so the printed contract IS the registered name.
+        const namePluginId = pluginId ?? id;
+        if (toolsRead && namePluginId !== undefined && toolEntries.length > 0) {
+          for (const entry of toolEntries) {
+            derivedToolNames.push({ name: toolName(namePluginId, entry.key), line: entry.line });
+          }
+          const rows = derivedToolNames.map((row) => `  ${row.name}`);
+          table += `${table === "" ? "" : "\n"}Tool names:\n${rows.join("\n")}\n`;
+        }
+        // rule 7b (ADR-0017 fail-closed): a gated tool synthesizes
+        // configure, and with agents.skills absent that configure sends
+        // skills: [] — every manifest skill silently unloads.
+        const enumeratedSkills = manifestSkills(pkg, cwd);
+        if (
+          agentsPresent &&
+          gatedToolUnit !== undefined &&
+          skillsProperty === undefined &&
+          enumeratedSkills !== undefined &&
+          enumeratedSkills.length > 0
+        ) {
+          fail(
+            `${gatedToolUnit} declares \`enabled\`, so the synthesized configure sends skills: [] — declare agents.skills or the manifest's skills never load (rule 7)`,
+            serverRelative,
+          );
+        }
+        // rule 7c: a static skills selection must be a SUBSET of what
+        // the manifest enumerates — an unknown name makes the host
+        // reject the plugin's ENTIRE selection, tools included.
+        if (skillsProperty !== undefined) {
+          const resolveExpression = (node: TS.Node | undefined, depth = 0): TS.Node | undefined => {
+            const expression = unwrap(node);
+            if (expression === undefined || depth > 5) {
+              return undefined;
+            }
+            if (ts.isIdentifier(expression)) {
+              const initializer = topInitializers.get(expression.text);
+              return initializer !== undefined
+                ? resolveExpression(initializer, depth + 1)
+                : expression;
+            }
+            return expression;
+          };
+          const value = resolveExpression(propertyValue(skillsProperty));
+          // A function-valued selector resolves per session — nothing
+          // static to check.
+          if (value !== undefined && ts.isArrayLiteralExpression(value)) {
+            const names: { text: string; line: number }[] = [];
+            let readable = true;
+            for (const element of value.elements) {
+              const text = stringText(unwrap(element));
+              if (text === undefined) {
+                fail(
+                  "an agents.skills entry must be a string literal for check to verify it — rule 7",
+                  serverRelative,
+                  lineOfNode(sourceFile, element),
+                );
+                readable = false;
+                continue;
+              }
+              names.push({ text, line: lineOfNode(sourceFile, element) });
+            }
+            if (names.length > 256) {
+              // PLUGIN_AGENT_SELECTION_MAX_IDS in the host policy.
+              fail(
+                `agents.skills lists ${names.length} entries — the host caps a selection at 256 ids (rule 7)`,
+                serverRelative,
+                lineOfNode(sourceFile, skillsProperty),
+              );
+            } else if (readable) {
+              const seen = new Set<string>();
+              for (const { text, line } of names) {
+                if (seen.has(text)) {
+                  fail(`agents.skills repeats "${text}" — rule 7`, serverRelative, line);
+                  continue;
+                }
+                seen.add(text);
+                if (enumeratedSkills !== undefined && !enumeratedSkills.includes(text)) {
+                  const known =
+                    enumeratedSkills.length > 0 ? ` (${enumeratedSkills.join(", ")})` : "";
+                  fail(
+                    `agents.skills "${text}" is not a skill the manifest enumerates${known} — an unknown name makes the host reject the plugin's whole selection (rule 7)`,
+                    serverRelative,
+                    line,
+                  );
+                }
+              }
+            }
           }
         }
       }
@@ -692,6 +907,36 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       const message = error instanceof Error ? error.message : String(error);
       fail(
         `could not load the host CLI policy from the plugin's SDK (@get-bb/plugin-sdk/internal/host-policy): ${message} — rule 5 skipped`,
+      );
+    }
+  }
+
+  // ---- rule 7a: host agent-tool policy, from the plugin's own SDK ---
+  if (derivedToolNames.length > 0) {
+    try {
+      const policyPath = requireFromPlugin.resolve("@get-bb/plugin-sdk/internal/host-policy");
+      const policy = (await import(pathToFileURL(policyPath).href)) as {
+        AGENT_TOOL_NAME_PATTERN?: RegExp;
+        RESERVED_AGENT_TOOL_NAMES?: readonly string[];
+      };
+      const pattern = policy.AGENT_TOOL_NAME_PATTERN;
+      const reserved = policy.RESERVED_AGENT_TOOL_NAMES;
+      for (const { name, line } of derivedToolNames) {
+        if (pattern instanceof RegExp && !pattern.test(name)) {
+          fail(
+            `agent tool name "${name}" does not match the host's ${String(pattern)} — rule 7`,
+            compositionRoot,
+            line,
+          );
+        }
+        if (Array.isArray(reserved) && reserved.includes(name)) {
+          fail(`agent tool name "${name}" is reserved by bb — rule 7`, compositionRoot, line);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      fail(
+        `could not load the host agent-tool policy from the plugin's SDK (@get-bb/plugin-sdk/internal/host-policy): ${message} — rule 7 skipped`,
       );
     }
   }
@@ -819,6 +1064,49 @@ function checkManifest(
       }
     }
   }
+}
+
+/**
+ * The manifest's skill enumeration (rule 7): every top-level directory
+ * holding a SKILL.md under the `bb.skills` roots (default ["skills"],
+ * a trailing "/*" stripped, plugin-root-relative). The identifier is
+ * the directory basename — the host requires the skill's name
+ * byte-identical to it. An unreadable manifest returns undefined
+ * (rule 4 already reported it).
+ */
+function manifestSkills(
+  pkg: Record<string, unknown> | undefined,
+  cwd: string,
+): string[] | undefined {
+  const bb = pkg?.["bb"];
+  if (bb === undefined || bb === null || typeof bb !== "object" || Array.isArray(bb)) {
+    return undefined;
+  }
+  const declared = (bb as Record<string, unknown>)["skills"];
+  let roots: string[];
+  if (declared === undefined) {
+    roots = ["skills"];
+  } else if (
+    Array.isArray(declared) &&
+    declared.every((root): root is string => typeof root === "string")
+  ) {
+    roots = declared.map((root) => pluginRelative(root.replace(/\/\*$/, "")));
+  } else {
+    return undefined;
+  }
+  const names: string[] = [];
+  for (const root of roots) {
+    const absolute = join(cwd, root);
+    if (!existsSync(absolute)) {
+      continue;
+    }
+    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+      if (entry.isDirectory() && existsSync(join(absolute, entry.name, "SKILL.md"))) {
+        names.push(entry.name);
+      }
+    }
+  }
+  return names;
 }
 
 /**
