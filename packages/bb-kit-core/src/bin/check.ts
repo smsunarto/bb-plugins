@@ -701,7 +701,12 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             );
             return undefined;
           }
-          const relative = resolveImport(serverRelative, binding.specifier);
+          const unresolved = resolveImport(serverRelative, binding.specifier);
+          const relative = /\.tsx?$/.test(unresolved)
+            ? unresolved
+            : ([`${unresolved}.ts`, `${unresolved}.tsx`].find((candidate) =>
+                unitFiles.has(candidate),
+              ) ?? unresolved);
           const expectedDir = unitDir(serverRelative, expectDir);
           if (posix.dirname(relative) !== expectedDir || !/\.tsx?$/.test(relative)) {
             fail(

@@ -176,7 +176,7 @@ describe("encodeWarmStartRows", () => {
     );
     const kept = decodeWarmStartRows(encodeWarmStartRows(rows));
     assert.equal(kept?.length, MAX_WARM_START_ROWS);
-    assert.equal(kept?.[0].threadId, `thr_${MAX_WARM_START_ROWS + 1}`);
+    assert.equal(kept?.[0]?.threadId, `thr_${MAX_WARM_START_ROWS + 1}`);
   });
 
   // A wake time is absolute and in the future — "Next week" is about now+7d —
@@ -208,7 +208,7 @@ describe("encodeWarmStartRows", () => {
       encodeWarmStartRows([...snoozes, row({ threadId: "settled", settledAt: 8_000 })]),
     );
     assert.equal(kept?.length, MAX_WARM_START_ROWS);
-    assert.equal(kept?.[0].threadId, "settled");
+    assert.equal(kept?.[0]?.threadId, "settled");
   });
 });
 

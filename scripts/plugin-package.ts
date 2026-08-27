@@ -57,6 +57,7 @@ export interface PluginManifest {
   peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   bb?: {
+    name?: string;
     server?: string;
     app?: string;
     skills?: string[];

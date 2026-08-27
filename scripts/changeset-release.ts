@@ -38,7 +38,8 @@ export function releaseTag(plugin: WorkspacePlugin): string {
 /** True when the changelog has the exact version heading the action reads. */
 export function hasChangelogVersion(changelog: string, version: string): boolean {
   for (const match of changelog.matchAll(/^#{1,6}\s+(.*)$/gm)) {
-    if (match[1].trim() === version) return true;
+    const heading = match[1];
+    if (heading !== undefined && heading.trim() === version) return true;
   }
   return false;
 }

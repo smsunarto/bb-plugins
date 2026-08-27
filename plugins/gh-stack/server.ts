@@ -642,12 +642,13 @@ async function inspectBranchPostcondition(
     };
   }
   const matches = view.stack.branches.filter((candidate) => candidate.name === branch);
+  const [match] = matches;
   const top = view.stack.branches.at(-1);
   return {
     complete:
       branchExists === true &&
       matches.length === 1 &&
-      matches[0].isCurrent &&
+      match?.isCurrent === true &&
       currentBranch === branch &&
       top?.name === branch,
     branchExists: branchExists === true,
@@ -1543,7 +1544,11 @@ export default async function plugin(bb: BbPluginApi) {
     const branches = await Promise.all(
       // oxlint-disable-next-line oxc/no-map-spread -- copy-on-write over zod-parsed data
       rawBranches.map(async (branch, index) => {
-        const parent = index === 0 ? rawStack.trunk : rawBranches[index - 1].name;
+        const previous = index === 0 ? null : rawBranches[index - 1];
+        if (index > 0 && previous === undefined) {
+          throw new Error(`Stack branch ${branch.name} has no parent at index ${index - 1}`);
+        }
+        const parent = previous?.name ?? rawStack.trunk;
         const diffPromise = branchChangeSet(cwd, parent, branch.name);
         const remote = `refs/remotes/origin/${branch.name}`;
         const remoteExists = remoteFresh
@@ -2258,8 +2263,8 @@ export default async function plugin(bb: BbPluginApi) {
         // Recompute and authorize directly immediately before the irreversible request.
         const fresh = await readStackView(cwd);
         if (fresh.error) return { ok: false, message: fresh.error.message, detail: null };
-        for (let index = 0; index < prefix.selected.length; index++) {
-          const selected = prefix.selected[index];
+        let expectedBase = fresh.stack.trunk;
+        for (const selected of prefix.selected) {
           const stackBranch = fresh.stack.branches.find(
             (branch) => branch.name === selected.name && branch.pr?.number === selected.pr?.number,
           );
@@ -2291,7 +2296,6 @@ export default async function plugin(bb: BbPluginApi) {
               detail: outputTail(direct),
             };
           }
-          const expectedBase = index === 0 ? fresh.stack.trunk : prefix.selected[index - 1].name;
           const authorized =
             direct.code === 0 &&
             state.headRefName === selected.name &&
@@ -2306,6 +2310,7 @@ export default async function plugin(bb: BbPluginApi) {
               detail: null,
             };
           }
+          expectedBase = selected.name;
         }
         const top = prefix.selected.at(-1)?.pr;
         if (!top) {

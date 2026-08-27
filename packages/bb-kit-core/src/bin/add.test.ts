@@ -22,9 +22,9 @@ test("add query writes the unit and sibling test and prints the wiring", () => {
   assert.match(unit, /export const readUrl = defineQuery\(/);
   assert.match(unit, /async execute\(_ctx\)/);
   const sibling = readFileSync(join(cwd, "server/rpc/read-url.test.ts"), "utf8");
-  assert.match(sibling, /import { readUrl } from ".\/read-url.ts";/);
+  assert.match(sibling, /import { readUrl } from ".\/read-url";/);
   assert.match(result.stdout, /wire it in server\/server.ts/);
-  assert.match(result.stdout, /import { readUrl } from "\.\/rpc\/read-url.ts";/);
+  assert.match(result.stdout, /import { readUrl } from "\.\/rpc\/read-url";/);
   assert.match(result.stdout, /readUrl,/);
   assert.match(result.stdout, /name: readUrl/);
 });
@@ -48,6 +48,7 @@ test("add command wires by kebab key when the name is hyphenated", () => {
   const unit = readFileSync(join(cwd, "server/command/sync-all.ts"), "utf8");
   assert.match(unit, /export const syncAll = defineCommand\(/);
   const sibling = readFileSync(join(cwd, "server/command/sync-all.test.ts"), "utf8");
+  assert.match(sibling, /import { syncAll } from ".\/sync-all";/);
   assert.match(sibling, /syncAll\.execute\(stubHostContext\(\)\)/);
   assert.match(result.stdout, /"sync-all": syncAll,/);
   assert.match(result.stdout, /must stay "sync-all"/);
@@ -65,7 +66,7 @@ test("printed wiring is relative to bb.server at the package root", () => {
   const result = runAdd("query", "read-url", { cwd });
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /wire it in server.ts/);
-  assert.match(result.stdout, /import { readUrl } from "\.\/rpc\/read-url.ts";/);
+  assert.match(result.stdout, /import { readUrl } from "\.\/rpc\/read-url";/);
   assert.ok(existsSync(join(cwd, "rpc/read-url.ts")));
   assert.ok(!existsSync(join(cwd, "server/rpc/read-url.ts")));
 });
@@ -109,6 +110,7 @@ test("add tool writes the unit and prints the derived name", () => {
   assert.match(unit, /export const beacon = defineTool\(/);
   assert.match(unit, /parameters: z.object\(/);
   const sibling = readFileSync(join(cwd, "server/tools/beacon.test.ts"), "utf8");
+  assert.match(sibling, /import { beacon } from ".\/beacon";/);
   assert.match(sibling, /beacon\.execute\(ctx, { value: "x" }\)/);
   assert.match(sibling, /signal: new AbortController\(\)\.signal/);
   assert.match(result.stdout, /and the agents\.tools entry:/);

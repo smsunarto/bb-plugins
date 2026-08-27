@@ -1074,22 +1074,20 @@ async function mockGtdSidebar(context: BrowserContext): Promise<void> {
       });
     } else if (method === "listLifecycle") {
       await fulfillRpc(route, {
-        rows: inbox
-          .slice(1)
-          .map((thread, index) => ({
+        rows: [
+          ...inbox.slice(1).map((thread, index) => ({
             threadId: thread.id,
             settledAt: null,
             snoozedUntil: FIXED_TIME.valueOf() + 86_400_000,
             snoozedAt: FIXED_TIME.valueOf() - (index + 1) * 60_000,
-          }))
-          .concat(
-            settledThreads.map((thread) => ({
-              threadId: thread.id,
-              settledAt: thread.settledAt,
-              snoozedUntil: null,
-              snoozedAt: null,
-            })),
-          ),
+          })),
+          ...settledThreads.map((thread) => ({
+            threadId: thread.id,
+            settledAt: thread.settledAt,
+            snoozedUntil: null,
+            snoozedAt: null,
+          })),
+        ],
       });
     } else if (method === "listSettledThreads") {
       await fulfillRpc(route, { threads: settledThreads });
@@ -1097,7 +1095,10 @@ async function mockGtdSidebar(context: BrowserContext): Promise<void> {
   });
 }
 
-async function createContext(browser: Browser, viewport = APP_VIEWPORT): Promise<BrowserContext> {
+async function createContext(
+  browser: Browser,
+  viewport: { width: number; height: number } = APP_VIEWPORT,
+): Promise<BrowserContext> {
   const context = await createScreenshotContext(browser, {
     viewport,
     dpr: DPR,

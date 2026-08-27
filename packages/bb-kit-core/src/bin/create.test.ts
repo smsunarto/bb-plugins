@@ -79,8 +79,8 @@ test("the scaffold templates bake the derived id into server, app, and tests", (
   assert.equal((files["server/server.ts"] ?? "").includes("export type RPC"), false);
   assert.equal((files["server/server.ts"] ?? "").includes("ClientFor"), false);
   assert.equal((files["server/server.ts"] ?? "").includes("export type Client"), false);
-  assert.match(files["server/server.ts"] ?? "", /from "\.\/rpc\/ping.ts"/);
-  assert.match(files["app/rpc.ts"] ?? "", /from "\.\.\/server\/server.ts"/);
+  assert.match(files["server/server.ts"] ?? "", /from "\.\/rpc\/ping"/);
+  assert.match(files["app/rpc.ts"] ?? "", /from "\.\.\/server\/server"/);
   assert.match(files["app/rpc.ts"] ?? "", /\["rpc"\]/);
   assert.match(files["app/rpc.ts"] ?? "", /createRPC<\(typeof plugin\)\["rpc"\]>\(\)/);
   assert.match(files["server/server.test.ts"] ?? "", /callRpc\("ping"\)/);
@@ -93,8 +93,16 @@ test("the scaffold uses Bun-compatible TypeScript module semantics", () => {
   assert.match(tsconfig, /"module": "preserve"/);
   assert.match(tsconfig, /"moduleDetection": "force"/);
   assert.match(tsconfig, /"moduleResolution": "bundler"/);
-  assert.match(tsconfig, /"allowImportingTsExtensions": true/);
+  assert.doesNotMatch(tsconfig, /allowImportingTsExtensions/);
   assert.match(tsconfig, /"verbatimModuleSyntax": true/);
+});
+
+test("the scaffold uses extensionless relative imports", () => {
+  const { files } = scaffoldFiles("@acme/bb-plugin-notes");
+  for (const [path, source] of Object.entries(files)) {
+    if (!/\.tsx?$/.test(path)) continue;
+    assert.doesNotMatch(source, /(?:from\s+|import\()["']\.\.?\/[^"']+\.tsx?["']/);
+  }
 });
 
 test("create refuses an existing non-empty directory", () => {

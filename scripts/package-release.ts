@@ -59,12 +59,13 @@ export function independentPackageReleases(
   const changesetsByPackage = new Map<string, string[]>();
 
   for (const changeset of status.changesets) {
-    if (changeset.releases.length !== 1) {
+    const [target] = changeset.releases;
+    if (target === undefined || changeset.releases.length !== 1) {
       throw new Error(
         `changeset ${changeset.id} targets ${changeset.releases.length} packages. Each changeset must target exactly one package`,
       );
     }
-    const packageName = changeset.releases[0].name;
+    const packageName = target.name;
     if (!pluginsByName.has(packageName)) {
       throw new Error(`changeset ${changeset.id} targets non-publishable package ${packageName}`);
     }

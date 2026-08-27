@@ -77,6 +77,7 @@ export function appendOracleTrace(
   if (normalized.kind === "tool" && normalized.toolCallId !== null) {
     for (let index = report.trace.length - 1; index >= 0; index--) {
       const candidate = report.trace[index];
+      if (candidate === undefined) continue;
       if (
         candidate.kind === "tool" &&
         candidate.toolCallId === normalized.toolCallId &&

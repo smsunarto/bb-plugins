@@ -287,8 +287,7 @@ export async function stashCountsByBranch(
   const counts = new Map<string, number>();
   for (const line of result.stdout.split("\n")) {
     const match = STASH_BRANCH.exec(line.trim());
-    if (!match) continue;
-    const branch = match[1].trim();
+    const branch = match?.[1]?.trim();
     if (!branch) continue;
     counts.set(branch, (counts.get(branch) ?? 0) + 1);
   }
