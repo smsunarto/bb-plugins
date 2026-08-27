@@ -1,0 +1,299 @@
+// The plugin's own Amp CLI spawn layer: execute-wire types, argv construction,
+// the settings/mcp temp files, process lifecycle, and NDJSON in both
+// directions. Written independently from observed CLI behavior; it copies no
+// @ampcode/sdk code. `createAmpExecute` produces the `AmpExecuteFn` the
+// conversation layer consumes, so everything above this module stays
+// protocol-level.
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+
+/** One `amp.permissions` entry. The plugin only ever rejects tools. */
+export interface AmpPermissionRule {
+  tool: string;
+  action: "reject";
+}
+
+/** The `--mcp-config` document: server name to stdio launch spec. */
+export type MCPConfig = Record<
+  string,
+  {
+    command: string;
+    args?: readonly string[];
+    env?: Record<string, string>;
+  }
+>;
+
+/** A stream-json stdin line. `steer` marks mid-turn injection. */
+export interface AmpUserInputMessage {
+  type: "user";
+  message: {
+    role: "user";
+    content: Array<{ type: "text"; text: string }>;
+  };
+  steer?: true;
+}
+
+export interface AmpExecuteOptions {
+  cwd?: string;
+  mode?: string;
+  thinking?: boolean;
+  fast?: boolean;
+  noArchiveAfterExecute?: boolean;
+  dangerouslyAllowAll?: boolean;
+  permissions?: readonly AmpPermissionRule[];
+  labels?: readonly string[];
+  mcpConfig?: MCPConfig;
+  continue?: string;
+  /** Local execution is the default and is expressed by omission. */
+  executor?: "orb";
+  project?: string;
+  env?: Record<string, string>;
+}
+
+export type AmpExecutePrompt = string | AsyncIterable<AmpUserInputMessage>;
+
+export type AmpExecuteFn = (args: {
+  prompt: AmpExecutePrompt;
+  signal?: AbortSignal;
+  options?: AmpExecuteOptions;
+}) => AsyncIterable<unknown>;
+
+export function createUserMessage(text: string): AmpUserInputMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text }] },
+  };
+}
+
+/** Which execute option produced a given optional CLI flag. The conversation
+ *  layer's unsupported-flag retry uses this to drop exactly that option.
+ *  `--orb-execute` is deliberately absent: a CLI that cannot run Orb must
+ *  fail, not silently execute locally. `--execute`/`--stream-json` are the
+ *  wire itself and cannot be dropped. */
+const DROPPABLE_FLAGS: Readonly<Record<string, keyof AmpExecuteOptions>> = {
+  fast: "fast",
+  "stream-json-thinking": "thinking",
+  mode: "mode",
+  "no-archive-after-execute": "noArchiveAfterExecute",
+  "dangerously-allow-all": "dangerouslyAllowAll",
+  "settings-file": "dangerouslyAllowAll",
+  "mcp-config": "mcpConfig",
+  label: "labels",
+  project: "project",
+};
+
+export function optionForFlag(flag: string): keyof AmpExecuteOptions | null {
+  return Object.hasOwn(DROPPABLE_FLAGS, flag) ? DROPPABLE_FLAGS[flag]! : null;
+}
+
+export interface AmpArgvPaths {
+  settingsFile?: string;
+  mcpConfigFile?: string;
+}
+
+/** The execute-wire argv, in the order the Amp CLI has always received it.
+ *  Faithful to its inputs: the caller decides which temp files exist. Unlike
+ *  the retired SDK driver it never defaults `--mode` — the conversation layer
+ *  always sets one, and an unset option must stay droppable. */
+export function buildAmpArgv(options: AmpExecuteOptions, paths: AmpArgvPaths = {}): string[] {
+  const argv: string[] = [];
+  if (options.continue !== undefined) argv.push("threads", "continue", options.continue);
+  if (options.fast === true) argv.push("--fast");
+  argv.push("--execute", options.thinking === true ? "--stream-json-thinking" : "--stream-json");
+  if (options.executor === "orb") {
+    argv.push("--orb-execute");
+    if (options.project !== undefined) argv.push("--project", options.project);
+  }
+  if (options.dangerouslyAllowAll === true) argv.push("--dangerously-allow-all");
+  if (options.noArchiveAfterExecute === true) argv.push("--no-archive-after-execute");
+  if (paths.settingsFile !== undefined) argv.push("--settings-file", paths.settingsFile);
+  if (paths.mcpConfigFile !== undefined) argv.push("--mcp-config", paths.mcpConfigFile);
+  if (options.mode !== undefined) argv.push("--mode", options.mode);
+  for (const label of options.labels ?? []) argv.push("--label", label);
+  return argv;
+}
+
+/** The `--settings-file` document: the user's own Amp settings with the two
+ *  keys the plugin controls merged on top. `env` is the child's environment,
+ *  so the settings the CLI would read are the settings we extend. */
+export function buildAmpSettings(
+  options: Pick<AmpExecuteOptions, "permissions" | "dangerouslyAllowAll">,
+  env: Record<string, string | undefined>,
+): Record<string, unknown> {
+  const settings = loadBaseSettings(env);
+  if (options.permissions !== undefined) settings["amp.permissions"] = [...options.permissions];
+  if (options.dangerouslyAllowAll !== undefined) {
+    settings["amp.dangerouslyAllowAll"] = options.dangerouslyAllowAll;
+  }
+  return settings;
+}
+
+function loadBaseSettings(env: Record<string, string | undefined>): Record<string, unknown> {
+  const explicit = env.AMP_SETTINGS_FILE;
+  if (explicit !== undefined && explicit.trim().length > 0) {
+    // An explicitly named settings file that is missing or broken must fail
+    // loudly; silently running without the user's settings is worse.
+    return asSettingsObject(JSON.parse(readFileSync(explicit, "utf8")));
+  }
+  const xdg = env.XDG_CONFIG_HOME;
+  const configHome = xdg !== undefined && xdg.trim().length > 0 ? xdg : join(homedir(), ".config");
+  for (const name of ["settings.json", "settings.jsonc"]) {
+    let raw: string;
+    try {
+      raw = readFileSync(join(configHome, "amp", name), "utf8");
+    } catch {
+      continue;
+    }
+    try {
+      return asSettingsObject(JSON.parse(raw));
+    } catch {
+      // settings.jsonc with comments does not parse as JSON; the CLI's own
+      // loader skipped unparseable candidates, and so do we.
+      continue;
+    }
+  }
+  return {};
+}
+
+function asSettingsObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : {};
+}
+
+export interface AmpExecuteDeps {
+  /** Resolved Amp CLI path. `.js`/`.mjs`/`.cjs` entrypoints run through the
+   *  current Node runtime, which is what lets tests substitute a script. */
+  cliPath: string;
+}
+
+export function createAmpExecute(deps: AmpExecuteDeps): AmpExecuteFn {
+  return ({ prompt, signal, options }) => runAmp(deps.cliPath, prompt, signal, options ?? {});
+}
+
+async function* runAmp(
+  cliPath: string,
+  prompt: AmpExecutePrompt,
+  signal: AbortSignal | undefined,
+  options: AmpExecuteOptions,
+): AsyncGenerator<unknown, void, undefined> {
+  signal?.throwIfAborted();
+  const env = { ...process.env, ...options.env };
+  let tempDir: string | null = null;
+  let child: ChildProcess | null = null;
+  try {
+    if (options.mcpConfig !== undefined && options.executor === "orb") {
+      throw new Error("mcpConfig is not supported for Orb executions");
+    }
+    const paths: AmpArgvPaths = {};
+    const needsSettings =
+      options.permissions !== undefined || options.dangerouslyAllowAll !== undefined;
+    if (needsSettings || options.mcpConfig !== undefined) {
+      tempDir = mkdtempSync(join(tmpdir(), "bb-amp-"));
+      if (needsSettings) {
+        paths.settingsFile = join(tempDir, "settings.json");
+        writeFileSync(paths.settingsFile, JSON.stringify(buildAmpSettings(options, env), null, 2), {
+          mode: 0o600,
+        });
+      }
+      if (options.mcpConfig !== undefined) {
+        paths.mcpConfigFile = join(tempDir, "mcp-config.json");
+        writeFileSync(paths.mcpConfigFile, JSON.stringify(options.mcpConfig), { mode: 0o600 });
+      }
+    }
+    const argv = buildAmpArgv(options, paths);
+    const nodeScript = /\.(cjs|mjs|js)$/i.test(cliPath);
+    child = spawn(nodeScript ? process.execPath : cliPath, nodeScript ? [cliPath, ...argv] : argv, {
+      cwd: options.cwd ?? process.cwd(),
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+      signal,
+    });
+    let stderr = "";
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    const exit = new Promise<number | null>((resolveExit, rejectExit) => {
+      child!.once("error", rejectExit);
+      child!.once("close", (code) => resolveExit(code));
+    });
+    // The consumer may abandon the generator before the exit is awaited.
+    exit.catch(() => {});
+    pumpInput(child, prompt, signal);
+    const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+    for await (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      let message: unknown;
+      try {
+        message = JSON.parse(trimmed);
+      } catch {
+        console.error(`[amp] ignoring a non-JSON line from the Amp CLI: ${truncate(trimmed)}`);
+        continue;
+      }
+      yield message;
+    }
+    const code = await exit;
+    signal?.throwIfAborted();
+    if (code !== 0) {
+      // parseUnsupportedFlag reads the CLI's stderr out of this message, so
+      // the stderr text must stay inside it.
+      throw new Error(
+        code === null
+          ? `Amp CLI process was killed before exiting: ${stderr.trim()}`
+          : `Amp CLI process exited with code ${code}: ${stderr.trim()}`,
+      );
+    }
+  } finally {
+    if (child !== null && child.exitCode === null && !child.killed) {
+      child.kill(process.platform === "win32" ? "SIGKILL" : "SIGTERM");
+    }
+    if (tempDir !== null) rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+/** Feeds the prompt to the CLI's stdin without blocking the output reader.
+ *  Messages are serialized as given — the steering `steer` flag rides along
+ *  untouched. Stdin errors are swallowed locally (a dying CLI EPIPEs mid
+ *  write); the exit-code check reports the real failure. */
+function pumpInput(
+  child: ChildProcess,
+  prompt: AmpExecutePrompt,
+  signal: AbortSignal | undefined,
+): void {
+  const stdin = child.stdin;
+  if (stdin === null) return;
+  stdin.on("error", () => {});
+  if (typeof prompt === "string") {
+    stdin.write(prompt + "\n");
+    stdin.end();
+    return;
+  }
+  void (async () => {
+    try {
+      for await (const message of prompt) {
+        if (signal?.aborted === true || stdin.destroyed || stdin.writableEnded) return;
+        if (!stdin.write(JSON.stringify(message) + "\n")) {
+          const settled = new AbortController();
+          const drained = once(stdin, "drain", { signal: settled.signal }).catch(() => {});
+          const closed = once(stdin, "close", { signal: settled.signal }).catch(() => {});
+          await Promise.race([drained, closed]);
+          settled.abort();
+        }
+      }
+    } catch {
+      // The input stream ends by throwing on abort; the reader owns errors.
+    } finally {
+      if (!stdin.destroyed) stdin.end();
+    }
+  })();
+}
+
+function truncate(line: string): string {
+  return line.length > 200 ? `${line.slice(0, 200)}…` : line;
+}
