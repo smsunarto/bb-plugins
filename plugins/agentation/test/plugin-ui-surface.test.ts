@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { pluginUiSurfaceFor, PUBLIC_SURFACE_BY_SLOT_KIND } from "../lib/plugin-ui-surface.ts";
+import { pluginUiSurfaceFor } from "../lib/plugin-ui-surface.ts";
+import { PUBLIC_SURFACE_BY_SLOT_KIND } from "../lib/plugin-ui-surface-map.ts";
 
 type Fiber = {
   memoizedProps?: unknown;

@@ -10,8 +10,6 @@
 import { panelPluginIdFromRoute } from "./route.ts";
 import { PUBLIC_SURFACE_BY_SLOT_KIND } from "./plugin-ui-surface-map.ts";
 
-export { PUBLIC_SURFACE_BY_SLOT_KIND } from "./plugin-ui-surface-map.ts";
-
 export interface PluginUiSurfaceContext {
   pluginId: string | null;
   surface: string | null;
