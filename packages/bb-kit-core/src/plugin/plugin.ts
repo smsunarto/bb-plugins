@@ -12,7 +12,9 @@ import type {
   SubcommandDefinition,
 } from "../cli/runner.ts";
 import { buildProgram, commandDefinitions, runProgram } from "../cli/runner.ts";
-import { hostContext, type Context } from "./host.ts";
+import type { Session, ToolMap, ToolsContext } from "../tools/tools.ts";
+import { assertToolKeys, runtimeTools, toolName } from "../tools/tools.ts";
+import { hostContext, type Context, type HostAgentsSeam } from "./host.ts";
 
 export type { HostSeam } from "./host.ts";
 export { hostContext } from "./host.ts";
@@ -37,6 +39,11 @@ export type CommandDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
   readonly [outsidePreset]: Keys;
 };
 
+/** Same, for agent tools. Tools additionally get `tool`. */
+export type ToolDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
+  readonly [outsidePreset]: Keys;
+};
+
 type OutsidePreset<Demand, Allowed extends PropertyKey> = Exclude<keyof Demand, Allowed>;
 
 type RPCFieldCheck<R extends RPCProcedures> = [OutsidePreset<RPCContext<R>, PresetField>] extends [
@@ -53,12 +60,26 @@ type CommandFieldCheck<C> = [OutsidePreset<CommandsContext<C>, PresetField | "cl
       >;
     };
 
+type ToolFieldCheck<T extends ToolMap> = [
+  OutsidePreset<ToolsContext<T>, PresetField | "tool">,
+] extends [never]
+  ? unknown
+  : {
+      agents: ToolDemandsFieldOutsideThePreset<
+        OutsidePreset<ToolsContext<T>, PresetField | "tool">
+      >;
+    };
+
 /**
  * Intersected into `definePlugin`'s parameter. Resolves to `unknown`
  * when every demand is a preset field, and to a re-declaration of
- * `rpc` / `cli` with the diagnostic type otherwise.
+ * `rpc` / `cli` / `agents` with the diagnostic type otherwise.
  */
-export type ClosedContext<R extends RPCProcedures, C> = RPCFieldCheck<R> & CommandFieldCheck<C>;
+export type ClosedContext<
+  R extends RPCProcedures,
+  C,
+  T extends ToolMap = Record<never, never>,
+> = RPCFieldCheck<R> & CommandFieldCheck<C> & ToolFieldCheck<T>;
 
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -79,13 +100,22 @@ export type DefinedPlugin<R extends RPCProcedures> = ((bb: BbPluginApi) => Promi
 export function definePlugin<
   R extends RPCProcedures,
   C extends AnyCommandMap = Record<never, never>,
+  T extends ToolMap = Record<never, never>,
 >(
   definition: {
     pluginId: string;
     rpc: R;
     cli?: C;
+    agents?: {
+      tools: T;
+      skills?: string[] | ((context: Context, session: Session) => string[]);
+      instructions?(
+        context: Context,
+        resolution: { threadId: string; projectId: string },
+      ): string | null;
+    };
     setup?(bb: BbPluginApi): MaybePromise<void>;
-  } & ClosedContext<R, C>,
+  } & ClosedContext<R, C, T>,
 ): DefinedPlugin<R> {
   const { pluginId, rpc } = definition;
   if (!PLUGIN_ID_PATTERN.test(pluginId)) {
@@ -98,10 +128,13 @@ export function definePlugin<
       throw new Error(`"${key}" is a reserved command name`);
     }
   }
+  if (definition.agents) {
+    assertToolKeys(definition.agents.tools);
+  }
   const summary = `CLI for the ${pluginId} plugin`;
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
-    // Order (§6): context → client → rpc.register → cli.register → setup.
+    // Order (§6): context → client → rpc.register → cli.register → agents → setup.
     const context = hostContext(bb);
     const client = createClient(rpc, context as RPCContext<R>);
 
@@ -154,6 +187,64 @@ export function definePlugin<
       commands,
       run: (argv, ctx) => runProgram(() => makeDefinitions(ctx), argv, { name: pluginId, summary }),
     });
+
+    // agents (ADR-0015): one registration per tool under the derived
+    // name. Registration goes through the seam type — the SDK's own
+    // registerTool overloads name zod, which bb-kit never imports.
+    const agents = definition.agents;
+    if (agents) {
+      const host: HostAgentsSeam = bb;
+      const tools = runtimeTools(agents.tools);
+      const keys = Object.keys(tools);
+      for (const key of keys) {
+        const tool = tools[key];
+        if (!tool) {
+          continue;
+        }
+        host.agents.registerTool({
+          name: toolName(pluginId, key),
+          description: tool.description,
+          ...(tool.instructions === undefined ? {} : { instructions: tool.instructions }),
+          ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
+          parameters: tool.parameters,
+          // The host already validated params against `parameters`; the
+          // overlay freeze mirrors the cli one above.
+          execute: (params, invocation) =>
+            tool.execute(Object.freeze({ ...context, tool: invocation }), params),
+        });
+      }
+
+      // Synthesized ONLY when gating or a skills selection exists
+      // (ADR-0017) — an unconditional configure would override the
+      // host's all-on default. No try/catch: a throwing predicate
+      // propagates and the host fails that selection closed.
+      const gated = keys.some((key) => tools[key]?.enabled !== undefined);
+      const skills = agents.skills;
+      if (gated || skills !== undefined) {
+        host.agents.configure((session) => {
+          const selected = keys.filter((key) => {
+            const tool = tools[key];
+            if (!tool) {
+              return false;
+            }
+            return tool.enabled === undefined || tool.enabled(context, session);
+          });
+          let selectedSkills: string[] = [];
+          if (skills !== undefined) {
+            selectedSkills = Array.isArray(skills) ? skills : skills(context, session);
+          }
+          return {
+            tools: selected.map((key) => toolName(pluginId, key)),
+            skills: selectedSkills,
+          };
+        });
+      }
+
+      if (agents.instructions !== undefined) {
+        const instructions = agents.instructions;
+        host.agents.contributeInstructions((resolution) => instructions(context, resolution));
+      }
+    }
 
     if (definition.setup) {
       await definition.setup(bb);

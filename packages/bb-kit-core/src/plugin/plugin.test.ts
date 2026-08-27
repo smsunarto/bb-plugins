@@ -5,6 +5,7 @@ import { z } from "zod";
 import { definePlugin, type Context } from "./plugin.ts";
 import { defineCommand, type CommandContext } from "../cli/cli.ts";
 import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
+import { defineTool, type Session, type ToolContext } from "../tools/tools.ts";
 import type { HostSeam } from "./host.ts";
 
 const echo = defineQuery({
@@ -39,9 +40,19 @@ type RPCArgs = {
   handlers: Parameters<HostSeam["rpc"]["register"]>[1];
 };
 type CLIRegistration = Parameters<HostSeam["cli"]["register"]>[0];
+type ToolRegistration = Parameters<HostSeam["agents"]["registerTool"]>[0];
+type ConfigureProvider = Parameters<HostSeam["agents"]["configure"]>[0];
+type InstructionsProvider = Parameters<HostSeam["agents"]["contributeInstructions"]>[0];
 
 function fakeHost() {
-  const captured: { order: string[]; rpc?: RPCArgs; cli?: CLIRegistration } = { order: [] };
+  const captured: {
+    order: string[];
+    rpc?: RPCArgs;
+    cli?: CLIRegistration;
+    agentTools: ToolRegistration[];
+    configure?: ConfigureProvider;
+    instructions?: InstructionsProvider;
+  } = { order: [], agentTools: [] };
   const bb: HostSeam & { sdk: { tag: string }; storage: { kv: object } } = {
     rpc: {
       register(contract, handlers) {
@@ -56,9 +67,16 @@ function fakeHost() {
       },
     },
     agents: {
-      registerTool() {},
-      configure() {},
-      contributeInstructions() {},
+      registerTool(registration) {
+        captured.order.push("agents");
+        captured.agentTools.push(registration);
+      },
+      configure(provider) {
+        captured.configure = provider;
+      },
+      contributeInstructions(provider) {
+        captured.instructions = provider;
+      },
     },
     sdk: { tag: "sdk" },
     storage: { kv: {} },
@@ -271,6 +289,162 @@ test("empty argv is exit 2 with help; help command is exit 0", async () => {
   assert.equal(help.exitCode, 0);
 });
 
+// ---- agent tools ----------------------------------------------------
+
+let toolGate = true;
+const seenToolContexts: unknown[] = [];
+
+const notifyUser = defineTool({
+  description: "Post a notification",
+  parameters: z.object({ message: z.string() }),
+  enabled: () => toolGate,
+  execute(context: ToolContext<Context>, input) {
+    seenToolContexts.push(context);
+    return `sent:${input.message}`;
+  },
+});
+
+const inventory = defineTool({
+  description: "List things",
+  parameters: z.object({}),
+  execute: () => "listed",
+});
+
+test("agent tools register under the derived public name", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: { tools: { user: notifyUser, inventory } },
+  })(bb);
+  assert.deepEqual(
+    captured.agentTools.map((tool) => tool.name),
+    ["demo_ns_user", "demo_ns_inventory"],
+  );
+  assert.equal(captured.agentTools[0]?.description, "Post a notification");
+  assert.equal(captured.agentTools[0]?.parameters, notifyUser.parameters);
+});
+
+test("factory order: rpc, cli, agents, then setup", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    cli: { status },
+    agents: { tools: { inventory } },
+    setup() {
+      captured.order.push("setup");
+    },
+  })(bb);
+  assert.deepEqual(captured.order, ["rpc", "cli", "agents", "setup"]);
+});
+
+test("registered execute freezes the overlay context and returns the tool result", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: { tools: { user: notifyUser } },
+  })(bb);
+  const registration = captured.agentTools[0];
+  assert.ok(registration);
+  const signal = new AbortController().signal;
+  seenToolContexts.length = 0;
+  const result = await registration.execute(
+    { message: "hi" },
+    { threadId: "t1", projectId: "p1", signal },
+  );
+  assert.equal(result, "sent:hi");
+  const context = seenToolContexts[0] as {
+    bb: unknown;
+    tool: { threadId: string; projectId: string; signal: AbortSignal };
+  };
+  assert.equal(context.bb, bb);
+  assert.deepEqual(context.tool, { threadId: "t1", projectId: "p1", signal });
+  assert.equal(Object.isFrozen(context), true);
+});
+
+test("a gated tool synthesizes one configure listing derived names for passing predicates", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: { tools: { user: notifyUser, inventory } },
+  })(bb);
+  const provider = captured.configure;
+  assert.ok(provider);
+  const session = {} as Session;
+  toolGate = true;
+  assert.deepEqual(provider(session), {
+    tools: ["demo_ns_user", "demo_ns_inventory"],
+    skills: [],
+  });
+  toolGate = false;
+  assert.deepEqual(provider(session), { tools: ["demo_ns_inventory"], skills: [] });
+  toolGate = true;
+});
+
+test("agents.skills: a static array passes through; a selector runs per resolution", async () => {
+  const fixed = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: { tools: { inventory }, skills: ["triage"] },
+  })(fixed.bb);
+  assert.deepEqual(fixed.captured.configure?.({} as Session), {
+    tools: ["demo_ns_inventory"],
+    skills: ["triage"],
+  });
+  const selected = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: { tools: { inventory }, skills: () => ["a", "b"] },
+  })(selected.bb);
+  assert.deepEqual(selected.captured.configure?.({} as Session), {
+    tools: ["demo_ns_inventory"],
+    skills: ["a", "b"],
+  });
+});
+
+test("ungated, skill-less tools register no configure and no instructions", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: { tools: { inventory } },
+  })(bb);
+  assert.equal(captured.configure, undefined);
+  assert.equal(captured.instructions, undefined);
+});
+
+test("agents.instructions wires contributeInstructions with the plugin context", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    agents: {
+      tools: { inventory },
+      instructions(context, resolution) {
+        return context.bb ? `${resolution.threadId}/${resolution.projectId}` : null;
+      },
+    },
+  })(bb);
+  assert.equal(captured.instructions?.({ threadId: "t", projectId: "p" }), "t/p");
+});
+
+test("invalid tool keys throw at define time", () => {
+  assert.throws(
+    () =>
+      definePlugin({
+        pluginId: "demo-ns",
+        rpc: demo,
+        agents: { tools: { "Bad-Key": inventory } },
+      }),
+    /invalid tool key "Bad-Key"/,
+  );
+});
+
 // ---- type-level pins ------------------------------------------------
 
 function typeOnly() {
@@ -340,6 +514,17 @@ function typeOnly() {
     pluginId: "demo-ns",
     // @ts-expect-error cli is a Command field, not an RPC field
     rpc: { ping: wantsCliOnRPC },
+  });
+  const greedyTool = defineTool({
+    description: "wants more than the preset provides",
+    parameters: z.object({}),
+    execute: (_context: ToolContext<{ extra(): void }>) => "x",
+  });
+  void definePlugin({
+    pluginId: "demo-ns",
+    rpc: demo,
+    // @ts-expect-error a tool demanding a field outside the preset is rejected
+    agents: { tools: { greedy: greedyTool } },
   });
   void definePlugin({ pluginId: "demo-ns", rpc: demo });
   const plugin = definePlugin({
