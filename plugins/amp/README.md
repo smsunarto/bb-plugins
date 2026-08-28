@@ -188,7 +188,7 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 | "Could not find a usable Amp CLI"  | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp`    |
 | Local tool calls rejected          | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits**    |
 | Orb tool calls rejected            | Change the permission settings in the Amp project                                               |
-| Orb opens the wrong repository     | Export `AMP_ACP_ORB_PROJECT` in the environment bb runs in, then start a new Orb thread         |
+| Orb opens the wrong repository     | Orb infers the project from the thread's working directory. Start the thread in that repository |
 | Orb toggle was on, thread ran Local | The armed toggle expires after 10 minutes. Toggle Orb off, then on, then send the first prompt   |
 | `Unknown session <id>` on resume   | The session mapping was pruned or removed. Start a new thread                                   |
 
