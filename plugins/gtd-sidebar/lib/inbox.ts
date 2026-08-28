@@ -84,7 +84,12 @@ export function reconcileActiveSectionOrder(
   return { entries, nextSequence };
 }
 
-/** Split visible active threads and retain their mounted entrance order. */
+/**
+ * Split visible active threads and retain their mounted entrance order.
+ *
+ * Next Action keeps its oldest entrant first. Waiting puts its newest entrant
+ * first so the work the user most recently handed off stays at the top.
+ */
 export function partitionActiveSections(
   threads: readonly PluginSidebarThread[],
   order: ActiveSectionOrder,
@@ -102,7 +107,7 @@ export function partitionActiveSections(
       (order.entries.get(right.id)?.sequence ?? Number.MAX_SAFE_INTEGER) ||
     left.id.localeCompare(right.id);
   nextAction.sort(byEntrance);
-  waiting.sort(byEntrance);
+  waiting.sort((left, right) => byEntrance(right, left));
   return { nextAction, waiting };
 }
 

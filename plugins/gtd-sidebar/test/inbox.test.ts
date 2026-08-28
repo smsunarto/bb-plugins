@@ -161,7 +161,7 @@ describe("active sections", () => {
     );
   });
 
-  it("puts a section entrant at the bottom", () => {
+  it("puts the newest waiting entrant at the top", () => {
     const initial = [
       thread({ id: "a", updatedAt: 10 }),
       thread({ id: "b", updatedAt: 20, indicator: "runtime" }),
@@ -171,7 +171,7 @@ describe("active sections", () => {
     const next = reconcileActiveSectionOrder(first, transitioned);
     assert.deepEqual(
       partitionActiveSections(transitioned, next).waiting.map((candidate) => candidate.id),
-      ["b", "a"],
+      ["a", "b"],
     );
   });
 
