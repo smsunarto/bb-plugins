@@ -29,6 +29,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
   workspacePlugins,
@@ -396,19 +397,116 @@ function runInteractive(command: string, args: string[], cwd: string): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 
-/** Like run(), but a non-zero exit is an answer rather than a failure, and the
-    command's own stderr stays off the console. Used for registry probes, where
-    "not published yet" arrives as a 404. */
-function probe(command: string, args: string[], cwd: string): string | null {
+function commandStderr(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("stderr" in error)) return "";
+  const stderr = error.stderr;
+  if (typeof stderr === "string") return stderr;
+  if (stderr instanceof Uint8Array) return new TextDecoder().decode(stderr);
+  return "";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function npmViewFailureIsMissing(stderr: string): boolean {
+  return /\bE404\b/.test(stderr);
+}
+
+export type RegistryVersionState =
+  | { readonly kind: "published" }
+  | { readonly kind: "missing" };
+
+function probeNpmVersion(target: string, version: string): RegistryVersionState {
+  let published: string;
   try {
-    return execFileSync(command, args, {
-      cwd,
+    published = execFileSync("npm", ["view", `${target}@${version}`, "version"], {
+      cwd: ROOT,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim();
-  } catch {
-    return null;
+  } catch (error) {
+    const stderr = commandStderr(error);
+    if (npmViewFailureIsMissing(stderr)) return { kind: "missing" };
+    const detail = stderr.trim();
+    throw new Error(
+      `npm view failed for ${target}@${version}${detail === "" ? "" : `:\n${detail}`}`,
+      { cause: error },
+    );
   }
+
+  if (published === version) return { kind: "published" };
+  throw new Error(
+    `npm view returned ${JSON.stringify(published)} for ${target}@${version}, expected ${JSON.stringify(version)}`,
+  );
+}
+
+const REGISTRY_VISIBILITY_RETRY_DELAYS_MS: readonly number[] = [
+  0, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 90_000, 120_000,
+];
+
+interface PublishPackageVersionOptions {
+  packageVersion: string;
+  probe: () => RegistryVersionState;
+  publish: () => void;
+  sleep: (milliseconds: number) => Promise<void>;
+  retryDelays?: readonly number[];
+}
+
+export type PublishPackageVersionResult =
+  | { readonly kind: "already-published" }
+  | { readonly kind: "published" }
+  | { readonly kind: "reconciled" };
+
+async function waitForPublished(
+  probe: () => RegistryVersionState,
+  sleep: (milliseconds: number) => Promise<void>,
+  retryDelays: readonly number[],
+): Promise<boolean> {
+  for (const delay of retryDelays) {
+    await sleep(delay);
+    if (probe().kind === "published") return true;
+  }
+  return false;
+}
+
+/**
+ * Publish one exact package version and wait until npm's read path can see it.
+ *
+ * npm's publish endpoint can accept a version before `npm view` sees it. A
+ * following release run may then receive E404 from the read path and E403 from
+ * the write path for the same version. Rechecking after a failed publish makes
+ * that partial success resumable without hiding unrelated registry failures.
+ */
+export async function publishPackageVersion({
+  packageVersion,
+  probe,
+  publish,
+  sleep,
+  retryDelays = REGISTRY_VISIBILITY_RETRY_DELAYS_MS,
+}: PublishPackageVersionOptions): Promise<PublishPackageVersionResult> {
+  if (probe().kind === "published") return { kind: "already-published" };
+
+  try {
+    publish();
+  } catch (publishError) {
+    try {
+      if (await waitForPublished(probe, sleep, retryDelays)) return { kind: "reconciled" };
+    } catch (probeError) {
+      throw new Error(
+        `${packageVersion} publish failed (${errorMessage(publishError)}), then its registry reconciliation failed`,
+        { cause: probeError },
+      );
+    }
+    throw publishError;
+  }
+
+  if (!(await waitForPublished(probe, sleep, retryDelays))) {
+    throw new Error(
+      `${packageVersion} was accepted by npm but did not become visible before the registry timeout`,
+    );
+  }
+  return { kind: "published" };
 }
 
 /**
@@ -437,7 +535,7 @@ function publishUnder(dir: string, name: string, manifestName: string): void {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry-run");
   const unknown = process.argv.slice(2).filter((argument) => argument !== "--dry-run");
   if (unknown.length > 0) {
@@ -529,25 +627,46 @@ function main(): void {
       (candidate): candidate is string => candidate !== null,
     );
     for (const target of names) {
-      const published = probe("npm", ["view", `${target}@${version}`, "version"], ROOT);
-      if (published === version) {
-        console.log(`  ${target}@${version} already published — skipping`);
-        continue;
-      }
-
       if (dryRun) {
-        console.log(`  ${target}@${version} ready (${paths.length} files)`);
+        const state = probeNpmVersion(target, version);
+        console.log(
+          state.kind === "published"
+            ? `  ${target}@${version} already published — skipping`
+            : `  ${target}@${version} ready (${paths.length} files)`,
+        );
         continue;
       }
 
-      console.log(`  publishing ${target}@${version}…`);
-      // Scoped names publish RESTRICTED by default; this is what makes them public.
-      publishUnder(dir, target, name);
-      console.log(`  ✓ ${target}@${version}`);
+      const packageVersion = `${target}@${version}`;
+      const result = await publishPackageVersion({
+        packageVersion,
+        probe: () => probeNpmVersion(target, version),
+        publish: () => {
+          console.log(`  publishing ${packageVersion}…`);
+          // Scoped names publish RESTRICTED by default; this is what makes them public.
+          publishUnder(dir, target, name);
+        },
+        sleep: wait,
+      });
+      switch (result.kind) {
+        case "already-published":
+          console.log(`  ${packageVersion} already published — skipping`);
+          break;
+        case "published":
+          console.log(`  ✓ ${packageVersion}`);
+          break;
+        case "reconciled":
+          console.log(`  ✓ ${packageVersion} was already accepted — registry caught up`);
+          break;
+        default: {
+          const exhaustive: never = result;
+          throw new Error(`unhandled publish result: ${JSON.stringify(exhaustive)}`);
+        }
+      }
     }
   }
 
   console.log(dryRun ? "\ndry run complete — nothing published" : "\ndone");
 }
 
-if (import.meta.main) main();
+if (import.meta.main) await main();

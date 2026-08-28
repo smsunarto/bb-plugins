@@ -9,11 +9,12 @@ permissions:
   id-token: write
   pull-requests: write
 
-# A second main push can update version PRs. It must not interrupt an npm
-# publish between a scoped package and its unscoped mirror.
+# Every main push must wait its turn. It must not interrupt an npm publish
+# between a scoped package and its unscoped mirror, or replace a pending run.
 concurrency:
   group: release-npm
   cancel-in-progress: false
+  queue: max
 
 jobs:
   plan:

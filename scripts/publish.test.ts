@@ -1,14 +1,17 @@
 // The publish gate decides whether a tarball can be installed at all, so the
 // checks that matter get a test each — most of all the one that reads the
 // manifest's bb.* paths back out of the packed file list.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import {
   ALLOWED_LICENSES,
   bbTargets,
   mirrorPackageName,
   nonRegistryProtocol,
+  npmViewFailureIsMissing,
   packedPaths,
+  publishPackageVersion,
   publishProblems,
+  type RegistryVersionState,
 } from "./publish";
 import { derivePluginId, workspacePlugins } from "./plugin-package";
 import { join } from "node:path";
@@ -247,6 +250,93 @@ describe("mirrorPackageName", () => {
       expect(derivePluginId(mirror as string)).toBe(plugin.id);
     });
   }
+});
+
+describe("publishPackageVersion", () => {
+  test("waits for a successful publish to become readable", async () => {
+    const states: RegistryVersionState[] = [
+      { kind: "missing" },
+      { kind: "missing" },
+      { kind: "published" },
+    ];
+    let probeIndex = 0;
+    const probe = mock(
+      (): RegistryVersionState => states[probeIndex++] ?? { kind: "published" },
+    );
+    const publish = mock(() => {});
+    const sleep = mock(async (_milliseconds: number) => {});
+
+    const result = await publishPackageVersion({
+      packageVersion: "bb-plugin-agent-proxy@0.2.4",
+      probe,
+      publish,
+      sleep,
+      retryDelays: [0, 1],
+    });
+
+    expect(result).toEqual({ kind: "published" });
+    expect(probe.mock.calls).toHaveLength(3);
+    expect(publish.mock.calls).toHaveLength(1);
+    expect(sleep.mock.calls).toEqual([[0], [1]]);
+  });
+
+  test("reconciles a duplicate publish after delayed registry visibility", async () => {
+    const states: RegistryVersionState[] = [
+      { kind: "missing" },
+      { kind: "missing" },
+      { kind: "published" },
+    ];
+    let probeIndex = 0;
+    const probe = mock(
+      (): RegistryVersionState => states[probeIndex++] ?? { kind: "published" },
+    );
+    const publish = mock(() => {
+      throw new Error("npm error code E403: version already published");
+    });
+    const sleep = mock(async (_milliseconds: number) => {});
+
+    const result = await publishPackageVersion({
+      packageVersion: "bb-plugin-agent-proxy@0.2.4",
+      probe,
+      publish,
+      sleep,
+      retryDelays: [0, 1],
+    });
+
+    expect(result).toEqual({ kind: "reconciled" });
+    expect(probe.mock.calls).toHaveLength(3);
+    expect(publish.mock.calls).toHaveLength(1);
+    expect(sleep.mock.calls).toEqual([[0], [1]]);
+  });
+
+  test("does not publish when the registry probe itself fails", async () => {
+    const registryError = new Error("npm error code E500");
+    const probe = mock((): RegistryVersionState => {
+      throw registryError;
+    });
+    const publish = mock(() => {});
+    const sleep = mock(async (_milliseconds: number) => {});
+
+    await expect(
+      publishPackageVersion({
+        packageVersion: "bb-plugin-agent-proxy@0.2.4",
+        probe,
+        publish,
+        sleep,
+        retryDelays: [0],
+      }),
+    ).rejects.toBe(registryError);
+    expect(publish.mock.calls).toHaveLength(0);
+    expect(sleep.mock.calls).toHaveLength(0);
+  });
+});
+
+describe("npmViewFailureIsMissing", () => {
+  test("treats only npm E404 as an unpublished version", () => {
+    expect(npmViewFailureIsMissing("npm error code E404")).toBeTrue();
+    expect(npmViewFailureIsMissing("npm error code E403")).toBeFalse();
+    expect(npmViewFailureIsMissing("npm error code E500")).toBeFalse();
+  });
 });
 
 // `bun pm pack` has no --json, so the gate parses its prose. If that parse
