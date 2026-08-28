@@ -327,7 +327,15 @@ function useAmpComposerGate(): {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    if (anchor === null || providersState.status !== "ready") return;
+    if (anchor === null) return;
+    // Not ready means the directory cannot say which provider is selected.
+    // Returning without clearing left a previously-true `visible` standing
+    // while the cleanup below had already disconnected the observer, so the
+    // button survived on screen after the picker moved to another provider.
+    if (providersState.status !== "ready") {
+      setVisible(false);
+      return;
+    }
     // No Amp record means the provider is not registered, so there is no Amp
     // thread to arm. The old fail-open put the Orb button on a Claude or
     // Codex composer, and `status` is a three-way enum, so an "error"

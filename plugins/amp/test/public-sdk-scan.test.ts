@@ -25,8 +25,9 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       // test/helpers/plugin-app-runtime.ts, which must install the runtime
       // from its own module scope so it evaluates before app.tsx does.
       /^@get-bb\/plugin-sdk\/testing\/app$/,
-      // act/cleanup for those slot tests. Resolved from the workspace root,
-      // not declared in this plugin's devDependencies.
+      // act/cleanup for those slot tests. Declaring a dependency does not
+      // exempt it from this scan, the same way `zod` is declared and still
+      // listed above, so the entry stays alongside the devDependency.
       /^@testing-library\/react$/,
     ],
   });
