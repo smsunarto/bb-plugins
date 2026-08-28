@@ -37,6 +37,7 @@ import {
 } from "@get-bb/plugin-sdk/provider-bridge";
 import { AMP_WIRE_MODELS } from "./model-catalog.ts";
 import { createFileOracleReportStore } from "../oracle-report-store.ts";
+import { consumeOrbIntent } from "../orb-intent.ts";
 import { createSessionStore } from "../session-store.ts";
 import { installStderrGuard } from "../stderr-guard.ts";
 import {
@@ -97,6 +98,9 @@ interface ManagedSession {
 interface BridgeState {
   store: SessionStore;
   oracle: OracleReports;
+  /** The bridge's persistent data directory. The composer's armed Orb
+   * intent (src/orb-intent.ts) is consumed from here at thread/start. */
+  dataDir: string;
 }
 
 let state: BridgeState | null = null;
@@ -376,10 +380,18 @@ const handlers: Record<string, RequestHandler> = {
     const providerThreadId = mintProviderThreadId(threadId);
     dropSession(threadId, "the thread was restarted");
     const existing = await bridge.store.read(providerThreadId);
-    const record: AmpSessionRecord =
-      existing !== null && existing.threadId === threadId
-        ? existing
-        : { ampThreadId: null, executionTarget: "local", threadId };
+    let record: AmpSessionRecord;
+    if (existing !== null && existing.threadId === threadId) {
+      record = existing;
+    } else {
+      // Only a fresh record consumes the composer's armed Orb intent. The
+      // executor is fixed when the thread is created, matching Amp, whose
+      // executor is a creation-time option.
+      const orb = consumeOrbIntent(bridge.dataDir);
+      record = { ampThreadId: null, executionTarget: orb ? "orb" : "local", threadId };
+      // Write-through so a crash before the first turn cannot resume as Local.
+      if (orb) await bridge.store.write(providerThreadId, record);
+    }
     const managed = await openSession({
       bridge,
       threadId,
@@ -626,6 +638,7 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
     state = {
       store: createSessionStore({ dir: join(context.dataDir, "sessions") }),
       oracle: createOracleReports(),
+      dataDir: context.dataDir,
     };
   },
   onSigterm() {

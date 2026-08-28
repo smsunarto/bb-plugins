@@ -15,7 +15,7 @@
 
 </div>
 
-<picture><img src="docs/media/hero.png" alt="Amp in bb: an /orb prompt to run in Amp&#39;s remote sandbox, the Orb session bar with its amp sync command, and an Oracle card" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="Amp in bb: the Orb toggle that runs a thread in Amp&#39;s remote sandbox, the Orb session bar with its amp sync command, and an Oracle card" width="100%" /></picture>
 
 This plugin registers Amp as a native bb provider. The executable side is the
 plugin's own provider bridge — its `bb.host` artifact — which spawns the Amp
@@ -73,18 +73,16 @@ optional.
 
 ### Local and Orb
 
-Amp runs against the bb environment's working directory. To use Amp Orb instead,
-press the **Orb** toggle in the composer when you start a new thread. The toggle
-shows only while Amp is the selected provider. It keeps a `/orb` token in the
-prompt, and typing the token yourself does the same thing:
+Amp runs against the bb environment's working directory. To use Amp Orb
+instead, press the **Orb** toggle in the composer, then send the first prompt
+of a new thread. The toggle shows only while Amp is the selected provider.
+Pressing it arms Orb for the next thread and adds nothing to the prompt text.
+An armed toggle expires after 10 minutes if no thread is started.
 
-```
-/orb refactor the payment retry logic
-```
-
-**Local or Orb is fixed for the life of the thread.** A `/orb` in a later prompt
-will not move an existing thread, so start a new one. Later prompts in an Orb
-thread do not need the token.
+**Local or Orb is fixed for the life of the thread.** This matches Amp's own
+model, where the executor is chosen at thread creation and cannot change
+later. To move existing work to Orb, start a new thread with the toggle
+pressed.
 
 An Orb thread shows a bar above the composer with the Amp thread id and a copyable
 `amp sync T-…` command. Run that in a local checkout to mirror the Orb's live

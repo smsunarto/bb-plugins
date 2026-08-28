@@ -26,7 +26,6 @@ import {
 import type { AmpEventBatch } from "./events.ts";
 import { toSessionShape } from "./options.ts";
 import { projectAmpEvent, type OracleReports, type ProjectionContext } from "./project.ts";
-import { routeAmpPrompt, type RoutedAmpPrompt } from "./prompt-routing.ts";
 import { AMP_THREAD_LINK_KIND } from "./shapes.ts";
 import { usageBreakdown, type ThreadWriter, type TurnScribe } from "./timeline.ts";
 
@@ -196,9 +195,6 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
   let orbRun: OrbRun | null = null;
   let active: ActiveTurn | null = null;
   let stopping: "interrupt" | "release" | null = null;
-  /** True once any turn launched in this session; with `record.ampThreadId`
-   * it guards the Orb flip against threads that already ran Local. */
-  let executionAttempted = false;
 
   const shapeFor = (options: BridgeExecutionOptions): SessionShape =>
     toSessionShape({
@@ -228,8 +224,8 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
   let threadLinkAnnounced = false;
   /** Publish the bb-to-Amp thread mapping as `amp/thread-link` state: once
    * when the Amp thread id first arrives, and once per session for a record
-   * that already has one (an ACP-era thread gets its state on its next
-   * turn). Always called mid-turn, so the delta rides the turn envelope. */
+   * that already has one or that runs Orb, whose banner starts before the id
+   * exists. Always called mid-turn, so the delta rides the turn envelope. */
   const announceThreadLink = (): void => {
     threadLinkAnnounced = true;
     writer.emit([
@@ -246,29 +242,6 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
         },
       },
     ]);
-  };
-
-  /** Act on a `/orb` request in this turn's prompt. Returns the refusal
-   * message the turn fails with, or null to proceed. The flip only lands on
-   * a thread with no execution history: Local or Orb is fixed for the life
-   * of the thread, and steering never routes (`steer` uses `promptText`). */
-  const applyOrbRequest = (routed: RoutedAmpPrompt): string | null => {
-    if (routed.requestedTarget === null) return null;
-    if (routed.directiveOnly) {
-      return "Add instructions to the prompt with the /orb directive";
-    }
-    if (record.executionTarget === "orb") return null;
-    if (executionAttempted || record.ampThreadId !== null) {
-      return "This Amp thread already runs Local and cannot switch to Orb. Start a new bb thread and include /orb in its first prompt.";
-    }
-    record.executionTarget = "orb";
-    // Write-through like persistAmpThreadId: a crash right now must not
-    // resume the thread as Local.
-    void store.write(providerThreadId, { ...record }).catch(() => {});
-    // ampThreadId is still null here, so this announces the "starting"
-    // banner state; the id's arrival re-announces with the sync command.
-    announceThreadLink();
-    return null;
   };
 
   const persistAmpThreadId = (ampThreadId: string): void => {
@@ -464,18 +437,18 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
     async startTurn(turnArgs) {
       if (active !== null) await active.done.catch(() => {});
       if (stopping !== null) return;
-      const routed = routeAmpPrompt(turnArgs.input);
-      const text = routed.prompt;
+      const text = promptText(turnArgs.input);
       const scribe = writer.scribe();
       const ctx = projection(scribe);
-      const refusal = applyOrbRequest(routed);
-      if (refusal !== null) {
-        // `turn/start` is already answered; the failed turn is the only
-        // surface this error can reach the user on.
-        scribe.fail({ message: refusal, settlesTurn: true });
-        return;
+      // An Orb record announces before its Amp thread id exists. That is the
+      // banner's "starting" state, re-announced with the sync command once
+      // the id arrives.
+      if (
+        !threadLinkAnnounced &&
+        (record.ampThreadId !== null || record.executionTarget === "orb")
+      ) {
+        announceThreadLink();
       }
-      if (!threadLinkAnnounced && record.ampThreadId !== null) announceThreadLink();
       const turn: ActiveTurn = {
         scribe,
         done: Promise.resolve(),
@@ -483,7 +456,6 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
         authRequired: false,
       };
       active = turn;
-      executionAttempted = true;
       turn.done =
         record.executionTarget === "orb"
           ? runOrbTurn(turn, ctx, text, turnArgs)

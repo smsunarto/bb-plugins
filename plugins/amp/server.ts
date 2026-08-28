@@ -21,6 +21,12 @@ import {
 import { AMP_THREAD_LINK_KIND } from "./src/bridge/kinds.js";
 import { AMP_AGENT } from "./src/execution-target.js";
 import { loadOracleReport } from "./src/oracle-report-store.js";
+import {
+  armOrbIntent,
+  bridgeDataDirFor,
+  disarmOrbIntent,
+  readOrbIntent,
+} from "./src/orb-intent.js";
 import { threadLinkToOrbUsageView } from "./src/orb-usage.js";
 
 const orbUsageViewSchema = z.discriminatedUnion("state", [
@@ -39,6 +45,14 @@ export const rpcContract = defineRpcContract({
   getOrbUsage: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: orbUsageViewSchema,
+  },
+  getOrbIntent: {
+    input: z.object({}).strict(),
+    output: z.object({ armed: z.boolean() }).strict(),
+  },
+  setOrbIntent: {
+    input: z.object({ armed: z.boolean() }).strict(),
+    output: z.object({ armed: z.boolean() }).strict(),
   },
   getOracleReport: {
     input: z.object({ reportId: z.string().uuid() }).strict(),
@@ -111,6 +125,20 @@ export default async function plugin(bb: BbPluginApi) {
         return link.success ? threadLinkToOrbUsageView(link.data) : { state: "hidden" as const };
       }
       return { state: "hidden" as const };
+    },
+    // The Orb toggle arms the next thread here. The provider bridge consumes
+    // the intent at thread/start in its own process, so the slot is a file
+    // under the plugin's bridge data directory (src/orb-intent.ts). The path
+    // derives from experimental_dataDir but only ever touches the plugin's
+    // own bridge storage, never a bb-managed file.
+    getOrbIntent() {
+      return { armed: readOrbIntent(bridgeDataDirFor(bb.server.experimental_dataDir)) };
+    },
+    setOrbIntent({ armed }) {
+      const dir = bridgeDataDirFor(bb.server.experimental_dataDir);
+      if (armed) armOrbIntent(dir);
+      else disarmOrbIntent(dir);
+      return { armed };
     },
     getOracleReport({ reportId }) {
       const report = loadOracleReport(reportId);

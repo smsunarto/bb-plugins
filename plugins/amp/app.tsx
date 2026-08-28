@@ -13,7 +13,6 @@ import {
 import { isOracleReportId, ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
 import { AMP_AGENT } from "./src/execution-target";
-import { findOrbDirectiveRanges, stripOrbDirectives } from "./src/orb-directive";
 import type { OrbUsageView } from "./src/orb-usage";
 import type { rpcContract } from "./server";
 
@@ -362,24 +361,46 @@ function useAmpComposerGate(): {
 
 /** New-thread composer action, rendered only while Amp is the selected
  *  provider (useAmpComposerGate); the wrapper span stays mounted as the
- *  gate's DOM anchor while the button unmounts. A pressed toggle keeps a
- *  `/orb` token in the draft; the bridge routes off the token, so the button,
- *  a hand-typed token, and CLI-sent prompts share one grammar. Pressed state
- *  derives from the draft rather than local state, so typing or deleting the
- *  token moves the button too. */
+ *  gate's DOM anchor while the button unmounts. Pressing it arms a one-shot
+ *  Orb intent on the server; nothing is typed into the draft. The bridge
+ *  consumes the intent when the next thread starts, so the armed state
+ *  lives server-side. A remount re-reads it, and moving the picker off Amp
+ *  disarms it. */
 function OrbToggleAction() {
   const composer = useComposer();
   const view = useComposerView();
   const gate = useAmpComposerGate();
-  const pressed = findOrbDirectiveRanges(view.draft.text).length > 0;
+  const rpc = useRpc<typeof rpcContract>();
+  const [pressed, setPressed] = useState(false);
+  const wasVisible = useRef(false);
+  useEffect(() => {
+    const was = wasVisible.current;
+    wasVisible.current = gate.visible;
+    if (gate.visible === was) return;
+    if (gate.visible) {
+      let cancelled = false;
+      void rpc
+        .call("getOrbIntent", {})
+        .then((result) => {
+          if (!cancelled) setPressed(result.armed);
+          return null;
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+    // The picker moved off Amp. A still-armed intent would surprise the
+    // next Amp thread while the toggle is not even on screen.
+    setPressed(false);
+    void rpc.call("setOrbIntent", { armed: false }).catch(() => {});
+  }, [gate.visible, rpc]);
   const toggle = () => {
-    composer.updateText((current) =>
-      pressed
-        ? stripOrbDirectives(current).text.replace(/^ /u, "")
-        : current.length === 0
-          ? "/orb "
-          : `/orb ${current}`,
-    );
+    const next = !pressed;
+    setPressed(next);
+    void rpc.call("setOrbIntent", { armed: next }).catch(() => {
+      setPressed(!next);
+    });
     composer.focus();
   };
   return (
@@ -406,19 +427,6 @@ function OrbToggleAction() {
 }
 
 export default definePluginApp((app) => {
-  app.composer.customize({
-    id: "orb-directive-effect",
-    richText: {
-      effects: [
-        {
-          id: "orb-directive",
-          className: "amp-orb-directive-highlight",
-          match: findOrbDirectiveRanges,
-        },
-      ],
-    },
-  });
-
   // The composer-action slot has no selected-provider signal, so the toggle
   // gates itself on the host DOM (useAmpComposerGate). It stays scoped to new
   // threads: the Orb flip is first-prompt-only, and the thread-scope banner

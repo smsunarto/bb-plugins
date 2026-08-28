@@ -1,7 +1,8 @@
-// Session-level Orb routing: the guards restored from the ACP bridge (the
-// native migration dropped them in 3607ed7), driven through createAmpSession
-// with fake deps. Runner internals stay out of scope; these tests pin which
-// runner a prompt reaches and what the refusals say.
+// Session-level Orb routing driven through createAmpSession with fake deps.
+// The execution target is fixed on the record before the session exists:
+// the bridge entry consumes the composer's armed Orb intent at thread/start
+// (entry.ts). These tests pin which runner a record's turns reach and what
+// `amp/thread-link` announces. Runner internals stay out of scope.
 import assert from "node:assert/strict";
 import { test } from "bun:test";
 import type { BridgeExecutionOptions } from "@get-bb/plugin-sdk/provider-bridge";
@@ -15,9 +16,6 @@ import {
   type TurnStartArgs,
 } from "../src/bridge/session.ts";
 import type { ThreadWriter, TurnScribe } from "../src/bridge/timeline.ts";
-
-const LATE_ORB_REFUSAL =
-  "This Amp thread already runs Local and cannot switch to Orb. Start a new bb thread and include /orb in its first prompt.";
 
 interface ThreadLinkDelta {
   kind: string;
@@ -48,7 +46,7 @@ function fakeConversation(sends: string[]): AmpConversation {
   } as unknown as AmpConversation;
 }
 
-function harness() {
+function harness(target: "local" | "orb" = "local") {
   const deltas: ThreadLinkDelta[] = [];
   const failures: string[] = [];
   const writes: AmpSessionRecord[] = [];
@@ -105,7 +103,7 @@ function harness() {
 
   const record: AmpSessionRecord = {
     ampThreadId: null,
-    executionTarget: "local",
+    executionTarget: target,
     threadId: "thr_test",
   };
 
@@ -144,16 +142,21 @@ function turn(text: string): TurnStartArgs {
   };
 }
 
-test("/orb in the first prompt flips the thread to Orb and runs there", async () => {
-  const h = harness();
-  await h.session.startTurn(turn("/orb do the thing"));
+test("an orb record routes every turn to runOrb and never touches Local", async () => {
+  const h = harness("orb");
+  await h.session.startTurn(turn("do the thing"));
+  await h.session.startTurn(turn("continue"));
 
   assert.deepEqual(h.failures, []);
   assert.equal(h.localSends.length, 0);
-  assert.equal(h.orbPrompts.length, 1);
-  assert.equal(h.orbPrompts[0]?.trim(), "do the thing");
-  assert.equal(h.record.executionTarget, "orb");
-  assert.equal(h.writes[0]?.executionTarget, "orb");
+  assert.deepEqual(h.orbPrompts, ["do the thing", "continue"]);
+  assert.equal(h.record.ampThreadId, "T-orb-1");
+  assert.equal(h.writes[0]?.ampThreadId, "T-orb-1");
+});
+
+test("an orb record announces the starting banner, then the sync command", async () => {
+  const h = harness("orb");
+  await h.session.startTurn(turn("do the thing"));
 
   const links = h.deltas.filter((delta) => delta.kind === "extension.state");
   assert.deepEqual(links[0]?.payload, {
@@ -168,40 +171,18 @@ test("/orb in the first prompt flips the thread to Orb and runs there", async ()
   });
 });
 
-test("a directive-only /orb prompt fails the turn without executing", async () => {
-  const h = harness();
-  await h.session.startTurn(turn("/orb"));
-
-  assert.deepEqual(h.failures, ["Add instructions to the prompt with the /orb directive"]);
-  assert.equal(h.orbPrompts.length, 0);
-  assert.equal(h.localSends.length, 0);
-  assert.equal(h.record.executionTarget, "local");
-
-  // The refused turn never launched, so a corrected prompt still flips.
-  await h.session.startTurn(turn("/orb do the thing"));
-  assert.equal(h.orbPrompts.length, 1);
-  assert.equal(h.record.executionTarget, "orb");
-});
-
-test("a late /orb cannot move a thread that already ran Local", async () => {
+test("a local record routes turns to the local conversation", async () => {
   const h = harness();
   await h.session.startTurn(turn("hello"));
+
   assert.deepEqual(h.failures, []);
   assert.deepEqual(h.localSends, ["hello"]);
-
-  await h.session.startTurn(turn("/orb and now remotely"));
-  assert.deepEqual(h.failures, [LATE_ORB_REFUSAL]);
   assert.equal(h.orbPrompts.length, 0);
-  assert.equal(h.record.executionTarget, "local");
-});
 
-test("later Orb turns keep running Orb without the token", async () => {
-  const h = harness();
-  await h.session.startTurn(turn("/orb start here"));
-  await h.session.startTurn(turn("continue"));
-
-  assert.deepEqual(h.failures, []);
-  assert.equal(h.localSends.length, 0);
-  assert.equal(h.orbPrompts.length, 2);
-  assert.equal(h.orbPrompts[1], "continue");
+  const links = h.deltas.filter((delta) => delta.kind === "extension.state");
+  assert.deepEqual(links.at(-1)?.payload, {
+    ampThreadId: "T-local-1",
+    executionTarget: "local",
+    syncCommand: null,
+  });
 });
