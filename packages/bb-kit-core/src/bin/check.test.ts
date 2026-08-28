@@ -163,6 +163,14 @@ test("an unwired unit file breaks the bijection (rule 1)", async () => {
   );
 });
 
+test("a bare unit specifier fails rule 1 instead of resolving as a local path", async () => {
+  const root = makeFixture();
+  edit(root, "server/server.ts", './rpc/ping"', 'rpc/ping"');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /imports "rpc\/ping" — a relative server\/rpc\/ unit file/);
+});
+
 test("a wrong unit export name fails rule 1", async () => {
   const root = makeFixture();
   edit(root, "server/rpc/ping.ts", "export const ping =", "export const pong =");
