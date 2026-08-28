@@ -84,11 +84,14 @@ test("thread/start consumes an armed intent only for a fresh record", async () =
     assert.equal(existsSync(intentFile), false);
     assert.deepEqual(storedTargets(dataDir), [["thr_orb_consume_a", "orb"]]);
 
-    // No intent armed: the next fresh thread stays Local, and Local has no
-    // write-through, so the store still holds only the Orb record.
+    // No intent armed: the next fresh thread stays Local, and that choice is
+    // written through too, so a restart before the first turn can find it.
     const second = await start(2, "thr_orb_consume_b");
     assert.equal(second.error, undefined);
-    assert.deepEqual(storedTargets(dataDir), [["thr_orb_consume_a", "orb"]]);
+    assert.deepEqual(storedTargets(dataDir), [
+      ["thr_orb_consume_a", "orb"],
+      ["thr_orb_consume_b", "local"],
+    ]);
 
     // Restarting a thread that has a record finds it and must not consume.
     armOrbIntent(dataDir);
@@ -102,8 +105,55 @@ test("thread/start consumes an armed intent only for a fresh record", async () =
     assert.equal(existsSync(intentFile), false);
     assert.deepEqual(storedTargets(dataDir), [
       ["thr_orb_consume_a", "orb"],
+      ["thr_orb_consume_b", "local"],
       ["thr_orb_consume_c", "orb"],
     ]);
+  } finally {
+    output.restore();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a Local thread restarted before its first turn cannot be re-armed to Orb", async () => {
+  const root = mkdtempSync(join(tmpdir(), "amp-orb-rearm-"));
+  const dataDir = join(root, "data");
+  const tempDir = join(root, "temp");
+  const workspace = join(root, "workspace");
+  for (const dir of [dataDir, tempDir, workspace]) mkdirSync(dir, { recursive: true });
+  const output = captureBridgeJsonRpcOutput();
+  try {
+    experimental_providerBridge.start?.({ pluginId: "amp", dataDir, tempDir });
+    const start = (id: number) => {
+      handleLine(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: BRIDGE_REQUEST_METHODS.threadStart,
+          params: {
+            threadId: "thr_orb_rearm",
+            cwd: workspace,
+            instructionMode: "append",
+            options: {
+              permissionMode: "auto",
+              permissionScope: "workspace",
+              approvalReviewer: "automatic",
+              permissionEscalation: "ask",
+            },
+          },
+        }),
+      );
+      return waitForAnswer(output.takeMessages, id);
+    };
+
+    assert.equal((await start(1)).error, undefined);
+    assert.deepEqual(storedTargets(dataDir), [["thr_orb_rearm", "local"]]);
+
+    // The executor is fixed at creation. A restart is not a creation, so an
+    // intent armed in between belongs to the next new thread, not this one.
+    armOrbIntent(dataDir);
+    assert.equal((await start(2)).error, undefined);
+    assert.deepEqual(storedTargets(dataDir), [["thr_orb_rearm", "local"]]);
+    assert.equal(existsSync(join(dataDir, ORB_INTENT_FILE)), true);
   } finally {
     output.restore();
     rmSync(root, { recursive: true, force: true });

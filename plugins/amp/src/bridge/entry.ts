@@ -398,8 +398,11 @@ const handlers: Record<string, RequestHandler> = {
       // executor is a creation-time option.
       const orb = consumeOrbIntent(bridge.dataDir);
       record = { ampThreadId: null, executionTarget: orb ? "orb" : "local", threadId };
-      // Write-through so a crash before the first turn cannot resume as Local.
-      if (orb) await bridge.store.write(providerThreadId, record);
+      // Write-through so the choice survives a restart before the first turn.
+      // Local needs this as much as Orb: without a record the restart looks
+      // like a fresh thread, so an intent armed in the meantime would be
+      // consumed for a thread whose executor was already settled.
+      await bridge.store.write(providerThreadId, record);
     }
     const managed = await openSession({
       bridge,
