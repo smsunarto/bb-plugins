@@ -191,9 +191,12 @@ function isSettingsObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Discovered settings files are best-effort: an unusable one is skipped, the
- *  way the CLI's own loader skips it. */
+ *  way the CLI's own loader skips it. Throwing is how it is skipped, because
+ *  the caller's `catch` moves to the next candidate. Returning {} instead
+ *  ended the search on the unusable file and dropped the user's settings. */
 function asSettingsObject(value: unknown): Record<string, unknown> {
-  return isSettingsObject(value) ? { ...value } : {};
+  if (!isSettingsObject(value)) throw new Error("settings file is not a JSON object");
+  return { ...value };
 }
 
 /** An explicitly named settings file is not best-effort. */
@@ -202,6 +205,19 @@ function requireSettingsObject(value: unknown, path: string): Record<string, unk
     throw new Error(`AMP_SETTINGS_FILE ${path} is not a JSON object`);
   }
   return { ...value };
+}
+
+/** Retained stderr is bounded. A long-lived execution can emit stderr for
+ *  hours and every byte was kept until exit, which is a slow leak in a
+ *  process that outlives many turns. The tail is the part failure reporting
+ *  needs, and a startup failure (the path parseUnsupportedFlag reads) emits
+ *  far less than this before the CLI exits. */
+const STDERR_LIMIT = 64 * 1024;
+
+export function appendBoundedStderr(text: string, chunk: string, limit = STDERR_LIMIT): string {
+  const next = text + chunk;
+  if (next.length <= limit) return next;
+  return `[earlier stderr truncated]\n${next.slice(next.length - limit)}`;
 }
 
 export interface AmpExecuteDeps {
@@ -255,7 +271,7 @@ async function* runAmp(
     let stderr = "";
     child.stderr!.setEncoding("utf8");
     child.stderr!.on("data", (chunk: string) => {
-      stderr += chunk;
+      stderr = appendBoundedStderr(stderr, chunk);
     });
     const exit = new Promise<number | null>((resolveExit, rejectExit) => {
       child!.once("error", rejectExit);

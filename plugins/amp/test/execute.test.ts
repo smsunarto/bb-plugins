@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseUnsupportedFlag } from "../src/bridge/events.ts";
 import {
+  appendBoundedStderr,
   buildAmpArgv,
   buildAmpSettings,
   createAmpExecute,
@@ -12,6 +13,20 @@ import {
   optionForFlag,
   type AmpUserInputMessage,
 } from "../src/bridge/execute.ts";
+
+/** mkdtempSync leaves its directory behind, so every run of this file used to
+ *  accumulate more of them in the OS temp dir. Registered directories are
+ *  removed after the last test. */
+const scratchDirs: string[] = [];
+function scratch(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of scratchDirs) rmSync(dir, { force: true, recursive: true });
+  scratchDirs.length = 0;
+});
 
 test("buildAmpArgv emits the bare execute wire by default", () => {
   assert.deepEqual(buildAmpArgv({}), ["--execute", "--stream-json"]);
@@ -150,7 +165,7 @@ test("createUserMessage builds the stream-json user line", () => {
 });
 
 test("buildAmpSettings merges the plugin-controlled keys over the user base", () => {
-  const configHome = mkdtempSync(join(tmpdir(), "amp-settings-"));
+  const configHome = scratch("amp-settings-");
   mkdirSync(join(configHome, "amp"), { recursive: true });
   writeFileSync(
     join(configHome, "amp", "settings.json"),
@@ -168,7 +183,7 @@ test("buildAmpSettings merges the plugin-controlled keys over the user base", ()
 });
 
 test("buildAmpSettings prefers AMP_SETTINGS_FILE and fails loudly when it is broken", () => {
-  const root = mkdtempSync(join(tmpdir(), "amp-settings-"));
+  const root = scratch("amp-settings-");
   const explicit = join(root, "explicit.json");
   writeFileSync(explicit, JSON.stringify({ "amp.url": "https://explicit" }));
   const settings = buildAmpSettings(
@@ -182,8 +197,31 @@ test("buildAmpSettings prefers AMP_SETTINGS_FILE and fails loudly when it is bro
   assert.throws(() => buildAmpSettings({ dangerouslyAllowAll: true }, { AMP_SETTINGS_FILE: broken }));
 });
 
+test("appendBoundedStderr keeps a bounded tail and says it truncated", () => {
+  assert.equal(appendBoundedStderr("ab", "cd", 8), "abcd");
+  const grown = appendBoundedStderr("x".repeat(8), "TAIL", 8);
+  assert.match(grown, /^\[earlier stderr truncated\]\n/);
+  assert.ok(grown.endsWith("TAIL"));
+  // Repeated truncation must converge, not grow a marker per chunk.
+  let text = "";
+  for (let i = 0; i < 50; i += 1) text = appendBoundedStderr(text, "y".repeat(10), 8);
+  assert.equal(text, `[earlier stderr truncated]\n${"y".repeat(8)}`);
+});
+
+test("buildAmpSettings skips a discovered settings.json that is not an object", () => {
+  const configHome = scratch("amp-settings-");
+  mkdirSync(join(configHome, "amp"), { recursive: true });
+  writeFileSync(join(configHome, "amp", "settings.json"), "42");
+  writeFileSync(join(configHome, "amp", "settings.jsonc"), '{ "amp.url": "https://jsonc" }');
+  // Coercing the scalar to {} returned from the loop, so the usable later
+  // candidate was never read and the user's settings vanished.
+  assert.deepEqual(buildAmpSettings({}, { XDG_CONFIG_HOME: configHome }), {
+    "amp.url": "https://jsonc",
+  });
+});
+
 test("buildAmpSettings rejects an explicit settings file that is not an object", () => {
-  const root = mkdtempSync(join(tmpdir(), "amp-settings-"));
+  const root = scratch("amp-settings-");
   for (const document of ['"a string"', "42", "null", "[]"]) {
     const path = join(root, `not-an-object-${document.length}.json`);
     writeFileSync(path, document);
@@ -199,7 +237,7 @@ test("buildAmpSettings rejects an explicit settings file that is not an object",
 });
 
 test("buildAmpSettings skips an unparseable settings.jsonc and prefers settings.json", () => {
-  const configHome = mkdtempSync(join(tmpdir(), "amp-settings-"));
+  const configHome = scratch("amp-settings-");
   mkdirSync(join(configHome, "amp"), { recursive: true });
   writeFileSync(join(configHome, "amp", "settings.jsonc"), "// jsonc comment\n{ \"amp.a\": 1 }");
   const jsoncSkipped = buildAmpSettings({ dangerouslyAllowAll: true }, { XDG_CONFIG_HOME: configHome });
@@ -262,7 +300,7 @@ interface FakeHead {
 }
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "amp-execute-"));
+  const root = scratch("amp-execute-");
   const cli = join(root, "fake-amp.mjs");
   writeFileSync(cli, FAKE_CLI, "utf8");
   const configHome = join(root, "config");
