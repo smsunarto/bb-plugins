@@ -1,5 +1,12 @@
 # @smsunarto/bb-plugin-gtd-sidebar
 
+## 0.4.2
+
+### Patch Changes
+
+- 3da36f5: Support bb 0.40. The engines floor moves to the tested bb release (`>=0.40.0 <1.0.0`) and the plugin is built against plugin SDK 0.4.21.
+- 14254e6: Show the applied GitButler virtual branch instead of `gitbutler/workspace` on thread cards. When several virtual branches are applied, show their count rather than guessing one.
+
 ## 0.4.1
 
 ### Patch Changes

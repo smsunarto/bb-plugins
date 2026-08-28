@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-gtd-sidebar",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "An action-oriented sidebar that groups threads by who can act next.",
   "license": "MIT",
   "author": "Scott Sunarto",
