@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-agent-proxy",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Run CLIProxyAPI as a persistent macOS or Linux service with OAuth accounts, providers, usage, and agent wiring.",
   "license": "MIT",
   "author": "Scott Sunarto",
