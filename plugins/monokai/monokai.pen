@@ -1,0 +1,872 @@
+{
+  "version": "2.17",
+  "variables": {
+    "bg": {
+      "type": "color",
+      "value": "#181818"
+    },
+    "chrome": {
+      "type": "color",
+      "value": "#141414"
+    },
+    "raised": {
+      "type": "color",
+      "value": "#262626"
+    },
+    "recessed": {
+      "type": "color",
+      "value": "#1e1e1e"
+    },
+    "border": {
+      "type": "color",
+      "value": "#2b2b2b"
+    },
+    "ink": {
+      "type": "color",
+      "value": "#e3e3dd"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#9a9a94"
+    },
+    "faint": {
+      "type": "color",
+      "value": "#6a6a64"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#88c0d0"
+    },
+    "amp": {
+      "type": "color",
+      "value": "#F34E3F"
+    },
+    "success": {
+      "type": "color",
+      "value": "#3fa266"
+    },
+    "warning": {
+      "type": "color",
+      "value": "#f1b467"
+    },
+    "font": {
+      "type": "string",
+      "value": "Inter"
+    },
+    "mono": {
+      "type": "string",
+      "value": "IBM Plex Mono"
+    }
+  },
+  "children": [
+    {
+      "type": "frame",
+      "id": "f68",
+      "name": "bb Monokai",
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 900,
+      "clip": true,
+      "layout": "horizontal",
+      "fill": "$bg",
+      "children": [
+        {
+          "type": "frame",
+          "id": "f40",
+          "name": "Settings nav",
+          "layout": "vertical",
+          "width": 240,
+          "height": "fill_container",
+          "fill": "$chrome",
+          "padding": [
+            12,
+            8
+          ],
+          "gap": 2,
+          "children": [
+            {
+              "type": "text",
+              "id": "t1",
+              "name": "Back to app",
+              "fontFamily": "$font",
+              "fontSize": 12,
+              "fill": "$accent",
+              "content": "Back to app"
+            },
+            {
+              "type": "text",
+              "id": "t2",
+              "name": "Settings",
+              "fontFamily": "$font",
+              "fontSize": 11,
+              "fontWeight": "600",
+              "fill": "$faint",
+              "content": "Settings"
+            },
+            {
+              "type": "frame",
+              "id": "f5",
+              "name": "General",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i3",
+                  "name": "settings",
+                  "library": "lucide",
+                  "icon": "settings",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t4",
+                  "name": "General",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "General"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f8",
+              "name": "Providers",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i6",
+                  "name": "cpu",
+                  "library": "lucide",
+                  "icon": "cpu",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t7",
+                  "name": "Providers",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Providers"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f11",
+              "name": "Appearance",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "fill": "$raised",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i9",
+                  "name": "palette",
+                  "library": "lucide",
+                  "icon": "palette",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$ink"
+                },
+                {
+                  "type": "text",
+                  "id": "t10",
+                  "name": "Appearance",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$ink",
+                  "content": "Appearance"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f14",
+              "name": "Keyboard",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i12",
+                  "name": "keyboard",
+                  "library": "lucide",
+                  "icon": "keyboard",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t13",
+                  "name": "Keyboard",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Keyboard"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f17",
+              "name": "Usage limits",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i15",
+                  "name": "gauge",
+                  "library": "lucide",
+                  "icon": "gauge",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t16",
+                  "name": "Usage limits",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Usage limits"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f20",
+              "name": "Files",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i18",
+                  "name": "folder",
+                  "library": "lucide",
+                  "icon": "folder",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t19",
+                  "name": "Files",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Files"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f23",
+              "name": "Machines",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i21",
+                  "name": "monitor",
+                  "library": "lucide",
+                  "icon": "monitor",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t22",
+                  "name": "Machines",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Machines"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "t24",
+              "name": "Plugins",
+              "fontFamily": "$font",
+              "fontSize": 11,
+              "fontWeight": "600",
+              "fill": "$faint",
+              "content": "Plugins"
+            },
+            {
+              "type": "frame",
+              "id": "f27",
+              "name": "Agent Proxy",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i25",
+                  "name": "plug",
+                  "library": "lucide",
+                  "icon": "plug",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t26",
+                  "name": "Agent Proxy",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Agent Proxy"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f30",
+              "name": "Agentation",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i28",
+                  "name": "plug",
+                  "library": "lucide",
+                  "icon": "plug",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t29",
+                  "name": "Agentation",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Agentation"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f33",
+              "name": "Dotfiles",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i31",
+                  "name": "plug",
+                  "library": "lucide",
+                  "icon": "plug",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t32",
+                  "name": "Dotfiles",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Dotfiles"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f36",
+              "name": "GTD Sidebar",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i34",
+                  "name": "plug",
+                  "library": "lucide",
+                  "icon": "plug",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t35",
+                  "name": "GTD Sidebar",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "GTD Sidebar"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f39",
+              "name": "Notify",
+              "layout": "horizontal",
+              "width": "fill_container",
+              "height": 32,
+              "padding": [
+                0,
+                10
+              ],
+              "gap": 8,
+              "alignItems": "center",
+              "cornerRadius": 6,
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "i37",
+                  "name": "plug",
+                  "library": "lucide",
+                  "icon": "plug",
+                  "width": 14,
+                  "height": 14,
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "t38",
+                  "name": "Notify",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "Notify"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "f67",
+          "name": "panel",
+          "layout": "vertical",
+          "width": "fill_container",
+          "height": "fill_container",
+          "padding": 32,
+          "gap": 20,
+          "children": [
+            {
+              "type": "text",
+              "id": "t41",
+              "name": "Appearance",
+              "fontFamily": "$font",
+              "fontSize": 22,
+              "fontWeight": "600",
+              "fill": "$ink",
+              "content": "Appearance"
+            },
+            {
+              "type": "frame",
+              "id": "f66",
+              "name": "card",
+              "layout": "vertical",
+              "width": 560,
+              "gap": 18,
+              "padding": 20,
+              "cornerRadius": 10,
+              "fill": "$recessed",
+              "stroke": "$border",
+              "strokeWidth": 1,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "f47",
+                  "name": "Sidebar",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "t42",
+                      "name": "Sidebar",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600",
+                      "fill": "$ink",
+                      "content": "Sidebar"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "f45",
+                      "name": "value",
+                      "layout": "horizontal",
+                      "width": "fill_container",
+                      "height": 36,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "cornerRadius": 8,
+                      "fill": "$raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "t43",
+                          "name": "GTD Sidebar (inbox)",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fill": "$ink",
+                          "content": "GTD Sidebar (inbox)"
+                        },
+                        {
+                          "type": "icon",
+                          "id": "i44",
+                          "name": "chevron-down",
+                          "library": "lucide",
+                          "icon": "chevron-down",
+                          "width": 14,
+                          "height": 14,
+                          "fill": "$muted"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "t46",
+                      "name": "Chooses the plugin that ",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fill": "$faint",
+                      "content": "Chooses the plugin that fills the thread list.",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f53",
+                  "name": "Theme",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "t48",
+                      "name": "Theme",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600",
+                      "fill": "$ink",
+                      "content": "Theme"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "f51",
+                      "name": "value",
+                      "layout": "horizontal",
+                      "width": "fill_container",
+                      "height": 36,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "cornerRadius": 8,
+                      "fill": "$raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "t49",
+                          "name": "System",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fill": "$ink",
+                          "content": "System"
+                        },
+                        {
+                          "type": "icon",
+                          "id": "i50",
+                          "name": "chevron-down",
+                          "library": "lucide",
+                          "icon": "chevron-down",
+                          "width": 14,
+                          "height": 14,
+                          "fill": "$muted"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "t52",
+                      "name": "Light, dark, or follow t",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fill": "$faint",
+                      "content": "Light, dark, or follow the OS.",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f59",
+                  "name": "Palette",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "t54",
+                      "name": "Palette",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600",
+                      "fill": "$ink",
+                      "content": "Palette"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "f57",
+                      "name": "value",
+                      "layout": "horizontal",
+                      "width": "fill_container",
+                      "height": 36,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "cornerRadius": 8,
+                      "fill": "$raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "t55",
+                          "name": "bb Monokai",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fill": "$ink",
+                          "content": "bb Monokai"
+                        },
+                        {
+                          "type": "icon",
+                          "id": "i56",
+                          "name": "chevron-down",
+                          "library": "lucide",
+                          "icon": "chevron-down",
+                          "width": 14,
+                          "height": 14,
+                          "fill": "$muted"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "t58",
+                      "name": "Palettes change bb's col",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fill": "$faint",
+                      "content": "Palettes change bb's colors, including syntax colors in diffs and file previews.",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f65",
+                  "name": "Favicon color",
+                  "layout": "vertical",
+                  "width": "fill_container",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "t60",
+                      "name": "Favicon color",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fontWeight": "600",
+                      "fill": "$ink",
+                      "content": "Favicon color"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "f63",
+                      "name": "value",
+                      "layout": "horizontal",
+                      "width": "fill_container",
+                      "height": 36,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "cornerRadius": 8,
+                      "fill": "$raised",
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "t61",
+                          "name": "Default",
+                          "fontFamily": "$font",
+                          "fontSize": 13,
+                          "fill": "$ink",
+                          "content": "Default"
+                        },
+                        {
+                          "type": "icon",
+                          "id": "i62",
+                          "name": "chevron-down",
+                          "library": "lucide",
+                          "icon": "chevron-down",
+                          "width": 14,
+                          "height": 14,
+                          "fill": "$muted"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "t64",
+                      "name": "Tint the app icon.",
+                      "fontFamily": "$font",
+                      "fontSize": 12,
+                      "fill": "$faint",
+                      "content": "Tint the app icon.",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

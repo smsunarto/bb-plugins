@@ -1,0 +1,638 @@
+{
+  "version": "2.17",
+  "variables": {
+    "bg": {
+      "type": "color",
+      "value": "#181818"
+    },
+    "chrome": {
+      "type": "color",
+      "value": "#141414"
+    },
+    "raised": {
+      "type": "color",
+      "value": "#262626"
+    },
+    "recessed": {
+      "type": "color",
+      "value": "#1e1e1e"
+    },
+    "border": {
+      "type": "color",
+      "value": "#2b2b2b"
+    },
+    "ink": {
+      "type": "color",
+      "value": "#e3e3dd"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#9a9a94"
+    },
+    "faint": {
+      "type": "color",
+      "value": "#6a6a64"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#88c0d0"
+    },
+    "amp": {
+      "type": "color",
+      "value": "#F34E3F"
+    },
+    "success": {
+      "type": "color",
+      "value": "#3fa266"
+    },
+    "warning": {
+      "type": "color",
+      "value": "#f1b467"
+    },
+    "font": {
+      "type": "string",
+      "value": "Inter"
+    },
+    "mono": {
+      "type": "string",
+      "value": "IBM Plex Mono"
+    }
+  },
+  "children": [
+    {
+      "type": "frame",
+      "id": "f48",
+      "name": "Notify",
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 900,
+      "clip": true,
+      "layout": "none",
+      "fill": "$bg",
+      "children": [
+        {
+          "type": "frame",
+          "id": "f44",
+          "name": "app",
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 900,
+          "layout": "horizontal",
+          "fill": "$bg",
+          "children": [
+            {
+              "type": "frame",
+              "id": "f40",
+              "name": "Settings nav",
+              "layout": "vertical",
+              "width": 240,
+              "height": "fill_container",
+              "fill": "$chrome",
+              "padding": [
+                12,
+                8
+              ],
+              "gap": 2,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "t1",
+                  "name": "Back to app",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fill": "$accent",
+                  "content": "Back to app"
+                },
+                {
+                  "type": "text",
+                  "id": "t2",
+                  "name": "Settings",
+                  "fontFamily": "$font",
+                  "fontSize": 11,
+                  "fontWeight": "600",
+                  "fill": "$faint",
+                  "content": "Settings"
+                },
+                {
+                  "type": "frame",
+                  "id": "f5",
+                  "name": "General",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i3",
+                      "name": "settings",
+                      "library": "lucide",
+                      "icon": "settings",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t4",
+                      "name": "General",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "General"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f8",
+                  "name": "Providers",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i6",
+                      "name": "cpu",
+                      "library": "lucide",
+                      "icon": "cpu",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t7",
+                      "name": "Providers",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Providers"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f11",
+                  "name": "Appearance",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i9",
+                      "name": "palette",
+                      "library": "lucide",
+                      "icon": "palette",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t10",
+                      "name": "Appearance",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Appearance"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f14",
+                  "name": "Keyboard",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i12",
+                      "name": "keyboard",
+                      "library": "lucide",
+                      "icon": "keyboard",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t13",
+                      "name": "Keyboard",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Keyboard"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f17",
+                  "name": "Usage limits",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i15",
+                      "name": "gauge",
+                      "library": "lucide",
+                      "icon": "gauge",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t16",
+                      "name": "Usage limits",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Usage limits"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f20",
+                  "name": "Files",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i18",
+                      "name": "folder",
+                      "library": "lucide",
+                      "icon": "folder",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t19",
+                      "name": "Files",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Files"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f23",
+                  "name": "Machines",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i21",
+                      "name": "monitor",
+                      "library": "lucide",
+                      "icon": "monitor",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t22",
+                      "name": "Machines",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Machines"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "t24",
+                  "name": "Plugins",
+                  "fontFamily": "$font",
+                  "fontSize": 11,
+                  "fontWeight": "600",
+                  "fill": "$faint",
+                  "content": "Plugins"
+                },
+                {
+                  "type": "frame",
+                  "id": "f27",
+                  "name": "Agent Proxy",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i25",
+                      "name": "plug",
+                      "library": "lucide",
+                      "icon": "plug",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t26",
+                      "name": "Agent Proxy",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Agent Proxy"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f30",
+                  "name": "Agentation",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i28",
+                      "name": "plug",
+                      "library": "lucide",
+                      "icon": "plug",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t29",
+                      "name": "Agentation",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Agentation"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f33",
+                  "name": "Dotfiles",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i31",
+                      "name": "plug",
+                      "library": "lucide",
+                      "icon": "plug",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t32",
+                      "name": "Dotfiles",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "Dotfiles"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f36",
+                  "name": "GTD Sidebar",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i34",
+                      "name": "plug",
+                      "library": "lucide",
+                      "icon": "plug",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t35",
+                      "name": "GTD Sidebar",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$muted",
+                      "content": "GTD Sidebar"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f39",
+                  "name": "Notify",
+                  "layout": "horizontal",
+                  "width": "fill_container",
+                  "height": 32,
+                  "padding": [
+                    0,
+                    10
+                  ],
+                  "gap": 8,
+                  "alignItems": "center",
+                  "cornerRadius": 6,
+                  "fill": "$raised",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "i37",
+                      "name": "plug",
+                      "library": "lucide",
+                      "icon": "plug",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$ink"
+                    },
+                    {
+                      "type": "text",
+                      "id": "t38",
+                      "name": "Notify",
+                      "fontFamily": "$font",
+                      "fontSize": 13,
+                      "fill": "$ink",
+                      "content": "Notify"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "f43",
+              "name": "panel",
+              "layout": "vertical",
+              "width": "fill_container",
+              "height": "fill_container",
+              "padding": 32,
+              "gap": 12,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "t41",
+                  "name": "Notify",
+                  "fontFamily": "$font",
+                  "fontSize": 22,
+                  "fontWeight": "600",
+                  "fill": "$ink",
+                  "content": "Notify"
+                },
+                {
+                  "type": "text",
+                  "id": "t42",
+                  "name": "No in-app panel. macOS n",
+                  "fontFamily": "$font",
+                  "fontSize": 13,
+                  "fill": "$muted",
+                  "content": "No in-app panel. macOS notifications fire when a thread finishes or fails.",
+                  "textGrowth": "fixed-width",
+                  "width": 480
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "f47",
+          "name": "toast",
+          "x": 900,
+          "y": 24,
+          "width": 340,
+          "layout": "vertical",
+          "gap": 4,
+          "padding": 12,
+          "cornerRadius": 12,
+          "fill": "$raised",
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "layoutPosition": "absolute",
+          "children": [
+            {
+              "type": "text",
+              "id": "t45",
+              "name": "amp own-spawn e2e",
+              "fontFamily": "$font",
+              "fontSize": 13,
+              "fontWeight": "600",
+              "fill": "$ink",
+              "content": "amp own-spawn e2e"
+            },
+            {
+              "type": "text",
+              "id": "t46",
+              "name": "[bb-plugins] AMP-BB-E2E-",
+              "fontFamily": "$font",
+              "fontSize": 12,
+              "fill": "$muted",
+              "content": "[bb-plugins] AMP-BB-E2E-OK"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
