@@ -19,7 +19,20 @@ export const ORB_INTENT_TTL_MS = 10 * 60 * 1000;
 
 /** The bridge receives this directory as its `context.dataDir`; the server
  * derives the same path from its own data directory. A plugin cannot ask bb
- * for its plugin id, so the id is spelled here once. */
+ * for its plugin id, so the id is spelled here once.
+ *
+ * The two sides agree because the SDK gives each half a different scope.
+ * `bb.server.experimental_dataDir` is documented as the server directory
+ * "holding `config.json`, `bb.db` and `plugins/<id>/`", so it is the root and
+ * needs the suffix below. `ProviderBridgeContext.dataDir` is documented as
+ * already "scoped to the owning plugin", so the bridge needs no suffix. No
+ * unit test can pin this: the plugin owns neither value, and asserting the
+ * join would only restate the line above it.
+ *
+ * The SDK also calls the server value "deliberately not a place to write".
+ * This writes there anyway, because the bridge is a separate process and
+ * `bb.storage` does not reach it. The bridge's own directory is the only
+ * channel the two share, so the write stays inside the bridge's scope. */
 export function bridgeDataDirFor(bbDataDir: string): string {
   return join(bbDataDir, "plugins", "amp", "bridge-data");
 }
