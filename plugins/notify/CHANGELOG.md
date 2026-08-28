@@ -1,5 +1,17 @@
 # @smsunarto/bb-plugin-notify
 
+## 0.3.0
+
+### Minor Changes
+
+- 902ca5d: Post notifications through an open BB desktop renderer so macOS uses BB's
+  identity and icon. Clicking an alert opens its thread. Alerts are discarded
+  instead of stored when no desktop window is available.
+
+### Patch Changes
+
+- 3da36f5: Support bb 0.40. The engines floor moves to the tested bb release (`>=0.40.0 <1.0.0`) and the plugin is built against plugin SDK 0.4.21. Tool status labels move from the experimental field to the stable presentation API.
+
 ## 0.2.2
 
 ### Patch Changes
