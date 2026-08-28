@@ -1,5 +1,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
-import { DotfilesPanel } from "./panel.tsx";
+import { DotfilesFilesTab } from "./files-tab.tsx";
+import { DotfilesPage, RepoStatusBadge } from "./page.tsx";
+import { DotfilesTasksTab } from "./tasks-tab.tsx";
 
 export default definePluginApp((app) => {
   app.slots.navPanel({
@@ -7,6 +9,25 @@ export default definePluginApp((app) => {
     title: "Dotfiles",
     icon: "Settings",
     path: "dotfiles",
-    component: DotfilesPanel,
+    component: DotfilesPage,
+    headerContent: RepoStatusBadge,
+    fixedTabs: [
+      {
+        panelId: "dotfiles",
+        id: "files",
+        title: "Files",
+        icon: "ListView",
+        component: DotfilesFilesTab,
+        layout: "flush",
+      },
+      {
+        panelId: "dotfiles",
+        id: "tasks",
+        title: "Tasks",
+        icon: "Play",
+        component: DotfilesTasksTab,
+        layout: "flush",
+      },
+    ],
   });
 });
