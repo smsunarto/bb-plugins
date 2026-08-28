@@ -420,9 +420,13 @@ function OrbToggleAction() {
   const toggle = () => {
     const next = !pressed;
     pressSeq.current += 1;
+    const seq = pressSeq.current;
     setPressed(next);
     void rpc.call("setOrbIntent", { armed: next }).catch(() => {
-      setPressed(!next);
+      // Roll back only while this press is still the latest one. A failure
+      // that lands after two further presses would otherwise restore the
+      // state its own press replaced, undoing what the user last asked for.
+      if (seq === pressSeq.current) setPressed(!next);
     });
     composer.focus();
   };

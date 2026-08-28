@@ -124,6 +124,36 @@ test("a marker flicker does not silently disarm the intent", async () => {
   cleanup();
 });
 
+test("a failed press does not roll back a newer press", async () => {
+  const rejects: Array<() => void> = [];
+  const slot = renderInComposer(AMP, {
+    providers: ready([AMP, CLAUDE]),
+    rpc: {
+      getOrbIntent: () => ({ armed: false }),
+      setOrbIntent: () =>
+        new Promise<{ armed: boolean }>((_resolve, reject) => {
+          rejects.push(() => reject(new Error("offline")));
+        }),
+    },
+  } as never);
+  await act(async () => {});
+  for (let press = 0; press < 3; press += 1) {
+    await act(async () => {
+      orbButton()?.click();
+    });
+  }
+  assert.equal(orbButton()?.getAttribute("aria-pressed"), "true");
+  await act(async () => {
+    rejects[0]?.();
+  });
+  // The first press asked for armed:true, so its rollback wrote false. Two
+  // presses later the user is back on true, and a stale failure must not
+  // reach back and undo that.
+  assert.equal(orbButton()?.getAttribute("aria-pressed"), "true");
+  slot.unmount();
+  cleanup();
+});
+
 test("a press outranks a getOrbIntent answer already in flight", async () => {
   let release: (() => void) | null = null;
   const slot = renderInComposer(AMP, {
