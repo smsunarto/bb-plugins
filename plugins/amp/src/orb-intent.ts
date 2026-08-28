@@ -54,12 +54,11 @@ export function disarmOrbIntent(dir: string): void {
   rmSync(intentPath(dir), { force: true });
 }
 
-/** True while a fresh intent is armed. A stale or unreadable file is
- * removed, never reported armed. */
-export function readOrbIntent(dir: string, now: number = Date.now()): boolean {
+/** True when the file at `path` holds an intent still inside its TTL. */
+function isFreshIntent(path: string, now: number): boolean {
   let raw: string;
   try {
-    raw = readFileSync(intentPath(dir), "utf8");
+    raw = readFileSync(path, "utf8");
   } catch {
     return false;
   }
@@ -74,14 +73,36 @@ export function readOrbIntent(dir: string, now: number = Date.now()): boolean {
     armedAt = undefined;
   }
   // A future armedAt (clock adjustment) still counts as fresh.
-  const fresh = typeof armedAt === "number" && now - armedAt < ORB_INTENT_TTL_MS;
+  return typeof armedAt === "number" && now - armedAt < ORB_INTENT_TTL_MS;
+}
+
+/** True while a fresh intent is armed. A stale or unreadable file is
+ * removed, never reported armed. */
+export function readOrbIntent(dir: string, now: number = Date.now()): boolean {
+  const fresh = isFreshIntent(intentPath(dir), now);
   if (!fresh) disarmOrbIntent(dir);
   return fresh;
 }
 
-/** Read-and-delete: at most one thread starts on Orb per armed intent. */
+let claimCounter = 0;
+
+/** Claim-then-read: at most one thread starts on Orb per armed intent.
+ *
+ * The claim is a rename, not a read followed by a delete. Two readers of one
+ * file both see it armed and both start on Orb, while only one rename of a
+ * given path can win. The bridge is a single process today, where the
+ * synchronous read and delete cannot interleave, so this guards the case the
+ * process topology does not: a second bridge sharing the directory. */
 export function consumeOrbIntent(dir: string, now: number = Date.now()): boolean {
-  const armed = readOrbIntent(dir, now);
-  if (armed) disarmOrbIntent(dir);
-  return armed;
+  const claim = `${intentPath(dir)}.claim.${process.pid}.${(claimCounter += 1)}`;
+  try {
+    renameSync(intentPath(dir), claim);
+  } catch {
+    return false;
+  }
+  try {
+    return isFreshIntent(claim, now);
+  } finally {
+    rmSync(claim, { force: true });
+  }
 }
