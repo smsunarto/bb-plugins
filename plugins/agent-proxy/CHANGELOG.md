@@ -1,5 +1,11 @@
 # @smsunarto/bb-plugin-agent-proxy
 
+## 0.2.4
+
+### Patch Changes
+
+- 3da36f5: Support bb 0.40. The engines floor moves to the tested bb release (`>=0.40.0 <1.0.0`) and the plugin is built against plugin SDK 0.4.21.
+
 ## 0.2.3
 
 ### Patch Changes
