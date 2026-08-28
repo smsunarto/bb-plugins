@@ -148,9 +148,9 @@ index them.
 
 Two bb controls do not reach Amp's execute wire and are not simulated:
 
-- bb's generated project and host instructions are preserved at the start of
-  the first Amp prompt. The wire carries no separate system or developer
-  instruction input.
+- bb's generated project and host instructions are dropped. The execute wire
+  carries no system or developer instruction input, and the plugin does not
+  fold them into the prompt text either.
 - Image input is disabled. The plugin sends text-only content blocks.
 
 These need the execute wire to carry the input before this plugin can preserve
