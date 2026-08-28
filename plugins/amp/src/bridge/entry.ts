@@ -35,7 +35,7 @@ import {
   type BridgeExecutionOptions,
   type DynamicTool,
 } from "@get-bb/plugin-sdk/provider-bridge";
-import { resolveAmpCli } from "../../lib/provision.ts";
+import { resolveAmpCliLaunch } from "../../lib/provision.ts";
 import { AMP_WIRE_MODELS } from "./model-catalog.ts";
 import { createFileOracleReportStore } from "../oracle-report-store.ts";
 import { consumeOrbIntent } from "../orb-intent.ts";
@@ -140,15 +140,18 @@ function providerOptionsOf(options: BridgeExecutionOptions): unknown {
 }
 
 /** Sessionless requests (archive or rename with no open session) carry no
- * providerOptions, so they resolve the CLI themselves. This runs the same
- * search the registration ran, rather than falling back to bare `amp`: a
- * GUI-launched daemon has a minimal PATH, which is why that search looks in
- * `~/.local/bin` and friends at all. Resolving differently here archived and
- * renamed through a binary the sessions never used, or through none. */
+ * providerOptions, so they resolve the CLI themselves. `resolveAmpCliLaunch`
+ * is the same resolution the registration uses, rather than a fall back to
+ * bare `amp`: a GUI-launched daemon has a minimal PATH, which is why that
+ * search looks in `~/.local/bin` and friends at all. Resolving differently
+ * here archived and renamed through a binary the sessions never used, or
+ * through none. Reusing it also means a stale `AMP_CLI_PATH` is checked for
+ * executability and superseded by a fresh search, instead of being spawned
+ * because it is set. */
 function ambientCliPath(): string {
   const configured = process.env.AMP_CLI_PATH?.trim();
-  if (configured !== undefined && configured.length > 0) return configured;
-  return resolveAmpCli(process.env) ?? "amp";
+  const recorded = configured !== undefined && configured.length > 0 ? configured : null;
+  return resolveAmpCliLaunch(recorded)?.command ?? "amp";
 }
 
 /** The Amp CLI a session spawns: the registration's providerOptions win over
