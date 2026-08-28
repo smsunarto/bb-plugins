@@ -2,9 +2,8 @@
 // @get-bb/plugin-sdk/provider-bridge/testing. The bridge's captured JSON-RPC
 // output is run through the exact translation the runtime performs, and the
 // assertions are on canonical ThreadEvents.
-import "./helpers/global-require.ts";
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "bun:test";
 import { experimental_createBridgeDeltaEventCollector } from "@get-bb/plugin-sdk/provider-bridge/testing";
 import type { AmpEvent, AmpUsage } from "../src/bridge/events.ts";
 import {
@@ -41,22 +40,20 @@ function makeHarness() {
 }
 
 function makeOracle() {
-  const calls: string[] = [];
   const writes = new Map<string, string[]>();
   let nextReport = 0;
+  const begin = mock<OracleReports["begin"]>((_question) => {
+    nextReport += 1;
+    const reportId = `report-${nextReport}`;
+    writes.set(reportId, []);
+    return { reportId, write: (text) => void writes.get(reportId)?.push(text) };
+  });
+  const finish = mock<OracleReports["finish"]>(() => {});
   const oracle: OracleReports = {
-    begin(question) {
-      nextReport += 1;
-      const reportId = `report-${nextReport}`;
-      calls.push(`begin:${question}`);
-      writes.set(reportId, []);
-      return { reportId, write: (text) => void writes.get(reportId)?.push(text) };
-    },
-    finish(reportId, status) {
-      calls.push(`finish:${reportId}:${status}`);
-    },
+    begin,
+    finish,
   };
-  return { oracle, calls, writes };
+  return { oracle, begin, finish, writes };
 }
 
 function makeContext(
@@ -100,7 +97,7 @@ describe("bridge stream (U2)", () => {
     });
 
     const scribe = writer.scribe();
-    const { oracle, calls, writes } = makeOracle();
+    const { oracle, begin, finish, writes } = makeOracle();
     const ctx = makeContext(writer, scribe, oracle);
     scribe.accept("creq_abcdefgh23");
     const ampEvents: AmpEvent[] = [
@@ -204,7 +201,12 @@ describe("bridge stream (U2)", () => {
       reportId: "report-1",
       question: "Why is the sky blue?",
     });
-    assert.deepEqual(calls, ["begin:Why is the sky blue?", "finish:report-1:completed"]);
+    assert.deepEqual(begin.mock.calls, [["Why is the sky blue?"]]);
+    assert.deepEqual(finish.mock.calls, [["report-1", "completed"]]);
+    assert.ok(
+      (begin.mock.invocationCallOrder[0] ?? 0) < (finish.mock.invocationCallOrder[0] ?? 0),
+      "oracle begins before it finishes",
+    );
     assert.deepEqual(writes.get("report-1"), ["Rayleigh scattering."]);
 
     const [message] = byType("agentMessage") as any[];
@@ -237,7 +239,7 @@ describe("bridge stream (U2)", () => {
   it("drains still-open items as interrupted and fails the oracle report", () => {
     const { messages, writer } = makeHarness();
     const scribe = writer.scribe();
-    const { oracle, calls } = makeOracle();
+    const { oracle, finish } = makeOracle();
     const ctx = makeContext(writer, scribe, oracle);
     projectAmpEvent(
       {
@@ -266,7 +268,10 @@ describe("bridge stream (U2)", () => {
     const last: any = events[events.length - 1];
     assert.equal(last.type, "turn/completed");
     assert.equal(last.status, "interrupted");
-    assert.ok(calls.includes("finish:report-1:error"), "oracle report finished as error");
+    assert.ok(
+      finish.mock.calls.some(([reportId, status]) => reportId === "report-1" && status === "error"),
+      "oracle report finished as error",
+    );
   });
 
   it("resultError settles the turn as failed through provider.error", () => {

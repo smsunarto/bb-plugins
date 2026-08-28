@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import test from "node:test";
+import { test } from "bun:test";
 
 // The bridge ships no bundled Amp CLI: the SDK must resolve the binary from
 // AMP_CLI_PATH, set by the managed provider entry. This matters more than it

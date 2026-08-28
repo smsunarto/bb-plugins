@@ -77,7 +77,7 @@
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "test": "bun test --timeout=30000 test/*.test.ts",
     "build:bridge": "esbuild src/amp-cli-shim.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --entry-names=[name] --banner:js=\"import { createRequire as __bbCreateRequire } from 'node:module'; const require = __bbCreateRequire(import.meta.url);\"",
     "build": "bun run build:bridge && bb plugin build .",
     "clean": "rm -rf dist"

@@ -1,7 +1,5 @@
-// Must be first: bb SDK modules expect a CJS-style global require.
-import "./helpers/global-require.ts";
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,31 +72,7 @@ test("the amp bridge passes the SDK conformance suite", async () => {
   // The Amp SDK resolves its CLI from process.env, not from execute options.
   const previousCliPath = process.env.AMP_CLI_PATH;
   process.env.AMP_CLI_PATH = fakeCli;
-  // Under `node --test`, this child process streams binary v8-serialized
-  // reporter events through the same stdout the kit captures. Layer a filter
-  // over the kit's patch: JSON lines (the bridge's wire) go to the kit,
-  // everything else passes through to the real stdout untouched.
-  const realWrite = process.stdout.write;
   const output = captureBridgeJsonRpcOutput();
-  const kitWrite = process.stdout.write;
-  const filteredWrite = (chunk: unknown, ...rest: unknown[]): boolean => {
-    const text =
-      typeof chunk === "string" ? chunk : Buffer.from(chunk as Uint8Array).toString("utf8");
-    const lines = text.split("\n").filter((line) => line.trim().length > 0);
-    const allJson =
-      lines.length > 0 &&
-      lines.every((line) => {
-        try {
-          JSON.parse(line);
-          return true;
-        } catch {
-          return false;
-        }
-      });
-    const write = allJson ? kitWrite : realWrite;
-    return Reflect.apply(write, process.stdout, [chunk, ...rest]) as boolean;
-  };
-  process.stdout.write = filteredWrite as typeof process.stdout.write;
   try {
     experimental_providerBridge.start?.({ pluginId: "amp", dataDir, tempDir });
     const report = await runBridgeConformance({
@@ -117,7 +91,6 @@ test("the amp bridge passes the SDK conformance suite", async () => {
     }
     assert.equal(report.passed, true, formatConformanceReport(report));
   } finally {
-    if (process.stdout.write === filteredWrite) process.stdout.write = kitWrite;
     output.restore();
     if (previousCliPath === undefined) delete process.env.AMP_CLI_PATH;
     else process.env.AMP_CLI_PATH = previousCliPath;

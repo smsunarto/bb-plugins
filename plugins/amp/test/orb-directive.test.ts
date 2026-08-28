@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "bun:test";
 import { findOrbDirectiveRanges, stripOrbDirectives } from "../src/orb-directive.ts";
 
 test("findOrbDirectiveRanges finds case-insensitive standalone tokens anywhere", () => {

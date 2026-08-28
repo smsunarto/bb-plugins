@@ -1,7 +1,5 @@
-// Must be first: bb SDK modules expect a CJS-style global require.
-import "./helpers/global-require.ts";
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "bun:test";
 import { validatePluginProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
 import {
   buildAmpProviderDeclaration,

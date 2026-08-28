@@ -6,7 +6,7 @@
  * bag, and the Orb variant.
  */
 import assert from "node:assert/strict";
-import test from "node:test";
+import { mock, test } from "bun:test";
 import { setImmediate as tick } from "node:timers/promises";
 import { AMP_CLI_SHIM_FAST_ENV } from "../src/amp-cli-shim.ts";
 import {
@@ -32,23 +32,12 @@ function shape(overrides: Partial<SessionShape> = {}): SessionShape {
   };
 }
 
-interface ExecuteCall {
-  prompt: unknown;
-  options: Record<string, unknown>;
-}
-
-type ExecuteArgs = Parameters<AmpExecuteFn>[0];
-
-/** Fake execute() recording each call and delegating it to the next script. */
-function fakeExecute(scripts: ReadonlyArray<(args: ExecuteArgs) => AsyncIterable<unknown>>) {
-  const calls: ExecuteCall[] = [];
-  const execute: AmpExecuteFn = (args) => {
-    calls.push({ prompt: args.prompt, options: (args.options ?? {}) as Record<string, unknown> });
-    const script = scripts[calls.length - 1];
-    if (script === undefined) throw new Error(`unexpected execute() call #${calls.length}`);
-    return script(args);
-  };
-  return { calls, execute };
+function mockExecute(scripts: ReadonlyArray<AmpExecuteFn>) {
+  const execute = mock<AmpExecuteFn>(() => {
+    throw new Error(`unexpected execute() call #${execute.mock.calls.length}`);
+  });
+  for (const script of scripts) execute.mockImplementationOnce(script);
+  return execute;
 }
 
 function depsFor(execute: AmpExecuteFn, overrides: Record<string, unknown> = {}) {
@@ -127,7 +116,7 @@ test("MultiTurnPrompt delivers at handoff once committed", async () => {
 });
 
 test("createAmpConversation never spawns when closed unsent", async () => {
-  const { calls, execute } = fakeExecute([]);
+  const execute = mockExecute([]);
   const conversation = createAmpConversation({
     shape: shape(),
     continueFrom: null,
@@ -136,16 +125,16 @@ test("createAmpConversation never spawns when closed unsent", async () => {
     deps: depsFor(execute),
   });
   await tick();
-  assert.equal(calls.length, 0);
+  assert.equal(execute.mock.calls.length, 0);
   conversation.closeInput();
   assert.deepEqual(await drain(conversation.batches()), []);
-  assert.equal(calls.length, 0);
+  assert.equal(execute.mock.calls.length, 0);
   assert.equal(conversation.closed, true);
   assert.equal(conversation.aborted, false);
 });
 
 test("createAmpConversation builds the spawn bag from the shape", async () => {
-  const { calls, execute } = fakeExecute([
+  const execute = mockExecute([
     async function* ({ prompt }) {
       for await (const _message of prompt as AsyncIterable<unknown>) {
         yield { type: "system" };
@@ -163,10 +152,10 @@ test("createAmpConversation builds the spawn bag from the shape", async () => {
   const sent = conversation.send("hi");
   const received = await drain(conversation.batches());
   await sent;
-  assert.equal(calls.length, 1);
+  assert.equal(execute.mock.calls.length, 1);
   assert.equal(received.length, 1);
   assert.equal(conversation.committed, true);
-  const options = calls[0]?.options ?? {};
+  const options = execute.mock.calls[0]?.[0].options ?? {};
   assert.equal(options.cwd, "/work/repo");
   assert.equal(options.mode, "medium");
   assert.equal(options.thinking, true);
@@ -183,7 +172,7 @@ test("createAmpConversation builds the spawn bag from the shape", async () => {
 });
 
 test("createAmpConversation continues a thread without the fast marker", async () => {
-  const { calls, execute } = fakeExecute([
+  const execute = mockExecute([
     async function* ({ prompt }) {
       for await (const _message of prompt as AsyncIterable<unknown>) {
         yield { type: "system" };
@@ -201,7 +190,7 @@ test("createAmpConversation continues a thread without the fast marker", async (
   const sent = conversation.send("hi");
   await drain(conversation.batches());
   await sent;
-  const options = calls[0]?.options ?? {};
+  const options = execute.mock.calls[0]?.[0].options ?? {};
   assert.equal(options.continue, "T-1");
   assert.equal("labels" in options, false);
   assert.equal("mcpConfig" in options, false);
@@ -213,7 +202,7 @@ test("createAmpConversation continues a thread without the fast marker", async (
 test("createAmpConversation drops an unsupported option and replays the prompt", async () => {
   let firstSeen: unknown;
   let secondSeen: unknown;
-  const { calls, execute } = fakeExecute([
+  const execute = mockExecute([
     async function* ({ prompt }) {
       const iterator = (prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
       firstSeen = (await iterator.next()).value;
@@ -238,10 +227,10 @@ test("createAmpConversation drops an unsupported option and replays the prompt",
   const sent = conversation.send("hi");
   const received = await drain(conversation.batches());
   await sent;
-  assert.equal(calls.length, 2);
+  assert.equal(execute.mock.calls.length, 2);
   assert.equal(received.length, 1);
-  assert.equal(calls[0]?.options.dangerouslyAllowAll, true);
-  assert.equal(calls[1]?.options.dangerouslyAllowAll, undefined);
+  assert.equal(execute.mock.calls[0]?.[0].options?.dangerouslyAllowAll, true);
+  assert.equal(execute.mock.calls[1]?.[0].options?.dangerouslyAllowAll, undefined);
   assert.equal(retry.droppedOptions.has("dangerouslyAllowAll"), true);
   assert.equal(retry.attemptedFlags.has("settings-file"), true);
   assert.notEqual(firstSeen, undefined);
@@ -249,7 +238,7 @@ test("createAmpConversation drops an unsupported option and replays the prompt",
 });
 
 test("runOrb builds the Orb bag and ignores Local-only shape controls", async () => {
-  const { calls, execute } = fakeExecute([
+  const execute = mockExecute([
     async function* () {
       yield { type: "system" };
     },
@@ -263,10 +252,10 @@ test("runOrb builds the Orb bag and ignores Local-only shape controls", async ()
     deps: depsFor(execute),
   });
   const received = await drain(run.batches());
-  assert.equal(calls.length, 1);
+  assert.equal(execute.mock.calls.length, 1);
   assert.equal(received.length, 1);
-  assert.equal(calls[0]?.prompt, "go");
-  const options = calls[0]?.options ?? {};
+  assert.equal(execute.mock.calls[0]?.[0].prompt, "go");
+  const options = execute.mock.calls[0]?.[0].options ?? {};
   assert.equal(options.executor, "orb");
   assert.equal(options.project, "acme/site");
   assert.equal(options.continue, undefined);
@@ -277,7 +266,7 @@ test("runOrb builds the Orb bag and ignores Local-only shape controls", async ()
 });
 
 test("runOrb continues a thread and drops the project selector", async () => {
-  const { calls, execute } = fakeExecute([
+  const execute = mockExecute([
     async function* () {
       yield { type: "system" };
     },
@@ -291,14 +280,14 @@ test("runOrb continues a thread and drops the project selector", async () => {
     deps: depsFor(execute),
   });
   await drain(run.batches());
-  const options = calls[0]?.options ?? {};
+  const options = execute.mock.calls[0]?.[0].options ?? {};
   assert.equal(options.continue, "T-9");
   assert.equal("project" in options, false);
 });
 
 test("runOrb fails closed on an unknown '--orb-execute' flag", async () => {
   const retry = createRetryState();
-  const { calls, execute } = fakeExecute([
+  const execute = mockExecute([
     // eslint-disable-next-line require-yield
     async function* () {
       throw new Error("error: unknown option '--orb-execute'");
@@ -313,7 +302,7 @@ test("runOrb fails closed on an unknown '--orb-execute' flag", async () => {
     deps: depsFor(execute, { retry }),
   });
   await assert.rejects(drain(run.batches()), /--orb-execute/);
-  assert.equal(calls.length, 1);
+  assert.equal(execute.mock.calls.length, 1);
   assert.equal(retry.droppedOptions.size, 0);
 });
 

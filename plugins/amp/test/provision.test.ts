@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test } from "bun:test";
 import {
   cleanupLegacyAmpEntry,
   inspectLegacyAmpEntry,
@@ -168,10 +175,10 @@ test("cleanup leaves an entry with customized fields the plugin never wrote", ()
   });
   const result = cleanupLegacyAmpEntry(f.paths);
   assert.equal(result.kind, "kept");
-  assert.deepEqual(
-    result.kind === "kept" ? result.deviations.toSorted() : [],
-    ["logo", "supportsManualCompaction"],
-  );
+  assert.deepEqual(result.kind === "kept" ? result.deviations.toSorted() : [], [
+    "logo",
+    "supportsManualCompaction",
+  ]);
 });
 
 test("deviation shape checks: args, env, displayName, skill roots", () => {
