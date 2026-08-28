@@ -165,8 +165,8 @@ request, the response, and a trace that streams while it runs.
 
 A healthy install does not need this command.
 
-| Command         | What it does                                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Command         | What it does                                                                                                |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
 | `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, provider registration, legacy config entry, and auth |
 
 ```console
@@ -180,17 +180,17 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 
 ## Troubleshooting
 
-| Symptom                            | Fix                                                                                          |
-| ---------------------------------- | -------------------------------------------------------------------------------------------- |
-| Plugin shows "needs configuration" | Install the Amp CLI, run `amp login`, then `bb plugin reload amp`                            |
-| Amp is not in the provider list    | `bb amp status` names the broken link                                                        |
-| Auth errors in a thread            | `amp login`, or export `AMP_API_KEY` in the environment bb runs in                           |
-| "Could not find a usable Amp CLI"  | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp` |
-| Local tool calls rejected          | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits** |
-| Orb tool calls rejected            | Change the permission settings in the Amp project                                            |
+| Symptom                            | Fix                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Plugin shows "needs configuration" | Install the Amp CLI, run `amp login`, then `bb plugin reload amp`                               |
+| Amp is not in the provider list    | `bb amp status` names the broken link                                                           |
+| Auth errors in a thread            | `amp login`, or export `AMP_API_KEY` in the environment bb runs in                              |
+| "Could not find a usable Amp CLI"  | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp`    |
+| Local tool calls rejected          | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits**    |
+| Orb tool calls rejected            | Change the permission settings in the Amp project                                               |
 | Orb opens the wrong repository     | Export `AMP_ACP_ORB_PROJECT` in the environment bb runs in, then start a new thread with `/orb` |
-| `/orb` is rejected in a thread     | That Amp thread is already Local. Start a new bb thread with `/orb` in its first prompt      |
-| `Unknown session <id>` on resume   | The session mapping was pruned or removed. Start a new thread                                |
+| `/orb` is rejected in a thread     | That Amp thread is already Local. Start a new bb thread with `/orb` in its first prompt         |
+| `Unknown session <id>` on resume   | The session mapping was pruned or removed. Start a new thread                                   |
 
 ## Develop from source
 

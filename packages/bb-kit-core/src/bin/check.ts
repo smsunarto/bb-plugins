@@ -326,7 +326,9 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
       if (!helpers.has(node.expression.name.text)) {
         return false;
       }
-      return ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "argv";
+      return (
+        ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "argv"
+      );
     }
 
     function failInnerOptionalBinding(relativePath: string, sourceFile: TS.SourceFile): void {
@@ -553,7 +555,11 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
               valueName = key;
             } else if (ts.isPropertyAssignment(property)) {
               const value = unwrap(property.initializer);
-              if (value !== undefined && ts.isObjectLiteralExpression(value) && what === "command") {
+              if (
+                value !== undefined &&
+                ts.isObjectLiteralExpression(value) &&
+                what === "command"
+              ) {
                 fail(
                   "commands must be flat — nesting is not supported (rule 5)",
                   serverRelative,
@@ -701,8 +707,27 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             );
             return undefined;
           }
-          const relative = resolveImport(serverRelative, binding.specifier);
           const expectedDir = unitDir(serverRelative, expectDir);
+          // resolveImport joins against the composition root's directory, so a
+          // bare specifier shaped like the unit path ("rpc/ping") resolves to
+          // the same string a relative one would. TypeScript does not resolve
+          // it that way, and a tsconfig `paths` alias can point it at a
+          // different module entirely, so the bijection below would pass while
+          // naming the wrong file. Only a relative specifier is checkable.
+          if (!binding.specifier.startsWith("./") && !binding.specifier.startsWith("../")) {
+            fail(
+              `"${valueName}" imports "${binding.specifier}" — a relative ${expectedDir}/ unit file was expected (rule 1)`,
+              serverRelative,
+              line,
+            );
+            return undefined;
+          }
+          const unresolved = resolveImport(serverRelative, binding.specifier);
+          const relative = /\.tsx?$/.test(unresolved)
+            ? unresolved
+            : ([`${unresolved}.ts`, `${unresolved}.tsx`].find((candidate) =>
+                unitFiles.has(candidate),
+              ) ?? unresolved);
           if (posix.dirname(relative) !== expectedDir || !/\.tsx?$/.test(relative)) {
             fail(
               `"${valueName}" imports "${binding.specifier}" — a ${expectedDir}/ unit file was expected (rule 1)`,

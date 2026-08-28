@@ -14,13 +14,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type {
-  Client,
-  RPCProcedures,
-  SchemaInput,
-  SchemaOutput,
-  StandardSchemaV1,
-} from "../rpc.ts";
+import type { Client, RPCProcedures, SchemaInput, SchemaOutput, StandardSchemaV1 } from "../rpc.ts";
 
 /** Public surface of `@bb-kit/core/rpc/query` (§1, §5). */
 

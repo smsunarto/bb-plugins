@@ -90,7 +90,7 @@
     "dev": "bun ../../scripts/dev-plugin.ts",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "test": "bun test --timeout=30000 --preload ../../scripts/agentation-sqlite-preload.ts test/*.test.ts",
     "clean": "rm -rf dist"
   }
 }

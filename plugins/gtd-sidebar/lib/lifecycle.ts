@@ -267,5 +267,5 @@ export const REFRESH_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000];
 
 export function refreshRetryDelayMs(attempt: number): number | null {
   if (attempt < 0 || attempt >= REFRESH_RETRY_DELAYS_MS.length) return null;
-  return REFRESH_RETRY_DELAYS_MS[attempt];
+  return REFRESH_RETRY_DELAYS_MS[attempt] ?? null;
 }

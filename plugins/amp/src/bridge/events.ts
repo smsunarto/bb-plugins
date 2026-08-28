@@ -365,7 +365,9 @@ function normalizeBase64(value: string): string | null {
 }
 
 function normalizeImageMimeType(value: string): string | null {
-  const mimeType = value.split(";", 1)[0].trim().toLowerCase();
+  const [essence] = value.split(";", 1);
+  if (essence === undefined) return null;
+  const mimeType = essence.trim().toLowerCase();
   return /^image\/[a-z0-9][a-z0-9.+-]*$/.test(mimeType) ? mimeType : null;
 }
 
@@ -409,7 +411,8 @@ export function classifyAmpError(subtype: string | undefined, message: string): 
  */
 export function parseUnsupportedFlag(message: string): string | null {
   const match = /unknown option\s+['"`‘’]?--([a-z0-9-]+)/i.exec(message);
-  return match === null ? null : match[1].toLowerCase();
+  const flag = match?.[1];
+  return flag === undefined ? null : flag.toLowerCase();
 }
 
 // ---------------------------------------------------------------------------

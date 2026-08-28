@@ -55,7 +55,7 @@ function screenshotPage(result: Buffer | Error): Pick<Page, "screenshot"> {
   return {
     async screenshot(options) {
       if (result instanceof Error) throw result;
-      if (!options.path) throw new Error("test screenshot has no output path");
+      if (!options?.path) throw new Error("test screenshot has no output path");
       await writeFile(options.path, result);
       return result;
     },
@@ -237,8 +237,8 @@ describe("screenshot batch publication", () => {
         { id: "first", width: 20, height: 10 },
         { id: "second", width: 30, height: 15 },
       ]);
-      expect(await readFile(first)).toEqual(png(20, 10));
-      expect(await readFile(second)).toEqual(png(30, 15));
+      expect(Buffer.compare(await readFile(first), png(20, 10))).toBe(0);
+      expect(Buffer.compare(await readFile(second), png(30, 15))).toBe(0);
       expect(await stagedFiles(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });

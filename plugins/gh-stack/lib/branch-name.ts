@@ -19,9 +19,11 @@ function slugify(text: string): string {
 export function deriveBranchName(name: string, conventional: boolean): string {
   if (!conventional) return slugify(name);
   const match = CONVENTIONAL_HEAD.exec(name);
-  const slug = slugify(match ? match[2] : name);
+  const type = match?.[1];
+  const subject = match?.[2];
+  const slug = slugify(subject ?? name);
   if (!slug) return "";
-  return match ? `${match[1].toLowerCase()}-${slug}` : slug;
+  return type === undefined ? slug : `${type.toLowerCase()}-${slug}`;
 }
 
 // Fast, conservative preflight before asking Git for authoritative ref

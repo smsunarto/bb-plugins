@@ -27,7 +27,8 @@ export function projectStackLayers<T extends { name: string; isMerged: boolean }
   if (!currentBranch) return { visibleBranches, checkout: null };
 
   const currentIndex = branches.findIndex((branch) => branch.name === currentBranch);
-  if (currentIndex < 0 || !branches[currentIndex].isMerged) {
+  const current = branches[currentIndex];
+  if (current === undefined || !current.isMerged) {
     return { visibleBranches, checkout: null };
   }
 

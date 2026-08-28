@@ -136,7 +136,9 @@ export function packedPaths(output: string): string[] {
   for (const line of output.split("\n")) {
     const packed = /^\s*packed\s+\S+\s+(.+?)\s*$/.exec(line);
     if (packed !== null) {
-      paths.push(packed[1]);
+      const path = packed[1];
+      if (path === undefined) throw new Error("a packed entry has no path");
+      paths.push(path);
       continue;
     }
     const summary = /^\s*Total files:\s*(\d+)\s*$/.exec(line);
@@ -229,7 +231,8 @@ export function sourceClosureProblems(
   const queue = entries.map((entry) => tarballPath(entry));
 
   while (queue.length > 0) {
-    const rel = queue.pop() as string;
+    const rel = queue.pop();
+    if (rel === undefined) break;
     if (seen.has(rel)) continue;
     seen.add(rel);
 
@@ -251,6 +254,7 @@ export function sourceClosureProblems(
     }
     for (const match of source.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)) {
       const spec = match[1];
+      if (spec === undefined) continue;
       let base: string;
       if (spec.startsWith(".")) base = join(dirname(rel), spec);
       else if (spec.startsWith("@/")) base = spec.slice(2);
@@ -479,10 +483,10 @@ function main(): void {
   // a partial release.
   for (const plugin of targets) {
     const { directory: id, dir, manifest } = plugin;
-    const version = manifest.version;
-    if (typeof version !== "string" || version.trim() === "") {
-      fail(`${id}: package.json has no version`);
-    }
+    const version =
+      typeof manifest.version === "string" && manifest.version.trim() !== ""
+        ? manifest.version
+        : fail(`${id}: package.json has no version`);
     if (!existsSync(join(dir, "LICENSE"))) fail(`${id}: no LICENSE in the package`);
 
     for (const artifact of ["server", ...(manifest.bb?.app ? ["app"] : [])]) {

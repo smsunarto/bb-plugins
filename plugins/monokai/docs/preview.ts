@@ -83,7 +83,7 @@ export abstract class Registry<T extends ThemeSource> {
 }
 
 const version = "0.40.0";
-const parsed = SEMVER.exec(version)?.slice(1, 4).map(Number) ?? [0, 0, 0];
-const supported = parsed[0] === 0 && parsed[1] >= 38;
+const [major = 0, minor = 0] = SEMVER.exec(version)?.slice(1, 3).map(Number) ?? [];
+const supported = major === 0 && minor >= 38;
 
 console.log(`bb ${version} — code theme ${supported ? "supported" : "unavailable"}`);

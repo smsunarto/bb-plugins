@@ -135,8 +135,10 @@ export function parseWcLines(stdout: string): Map<string, number> {
   const lines = new Map<string, number>();
   for (const line of stdout.split("\n")) {
     const match = /^\s*(\d+) (.*)$/.exec(line);
-    if (!match || match[2] === "total") continue;
-    lines.set(match[2].replace(/^\.\//, ""), Number(match[1]));
+    const count = match?.[1];
+    const path = match?.[2];
+    if (count === undefined || path === undefined || path === "total") continue;
+    lines.set(path.replace(/^\.\//, ""), Number(count));
   }
   return lines;
 }

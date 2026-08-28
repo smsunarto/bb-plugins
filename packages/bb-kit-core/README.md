@@ -47,7 +47,7 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@bb-kit/core/plugin`    | `definePlugin`, `hostContext`, types `DefinedPlugin`, `Context`, `HostSeam`                                                                                                                 |
 | `@bb-kit/core/rpc`       | `defineQuery`, `defineMutation`, `createClient`, `RPCValidationError`, types `Client`, `RPCContext`, `RPCProcedures`, `JSONObjectSchema`, `StandardSchemaV1`, `SchemaInput`, `SchemaOutput` |
-| `@bb-kit/core/command`   | `defineCommand`, `argv`, `CommandError`, types `CommandResult`, `CommandContext`                                                                          |
+| `@bb-kit/core/command`   | `defineCommand`, `argv`, `CommandError`, types `CommandResult`, `CommandContext`                                                                                                            |
 | `@bb-kit/core/rpc/query` | `createRPC`, `PluginQueryBoundary` (browser)                                                                                                                                                |
 | `@bb-kit/core/testing`   | `installDom`, `stubClient`, `stubHostContext`                                                                                                                                               |
 

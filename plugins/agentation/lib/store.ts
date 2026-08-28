@@ -512,29 +512,26 @@ export function appendThreadMessage(
 
 export function deleteAnnotations(db: Database, annotationIds: string[]): number {
   if (annotationIds.length === 0) return 0;
-  const sessionIds = new Set<string>();
-  for (const id of annotationIds) {
-    const row = db.prepare(`SELECT session_id FROM annotations WHERE id = ?`).get(id) as
-      | { session_id: string }
-      | undefined;
-    if (row) sessionIds.add(row.session_id);
-  }
-
   const placeholders = annotationIds.map(() => "?").join(", ");
-  const result = db
-    .prepare(`DELETE FROM annotations WHERE id IN (${placeholders})`)
-    .run(...annotationIds);
+  const rows = db
+    .prepare(`SELECT session_id FROM annotations WHERE id IN (${placeholders})`)
+    .all(...annotationIds) as { session_id: string }[];
+  db.prepare(`DELETE FROM annotations WHERE id IN (${placeholders})`).run(...annotationIds);
 
   // A delete leaves no row to carry a cursor, so the session has to record it
   // or clients would never notice the removal.
+  const sessionIds = new Set(rows.map((row) => row.session_id));
   for (const sessionId of sessionIds) touchSession(db, sessionId);
-  return result.changes;
+  return rows.length;
 }
 
 export function clearSession(db: Database, sessionId: string): number {
-  const result = db.prepare(`DELETE FROM annotations WHERE session_id = ?`).run(sessionId);
+  const row = db
+    .prepare(`SELECT COUNT(*) AS count FROM annotations WHERE session_id = ?`)
+    .get(sessionId) as { count: number };
+  db.prepare(`DELETE FROM annotations WHERE session_id = ?`).run(sessionId);
   touchSession(db, sessionId);
-  return result.changes;
+  return row.count;
 }
 
 export interface ListAnnotationsFilter {

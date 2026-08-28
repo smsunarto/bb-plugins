@@ -44,10 +44,11 @@ export function parseGitButlerBranchSummary(stdout: string): GitButlerBranchSumm
     ),
   ];
 
-  if (branchNames.length === 0) return null;
+  const firstBranch = branchNames[0];
+  if (firstBranch === undefined) return null;
 
   return {
-    label: branchNames.length === 1 ? branchNames[0] : `${branchNames.length} GitButler branches`,
+    label: branchNames.length === 1 ? firstBranch : `${branchNames.length} GitButler branches`,
     branchNames,
   };
 }

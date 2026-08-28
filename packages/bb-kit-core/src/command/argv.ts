@@ -1,5 +1,10 @@
 import type { Command } from "commander";
-import type { JSONObjectSchema, SchemaInput, StandardSchemaV1, StandardSchemaV1Issue } from "../rpc/rpc.ts";
+import type {
+  JSONObjectSchema,
+  SchemaInput,
+  StandardSchemaV1,
+  StandardSchemaV1Issue,
+} from "../rpc/rpc.ts";
 
 type WithoutUndefined<T> = Exclude<T, undefined>;
 
@@ -47,25 +52,29 @@ export type FieldBinding =
   | OptionBinding
   | FlagBinding;
 
-export type BoundField<Schema extends ZodField = ZodField, Binding extends FieldBinding = FieldBinding> = Schema & {
+export type BoundField<
+  Schema extends ZodField = ZodField,
+  Binding extends FieldBinding = FieldBinding,
+> = Schema & {
   readonly [commandFieldBinding]: Binding;
 };
 
-type RequiredStringField<Schema extends ZodField> = SchemaInput<Schema> extends string
-  ? unknown
-  : never;
+type RequiredStringField<Schema extends ZodField> =
+  SchemaInput<Schema> extends string ? unknown : never;
 
-type OptionalStringField<Schema extends ZodField> = undefined extends SchemaInput<Schema>
-  ? WithoutUndefined<SchemaInput<Schema>> extends string
-    ? unknown
-    : never
-  : never;
+type OptionalStringField<Schema extends ZodField> =
+  undefined extends SchemaInput<Schema>
+    ? WithoutUndefined<SchemaInput<Schema>> extends string
+      ? unknown
+      : never
+    : never;
 
-type BooleanFlagField<Schema extends ZodField> = undefined extends SchemaInput<Schema>
-  ? WithoutUndefined<SchemaInput<Schema>> extends boolean
-    ? unknown
-    : never
-  : never;
+type BooleanFlagField<Schema extends ZodField> =
+  undefined extends SchemaInput<Schema>
+    ? WithoutUndefined<SchemaInput<Schema>> extends boolean
+      ? unknown
+      : never
+    : never;
 
 function bind<Schema extends ZodField, Binding extends FieldBinding>(
   schema: Schema,
@@ -157,7 +166,9 @@ function plannedFields(input: CommandInputSchema): PlannedField[] {
 
 export function assertCommandInput(input: CommandInputSchema): void {
   const fields = plannedFields(input);
-  const restKeys = fields.filter((field) => field.binding.arity === "rest").map((field) => field.key);
+  const restKeys = fields
+    .filter((field) => field.binding.arity === "rest")
+    .map((field) => field.key);
   if (restKeys.length > 1) {
     throw new Error(`command input allows one words field, found ${restKeys.join(", ")}`);
   }
@@ -271,7 +282,9 @@ function issuePath(issue: StandardSchemaV1Issue): string | undefined {
     return undefined;
   }
   const parts = Array.isArray(issue.path) ? issue.path : [issue.path];
-  const keys = parts.map((part) => (typeof part === "object" && part !== null && "key" in part ? part.key : part));
+  const keys = parts.map((part) =>
+    typeof part === "object" && part !== null && "key" in part ? part.key : part,
+  );
   return keys.length === 0 ? undefined : keys.map(String).join(".");
 }
 

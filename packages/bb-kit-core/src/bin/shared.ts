@@ -51,7 +51,7 @@ export function compositionRootFromPkg(
 
 /** Import specifier from one plugin-relative file to another. */
 export function relativeImport(fromFile: string, toFile: string): string {
-  const spec = posix.relative(posix.dirname(fromFile), toFile);
+  const spec = posix.relative(posix.dirname(fromFile), toFile).replace(/\.tsx?$/, "");
   return spec.startsWith(".") ? spec : `./${spec}`;
 }
 

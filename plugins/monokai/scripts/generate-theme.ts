@@ -254,21 +254,34 @@ function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function requiredAt<T>(values: readonly T[], index: number, label: string): T {
+  const value = values[index];
+  if (value === undefined) {
+    throw new Error(`${label}: missing item ${index}`);
+  }
+  return value;
+}
+
 function parseRules(source: string, violations: string[]): CssRule[] {
   const rules: CssRule[] = [];
   const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
   for (const match of source.matchAll(rulePattern)) {
+    const selectors = requiredAt(match, 1, "CSS rule");
+    const body = requiredAt(match, 2, normalize(selectors));
     const declarations = new Map<string, string>();
     const declarationPattern = /([\w-]+)\s*:\s*([^;{}]+);/g;
-    for (const declaration of match[2].matchAll(declarationPattern)) {
-      const name = declaration[1].trim();
+    for (const declaration of body.matchAll(declarationPattern)) {
+      const name = requiredAt(declaration, 1, `${normalize(selectors)} declaration`).trim();
       if (declarations.has(name)) {
-        violations.push(`${normalize(match[1])}: duplicate ${name}`);
+        violations.push(`${normalize(selectors)}: duplicate ${name}`);
       }
-      declarations.set(name, normalize(declaration[2]));
+      declarations.set(
+        name,
+        normalize(requiredAt(declaration, 2, `${normalize(selectors)} ${name}`)),
+      );
     }
     rules.push({
-      selectors: match[1].split(",").map(normalize),
+      selectors: selectors.split(",").map(normalize),
       declarations,
     });
   }
@@ -533,20 +546,23 @@ function assertExpected(
 
 function channels(hex: string): [number, number, number] {
   const core = hex.replace("#", "");
-  return [0, 2, 4].map((offset) => parseInt(core.slice(offset, offset + 2), 16)) as [
-    number,
-    number,
-    number,
+  return [
+    parseInt(core.slice(0, 2), 16),
+    parseInt(core.slice(2, 4), 16),
+    parseInt(core.slice(4, 6), 16),
   ];
 }
 
 function flatten(foreground: string, background: string): string {
   const core = foreground.replace("#", "");
   const alpha = core.length === 8 ? parseInt(core.slice(6, 8), 16) / 255 : 1;
-  const front = channels(foreground);
-  const back = channels(background);
-  return `#${front
-    .map((channel, index) => Math.round(alpha * channel + (1 - alpha) * back[index]))
+  const [frontRed, frontGreen, frontBlue] = channels(foreground);
+  const [backRed, backGreen, backBlue] = channels(background);
+  return `#${[
+    Math.round(alpha * frontRed + (1 - alpha) * backRed),
+    Math.round(alpha * frontGreen + (1 - alpha) * backGreen),
+    Math.round(alpha * frontBlue + (1 - alpha) * backBlue),
+  ]
     .map((channel) => channel.toString(16).padStart(2, "0"))
     .join("")}`;
 }
@@ -556,12 +572,19 @@ function srgbToLinear(value: number): number {
 }
 
 function luminance(hex: string): number {
-  const [red, green, blue] = channels(hex).map((channel) => srgbToLinear(channel / 255));
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  const [red, green, blue] = channels(hex);
+  return (
+    0.2126 * srgbToLinear(red / 255) +
+    0.7152 * srgbToLinear(green / 255) +
+    0.0722 * srgbToLinear(blue / 255)
+  );
 }
 
 function contrast(a: string, b: string): number {
-  const [high, low] = [luminance(a), luminance(b)].sort((left, right) => right - left);
+  const left = luminance(a);
+  const right = luminance(b);
+  const high = Math.max(left, right);
+  const low = Math.min(left, right);
   return (high + 0.05) / (low + 0.05);
 }
 
@@ -615,7 +638,7 @@ export function auditTheme(source: string): void {
     }
     assertExpected(
       selector,
-      matches[0].declarations,
+      requiredAt(matches, 0, selector).declarations,
       declarationMap(required.declarations),
       violations,
     );
@@ -655,7 +678,7 @@ export function auditTheme(source: string): void {
   for (const [index, background] of ansi.entries()) {
     requireContrast(
       `--ansi-bg-fg-${index} on --ansi-${index}`,
-      ansiForegrounds[index],
+      requiredAt(ansiForegrounds, index, "ANSI foreground"),
       background,
       index === 8 ? 4 : 4.5,
       violations,
