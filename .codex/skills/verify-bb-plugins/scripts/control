@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/../../../.." && pwd)"
+state_root="${repo_root}/.scratch/verify-bb-plugins"
+runs_root="${state_root}/runs"
+lock_dir="${state_root}/active"
+bb_repo="${BB_DEV_REPO:-${HOME}/.bb/worktrees/dev/bb}"
+bb_app="${bb_repo}/scripts/bb-dev-app"
+bb_cli="${repo_root}/scripts/bb-dev-cli"
+theme_id="plugin:monokai:bb-monokai"
+
+fail() {
+  printf 'verify-bb-plugins: %s\n' "$*" >&2
+  exit 1
+}
+
+app_url() {
+  local status
+  status="$("${bb_app}" status)"
+  awk '/^App: / { print $2; exit }' <<<"${status}"
+}
+
+browser_session_for() {
+  local run_id="$1"
+  local safe_id
+  safe_id="$(printf '%s' "${run_id}" | tr -cs 'A-Za-z0-9._-' '-')"
+  printf 'verify-bb-plugins-%s\n' "${safe_id}"
+}
+
+doctor() {
+  [[ -x "${bb_app}" ]] || fail "missing pinned app helper at ${bb_app}"
+  [[ -x "${bb_cli}" ]] || fail "missing pinned CLI shim at ${bb_cli}"
+
+  local status url settings plugins theme
+  status="$("${bb_app}" status)"
+  grep -q '^Dev session: running$' <<<"${status}" || fail "pinned dev session is not running"
+  url="$(awk '/^App: / { print $2; exit }' <<<"${status}")"
+  [[ -n "${url}" ]] || fail "pinned app status has no App URL"
+  curl --fail --silent --show-error "${url}" >/dev/null || fail "pinned app did not answer at ${url}"
+
+  settings="$("${bb_cli}" settings show --json)"
+  bun -e '
+    const value = JSON.parse(await Bun.stdin.text());
+    if (!String(value.dataDir ?? "").includes("/.bb-dev/")) {
+      throw new Error(`unsafe data directory: ${value.dataDir ?? "missing"}`);
+    }
+  ' <<<"${settings}"
+
+  plugins="$("${bb_cli}" plugin list --json)"
+  REPO_ROOT="${repo_root}" bun -e '
+    import { join } from "node:path";
+    import { workspacePlugins } from "./scripts/plugin-package.ts";
+    const root = process.env.REPO_ROOT;
+    if (!root) throw new Error("REPO_ROOT is missing");
+    const actual = new Map(
+      JSON.parse(await Bun.stdin.text()).plugins.map((plugin) => [plugin.id, plugin]),
+    );
+    const failures = [];
+    for (const plugin of workspacePlugins(root)) {
+      const installed = actual.get(plugin.id);
+      if (!installed) failures.push(`${plugin.id}: not installed`);
+      else if (installed.status !== "running") failures.push(`${plugin.id}: ${installed.status}`);
+      else if (installed.enabled !== true) failures.push(`${plugin.id}: disabled`);
+      else if (installed.rootDir !== join(root, "plugins", plugin.directory)) {
+        failures.push(`${plugin.id}: wrong source ${installed.rootDir}`);
+      }
+    }
+    if (failures.length) throw new Error(failures.join("\n"));
+  ' <<<"${plugins}"
+
+  theme="$("${bb_cli}" theme show --json)"
+  grep -q "${theme_id}" <<<"${theme}" || fail "selected theme is not ${theme_id}"
+
+  printf 'doctor: pinned app %s is ready\n' "${url}"
+}
+
+launch() {
+  local run_id="${1:-}"
+  [[ -n "${run_id}" ]] || fail "launch needs a run ID"
+  [[ "${run_id}" =~ ^[A-Za-z0-9._-]+$ ]] || fail "run ID may use letters, numbers, dot, underscore, and dash"
+
+  mkdir -p "${runs_root}"
+  if ! mkdir "${lock_dir}" 2>/dev/null; then
+    local owner="unknown"
+    [[ -f "${lock_dir}/run-id" ]] && owner="$(<"${lock_dir}/run-id")"
+    fail "run ${owner} owns the verification lock"
+  fi
+  printf '%s\n' "${run_id}" >"${lock_dir}/run-id"
+  trap 'rm -rf "${lock_dir}"' ERR INT TERM
+
+  "${bb_app}" current
+  (cd "${repo_root}" && env BB_CLI="${bb_cli}" bun run dev:setup)
+  doctor
+
+  local run_dir evidence_dir url session env_file
+  run_dir="${runs_root}/${run_id}"
+  evidence_dir="${run_dir}/evidence"
+  url="$(app_url)"
+  session="$(browser_session_for "${run_id}")"
+  mkdir -p "${evidence_dir}"
+  env_file="${run_dir}/run.env"
+  {
+    printf 'export RUN_ID=%q\n' "${run_id}"
+    printf 'export BB_APP_URL=%q\n' "${url}"
+    printf 'export BROWSER_SESSION=%q\n' "${session}"
+    printf 'export ARTIFACT_DIR=%q\n' "${evidence_dir}"
+  } >"${env_file}"
+  printf '%s\n' "${run_id}" >"${lock_dir}/run-id"
+  printf '%s\n' "${session}" >"${lock_dir}/browser-session"
+  trap - ERR INT TERM
+
+  printf 'run: %s\napp: %s\nsession: %s\nevidence: %s\n' \
+    "${run_id}" "${url}" "${session}" "${evidence_dir}"
+}
+
+cleanup() {
+  local run_id="${1:-}"
+  [[ -n "${run_id}" ]] || fail "cleanup needs a run ID"
+  [[ -d "${lock_dir}" ]] || fail "no verification run owns the lock"
+  local owner session
+  owner="$(<"${lock_dir}/run-id")"
+  [[ "${owner}" == "${run_id}" ]] || fail "run ${owner} owns the verification lock"
+  session="$(<"${lock_dir}/browser-session")"
+  agent-browser --session "${session}" close >/dev/null 2>&1 || true
+  rm -rf "${lock_dir}"
+  printf 'cleanup: closed %s and kept %s\n' "${session}" "${runs_root}/${run_id}/evidence"
+}
+
+case "${1:-}" in
+  launch) launch "${2:-}" ;;
+  doctor) doctor ;;
+  cleanup) cleanup "${2:-}" ;;
+  *) fail "use: control {launch <run-id>|doctor|cleanup <run-id>}" ;;
+esac
