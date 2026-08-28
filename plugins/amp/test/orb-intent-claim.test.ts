@@ -36,7 +36,14 @@ test("concurrent consumers of one armed intent produce exactly one winner", asyn
         stderr: "pipe",
       })
     );
+    const deadline = Bun.nanoseconds() + 10_000_000_000;
     while (running.some((_unused, i) => !existsSync(join(root, `ready.${i}`)))) {
+      // Without a deadline a worker that fails to import spins here until the
+      // test times out, hiding the stderr that says why.
+      if (Bun.nanoseconds() > deadline) {
+        const errs = await Promise.all(running.map((c) => new Response(c.stderr).text()));
+        throw new Error(`workers never reached the barrier: ${errs.join("")}`);
+      }
       await Bun.sleep(1);
     }
     writeFileSync(gate, "");
