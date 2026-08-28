@@ -145,7 +145,6 @@ export function planRestart(args: {
   if (current.dangerouslyAllowAll !== next.dangerouslyAllowAll) {
     reasons.push("the permission mode changed");
   }
-  if (current.fast !== next.fast) reasons.push("Amp Fast mode changed");
   const denied = (shape: SessionShape): string => [...shape.denied].sort().join(",");
   if (denied(current) !== denied(next)) reasons.push("the disallowed tool list changed");
   if (current.mcpConfigDigest !== next.mcpConfigDigest) {

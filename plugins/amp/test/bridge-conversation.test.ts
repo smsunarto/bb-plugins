@@ -18,6 +18,7 @@ import {
   type AmpExecuteFn,
   type SessionShape,
 } from "../src/bridge/conversation.ts";
+import { toSessionShape } from "../src/bridge/options.ts";
 
 function shape(overrides: Partial<SessionShape> = {}): SessionShape {
   return {
@@ -321,8 +322,27 @@ test("shapesEqual compares denied as a set and every scalar strictly", () => {
   assert.equal(shapesEqual(base, shape({ denied: ["b", "a"] })), true);
   assert.equal(shapesEqual(base, shape({ denied: ["a"] })), false);
   assert.equal(shapesEqual(shape({ denied: ["a", "a"] }), shape({ denied: ["a"] })), true);
-  assert.equal(shapesEqual(shape(), shape({ fast: true })), false);
   assert.equal(shapesEqual(shape(), shape({ mcpConfigDigest: "x" })), false);
   assert.equal(shapesEqual(shape(), shape({ mode: "ultra" })), false);
   assert.equal(shapesEqual(shape(), shape()), true);
+});
+
+test("a Fast thread's second turn keeps the shape its first turn spawned", () => {
+  const fastShape = (firstExecution: boolean): SessionShape =>
+    toSessionShape({
+      cwd: "/work/repo",
+      options: { serviceTier: "fast" } as Parameters<typeof toSessionShape>[0]["options"],
+      disallowedTools: [],
+      mcpConfigDigest: "",
+      firstExecution,
+    });
+  const turnOne = fastShape(true);
+  const turnTwo = fastShape(false);
+
+  assert.equal(turnOne.fast, true);
+  assert.equal(turnTwo.fast, false);
+  // The flip is Amp's own rule, not a user control: `--fast` only applies
+  // while the CLI creates the thread. Treating it as a config change aborts
+  // a warm CLI and shows a "session replaced" notice on every second turn.
+  assert.equal(shapesEqual(turnOne, turnTwo), true);
 });

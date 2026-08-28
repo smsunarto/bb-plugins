@@ -101,13 +101,21 @@ export interface SessionShape {
   readonly mcpConfigDigest: string;
 }
 
-/** Structural equality; `denied` compares as a set. */
+/**
+ * Structural equality; `denied` compares as a set.
+ *
+ * `fast` is excluded. Amp's CLI can only apply `--fast` while it creates the
+ * thread, so the field records a spawn-time decision rather than a control
+ * the user can change later: it is true on the first execution of a Fast
+ * thread and false from the turn the Amp thread id lands. Comparing it would
+ * read that flip as a configuration change and respawn a warm CLI that is
+ * already running the right thread.
+ */
 export function shapesEqual(a: SessionShape, b: SessionShape): boolean {
   if (
     a.cwd !== b.cwd ||
     a.mode !== b.mode ||
     a.dangerouslyAllowAll !== b.dangerouslyAllowAll ||
-    a.fast !== b.fast ||
     a.mcpConfigDigest !== b.mcpConfigDigest
   ) {
     return false;
