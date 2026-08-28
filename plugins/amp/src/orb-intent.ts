@@ -72,7 +72,11 @@ function isFreshIntent(path: string, now: number): boolean {
   } catch {
     armedAt = undefined;
   }
-  // A future armedAt (clock adjustment) still counts as fresh.
+  // A future armedAt (clock adjustment) still counts as fresh, but only a
+  // finite one. JSON.parse turns an overflowing literal such as 1e999 into
+  // Infinity, and `now - Infinity` is -Infinity, so an unfinite armedAt would
+  // read fresh against every clock and arm Orb from a corrupt file.
+  if (!Number.isFinite(armedAt as number)) return false;
   return typeof armedAt === "number" && now - armedAt < ORB_INTENT_TTL_MS;
 }
 

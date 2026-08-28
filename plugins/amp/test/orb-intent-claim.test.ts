@@ -3,7 +3,12 @@ import { test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { armOrbIntent, consumeOrbIntent } from "../src/orb-intent.ts";
+import {
+  ORB_INTENT_FILE,
+  armOrbIntent,
+  consumeOrbIntent,
+  readOrbIntent,
+} from "../src/orb-intent.ts";
 
 const CONSUMERS = 8;
 
@@ -73,8 +78,23 @@ test("consuming leaves no intent file and no claim residue", () => {
     armOrbIntent(root);
     assert.equal(consumeOrbIntent(root), true);
     assert.deepEqual(readdirSync(root), []);
-    writeFileSync(join(root, "orb-intent.json"), "not json");
+    writeFileSync(join(root, ORB_INTENT_FILE), "not json");
     assert.equal(consumeOrbIntent(root), false);
+    assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test("an intent whose armedAt overflows to Infinity is not fresh", () => {
+  const root = mkdtempSync(join(tmpdir(), "amp-claim-"));
+  try {
+    // JSON.parse renders this as Infinity, and `now - Infinity` is -Infinity,
+    // so an unguarded TTL comparison reports it fresh against any clock.
+    writeFileSync(join(root, ORB_INTENT_FILE), '{"armedAt":1e999}');
+    assert.equal(consumeOrbIntent(root), false);
+    writeFileSync(join(root, ORB_INTENT_FILE), '{"armedAt":1e999}');
+    assert.equal(readOrbIntent(root), false);
     assert.deepEqual(readdirSync(root), []);
   } finally {
     rmSync(root, { force: true, recursive: true });
