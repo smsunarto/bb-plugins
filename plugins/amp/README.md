@@ -125,11 +125,11 @@ Orb permissions stay in the Amp project settings.
 ### Fast
 
 bb **Fast** starts a new Local Amp thread with the CLI's native `--fast`
-feature. The official SDK does not expose that option yet, so the plugin's
-bundled launcher adds the flag only to SDK execute calls that bb marked Fast.
-Standard turns, continued threads, SDK version probes, and Orb executions are
-unchanged. Start a new bb thread after selecting Fast; Amp's CLI cannot add
-Fast to an existing Amp thread.
+feature. The plugin builds the CLI argv itself, so it adds `--fast` to a
+thread's first execution when bb marked that thread Fast. Standard turns,
+continued threads, version probes, and Orb executions are unchanged. Start a
+new bb thread after selecting Fast; Amp's CLI cannot add Fast to an existing
+Amp thread.
 
 ### Skills
 
@@ -146,14 +146,15 @@ index them.
 
 ### Current transport limits
 
-Two bb controls cannot yet reach the official Amp SDK and are not simulated:
+Two bb controls do not reach Amp's execute wire and are not simulated:
 
 - bb's generated project and host instructions are preserved at the start of
-  the first Amp prompt, but the SDK has no system/developer instruction input.
-- Image input is disabled because the SDK's `UserInputMessage` accepts text only.
+  the first Amp prompt. The wire carries no separate system or developer
+  instruction input.
+- Image input is disabled. The plugin sends text-only content blocks.
 
-These need upstream Amp SDK transport support before this plugin can
-preserve their native meaning.
+These need the execute wire to carry the input before this plugin can preserve
+their native meaning.
 
 ### The Oracle card
 
