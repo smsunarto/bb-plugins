@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { changedPluginFiles, findInstalledPlugin, snapshotPluginFiles } from "./dev-plugin";
+import {
+  changedPluginFiles,
+  findInstalledPlugin,
+  pluginTypesArgs,
+  snapshotPluginFiles,
+} from "./dev-plugin";
 
 const temporaryDirectories: string[] = [];
 
@@ -59,6 +64,16 @@ describe("changedPluginFiles", () => {
     ]);
 
     expect(changedPluginFiles(previous, next)).toEqual(["added.ts", "changed.ts", "removed.ts"]);
+  });
+});
+
+describe("pluginTypesArgs", () => {
+  test("keeps the plugin path absolute through a CLI shim that changes cwd", () => {
+    expect(pluginTypesArgs("/workspace/plugins/notify")).toEqual([
+      "plugin",
+      "types",
+      "/workspace/plugins/notify",
+    ]);
   });
 });
 

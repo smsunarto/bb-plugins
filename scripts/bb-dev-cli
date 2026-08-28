@@ -20,12 +20,27 @@ set -euo pipefail
 # nobody edits this checkout, so it should not sit in the working directory as
 # if it were one.
 repo="${BB_DEV_REPO:-${HOME}/.bb/worktrees/dev/bb}"
+caller_dir="${PWD}"
 
 if [[ ! -d "${repo}" ]]; then
   echo "bb-dev-cli: no worktree at ${repo}" >&2
   echo "Create one, or point BB_DEV_REPO at an existing checkout." >&2
   exit 1
 fi
+
+args=("$@")
+case "${args[0]:-}:${args[1]:-}" in
+  plugin:build | plugin:dev | plugin:migrate | plugin:types)
+    if [[ ${#args[@]} -lt 3 || "${args[2]}" == -* ]]; then
+      args=("${args[0]}" "${args[1]}" "${caller_dir}" "${args[@]:2}")
+    else
+      case "${args[2]}" in
+        .) args[2]="${caller_dir}" ;;
+        ./* | ../*) args[2]="${caller_dir}/${args[2]}" ;;
+      esac
+    fi
+    ;;
+esac
 
 # `bb:dev` sends its build chatter to stderr already, so stdout stays parseable
 # JSON for the callers that ask for --json.
@@ -36,4 +51,4 @@ exec env \
   -u BB_ENVIRONMENT_ID \
   -u BB_THREAD_STORAGE \
   -u BB_PROJECT_ID \
-  pnpm -C "${repo}" --silent bb:dev "$@"
+  pnpm -C "${repo}" --silent bb:dev "${args[@]}"

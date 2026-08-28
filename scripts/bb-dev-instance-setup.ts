@@ -35,16 +35,15 @@ import {
  * every experiment key once any of them is set, so an explicit value survives a
  * release that changes what the default is.
  *
- * `newOnboarding` is the one that matters: the first-run overlay renders when
- * it is on and `onboardingCompletedAt` is null, and the CLI can only clear that
- * timestamp, never stamp it. Holding the experiment off is what keeps the
- * overlay out of a capture.
+ * Keep the full release registry here. bb persists every key after one write,
+ * so an explicit baseline survives a release that changes a default.
  */
 export const BB_DEV_EXPERIMENTS: Readonly<Record<string, boolean>> = {
-  claudeCodeMockCliTraffic: false,
+  changelogPreview: false,
   editMessages: true,
-  newOnboarding: false,
+  mobileApp: false,
   providerSessionReaping: false,
+  timelineWindowing: false,
 };
 
 interface PluginSchemaEntry {

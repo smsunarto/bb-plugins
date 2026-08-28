@@ -88,6 +88,10 @@ export function changedPluginFiles(
   return [...changed].sort();
 }
 
+export function pluginTypesArgs(pluginDir: string): string[] {
+  return ["plugin", "types", pluginDir];
+}
+
 export async function findInstalledPlugin(
   plugins: readonly InstalledPlugin[],
   pluginDir: string,
@@ -252,7 +256,12 @@ async function main(): Promise<void> {
       }
     }
 
-    const typesExitCode = await runCommand(bb, ["plugin", "types", "."], pluginDir, setActiveChild);
+    const typesExitCode = await runCommand(
+      bb,
+      pluginTypesArgs(pluginDir),
+      pluginDir,
+      setActiveChild,
+    );
     if (typesExitCode !== 0) {
       throw new Error(`could not refresh SDK types for ${installed.id}`);
     }
