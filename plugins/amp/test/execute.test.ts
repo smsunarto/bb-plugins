@@ -104,7 +104,14 @@ test("every optional flag the builder can emit maps back to an option for the dr
     ...buildAmpArgv({ executor: "orb", project: "p" }),
     ...buildAmpArgv({}, {}, true),
   ];
-  const undroppable = new Set(["execute", "stream-json", "stream-json-input", "orb-execute"]);
+  const undroppable = new Set([
+    "execute",
+    "stream-json",
+    "stream-json-input",
+    "orb-execute",
+    "project",
+    "settings-file",
+  ]);
   for (const arg of emitted) {
     if (!arg.startsWith("--")) continue;
     const flag = arg.slice(2);
@@ -114,13 +121,20 @@ test("every optional flag the builder can emit maps back to an option for the dr
 });
 
 test("optionForFlag maps the wire names and fails closed on the rest", () => {
-  assert.equal(optionForFlag("settings-file"), "dangerouslyAllowAll");
   assert.equal(optionForFlag("label"), "labels");
   assert.equal(optionForFlag("mcp-config"), "mcpConfig");
   assert.equal(optionForFlag("stream-json-thinking"), "thinking");
   assert.equal(optionForFlag("fast"), "fast");
+  // Emitted only when the option is true, so the drop can only remove
+  // permission, never grant it.
+  assert.equal(optionForFlag("dangerously-allow-all"), "dangerouslyAllowAll");
   // Orb must fail, not silently run locally, on a CLI without --orb-execute.
   assert.equal(optionForFlag("orb-execute"), null);
+  // Dropping these two would change the blast radius, not a preference: the
+  // settings file carries the explicit dangerouslyAllowAll:false override,
+  // and --project overrides git-remote inference of the Orb repository.
+  assert.equal(optionForFlag("settings-file"), null);
+  assert.equal(optionForFlag("project"), null);
   // The retired SDK-era mapping carried a dead effort entry; it stays dead.
   assert.equal(optionForFlag("effort"), null);
   // Framed stdin is the wire itself; a CLI rejecting it must error, not retry.

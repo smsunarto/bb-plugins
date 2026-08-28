@@ -202,7 +202,7 @@ test("createAmpConversation drops an unsupported option and replays the prompt",
     async function* ({ prompt }) {
       const iterator = (prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
       firstSeen = (await iterator.next()).value;
-      throw new Error("error: unknown option '--settings-file'");
+      throw new Error("error: unknown option '--mode'");
     },
     async function* ({ prompt }) {
       for await (const message of prompt as AsyncIterable<unknown>) {
@@ -225,12 +225,52 @@ test("createAmpConversation drops an unsupported option and replays the prompt",
   await sent;
   assert.equal(execute.mock.calls.length, 2);
   assert.equal(received.length, 1);
-  assert.equal(execute.mock.calls[0]?.[0].options?.dangerouslyAllowAll, true);
-  assert.equal(execute.mock.calls[1]?.[0].options?.dangerouslyAllowAll, undefined);
-  assert.equal(retry.droppedOptions.has("dangerouslyAllowAll"), true);
-  assert.equal(retry.attemptedFlags.has("settings-file"), true);
+  assert.equal(execute.mock.calls[0]?.[0].options?.mode, "medium");
+  assert.equal(execute.mock.calls[1]?.[0].options?.mode, undefined);
+  assert.equal(retry.droppedOptions.has("mode"), true);
+  assert.equal(retry.attemptedFlags.has("mode"), true);
   assert.notEqual(firstSeen, undefined);
   assert.equal(secondSeen, firstSeen);
+});
+
+test("a rejected --settings-file fails instead of falling back to persisted settings", async () => {
+  const execute = mockExecute([
+    async function* () {
+      throw new Error("error: unknown option '--settings-file'");
+    },
+  ]);
+  const conversation = createAmpConversation({
+    shape: shape({ dangerouslyAllowAll: false, denied: ["Bash"] }),
+    continueFrom: null,
+    mcpConfig: null,
+    labels: null,
+    deps: depsFor(execute, { retry: createRetryState() }),
+  });
+  // A fatal attempt never settles pending input, so this promise stays open.
+  conversation.send("hi").catch(() => {});
+  await assert.rejects(drain(conversation.batches()), /--settings-file/);
+  // One attempt only. The file carries the explicit dangerouslyAllowAll:false
+  // that overrides a user-level true, so dropping it would run the turn with
+  // more permission than bb asked for.
+  assert.equal(execute.mock.calls.length, 1);
+});
+
+test("a rejected --project fails instead of inferring the Orb repository", async () => {
+  const execute = mockExecute([
+    async function* () {
+      throw new Error("error: unknown option '--project'");
+    },
+  ]);
+  const run = runOrb({
+    prompt: "go",
+    project: "acme/site",
+    continueFrom: null,
+    shape: shape(),
+    labels: null,
+    deps: depsFor(execute, { retry: createRetryState() }),
+  });
+  await assert.rejects(drain(run.batches()), /--project/);
+  assert.equal(execute.mock.calls.length, 1);
 });
 
 test("runOrb builds the Orb bag and ignores Local-only shape controls", async () => {
@@ -284,7 +324,6 @@ test("runOrb continues a thread and drops the project selector", async () => {
 test("runOrb fails closed on an unknown '--orb-execute' flag", async () => {
   const retry = createRetryState();
   const execute = mockExecute([
-    // eslint-disable-next-line require-yield
     async function* () {
       throw new Error("error: unknown option '--orb-execute'");
     },
