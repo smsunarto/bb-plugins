@@ -4,15 +4,14 @@ import {
   definePluginApp,
   Markdown,
   useComposerView,
-  useRealtime,
-  useRealtimeConnectionState,
   useRpc,
   type PluginMessageDirectiveProps,
+  type PluginTimelineRendererProps,
 } from "@get-bb/plugin-sdk/app";
 import { isOracleReportId, ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
 import { findOrbDirectiveRanges } from "./src/orb-directive";
-import { ORB_USAGE_CHANNEL, type OrbUsageView } from "./src/orb-usage";
+import type { OrbUsageView } from "./src/orb-usage";
 import type { rpcContract } from "./server";
 
 type OracleState =
@@ -54,9 +53,11 @@ function TraceList({ report }: { report: OracleReport }) {
   );
 }
 
-function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
+/** The Oracle report card. Two surfaces share it: the `amp/oracle` timeline
+ *  renderer (new threads) and the legacy message directive (ACP-era threads,
+ *  whose directives stay in their message bodies). */
+function OracleCard({ reportId, question }: { reportId: string | undefined; question?: string }) {
   const rpc = useRpc<typeof rpcContract>();
-  const reportId = attributes.reportId;
   const [state, setState] = useState<OracleState>({ kind: "loading" });
 
   useEffect(() => {
@@ -114,7 +115,8 @@ function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
 
   const failed = state.report.status === "error";
   const running = state.report.status === "running";
-  const request = state.report.request?.replaceAll(/\s+/g, " ").trim() || "Oracle response";
+  const request =
+    (state.report.request ?? question)?.replaceAll(/\s+/g, " ").trim() || "Oracle response";
 
   return (
     <details className="group my-2 overflow-hidden rounded-md border border-border bg-card" open>
@@ -163,14 +165,28 @@ function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
   );
 }
 
-function isThreadSignal(value: unknown, threadId: string): boolean {
+function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
+  return <OracleCard reportId={attributes.reportId} />;
+}
+
+/** Body renderer for `amp/oracle` timeline items. The payload is the bridge's
+ *  receipt, validated against the declared schema at ingest. */
+function OracleTimelineItem({ payload }: PluginTimelineRendererProps) {
+  const receipt =
+    payload !== null && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as { reportId?: unknown; question?: unknown })
+      : {};
   return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    (value as { threadId?: unknown }).threadId === threadId
+    <OracleCard
+      question={typeof receipt.question === "string" ? receipt.question : undefined}
+      reportId={typeof receipt.reportId === "string" ? receipt.reportId : undefined}
+    />
   );
 }
+
+/** The thread-link state has no push channel to the app, so the banner polls
+ *  `getOrbUsage` while a thread composer is mounted. */
+const ORB_USAGE_POLL_MS = 5_000;
 
 function AmpOrbBanner() {
   const view = useComposerView();
@@ -201,24 +217,11 @@ function AmpOrbBanner() {
     };
   }, [refresh]);
 
-  useRealtime(
-    ORB_USAGE_CHANNEL,
-    useCallback(
-      (payload) => {
-        if (threadId !== null && isThreadSignal(payload, threadId)) void refresh();
-      },
-      [refresh, threadId],
-    ),
-  );
-
-  const connection = useRealtimeConnectionState();
-  const previousConnection = useRef(connection);
   useEffect(() => {
-    if (previousConnection.current === "reconnecting" && connection === "connected") {
-      void refresh();
-    }
-    previousConnection.current = connection;
-  }, [connection, refresh]);
+    if (threadId === null) return;
+    const timer = setInterval(() => void refresh(), ORB_USAGE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [refresh, threadId]);
 
   useEffect(
     () => () => {
@@ -320,6 +323,15 @@ export default definePluginApp((app) => {
     ],
   });
 
+  // AMP_ORACLE_KIND (src/bridge/shapes.ts). The app bundle must stay
+  // node-free, so the literal repeats here rather than importing it.
+  app.slots.experimental_timelineRenderer({
+    kind: "amp/oracle",
+    component: OracleTimelineItem,
+  });
+
+  // ACP-era threads carry Oracle results as message directives; keep their
+  // renderer so history stays readable.
   app.slots.messageDirective({
     id: ORACLE_DIRECTIVE_ID,
     component: OracleDirective,
