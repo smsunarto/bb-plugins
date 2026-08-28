@@ -310,9 +310,11 @@ function AmpOrbBanner() {
  *  slot are ignored so the button cannot latch itself visible. Scoped to the
  *  surrounding `[data-app-composer]` so split panes gate independently; the
  *  picker's popover portals to <body>, so browsing other providers never
- *  flips the gate. The gate stays hidden while the provider directory loads,
- *  and a missing directory record fails open to the ungated behavior rather
- *  than hiding the toggle from Amp users. */
+ *  flips the gate. The gate stays hidden until the directory is ready and
+ *  hides outright when Amp has no record, because both mean the gate cannot
+ *  tell which provider is selected and showing Orb on a Claude or Codex
+ *  composer arms the next Amp thread from a button that has nothing to do
+ *  with it. */
 function useAmpComposerGate(): {
   setAnchor: (node: HTMLElement | null) => void;
   visible: boolean;
@@ -325,12 +327,21 @@ function useAmpComposerGate(): {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    if (anchor === null || providersState.status === "loading") return;
-    const composerRoot = anchor.closest("[data-app-composer]");
-    if (composerRoot === null || (ampLogoUrl === null && ampDisplayName === null)) {
-      setVisible(true);
+    if (anchor === null || providersState.status !== "ready") return;
+    // No Amp record means the provider is not registered, so there is no Amp
+    // thread to arm. The old fail-open put the Orb button on a Claude or
+    // Codex composer, and `status` is a three-way enum, so an "error"
+    // directory reached it with Amp installed and registered.
+    if (ampLogoUrl === null && ampDisplayName === null) {
+      setVisible(false);
       return;
     }
+    // Past the third plugin group the host portals composer actions into an
+    // overflow popover on <body>, so the anchor has no composer ancestor.
+    // Widen to the document rather than fail open: this action registers for
+    // `new-thread` only and the host keeps at most one new-thread composer,
+    // so the picker found here is still the one the button submits through.
+    const composerRoot: ParentNode = anchor.closest("[data-app-composer]") ?? anchor.ownerDocument;
     const check = () => {
       const logoSelected =
         ampLogoUrl !== null &&
@@ -348,7 +359,7 @@ function useAmpComposerGate(): {
     };
     check();
     const observer = new MutationObserver(check);
-    observer.observe(composerRoot, {
+    observer.observe(composerRoot instanceof Document ? composerRoot.body : composerRoot, {
       attributeFilter: ["data-provider-logo", "title"],
       attributes: true,
       childList: true,
@@ -364,8 +375,11 @@ function useAmpComposerGate(): {
  *  gate's DOM anchor while the button unmounts. Pressing it arms a one-shot
  *  Orb intent on the server; nothing is typed into the draft. The bridge
  *  consumes the intent when the next thread starts, so the armed state
- *  lives server-side. A remount re-reads it, and moving the picker off Amp
- *  disarms it. */
+ *  lives server-side, and every remount re-reads it. Nothing here disarms on
+ *  the way off Amp: the read makes a returning armed intent visible before
+ *  the user can send, which is all the removed disarm bought, and it cost
+ *  the arm whenever the host repainted the picker markers. The intent's own
+ *  10-minute expiry bounds the rest. */
 function OrbToggleAction() {
   const composer = useComposer();
   const view = useComposerView();
@@ -373,30 +387,31 @@ function OrbToggleAction() {
   const rpc = useRpc<typeof rpcContract>();
   const [pressed, setPressed] = useState(false);
   const wasVisible = useRef(false);
+  /** Bumped on every press. A `getOrbIntent` answer minted before the press
+   *  describes the state that press replaced, so applying it late would read
+   *  "off" while the server is armed, and the next thread would run on Orb
+   *  with nothing on screen saying so. */
+  const pressSeq = useRef(0);
   useEffect(() => {
     const was = wasVisible.current;
     wasVisible.current = gate.visible;
-    if (gate.visible === was) return;
-    if (gate.visible) {
-      let cancelled = false;
-      void rpc
-        .call("getOrbIntent", {})
-        .then((result) => {
-          if (!cancelled) setPressed(result.armed);
-          return null;
-        })
-        .catch(() => {});
-      return () => {
-        cancelled = true;
-      };
-    }
-    // The picker moved off Amp. A still-armed intent would surprise the
-    // next Amp thread while the toggle is not even on screen.
-    setPressed(false);
-    void rpc.call("setOrbIntent", { armed: false }).catch(() => {});
+    if (gate.visible === was || !gate.visible) return;
+    let cancelled = false;
+    const seq = pressSeq.current;
+    void rpc
+      .call("getOrbIntent", {})
+      .then((result) => {
+        if (!cancelled && seq === pressSeq.current) setPressed(result.armed);
+        return null;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [gate.visible, rpc]);
   const toggle = () => {
     const next = !pressed;
+    pressSeq.current += 1;
     setPressed(next);
     void rpc.call("setOrbIntent", { armed: next }).catch(() => {
       setPressed(!next);

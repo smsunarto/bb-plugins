@@ -20,6 +20,14 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       // own validator, which the SDK exports only under internal/. Shipped
       // code imports nothing internal; this covers that one test import.
       /^@get-bb\/plugin-sdk\/internal\/host-policy$/,
+      // The frontend test harness. The scanner's `*.test.*` extension already
+      // covers the slot tests themselves; this entry covers
+      // test/helpers/plugin-app-runtime.ts, which must install the runtime
+      // from its own module scope so it evaluates before app.tsx does.
+      /^@get-bb\/plugin-sdk\/testing\/app$/,
+      // act/cleanup for those slot tests. Resolved from the workspace root,
+      // not declared in this plugin's devDependencies.
+      /^@testing-library\/react$/,
     ],
   });
   assert.ok(report.files.length > 0, "the scan found no source files");
