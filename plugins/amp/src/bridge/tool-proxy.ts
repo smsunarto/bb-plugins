@@ -28,7 +28,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createConnection, createServer, type Socket } from "node:net";
 import { createInterface } from "node:readline";
-import type { MCPConfig } from "@ampcode/sdk";
+import type { MCPConfig } from "./execute.ts";
 import {
   dynamicToolSchema,
   experimental_buildBridgeToolCallContent as buildBridgeToolCallContent,

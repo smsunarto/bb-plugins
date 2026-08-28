@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-amp",
   "version": "0.4.1",
-  "description": "Amp (ampcode.com) as a bb provider: a native provider bridge driving the Amp CLI through the official SDK, with Oracle and Orb surfaces",
+  "description": "Amp (ampcode.com) as a bb provider: a native provider bridge spawning the Amp CLI directly, with Oracle and Orb surfaces",
   "keywords": [
     "bb",
     "bb-plugin",
@@ -51,7 +51,6 @@
     "dist/app.css",
     "dist/host.js",
     "dist/host.meta.json",
-    "dist/amp-cli-shim.js",
     "assets/",
     "README.md",
     "LICENSE",
@@ -68,18 +67,17 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@ampcode/sdk": "0.1.0-20260729105907-g72d5ca3",
+    "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "esbuild": "^0.25.0",
+    "jsdom": "25.0.1",
     "typescript": "^7.0.0"
   },
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000 test/*.test.ts",
-    "build:bridge": "esbuild src/amp-cli-shim.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --entry-names=[name] --banner:js=\"import { createRequire as __bbCreateRequire } from 'node:module'; const require = __bbCreateRequire(import.meta.url);\"",
-    "build": "bun run build:bridge && bb plugin build .",
+    "build": "bb plugin build .",
     "clean": "rm -rf dist"
   }
 }

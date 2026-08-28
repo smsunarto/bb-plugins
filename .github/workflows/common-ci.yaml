@@ -59,13 +59,6 @@ jobs:
       - name: Build
         run: bun run build
 
-      # bb never runs a plugin's build script, so amp's CLI shim ships in the
-      # tag as a committed bundle. `bun run build` above rebuilds it from src/;
-      # a diff here means the tag would carry a shim that no longer matches
-      # the sources it was built from.
-      - name: Guard against a stale committed amp CLI shim
-        run: git diff --exit-code -- 'plugins/amp/dist/amp-cli-shim.js'
-
       # Two code paths rewrite a manifest in place and restore it afterwards:
       # `bb plugin build` swaps bb.server/bb.app to the sources for the length
       # of a build, and publishUnder() rewrites `name` for the length of one

@@ -15,11 +15,11 @@
 
 </div>
 
-<picture><img src="docs/media/hero.png" alt="Amp in bb: an /orb prompt to run in Amp&#39;s remote sandbox, the Orb session bar with its amp sync command, and an Oracle card" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="Amp in bb: the Orb toggle that runs a thread in Amp&#39;s remote sandbox, the Orb session bar with its amp sync command, and an Oracle card" width="100%" /></picture>
 
 This plugin registers Amp as a native bb provider. The executable side is the
-plugin's own provider bridge — its `bb.host` artifact — which drives the Amp
-CLI through the official `@ampcode/sdk` and a stream-json shim. Amp appears
+plugin's own provider bridge — its `bb.host` artifact — which spawns the Amp
+CLI directly and drives it over its stream-json execute wire. Amp appears
 in bb's provider list, runs against your bb environment by default, and can run
 in an [Amp Orb](https://ampcode.com) cloud sandbox instead when you ask for one.
 
@@ -73,16 +73,16 @@ optional.
 
 ### Local and Orb
 
-Amp runs against the bb environment's working directory. To use Amp Orb instead,
-put `/orb` in the **first** prompt of a new thread:
+Amp runs against the bb environment's working directory. To use Amp Orb
+instead, press the **Orb** toggle in the composer, then send the first prompt
+of a new thread. The toggle shows only while Amp is the selected provider.
+Pressing it arms Orb for the next thread and adds nothing to the prompt text.
+An armed toggle expires after 10 minutes if no thread is started.
 
-```
-/orb refactor the payment retry logic
-```
-
-**Local or Orb is fixed for the life of the thread.** A `/orb` in a later prompt
-will not move an existing thread, so start a new one. Later prompts in an Orb
-thread do not need the token.
+**Local or Orb is fixed for the life of the thread.** This matches Amp's own
+model, where the executor is chosen at thread creation and cannot change
+later. To move existing work to Orb, start a new thread with the toggle
+pressed.
 
 An Orb thread shows a bar above the composer with the Amp thread id and a copyable
 `amp sync T-…` command. Run that in a local checkout to mirror the Orb's live
@@ -107,9 +107,9 @@ nothing recorded and are not restored.
 
 ### Modes
 
-Amp's four modes — low, medium, high, ultra — appear in bb's model picker, each
-labelled with the "With ChatGPT Sub" routing as
-`<agent> [<effort>] · <oracle> [<effort>]`.
+bb's picker offers one Amp model. Its reasoning levels — Low, Medium, High,
+Ultra — are Amp's four modes, and the selected level becomes `--mode` on the
+spawned CLI (`src/bridge/options.ts`).
 
 ### Permissions
 
@@ -125,11 +125,11 @@ Orb permissions stay in the Amp project settings.
 ### Fast
 
 bb **Fast** starts a new Local Amp thread with the CLI's native `--fast`
-feature. The official SDK does not expose that option yet, so the plugin's
-bundled launcher adds the flag only to SDK execute calls that bb marked Fast.
-Standard turns, continued threads, SDK version probes, and Orb executions are
-unchanged. Start a new bb thread after selecting Fast; Amp's CLI cannot add
-Fast to an existing Amp thread.
+feature. The plugin builds the CLI argv itself, so it adds `--fast` to a
+thread's first execution when bb marked that thread Fast. Standard turns,
+continued threads, version probes, and Orb executions are unchanged. Start a
+new bb thread after selecting Fast; Amp's CLI cannot add Fast to an existing
+Amp thread.
 
 ### Skills
 
@@ -146,14 +146,15 @@ index them.
 
 ### Current transport limits
 
-Two bb controls cannot yet reach the official Amp SDK and are not simulated:
+Two bb controls do not reach Amp's execute wire and are not simulated:
 
-- bb's generated project and host instructions are preserved at the start of
-  the first Amp prompt, but the SDK has no system/developer instruction input.
-- Image input is disabled because the SDK's `UserInputMessage` accepts text only.
+- bb's generated project and host instructions are dropped. The execute wire
+  carries no system or developer instruction input, and the plugin does not
+  fold them into the prompt text either.
+- Image input is disabled. The plugin sends text-only content blocks.
 
-These need upstream Amp SDK transport support before this plugin can
-preserve their native meaning.
+These need the execute wire to carry the input before this plugin can preserve
+their native meaning.
 
 ### The Oracle card
 
@@ -166,12 +167,12 @@ A healthy install does not need this command.
 
 | Command         | What it does                                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `bb amp status` | Print every link in the chain: Amp CLI, CLI shim, provider registration, legacy config entry, and auth |
+| `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, provider registration, legacy config entry, and auth |
 
 ```console
 $ bb amp status
 Amp CLI: /Users/you/.local/bin/amp
-CLI shim: /path/to/plugins/amp/dist/amp-cli-shim.js
+bridge bundle: /path/to/plugins/amp/dist/host.js
 bb provider acp-amp: registered
 legacy config entry amp: absent
 auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in your environment
@@ -194,13 +195,12 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 ## Develop from source
 
 Install from source as shown under [Install](#install). `bun run build` in
-`plugins/amp` produces `dist/amp-cli-shim.js` alongside `dist/server.js`,
-`dist/app.js`, and `dist/host.js` (the provider bridge).
+`plugins/amp` produces `dist/server.js`, `dist/app.js`, and `dist/host.js`
+(the provider bridge).
 
-Never run `npm install` inside `plugins/amp`. The root `overrides` entry that
-keeps the real `@ampcode/cli` out of the tree only applies at the workspace
-root, and a leaf install makes `@ampcode/sdk` prefer a CLI the plugin did not
-configure.
+Never run `npm install` inside `plugins/amp`. The source checkout is a Bun
+workspace, and a leaf npm install writes a second lockfile and `node_modules`
+that shadow the workspace install.
 
 `bb plugin install .` and `bb plugin dev` rebuild the frontend in place from the
 published manifest entry, which drops the authored rules from `dist/app.css`.

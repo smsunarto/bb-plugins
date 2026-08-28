@@ -66,20 +66,6 @@ vendored Amp mark as an Amp-red status accent.
 
 ---
 
-## `@ampcode/sdk`
-
-`plugins/amp` depends on `@ampcode/sdk`, published by Sourcegraph under the **Amp
-Commercial License**, and bundles it into `dist/host.js`. That code is
-Sourcegraph's and stays under the Amp Commercial License, not MIT; the licence
-permits the redistribution `@smsunarto/bb-plugin-amp` performs.
-
-`plugins/amp/vendor/ampcode-cli-stub` is a local, empty stand-in for
-`@ampcode/cli` written for this repository. It contains none of Sourcegraph's
-code; it exists so `@ampcode/sdk` falls through to the `AMP_CLI_PATH` the plugin
-configures, instead of resolving a bundled CLI.
-
----
-
 ## `agentation`
 
 `plugins/agentation` bundles `agentation` into `dist/app.js`, from a **modified

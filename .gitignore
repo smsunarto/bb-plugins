@@ -1,14 +1,5 @@
 node_modules/
 dist/
-# bb builds a plugin's server and app bundles at install time, but it never runs
-# a plugin's own build script -- so amp's ACP bridge, which esbuild produces
-# from src/ with the patched @ampcode/sdk inlined, has to be in the tag itself.
-# CI rebuilds both and fails on a diff, so a stale bundle cannot ship.
-!plugins/amp/dist/
-plugins/amp/dist/*
-!plugins/amp/dist/bridge.js
-!plugins/amp/dist/amp-cli-shim.js
-
 # The vendored agentation build is source, not output: bb's install-time build
 # has to find it, and no build step in this repo regenerates it.
 !plugins/agentation/vendor/agentation/dist/

@@ -8,11 +8,11 @@ import {
   type AmpProviderPaths,
 } from "../lib/declaration.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "../lib/provision.ts";
+import { AMP_FALLBACK_MODELS } from "../src/bridge/model-catalog.ts";
 import { AMP_ORACLE_KIND, AMP_THREAD_LINK_KIND } from "../src/bridge/shapes.ts";
 
 const PATHS: AmpProviderPaths = {
-  ampCliPath: "/plugin/dist/amp-cli-shim.js",
-  ampRealCliPath: "/usr/local/bin/amp",
+  ampCliPath: "/usr/local/bin/amp",
 };
 
 test("the declaration passes the SDK validator", () => {
@@ -44,7 +44,7 @@ test("the declaration passes the SDK validator", () => {
     typeof root === "string" ? root : root.path;
   assert.deepEqual(skillRoots?.project?.map(rootPath), AMP_NATIVE_SKILL_ROOTS.project);
   assert.deepEqual(skillRoots?.user?.map(rootPath), AMP_NATIVE_SKILL_ROOTS.user);
-  assert.deepEqual(normalized.models, { scope: "host" });
+  assert.deepEqual(normalized.models, { scope: "host", fallback: AMP_FALLBACK_MODELS });
 });
 
 test("service tiers and reasoning levels pin the wire ids the bridge maps", () => {
@@ -111,8 +111,18 @@ test("deriveProviderOptions returns the closed-over paths", () => {
     permissionMode: "full",
     settings: {},
   });
-  assert.deepEqual(options, {
-    ampCliPath: PATHS.ampCliPath,
-    ampRealCliPath: PATHS.ampRealCliPath,
-  });
+  assert.deepEqual(options, { ampCliPath: PATHS.ampCliPath });
+});
+
+test("the fallback catalog is one default model on the declared mode ladder", () => {
+  const declaration = buildAmpProviderDeclaration(PATHS);
+  assert.equal(AMP_FALLBACK_MODELS.filter((model) => model.isDefault).length, 1);
+  const ladder = declaration.capabilities.reasoningLevels;
+  for (const model of AMP_FALLBACK_MODELS) {
+    const efforts = model.supportedReasoningEfforts.map((effort) => effort.reasoningEffort);
+    // options.ts maps every bb level onto an Amp mode; the picker offers
+    // exactly the declared ladder, so the two must agree.
+    assert.deepEqual(efforts, ladder);
+    assert.ok(efforts.includes(model.defaultReasoningEffort));
+  }
 });

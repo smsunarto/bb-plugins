@@ -82,8 +82,8 @@ export class NoActiveTurnError extends Error {}
 export interface SessionDeps {
   createConversation(args: { shape: SessionShape; continueFrom: string | null }): AmpConversation;
   runOrb(args: { prompt: string; shape: SessionShape; continueFrom: string | null }): OrbRun;
-  /** One-shot `amp threads …` CLI invocation (archive, rename); the SDK
-   * exports no helpers for these. */
+  /** One-shot `amp threads …` CLI invocation (archive, rename), outside
+   * the execute wire. */
   threadCommand(argv: readonly string[]): Promise<{ ok: boolean; stderr: string }>;
   /** Oracle report persistence for the projection (deviation (h): the sketch
    * passed only `finishOracleReport`, but `ProjectionContext` needs
@@ -224,8 +224,8 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
   let threadLinkAnnounced = false;
   /** Publish the bb-to-Amp thread mapping as `amp/thread-link` state: once
    * when the Amp thread id first arrives, and once per session for a record
-   * that already has one (an ACP-era thread gets its state on its next
-   * turn). Always called mid-turn, so the delta rides the turn envelope. */
+   * that already has one or that runs Orb, whose banner starts before the id
+   * exists. Always called mid-turn, so the delta rides the turn envelope. */
   const announceThreadLink = (): void => {
     threadLinkAnnounced = true;
     writer.emit([
@@ -440,7 +440,15 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
       const text = promptText(turnArgs.input);
       const scribe = writer.scribe();
       const ctx = projection(scribe);
-      if (!threadLinkAnnounced && record.ampThreadId !== null) announceThreadLink();
+      // An Orb record announces before its Amp thread id exists. That is the
+      // banner's "starting" state, re-announced with the sync command once
+      // the id arrives.
+      if (
+        !threadLinkAnnounced &&
+        (record.ampThreadId !== null || record.executionTarget === "orb")
+      ) {
+        announceThreadLink();
+      }
       const turn: ActiveTurn = {
         scribe,
         done: Promise.resolve(),

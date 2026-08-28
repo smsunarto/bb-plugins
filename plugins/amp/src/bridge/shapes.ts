@@ -26,11 +26,8 @@ import {
 import type { AmpImageContent } from "./events.ts";
 import type { TimelineRow } from "./timeline.ts";
 
-/** Namespaced extension kinds this bridge may emit. Must match the plugin
- *  declaration's `extensionKinds` keys — the server validates payloads against
- *  those schemas and persists `provider/unhandled` on a miss. */
-export const AMP_ORACLE_KIND = "amp/oracle";
-export const AMP_THREAD_LINK_KIND = "amp/thread-link";
+import { AMP_ORACLE_KIND, AMP_THREAD_LINK_KIND } from "./kinds.ts";
+export { AMP_ORACLE_KIND, AMP_THREAD_LINK_KIND };
 
 /** The Oracle receipt payload. Small on purpose: the report body lives in the
  *  XDG file store and the plugin's `getOracleReport` RPC serves it. The

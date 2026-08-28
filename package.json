@@ -9,14 +9,8 @@
     "packages/*"
   ],
   "comments": {
-    "overrides": "@ampcode/sdk's findAmpCommand() tries its bundled @ampcode/cli BEFORE the AMP_CLI_PATH env var, so a real @ampcode/cli silently outranks the CLI that plugins/amp provisions. The stub declares no bin.amp, so that first resolver returns null and AMP_CLI_PATH wins. It also keeps the ~69MiB @ampcode/cli-<platform> binary out of every install. Bun only honours overrides in the workspace root, so this leaf concern must live here, and it ignores scoped/nested override syntax -- keep the key flat. The root devDependency on @ampcode/cli exists because Bun 1.3's hoisted linker resolves the override in the lockfile but does not link the file: stub into node_modules on a fresh install; the devDependency forces the root link so @ampcode/sdk resolves the stub. plugins/amp/test/cli-stub.test.ts fails if the stub stops resolving. The zod override exists because @ampcode/sdk declares zod ^3, and Bun's hoisted linker parks that conflicting zod 3 at plugins/amp/node_modules/zod, where it shadows the workspace's zod 4 for everything under the plugin -- `bb plugin build` then inlines zod 3 into dist/host.js and the @get-bb/plugin-sdk code bundled there (peer zod ^4.3.6) throws at load. Forcing zod 4 everywhere is safe: @ampcode/sdk vendors its own zod 3 inside dist/index.js and never resolves zod from node_modules.",
-    "patchedDependencies": "@ampcode/sdk strips Amp's supported top-level steer flag from streaming input because its UserInputMessage Zod schema predates that protocol field. The patch preserves a literal true flag so bb follow-ups steer the active Amp turn; remove it when the pinned SDK exposes steer itself. The Agentation patch used to live here too; it now ships as the vendored file: dependency in plugins/agentation/vendor, because bb builds a git: install with npm, which never applies this field. See that directory README.",
     "trustedDependencies": "Bun runs no dependency lifecycle script unless the package is trusted, and declaring this field REPLACES Bun's default allow list rather than extending it -- so every package that needs its script must be named here. Only two dependencies have one: esbuild, whose `node install.js` links a standalone binary and is ABI-independent, and better-sqlite3, which is deliberately absent. better-sqlite3 is a native Node addon, and its `prebuild-install` picks a prebuilt binary by the NODE_MODULE_VERSION of whatever runtime executes the script. Bun reports 137 (Node 24); the plugin tests run under `node --test`, and Node 22 is 127, so a Bun-run install fetches a binary that then fails to load with ERR_DLOPEN_FAILED. Leaving it untrusted skips that wrong-ABI download entirely and lets the root postinstall below fetch the right one under node.",
     "postinstall": "better-sqlite3 is left out of trustedDependencies above, so nothing has built it by the time this runs. Invoking prebuild-install under `node` resolves the binary against the ABI of the runtime that will actually load it. This is what `npm rebuild better-sqlite3` used to do, without needing npm on PATH. There is no node-gyp fallback here, unlike better-sqlite3's own `install` script -- a platform with no published prebuild fails loudly instead of building from source."
-  },
-  "overrides": {
-    "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
-    "zod": "^4.4.3"
   },
   "trustedDependencies": [
     "esbuild"
@@ -51,7 +45,6 @@
     "clean": "bun run --filter '@bb-kit/*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean"
   },
   "devDependencies": {
-    "@ampcode/cli": "file:./plugins/amp/vendor/ampcode-cli-stub",
     "@changesets/cli": "3.0.0",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
@@ -60,8 +53,5 @@
     "oxlint": "^1.77.0",
     "playwright": "1.62.1",
     "typescript": "^6.0.0"
-  },
-  "patchedDependencies": {
-    "@ampcode/sdk@0.1.0-20260729105907-g72d5ca3": "patches/@ampcode+sdk@0.1.0-20260729105907-g72d5ca3.patch"
   }
 }

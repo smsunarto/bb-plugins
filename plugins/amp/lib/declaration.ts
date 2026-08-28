@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { PluginProviderDeclaration } from "@get-bb/plugin-sdk";
 import { AMP_AGENT } from "../src/execution-target.ts";
+import { AMP_FALLBACK_MODELS } from "../src/bridge/model-catalog.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "./provision.ts";
 
 /** `amp/oracle` timeline items carry only this receipt. The report body
@@ -25,10 +26,8 @@ export type AmpThreadLinkState = z.infer<typeof threadLinkStateSchema>;
  *  closes over them: it is synchronous and sits on the turn-submit path, so
  *  it must not resolve anything itself. */
 export interface AmpProviderPaths {
-  /** The stream-json shim the bridge hands to @ampcode/sdk as AMP_CLI_PATH. */
+  /** The Amp CLI the bridge spawns, for executions and thread commands. */
   ampCliPath: string;
-  /** The real Amp CLI, for thread commands (archive, rename) and the shim. */
-  ampRealCliPath: string;
 }
 
 /**
@@ -77,14 +76,12 @@ export function buildAmpProviderDeclaration(paths: AmpProviderPaths): PluginProv
       oracle: { item: oracleReceiptSchema },
       "thread-link": { state: threadLinkStateSchema },
     },
-    // Amp's catalog comes from the account, never from the workspace, so one
-    // probe per host is enough.
-    models: { scope: "host" },
+    // One probe per host: the catalog is static (src/bridge/model-catalog.ts),
+    // never workspace-dependent. The fallback mirrors the bridge's live
+    // model/list answer so the picker is populated before any probe.
+    models: { scope: "host", fallback: AMP_FALLBACK_MODELS },
     env: { passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY"] },
     experimental_nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
-    deriveProviderOptions: () => ({
-      ampCliPath: paths.ampCliPath,
-      ampRealCliPath: paths.ampRealCliPath,
-    }),
+    deriveProviderOptions: () => ({ ampCliPath: paths.ampCliPath }),
   };
 }

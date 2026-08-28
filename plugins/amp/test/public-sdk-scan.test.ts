@@ -9,7 +9,6 @@ const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 test("the plugin imports only the public SDK and its declared dependencies", () => {
   const report = scanPublicSdkOnly(PLUGIN_ROOT, {
     allow: [
-      /^@ampcode\/sdk$/,
       /^bun:test$/,
       /^zod$/,
       /^react$/,
@@ -21,6 +20,15 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       // own validator, which the SDK exports only under internal/. Shipped
       // code imports nothing internal; this covers that one test import.
       /^@get-bb\/plugin-sdk\/internal\/host-policy$/,
+      // The frontend test harness. The scanner's `*.test.*` extension already
+      // covers the slot tests themselves; this entry covers
+      // test/helpers/plugin-app-runtime.ts, which must install the runtime
+      // from its own module scope so it evaluates before app.tsx does.
+      /^@get-bb\/plugin-sdk\/testing\/app$/,
+      // act/cleanup for those slot tests. Declaring a dependency does not
+      // exempt it from this scan, the same way `zod` is declared and still
+      // listed above, so the entry stays alongside the devDependency.
+      /^@testing-library\/react$/,
     ],
   });
   assert.ok(report.files.length > 0, "the scan found no source files");

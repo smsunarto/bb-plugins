@@ -34,7 +34,7 @@ test("readProviderOptions falls back to defaults on a malformed bag", () => {
 });
 
 test("readProviderOptions passes valid knobs through", () => {
-  const bag = { ampCliPath: "/shim", ampRealCliPath: "/real", orbProject: "acme/site" };
+  const bag = { ampCliPath: "/amp", orbProject: "acme/site" };
   assert.deepEqual(readProviderOptions(bag), bag);
 });
 

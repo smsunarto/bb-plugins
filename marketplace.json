@@ -48,7 +48,7 @@
     {
       "id": "amp",
       "displayName": "Amp",
-      "description": "Runs Amp locally or in an Orb as one bb provider through a bundled ACP bridge built on the official @ampcode/sdk.",
+      "description": "Runs Amp locally or in an Orb as one bb provider through the plugin's own provider bridge, which spawns the Amp CLI directly.",
       "icon": {
         "url": "plugins/amp/assets/icon.svg"
       },

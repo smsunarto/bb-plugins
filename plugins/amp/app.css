@@ -1,30 +1,8 @@
 /* Keep the Orb state accents red while the Amp mark stays theme-neutral. */
-.amp-orb-directive-highlight,
 .amp-orb-status-pill,
-.amp-orb-copy-button {
+.amp-orb-copy-button,
+.amp-orb-toggle {
   --amp-brand-red: #f34e3f;
-}
-
-.amp-orb-directive-highlight {
-  --amp-orb-red: var(--amp-brand-red);
-  --amp-orb-red-deep: color-mix(in oklch, var(--amp-orb-red) 82%, black);
-  --amp-orb-red-bright: color-mix(in oklch, var(--amp-orb-red) 62%, white);
-
-  position: relative;
-  font-weight: 600;
-  background: linear-gradient(
-    90deg,
-    var(--amp-orb-red-deep) 0%,
-    var(--amp-orb-red) 30%,
-    var(--amp-orb-red-bright) 50%,
-    var(--amp-orb-red) 70%,
-    var(--amp-orb-red-deep) 100%
-  );
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: amp-orb-shimmer 3s linear infinite;
 }
 
 .amp-orb-brand-logo {
@@ -100,51 +78,58 @@
   opacity: 0.5;
 }
 
-.amp-orb-directive-highlight::before,
-.amp-orb-directive-highlight::after {
-  content: "✦";
-  position: absolute;
-  font-size: 0.62em;
-  line-height: 1;
-  color: var(--amp-orb-red-bright);
-  -webkit-text-fill-color: var(--amp-orb-red-bright);
-  pointer-events: none;
-  opacity: 0;
-  animation: amp-orb-sparkle 1.8s ease-in-out infinite;
+.amp-orb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: transparent;
+  padding: 0.12rem 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
-.amp-orb-directive-highlight::before {
-  top: -0.32em;
-  right: -0.42em;
+.amp-orb-toggle:hover {
+  background: color-mix(in oklch, var(--amp-brand-red) 8%, transparent);
+  color: var(--amp-brand-red);
 }
 
-.amp-orb-directive-highlight::after {
-  bottom: -0.22em;
-  left: -0.42em;
-  animation-delay: 0.9s;
+.amp-orb-toggle:focus-visible {
+  outline: 2px solid var(--amp-brand-red);
+  outline-offset: -2px;
 }
 
-@keyframes amp-orb-shimmer {
-  0% {
-    background-position: 200% 0%;
-  }
-
-  100% {
-    background-position: -200% 0%;
-  }
+.amp-orb-toggle[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--amp-brand-red) 35%, transparent);
+  background: color-mix(in oklch, var(--amp-brand-red) 8%, transparent);
+  color: var(--amp-brand-red);
 }
 
-@keyframes amp-orb-sparkle {
-  0%,
-  100% {
-    opacity: 0;
-    transform: scale(0.4) rotate(0deg);
-  }
+.amp-orb-toggle:disabled {
+  cursor: default;
+  background: transparent;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
 
-  50% {
-    opacity: 1;
-    transform: scale(1) rotate(90deg);
-  }
+.amp-orb-toggle-logo {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: 0 0 auto;
+}
+
+/* The gate keeps this wrapper mounted as its DOM anchor while the button
+   unmounts; display:contents keeps the empty wrapper out of the action row's
+   flex layout. */
+.amp-orb-toggle-slot {
+  display: contents;
 }
 
 @keyframes amp-orb-status-spin {
@@ -154,17 +139,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .amp-orb-directive-highlight {
-    animation: none;
-    background-position: 50% 0%;
-  }
-
-  .amp-orb-directive-highlight::before,
-  .amp-orb-directive-highlight::after {
-    animation: none;
-    opacity: 0.9;
-  }
-
   .amp-orb-status-spinner {
     animation: none;
     border-right-color: currentColor;

@@ -47,15 +47,7 @@ SOFTWARE.
 
 | Work                                                         | Copyright          | Where it is used                                                                                                                                     |
 | ------------------------------------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`@ampcode/sdk`](https://www.npmjs.com/package/@ampcode/sdk) | © Sourcegraph Inc. | The Amp execution layer of `dist/host.js`                                                                                                            |
 | Amp logo mark                                                | © Sourcegraph Inc. | `assets/icon.svg`, `assets/logo.svg`, `assets/logo-dark.svg`, and `dist/app.js` |
-
-The following is reproduced from the licence file distributed with
-`@ampcode/sdk`:
-
-> © Sourcegraph Inc. All rights reserved. Use of Amp is subject to Amp's
-> [Terms of Service](https://ampcode.com/terms), or separate Amp terms that you
-> have signed with Sourcegraph Inc.
 
 "Amp" and the Amp logo are marks of Sourcegraph Inc. This plugin is not
 affiliated with or endorsed by Sourcegraph Inc.

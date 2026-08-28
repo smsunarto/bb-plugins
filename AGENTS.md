@@ -16,7 +16,6 @@
 - Keep `bb.server` and `bb.app` on source. Do not point them at `dist/server.js`.
 - The `bb-plugin-` segment in the package name is load-bearing. The directory name is not identity.
 - Put runtime imports in `dependencies`.
-- Do not remove or move the root `@ampcode/cli` override.
 - Drive a running bb through the pinned dev instance (`bun run dev:setup`, `scripts/bb-dev-cli`).
 - Ask before the live desktop app loads a change.
 - `dist/` is shared between the two instances.
