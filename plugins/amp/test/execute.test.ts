@@ -182,6 +182,22 @@ test("buildAmpSettings prefers AMP_SETTINGS_FILE and fails loudly when it is bro
   assert.throws(() => buildAmpSettings({ dangerouslyAllowAll: true }, { AMP_SETTINGS_FILE: broken }));
 });
 
+test("buildAmpSettings rejects an explicit settings file that is not an object", () => {
+  const root = mkdtempSync(join(tmpdir(), "amp-settings-"));
+  for (const document of ['"a string"', "42", "null", "[]"]) {
+    const path = join(root, `not-an-object-${document.length}.json`);
+    writeFileSync(path, document);
+    // Coercing these to {} discards the user's whole settings document, and
+    // with it the explicit amp.dangerouslyAllowAll:false bb writes there. The
+    // turn would then run with the persisted user-level setting instead.
+    assert.throws(
+      () => buildAmpSettings({ dangerouslyAllowAll: false }, { AMP_SETTINGS_FILE: path }),
+      /not a JSON object/,
+      `${document} must be rejected`,
+    );
+  }
+});
+
 test("buildAmpSettings skips an unparseable settings.jsonc and prefers settings.json", () => {
   const configHome = mkdtempSync(join(tmpdir(), "amp-settings-"));
   mkdirSync(join(configHome, "amp"), { recursive: true });

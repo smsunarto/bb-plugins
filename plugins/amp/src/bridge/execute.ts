@@ -159,8 +159,12 @@ function loadBaseSettings(env: Record<string, string | undefined>): Record<strin
   const explicit = env.AMP_SETTINGS_FILE;
   if (explicit !== undefined && explicit.trim().length > 0) {
     // An explicitly named settings file that is missing or broken must fail
-    // loudly; silently running without the user's settings is worse.
-    return asSettingsObject(JSON.parse(readFileSync(explicit, "utf8")));
+    // loudly; silently running without the user's settings is worse. A valid
+    // JSON scalar or array is the same kind of broken: coercing it to {}
+    // drops the whole document, including the explicit
+    // `amp.dangerouslyAllowAll: false` bb writes there, so the turn would run
+    // on the user's persisted setting instead of the one bb asked for.
+    return requireSettingsObject(JSON.parse(readFileSync(explicit, "utf8")), explicit);
   }
   const xdg = env.XDG_CONFIG_HOME;
   const configHome = xdg !== undefined && xdg.trim().length > 0 ? xdg : join(homedir(), ".config");
@@ -182,10 +186,22 @@ function loadBaseSettings(env: Record<string, string | undefined>): Record<strin
   return {};
 }
 
+function isSettingsObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Discovered settings files are best-effort: an unusable one is skipped, the
+ *  way the CLI's own loader skips it. */
 function asSettingsObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {};
+  return isSettingsObject(value) ? { ...value } : {};
+}
+
+/** An explicitly named settings file is not best-effort. */
+function requireSettingsObject(value: unknown, path: string): Record<string, unknown> {
+  if (!isSettingsObject(value)) {
+    throw new Error(`AMP_SETTINGS_FILE ${path} is not a JSON object`);
+  }
+  return { ...value };
 }
 
 export interface AmpExecuteDeps {
