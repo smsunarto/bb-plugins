@@ -1,21 +1,31 @@
 import { z } from "zod";
 import { defineQuery } from "@bb-kit/core/rpc";
-import { gitEntrySchema, groupDefinitions, type TweakableGroupDefinition } from "../domain.ts";
+import {
+  gitEntrySchema,
+  groupDefinitions,
+  isValidSkillName,
+  type TweakableGroupDefinition,
+} from "../domain.ts";
 import { gitFor } from "../git.ts";
 
 function toOverviewGroup(
   group: TweakableGroupDefinition,
   exists: (path: string) => boolean,
   dirtyPaths: ReadonlySet<string>,
+  removableSkillNames: ReadonlyMap<string, string>,
 ) {
   return {
     id: group.id,
     title: group.title,
-    files: group.files.map((file) => ({
-      ...file,
-      exists: exists(file.path),
-      dirty: dirtyPaths.has(file.path),
-    })),
+    files: group.files.map((file) => {
+      const removeSkillName = removableSkillNames.get(file.path);
+      return {
+        ...file,
+        exists: exists(file.path),
+        dirty: dirtyPaths.has(file.path),
+        ...(removeSkillName === undefined ? {} : { removeSkillName }),
+      };
+    }),
   };
 }
 
@@ -39,6 +49,7 @@ export const overview = defineQuery({
                   render: z.boolean().optional(),
                   exists: z.boolean(),
                   dirty: z.boolean(),
+                  removeSkillName: z.string().optional(),
                 })
                 .strict(),
             ),
@@ -55,14 +66,21 @@ export const overview = defineQuery({
     const skills = repoExists ? git.discoverSkills(repoPath) : [];
     const status = repoExists ? await git.gitStatus(repoPath) : { branch: "missing", entries: [] };
     const dirtyPaths = new Set(status.entries.map((entry) => entry.path));
+    const removableSkillNames = new Map(
+      skills
+        .filter((skill) => isValidSkillName(skill.title))
+        .map((skill) => [skill.path, skill.title]),
+    );
     return {
       repoPath,
       repoExists,
       branch: status.branch,
       gitEntries: status.entries,
       groups: groupDefinitions(skills).map((group) =>
-        toOverviewGroup(group, (path) => git.pathExists(repoPath, path), dirtyPaths),
+        toOverviewGroup(group, (path) => git.pathExists(repoPath, path), dirtyPaths, removableSkillNames),
       ),
     };
   },
 });
+
+export type OverviewResult = z.infer<typeof overview.output>;

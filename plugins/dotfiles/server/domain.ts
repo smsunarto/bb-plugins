@@ -226,6 +226,10 @@ export function needsRender(path: string): boolean {
   );
 }
 
+export function isValidSkillName(name: string): boolean {
+  return /^[a-z0-9][a-z0-9-]*$/.test(name);
+}
+
 // ---- git ------------------------------------------------------------
 
 export const gitEntrySchema = z

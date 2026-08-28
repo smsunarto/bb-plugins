@@ -43,6 +43,29 @@ test("returns explicit save conflict and render outcomes", async () => {
   );
 });
 
+test("omitting expectedSha256 writes unconditionally", async () => {
+  let captured: string | undefined = "unset";
+  const ctx = createFakeContext({
+    writeFile: async (_repoPath, _path, _content, expectedSha256) => {
+      captured = expectedSha256;
+      return { outcome: "written", sha256: "sha-forced" };
+    },
+  });
+
+  assert.deepEqual(
+    await saveFile.execute(ctx, {
+      path: ".dotfiles/mcp.json",
+      content: "next",
+    }),
+    {
+      outcome: "written",
+      sha256: "sha-forced",
+      renderHint: true,
+    },
+  );
+  assert.equal(captured, undefined);
+});
+
 test("saves only registered files", async () => {
   const ctx = createFakeContext();
 

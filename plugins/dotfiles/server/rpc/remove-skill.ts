@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { defineMutation } from "@bb-kit/core/rpc";
+import { isValidSkillName } from "../domain.ts";
 import { gitFor } from "../git.ts";
-
-function isValidSkillName(name: string): boolean {
-  return /^[a-z0-9][a-z0-9-]*$/.test(name);
-}
 
 export const removeSkill = defineMutation({
   input: z.object({ name: z.string() }).strict(),

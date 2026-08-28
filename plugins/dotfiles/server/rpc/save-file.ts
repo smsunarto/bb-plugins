@@ -8,7 +8,7 @@ export const saveFile = defineMutation({
     .object({
       path: z.string(),
       content: z.string(),
-      expectedSha256: z.string(),
+      expectedSha256: z.string().optional(),
     })
     .strict(),
   output: z.discriminatedUnion("outcome", [

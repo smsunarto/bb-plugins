@@ -35,7 +35,7 @@ export interface DotfilesGit {
     repoPath: string,
     path: string,
     content: string,
-    expectedSha256: string,
+    expectedSha256: string | undefined,
   ): Promise<{ outcome: "written"; sha256: string } | { outcome: "conflict" }>;
   run(repoPath: string, command: string): Promise<TaskResult>;
   removeSkill(repoPath: string, name: string): Promise<TaskResult>;
