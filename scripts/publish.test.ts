@@ -11,6 +11,8 @@ import {
   packedPaths,
   publishPackageVersion,
   publishProblems,
+  publishableWorkspacePlugins,
+  selectPublishTargets,
   type RegistryVersionState,
 } from "./publish";
 import { derivePluginId, workspacePlugins } from "./plugin-package";
@@ -252,6 +254,27 @@ describe("mirrorPackageName", () => {
   }
 });
 
+describe("selectPublishTargets", () => {
+  const plugins = publishableWorkspacePlugins(join(import.meta.dir, ".."));
+
+  test("keeps workspace order while selecting released plugin ids", () => {
+    expect(selectPublishTargets(plugins, ["notify", "amp"]).map((plugin) => plugin.id)).toEqual([
+      "amp",
+      "notify",
+    ]);
+  });
+
+  test("publishes every plugin when no release filter is supplied", () => {
+    expect(selectPublishTargets(plugins, [])).toEqual(plugins);
+  });
+
+  test("rejects a release id that is not publishable", () => {
+    expect(() => selectPublishTargets(plugins, ["dotfiles", "missing"])).toThrow(
+      "unknown publish plugins: dotfiles, missing",
+    );
+  });
+});
+
 describe("publishPackageVersion", () => {
   test("waits for a successful publish to become readable", async () => {
     const states: RegistryVersionState[] = [
@@ -260,9 +283,7 @@ describe("publishPackageVersion", () => {
       { kind: "published" },
     ];
     let probeIndex = 0;
-    const probe = mock(
-      (): RegistryVersionState => states[probeIndex++] ?? { kind: "published" },
-    );
+    const probe = mock((): RegistryVersionState => states[probeIndex++] ?? { kind: "published" });
     const publish = mock(() => {});
     const sleep = mock(async (_milliseconds: number) => {});
 
@@ -287,9 +308,7 @@ describe("publishPackageVersion", () => {
       { kind: "published" },
     ];
     let probeIndex = 0;
-    const probe = mock(
-      (): RegistryVersionState => states[probeIndex++] ?? { kind: "published" },
-    );
+    const probe = mock((): RegistryVersionState => states[probeIndex++] ?? { kind: "published" });
     const publish = mock(() => {
       throw new Error("npm error code E403: version already published");
     });

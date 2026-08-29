@@ -24,7 +24,8 @@
  * manifest declares in `engines.bb`.
  *
  *   bun scripts/publish.ts --dry-run     # pack and check, publish nothing
- *   bun scripts/publish.ts               # the real thing
+ *   bun scripts/publish.ts               # publish every workspace plugin
+ *   bun scripts/publish.ts --plugin amp  # publish one released plugin
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -66,6 +67,24 @@ export function publishableWorkspacePlugins(root: string): WorkspacePlugin[] {
     }
   }
   return plugins.filter((plugin) => !EXCLUDED.has(plugin.directory));
+}
+
+/** Restrict publication to exact plugin ids supplied by the release gate. */
+export function selectPublishTargets(
+  plugins: readonly WorkspacePlugin[],
+  requestedIds: readonly string[],
+): WorkspacePlugin[] {
+  if (requestedIds.length === 0) return [...plugins];
+
+  const requested = new Set(requestedIds);
+  const known = new Set(plugins.map((plugin) => plugin.id));
+  const unknown = [...requested].filter((id) => !known.has(id)).sort();
+  if (unknown.length > 0) {
+    throw new Error(
+      `unknown publish plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
+    );
+  }
+  return plugins.filter((plugin) => requested.has(plugin.id));
 }
 
 /**
@@ -536,8 +555,28 @@ function publishUnder(dir: string, name: string, manifestName: string): void {
 }
 
 async function main(): Promise<void> {
-  const dryRun = process.argv.includes("--dry-run");
-  const unknown = process.argv.slice(2).filter((argument) => argument !== "--dry-run");
+  const requestedIds: string[] = [];
+  const unknown: string[] = [];
+  let dryRun = false;
+  const args = process.argv.slice(2);
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (argument === "--plugin") {
+      const id = args[index + 1];
+      if (id === undefined || id.startsWith("--")) {
+        unknown.push("--plugin requires an id");
+      } else {
+        requestedIds.push(id);
+        index += 1;
+      }
+      continue;
+    }
+    if (argument !== undefined) unknown.push(argument);
+  }
   if (unknown.length > 0) {
     console.error(
       `publish: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
@@ -550,7 +589,13 @@ async function main(): Promise<void> {
     process.exit(1);
   };
 
-  const targets = publishableWorkspacePlugins(ROOT);
+  let targets: WorkspacePlugin[];
+  try {
+    targets = selectPublishTargets(publishableWorkspacePlugins(ROOT), requestedIds);
+  } catch (error) {
+    console.error(`publish: ${errorMessage(error)}`);
+    process.exit(2);
+  }
   console.log(`publishing ${targets.length} plugins (excluded: ${[...EXCLUDED].join(", ")})\n`);
 
   // A stale dist/ is the failure mode that matters: the tarball is the product,

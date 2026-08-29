@@ -1,0 +1,10 @@
+{
+  "plugins/agent-proxy": "0.2.4",
+  "plugins/agentation": "0.2.3",
+  "plugins/amp": "0.4.1",
+  "plugins/gh-stack": "0.2.3",
+  "plugins/gtd-sidebar": "0.4.2",
+  "plugins/monokai": "0.3.2",
+  "plugins/nanocodex": "0.0.0",
+  "plugins/notify": "0.3.0"
+}

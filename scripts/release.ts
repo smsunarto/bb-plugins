@@ -1,26 +1,18 @@
 #!/usr/bin/env bun
 /**
- * Publish every unpublished scoped package and unscoped mirror, then tell the
- * Changesets action which plugin-specific GitHub Releases are still missing.
+ * Publish npm versions only after Release Please has created their GitHub
+ * Release and tag.
  *
- * npm and GitHub are both treated as durable stores. A retry skips package
- * versions that reached npm and release tags that already have a non-draft
- * GitHub Release, so a failure at any point can converge on the next run.
+ * GitHub and npm are durable stores. This script runs after every successful
+ * Release Please pass, skips package versions that do not have a release yet,
+ * and lets the npm publisher reconcile partial scoped or mirror publishes.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkspacePlugin } from "./plugin-package";
 import { publishableWorkspacePlugins } from "./publish";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-
-export interface ChangesetOutputEvent {
-  type: "git-tag";
-  tag: string;
-  packageName: string;
-}
 
 export function releaseTag(plugin: WorkspacePlugin): string {
   const version = plugin.manifest.version;
@@ -35,34 +27,22 @@ export function releaseTag(plugin: WorkspacePlugin): string {
   return `${plugin.directory}/v${version}`;
 }
 
-/** True when the changelog has the exact version heading the action reads. */
-export function hasChangelogVersion(changelog: string, version: string): boolean {
-  for (const match of changelog.matchAll(/^#{1,6}\s+(.*)$/gm)) {
-    const heading = match[1];
-    if (heading !== undefined && heading.trim() === version) return true;
-  }
-  return false;
-}
-
 export type ReleaseState = "complete" | "missing";
 export type ReleaseStateLookup = (tag: string) => Promise<ReleaseState>;
 
-/** Build the action events for releases that GitHub does not have yet. */
-export async function missingReleaseEvents(
+/** Select packages whose current version Release Please has already released. */
+export async function releasedPlugins(
   plugins: readonly WorkspacePlugin[],
   releaseState: ReleaseStateLookup,
-): Promise<ChangesetOutputEvent[]> {
-  const events: ChangesetOutputEvent[] = [];
+): Promise<WorkspacePlugin[]> {
+  const released: WorkspacePlugin[] = [];
   for (const plugin of plugins) {
     if (plugin.manifest.private === true) {
       throw new Error(`${plugin.name} is private and cannot receive a release`);
     }
-    const tag = releaseTag(plugin);
-    if ((await releaseState(tag)) === "missing") {
-      events.push({ type: "git-tag", tag, packageName: plugin.name });
-    }
+    if ((await releaseState(releaseTag(plugin))) === "complete") released.push(plugin);
   }
-  return events;
+  return released;
 }
 
 interface GitHubReleaseOptions {
@@ -82,7 +62,7 @@ async function githubError(response: Response, operation: string): Promise<never
  *
  * A 404 release is the only "missing" result. Authentication, rate-limit, and
  * server failures stop publication. A completed release must also retain its
- * tag ref; otherwise the repository is inconsistent and needs manual repair.
+ * tag ref or the repository needs manual repair.
  */
 export async function githubReleaseState(
   tag: string,
@@ -107,16 +87,13 @@ export async function githubReleaseState(
   const encodedTag = encodeURIComponent(tag);
   const releaseResponse = await request(`releases/tags/${encodedTag}`);
   if (releaseResponse.status === 404) return "missing";
-  if (!releaseResponse.ok) {
-    return githubError(releaseResponse, `release lookup for ${tag}`);
-  }
+  if (!releaseResponse.ok) return githubError(releaseResponse, `release lookup for ${tag}`);
+
   const release = (await releaseResponse.json()) as {
     draft?: unknown;
     tag_name?: unknown;
   };
-  if (release.tag_name !== tag) {
-    throw new Error(`GitHub returned the wrong release for ${tag}`);
-  }
+  if (release.tag_name !== tag) throw new Error(`GitHub returned the wrong release for ${tag}`);
   if (release.draft !== false) {
     throw new Error(`GitHub Release ${tag} is a draft; publish or delete it before retrying`);
   }
@@ -138,63 +115,33 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function assertChangelogs(plugins: readonly WorkspacePlugin[]): void {
-  for (const plugin of plugins) {
-    const version = plugin.manifest.version;
-    if (typeof version !== "string" || version.trim() === "") {
-      throw new Error(`${plugin.name} has no package version`);
-    }
-    const changelogPath = join(plugin.dir, "CHANGELOG.md");
-    let changelog: string;
-    try {
-      changelog = readFileSync(changelogPath, "utf8");
-    } catch {
-      throw new Error(`${plugin.name} has no CHANGELOG.md for GitHub Releases`);
-    }
-    if (!hasChangelogVersion(changelog, version)) {
-      throw new Error(`${plugin.name} CHANGELOG.md has no heading for ${version}`);
-    }
+function publishPackages(plugins: readonly WorkspacePlugin[]): void {
+  if (plugins.length === 0) {
+    console.log("no package version has a completed GitHub Release");
+    return;
   }
-}
-
-function publishPackages(): void {
-  execFileSync("bun", ["scripts/publish.ts"], {
-    cwd: ROOT,
-    env: process.env,
-    stdio: "inherit",
-  });
+  execFileSync(
+    "bun",
+    ["scripts/publish.ts", ...plugins.flatMap((plugin) => ["--plugin", plugin.id])],
+    {
+      cwd: ROOT,
+      env: process.env,
+      stdio: "inherit",
+    },
+  );
 }
 
 async function main(): Promise<void> {
-  const actionOutput = process.env.CHANGESETS_OUTPUT;
-  if (!actionOutput) {
-    publishPackages();
-    return;
-  }
-
-  const plugins = publishableWorkspacePlugins(ROOT);
-  assertChangelogs(plugins);
   const repository = requiredEnvironment("GITHUB_REPOSITORY");
   const token = requiredEnvironment("GITHUB_TOKEN");
-  const events = await missingReleaseEvents(plugins, (tag) =>
+  const plugins = await releasedPlugins(publishableWorkspacePlugins(ROOT), (tag) =>
     githubReleaseState(tag, {
       repository,
       token,
       apiUrl: process.env.GITHUB_API_URL,
     }),
   );
-
-  publishPackages();
-
-  // changesets/action reads this NDJSON after the command exits. Create the
-  // file even when no event remains, so a successful no-op retry is quiet.
-  writeFileSync(
-    actionOutput,
-    events.map((event) => JSON.stringify(event)).join("\n") + (events.length > 0 ? "\n" : ""),
-    { flag: "a" },
-  );
+  publishPackages(plugins);
 }
 
-if (import.meta.main) {
-  await main();
-}
+if (import.meta.main) await main();

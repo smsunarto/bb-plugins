@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import {
-  githubReleaseState,
-  hasChangelogVersion,
-  missingReleaseEvents,
-  releaseTag,
-} from "./changeset-release";
+import { githubReleaseState, releasedPlugins, releaseTag } from "./release";
 import type { WorkspacePlugin } from "./plugin-package";
 import { publishableWorkspacePlugins } from "./publish";
 
@@ -45,13 +40,13 @@ const githubOptions = {
   apiUrl: "https://api.github.test/",
 };
 
-describe("Changesets release routing", () => {
-  test("routes each package to its matching plugin directory", () => {
+describe("Release Please routing", () => {
+  test("routes each package to its matching plugin tag", () => {
     expect(releaseTag(plugin())).toBe("gh-stack/v1.2.3");
     expect(() => releaseTag(plugin({ id: "other" }))).toThrow("resolves to plugin id");
   });
 
-  test("emits only missing releases in the action's NDJSON shape", async () => {
+  test("publishes only packages with a completed GitHub Release", async () => {
     const amp = plugin({
       directory: "amp",
       id: "amp",
@@ -59,22 +54,16 @@ describe("Changesets release routing", () => {
       manifest: { name: "@smsunarto/bb-plugin-amp", version: "2.0.0" },
     });
     const calls: string[] = [];
-    const events = await missingReleaseEvents([plugin(), amp], async (tag) => {
+    const released = await releasedPlugins([plugin(), amp], async (tag) => {
       calls.push(tag);
       return tag.startsWith("gh-stack/") ? "missing" : "complete";
     });
 
     expect(calls).toEqual(["gh-stack/v1.2.3", "amp/v2.0.0"]);
-    expect(events).toEqual([
-      {
-        type: "git-tag",
-        tag: "gh-stack/v1.2.3",
-        packageName: "@smsunarto/bb-plugin-gh-stack",
-      },
-    ]);
+    expect(released).toEqual([amp]);
   });
 
-  test("never emits a private package", async () => {
+  test("never publishes a private package", async () => {
     const privatePlugin = plugin({
       manifest: {
         name: "@smsunarto/bb-plugin-gh-stack",
@@ -82,7 +71,7 @@ describe("Changesets release routing", () => {
         private: true,
       },
     });
-    await expect(missingReleaseEvents([privatePlugin], async () => "missing")).rejects.toThrow(
+    await expect(releasedPlugins([privatePlugin], async () => "missing")).rejects.toThrow(
       "private",
     );
   });
@@ -100,13 +89,6 @@ describe("Changesets release routing", () => {
       "notify",
     ]);
     expect(plugins.every((candidate) => candidate.manifest.private !== true)).toBe(true);
-  });
-
-  test("recognizes only an exact changelog version heading", () => {
-    const changelog = "# Package\n\n## 1.2.3\n\n### Minor Changes\n";
-    expect(hasChangelogVersion(changelog, "1.2.3")).toBe(true);
-    expect(hasChangelogVersion(changelog, "1.2")).toBe(false);
-    expect(hasChangelogVersion("Version 1.2.3", "1.2.3")).toBe(false);
   });
 });
 

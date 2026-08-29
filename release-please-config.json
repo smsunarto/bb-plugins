@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "da91c8346edea3232888503164125ca39eed5486",
+  "separate-pull-requests": true,
+  "sequential-calls": true,
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "tag-separator": "/",
+  "pull-request-title-pattern": "Release ${component} ${version}",
+  "packages": {
+    "plugins/agent-proxy": {
+      "release-type": "node",
+      "component": "agent-proxy",
+      "package-name": "@smsunarto/bb-plugin-agent-proxy"
+    },
+    "plugins/agentation": {
+      "release-type": "node",
+      "component": "agentation",
+      "package-name": "@smsunarto/bb-plugin-agentation"
+    },
+    "plugins/amp": {
+      "release-type": "node",
+      "component": "amp",
+      "package-name": "@smsunarto/bb-plugin-amp"
+    },
+    "plugins/gh-stack": {
+      "release-type": "node",
+      "component": "gh-stack",
+      "package-name": "@smsunarto/bb-plugin-gh-stack"
+    },
+    "plugins/gtd-sidebar": {
+      "release-type": "node",
+      "component": "gtd-sidebar",
+      "package-name": "@smsunarto/bb-plugin-gtd-sidebar"
+    },
+    "plugins/monokai": {
+      "release-type": "node",
+      "component": "monokai",
+      "package-name": "@smsunarto/bb-plugin-monokai"
+    },
+    "plugins/nanocodex": {
+      "release-type": "node",
+      "component": "nanocodex",
+      "package-name": "@smsunarto/bb-plugin-nanocodex"
+    },
+    "plugins/notify": {
+      "release-type": "node",
+      "component": "notify",
+      "package-name": "@smsunarto/bb-plugin-notify"
+    }
+  }
+}
