@@ -13,7 +13,7 @@ import {
   experimental_toolPresentation as toolPresentation,
   experimental_withTitle as withTitle,
 } from "@get-bb/plugin-sdk/provider-bridge";
-import type { ItemKey, TimelineRow } from "./timeline.ts";
+import type { TimelineRow } from "./timeline.ts";
 
 /** Standard tools — crates/nanocodex-tools/src/standard.rs. */
 export const STANDARD_TOOLS = ["exec_command", "write_stdin", "update_plan", "apply_patch", "view_image"] as const;
@@ -261,48 +261,6 @@ export function resultExitCode(structuredResult: unknown): number | undefined {
   if (typeof structuredResult !== "object" || structuredResult === null) return undefined;
   const exitCode = (structuredResult as { exit_code?: unknown }).exit_code;
   return typeof exitCode === "number" ? exitCode : undefined;
-}
-
-/**
- * A bounded continuity note for one settled tool call — what goes in the
- * ledger, not what goes on the timeline. Code-mode CHILDREN produce notes;
- * the `exec` wrapper does not, because its script is long and its children say
- * the same thing in less space.
- */
-export function actionForToolResult(args: {
-  key: ItemKey;
-  tool: string;
-  isCodeModeChild: boolean;
-  arguments: string | Record<string, unknown>;
-  resultText: string;
-  exitCode: number | undefined;
-}): { kind: "command"; command: string; exitCode: number | null } | { kind: "fileChange"; paths: string[] } | { kind: "tool"; tool: string; brief: string } | null {
-  const { tool, isCodeModeChild } = args;
-  if (tool === CODE_MODE_TOOL && !isCodeModeChild) return null;
-  const input = typeof args.arguments === "string" ? {} : args.arguments;
-  switch (tool) {
-    case "exec_command":
-      return {
-        kind: "command",
-        command: truncateSingleLine(stringValue(input.cmd) ?? "", 200),
-        exitCode: args.exitCode ?? null,
-      };
-    case "apply_patch": {
-      const patch =
-        typeof args.arguments === "string"
-          ? args.arguments
-          : (stringValue(input.patch) ?? stringValue(input.input) ?? "");
-      const paths = parseApplyPatch(patch).map((change) => change.path);
-      return { kind: "fileChange", paths };
-    }
-    default: {
-      const brief = truncateSingleLine(
-        args.resultText.length > 0 ? args.resultText : (firstScalarString(input) ?? ""),
-        200,
-      );
-      return { kind: "tool", tool, brief };
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

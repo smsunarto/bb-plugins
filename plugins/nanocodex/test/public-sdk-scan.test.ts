@@ -17,6 +17,8 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
     allow: [
       /^bun:test$/,
       /^zod$/,
+      /^@bb-kit\/core\/(?:command|plugin)$/,
+      /^nanocodex\/(?:durability|host|node(?:\/transport)?|worker)$/,
       // The scanner extends its allowlist for `*.test.*` files only; the
       // tests assemble deltas through the SDK's public testing kits.
       /^@get-bb\/plugin-sdk\/provider-bridge\/testing$/,

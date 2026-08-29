@@ -29,7 +29,7 @@
  *     (`model_call_index` restarts at 1 on every `run`) would silently alias
  *     two items and fail `session/resume-id-uniqueness`.
  *  3. Every dispatched `clientRequestId` settles. `settle()` accepts any
- *     un-accepted ids first, so a child that dies before `run.started` still
+ *     un-accepted ids first, so a native run that fails before `run.started` still
  *     produces `input.accepted` + `turn.open` + `turn.boundary`.
  *     (Gotchas 4, 5 and 7.)
  */
@@ -113,7 +113,7 @@ export interface ThreadWriter {
   /** `provider/raw`. Droppable diagnostics; never blocks real deltas. Used for `unknown` event kinds only — `noise` is dropped without a notification. */
   raw(payload: JsonValue, coverage: "noise" | "unknown"): void;
 
-  /** Start a scribe for one bb turn. `ordinal` is the ledger ordinal, which is also the fork checkpoint id. */
+  /** Start a scribe for one bb turn. `ordinal` is also the exact fork checkpoint id. */
   scribe(args: { ordinal: number; clientRequestIds: readonly ClientTurnRequestId[] }): TurnScribe;
 }
 
@@ -131,7 +131,7 @@ export interface ThreadWriter {
  * on the start/resume/fork result. It is absent from the 0.4.21 bundled types
  * because those schemas are `.passthrough()`; bb's own protocol package
  * defines it and the runtime reads it from the RESULT, not the notification.
- * This bridge always sends `true` — see `continuity.ts`.
+ * This bridge always sends `true` because native durability backs every thread.
  */
 export function createThreadWriter(args: {
   threadId: string;
@@ -246,7 +246,7 @@ export function usageBreakdown(usage: {
 // ---------------------------------------------------------------------------
 
 export interface TurnScribe {
-  /** The ledger ordinal this turn occupies; emitted as `providerCheckpointId` on the boundary. */
+  /** The checkpoint ordinal this turn occupies; emitted as `providerCheckpointId` on the boundary. */
   readonly ordinal: number;
 
   /** True once the turn settled. `session.ts` reads it to know whether a steer can still join. */
@@ -254,7 +254,7 @@ export interface TurnScribe {
 
   /**
    * Open the turn. Idempotent. Called from `run.started` with nanocodex's
-   * session uuid; also called by `settle()` when the child died first, then
+   * session uuid; also called by `settle()` when the native run failed first, then
    * with null.
    *
    * The uuid is accepted for the caller's flow but NOT stamped on the wire.
@@ -286,7 +286,7 @@ export interface TurnScribe {
    */
   adopt(ids: readonly ClientTurnRequestId[]): void;
 
-  /** How the turn settled, or null while it is still live. (Deviation from the sketch: `session.ts` folds the outcome into the ledger record.) */
+  /** How the turn settled, or null while it is still live. */
   readonly status: ThreadEventTurnStatus | null;
 
   /** A `provider.warning` row for a recoverable hiccup (model retry, connection failure). (Deviation from the sketch: `normalized` non-fatal kinds need a carrier that is not a fake error.) */
@@ -327,7 +327,7 @@ export interface TurnScribe {
    * flush the lanes, drain still-open items, then emit the boundary — in that
    * order, because an item closed after its turn's boundary is an orphan.
    *
-   * Idempotent. `thread/stop --interrupt` settles, and the child's own
+   * Idempotent. `thread/stop --interrupt` settles, and the native turn's own
    * `run.completed {status:"cancelled"}` may arrive a moment later and settle
    * again; the second call is silent.
    */
@@ -340,8 +340,7 @@ export function createTurnScribe(
   args: { ordinal: number; providerThreadId: string; clientRequestIds: readonly ClientTurnRequestId[] },
 ): TurnScribe {
   const { ordinal, providerThreadId, clientRequestIds } = args;
-  // Deterministic, no process entropy and no clock: the parity oracle replays
-  // a recording and must reproduce every id byte-for-byte.
+  // Deterministic, with no process entropy or clock, so resume keeps item ids stable.
   const keyPrefix = `${providerThreadId}:t${ordinal}`;
 
   let opened = false;
@@ -387,7 +386,7 @@ export function createTurnScribe(
 
   const flushLanes = (): void => {
     closeAssistantLane();
-    for (const key of [...reasoningLanesOpen]) closeReasoningLane(key);
+    for (const key of reasoningLanesOpen) closeReasoningLane(key);
   };
 
   const drain = (status: "failed" | "interrupted"): void => {
@@ -438,7 +437,7 @@ export function createTurnScribe(
     },
     say(text) {
       if (text.length === 0) return;
-      for (const key of [...reasoningLanesOpen]) closeReasoningLane(key);
+      for (const key of reasoningLanesOpen) closeReasoningLane(key);
       openTurn(null);
       assistantLaneOpen = true;
       writer.emit([
@@ -549,8 +548,8 @@ export function createTurnScribe(
           ...(opts?.error === undefined ? {} : { error: opts.error }),
         },
       ]);
-      // The interrupted boundary must be on the wire before thread/stop
-      // answers (rule stop/interrupt-settles-before-result).
+      // The entry layer acknowledges thread/stop before calling stop(). This
+      // flush keeps the later interrupted boundary internally ordered.
       writer.flush();
     },
   };

@@ -1,6 +1,17 @@
 {
   "name": "@smsunarto/bb-plugin-nanocodex",
   "version": "0.0.0",
+  "description": "NanoCodex as a native bb provider through its JavaScript binding",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/nanocodex"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "bb": ">=0.40.0 <1.0.0",
@@ -8,33 +19,42 @@
   },
   "bb": {
     "name": "Nanocodex",
-    "description": "Runs one-shot Nanocodex agents as persistent bb threads",
+    "description": "Runs native NanoCodex agents as persistent bb threads",
     "branding": {
       "icon": "./assets/icon.svg",
       "experimental_icons": {
         "terminal": "./assets/terminal.svg"
       }
     },
-    "server": "./server.ts",
+    "server": "./server/server.ts",
     "host": "./host.ts",
     "skills": []
   },
   "files": [
-    "dist/",
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/host.js",
+    "dist/host.meta.json",
     "assets/",
-    "server.ts",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "server/",
     "host.ts",
     "src/"
   ],
   "dependencies": {
+    "@bb-kit/core": "0.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.21"
+    "@get-bb/plugin-sdk": "0.4.21",
+    "nanocodex": "https://pkg.pr.new/nanocodex@fa3f254178fff43482476203bb4a007971ceed6b"
   },
   "scripts": {
+    "dev": "bun ../../scripts/dev-plugin.ts",
     "build": "bb plugin build .",
-    "test": "bun test --timeout=30000 test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test --timeout=30000 test/*.test.ts server/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check"
   }
 }

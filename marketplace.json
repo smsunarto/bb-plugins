@@ -128,7 +128,7 @@
     {
       "id": "nanocodex",
       "displayName": "Nanocodex",
-      "description": "Runs one-shot Nanocodex agents as persistent bb threads",
+      "description": "Runs native NanoCodex agents as persistent bb threads",
       "icon": {
         "url": "plugins/nanocodex/assets/icon.svg"
       },

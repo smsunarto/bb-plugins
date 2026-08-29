@@ -96,6 +96,7 @@ describe("Changesets release routing", () => {
       "gh-stack",
       "gtd-sidebar",
       "monokai",
+      "nanocodex",
       "notify",
     ]);
     expect(plugins.every((candidate) => candidate.manifest.private !== true)).toBe(true);

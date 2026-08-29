@@ -2,11 +2,11 @@
  * `src/bridge/events.ts` — what nanocodex can say, and which of it matters.
  *
  * Schemas and classification live together because they are one body of
- * knowledge: the vocabulary of nanocodex's JSONL stream. Splitting them would
+ * knowledge: the vocabulary of NanoCodex AgentEvent objects. Splitting them would
  * put the kind list in two files and let a nanocodex upgrade satisfy one
  * without the other.
  *
- * Envelope (crates/nanocodex-oai-api/src/events/stream.rs):
+ * AgentEvent envelope:
  *   {"protocol_version":1,"request_id":"<session uuid>","seq":N,
  *    "type":"<kind>","payload":{...}}
  *
@@ -18,7 +18,7 @@ import { z } from "zod";
 import { createProviderVisibilityMetadata } from "@get-bb/plugin-sdk/provider-bridge";
 
 /**
- * Every kind `AgentEventKind` serializes. Exhaustive against nanocodex 0.5.0.
+ * Every kind the pinned NanoCodex preview serializes.
  * The classification record below is keyed by this union, so a new kind in a
  * future nanocodex fails typecheck until someone classifies it — the
  * three-layer defense provider-codex gets from generated types, reduced to the
@@ -58,10 +58,8 @@ export type NanocodexEventKind = (typeof NANOCODEX_EVENT_KINDS)[number];
 /**
  * The envelope, with `payload` deliberately left `unknown`.
  *
- * Two-stage parsing is a size decision, not a style one: `api.event` is 181 of
- * 252 lines and 408 KB of the 425 KB in the tool-run fixture (96%). Classifying
- * on `type` before touching `payload` means the firehose costs one string
- * compare, not a zod walk over a nested Responses frame.
+ * Payloads stay unknown until their event type needs projection. This avoids
+ * walking large nested `api.event` response frames that the timeline drops.
  */
 export const envelopeSchema = z
   .object({
@@ -72,8 +70,6 @@ export const envelopeSchema = z
     payload: z.unknown(),
   })
   .loose();
-
-export type NanocodexEnvelope = z.infer<typeof envelopeSchema>;
 
 /** Only these two end the stream. `run.error` does NOT — a consumer that treats it as terminal drops the rest of a recoverable turn. */
 export function isTerminalKind(kind: string): kind is "run.completed" | "run.failed" {
@@ -236,23 +232,3 @@ export const nanocodexVisibility = createProviderVisibilityMetadata({
     return { kind: event.kind, coverage };
   },
 });
-
-/**
- * Parse one stdout line into an envelope, or null if it is not one.
- *
- * Never throws. nanocodex writes only JSONL on stdout, but a panic message or
- * a stray library print would otherwise take down a turn that is otherwise
- * fine.
- */
-export function parseEventLine(line: string): NanocodexEnvelope | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("{")) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  const result = envelopeSchema.safeParse(parsed);
-  return result.success ? result.data : null;
-}

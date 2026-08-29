@@ -2,4 +2,4 @@
 "@smsunarto/bb-plugin-nanocodex": minor
 ---
 
-Add nanocodex provider plugin
+Add the native NanoCodex provider plugin

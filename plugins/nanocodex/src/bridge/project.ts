@@ -1,26 +1,18 @@
 /**
  * `src/bridge/project.ts` — one nanocodex event stream to two outputs.
  *
- * A `TurnProjector` reads the child's JSONL once and produces BOTH the bb
- * timeline (through the scribe) and the turn's ledger record (through
- * `finish()`). One pass, one traversal, one place that decides what a turn
- * "was" — derive, don't sync. A second pass over the stream to build history
- * would be a second definition of the same fact, and the two would drift the
- * first time a tool name changed.
+ * A `TurnProjector` translates typed AgentEvent objects into bb timeline rows.
+ * It does not own request settlement, checkpoints, or native session history.
  *
  * The projector owns no wire types: it takes parsed envelopes and calls scribe
  * methods. It constructs no `ThreadDelta` — `timeline.ts` does that.
  */
 
 import {
-  addTokenUsage,
   experimental_COMPACTION_PRESENTATION as COMPACTION_PRESENTATION,
-  ZERO_TOKEN_USAGE,
-  type ClientTurnRequestId,
   type JsonValue,
-  type ThreadEventTokenUsageBreakdown,
 } from "@get-bb/plugin-sdk/provider-bridge";
-import type { LedgerTurn, TurnAction } from "./continuity.ts";
+import type { AgentEvent } from "nanocodex/host";
 import {
   assistantTextSchema,
   compactionStartedSchema,
@@ -33,21 +25,19 @@ import {
   runTerminalSchema,
   toolCallSchema,
   toolResultSchema,
-  type NanocodexEnvelope,
 } from "./events.ts";
 import {
-  actionForToolResult,
   parseCodeModeChild,
   resultBodyText,
   resultExitCode,
   rowForToolCall,
   rowForToolResult,
 } from "./shapes.ts";
-import { usageBreakdown, type ItemKey, type OpenItem, type TimelineRow, type TurnScribe } from "./timeline.ts";
+import type { ItemKey, OpenItem, TimelineRow, TurnScribe } from "./timeline.ts";
 
 export interface TurnProjector {
   /**
-   * Fold one event into the timeline and the pending ledger record.
+   * Fold one event into the timeline.
    *
    * Returns whether the event was terminal, which is the ONLY signal
    * `session.ts` uses to know the turn produced a real ending. `run.error` is
@@ -55,37 +45,20 @@ export interface TurnProjector {
    * loop treats a stream that closes without `run.completed`/`run.failed` as an
    * error, and so does the session.
    */
-  consume(envelope: NanocodexEnvelope): boolean;
-
-  /**
-   * The turn's ledger record. Callable at any point, including after a crash or
-   * an interrupt, so the history keeps whatever the turn managed to produce.
-   * Idempotent.
-   */
-  finish(status: LedgerTurn["status"]): LedgerTurn;
+  consume(envelope: AgentEvent): boolean;
 
   /** nanocodex's session uuid for this run, once `run.started` revealed it. */
   readonly requestId: string | null;
 
   /** `usage.input_tokens` from the first `model.call.completed`: the measured prompt cost. */
   readonly firstCallInputTokens: number | null;
+
+  /** Native compactions already projected for this turn. */
+  readonly compactionCount: number;
 }
 
 export interface TurnProjectorArgs {
   readonly scribe: TurnScribe;
-  readonly ordinal: number;
-  /** Flattened user text for this turn, already known before the child ran. */
-  readonly userText: string;
-  /** What `composePrompt` produced, recorded so the next budget can calibrate. */
-  readonly promptBytes: number;
-  readonly clientRequestIds: readonly ClientTurnRequestId[];
-  /**
-   * Writer taps the projector cannot reach through the scribe. A deviation
-   * from the sketch's five-field args: the usage delta and the `provider/raw`
-   * notification are `ThreadWriter` methods, and the projector is the only
-   * consumer that knows when to call them.
-   */
-  readonly addUsage: (last: ThreadEventTokenUsageBreakdown, promptTokens: number | null) => void;
   readonly raw: (payload: JsonValue) => void;
 }
 
@@ -134,7 +107,7 @@ export interface TurnProjectorArgs {
  *                          already names unknown kinds as its cargo).
  */
 export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
-  const { scribe, ordinal, userText, promptBytes } = args;
+  const { scribe } = args;
 
   let requestId: string | null = null;
   let firstCallInputTokens: number | null = null;
@@ -145,9 +118,7 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
   const streamedMessageText = new Map<string, string>();
   let openCompaction: OpenItem | null = null;
   let compactionIndex = 0;
-  const commentary: string[] = [];
-  let final = "";
-  const actions: TurnAction[] = [];
+  let compactionCount = 0;
 
   const sayNovel = (nativeId: string, fullText: string): void => {
     const streamed = streamedMessageText.get(nativeId) ?? "";
@@ -159,14 +130,13 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
     streamedMessageText.set(nativeId, fullText);
   };
 
-  const consume = (envelope: NanocodexEnvelope): boolean => {
+  const consume = (envelope: AgentEvent): boolean => {
     switch (envelope.type) {
       case "run.started": {
         const payload = runStartedSchema.safeParse(envelope.payload);
         if (!payload.success) return false;
         requestId = envelope.request_id;
         scribe.open(envelope.request_id);
-        scribe.acceptAll();
         return false;
       }
       case "assistant.delta": {
@@ -185,11 +155,6 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
         if (!payload.success) return false;
         const nativeId = payload.data.item_id ?? `msg-${payload.data.model_call_index}`;
         sayNovel(nativeId, payload.data.text);
-        if (payload.data.phase === "commentary") {
-          commentary.push(payload.data.text);
-        } else {
-          final = final.length === 0 ? payload.data.text : `${final}\n\n${payload.data.text}`;
-        }
         return false;
       }
       case "reasoning.summary.delta": {
@@ -257,15 +222,6 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
               ? {}
               : { resultText }),
         });
-        const action = actionForToolResult({
-          key: open.item.key,
-          tool,
-          isCodeModeChild: parseCodeModeChild(callId) !== null,
-          arguments: open.arguments,
-          resultText,
-          exitCode,
-        });
-        if (action !== null) appendBoundedAction(actions, action);
         return false;
       }
       case "model.compaction.started": {
@@ -283,6 +239,7 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
           scribe.closeItem(openCompaction, { status: "completed" });
           openCompaction = null;
         }
+        compactionCount += 1;
         scribe.compacted();
         return false;
       }
@@ -309,7 +266,6 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
         return false;
       }
       case "run.steered": {
-        scribe.acceptAll();
         return false;
       }
       case "run.error": {
@@ -323,23 +279,9 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
       case "run.completed":
       case "run.failed": {
         const payload = runTerminalSchema.safeParse(envelope.payload);
-        const usage = payload.success ? payload.data.usage : undefined;
-        const warmup = payload.success ? payload.data.warmup_usage : undefined;
-        if (usage !== undefined || warmup !== undefined) {
-          const last = addTokenUsage(
-            usage === undefined ? ZERO_TOKEN_USAGE : usageBreakdown(usage),
-            warmup === undefined ? ZERO_TOKEN_USAGE : usageBreakdown(warmup),
-          );
-          args.addUsage(last, firstCallInputTokens);
-        }
         if (envelope.type === "run.failed" || (payload.success && payload.data.status === "failed")) {
           const message = messageOf(envelope.payload) ?? "nanocodex run failed";
-          scribe.fail({ message, settlesTurn: true });
-          scribe.settle("failed", { error: { message } });
-        } else if (payload.success && payload.data.status === "cancelled") {
-          scribe.settle("interrupted");
-        } else {
-          scribe.settle("completed");
+          scribe.fail({ message, settlesTurn: false });
         }
         return true;
       }
@@ -354,56 +296,16 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
 
   return {
     consume,
-    finish(status) {
-      return {
-        ordinal,
-        requestId,
-        status,
-        userText,
-        commentary: [...commentary],
-        final,
-        actions: [...actions],
-        promptBytes,
-        firstCallInputTokens,
-      };
-    },
     get requestId() {
       return requestId;
     },
     get firstCallInputTokens() {
       return firstCallInputTokens;
     },
+    get compactionCount() {
+      return compactionCount;
+    },
   };
-}
-
-/** Bound what one turn contributes to history, so a 300-command turn cannot swamp the next prompt. */
-export const MAX_ACTIONS_PER_TURN = 24;
-export const MAX_ACTION_BRIEF_BYTES = 200;
-
-/** @internal exported for tests. */
-export function appendBoundedAction(actions: TurnAction[], action: TurnAction): void {
-  if (actions.length >= MAX_ACTIONS_PER_TURN) return;
-  actions.push(boundAction(action));
-}
-
-function boundAction(action: TurnAction): TurnAction {
-  switch (action.kind) {
-    case "command":
-      return { ...action, command: boundedText(action.command) };
-    case "tool":
-      return { ...action, brief: boundedText(action.brief) };
-    case "fileChange":
-      return action;
-  }
-}
-
-function boundedText(text: string): string {
-  if (Buffer.byteLength(text, "utf8") <= MAX_ACTION_BRIEF_BYTES) return text;
-  let sliced = text.slice(0, MAX_ACTION_BRIEF_BYTES);
-  while (Buffer.byteLength(sliced, "utf8") > MAX_ACTION_BRIEF_BYTES - 1) {
-    sliced = sliced.slice(0, -1);
-  }
-  return `${sliced}…`;
 }
 
 function messageOf(payload: unknown): string | undefined {
