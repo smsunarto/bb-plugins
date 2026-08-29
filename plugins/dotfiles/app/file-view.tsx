@@ -6,6 +6,7 @@ import { FileDiff } from "./diffs-lib.ts";
 import type { RepoPath } from "./route.ts";
 import { useTasks, type Tasks } from "./tasks.ts";
 import { useFileEditor, type ReadyFileEditor } from "./use-file-editor.ts";
+import { WorkingFileEditor } from "./working-file-editor.tsx";
 
 export interface FileViewProps {
   readonly path: RepoPath;
@@ -146,13 +147,11 @@ function ReadyFileView({
           <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-muted-foreground">
             Working file
           </div>
-          <textarea
-            aria-label={`Edit ${path}`}
+          <WorkingFileEditor
+            path={path}
             value={editor.content}
-            onChange={(event) => editor.setContent(event.target.value)}
-            onBlur={editor.flush}
-            spellCheck={false}
-            className="min-h-0 flex-1 resize-none bg-background p-3 font-mono text-xs leading-5 text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+            onChange={editor.setContent}
+            onSave={editor.flush}
           />
         </section>
         <section className="min-h-64 overflow-auto lg:min-h-0">

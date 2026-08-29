@@ -13,6 +13,7 @@ test("the plugin registers its RPC and CLI against the fake host", async () => {
   await plugin(bb);
 
   assert.deepEqual([...harness.registrations.rpcMethods].sort(), [
+    "monacoAssets",
     "overview",
     "publish",
     "readFile",

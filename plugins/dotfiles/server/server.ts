@@ -6,6 +6,7 @@ import { render } from "./command/render.ts";
 import { status } from "./command/status.ts";
 import { sync } from "./command/sync.ts";
 import { overview } from "./rpc/overview.ts";
+import { monacoAssets } from "./rpc/monaco-assets.ts";
 import { publish } from "./rpc/publish.ts";
 import { readFile } from "./rpc/read-file.ts";
 import { removeSkill } from "./rpc/remove-skill.ts";
@@ -15,7 +16,7 @@ import { bindGit, createDotfilesGit } from "./git.ts";
 
 export default definePlugin({
   pluginId: "dotfiles",
-  rpc: { overview, publish, readFile, removeSkill, runTask, saveFile },
+  rpc: { monacoAssets, overview, publish, readFile, removeSkill, runTask, saveFile },
   command: { cat, check, list, render, status, sync },
   async setup(bb) {
     const settings = bb.settings.define({

@@ -46,6 +46,7 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/monaco/",
     "assets/",
     "README.md",
     "LICENSE",
@@ -84,6 +85,8 @@
     "cron-parser": "^5.5.0",
     "hono": "^4.11.9",
     "jsdom": "25.0.1",
+    "esbuild": "^0.28.0",
+    "monaco-editor": "0.56.0",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
     "tsx": "4.23.12",
@@ -92,12 +95,13 @@
   },
   "scripts": {
     "dev": "bun ../../scripts/dev-plugin.ts",
-    "build": "bb plugin build .",
+    "build": "bb plugin build . && bun run build:monaco",
+    "build:monaco": "node scripts/stage-monaco-assets.mjs",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
-    "verify": "oxlint && tsc --noEmit && bun test --timeout=30000 && node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check && bb plugin build . && bun pm pack --dry-run",
+    "verify": "oxlint && tsc --noEmit && bun test --timeout=30000 && node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check && bun run build && node scripts/check-monaco-package.mjs",
     "clean": "rm -rf dist"
   }
 }
