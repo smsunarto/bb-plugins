@@ -1,0 +1,40 @@
+{
+  "name": "@smsunarto/bb-plugin-nanocodex",
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.21"
+  },
+  "bb": {
+    "name": "Nanocodex",
+    "description": "Runs one-shot Nanocodex agents as persistent bb threads",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "experimental_icons": {
+        "terminal": "./assets/terminal.svg"
+      }
+    },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "skills": []
+  },
+  "files": [
+    "dist/",
+    "assets/",
+    "server.ts",
+    "host.ts",
+    "src/"
+  ],
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.21"
+  },
+  "scripts": {
+    "build": "bb plugin build .",
+    "test": "bun test --timeout=30000 test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}
