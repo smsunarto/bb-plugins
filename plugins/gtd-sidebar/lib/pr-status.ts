@@ -16,7 +16,12 @@ const MERGED = "text-[color:var(--pr-merged)]";
 const OPEN = "text-success";
 /** Draft is muted, matching bb's draft token. */
 const DRAFT = "text-muted-foreground";
-const QUEUE = "text-[color:var(--attention)]";
+/**
+ * Merge-queue is in-flight, not an alarm. `--attention` is the peach
+ * attention-dot and reads too orange; `--warning-text` is the ochre
+ * Full Access uses in bb's permission-mode switcher.
+ */
+const QUEUE = "text-[color:var(--warning-text)]";
 const DANGER = "text-destructive-text";
 /**
  * Conflicts are the one red the user has to act on locally — a rebase, not a

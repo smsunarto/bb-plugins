@@ -12,10 +12,10 @@ describe("prNumberClassName", () => {
     assert.equal(prNumberClassName({ state: "open", attention: "ready_to_merge" }), "text-success");
   });
 
-  it("colours a merge-queue PR with the attention token", () => {
+  it("colours a merge-queue PR with the warning-text ochre Full Access uses", () => {
     assert.equal(
       prNumberClassName({ state: "open", attention: "queued" }),
-      "text-[color:var(--attention)]",
+      "text-[color:var(--warning-text)]",
     );
   });
 
@@ -40,7 +40,7 @@ describe("prNumberClassName", () => {
   it("lets attention outrank state so a queued draft still reads as queued", () => {
     assert.equal(
       prNumberClassName({ state: "draft", attention: "queued" }),
-      "text-[color:var(--attention)]",
+      "text-[color:var(--warning-text)]",
     );
   });
 });
