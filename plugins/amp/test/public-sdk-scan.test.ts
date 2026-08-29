@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { experimental_scanPublicSdkOnly as scanPublicSdkOnly } from "@get-bb/plugin-sdk/testing";
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+test("the SDK pin is a runtime dependency so git installs can bundle the provider bridge", () => {
+  const manifest = JSON.parse(readFileSync(join(PLUGIN_ROOT, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  // The host builder inlines `@get-bb/plugin-sdk/provider-bridge` from this
+  // package's own install. Managed git installs run `npm install --omit=dev`,
+  // so a devDependency-only pin is missing when the host artifact is built.
+  assert.equal(manifest.dependencies?.["@get-bb/plugin-sdk"], "0.4.21");
+  assert.equal(manifest.devDependencies?.["@get-bb/plugin-sdk"], undefined);
+});
 
 test("the plugin imports only the public SDK and its declared dependencies", () => {
   const report = scanPublicSdkOnly(PLUGIN_ROOT, {
