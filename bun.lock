@@ -118,10 +118,10 @@
       "name": "@smsunarto/bb-plugin-amp",
       "version": "0.4.1",
       "dependencies": {
+        "@get-bb/plugin-sdk": "0.4.21",
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.4.21",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -274,10 +274,10 @@
       "version": "0.0.0",
       "dependencies": {
         "@bb-kit/core": "0.1.0",
+        "@get-bb/plugin-sdk": "0.4.21",
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.4.21",
         "nanocodex": "https://pkg.pr.new/nanocodex@fa3f254178fff43482476203bb4a007971ceed6b",
       },
     },
