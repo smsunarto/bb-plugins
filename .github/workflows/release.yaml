@@ -1,4 +1,4 @@
-name: Release (npm)
+name: Release
 
 on:
   push:
@@ -13,13 +13,13 @@ permissions:
 # Every main push must wait its turn. It must not interrupt an npm publish
 # between a scoped package and its unscoped mirror, or replace a pending run.
 concurrency:
-  group: release-npm
+  group: release
   cancel-in-progress: false
   queue: max
 
 jobs:
   release-please:
-    name: Version and tag packages
+    name: Release Please
     runs-on: ubuntu-24.04
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
@@ -30,17 +30,6 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ github.token }}
-
-      - name: Close replaced Changesets release PRs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr list --repo "$GITHUB_REPOSITORY" --base main --state open --limit 100 --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("changeset-release/")) | .number' |
-            while read -r release_pr; do
-              gh pr close --repo "$GITHUB_REPOSITORY" "$release_pr" --delete-branch \
-                --comment "Replaced by Release Please."
-            done
 
   publish:
     name: Publish (${{ matrix.path }})

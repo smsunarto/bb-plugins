@@ -16,8 +16,8 @@ concurrency:
 jobs:
   # The cheap checks, together: each is seconds of work behind a shared install,
   # so splitting them further would cost more setup than it saves.
-  verify:
-    name: Verify (Static)
+  lint:
+    name: Lint
     runs-on: namespace-profile-linux-8vcpu-16gb-cached
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
@@ -33,7 +33,7 @@ jobs:
         run: bun run typecheck
 
   test:
-    name: Test (Bun)
+    name: Test
     runs-on: namespace-profile-linux-8vcpu-16gb-cached
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
@@ -45,10 +45,8 @@ jobs:
       - name: Test
         run: bun run test
 
-  # The job that decides whether a release would install anywhere. Kept separate
-  # from `test` because it is the slow one: it builds and packs every package.
-  package:
-    name: Package (Tarballs)
+  build:
+    name: Build
     runs-on: namespace-profile-linux-8vcpu-16gb-cached
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
