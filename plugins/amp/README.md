@@ -58,8 +58,9 @@ bb plugin install ./plugins/amp
 
 ## Requirements
 
-- bb 0.40+ or a current bb nightly, on macOS or Linux. The plugin registers
-  its provider through bb's plugin API, which bb 0.39 stable predates
+- bb 0.40+ or a current bb nightly, on macOS or Linux. Amp 0.4.2 starts this
+  compatibility line. The plugin registers its provider through bb's plugin
+  API, which bb 0.39 stable predates
 - The **Amp CLI**, installed ([get started](https://ampcode.com/manual#get-started))
   and authenticated with `amp login`, or `AMP_API_KEY` exported in the
   environment bb runs in.
