@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, readdirSync, renameSync, rmSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { ensureDir, readTextOr, timestampedBackup, writeAtomic } from "./lib/fsx.ts";
 import { loadOrCreateKey } from "./lib/keys.ts";
 import { buildPaths, systemdUserUnitPath, type Paths } from "./lib/paths.ts";
@@ -14,13 +14,7 @@ import {
   installedVersion,
   migrateLegacyInstall,
 } from "./lib/core-install.ts";
-import {
-  CORE_REF,
-  CORE_REPO,
-  normalizeCoreRef,
-  normalizeCoreSource,
-  type CoreSource,
-} from "./lib/release.ts";
+import { normalizeCoreRef, normalizeCoreSource, type CoreSource } from "./lib/release.ts";
 import { reconcileConfigFile, renderInitialConfig } from "./lib/core-config.ts";
 import {
   LaunchdSupervisor,
@@ -44,13 +38,15 @@ import {
   type TunnelStatus,
 } from "./lib/cloudflare-tunnel.ts";
 import type { PersistentService } from "./lib/persistent-service.ts";
+import { resolveAgentProxyInstance } from "./lib/instance.ts";
 import { planRuntimeReconciliation, runtimeConfigFingerprint } from "./lib/runtime-state.ts";
 import {
-  DEFAULT_AGENT_PROXY_SETTINGS,
-  normalizeAgentProxySettings,
+  createAgentProxyDefaults,
+  migrateAgentProxySettings,
   ROUTING_STRATEGIES,
   type AgentProxySettings,
 } from "./lib/plugin-settings.ts";
+import { retireCurrentDevOwnedSharedServices } from "./lib/shared-service-retirement.ts";
 import {
   ManagementClient,
   ManagementError,
@@ -67,13 +63,12 @@ import {
   type ClaudeEnvState,
 } from "./lib/agents-config.ts";
 
-const DEFAULT_PORT = DEFAULT_AGENT_PROXY_SETTINGS.port;
 const LATEST_CACHE_KEY = "latest-source-revision-v1";
 const SETTINGS_STORAGE_KEY = "configuration-v1";
 const LATEST_CACHE_TTL_MS = 3_600_000;
 const CLAUDE_BACKUP_BASE = "claude-settings.json";
-const SERVICE_LABEL = "com.bb.plugin.agent-proxy";
-const TUNNEL_SERVICE_LABEL = "com.bb.plugin.agent-proxy.cloudflare-tunnel";
+const SHARED_SERVICE_LABEL = "com.bb.plugin.agent-proxy";
+const SHARED_TUNNEL_SERVICE_LABEL = "com.bb.plugin.agent-proxy.cloudflare-tunnel";
 /** Labels earlier versions installed. Retired once on initialize so an upgraded
     install keeps exactly one login service. Never derive this from the plugin
     id: a rename or reinstall would orphan the service already on disk. */
@@ -320,7 +315,10 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   const homeDir = homedir();
-  const paths: Paths = buildPaths(await resolveDataDir());
+  const dataDir = await resolveDataDir();
+  const instance = resolveAgentProxyInstance(dataDir, { homeDir });
+  const instanceDefaults = createAgentProxyDefaults(instance.defaultPort);
+  const paths: Paths = buildPaths(dataDir);
   function serviceDefinitionPath(label: string): string {
     return process.platform === "darwin"
       ? join(homeDir, "Library", "LaunchAgents", `${label}.plist`)
@@ -347,28 +345,40 @@ export default async function plugin(bb: BbPluginApi) {
   let configuration: AgentProxySettings;
   if (storedConfiguration === undefined) {
     const legacySettings = bb.settings.define({
-      autostart: { type: "boolean", label: "Autostart", default: true },
+      autostart: {
+        type: "boolean",
+        label: "Autostart",
+        default: instanceDefaults.autostart,
+      },
       cloudflareQuickTunnelForCursor: {
         type: "boolean",
         label: "Cloudflare Quick Tunnel for Cursor",
-        default: false,
+        default: instanceDefaults.cloudflareQuickTunnelForCursor,
       },
-      port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
+      port: {
+        type: "string",
+        label: "Proxy listen port",
+        default: String(instanceDefaults.port),
+      },
       sourceRepository: {
         type: "string",
         label: "Core source repository",
-        default: CORE_REPO,
+        default: instanceDefaults.sourceRepository,
       },
-      sourceBranch: { type: "string", label: "Core source branch", default: CORE_REF },
+      sourceBranch: {
+        type: "string",
+        label: "Core source branch",
+        default: instanceDefaults.sourceBranch,
+      },
       managementKey: { type: "string", label: "Management API key", secret: true },
       routingStrategy: {
         type: "string",
         label: "Credential routing strategy",
-        default: "round-robin",
+        default: instanceDefaults.routingStrategy,
       },
     });
     const legacyValues = await legacySettings.get();
-    configuration = normalizeAgentProxySettings(legacyValues);
+    configuration = migrateAgentProxySettings(legacyValues, instanceDefaults);
     const legacyManagementKey = legacyValues.managementKey?.trim();
     if (legacyManagementKey) {
       writeAtomic(paths.managementKeyOverridePath, `${legacyManagementKey}\n`, 0o600);
@@ -376,7 +386,7 @@ export default async function plugin(bb: BbPluginApi) {
     await bb.storage.kv.set(SETTINGS_STORAGE_KEY, configuration);
     migratedLegacySettings = true;
   } else {
-    configuration = normalizeAgentProxySettings(storedConfiguration);
+    configuration = migrateAgentProxySettings(storedConfiguration, instanceDefaults);
     if (JSON.stringify(configuration) !== JSON.stringify(storedConfiguration)) {
       await bb.storage.kv.set(SETTINGS_STORAGE_KEY, configuration);
     }
@@ -429,7 +439,7 @@ export default async function plugin(bb: BbPluginApi) {
     const source = await sourceSettingsView();
     return {
       values: configuration,
-      defaults: DEFAULT_AGENT_PROXY_SETTINGS,
+      defaults: instanceDefaults,
       managementKeyConfigured: managementKeyOverride() !== null,
       sourceError: source.error,
     };
@@ -646,12 +656,61 @@ export default async function plugin(bb: BbPluginApi) {
     return retired;
   }
 
+  async function retireCurrentDevelopmentSharedServices(): Promise<boolean> {
+    if (instance.kind !== "development") return false;
+
+    const sharedCore = createSupervisor(SHARED_SERVICE_LABEL);
+    const sharedTunnel = createTunnelSupervisor(SHARED_TUNNEL_SERVICE_LABEL);
+    const retired = await retireCurrentDevOwnedSharedServices({
+      tunnel: {
+        name: "tunnel",
+        label: sharedTunnel.label,
+        definitionPath: sharedTunnel.definitionPath,
+        expectedDefinition: sharedTunnel.definition(),
+        requiredOwnedPaths: [
+          bundledTunnelRuntime?.targetPath ??
+            join(paths.tunnelRuntimeDir, "unavailable-runtime.mjs"),
+          paths.tunnelConfigPath,
+          paths.tunnelObservationPath,
+          paths.tunnelDir,
+          paths.tunnelLogPath,
+        ],
+        stop: () => sharedTunnel.stop(),
+      },
+      core: {
+        name: "core",
+        label: sharedCore.label,
+        definitionPath: sharedCore.definitionPath,
+        expectedDefinition: sharedCore.definition(),
+        requiredOwnedPaths: [
+          paths.binPath,
+          paths.configPath,
+          dirname(paths.configPath),
+          paths.serviceLogPath,
+        ],
+        stop: () => sharedCore.stop(),
+      },
+    });
+    if (retired.retiredTunnel) {
+      bb.log.info(
+        `moved the development tunnel service from ${SHARED_TUNNEL_SERVICE_LABEL} to ${instance.tunnelLabel}`,
+      );
+    }
+    if (retired.retiredCore) {
+      bb.log.info(
+        `moved the development core service from ${SHARED_SERVICE_LABEL} to ${instance.coreLabel}`,
+      );
+    }
+    return retired.retiredTunnel || retired.retiredCore;
+  }
+
   function initialize(): Promise<void> {
     if (initialized) return Promise.resolve();
     initializationTask ??= enqueue(async () => {
       cleanStaleStaging(paths.coreDir);
       migrateLegacyInstall(paths);
       const retiredLegacyService = await retireLegacyServices();
+      const retiredSharedDevelopmentService = await retireCurrentDevelopmentSharedServices();
       if (!tunnelEnabled && (await tryStopTunnel()) !== null) await supervisor.stop();
       secureAuthDirectory();
       const effective = await effectiveSettings();
@@ -670,7 +729,10 @@ export default async function plugin(bb: BbPluginApi) {
       // The planner starts only a service it found loaded, which is right for a
       // fresh install and wrong straight after a retirement: the core WAS
       // running, under the old label. Re-adopt it under the new one.
-      const replaceRetiredService = retiredLegacyService && desiredRunning && !snapshot.loaded;
+      const replaceRetiredService =
+        (retiredLegacyService || retiredSharedDevelopmentService) &&
+        desiredRunning &&
+        !snapshot.loaded;
       if (plan.startAfterWrite || replaceRetiredService) {
         await startManagedStack();
       } else if (tunnelEnabled && desiredRunning) {
@@ -720,14 +782,15 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   function createTunnelSupervisor(
+    label: string,
     hooks: {
       onChange?: (snapshot: SupervisorSnapshot) => void;
       onError?: (error: unknown) => void;
     } = {},
   ): PersistentService {
     return createCloudflareTunnelService({
-      label: TUNNEL_SERVICE_LABEL,
-      definitionPath: serviceDefinitionPath(TUNNEL_SERVICE_LABEL),
+      label,
+      definitionPath: serviceDefinitionPath(label),
       runtimePath:
         bundledTunnelRuntime?.targetPath ?? join(paths.tunnelRuntimeDir, "unavailable-runtime.mjs"),
       hostRuntime: tunnelHostRuntime,
@@ -741,7 +804,7 @@ export default async function plugin(bb: BbPluginApi) {
     });
   }
 
-  supervisor = createSupervisor(SERVICE_LABEL, {
+  supervisor = createSupervisor(instance.coreLabel, {
     onChange: (snapshot: SupervisorSnapshot) => {
       bb.realtime.publish("status", snapshot);
     },
@@ -749,7 +812,7 @@ export default async function plugin(bb: BbPluginApi) {
       bb.log.error(`service monitor failed: ${String(error)}`);
     },
   });
-  tunnelSupervisor = createTunnelSupervisor({
+  tunnelSupervisor = createTunnelSupervisor(instance.tunnelLabel, {
     onChange: () => {
       bb.realtime.publish("status", { tunnelChanged: true });
     },

@@ -20,6 +20,13 @@ export const DEFAULT_AGENT_PROXY_SETTINGS: AgentProxySettings = {
   routingStrategy: "round-robin",
 };
 
+export function createAgentProxyDefaults(port: number): AgentProxySettings {
+  if (!Number.isInteger(port) || port <= 0 || port >= 65_536) {
+    throw new Error(`invalid Agent Proxy default port: ${port}`);
+  }
+  return { ...DEFAULT_AGENT_PROXY_SETTINGS, port };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -44,23 +51,34 @@ function routingStrategyOr(value: unknown, fallback: RoutingStrategy): RoutingSt
     : fallback;
 }
 
-export function normalizeAgentProxySettings(value: unknown): AgentProxySettings {
+export function normalizeAgentProxySettings(
+  value: unknown,
+  defaults: AgentProxySettings = DEFAULT_AGENT_PROXY_SETTINGS,
+): AgentProxySettings {
   const source = isRecord(value) ? value : {};
   return {
-    autostart: booleanOr(source.autostart, DEFAULT_AGENT_PROXY_SETTINGS.autostart),
+    autostart: booleanOr(source.autostart, defaults.autostart),
     cloudflareQuickTunnelForCursor: booleanOr(
       source.cloudflareQuickTunnelForCursor,
-      DEFAULT_AGENT_PROXY_SETTINGS.cloudflareQuickTunnelForCursor,
+      defaults.cloudflareQuickTunnelForCursor,
     ),
-    port: portOr(source.port, DEFAULT_AGENT_PROXY_SETTINGS.port),
-    sourceRepository: stringOr(
-      source.sourceRepository,
-      DEFAULT_AGENT_PROXY_SETTINGS.sourceRepository,
-    ),
-    sourceBranch: stringOr(source.sourceBranch, DEFAULT_AGENT_PROXY_SETTINGS.sourceBranch),
-    routingStrategy: routingStrategyOr(
-      source.routingStrategy,
-      DEFAULT_AGENT_PROXY_SETTINGS.routingStrategy,
-    ),
+    port: portOr(source.port, defaults.port),
+    sourceRepository: stringOr(source.sourceRepository, defaults.sourceRepository),
+    sourceBranch: stringOr(source.sourceBranch, defaults.sourceBranch),
+    routingStrategy: routingStrategyOr(source.routingStrategy, defaults.routingStrategy),
   };
+}
+
+export function migrateAgentProxySettings(
+  value: unknown,
+  defaults: AgentProxySettings = DEFAULT_AGENT_PROXY_SETTINGS,
+): AgentProxySettings {
+  const normalized = normalizeAgentProxySettings(value, defaults);
+  if (
+    defaults.port !== DEFAULT_AGENT_PROXY_SETTINGS.port &&
+    normalized.port === DEFAULT_AGENT_PROXY_SETTINGS.port
+  ) {
+    return { ...normalized, port: defaults.port };
+  }
+  return normalized;
 }

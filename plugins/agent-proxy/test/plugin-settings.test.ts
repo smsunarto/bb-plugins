@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  createAgentProxyDefaults,
   DEFAULT_AGENT_PROXY_SETTINGS,
+  migrateAgentProxySettings,
   normalizeAgentProxySettings,
 } from "../lib/plugin-settings.ts";
 
@@ -46,4 +48,18 @@ test("a persisted port with a numeric prefix falls back to the default", () => {
     normalizeAgentProxySettings({ port: "9417garbage" }).port,
     DEFAULT_AGENT_PROXY_SETTINGS.port,
   );
+});
+
+test("builds instance defaults by replacing only the canonical port", () => {
+  const defaults = createAgentProxyDefaults(56_493);
+  assert.deepEqual(defaults, { ...DEFAULT_AGENT_PROXY_SETTINGS, port: 56_493 });
+  assert.deepEqual(normalizeAgentProxySettings({}, defaults), defaults);
+});
+
+test("migrates only the old development default in configuration-v1", () => {
+  const defaults = createAgentProxyDefaults(56_493);
+  assert.equal(migrateAgentProxySettings({ port: 8317 }, defaults).port, 56_493);
+  assert.equal(migrateAgentProxySettings({ port: 9417 }, defaults).port, 9417);
+  assert.equal(migrateAgentProxySettings({ port: "invalid" }, defaults).port, 56_493);
+  assert.equal(migrateAgentProxySettings({ port: 8317 }, DEFAULT_AGENT_PROXY_SETTINGS).port, 8317);
 });

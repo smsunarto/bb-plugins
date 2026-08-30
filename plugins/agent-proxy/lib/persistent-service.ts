@@ -31,6 +31,7 @@ export interface PersistentService {
   readonly manager: ServiceManager;
   readonly label: string;
   readonly definitionPath: string;
+  definition(): string;
   logs(): string[];
   snapshot(): Promise<ServiceSnapshot>;
   start(): Promise<ServiceSnapshot>;

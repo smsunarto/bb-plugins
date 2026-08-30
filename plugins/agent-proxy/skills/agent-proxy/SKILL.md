@@ -22,13 +22,15 @@ Get live values (URLs + local API key) with:
 bb agent-proxy endpoints
 ```
 
-| Protocol                                         | Base URL (default port 8317)   |
+| Protocol                                         | Base URL (production default)  |
 | ------------------------------------------------ | ------------------------------ |
 | OpenAI-compatible (chat completions + responses) | `http://127.0.0.1:8317/v1`     |
 | Anthropic (`/v1/messages`)                       | `http://127.0.0.1:8317`        |
 | Gemini                                           | `http://127.0.0.1:8317/v1beta` |
 
 Auth: pass the local API key as the bearer token / `x-api-key`.
+Production defaults to port 8317. BB development instances derive a stable,
+checkout-scoped port. Always read the live endpoint before wiring an agent.
 
 ## Cursor BYOK quick tunnel
 
