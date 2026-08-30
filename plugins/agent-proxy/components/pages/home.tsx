@@ -7,6 +7,25 @@ import { CopyField } from "@/components/copy-field";
 import { StatusBadge } from "@/components/status-badge";
 import { useCoreStatus } from "@/components/use-core-status";
 import { canStopService } from "@/lib/service-actions";
+import type { CoreStatus } from "../../server";
+
+function tunnelStatusText(tunnel: CoreStatus["tunnel"]): string {
+  switch (tunnel.state) {
+    case "disabled":
+      return "Disabled. Enable Cloudflare Quick Tunnel for Cursor in Agent Proxy settings.";
+    case "missing-binary":
+      return tunnel.detail;
+    case "stopped":
+      return "Stopped with the local proxy.";
+    case "stopping":
+    case "starting":
+    case "running-without-url":
+    case "crashed":
+      return tunnel.detail;
+    case "ready":
+      return "Ready for Cursor BYOK.";
+  }
+}
 
 export function HomePage() {
   const { status, error, refresh, rpc } = useCoreStatus();
@@ -207,6 +226,31 @@ export function HomePage() {
               />
               <CopyField label="Gemini base URL" value={status.endpoints.gemini} />
               {apiKey ? <CopyField label="Local API key" value={apiKey} masked /> : null}
+            </>
+          ) : (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Public OpenAI base URL</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {status ? (
+            <>
+              <div className="text-sm text-muted-foreground">{tunnelStatusText(status.tunnel)}</div>
+              {status.tunnel.state === "ready" ? (
+                <>
+                  <CopyField label="Cursor OpenAI base URL" value={status.tunnel.openaiBaseUrl} />
+                  {apiKey ? <CopyField label="Cursor API key" value={apiKey} masked /> : null}
+                </>
+              ) : null}
+              <div className="text-xs text-muted-foreground">
+                Quick Tunnels are for development. The hostname changes after the helper restarts.
+                Cloudflare Quick Tunnels do not support SSE, so some Cursor requests can fail.
+              </div>
             </>
           ) : (
             <div className="text-sm text-muted-foreground">Loading…</div>

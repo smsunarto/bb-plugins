@@ -1,6 +1,6 @@
 ---
 name: agent-proxy
-description: Route Claude Code, Codex, and OpenAI-compatible agents through the local CLIProxyAPI proxy managed by the agent-proxy plugin. Use when the user asks to route model traffic through the proxy, needs local proxy endpoints/keys, or wants to manage the proxy core.
+description: Route Claude Code, Codex, Cursor BYOK, and OpenAI-compatible agents through the CLIProxyAPI proxy. Use for local endpoints and keys, the public Cursor Quick Tunnel, or proxy lifecycle work.
 ---
 
 # Agent Proxy (CLIProxyAPI)
@@ -30,6 +30,36 @@ bb agent-proxy endpoints
 
 Auth: pass the local API key as the bearer token / `x-api-key`.
 
+## Cursor BYOK quick tunnel
+
+Enable **Cloudflare Quick Tunnel for Cursor** in Agent Proxy settings. Then run:
+
+```
+bb agent-proxy endpoints
+```
+
+Use these values in Cursor BYOK:
+
+- OpenAI base URL: the `public openai` value. It already ends in `/v1`.
+- OpenAI API key: the `api key` value.
+
+The setting is off by default. When it is off, Agent Proxy does not search for
+`cloudflared`. When it is on, Agent Proxy keeps the core running and starts the
+tunnel helper after the core.
+
+The helper survives bb closing. Stop shuts down the helper before the core. A
+core port change keeps the helper PID and public hostname. A helper restart gets
+a new random hostname.
+
+Quick Tunnels are for development. They do not support SSE. Some Cursor
+requests may fail. This plugin release has not verified a live Cursor request.
+
+Use `bb agent-proxy status` for the tunnel state. If `cloudflared` is missing,
+install it and toggle the setting off and on. If the public endpoint returns
+503, start the core or resolve its port conflict. The helper keeps the current
+hostname during a temporary core outage. If the host runtime cannot run the
+helper, update or reinstall bb, then toggle the setting off and on.
+
 ## Env recipes
 
 - Claude Code: `ANTHROPIC_BASE_URL=<anthropic url> ANTHROPIC_AUTH_TOKEN=<key>`
@@ -40,9 +70,9 @@ Auth: pass the local API key as the bearer token / `x-api-key`.
 ## CLI
 
 ```
-bb agent-proxy status                 # core state, versions, endpoints
+bb agent-proxy status                 # core and tunnel state, versions, endpoints
 bb agent-proxy start|stop|restart     # lifecycle
-bb agent-proxy endpoints              # URLs + local API key
+bb agent-proxy endpoints              # local and public URLs + local API key
 bb agent-proxy install [ref]          # install configured source (release archive, else source build); ref temporarily overrides branch
 bb agent-proxy oauth <claude|codex>   # browser OAuth flow (prints URL, waits)
 bb agent-proxy providers              # configured credentials + auth files
@@ -60,6 +90,8 @@ enables and loads it again.
   the plugin and the core co-own that file.
 - Never edit or load the generated service definition by hand. The plugin owns
   the macOS LaunchAgent or Linux user unit and reloads it when needed.
+- Never start `cloudflared` directly for this feature. The helper restricts the
+  public gateway to `/v1` and checks the local bearer key before proxying.
 - The proxy listens on 127.0.0.1 of the bb server machine only.
 - Save custom GitHub repository and branch values on the Advanced page. A save
   does not replace the running binary; run Install core after the change.

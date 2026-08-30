@@ -17,6 +17,11 @@ export interface Paths {
   serviceDir: string;
   serviceLogPath: string;
   runtimeFingerprintPath: string;
+  tunnelDir: string;
+  tunnelConfigPath: string;
+  tunnelObservationPath: string;
+  tunnelLogPath: string;
+  tunnelRuntimeDir: string;
   secretsDir: string;
   managementKeyPath: string;
   localApiKeyPath: string;
@@ -35,6 +40,7 @@ export function buildPaths(dataDir: string): Paths {
   const currentLink = join(binDir, "current");
   const coreExecutable = "cli-proxy-api";
   const serviceDir = join(coreDir, "service");
+  const tunnelDir = join(root, "cloudflare-tunnel");
   const secretsDir = join(coreDir, "secrets");
   const agentsDir = join(root, "agents");
   const codexHomeDir = join(agentsDir, "codex-home");
@@ -53,6 +59,11 @@ export function buildPaths(dataDir: string): Paths {
     serviceDir,
     serviceLogPath: join(serviceDir, "core.log"),
     runtimeFingerprintPath: join(serviceDir, "runtime-fingerprint"),
+    tunnelDir,
+    tunnelConfigPath: join(tunnelDir, "desired.json"),
+    tunnelObservationPath: join(tunnelDir, "observation.json"),
+    tunnelLogPath: join(tunnelDir, "tunnel.log"),
+    tunnelRuntimeDir: join(tunnelDir, "runtime"),
     secretsDir,
     managementKeyPath: join(secretsDir, "management-key"),
     localApiKeyPath: join(secretsDir, "local-api-key"),
