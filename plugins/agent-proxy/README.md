@@ -24,7 +24,7 @@ the machine that runs the bb server and gives it a management UI inside bb.
 
 - **Pool several subscriptions** — authorize more than one Claude Code or Codex account and requests spread across every credential that matches the model. Round-robin by default; weighted and fill-first available.
 - **Quota failover** — a 429 moves to the next account instead of failing the request.
-- **One address for every provider** — Claude, Codex/ChatGPT, Gemini, and any OpenAI-compatible account on one local endpoint, translated across the OpenAI, Anthropic, and Gemini wire protocols. Production defaults to `http://127.0.0.1:8317`.
+- **One address for every provider** — Claude, Codex/ChatGPT, Gemini, and any OpenAI-compatible account on `http://127.0.0.1:8317`, translated across the OpenAI, Anthropic, and Gemini wire protocols.
 - **Outlives bb** — the core runs as a login service, `launchd` on macOS and `systemd` on Linux, so it keeps serving after bb closes.
 - **Green when it is up** — the sidebar row tints by core state: green running, amber starting or stopping, red crashed, dimmed when stopped.
 - **One-click wiring** — point Claude Code, Codex, or anything else at the proxy without clobbering a config you generate yourself.
@@ -86,7 +86,7 @@ plugin fetches or builds on your machine, and OAuth sign-in opens a browser.
 - **Go 1.26+** — only if you build from a non-release ref. A published release needs no toolchain.
 - Outbound HTTPS to GitHub, to fetch the core.
 - At least one upstream account: a Claude or ChatGPT subscription for the OAuth flows, or an Anthropic / OpenAI / Gemini / OpenAI-compatible API key.
-- A free TCP port on loopback. Production uses 8317 by default. BB development instances derive a stable port from their checkout identity, so they can run beside production.
+- A free TCP port on loopback (8317 by default). A conflict shows up as a crash loop on the Home page.
 - `cloudflared` on `PATH` or in a common install location. You need it only for the optional Cursor Quick Tunnel.
 
 ## Endpoints
@@ -98,8 +98,6 @@ plugin fetches or builds on your machine, and OAuth sign-in opens a browser.
 | Gemini                     | `http://127.0.0.1:8317/v1beta` |
 
 The proxy listens on loopback of the bb server machine only.
-The table shows production defaults. Use `bb agent-proxy endpoints` for the
-current instance, including a checkout-scoped BB development instance.
 
 ## Use the Cursor Quick Tunnel
 
@@ -145,7 +143,7 @@ instead of duplicating the form.
 | -------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
 | `autostart`                      | `true`                      | Keep the login service enabled, so the core starts at login and survives bb closing  |
 | `cloudflareQuickTunnelForCursor` | `false`                     | Expose the OpenAI-compatible `/v1` API through a development Quick Tunnel for Cursor |
-| `port`                           | `8317` in production        | Listen port. BB development instances derive a stable checkout-scoped default        |
+| `port`                           | `8317`                      | Listen port. Out-of-range or unparseable values fall back to 8317                    |
 | `sourceRepository`               | `router-for-me/CLIProxyAPI` | Public GitHub source                                                                 |
 | `sourceBranch`                   | `latest`                    | `latest` resolves to the newest published release; or a branch, tag, or commit       |
 | `managementKey`                  | _(generated)_               | Secret. Overrides the auto-generated management key                                  |
@@ -175,7 +173,7 @@ paths and service settings.
 
 ## Troubleshooting
 
-- **Crash loop right after install** — usually a port conflict. Change `port`, or free the port shown on the Home page.
+- **Crash loop right after install** — usually a port conflict. Change `port`, or free 8317.
 - **"Unavailable — is the core running?"** on OAuth, Providers, or Usage — those pages talk to the core's management API, so the core must be up first.
 - **Removed the plugin, service still there** — the operating system owns the process by design. Run `bb agent-proxy stop` _before_ you remove the plugin, or delete the definition by hand.
 - **macOS Gatekeeper kills the binary** — it should not be quarantined, but if it happens: `xattr -d com.apple.quarantine <core/bin/current/cli-proxy-api>`.
