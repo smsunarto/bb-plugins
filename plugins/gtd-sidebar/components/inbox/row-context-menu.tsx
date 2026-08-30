@@ -1,50 +1,41 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
-  type PluginSidebarThread,
-} from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
+import { usePortalScopeProps } from "@/lib/portal-scope";
+import { getThreadActionGroups, type ThreadActionPlan } from "@/components/inbox/thread-actions";
 
-/**
- * This sidebar's own right-click menu.
- *
- * The plugin API ships no menu component on purpose, so a replaced sidebar
- * owns this surface. Every item below is one call on
- * `experimental_useSidebarThreadActions`, and the destructive one is
- * `requestDelete`, which opens BB's confirmation rather than deleting a
- * subtree silently.
- */
 export function RowContextMenu({
-  thread,
+  plan,
   children,
 }: {
-  thread: PluginSidebarThread;
+  plan: ThreadActionPlan;
   children: ReactNode;
 }) {
-  const actions = useSidebarThreadActions();
+  const groups = getThreadActionGroups(plan);
 
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
+          {...usePortalScopeProps()}
           aria-label="Thread actions"
           className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          <Item onSelect={() => actions.open(thread.id, { split: true })}>Open in split</Item>
-          <Separator />
-          <Item onSelect={() => void actions.setRead(thread.id, thread.isUnread)}>
-            {thread.isUnread ? "Mark read" : "Mark unread"}
-          </Item>
-          <Item onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}>
-            {thread.isPinned ? "Unpin" : "Pin"}
-          </Item>
-          <Separator />
-          <Item onSelect={() => actions.archive(thread.id)}>Archive</Item>
-          <Item destructive onSelect={() => actions.requestDelete(thread.id)}>
-            Delete
-          </Item>
+          {groups.map((group, index) => (
+            <Fragment key={group.id}>
+              {index === 0 ? null : <Separator />}
+              {group.actions.map((action) => (
+                <Item
+                  key={action.id}
+                  destructive={group.id === "destructive"}
+                  onSelect={action.execute}
+                >
+                  {action.label}
+                </Item>
+              ))}
+            </Fragment>
+          ))}
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
