@@ -155,6 +155,7 @@ export function projectAmpEvent(event: AmpEvent, ctx: ProjectionContext): void {
         message: event.message,
         settlesTurn: true,
         category: categoryFor(event.subtype),
+        ...(event.subtype === "stream_disconnected" ? { willRetry: false } : {}),
       });
       return;
     case "raw":
@@ -263,6 +264,8 @@ function categoryFor(subtype: AmpErrorSubtype): ProviderErrorCategory {
       return "bad-request";
     case "error_during_execution":
       return "internal";
+    case "stream_disconnected":
+      return "stream-disconnected";
     case "unknown":
       return "unknown";
   }

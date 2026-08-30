@@ -306,6 +306,34 @@ describe("bridge stream (U2)", () => {
     assert.equal(last.status, "failed");
   });
 
+  it("marks a stream disconnect as a non-retrying provider error", () => {
+    const { messages, writer } = makeHarness();
+    const scribe = writer.scribe();
+    const { oracle } = makeOracle();
+    const ctx = makeContext(writer, scribe, oracle);
+    projectAmpEvent(
+      {
+        kind: "resultError",
+        subtype: "stream_disconnected",
+        message: "OpenAI WebSocket closed: 1006",
+        denials: [],
+      },
+      ctx,
+    );
+
+    const deltaMessage = messages.find((message) => message.method === "thread/delta");
+    assert.ok(deltaMessage);
+    const params = deltaMessage.params as { deltas?: Array<Record<string, unknown>> };
+    const providerError = params.deltas?.find((delta) => delta.kind === "provider.error");
+    assert.deepEqual(providerError, {
+      kind: "provider.error",
+      message: "OpenAI WebSocket closed: 1006",
+      category: "stream-disconnected",
+      willRetry: false,
+      settlesTurn: true,
+    });
+  });
+
   it("claims a zero-work turn", () => {
     const { messages, writer } = makeHarness();
     const scribe = writer.scribe();
