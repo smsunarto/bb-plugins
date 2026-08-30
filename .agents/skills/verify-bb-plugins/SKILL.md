@@ -19,7 +19,7 @@ Create one run ID. The helper starts the pinned app, resets its test baseline, a
 
 ```bash
 RUN_ID="verify-$(date +%Y%m%d-%H%M%S)"
-.codex/skills/verify-bb-plugins/scripts/control launch "$RUN_ID"
+.agents/skills/verify-bb-plugins/scripts/control launch "$RUN_ID"
 source ".scratch/verify-bb-plugins/runs/$RUN_ID/run.env"
 ```
 
@@ -32,7 +32,7 @@ The helper prints the app URL, browser session, and evidence directory. Use thos
 Run the doctor before browser work and after unexpected behavior.
 
 ```bash
-.codex/skills/verify-bb-plugins/scripts/control doctor
+.agents/skills/verify-bb-plugins/scripts/control doctor
 ```
 
 The doctor checks the pinned app, its isolated data directory, every workspace plugin, and the bb Monokai theme. Fix a failed check before driving the UI.
@@ -71,7 +71,7 @@ Record the expected result and the observed result in `$ARTIFACT_DIR/result.md`.
 Close only the session created for this run. Keep the evidence directory.
 
 ```bash
-.codex/skills/verify-bb-plugins/scripts/control cleanup "$RUN_ID"
+.agents/skills/verify-bb-plugins/scripts/control cleanup "$RUN_ID"
 test -d "$ARTIFACT_DIR"
 ```
 
