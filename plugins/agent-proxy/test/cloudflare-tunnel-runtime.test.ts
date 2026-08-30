@@ -234,6 +234,66 @@ test("the gateway destroys upstream work when the downstream disconnects", async
   }
 });
 
+test("an early core response closes the upstream request while the upload remains open", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-gateway-early-response-"));
+  let closeUpstream!: () => void;
+  const upstreamClosed = new Promise<void>((resolveClosed) => {
+    closeUpstream = resolveClosed;
+  });
+  const core = createServer((request, response) => {
+    request.socket.once("close", closeUpstream);
+    response.writeHead(200, {
+      "content-length": 5,
+      connection: "keep-alive",
+    });
+    response.end("early");
+  });
+  const corePort = await listen(core);
+  const { configPath, key } = gatewayFixture(dir, corePort);
+  const gateway = createGateway(configPath, { upstreamIdleTimeoutMs: 5_000 });
+  const gatewayPort = await listen(gateway);
+  let downstream!: ReturnType<typeof httpRequest>;
+  const earlyResponse = new Promise<GatewayResponse>((resolveResponse, reject) => {
+    downstream = httpRequest(
+      {
+        host: "127.0.0.1",
+        port: gatewayPort,
+        path: "/v1/chat/completions",
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${key}`,
+          "content-length": 1_000_000,
+        },
+      },
+      (response) => {
+        response.setEncoding("utf8");
+        let body = "";
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () =>
+          resolveResponse({ status: response.statusCode ?? 0, body, headers: response.headers }),
+        );
+      },
+    );
+    downstream.once("error", reject);
+  });
+  downstream.write(Buffer.alloc(64 * 1024, "a"));
+
+  try {
+    const response = await eventWithin(earlyResponse, "early core response");
+    assert.equal(response.status, 200);
+    assert.equal(response.body, "early");
+    await eventWithin(upstreamClosed, "early-response upstream cleanup", 250);
+  } finally {
+    downstream.destroy();
+    gateway.closeAllConnections?.();
+    core.closeAllConnections?.();
+    await Promise.all([close(gateway), close(core)]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test(
   "the helper retries cloudflared and enforces the loopback gateway boundary",
   { timeout: 20_000 },

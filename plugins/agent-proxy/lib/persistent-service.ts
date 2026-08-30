@@ -338,7 +338,7 @@ export class LaunchdPersistentService implements PersistentService {
     return this.commitObservation(token, () => this.snapshotFromJob(job, ready));
   }
 
-  start(): Promise<ServiceSnapshot> {
+  async start(): Promise<ServiceSnapshot> {
     this.assertSupported();
     return this.operations.lifecycle(() => this.startLifecycle());
   }
@@ -368,7 +368,7 @@ export class LaunchdPersistentService implements PersistentService {
     return this.observe(null);
   }
 
-  stop(): Promise<ServiceSnapshot> {
+  async stop(): Promise<ServiceSnapshot> {
     this.assertSupported();
     return this.operations.lifecycle(() => this.stopLifecycle());
   }
@@ -388,7 +388,7 @@ export class LaunchdPersistentService implements PersistentService {
     });
   }
 
-  restart(): Promise<ServiceSnapshot> {
+  async restart(): Promise<ServiceSnapshot> {
     this.assertSupported();
     return this.operations.lifecycle(() => this.restartLifecycle());
   }
@@ -732,7 +732,7 @@ export class SystemdPersistentService implements PersistentService {
     return this.commitObservation(token, () => this.snapshotFromJob(job, ready));
   }
 
-  start(): Promise<ServiceSnapshot> {
+  async start(): Promise<ServiceSnapshot> {
     this.assertSupported();
     return this.operations.lifecycle(() => this.startLifecycle());
   }
@@ -754,7 +754,7 @@ export class SystemdPersistentService implements PersistentService {
     return this.observe(null);
   }
 
-  stop(): Promise<ServiceSnapshot> {
+  async stop(): Promise<ServiceSnapshot> {
     this.assertSupported();
     return this.operations.lifecycle(() => this.stopLifecycle());
   }
@@ -773,7 +773,7 @@ export class SystemdPersistentService implements PersistentService {
     });
   }
 
-  restart(): Promise<ServiceSnapshot> {
+  async restart(): Promise<ServiceSnapshot> {
     this.assertSupported();
     return this.operations.lifecycle(() => this.restartLifecycle());
   }

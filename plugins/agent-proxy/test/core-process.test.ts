@@ -107,6 +107,7 @@ function makeSupervisor(options: {
   fetchImpl?: typeof fetch;
   logLimit?: number;
   now?: () => number;
+  platform?: NodeJS.Platform;
 }) {
   const dir = mkdtempSync(join(tmpdir(), "agent-proxy-launchd-"));
   const launchctl = options.launchctl ?? makeFakeLaunchctl();
@@ -126,12 +127,25 @@ function makeSupervisor(options: {
     fetchImpl: options.fetchImpl ?? ((() => Promise.resolve(new Response("ok"))) as typeof fetch),
     monitorIntervalMs: 10,
     ...(options.logLimit === undefined ? {} : { logLimit: options.logLimit }),
-    platform: "darwin",
+    platform: options.platform ?? "darwin",
     now: options.now ?? (() => 1_700_000_000_000),
     onChange: (snapshot) => transitions.push(snapshot.state),
   });
   return { supervisor, transitions, launchctl, plistPath, logPath };
 }
+
+test("unsupported launchd lifecycle calls return rejected promises", async () => {
+  const { supervisor } = makeSupervisor({ platform: "linux" });
+
+  for (const operation of ["start", "stop", "restart"] as const) {
+    let outcome: Promise<unknown> | undefined;
+    assert.doesNotThrow(() => {
+      outcome = supervisor[operation]();
+    });
+    assert.ok(outcome instanceof Promise);
+    await assert.rejects(outcome, /persistent service requires macOS launchd/);
+  }
+});
 
 test("renders a private, persistent launch agent definition", () => {
   const plist = renderLaunchAgentPlist({
@@ -455,7 +469,7 @@ function makeFakeSystemctl(initial: Partial<FakeSystemdJob> = {}) {
 
 function makeSystemdSupervisor(
   initial: Partial<FakeSystemdJob> = {},
-  options: { fetchImpl?: typeof fetch; now?: () => number } = {},
+  options: { fetchImpl?: typeof fetch; now?: () => number; platform?: NodeJS.Platform } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "agent-proxy-systemd-"));
   const systemctl = makeFakeSystemctl(initial);
@@ -473,12 +487,25 @@ function makeSystemdSupervisor(
     runCommand: systemctl.runner,
     fetchImpl: options.fetchImpl ?? ((() => Promise.resolve(new Response("ok"))) as typeof fetch),
     monitorIntervalMs: 10,
-    platform: "linux",
+    platform: options.platform ?? "linux",
     now: options.now ?? (() => 1_700_000_000_000),
     onChange: (snapshot) => transitions.push(snapshot.state),
   });
   return { supervisor, transitions, systemctl, unitPath, logPath };
 }
+
+test("unsupported systemd lifecycle calls return rejected promises", async () => {
+  const { supervisor } = makeSystemdSupervisor({}, { platform: "darwin" });
+
+  for (const operation of ["start", "stop", "restart"] as const) {
+    let outcome: Promise<unknown> | undefined;
+    assert.doesNotThrow(() => {
+      outcome = supervisor[operation]();
+    });
+    assert.ok(outcome instanceof Promise);
+    await assert.rejects(outcome, /persistent service requires Linux systemd/);
+  }
+});
 
 test("renders and parses a persistent user systemd service", () => {
   const unit = renderSystemdUserUnit({

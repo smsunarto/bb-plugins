@@ -268,9 +268,7 @@ export function createGateway(configPath, { upstreamIdleTimeoutMs = 5 * 60_000 }
         upstreamResponse = response;
         response.once("aborted", failUpstream);
         response.once("error", failUpstream);
-        response.once("end", () => {
-          terminal = true;
-        });
+        response.once("end", closeUpstream);
         outgoing.writeHead(response.statusCode ?? 502, responseHeaders(response.headers));
         response.pipe(outgoing);
       },
