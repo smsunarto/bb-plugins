@@ -63,7 +63,7 @@
     "src/"
   ],
   "dependencies": {
-    "@get-bb/plugin-sdk": "0.4.21",
+    "@get-bb/plugin-sdk": "0.4.24",
     "zod": "^4.3.6"
   },
   "devDependencies": {
