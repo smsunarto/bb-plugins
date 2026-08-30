@@ -136,6 +136,9 @@ a live Cursor request.
 
 ## Settings
 
+Configure Agent Proxy on its **Advanced** page. The plugin entry in bb Settings links to that page
+instead of duplicating the form.
+
 | Key                              | Default                     | Meaning                                                                              |
 | -------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
 | `autostart`                      | `true`                      | Keep the login service enabled, so the core starts at login and survives bb closing  |
@@ -144,6 +147,7 @@ a live Cursor request.
 | `sourceRepository`               | `router-for-me/CLIProxyAPI` | Public GitHub source                                                                 |
 | `sourceBranch`                   | `latest`                    | `latest` resolves to the newest published release; or a branch, tag, or commit       |
 | `managementKey`                  | _(generated)_               | Secret. Overrides the auto-generated management key                                  |
+| `routingStrategy`                | `round-robin`               | Select credentials with round robin, fill first, or weighted round robin             |
 
 Autostart applies immediately. The core reads the port and the management key only
 at startup, so a change to either stops the service, rewrites `config.yaml`, and

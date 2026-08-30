@@ -1,6 +1,7 @@
 import "./app.css";
 import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { CORE_STATE_STYLES } from "@/components/status-badge";
 import { mountSidebarNavStatus } from "@/components/sidebar-nav-status";
 import { useCoreStatus } from "@/components/use-core-status";
@@ -84,7 +85,23 @@ function AgentProxyPanel({ subPath }: { subPath: string }) {
   );
 }
 
+function SettingsShortcut() {
+  const navigate = useBbNavigate();
+  return (
+    <Button
+      type="button"
+      onClick={() => navigate.toPluginPanel("agent-proxy", { subPath: "advanced" })}
+    >
+      Open Agent Proxy settings
+    </Button>
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.settingsSection({
+    id: "settings-shortcut",
+    component: SettingsShortcut,
+  });
   app.slots.navPanel({
     id: "agent-proxy",
     title: NAV_TITLE,

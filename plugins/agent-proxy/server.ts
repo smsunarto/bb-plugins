@@ -46,6 +46,12 @@ import {
 import type { PersistentService } from "./lib/persistent-service.ts";
 import { planRuntimeReconciliation, runtimeConfigFingerprint } from "./lib/runtime-state.ts";
 import {
+  DEFAULT_AGENT_PROXY_SETTINGS,
+  normalizeAgentProxySettings,
+  ROUTING_STRATEGIES,
+  type AgentProxySettings,
+} from "./lib/plugin-settings.ts";
+import {
   ManagementClient,
   ManagementError,
   RESOURCES,
@@ -61,8 +67,9 @@ import {
   type ClaudeEnvState,
 } from "./lib/agents-config.ts";
 
-const DEFAULT_PORT = 8317;
+const DEFAULT_PORT = DEFAULT_AGENT_PROXY_SETTINGS.port;
 const LATEST_CACHE_KEY = "latest-source-revision-v1";
+const SETTINGS_STORAGE_KEY = "configuration-v1";
 const LATEST_CACHE_TTL_MS = 3_600_000;
 const CLAUDE_BACKUP_BASE = "claude-settings.json";
 const SERVICE_LABEL = "com.bb.plugin.agent-proxy";
@@ -123,10 +130,27 @@ const sourceSchema = z.object({
   error: z.string().nullable(),
 });
 
-const sourceSettingsSchema = sourceSchema.extend({
-  defaultRepository: z.string(),
-  defaultBranch: z.string(),
+const configurationValuesSchema = z.object({
+  autostart: z.boolean(),
+  cloudflareQuickTunnelForCursor: z.boolean(),
+  port: z.number().int().min(1).max(65_535),
+  sourceRepository: z.string(),
+  sourceBranch: z.string(),
+  routingStrategy: z.enum(ROUTING_STRATEGIES),
 });
+
+const configurationViewSchema = z.object({
+  values: configurationValuesSchema,
+  defaults: configurationValuesSchema,
+  managementKeyConfigured: z.boolean(),
+  sourceError: z.string().nullable(),
+});
+
+const managementKeyUpdateSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("keep") }).strict(),
+  z.object({ action: z.literal("clear") }).strict(),
+  z.object({ action: z.literal("set"), value: z.string().min(1) }).strict(),
+]);
 
 const statusSchema = z.object({
   state: stateSchema,
@@ -207,10 +231,10 @@ export const rpcContract = defineRpcContract({
     input: z.null(),
     output: endpointsSchema.extend({ apiKey: z.string(), publicOpenai: z.string().nullable() }),
   },
-  sourceSettings: { input: z.null(), output: sourceSettingsSchema },
-  sourceSettingsUpdate: {
-    input: z.object({ repository: z.string(), branch: z.string() }).strict(),
-    output: sourceSettingsSchema,
+  configuration: { input: z.null(), output: configurationViewSchema },
+  configurationUpdate: {
+    input: configurationValuesSchema.extend({ managementKey: managementKeyUpdateSchema }).strict(),
+    output: configurationViewSchema,
   },
 
   oauthStart: {
@@ -285,49 +309,6 @@ export const rpcContract = defineRpcContract({
 // ---------------------------------------------------------------------------
 
 export default async function plugin(bb: BbPluginApi) {
-  const settings = bb.settings.define({
-    autostart: {
-      type: "boolean",
-      label: "Keep the proxy running as a login service",
-      description:
-        "The operating system starts it at login and keeps it running when bb is closed.",
-      default: true,
-    },
-    cloudflareQuickTunnelForCursor: {
-      type: "boolean",
-      label: "Cloudflare Quick Tunnel for Cursor",
-      description:
-        "Development only. The hostname changes after helper restarts, and Cloudflare Quick Tunnels do not support SSE.",
-      default: false,
-    },
-    port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
-    sourceRepository: {
-      type: "string",
-      label: "Advanced: core source repository",
-      description:
-        "Public GitHub repository in owner/name form. A github.com URL is also accepted.",
-      default: CORE_REPO,
-    },
-    sourceBranch: {
-      type: "string",
-      label: "Advanced: core source branch or ref",
-      description: "Branch, tag, or commit used for update checks and source builds.",
-      default: CORE_REF,
-    },
-    managementKey: {
-      type: "string",
-      label: "Management API key override (leave empty to auto-generate)",
-      secret: true,
-    },
-    routingStrategy: {
-      type: "string",
-      label: "Credential routing strategy",
-      description:
-        "How the core selects between multiple matching credentials. round-robin rotates per request (trashes upstream prompt caches); fill-first sticks to one until it cools down; weighted-round-robin uses per-credential weights.",
-      default: "round-robin",
-    },
-  });
-
   async function resolveDataDir(): Promise<string> {
     try {
       const config = await bb.sdk.system.config();
@@ -361,6 +342,50 @@ export default async function plugin(bb: BbPluginApi) {
   const generatedManagementKey = loadOrCreateKey(paths.managementKeyPath);
   const localApiKey = loadOrCreateKey(paths.localApiKeyPath);
 
+  let migratedLegacySettings = false;
+  const storedConfiguration = await bb.storage.kv.get<unknown>(SETTINGS_STORAGE_KEY);
+  let configuration: AgentProxySettings;
+  if (storedConfiguration === undefined) {
+    const legacySettings = bb.settings.define({
+      autostart: { type: "boolean", label: "Autostart", default: true },
+      cloudflareQuickTunnelForCursor: {
+        type: "boolean",
+        label: "Cloudflare Quick Tunnel for Cursor",
+        default: false,
+      },
+      port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
+      sourceRepository: {
+        type: "string",
+        label: "Core source repository",
+        default: CORE_REPO,
+      },
+      sourceBranch: { type: "string", label: "Core source branch", default: CORE_REF },
+      managementKey: { type: "string", label: "Management API key", secret: true },
+      routingStrategy: {
+        type: "string",
+        label: "Credential routing strategy",
+        default: "round-robin",
+      },
+    });
+    const legacyValues = await legacySettings.get();
+    configuration = normalizeAgentProxySettings(legacyValues);
+    const legacyManagementKey = legacyValues.managementKey?.trim();
+    if (legacyManagementKey) {
+      writeAtomic(paths.managementKeyOverridePath, `${legacyManagementKey}\n`, 0o600);
+    }
+    await bb.storage.kv.set(SETTINGS_STORAGE_KEY, configuration);
+    migratedLegacySettings = true;
+  } else {
+    configuration = normalizeAgentProxySettings(storedConfiguration);
+    if (JSON.stringify(configuration) !== JSON.stringify(storedConfiguration)) {
+      await bb.storage.kv.set(SETTINGS_STORAGE_KEY, configuration);
+    }
+  }
+
+  function managementKeyOverride(): string | null {
+    return readTextOr(paths.managementKeyOverridePath)?.trim() || null;
+  }
+
   async function effectiveSettings(): Promise<{
     port: number;
     managementKey: string;
@@ -368,45 +393,46 @@ export default async function plugin(bb: BbPluginApi) {
     cloudflareQuickTunnelForCursor: boolean;
     routingStrategy: string;
   }> {
-    const values = await settings.get();
-    const port = Number.parseInt(values.port, 10);
-    const strategy = values.routingStrategy?.trim() || "round-robin";
     return {
-      port: Number.isFinite(port) && port > 0 && port < 65_536 ? port : DEFAULT_PORT,
-      managementKey: values.managementKey?.trim() || generatedManagementKey,
-      autostart: values.autostart,
-      cloudflareQuickTunnelForCursor: values.cloudflareQuickTunnelForCursor,
-      routingStrategy: strategy,
+      port: configuration.port,
+      managementKey: managementKeyOverride() ?? generatedManagementKey,
+      autostart: configuration.autostart,
+      cloudflareQuickTunnelForCursor: configuration.cloudflareQuickTunnelForCursor,
+      routingStrategy: configuration.routingStrategy,
     };
   }
 
   async function sourceSettingsView() {
-    const values = await settings.get();
-    const repository = values.sourceRepository.trim();
-    const branch = values.sourceBranch.trim();
+    const repository = configuration.sourceRepository;
+    const branch = configuration.sourceBranch;
     try {
       const source = normalizeCoreSource(repository, branch);
       return {
         repository: source.repo,
         branch: source.ref,
         error: null,
-        defaultRepository: CORE_REPO,
-        defaultBranch: CORE_REF,
       };
     } catch (error) {
       return {
         repository,
         branch,
         error: String(error instanceof Error ? error.message : error),
-        defaultRepository: CORE_REPO,
-        defaultBranch: CORE_REF,
       };
     }
   }
 
   async function configuredSource(): Promise<CoreSource> {
-    const values = await settings.get();
-    return normalizeCoreSource(values.sourceRepository, values.sourceBranch);
+    return normalizeCoreSource(configuration.sourceRepository, configuration.sourceBranch);
+  }
+
+  async function configurationView() {
+    const source = await sourceSettingsView();
+    return {
+      values: configuration,
+      defaults: DEFAULT_AGENT_PROXY_SETTINGS,
+      managementKeyConfigured: managementKeyOverride() !== null,
+      sourceError: source.error,
+    };
   }
 
   const initial = await effectiveSettings();
@@ -898,39 +924,73 @@ export default async function plugin(bb: BbPluginApi) {
     });
   }
 
-  settings.onChange((next, previous) => {
-    const sourceChanged =
-      next.sourceRepository !== previous.sourceRepository ||
-      next.sourceBranch !== previous.sourceBranch;
-    if (sourceChanged) {
-      void bb.storage.kv
-        .delete(LATEST_CACHE_KEY)
-        .then(() => bb.realtime.publish("status", { sourceChanged: true }))
-        .catch((error: unknown) => {
-          bb.log.error(`failed to clear the source update cache: ${String(error)}`);
-        });
+  async function updateConfiguration(
+    requested: AgentProxySettings,
+    managementKeyUpdate:
+      | { action: "keep" }
+      | { action: "clear" }
+      | { action: "set"; value: string },
+  ) {
+    const source = normalizeCoreSource(requested.sourceRepository, requested.sourceBranch);
+    const next: AgentProxySettings = {
+      ...requested,
+      sourceRepository: source.repo,
+      sourceBranch: source.ref,
+    };
+    const nextManagementKey =
+      managementKeyUpdate.action === "set" ? managementKeyUpdate.value.trim() : null;
+    if (managementKeyUpdate.action === "set" && !nextManagementKey) {
+      throw new Error("Management API key cannot be empty");
     }
-    const runtimeChanged =
-      next.port !== previous.port ||
-      next.managementKey !== previous.managementKey ||
-      next.routingStrategy !== previous.routingStrategy;
-    const autostartChanged = next.autostart !== previous.autostart;
-    const tunnelChanged =
-      next.cloudflareQuickTunnelForCursor !== previous.cloudflareQuickTunnelForCursor;
-    if (autostartChanged || tunnelChanged) {
-      tunnelEnabled = next.cloudflareQuickTunnelForCursor;
-      desiredRunning = next.autostart || tunnelEnabled;
-    }
-    if (!runtimeChanged && !autostartChanged && !tunnelChanged) return;
-    void initialize()
-      .then(() =>
-        enqueue(async () => {
-          const tunnelStopFailure =
-            !tunnelEnabled || !desiredRunning ? await tryStopTunnel() : null;
-          if (!tunnelEnabled && tunnelStopFailure !== null) {
-            await supervisor.stop();
-            return;
-          }
+
+    await initialize();
+    return enqueue(async () => {
+      const previous = configuration;
+      const previousManagementKey = managementKeyOverride();
+      const resolvedManagementKey =
+        managementKeyUpdate.action === "keep"
+          ? previousManagementKey
+          : managementKeyUpdate.action === "clear"
+            ? null
+            : nextManagementKey;
+      const managementKeyChanged = resolvedManagementKey !== previousManagementKey;
+
+      await bb.storage.kv.set(SETTINGS_STORAGE_KEY, next);
+      try {
+        if (resolvedManagementKey === null) {
+          rmSync(paths.managementKeyOverridePath, { force: true });
+        } else if (managementKeyChanged) {
+          writeAtomic(paths.managementKeyOverridePath, `${resolvedManagementKey}\n`, 0o600);
+        }
+      } catch (error) {
+        await bb.storage.kv.set(SETTINGS_STORAGE_KEY, previous);
+        throw error;
+      }
+      configuration = next;
+
+      const sourceChanged =
+        next.sourceRepository !== previous.sourceRepository ||
+        next.sourceBranch !== previous.sourceBranch;
+      if (sourceChanged) {
+        await bb.storage.kv.delete(LATEST_CACHE_KEY);
+        bb.realtime.publish("status", { sourceChanged: true });
+      }
+      const runtimeChanged =
+        next.port !== previous.port ||
+        managementKeyChanged ||
+        next.routingStrategy !== previous.routingStrategy;
+      const autostartChanged = next.autostart !== previous.autostart;
+      const tunnelChanged =
+        next.cloudflareQuickTunnelForCursor !== previous.cloudflareQuickTunnelForCursor;
+      if (autostartChanged || tunnelChanged) {
+        tunnelEnabled = next.cloudflareQuickTunnelForCursor;
+        desiredRunning = next.autostart || tunnelEnabled;
+      }
+      if (runtimeChanged || autostartChanged || tunnelChanged) {
+        const tunnelStopFailure = !tunnelEnabled || !desiredRunning ? await tryStopTunnel() : null;
+        if (!tunnelEnabled && tunnelStopFailure !== null) {
+          await supervisor.stop();
+        } else {
           if (runtimeChanged) {
             const effective = await effectiveSettings();
             await supervisor.stop();
@@ -952,12 +1012,13 @@ export default async function plugin(bb: BbPluginApi) {
             const snapshot = await supervisor.snapshot();
             await reconcileTunnelForCore(snapshot);
           }
-        }),
-      )
-      .catch((error: unknown) => {
-        bb.log.error(`failed to apply settings to core config: ${String(error)}`);
-      });
-  });
+        }
+      }
+
+      bb.realtime.publish("status", { configurationChanged: true });
+      return configurationView();
+    });
+  }
 
   // -------------------------------------------------------------------------
   // Agents wiring helpers
@@ -1087,19 +1148,9 @@ export default async function plugin(bb: BbPluginApi) {
         publicOpenai: status.tunnel.state === "ready" ? status.tunnel.openaiBaseUrl : null,
       };
     },
-    sourceSettings: () => sourceSettingsView(),
-    async sourceSettingsUpdate({ repository, branch }) {
-      const source = normalizeCoreSource(repository, branch);
-      await bb.sdk.plugins.updateSettings({
-        pluginId: bb.pluginId,
-        values: {
-          sourceRepository: source.repo,
-          sourceBranch: source.ref,
-        },
-      });
-      await bb.storage.kv.delete(LATEST_CACHE_KEY);
-      bb.realtime.publish("status", { sourceChanged: true });
-      return sourceSettingsView();
+    configuration: () => configurationView(),
+    async configurationUpdate({ managementKey, ...values }) {
+      return updateConfiguration(values, managementKey);
     },
 
     async oauthStart({ provider }) {
@@ -1423,6 +1474,15 @@ export default async function plugin(bb: BbPluginApi) {
       }
     },
   });
+
+  if (migratedLegacySettings) {
+    const migrationReload = setTimeout(() => {
+      void bb.sdk.plugins.reload({ pluginId: bb.pluginId }).catch((error: unknown) => {
+        bb.log.error(`failed to finish the settings migration reload: ${String(error)}`);
+      });
+    }, 0);
+    bb.onDispose(() => clearTimeout(migrationReload));
+  }
 
   bb.log.info(
     `loaded (core ${installedVersion(paths) ?? "not installed"}, source ${initialSource.repository}#${initialSource.branch}, port ${initial.port}, routing ${initial.routingStrategy}, autostart ${String(initial.autostart)}, Cloudflare tunnel ${String(initial.cloudflareQuickTunnelForCursor)})`,

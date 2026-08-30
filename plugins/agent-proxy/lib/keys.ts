@@ -5,9 +5,7 @@ export function generateKey(): string {
   return randomBytes(32).toString("base64url");
 }
 
-/** Settings have no programmatic write in the plugin SDK, so generated secrets
-    live in 0600 files under the plugin data dir; the secret setting (when set)
-    overrides the file. */
+/** Generated secrets live in 0600 files under the plugin data directory. */
 export function loadOrCreateKey(path: string): string {
   const existing = readTextOr(path)?.trim();
   if (existing) return existing;

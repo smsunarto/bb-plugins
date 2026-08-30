@@ -24,6 +24,7 @@ export interface Paths {
   tunnelRuntimeDir: string;
   secretsDir: string;
   managementKeyPath: string;
+  managementKeyOverridePath: string;
   localApiKeyPath: string;
   backupsDir: string;
   agentsDir: string;
@@ -66,6 +67,7 @@ export function buildPaths(dataDir: string): Paths {
     tunnelRuntimeDir: join(tunnelDir, "runtime"),
     secretsDir,
     managementKeyPath: join(secretsDir, "management-key"),
+    managementKeyOverridePath: join(secretsDir, "management-key-override"),
     localApiKeyPath: join(secretsDir, "local-api-key"),
     backupsDir: join(root, "backups"),
     agentsDir,
