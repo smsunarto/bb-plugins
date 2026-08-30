@@ -1,0 +1,38 @@
+{
+  "changes": [
+    {
+      "id": "selector-a",
+      "path": "src/a.ts",
+      "status": "modified",
+      "diff": {
+        "type": "patch",
+        "hunks": [
+          {
+            "oldStart": 1,
+            "oldLines": 1,
+            "newStart": 1,
+            "newLines": 1,
+            "diff": "@@ -1,1 +1,1 @@\n-old\n+new\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "selector-b",
+      "path": "src/b.ts",
+      "status": "added",
+      "diff": {
+        "type": "patch",
+        "hunks": [
+          {
+            "oldStart": 0,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 1,
+            "diff": "@@ -0,0 +1,1 @@\n+created\n"
+          }
+        ]
+      }
+    }
+  ]
+}

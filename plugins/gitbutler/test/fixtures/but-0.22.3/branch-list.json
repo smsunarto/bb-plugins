@@ -1,0 +1,27 @@
+{
+  "appliedStacks": [
+    {
+      "id": "stack-a",
+      "heads": [
+        {
+          "name": "scott/alpha",
+          "reviews": [],
+          "lastCommitAt": 1788080725000,
+          "commitsAhead": null,
+          "lastAuthor": { "name": "Scott", "email": "scott@example.com" }
+        }
+      ]
+    }
+  ],
+  "branches": [
+    {
+      "name": "scott/existing",
+      "reviews": [],
+      "hasLocal": true,
+      "lastCommitAt": 1788080725000,
+      "commitsAhead": null,
+      "lastAuthor": { "name": "Scott", "email": "scott@example.com" }
+    }
+  ],
+  "hasMoreBranches": false
+}

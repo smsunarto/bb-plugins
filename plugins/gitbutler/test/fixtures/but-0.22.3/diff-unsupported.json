@@ -1,0 +1,10 @@
+{
+  "changes": [
+    {
+      "id": "selector-binary",
+      "path": "asset.png",
+      "status": "modified",
+      "diff": { "type": "binary" }
+    }
+  ]
+}

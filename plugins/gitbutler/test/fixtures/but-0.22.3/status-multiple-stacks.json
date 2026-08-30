@@ -1,0 +1,110 @@
+{
+  "uncommittedChanges": [
+    { "cliId": "wt-a", "filePath": "src/a.ts", "changeType": "modified" },
+    { "cliId": "wt-b", "filePath": "src/b.ts", "changeType": "added" }
+  ],
+  "stacks": [
+    {
+      "cliId": "stack-a",
+      "assignedChanges": [
+        { "cliId": "assigned-a", "filePath": "src/assigned.ts", "changeType": "modified" }
+      ],
+      "branches": [
+        {
+          "cliId": "branch-a",
+          "name": "scott/alpha",
+          "commits": [
+            {
+              "cliId": "commit-a",
+              "changeId": "change-a",
+              "commitId": "1111111111111111111111111111111111111111",
+              "createdAt": "2026-08-30T00:00:00Z",
+              "message": "alpha commit",
+              "authorName": "Scott",
+              "authorEmail": "scott@example.com",
+              "conflicted": false,
+              "reviewId": "(#1)",
+              "changes": [
+                {
+                  "cliId": "commit-file-a",
+                  "filePath": "src/committed.ts",
+                  "changeType": "renamed"
+                }
+              ]
+            }
+          ],
+          "upstreamCommits": [],
+          "branchStatus": "completelyUnpushed",
+          "reviewId": "(#1)",
+          "ci": {
+            "pendingCheckTitles": ["pending"],
+            "passingCheckTitles": ["passing"],
+            "failingCheckTitles": ["failing"],
+            "status": "inProgress",
+            "conclusion": "unknown"
+          }
+        }
+      ]
+    },
+    {
+      "cliId": "stack-b",
+      "assignedChanges": [],
+      "branches": [
+        {
+          "cliId": "branch-b",
+          "name": "scott/beta",
+          "commits": [],
+          "upstreamCommits": [
+            {
+              "cliId": "upstream-b",
+              "changeId": "change-b",
+              "commitId": "2222222222222222222222222222222222222222",
+              "createdAt": "2026-08-29T00:00:00Z",
+              "message": "beta upstream",
+              "authorName": "Alex",
+              "authorEmail": "alex@example.com",
+              "conflicted": true,
+              "reviewId": null,
+              "changes": [
+                {
+                  "cliId": "upstream-file-b",
+                  "filePath": "src/upstream.ts",
+                  "changeType": "deleted"
+                }
+              ]
+            }
+          ],
+          "branchStatus": "integrated",
+          "reviewId": null,
+          "ci": null
+        }
+      ]
+    }
+  ],
+  "mergeBase": {
+    "cliId": "",
+    "commitId": "0000000000000000000000000000000000000000",
+    "createdAt": "2026-08-28T00:00:00Z",
+    "message": "base",
+    "authorName": "Base",
+    "authorEmail": "base@example.com",
+    "conflicted": null,
+    "reviewId": null,
+    "changes": null
+  },
+  "upstreamState": {
+    "behind": 2,
+    "latestCommit": {
+      "cliId": "",
+      "commitId": "0000000000000000000000000000000000000000",
+      "createdAt": "2026-08-28T00:00:00Z",
+      "message": "base",
+      "authorName": "Base",
+      "authorEmail": "base@example.com",
+      "conflicted": null,
+      "reviewId": null,
+      "changes": null
+    },
+    "lastFetched": "2026-08-30T00:01:00Z"
+  }
+}
