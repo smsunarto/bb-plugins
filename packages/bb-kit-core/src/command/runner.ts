@@ -18,7 +18,11 @@ export type ProgramDefinition = {
   children?: ProgramDefinition[];
 };
 
-export type ProgramOptions = { name?: string; summary?: string };
+export type ProgramOptions = {
+  name?: string;
+  summary?: string;
+  onUnhandledError?: (error: unknown) => void;
+};
 
 /** Map curated Commands to program nodes (shared by both tiers). */
 export function commandDefinitions(
@@ -87,6 +91,9 @@ export async function runProgram(
     if (error instanceof CommandError) {
       return { exitCode: error.exitCode, stderr: `${error.message}\n` };
     }
+    try {
+      options.onUnhandledError?.(error);
+    } catch {}
     const message = error instanceof Error ? error.message : String(error);
     return { exitCode: 1, stderr: `${message}\n` };
   }

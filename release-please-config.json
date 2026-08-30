@@ -13,6 +13,11 @@
       "component": "bb-kit-core",
       "package-name": "@bb-kit/core"
     },
+    "packages/bb-kit-sentry": {
+      "release-type": "node",
+      "component": "bb-kit-sentry",
+      "package-name": "@bb-kit/sentry"
+    },
     "plugins/agent-proxy": {
       "release-type": "node",
       "component": "agent-proxy",

@@ -62,3 +62,24 @@ test("a user-supplied .action() in configure is inert", async () => {
   const result = await runProgram(() => definitions, ["cmd"], {});
   assert.deepEqual(result, { exitCode: 0, stdout: "framework\n" });
 });
+
+test("a failing unhandled-error observer cannot replace the command result", async () => {
+  const result = await runProgram(
+    () => [
+      {
+        name: "fail",
+        summary: "Fail",
+        action() {
+          throw new Error("original");
+        },
+      },
+    ],
+    ["fail"],
+    {
+      onUnhandledError() {
+        throw new Error("observer");
+      },
+    },
+  );
+  assert.deepEqual(result, { exitCode: 1, stderr: "original\n" });
+});

@@ -1,0 +1,43 @@
+{
+  "name": "@bb-kit/sentry",
+  "version": "0.1.0",
+  "description": "Privacy-first Sentry error reporting for bb-kit plugins.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "packages/bb-kit-sentry"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build src/node.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "bun test --timeout=30000",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sentry/node": "^10.72.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  }
+}
