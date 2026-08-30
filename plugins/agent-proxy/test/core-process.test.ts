@@ -31,6 +31,16 @@ function successful(stdout = ""): CommandResult {
   return { code: 0, stdout, stderr: "" };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function launchctlOutput(job: FakeJob): string {
   return `gui/501/${TEST_LABEL} = {
 \tstate = ${job.state}
@@ -94,7 +104,9 @@ function makeFakeLaunchctl(initial: Partial<FakeJob> = {}) {
 function makeSupervisor(options: {
   installed?: () => boolean;
   launchctl?: ReturnType<typeof makeFakeLaunchctl>;
+  fetchImpl?: typeof fetch;
   logLimit?: number;
+  now?: () => number;
 }) {
   const dir = mkdtempSync(join(tmpdir(), "agent-proxy-launchd-"));
   const launchctl = options.launchctl ?? makeFakeLaunchctl();
@@ -111,11 +123,11 @@ function makeSupervisor(options: {
     isInstalled: options.installed ?? (() => true),
     probeUrl: () => "http://127.0.0.1:8317/",
     runCommand: launchctl.runner,
-    fetchImpl: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+    fetchImpl: options.fetchImpl ?? ((() => Promise.resolve(new Response("ok"))) as typeof fetch),
     monitorIntervalMs: 10,
     ...(options.logLimit === undefined ? {} : { logLimit: options.logLimit }),
     platform: "darwin",
-    now: () => 1_700_000_000_000,
+    now: options.now ?? (() => 1_700_000_000_000),
     onChange: (snapshot) => transitions.push(snapshot.state),
   });
   return { supervisor, transitions, launchctl, plistPath, logPath };
@@ -235,6 +247,120 @@ test("reports a launchd crash and its last exit", async () => {
   });
 });
 
+test("reports a signal-only launchd exit as crashed", async () => {
+  const launchctl = makeFakeLaunchctl({
+    loaded: true,
+    state: "waiting",
+    runs: 2,
+    lastExitCode: 0,
+    lastSignal: "Terminated: 15",
+  });
+  const { supervisor } = makeSupervisor({ launchctl });
+  const snapshot = await supervisor.snapshot();
+  assert.equal(snapshot.state, "crashed");
+  assert.deepEqual(snapshot.lastExit, {
+    code: 0,
+    signal: "Terminated: 15",
+    at: 1_700_000_000_000,
+  });
+});
+
+test("launchd stop tolerates only missing-service disable errors", async () => {
+  const missingLaunchctl = makeFakeLaunchctl();
+  const missingRunner = missingLaunchctl.runner;
+  missingLaunchctl.runner = async (file, args) =>
+    args[0] === "disable"
+      ? { code: 113, stdout: "", stderr: "Could not find service" }
+      : missingRunner(file, args);
+  const missing = makeSupervisor({ launchctl: missingLaunchctl });
+  assert.equal((await missing.supervisor.stop()).state, "stopped");
+
+  const rejectedLaunchctl = makeFakeLaunchctl();
+  const rejectedRunner = rejectedLaunchctl.runner;
+  rejectedLaunchctl.runner = async (file, args) =>
+    args[0] === "disable"
+      ? { code: 77, stdout: "", stderr: "permission denied" }
+      : rejectedRunner(file, args);
+  const rejected = makeSupervisor({ launchctl: rejectedLaunchctl });
+  await assert.rejects(rejected.supervisor.stop(), /permission denied/);
+});
+
+test("launchd stop overtakes and discards a stale observation", { timeout: 2_000 }, async () => {
+  const probeStarted = deferred<void>();
+  const probeResponse = deferred<Response>();
+  let nowCalls = 0;
+  const launchctl = makeFakeLaunchctl({
+    loaded: true,
+    state: "running",
+    pid: 9_001,
+    runs: 2,
+    lastExitCode: 7,
+  });
+  const { supervisor, transitions } = makeSupervisor({
+    launchctl,
+    fetchImpl: (() => {
+      probeStarted.resolve();
+      return probeResponse.promise;
+    }) as typeof fetch,
+    now: () => 1_700_000_000_000 + ++nowCalls,
+  });
+
+  const staleObservation = supervisor.snapshot();
+  await probeStarted.promise;
+  const stopped = await supervisor.stop();
+  assert.equal(stopped.state, "stopped");
+  probeResponse.resolve(new Response("ok"));
+
+  assert.deepEqual(await staleObservation, stopped);
+  assert.deepEqual(transitions, ["stopping", "stopped"]);
+  assert.equal(nowCalls, 0);
+});
+
+test("launchd lifecycle operations are serialized", { timeout: 2_000 }, async () => {
+  const enableStarted = deferred<void>();
+  const releaseEnable = deferred<void>();
+  const launchctl = makeFakeLaunchctl();
+  const baseRunner = launchctl.runner;
+  launchctl.runner = async (file, args) => {
+    if (args[0] === "enable") {
+      enableStarted.resolve();
+      await releaseEnable.promise;
+    }
+    return baseRunner(file, args);
+  };
+  const { supervisor } = makeSupervisor({ launchctl });
+
+  const starting = supervisor.start();
+  await enableStarted.promise;
+  const stopping = supervisor.stop();
+  assert.equal(
+    launchctl.calls.some((args) => args[0] === "bootout" || args[0] === "disable"),
+    false,
+  );
+
+  releaseEnable.resolve();
+  const [started, stopped] = await Promise.all([starting, stopping]);
+  assert.equal(started.state, "running");
+  assert.equal(stopped.state, "stopped");
+});
+
+test("a rejected launchd lifecycle operation does not poison later work", async () => {
+  const launchctl = makeFakeLaunchctl({ loaded: true, state: "running", pid: 9_001 });
+  const baseRunner = launchctl.runner;
+  let rejectDisable = true;
+  launchctl.runner = async (file, args) => {
+    if (args[0] === "disable" && rejectDisable) {
+      rejectDisable = false;
+      return { code: 77, stdout: "", stderr: "permission denied" };
+    }
+    return baseRunner(file, args);
+  };
+  const { supervisor } = makeSupervisor({ launchctl });
+
+  await assert.rejects(supervisor.stop(), /permission denied/);
+  assert.equal((await supervisor.stop()).state, "stopped");
+});
+
 test("aborting the monitor does not stop the external service", async () => {
   const { supervisor, launchctl } = makeSupervisor({});
   await supervisor.start();
@@ -327,11 +453,15 @@ function makeFakeSystemctl(initial: Partial<FakeSystemdJob> = {}) {
   return { calls, job, runner };
 }
 
-function makeSystemdSupervisor(initial: Partial<FakeSystemdJob> = {}) {
+function makeSystemdSupervisor(
+  initial: Partial<FakeSystemdJob> = {},
+  options: { fetchImpl?: typeof fetch; now?: () => number } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "agent-proxy-systemd-"));
   const systemctl = makeFakeSystemctl(initial);
   const unitPath = join(dir, ".config", "systemd", "user", "agent-proxy.service");
   const logPath = join(dir, "core", "service", "core.log");
+  const transitions: string[] = [];
   const supervisor = new SystemdSupervisor({
     label: TEST_LABEL,
     unitPath,
@@ -341,12 +471,13 @@ function makeSystemdSupervisor(initial: Partial<FakeSystemdJob> = {}) {
     isInstalled: () => true,
     probeUrl: () => "http://127.0.0.1:8317/",
     runCommand: systemctl.runner,
-    fetchImpl: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+    fetchImpl: options.fetchImpl ?? ((() => Promise.resolve(new Response("ok"))) as typeof fetch),
     monitorIntervalMs: 10,
     platform: "linux",
-    now: () => 1_700_000_000_000,
+    now: options.now ?? (() => 1_700_000_000_000),
+    onChange: (snapshot) => transitions.push(snapshot.state),
   });
-  return { supervisor, systemctl, unitPath, logPath };
+  return { supervisor, transitions, systemctl, unitPath, logPath };
 }
 
 test("renders and parses a persistent user systemd service", () => {
@@ -459,4 +590,37 @@ test("systemd maps numeric CLD_KILLED exit metadata to a signal", async () => {
   const snapshot = await killed.supervisor.snapshot();
   assert.equal(snapshot.lastExit?.code, null);
   assert.equal(snapshot.lastExit?.signal, "15");
+});
+
+test("systemd stop overtakes and discards a stale observation", { timeout: 2_000 }, async () => {
+  const probeStarted = deferred<void>();
+  const probeResponse = deferred<Response>();
+  let nowCalls = 0;
+  const { supervisor, transitions } = makeSystemdSupervisor(
+    {
+      enabled: true,
+      activeState: "active",
+      pid: 10_001,
+      restarts: 2,
+      exitStatus: 7,
+      exitCode: 1,
+    },
+    {
+      fetchImpl: (() => {
+        probeStarted.resolve();
+        return probeResponse.promise;
+      }) as typeof fetch,
+      now: () => 1_700_000_000_000 + ++nowCalls,
+    },
+  );
+
+  const staleObservation = supervisor.snapshot();
+  await probeStarted.promise;
+  const stopped = await supervisor.stop();
+  assert.equal(stopped.state, "stopped");
+  probeResponse.resolve(new Response("ok"));
+
+  assert.deepEqual(await staleObservation, stopped);
+  assert.deepEqual(transitions, ["stopping", "stopped"]);
+  assert.equal(nowCalls, 0);
 });

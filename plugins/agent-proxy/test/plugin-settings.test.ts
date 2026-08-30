@@ -40,3 +40,10 @@ test("invalid stored values fall back to safe defaults", () => {
     DEFAULT_AGENT_PROXY_SETTINGS,
   );
 });
+
+test("a persisted port with a numeric prefix falls back to the default", () => {
+  assert.equal(
+    normalizeAgentProxySettings({ port: "9417garbage" }).port,
+    DEFAULT_AGENT_PROXY_SETTINGS.port,
+  );
+});

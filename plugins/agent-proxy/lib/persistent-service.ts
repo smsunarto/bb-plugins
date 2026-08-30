@@ -202,6 +202,38 @@ function sameSnapshot(a: ServiceSnapshot, b: ServiceSnapshot): boolean {
   );
 }
 
+class ServiceOperationFence {
+  private epoch = 0;
+  private lifecycleActive = false;
+  private lifecycleTail: Promise<void> = Promise.resolve();
+
+  observationToken(): number {
+    return this.epoch;
+  }
+
+  canCommit(token: number): boolean {
+    return !this.lifecycleActive && token === this.epoch;
+  }
+
+  lifecycle<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.lifecycleTail.then(async () => {
+      this.epoch += 1;
+      this.lifecycleActive = true;
+      try {
+        return await operation();
+      } finally {
+        this.epoch += 1;
+        this.lifecycleActive = false;
+      }
+    });
+    this.lifecycleTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+}
+
 async function wait(ms: number, signal: AbortSignal): Promise<void> {
   try {
     await delay(ms, undefined, { signal });
@@ -248,6 +280,7 @@ export class LaunchdPersistentService implements PersistentService {
     lastExit: null,
   };
   private lastExitSignature: string | null = null;
+  private readonly operations = new ServiceOperationFence();
 
   constructor(options: LaunchdServiceOptions) {
     this.options = {
@@ -286,22 +319,32 @@ export class LaunchdPersistentService implements PersistentService {
 
   async snapshot(): Promise<ServiceSnapshot> {
     this.assertSupported();
+    return this.observe(this.operations.observationToken());
+  }
+
+  private async observe(token: number | null): Promise<ServiceSnapshot> {
     if (!this.options.isInstalled()) {
-      return this.setSnapshot({
-        state: "not-installed",
+      return this.commitObservation(token, () => ({
+        state: "not-installed" as const,
         pid: null,
         loaded: false,
         crashCount: 0,
         lastExit: null,
-      });
+      }));
     }
     const job = await this.inspectJob();
-    return this.setSnapshot(await this.snapshotFromJob(job));
+    const ready =
+      job.loaded && job.state === "running" && job.pid !== null ? await this.probe() : false;
+    return this.commitObservation(token, () => this.snapshotFromJob(job, ready));
   }
 
-  async start(): Promise<ServiceSnapshot> {
+  start(): Promise<ServiceSnapshot> {
     this.assertSupported();
-    if (!this.options.isInstalled()) return this.snapshot();
+    return this.operations.lifecycle(() => this.startLifecycle());
+  }
+
+  private async startLifecycle(): Promise<ServiceSnapshot> {
+    if (!this.options.isInstalled()) return this.observe(null);
 
     const definitionChanged = this.ensureDefinition();
     await this.runChecked(["enable", this.serviceTarget]);
@@ -322,14 +365,21 @@ export class LaunchdPersistentService implements PersistentService {
     } else if (job.pid === null || job.state !== "running") {
       await this.runChecked(["kickstart", this.serviceTarget]);
     }
-    return this.snapshot();
+    return this.observe(null);
   }
 
-  async stop(): Promise<ServiceSnapshot> {
+  stop(): Promise<ServiceSnapshot> {
     this.assertSupported();
+    return this.operations.lifecycle(() => this.stopLifecycle());
+  }
+
+  private async stopLifecycle(): Promise<ServiceSnapshot> {
     this.setSnapshot({ ...this.snapshotValue, state: "stopping" });
     await this.bootout();
-    await this.runChecked(["disable", this.serviceTarget]);
+    const result = await this.run(["disable", this.serviceTarget]);
+    if (result.code !== 0 && !isMissingService(result)) {
+      throw new Error(this.commandError(["disable", this.serviceTarget], result));
+    }
     return this.setSnapshot({
       ...this.snapshotValue,
       state: this.options.isInstalled() ? "stopped" : "not-installed",
@@ -338,9 +388,13 @@ export class LaunchdPersistentService implements PersistentService {
     });
   }
 
-  async restart(): Promise<ServiceSnapshot> {
+  restart(): Promise<ServiceSnapshot> {
     this.assertSupported();
-    if (!this.options.isInstalled()) return this.snapshot();
+    return this.operations.lifecycle(() => this.restartLifecycle());
+  }
+
+  private async restartLifecycle(): Promise<ServiceSnapshot> {
+    if (!this.options.isInstalled()) return this.observe(null);
 
     const definitionChanged = this.ensureDefinition();
     await this.runChecked(["enable", this.serviceTarget]);
@@ -353,7 +407,7 @@ export class LaunchdPersistentService implements PersistentService {
     } else {
       await this.runChecked(["kickstart", "-k", this.serviceTarget]);
     }
-    return this.snapshot();
+    return this.observe(null);
   }
 
   async monitor(signal: AbortSignal): Promise<void> {
@@ -400,7 +454,7 @@ export class LaunchdPersistentService implements PersistentService {
     return { loaded: true, ...parseLaunchctlPrint(result.stdout) };
   }
 
-  private async snapshotFromJob(job: LaunchdJobInfo): Promise<ServiceSnapshot> {
+  private snapshotFromJob(job: LaunchdJobInfo, ready: boolean): ServiceSnapshot {
     if (!job.loaded) {
       return {
         state: "stopped",
@@ -414,8 +468,8 @@ export class LaunchdPersistentService implements PersistentService {
     const lastExit = this.exitInfo(job);
     let state: ServiceState;
     if (job.state === "running" && job.pid !== null) {
-      state = (await this.probe()) ? "running" : "starting";
-    } else if (job.lastExitCode !== null && job.lastExitCode !== 0) {
+      state = ready ? "running" : "starting";
+    } else if (job.lastSignal !== null || (job.lastExitCode !== null && job.lastExitCode !== 0)) {
       state = "crashed";
     } else {
       state = "starting";
@@ -483,6 +537,14 @@ export class LaunchdPersistentService implements PersistentService {
       this.options.onChange?.(snapshot);
     }
     return this.snapshotValue;
+  }
+
+  private commitObservation(
+    token: number | null,
+    makeSnapshot: () => ServiceSnapshot,
+  ): ServiceSnapshot {
+    if (token !== null && !this.operations.canCommit(token)) return this.snapshotValue;
+    return this.setSnapshot(makeSnapshot());
   }
 }
 
@@ -616,6 +678,7 @@ export class SystemdPersistentService implements PersistentService {
     lastExit: null,
   };
   private lastExitSignature: string | null = null;
+  private readonly operations = new ServiceOperationFence();
 
   constructor(options: SystemdServiceOptions) {
     this.options = {
@@ -651,22 +714,31 @@ export class SystemdPersistentService implements PersistentService {
 
   async snapshot(): Promise<ServiceSnapshot> {
     this.assertSupported();
+    return this.observe(this.operations.observationToken());
+  }
+
+  private async observe(token: number | null): Promise<ServiceSnapshot> {
     if (!this.options.isInstalled()) {
-      return this.setSnapshot({
-        state: "not-installed",
+      return this.commitObservation(token, () => ({
+        state: "not-installed" as const,
         pid: null,
         loaded: false,
         crashCount: 0,
         lastExit: null,
-      });
+      }));
     }
     const job = await this.inspectJob();
-    return this.setSnapshot(await this.snapshotFromJob(job));
+    const ready = job.activeState === "active" ? await this.probe() : false;
+    return this.commitObservation(token, () => this.snapshotFromJob(job, ready));
   }
 
-  async start(): Promise<ServiceSnapshot> {
+  start(): Promise<ServiceSnapshot> {
     this.assertSupported();
-    if (!this.options.isInstalled()) return this.snapshot();
+    return this.operations.lifecycle(() => this.startLifecycle());
+  }
+
+  private async startLifecycle(): Promise<ServiceSnapshot> {
+    if (!this.options.isInstalled()) return this.observe(null);
 
     const definitionChanged = this.ensureDefinition();
     await this.runChecked(["--user", "daemon-reload"]);
@@ -679,11 +751,15 @@ export class SystemdPersistentService implements PersistentService {
     } else {
       await this.runChecked(["--user", "start", this.unitTarget]);
     }
-    return this.snapshot();
+    return this.observe(null);
   }
 
-  async stop(): Promise<ServiceSnapshot> {
+  stop(): Promise<ServiceSnapshot> {
     this.assertSupported();
+    return this.operations.lifecycle(() => this.stopLifecycle());
+  }
+
+  private async stopLifecycle(): Promise<ServiceSnapshot> {
     this.setSnapshot({ ...this.snapshotValue, state: "stopping" });
     const result = await this.run(["--user", "disable", "--now", this.unitTarget]);
     if (result.code !== 0 && !isMissingSystemdUnit(result)) {
@@ -697,9 +773,13 @@ export class SystemdPersistentService implements PersistentService {
     });
   }
 
-  async restart(): Promise<ServiceSnapshot> {
+  restart(): Promise<ServiceSnapshot> {
     this.assertSupported();
-    if (!this.options.isInstalled()) return this.snapshot();
+    return this.operations.lifecycle(() => this.restartLifecycle());
+  }
+
+  private async restartLifecycle(): Promise<ServiceSnapshot> {
+    if (!this.options.isInstalled()) return this.observe(null);
 
     this.ensureDefinition();
     await this.runChecked(["--user", "daemon-reload"]);
@@ -710,7 +790,7 @@ export class SystemdPersistentService implements PersistentService {
       job.activeState === "active" ? "restart" : "start",
       this.unitTarget,
     ]);
-    return this.snapshot();
+    return this.observe(null);
   }
 
   async monitor(signal: AbortSignal): Promise<void> {
@@ -794,7 +874,7 @@ export class SystemdPersistentService implements PersistentService {
     };
   }
 
-  private async snapshotFromJob(job: SystemdJobInfo): Promise<ServiceSnapshot> {
+  private snapshotFromJob(job: SystemdJobInfo, ready: boolean): ServiceSnapshot {
     const loaded =
       job.enabled ||
       job.activeState === "active" ||
@@ -802,7 +882,7 @@ export class SystemdPersistentService implements PersistentService {
       job.activeState === "deactivating";
     let state: ServiceState;
     if (job.activeState === "active") {
-      state = (await this.probe()) ? "running" : "starting";
+      state = ready ? "running" : "starting";
     } else if (job.activeState === "activating") {
       state = "starting";
     } else if (job.activeState === "deactivating") {
@@ -872,5 +952,13 @@ export class SystemdPersistentService implements PersistentService {
       this.options.onChange?.(snapshot);
     }
     return this.snapshotValue;
+  }
+
+  private commitObservation(
+    token: number | null,
+    makeSnapshot: () => ServiceSnapshot,
+  ): ServiceSnapshot {
+    if (token !== null && !this.operations.canCommit(token)) return this.snapshotValue;
+    return this.setSnapshot(makeSnapshot());
   }
 }

@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { createGateway } from "../lib/cloudflare-tunnel-runtime.mjs";
 
 interface CoreRequest {
   method: string;
@@ -119,6 +120,119 @@ function waitForExit(child: ChildProcess): Promise<number | null> {
     });
   });
 }
+
+function eventWithin<T>(promise: Promise<T>, detail: string, timeoutMs = 1_000): Promise<T> {
+  return new Promise((resolveEvent, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`timed out waiting for ${detail}`)),
+      timeoutMs,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        return resolveEvent(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        return reject(error);
+      },
+    );
+  });
+}
+
+function gatewayFixture(dir: string, corePort: number) {
+  const key = "unit-test-local-key";
+  const keyPath = join(dir, "local-api-key");
+  const configPath = join(dir, "desired.json");
+  writeFileSync(keyPath, `${key}\n`, { mode: 0o600 });
+  writeFileSync(
+    configPath,
+    `${JSON.stringify({
+      version: 1,
+      corePort,
+      cloudflaredPath: join(dir, "cloudflared"),
+      localApiKeyPath: keyPath,
+    })}\n`,
+    { mode: 0o600 },
+  );
+  return { configPath, key };
+}
+
+test("the gateway returns 503 and closes an idle upstream before headers", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-gateway-idle-"));
+  let closeUpstream!: () => void;
+  const upstreamClosed = new Promise<void>((resolveClosed) => {
+    closeUpstream = resolveClosed;
+  });
+  const core = createServer((request) => {
+    request.resume();
+    request.socket.once("close", closeUpstream);
+  });
+  const corePort = await listen(core);
+  const { configPath, key } = gatewayFixture(dir, corePort);
+  const gateway = createGateway(configPath, { upstreamIdleTimeoutMs: 25 });
+  const gatewayPort = await listen(gateway);
+
+  try {
+    const response = await eventWithin(
+      requestGateway({
+        port: gatewayPort,
+        path: "/v1/models",
+        headers: { authorization: `Bearer ${key}` },
+      }),
+      "gateway idle timeout",
+    );
+    assert.equal(response.status, 503);
+    assert.equal(response.body, "CLIProxyAPI is temporarily unavailable\n");
+    await eventWithin(upstreamClosed, "idle upstream cleanup");
+  } finally {
+    gateway.closeAllConnections?.();
+    core.closeAllConnections?.();
+    await Promise.all([close(gateway), close(core)]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the gateway destroys upstream work when the downstream disconnects", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-proxy-gateway-downstream-close-"));
+  let acceptUpstream!: () => void;
+  const upstreamAccepted = new Promise<void>((resolveAccepted) => {
+    acceptUpstream = resolveAccepted;
+  });
+  let closeUpstream!: () => void;
+  const upstreamClosed = new Promise<void>((resolveClosed) => {
+    closeUpstream = resolveClosed;
+  });
+  const core = createServer((request) => {
+    request.resume();
+    request.socket.once("close", closeUpstream);
+    acceptUpstream();
+  });
+  const corePort = await listen(core);
+  const { configPath, key } = gatewayFixture(dir, corePort);
+  const gateway = createGateway(configPath, { upstreamIdleTimeoutMs: 5_000 });
+  const gatewayPort = await listen(gateway);
+  const downstream = httpRequest({
+    host: "127.0.0.1",
+    port: gatewayPort,
+    path: "/v1/models",
+    headers: { authorization: `Bearer ${key}` },
+  });
+  downstream.on("error", () => {});
+  downstream.end();
+
+  try {
+    await eventWithin(upstreamAccepted, "upstream request acceptance");
+    downstream.destroy();
+    await eventWithin(upstreamClosed, "downstream-close upstream cleanup");
+  } finally {
+    downstream.destroy();
+    gateway.closeAllConnections?.();
+    core.closeAllConnections?.();
+    await Promise.all([close(gateway), close(core)]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test(
   "the helper retries cloudflared and enforces the loopback gateway boundary",

@@ -222,7 +222,7 @@ function send(response, status, detail) {
   response.end(body);
 }
 
-function createGateway(configPath) {
+export function createGateway(configPath, { upstreamIdleTimeoutMs = 5 * 60_000 } = {}) {
   const handleRequest = (incoming, outgoing, continueAfterAuth = false) => {
     const target = inspectRequestTarget(incoming.url);
     if (!target.accepted) {
@@ -261,12 +261,40 @@ function createGateway(configPath) {
         headers: requestHeaders(incoming.headers, config.corePort),
       },
       (response) => {
+        if (terminal) {
+          response.destroy();
+          return;
+        }
+        upstreamResponse = response;
+        response.once("aborted", failUpstream);
+        response.once("error", failUpstream);
+        response.once("end", () => {
+          terminal = true;
+        });
         outgoing.writeHead(response.statusCode ?? 502, responseHeaders(response.headers));
         response.pipe(outgoing);
       },
     );
-    upstream.on("error", () => send(outgoing, 503, "CLIProxyAPI is temporarily unavailable"));
-    incoming.on("aborted", () => upstream.destroy());
+    let upstreamResponse = null;
+    let terminal = false;
+    const terminateUpstream = (sendUnavailable) => {
+      if (terminal) return;
+      terminal = true;
+      upstream.destroy();
+      upstreamResponse?.destroy();
+      if (sendUnavailable) {
+        if (outgoing.headersSent) outgoing.destroy();
+        else send(outgoing, 503, "CLIProxyAPI is temporarily unavailable");
+      }
+    };
+    const failUpstream = () => terminateUpstream(true);
+    const closeUpstream = () => terminateUpstream(false);
+    upstream.setTimeout(upstreamIdleTimeoutMs, failUpstream);
+    upstream.once("error", failUpstream);
+    incoming.once("aborted", closeUpstream);
+    outgoing.once("close", () => {
+      if (!outgoing.writableEnded) closeUpstream();
+    });
     incoming.pipe(upstream);
   };
   const server = createServer(handleRequest);

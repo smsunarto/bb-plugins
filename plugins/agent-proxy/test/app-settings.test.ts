@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { installDom } from "@bb-kit/core/testing";
-import { fireEvent } from "@testing-library/react";
 
 installDom();
+const { fireEvent, waitFor } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 const configuration = {
@@ -70,5 +70,47 @@ test("Agent Proxy Advanced owns every configuration field", async () => {
   slot.getByLabelText("Management key override");
   slot.getByRole("textbox", { name: /Repository/ });
   slot.getByRole("textbox", { name: /Branch or ref/ });
+  slot.unmount();
+});
+
+test("Agent Proxy Advanced keeps an empty port draft and validates before saving", async () => {
+  const app = await loadPluginApp(() => import("../app.tsx"));
+  const panel = app.navPanels[0];
+  assert.ok(panel);
+  const updateCalls: unknown[] = [];
+  const slot = renderSlot(
+    panel,
+    { subPath: "advanced" },
+    {
+      rpc: {
+        configuration: async () => configuration,
+        configurationUpdate: async (input) => {
+          updateCalls.push(input);
+          const port = (input as { port: number }).port;
+          return {
+            ...configuration,
+            values: { ...configuration.values, port },
+          };
+        },
+      },
+    },
+  );
+
+  await slot.findByText("Service");
+  const port = slot.getByLabelText("Proxy listen port") as HTMLInputElement;
+  await waitFor(() => assert.equal(port.disabled, false));
+  fireEvent.input(port, { target: { value: "" } });
+  assert.equal(port.value, "");
+
+  const save = slot.getByRole("button", { name: "Save settings" }) as HTMLButtonElement;
+  await waitFor(() => assert.equal(save.disabled, false));
+  fireEvent.click(save);
+  await slot.findByText("Proxy listen port must be an integer from 1 to 65535.");
+  assert.equal(updateCalls.length, 0);
+
+  fireEvent.input(port, { target: { value: "9417" } });
+  fireEvent.click(save);
+  await waitFor(() => assert.equal(updateCalls.length, 1));
+  assert.equal((updateCalls[0] as { port: unknown }).port, 9417);
   slot.unmount();
 });

@@ -4,34 +4,25 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  DEFAULT_AGENT_PROXY_SETTINGS,
+  type AgentProxySettings,
+  type RoutingStrategy,
+} from "../../lib/plugin-settings.ts";
 import type { rpcContract } from "../../server";
 
-type RoutingStrategy = "round-robin" | "fill-first" | "weighted-round-robin";
-
-interface SettingsValues {
-  autostart: boolean;
-  cloudflareQuickTunnelForCursor: boolean;
-  port: number;
-  sourceRepository: string;
-  sourceBranch: string;
-  routingStrategy: RoutingStrategy;
-}
+type SettingsDraft = Omit<AgentProxySettings, "port"> & { port: string };
 
 interface SettingsView {
-  values: SettingsValues;
-  defaults: SettingsValues;
+  values: AgentProxySettings;
+  defaults: AgentProxySettings;
   managementKeyConfigured: boolean;
   sourceError: string | null;
 }
 
-const EMPTY_SETTINGS: SettingsValues = {
-  autostart: true,
-  cloudflareQuickTunnelForCursor: false,
-  port: 8317,
-  sourceRepository: "router-for-me/CLIProxyAPI",
-  sourceBranch: "latest",
-  routingStrategy: "round-robin",
-};
+function settingsDraft(values: AgentProxySettings): SettingsDraft {
+  return { ...values, port: String(values.port) };
+}
 
 function ToggleSetting({
   checked,
@@ -69,7 +60,9 @@ function ToggleSetting({
 export function AdvancedPage() {
   const rpc = useRpc<typeof rpcContract>();
   const [saved, setSaved] = useState<SettingsView | null>(null);
-  const [draft, setDraft] = useState<SettingsValues>(EMPTY_SETTINGS);
+  const [draft, setDraft] = useState<SettingsDraft>(() =>
+    settingsDraft(DEFAULT_AGENT_PROXY_SETTINGS),
+  );
   const [managementKey, setManagementKey] = useState("");
   const [clearManagementKey, setClearManagementKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +72,7 @@ export function AdvancedPage() {
     try {
       const next = await rpc.call("configuration");
       setSaved(next);
-      setDraft(next.values);
+      setDraft(settingsDraft(next.values));
       setError(next.sourceError);
     } catch (cause) {
       setError(String(cause instanceof Error ? cause.message : cause));
@@ -90,17 +83,23 @@ export function AdvancedPage() {
     void load();
   }, [load]);
 
-  const update = <Key extends keyof SettingsValues>(key: Key, value: SettingsValues[Key]) => {
+  const update = <Key extends keyof SettingsDraft>(key: Key, value: SettingsDraft[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
   const save = async () => {
+    const port = Number(draft.port);
+    if (!Number.isInteger(port) || port <= 0 || port >= 65_536) {
+      setError("Proxy listen port must be an integer from 1 to 65535.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const key = managementKey.trim();
       const next = await rpc.call("configurationUpdate", {
         ...draft,
+        port,
         managementKey: clearManagementKey
           ? { action: "clear" }
           : key
@@ -108,7 +107,7 @@ export function AdvancedPage() {
             : { action: "keep" },
       });
       setSaved(next);
-      setDraft(next.values);
+      setDraft(settingsDraft(next.values));
       setManagementKey("");
       setClearManagementKey(false);
       setError(next.sourceError);
@@ -124,7 +123,7 @@ export function AdvancedPage() {
 
   const reset = () => {
     if (saved === null) return;
-    setDraft(saved.defaults);
+    setDraft(settingsDraft(saved.defaults));
     setManagementKey("");
     setClearManagementKey(saved.managementKeyConfigured);
     setError(null);
@@ -132,7 +131,7 @@ export function AdvancedPage() {
 
   const dirty =
     saved !== null &&
-    (JSON.stringify(draft) !== JSON.stringify(saved.values) ||
+    (JSON.stringify(draft) !== JSON.stringify(settingsDraft(saved.values)) ||
       managementKey.trim().length > 0 ||
       clearManagementKey);
   const disabled = saved === null || saving;
@@ -165,7 +164,7 @@ export function AdvancedPage() {
                 max={65_535}
                 value={draft.port}
                 disabled={disabled}
-                onChange={(event) => update("port", Number(event.target.value))}
+                onChange={(event) => update("port", event.target.value)}
               />
             </label>
 
