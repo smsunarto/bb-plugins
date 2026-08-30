@@ -22,6 +22,10 @@
     "description": "Runs native NanoCodex agents as persistent bb threads",
     "branding": {
       "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      },
       "experimental_icons": {
         "terminal": "./assets/terminal.svg"
       }

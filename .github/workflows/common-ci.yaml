@@ -37,11 +37,10 @@ jobs:
     runs-on: namespace-profile-linux-8vcpu-16gb-cached
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
-      # Nothing here shells out to bb, so this job skips the native node-pty
-      # compile the CLI install would otherwise trigger.
+      # NanoCodex's relocation test builds the plugin through the pinned CLI.
       - uses: ./.github/actions/setup
         with:
-          bb-cli: "false"
+          bb-cli: "true"
 
       - name: Test
         run: bun run test
