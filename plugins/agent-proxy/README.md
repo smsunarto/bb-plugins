@@ -28,11 +28,13 @@ the machine that runs the bb server and gives it a management UI inside bb.
 - **Outlives bb** — the core runs as a login service, `launchd` on macOS and `systemd` on Linux, so it keeps serving after bb closes.
 - **Green when it is up** — the sidebar row tints by core state: green running, amber starting or stopping, red crashed, dimmed when stopped.
 - **One-click wiring** — point Claude Code, Codex, or anything else at the proxy without clobbering a config you generate yourself.
+- **Opt-in Cursor endpoint.** Expose only the OpenAI-compatible `/v1` API through a Cloudflare Quick Tunnel for Cursor BYOK.
 - **Installed and signed in from the panel** — one button for the core, browser OAuth for Claude and Codex, and each credential's quota state.
 
 > **Stop is not permanent.** Stop disables the login job, but with `autostart` on
-> (the default) the next bb start or `bb plugin reload` brings the core back. Turn
-> `autostart` off for a stop that survives a reload.
+> (the default) the next bb start or `bb plugin reload` brings the core back. An
+> enabled Quick Tunnel also keeps the core running. Turn both settings off for a
+> stop that survives a reload.
 
 | Client            | What Apply does                                                                                                                                                                         |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,6 +87,7 @@ plugin fetches or builds on your machine, and OAuth sign-in opens a browser.
 - Outbound HTTPS to GitHub, to fetch the core.
 - At least one upstream account: a Claude or ChatGPT subscription for the OAuth flows, or an Anthropic / OpenAI / Gemini / OpenAI-compatible API key.
 - A free TCP port on loopback (8317 by default). A conflict shows up as a crash loop on the Home page.
+- `cloudflared` on `PATH` or in a common install location. You need it only for the optional Cursor Quick Tunnel.
 
 ## Endpoints
 
@@ -96,29 +99,55 @@ plugin fetches or builds on your machine, and OAuth sign-in opens a browser.
 
 The proxy listens on loopback of the bb server machine only.
 
+## Use the Cursor Quick Tunnel
+
+1. Install `cloudflared` on the bb server machine.
+2. Enable **Cloudflare Quick Tunnel for Cursor** in Agent Proxy settings.
+3. Open Agent Proxy Home and wait for **Public OpenAI base URL** to become ready.
+4. Set Cursor's OpenAI base URL to the public URL from the card.
+5. Set Cursor's OpenAI API key to the local API key from the same card.
+
+The public URL ends in `/v1`. The gateway rejects every other path before it
+reaches CLIProxyAPI. It also checks the local bearer key. CLIProxyAPI checks the
+key again.
+
+The helper runs as a login service and survives bb closing. Stop shuts down the
+helper before it stops CLIProxyAPI. A port change updates the helper config but
+keeps the current public hostname. A helper restart assigns a new hostname.
+
+Quick Tunnels are for development. Cloudflare Quick Tunnels do not support SSE,
+so Cursor requests that require SSE may fail. A temporary CLIProxyAPI outage
+returns HTTP 503 through the existing public URL. This release has not verified
+a live Cursor request.
+
 ## Commands
 
-| Command                                | What it does                                                                                |
-| -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `bb agent-proxy status`                | State, pid, port, service manager, definition path, installed and latest version, endpoints |
-| `bb agent-proxy start`                 | Enable and start the login service                                                          |
-| `bb agent-proxy stop`                  | Stop _and_ disable the login service                                                        |
-| `bb agent-proxy restart`               | Rewrite the definition if it changed, then restart                                          |
-| `bb agent-proxy endpoints`             | Print the three base URLs and the local API key                                             |
-| `bb agent-proxy install [ref]`         | Install the configured source, or a one-off ref without changing the saved setting          |
-| `bb agent-proxy oauth <claude\|codex>` | Start a browser OAuth flow and poll for up to 3 minutes                                     |
-| `bb agent-proxy providers`             | Count configured entries per collection, then list auth files                               |
-| `bb agent-proxy usage`                 | Print the usage report as JSON                                                              |
+| Command                                | What it does                                                                       |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| `bb agent-proxy status`                | Core state, versions, local endpoints, tunnel state, and the ready public endpoint |
+| `bb agent-proxy start`                 | Enable and start the login service                                                 |
+| `bb agent-proxy stop`                  | Stop _and_ disable the login service                                               |
+| `bb agent-proxy restart`               | Rewrite the definition if it changed, then restart                                 |
+| `bb agent-proxy endpoints`             | Print local URLs, the local API key, tunnel state, and the ready public endpoint   |
+| `bb agent-proxy install [ref]`         | Install the configured source, or a one-off ref without changing the saved setting |
+| `bb agent-proxy oauth <claude\|codex>` | Start a browser OAuth flow and poll for up to 3 minutes                            |
+| `bb agent-proxy providers`             | Count configured entries per collection, then list auth files                      |
+| `bb agent-proxy usage`                 | Print the usage report as JSON                                                     |
 
 ## Settings
 
-| Key                | Default                     | Meaning                                                                             |
-| ------------------ | --------------------------- | ----------------------------------------------------------------------------------- |
-| `autostart`        | `true`                      | Keep the login service enabled, so the core starts at login and survives bb closing |
-| `port`             | `8317`                      | Listen port. Out-of-range or unparseable values fall back to 8317                   |
-| `sourceRepository` | `router-for-me/CLIProxyAPI` | Public GitHub source                                                                |
-| `sourceBranch`     | `latest`                    | `latest` resolves to the newest published release; or a branch, tag, or commit      |
-| `managementKey`    | _(generated)_               | Secret. Overrides the auto-generated management key                                 |
+Configure Agent Proxy on its **Advanced** page. The plugin entry in bb Settings links to that page
+instead of duplicating the form.
+
+| Key                              | Default                     | Meaning                                                                              |
+| -------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
+| `autostart`                      | `true`                      | Keep the login service enabled, so the core starts at login and survives bb closing  |
+| `cloudflareQuickTunnelForCursor` | `false`                     | Expose the OpenAI-compatible `/v1` API through a development Quick Tunnel for Cursor |
+| `port`                           | `8317`                      | Listen port. Out-of-range or unparseable values fall back to 8317                    |
+| `sourceRepository`               | `router-for-me/CLIProxyAPI` | Public GitHub source                                                                 |
+| `sourceBranch`                   | `latest`                    | `latest` resolves to the newest published release; or a branch, tag, or commit       |
+| `managementKey`                  | _(generated)_               | Secret. Overrides the auto-generated management key                                  |
+| `routingStrategy`                | `round-robin`               | Select credentials with round robin, fill first, or weighted round robin             |
 
 Autostart applies immediately. The core reads the port and the management key only
 at startup, so a change to either stops the service, rewrites `config.yaml`, and
@@ -129,15 +158,18 @@ is applied on its next start.
 
 Everything lives under `<bb dataDir>/plugins/agent-proxy/`:
 
-| Path                    | Contents                                                                |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `core/auth/`            | Your OAuth credentials                                                  |
-| `core/secrets/`         | Generated API keys                                                      |
-| `backups/`              | Timestamped copies of any file the plugin edits, taken before it writes |
-| `core/service/core.log` | The log behind the Home page's tail                                     |
+| Path                                 | Contents                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| `core/auth/`                         | Your OAuth credentials                                                    |
+| `core/secrets/`                      | Generated API keys                                                        |
+| `backups/`                           | Timestamped copies of any file the plugin edits, taken before it writes   |
+| `core/service/core.log`              | The log behind the Home page's tail                                       |
+| `cloudflare-tunnel/desired.json`     | Plugin-owned helper config. It contains paths, not keys or the public URL |
+| `cloudflare-tunnel/observation.json` | Helper-owned state and the current public origin                          |
+| `cloudflare-tunnel/tunnel.log`       | Helper and `cloudflared` output                                           |
 
-Credentials and keys are written `0600` and never leave this directory — the
-service definition holds only paths and service settings.
+Credential and key files are written `0600`. Service definitions contain only
+paths and service settings.
 
 ## Troubleshooting
 
@@ -145,6 +177,11 @@ service definition holds only paths and service settings.
 - **"Unavailable — is the core running?"** on OAuth, Providers, or Usage — those pages talk to the core's management API, so the core must be up first.
 - **Removed the plugin, service still there** — the operating system owns the process by design. Run `bb agent-proxy stop` _before_ you remove the plugin, or delete the definition by hand.
 - **macOS Gatekeeper kills the binary** — it should not be quarantined, but if it happens: `xattr -d com.apple.quarantine <core/bin/current/cli-proxy-api>`.
+- **Tunnel says `cloudflared` is missing.** Install `cloudflared`, then disable and re-enable the setting.
+- **Tunnel says the host runtime cannot run the helper.** Update or reinstall bb, then disable and re-enable the setting.
+- **Tunnel stays on starting.** Read `cloudflare-tunnel/tunnel.log`. Cloudflare must be reachable from the bb server machine.
+- **The public endpoint returns 401.** Use the local API key shown on Home as a bearer token.
+- **The public endpoint returns 503.** Start the CLIProxyAPI core or resolve its port conflict. The helper keeps the public hostname while the core recovers.
 
 ## Develop from source
 

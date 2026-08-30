@@ -28,7 +28,29 @@ import {
   type CoreSupervisor,
   type SupervisorSnapshot,
 } from "./lib/core-process.ts";
+import {
+  createCloudflareTunnelService,
+  deriveTunnelStatus,
+  discoverCloudflared,
+  installTunnelRuntime,
+  loadBundledTunnelRuntime,
+  monitorTunnelObservation,
+  readTunnelObservation,
+  renderTunnelDesiredConfig,
+  resolveTunnelHostRuntime,
+  type BundledTunnelRuntime,
+  type CloudflaredDiscovery,
+  type TunnelHostRuntime,
+  type TunnelStatus,
+} from "./lib/cloudflare-tunnel.ts";
+import type { PersistentService } from "./lib/persistent-service.ts";
 import { planRuntimeReconciliation, runtimeConfigFingerprint } from "./lib/runtime-state.ts";
+import {
+  DEFAULT_AGENT_PROXY_SETTINGS,
+  normalizeAgentProxySettings,
+  ROUTING_STRATEGIES,
+  type AgentProxySettings,
+} from "./lib/plugin-settings.ts";
 import {
   ManagementClient,
   ManagementError,
@@ -45,11 +67,13 @@ import {
   type ClaudeEnvState,
 } from "./lib/agents-config.ts";
 
-const DEFAULT_PORT = 8317;
+const DEFAULT_PORT = DEFAULT_AGENT_PROXY_SETTINGS.port;
 const LATEST_CACHE_KEY = "latest-source-revision-v1";
+const SETTINGS_STORAGE_KEY = "configuration-v1";
 const LATEST_CACHE_TTL_MS = 3_600_000;
 const CLAUDE_BACKUP_BASE = "claude-settings.json";
 const SERVICE_LABEL = "com.bb.plugin.agent-proxy";
+const TUNNEL_SERVICE_LABEL = "com.bb.plugin.agent-proxy.cloudflare-tunnel";
 /** Labels earlier versions installed. Retired once on initialize so an upgraded
     install keeps exactly one login service. Never derive this from the plugin
     id: a rename or reinstall would orphan the service already on disk. */
@@ -106,10 +130,27 @@ const sourceSchema = z.object({
   error: z.string().nullable(),
 });
 
-const sourceSettingsSchema = sourceSchema.extend({
-  defaultRepository: z.string(),
-  defaultBranch: z.string(),
+const configurationValuesSchema = z.object({
+  autostart: z.boolean(),
+  cloudflareQuickTunnelForCursor: z.boolean(),
+  port: z.number().int().min(1).max(65_535),
+  sourceRepository: z.string(),
+  sourceBranch: z.string(),
+  routingStrategy: z.enum(ROUTING_STRATEGIES),
 });
+
+const configurationViewSchema = z.object({
+  values: configurationValuesSchema,
+  defaults: configurationValuesSchema,
+  managementKeyConfigured: z.boolean(),
+  sourceError: z.string().nullable(),
+});
+
+const managementKeyUpdateSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("keep") }).strict(),
+  z.object({ action: z.literal("clear") }).strict(),
+  z.object({ action: z.literal("set"), value: z.string().min(1) }).strict(),
+]);
 
 const statusSchema = z.object({
   state: stateSchema,
@@ -129,6 +170,37 @@ const statusSchema = z.object({
   }),
   source: sourceSchema,
   latest: z.object({ version: z.string(), checkedAt: z.number() }).nullable(),
+  tunnel: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("disabled") }),
+    z.object({ state: z.literal("missing-binary"), detail: z.string() }),
+    z.object({
+      state: z.literal("stopped"),
+      reason: z.enum(["core-stopped", "disabled"]),
+    }),
+    z.object({
+      state: z.literal("stopping"),
+      pid: z.number().nullable(),
+      detail: z.string(),
+    }),
+    z.object({
+      state: z.literal("starting"),
+      pid: z.number().nullable(),
+      detail: z.string(),
+    }),
+    z.object({
+      state: z.literal("running-without-url"),
+      pid: z.number(),
+      detail: z.string(),
+    }),
+    z.object({ state: z.literal("ready"), pid: z.number(), openaiBaseUrl: z.string() }),
+    z.object({
+      state: z.literal("crashed"),
+      lastExit: z
+        .object({ code: z.number().nullable(), signal: z.string().nullable(), at: z.number() })
+        .nullable(),
+      detail: z.string(),
+    }),
+  ]),
 });
 
 export type CoreStatus = z.infer<typeof statusSchema>;
@@ -157,12 +229,12 @@ export const rpcContract = defineRpcContract({
   restart: { input: z.null(), output: statusSchema },
   endpoints: {
     input: z.null(),
-    output: endpointsSchema.extend({ apiKey: z.string() }),
+    output: endpointsSchema.extend({ apiKey: z.string(), publicOpenai: z.string().nullable() }),
   },
-  sourceSettings: { input: z.null(), output: sourceSettingsSchema },
-  sourceSettingsUpdate: {
-    input: z.object({ repository: z.string(), branch: z.string() }).strict(),
-    output: sourceSettingsSchema,
+  configuration: { input: z.null(), output: configurationViewSchema },
+  configurationUpdate: {
+    input: configurationValuesSchema.extend({ managementKey: managementKeyUpdateSchema }).strict(),
+    output: configurationViewSchema,
   },
 
   oauthStart: {
@@ -237,42 +309,6 @@ export const rpcContract = defineRpcContract({
 // ---------------------------------------------------------------------------
 
 export default async function plugin(bb: BbPluginApi) {
-  const settings = bb.settings.define({
-    autostart: {
-      type: "boolean",
-      label: "Keep the proxy running as a login service",
-      description:
-        "The operating system starts it at login and keeps it running when bb is closed.",
-      default: true,
-    },
-    port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
-    sourceRepository: {
-      type: "string",
-      label: "Advanced: core source repository",
-      description:
-        "Public GitHub repository in owner/name form. A github.com URL is also accepted.",
-      default: CORE_REPO,
-    },
-    sourceBranch: {
-      type: "string",
-      label: "Advanced: core source branch or ref",
-      description: "Branch, tag, or commit used for update checks and source builds.",
-      default: CORE_REF,
-    },
-    managementKey: {
-      type: "string",
-      label: "Management API key override (leave empty to auto-generate)",
-      secret: true,
-    },
-    routingStrategy: {
-      type: "string",
-      label: "Credential routing strategy",
-      description:
-        "How the core selects between multiple matching credentials. round-robin rotates per request (trashes upstream prompt caches); fill-first sticks to one until it cools down; weighted-round-robin uses per-credential weights.",
-      default: "round-robin",
-    },
-  });
-
   async function resolveDataDir(): Promise<string> {
     try {
       const config = await bb.sdk.system.config();
@@ -306,63 +342,124 @@ export default async function plugin(bb: BbPluginApi) {
   const generatedManagementKey = loadOrCreateKey(paths.managementKeyPath);
   const localApiKey = loadOrCreateKey(paths.localApiKeyPath);
 
+  let migratedLegacySettings = false;
+  const storedConfiguration = await bb.storage.kv.get<unknown>(SETTINGS_STORAGE_KEY);
+  let configuration: AgentProxySettings;
+  if (storedConfiguration === undefined) {
+    const legacySettings = bb.settings.define({
+      autostart: { type: "boolean", label: "Autostart", default: true },
+      cloudflareQuickTunnelForCursor: {
+        type: "boolean",
+        label: "Cloudflare Quick Tunnel for Cursor",
+        default: false,
+      },
+      port: { type: "string", label: "Proxy listen port", default: String(DEFAULT_PORT) },
+      sourceRepository: {
+        type: "string",
+        label: "Core source repository",
+        default: CORE_REPO,
+      },
+      sourceBranch: { type: "string", label: "Core source branch", default: CORE_REF },
+      managementKey: { type: "string", label: "Management API key", secret: true },
+      routingStrategy: {
+        type: "string",
+        label: "Credential routing strategy",
+        default: "round-robin",
+      },
+    });
+    const legacyValues = await legacySettings.get();
+    configuration = normalizeAgentProxySettings(legacyValues);
+    const legacyManagementKey = legacyValues.managementKey?.trim();
+    if (legacyManagementKey) {
+      writeAtomic(paths.managementKeyOverridePath, `${legacyManagementKey}\n`, 0o600);
+    }
+    await bb.storage.kv.set(SETTINGS_STORAGE_KEY, configuration);
+    migratedLegacySettings = true;
+  } else {
+    configuration = normalizeAgentProxySettings(storedConfiguration);
+    if (JSON.stringify(configuration) !== JSON.stringify(storedConfiguration)) {
+      await bb.storage.kv.set(SETTINGS_STORAGE_KEY, configuration);
+    }
+  }
+
+  function managementKeyOverride(): string | null {
+    return readTextOr(paths.managementKeyOverridePath)?.trim() || null;
+  }
+
   async function effectiveSettings(): Promise<{
     port: number;
     managementKey: string;
     autostart: boolean;
+    cloudflareQuickTunnelForCursor: boolean;
     routingStrategy: string;
   }> {
-    const values = await settings.get();
-    const port = Number.parseInt(values.port, 10);
-    const strategy = values.routingStrategy?.trim() || "round-robin";
     return {
-      port: Number.isFinite(port) && port > 0 && port < 65_536 ? port : DEFAULT_PORT,
-      managementKey: values.managementKey?.trim() || generatedManagementKey,
-      autostart: values.autostart,
-      routingStrategy: strategy,
+      port: configuration.port,
+      managementKey: managementKeyOverride() ?? generatedManagementKey,
+      autostart: configuration.autostart,
+      cloudflareQuickTunnelForCursor: configuration.cloudflareQuickTunnelForCursor,
+      routingStrategy: configuration.routingStrategy,
     };
   }
 
   async function sourceSettingsView() {
-    const values = await settings.get();
-    const repository = values.sourceRepository.trim();
-    const branch = values.sourceBranch.trim();
+    const repository = configuration.sourceRepository;
+    const branch = configuration.sourceBranch;
     try {
       const source = normalizeCoreSource(repository, branch);
       return {
         repository: source.repo,
         branch: source.ref,
         error: null,
-        defaultRepository: CORE_REPO,
-        defaultBranch: CORE_REF,
       };
     } catch (error) {
       return {
         repository,
         branch,
         error: String(error instanceof Error ? error.message : error),
-        defaultRepository: CORE_REPO,
-        defaultBranch: CORE_REF,
       };
     }
   }
 
   async function configuredSource(): Promise<CoreSource> {
-    const values = await settings.get();
-    return normalizeCoreSource(values.sourceRepository, values.sourceBranch);
+    return normalizeCoreSource(configuration.sourceRepository, configuration.sourceBranch);
+  }
+
+  async function configurationView() {
+    const source = await sourceSettingsView();
+    return {
+      values: configuration,
+      defaults: DEFAULT_AGENT_PROXY_SETTINGS,
+      managementKeyConfigured: managementKeyOverride() !== null,
+      sourceError: source.error,
+    };
   }
 
   const initial = await effectiveSettings();
   const initialSource = await sourceSettingsView();
+  const tunnelHostRuntime: TunnelHostRuntime = resolveTunnelHostRuntime();
+  let bundledTunnelRuntime: BundledTunnelRuntime | null = null;
+  let bundledTunnelRuntimeError: string | null = null;
+  try {
+    bundledTunnelRuntime = loadBundledTunnelRuntime({ runtimeDir: paths.tunnelRuntimeDir });
+  } catch (error) {
+    bundledTunnelRuntimeError = String(error instanceof Error ? error.message : error);
+  }
   let currentPort = initial.port;
   let currentManagementKey = initial.managementKey;
-  let desiredRunning = initial.autostart;
+  let tunnelEnabled = initial.cloudflareQuickTunnelForCursor;
+  let desiredRunning = initial.autostart || tunnelEnabled;
+  let tunnelDiscovery: CloudflaredDiscovery | null = null;
+  let tunnelPreparationError: string | null = bundledTunnelRuntimeError;
+  let tunnelStopError: string | null = null;
+  let tunnelRuntimeValidated = false;
   let acceptingOperations = true;
   let initialized = false;
   let operationTail: Promise<void> = Promise.resolve();
   let initializationTask: Promise<void> | null = null;
   let currentRuntimeFingerprint = runtimeConfigFingerprint(initial);
   let supervisor: CoreSupervisor;
+  let tunnelSupervisor: PersistentService;
   const pluginAbort = new AbortController();
 
   function enqueue<T>(operation: () => Promise<T> | T): Promise<T> {
@@ -427,6 +524,101 @@ export default async function plugin(bb: BbPluginApi) {
     return snapshot;
   }
 
+  function persistTunnelConfig(cloudflaredPath: string): void {
+    writeAtomic(
+      paths.tunnelConfigPath,
+      renderTunnelDesiredConfig({
+        version: 1,
+        corePort: currentPort,
+        cloudflaredPath,
+        localApiKeyPath: paths.localApiKeyPath,
+      }),
+      0o600,
+    );
+  }
+
+  async function tryStopTunnel(): Promise<unknown | null> {
+    try {
+      await tunnelSupervisor.stop();
+      tunnelStopError = null;
+      return null;
+    } catch (error) {
+      tunnelStopError = `Could not stop the public tunnel: ${String(
+        error instanceof Error ? error.message : error,
+      )}`;
+      bb.realtime.publish("status", { tunnelChanged: true });
+      return error;
+    }
+  }
+
+  async function startTunnel(): Promise<void> {
+    await tunnelSupervisor.start();
+    tunnelStopError = null;
+  }
+
+  async function prepareTunnel(): Promise<boolean> {
+    if (!tunnelEnabled) return false;
+    tunnelDiscovery = discoverCloudflared();
+    if (tunnelDiscovery.state === "missing") {
+      tunnelPreparationError = null;
+      await tryStopTunnel();
+      return false;
+    }
+    if (bundledTunnelRuntime === null) {
+      tunnelPreparationError =
+        bundledTunnelRuntimeError ?? "the packaged Cloudflare tunnel helper source is missing";
+      await tryStopTunnel();
+      return false;
+    }
+    if (!tunnelRuntimeValidated) {
+      const installed = await installTunnelRuntime({
+        runtime: bundledTunnelRuntime,
+        hostRuntime: tunnelHostRuntime,
+      });
+      if (installed.state === "blocked") {
+        tunnelPreparationError = installed.detail;
+        await tryStopTunnel();
+        return false;
+      }
+      tunnelRuntimeValidated = true;
+    }
+    tunnelPreparationError = null;
+    persistTunnelConfig(tunnelDiscovery.path);
+    return true;
+  }
+
+  async function reconcileTunnelForCore(snapshot: SupervisorSnapshot): Promise<void> {
+    if (!tunnelEnabled || !snapshot.loaded) return;
+    if (await prepareTunnel()) {
+      await startTunnel();
+      return;
+    }
+    if (tunnelStopError !== null) {
+      await supervisor.stop();
+      throw new Error(tunnelStopError);
+    }
+  }
+
+  async function startManagedStack(): Promise<SupervisorSnapshot> {
+    if (!tunnelEnabled && tunnelStopError !== null) {
+      const stopError = await tryStopTunnel();
+      if (stopError !== null) {
+        await supervisor.stop();
+        throw stopError;
+      }
+    }
+    const snapshot = await startManagedService();
+    await reconcileTunnelForCore(snapshot);
+    return snapshot;
+  }
+
+  async function stopManagedStack(): Promise<SupervisorSnapshot> {
+    const tunnelError = await tryStopTunnel();
+    const snapshot = await supervisor.stop();
+    if (tunnelError !== null) throw tunnelError;
+    return snapshot;
+  }
+
   /** One-time retirement of login services installed under an older label. Stops
       each one through the same supervisor that installed it, then deletes its
       definition so reconciliation installs only the current label. Idempotent:
@@ -460,6 +652,7 @@ export default async function plugin(bb: BbPluginApi) {
       cleanStaleStaging(paths.coreDir);
       migrateLegacyInstall(paths);
       const retiredLegacyService = await retireLegacyServices();
+      if (!tunnelEnabled && (await tryStopTunnel()) !== null) await supervisor.stop();
       secureAuthDirectory();
       const effective = await effectiveSettings();
       const desiredFingerprint = runtimeConfigFingerprint(effective);
@@ -473,11 +666,16 @@ export default async function plugin(bb: BbPluginApi) {
       if (plan.stopBeforeWrite) await supervisor.stop();
       if (plan.writeConfig) persistCoreConfig(effective);
       else adoptCoreSettings(effective);
+      if (tunnelEnabled) await prepareTunnel();
       // The planner starts only a service it found loaded, which is right for a
       // fresh install and wrong straight after a retirement: the core WAS
       // running, under the old label. Re-adopt it under the new one.
       const replaceRetiredService = retiredLegacyService && desiredRunning && !snapshot.loaded;
-      if (plan.startAfterWrite || replaceRetiredService) await startManagedService();
+      if (plan.startAfterWrite || replaceRetiredService) {
+        await startManagedStack();
+      } else if (tunnelEnabled && desiredRunning) {
+        await reconcileTunnelForCore(snapshot);
+      }
       initialized = true;
     });
     return initializationTask;
@@ -521,6 +719,28 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  function createTunnelSupervisor(
+    hooks: {
+      onChange?: (snapshot: SupervisorSnapshot) => void;
+      onError?: (error: unknown) => void;
+    } = {},
+  ): PersistentService {
+    return createCloudflareTunnelService({
+      label: TUNNEL_SERVICE_LABEL,
+      definitionPath: serviceDefinitionPath(TUNNEL_SERVICE_LABEL),
+      runtimePath:
+        bundledTunnelRuntime?.targetPath ?? join(paths.tunnelRuntimeDir, "unavailable-runtime.mjs"),
+      hostRuntime: tunnelHostRuntime,
+      configPath: paths.tunnelConfigPath,
+      observationPath: paths.tunnelObservationPath,
+      workingDirectory: paths.tunnelDir,
+      logPath: paths.tunnelLogPath,
+      readinessUrl: () => `http://127.0.0.1:${currentPort}/`,
+      uid: process.getuid?.(),
+      ...hooks,
+    });
+  }
+
   supervisor = createSupervisor(SERVICE_LABEL, {
     onChange: (snapshot: SupervisorSnapshot) => {
       bb.realtime.publish("status", snapshot);
@@ -529,13 +749,29 @@ export default async function plugin(bb: BbPluginApi) {
       bb.log.error(`service monitor failed: ${String(error)}`);
     },
   });
+  tunnelSupervisor = createTunnelSupervisor({
+    onChange: () => {
+      bb.realtime.publish("status", { tunnelChanged: true });
+    },
+    onError: (error: unknown) => {
+      bb.log.error(`Cloudflare tunnel service monitor failed: ${String(error)}`);
+    },
+  });
 
   bb.background.service("core", {
     async start(signal) {
       await initialize();
-      if (desiredRunning) await startManagedService();
-      else if (installedVersion(paths) !== null) await supervisor.stop();
-      await supervisor.monitor(signal);
+      if (desiredRunning) await startManagedStack();
+      else if (installedVersion(paths) !== null) await stopManagedStack();
+      await Promise.all([
+        supervisor.monitor(signal),
+        tunnelSupervisor.monitor(signal),
+        monitorTunnelObservation({
+          path: paths.tunnelObservationPath,
+          signal,
+          onChange: () => bb.realtime.publish("status", { tunnelChanged: true }),
+        }),
+      ]);
     },
   });
   bb.onDispose(async () => {
@@ -572,6 +808,30 @@ export default async function plugin(bb: BbPluginApi) {
   async function computeStatus(): Promise<CoreStatus> {
     await initialize();
     const snapshot = await supervisor.snapshot();
+    let tunnel: TunnelStatus;
+    try {
+      const tunnelSnapshot = await tunnelSupervisor.snapshot();
+      tunnel = deriveTunnelStatus({
+        enabled: tunnelEnabled,
+        coreDesiredRunning: desiredRunning,
+        coreLoaded: snapshot.loaded,
+        discovery: tunnelDiscovery,
+        preparationError: tunnelPreparationError,
+        stopError: tunnelStopError,
+        service: tunnelSnapshot,
+        observation: readTunnelObservation(paths.tunnelObservationPath),
+      });
+    } catch (error) {
+      tunnel = {
+        state: "crashed",
+        lastExit: null,
+        detail:
+          tunnelStopError ??
+          `Could not inspect the public tunnel service: ${String(
+            error instanceof Error ? error.message : error,
+          )}`,
+      };
+    }
     const sourceView = await sourceSettingsView();
     const latest =
       sourceView.error === null
@@ -597,6 +857,7 @@ export default async function plugin(bb: BbPluginApi) {
         error: sourceView.error,
       },
       latest,
+      tunnel,
     };
   }
 
@@ -625,7 +886,7 @@ export default async function plugin(bb: BbPluginApi) {
       bb.log.info(`installed CLIProxyAPI ${installed}`);
       return installed;
     } finally {
-      if (stoppedForSwap && desiredRunning) await startManagedService();
+      if (stoppedForSwap && desiredRunning) await startManagedStack();
       else await supervisor.snapshot();
     }
   }
@@ -639,7 +900,7 @@ export default async function plugin(bb: BbPluginApi) {
     desiredRunning = true;
     await initialize();
     return enqueue(async () => {
-      await startManagedService();
+      await startManagedStack();
       return computeStatus();
     });
   }
@@ -648,7 +909,7 @@ export default async function plugin(bb: BbPluginApi) {
     desiredRunning = false;
     await initialize();
     return enqueue(async () => {
-      await supervisor.stop();
+      await stopManagedStack();
       return computeStatus();
     });
   }
@@ -657,53 +918,107 @@ export default async function plugin(bb: BbPluginApi) {
     desiredRunning = true;
     await initialize();
     return enqueue(async () => {
-      await restartManagedService();
+      const snapshot = await restartManagedService();
+      await reconcileTunnelForCore(snapshot);
       return computeStatus();
     });
   }
 
-  settings.onChange((next, previous) => {
-    const sourceChanged =
-      next.sourceRepository !== previous.sourceRepository ||
-      next.sourceBranch !== previous.sourceBranch;
-    if (sourceChanged) {
-      void bb.storage.kv
-        .delete(LATEST_CACHE_KEY)
-        .then(() => bb.realtime.publish("status", { sourceChanged: true }))
-        .catch((error: unknown) => {
-          bb.log.error(`failed to clear the source update cache: ${String(error)}`);
-        });
+  async function updateConfiguration(
+    requested: AgentProxySettings,
+    managementKeyUpdate:
+      | { action: "keep" }
+      | { action: "clear" }
+      | { action: "set"; value: string },
+  ) {
+    const source = normalizeCoreSource(requested.sourceRepository, requested.sourceBranch);
+    const next: AgentProxySettings = {
+      ...requested,
+      sourceRepository: source.repo,
+      sourceBranch: source.ref,
+    };
+    const nextManagementKey =
+      managementKeyUpdate.action === "set" ? managementKeyUpdate.value.trim() : null;
+    if (managementKeyUpdate.action === "set" && !nextManagementKey) {
+      throw new Error("Management API key cannot be empty");
     }
-    const runtimeChanged =
-      next.port !== previous.port ||
-      next.managementKey !== previous.managementKey ||
-      next.routingStrategy !== previous.routingStrategy;
-    const autostartChanged = next.autostart !== previous.autostart;
-    if (autostartChanged) desiredRunning = next.autostart;
-    if (!runtimeChanged && !autostartChanged) return;
-    void initialize()
-      .then(() =>
-        enqueue(async () => {
+
+    await initialize();
+    return enqueue(async () => {
+      const previous = configuration;
+      const previousManagementKey = managementKeyOverride();
+      const resolvedManagementKey =
+        managementKeyUpdate.action === "keep"
+          ? previousManagementKey
+          : managementKeyUpdate.action === "clear"
+            ? null
+            : nextManagementKey;
+      const managementKeyChanged = resolvedManagementKey !== previousManagementKey;
+
+      await bb.storage.kv.set(SETTINGS_STORAGE_KEY, next);
+      try {
+        if (resolvedManagementKey === null) {
+          rmSync(paths.managementKeyOverridePath, { force: true });
+        } else if (managementKeyChanged) {
+          writeAtomic(paths.managementKeyOverridePath, `${resolvedManagementKey}\n`, 0o600);
+        }
+      } catch (error) {
+        await bb.storage.kv.set(SETTINGS_STORAGE_KEY, previous);
+        throw error;
+      }
+      configuration = next;
+
+      const sourceChanged =
+        next.sourceRepository !== previous.sourceRepository ||
+        next.sourceBranch !== previous.sourceBranch;
+      if (sourceChanged) {
+        await bb.storage.kv.delete(LATEST_CACHE_KEY);
+        bb.realtime.publish("status", { sourceChanged: true });
+      }
+      const runtimeChanged =
+        next.port !== previous.port ||
+        managementKeyChanged ||
+        next.routingStrategy !== previous.routingStrategy;
+      const autostartChanged = next.autostart !== previous.autostart;
+      const tunnelChanged =
+        next.cloudflareQuickTunnelForCursor !== previous.cloudflareQuickTunnelForCursor;
+      if (autostartChanged || tunnelChanged) {
+        tunnelEnabled = next.cloudflareQuickTunnelForCursor;
+        desiredRunning = next.autostart || tunnelEnabled;
+      }
+      if (runtimeChanged || autostartChanged || tunnelChanged) {
+        const tunnelStopFailure = !tunnelEnabled || !desiredRunning ? await tryStopTunnel() : null;
+        if (!tunnelEnabled && tunnelStopFailure !== null) {
+          await supervisor.stop();
+        } else {
           if (runtimeChanged) {
             const effective = await effectiveSettings();
             await supervisor.stop();
             try {
               persistCoreConfig(effective);
+              if (tunnelEnabled && tunnelDiscovery?.state === "found") {
+                persistTunnelConfig(tunnelDiscovery.path);
+              }
               bb.log.info(`core settings reconciled on port ${effective.port}`);
             } finally {
               if (desiredRunning) await startManagedService();
             }
           } else if (desiredRunning) {
             await startManagedService();
-          } else {
-            await supervisor.stop();
           }
-        }),
-      )
-      .catch((error: unknown) => {
-        bb.log.error(`failed to apply settings to core config: ${String(error)}`);
-      });
-  });
+          if (!desiredRunning) {
+            await stopManagedStack();
+          } else if (tunnelEnabled) {
+            const snapshot = await supervisor.snapshot();
+            await reconcileTunnelForCore(snapshot);
+          }
+        }
+      }
+
+      bb.realtime.publish("status", { configurationChanged: true });
+      return configurationView();
+    });
+  }
 
   // -------------------------------------------------------------------------
   // Agents wiring helpers
@@ -826,22 +1141,16 @@ export default async function plugin(bb: BbPluginApi) {
       return requestRestart();
     },
     async endpoints() {
-      await initialize();
-      return { ...endpointsFor(currentPort), apiKey: localApiKey };
+      const status = await computeStatus();
+      return {
+        ...endpointsFor(currentPort),
+        apiKey: localApiKey,
+        publicOpenai: status.tunnel.state === "ready" ? status.tunnel.openaiBaseUrl : null,
+      };
     },
-    sourceSettings: () => sourceSettingsView(),
-    async sourceSettingsUpdate({ repository, branch }) {
-      const source = normalizeCoreSource(repository, branch);
-      await bb.sdk.plugins.updateSettings({
-        pluginId: bb.pluginId,
-        values: {
-          sourceRepository: source.repo,
-          sourceBranch: source.ref,
-        },
-      });
-      await bb.storage.kv.delete(LATEST_CACHE_KEY);
-      bb.realtime.publish("status", { sourceChanged: true });
-      return sourceSettingsView();
+    configuration: () => configurationView(),
+    async configurationUpdate({ managementKey, ...values }) {
+      return updateConfiguration(values, managementKey);
     },
 
     async oauthStart({ provider }) {
@@ -1007,7 +1316,7 @@ export default async function plugin(bb: BbPluginApi) {
     commands: [
       {
         name: "status",
-        summary: "Core state, versions, and endpoints",
+        summary: "Core and tunnel state, versions, and endpoints",
         usage: "bb agent-proxy status",
       },
       { name: "start", summary: "Start the proxy core", usage: "bb agent-proxy start" },
@@ -1015,7 +1324,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name: "restart", summary: "Restart the proxy core", usage: "bb agent-proxy restart" },
       {
         name: "endpoints",
-        summary: "Print local endpoint URLs and the local API key",
+        summary: "Print local endpoints, the API key, and the ready public endpoint",
         usage: "bb agent-proxy endpoints",
       },
       {
@@ -1057,7 +1366,12 @@ export default async function plugin(bb: BbPluginApi) {
               `openai: ${status.endpoints.openai}`,
               `anthropic: ${status.endpoints.anthropic}`,
               `gemini: ${status.endpoints.gemini}`,
+              `tunnel: ${status.tunnel.state}`,
             ];
+            if ("detail" in status.tunnel) lines.push(`tunnel detail: ${status.tunnel.detail}`);
+            if (status.tunnel.state === "ready") {
+              lines.push(`public openai: ${status.tunnel.openaiBaseUrl}`);
+            }
             if (status.lastExit) {
               lines.push(
                 `last exit: code ${status.lastExit.code ?? "null"} signal ${status.lastExit.signal ?? "null"} (${new Date(status.lastExit.at).toISOString()})`,
@@ -1079,17 +1393,19 @@ export default async function plugin(bb: BbPluginApi) {
             return { exitCode: 0, stdout: "restart requested" };
           }
           case "endpoints": {
-            await initialize();
+            const status = await computeStatus();
             const endpoints = endpointsFor(currentPort);
-            return {
-              exitCode: 0,
-              stdout: [
-                `openai: ${endpoints.openai}`,
-                `anthropic: ${endpoints.anthropic}`,
-                `gemini: ${endpoints.gemini}`,
-                `api key: ${localApiKey}`,
-              ].join("\n"),
-            };
+            const lines = [
+              `openai: ${endpoints.openai}`,
+              `anthropic: ${endpoints.anthropic}`,
+              `gemini: ${endpoints.gemini}`,
+              `api key: ${localApiKey}`,
+              `tunnel: ${status.tunnel.state}`,
+            ];
+            if (status.tunnel.state === "ready") {
+              lines.push(`public openai: ${status.tunnel.openaiBaseUrl}`);
+            }
+            return { exitCode: 0, stdout: lines.join("\n") };
           }
           case "install": {
             const version = await requestInstall(rest[0]);
@@ -1144,9 +1460,9 @@ export default async function plugin(bb: BbPluginApi) {
               exitCode: 2,
               stderr:
                 "usage: bb agent-proxy <status|start|stop|restart|endpoints|install|oauth|providers|usage>\n" +
-                "  status              core state, versions, endpoints\n" +
+                "  status              core and tunnel state, versions, endpoints\n" +
                 "  start|stop|restart  control the proxy core\n" +
-                "  endpoints           local endpoint URLs + API key\n" +
+                "  endpoints           local endpoints, API key, tunnel state, and public endpoint\n" +
                 "  install [ref]       build and install the configured GitHub source\n" +
                 "  oauth <claude|codex> run a browser OAuth flow\n" +
                 "  providers           configured credentials + auth files\n" +
@@ -1159,7 +1475,16 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
+  if (migratedLegacySettings) {
+    const migrationReload = setTimeout(() => {
+      void bb.sdk.plugins.reload({ pluginId: bb.pluginId }).catch((error: unknown) => {
+        bb.log.error(`failed to finish the settings migration reload: ${String(error)}`);
+      });
+    }, 0);
+    bb.onDispose(() => clearTimeout(migrationReload));
+  }
+
   bb.log.info(
-    `loaded (core ${installedVersion(paths) ?? "not installed"}, source ${initialSource.repository}#${initialSource.branch}, port ${initial.port}, routing ${initial.routingStrategy}, autostart ${String(initial.autostart)})`,
+    `loaded (core ${installedVersion(paths) ?? "not installed"}, source ${initialSource.repository}#${initialSource.branch}, port ${initial.port}, routing ${initial.routingStrategy}, autostart ${String(initial.autostart)}, Cloudflare tunnel ${String(initial.cloudflareQuickTunnelForCursor)})`,
   );
 }
