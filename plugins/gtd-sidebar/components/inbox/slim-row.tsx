@@ -43,7 +43,7 @@ export function SlimRow({
   onRestore: () => void;
 }) {
   const actions = useSidebarThreadActions();
-  const { isAvailable: isSplitAvailable } = useSidebarThreadSplit(thread.id);
+  const { splitProps, isAvailable: isSplitAvailable } = useSidebarThreadSplit(thread.id);
   const title = threadDisplayTitle(thread);
   const plan = buildThreadActionPlan({
     lifecycle:
@@ -80,6 +80,7 @@ export function SlimRow({
               anchor: the shortcut-target contract and modifier-click
               split-open both depend on it. A button breaks each. */}
           <a
+            {...splitProps}
             data-sidebar-thread-shortcut-target=""
             data-sidebar-thread-id={thread.id}
             href="#"
