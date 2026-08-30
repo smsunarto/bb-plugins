@@ -55,7 +55,7 @@
     "nanocodex": "https://pkg.pr.new/nanocodex@fa3f254178fff43482476203bb4a007971ceed6b"
   },
   "scripts": {
-    "dev": "bun ../../scripts/dev-plugin.ts",
+    "dev": "\"${BB_CLI:-bb}\" plugin dev .",
     "build": "bb plugin build .",
     "test": "bun test --timeout=30000 test/*.test.ts server/**/*.test.ts",
     "typecheck": "tsc --noEmit",

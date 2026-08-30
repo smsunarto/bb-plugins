@@ -90,7 +90,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
-    "dev": "bun ../../scripts/dev-plugin.ts",
+    "dev": "\"${BB_CLI:-bb}\" plugin dev .",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000 test/*.test.ts",
     "build": "bb plugin build .",

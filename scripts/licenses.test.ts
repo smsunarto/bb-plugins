@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ALLOWED_LICENSES } from "./publish";
+import { ALLOWED_LICENSES } from "./package-check";
 import { workspacePlugins } from "./plugin-package";
 
 const ROOT = join(import.meta.dir, "..");

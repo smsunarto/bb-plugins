@@ -30,9 +30,8 @@ pending bb 0.40 patch as Amp 0.4.2. NanoCodex already has a `feat(nanocodex)`
 commit after the floor, so its first Release Please pull request starts at
 0.1.0.
 
-## Retry behavior
+## Publication
 
-The npm publisher runs after every successful Release Please pass. It publishes
-only package versions whose matching GitHub Release and tag already exist.
-Both the scoped package and its mirror are checked before publication, so a
-failed or partially visible npm publish converges on the next workflow run.
+The release workflow uses Release Please's `paths_released` output as its npm
+publish matrix. Each released package is built and published directly from its
+workspace directory. Plugins also publish their established unscoped mirror.

@@ -1,23 +1,15 @@
-// The publish gate decides whether a tarball can be installed at all, so the
+// The package check decides whether a tarball can be installed at all, so the
 // checks that matter get a test each — most of all the one that reads the
 // manifest's bb.* paths back out of the packed file list.
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   ALLOWED_LICENSES,
   bbTargets,
-  mirrorPackageName,
   nonRegistryProtocol,
-  npmViewFailureIsMissing,
   packageProblems,
   packedPaths,
-  publishPackageVersion,
-  publishProblems,
-  publishableWorkspacePlugins,
-  selectPublishTargets,
-  type RegistryVersionState,
-} from "./publish";
-import { derivePluginId, workspacePlugins } from "./plugin-package";
-import { join } from "node:path";
+  pluginPackageProblems,
+} from "./package-check";
 import type { PluginManifest } from "./plugin-package";
 
 /** A manifest and a packed file list that the gate accepts. */
@@ -58,10 +50,10 @@ function healthy(): { manifest: PluginManifest; paths: string[] } {
   };
 }
 
-describe("publishProblems", () => {
+describe("pluginPackageProblems", () => {
   test("accepts a package whose bb.* paths all survive into the tarball", () => {
     const { manifest, paths } = healthy();
-    expect(publishProblems(manifest, paths)).toEqual([]);
+    expect(pluginPackageProblems(manifest, paths)).toEqual([]);
   });
 
   // The bug this gate exists for: `bb.server` pointed at a source file the
@@ -71,7 +63,7 @@ describe("publishProblems", () => {
     const { manifest, paths } = healthy();
     manifest.bb!.server = "./server.ts";
 
-    const problems = publishProblems(manifest, paths);
+    const problems = pluginPackageProblems(manifest, paths);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("bb.server");
     expect(problems[0]).toContain("./server.ts");
@@ -82,7 +74,7 @@ describe("publishProblems", () => {
     const { manifest, paths } = healthy();
     manifest.bb!.themes = [{ id: "example", css: "./themes/example.css" }];
 
-    const problems = publishProblems(
+    const problems = pluginPackageProblems(
       manifest,
       paths.filter((path) => path !== "assets/logo-dark.svg" && !path.startsWith("skills/")),
     );
@@ -96,12 +88,12 @@ describe("publishProblems", () => {
   test("accepts a host icon name, which is not a path in the package", () => {
     const { manifest, paths } = healthy();
     manifest.bb!.branding!.icon = "Bell";
-    expect(publishProblems(manifest, paths)).toEqual([]);
+    expect(pluginPackageProblems(manifest, paths)).toEqual([]);
   });
 
   test("requires the fixed dist files an npm install reads", () => {
     const { manifest, paths } = healthy();
-    const problems = publishProblems(
+    const problems = pluginPackageProblems(
       manifest,
       paths.filter((path) => path !== "dist/app.meta.json"),
     );
@@ -124,7 +116,7 @@ describe("publishProblems", () => {
     // devDependencies never reach an installer, so they are not checked.
     manifest.devDependencies = { tooling: "workspace:*" };
 
-    const problems = publishProblems(manifest, paths);
+    const problems = pluginPackageProblems(manifest, paths);
     expect(problems).toHaveLength(5);
     expect(problems.join("\n")).not.toContain("dependencies.good");
     expect(problems.join("\n")).not.toContain("dependencies.aliased");
@@ -140,7 +132,7 @@ describe("publishProblems", () => {
     delete manifest.author;
     delete manifest.publishConfig;
 
-    const problems = publishProblems(manifest, paths).join("\n");
+    const problems = pluginPackageProblems(manifest, paths).join("\n");
     expect(problems).toContain('"private": true');
     expect(problems).toContain("no description");
     expect(problems).toContain("no repository");
@@ -152,23 +144,23 @@ describe("publishProblems", () => {
     const { manifest, paths } = healthy();
     for (const license of ALLOWED_LICENSES) {
       manifest.license = license;
-      expect(publishProblems(manifest, [...paths, "THIRD_PARTY_NOTICES.md"])).toEqual([]);
+      expect(pluginPackageProblems(manifest, [...paths, "THIRD_PARTY_NOTICES.md"])).toEqual([]);
     }
     manifest.license = "Apache-2.0";
-    expect(publishProblems(manifest, paths).join("\n")).toContain("Apache-2.0");
+    expect(pluginPackageProblems(manifest, paths).join("\n")).toContain("Apache-2.0");
   });
 
   test("a licence beyond MIT has to ship the terms it adds", () => {
     const { manifest, paths } = healthy();
     manifest.license = "MIT AND PolyForm-Shield-1.0.0";
-    expect(publishProblems(manifest, paths)).toEqual([
+    expect(pluginPackageProblems(manifest, paths)).toEqual([
       'licence "MIT AND PolyForm-Shield-1.0.0" adds terms beyond MIT, but the tarball carries no THIRD_PARTY_NOTICES.md stating them',
     ]);
   });
 
   test("keeps rejecting forbidden paths and a tarball with no LICENSE", () => {
     const { manifest, paths } = healthy();
-    const problems = publishProblems(manifest, [
+    const problems = pluginPackageProblems(manifest, [
       ...paths.filter((path) => path !== "LICENSE"),
       "assets/font.woff2",
       "dist/app.js.map",
@@ -244,7 +236,7 @@ describe("bbTargets", () => {
     });
     // Explicitly: the "/*" must not be looked for as a literal file name.
     expect(
-      publishProblems(
+      pluginPackageProblems(
         {
           name: "@smsunarto/bb-plugin-example",
           license: "MIT",
@@ -275,133 +267,6 @@ describe("nonRegistryProtocol", () => {
     expect(nonRegistryProtocol("github:owner/repo")).toBe("github");
     expect(nonRegistryProtocol("../sibling")).toBe("path");
     expect(nonRegistryProtocol("owner/repo")).toBe("github shorthand");
-  });
-});
-
-// Every plugin ships under two registry names so the short one cannot be
-// squatted. The mirror is only safe because both names collapse to one plugin
-// id — if that ever stopped being true, the mirror would install a SECOND
-// plugin rather than the same one, so the id equality is the real assertion.
-describe("mirrorPackageName", () => {
-  test("a scoped name mirrors to its unscoped twin", () => {
-    expect(mirrorPackageName("@smsunarto/bb-plugin-notify")).toBe("bb-plugin-notify");
-    expect(mirrorPackageName("@smsunarto/bb-plugin-gh-stack")).toBe("bb-plugin-gh-stack");
-  });
-
-  test("an already-unscoped name has no mirror, so it publishes once", () => {
-    expect(mirrorPackageName("bb-plugin-notify")).toBeNull();
-  });
-
-  for (const plugin of workspacePlugins(join(import.meta.dir, ".."))) {
-    test(`${plugin.directory} mirrors to a name bb reads as the same plugin`, () => {
-      const mirror = mirrorPackageName(plugin.name);
-      expect(mirror).toBe(`bb-plugin-${plugin.directory}`);
-      expect(derivePluginId(mirror as string)).toBe(plugin.id);
-    });
-  }
-});
-
-describe("selectPublishTargets", () => {
-  const plugins = publishableWorkspacePlugins(join(import.meta.dir, ".."));
-
-  test("keeps workspace order while selecting released plugin ids", () => {
-    expect(selectPublishTargets(plugins, ["notify", "amp"]).map((plugin) => plugin.id)).toEqual([
-      "amp",
-      "notify",
-    ]);
-  });
-
-  test("publishes every plugin when no release filter is supplied", () => {
-    expect(selectPublishTargets(plugins, [])).toEqual(plugins);
-  });
-
-  test("rejects a release id that is not publishable", () => {
-    expect(() => selectPublishTargets(plugins, ["dotfiles", "missing"])).toThrow(
-      "unknown publish plugins: dotfiles, missing",
-    );
-  });
-});
-
-describe("publishPackageVersion", () => {
-  test("waits for a successful publish to become readable", async () => {
-    const states: RegistryVersionState[] = [
-      { kind: "missing" },
-      { kind: "missing" },
-      { kind: "published" },
-    ];
-    let probeIndex = 0;
-    const probe = mock((): RegistryVersionState => states[probeIndex++] ?? { kind: "published" });
-    const publish = mock(() => {});
-    const sleep = mock(async (_milliseconds: number) => {});
-
-    const result = await publishPackageVersion({
-      packageVersion: "bb-plugin-agent-proxy@0.2.4",
-      probe,
-      publish,
-      sleep,
-      retryDelays: [0, 1],
-    });
-
-    expect(result).toEqual({ kind: "published" });
-    expect(probe.mock.calls).toHaveLength(3);
-    expect(publish.mock.calls).toHaveLength(1);
-    expect(sleep.mock.calls).toEqual([[0], [1]]);
-  });
-
-  test("reconciles a duplicate publish after delayed registry visibility", async () => {
-    const states: RegistryVersionState[] = [
-      { kind: "missing" },
-      { kind: "missing" },
-      { kind: "published" },
-    ];
-    let probeIndex = 0;
-    const probe = mock((): RegistryVersionState => states[probeIndex++] ?? { kind: "published" });
-    const publish = mock(() => {
-      throw new Error("npm error code E403: version already published");
-    });
-    const sleep = mock(async (_milliseconds: number) => {});
-
-    const result = await publishPackageVersion({
-      packageVersion: "bb-plugin-agent-proxy@0.2.4",
-      probe,
-      publish,
-      sleep,
-      retryDelays: [0, 1],
-    });
-
-    expect(result).toEqual({ kind: "reconciled" });
-    expect(probe.mock.calls).toHaveLength(3);
-    expect(publish.mock.calls).toHaveLength(1);
-    expect(sleep.mock.calls).toEqual([[0], [1]]);
-  });
-
-  test("does not publish when the registry probe itself fails", async () => {
-    const registryError = new Error("npm error code E500");
-    const probe = mock((): RegistryVersionState => {
-      throw registryError;
-    });
-    const publish = mock(() => {});
-    const sleep = mock(async (_milliseconds: number) => {});
-
-    await expect(
-      publishPackageVersion({
-        packageVersion: "bb-plugin-agent-proxy@0.2.4",
-        probe,
-        publish,
-        sleep,
-        retryDelays: [0],
-      }),
-    ).rejects.toBe(registryError);
-    expect(publish.mock.calls).toHaveLength(0);
-    expect(sleep.mock.calls).toHaveLength(0);
-  });
-});
-
-describe("npmViewFailureIsMissing", () => {
-  test("treats only npm E404 as an unpublished version", () => {
-    expect(npmViewFailureIsMissing("npm error code E404")).toBeTrue();
-    expect(npmViewFailureIsMissing("npm error code E403")).toBeFalse();
-    expect(npmViewFailureIsMissing("npm error code E500")).toBeFalse();
   });
 });
 

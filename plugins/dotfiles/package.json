@@ -94,7 +94,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
-    "dev": "bun ../../scripts/dev-plugin.ts",
+    "dev": "bun run build:monaco && \"${BB_CLI:-bb}\" plugin dev .",
     "build": "bb plugin build . && bun run build:monaco",
     "build:monaco": "node scripts/stage-monaco-assets.mjs",
     "lint": "oxlint",

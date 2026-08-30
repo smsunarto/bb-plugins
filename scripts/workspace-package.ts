@@ -105,21 +105,3 @@ export function workspacePackages(root: string): WorkspacePackage[] {
 export function publishableWorkspacePackages(root: string): WorkspacePackage[] {
   return workspacePackages(root).filter((candidate) => candidate.manifest.private !== true);
 }
-
-/** Keep workspace order while selecting exact package directories. */
-export function selectWorkspacePackages(
-  packages: readonly WorkspacePackage[],
-  requestedDirectories: readonly string[],
-): WorkspacePackage[] {
-  if (requestedDirectories.length === 0) return [...packages];
-
-  const requested = new Set(requestedDirectories);
-  const known = new Set(packages.map((candidate) => candidate.directory));
-  const unknown = [...requested].filter((directory) => !known.has(directory)).sort();
-  if (unknown.length > 0) {
-    throw new Error(
-      `unknown publish package${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
-    );
-  }
-  return packages.filter((candidate) => requested.has(candidate.directory));
-}

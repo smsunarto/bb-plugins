@@ -5,7 +5,7 @@
 - Start `bun run dev` before the first plugin edit. Leave it running.
 - Close a change by naming what to exercise in bb. Never prescribe `bb plugin build` or `bb plugin reload`.
 - Before handoff, run root `typecheck`, `test`, and `lint`. Also run `build` when a manifest, frontend bundle, build input, dependency, or workspace tooling changed.
-- Use `reload` and `build:reload` only for recovery.
+- Use direct `bb plugin reload` only for recovery.
 - Use `clean` only to diagnose stale `dist/`.
 
 ## Traps

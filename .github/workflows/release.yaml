@@ -21,6 +21,9 @@ jobs:
   release-please:
     name: Version and tag packages
     runs-on: ubuntu-24.04
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
     steps:
       - name: Create package release PRs or GitHub Releases
         id: release
@@ -40,8 +43,13 @@ jobs:
             done
 
   publish:
-    name: Publish released packages
+    name: Publish (${{ matrix.path }})
     needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        path: ${{ fromJSON(needs.release-please.outputs.paths_released) }}
     # npm trusted publishing accepts OIDC identities from GitHub-hosted runners,
     # not self-hosted Namespace runners.
     runs-on: ubuntu-24.04
@@ -70,15 +78,28 @@ jobs:
           bun install --frozen-lockfile
           bun install --global "bb-app@$(node -p "require('./package.json').config.bbVersion")"
 
-      # Run after every successful Release Please pass. GitHub Releases and npm
-      # are durable stores, so this also retries a prior partial npm publish.
-      - name: Publish versions that have a GitHub Release
-        run: bun run release
+      - name: Build released package
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_PATH: ${{ matrix.path }}
+        run: |
+          package_name="$(node -p "require('./$RELEASE_PATH/package.json').name")"
+          if [[ "$RELEASE_PATH" == plugins/* ]]; then
+            bun run build:framework
+          fi
+          bun run --filter "$package_name" build
 
-      # `scripts/publish.ts` rewrites each manifest for the unscoped mirror and
-      # must restore the original bytes, including after a failed publish.
-      - name: Verify manifests were restored
-        if: always()
-        run: git diff --exit-code -- 'plugins/*/package.json'
+      - name: Publish package
+        working-directory: ${{ matrix.path }}
+        run: npm publish --access public
+
+      # Keep the established unscoped plugin package alongside the canonical
+      # scoped package. This checkout is disposable, so the temporary manifest
+      # rewrite needs no restoration machinery.
+      - name: Publish unscoped plugin package
+        if: ${{ startsWith(matrix.path, 'plugins/') }}
+        working-directory: ${{ matrix.path }}
+        env:
+          RELEASE_PATH: ${{ matrix.path }}
+        run: |
+          npm pkg set "name=bb-plugin-${RELEASE_PATH#plugins/}"
+          npm publish --access public

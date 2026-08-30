@@ -46,8 +46,7 @@ jobs:
         run: bun run test
 
   # The job that decides whether a release would install anywhere. Kept separate
-  # from `test` because it is the slow one: it builds every plugin, then packs
-  # every plugin again inside publish:dry.
+  # from `test` because it is the slow one: it builds and packs every package.
   package:
     name: Package (Tarballs)
     runs-on: namespace-profile-linux-8vcpu-16gb-cached
@@ -58,16 +57,13 @@ jobs:
       - name: Build
         run: bun run build
 
-      # Two code paths rewrite a manifest in place and restore it afterwards:
-      # `bb plugin build` swaps bb.server/bb.app to the sources for the length
-      # of a build, and publishUnder() rewrites `name` for the length of one
-      # publish. A dirty tree here means one of them did not put it back.
+      # `bb plugin build` temporarily rewrites bb.server/bb.app while bundling.
+      # A dirty tree here means it did not restore the manifest afterwards.
       - name: Guard against a build leaving a manifest rewritten
         run: git diff --exit-code -- 'plugins/*/types/*.d.ts' 'plugins/*/package.json'
 
-      # Packs every publishable plugin and checks the manifest's bb.* paths
-      # against the tarball's contents. bb stats those paths at install time,
-      # so an allowlist that omits one ships a package that installs nowhere.
-      # Also proves both the scoped and unscoped names resolve.
-      - name: Check the publishable tarballs
-        run: bun run publish:dry
+      # Checks each package's manifest entry points against the files npm will
+      # pack. bb stats plugin bb.* paths at install time, so an omitted path
+      # ships a package that installs nowhere.
+      - name: Check npm packages
+        run: bun run package:check

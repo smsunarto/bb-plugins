@@ -107,3 +107,7 @@ export function workspacePlugins(root: string): WorkspacePlugin[] {
   }
   return plugins;
 }
+
+export function publishableWorkspacePlugins(root: string): WorkspacePlugin[] {
+  return workspacePlugins(root).filter((plugin) => plugin.manifest.private !== true);
+}

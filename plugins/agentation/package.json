@@ -97,7 +97,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
-    "dev": "bun ../../scripts/dev-plugin.ts",
+    "dev": "\"${BB_CLI:-bb}\" plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000 --preload ../../scripts/agentation-sqlite-preload.ts test/*.test.ts",

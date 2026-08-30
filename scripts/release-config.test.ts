@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { releaseTargets } from "./release";
+import { publishableWorkspacePlugins } from "./plugin-package";
+import { publishableWorkspacePackages } from "./workspace-package";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -27,7 +28,20 @@ test("Release Please covers every publishable release target with the existing t
   const manifest = JSON.parse(
     readFileSync(`${ROOT}/.release-please-manifest.json`, "utf8"),
   ) as Record<string, unknown>;
-  const targets = releaseTargets(ROOT);
+  const targets = [
+    ...publishableWorkspacePackages(ROOT).map((candidate) => ({
+      relativePath: `packages/${candidate.directory}`,
+      component: candidate.directory,
+      name: candidate.name,
+      version: candidate.manifest.version,
+    })),
+    ...publishableWorkspacePlugins(ROOT).map((plugin) => ({
+      relativePath: `plugins/${plugin.directory}`,
+      component: plugin.id,
+      name: plugin.name,
+      version: plugin.manifest.version,
+    })),
+  ];
   const expectedPaths = targets.map((target) => target.relativePath).sort();
 
   expect(config["bootstrap-sha"]).toBe("da91c8346edea3232888503164125ca39eed5486");
@@ -44,6 +58,6 @@ test("Release Please covers every publishable release target with the existing t
       component: target.component,
       "package-name": target.name,
     });
-    expect(manifest[target.relativePath]).toBe(target.manifest.version);
+    expect(manifest[target.relativePath]).toBe(target.version);
   }
 });

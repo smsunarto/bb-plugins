@@ -70,7 +70,7 @@
     "typescript": "^6.0.0"
   },
   "scripts": {
-    "dev": "bun ../../scripts/dev-plugin.ts",
+    "dev": "\"${BB_CLI:-bb}\" plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",

@@ -81,7 +81,7 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "dev": "bun ../../scripts/dev-plugin.ts",
+    "dev": "bun run generate:theme && \"${BB_CLI:-bb}\" plugin dev .",
     "storybook": "storybook dev --port 6006",
     "generate:theme": "bun run scripts/generate-theme.ts",
     "sync:code-theme": "bun run scripts/sync-code-theme.ts",

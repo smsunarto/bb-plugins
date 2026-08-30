@@ -51,9 +51,9 @@ describe("the workspace", () => {
   });
 
   for (const plugin of plugins) {
-    // plugin-icons.ts, EXCLUDED in publish.ts, and every path in the docs key
-    // off the directory name, while bb keys off the derived id. They have to
-    // agree or a rename silently addresses the wrong plugin.
+    // plugin-icons.ts and every path in the docs key off the directory name,
+    // while bb keys off the derived id. They have to agree or a rename silently
+    // addresses the wrong plugin.
     test(`${plugin.directory} is named for the id bb derives from it`, () => {
       expect(plugin.id).toBe(plugin.directory);
     });

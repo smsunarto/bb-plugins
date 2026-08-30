@@ -1,92 +1,12 @@
-/**
- * Publish the supportable plugins to npm.
- *
- * npm is no longer the only channel a monorepo plugin can reach. bb 0.38 added
- * a subdirectory selector to the git source, so `git:<url>@semver:<prefix>:*`
- * plus a directory installs one plugin out of this repository, and the release
- * tag is now the blessed path. npm
- * stays published alongside it: it is the one channel that fetches a single
- * tarball instead of cloning the whole repository, and it is what an existing
- * `npm:` install updates from.
- *
- * The two channels ship differently, and that is the reason this gate exists.
- * bb BUILDS a git install on the host, so a tag can carry sources. bb NEVER
- * builds an npm plugin: it stats the manifest's `bb.*` paths against the
- * unpacked package and refuses what is missing. The tarball is therefore the
- * product, and everything bb reads at install time has to be INSIDE it — a
- * `files` allowlist that omits one of those paths ships a package that
- * installs nowhere. The gate below packs each plugin and looks for the paths
- * in the result, a check that costs one `npm pack --dry-run` and is the
- * difference between a release and eight dead tarballs.
- *
- * The same asymmetry sets the version floor: a prebuilt bundle has to match
- * the host's SDK exactly, so an npm release is only good for the bb line its
- * manifest declares in `engines.bb`.
- *
- *   bun scripts/publish.ts --dry-run     # pack and check, publish nothing
- *   bun scripts/publish.ts               # publish every workspace plugin
- *   bun scripts/publish.ts --plugin amp  # publish one released plugin
- */
+/** Build and inspect every npm tarball without publishing it. */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { setTimeout as wait } from "node:timers/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  workspacePlugins,
-  unscopedPackageName,
-  type PluginManifest,
-  type WorkspacePlugin,
-} from "./plugin-package";
-import type { PackageManifest } from "./workspace-package";
+import { publishableWorkspacePlugins, type PluginManifest } from "./plugin-package";
+import { publishableWorkspacePackages, type PackageManifest } from "./workspace-package";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-
-/**
- * Not published:
- * - dotfiles: personal tooling written against one repository layout, and its
- *   README says so. Publishing it would invite installs it cannot serve.
- * It also carries `"private": true`, which npm itself refuses to publish; this
- * set keeps it out of the gate rather than letting it fail there.
- */
-export const EXCLUDED = new Set(["dotfiles"]);
-
-/**
- * The workspace packages that may be published and receive GitHub Releases.
- *
- * Keep the explicit release policy and npm's `private` safety switch in step.
- * A mismatch is an error instead of silently publishing or silently omitting a
- * package from one half of the release process.
- */
-export function publishableWorkspacePlugins(root: string): WorkspacePlugin[] {
-  const plugins = workspacePlugins(root);
-  for (const plugin of plugins) {
-    const excluded = EXCLUDED.has(plugin.directory);
-    const privatePackage = plugin.manifest.private === true;
-    if (excluded !== privatePackage) {
-      throw new Error(`${plugin.directory}: EXCLUDED and package.json private must agree`);
-    }
-  }
-  return plugins.filter((plugin) => !EXCLUDED.has(plugin.directory));
-}
-
-/** Restrict publication to exact plugin ids supplied by the release gate. */
-export function selectPublishTargets(
-  plugins: readonly WorkspacePlugin[],
-  requestedIds: readonly string[],
-): WorkspacePlugin[] {
-  if (requestedIds.length === 0) return [...plugins];
-
-  const requested = new Set(requestedIds);
-  const known = new Set(plugins.map((plugin) => plugin.id));
-  const unknown = [...requested].filter((id) => !known.has(id)).sort();
-  if (unknown.length > 0) {
-    throw new Error(
-      `unknown publish plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
-    );
-  }
-  return plugins.filter((plugin) => requested.has(plugin.id));
-}
 
 /**
  * Licence expressions a published plugin may declare. A plugin that embeds
@@ -98,27 +18,6 @@ export const ALLOWED_LICENSES: ReadonlySet<string> = new Set([
   // agentation bundles the upstream `agentation` package into dist/app.js.
   "MIT AND PolyForm-Shield-1.0.0",
 ]);
-
-/**
- * The unscoped twin of a scoped package name, or null when there is none.
- *
- * Both names derive the SAME bb plugin id — `@smsunarto/bb-plugin-notify` and
- * `bb-plugin-notify` both give `notify`, because derivePluginId() drops the
- * scope before it strips the prefix. So the mirror is not a second plugin: it
- * is the same tarball under a second registry name, published so that the
- * short name cannot be taken by anyone else.
- *
- * It ships the real package rather than an empty placeholder on purpose. npm's
- * Open-Source Terms forbid publishing content that exists only to reserve a
- * name, and reclaim it without notice; a functional package is not squatting.
- *
- * The two names are alternatives, never companions — a user who installed both
- * would give bb two plugins claiming one id.
- */
-export function mirrorPackageName(name: string): string | null {
-  const unscoped = unscopedPackageName(name);
-  return unscoped === name ? null : unscoped;
-}
 
 /** Paths that must never reach any npm package, whatever the allowlist says. */
 const PACKAGE_FORBIDDEN_PATH = /\.woff2$|(^|\/)\.env|node_modules|__pycache__/;
@@ -350,7 +249,10 @@ export function nonRegistryProtocol(spec: string): string | null {
  *
  * `paths` is the file list npm would pack, package-root-relative.
  */
-export function publishProblems(manifest: PluginManifest, paths: readonly string[]): string[] {
+export function pluginPackageProblems(
+  manifest: PluginManifest,
+  paths: readonly string[],
+): string[] {
   const problems: string[] = [];
   const files = new Set(paths);
   const hasTree = (prefix: string): boolean =>
@@ -415,7 +317,7 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
     problems.push(
       `licence ${JSON.stringify(manifest.license)} is not one of ` +
         `${[...ALLOWED_LICENSES].map((value) => JSON.stringify(value)).join(", ")}` +
-        ` — add it to ALLOWED_LICENSES in scripts/publish.ts if it is intended`,
+        ` — add it to ALLOWED_LICENSES in scripts/package-check.ts if it is intended`,
     );
   }
   // A compound expression is there because the package bundles code under the
@@ -428,9 +330,7 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
   }
   if (!Array.isArray(manifest.files)) problems.push("manifest has no files allowlist");
   if (manifest.private === true) {
-    problems.push(
-      'manifest is `"private": true` — npm refuses to publish it. Drop the flag, or add the plugin to EXCLUDED in scripts/publish.ts',
-    );
+    problems.push('manifest is `"private": true` — npm refuses to publish it');
   }
   for (const field of ["description", "repository", "author"] as const) {
     const value = manifest[field];
@@ -467,226 +367,35 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
 function run(command: string, args: string[], cwd: string): string {
   return execFileSync(command, args, { cwd, encoding: "utf8" }).trim();
 }
-
-/**
- * Like run(), but the child keeps this terminal.
- *
- * `npm publish` can need the user: a web auth handshake, or a 2FA one-time
- * password. Those prompts go to stdout, so capturing it the way run() does
- * leaves npm waiting on a keypress for a prompt nobody was shown — the publish
- * looks hung when it is only asking a question.
- */
-function runInteractive(command: string, args: string[], cwd: string): void {
-  execFileSync(command, args, { cwd, stdio: "inherit" });
-}
-
-function commandStderr(error: unknown): string {
-  if (typeof error !== "object" || error === null || !("stderr" in error)) return "";
-  const stderr = error.stderr;
-  if (typeof stderr === "string") return stderr;
-  if (stderr instanceof Uint8Array) return new TextDecoder().decode(stderr);
-  return "";
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-export function npmViewFailureIsMissing(stderr: string): boolean {
-  return /\bE404\b/.test(stderr);
-}
-
-export type RegistryVersionState = { readonly kind: "published" } | { readonly kind: "missing" };
-
-export function probeNpmVersion(target: string, version: string): RegistryVersionState {
-  let published: string;
-  try {
-    published = execFileSync("npm", ["view", `${target}@${version}`, "version"], {
-      cwd: ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-  } catch (error) {
-    const stderr = commandStderr(error);
-    if (npmViewFailureIsMissing(stderr)) return { kind: "missing" };
-    const detail = stderr.trim();
-    throw new Error(
-      `npm view failed for ${target}@${version}${detail === "" ? "" : `:\n${detail}`}`,
-      { cause: error },
-    );
-  }
-
-  if (published === version) return { kind: "published" };
-  throw new Error(
-    `npm view returned ${JSON.stringify(published)} for ${target}@${version}, expected ${JSON.stringify(version)}`,
-  );
-}
-
-const REGISTRY_VISIBILITY_RETRY_DELAYS_MS: readonly number[] = [
-  0, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 90_000, 120_000,
-];
-
-interface PublishPackageVersionOptions {
-  packageVersion: string;
-  probe: () => RegistryVersionState;
-  publish: () => void;
-  sleep: (milliseconds: number) => Promise<void>;
-  retryDelays?: readonly number[];
-}
-
-export type PublishPackageVersionResult =
-  | { readonly kind: "already-published" }
-  | { readonly kind: "published" }
-  | { readonly kind: "reconciled" };
-
-async function waitForPublished(
-  probe: () => RegistryVersionState,
-  sleep: (milliseconds: number) => Promise<void>,
-  retryDelays: readonly number[],
-): Promise<boolean> {
-  for (const delay of retryDelays) {
-    await sleep(delay);
-    if (probe().kind === "published") return true;
-  }
-  return false;
-}
-
-/**
- * Publish one exact package version and wait until npm's read path can see it.
- *
- * npm's publish endpoint can accept a version before `npm view` sees it. A
- * following release run may then receive E404 from the read path and E403 from
- * the write path for the same version. Rechecking after a failed publish makes
- * that partial success resumable without hiding unrelated registry failures.
- */
-export async function publishPackageVersion({
-  packageVersion,
-  probe,
-  publish,
-  sleep,
-  retryDelays = REGISTRY_VISIBILITY_RETRY_DELAYS_MS,
-}: PublishPackageVersionOptions): Promise<PublishPackageVersionResult> {
-  if (probe().kind === "published") return { kind: "already-published" };
-
-  try {
-    publish();
-  } catch (publishError) {
-    try {
-      if (await waitForPublished(probe, sleep, retryDelays)) return { kind: "reconciled" };
-    } catch (probeError) {
-      throw new Error(
-        `${packageVersion} publish failed (${errorMessage(publishError)}), then its registry reconciliation failed`,
-        { cause: probeError },
-      );
-    }
-    throw publishError;
-  }
-
-  if (!(await waitForPublished(probe, sleep, retryDelays))) {
-    throw new Error(
-      `${packageVersion} was accepted by npm but did not become visible before the registry timeout`,
-    );
-  }
-  return { kind: "published" };
-}
-
-/**
- * Publish the package in `dir` under `name`.
- *
- * `npm publish` reads the name from package.json on disk, so shipping the
- * unscoped mirror means holding that one field rewritten for the length of one
- * command. The original bytes go back in a `finally`, so an interrupted or
- * failed publish cannot leave a rewritten manifest in the working tree — only
- * the tarball's copy differs, and only in `name`.
- */
-function publishUnder(dir: string, name: string, manifestName: string): void {
-  if (name === manifestName) {
-    runInteractive("npm", ["publish", "--access", "public"], dir);
-    return;
-  }
-  const manifestPath = join(dir, "package.json");
-  const original = readFileSync(manifestPath, "utf8");
-  const patched = JSON.parse(original) as PluginManifest;
-  patched.name = name;
-  writeFileSync(manifestPath, `${JSON.stringify(patched, null, 2)}\n`);
-  try {
-    runInteractive("npm", ["publish", "--access", "public"], dir);
-  } finally {
-    writeFileSync(manifestPath, original);
-  }
-}
-
-async function main(): Promise<void> {
-  const requestedIds: string[] = [];
-  const unknown: string[] = [];
-  let dryRun = false;
-  const args = process.argv.slice(2);
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--dry-run") {
-      dryRun = true;
-      continue;
-    }
-    if (argument === "--plugin") {
-      const id = args[index + 1];
-      if (id === undefined || id.startsWith("--")) {
-        unknown.push("--plugin requires an id");
-      } else {
-        requestedIds.push(id);
-        index += 1;
-      }
-      continue;
-    }
-    if (argument !== undefined) unknown.push(argument);
-  }
-  if (unknown.length > 0) {
-    console.error(
-      `publish: unknown argument${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`,
-    );
-    process.exit(2);
-  }
-
+function main(): void {
   const fail = (message: string): never => {
     console.error(`\n✗ ${message}`);
     process.exit(1);
   };
 
-  let targets: WorkspacePlugin[];
-  try {
-    targets = selectPublishTargets(publishableWorkspacePlugins(ROOT), requestedIds);
-  } catch (error) {
-    console.error(`publish: ${errorMessage(error)}`);
-    process.exit(2);
-  }
-  console.log(`publishing ${targets.length} plugins (excluded: ${[...EXCLUDED].join(", ")})\n`);
+  const packages = publishableWorkspacePackages(ROOT);
+  const plugins = publishableWorkspacePlugins(ROOT);
+  console.log(`checking ${packages.length} framework package and ${plugins.length} plugins\n`);
 
-  // A stale dist/ is the failure mode that matters: the tarball is the product,
-  // and a version stamp that disagrees with the manifest is refused at install.
-  //
-  // Build the publish targets, not root `bun run build`. The root script fans
-  // out across every workspace plugin including the private ones, so a build
-  // failure in a package this script is documented to exclude — `EXCLUDED`,
-  // above — aborted the release before it packed anything. A plugin that is
-  // never published cannot be a release blocker. The framework still builds
-  // first: it is cheap, and a publishable plugin may depend on `@bb-kit/core`.
-  console.log(`building ${targets.length} plugins…`);
   run("bun", ["run", "build:framework"], ROOT);
   run(
     "bun",
-    ["run", ...targets.flatMap((plugin) => ["--filter", plugin.name]), "--parallel", "build"],
+    ["run", ...plugins.flatMap((plugin) => ["--filter", plugin.name]), "--parallel", "build"],
     ROOT,
   );
 
-  const plans: {
-    plugin: WorkspacePlugin;
-    version: string;
-    paths: string[];
-  }[] = [];
+  for (const candidate of packages) {
+    const paths = packedPaths(run("bun", ["pm", "pack", "--dry-run"], candidate.dir));
+    const problems = packageProblems(candidate.manifest, paths);
+    if (problems.length > 0) {
+      fail(
+        `${candidate.directory} cannot be published:\n${problems.map((problem) => `    - ${problem}`).join("\n")}`,
+      );
+    }
+    console.log(`  ${candidate.name} ready (${paths.length} files)`);
+  }
 
-  // Validate every tarball before publishing any of them. A broken package
-  // late in the workspace must not turn a preventable validation failure into
-  // a partial release.
-  for (const plugin of targets) {
+  for (const plugin of plugins) {
     const { directory: id, dir, manifest } = plugin;
     const version =
       typeof manifest.version === "string" && manifest.version.trim() !== ""
@@ -710,7 +419,7 @@ async function main(): Promise<void> {
     const paths = packedPaths(run("bun", ["pm", "pack", "--dry-run"], dir));
 
     const problems = [
-      ...publishProblems(manifest, paths),
+      ...pluginPackageProblems(manifest, paths),
       ...sourceClosureProblems(dir, manifest, paths),
     ];
     if (problems.length > 0) {
@@ -718,62 +427,10 @@ async function main(): Promise<void> {
         `${id} cannot be published:\n${problems.map((problem) => `    - ${problem}`).join("\n")}`,
       );
     }
-
-    plans.push({ plugin, version, paths });
+    console.log(`  ${plugin.name}@${version} ready (${paths.length} files)`);
   }
 
-  for (const {
-    plugin: { dir, name },
-    version,
-    paths,
-  } of plans) {
-    // The scoped name, then its unscoped mirror. Each is probed and published
-    // on its own, so a mirror added to an already-released version still goes
-    // out, and a half-finished run resumes without republishing what landed.
-    const names = [name, mirrorPackageName(name)].filter(
-      (candidate): candidate is string => candidate !== null,
-    );
-    for (const target of names) {
-      if (dryRun) {
-        const state = probeNpmVersion(target, version);
-        console.log(
-          state.kind === "published"
-            ? `  ${target}@${version} already published — skipping`
-            : `  ${target}@${version} ready (${paths.length} files)`,
-        );
-        continue;
-      }
-
-      const packageVersion = `${target}@${version}`;
-      const result = await publishPackageVersion({
-        packageVersion,
-        probe: () => probeNpmVersion(target, version),
-        publish: () => {
-          console.log(`  publishing ${packageVersion}…`);
-          // Scoped names publish RESTRICTED by default; this is what makes them public.
-          publishUnder(dir, target, name);
-        },
-        sleep: wait,
-      });
-      switch (result.kind) {
-        case "already-published":
-          console.log(`  ${packageVersion} already published — skipping`);
-          break;
-        case "published":
-          console.log(`  ✓ ${packageVersion}`);
-          break;
-        case "reconciled":
-          console.log(`  ✓ ${packageVersion} was already accepted — registry caught up`);
-          break;
-        default: {
-          const exhaustive: never = result;
-          throw new Error(`unhandled publish result: ${JSON.stringify(exhaustive)}`);
-        }
-      }
-    }
-  }
-
-  console.log(dryRun ? "\ndry run complete — nothing published" : "\ndone");
+  console.log("\nall npm packages are ready");
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) main();

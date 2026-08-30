@@ -89,5 +89,4 @@ Do not stop the repository watcher. Do not reload the live desktop app.
 - The pinned app uses `http://localhost:16493` today. Always use the URL that the helper reads from `bb-dev-app status`.
 - The app port is not the Server port. Set browser and `BB_SERVER_URL` traffic to the App port.
 - The pinned and desktop instances share `dist/`. Never load a test change into the desktop app without approval.
-- Plugin type sync can update SDK pins. Review manifest changes before keeping them.
 - Keep screenshots and snapshots under `.scratch/verify-bb-plugins/runs/<run-id>/evidence/`.
