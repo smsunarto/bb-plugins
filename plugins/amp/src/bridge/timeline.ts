@@ -27,6 +27,7 @@ import {
   type DeltaPresentation,
   type JsonValue,
   type ProviderErrorCategory,
+  type ProviderRecoveryHint,
   type ThreadDelta,
   type ThreadEventItemStatus,
   type ThreadEventTokenUsageBreakdown,
@@ -84,15 +85,6 @@ export type ItemOutcome =
 // ---------------------------------------------------------------------------
 // ThreadWriter — session scope
 // ---------------------------------------------------------------------------
-
-/** An unsolicited recovery hint. `message` is required by the runtime's
- *  `providerRecoveryNotificationSchema` (deviation from the sketch, which had
- *  it optional). */
-export interface ProviderRecoveryHint {
-  readonly kind: "authRequired" | "sessionArchived" | "staleTurn" | "rateLimited";
-  readonly retryable: boolean;
-  readonly message: string;
-}
 
 export interface ThreadWriter {
   /**
@@ -311,6 +303,7 @@ export interface TurnScribe {
     detail?: string;
     settlesTurn: boolean;
     category?: ProviderErrorCategory;
+    willRetry?: boolean;
   }): void;
 
   /**
@@ -495,6 +488,7 @@ export function createTurnScribe(writer: ThreadWriter, turnKeyPrefix: string): T
           message: e.message,
           ...(e.detail === undefined ? {} : { detail: e.detail }),
           ...(e.category === undefined ? {} : { category: e.category }),
+          ...(e.willRetry === undefined ? {} : { willRetry: e.willRetry }),
           ...(settles ? { settlesTurn: true } : {}),
         },
       ]);

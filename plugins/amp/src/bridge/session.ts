@@ -16,14 +16,17 @@
  * truthfully declare `steerMode: "inject"`.
  */
 import { createHash } from "node:crypto";
-import type { BridgeExecutionOptions } from "@get-bb/plugin-sdk/provider-bridge";
+import type {
+  BridgeExecutionOptions,
+  ProviderRecoveryHint,
+} from "@get-bb/plugin-sdk/provider-bridge";
 import {
   shapesEqual,
   type AmpConversation,
   type OrbRun,
   type SessionShape,
 } from "./conversation.ts";
-import type { AmpEventBatch } from "./events.ts";
+import type { AmpEvent, AmpEventBatch } from "./events.ts";
 import { toSessionShape } from "./options.ts";
 import { projectAmpEvent, type OracleReports, type ProjectionContext } from "./project.ts";
 import { AMP_THREAD_LINK_KIND } from "./shapes.ts";
@@ -163,7 +166,6 @@ interface ActiveTurn {
   /** Set while the pump sits in the post-terminal idle window; calling it
    * cancels the timer and keeps the pump reading. */
   steerWake: (() => void) | null;
-  authRequired: boolean;
 }
 
 interface LiveLocal {
@@ -172,6 +174,16 @@ interface LiveLocal {
   /** Held manually across turns: a for-await `break` would close the
    * generator, and `batches()` is one continuous stream per CLI process. */
   iterator: AsyncIterator<AmpEventBatch>;
+}
+
+interface PumpOutcome {
+  readonly disposition: "keep-warm" | "retire";
+  readonly recovery?: ProviderRecoveryHint;
+}
+
+interface PendingLocalReplacement {
+  readonly reason: string;
+  readonly contextLost: boolean;
 }
 
 function promptText(input: readonly unknown[]): string {
@@ -188,6 +200,27 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function recoveryFor(events: readonly AmpEvent[]): ProviderRecoveryHint | undefined {
+  for (const event of events) {
+    if (event.kind !== "resultError") continue;
+    if (event.subtype === "auth_required") {
+      return {
+        kind: "authRequired",
+        message: "Amp is not signed in. Run `amp login` in a terminal, then retry.",
+        retryable: true,
+      };
+    }
+    if (event.subtype === "stream_disconnected") {
+      return {
+        kind: "restartRecommended",
+        message: "Amp disconnected from OpenAI. Retry to continue this thread in a fresh process.",
+        retryable: true,
+      };
+    }
+  }
+  return undefined;
+}
+
 export function createAmpSession(args: AmpSessionArgs): AmpSession {
   const { threadId, providerThreadId, cwd, record, writer, store, deps } = args;
 
@@ -195,6 +228,7 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
   let orbRun: OrbRun | null = null;
   let active: ActiveTurn | null = null;
   let stopping: "interrupt" | "release" | null = null;
+  let pendingLocalReplacement: PendingLocalReplacement | null = null;
 
   const shapeFor = (options: BridgeExecutionOptions): SessionShape =>
     toSessionShape({
@@ -244,12 +278,19 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
     ]);
   };
 
-  const persistAmpThreadId = (ampThreadId: string): void => {
-    if (record.ampThreadId !== null) return;
-    record.ampThreadId = ampThreadId;
-    // Write-through so a crash right now still resumes into the Amp thread.
-    void store.write(providerThreadId, { ...record }).catch(() => {});
-    announceThreadLink();
+  let ampThreadIdPersistenceAttempted = record.ampThreadId !== null;
+  const persistAmpThreadId = async (ampThreadId: string): Promise<void> => {
+    if (record.ampThreadId === null) {
+      record.ampThreadId = ampThreadId;
+      announceThreadLink();
+    }
+    if (ampThreadIdPersistenceAttempted) return;
+    ampThreadIdPersistenceAttempted = true;
+    try {
+      await store.write(providerThreadId, { ...record });
+    } catch {
+      return;
+    }
   };
 
   const idleWindow = (turn: ActiveTurn): Promise<boolean> =>
@@ -292,7 +333,7 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
     ctx: ProjectionContext,
     iterator: AsyncIterator<AmpEventBatch>,
     steerable: boolean,
-  ): Promise<void> => {
+  ): Promise<PumpOutcome> => {
     const scribe = turn.scribe;
     try {
       while (true) {
@@ -301,30 +342,36 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
           result = await iterator.next();
         } catch (error) {
           settleAfterStreamEnd(scribe, error);
-          return;
+          return { disposition: "retire" };
         }
         if (result.done === true) {
           settleAfterStreamEnd(scribe, undefined);
-          return;
+          return { disposition: "retire" };
         }
         const batch = result.value;
-        if (batch.ampThreadId !== null) persistAmpThreadId(batch.ampThreadId);
+        if (batch.ampThreadId !== null) await persistAmpThreadId(batch.ampThreadId);
+        if (stopping !== null) {
+          settleAfterStreamEnd(scribe, undefined);
+          return { disposition: "retire" };
+        }
         for (const event of batch.events) {
-          if (event.kind === "resultError" && event.subtype === "auth_required") {
-            turn.authRequired = true;
-          }
           projectAmpEvent(event, ctx);
+        }
+        const recovery = recoveryFor(batch.events);
+        if (batch.terminal || scribe.settled) {
+          if (!scribe.settled) scribe.settle("completed");
+          return {
+            disposition: "retire",
+            ...(recovery === undefined ? {} : { recovery }),
+          };
         }
         // Live evidence (U5 smoke): in interactive stream-json mode the CLI
         // ends a turn with stop_reason on the assistant message and sends no
         // result line, so assistantStop is the primary turn-end signal —
         // exactly the signal bridge-core keyed on. Result lines still count:
         // that is how zero-work and error turns terminate.
-        const turnEnded =
-          batch.terminal || batch.events.some((event) => event.kind === "assistantStop");
+        const turnEnded = batch.events.some((event) => event.kind === "assistantStop");
         if (!turnEnded) continue;
-        // A resultError already settled the turn through scribe.fail.
-        if (scribe.settled) return;
         if (steerable) {
           const steered = await idleWindow(turn);
           // A stop arrived inside the window: one more next() surfaces the
@@ -333,38 +380,54 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
           if (steered) continue;
         }
         scribe.settle("completed");
-        return;
+        return { disposition: "keep-warm" };
       }
     } finally {
       turn.steerWake = null;
       writer.flush();
-      if (active === turn) active = null;
     }
   };
 
-  const reportAuthRequired = (turn: ActiveTurn): void => {
-    if (!turn.authRequired) return;
-    writer.recovery({
-      kind: "authRequired",
-      message: "Amp is not signed in. Run `amp login` in a terminal, then retry.",
-      retryable: true,
-    });
+  const closeIterator = async (iterator: AsyncIterator<AmpEventBatch>): Promise<void> => {
+    try {
+      await iterator.return?.();
+    } catch {
+      return;
+    }
+  };
+
+  const retireLocal = (
+    live: LiveLocal,
+    replacement: PendingLocalReplacement | null,
+  ): Promise<void> => {
+    if (local === live) {
+      local = null;
+      if (replacement !== null) pendingLocalReplacement = replacement;
+    }
+    if (!live.conversation.aborted) live.conversation.abort("restart");
+    return closeIterator(live.iterator);
   };
 
   const ensureLocal = (options: BridgeExecutionOptions): LiveLocal => {
     const next = shapeFor(options);
     // A CLI that exited or was interrupted just respawns with --continue;
-    // that is not a shape restart and gets no session.replaced notice.
+    // announce that rebuild when the next turn creates its replacement.
     if (local !== null && (local.conversation.closed || local.conversation.aborted)) {
-      local = null;
+      void retireLocal(local, {
+        reason: "the Amp process ended",
+        contextLost: record.ampThreadId === null,
+      });
     }
     if (local !== null && !shapesEqual(local.shape, next)) {
       const plan = planRestart({ current: local.shape, next, ampThreadId: record.ampThreadId });
       writer.replaced({ providerThreadId, reason: plan.reason, contextLost: plan.contextLost });
-      local.conversation.abort("restart");
-      local = null;
+      void retireLocal(local, null);
     }
     if (local === null) {
+      if (pendingLocalReplacement !== null) {
+        writer.replaced({ providerThreadId, ...pendingLocalReplacement });
+        pendingLocalReplacement = null;
+      }
       const conversation = deps.createConversation({
         shape: next,
         continueFrom: record.ampThreadId,
@@ -403,8 +466,14 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
         writer.flush();
       }
     });
-    await pump(turn, ctx, live.iterator, true);
-    reportAuthRequired(turn);
+    const outcome = await pump(turn, ctx, live.iterator, true);
+    if (outcome.disposition === "retire") {
+      await retireLocal(live, {
+        reason: "the Amp process ended",
+        contextLost: record.ampThreadId === null,
+      });
+    }
+    if (outcome.recovery !== undefined) writer.recovery(outcome.recovery);
   };
 
   const runOrbTurn = async (
@@ -422,12 +491,15 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
     // Orb prompts are one-shot strings with no delivery signal; starting the
     // execution is the acceptance.
     if (turnArgs.clientRequestId !== null) turn.scribe.accept(turnArgs.clientRequestId);
+    const iterator = run.batches()[Symbol.asyncIterator]();
     try {
-      await pump(turn, ctx, run.batches()[Symbol.asyncIterator](), false);
+      const outcome = await pump(turn, ctx, iterator, false);
+      if (outcome.recovery !== undefined) writer.recovery(outcome.recovery);
     } finally {
+      run.abort();
+      await closeIterator(iterator);
       orbRun = null;
     }
-    reportAuthRequired(turn);
   };
 
   return {
@@ -453,13 +525,15 @@ export function createAmpSession(args: AmpSessionArgs): AmpSession {
         scribe,
         done: Promise.resolve(),
         steerWake: null,
-        authRequired: false,
       };
       active = turn;
-      turn.done =
+      const run =
         record.executionTarget === "orb"
           ? runOrbTurn(turn, ctx, text, turnArgs)
           : runLocalTurn(turn, ctx, ensureLocal(turnArgs.options), text, turnArgs.clientRequestId);
+      turn.done = run.finally(() => {
+        if (active === turn) active = null;
+      });
       await turn.done;
     },
 

@@ -46,6 +46,7 @@ export type AmpErrorSubtype =
   | "error_max_turns"
   | "unsupported_option"
   | "auth_required"
+  | "stream_disconnected"
   | "unknown";
 
 /** Token usage as Amp reports it on the execute wire. Provider-owned:
@@ -375,6 +376,8 @@ function normalizeImageMimeType(value: string): string | null {
 // Error classification
 // ---------------------------------------------------------------------------
 
+const OPENAI_WEBSOCKET_CLOSED_1006 = /^OpenAI WebSocket closed:\s*1006(?:\s|\.|$)/;
+
 /** Amp CLI auth failures, matched on the error text Amp actually emits. */
 export function isAuthError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -396,6 +399,7 @@ export function isAuthError(message: string): boolean {
  */
 export function classifyAmpError(subtype: string | undefined, message: string): AmpErrorSubtype {
   if (subtype === "error_max_turns") return "error_max_turns";
+  if (OPENAI_WEBSOCKET_CLOSED_1006.test(message)) return "stream_disconnected";
   if (subtype === "error_during_execution") {
     return isAuthError(message) ? "auth_required" : "error_during_execution";
   }

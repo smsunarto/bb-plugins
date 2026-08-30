@@ -26,8 +26,15 @@ interface ThreadLinkDelta {
   };
 }
 
-async function* oneTurn(ampThreadId: string): AsyncGenerator<AmpEventBatch> {
-  yield { ampThreadId, terminal: true, events: [] };
+async function* oneTurn(
+  ampThreadId: string,
+  onClose: () => void = () => {},
+): AsyncGenerator<AmpEventBatch> {
+  try {
+    yield { ampThreadId, terminal: true, events: [] };
+  } finally {
+    onClose();
+  }
 }
 
 function fakeConversation(sends: string[]): AmpConversation {
@@ -52,6 +59,8 @@ function harness(target: "local" | "orb" = "local") {
   const writes: AmpSessionRecord[] = [];
   const localSends: string[] = [];
   const orbPrompts: string[] = [];
+  const orbAborts: string[] = [];
+  const orbOutputsClosed: string[] = [];
 
   const writer = {
     emit: (batch: readonly unknown[]) => {
@@ -122,8 +131,10 @@ function harness(target: "local" | "orb" = "local") {
       runOrb: (runArgs) => {
         orbPrompts.push(runArgs.prompt);
         return {
-          batches: () => oneTurn("T-orb-1"),
-          abort: () => {},
+          batches: () => oneTurn("T-orb-1", () => orbOutputsClosed.push("closed")),
+          abort: () => {
+            orbAborts.push("aborted");
+          },
         } as unknown as OrbRun;
       },
       threadCommand: () => Promise.resolve({ ok: true, stderr: "" }),
@@ -131,7 +142,17 @@ function harness(target: "local" | "orb" = "local") {
     },
   });
 
-  return { session, record, deltas, failures, writes, localSends, orbPrompts };
+  return {
+    session,
+    record,
+    deltas,
+    failures,
+    writes,
+    localSends,
+    orbPrompts,
+    orbAborts,
+    orbOutputsClosed,
+  };
 }
 
 function turn(text: string): TurnStartArgs {
@@ -150,6 +171,8 @@ test("an orb record routes every turn to runOrb and never touches Local", async 
   assert.deepEqual(h.failures, []);
   assert.equal(h.localSends.length, 0);
   assert.deepEqual(h.orbPrompts, ["do the thing", "continue"]);
+  assert.equal(h.orbAborts.length, 2);
+  assert.equal(h.orbOutputsClosed.length, 2);
   assert.equal(h.record.ampThreadId, "T-orb-1");
   assert.equal(h.writes[0]?.ampThreadId, "T-orb-1");
 });

@@ -355,6 +355,10 @@ describe("result messages", () => {
 describe("classifyAmpError", () => {
   it("keeps error_max_turns even when the text looks auth-shaped", () => {
     assert.equal(classifyAmpError("error_max_turns", "run 'amp login'"), "error_max_turns");
+    assert.equal(
+      classifyAmpError("error_max_turns", "OpenAI WebSocket closed: 1006"),
+      "error_max_turns",
+    );
   });
 
   it("splits error_during_execution on auth-shaped text", () => {
