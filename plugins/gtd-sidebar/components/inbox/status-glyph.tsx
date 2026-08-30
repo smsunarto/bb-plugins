@@ -92,7 +92,12 @@ export function StatusGlyph({
       // bb centers its own trailing indicators. Right-aligned on its own, a
       // 5px dot would sit ~4px off the column the icons share.
       return (
-        <span aria-label={aria} className={cn("flex items-center justify-center", shared)}>
+        <span
+          {...(aria === undefined
+            ? { "aria-hidden": true }
+            : { "aria-label": aria, role: "img" as const })}
+          className={cn("flex items-center justify-center", shared)}
+        >
           <span className="size-[5px] rounded-full bg-timeline-accent" />
         </span>
       );

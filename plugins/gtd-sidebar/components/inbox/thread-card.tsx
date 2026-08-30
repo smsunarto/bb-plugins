@@ -7,6 +7,8 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { CompactThreadActionMenu } from "@/components/inbox/thread-action-menu";
+import { buildThreadActionPlan, findThreadAction } from "@/components/inbox/thread-actions";
 import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
@@ -29,6 +31,7 @@ export function ThreadCard({
   isActive,
   canPark,
   showProviderIcon,
+  isCompactViewport,
   onNavigate,
   onSettle,
   onSnooze,
@@ -44,6 +47,7 @@ export function ThreadCard({
   canPark: boolean;
   /** The `showProviderIcon` setting, on by default. */
   showProviderIcon: boolean;
+  isCompactViewport: boolean;
   onNavigate: () => void;
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
@@ -51,13 +55,41 @@ export function ThreadCard({
   now: number;
 }) {
   const actions = useSidebarThreadActions();
-  const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  const { splitProps, layout, isAvailable: isSplitAvailable } = useSidebarThreadSplit(thread.id);
   // Opt-in per row: this costs a git-host lookup, and threads sharing a
   // worktree share one.
   const { pullRequest } = useSidebarThreadPullRequest(thread.id);
+  const plan = buildThreadActionPlan({
+    lifecycle: {
+      kind: "active",
+      canPark,
+      snoozeUntilTomorrow: () => {
+        const tomorrow = resolveSnoozePresets(new Date()).find(
+          (preset) => preset.id === "tomorrow",
+        );
+        if (tomorrow !== undefined) onSnooze(tomorrow.snoozedUntil);
+      },
+      settle: onSettle,
+    },
+    split: {
+      isAvailable: isSplitAvailable,
+      open: () => {
+        actions.open(thread.id, { split: true });
+        onNavigate();
+      },
+    },
+    isUnread: thread.isUnread,
+    isPinned: thread.isPinned,
+    setRead: (read) => void actions.setRead(thread.id, read),
+    setPinned: (pinned) => void actions.setPinned(thread.id, pinned),
+    archive: () => actions.archive(thread.id),
+    requestDelete: () => actions.requestDelete(thread.id),
+  });
+  const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
+  const settleAction = findThreadAction(plan, "settle");
 
   return (
-    <RowContextMenu thread={thread}>
+    <RowContextMenu plan={plan}>
       <li className="list-none">
         <div
           className={cn(
@@ -78,7 +110,7 @@ export function ThreadCard({
             href="#"
             aria-label={threadDisplayTitle(thread)}
             {...splitProps}
-            onPointerDown={(event) => {
+            onClick={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
               actions.open(thread.id, {
@@ -88,7 +120,17 @@ export function ThreadCard({
             }}
             className="absolute inset-0 cursor-pointer rounded-md"
           />
-          <div className="pointer-events-none relative flex h-5 items-center gap-1.5">
+          {isCompactViewport ? (
+            <div className="pointer-events-auto absolute right-1 top-1/2 z-[1] -translate-y-1/2">
+              <CompactThreadActionMenu plan={plan} />
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              "pointer-events-none relative flex h-5 items-center gap-1.5",
+              isCompactViewport && "pr-10",
+            )}
+          >
             <span
               className={cn(
                 // Keep resting titles on the sidebar's own text ladder. The
@@ -103,24 +145,26 @@ export function ThreadCard({
             </span>
             {/* Status at rest, park actions on hover. Only the status yields,
                 so the title never shifts. */}
-            {canPark ? (
+            {!isCompactViewport && snoozeAction !== undefined && settleAction !== undefined ? (
               <span className="pointer-events-auto hidden items-center gap-0.5 group-hover/card:flex">
                 <ParkButton
-                  label="Snooze until tomorrow"
+                  label={snoozeAction.label}
                   icon="Clock"
-                  onActivate={() => {
-                    // By id, never by index: "This evening" drops out of the
-                    // list once 18:00 is under an hour away, so a positional
-                    // pick silently becomes "Next week" every afternoon.
-                    const presets = resolveSnoozePresets(new Date());
-                    const tomorrow = presets.find((p) => p.id === "tomorrow");
-                    if (tomorrow) onSnooze(tomorrow.snoozedUntil);
-                  }}
+                  onActivate={snoozeAction.execute}
                 />
-                <ParkButton label="Settle thread" icon="Check" onActivate={onSettle} />
+                <ParkButton
+                  label={settleAction.label}
+                  icon="Check"
+                  onActivate={settleAction.execute}
+                />
               </span>
             ) : null}
-            <span className={cn(STATUS_SLOT_CLASS, canPark && "group-hover/card:hidden")}>
+            <span
+              className={cn(
+                STATUS_SLOT_CLASS,
+                !isCompactViewport && canPark && "group-hover/card:hidden",
+              )}
+            >
               <StatusOrTime thread={thread} now={now} />
             </span>
           </div>
@@ -128,7 +172,13 @@ export function ThreadCard({
               alone does not carry the hierarchy, so the line also starts at the
               tint the provider glyph already uses. Segments that rank below the
               project dim further from here. */}
-          <div className="pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
+          <div
+            className={cn(
+              "pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs",
+              isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+              isCompactViewport && "pr-10",
+            )}
+          >
             {/* Project and origin share this line now that the title has taken
                 the one above. The project holds its full name and the origin
                 yields: which repository a thread belongs to outranks which
@@ -138,7 +188,13 @@ export function ThreadCard({
             <span className="flex min-w-0 flex-1 items-center gap-1">
               {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
               {projectName && (branchName || thread.host) ? (
-                <span aria-hidden className="shrink-0 text-muted-foreground/40">
+                <span
+                  aria-hidden
+                  className={cn(
+                    "shrink-0",
+                    isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/40",
+                  )}
+                >
                   ·
                 </span>
               ) : null}
@@ -155,20 +211,38 @@ export function ThreadCard({
                   machine takes the branch's place rather than leaving the
                   segment blank. */}
               {branchName ? (
-                <span className="min-w-0 shrink-[9999] truncate font-mono text-muted-foreground/50">
+                <span
+                  className={cn(
+                    "min-w-0 shrink-[9999] truncate font-mono",
+                    isCompactViewport ? "text-muted-foreground/80" : "text-muted-foreground/50",
+                  )}
+                >
                   {branchName}
                 </span>
               ) : thread.host ? (
-                <span className="min-w-0 shrink-[9999] truncate text-muted-foreground/50">
+                <span
+                  className={cn(
+                    "min-w-0 shrink-[9999] truncate",
+                    isCompactViewport ? "text-muted-foreground/80" : "text-muted-foreground/50",
+                  )}
+                >
                   {thread.host.name}
                 </span>
               ) : null}
             </span>
             {thread.activity.workflows > 0 ? (
-              <ActivityCount label="workflows" count={thread.activity.workflows} />
+              <ActivityCount
+                label="workflows"
+                count={thread.activity.workflows}
+                isCompactViewport={isCompactViewport}
+              />
             ) : null}
             {thread.activity.backgroundAgents > 0 ? (
-              <ActivityCount label="background agents" count={thread.activity.backgroundAgents} />
+              <ActivityCount
+                label="background agents"
+                count={thread.activity.backgroundAgents}
+                isCompactViewport={isCompactViewport}
+              />
             ) : null}
             {pullRequest ? (
               <a
@@ -229,11 +303,22 @@ function ParkButton({
   );
 }
 
-function ActivityCount({ label, count }: { label: string; count: number }) {
+function ActivityCount({
+  label,
+  count,
+  isCompactViewport,
+}: {
+  label: string;
+  count: number;
+  isCompactViewport: boolean;
+}) {
   return (
     <span
       aria-label={`${count} ${label}`}
-      className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-muted-foreground/70"
+      className={cn(
+        "shrink-0 rounded bg-muted px-1 font-mono text-2xs",
+        isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+      )}
     >
       {count}
     </span>

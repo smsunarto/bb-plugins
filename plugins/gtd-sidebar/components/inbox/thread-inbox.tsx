@@ -48,7 +48,12 @@ const GITBUTLER_REFRESH_MS = 30_000;
  * ships neither. It filters by the `searchQuery` prop and keeps only the one
  * control the host has no equivalent for: the project scope picker.
  */
-export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginThreadListProps) {
+export function ThreadInbox({
+  activeThreadId,
+  isCompactViewport,
+  onNavigate,
+  searchQuery,
+}: PluginThreadListProps) {
   const { status, threads: hostThreads, projects } = useSidebarThreads();
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One clock for every card in a render, quantized to the minute so the
@@ -268,7 +273,10 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
               border. Evicting the color class is what actually keeps the
               track clear. */}
           <SelectTrigger
-            className="h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
+            className={cn(
+              "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
+              isCompactViewport && "min-h-10",
+            )}
             aria-label={`Project scope: ${scopeLabel}`}
           >
             <SelectValue />
@@ -326,7 +334,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
         ) : (
           <>
             {pinned.length > 0 ? (
-              <Shelf label="Pinned">
+              <Shelf label="Pinned" isCompactViewport={isCompactViewport}>
                 {pinned.map((thread) => (
                   <ThreadCard
                     key={thread.id}
@@ -341,6 +349,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     )}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
+                    isCompactViewport={isCompactViewport}
                     onNavigate={onNavigate}
                     onSettle={() => lifecycle.settle(thread.id)}
                     onSnooze={(until) => lifecycle.snooze(thread.id, until)}
@@ -350,7 +359,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
               </Shelf>
             ) : null}
             {nextAction.length > 0 ? (
-              <Shelf label="Next Action">
+              <Shelf label="Next Action" isCompactViewport={isCompactViewport}>
                 {nextAction.map((thread) => (
                   <ThreadCard
                     key={thread.id}
@@ -365,6 +374,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     )}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
+                    isCompactViewport={isCompactViewport}
                     onNavigate={onNavigate}
                     onSettle={() => lifecycle.settle(thread.id)}
                     onSnooze={(until) => lifecycle.snooze(thread.id, until)}
@@ -374,7 +384,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
               </Shelf>
             ) : null}
             {waiting.length > 0 ? (
-              <Shelf label="Waiting">
+              <Shelf label="Waiting" isCompactViewport={isCompactViewport}>
                 {waiting.map((thread) => (
                   <ThreadCard
                     key={thread.id}
@@ -389,6 +399,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
                     )}
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
+                    isCompactViewport={isCompactViewport}
                     onNavigate={onNavigate}
                     onSettle={() => lifecycle.settle(thread.id)}
                     onSnooze={(until) => lifecycle.snooze(thread.id, until)}
@@ -405,6 +416,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
               shelf="snoozed"
               activeThreadId={activeThreadId}
               lifecycle={lifecycle}
+              isCompactViewport={isCompactViewport}
               onNavigate={onNavigate}
               now={now}
             />
@@ -417,6 +429,7 @@ export function ThreadInbox({ activeThreadId, onNavigate, searchQuery }: PluginT
               shelf="settled"
               activeThreadId={activeThreadId}
               lifecycle={lifecycle}
+              isCompactViewport={isCompactViewport}
               onNavigate={onNavigate}
               now={now}
             />
@@ -443,6 +456,7 @@ function ParkedShelf({
   shelf,
   activeThreadId,
   lifecycle,
+  isCompactViewport,
   onNavigate,
   now,
 }: {
@@ -467,6 +481,7 @@ function ParkedShelf({
   shelf: "snoozed" | "settled";
   activeThreadId: string | null;
   lifecycle: ReturnType<typeof useLifecycle>;
+  isCompactViewport: boolean;
   onNavigate: () => void;
   /** Quantized clock, shared by every row — never a fresh read, which a
    * seeded first paint could now disagree with. */
@@ -484,9 +499,17 @@ function ParkedShelf({
         // every row's status and provider glyph. `cursor-pointer` is explicit
         // because Tailwind v4's preflight gives a button `cursor: default`,
         // and the whole header is the hit target for collapsing the shelf.
-        className="mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 pb-0.5 text-left"
+        className={cn(
+          "mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
+          isCompactViewport ? "min-h-10" : "pb-0.5",
+        )}
       >
-        <span className="text-2xs font-medium text-muted-foreground/70">
+        <span
+          className={cn(
+            "text-2xs font-medium",
+            isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+          )}
+        >
           {expanded ? label : `${label} (${count})`}
         </span>
         <span className="h-px flex-1 bg-sidebar-border" />
@@ -494,7 +517,8 @@ function ParkedShelf({
           <Icon
             name="ChevronDown"
             className={cn(
-              "size-3 text-muted-foreground/70 transition-transform",
+              "size-3 transition-transform",
+              isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
               expanded && "rotate-180",
             )}
           />
@@ -510,6 +534,7 @@ function ParkedShelf({
               shelf={shelf}
               wakeAt={lifecycle.wakeAtFor(thread)}
               now={now}
+              isCompactViewport={isCompactViewport}
               onNavigate={onNavigate}
               onRestore={() =>
                 shelf === "snoozed" ? lifecycle.unsnooze(thread.id) : lifecycle.unsettle(thread.id)
@@ -522,14 +547,29 @@ function ParkedShelf({
   );
 }
 
-function Shelf({ label, children }: { label: string | null; children: React.ReactNode }) {
+function Shelf({
+  label,
+  children,
+  isCompactViewport,
+}: {
+  label: string | null;
+  children: React.ReactNode;
+  isCompactViewport: boolean;
+}) {
   return (
     // A named section is exposed as a landmark region; an unnamed one is not,
     // which is exactly right for the single unlabelled inbox list.
     <section {...(label ? { "aria-label": label } : {})}>
       {label ? (
         <h2 className={cn("flex items-center gap-2 px-2.5 pb-0.5 pt-2")}>
-          <span className="text-2xs font-medium text-muted-foreground/70">{label}</span>
+          <span
+            className={cn(
+              "text-2xs font-medium",
+              isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+            )}
+          >
+            {label}
+          </span>
           <span className="h-px flex-1 bg-sidebar-border" />
         </h2>
       ) : null}
