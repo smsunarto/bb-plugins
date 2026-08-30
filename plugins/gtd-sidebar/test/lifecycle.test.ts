@@ -8,7 +8,7 @@ import {
   resolveSnoozePresets,
   rowsMatch,
   snoozeWakeLabel,
-  wokenSettledThreadIds,
+  threadEventWakesSettledRow,
   MAX_TIMEOUT_MS,
   REFRESH_RETRY_DELAYS_MS,
   type ThreadActivitySignals,
@@ -120,50 +120,18 @@ describe("resolveShelf", () => {
   });
 });
 
-describe("wokenSettledThreadIds", () => {
-  const signals = (overrides: Partial<ThreadActivitySignals> = {}): ThreadActivitySignals => ({
-    ...quiet,
-    ...overrides,
+describe("threadEventWakesSettledRow", () => {
+  it("ignores a stale event that predates the settle", () => {
+    assert.equal(threadEventWakesSettledRow(row({ settledAt: 500 }), 499), false);
+    assert.equal(threadEventWakesSettledRow(row({ settledAt: 500 }), 500), false);
   });
 
-  it("leaves a thread that is still settled alone", () => {
-    assert.deepEqual(
-      wokenSettledThreadIds([row({ threadId: "a", settledAt: 500 })], () => signals(), 1_000),
-      [],
-    );
+  it("wakes a settled thread after a newer event", () => {
+    assert.equal(threadEventWakesSettledRow(row({ settledAt: 500 }), 501), true);
   });
 
-  // The row is what holds bb's archive, so a thread the shelf has already put
-  // back in the inbox has to give the row up too.
-  it("reports a settled thread that has come back", () => {
-    assert.deepEqual(
-      wokenSettledThreadIds(
-        [row({ threadId: "a", settledAt: 500 }), row({ threadId: "b", settledAt: 500 })],
-        (threadId) => (threadId === "b" ? signals({ latestAttentionAt: 900 }) : signals()),
-        1_000,
-      ),
-      ["b"],
-    );
-  });
-
-  it("ignores snoozed rows", () => {
-    assert.deepEqual(
-      wokenSettledThreadIds(
-        [row({ threadId: "a", snoozedUntil: 900, snoozedAt: 500 })],
-        () => signals(),
-        1_000,
-      ),
-      [],
-    );
-  });
-
-  // A thread bb no longer reports is the deletion cleanup's job, not this
-  // one's: unsettling a row for a thread that is gone archives nothing.
-  it("skips a thread bb no longer reports", () => {
-    assert.deepEqual(
-      wokenSettledThreadIds([row({ threadId: "a", settledAt: 500 })], () => undefined, 1_000),
-      [],
-    );
+  it("ignores a snoozed row", () => {
+    assert.equal(threadEventWakesSettledRow(row({ snoozedUntil: 900, snoozedAt: 500 }), 1_000), false);
   });
 });
 

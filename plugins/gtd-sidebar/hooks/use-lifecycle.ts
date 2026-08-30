@@ -8,7 +8,6 @@ import {
   nextWakeDelayMs,
   resolveShelf,
   rowsMatch,
-  wokenSettledThreadIds,
   type ThreadActivitySignals,
   type ThreadLifecycleRow,
   type ThreadShelf,
@@ -75,7 +74,7 @@ const SHELF_GATE_MS = 250;
  * move its row without waiting for an unrelated re-render, and re-reading the
  * clock during render would make the classification unstable.
  */
-export function useLifecycle(threads: readonly PluginSidebarThread[]): LifecycleApi {
+export function useLifecycle(): LifecycleApi {
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One read, at the only moment that can still beat the first paint.
   // `useState` and not `useMemo`: React is free to throw a memo away and run
@@ -88,12 +87,6 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
   // Two questions, and one flag cannot answer both. This one asks whether the
   // shelves may be painted; a cache hit says yes immediately.
   const [shelvesReady, setShelvesReady] = useState(seededRows !== null);
-  // This one asks whether the server has spoken for itself, and only it may
-  // gate a write. Seeded rows are a guess, and the reconcile effect below
-  // un-settles threads: acting on a guess would take bb's archive off a thread
-  // and delete a row another window had just replaced.
-  const [serverRowsLoaded, setServerRowsLoaded] = useState(false);
-
   // A response belonging to a mount that is already gone must not reach the
   // cache. Its `requestSeq` is its own, so nothing in the instance that
   // replaced it can reject the older rows, and the next remount would seed
@@ -123,7 +116,6 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
           ? current
           : new Map(result.rows.map((row) => [row.threadId, row])),
       );
-      setServerRowsLoaded(true);
       // After the state, not before it: what is on screen must never depend on
       // the cache write having gone through.
       if (mountedRef.current) writeWarmStartRows(result.rows);
@@ -142,9 +134,8 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
   }, [rpc]);
 
   // The shelves keep whatever they already had, and the read comes back for
-  // them. Without a retry a single failure would also pin `serverRowsLoaded`
-  // false for the life of the mount, and that is what holds the reconcile
-  // effect below — and with it bb's archive — shut.
+  // them. Without a retry a single failure would leave the browser's warm
+  // snapshot unchallenged for the life of the mount.
   const refresh = useRetryingRead(readLifecycle);
 
   useEffect(() => {
@@ -194,39 +185,6 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     const timer = setTimeout(() => setNow(Date.now()), delay);
     return () => clearTimeout(timer);
   }, [now, rows]);
-
-  // A settled thread that comes back has to come back everywhere. The shelf
-  // already reads it as active, and this is what makes the store agree — and
-  // with it bb's archive, which `unsettle` takes off again. Ids in flight are
-  // held so a slow round trip cannot fire the same unsettle twice.
-  const wakingRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    // The one place the seeded rows are not allowed. This effect deletes rows
-    // and unarchives threads, and bb's own thread data is already warm on a
-    // remount, so without this guard a cached row plus fresh activity would
-    // destroy a park that another window or device had set in the meantime.
-    if (!serverRowsLoaded) return;
-    const threadById = new Map(threads.map((thread) => [thread.id, thread]));
-    const woken = wokenSettledThreadIds(
-      rows.values(),
-      (threadId) => {
-        const thread = threadById.get(threadId);
-        return thread === undefined ? undefined : signalsFor(thread);
-      },
-      now,
-    );
-    for (const threadId of woken) {
-      if (wakingRef.current.has(threadId)) continue;
-      wakingRef.current.add(threadId);
-      void rpc
-        .call("unsettle", { threadId })
-        .catch(() => {
-          // A failed reconcile is retried on the next thread update; the
-          // thread is already back in the inbox either way.
-        })
-        .finally(() => wakingRef.current.delete(threadId));
-    }
-  }, [now, rows, rpc, serverRowsLoaded, threads]);
 
   // Hoisted out of the api object below, which the clock invalidates every
   // minute: this set decides which archived threads stay visible, and a new

@@ -73,7 +73,7 @@ export function ThreadInbox({
     () => mergeSettledThreads(hostThreads, settledThreads),
     [hostThreads, settledThreads],
   );
-  const lifecycle = useLifecycle(threads);
+  const lifecycle = useLifecycle();
   // Seeded from the same cache the shelves use, and for the same reason: a
   // remount would otherwise draw every glyph from a fallback and swap it a
   // round trip later. Nothing gates on it — a fallback glyph is a different

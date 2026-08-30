@@ -10,7 +10,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
-import { parseArchivedThreadIds } from "./lib/lifecycle.ts";
+import { parseArchivedThreadIds, threadEventWakesSettledRow } from "./lib/lifecycle.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { gitButlerHostContract } from "./lib/gitbutler.ts";
 
@@ -270,6 +270,30 @@ export default function plugin(bb: BbPluginApi) {
     return stored.length === 0 ? [threadId] : stored;
   };
 
+  // One thread has one lifecycle owner. RPC requests from several windows and
+  // bb's thread events can arrive together, so serialize them by id. This keeps
+  // an automatic wake from unarchiving a newer settle that started meanwhile.
+  const lifecycleMutationTails = new Map<string, Promise<void>>();
+  const serializeLifecycleMutation = <T>(
+    threadId: string,
+    mutation: () => T | Promise<T>,
+  ): Promise<T> => {
+    const previous = lifecycleMutationTails.get(threadId) ?? Promise.resolve();
+    const result = previous.then(mutation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    lifecycleMutationTails.set(threadId, tail);
+    void tail.then(() => {
+      if (lifecycleMutationTails.get(threadId) === tail) {
+        lifecycleMutationTails.delete(threadId);
+      }
+      return undefined;
+    });
+    return result;
+  };
+
   /** One page is already generous; the loop is for the account that isn't. */
   const ARCHIVED_PAGE_SIZE = 200;
   const ARCHIVED_PAGE_LIMIT = 50;
@@ -398,59 +422,64 @@ export default function plugin(bb: BbPluginApi) {
       };
     },
     async settle({ threadId }) {
-      // Settling clears any snooze: they are two answers to the same
-      // question, and holding both would make the shelf order ambiguous.
-      write({
-        threadId,
-        settledAt: Date.now(),
-        snoozedUntil: null,
-        snoozedAt: null,
-        archivedThreadIds: [],
-      });
-      // The row first, then the archive. A settled thread stays on screen
-      // only because its row says so, so archiving first would blink it out
-      // of the list until the row landed.
-      const archivedThreadIds = await archiveThread(threadId);
-      if (archivedThreadIds.length > 0) {
-        // Second write, second publish — and the publish is the point. bb has
-        // just evicted the thread from the host's sidebar view, so this is
-        // what tells the frontend to fetch it back from `listSettledThreads`.
-        // Re-read rather than re-derive: a user who restored the thread while
-        // the archive was in flight must not have their un-settle overwritten
-        // by the settle that started before it.
-        const row = readOne(threadId);
-        if (row !== undefined && row.settledAt !== null) {
-          write({ ...row, archivedThreadIds });
+      return serializeLifecycleMutation(threadId, async () => {
+        // Settling clears any snooze: they are two answers to the same
+        // question, and holding both would make the shelf order ambiguous.
+        write({
+          threadId,
+          settledAt: Date.now(),
+          snoozedUntil: null,
+          snoozedAt: null,
+          archivedThreadIds: [],
+        });
+        // The row first, then the archive. A settled thread stays on screen
+        // only because its row says so, so archiving first would blink it out
+        // of the list until the row landed.
+        const archivedThreadIds = await archiveThread(threadId);
+        if (archivedThreadIds.length > 0) {
+          // Second write, second publish — and the publish is the point. bb has
+          // just evicted the thread from the host's sidebar view, so this is
+          // what tells the frontend to fetch it back from `listSettledThreads`.
+          const row = readOne(threadId);
+          if (row !== undefined && row.settledAt !== null) {
+            write({ ...row, archivedThreadIds });
+          }
         }
-      }
-      return { ok: true };
+        return { ok: true };
+      });
     },
     async unsettle({ threadId }) {
-      // The archive first, then the row — the mirror of settle, for the same
-      // reason: clearing the row while the thread is still archived would
-      // drop it out of the sidebar entirely.
-      await unarchiveThreads(archivedIdsFor(threadId));
-      clear(threadId);
-      return { ok: true };
+      return serializeLifecycleMutation(threadId, async () => {
+        // The archive first, then the row — the mirror of settle, for the same
+        // reason: clearing the row while the thread is still archived would
+        // drop it out of the sidebar entirely.
+        await unarchiveThreads(archivedIdsFor(threadId));
+        clear(threadId);
+        return { ok: true };
+      });
     },
     async snooze({ threadId, snoozedUntil }) {
-      const now = Date.now();
-      // Snoozing a settled thread takes the archive back first: a snoozed row
-      // is not on the settled shelf, so the thread has nowhere to be drawn
-      // until bb reports it again.
-      await unarchiveThreads(archivedIdsFor(threadId));
-      write({
-        threadId,
-        settledAt: null,
-        snoozedUntil,
-        snoozedAt: now,
-        archivedThreadIds: [],
+      return serializeLifecycleMutation(threadId, async () => {
+        const now = Date.now();
+        // Snoozing a settled thread takes the archive back first: a snoozed row
+        // is not on the settled shelf, so the thread has nowhere to be drawn
+        // until bb reports it again.
+        await unarchiveThreads(archivedIdsFor(threadId));
+        write({
+          threadId,
+          settledAt: null,
+          snoozedUntil,
+          snoozedAt: now,
+          archivedThreadIds: [],
+        });
+        return { ok: true };
       });
-      return { ok: true };
     },
     async unsnooze({ threadId }) {
-      clear(threadId);
-      return { ok: true };
+      return serializeLifecycleMutation(threadId, () => {
+        clear(threadId);
+        return { ok: true };
+      });
     },
   });
 
@@ -461,19 +490,24 @@ export default function plugin(bb: BbPluginApi) {
   });
 
   /**
-   * The settled shelf's heartbeat.
+   * Wake settled work from bb's authoritative event stream.
    *
-   * An archived thread is invisible to the host's sidebar view, so no host
-   * update can tell the frontend that a settled thread started working or
-   * finished a turn. Without this the un-settle rule — new attention brings a
-   * thread back — would never fire again for anything on the shelf. A publish
-   * only asks the frontend to re-read; the decision stays where it was.
+   * Archived threads are absent from every client's sidebar query. More
+   * importantly, each client can hold a different stale snapshot. Keeping the
+   * write here means an old window cannot undo a fresh settle. An event that
+   * was already in flight when the user settled is rejected by its timestamp.
    */
-  const republishIfSettled = ({ thread }: { thread: { id: string } }) => {
-    if (readOne(thread.id)?.settledAt == null) return;
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: thread.id });
+  const wakeIfSettled = ({ thread }: { thread: { id: string; updatedAt: number } }) => {
+    void serializeLifecycleMutation(thread.id, async () => {
+      const row = readOne(thread.id);
+      if (row === undefined || !threadEventWakesSettledRow(row, thread.updatedAt)) return;
+      await unarchiveThreads(archivedIdsFor(thread.id));
+      clear(thread.id);
+    }).catch((error) => {
+      bb.log.warn(`automatic un-settle failed for thread ${thread.id}: ${String(error)}`);
+    });
   };
-  bb.events.on("thread.active", republishIfSettled);
-  bb.events.on("thread.idle", republishIfSettled);
-  bb.events.on("thread.failed", republishIfSettled);
+  bb.events.on("thread.active", wakeIfSettled);
+  bb.events.on("thread.idle", wakeIfSettled);
+  bb.events.on("thread.failed", wakeIfSettled);
 }

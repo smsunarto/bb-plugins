@@ -112,30 +112,18 @@ export function resolveShelf(
 }
 
 /**
- * The settled rows that have come back on their own, so the store can let
- * them go — and, with them, bb's archive.
+ * Whether an authoritative thread event happened after this settle.
  *
- * `resolveShelf` un-settles a thread the moment it has something new to say,
- * but that is a reading of the row, not a change to it. Without this the row
- * would sit there settled forever while the thread is back in the inbox, and
- * bb would still call it archived.
- *
- * `signalsFor` returns undefined for a thread bb no longer reports; those
- * rows belong to the `thread.deleted` cleanup instead.
+ * The backend owns this decision. A browser can hold a stale sidebar snapshot,
+ * so letting every open client reconcile live work would let one old window
+ * undo a settle another window just wrote. The event timestamp and settle
+ * timestamp come from the same server clock.
  */
-export function wokenSettledThreadIds(
-  rows: Iterable<ThreadLifecycleRow>,
-  signalsFor: (threadId: string) => ThreadActivitySignals | undefined,
-  now: number,
-): string[] {
-  const woken: string[] = [];
-  for (const row of rows) {
-    if (row.settledAt === null) continue;
-    const signals = signalsFor(row.threadId);
-    if (signals === undefined) continue;
-    if (resolveShelf(row, signals, now) !== "settled") woken.push(row.threadId);
-  }
-  return woken;
+export function threadEventWakesSettledRow(
+  row: ThreadLifecycleRow,
+  eventUpdatedAt: number,
+): boolean {
+  return row.settledAt !== null && eventUpdatedAt > row.settledAt;
 }
 
 /**
