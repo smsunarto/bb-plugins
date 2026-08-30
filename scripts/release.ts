@@ -11,36 +11,83 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { WorkspacePlugin } from "./plugin-package";
 import { publishableWorkspacePlugins } from "./publish";
+import { publishableWorkspacePackages, type WorkspacePackage } from "./workspace-package";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-export function releaseTag(plugin: WorkspacePlugin): string {
-  const version = plugin.manifest.version;
-  if (typeof version !== "string" || version.trim() === "") {
-    throw new Error(`${plugin.name} has no package version`);
-  }
+interface ReleaseTargetBase {
+  component: string;
+  relativePath: string;
+  dir: string;
+  name: string;
+  manifest: {
+    version?: string;
+    private?: boolean;
+  };
+}
+
+export type ReleaseTarget =
+  | (ReleaseTargetBase & { readonly kind: "plugin"; readonly publishId: string })
+  | (ReleaseTargetBase & { readonly kind: "package"; readonly publishDirectory: string });
+
+export function pluginReleaseTarget(plugin: WorkspacePlugin): ReleaseTarget {
   if (plugin.directory !== plugin.id) {
     throw new Error(
       `${plugin.name} resolves to plugin id "${plugin.id}" but lives at plugins/${plugin.directory}`,
     );
   }
-  return `${plugin.directory}/v${version}`;
+  return {
+    kind: "plugin",
+    component: plugin.id,
+    relativePath: `plugins/${plugin.directory}`,
+    dir: plugin.dir,
+    name: plugin.name,
+    manifest: plugin.manifest,
+    publishId: plugin.id,
+  };
+}
+
+export function packageReleaseTarget(candidate: WorkspacePackage): ReleaseTarget {
+  return {
+    kind: "package",
+    component: candidate.directory,
+    relativePath: `packages/${candidate.directory}`,
+    dir: candidate.dir,
+    name: candidate.name,
+    manifest: candidate.manifest,
+    publishDirectory: candidate.directory,
+  };
+}
+
+export function releaseTargets(root: string): ReleaseTarget[] {
+  return [
+    ...publishableWorkspacePlugins(root).map(pluginReleaseTarget),
+    ...publishableWorkspacePackages(root).map(packageReleaseTarget),
+  ];
+}
+
+export function releaseTag(target: ReleaseTarget): string {
+  const version = target.manifest.version;
+  if (typeof version !== "string" || version.trim() === "") {
+    throw new Error(`${target.name} has no package version`);
+  }
+  return `${target.component}/v${version}`;
 }
 
 export type ReleaseState = "complete" | "missing";
 export type ReleaseStateLookup = (tag: string) => Promise<ReleaseState>;
 
 /** Select packages whose current version Release Please has already released. */
-export async function releasedPlugins(
-  plugins: readonly WorkspacePlugin[],
+export async function releasedTargets(
+  targets: readonly ReleaseTarget[],
   releaseState: ReleaseStateLookup,
-): Promise<WorkspacePlugin[]> {
-  const released: WorkspacePlugin[] = [];
-  for (const plugin of plugins) {
-    if (plugin.manifest.private === true) {
-      throw new Error(`${plugin.name} is private and cannot receive a release`);
+): Promise<ReleaseTarget[]> {
+  const released: ReleaseTarget[] = [];
+  for (const target of targets) {
+    if (target.manifest.private === true) {
+      throw new Error(`${target.name} is private and cannot receive a release`);
     }
-    if ((await releaseState(releaseTag(plugin))) === "complete") released.push(plugin);
+    if ((await releaseState(releaseTag(target))) === "complete") released.push(target);
   }
   return released;
 }
@@ -115,33 +162,61 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function publishPackages(plugins: readonly WorkspacePlugin[]): void {
-  if (plugins.length === 0) {
+function publishPackages(targets: readonly ReleaseTarget[]): void {
+  if (targets.length === 0) {
     console.log("no package version has a completed GitHub Release");
     return;
   }
-  execFileSync(
-    "bun",
-    ["scripts/publish.ts", ...plugins.flatMap((plugin) => ["--plugin", plugin.id])],
-    {
+
+  const pluginIds: string[] = [];
+  const packageDirectories: string[] = [];
+  for (const target of targets) {
+    switch (target.kind) {
+      case "plugin":
+        pluginIds.push(target.publishId);
+        break;
+      case "package":
+        packageDirectories.push(target.publishDirectory);
+        break;
+      default: {
+        const exhaustive: never = target;
+        throw new Error(`unhandled release target: ${JSON.stringify(exhaustive)}`);
+      }
+    }
+  }
+
+  const runPublisher = (args: string[]): void => {
+    execFileSync("bun", args, {
       cwd: ROOT,
       env: process.env,
       stdio: "inherit",
-    },
-  );
+    });
+  };
+  if (packageDirectories.length > 0) {
+    runPublisher([
+      "scripts/publish-framework.ts",
+      ...packageDirectories.flatMap((directory) => ["--package", directory]),
+    ]);
+  }
+  if (pluginIds.length > 0) {
+    runPublisher([
+      "scripts/publish.ts",
+      ...pluginIds.flatMap((pluginId) => ["--plugin", pluginId]),
+    ]);
+  }
 }
 
 async function main(): Promise<void> {
   const repository = requiredEnvironment("GITHUB_REPOSITORY");
   const token = requiredEnvironment("GITHUB_TOKEN");
-  const plugins = await releasedPlugins(publishableWorkspacePlugins(ROOT), (tag) =>
+  const targets = await releasedTargets(releaseTargets(ROOT), (tag) =>
     githubReleaseState(tag, {
       repository,
       token,
       apiUrl: process.env.GITHUB_API_URL,
     }),
   );
-  publishPackages(plugins);
+  publishPackages(targets);
 }
 
 if (import.meta.main) await main();

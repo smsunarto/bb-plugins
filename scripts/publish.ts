@@ -38,6 +38,7 @@ import {
   type PluginManifest,
   type WorkspacePlugin,
 } from "./plugin-package";
+import type { PackageManifest } from "./workspace-package";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -119,8 +120,11 @@ export function mirrorPackageName(name: string): string | null {
   return unscoped === name ? null : unscoped;
 }
 
-/** Paths that must never reach a tarball, whatever the allowlist says. */
-const FORBIDDEN_PATH = /\.woff2$|\.map$|(^|\/)\.env|node_modules|__pycache__/;
+/** Paths that must never reach any npm package, whatever the allowlist says. */
+const PACKAGE_FORBIDDEN_PATH = /\.woff2$|(^|\/)\.env|node_modules|__pycache__/;
+
+/** Plugin bundles are self-contained and must not ship their source maps. */
+const PLUGIN_FORBIDDEN_PATH = /\.map$/;
 
 /** A manifest path bb resolves against the installed package root. */
 interface BbTarget {
@@ -139,6 +143,42 @@ function tarballPath(entry: string): string {
     .replace(/^\.\/+/, "")
     .replace(/\/\*$/, "")
     .replace(/\/+$/, "");
+}
+
+interface PackageTarget {
+  label: string;
+  entry: string;
+}
+
+/** Manifest paths Node or npm resolves after installing an ordinary package. */
+function packageTargets(manifest: PackageManifest): PackageTarget[] {
+  const targets: PackageTarget[] = [];
+  const add = (label: string, entry: unknown): void => {
+    if (typeof entry === "string" && entry.trim() !== "") targets.push({ label, entry });
+  };
+
+  if (typeof manifest.bin === "string") {
+    add("bin", manifest.bin);
+  } else if (typeof manifest.bin === "object" && manifest.bin !== null) {
+    for (const [name, entry] of Object.entries(manifest.bin)) add(`bin.${name}`, entry);
+  }
+
+  const visitExport = (label: string, value: unknown): void => {
+    if (typeof value === "string") {
+      add(label, value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => visitExport(`${label}[${index}]`, entry));
+      return;
+    }
+    if (typeof value !== "object" || value === null) return;
+    for (const [condition, entry] of Object.entries(value)) {
+      visitExport(`${label}.${condition}`, entry);
+    }
+  };
+  visitExport("exports", manifest.exports);
+  return targets;
 }
 
 /**
@@ -341,8 +381,32 @@ export function publishProblems(manifest: PluginManifest, paths: readonly string
     }
   }
 
+  const forbidden = paths.filter((path) => PLUGIN_FORBIDDEN_PATH.test(path));
+  if (forbidden.length > 0) problems.push(`tarball carries ${forbidden.join(", ")}`);
+
+  return [...problems, ...packageProblems(manifest, paths)];
+}
+
+/** Every reason an ordinary npm package cannot be published as it stands. */
+export function packageProblems(manifest: PackageManifest, paths: readonly string[]): string[] {
+  const problems: string[] = [];
+  const files = new Set(paths);
+
+  for (const target of packageTargets(manifest)) {
+    const wanted = tarballPath(target.entry);
+    if (wanted === "" || wanted.startsWith("/") || /(^|\/)\.\.(\/|$)/.test(wanted)) {
+      problems.push(`${target.label} "${target.entry}" is not a path inside the package`);
+      continue;
+    }
+    if (!files.has(wanted)) {
+      problems.push(
+        `${target.label} points at "${target.entry}", which the tarball does not carry`,
+      );
+    }
+  }
+
   // ---- Distribution hygiene. ---------------------------------------------
-  const forbidden = paths.filter((path) => FORBIDDEN_PATH.test(path));
+  const forbidden = paths.filter((path) => PACKAGE_FORBIDDEN_PATH.test(path));
   if (forbidden.length > 0) problems.push(`tarball carries ${forbidden.join(", ")}`);
   if (!files.has("LICENSE")) problems.push("tarball has no LICENSE");
 
@@ -432,11 +496,9 @@ export function npmViewFailureIsMissing(stderr: string): boolean {
   return /\bE404\b/.test(stderr);
 }
 
-export type RegistryVersionState =
-  | { readonly kind: "published" }
-  | { readonly kind: "missing" };
+export type RegistryVersionState = { readonly kind: "published" } | { readonly kind: "missing" };
 
-function probeNpmVersion(target: string, version: string): RegistryVersionState {
+export function probeNpmVersion(target: string, version: string): RegistryVersionState {
   let published: string;
   try {
     published = execFileSync("npm", ["view", `${target}@${version}`, "version"], {

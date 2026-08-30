@@ -1,4 +1,5 @@
 {
+  "packages/bb-kit-core": "0.1.0",
   "plugins/agent-proxy": "0.2.4",
   "plugins/agentation": "0.2.3",
   "plugins/amp": "0.4.1",

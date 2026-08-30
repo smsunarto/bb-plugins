@@ -8,6 +8,7 @@ import {
   mirrorPackageName,
   nonRegistryProtocol,
   npmViewFailureIsMissing,
+  packageProblems,
   packedPaths,
   publishPackageVersion,
   publishProblems,
@@ -181,6 +182,52 @@ describe("publishProblems", () => {
     expect(problems).toContain("__pycache__");
     expect(problems).toContain("node_modules");
     expect(problems).toContain("no LICENSE");
+  });
+});
+
+describe("packageProblems", () => {
+  const framework = {
+    name: "@bb-kit/core",
+    version: "0.1.0",
+    description: "The framework a bb plugin is written in.",
+    license: "MIT",
+    author: "Scott Sunarto",
+    repository: "https://github.com/smsunarto/bb-plugins",
+    publishConfig: { access: "public" },
+    files: ["bin/", "dist/", "README.md", "LICENSE"],
+    bin: { "bb-kit": "./bin/bb-kit.mjs" },
+    exports: {
+      "./plugin": {
+        types: "./dist/plugin/plugin.d.ts",
+        import: "./dist/plugin/plugin.js",
+      },
+    },
+  };
+
+  test("accepts framework entry points and linked source maps", () => {
+    expect(
+      packageProblems(framework, [
+        "package.json",
+        "LICENSE",
+        "README.md",
+        "bin/bb-kit.mjs",
+        "dist/plugin/plugin.d.ts",
+        "dist/plugin/plugin.js",
+        "dist/plugin/plugin.js.map",
+      ]),
+    ).toEqual([]);
+  });
+
+  test("rejects a framework tarball that omits an exported file", () => {
+    expect(
+      packageProblems(framework, [
+        "package.json",
+        "LICENSE",
+        "README.md",
+        "bin/bb-kit.mjs",
+        "dist/plugin/plugin.d.ts",
+      ]).join("\n"),
+    ).toContain('exports../plugin.import points at "./dist/plugin/plugin.js"');
   });
 });
 

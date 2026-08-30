@@ -8,6 +8,11 @@
   "tag-separator": "/",
   "pull-request-title-pattern": "Release ${component} ${version}",
   "packages": {
+    "packages/bb-kit-core": {
+      "release-type": "node",
+      "component": "bb-kit-core",
+      "package-name": "@bb-kit/core"
+    },
     "plugins/agent-proxy": {
       "release-type": "node",
       "component": "agent-proxy",

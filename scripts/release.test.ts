@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { githubReleaseState, releasedPlugins, releaseTag } from "./release";
+import {
+  githubReleaseState,
+  pluginReleaseTarget,
+  releasedTargets,
+  releaseTag,
+  releaseTargets,
+} from "./release";
 import type { WorkspacePlugin } from "./plugin-package";
-import { publishableWorkspacePlugins } from "./publish";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -42,19 +47,22 @@ const githubOptions = {
 
 describe("Release Please routing", () => {
   test("routes each package to its matching plugin tag", () => {
-    expect(releaseTag(plugin())).toBe("gh-stack/v1.2.3");
-    expect(() => releaseTag(plugin({ id: "other" }))).toThrow("resolves to plugin id");
+    expect(releaseTag(pluginReleaseTarget(plugin()))).toBe("gh-stack/v1.2.3");
+    expect(() => pluginReleaseTarget(plugin({ id: "other" }))).toThrow("resolves to plugin id");
   });
 
   test("publishes only packages with a completed GitHub Release", async () => {
-    const amp = plugin({
-      directory: "amp",
-      id: "amp",
-      name: "@smsunarto/bb-plugin-amp",
-      manifest: { name: "@smsunarto/bb-plugin-amp", version: "2.0.0" },
-    });
+    const ghStack = pluginReleaseTarget(plugin());
+    const amp = pluginReleaseTarget(
+      plugin({
+        directory: "amp",
+        id: "amp",
+        name: "@smsunarto/bb-plugin-amp",
+        manifest: { name: "@smsunarto/bb-plugin-amp", version: "2.0.0" },
+      }),
+    );
     const calls: string[] = [];
-    const released = await releasedPlugins([plugin(), amp], async (tag) => {
+    const released = await releasedTargets([ghStack, amp], async (tag) => {
       calls.push(tag);
       return tag.startsWith("gh-stack/") ? "missing" : "complete";
     });
@@ -71,24 +79,23 @@ describe("Release Please routing", () => {
         private: true,
       },
     });
-    await expect(releasedPlugins([privatePlugin], async () => "missing")).rejects.toThrow(
-      "private",
-    );
+    await expect(
+      releasedTargets([pluginReleaseTarget(privatePlugin)], async () => "missing"),
+    ).rejects.toThrow("private");
   });
 
-  test("the shared publish policy excludes only private workspace plugins", () => {
-    const plugins = publishableWorkspacePlugins(ROOT);
-    expect(plugins.map((candidate) => candidate.directory)).toEqual([
-      "agent-proxy",
-      "agentation",
-      "amp",
-      "gh-stack",
-      "gtd-sidebar",
-      "monokai",
-      "nanocodex",
-      "notify",
+  test("the release inventory includes plugins and framework packages", () => {
+    expect(releaseTargets(ROOT).map(({ kind, relativePath }) => ({ kind, relativePath }))).toEqual([
+      { kind: "plugin", relativePath: "plugins/agent-proxy" },
+      { kind: "plugin", relativePath: "plugins/agentation" },
+      { kind: "plugin", relativePath: "plugins/amp" },
+      { kind: "plugin", relativePath: "plugins/gh-stack" },
+      { kind: "plugin", relativePath: "plugins/gtd-sidebar" },
+      { kind: "plugin", relativePath: "plugins/monokai" },
+      { kind: "plugin", relativePath: "plugins/nanocodex" },
+      { kind: "plugin", relativePath: "plugins/notify" },
+      { kind: "package", relativePath: "packages/bb-kit-core" },
     ]);
-    expect(plugins.every((candidate) => candidate.manifest.private !== true)).toBe(true);
   });
 });
 

@@ -38,8 +38,8 @@
     "typecheck": "tsc -p tsconfig.json && bun run build:framework && bun run --filter '@bb-kit/*' --parallel typecheck && bun run --filter '@smsunarto/bb-plugin-*' --parallel typecheck",
     "test": "bun run build:framework && bun test scripts/*.test.ts && bun run --filter '@bb-kit/*' --parallel test && bun run --filter '@smsunarto/bb-plugin-*' --parallel test",
     "release": "bun scripts/release.ts",
-    "publish:dry": "bun scripts/publish.ts --dry-run",
-    "publish:npm": "bun scripts/publish.ts",
+    "publish:dry": "bun scripts/publish-framework.ts --dry-run && bun scripts/publish.ts --dry-run",
+    "publish:npm": "bun scripts/publish-framework.ts && bun scripts/publish.ts",
     "clean": "bun run --filter '@bb-kit/*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean"
   },
   "devDependencies": {
