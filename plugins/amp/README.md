@@ -168,6 +168,7 @@ A healthy install does not need this command.
 
 Cold-start performance tracing is opt-in. Set `SENTRY_DSN` in the environment
 that runs bb to send one `amp.cli.startup` transaction per actual Amp CLI spawn.
+`SENTRY_ENVIRONMENT` is optional, and Amp derives the release from the built plugin metadata.
 The trace records numeric elapsed checkpoints from execute entry through
 `system/init` and the first model event. It includes only finite dimensions
 (Local or Orb, fresh or continued, MCP presence, mode, and retry attempt), never
@@ -190,17 +191,17 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 
 ## Troubleshooting
 
-| Symptom                            | Fix                                                                                             |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Plugin shows "needs configuration" | Install the Amp CLI, run `amp login`, then `bb plugin reload amp`                               |
-| Amp is not in the provider list    | `bb amp status` names the broken link                                                           |
-| Auth errors in a thread            | `amp login`, or export `AMP_API_KEY` in the environment bb runs in                              |
-| "Could not find a usable Amp CLI"  | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp`    |
-| Local tool calls rejected          | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits**    |
-| Orb tool calls rejected            | Change the permission settings in the Amp project                                               |
-| Orb opens the wrong repository     | Orb infers the project from the thread's working directory. Start the thread in that repository |
-| Orb toggle was on, thread ran Local | The armed toggle expires after 10 minutes. Toggle Orb off, then on, then send the first prompt   |
-| `Unknown session <id>` on resume   | The session mapping was pruned or removed. Start a new thread                                   |
+| Symptom                             | Fix                                                                                             |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Plugin shows "needs configuration"  | Install the Amp CLI, run `amp login`, then `bb plugin reload amp`                               |
+| Amp is not in the provider list     | `bb amp status` names the broken link                                                           |
+| Auth errors in a thread             | `amp login`, or export `AMP_API_KEY` in the environment bb runs in                              |
+| "Could not find a usable Amp CLI"   | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp`    |
+| Local tool calls rejected           | Use bb **Full** to force-allow all tools, or adjust Amp's own rules and use **Accept Edits**    |
+| Orb tool calls rejected             | Change the permission settings in the Amp project                                               |
+| Orb opens the wrong repository      | Orb infers the project from the thread's working directory. Start the thread in that repository |
+| Orb toggle was on, thread ran Local | The armed toggle expires after 10 minutes. Toggle Orb off, then on, then send the first prompt  |
+| `Unknown session <id>` on resume    | The session mapping was pruned or removed. Start a new thread                                   |
 
 ## Develop from source
 

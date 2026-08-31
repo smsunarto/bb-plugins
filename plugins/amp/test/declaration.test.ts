@@ -35,7 +35,7 @@ test("the declaration passes the SDK validator", () => {
   });
   assert.deepEqual(normalized.composerActions, []);
   assert.deepEqual(normalized.env, {
-    passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY"],
+    passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY", "SENTRY_DSN", "SENTRY_ENVIRONMENT"],
   });
   // The validator normalizes skill-root strings into descriptor objects;
   // the paths are the contract.

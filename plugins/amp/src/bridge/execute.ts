@@ -10,6 +10,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import type { AmpExecutionTrace, AmpStartupCheckpoint } from "./telemetry.ts";
+
+export type { AmpExecutionTrace } from "./telemetry.ts";
 
 /** One `amp.permissions` entry. The plugin only ever rejects tools. */
 export interface AmpPermissionRule {
@@ -55,14 +58,6 @@ export interface AmpExecuteOptions {
 }
 
 export type AmpExecutePrompt = string | AsyncIterable<AmpUserInputMessage>;
-
-/** A startup trace is deliberately narrower than the Sentry adapter. The
- * execute layer reports static checkpoint names and terminal outcomes;
- * prompts, paths, argv, stderr, and parsed messages never cross this seam. */
-export interface AmpExecutionTrace {
-  checkpoint(name: string): void;
-  finish(outcome: "ok" | "error" | "cancelled" | "retry" | "incomplete"): void;
-}
 
 export type AmpExecuteFn = (args: {
   prompt: AmpExecutePrompt;
@@ -249,7 +244,7 @@ async function* runAmp(
 ): AsyncGenerator<unknown, void, undefined> {
   signal?.throwIfAborted();
   const reported = new Set<string>();
-  const checkpoint = (name: string): void => {
+  const checkpoint = (name: AmpStartupCheckpoint): void => {
     if (reported.has(name)) return;
     reported.add(name);
     trace?.checkpoint(name);
@@ -345,7 +340,7 @@ function pumpInput(
   child: ChildProcess,
   prompt: AmpExecutePrompt,
   signal: AbortSignal | undefined,
-  checkpoint: (name: string) => void,
+  checkpoint: (name: AmpStartupCheckpoint) => void,
 ): void {
   const stdin = child.stdin;
   if (stdin === null) return;

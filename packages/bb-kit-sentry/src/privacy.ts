@@ -32,6 +32,18 @@ export function redactPluginError(error: unknown): Error {
 export function sanitizeSentryEvent(event: ErrorEvent): ErrorEvent {
   const exception = event.exception?.values?.[0];
   const frames = exception?.stacktrace?.frames?.map(sanitizeStackFrame);
+  const debugImages = event.debug_meta?.images?.flatMap((image) => {
+    if (
+      image.type !== "sourcemap" ||
+      typeof image.debug_id !== "string" ||
+      !isDebugId(image.debug_id)
+    ) {
+      return [];
+    }
+    const codeFile = sanitizeFilename(image.code_file);
+    if (codeFile === undefined) return [];
+    return [{ type: "sourcemap" as const, code_file: codeFile, debug_id: image.debug_id }];
+  });
   const tags: Record<string, string> = {};
   for (const key of CONTROLLED_TAGS) {
     const value = event.tags?.[key];
@@ -57,6 +69,9 @@ export function sanitizeSentryEvent(event: ErrorEvent): ErrorEvent {
           },
         }),
     ...(Object.keys(tags).length === 0 ? {} : { tags }),
+    ...(debugImages === undefined || debugImages.length === 0
+      ? {}
+      : { debug_meta: { images: debugImages } }),
     exception: {
       values: [
         {
@@ -163,4 +178,8 @@ function sanitizeFilename(filename: string | undefined): string | undefined {
     }
   }
   return normalized.split("/").at(-1);
+}
+
+function isDebugId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value);
 }

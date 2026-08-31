@@ -9,10 +9,11 @@
     "packages/*"
   ],
   "comments": {
-    "trustedDependencies": "Bun runs no dependency lifecycle script unless the package is trusted, and declaring this field REPLACES Bun's default allow list rather than extending it -- so every package that needs its script must be named here. Only two dependencies have one: esbuild, whose `node install.js` links a standalone binary and is ABI-independent, and better-sqlite3, which is deliberately absent. better-sqlite3 is a native addon used at the BB and plain-Node compatibility boundary, and its `prebuild-install` picks a binary by the NODE_MODULE_VERSION of the runtime that executes the script. Bun reports a different Node ABI from the supported Node 22 runtime, so a Bun-run install fetches a binary that BB and plain Node cannot load. Leaving it untrusted skips that wrong-ABI download and lets the root postinstall fetch the Node binary.",
+    "trustedDependencies": "Bun runs no dependency lifecycle script unless the package is trusted, and declaring this field REPLACES Bun's default allow list rather than extending it -- so every package that needs its script must be named here. esbuild links its ABI-independent binary. @sentry/cli installs the pinned release binary used for source-map upload. better-sqlite3 is deliberately absent. It is a native addon used at the BB and plain-Node compatibility boundary, and its `prebuild-install` picks a binary by the NODE_MODULE_VERSION of the runtime that executes the script. Bun reports a different Node ABI from the supported Node 22 runtime, so a Bun-run install fetches a binary that BB and plain Node cannot load. Leaving it untrusted skips that wrong-ABI download and lets the root postinstall fetch the Node binary.",
     "postinstall": "better-sqlite3 is left out of trustedDependencies above, so nothing has built it by the time this runs. Invoking prebuild-install under `node` resolves the binary against the ABI used by the supported BB and plain-Node runtime. This is what `npm rebuild better-sqlite3` used to do, without needing npm on PATH. There is no node-gyp fallback here, unlike better-sqlite3's own `install` script -- a platform with no published prebuild fails loudly instead of building from source."
   },
   "trustedDependencies": [
+    "@sentry/cli",
     "esbuild"
   ],
   "config": {
@@ -41,6 +42,7 @@
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@hugeicons/core-free-icons": "4.2.3",
+    "@sentry/cli": "3.7.0",
     "@types/bun": "1.3.14",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.77.0",

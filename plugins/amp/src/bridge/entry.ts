@@ -12,10 +12,6 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  sentryPerformanceReporter,
-  type SentryPerformanceReporter,
-} from "@bb-kit/sentry/performance";
-import {
   BRIDGE_JSON_RPC_ERRORS,
   BRIDGE_REQUEST_METHODS,
   PROVIDER_BRIDGE_PROTOCOL_VERSION,
@@ -63,6 +59,12 @@ import {
   type SessionStore,
 } from "./session.ts";
 import { createThreadWriter, type ThreadWriter } from "./timeline.ts";
+import {
+  createAmpPerformanceReporter,
+  createIdempotentShutdown,
+  startAmpStartupTrace,
+  type AmpPerformanceReporter,
+} from "./telemetry.ts";
 import { runMcpStdioChild, startToolProxy, type ToolProxy } from "./tool-proxy.ts";
 
 // The MCP child re-executes this artifact; it must never touch bridge state.
@@ -103,13 +105,14 @@ interface ManagedSession {
 interface BridgeState {
   store: SessionStore;
   oracle: OracleReports;
-  performance: SentryPerformanceReporter | undefined;
+  performance: AmpPerformanceReporter | undefined;
   /** The bridge's persistent data directory. The composer's armed Orb
    * intent (src/orb-intent.ts) is consumed from here at thread/start. */
   dataDir: string;
 }
 
 let state: BridgeState | null = null;
+let shutdownBridge: () => Promise<void> = async () => {};
 const sessions = new Map<string, ManagedSession>();
 
 const io = createBridgeIo();
@@ -271,11 +274,7 @@ async function openSession(args: {
     execute: createAmpExecute({ cliPath }),
     env: {},
     retry: createRetryState(),
-    startTrace: ({ executor, continuation, mcp, mode, attempt }) =>
-      args.bridge.performance?.start({
-        operation: "cli.startup",
-        variant: `${executor}.${continuation}.${mcp ? "mcp" : "no-mcp"}.${mode}.attempt-${attempt}`,
-      }),
+    startTrace: (context) => startAmpStartupTrace(args.bridge.performance, context),
   };
   const mcpConfig = proxy?.config ?? null;
   const orbProject = readProviderOptions(providerOptionsOf(args.options)).orbProject ?? null;
@@ -660,19 +659,23 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
     state = {
       store: createSessionStore({ dir: join(context.dataDir, "sessions") }),
       oracle: createOracleReports(),
-      performance: sentryPerformanceReporter({
-        dsn: process.env.SENTRY_DSN,
-        release: process.env.SENTRY_RELEASE,
-        environment: process.env.SENTRY_ENVIRONMENT,
-      })({ pluginId: context.pluginId }),
+      performance: createAmpPerformanceReporter(context.pluginId),
       dataDir: context.dataDir,
     };
+    shutdownBridge = createIdempotentShutdown(async () => {
+      for (const threadId of Array.from(sessions.keys())) {
+        dropSession(threadId, "the bridge is shutting down");
+      }
+      await state?.performance?.dispose(2_000);
+    });
+  },
+  onClose() {
+    void shutdownBridge();
+  },
+  onSigint() {
+    void shutdownBridge();
   },
   onSigterm() {
-    // Release-abort everything: no settlement deltas, nothing fabricated.
-    for (const threadId of Array.from(sessions.keys())) {
-      dropSession(threadId, "the bridge is shutting down");
-    }
-    void state?.performance?.dispose(2_000);
+    void shutdownBridge();
   },
 });

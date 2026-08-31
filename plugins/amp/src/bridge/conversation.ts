@@ -21,6 +21,7 @@ import {
   type MCPConfig,
 } from "./execute.ts";
 import { toAmpPermissions } from "./options.ts";
+import type { AmpStartupTraceContext } from "./telemetry.ts";
 
 export type {
   AmpExecuteFn,
@@ -237,14 +238,6 @@ export interface AmpConversationDeps {
   startTrace?: (context: AmpStartupTraceContext) => AmpExecutionTrace | undefined;
 }
 
-export interface AmpStartupTraceContext {
-  readonly executor: "local" | "orb";
-  readonly continuation: "fresh" | "continued";
-  readonly mcp: boolean;
-  readonly mode: SessionShape["mode"];
-  readonly attempt: number;
-}
-
 export interface AmpConversationArgs {
   shape: SessionShape;
   /** Amp thread id to continue, or null for a fresh thread. */
@@ -330,7 +323,7 @@ export function createAmpConversation(args: AmpConversationArgs): AmpConversatio
         continuation: continueFrom === null ? "fresh" : "continued",
         mcp: mcpConfig !== null && Object.keys(mcpConfig).length > 0,
         mode: shape.mode,
-        attempt,
+        attempt: attempt === 0 ? 0 : 1,
       });
       let traceFinished = false;
       const finishTrace = (outcome: Parameters<AmpExecutionTrace["finish"]>[0]): void => {
@@ -475,7 +468,7 @@ export function runOrb(args: OrbRunArgs): OrbRun {
         continuation: continueFrom === null ? "fresh" : "continued",
         mcp: false,
         mode: shape.mode,
-        attempt,
+        attempt: attempt === 0 ? 0 : 1,
       });
       let traceFinished = false;
       const finishTrace = (outcome: Parameters<AmpExecutionTrace["finish"]>[0]): void => {

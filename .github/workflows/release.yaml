@@ -77,6 +77,14 @@ jobs:
           fi
           bun run --filter "$package_name" build
 
+      - name: Upload Amp source maps
+        if: ${{ matrix.path == 'plugins/amp' }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: bun scripts/sentry-release.ts "${{ matrix.path }}"
+
       - name: Publish package
         working-directory: ${{ matrix.path }}
         run: npm publish --access public

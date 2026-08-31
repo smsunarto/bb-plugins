@@ -34,13 +34,14 @@
   "scripts": {
     "build": "bun build src/node.ts src/performance.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "bun test --timeout=30000",
+    "test": "bun run build && bun test --timeout=30000",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@sentry/node": "^10.72.0"
   },
   "devDependencies": {
+    "@bb-kit/core": "0.1.0",
     "@types/node": "^22.0.0",
     "typescript": "^6.0.0"
   }

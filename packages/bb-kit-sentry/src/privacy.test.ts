@@ -45,6 +45,20 @@ test("sanitizeSentryEvent returns only the privacy allowlist", () => {
     transaction: "private-transaction",
     modules: { private: "1.0.0" },
     fingerprint: ["private-fingerprint"],
+    debug_meta: {
+      images: [
+        {
+          type: "sourcemap",
+          code_file: "file:///Users/alice/git/bb-plugins/plugins/notify/dist/server.js",
+          debug_id: "01234567-89ab-cdef-0123-456789abcdef",
+        },
+        {
+          type: "sourcemap",
+          code_file: "/Users/alice/private.js",
+          debug_id: "not-a-debug-id",
+        },
+      ],
+    },
     exception: {
       values: [
         {
@@ -101,6 +115,15 @@ test("sanitizeSentryEvent returns only the privacy allowlist", () => {
       "bb.plugin.id": "notify",
       "bb.kit.boundary": "rpc.execute",
       "bb.kit.operation": "send",
+    },
+    debug_meta: {
+      images: [
+        {
+          type: "sourcemap",
+          code_file: "plugins/notify/dist/server.js",
+          debug_id: "01234567-89ab-cdef-0123-456789abcdef",
+        },
+      ],
     },
     exception: {
       values: [

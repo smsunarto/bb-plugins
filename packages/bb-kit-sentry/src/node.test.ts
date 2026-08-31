@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
+import type { PluginErrorReporterFactory } from "@bb-kit/core/plugin";
 import { sentryErrorReporter } from "./node.ts";
+
+const coreCompatibleReporter: PluginErrorReporterFactory = sentryErrorReporter({});
+void coreCompatibleReporter;
 
 test("missing and blank DSNs disable reporting", () => {
   assert.equal(sentryErrorReporter({})({ pluginId: "demo" }), undefined);

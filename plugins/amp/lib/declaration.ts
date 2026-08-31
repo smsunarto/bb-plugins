@@ -3,6 +3,7 @@ import type { PluginProviderDeclaration } from "@get-bb/plugin-sdk";
 import { AMP_AGENT } from "../src/execution-target.ts";
 import { AMP_FALLBACK_MODELS } from "../src/bridge/model-catalog.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "./provision.ts";
+import { AMP_SENTRY_ENV } from "./telemetry.ts";
 
 /** `amp/oracle` timeline items carry only this receipt. The report body
  *  stays in the XDG store and the plugin's `getOracleReport` RPC serves it. */
@@ -80,7 +81,9 @@ export function buildAmpProviderDeclaration(paths: AmpProviderPaths): PluginProv
     // never workspace-dependent. The fallback mirrors the bridge's live
     // model/list answer so the picker is populated before any probe.
     models: { scope: "host", fallback: AMP_FALLBACK_MODELS },
-    env: { passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY"] },
+    env: {
+      passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY", ...AMP_SENTRY_ENV],
+    },
     experimental_nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
     deriveProviderOptions: () => ({ ampCliPath: paths.ampCliPath }),
   };
