@@ -47,6 +47,8 @@
   "files": [
     "dist/server.js",
     "dist/server.meta.json",
+    "dist/host.js",
+    "dist/host.meta.json",
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",

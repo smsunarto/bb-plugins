@@ -166,7 +166,7 @@ describe("setUpBbDevInstance", () => {
           if (args[0] === "plugin" && args[1] === "config" && args.length === 4) {
             return JSON.stringify({
               schema: { tidy: { type: "boolean", default: true } },
-              values: { tidy: args[2] === id ? false : true },
+              values: { tidy: args[2] !== id },
             });
           }
           return JSON.stringify({ ok: true });

@@ -39,7 +39,7 @@ test("concurrent consumers of one armed intent produce exactly one winner", asyn
       Bun.spawn(["bun", worker, root, gate, join(root, `ready.${i}`)], {
         stdout: "pipe",
         stderr: "pipe",
-      })
+      }),
     );
     const deadline = Bun.nanoseconds() + 10_000_000_000;
     while (running.some((_unused, i) => !existsSync(join(root, `ready.${i}`)))) {
@@ -60,12 +60,12 @@ test("concurrent consumers of one armed intent produce exactly one winner", asyn
         ]);
         if (err.length > 0) throw new Error(err);
         return out;
-      })
+      }),
     );
     assert.equal(
       all.filter((result) => result === "won").length,
       1,
-      `exactly one consumer must win, got ${all.join(",")}`
+      `exactly one consumer must win, got ${all.join(",")}`,
     );
   } finally {
     rmSync(root, { force: true, recursive: true });

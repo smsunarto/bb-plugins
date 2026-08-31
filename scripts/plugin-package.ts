@@ -59,6 +59,7 @@ export interface PluginManifest {
   bb?: {
     name?: string;
     server?: string;
+    host?: string;
     app?: string;
     skills?: string[];
     commands?: string[] | string;

@@ -77,7 +77,12 @@ export const overview = defineQuery({
       branch: status.branch,
       gitEntries: status.entries,
       groups: groupDefinitions(skills).map((group) =>
-        toOverviewGroup(group, (path) => git.pathExists(repoPath, path), dirtyPaths, removableSkillNames),
+        toOverviewGroup(
+          group,
+          (path) => git.pathExists(repoPath, path),
+          dirtyPaths,
+          removableSkillNames,
+        ),
       ),
     };
   },

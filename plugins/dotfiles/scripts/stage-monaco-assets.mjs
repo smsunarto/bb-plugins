@@ -23,11 +23,7 @@ async function bundleIsFresh() {
   if (outputTimes.some((value) => value === null)) return false;
   const bundleDir = path.join(pluginRoot, "monaco-bundle");
   const bundleInputs = (await readdir(bundleDir)).map((name) => path.join(bundleDir, name));
-  const inputs = [
-    import.meta.filename,
-    path.join(pluginRoot, "package.json"),
-    ...bundleInputs,
-  ];
+  const inputs = [import.meta.filename, path.join(pluginRoot, "package.json"), ...bundleInputs];
   const inputTimes = await Promise.all(inputs.map(mtime));
   const newestInput = Math.max(...inputTimes.filter((value) => value !== null));
   const oldestOutput = Math.min(...outputTimes);
@@ -38,7 +34,13 @@ async function validateBundle(stageDir, editorBuild) {
   const inputs = Object.keys(editorBuild.metafile.inputs);
   const output = await readFile(path.join(stageDir, "editor.js"), "utf8");
   const missing = [
-    ["language grammars", () => inputs.some((input) => input.includes("languages/definitions/") || input.includes("basic-languages"))],
+    [
+      "language grammars",
+      () =>
+        inputs.some(
+          (input) => input.includes("languages/definitions/") || input.includes("basic-languages"),
+        ),
+    ],
     ["editor contributions", () => inputs.some((input) => input.includes("editor/contrib/"))],
     ["find widget", () => output.includes("find-widget")],
     ["folding", () => output.includes("foldRecursively")],
@@ -106,8 +108,10 @@ try {
   });
   await validateBundle(stageDir, editorBuild);
   await promote(stageDir);
-  const total = [...Object.values(editorBuild.metafile.outputs), ...Object.values(workerBuild.metafile.outputs)]
-    .reduce((bytes, output) => bytes + output.bytes, 0);
+  const total = [
+    ...Object.values(editorBuild.metafile.outputs),
+    ...Object.values(workerBuild.metafile.outputs),
+  ].reduce((bytes, output) => bytes + output.bytes, 0);
   console.log(`monaco: built ${outDir} (${(total / 1024 / 1024).toFixed(2)} MB)`);
 } finally {
   await rm(stageDir, { recursive: true, force: true });

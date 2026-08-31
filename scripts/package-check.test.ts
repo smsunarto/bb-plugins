@@ -26,6 +26,7 @@ function healthy(): { manifest: PluginManifest; paths: string[] } {
       files: ["dist/", "assets/", "skills/", "LICENSE"],
       bb: {
         server: "./dist/server.js",
+        host: "./dist/host.js",
         app: "./dist/app.js",
         skills: ["skills"],
         branding: {
@@ -43,6 +44,8 @@ function healthy(): { manifest: PluginManifest; paths: string[] } {
       "assets/logo-dark.svg",
       "dist/server.js",
       "dist/server.meta.json",
+      "dist/host.js",
+      "dist/host.meta.json",
       "dist/app.js",
       "dist/app.meta.json",
       "skills/example/SKILL.md",
@@ -68,6 +71,20 @@ describe("pluginPackageProblems", () => {
     expect(problems[0]).toContain("bb.server");
     expect(problems[0]).toContain("./server.ts");
     expect(problems[0]).toContain("files");
+  });
+
+  test("rejects a bb.host and its fixed artifacts when the tarball leaves them out", () => {
+    const { manifest, paths } = healthy();
+    manifest.bb!.host = "./host/host.ts";
+
+    const problems = pluginPackageProblems(
+      manifest,
+      paths.filter((path) => !path.startsWith("dist/host")),
+    );
+    expect(problems).toHaveLength(3);
+    expect(problems.join("\n")).toContain("bb.host");
+    expect(problems.join("\n")).toContain("dist/host.js");
+    expect(problems.join("\n")).toContain("dist/host.meta.json");
   });
 
   test("rejects missing branding, theme, and skills targets", () => {

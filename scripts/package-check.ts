@@ -127,6 +127,7 @@ export function bbTargets(manifest: PluginManifest): BbTarget[] {
   };
 
   file("bb.server", bb.server);
+  file("bb.host", bb.host);
   file("bb.app", bb.app);
   // branding.icon is either a host icon NAME or a plugin-relative path. bb
   // reads it out of the package only in the "./" form (isPluginOwnedIconPath).
@@ -173,7 +174,7 @@ export function sourceClosureProblems(
   paths: readonly string[],
 ): string[] {
   const packed = new Set(paths);
-  const entries = [manifest.bb?.server, manifest.bb?.app].filter(
+  const entries = [manifest.bb?.server, manifest.bb?.host, manifest.bb?.app].filter(
     (entry): entry is string => typeof entry === "string" && entry.trim() !== "",
   );
 
@@ -276,6 +277,7 @@ export function pluginPackageProblems(
   // dist/app.js + dist/app.meta.json gate an npm install outright
   // (managed-plugin-artifacts.ts), and the runtime reads dist/server.meta.json.
   const fixed = ["dist/server.meta.json"];
+  if (manifest.bb?.host) fixed.push("dist/host.js", "dist/host.meta.json");
   if (manifest.bb?.app) fixed.push("dist/app.js", "dist/app.meta.json");
   for (const path of fixed) {
     if (!files.has(path)) {
@@ -403,7 +405,11 @@ function main(): void {
         : fail(`${id}: package.json has no version`);
     if (!existsSync(join(dir, "LICENSE"))) fail(`${id}: no LICENSE in the package`);
 
-    for (const artifact of ["server", ...(manifest.bb?.app ? ["app"] : [])]) {
+    for (const artifact of [
+      "server",
+      ...(manifest.bb?.host ? ["host"] : []),
+      ...(manifest.bb?.app ? ["app"] : []),
+    ]) {
       const metaPath = join(dir, "dist", `${artifact}.meta.json`);
       if (!existsSync(metaPath)) fail(`${id}: missing dist/${artifact}.meta.json — build first`);
       const meta = JSON.parse(readFileSync(metaPath, "utf8"));

@@ -56,8 +56,6 @@ const MONACO_TOKEN_RULES: readonly CodeThemeRule[] = [
 ];
 
 export function readCodeThemeRules(): CodeThemeRuleFile {
-  const vendored = JSON.parse(
-    readFileSync(codeThemeRulesPath, "utf8"),
-  ) as CodeThemeRuleFile;
+  const vendored = JSON.parse(readFileSync(codeThemeRulesPath, "utf8")) as CodeThemeRuleFile;
   return { ...vendored, rules: [...vendored.rules, ...MONACO_TOKEN_RULES] };
 }

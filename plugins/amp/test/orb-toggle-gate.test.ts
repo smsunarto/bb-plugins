@@ -57,11 +57,9 @@ const ready = (providers: unknown[]) => ({ providers, status: "ready" as const }
 test("a provider directory error keeps the toggle off a non-Amp composer", async () => {
   paintComposer(CLAUDE);
   globalThis.document.body.setAttribute("data-app-composer", "");
-  const slot = renderSlot(
-    toggleAction,
-    {},
-    { providers: { providers: [], status: "error" } } as never,
-  );
+  const slot = renderSlot(toggleAction, {}, {
+    providers: { providers: [], status: "error" },
+  } as never);
   await act(async () => {});
   // status is "error", not "loading", so the old guard fell through to the
   // fail-open branch and armed Orb from a Claude composer.

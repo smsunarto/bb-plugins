@@ -1006,15 +1006,21 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve) => {
-      const done = () => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", done);
-        resolve();
-      };
-      const timer = setTimeout(done, ms);
-      signal?.addEventListener("abort", done, { once: true });
+    let resolveSleep!: () => void;
+    const sleeping = new Promise<void>((resolve) => {
+      resolveSleep = resolve;
     });
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolveSleep();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+    return sleeping;
   }
 
   /** Resolve true as soon as `test()` passes, false on timeout or abort. */
@@ -1025,26 +1031,29 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<boolean> {
     if (test()) return Promise.resolve(true);
 
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        watchers.delete(wake);
-        signal?.removeEventListener("abort", onAbort);
-        resolve(value);
-      };
-      const wake = () => {
-        if (test()) finish(true);
-      };
-      const onAbort = () => finish(false);
-
-      const timer = setTimeout(() => finish(false), timeoutMs);
-      watchers.add(wake);
-      signal?.addEventListener("abort", onAbort, { once: true });
-      if (disposed) finish(false);
+    let resolveChange!: (changed: boolean) => void;
+    const change = new Promise<boolean>((resolve) => {
+      resolveChange = resolve;
     });
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      watchers.delete(wake);
+      signal?.removeEventListener("abort", onAbort);
+      resolveChange(value);
+    };
+    const wake = () => {
+      if (test()) finish(true);
+    };
+    const onAbort = () => finish(false);
+
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    watchers.add(wake);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (disposed) finish(false);
+    return change;
   }
 
   bb.agents.contributeInstructions(() => {

@@ -28,6 +28,7 @@ export function installDom(): void {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
       `installDom() could not resolve jsdom. Add "jsdom" to your plugin's devDependencies and install it. (${message})`,
+      { cause: error },
     );
   }
 

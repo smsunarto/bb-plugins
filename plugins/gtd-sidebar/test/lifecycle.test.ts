@@ -131,7 +131,10 @@ describe("threadEventWakesSettledRow", () => {
   });
 
   it("ignores a snoozed row", () => {
-    assert.equal(threadEventWakesSettledRow(row({ snoozedUntil: 900, snoozedAt: 500 }), 1_000), false);
+    assert.equal(
+      threadEventWakesSettledRow(row({ snoozedUntil: 900, snoozedAt: 500 }), 1_000),
+      false,
+    );
   });
 });
 

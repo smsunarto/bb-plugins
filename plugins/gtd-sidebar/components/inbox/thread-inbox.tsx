@@ -260,10 +260,7 @@ export function ThreadInbox({
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
 
-  const settleAndAdvance = (
-    threadId: string,
-    sectionThreads: readonly PluginSidebarThread[],
-  ) => {
+  const settleAndAdvance = (threadId: string, sectionThreads: readonly PluginSidebarThread[]) => {
     lifecycle.settle(threadId);
     const nextThreadId = nextThreadIdAfterSettle(sectionThreads, threadId, activeThreadId);
     if (nextThreadId === null) return;
