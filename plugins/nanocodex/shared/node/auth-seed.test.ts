@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "bun:test";
-import { inspectAuthSeed } from "../src/auth.ts";
+import { inspectAuthSeed } from "./auth-seed.ts";
 
 test("Codex auth seeding is bounded, account-consistent, and never returned in diagnostics", async () => {
   const root = await mkdtemp(join(tmpdir(), "nanocodex-auth-"));
@@ -15,10 +15,18 @@ test("Codex auth seeding is bounded, account-consistent, and never returned in d
     "https://api.openai.com/auth": { chatgpt_account_id: accountId },
   });
   try {
-    await writeFile(path, JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: { access_token: accessToken, refresh_token: "refresh-secret", account_id: accountId },
-    }), { mode: 0o600 });
+    await writeFile(
+      path,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: accessToken,
+          refresh_token: "refresh-secret",
+          account_id: accountId,
+        },
+      }),
+      { mode: 0o600 },
+    );
     await chmod(path, 0o600);
     const ready = await inspectAuthSeed({ NANOCODEX_AUTH_FILE: path }, now);
     assert.equal(ready.state, "ready");

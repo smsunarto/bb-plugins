@@ -1,5 +1,5 @@
 /**
- * `src/bridge/timeline.ts` — the ONE place that knows grammar-v3.
+ * `host/bridge/timeline.ts` — the ONE place that knows grammar-v3.
  *
  * Nothing outside this file constructs a `ThreadDelta`. Grep for
  * `kind: "item.` and it should only ever match here. `project.ts` calls
@@ -48,7 +48,7 @@ import {
   type ThreadEventTokenUsageBreakdown,
   type ThreadEventTurnStatus,
 } from "@get-bb/plugin-sdk/provider-bridge";
-import { NANOCODEX_CONTEXT_WINDOW_TOKENS } from "../catalog.ts";
+import { NANOCODEX_CONTEXT_WINDOW_TOKENS } from "../../shared/provider-catalog.ts";
 
 // ---------------------------------------------------------------------------
 // Values that pair "what it is" with "how it reads"
@@ -108,7 +108,11 @@ export interface ThreadWriter {
   addUsage(last: ThreadEventTokenUsageBreakdown, promptTokens: number | null): void;
 
   /** `provider/recovery` — unsolicited hints only. A hint explaining a request failure rides that request's `error.data.recovery` instead; the two carriers are mutually exclusive. */
-  recovery(hint: { kind: "authRequired" | "rateLimited" | "restartRecommended" | "sessionArchived" | "staleTurn"; message: string; retryable: boolean }): void;
+  recovery(hint: {
+    kind: "authRequired" | "rateLimited" | "restartRecommended" | "sessionArchived" | "staleTurn";
+    message: string;
+    retryable: boolean;
+  }): void;
 
   /** `provider/raw`. Droppable diagnostics; never blocks real deltas. Used for `unknown` event kinds only — `noise` is dropped without a notification. */
   raw(payload: JsonValue, coverage: "noise" | "unknown"): void;
@@ -337,7 +341,11 @@ export interface TurnScribe {
 /** @internal Constructed only through `ThreadWriter.scribe`. */
 export function createTurnScribe(
   writer: ThreadWriter,
-  args: { ordinal: number; providerThreadId: string; clientRequestIds: readonly ClientTurnRequestId[] },
+  args: {
+    ordinal: number;
+    providerThreadId: string;
+    clientRequestIds: readonly ClientTurnRequestId[];
+  },
 ): TurnScribe {
   const { ordinal, providerThreadId, clientRequestIds } = args;
   // Deterministic, with no process entropy or clock, so resume keeps item ids stable.
@@ -500,9 +508,7 @@ export function createTurnScribe(
     output(item, channel, text) {
       if (!items.has(item.key)) return;
       if (text.length === 0) return;
-      writer.emit([
-        { kind: "item.outputDelta", channel, key: { providerItemId: item.key }, text },
-      ]);
+      writer.emit([{ kind: "item.outputDelta", channel, key: { providerItemId: item.key }, text }]);
     },
     compacted() {
       writer.emit([{ kind: "context.compacted" }]);

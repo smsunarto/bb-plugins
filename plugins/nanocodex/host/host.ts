@@ -8,7 +8,5 @@
  * AI services and no native roots. If a settings panel later needs one, it is
  * added here beside the re-export, not in place of it.
  */
-export { experimental_providerBridge } from "./src/bridge/entry.ts";
-export {
-  initializeEmbeddedNanocodexModule as experimental_initializeNanocodexModule,
-} from "./src/binding.ts";
+export { experimental_providerBridge } from "./bridge/entry.ts";
+export { initializeEmbeddedNanocodexModule as experimental_initializeNanocodexModule } from "./binding.ts";

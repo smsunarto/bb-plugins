@@ -11,12 +11,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { OverviewResult } from "../server/rpc/overview.ts";
 import { dotfilesQueryClient, DotfilesBoundary } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { rpc, type RPCOutput } from "./rpc.ts";
 import { useDotfilesRoute, type DotfilesNavigation } from "./route.ts";
 import { errorMessage } from "./tasks.ts";
 
+type OverviewResult = RPCOutput<"overview">;
 type OverviewFile = OverviewResult["groups"][number]["files"][number];
 
 interface PendingRemoval {
@@ -29,8 +29,7 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
   const overview = rpc.overview.useQuery();
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const removeSkillMutation = rpc.removeSkill.useMutation({
-    onSuccess: () =>
-      dotfilesQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
+    onSuccess: () => dotfilesQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
   });
 
   async function removeSkill({ name, path }: PendingRemoval): Promise<void> {

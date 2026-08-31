@@ -7,7 +7,7 @@ import type {
   TurnResult,
   TurnUsage,
 } from "nanocodex/host";
-import type { NativeAgentOptions, NativeBinding } from "../../src/binding.ts";
+import type { NativeAgentOptions, NativeBinding } from "../binding.ts";
 
 export interface TurnPlan {
   readonly snapshot: SessionSnapshot;
@@ -26,7 +26,11 @@ export class FakeNativeBinding implements NativeBinding {
 
   async createAgent(options: NativeAgentOptions): Promise<DefaultAgent> {
     this.createCalls.push(options);
-    if (this.failNextPromotion && options.durability !== undefined && options.resume !== undefined) {
+    if (
+      this.failNextPromotion &&
+      options.durability !== undefined &&
+      options.resume !== undefined
+    ) {
       this.failNextPromotion = false;
       throw new Error("promotion failed");
     }
@@ -72,7 +76,9 @@ export class FakeAgent {
       sessionId,
       type: "fake",
       uid: sessionId,
-      extend: (() => { throw new Error("unused"); }) as DefaultAgent["extend"],
+      extend: (() => {
+        throw new Error("unused");
+      }) as DefaultAgent["extend"],
       dispose() {},
       events: {
         watch: () => ({
@@ -99,7 +105,9 @@ export class FakeAgent {
         },
         setFastMode: async () => {},
         setThinking: async () => {},
-        shutdown: async () => { this.shutdowns += 1; },
+        shutdown: async () => {
+          this.shutdowns += 1;
+        },
         spawn: async () => this.binding.newAgent(this.snapshot).value,
         realtime: {
           start: async () => this.context(),
@@ -113,10 +121,12 @@ export class FakeAgent {
   }
 
   private context() {
-    return this.binding.compactContext ?? {
-      workspace: this.snapshot?.workspace ?? "/workspace",
-      history: this.snapshot?.history ?? [],
-    };
+    return (
+      this.binding.compactContext ?? {
+        workspace: this.snapshot?.workspace ?? "/workspace",
+        history: this.snapshot?.history ?? [],
+      }
+    );
   }
 
   private prompt(input: PromptInput): Turn {

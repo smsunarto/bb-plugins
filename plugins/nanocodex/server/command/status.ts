@@ -1,6 +1,6 @@
 import { defineCommand } from "@bb-kit/core/command";
-import { inspectAuthSeed } from "../../src/auth.ts";
-import { NANOCODEX_BINDING_VERSION } from "../../src/catalog.ts";
+import { inspectAuthSeed } from "../../shared/node/auth-seed.ts";
+import { NANOCODEX_BINDING_VERSION } from "../../shared/provider-catalog.ts";
 
 export const status = defineCommand({
   summary: "Show NanoCodex binding and authentication status",

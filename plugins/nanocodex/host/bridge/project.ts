@@ -1,5 +1,5 @@
 /**
- * `src/bridge/project.ts` — one nanocodex event stream to two outputs.
+ * `host/bridge/project.ts` — one nanocodex event stream to two outputs.
  *
  * A `TurnProjector` translates typed AgentEvent objects into bb timeline rows.
  * It does not own request settlement, checkpoints, or native session history.
@@ -113,7 +113,10 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
   let firstCallInputTokens: number | null = null;
   // All keys come from scribe.itemKey / scribe.mintKey, so they are
   // turn-namespaced by construction and cannot alias a previous turn's items.
-  const openToolItems = new Map<string, { item: OpenItem; row: TimelineRow; tool: string; arguments: string | Record<string, unknown> }>();
+  const openToolItems = new Map<
+    string,
+    { item: OpenItem; row: TimelineRow; tool: string; arguments: string | Record<string, unknown> }
+  >();
   const openReasoningKeys = new Map<number, ItemKey>();
   const streamedMessageText = new Map<string, string>();
   let openCompaction: OpenItem | null = null;
@@ -279,15 +282,19 @@ export function createTurnProjector(args: TurnProjectorArgs): TurnProjector {
       case "run.completed":
       case "run.failed": {
         const payload = runTerminalSchema.safeParse(envelope.payload);
-        if (envelope.type === "run.failed" || (payload.success && payload.data.status === "failed")) {
+        if (
+          envelope.type === "run.failed" ||
+          (payload.success && payload.data.status === "failed")
+        ) {
           const message = messageOf(envelope.payload) ?? "nanocodex run failed";
           scribe.fail({ message, settlesTurn: false });
         }
         return true;
       }
       default: {
-        const coverage =
-          (NANOCODEX_EVENT_VISIBILITY as Record<string, "normalized" | "noise">)[envelope.type];
+        const coverage = (NANOCODEX_EVENT_VISIBILITY as Record<string, "normalized" | "noise">)[
+          envelope.type
+        ];
         if (coverage === undefined) args.raw(envelope as unknown as JsonValue);
         return isTerminalKind(envelope.type);
       }

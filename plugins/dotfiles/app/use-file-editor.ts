@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReadFileResult } from "../server/rpc/read-file.ts";
 import { dotfilesQueryClient } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { rpc, type RPCOutput } from "./rpc.ts";
 import type { RepoPath } from "./route.ts";
 import { errorMessage, markRenderStale } from "./tasks.ts";
+
+type ReadFileResult = RPCOutput<"readFile">;
 
 export type FileEditor =
   | { readonly status: "loading" }

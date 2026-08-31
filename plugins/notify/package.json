@@ -53,7 +53,8 @@
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "server/",
-    "app/"
+    "app/",
+    "shared/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.1.0",

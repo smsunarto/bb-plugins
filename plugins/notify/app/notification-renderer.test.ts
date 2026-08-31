@@ -1,11 +1,7 @@
 import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
-import {
-  mountNotificationRenderer,
-  parseDeliveryEnvelope,
-  type RendererDependencies,
-} from "./notification-renderer.ts";
+import { mountNotificationRenderer, type RendererDependencies } from "./notification-renderer.ts";
 import type { AttentionEventTarget, AttentionSource } from "./thread-attention.ts";
 
 class FakeEvents implements AttentionEventTarget {
@@ -50,22 +46,6 @@ function attentionDependencies(source = attentionSource()) {
     createAttentionChannel: () => null,
   };
 }
-
-test("HTTP delivery envelopes reject invalid ids and thread targets", () => {
-  const base = {
-    id: "delivery-1",
-    notification: { title: "Build", body: "finished", threadId: "thr_1", silent: true },
-  };
-  assert.deepEqual(parseDeliveryEnvelope(base), base);
-  assert.equal(parseDeliveryEnvelope({ ...base, id: "" }), null);
-  assert.equal(
-    parseDeliveryEnvelope({
-      ...base,
-      notification: { ...base.notification, threadId: "bad id" },
-    }),
-    null,
-  );
-});
 
 test("an open BB renderer shows, acknowledges, and opens one notification", async () => {
   const controller = new AbortController();
@@ -143,7 +123,7 @@ test("an open BB renderer shows, acknowledges, and opens one notification", asyn
     ...attentionDependencies(),
   };
 
-  await mountNotificationRenderer({ signal: controller.signal, dependencies });
+  await mountNotificationRenderer({ pluginId: "notify", signal: controller.signal, dependencies });
 
   assert.deepEqual(
     notifications.map(({ title, options }) => ({ title, options })),
@@ -168,6 +148,7 @@ test("an open BB renderer shows, acknowledges, and opens one notification", asyn
 test("a browser tab never starts the renderer mailbox", async () => {
   const fetch = mock<typeof globalThis.fetch>(async () => new Response(null, { status: 204 }));
   await mountNotificationRenderer({
+    pluginId: "notify",
     signal: new AbortController().signal,
     dependencies: {
       fetch,
@@ -225,6 +206,7 @@ test("an active visible focused target acknowledges suppressed without construct
   });
 
   await mountNotificationRenderer({
+    pluginId: "notify",
     signal: controller.signal,
     dependencies: {
       fetch,
@@ -295,6 +277,7 @@ test("the target in an unfocused window shows then closes when that window gains
   });
 
   const mounted = mountNotificationRenderer({
+    pluginId: "notify",
     signal: controller.signal,
     dependencies: {
       fetch,

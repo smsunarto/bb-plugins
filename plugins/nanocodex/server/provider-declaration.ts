@@ -4,7 +4,7 @@ import {
   NANOCODEX_PROVIDER_ID,
   NANOCODEX_REASONING_LEVELS,
   NANOCODEX_SERVICE_TIERS,
-} from "../src/catalog.ts";
+} from "../shared/provider-catalog.ts";
 
 export const nanocodexProvider: PluginProviderDeclaration = {
   id: NANOCODEX_PROVIDER_ID,

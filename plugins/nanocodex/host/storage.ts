@@ -22,7 +22,10 @@ import type {
 interface StoredDurability {
   readonly version: 1;
   readonly owner?: { readonly id: string; readonly fence: string };
-  readonly journal: { readonly revision: string; readonly batches: readonly { readonly revision: string; readonly payload: string }[] };
+  readonly journal: {
+    readonly revision: string;
+    readonly batches: readonly { readonly revision: string; readonly payload: string }[];
+  };
 }
 
 export interface StoredThread {
@@ -162,10 +165,9 @@ export function createNanocodexStorage(dataDir: string): NanocodexStorage {
   };
 
   const readThread = async (providerThreadId: string): Promise<StoredThread> => {
-    const stored = await readJson<(Omit<StoredThread, "durabilityId"> & { readonly durabilityId?: string }) | null>(
-      threadFile(providerThreadId),
-      null,
-    );
+    const stored = await readJson<
+      (Omit<StoredThread, "durabilityId"> & { readonly durabilityId?: string }) | null
+    >(threadFile(providerThreadId), null);
     if (stored === null || stored.version !== 1 || stored.providerThreadId !== providerThreadId) {
       throw new Error(`No native NanoCodex state exists for ${providerThreadId}`);
     }
@@ -207,10 +209,14 @@ export function createNanocodexStorage(dataDir: string): NanocodexStorage {
     readThread,
     async readCheckpoint(providerThreadId, checkpointId) {
       const stored = await readThread(providerThreadId);
-      const resolved = checkpointId ?? (stored.nextCheckpoint === 0 ? undefined : String(stored.nextCheckpoint - 1));
+      const resolved =
+        checkpointId ??
+        (stored.nextCheckpoint === 0 ? undefined : String(stored.nextCheckpoint - 1));
       const snapshot = resolved === undefined ? undefined : stored.checkpoints[resolved];
       if (snapshot === undefined) {
-        throw new Error(`Unknown NanoCodex checkpoint ${checkpointId ?? "tip"} for ${providerThreadId}`);
+        throw new Error(
+          `Unknown NanoCodex checkpoint ${checkpointId ?? "tip"} for ${providerThreadId}`,
+        );
       }
       return snapshot;
     },
@@ -334,5 +340,7 @@ function requireSubscriptionId(id: string): void {
 }
 
 function isErrno(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === code;
+  return (
+    typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === code
+  );
 }

@@ -7,5 +7,5 @@
     "types": ["node", "bun-types/test"],
     "skipLibCheck": false
   },
-  "include": ["app", "server"]
+  "include": ["app", "server", "shared"]
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "bun:test";
 import type { ToolContext } from "nanocodex/host";
-import { createParallelWebTool, type ParallelSearch } from "../src/parallel-web.ts";
+import { createParallelWebTool, type ParallelSearch } from "./parallel-web.ts";
 
 const CONTEXT = {
   callId: "call-1",

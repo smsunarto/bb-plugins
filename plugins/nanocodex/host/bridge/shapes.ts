@@ -1,5 +1,5 @@
 /**
- * `src/bridge/shapes.ts` — nanocodex's tool vocabulary as timeline rows.
+ * `host/bridge/shapes.ts` — nanocodex's tool vocabulary as timeline rows.
  *
  * A lookup table, imported only by `project.ts`. It owns one decision: what a
  * given nanocodex tool call LOOKS like in a bb thread. Keeping it out of the
@@ -16,10 +16,24 @@ import {
 import type { TimelineRow } from "./timeline.ts";
 
 /** Standard tools — crates/nanocodex-tools/src/standard.rs. */
-export const STANDARD_TOOLS = ["exec_command", "write_stdin", "update_plan", "apply_patch", "view_image"] as const;
+export const STANDARD_TOOLS = [
+  "exec_command",
+  "write_stdin",
+  "update_plan",
+  "apply_patch",
+  "view_image",
+] as const;
 
 /** Subagent tools — crates/nanocodex-subagents/src/tools.rs. Rendered as delegations. */
-export const SUBAGENT_TOOLS = ["spawn_agent", "submit_result", "send_agent_message", "list_agents", "wait_agent", "interrupt_agent", "close_agent"] as const;
+export const SUBAGENT_TOOLS = [
+  "spawn_agent",
+  "submit_result",
+  "send_agent_message",
+  "list_agents",
+  "wait_agent",
+  "interrupt_agent",
+  "close_agent",
+] as const;
 
 /**
  * The code-mode wrapper. In `orchestration: "local_code_mode"` nanocodex emits
@@ -117,10 +131,7 @@ export function rowForToolCall(args: {
     }
     case "spawn_agent": {
       const label = truncateSingleLine(
-        stringValue(input.message) ??
-          stringValue(input.prompt) ??
-          stringValue(input.task) ??
-          tool,
+        stringValue(input.message) ?? stringValue(input.prompt) ?? stringValue(input.task) ?? tool,
         120,
       );
       return {
@@ -202,9 +213,21 @@ export function rowForToolResult(args: {
  * an unparseable envelope yields one entry with the raw text as the diff rather
  * than throwing, because a malformed patch is still a thing the user must see.
  */
-export function parseApplyPatch(patch: string): Array<{ path: string; kind: "add" | "delete" | "update"; diff?: string; movePath?: string }> {
-  const entries: Array<{ path: string; kind: "add" | "delete" | "update"; diff?: string; movePath?: string }> = [];
-  let current: { path: string; kind: "add" | "delete" | "update"; movePath?: string; body: string[] } | null = null;
+export function parseApplyPatch(
+  patch: string,
+): Array<{ path: string; kind: "add" | "delete" | "update"; diff?: string; movePath?: string }> {
+  const entries: Array<{
+    path: string;
+    kind: "add" | "delete" | "update";
+    diff?: string;
+    movePath?: string;
+  }> = [];
+  let current: {
+    path: string;
+    kind: "add" | "delete" | "update";
+    movePath?: string;
+    body: string[];
+  } | null = null;
   const finish = (): void => {
     if (current === null) return;
     entries.push({

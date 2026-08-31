@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
-import { isAbsolute, join, normalize, posix } from "node:path";
+import { builtinModules, createRequire } from "node:module";
+import { isAbsolute, join, normalize, posix, relative as pathRelative } from "node:path";
 import { pathToFileURL } from "node:url";
 import type * as TS from "typescript";
 import type { BinResult } from "./shared.ts";
@@ -16,11 +16,12 @@ import { derivePluginID } from "./derive-plugin-id.ts";
 import { TOOL_KEY_PATTERN, toolName } from "../tools/tools.ts";
 
 /**
- * `bb-kit check` (§8): static verification of the seven rules — wiring
+ * `bb-kit check` (§8): static verification of the eight rules — wiring
  * bijection and naming (1), definePlugin id = derived plugin id (2), the name
  * table (3), manifest paths and engines (4),
  * composition and host CLI policy (5), sibling tests (warn-only, 6),
- * agent tool names and skills selection against the host policy (7).
+ * agent tool names and skills selection against the host policy (7), and
+ * runtime ownership boundaries (8).
  *
  * check EXECUTES no plugin code. Parsing goes through the plugin's own
  * TypeScript — the plugin's `typescript` package (a plain CJS library;
@@ -40,6 +41,10 @@ type Project = {
   ts: TSModule;
   program: TS.Program;
 };
+
+type RuntimeZone = "app" | "server" | "host" | "shared" | "shared-node";
+
+const NODE_BUILTINS = new Set(builtinModules);
 
 function loadProject(
   cwd: string,
@@ -106,9 +111,166 @@ function lineOfNode(sourceFile: TS.SourceFile, node: TS.Node): number {
   return lineAt(sourceFile, node.getStart(sourceFile));
 }
 
+function runtimeZone(relativePath: string): RuntimeZone | undefined {
+  if (relativePath.startsWith("app/")) return "app";
+  if (relativePath.startsWith("server/")) return "server";
+  if (relativePath.startsWith("host/")) return "host";
+  if (relativePath.startsWith("shared/node/")) return "shared-node";
+  if (relativePath.startsWith("shared/")) return "shared";
+  return undefined;
+}
+
+function isTestPath(relativePath: string): boolean {
+  return (
+    relativePath.startsWith("test/") ||
+    relativePath.includes("/testing/") ||
+    /\.test\.tsx?$/.test(relativePath)
+  );
+}
+
+function isNodeBuiltin(specifier: string): boolean {
+  return specifier.startsWith("node:") || NODE_BUILTINS.has(specifier);
+}
+
+function importIsTypeOnly(ts: TSModule, declaration: TS.ImportDeclaration): boolean {
+  const clause = declaration.importClause;
+  if (clause?.isTypeOnly === true) return true;
+  if (clause?.name !== undefined || clause?.namedBindings === undefined) return false;
+  return (
+    ts.isNamedImports(clause.namedBindings) &&
+    clause.namedBindings.elements.length > 0 &&
+    clause.namedBindings.elements.every((element) => element.isTypeOnly)
+  );
+}
+
+function containsTypeScriptSource(directory: string): boolean {
+  if (!existsSync(directory)) return false;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    const path = join(directory, entry.name);
+    if (entry.isDirectory() && containsTypeScriptSource(path)) return true;
+    if (entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function manifestEntry(
+  pkg: Record<string, unknown> | undefined,
+  key: "app" | "host" | "server",
+): string | undefined {
+  const bb = pkg?.["bb"];
+  if (bb === undefined || bb === null || typeof bb !== "object" || Array.isArray(bb)) {
+    return undefined;
+  }
+  const value = (bb as Record<string, unknown>)[key];
+  return typeof value === "string" && value !== "" ? pluginRelative(value) : undefined;
+}
+
 function unitBasename(relativePath: string): string {
   const file = relativePath.split("/").pop() ?? relativePath;
   return file.replace(/\.tsx?$/, "");
+}
+
+function checkRuntimeBoundaries(
+  cwd: string,
+  project: Project,
+  warn: (message: string, file?: string, line?: number) => void,
+): void {
+  const { ts } = project;
+
+  const warnBoundary = (
+    sourceFile: TS.SourceFile,
+    relativePath: string,
+    node: TS.Node,
+    message: string,
+  ): void => {
+    warn(`${message} — rule 8`, relativePath, lineOfNode(sourceFile, node));
+  };
+
+  for (const sourceFile of project.program.getSourceFiles()) {
+    const relativePath = pluginRelative(
+      pathRelative(cwd, sourceFile.fileName).replaceAll("\\", "/"),
+    );
+    const sourceZone = runtimeZone(relativePath);
+    if (
+      sourceZone === undefined ||
+      relativePath.startsWith("../") ||
+      isTestPath(relativePath) ||
+      sourceFile.isDeclarationFile
+    ) {
+      continue;
+    }
+
+    const checkSpecifier = (node: TS.Node, specifier: string, typeOnly: boolean): void => {
+      if ((sourceZone === "app" || sourceZone === "shared") && isNodeBuiltin(specifier)) {
+        warnBoundary(
+          sourceFile,
+          relativePath,
+          node,
+          `${sourceZone}/ must remain browser-safe and cannot import ${JSON.stringify(specifier)}`,
+        );
+      }
+      if (!specifier.startsWith(".")) return;
+
+      const targetPath = pluginRelative(resolveImport(relativePath, specifier));
+      if (isTestPath(targetPath)) {
+        warnBoundary(
+          sourceFile,
+          relativePath,
+          node,
+          `production code cannot import test support ${JSON.stringify(targetPath)}`,
+        );
+        return;
+      }
+
+      const targetZone = runtimeZone(targetPath);
+      if (targetZone === undefined || targetZone === sourceZone) return;
+
+      const rpcTypeEdge =
+        sourceZone === "app" &&
+        targetZone === "server" &&
+        relativePath === "app/rpc.ts" &&
+        targetPath.replace(/\.(?:js|ts)$/, "") === "server/server" &&
+        typeOnly;
+      if (rpcTypeEdge) return;
+
+      const allowed =
+        targetZone === "shared" ||
+        (targetZone === "shared-node" && (sourceZone === "server" || sourceZone === "host"));
+      if (!allowed) {
+        warnBoundary(
+          sourceFile,
+          relativePath,
+          node,
+          `${sourceZone}/ cannot import ${targetZone}/ through ${JSON.stringify(specifier)}`,
+        );
+      }
+    };
+
+    const visit = (node: TS.Node): void => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+        checkSpecifier(node, node.moduleSpecifier.text, importIsTypeOnly(ts, node));
+      } else if (
+        ts.isExportDeclaration(node) &&
+        node.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        checkSpecifier(node, node.moduleSpecifier.text, node.isTypeOnly);
+      } else if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+      ) {
+        const [argument] = node.arguments;
+        if (argument !== undefined && ts.isStringLiteralLike(argument)) {
+          checkSpecifier(node, argument.text, false);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    ts.forEachChild(sourceFile, visit);
+  }
 }
 
 export async function runCheck(options: CheckOptions): Promise<BinResult> {
@@ -153,6 +315,19 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   // ---- rule 4: manifest paths + engines (filesystem only) -----------
   if (pkg) {
     checkManifest(pkg, cwd, fail);
+    const hostEntry = manifestEntry(pkg, "host");
+    if (hostEntry !== undefined && hostEntry !== "host/host.ts") {
+      warn(
+        `bb.host should use the canonical host/host.ts runtime entry, not ${JSON.stringify(hostEntry)} — rule 8`,
+        "package.json",
+      );
+    }
+    if (containsTypeScriptSource(join(cwd, "src"))) {
+      warn(
+        "plugin-level src/ hides runtime ownership; move code into server/, app/, host/, or shared/ — rule 8",
+        "src/",
+      );
+    }
   }
 
   // ---- unit inventory, rule 1 basenames, rule 6 sibling tests -------
@@ -194,6 +369,9 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   const { project, failure } = loadProject(cwd, requireFromPlugin);
   if (failure !== undefined) {
     fail(`${failure} (parse-dependent rules skipped)`);
+  }
+  if (project !== undefined) {
+    checkRuntimeBoundaries(cwd, project, warn);
   }
 
   let pluginId: string | undefined;
@@ -1063,6 +1241,7 @@ function checkManifest(
     const manifest = bb as Record<string, unknown>;
     checkPath("bb.server", manifest["server"], true);
     checkPath("bb.app", manifest["app"], false);
+    checkPath("bb.host", manifest["host"], false);
     checkPath("bb.theme", manifest["theme"], false);
     const branding = manifest["branding"];
     if (branding === undefined || branding === null || typeof branding !== "object") {

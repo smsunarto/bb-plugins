@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-const source = resolve(import.meta.dir, "../../../node_modules/nanocodex/pkg-web/nanocodex_bg.wasm");
-const destination = resolve(import.meta.dir, "../src/generated/nanocodex-wasm.ts");
+const source = resolve(
+  import.meta.dir,
+  "../../../node_modules/nanocodex/pkg-web/nanocodex_bg.wasm",
+);
+const destination = resolve(import.meta.dir, "../host/generated/nanocodex-wasm.ts");
 const bytes = await readFile(source);
 const sha256 = createHash("sha256").update(bytes).digest("hex");
 await mkdir(dirname(destination), { recursive: true });

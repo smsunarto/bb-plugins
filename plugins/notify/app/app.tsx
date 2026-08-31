@@ -5,8 +5,8 @@ import { mountNotificationRenderer } from "./notification-renderer.ts";
 export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "notification-renderer",
-    mount({ signal }) {
-      void mountNotificationRenderer({ signal }).catch(() => {});
+    mount({ pluginId, signal }) {
+      void mountNotificationRenderer({ pluginId, signal }).catch(() => {});
     },
   });
 });

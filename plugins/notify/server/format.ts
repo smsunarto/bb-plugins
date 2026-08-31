@@ -1,6 +1,8 @@
 // Pure text and policy helpers. No BB API, no child processes — everything
 // here is directly testable.
 
+import { isThreadId } from "../shared/renderer-http.ts";
+
 /** Escaped markdown literals are parked at this offset while syntax is stripped. */
 const ESCAPE_OFFSET = 0xe000;
 /** A minimum-run filter longer than this is treated as this maximum. */
@@ -93,11 +95,6 @@ export function plainText(markdown: string): string {
         String.fromCodePoint((char.codePointAt(0) ?? 0) - ESCAPE_OFFSET),
       )
   );
-}
-
-/** BB entity ids are opaque slugs; reject anything else before acting on one. */
-export function isThreadId(value: string): boolean {
-  return /^[A-Za-z0-9_-]{1,64}$/u.test(value);
 }
 
 /** Settings hold strings; a bad value should mean "off", not NaN. */

@@ -28,20 +28,20 @@ test("built host initializes from one relocated Node 22 file with embedded WASM"
     const bundled = await readFile(artifact, "utf8");
     assert.match(bundled, /NANOCODEX_WASM_BASE64/);
 
-    const child = Bun.spawn([
-      "node",
-      "--experimental-default-type=module",
-      "--eval",
-      "const m = await import('./host.js'); await m.experimental_initializeNanocodexModule(); if (!m.experimental_providerBridge) process.exit(9)",
-    ], {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [exitCode, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stderr).text(),
-    ]);
+    const child = Bun.spawn(
+      [
+        "node",
+        "--experimental-default-type=module",
+        "--eval",
+        "const m = await import('./host.js'); await m.experimental_initializeNanocodexModule(); if (!m.experimental_providerBridge) process.exit(9)",
+      ],
+      {
+        cwd: root,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
     assert.equal(exitCode, 0, stderr);
   } finally {
     await rm(root, { recursive: true, force: true });

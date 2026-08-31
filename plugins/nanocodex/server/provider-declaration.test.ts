@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
 import { validatePluginProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
-import server from "../server/server.ts";
-import { nanocodexProvider } from "../server/provider-declaration.ts";
-import { NANOCODEX_MODELS, NANOCODEX_REASONING_LEVELS } from "../src/catalog.ts";
+import server from "./server.ts";
+import { nanocodexProvider } from "./provider-declaration.ts";
+import { NANOCODEX_MODELS, NANOCODEX_REASONING_LEVELS } from "../shared/provider-catalog.ts";
 
 test("the provider declaration preserves NanoCodex models, reasoning, fast tier, and checkpoint fork", () => {
   const provider = validatePluginProviderDeclaration(nanocodexProvider);

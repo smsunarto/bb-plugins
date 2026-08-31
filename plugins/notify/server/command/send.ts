@@ -1,8 +1,8 @@
 import { argv, defineCommand } from "@bb-kit/core/command";
 import { z } from "zod";
 
+import { isThreadId } from "../../shared/renderer-http.ts";
 import { send as sendRpc } from "../rpc/send.ts";
-import { isThreadId } from "../format.ts";
 
 export const send = defineCommand({
   summary: "Post a notification",

@@ -1,5 +1,5 @@
 /**
- * `src/bridge/events.ts` — what nanocodex can say, and which of it matters.
+ * `host/bridge/events.ts` — what nanocodex can say, and which of it matters.
  *
  * Schemas and classification live together because they are one body of
  * knowledge: the vocabulary of NanoCodex AgentEvent objects. Splitting them would
@@ -80,89 +80,117 @@ export function isTerminalKind(kind: string): kind is "run.completed" | "run.fai
 // Payload schemas — one per kind the bridge reads
 // ---------------------------------------------------------------------------
 
-export const runStartedSchema = z.object({ model: z.string(), effort: z.string().optional(), orchestration: z.string().optional(), workspace: z.string().nullable().optional(), instruction_bytes: z.number().optional() }).loose();
+export const runStartedSchema = z
+  .object({
+    model: z.string(),
+    effort: z.string().optional(),
+    orchestration: z.string().optional(),
+    workspace: z.string().nullable().optional(),
+    instruction_bytes: z.number().optional(),
+  })
+  .loose();
 
-export const assistantTextSchema = z.object({
-  model_call_index: z.number(),
-  /** Absent on some deltas; `project.ts` falls back to `msg-${model_call_index}`. */
-  item_id: z.string().optional(),
-  /** Both phases are real assistant prose. `commentary` narrates, `final_answer` concludes. */
-  phase: z.enum(["commentary", "final_answer"]).optional(),
-  text: z.string(),
-}).loose();
+export const assistantTextSchema = z
+  .object({
+    model_call_index: z.number(),
+    /** Absent on some deltas; `project.ts` falls back to `msg-${model_call_index}`. */
+    item_id: z.string().optional(),
+    /** Both phases are real assistant prose. `commentary` narrates, `final_answer` concludes. */
+    phase: z.enum(["commentary", "final_answer"]).optional(),
+    text: z.string(),
+  })
+  .loose();
 
 /** No `item_id` at all — keyed by `model_call_index`, which is why item keys must be turn-namespaced. */
-export const reasoningDeltaSchema = z.object({ model_call_index: z.number(), text: z.string() }).loose();
+export const reasoningDeltaSchema = z
+  .object({ model_call_index: z.number(), text: z.string() })
+  .loose();
 
-export const toolCallSchema = z.object({
-  call_id: z.string(),
-  tool: z.string(),
-  /**
-   * Object OR raw string. In `orchestration: "local_code_mode"` the parent
-   * call is `tool: "exec"` and `arguments` is a JavaScript program (verified in
-   * the tool-run fixture). A schema that assumed an object would reject the
-   * most common real shape.
-   */
-  arguments: z.union([z.string(), z.record(z.string(), z.unknown())]),
-  model_call_index: z.number().optional(),
-}).loose();
+export const toolCallSchema = z
+  .object({
+    call_id: z.string(),
+    tool: z.string(),
+    /**
+     * Object OR raw string. In `orchestration: "local_code_mode"` the parent
+     * call is `tool: "exec"` and `arguments` is a JavaScript program (verified in
+     * the tool-run fixture). A schema that assumed an object would reject the
+     * most common real shape.
+     */
+    arguments: z.union([z.string(), z.record(z.string(), z.unknown())]),
+    model_call_index: z.number().optional(),
+  })
+  .loose();
 
-export const toolResultSchema = z.object({
-  call_id: z.string(),
-  tool: z.string(),
-  status: z.enum(["completed", "failed", "cancelled"]),
-  duration_ns: z.number().optional(),
-  /** Untagged `ToolOutputBody`: a plain string, or content blocks. */
-  result: z.union([z.string(), z.array(z.object({ type: z.string(), text: z.string() }).loose())]).optional(),
-  structured_result: z.unknown().optional(),
-}).loose();
+export const toolResultSchema = z
+  .object({
+    call_id: z.string(),
+    tool: z.string(),
+    status: z.enum(["completed", "failed", "cancelled"]),
+    duration_ns: z.number().optional(),
+    /** Untagged `ToolOutputBody`: a plain string, or content blocks. */
+    result: z
+      .union([z.string(), z.array(z.object({ type: z.string(), text: z.string() }).loose())])
+      .optional(),
+    structured_result: z.unknown().optional(),
+  })
+  .loose();
 
 /** Per-TURN usage, flat. Distinct from the per-CALL shape below; conflating them mis-reports cache hits. */
-export const eventUsageSchema = z.object({
-  input_tokens: z.number(),
-  cached_input_tokens: z.number(),
-  cache_write_input_tokens: z.number().optional(),
-  output_tokens: z.number(),
-  reasoning_output_tokens: z.number(),
-  total_tokens: z.number(),
-}).loose();
+export const eventUsageSchema = z
+  .object({
+    input_tokens: z.number(),
+    cached_input_tokens: z.number(),
+    cache_write_input_tokens: z.number().optional(),
+    output_tokens: z.number(),
+    reasoning_output_tokens: z.number(),
+    total_tokens: z.number(),
+  })
+  .loose();
 
 /** Per-CALL usage: nested `input_tokens_details.cached_tokens`. Read for one number only — see `modelCallCompletedSchema`. */
-export const callUsageSchema = z.object({
-  input_tokens: z.number(),
-  input_tokens_details: z.object({ cached_tokens: z.number().optional() }).loose().optional(),
-  output_tokens: z.number(),
-  total_tokens: z.number(),
-}).loose();
+export const callUsageSchema = z
+  .object({
+    input_tokens: z.number(),
+    input_tokens_details: z.object({ cached_tokens: z.number().optional() }).loose().optional(),
+    output_tokens: z.number(),
+    total_tokens: z.number(),
+  })
+  .loose();
 
-export const modelCallCompletedSchema = z.object({
-  call_index: z.number(),
-  /**
-   * For `call_index === 1` this is the measured cost of the stitched prompt
-   * plus nanocodex's fixed overhead (~13.4k tokens in both fixtures). It is the
-   * only honest number the bridge can put behind `contextWindow.used` and
-   * behind the budget's calibration, so it is read here and nowhere else.
-   */
-  usage: callUsageSchema.nullable().optional(),
-}).loose();
+export const modelCallCompletedSchema = z
+  .object({
+    call_index: z.number(),
+    /**
+     * For `call_index === 1` this is the measured cost of the stitched prompt
+     * plus nanocodex's fixed overhead (~13.4k tokens in both fixtures). It is the
+     * only honest number the bridge can put behind `contextWindow.used` and
+     * behind the budget's calibration, so it is read here and nowhere else.
+     */
+    usage: callUsageSchema.nullable().optional(),
+  })
+  .loose();
 
 /** `RunTerminal`, with `RunMetrics` FLATTENED into it: `payload.usage`, not `payload.metrics.usage`. */
-export const runTerminalSchema = z.object({
-  /** `"cancelled"` maps to an INTERRUPTED boundary, not a completed one. */
-  status: z.enum(["completed", "cancelled", "failed"]),
-  usage: eventUsageSchema.optional(),
-  warmup_usage: eventUsageSchema.optional(),
-  /** Dollar fields are STRINGS here while the sibling `cost_usd` is a number. Neither is read today. */
-  estimated_cost: z.unknown().optional(),
-}).loose();
+export const runTerminalSchema = z
+  .object({
+    /** `"cancelled"` maps to an INTERRUPTED boundary, not a completed one. */
+    status: z.enum(["completed", "cancelled", "failed"]),
+    usage: eventUsageSchema.optional(),
+    warmup_usage: eventUsageSchema.optional(),
+    /** Dollar fields are STRINGS here while the sibling `cost_usd` is a number. Neither is read today. */
+    estimated_cost: z.unknown().optional(),
+  })
+  .loose();
 
 export const runErrorSchema = z.object({ message: z.string() }).loose();
 
-export const compactionStartedSchema = z.object({
-  after_model_call_index: z.number().optional(),
-  active_context_tokens: z.number().optional(),
-  auto_compact_token_limit: z.number().optional(),
-}).loose();
+export const compactionStartedSchema = z
+  .object({
+    after_model_call_index: z.number().optional(),
+    active_context_tokens: z.number().optional(),
+    auto_compact_token_limit: z.number().optional(),
+  })
+  .loose();
 
 // ---------------------------------------------------------------------------
 // Visibility

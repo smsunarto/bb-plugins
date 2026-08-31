@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import type { TaskId } from "../server/domain.ts";
 import { dotfilesQueryClient } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { rpc, type RPCInput } from "./rpc.ts";
+
+type TaskId = RPCInput<"runTask">["task"];
 
 export type QuickTask = Extract<TaskId, "render" | "check" | "apply:dry" | "sync:pull"> | "publish";
 

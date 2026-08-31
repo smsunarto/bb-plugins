@@ -1,8 +1,9 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 
+import { isThreadId } from "../../shared/renderer-http.ts";
 import { deliver } from "../delivery.ts";
-import { BODY_MAX_CHARS, isThreadId, oneLine, plainText } from "../format.ts";
+import { BODY_MAX_CHARS, oneLine, plainText } from "../format.ts";
 import { projectName } from "../project-names.ts";
 
 /** The public response keeps `listening` for compatibility. It means a renderer acknowledged the notification. */

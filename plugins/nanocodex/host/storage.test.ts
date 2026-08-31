@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { test } from "bun:test";
 import type { SubscriptionRevision } from "nanocodex/host";
 import type { DurabilityFence, DurabilityRevision } from "nanocodex/durability";
-import { createNanocodexStorage } from "../src/storage.ts";
-import { snapshot } from "./helpers/native.ts";
+import { createNanocodexStorage } from "./storage.ts";
+import { snapshot } from "./testing/fake-native.ts";
 
 test("subscription state uses durable compare-and-swap with secret file permissions", async () => {
   const root = await mkdtemp(join(tmpdir(), "nanocodex-storage-"));

@@ -2,7 +2,7 @@
 
 The framework a bb plugin is written in: the shapes a plugin is made of
 and the names they answer to. One context; the consuming plugins under
-`plugins/` sit outside it. The concern directories (`app/`, `server/`)
+`plugins/` sit outside it. The runtime directories (`app/`, `server/`, `host/`)
 have no collective term — prose says "directories";
 avoid "slot" and "surface". In identifiers, an acronym is always fully
 capitalized — `CLI`, `RPC`, `ID`, `URL` — never `Cli`, `Rpc`, `Id`;
@@ -12,7 +12,7 @@ host-owned names (`pluginId`, `BbPluginApi`) stay as bb spells them.
 
 **Plugin**:
 One npm package that bb installs and runs. The package root is the plugin
-root.
+root. Runtime directories (`server/`, `app/`, and `host/`) are siblings.
 _Avoid_: extension, app
 
 **Composition root**:
@@ -35,13 +35,35 @@ file, its test beside it. Same `dirname(bb.server)` rule as
 `server/rpc/`.
 
 **`app/`**:
-Everything browser-bound; `app/app.tsx` is the app entry. An import
-outside `app/` never reaches the browser bundle.
+Everything browser-bound; `app/app.tsx` is the app entry. App code may
+import portable `shared/` modules. Its only server edge is the type-only
+`app/rpc.ts` import of `server/server.ts`.
 
 **`server/`**:
 The server concern. `server/server.ts` is the composition root. Interned
 collaborators, domain modules, `rpc/`, `command/`, and `tools/` are siblings. A plugin
 without a backend omits the directory.
+
+**`host/`**:
+Everything bundled into the supervised Node worker that runs on an enrolled
+host; `host/host.ts` is `bb.host`. A plugin without machine-local work omits
+the directory. Server code calls it through the typed BB host client rather
+than importing its implementation.
+
+**`shared/`**:
+Portable contracts and values consumed by at least two shipped runtimes.
+It imports no runtime directory and stays browser-safe. Node-only code shared
+by `server/` and `host/` uses the explicit `shared/node/` exception; `app/`
+never imports that subtree. A one-runtime helper stays with its runtime owner.
+
+**`testing/`**:
+Reusable test helpers owned by one runtime, such as `host/testing/`. Shipped
+entry graphs never import it. Tests with one subject remain beside that
+subject.
+
+**`test/`**:
+Optional package-wide integration, artifact, and import-boundary tests. It is
+not the home for ordinary unit tests.
 
 **RPC**:
 One remotely callable unit, defined in its own file. Either a Query or a

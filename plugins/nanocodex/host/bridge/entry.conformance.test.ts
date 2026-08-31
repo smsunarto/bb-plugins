@@ -9,11 +9,11 @@ import {
   experimental_formatConformanceReport as formatConformanceReport,
   experimental_runBridgeConformance as runBridgeConformance,
 } from "@get-bb/plugin-sdk/provider-bridge/testing";
-import { createBridge } from "../src/bridge/entry.ts";
-import type { ThreadWriter } from "../src/bridge/timeline.ts";
-import { SessionBusyError, type SessionRegistry } from "../src/session.ts";
-import { createNanocodexStorage } from "../src/storage.ts";
-import { FakeNativeBinding, snapshot } from "./helpers/native.ts";
+import { createBridge } from "./entry.ts";
+import type { ThreadWriter } from "./timeline.ts";
+import { SessionBusyError, type SessionRegistry } from "../session.ts";
+import { createNanocodexStorage } from "../storage.ts";
+import { FakeNativeBinding, snapshot } from "../testing/fake-native.ts";
 
 const OPTIONS = {
   model: "gpt-5.6-sol",
@@ -38,14 +38,23 @@ test("accepted RPC replies precede notifications and every request settles once"
         if (failActivation) throw new Error("activation failed after reply");
         writer = next;
       },
-      async dispose() { throw new Error("dispose failed after reply"); },
+      async dispose() {
+        throw new Error("dispose failed after reply");
+      },
     }),
-    prepareResume: async () => { throw new Error("unused"); },
-    prepareFork: async () => { throw new Error("unused"); },
+    prepareResume: async () => {
+      throw new Error("unused");
+    },
+    prepareFork: async () => {
+      throw new Error("unused");
+    },
     prepareTurn: (options) => {
       if (busy) throw new SessionBusyError("thread is busy");
       return () => {
-        const scribe = writer?.scribe({ ordinal: 0, clientRequestIds: options.clientRequestId === null ? [] : [options.clientRequestId] });
+        const scribe = writer?.scribe({
+          ordinal: 0,
+          clientRequestIds: options.clientRequestId === null ? [] : [options.clientRequestId],
+        });
         scribe?.open(null);
         scribe?.acceptAll();
         scribe?.settle("completed");
@@ -62,7 +71,9 @@ test("accepted RPC replies precede notifications and every request settles once"
       writer?.recovery({ kind: "restartRecommended", message: "test stop", retryable: true });
       throw new Error("stop failed after reply");
     },
-    discard: async () => { throw new Error("discard failed after reply"); },
+    discard: async () => {
+      throw new Error("discard failed after reply");
+    },
     close: async () => {},
   };
   const bridge = createBridge({

@@ -1,7 +1,7 @@
 // Static layer: the shipped modules import only the public SDK surface.
 // server.ts's module graph must stay off every @get-bb/plugin-sdk subpath
-// (the path-install runtime shim cannot resolve them), and only src/bridge/*
-// may import @get-bb/plugin-sdk/provider-bridge; src/catalog.ts imports
+// (the path-install runtime shim cannot resolve them), and only host/bridge/*
+// may import @get-bb/plugin-sdk/provider-bridge; shared/provider-catalog.ts imports
 // nothing. The scanner enforces the first fact; the graph shape is upheld by
 // the imports themselves and reviewed here by allowlist absence.
 import assert from "node:assert/strict";

@@ -11,11 +11,8 @@ import type {
 } from "nanocodex/host";
 import { Agent } from "nanocodex/node";
 import { ChatGptSubscription } from "nanocodex/worker";
-import {
-  createProcessBinding,
-  initializeEmbeddedNanocodexModule,
-} from "../src/binding.ts";
-import { createNanocodexStorage } from "../src/storage.ts";
+import { createProcessBinding, initializeEmbeddedNanocodexModule } from "./binding.ts";
+import { createNanocodexStorage } from "./storage.ts";
 
 test("one compiled module and one ChatGPT subscription serve every agent", async () => {
   const root = await mkdtemp(join(tmpdir(), "nanocodex-binding-"));
@@ -42,7 +39,9 @@ test("one compiled module and one ChatGPT subscription serve every agent", async
       revision: "1" as SubscriptionRevision,
     }),
     logout: async () => {},
-    dispose: () => { disposals += 1; },
+    dispose: () => {
+      disposals += 1;
+    },
   };
   const openSubscription = (async (options: Parameters<typeof ChatGptSubscription.open>[0]) => {
     opens += 1;
@@ -68,16 +67,26 @@ test("one compiled module and one ChatGPT subscription serve every agent", async
     });
     await Promise.all([
       binding.health(),
-      binding.createAgent({ model: "gpt-5.6-sol", thinking: "high", fastMode: false, workspace: "/a" }),
-      binding.createAgent({ model: "gpt-5.6-terra", thinking: "max", fastMode: true, workspace: "/b" }),
+      binding.createAgent({
+        model: "gpt-5.6-sol",
+        thinking: "high",
+        fastMode: false,
+        workspace: "/a",
+      }),
+      binding.createAgent({
+        model: "gpt-5.6-terra",
+        thinking: "max",
+        fastMode: true,
+        workspace: "/b",
+      }),
     ]);
     const module = await initializeEmbeddedNanocodexModule();
     assert.equal(opens, 1);
     assert.deepEqual(modules, [module, module, module]);
-    assert.deepEqual(agentOptions.map((options) => options.tools), [
-      [parallelWebTool],
-      [parallelWebTool],
-    ]);
+    assert.deepEqual(
+      agentOptions.map((options) => options.tools),
+      [[parallelWebTool], [parallelWebTool]],
+    );
     await binding.close();
     await binding.close();
     assert.equal(disposals, 1);
@@ -102,8 +111,12 @@ test("health starts the native ChatGPT device-login lifecycle when signed out", 
       };
     },
     status: async () => ({ state: "signed_out" as const }),
-    credential: async () => { throw new Error("unused"); },
-    recover: async () => { throw new Error("unused"); },
+    credential: async () => {
+      throw new Error("unused");
+    },
+    recover: async () => {
+      throw new Error("unused");
+    },
     logout: async () => {},
     dispose() {},
   } satisfies ChatGptSubscriptionHandle;
@@ -135,8 +148,12 @@ test("health distinguishes a broken auth seed from signed-out device login", asy
       return { state: "signed_out" as const };
     },
     status: async () => ({ state: "signed_out" as const }),
-    credential: async () => { throw new Error("unused"); },
-    recover: async () => { throw new Error("unused"); },
+    credential: async () => {
+      throw new Error("unused");
+    },
+    recover: async () => {
+      throw new Error("unused");
+    },
     logout: async () => {},
     dispose() {},
   } satisfies ChatGptSubscriptionHandle;

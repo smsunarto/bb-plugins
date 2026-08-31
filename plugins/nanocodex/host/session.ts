@@ -16,7 +16,7 @@ import type {
 import type { NativeAgentOptions, NativeBinding } from "./binding.ts";
 import { createTurnProjector, type TurnProjector } from "./bridge/project.ts";
 import { usageBreakdown, type ThreadWriter, type TurnScribe } from "./bridge/timeline.ts";
-import { isNanocodexModel, isNanocodexThinking } from "./catalog.ts";
+import { isNanocodexModel, isNanocodexThinking } from "../shared/provider-catalog.ts";
 import type { NanocodexStorage, StoredThread } from "./storage.ts";
 
 export interface PreparedSession {
@@ -26,9 +26,15 @@ export interface PreparedSession {
 }
 
 export interface SessionRegistry {
-  prepareNew(args: SessionOptions & { readonly providerThreadId: string }): Promise<PreparedSession>;
-  prepareResume(args: SessionOptions & { readonly providerThreadId: string }): Promise<PreparedSession>;
-  prepareFork(args: SessionOptions & { readonly providerThreadId: string; readonly seed: SessionSnapshot }): Promise<PreparedSession>;
+  prepareNew(
+    args: SessionOptions & { readonly providerThreadId: string },
+  ): Promise<PreparedSession>;
+  prepareResume(
+    args: SessionOptions & { readonly providerThreadId: string },
+  ): Promise<PreparedSession>;
+  prepareFork(
+    args: SessionOptions & { readonly providerThreadId: string; readonly seed: SessionSnapshot },
+  ): Promise<PreparedSession>;
   prepareTurn(args: StartTurnOptions): () => void;
   prepareSteer(args: SteerOptions): () => Promise<void>;
   stop(threadId: string, intent: "interrupt" | "release"): Promise<void>;
@@ -129,15 +135,16 @@ export function createSessionRegistry(args: {
       agent = await createForkAgent(binding, nativeOptions, seed);
     } else {
       stored = await storage.readThread(options.providerThreadId);
-      agent = stored.forkSeed === undefined
-        ? await createDurableAgent(
-            binding,
-            storage,
-            options.providerThreadId,
-            stored.durabilityId,
-            nativeOptions,
-          )
-        : await createForkAgent(binding, nativeOptions, stored.forkSeed);
+      agent =
+        stored.forkSeed === undefined
+          ? await createDurableAgent(
+              binding,
+              storage,
+              options.providerThreadId,
+              stored.durabilityId,
+              nativeOptions,
+            )
+          : await createForkAgent(binding, nativeOptions, stored.forkSeed);
     }
 
     let activated = false;
@@ -246,7 +253,11 @@ export function createSessionRegistry(args: {
       sessions.set(
         running.threadId,
         running.releaseRequested
-          ? { kind: "closed", threadId: running.threadId, providerThreadId: running.providerThreadId }
+          ? {
+              kind: "closed",
+              threadId: running.threadId,
+              providerThreadId: running.providerThreadId,
+            }
           : idleFrom(running),
       );
       running.resolveSettled();
@@ -263,7 +274,9 @@ export function createSessionRegistry(args: {
       clientRequestIds: options.clientRequestId === null ? [] : [options.clientRequestId],
     });
     let resolveSettled!: () => void;
-    const settled = new Promise<void>((resolve) => { resolveSettled = resolve; });
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
     const running: RunningSession = {
       ...idle,
       kind: "running",
@@ -276,7 +289,9 @@ export function createSessionRegistry(args: {
       stopWatching: () => {},
     };
     sessions.set(options.threadId, running);
-    return () => { void executeTurn(running, options.input, options.options); };
+    return () => {
+      void executeTurn(running, options.input, options.options);
+    };
   };
 
   const prepareSteer = (options: SteerOptions): (() => Promise<void>) => {
@@ -368,9 +383,15 @@ export function createSessionRegistry(args: {
     snapshot: SessionSnapshot,
     options: { readonly retainAsForkSeed?: boolean } = {},
   ): Promise<void> {
-    const checkpointId = await storage.commitCheckpoint(running.providerThreadId, snapshot, options);
+    const checkpointId = await storage.commitCheckpoint(
+      running.providerThreadId,
+      snapshot,
+      options,
+    );
     if (checkpointId !== String(running.nextCheckpoint)) {
-      throw new Error(`NanoCodex checkpoint sequence changed from ${running.nextCheckpoint} to ${checkpointId}`);
+      throw new Error(
+        `NanoCodex checkpoint sequence changed from ${running.nextCheckpoint} to ${checkpointId}`,
+      );
     }
     running.nextCheckpoint += 1;
     running.lastSnapshot = snapshot;
@@ -421,7 +442,9 @@ function idleFrom(running: RunningSession): IdleSession {
 }
 
 function latestSnapshot(stored: StoredThread): SessionSnapshot | undefined {
-  return stored.nextCheckpoint === 0 ? undefined : stored.checkpoints[String(stored.nextCheckpoint - 1)];
+  return stored.nextCheckpoint === 0
+    ? undefined
+    : stored.checkpoints[String(stored.nextCheckpoint - 1)];
 }
 
 function toNativeAgentOptions(options: SessionOptions): NativeAgentOptions {
@@ -464,5 +487,7 @@ function toNativePrompt(input: readonly BridgePromptInput[]): PromptInput {
 }
 
 function errorCode(error: unknown): unknown {
-  return typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof error === "object" && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined;
 }

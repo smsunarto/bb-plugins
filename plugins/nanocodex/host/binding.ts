@@ -11,11 +11,8 @@ import type {
   Thinking,
 } from "nanocodex/host";
 import type { DurabilityStore } from "nanocodex/durability";
-import { inspectAuthSeed, readAuthSeed } from "./auth.ts";
-import {
-  NANOCODEX_WASM_BASE64,
-  NANOCODEX_WASM_SHA256,
-} from "./generated/nanocodex-wasm.ts";
+import { inspectAuthSeed, readAuthSeed } from "../shared/node/auth-seed.ts";
+import { NANOCODEX_WASM_BASE64, NANOCODEX_WASM_SHA256 } from "./generated/nanocodex-wasm.ts";
 import { createParallelWebTool } from "./parallel-web.ts";
 import type { NanocodexStorage } from "./storage.ts";
 
@@ -31,7 +28,11 @@ export interface NativeAgentOptions {
 }
 
 export type BindingHealth =
-  | { readonly state: "authenticated"; readonly accountId: string; readonly expiresAt: number | null }
+  | {
+      readonly state: "authenticated";
+      readonly accountId: string;
+      readonly expiresAt: number | null;
+    }
   | { readonly state: "signed_out" | "expired" }
   | {
       readonly state: "pending";
@@ -71,10 +72,13 @@ export function createProcessBinding(
   const openSubscription = dependencies.openSubscription ?? ChatGptSubscription.open;
   const createAgent = dependencies.createAgent ?? Agent.create;
   const readSeed = dependencies.readSeed ?? readAuthSeed;
-  const inspectSeed = dependencies.inspectSeed ?? (dependencies.readSeed === undefined ? inspectAuthSeed : undefined);
+  const inspectSeed =
+    dependencies.inspectSeed ?? (dependencies.readSeed === undefined ? inspectAuthSeed : undefined);
   const parallelWebTool = dependencies.parallelWebTool ?? createParallelWebTool();
   let subscriptionPromise: Promise<ChatGptSubscriptionHandle> | undefined;
-  let authSeedProblem: { readonly state: "expired" | "broken"; readonly message: string } | undefined;
+  let authSeedProblem:
+    | { readonly state: "expired" | "broken"; readonly message: string }
+    | undefined;
   let closed = false;
 
   const subscription = (): Promise<ChatGptSubscriptionHandle> => {
@@ -85,11 +89,12 @@ export function createProcessBinding(
       if (inspected?.state === "expired" || inspected?.state === "broken") {
         authSeedProblem = { state: inspected.state, message: inspected.message };
       }
-      const seed = inspected === undefined
-        ? await readSeed()
-        : inspected.state === "ready"
-          ? inspected.seed
-          : undefined;
+      const seed =
+        inspected === undefined
+          ? await readSeed()
+          : inspected.state === "ready"
+            ? inspected.seed
+            : undefined;
       return openSubscription({
         id: "nanocodex",
         module,
@@ -132,12 +137,18 @@ export function createProcessBinding(
       try {
         const handle = await subscription();
         let status = await handle.status();
-        if ((status.state === "signed_out" || status.state === "expired") && authSeedProblem !== undefined) {
+        if (
+          (status.state === "signed_out" || status.state === "expired") &&
+          authSeedProblem !== undefined
+        ) {
           return authSeedProblem.state === "expired"
             ? { state: "expired" }
             : { state: "broken", message: authSeedProblem.message };
         }
-        if (options.beginLogin === true && (status.state === "signed_out" || status.state === "expired")) {
+        if (
+          options.beginLogin === true &&
+          (status.state === "signed_out" || status.state === "expired")
+        ) {
           status = await handle.startLogin();
         }
         return healthFromStatus(status);

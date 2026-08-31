@@ -1,29 +1,17 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { z } from "zod";
-
-import { isThreadId } from "./format.ts";
-
-export type RendererNotification = Readonly<{
-  title: string;
-  body: string;
-  threadId: string | null;
-  silent: boolean;
-}>;
+import {
+  openThreadSchema,
+  rendererAckSchema,
+  rendererHttpPaths,
+  type DeliveryEnvelope,
+  type RendererAck,
+  type RendererNotification,
+} from "../shared/renderer-http.ts";
 
 export type NotificationOffer = RendererNotification &
   Readonly<{
     play: string | null;
   }>;
-
-export type DeliveryEnvelope = Readonly<{
-  id: string;
-  notification: RendererNotification;
-}>;
-
-export type RendererAck = Readonly<{
-  id: string;
-  outcome: "shown" | "suppressed" | "failed";
-}>;
 
 export type OfferResult = "shown" | "suppressed" | "unavailable" | "failed";
 
@@ -212,15 +200,6 @@ export function rendererMailbox(bb: object): RendererMailbox {
   return created;
 }
 
-const ackSchema = z.object({
-  id: z.string().min(1).max(128),
-  outcome: z.enum(["shown", "suppressed", "failed"]),
-});
-
-const openSchema = z.object({
-  threadId: z.string().refine(isThreadId, "invalid threadId"),
-});
-
 export function registerRendererMailboxRoutes(
   bb: BbPluginApi,
   options: {
@@ -231,15 +210,15 @@ export function registerRendererMailboxRoutes(
   const mailbox = options.mailbox ?? rendererMailbox(bb);
   const queueSound = options.queueSound ?? (() => {});
 
-  bb.http.route("GET", "/mailbox/next", async (c) => {
+  bb.http.route("GET", rendererHttpPaths.next, async (c) => {
     const envelope = await mailbox.wait(c.req.raw.signal);
     if (envelope === null) return new Response(null, { status: 204 });
     return c.json(envelope);
   });
 
-  bb.http.route("POST", "/mailbox/ack", async (c) => {
+  bb.http.route("POST", rendererHttpPaths.acknowledge, async (c) => {
     const body: unknown = await c.req.json().catch(() => null);
-    const parsed = ackSchema.safeParse(body);
+    const parsed = rendererAckSchema.safeParse(body);
     if (!parsed.success) {
       return c.json({ ok: false, error: "invalid acknowledgement" }, 400);
     }
@@ -248,9 +227,9 @@ export function registerRendererMailboxRoutes(
     return new Response(null, { status: 204 });
   });
 
-  bb.http.route("POST", "/open", async (c) => {
+  bb.http.route("POST", rendererHttpPaths.openThread, async (c) => {
     const body: unknown = await c.req.json().catch(() => null);
-    const parsed = openSchema.safeParse(body);
+    const parsed = openThreadSchema.safeParse(body);
     if (!parsed.success) return c.json({ ok: false, error: "invalid threadId" }, 400);
     try {
       await bb.sdk.threads.open({ threadId: parsed.data.threadId, file: null });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { isThreadId } from "../shared/renderer-http.ts";
 import {
-  isThreadId,
   MAX_RUN_SECONDS,
   notificationLines,
   oneLine,

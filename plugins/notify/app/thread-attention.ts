@@ -1,3 +1,5 @@
+import { isThreadId } from "../shared/renderer-http.ts";
+
 const ROUTE_POLL_MS = 400;
 const PROBE_TIMEOUT_MS = 40;
 
@@ -53,10 +55,6 @@ type PendingProbe = Readonly<{
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isThreadId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/u.test(value);
 }
 
 function isProbeId(value: unknown): value is string {

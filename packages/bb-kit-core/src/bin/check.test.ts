@@ -217,6 +217,101 @@ test("a manifest path that does not exist fails rule 4", async () => {
   assert.match(result.stderr, /bb\.server "\.\/missing\.ts" does not exist — rule 4/);
 });
 
+test("bb.host is validated as a source manifest path", async () => {
+  const root = makeFixture();
+  edit(
+    root,
+    "package.json",
+    '"app": "./app/app.tsx",',
+    '"app": "./app/app.tsx",\n    "host": "./missing-host.ts",',
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /bb\.host "\.\/missing-host\.ts" does not exist — rule 4/);
+});
+
+test("a root host entry warns in favor of the canonical runtime directory", async () => {
+  const root = makeFixture();
+  writeFileSync(join(root, "host.ts"), "export {};\n");
+  edit(
+    root,
+    "package.json",
+    '"app": "./app/app.tsx",',
+    '"app": "./app/app.tsx",\n    "host": "./host.ts",',
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stderr, /bb\.host should use the canonical host\/host\.ts runtime entry/);
+});
+
+test("a plugin-level src directory warns when it hides shipped source", async () => {
+  const root = makeFixture();
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "src", "helper.ts"), "export const helper = true;\n");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stderr, /plugin-level src\/ hides runtime ownership/);
+});
+
+test("cross-runtime implementation imports warn", async () => {
+  const root = makeFixture();
+  mkdirSync(join(root, "host"));
+  writeFileSync(join(root, "host", "host.ts"), "export {};\n");
+  writeFileSync(join(root, "host", "local.ts"), "export const local = true;\n");
+  edit(
+    root,
+    "package.json",
+    '"app": "./app/app.tsx",',
+    '"app": "./app/app.tsx",\n    "host": "./host/host.ts",',
+  );
+  edit(
+    root,
+    "server/server.ts",
+    'import { definePlugin } from "@bb-kit/core/plugin";',
+    'import { definePlugin } from "@bb-kit/core/plugin";\nimport "../host/local.ts";',
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stderr, /server\/ cannot import host\/ through "\.\.\/host\/local\.ts"/);
+});
+
+test("dynamic cross-runtime imports warn", async () => {
+  const root = makeFixture();
+  mkdirSync(join(root, "host"));
+  writeFileSync(join(root, "host", "local.ts"), "export const local = true;\n");
+  edit(
+    root,
+    "server/server.ts",
+    'import { definePlugin } from "@bb-kit/core/plugin";',
+    'import { definePlugin } from "@bb-kit/core/plugin";\nvoid import("../host/local.ts");',
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stderr, /server\/ cannot import host\/ through "\.\.\/host\/local\.ts"/);
+});
+
+test("app code cannot import the Node-only shared subtree", async () => {
+  const root = makeFixture();
+  mkdirSync(join(root, "shared", "node"), { recursive: true });
+  writeFileSync(join(root, "shared", "node", "auth.ts"), "export const auth = true;\n");
+  const appPath = join(root, "app", "app.tsx");
+  writeFileSync(appPath, `import "../shared/node/auth.ts";\n${readFileSync(appPath, "utf8")}`);
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stderr, /app\/ cannot import shared-node\/ through/);
+});
+
+test("portable shared code cannot import Node builtins", async () => {
+  const root = makeFixture();
+  mkdirSync(join(root, "shared"));
+  writeFileSync(join(root, "shared", "portable.ts"), 'import "node:fs";\n');
+  const appPath = join(root, "app", "app.tsx");
+  writeFileSync(appPath, `import "../shared/portable.ts";\n${readFileSync(appPath, "utf8")}`);
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stderr, /shared\/ must remain browser-safe and cannot import "node:fs"/);
+});
+
 test("a reserved plugin CLI name fails rule 5", async () => {
   const root = makeFixture("bb-plugin-status");
   const result = await runCheck({ cwd: root });
