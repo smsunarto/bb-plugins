@@ -6,6 +6,7 @@ import {
   childrenOf,
   filterByProject,
   hideChildrenOfVisibleParents,
+  nextThreadIdAfterSettle,
   parentOf,
   partitionActiveSections,
   partitionPinned,
@@ -288,6 +289,26 @@ describe("filtering", () => {
       inbox.map((t) => t.id),
       ["a", "c"],
     );
+  });
+});
+
+describe("nextThreadIdAfterSettle", () => {
+  const section = [thread({ id: "a" }), thread({ id: "b" }), thread({ id: "c" })];
+
+  it("moves a focused thread to the row below it", () => {
+    assert.equal(nextThreadIdAfterSettle(section, "b", "b"), "c");
+  });
+
+  it("falls back to the row above when settling the final row", () => {
+    assert.equal(nextThreadIdAfterSettle(section, "c", "c"), "b");
+  });
+
+  it("does not move focus when settling an unfocused thread", () => {
+    assert.equal(nextThreadIdAfterSettle(section, "b", "a"), null);
+  });
+
+  it("returns no target when the section has no adjacent row", () => {
+    assert.equal(nextThreadIdAfterSettle([thread({ id: "only" })], "only", "only"), null);
   });
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
   useRpc,
   useSettings,
@@ -27,6 +28,7 @@ import {
   type ActiveSectionOrder,
   filterByProject,
   hideChildrenOfVisibleParents,
+  nextThreadIdAfterSettle,
   partitionActiveSections,
   partitionPinned,
   reconcileActiveSectionOrder,
@@ -55,6 +57,7 @@ export function ThreadInbox({
   searchQuery,
 }: PluginThreadListProps) {
   const { status, threads: hostThreads, projects } = useSidebarThreads();
+  const threadActions = useSidebarThreadActions();
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One clock for every card in a render, quantized to the minute so the
   // labels do not disagree and do not churn on unrelated re-renders. It is
@@ -257,6 +260,17 @@ export function ThreadInbox({
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
 
+  const settleAndAdvance = (
+    threadId: string,
+    sectionThreads: readonly PluginSidebarThread[],
+  ) => {
+    lifecycle.settle(threadId);
+    const nextThreadId = nextThreadIdAfterSettle(sectionThreads, threadId, activeThreadId);
+    if (nextThreadId === null) return;
+    threadActions.open(nextThreadId);
+    onNavigate();
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* The one control the host has no equivalent for. Everything else in
@@ -351,7 +365,7 @@ export function ThreadInbox({
                     canPark={lifecycle.canPark(thread)}
                     isCompactViewport={isCompactViewport}
                     onNavigate={onNavigate}
-                    onSettle={() => lifecycle.settle(thread.id)}
+                    onSettle={() => settleAndAdvance(thread.id, pinned)}
                     onSnooze={(until) => lifecycle.snooze(thread.id, until)}
                     now={now}
                   />
@@ -376,7 +390,7 @@ export function ThreadInbox({
                     canPark={lifecycle.canPark(thread)}
                     isCompactViewport={isCompactViewport}
                     onNavigate={onNavigate}
-                    onSettle={() => lifecycle.settle(thread.id)}
+                    onSettle={() => settleAndAdvance(thread.id, nextAction)}
                     onSnooze={(until) => lifecycle.snooze(thread.id, until)}
                     now={now}
                   />
@@ -401,7 +415,7 @@ export function ThreadInbox({
                     canPark={lifecycle.canPark(thread)}
                     isCompactViewport={isCompactViewport}
                     onNavigate={onNavigate}
-                    onSettle={() => lifecycle.settle(thread.id)}
+                    onSettle={() => settleAndAdvance(thread.id, waiting)}
                     onSnooze={(until) => lifecycle.snooze(thread.id, until)}
                     now={now}
                   />

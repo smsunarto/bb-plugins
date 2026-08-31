@@ -173,6 +173,24 @@ export function partitionPinned(threads: readonly PluginSidebarThread[]): {
 }
 
 /**
+ * The row that should receive focus when the active thread leaves its section.
+ *
+ * Prefer the row below it. When the settled row was last, use the row above so
+ * focus still leaves the archived thread. A settle from an unfocused row must
+ * not move the user's current thread.
+ */
+export function nextThreadIdAfterSettle<T extends { readonly id: string }>(
+  sectionThreads: readonly T[],
+  settledThreadId: string,
+  activeThreadId: string | null,
+): string | null {
+  if (settledThreadId !== activeThreadId) return null;
+  const settledIndex = sectionThreads.findIndex((thread) => thread.id === settledThreadId);
+  if (settledIndex === -1) return null;
+  return sectionThreads[settledIndex + 1]?.id ?? sectionThreads[settledIndex - 1]?.id ?? null;
+}
+
+/**
  * Child threads leave the flat list and live in their parent's header chip
  * instead — a flat inbox has nowhere to nest them.
  *
