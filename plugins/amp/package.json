@@ -63,6 +63,7 @@
     "src/"
   ],
   "dependencies": {
+    "@bb-kit/sentry": "0.1.0",
     "@get-bb/plugin-sdk": "0.4.24",
     "zod": "^4.3.6"
   },

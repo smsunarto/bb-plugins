@@ -168,6 +168,57 @@ test("createAmpConversation builds the spawn bag from the shape", async () => {
   assert.equal(env.TERM, "dumb");
 });
 
+test("createAmpConversation traces a CLI attempt through the first model event", async () => {
+  const execute = mockExecute([
+    async function* () {
+      yield { type: "system", subtype: "init", session_id: "T-1", tools: [] };
+      yield {
+        type: "assistant",
+        session_id: "T-1",
+        message: { content: [{ type: "thinking", thinking: "working" }] },
+      };
+    },
+  ]);
+  const traces: Array<{
+    context: unknown;
+    checkpoints: string[];
+    outcomes: string[];
+  }> = [];
+  const conversation = createAmpConversation({
+    shape: shape(),
+    continueFrom: null,
+    mcpConfig: { srv: { command: "x" } } as never,
+    labels: null,
+    deps: depsFor(execute, {
+      startTrace(context: unknown) {
+        const record = { context, checkpoints: [] as string[], outcomes: [] as string[] };
+        traces.push(record);
+        return {
+          checkpoint(name: string) {
+            record.checkpoints.push(name);
+          },
+          finish(outcome: string) {
+            record.outcomes.push(outcome);
+          },
+        };
+      },
+    }),
+  });
+  conversation.send("hi").catch(() => {});
+  await drain(conversation.batches());
+
+  assert.equal(traces.length, 1);
+  assert.deepEqual(traces[0]?.context, {
+    executor: "local",
+    continuation: "fresh",
+    mcp: true,
+    mode: "medium",
+    attempt: 0,
+  });
+  assert.deepEqual(traces[0]?.checkpoints, ["attempt_entered", "system_init", "first_model_event"]);
+  assert.deepEqual(traces[0]?.outcomes, ["ok"]);
+});
+
 test("createAmpConversation continues a thread without the fast marker", async () => {
   const execute = mockExecute([
     async function* ({ prompt }) {

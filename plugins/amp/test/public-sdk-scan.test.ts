@@ -12,6 +12,9 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       /^bun:test$/,
       /^zod$/,
       /^react$/,
+      // The host bridge's opt-in startup telemetry. This is a declared
+      // runtime dependency and its performance entry point stays lazy.
+      /^@bb-kit\/sentry\/performance$/,
       // The scanner extends its allowlist for `*.test.*` files only; the
       // manual parity recorder (test/helpers/record-parity.ts) legitimately
       // imports the same public testing kit the parity test uses.

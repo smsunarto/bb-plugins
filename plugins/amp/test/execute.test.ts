@@ -11,6 +11,7 @@ import {
   createAmpExecute,
   createUserMessage,
   optionForFlag,
+  type AmpExecutionTrace,
   type AmpUserInputMessage,
 } from "../src/bridge/execute.ts";
 
@@ -368,6 +369,32 @@ test("createAmpExecute spawns the CLI with the built argv, merged settings, and 
   assert.deepEqual(messages[1], { type: "echo", message: { raw: "hello amp" } });
   // The settings temp dir is gone once the run completes.
   assert.equal(head.settingsPath === null || existsSync(head.settingsPath), false);
+});
+
+test("createAmpExecute reports process-boundary startup checkpoints", async () => {
+  const f = fixture();
+  const checkpoints: string[] = [];
+  const trace: AmpExecutionTrace = {
+    checkpoint(name) {
+      checkpoints.push(name);
+    },
+    finish() {},
+  };
+  await collect(f.execute({ prompt: "hello", options: { env: f.env }, trace }));
+
+  for (const expected of [
+    "execute_entered",
+    "temp_files_ready",
+    "spawn_called",
+    "child_spawned",
+    "input_written",
+    "first_stdout_byte",
+    "first_stdout_line",
+    "first_valid_json",
+    "process_closed",
+  ]) {
+    assert.equal(checkpoints.filter((checkpoint) => checkpoint === expected).length, 1, expected);
+  }
 });
 
 test("steering messages reach the CLI stdin verbatim, steer flag included", async () => {

@@ -166,6 +166,15 @@ request, the response, and a trace that streams while it runs.
 
 A healthy install does not need this command.
 
+Cold-start performance tracing is opt-in. Set `SENTRY_DSN` in the environment
+that runs bb to send one `amp.cli.startup` transaction per actual Amp CLI spawn.
+The trace records numeric elapsed checkpoints from execute entry through
+`system/init` and the first model event. It includes only finite dimensions
+(Local or Orb, fresh or continued, MCP presence, mode, and retry attempt), never
+prompts, paths, thread ids, tool data, argv, or stderr. A lightweight Sentry
+envelope is emitted only after the measured startup finishes; the performance
+path does not load the Sentry SDK.
+
 | Command         | What it does                                                                                                |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
 | `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, provider registration, legacy config entry, and auth |

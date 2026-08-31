@@ -12,6 +12,10 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  sentryPerformanceReporter,
+  type SentryPerformanceReporter,
+} from "@bb-kit/sentry/performance";
+import {
   BRIDGE_JSON_RPC_ERRORS,
   BRIDGE_REQUEST_METHODS,
   PROVIDER_BRIDGE_PROTOCOL_VERSION,
@@ -99,6 +103,7 @@ interface ManagedSession {
 interface BridgeState {
   store: SessionStore;
   oracle: OracleReports;
+  performance: SentryPerformanceReporter | undefined;
   /** The bridge's persistent data directory. The composer's armed Orb
    * intent (src/orb-intent.ts) is consumed from here at thread/start. */
   dataDir: string;
@@ -266,6 +271,11 @@ async function openSession(args: {
     execute: createAmpExecute({ cliPath }),
     env: {},
     retry: createRetryState(),
+    startTrace: ({ executor, continuation, mcp, mode, attempt }) =>
+      args.bridge.performance?.start({
+        operation: "cli.startup",
+        variant: `${executor}.${continuation}.${mcp ? "mcp" : "no-mcp"}.${mode}.attempt-${attempt}`,
+      }),
   };
   const mcpConfig = proxy?.config ?? null;
   const orbProject = readProviderOptions(providerOptionsOf(args.options)).orbProject ?? null;
@@ -650,6 +660,11 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
     state = {
       store: createSessionStore({ dir: join(context.dataDir, "sessions") }),
       oracle: createOracleReports(),
+      performance: sentryPerformanceReporter({
+        dsn: process.env.SENTRY_DSN,
+        release: process.env.SENTRY_RELEASE,
+        environment: process.env.SENTRY_ENVIRONMENT,
+      })({ pluginId: context.pluginId }),
       dataDir: context.dataDir,
     };
   },
@@ -658,5 +673,6 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
     for (const threadId of Array.from(sessions.keys())) {
       dropSession(threadId, "the bridge is shutting down");
     }
+    void state?.performance?.dispose(2_000);
   },
 });

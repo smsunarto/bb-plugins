@@ -25,10 +25,14 @@
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./performance": {
+      "types": "./dist/performance.d.ts",
+      "import": "./dist/performance.js"
     }
   },
   "scripts": {
-    "build": "bun build src/node.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
+    "build": "bun build src/node.ts src/performance.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test --timeout=30000",
     "clean": "rm -rf dist"

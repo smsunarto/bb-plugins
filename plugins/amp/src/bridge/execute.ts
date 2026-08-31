@@ -56,10 +56,19 @@ export interface AmpExecuteOptions {
 
 export type AmpExecutePrompt = string | AsyncIterable<AmpUserInputMessage>;
 
+/** A startup trace is deliberately narrower than the Sentry adapter. The
+ * execute layer reports static checkpoint names and terminal outcomes;
+ * prompts, paths, argv, stderr, and parsed messages never cross this seam. */
+export interface AmpExecutionTrace {
+  checkpoint(name: string): void;
+  finish(outcome: "ok" | "error" | "cancelled" | "retry" | "incomplete"): void;
+}
+
 export type AmpExecuteFn = (args: {
   prompt: AmpExecutePrompt;
   signal?: AbortSignal;
   options?: AmpExecuteOptions;
+  trace?: AmpExecutionTrace;
 }) => AsyncIterable<unknown>;
 
 export function createUserMessage(text: string): AmpUserInputMessage {
@@ -227,7 +236,8 @@ export interface AmpExecuteDeps {
 }
 
 export function createAmpExecute(deps: AmpExecuteDeps): AmpExecuteFn {
-  return ({ prompt, signal, options }) => runAmp(deps.cliPath, prompt, signal, options ?? {});
+  return ({ prompt, signal, options, trace }) =>
+    runAmp(deps.cliPath, prompt, signal, options ?? {}, trace);
 }
 
 async function* runAmp(
@@ -235,8 +245,16 @@ async function* runAmp(
   prompt: AmpExecutePrompt,
   signal: AbortSignal | undefined,
   options: AmpExecuteOptions,
+  trace: AmpExecutionTrace | undefined,
 ): AsyncGenerator<unknown, void, undefined> {
   signal?.throwIfAborted();
+  const reported = new Set<string>();
+  const checkpoint = (name: string): void => {
+    if (reported.has(name)) return;
+    reported.add(name);
+    trace?.checkpoint(name);
+  };
+  checkpoint("execute_entered");
   const env = { ...process.env, ...options.env };
   let tempDir: string | null = null;
   let child: ChildProcess | null = null;
@@ -260,14 +278,17 @@ async function* runAmp(
         writeFileSync(paths.mcpConfigFile, JSON.stringify(options.mcpConfig), { mode: 0o600 });
       }
     }
+    checkpoint("temp_files_ready");
     const argv = buildAmpArgv(options, paths, typeof prompt !== "string");
     const nodeScript = /\.(cjs|mjs|js)$/i.test(cliPath);
+    checkpoint("spawn_called");
     child = spawn(nodeScript ? process.execPath : cliPath, nodeScript ? [cliPath, ...argv] : argv, {
       cwd: options.cwd ?? process.cwd(),
       env,
       stdio: ["pipe", "pipe", "pipe"],
       signal,
     });
+    child.once("spawn", () => checkpoint("child_spawned"));
     let stderr = "";
     child.stderr!.setEncoding("utf8");
     child.stderr!.on("data", (chunk: string) => {
@@ -279,11 +300,13 @@ async function* runAmp(
     });
     // The consumer may abandon the generator before the exit is awaited.
     exit.catch(() => {});
-    pumpInput(child, prompt, signal);
+    child.stdout!.once("data", () => checkpoint("first_stdout_byte"));
+    pumpInput(child, prompt, signal, checkpoint);
     const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
     for await (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.length === 0) continue;
+      checkpoint("first_stdout_line");
       let message: unknown;
       try {
         message = JSON.parse(trimmed);
@@ -291,9 +314,11 @@ async function* runAmp(
         console.error(`[amp] ignoring a non-JSON line from the Amp CLI: ${truncate(trimmed)}`);
         continue;
       }
+      checkpoint("first_valid_json");
       yield message;
     }
     const code = await exit;
+    checkpoint("process_closed");
     signal?.throwIfAborted();
     if (code !== 0) {
       // parseUnsupportedFlag reads the CLI's stderr out of this message, so
@@ -320,12 +345,14 @@ function pumpInput(
   child: ChildProcess,
   prompt: AmpExecutePrompt,
   signal: AbortSignal | undefined,
+  checkpoint: (name: string) => void,
 ): void {
   const stdin = child.stdin;
   if (stdin === null) return;
   stdin.on("error", () => {});
   if (typeof prompt === "string") {
     stdin.write(prompt + "\n");
+    checkpoint("input_written");
     stdin.end();
     return;
   }
@@ -333,7 +360,9 @@ function pumpInput(
     try {
       for await (const message of prompt) {
         if (signal?.aborted === true || stdin.destroyed || stdin.writableEnded) return;
-        if (!stdin.write(JSON.stringify(message) + "\n")) {
+        const accepted = stdin.write(JSON.stringify(message) + "\n");
+        checkpoint("input_written");
+        if (!accepted) {
           const settled = new AbortController();
           const drained = once(stdin, "drain", { signal: settled.signal }).catch(() => {});
           const closed = once(stdin, "close", { signal: settled.signal }).catch(() => {});

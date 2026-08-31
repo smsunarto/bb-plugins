@@ -22,6 +22,25 @@ export default definePlugin({
 The adapter sends a fixed exception message, sanitized stack frames, and controlled `bb.*` tags.
 It does not send callback input, raw error messages, user data, breadcrumbs, or request data.
 
+Performance tracing is a separate, lightweight entry point. It records elapsed numeric checkpoints
+and emits a Sentry envelope only after the measured work has finished, without loading the Sentry
+SDK on the measured path:
+
+```ts
+import { sentryPerformanceReporter } from "@bb-kit/sentry/performance";
+
+const performance = sentryPerformanceReporter({ dsn: process.env.SENTRY_DSN })({
+  pluginId: "my-plugin",
+});
+const trace = performance?.start({ operation: "cli.startup", variant: "fresh" });
+trace?.checkpoint("spawned");
+trace?.checkpoint("protocol_ready");
+trace?.finish("ok");
+```
+
+Operation, variant, and checkpoint names must be static developer-authored values. Transaction
+sanitization removes application context, child spans, and uncontrolled tags.
+
 ## License
 
 MIT

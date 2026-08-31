@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ErrorEvent } from "@sentry/node";
-import { FIXED_EXCEPTION_MESSAGE, redactPluginError, sanitizeSentryEvent } from "./privacy.ts";
+import {
+  FIXED_EXCEPTION_MESSAGE,
+  redactPluginError,
+  sanitizeSentryEvent,
+  sanitizeSentryTransaction,
+} from "./privacy.ts";
 
 test("redactPluginError replaces the message and stack header", () => {
   const source = new Error("token=private");
@@ -119,4 +124,74 @@ test("sanitizeSentryEvent returns only the privacy allowlist", () => {
     },
   });
   assert.doesNotMatch(JSON.stringify(sanitized), /private|secret|alice/iu);
+});
+
+test("sanitizeSentryTransaction keeps timing data and removes contextual data", () => {
+  const event: Parameters<typeof sanitizeSentryTransaction>[0] = {
+    type: "transaction",
+    event_id: "event-id",
+    start_timestamp: 41,
+    timestamp: 42,
+    transaction: "amp.cli.startup",
+    release: "amp@1",
+    environment: "test",
+    request: { url: "https://private.example/secret" },
+    user: { email: "private@example.com" },
+    breadcrumbs: [{ message: "token=private" }],
+    extra: { secret: "token=private" },
+    tags: {
+      "bb.plugin.id": "amp",
+      "bb.kit.operation": "cli.startup",
+      "bb.kit.variant": "local.fresh.mcp.medium.attempt-0",
+      "bb.kit.outcome": "ok",
+      private: "token=private",
+    },
+    contexts: {
+      trace: {
+        trace_id: "trace-id",
+        span_id: "span-id",
+        op: "bb.plugin.performance",
+        status: "ok",
+        data: {
+          "sentry.origin": "manual",
+          private: "token=private",
+        },
+      },
+      private: { secret: "token=private" },
+    },
+    measurements: {
+      "bb.system_init": { value: 120, unit: "millisecond" },
+    },
+    spans: [
+      {
+        trace_id: "trace-id",
+        span_id: "child-id",
+        start_timestamp: 41,
+        timestamp: 42,
+        data: { secret: "token=private" },
+      },
+    ],
+  };
+
+  const sanitized = sanitizeSentryTransaction(event);
+  assert.equal(sanitized.transaction, "amp.cli.startup");
+  assert.deepEqual(sanitized.tags, {
+    "bb.plugin.id": "amp",
+    "bb.kit.operation": "cli.startup",
+    "bb.kit.variant": "local.fresh.mcp.medium.attempt-0",
+    "bb.kit.outcome": "ok",
+  });
+  assert.deepEqual(sanitized.measurements, {
+    "bb.system_init": { value: 120, unit: "millisecond" },
+  });
+  assert.deepEqual(sanitized.contexts, {
+    trace: {
+      trace_id: "trace-id",
+      span_id: "span-id",
+      op: "bb.plugin.performance",
+      status: "ok",
+      data: { "sentry.origin": "manual" },
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(sanitized), /private|secret|token/iu);
 });

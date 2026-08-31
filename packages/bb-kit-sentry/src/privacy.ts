@@ -1,8 +1,23 @@
-import type { ErrorEvent, StackFrame } from "@sentry/node";
+import type { ErrorEvent, Event, StackFrame } from "@sentry/node";
+
+type TransactionEvent = Event & { type: "transaction" };
 
 export const FIXED_EXCEPTION_MESSAGE = "Unexpected plugin callback failure";
 
-const CONTROLLED_TAGS: readonly string[] = ["bb.plugin.id", "bb.kit.boundary", "bb.kit.operation"];
+const CONTROLLED_TAGS: readonly string[] = [
+  "bb.plugin.id",
+  "bb.kit.boundary",
+  "bb.kit.operation",
+  "bb.kit.variant",
+  "bb.kit.outcome",
+];
+
+const CONTROLLED_TRACE_DATA: readonly string[] = [
+  "sentry.origin",
+  "sentry.op",
+  "sentry.source",
+  "sentry.sample_rate",
+];
 
 export function redactPluginError(error: unknown): Error {
   const redacted = new Error(FIXED_EXCEPTION_MESSAGE);
@@ -52,6 +67,74 @@ export function sanitizeSentryEvent(event: ErrorEvent): ErrorEvent {
       ],
     },
   };
+}
+
+/** Performance events use only static operation names, controlled tags, trace
+ * identifiers, and numeric measurements. In particular, they never carry a
+ * request, cwd, thread id, prompt, tool input, breadcrumb, or user context. */
+export function sanitizeSentryTransaction(event: TransactionEvent): TransactionEvent {
+  const tags = controlledTags(event.tags);
+  const trace = event.contexts?.trace;
+  const traceData: Record<string, string | number | boolean> = {};
+  for (const key of CONTROLLED_TRACE_DATA) {
+    const value = trace?.data?.[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      traceData[key] = value;
+    }
+  }
+  const measurements: NonNullable<TransactionEvent["measurements"]> = {};
+  for (const [name, measurement] of Object.entries(event.measurements ?? {})) {
+    if (!Number.isFinite(measurement.value) || typeof measurement.unit !== "string") continue;
+    measurements[name] = { value: measurement.value, unit: measurement.unit };
+  }
+
+  return {
+    type: "transaction",
+    ...(event.event_id === undefined ? {} : { event_id: event.event_id }),
+    ...(event.timestamp === undefined ? {} : { timestamp: event.timestamp }),
+    ...(event.start_timestamp === undefined ? {} : { start_timestamp: event.start_timestamp }),
+    ...(event.platform === undefined ? {} : { platform: event.platform }),
+    ...(event.release === undefined ? {} : { release: event.release }),
+    ...(event.environment === undefined ? {} : { environment: event.environment }),
+    ...(event.sdk?.name === undefined && event.sdk?.version === undefined
+      ? {}
+      : {
+          sdk: {
+            ...(event.sdk.name === undefined ? {} : { name: event.sdk.name }),
+            ...(event.sdk.version === undefined ? {} : { version: event.sdk.version }),
+          },
+        }),
+    ...(event.transaction === undefined ? {} : { transaction: event.transaction }),
+    ...(event.transaction_info === undefined ? {} : { transaction_info: event.transaction_info }),
+    ...(Object.keys(tags).length === 0 ? {} : { tags }),
+    ...(trace === undefined
+      ? {}
+      : {
+          contexts: {
+            trace: {
+              trace_id: trace.trace_id,
+              span_id: trace.span_id,
+              ...(trace.parent_span_id === undefined
+                ? {}
+                : { parent_span_id: trace.parent_span_id }),
+              ...(trace.op === undefined ? {} : { op: trace.op }),
+              ...(trace.status === undefined ? {} : { status: trace.status }),
+              ...(trace.origin === undefined ? {} : { origin: trace.origin }),
+              ...(Object.keys(traceData).length === 0 ? {} : { data: traceData }),
+            },
+          },
+        }),
+    ...(Object.keys(measurements).length === 0 ? {} : { measurements }),
+  };
+}
+
+function controlledTags(tags: TransactionEvent["tags"]): Record<string, string> {
+  const controlled: Record<string, string> = {};
+  for (const key of CONTROLLED_TAGS) {
+    const value = tags?.[key];
+    if (typeof value === "string") controlled[key] = value;
+  }
+  return controlled;
 }
 
 function sanitizeStackFrame(frame: StackFrame): StackFrame {
