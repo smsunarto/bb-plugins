@@ -1,6 +1,4 @@
-import { Agent } from "nanocodex/node";
-import { chatGpt } from "nanocodex/node/transport";
-import { ChatGptSubscription } from "nanocodex/worker";
+import { Agent, ChatGptSubscription, chatGpt } from "./generated/nanocodex-runtime.mjs";
 import type {
   ChatGptLoginStatus,
   ChatGptSubscriptionHandle,
