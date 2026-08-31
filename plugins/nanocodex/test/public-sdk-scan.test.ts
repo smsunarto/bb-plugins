@@ -16,6 +16,7 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
   const report = scanPublicSdkOnly(PLUGIN_ROOT, {
     allow: [
       /^bun:test$/,
+      /^parallel-web$/,
       /^zod$/,
       /^@bb-kit\/core\/(?:command|plugin)$/,
       /^nanocodex\/(?:durability|host|node(?:\/transport)?|worker)$/,

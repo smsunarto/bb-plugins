@@ -6,7 +6,7 @@ import { test } from "bun:test";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("the shipped NanoCodex plugin has no CLI or child-process bridge", async () => {
+test("the shipped NanoCodex provider never spawns a CLI or child process", async () => {
   const violations: string[] = [];
   for (const path of await sourceFiles(ROOT)) {
     const text = await readFile(path, "utf8");
@@ -22,7 +22,7 @@ async function sourceFiles(root: string): Promise<string[]> {
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (entry.name === "dist" || entry.name === "test" || entry.name === "node_modules") continue;
     const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await sourceFiles(path));
+    if (entry.isDirectory()) files.push(...(await sourceFiles(path)));
     else if (entry.name.endsWith(".ts") || entry.name === "package.json") files.push(path);
   }
   return files;

@@ -26,9 +26,10 @@ export const nanocodexProvider: PluginProviderDeclaration = {
   models: { scope: "host", fallback: NANOCODEX_MODELS },
   maintenance: { health: true, usage: false, installation: false },
   strings: {
-    signInHint: "NanoCodex uses Codex auth.json when available and starts ChatGPT device login from provider health.",
+    signInHint:
+      "NanoCodex uses Codex auth.json when available and starts ChatGPT device login from provider health.",
     expiredHint: "Start ChatGPT device login from provider health.",
     installUrl: "https://github.com/gakonst/nanocodex",
   },
-  env: { passthrough: ["CODEX_HOME", "NANOCODEX_AUTH_FILE"] },
+  env: { passthrough: ["CODEX_HOME", "NANOCODEX_AUTH_FILE", "PARALLEL_API_KEY"] },
 };

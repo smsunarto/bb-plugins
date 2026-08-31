@@ -6,6 +6,7 @@ import { test } from "bun:test";
 import type {
   ChatGptSubscriptionHandle,
   DefaultAgent,
+  NamedTool,
   SubscriptionRevision,
 } from "nanocodex/host";
 import { Agent } from "nanocodex/node";
@@ -19,6 +20,7 @@ import { createNanocodexStorage } from "../src/storage.ts";
 test("one compiled module and one ChatGPT subscription serve every agent", async () => {
   const root = await mkdtemp(join(tmpdir(), "nanocodex-binding-"));
   const modules: unknown[] = [];
+  const agentOptions: Agent.create.Options[] = [];
   let opens = 0;
   let disposals = 0;
   const handle: ChatGptSubscriptionHandle = {
@@ -48,14 +50,21 @@ test("one compiled module and one ChatGPT subscription serve every agent", async
     return handle;
   }) as typeof ChatGptSubscription.open;
   const createAgent = (async (options: Agent.create.Options) => {
+    agentOptions.push(options);
     modules.push(options.module);
     return {} as DefaultAgent;
   }) as typeof Agent.create;
+  const parallelWebTool = {
+    name: "web__run",
+    description: "test",
+    handler() {},
+  } satisfies NamedTool;
   try {
     const binding = createProcessBinding(createNanocodexStorage(root), {
       openSubscription,
       createAgent,
       readSeed: async () => undefined,
+      parallelWebTool,
     });
     await Promise.all([
       binding.health(),
@@ -65,6 +74,10 @@ test("one compiled module and one ChatGPT subscription serve every agent", async
     const module = await initializeEmbeddedNanocodexModule();
     assert.equal(opens, 1);
     assert.deepEqual(modules, [module, module, module]);
+    assert.deepEqual(agentOptions.map((options) => options.tools), [
+      [parallelWebTool],
+      [parallelWebTool],
+    ]);
     await binding.close();
     await binding.close();
     assert.equal(disposals, 1);

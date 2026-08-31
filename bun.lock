@@ -296,6 +296,7 @@
       "dependencies": {
         "@bb-kit/core": "0.1.0",
         "@get-bb/plugin-sdk": "0.4.21",
+        "parallel-web": "^1.3.2",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -1446,6 +1447,8 @@
     "pako": ["pako@2.1.0", "", {}, "sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug=="],
 
     "papaparse": ["papaparse@5.7.0", "", {}, "sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA=="],
+
+    "parallel-web": ["parallel-web@1.3.2", "", {}, "sha512-lKtHlzSwITT98iCkJoG09ttVcM0WwR2zFIgDzZzNfCBUz2q5n9ktE+pZWKbH1d6iZvnBDsAcCF915IAxdrWWDA=="],
 
     "parse5": ["parse5@7.3.0", "", { "dependencies": { "entities": "^6.0.0" } }, "sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw=="],
 

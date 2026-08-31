@@ -6,6 +6,7 @@ import type {
   ChatGptSubscriptionHandle,
   DefaultAgent,
   Model,
+  NamedTool,
   SessionSnapshot,
   Thinking,
 } from "nanocodex/host";
@@ -15,6 +16,7 @@ import {
   NANOCODEX_WASM_BASE64,
   NANOCODEX_WASM_SHA256,
 } from "./generated/nanocodex-wasm.ts";
+import { createParallelWebTool } from "./parallel-web.ts";
 import type { NanocodexStorage } from "./storage.ts";
 
 export interface NativeAgentOptions {
@@ -50,6 +52,7 @@ export interface BindingDependencies {
   readonly createAgent?: typeof Agent.create;
   readonly readSeed?: typeof readAuthSeed;
   readonly inspectSeed?: typeof inspectAuthSeed;
+  readonly parallelWebTool?: NamedTool;
 }
 
 let modulePromise: Promise<WebAssembly.Module> | undefined;
@@ -69,6 +72,7 @@ export function createProcessBinding(
   const createAgent = dependencies.createAgent ?? Agent.create;
   const readSeed = dependencies.readSeed ?? readAuthSeed;
   const inspectSeed = dependencies.inspectSeed ?? (dependencies.readSeed === undefined ? inspectAuthSeed : undefined);
+  const parallelWebTool = dependencies.parallelWebTool ?? createParallelWebTool();
   let subscriptionPromise: Promise<ChatGptSubscriptionHandle> | undefined;
   let authSeedProblem: { readonly state: "expired" | "broken"; readonly message: string } | undefined;
   let closed = false;
@@ -107,6 +111,7 @@ export function createProcessBinding(
         module,
         transport,
         mcp: false as const,
+        tools: [parallelWebTool],
         model: options.model,
         thinking: options.thinking,
         fastMode: options.fastMode,
