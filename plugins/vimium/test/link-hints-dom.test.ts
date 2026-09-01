@@ -87,6 +87,48 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("activating a dropdown trigger re-prompts scoped to its options", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML = '<button id="trigger" aria-haspopup="menu">Model</button>';
+    const trigger = document.getElementById("trigger") as HTMLElement;
+    giveRect(trigger, 10, 10);
+    const picked: string[] = [];
+    trigger.addEventListener("click", () => {
+      const menu = document.createElement("div");
+      menu.id = "trigger-menu";
+      menu.setAttribute("role", "menu");
+      for (const name of ["Sol", "Luna"]) {
+        const item = document.createElement("div");
+        item.setAttribute("role", "menuitem");
+        item.textContent = name;
+        item.addEventListener("click", () => picked.push(name));
+        menu.appendChild(item);
+      }
+      document.body.appendChild(menu);
+      giveRect(menu.children[0] as Element, 10, 40);
+      giveRect(menu.children[1] as Element, 10, 70);
+      trigger.setAttribute("aria-controls", "trigger-menu");
+    });
+
+    pressKey("f");
+    expect(markers()).toEqual(["s"]);
+    pressKey("s");
+    expect(markers()).toEqual([]);
+
+    // The reprompt polls on a 60ms timer, so give it two ticks.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(markers()).toEqual(["f", "j"]);
+
+    pressKey("j");
+    expect(picked).toEqual(["Luna"]);
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    void dispose();
+    controller.abort();
+  });
+
   test("Escape exits and the disposer plus abort remove everything", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));

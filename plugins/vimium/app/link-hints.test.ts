@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { DROPDOWN_ALPHABET, HINT_ALPHABET } from "./hint-labels.ts";
 import {
   activeTransition,
   isEditableProbe,
   isIdleTrigger,
   isViableCandidate,
+  opensDropdown,
   type CandidateView,
+  type DropdownProbe,
   type EditableProbe,
   type IdleKey,
 } from "./link-hints.ts";
@@ -91,6 +94,35 @@ describe("isIdleTrigger", () => {
     expect(isIdleTrigger(idleKey({ ...chord, code: "KeyC", key: "C" }))).toBe(false);
     expect(isIdleTrigger(idleKey({ ...chord, altKey: true }))).toBe(false);
     expect(isIdleTrigger(idleKey({ ...chord, ctrlKey: true }))).toBe(false);
+  });
+});
+
+describe("opensDropdown", () => {
+  function dropdownProbe(attributes: Record<string, string>, tagName = "BUTTON"): DropdownProbe {
+    return { tagName, getAttribute: (name) => attributes[name] ?? null };
+  }
+
+  test("aria-haspopup menu, listbox, and true open a dropdown", () => {
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "menu" }))).toBe(true);
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "listbox" }))).toBe(true);
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "true" }))).toBe(true);
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "dialog" }))).toBe(false);
+  });
+
+  test("a combobox opens a dropdown", () => {
+    expect(opensDropdown(dropdownProbe({ role: "combobox" }))).toBe(true);
+  });
+
+  test("a plain button and a native select do not", () => {
+    expect(opensDropdown(dropdownProbe({}))).toBe(false);
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "menu" }, "SELECT"))).toBe(false);
+  });
+});
+
+describe("DROPDOWN_ALPHABET", () => {
+  test("reorders the hint alphabet without changing its character set", () => {
+    expect([...DROPDOWN_ALPHABET].sort()).toEqual([...HINT_ALPHABET].sort());
+    expect(DROPDOWN_ALPHABET.startsWith("fjdk")).toBe(true);
   });
 });
 
