@@ -314,6 +314,44 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("active agents hide locked composer controls until the run stops", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<button id="scroll" aria-label="Scroll to latest event">Latest</button>' +
+      '<div data-app-composer data-app-composer-role="primary">' +
+      '<div id="editor" role="textbox"></div>' +
+      '<button id="stop" aria-label="Stop run" data-promptbox-submit-action>Stop</button>' +
+      '<div data-follow-up-composer-footer>' +
+      '<div><button id="project" data-promptbox-project-control>Monorepo</button>' +
+      '<button id="machine" aria-label="Environment">Dev Mac</button></div>' +
+      '<div><button id="permission" aria-label="Permission mode">Ask</button></div>' +
+      "</div></div>";
+    for (const [index, id] of [
+      "scroll",
+      "editor",
+      "stop",
+      "project",
+      "machine",
+      "permission",
+    ].entries()) {
+      giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
+    }
+
+    pressKey("f");
+    expect(markers()).toEqual(["i", "j", "k"]);
+
+    pressKey("Escape");
+    document.getElementById("stop")?.setAttribute("aria-label", "Submit");
+    pressKey("f");
+    expect(markers()).toHaveLength(6);
+    expect(markers()).toEqual(expect.arrayContaining(["i", "j", "p", "l", "k"]));
+
+    void dispose();
+    controller.abort();
+  });
+
   test("a scroll away from the hints keeps the prompt, a window scroll exits", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));

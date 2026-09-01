@@ -190,6 +190,7 @@ describe("isViableCandidate", () => {
       disabled: false,
       insideAriaHidden: false,
       insideQuietZone: false,
+      blockedByActiveAgent: false,
       rect: { top: 10, left: 10, width: 40, height: 20 },
       viewportWidth: 1024,
       viewportHeight: 768,
@@ -212,10 +213,11 @@ describe("isViableCandidate", () => {
     expect(isViableCandidate(view({ tabindex: "0", clickableBeyondTabindex: false }))).toBe(true);
   });
 
-  test("disabled, aria-hidden, and quiet-zone elements are not viable", () => {
+  test("disabled, hidden, quiet-zone, and active-agent-locked elements are not viable", () => {
     expect(isViableCandidate(view({ disabled: true }))).toBe(false);
     expect(isViableCandidate(view({ insideAriaHidden: true }))).toBe(false);
     expect(isViableCandidate(view({ insideQuietZone: true }))).toBe(false);
+    expect(isViableCandidate(view({ blockedByActiveAgent: true }))).toBe(false);
   });
 
   test("zero-size and offscreen rects are not viable", () => {

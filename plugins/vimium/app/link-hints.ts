@@ -181,6 +181,7 @@ export interface CandidateView {
   readonly disabled: boolean;
   readonly insideAriaHidden: boolean;
   readonly insideQuietZone: boolean;
+  readonly blockedByActiveAgent: boolean;
   readonly rect: { top: number; left: number; width: number; height: number };
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -196,7 +197,14 @@ export interface CandidateView {
 /** True when the element deserves a hint marker. */
 export function isViableCandidate(view: CandidateView): boolean {
   if (view.tabindex === "-1" && !view.clickableBeyondTabindex) return false;
-  if (view.disabled || view.insideAriaHidden || view.insideQuietZone) return false;
+  if (
+    view.disabled ||
+    view.insideAriaHidden ||
+    view.insideQuietZone ||
+    view.blockedByActiveAgent
+  ) {
+    return false;
+  }
   if (view.rect.width <= 0 || view.rect.height <= 0) return false;
   if (view.rect.top + view.rect.height <= 0 || view.rect.left + view.rect.width <= 0) return false;
   if (view.rect.top >= view.viewportHeight || view.rect.left >= view.viewportWidth) return false;
@@ -269,7 +277,32 @@ function isEditableTarget(target: EventTarget | null): boolean {
   });
 }
 
-function candidateView(element: Element): CandidateView {
+function findActivePrimaryComposer(): HTMLElement | null {
+  for (const composer of document.querySelectorAll<HTMLElement>(
+    '[data-app-composer-role="primary"]',
+  )) {
+    if (composer.querySelector('button[aria-label="Stop run"]') !== null) return composer;
+  }
+  return null;
+}
+
+function isBlockedByActiveAgent(
+  element: Element,
+  activeComposer: HTMLElement | null,
+): boolean {
+  if (activeComposer === null) return false;
+  if (element.matches('button[aria-label="Scroll to latest event"]')) return true;
+
+  const footer = activeComposer.querySelector<HTMLElement>(
+    "[data-follow-up-composer-footer]",
+  );
+  return footer?.firstElementChild?.contains(element) === true;
+}
+
+function candidateView(
+  element: Element,
+  activeComposer: HTMLElement | null,
+): CandidateView {
   const style = window.getComputedStyle(element);
   const rect = element.getBoundingClientRect();
   return {
@@ -281,6 +314,7 @@ function candidateView(element: Element): CandidateView {
       element.getAttribute("aria-disabled") === "true",
     insideAriaHidden: element.closest('[aria-hidden="true"]') !== null,
     insideQuietZone: element.closest(QUIET_ZONE_SELECTOR) !== null,
+    blockedByActiveAgent: isBlockedByActiveAgent(element, activeComposer),
     rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
     viewportWidth: window.innerWidth,
     viewportHeight: window.innerHeight,
@@ -295,8 +329,9 @@ function candidateView(element: Element): CandidateView {
 
 function collectTargets(scope: ParentNode): HTMLElement[] {
   const targets: HTMLElement[] = [];
+  const activeComposer = findActivePrimaryComposer();
   for (const element of scope.querySelectorAll<HTMLElement>(CANDIDATE_SELECTOR)) {
-    if (isViableCandidate(candidateView(element))) targets.push(element);
+    if (isViableCandidate(candidateView(element, activeComposer))) targets.push(element);
   }
   return targets;
 }
