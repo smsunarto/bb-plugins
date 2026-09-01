@@ -5,20 +5,39 @@
 // lands anywhere, since bb keeps its composer focused — then a marker per
 // visible clickable element until the typed characters pick one — or Escape,
 // Backspace past the start, a non-hint key, a scroll, a resize, or a blur
-// exits. A hint that lands on a dropdown trigger re-prompts once the popup
-// appears, with hints scoped to its options and labels ordered for the home
-// row. The transitions and predicates are pure functions so they test
-// without a DOM; only mounting, marker drawing, and activation touch one.
+// exits. Built-in composer controls keep pinned single-character labels and
+// sidebar thread rows count 1-9; everything else gets two-character labels.
+// A hint that lands on a dropdown trigger re-prompts once the popup appears,
+// with hints scoped to its options and labels ordered for the home row; the
+// scoped prompt follows the popup (exiting when it is dismissed), yields to
+// `Cmd+Shift+F` for a fresh whole-screen prompt, and hands focus back to the
+// composer after a pick from one of the composer's own dropdowns. The
+// transitions and predicates are pure functions so they test without a DOM;
+// only mounting, marker drawing, and activation touch one.
 
 import type {
   PluginContentScriptContext,
   PluginContentScriptDisposer,
 } from "@get-bb/plugin-sdk/app";
-import { DROPDOWN_ALPHABET, HINT_ALPHABET, hintLabels } from "./hint-labels.ts";
+import {
+  DROPDOWN_ALPHABET,
+  RESERVED_COMPOSER_CONTROLS,
+  assignTopLevelLabels,
+  hintLabels,
+  type TopLevelFact,
+} from "./hint-labels.ts";
 
 type HintMode =
   | { kind: "idle" }
-  | { kind: "active"; hints: readonly Hint[]; typed: string };
+  | {
+      kind: "active";
+      hints: readonly Hint[];
+      typed: string;
+      /** The popup a scoped reprompt is pinned to; null for a whole-screen prompt. */
+      scopeRoot: HTMLElement | null;
+      /** True when picking from this scope should hand focus back to the composer. */
+      refocusComposer: boolean;
+    };
 
 interface Hint {
   readonly label: string;
@@ -49,18 +68,21 @@ export type ActiveTransition =
   | { kind: "retype"; typed: string }
   | { kind: "activate"; label: string };
 
-/** What one keydown does to active hint mode, given the labels on screen. */
+/**
+ * What one keydown does to active hint mode. The labels themselves define
+ * the valid characters — letters, digits, and reserved mnemonics alike — so
+ * any key that cannot extend the typed prefix toward a label exits.
+ */
 export function activeTransition(
   labels: readonly string[],
   typed: string,
   key: string,
-  alphabet: string = HINT_ALPHABET,
 ): ActiveTransition {
   if (MODIFIER_KEYS.has(key)) return { kind: "ignore" };
   if (key === "Escape") return { kind: "exit" };
   if (key === "Backspace") return { kind: "retype", typed: typed.slice(0, -1) };
   const char = key.length === 1 ? key.toLowerCase() : "";
-  if (char === "" || !alphabet.includes(char)) return { kind: "exit" };
+  if (char === "") return { kind: "exit" };
   const next = typed + char;
   const matching = labels.filter((label) => label.startsWith(next));
   if (matching.length === 0) return { kind: "exit" };
@@ -81,15 +103,24 @@ export interface IdleKey {
 }
 
 /**
+ * True for `Cmd+Shift+F`, which opens hints from anywhere and, while a
+ * scoped reprompt is up, replaces it with a whole-screen prompt. Matched by
+ * code, since shift changes the reported key.
+ */
+export function isForceChord(
+  key: Pick<IdleKey, "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+): boolean {
+  return key.metaKey && key.shiftKey && !key.ctrlKey && !key.altKey && key.code === "KeyF";
+}
+
+/**
  * True when the keydown opens hint mode from idle. Plain `f` defers to an
- * editable target; `Cmd+Shift+F` does not, because bb autofocuses its
+ * editable target; the force chord does not, because bb autofocuses its
  * composer and would otherwise make hints unreachable without a click or an
- * Escape. Matched by code, since shift changes the reported key.
+ * Escape.
  */
 export function isIdleTrigger(key: IdleKey): boolean {
-  if (key.metaKey) {
-    return key.shiftKey && !key.ctrlKey && !key.altKey && key.code === "KeyF";
-  }
+  if (key.metaKey) return isForceChord(key);
   if (key.ctrlKey || key.altKey) return false;
   return key.key === "f" && !key.editableTarget;
 }
@@ -120,14 +151,16 @@ export interface DropdownProbe {
 }
 
 /**
- * True when activating the element opens an in-page dropdown worth
- * reprompting into. A native select renders its options in the OS picker,
+ * True when activating the element opens an in-page popup worth reprompting
+ * into. `dialog` counts because bb's model selector is a popover dialog full
+ * of plain buttons. A native select renders its options in the OS picker,
  * outside the DOM, so it is not one.
  */
 export function opensDropdown(probe: DropdownProbe): boolean {
   if (probe.tagName.toUpperCase() === "SELECT") return false;
   const haspopup = probe.getAttribute("aria-haspopup");
-  if (haspopup === "menu" || haspopup === "listbox" || haspopup === "true") return true;
+  if (haspopup === "menu" || haspopup === "listbox" || haspopup === "dialog") return true;
+  if (haspopup === "true") return true;
   return probe.getAttribute("role") === "combobox";
 }
 
@@ -181,6 +214,13 @@ const CLICKABLE_SELECTORS = [
 const CANDIDATE_SELECTOR = [...CLICKABLE_SELECTORS, "[tabindex]"].join(", ");
 const NON_TABINDEX_SELECTOR = CLICKABLE_SELECTORS.join(", ");
 
+// Covers bb's own thread links and any sidebar honoring bb's thread-shortcut
+// contract (gtd-sidebar rows are `href="#"` anchors carrying the data attribute).
+const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut-target]';
+
+const COMPOSER_SELECTOR = "[data-app-composer]";
+const COMPOSER_TEXTBOX_SELECTOR = '[data-app-composer] [role="textbox"]';
+
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
   "checkbox",
@@ -233,6 +273,16 @@ function collectTargets(scope: ParentNode): HTMLElement[] {
     if (isViableCandidate(candidateView(element))) targets.push(element);
   }
   return targets;
+}
+
+function topLevelFact(element: HTMLElement): TopLevelFact {
+  const reserved = RESERVED_COMPOSER_CONTROLS.find((control) =>
+    element.matches(control.selector),
+  );
+  return {
+    reservedChar: reserved?.char ?? null,
+    isThreadRow: element.matches(THREAD_ROW_SELECTOR),
+  };
 }
 
 function findPopupRoot(trigger: HTMLElement): HTMLElement | null {
@@ -303,8 +353,13 @@ export function mountLinkHints(
 ): PluginContentScriptDisposer {
   let mode: HintMode = { kind: "idle" };
   let container: HTMLElement | null = null;
+  let popupWatch: number | null = null;
 
   function exit(): void {
+    if (popupWatch !== null) {
+      window.clearInterval(popupWatch);
+      popupWatch = null;
+    }
     mode = { kind: "idle" };
     container?.remove();
     container = null;
@@ -314,10 +369,12 @@ export function mountLinkHints(
     if (mode.kind === "active") exit();
   }
 
-  function enter(scope: ParentNode = document, alphabet: string = HINT_ALPHABET): boolean {
-    const targets = collectTargets(scope);
-    if (targets.length === 0) return false;
-    const labels = hintLabels(targets.length, alphabet);
+  function show(
+    targets: readonly HTMLElement[],
+    labels: readonly string[],
+    scopeRoot: HTMLElement | null,
+    refocusComposer: boolean,
+  ): void {
     const layer = document.createElement("div");
     layer.className = "vimium-hint-layer";
     const hints = targets.map((target, index): Hint => {
@@ -328,8 +385,31 @@ export function mountLinkHints(
     });
     document.body.appendChild(layer);
     container = layer;
-    mode = { kind: "active", hints, typed: "" };
+    mode = { kind: "active", hints, typed: "", scopeRoot, refocusComposer };
+    if (scopeRoot !== null) watchPopup(scopeRoot);
+  }
+
+  function enterTopLevel(): boolean {
+    const targets = collectTargets(document);
+    if (targets.length === 0) return false;
+    show(targets, assignTopLevelLabels(targets.map(topLevelFact)), null, false);
     return true;
+  }
+
+  function enterScoped(root: HTMLElement, refocusComposer: boolean): boolean {
+    const targets = collectTargets(root);
+    if (targets.length === 0) return false;
+    show(targets, hintLabels(targets.length, DROPDOWN_ALPHABET), root, refocusComposer);
+    return true;
+  }
+
+  // A click outside or an app-level Escape unmounts the popup without any key
+  // reaching the hint listener, so a scoped prompt has to see the removal
+  // itself.
+  function watchPopup(root: HTMLElement): void {
+    popupWatch = window.setInterval(() => {
+      if (!root.isConnected) exitIfActive();
+    }, 100);
   }
 
   function applyTyped(typed: string): void {
@@ -354,13 +434,21 @@ export function mountLinkHints(
         editableTarget: isEditableTarget(event.target),
       });
       if (!trigger) return;
-      if (!enter()) return;
+      if (!enterTopLevel()) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
+    if (isForceChord(event)) {
+      exit();
+      if (enterTopLevel()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      return;
+    }
     if (event.ctrlKey || event.metaKey || event.altKey) {
-      // A chord belongs to the browser or to bb; exit without swallowing it.
+      // Any other chord belongs to the browser or to bb; exit without swallowing it.
       exit();
       return;
     }
@@ -381,26 +469,56 @@ export function mountLinkHints(
       return;
     }
     const chosen = mode.hints.find((hint) => hint.label === action.label);
+    const scopeRoot = mode.scopeRoot;
+    const wantsComposerBack = mode.refocusComposer;
     exit();
     if (!chosen) return;
     activate(chosen.target);
-    if (!isTextEntry(chosen.target) && opensDropdown(chosen.target)) {
+    if (isTextEntry(chosen.target)) return;
+    if (opensDropdown(chosen.target)) {
       scheduleReprompt(chosen.target);
+      return;
     }
+    if (scopeRoot !== null && wantsComposerBack) scheduleComposerRefocus(scopeRoot);
   }
 
   // The popup portals in and animates open after the click, so poll briefly
   // and reprompt with hints scoped to it once it holds viable options.
   function scheduleReprompt(trigger: HTMLElement): void {
+    const refocusComposer = trigger.closest(COMPOSER_SELECTOR) !== null;
     let attempts = 0;
     const poll = (): void => {
       if (context.signal.aborted || mode.kind !== "idle") return;
       const root = findPopupRoot(trigger);
-      if (root && enter(root, DROPDOWN_ALPHABET)) return;
+      if (root && enterScoped(root, refocusComposer)) return;
       attempts += 1;
       if (attempts < 10) window.setTimeout(poll, 60);
     };
     window.setTimeout(poll, 60);
+  }
+
+  // Wait for the popup to actually close before claiming focus: bb's model
+  // dialog stays open after a pick, and its focus trap owns focus until then.
+  // Once it closes, Radix hands focus back to the trigger, so a single
+  // focus() would be stolen right back; restate the composer's claim for a
+  // few ticks instead.
+  function scheduleComposerRefocus(popup: HTMLElement): void {
+    let waitTicks = 0;
+    let assertTicks = 0;
+    const poll = (): void => {
+      if (context.signal.aborted) return;
+      if (popup.isConnected) {
+        waitTicks += 1;
+        if (waitTicks < 12) window.setTimeout(poll, 80);
+        return;
+      }
+      const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
+      if (!textbox) return;
+      if (document.activeElement !== textbox) textbox.focus();
+      assertTicks += 1;
+      if (assertTicks < 6) window.setTimeout(poll, 80);
+    };
+    window.setTimeout(poll, 80);
   }
 
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });

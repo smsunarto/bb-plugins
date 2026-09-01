@@ -3,6 +3,7 @@ import { DROPDOWN_ALPHABET, HINT_ALPHABET } from "./hint-labels.ts";
 import {
   activeTransition,
   isEditableProbe,
+  isForceChord,
   isIdleTrigger,
   isViableCandidate,
   opensDropdown,
@@ -95,6 +96,15 @@ describe("isIdleTrigger", () => {
     expect(isIdleTrigger(idleKey({ ...chord, altKey: true }))).toBe(false);
     expect(isIdleTrigger(idleKey({ ...chord, ctrlKey: true }))).toBe(false);
   });
+
+  test("the force chord matches exactly Cmd+Shift+F", () => {
+    const chord = { code: "KeyF", ctrlKey: false, metaKey: true, altKey: false, shiftKey: true };
+    expect(isForceChord(chord)).toBe(true);
+    expect(isForceChord({ ...chord, metaKey: false })).toBe(false);
+    expect(isForceChord({ ...chord, shiftKey: false })).toBe(false);
+    expect(isForceChord({ ...chord, altKey: true })).toBe(false);
+    expect(isForceChord({ ...chord, code: "KeyG" })).toBe(false);
+  });
 });
 
 describe("opensDropdown", () => {
@@ -102,11 +112,13 @@ describe("opensDropdown", () => {
     return { tagName, getAttribute: (name) => attributes[name] ?? null };
   }
 
-  test("aria-haspopup menu, listbox, and true open a dropdown", () => {
+  test("aria-haspopup menu, listbox, dialog, and true open a dropdown", () => {
     expect(opensDropdown(dropdownProbe({ "aria-haspopup": "menu" }))).toBe(true);
     expect(opensDropdown(dropdownProbe({ "aria-haspopup": "listbox" }))).toBe(true);
     expect(opensDropdown(dropdownProbe({ "aria-haspopup": "true" }))).toBe(true);
-    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "dialog" }))).toBe(false);
+    // bb's model selector is a popover dialog and must reprompt.
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "dialog" }))).toBe(true);
+    expect(opensDropdown(dropdownProbe({ "aria-haspopup": "grid" }))).toBe(false);
   });
 
   test("a combobox opens a dropdown", () => {
@@ -144,10 +156,15 @@ describe("activeTransition", () => {
     expect(activeTransition(labels, "", "Backspace")).toEqual({ kind: "retype", typed: "" });
   });
 
-  test("a key outside the alphabet exits", () => {
+  test("a key no label starts with exits", () => {
     expect(activeTransition(labels, "", "q")).toEqual({ kind: "exit" });
+    expect(activeTransition(labels, "", "1")).toEqual({ kind: "exit" });
     expect(activeTransition(labels, "", "Enter")).toEqual({ kind: "exit" });
     expect(activeTransition(labels, "", "ArrowDown")).toEqual({ kind: "exit" });
+  });
+
+  test("digit labels activate like letter labels", () => {
+    expect(activeTransition(["1", "2", "sa"], "", "2")).toEqual({ kind: "activate", label: "2" });
   });
 
   test("a matching prefix narrows, case-insensitively", () => {

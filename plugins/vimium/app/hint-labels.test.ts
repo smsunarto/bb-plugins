@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { HINT_ALPHABET, hintLabels } from "./hint-labels.ts";
+import {
+  GENERAL_ALPHABET,
+  HINT_ALPHABET,
+  RESERVED_COMPOSER_CONTROLS,
+  assignTopLevelLabels,
+  hintLabels,
+  type TopLevelFact,
+} from "./hint-labels.ts";
 
 describe("hintLabels", () => {
   test("returns nothing for zero or negative counts", () => {
@@ -44,5 +51,67 @@ describe("hintLabels", () => {
   test("respects a custom alphabet", () => {
     expect(hintLabels(2, "ab")).toEqual(["a", "b"]);
     expect(hintLabels(3, "ab")).toEqual(["aa", "ab", "ba"]);
+  });
+
+  test("a minimum length forces longer labels even for small counts", () => {
+    expect(hintLabels(2, "ab", 2)).toEqual(["aa", "ab"]);
+    expect(hintLabels(5, "ab", 2).every((label) => label.length === 3)).toBe(true);
+  });
+});
+
+describe("GENERAL_ALPHABET", () => {
+  test("excludes every reserved composer character", () => {
+    for (const control of RESERVED_COMPOSER_CONTROLS) {
+      expect(GENERAL_ALPHABET).not.toContain(control.char);
+    }
+  });
+});
+
+describe("assignTopLevelLabels", () => {
+  const general = (): TopLevelFact => ({ reservedChar: null, isThreadRow: false });
+  const thread = (): TopLevelFact => ({ reservedChar: null, isThreadRow: true });
+  const reserved = (char: string): TopLevelFact => ({ reservedChar: char, isThreadRow: false });
+
+  test("reserved controls keep their pinned character regardless of position", () => {
+    expect(assignTopLevelLabels([general(), reserved("m"), reserved("s")])).toEqual([
+      "dd",
+      "m",
+      "s",
+    ]);
+  });
+
+  test("a duplicate reserved match falls back to a general label", () => {
+    const labels = assignTopLevelLabels([reserved("m"), reserved("m")]);
+    expect(labels[0]).toBe("m");
+    expect(labels[1]?.length).toBe(2);
+  });
+
+  test("thread rows count 1-9 in order, the tenth goes general", () => {
+    const facts = Array.from({ length: 10 }, thread);
+    const labels = assignTopLevelLabels([general(), ...facts]);
+    expect(labels.slice(1, 10)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    expect(labels[10]?.length).toBe(2);
+  });
+
+  test("general labels are never a single character", () => {
+    for (const label of assignTopLevelLabels(Array.from({ length: 30 }, general))) {
+      expect(label.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  test("the mixed label set is prefix-free", () => {
+    const labels = assignTopLevelLabels([
+      reserved("m"),
+      reserved("p"),
+      thread(),
+      thread(),
+      ...Array.from({ length: 20 }, general),
+    ]);
+    for (const a of labels) {
+      for (const b of labels) {
+        if (a === b) continue;
+        expect(a.startsWith(b)).toBe(false);
+      }
+    }
   });
 });
