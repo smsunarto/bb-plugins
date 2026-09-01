@@ -96,7 +96,8 @@ export function ThreadCard({
       <li className="list-none">
         <div
           className={cn(
-            "group/card relative rounded-md px-2.5 py-1.5 transition-colors",
+            "group/card relative rounded-md px-2.5 transition-colors",
+            isCompactViewport ? "min-h-10 py-0" : "py-1.5",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             // A thread open in another pane gets a weaker tint than the active
             // row, so the two states stay distinguishable.
@@ -130,8 +131,8 @@ export function ThreadCard({
           ) : null}
           <div
             className={cn(
-              "pointer-events-none relative flex h-5 items-center gap-1.5",
-              isCompactViewport && "pr-10",
+              "pointer-events-none relative flex items-center gap-1.5",
+              isCompactViewport ? "h-10 pr-10" : "h-5",
             )}
           >
             <span
@@ -170,6 +171,45 @@ export function ThreadCard({
             >
               <StatusOrTime thread={thread} now={now} />
             </span>
+            {isCompactViewport && thread.activity.workflows > 0 ? (
+              <ActivityCount
+                label="workflows"
+                count={thread.activity.workflows}
+                isCompactViewport
+              />
+            ) : null}
+            {isCompactViewport && thread.activity.backgroundAgents > 0 ? (
+              <ActivityCount
+                label="background agents"
+                count={thread.activity.backgroundAgents}
+                isCompactViewport
+              />
+            ) : null}
+            {isCompactViewport && pullRequest ? (
+              <a
+                href={pullRequest.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                title={pullRequest.title}
+                className={cn(
+                  "pointer-events-auto relative z-[1] shrink-0 font-mono hover:underline",
+                  pullRequest.state === "merged"
+                    ? "text-[color:var(--pr-merged)]"
+                    : pullRequest.attention === "checks_failed" ||
+                        pullRequest.attention === "conflicts"
+                      ? "text-destructive-text"
+                      : pullRequest.attention === "ready_to_merge"
+                        ? "text-success-foreground"
+                        : "text-muted-foreground",
+                )}
+              >
+                #{pullRequest.number}
+              </a>
+            ) : null}
+            {isCompactViewport && showProviderIcon ? (
+              <ProviderGlyph providerId={thread.providerId} provider={provider} />
+            ) : null}
           </div>
           {/* One step below the title, not half a step: at 10px the size drop
               alone does not carry the hierarchy, so the line also starts at the
@@ -179,7 +219,7 @@ export function ThreadCard({
             className={cn(
               "pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs",
               isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
-              isCompactViewport && "pr-10",
+              isCompactViewport && "hidden",
             )}
           >
             {/* Project and origin share this line now that the title has taken

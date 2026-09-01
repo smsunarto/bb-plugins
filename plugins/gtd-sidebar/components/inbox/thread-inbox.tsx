@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -42,6 +42,11 @@ import { resolveSidebarBranchLabel } from "@/lib/gitbutler";
 const ALL_PROJECTS = "__all__";
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
+const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
+  maskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
+  WebkitMaskImage:
+    "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
+};
 
 /**
  * The sidebar's scrolling list: cards grouped by who can act next.
@@ -305,7 +310,15 @@ export function ThreadInbox({
         </Select>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto px-1.5",
+          isCompactViewport ? "pb-8" : "pb-2",
+        )}
+        // bb's compact footer overlays the list edge. Fade content into that
+        // surface, while the matching padding lets the final row scroll clear.
+        style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
+      >
         {/* Five outcomes, and the order carries the argument. The unready one
             renders nothing rather than "No threads yet" — bb's threads are
             already here, so what is still missing is this plugin's own rows,
