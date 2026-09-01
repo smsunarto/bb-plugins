@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   activeTransition,
   isEditableProbe,
+  isIdleTrigger,
   isViableCandidate,
   type CandidateView,
   type EditableProbe,
+  type IdleKey,
 } from "./link-hints.ts";
 
 function probe(overrides: Partial<EditableProbe> = {}): EditableProbe {
@@ -49,6 +51,46 @@ describe("isEditableProbe", () => {
   test("a plain element is not editable", () => {
     expect(isEditableProbe(probe())).toBe(false);
     expect(isEditableProbe(probe({ tagName: "BUTTON" }))).toBe(false);
+  });
+});
+
+describe("isIdleTrigger", () => {
+  function idleKey(overrides: Partial<IdleKey> = {}): IdleKey {
+    return {
+      key: "f",
+      code: "KeyF",
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      editableTarget: false,
+      ...overrides,
+    };
+  }
+
+  test("plain f triggers outside an editable target only", () => {
+    expect(isIdleTrigger(idleKey())).toBe(true);
+    expect(isIdleTrigger(idleKey({ editableTarget: true }))).toBe(false);
+  });
+
+  test("shifted or non-f keys do not trigger", () => {
+    expect(isIdleTrigger(idleKey({ key: "F", shiftKey: true }))).toBe(false);
+    expect(isIdleTrigger(idleKey({ key: "g", code: "KeyG" }))).toBe(false);
+  });
+
+  test("ctrl and alt chords never trigger", () => {
+    expect(isIdleTrigger(idleKey({ ctrlKey: true }))).toBe(false);
+    expect(isIdleTrigger(idleKey({ altKey: true }))).toBe(false);
+    expect(isIdleTrigger(idleKey({ metaKey: true }))).toBe(false);
+  });
+
+  test("Cmd+Shift+F triggers even inside an editable target", () => {
+    const chord = { key: "F", metaKey: true, shiftKey: true } as const;
+    expect(isIdleTrigger(idleKey({ ...chord, editableTarget: true }))).toBe(true);
+    expect(isIdleTrigger(idleKey(chord))).toBe(true);
+    expect(isIdleTrigger(idleKey({ ...chord, code: "KeyC", key: "C" }))).toBe(false);
+    expect(isIdleTrigger(idleKey({ ...chord, altKey: true }))).toBe(false);
+    expect(isIdleTrigger(idleKey({ ...chord, ctrlKey: true }))).toBe(false);
   });
 });
 

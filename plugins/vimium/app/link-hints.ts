@@ -1,7 +1,8 @@
 // @smsunarto/bb-plugin-vimium — Vimium-style `f` link hints over the bb app shell.
 //
 // One content script, one capture-phase keydown listener, one state machine:
-// idle until a plain `f` lands outside an editable target, then a marker per
+// idle until a plain `f` lands outside an editable target — or `Cmd+Shift+F`
+// lands anywhere, since bb keeps its composer focused — then a marker per
 // visible clickable element until the typed characters pick one — or Escape,
 // Backspace past the start, a non-hint key, a scroll, a resize, or a blur
 // exits. The transitions and predicates are pure functions so they test
@@ -64,6 +65,31 @@ export function activeTransition(
   const exact = matching.find((label) => label === next);
   if (exact !== undefined) return { kind: "activate", label: exact };
   return { kind: "retype", typed: next };
+}
+
+/** The keydown facts the idle-trigger decision reads. */
+export interface IdleKey {
+  readonly key: string;
+  readonly code: string;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly altKey: boolean;
+  readonly shiftKey: boolean;
+  readonly editableTarget: boolean;
+}
+
+/**
+ * True when the keydown opens hint mode from idle. Plain `f` defers to an
+ * editable target; `Cmd+Shift+F` does not, because bb autofocuses its
+ * composer and would otherwise make hints unreachable without a click or an
+ * Escape. Matched by code, since shift changes the reported key.
+ */
+export function isIdleTrigger(key: IdleKey): boolean {
+  if (key.metaKey) {
+    return key.shiftKey && !key.ctrlKey && !key.altKey && key.code === "KeyF";
+  }
+  if (key.ctrlKey || key.altKey) return false;
+  return key.key === "f" && !key.editableTarget;
 }
 
 /** The element facts the editable-target decision reads. */
@@ -287,8 +313,16 @@ export function mountLinkHints(
 
   function onKeydown(event: KeyboardEvent): void {
     if (mode.kind === "idle") {
-      if (event.key !== "f" || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (isEditableTarget(event.target)) return;
+      const trigger = isIdleTrigger({
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        editableTarget: isEditableTarget(event.target),
+      });
+      if (!trigger) return;
       if (!enter()) return;
       event.preventDefault();
       event.stopImmediatePropagation();
