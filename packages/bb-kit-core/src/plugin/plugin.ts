@@ -22,6 +22,14 @@ import {
   type PluginErrorReporter,
   type PluginErrorReporterFactory,
 } from "./error-reporter.ts";
+import {
+  createPluginPerformanceReporter,
+  finishTraceOnSuccess,
+  rpcTraceOperation,
+  startPluginTrace,
+  toolTraceOperation,
+  type PluginPerformanceReporterFactory,
+} from "./performance-reporter.ts";
 import { hostContext, type Context, type HostAgentsSeam } from "./host.ts";
 
 export type {
@@ -29,6 +37,12 @@ export type {
   PluginErrorReporterFactory,
   PluginFailure,
 } from "./error-reporter.ts";
+export type {
+  PluginPerformanceReporter,
+  PluginPerformanceReporterFactory,
+  PluginPerformanceTrace,
+  PluginTraceOutcome,
+} from "./performance-reporter.ts";
 export type { HostSeam } from "./host.ts";
 export { hostContext } from "./host.ts";
 export type { Context } from "./host.ts";
@@ -104,6 +118,7 @@ export function definePlugin<
   definition: {
     pluginId: string;
     errorReporter?: PluginErrorReporterFactory;
+    performanceReporter?: PluginPerformanceReporterFactory;
     rpc: R;
     command?: C;
     agents?: {
@@ -135,15 +150,25 @@ export function definePlugin<
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
     let reporter = createPluginErrorReporter(definition.errorReporter, pluginId);
-    const disposeReporter = createPluginErrorReporterDisposer(reporter);
-    if (reporter !== undefined) {
+    let performanceReporter = createPluginPerformanceReporter(
+      definition.performanceReporter,
+      pluginId,
+    );
+    const disposeErrorReporter = createPluginErrorReporterDisposer(reporter);
+    const disposePerformanceReporter = createPluginErrorReporterDisposer(performanceReporter);
+    const disposeReporters = async (): Promise<void> => {
+      await Promise.all([disposeErrorReporter(), disposePerformanceReporter()]);
+    };
+    if (reporter !== undefined || performanceReporter !== undefined) {
       try {
-        bb.onDispose(disposeReporter);
+        bb.onDispose(disposeReporters);
       } catch {
         reporter = undefined;
-        void disposeReporter();
+        performanceReporter = undefined;
+        void disposeReporters();
       }
     }
+    const startupTrace = startPluginTrace(performanceReporter, "plugin.startup");
 
     try {
       // Order (§7): context → client → rpc.register → cli.register → agents → setup.
@@ -166,19 +191,28 @@ export function definePlugin<
           input: procedure.input ?? noInputSchema,
           output: procedure.output,
         };
+        const traceOperation = rpcTraceOperation(key);
         handlers[key] = procedure.input
           ? async (input: unknown) => {
+              const trace = startPluginTrace(performanceReporter, traceOperation);
               try {
-                return await procedure.execute(ctx, input);
+                const result = await procedure.execute(ctx, input);
+                trace?.finish("ok");
+                return result;
               } catch (error) {
+                trace?.finish("error");
                 capturePluginFailure(reporter, { boundary: "rpc.execute", operation: key, error });
                 throw error;
               }
             }
           : async () => {
+              const trace = startPluginTrace(performanceReporter, traceOperation);
               try {
-                return await procedure.execute(ctx);
+                const result = await procedure.execute(ctx);
+                trace?.finish("ok");
+                return result;
               } catch (error) {
+                trace?.finish("error");
                 capturePluginFailure(reporter, { boundary: "rpc.execute", operation: key, error });
                 throw error;
               }
@@ -238,25 +272,34 @@ export function definePlugin<
             continue;
           }
           const operation = toolName(pluginId, key);
+          const traceOperation = toolTraceOperation(key);
           host.agents.registerTool({
             name: operation,
             description: tool.description,
             ...(tool.instructions === undefined ? {} : { instructions: tool.instructions }),
             ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
             parameters: tool.parameters,
-            execute: (params, invocation) =>
-              observePluginFailure(
-                () => tool.execute(Object.freeze({ ...ctx, tool: invocation }), params),
+            execute: (params, invocation) => {
+              const trace = startPluginTrace(performanceReporter, traceOperation);
+              return observePluginFailure(
+                () =>
+                  finishTraceOnSuccess(trace, () =>
+                    tool.execute(Object.freeze({ ...ctx, tool: invocation }), params),
+                  ),
                 (error) => {
-                  if (!isAbortedFailure(error, invocation.signal)) {
-                    capturePluginFailure(reporter, {
-                      boundary: "agent.tool",
-                      operation,
-                      error,
-                    });
+                  if (isAbortedFailure(error, invocation.signal)) {
+                    trace?.finish("cancelled");
+                    return;
                   }
+                  trace?.finish("error");
+                  capturePluginFailure(reporter, {
+                    boundary: "agent.tool",
+                    operation,
+                    error,
+                  });
                 },
-              ),
+              );
+            },
           });
         }
 
@@ -305,19 +348,23 @@ export function definePlugin<
           );
         }
       }
+      startupTrace?.checkpoint("registered");
     } catch (error) {
+      startupTrace?.finish("error");
       capturePluginFailure(reporter, { boundary: "plugin.factory", error });
-      await disposeReporter();
+      await disposeReporters();
       throw error;
     }
 
     try {
       await definition.setup?.(bb);
     } catch (error) {
+      startupTrace?.finish("error");
       capturePluginFailure(reporter, { boundary: "plugin.setup", error });
-      await disposeReporter();
+      await disposeReporters();
       throw error;
     }
+    startupTrace?.finish("ok");
   };
   return Object.assign(factory, { rpc });
 }

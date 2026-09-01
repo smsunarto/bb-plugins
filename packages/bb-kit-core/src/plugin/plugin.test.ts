@@ -7,6 +7,7 @@ import {
   type Context,
   type PluginErrorReporter,
   type PluginFailure,
+  type PluginPerformanceReporter,
 } from "./plugin.ts";
 import { argv, CommandError, defineCommand } from "../command/command.ts";
 import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
@@ -975,6 +976,174 @@ test("invalid tool keys throw at define time", () => {
       }),
     /invalid tool key "Bad-Key"/,
   );
+});
+
+// ---- performance traces ---------------------------------------------
+
+function recordingPerformance() {
+  const traces: Array<{ operation: string; variant?: string; events: string[] }> = [];
+  const disposeTimeouts: number[] = [];
+  const reporter: PluginPerformanceReporter = {
+    start(args) {
+      const record = { ...args, events: [] as string[] };
+      traces.push(record);
+      return {
+        checkpoint(name) {
+          record.events.push(`checkpoint:${name}`);
+        },
+        finish(outcome) {
+          record.events.push(`finish:${outcome}`);
+        },
+      };
+    },
+    dispose(timeoutMs) {
+      disposeTimeouts.push(timeoutMs);
+    },
+  };
+  return { traces, disposeTimeouts, reporter };
+}
+
+test("startup and wire RPC calls trace with kebab-case operations", async () => {
+  const { bb, captured } = fakeHost();
+  const recording = recordingPerformance();
+  await definePlugin({
+    pluginId: "demo-ns",
+    performanceReporter: () => recording.reporter,
+    rpc: demo,
+  })(bb);
+  assert.deepEqual(recording.traces[0], {
+    operation: "plugin.startup",
+    events: ["checkpoint:registered", "finish:ok"],
+  });
+  await captured.rpc?.handlers.readURL?.({ url: "u" });
+  await captured.rpc?.handlers.ping?.(null);
+  assert.deepEqual(
+    recording.traces.slice(1).map(({ operation, events }) => ({ operation, events })),
+    [
+      { operation: "rpc.read-u-r-l", events: ["finish:ok"] },
+      { operation: "rpc.ping", events: ["finish:ok"] },
+    ],
+  );
+});
+
+test("wire RPC failures finish the trace as error and preserve identity", async () => {
+  const failure = new Error("wire failed");
+  const failing = defineQuery({
+    output: z.object({ ok: z.boolean() }),
+    execute() {
+      throw failure;
+    },
+  });
+  const { bb, captured } = fakeHost();
+  const recording = recordingPerformance();
+  await definePlugin({
+    pluginId: "demo-ns",
+    performanceReporter: () => recording.reporter,
+    rpc: { failing },
+  })(bb);
+  const invocation = captured.rpc?.handlers.failing?.(undefined);
+  assert.ok(invocation);
+  await assert.rejects(Promise.resolve(invocation), (error: unknown) => error === failure);
+  assert.deepEqual(recording.traces.at(-1), {
+    operation: "rpc.failing",
+    events: ["finish:error"],
+  });
+});
+
+test("agent tool traces finish ok, error, and cancelled", async () => {
+  const toolFailure = new Error("tool failed");
+  const abortFailure = new Error("cancelled");
+  abortFailure.name = "AbortError";
+  const tools = {
+    listing: defineTool({
+      description: "List",
+      parameters: z.object({}),
+      execute: () => "listed",
+    }),
+    crashing: defineTool({
+      description: "Crash",
+      parameters: z.object({}),
+      execute() {
+        throw toolFailure;
+      },
+    }),
+    aborting: defineTool({
+      description: "Abort",
+      parameters: z.object({}),
+      execute() {
+        throw abortFailure;
+      },
+    }),
+  };
+  const { bb, captured } = fakeHost();
+  const recording = recordingPerformance();
+  await definePlugin({
+    pluginId: "demo-ns",
+    performanceReporter: () => recording.reporter,
+    rpc: { ping },
+    agents: { tools },
+  })(bb);
+  const byName = new Map(captured.agentTools.map((tool) => [tool.name, tool]));
+  const aborted = new AbortController();
+  aborted.abort();
+  const invocation = { threadId: "t", projectId: "p", signal: new AbortController().signal };
+
+  assert.equal(byName.get("demo_ns_listing")?.execute({}, invocation), "listed");
+  assert.throws(() => byName.get("demo_ns_crashing")?.execute({}, invocation));
+  assert.throws(() =>
+    byName.get("demo_ns_aborting")?.execute({}, { ...invocation, signal: aborted.signal }),
+  );
+  assert.deepEqual(
+    recording.traces.slice(1).map(({ operation, events }) => ({ operation, events })),
+    [
+      { operation: "tool.listing", events: ["finish:ok"] },
+      { operation: "tool.crashing", events: ["finish:error"] },
+      { operation: "tool.aborting", events: ["finish:cancelled"] },
+    ],
+  );
+});
+
+test("setup failures finish the startup trace as error", async () => {
+  const { bb } = fakeHost();
+  const recording = recordingPerformance();
+  await assert.rejects(
+    definePlugin({
+      pluginId: "demo-ns",
+      performanceReporter: () => recording.reporter,
+      rpc: demo,
+      setup() {
+        throw new Error("setup failed");
+      },
+    })(bb),
+  );
+  assert.deepEqual(recording.traces[0]?.events, ["checkpoint:registered", "finish:error"]);
+});
+
+test("a performance reporter alone owns one bounded disposal hook", async () => {
+  const { bb, captured } = fakeHost();
+  const recording = recordingPerformance();
+  await definePlugin({
+    pluginId: "demo-ns",
+    performanceReporter: () => recording.reporter,
+    rpc: demo,
+  })(bb);
+  assert.equal(captured.disposers.length, 1);
+  await captured.disposers[0]?.();
+  await captured.disposers[0]?.();
+  assert.deepEqual(recording.disposeTimeouts, [2_000]);
+});
+
+test("performance reporter construction fails open", async () => {
+  const { bb, captured } = fakeHost();
+  await definePlugin({
+    pluginId: "demo-ns",
+    performanceReporter() {
+      throw new Error("telemetry unavailable");
+    },
+    rpc: demo,
+  })(bb);
+  assert.deepEqual(captured.order, ["rpc", "cli"]);
+  assert.equal(captured.disposers.length, 0);
 });
 
 // ---- type-level pins ------------------------------------------------

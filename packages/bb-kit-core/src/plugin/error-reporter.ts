@@ -18,6 +18,13 @@ export type PluginErrorReporterFactory = (
 
 const REPORTER_DISPOSE_TIMEOUT_MS = 2_000;
 
+/** Structural: both the error reporter (capture) and the performance reporter (start) dispose this way. */
+type DisposableReporter = Readonly<{
+  capture?: unknown;
+  start?: unknown;
+  dispose?(timeoutMs: number): void | Promise<void>;
+}>;
+
 export function createPluginErrorReporter(
   factory: PluginErrorReporterFactory | undefined,
   pluginId: string,
@@ -41,7 +48,7 @@ export function capturePluginFailure(
 }
 
 export function createPluginErrorReporterDisposer(
-  reporter: PluginErrorReporter | undefined,
+  reporter: DisposableReporter | undefined,
   timeoutMs = REPORTER_DISPOSE_TIMEOUT_MS,
 ): () => Promise<void> {
   let disposing: Promise<void> | undefined;
@@ -82,10 +89,10 @@ export function isAbortedFailure(error: unknown, signal: AbortSignal | undefined
 }
 
 async function disposePluginErrorReporter(
-  reporter: PluginErrorReporter | undefined,
+  reporter: DisposableReporter | undefined,
   timeoutMs: number,
 ): Promise<void> {
-  let dispose: PluginErrorReporter["dispose"];
+  let dispose: DisposableReporter["dispose"];
   try {
     dispose = reporter?.dispose;
   } catch {
