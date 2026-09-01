@@ -1,0 +1,28 @@
+/* The hint layer overlays everything, including bb's dialogs — a hint may
+   point at a dialog's own buttons — and must never intercept the pointer. */
+.vimium-hint-layer {
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  z-index: 2147483647;
+}
+
+/* Brand-Vimium badge, hence literal colors rather than theme tokens. */
+.vimium-hint-marker {
+  background: linear-gradient(to bottom, #fff785, #ffc542);
+  border: 1px solid #c38a22;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  color: #302505;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 1px 4px;
+  position: absolute;
+  text-transform: uppercase;
+}
+
+.vimium-hint-typed {
+  color: #b8a25a;
+}
