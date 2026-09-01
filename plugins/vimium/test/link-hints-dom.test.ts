@@ -47,9 +47,15 @@ function markers(): string[] {
 
 /**
  * A dropdown trigger that appends a two-item menu on click, like a Radix
- * portal; picking an item records it and closes the menu.
+ * portal; picking an item records it and, unless the popup is persistent
+ * like bb's model dialog, closes the menu.
  */
-function installMenuTrigger(trigger: HTMLElement, picked: string[]): void {
+function installMenuTrigger(
+  trigger: HTMLElement,
+  picked: string[],
+  options: { closeOnPick?: boolean } = {},
+): void {
+  const closeOnPick = options.closeOnPick ?? true;
   trigger.addEventListener("click", () => {
     const menu = document.createElement("div");
     menu.id = "trigger-menu";
@@ -60,7 +66,7 @@ function installMenuTrigger(trigger: HTMLElement, picked: string[]): void {
       item.textContent = name;
       item.addEventListener("click", () => {
         picked.push(name);
-        menu.remove();
+        if (closeOnPick) menu.remove();
       });
       menu.appendChild(item);
     }
@@ -127,21 +133,95 @@ describe("mountLinkHints", () => {
 
     document.body.innerHTML =
       '<div data-app-composer><button id="model" aria-label="Provider, model and reasoning (⇧ ⌘ M)" aria-haspopup="dialog">Sol</button>' +
-      '<button id="actions" aria-label="Prompt actions" aria-haspopup="menu">+</button></div>' +
+      '<button id="actions" aria-label="Prompt actions" aria-haspopup="menu">+</button>' +
+      '<button id="permission" aria-label="Permission mode" aria-haspopup="menu">Ask</button>' +
+      '<button id="machine" aria-label="Machine" aria-haspopup="menu">Mac</button>' +
+      '<button id="send" data-promptbox-submit-action>Send</button></div>' +
       '<button id="plain">Plain</button>';
-    giveRect(document.getElementById("model") as HTMLElement, 10, 10);
-    giveRect(document.getElementById("actions") as HTMLElement, 10, 40);
-    giveRect(document.getElementById("plain") as HTMLElement, 10, 70);
+    for (const [index, id] of ["model", "actions", "permission", "machine", "send", "plain"].entries()) {
+      giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
+    }
     const clicked: string[] = [];
     document
       .getElementById("model")
       ?.addEventListener("click", () => clicked.push("model"));
 
     pressKey("f");
-    expect(markers()).toEqual(["m", "a", "dd"]);
+    expect(markers()).toEqual(["m", "a", "s", "h", "j", "dd"]);
 
     pressKey("m");
     expect(clicked).toEqual(["model"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("the project selector gets g and picking it opens the dropdown", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><button id="project" data-promptbox-project-control aria-haspopup="menu">Project</button>' +
+      '<div id="editor" role="textbox"></div></div>' +
+      '<button id="plain">Plain</button>';
+    const project = document.getElementById("project") as HTMLElement;
+    const editor = document.getElementById("editor") as HTMLElement;
+    giveRect(project, 10, 10);
+    giveRect(editor, 10, 40);
+    giveRect(document.getElementById("plain") as HTMLElement, 10, 70);
+    const picked: string[] = [];
+    installMenuTrigger(project, picked);
+
+    pressKey("f");
+    expect(markers()).toEqual(["g", "dd", "df"]);
+
+    pressKey("g");
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(markers()).toEqual(["f", "j"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("the conversation timeline is a quiet zone", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-timeline-row-list><button id="inside">In</button></div>' +
+      '<button id="utility" data-utility-button>Line</button>' +
+      '<button id="outside">Out</button>';
+    giveRect(document.getElementById("inside") as HTMLElement, 10, 10);
+    giveRect(document.getElementById("utility") as HTMLElement, 10, 40);
+    giveRect(document.getElementById("outside") as HTMLElement, 10, 70);
+
+    pressKey("f");
+    expect(markers()).toEqual(["dd"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("a scroll away from the hints keeps the prompt, a window scroll exits", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div id="quiet" data-timeline-row-list><button>In</button></div>' +
+      '<button id="outside">Out</button>';
+    giveRect(document.getElementById("outside") as HTMLElement, 10, 10);
+
+    pressKey("f");
+    expect(document.querySelector(".vimium-hint-layer")).not.toBeNull();
+
+    document
+      .getElementById("quiet")
+      ?.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+    expect(document.querySelector(".vimium-hint-layer")).not.toBeNull();
+
+    document.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
 
     void dispose();
     controller.abort();
@@ -217,11 +297,72 @@ describe("mountLinkHints", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(markers()).toEqual(["f", "j"]);
 
-    // Trigger plus both menu items are on screen, so the whole-screen prompt
-    // hints all three with general labels; the chord itself is swallowed.
+    // The chord is swallowed at once, then the dismissal poll gives up on the
+    // Escape-deaf test menu (~8 ticks of 60ms) and prompts over it anyway:
+    // trigger plus both menu items, with general labels.
     const propagated = pressKey("F", window, { code: "KeyF", metaKey: true, shiftKey: true });
     expect(propagated).toBe(false);
-    expect(markers()).toEqual(["dd", "df", "dj"]);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(markers()).toEqual(["dd", "df", "dk"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("the force chord closes an open layer before prompting the whole screen", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    // A modal layer over an aria-hidden page, like Radix leaves it; its
+    // Escape handler undoes both, like Radix does on dismiss.
+    document.body.innerHTML =
+      '<div id="page" aria-hidden="true"><button id="under">Under</button></div>' +
+      '<div id="layer" role="dialog" data-bb-portaled-overlay><button id="in-layer">In</button></div>';
+    giveRect(document.getElementById("under") as HTMLElement, 10, 10);
+    giveRect(document.getElementById("in-layer") as HTMLElement, 10, 40);
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Escape") return;
+        document.getElementById("layer")?.remove();
+        document.getElementById("page")?.removeAttribute("aria-hidden");
+      },
+      { once: true },
+    );
+
+    pressKey("F", window, { code: "KeyF", metaKey: true, shiftKey: true });
+    expect(markers()).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(markers()).toEqual(["dd"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("a pick that leaves the popup open re-prompts scoped to it", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML = '<button id="trigger" aria-haspopup="menu">Model</button>';
+    const trigger = document.getElementById("trigger") as HTMLElement;
+    giveRect(trigger, 10, 10);
+    const picked: string[] = [];
+    installMenuTrigger(trigger, picked, { closeOnPick: false });
+
+    pressKey("f");
+    pressKey("d");
+    pressKey("d");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(markers()).toEqual(["f", "j"]);
+
+    pressKey("f");
+    expect(picked).toEqual(["Sol"]);
+    expect(markers()).toEqual([]);
+
+    // The after-pick poll waits ~6 ticks of 80ms for the popup to close, then
+    // follows it with a fresh scoped prompt.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(markers()).toEqual(["f", "j"]);
 
     void dispose();
     controller.abort();

@@ -9,18 +9,24 @@ export const HINT_ALPHABET = "sadfjklewcmpgh";
 export const DROPDOWN_ALPHABET = "fjdkslahgewcmp";
 
 /**
- * bb's built-in composer controls, each pinned to one mnemonic character so
- * the binding never shifts with what else is on screen: m(odel), p(roject),
- * a(ctions), v(oice), s(end). Only these built-ins get single-character
- * labels; plugin-contributed buttons come and go, so a single character there
- * would never stay stable enough for muscle memory.
+ * bb's built-in composer controls, each pinned to one character so the
+ * binding never shifts with what else is on screen: g opens the project
+ * selector, j submits (the strongest right-index key), and the mnemonics are
+ * m(odel), a(ctions), v(oice), s for the permission-mode picker
+ * (safety), h for the machine picker (host). Only these built-ins get
+ * single-character labels; plugin-contributed buttons come and go, so a
+ * single character there would never stay stable enough for muscle memory.
+ * The picker entries match nothing on screens without those pickers, and
+ * their characters stay carved out of the general alphabet anyway.
  */
 export const RESERVED_COMPOSER_CONTROLS = [
   { selector: '[data-app-composer] button[aria-label^="Provider, model"]', char: "m" },
-  { selector: "[data-app-composer] [data-promptbox-project-control]", char: "p" },
+  { selector: "[data-app-composer] [data-promptbox-project-control]", char: "g" },
   { selector: '[data-app-composer] button[aria-label="Prompt actions"]', char: "a" },
   { selector: '[data-app-composer] button[aria-label="Start voice input"]', char: "v" },
-  { selector: "[data-app-composer] [data-promptbox-submit-action]", char: "s" },
+  { selector: "[data-app-composer] [data-promptbox-submit-action]", char: "j" },
+  { selector: '[data-app-composer] button[aria-label="Permission mode"]', char: "s" },
+  { selector: '[data-app-composer] button[aria-label="Machine"]', char: "h" },
 ] as const;
 
 /** Thread rows count up from 1 in list order, ten and beyond fall back to letters. */
@@ -32,9 +38,12 @@ const RESERVED_CHARS = new Set<string>(RESERVED_COMPOSER_CONTROLS.map((control) 
  * The alphabet for everything that is not a reserved control or a thread row.
  * Reserved characters are carved out even when their control is off screen,
  * so no general label ever starts with one and the whole set stays
- * prefix-free.
+ * prefix-free. The reserved controls remove most home-row characters, and a
+ * thread with an open diff panel can exceed the remaining two-character range.
+ * Extra characters extend the general set to 256 two-character labels.
  */
-export const GENERAL_ALPHABET = [...HINT_ALPHABET]
+const EXTRA_GENERAL_CHARS = "uortnbiy";
+export const GENERAL_ALPHABET = [...HINT_ALPHABET + EXTRA_GENERAL_CHARS]
   .filter((char) => !RESERVED_CHARS.has(char))
   .join("");
 

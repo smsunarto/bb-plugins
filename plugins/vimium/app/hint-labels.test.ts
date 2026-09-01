@@ -65,6 +65,11 @@ describe("GENERAL_ALPHABET", () => {
       expect(GENERAL_ALPHABET).not.toContain(control.char);
     }
   });
+
+  test("has no duplicates and enough range to keep a diff-heavy screen at two characters", () => {
+    expect(new Set(GENERAL_ALPHABET).size).toBe(GENERAL_ALPHABET.length);
+    expect(GENERAL_ALPHABET.length ** 2).toBeGreaterThanOrEqual(196);
+  });
 });
 
 describe("assignTopLevelLabels", () => {

@@ -7,13 +7,19 @@
 // Backspace past the start, a non-hint key, a scroll, a resize, or a blur
 // exits. Built-in composer controls keep pinned single-character labels and
 // sidebar thread rows count 1-9; everything else gets two-character labels.
-// A hint that lands on a dropdown trigger re-prompts once the popup appears,
-// with hints scoped to its options and labels ordered for the home row; the
-// scoped prompt follows the popup (exiting when it is dismissed), yields to
-// `Cmd+Shift+F` for a fresh whole-screen prompt, and hands focus back to the
-// composer after a pick from one of the composer's own dropdowns. The
-// transitions and predicates are pure functions so they test without a DOM;
-// only mounting, marker drawing, and activation touch one.
+// The conversation timeline is a quiet zone: it rerenders and auto-scrolls
+// itself while an agent streams, so nothing inside it gets a hint and its own
+// scrolling never dismisses one — only a scroll that moves a hinted target
+// does. A hint that lands on a dropdown trigger re-prompts once the popup
+// appears, with hints scoped to its options and labels ordered for the home
+// row; the scoped prompt follows the popup — exiting when it is dismissed,
+// re-prompting when a pick leaves it open (the model dialog and its tabs),
+// and handing focus back to the composer when a pick from one of the
+// composer's own dropdowns closes it. `Cmd+Shift+F` always means the whole
+// screen: it replaces a scoped prompt, and first closes any open popup layer,
+// which would otherwise aria-hide the rest of the page. The transitions and
+// predicates are pure functions so they test without a DOM; only mounting,
+// marker drawing, and activation touch one.
 
 import type {
   PluginContentScriptContext,
@@ -170,6 +176,7 @@ export interface CandidateView {
   readonly tabindex: string | null;
   readonly disabled: boolean;
   readonly insideAriaHidden: boolean;
+  readonly insideQuietZone: boolean;
   readonly rect: { top: number; left: number; width: number; height: number };
   readonly viewportWidth: number;
   readonly viewportHeight: number;
@@ -185,7 +192,7 @@ export interface CandidateView {
 /** True when the element deserves a hint marker. */
 export function isViableCandidate(view: CandidateView): boolean {
   if (view.tabindex === "-1" && !view.clickableBeyondTabindex) return false;
-  if (view.disabled || view.insideAriaHidden) return false;
+  if (view.disabled || view.insideAriaHidden || view.insideQuietZone) return false;
   if (view.rect.width <= 0 || view.rect.height <= 0) return false;
   if (view.rect.top + view.rect.height <= 0 || view.rect.left + view.rect.width <= 0) return false;
   if (view.rect.top >= view.viewportHeight || view.rect.left >= view.viewportWidth) return false;
@@ -209,10 +216,23 @@ const CLICKABLE_SELECTORS = [
   '[role="checkbox"]',
   '[role="switch"]',
   '[contenteditable="true"]',
+  '[role="textbox"]',
   "[onclick]",
 ] as const;
 const CANDIDATE_SELECTOR = [...CLICKABLE_SELECTORS, "[tabindex]"].join(", ");
 const NON_TABINDEX_SELECTOR = CLICKABLE_SELECTORS.join(", ");
+
+// Hint-free regions. The conversation timeline rerenders and auto-scrolls
+// while an agent streams, so its hints would be stale the moment they drew,
+// and its per-message action bars are the bulk of a busy screen's clutter.
+// Pierre's per-line action buttons ride the same exclusion. closest() matches
+// the element itself, so [data-utility-button] excludes the button proper.
+const QUIET_ZONE_SELECTOR =
+  "[data-timeline-row-list], [data-timeline-file-diff], [data-utility-button]";
+
+// Radix layers that trap focus and aria-hide the rest of the page while open.
+const OPEN_LAYER_SELECTOR =
+  '[role="dialog"][data-bb-portaled-overlay], [role="menu"], [role="listbox"]';
 
 // Covers bb's own thread links and any sidebar honoring bb's thread-shortcut
 // contract (gtd-sidebar rows are `href="#"` anchors carrying the data attribute).
@@ -255,6 +275,7 @@ function candidateView(element: Element): CandidateView {
       element.hasAttribute("disabled") ||
       element.getAttribute("aria-disabled") === "true",
     insideAriaHidden: element.closest('[aria-hidden="true"]') !== null,
+    insideQuietZone: element.closest(QUIET_ZONE_SELECTOR) !== null,
     rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
     viewportWidth: window.innerWidth,
     viewportHeight: window.innerHeight,
@@ -316,6 +337,7 @@ function renderMarker(hint: Hint, typedCount: number): void {
 function isTextEntry(target: HTMLElement): boolean {
   if (target instanceof HTMLTextAreaElement) return true;
   if (target.isContentEditable) return true;
+  if (target.getAttribute("role") === "textbox") return true;
   if (target instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(target.type);
   return false;
 }
@@ -403,6 +425,41 @@ export function mountLinkHints(
     return true;
   }
 
+  // The force chord means the whole screen, but an open popup layer aria-hides
+  // everything outside itself, so a prompt over one would only find its own
+  // controls. Radix layers dismiss on a document-level Escape; send one, wait
+  // for the layers to unmount, then prompt. With no layer open this stays
+  // synchronous. If a layer refuses to close, prompt anyway.
+  function enterTopLevelDismissing(): boolean {
+    const layers = [...document.querySelectorAll<HTMLElement>(OPEN_LAYER_SELECTOR)];
+    if (layers.length === 0) return enterTopLevel();
+    dispatchEscape();
+    let attempts = 0;
+    const poll = (): void => {
+      if (context.signal.aborted || mode.kind !== "idle") return;
+      attempts += 1;
+      if (layers.some((layer) => layer.isConnected) && attempts < 8) {
+        if (attempts % 3 === 0) dispatchEscape();
+        window.setTimeout(poll, 60);
+        return;
+      }
+      enterTopLevel();
+    };
+    window.setTimeout(poll, 60);
+    return true;
+  }
+
+  function dispatchEscape(): void {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
+
   // A click outside or an app-level Escape unmounts the popup without any key
   // reaching the hint listener, so a scoped prompt has to see the removal
   // itself.
@@ -434,14 +491,15 @@ export function mountLinkHints(
         editableTarget: isEditableTarget(event.target),
       });
       if (!trigger) return;
-      if (!enterTopLevel()) return;
+      const opened = isForceChord(event) ? enterTopLevelDismissing() : enterTopLevel();
+      if (!opened) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
     if (isForceChord(event)) {
       exit();
-      if (enterTopLevel()) {
+      if (enterTopLevelDismissing()) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -479,7 +537,7 @@ export function mountLinkHints(
       scheduleReprompt(chosen.target);
       return;
     }
-    if (scopeRoot !== null && wantsComposerBack) scheduleComposerRefocus(scopeRoot);
+    if (scopeRoot !== null) afterScopedPick(scopeRoot, wantsComposerBack);
   }
 
   // The popup portals in and animates open after the click, so poll briefly
@@ -497,33 +555,62 @@ export function mountLinkHints(
     window.setTimeout(poll, 60);
   }
 
-  // Wait for the popup to actually close before claiming focus: bb's model
-  // dialog stays open after a pick, and its focus trap owns focus until then.
-  // Once it closes, Radix hands focus back to the trigger, so a single
-  // focus() would be stolen right back; restate the composer's claim for a
-  // few ticks instead.
-  function scheduleComposerRefocus(popup: HTMLElement): void {
-    let waitTicks = 0;
-    let assertTicks = 0;
+  // A pick from a popup either closes it or leaves it open: bb's model dialog
+  // stays up after a pick, and its Providers tab swaps the option list. Follow
+  // the popup — once it closes, hand focus back to the composer when the
+  // trigger came from there; while it stays open, re-prompt scoped to it.
+  function afterScopedPick(popup: HTMLElement, refocusComposer: boolean): void {
+    let ticks = 0;
     const poll = (): void => {
-      if (context.signal.aborted) return;
-      if (popup.isConnected) {
-        waitTicks += 1;
-        if (waitTicks < 12) window.setTimeout(poll, 80);
+      if (context.signal.aborted || mode.kind !== "idle") return;
+      if (!popup.isConnected) {
+        if (refocusComposer) assertComposerFocus();
         return;
       }
-      const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
-      if (!textbox) return;
-      if (document.activeElement !== textbox) textbox.focus();
-      assertTicks += 1;
-      if (assertTicks < 6) window.setTimeout(poll, 80);
+      ticks += 1;
+      if (ticks < 6) {
+        window.setTimeout(poll, 80);
+        return;
+      }
+      enterScoped(popup, refocusComposer);
     };
     window.setTimeout(poll, 80);
   }
 
+  // Radix hands focus back to the trigger as its popup closes, so a single
+  // focus() would be stolen right back; restate the composer's claim for a
+  // few ticks.
+  function assertComposerFocus(): void {
+    let ticks = 0;
+    const claim = (): void => {
+      if (context.signal.aborted) return;
+      const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
+      if (!textbox) return;
+      if (document.activeElement !== textbox) textbox.focus();
+      ticks += 1;
+      if (ticks < 6) window.setTimeout(claim, 80);
+    };
+    claim();
+  }
+
+  // Markers are pinned to rects measured at entry, so a scroll that moves a
+  // hinted target makes them stale — but the timeline's streaming auto-scroll
+  // moves no hint (it is a quiet zone) and must not dismiss the prompt. A
+  // window scroll reaches here with the document as target and always exits.
+  function onScroll(event: Event): void {
+    if (mode.kind !== "active") return;
+    const scrolled = event.target;
+    if (
+      scrolled instanceof Element &&
+      !mode.hints.some((hint) => scrolled.contains(hint.target))
+    ) {
+      return;
+    }
+    exit();
+  }
+
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });
-  // Markers are pinned to rects measured at entry; any of these makes them stale.
-  window.addEventListener("scroll", exitIfActive, { capture: true, signal: context.signal });
+  window.addEventListener("scroll", onScroll, { capture: true, signal: context.signal });
   window.addEventListener("resize", exitIfActive, { signal: context.signal });
   window.addEventListener("blur", exitIfActive, { signal: context.signal });
 
