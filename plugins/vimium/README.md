@@ -17,7 +17,7 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 ## Labels
 
 - bb's stable controls keep pinned single-character labels for muscle memory: `p` project, `i` composer input, `l` machine, `b` branch, `n` new thread, `s` thread search, `k` permission mode, `j` send, `m` model, `a` prompt actions, and `v` voice.
-- Core navigation is stable too: `[` back, `]` forward, `e` Extensions, `,` Settings, `\` sidebar, and `/` right panel. The context-window tracker is never selectable.
+- Core navigation is stable too: `[` back, `]` forward, `e` Extensions, `,` Settings, `q` left sidebar, and `\` right sidebar. The context-window tracker is never selectable.
 - Sidebar thread rows (bb's own or any sidebar honoring the thread-shortcut contract) count `1`-`9` in list order.
 - Everything else gets two-character labels from the remaining alphabet, extended past the reserved carve-outs so even a diff-heavy screen stays at two characters.
 

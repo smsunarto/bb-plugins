@@ -195,8 +195,8 @@ describe("mountLinkHints", () => {
       "]",
       "e",
       ",",
+      "q",
       "\\",
-      "/",
       "dd",
     ]);
 

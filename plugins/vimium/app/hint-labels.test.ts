@@ -86,8 +86,8 @@ describe("GENERAL_ALPHABET", () => {
       'button[aria-label="Go back"]': "[",
       'button[aria-label="Go forward"]': "]",
       'a[href^="/settings"]': ",",
-      'button[aria-label^="Toggle sidebar"]': "\\",
-      'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "/",
+      'button[aria-label^="Toggle sidebar"]': "q",
+      'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "\\",
     });
   });
 

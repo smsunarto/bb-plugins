@@ -34,11 +34,11 @@ export const RESERVED_CONTROLS = [
   { selector: 'button[aria-label="Go back"]', char: "[" },
   { selector: 'button[aria-label="Go forward"]', char: "]" },
   { selector: 'a[href^="/settings"]', char: "," },
-  { selector: 'button[aria-label^="Toggle sidebar"]', char: "\\" },
+  { selector: 'button[aria-label^="Toggle sidebar"]', char: "q" },
   {
     selector:
       'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
-    char: "/",
+    char: "\\",
   },
 ] as const;
 
@@ -62,7 +62,7 @@ const RESERVED_CHARS = new Set<string>([
  * thread with an open diff panel can exceed the remaining two-character range.
  * Extra characters extend the general set past 196 two-character labels.
  */
-const EXTRA_GENERAL_CHARS = "uortnbiyqxz";
+const EXTRA_GENERAL_CHARS = "uortnbiyqxz;";
 export const GENERAL_ALPHABET = [...HINT_ALPHABET + EXTRA_GENERAL_CHARS]
   .filter((char) => !RESERVED_CHARS.has(char))
   .join("");
