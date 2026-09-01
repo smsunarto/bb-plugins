@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import { sentryPluginRelease, sentryPluginTelemetry } from "./telemetry.ts";
+import {
+  sentryPluginRelease,
+  sentryPluginTelemetry,
+  TELEMETRY_SETTINGS_BLOCK,
+  type SentryTelemetryHost,
+} from "./telemetry.ts";
 
 const IDENTITY = { pluginId: "demo", pluginVersion: "9.9.9" };
 
@@ -106,9 +111,185 @@ test("SENTRY_TRACES_SAMPLE_RATE overrides the sampling default", async () => {
   }
 });
 
+test("telemetry defaults on and both reporters inject one shared setting", async () => {
+  const target = await startEnvelopeTarget();
+  const fixture = createArtifactFixture("built", IDENTITY);
+  const settings = fakeSettingsHost({ telemetry: true });
+  try {
+    const telemetry = sentryPluginTelemetry({
+      pluginId: "demo",
+      serverEntryUrl: fixture.serverEntryUrl,
+      env: { SENTRY_DSN: target.dsn },
+      tracesSampleRate: 1,
+    });
+    const errorReporter = telemetry.errorReporter({ pluginId: "demo", host: settings.host });
+    const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
+    assert.ok(errorReporter);
+    assert.ok(performance);
+    assert.equal(settings.defines.length, 1);
+    assert.deepEqual(settings.defines[0], TELEMETRY_SETTINGS_BLOCK);
+    assert.equal(TELEMETRY_SETTINGS_BLOCK.telemetry.default, true);
+
+    errorReporter.capture({ boundary: "plugin.setup", error: new Error("boom") });
+    performance.start({ operation: "plugin.startup" }).finish("ok");
+    await errorReporter.dispose(5_000);
+    await performance.dispose(5_000);
+    assert.equal(target.bodies.length, 2);
+  } finally {
+    fixture.cleanup();
+    await target.close();
+  }
+});
+
+test("a stored opt-out sends nothing", async () => {
+  const target = await startEnvelopeTarget();
+  const fixture = createArtifactFixture("built", IDENTITY);
+  const settings = fakeSettingsHost({ telemetry: false });
+  try {
+    const telemetry = sentryPluginTelemetry({
+      pluginId: "demo",
+      serverEntryUrl: fixture.serverEntryUrl,
+      env: { SENTRY_DSN: target.dsn },
+      tracesSampleRate: 1,
+    });
+    const errorReporter = telemetry.errorReporter({ pluginId: "demo", host: settings.host });
+    const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
+    assert.ok(errorReporter);
+    assert.ok(performance);
+    errorReporter.capture({ boundary: "plugin.setup", error: new Error("boom") });
+    performance.start({ operation: "plugin.startup" }).finish("ok");
+    await errorReporter.dispose(5_000);
+    await performance.dispose(5_000);
+    assert.equal(target.bodies.length, 0);
+  } finally {
+    fixture.cleanup();
+    await target.close();
+  }
+});
+
+test("an opt-out through onChange applies to later operations", async () => {
+  const target = await startEnvelopeTarget();
+  const fixture = createArtifactFixture("built", IDENTITY);
+  const settings = fakeSettingsHost({ telemetry: true });
+  try {
+    const telemetry = sentryPluginTelemetry({
+      pluginId: "demo",
+      serverEntryUrl: fixture.serverEntryUrl,
+      env: { SENTRY_DSN: target.dsn },
+      tracesSampleRate: 1,
+    });
+    const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
+    assert.ok(performance);
+    performance.start({ operation: "plugin.startup" }).finish("ok");
+    await waitFor(() => target.bodies.length === 1);
+    settings.change(false);
+    performance.start({ operation: "rpc.echo" }).finish("ok");
+    await performance.dispose(5_000);
+    assert.equal(target.bodies.length, 1);
+  } finally {
+    fixture.cleanup();
+    await target.close();
+  }
+});
+
+test("a failing settings store fails open to default-on", async () => {
+  const target = await startEnvelopeTarget();
+  const fixture = createArtifactFixture("built", IDENTITY);
+  const settings = fakeSettingsHost("reject");
+  try {
+    const telemetry = sentryPluginTelemetry({
+      pluginId: "demo",
+      serverEntryUrl: fixture.serverEntryUrl,
+      env: { SENTRY_DSN: target.dsn },
+      tracesSampleRate: 1,
+    });
+    const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
+    assert.ok(performance);
+    performance.start({ operation: "plugin.startup" }).finish("ok");
+    await performance.dispose(5_000);
+    assert.equal(target.bodies.length, 1);
+  } finally {
+    fixture.cleanup();
+    await target.close();
+  }
+});
+
+test("the baked dsn option enables telemetry and SENTRY_DSN overrides it", async () => {
+  const target = await startEnvelopeTarget();
+  const fixture = createArtifactFixture("built", IDENTITY);
+  try {
+    const baked = sentryPluginTelemetry({
+      pluginId: "demo",
+      serverEntryUrl: fixture.serverEntryUrl,
+      dsn: target.dsn,
+      env: {},
+      tracesSampleRate: 1,
+    });
+    const bakedPerformance = baked.performanceReporter({ pluginId: "demo" });
+    assert.ok(bakedPerformance);
+    bakedPerformance.start({ operation: "plugin.startup" }).finish("ok");
+    await bakedPerformance.dispose(5_000);
+    assert.equal(target.bodies.length, 1);
+
+    const overridden = sentryPluginTelemetry({
+      pluginId: "demo",
+      serverEntryUrl: fixture.serverEntryUrl,
+      dsn: "https://public@dsn-option-must-lose.invalid/1",
+      env: { SENTRY_DSN: target.dsn },
+      tracesSampleRate: 1,
+    });
+    const overriddenPerformance = overridden.performanceReporter({ pluginId: "demo" });
+    assert.ok(overriddenPerformance);
+    overriddenPerformance.start({ operation: "plugin.startup" }).finish("ok");
+    await overriddenPerformance.dispose(5_000);
+    assert.equal(target.bodies.length, 2);
+  } finally {
+    fixture.cleanup();
+    await target.close();
+  }
+});
+
 test("the release name matches the source-map pipeline convention", () => {
   assert.equal(sentryPluginRelease({ pluginId: "amp", pluginVersion: "1.2.3" }), "bb-plugin-amp@1.2.3");
 });
+
+function fakeSettingsHost(stored: { telemetry: boolean } | "reject"): {
+  host: SentryTelemetryHost;
+  defines: unknown[];
+  change(telemetry: boolean): void;
+} {
+  const defines: unknown[] = [];
+  let listener: ((next: Readonly<{ telemetry: boolean }>) => void) | undefined;
+  const host: SentryTelemetryHost = {
+    settings: {
+      define(descriptors) {
+        defines.push(descriptors);
+        return {
+          get: () =>
+            stored === "reject"
+              ? Promise.reject(new Error("settings unavailable"))
+              : Promise.resolve(stored),
+          onChange(next) {
+            listener = next;
+          },
+        };
+      },
+    },
+  };
+  return {
+    host,
+    defines,
+    change: (telemetry) => listener?.({ telemetry }),
+  };
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("condition not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 function createArtifactFixture(
   layout: "built" | "source",

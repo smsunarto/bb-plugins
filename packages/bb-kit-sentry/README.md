@@ -1,8 +1,9 @@
 # @bb-kit/sentry
 
-`@bb-kit/sentry` adds opt-in, Node-only Sentry reporting to `@bb-kit/core` plugins.
-It creates an isolated client for each plugin factory execution. A missing or blank DSN disables
-reporting.
+`@bb-kit/sentry` adds Node-only Sentry reporting to `@bb-kit/core` plugins. Reporting is on by
+default when a DSN is available, and every reporter auto-injects a `telemetry` boolean into the
+plugin's bb settings so users can opt out. It creates an isolated client for each plugin factory
+execution. A missing or blank DSN disables reporting.
 
 ```ts
 import { definePlugin } from "@bb-kit/core/plugin";
@@ -64,13 +65,22 @@ export default definePlugin({
 });
 ```
 
-Telemetry stays fully disabled unless `SENTRY_DSN` is set in the environment where bb runs the
-plugin. The DSN is never baked into a build. A missing, unreadable, or mismatched sidecar also
-disables telemetry, so a drifted install never reports under a wrong release.
+Telemetry is enabled by default. The DSN comes from `SENTRY_DSN` in the environment where bb runs
+the plugin, or from the `dsn` option baked into the plugin. Without either, telemetry stays
+disabled. A missing, unreadable, or mismatched sidecar also disables telemetry, so a drifted
+install never reports under a wrong release.
 
-Environment switches:
+### Opting out
 
-- `SENTRY_DSN` — opt in. Unset or blank means no telemetry.
+When `definePlugin` runs the reporter factories, it hands them the bb plugin API. The reporters
+then define a `telemetry` boolean setting (default on) in the plugin's settings — plugin authors
+never declare it. Turning it off stops every send, and the change applies live through
+`settings.onChange`. Nothing is sent while the stored value is still loading, and a broken
+settings store fails open to the default.
+
+Environment overrides:
+
+- `SENTRY_DSN` — overrides the baked `dsn` option. When neither is set, no telemetry.
 - `SENTRY_ENVIRONMENT` — optional environment label.
 - `SENTRY_TRACES_SAMPLE_RATE` — trace sampling in `[0, 1]`. Defaults to `0.1`.
 

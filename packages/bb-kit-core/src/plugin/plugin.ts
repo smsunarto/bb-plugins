@@ -149,10 +149,11 @@ export function definePlugin<
   const summary = `CLI for the ${pluginId} plugin`;
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
-    let reporter = createPluginErrorReporter(definition.errorReporter, pluginId);
+    let reporter = createPluginErrorReporter(definition.errorReporter, pluginId, bb);
     let performanceReporter = createPluginPerformanceReporter(
       definition.performanceReporter,
       pluginId,
+      bb,
     );
     const disposeErrorReporter = createPluginErrorReporterDisposer(reporter);
     const disposePerformanceReporter = createPluginErrorReporterDisposer(performanceReporter);

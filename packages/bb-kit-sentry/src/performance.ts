@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { sanitizeSentryTransaction } from "./privacy.ts";
+import { telemetryGate, type SentryTelemetryHost } from "./telemetry-gate.ts";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
@@ -9,7 +10,7 @@ export type SentryPerformanceReporterOptions = Readonly<{
   dsn?: string;
   release?: string;
   environment?: string;
-  /** Defaults to 1 because the DSN is the opt-in switch and startup traces are low-volume. */
+  /** Defaults to 1; `sentryPluginTelemetry` lowers it to 0.1 for per-call traces. */
   tracesSampleRate?: number;
   /** Deadline for each envelope request. Defaults to 10 seconds. */
   requestTimeoutMs?: number;
@@ -51,14 +52,17 @@ interface PendingRequest {
 
 export function sentryPerformanceReporter(
   options: SentryPerformanceReporterOptions,
-): (context: Readonly<{ pluginId: string }>) => SentryPerformanceReporter | undefined {
-  return ({ pluginId }) => {
+): (
+  context: Readonly<{ pluginId: string; host?: SentryTelemetryHost }>,
+) => SentryPerformanceReporter | undefined {
+  return ({ pluginId, host }) => {
     const dsn = options.dsn?.trim();
     if (dsn === undefined || dsn.length === 0 || !isTelemetryIdentifier(pluginId)) {
       return undefined;
     }
     const target = parseEnvelopeTarget(dsn);
     if (target === undefined) return undefined;
+    const gate = host === undefined ? undefined : telemetryGate(host);
 
     let closing: Promise<void> | undefined;
     let disposed = false;
@@ -96,19 +100,27 @@ export function sentryPerformanceReporter(
             if (disposed || !sampled) return;
 
             const controller = new AbortController();
-            const task = sendCompletedTrace(
-              target,
-              options,
-              {
-                pluginId,
-                operation,
-                ...(variant === undefined ? {} : { variant }),
-                outcome,
-                startedAtEpochMs,
-                finishedAtEpochMs: startedAtEpochMs + elapsedMs,
-                checkpoints,
-              },
-              controller.signal,
+            const completed: CompletedTrace = {
+              pluginId,
+              operation,
+              ...(variant === undefined ? {} : { variant }),
+              outcome,
+              startedAtEpochMs,
+              finishedAtEpochMs: startedAtEpochMs + elapsedMs,
+              checkpoints,
+            };
+            // Timings above are final; only the send waits on the opt-out
+            // gate. The task stays in the pending set so dispose drains it.
+            const task = (
+              gate === undefined
+                ? sendCompletedTrace(target, options, completed, controller.signal)
+                : gate
+                    .decided()
+                    .then((enabled) =>
+                      enabled
+                        ? sendCompletedTrace(target, options, completed, controller.signal)
+                        : undefined,
+                    )
             ).catch(() => undefined);
             const request: PendingRequest = { controller, task };
             pending.add(request);

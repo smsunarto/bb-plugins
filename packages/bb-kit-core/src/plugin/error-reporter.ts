@@ -1,3 +1,5 @@
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+
 export type PluginFailure =
   | Readonly<{ boundary: "plugin.factory" | "plugin.setup"; error: unknown }>
   | Readonly<{
@@ -13,7 +15,7 @@ export interface PluginErrorReporter {
 }
 
 export type PluginErrorReporterFactory = (
-  context: Readonly<{ pluginId: string }>,
+  context: Readonly<{ pluginId: string; host?: BbPluginApi }>,
 ) => PluginErrorReporter | undefined;
 
 const REPORTER_DISPOSE_TIMEOUT_MS = 2_000;
@@ -28,9 +30,10 @@ type DisposableReporter = Readonly<{
 export function createPluginErrorReporter(
   factory: PluginErrorReporterFactory | undefined,
   pluginId: string,
+  host?: BbPluginApi,
 ): PluginErrorReporter | undefined {
   try {
-    return factory?.({ pluginId });
+    return factory?.(host === undefined ? { pluginId } : { pluginId, host });
   } catch {
     return undefined;
   }

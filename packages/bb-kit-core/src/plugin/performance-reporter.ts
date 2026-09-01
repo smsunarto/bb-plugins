@@ -1,3 +1,5 @@
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+
 export type PluginTraceOutcome = "ok" | "error" | "cancelled" | "retry" | "incomplete";
 
 export interface PluginPerformanceTrace {
@@ -11,15 +13,16 @@ export interface PluginPerformanceReporter {
 }
 
 export type PluginPerformanceReporterFactory = (
-  context: Readonly<{ pluginId: string }>,
+  context: Readonly<{ pluginId: string; host?: BbPluginApi }>,
 ) => PluginPerformanceReporter | undefined;
 
 export function createPluginPerformanceReporter(
   factory: PluginPerformanceReporterFactory | undefined,
   pluginId: string,
+  host?: BbPluginApi,
 ): PluginPerformanceReporter | undefined {
   try {
-    return factory?.({ pluginId });
+    return factory?.(host === undefined ? { pluginId } : { pluginId, host });
   } catch {
     return undefined;
   }
