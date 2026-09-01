@@ -164,6 +164,26 @@
           "tagPrefix": "notify/"
         }
       }
+    },
+    {
+      "id": "novnc",
+      "displayName": "NoVNC",
+      "description": "Watch a thread's remote screen through NoVNC in a floating picture-in-picture panel.",
+      "icon": {
+        "url": "plugins/novnc/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/novnc",
+          "range": "*",
+          "tagPrefix": "novnc/"
+        }
+      }
     }
   ]
 }

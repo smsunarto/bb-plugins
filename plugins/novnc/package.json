@@ -1,0 +1,80 @@
+{
+  "name": "@smsunarto/bb-plugin-novnc",
+  "version": "0.1.0",
+  "description": "Watch a thread's remote screen through NoVNC in a floating picture-in-picture panel.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/novnc",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/novnc"
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "novnc",
+    "vnc",
+    "remote-desktop"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.21"
+  },
+  "bb": {
+    "name": "NoVNC",
+    "description": "Watch a thread's remote screen through NoVNC in a floating picture-in-picture panel.",
+    "branding": {
+      "icon": "./assets/icon.svg"
+    },
+    "server": "./server/server.ts",
+    "app": "./app/app.tsx",
+    "host": "./host/host.ts",
+    "skills": []
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
+    "dist/host.js",
+    "dist/host.meta.json",
+    "assets/",
+    "README.md",
+    "LICENSE",
+    "server/",
+    "app/",
+    "host/",
+    "shared/"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@tanstack/react-query": "^5.101.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.24",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:-bb}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout=30000",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "clean": "rm -rf dist"
+  }
+}
