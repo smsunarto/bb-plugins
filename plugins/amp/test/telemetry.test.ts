@@ -15,7 +15,7 @@ import {
 } from "../src/bridge/telemetry.ts";
 
 test("Amp forwards the complete Sentry environment contract", () => {
-  assert.deepEqual(AMP_SENTRY_ENV, ["SENTRY_DSN", "SENTRY_ENVIRONMENT"]);
+  assert.deepEqual(AMP_SENTRY_ENV, ["SENTRY_DSN", "SENTRY_ENVIRONMENT", "NODE_ENV"]);
   assert.equal(
     ampSentryRelease({ pluginId: "amp", pluginVersion: "1.2.3" }),
     "bb-plugin-amp@1.2.3",
@@ -50,6 +50,26 @@ test("Amp derives the performance release from final host metadata", async () =>
     assert.equal(event.environment, "test");
     assert.equal(event.transaction, "amp.cli.startup");
     assert.equal(readRecord(event, "tags")["bb.kit.variant"], "local.fresh.mcp.medium.attempt-0");
+  } finally {
+    await Promise.all([target.close(), rm(dir, { recursive: true, force: true })]);
+  }
+});
+
+test("Amp labels development traces from NODE_ENV", async () => {
+  const target = await startEnvelopeTarget();
+  const dir = await mkdtemp(join(tmpdir(), "bb-amp-telemetry-environment-"));
+  const metaPath = join(dir, "host.meta.json");
+  writeFileSync(metaPath, JSON.stringify({ pluginId: "amp", pluginVersion: "1.2.3" }));
+  try {
+    const reporter = createAmpPerformanceReporter(
+      "amp",
+      { SENTRY_DSN: target.dsn, NODE_ENV: "development" },
+      pathToFileURL(metaPath),
+    );
+    assert.ok(reporter);
+    reporter.start({ operation: "cli.startup" }).finish("ok");
+    await reporter.dispose(5_000);
+    assert.equal(parseEnvelopeEvent(target.bodies[0] ?? "").environment, "development");
   } finally {
     await Promise.all([target.close(), rm(dir, { recursive: true, force: true })]);
   }

@@ -1,10 +1,3 @@
-export const AMP_SENTRY_ENV = ["SENTRY_DSN", "SENTRY_ENVIRONMENT"] as const;
+export { sentryPluginRelease as ampSentryRelease } from "@bb-kit/sentry/performance";
 
-export interface AmpHostArtifactIdentity {
-  readonly pluginId: string;
-  readonly pluginVersion: string;
-}
-
-export function ampSentryRelease(identity: AmpHostArtifactIdentity): string {
-  return `bb-plugin-${identity.pluginId}@${identity.pluginVersion}`;
-}
+export const AMP_SENTRY_ENV = ["SENTRY_DSN", "SENTRY_ENVIRONMENT", "NODE_ENV"] as const;

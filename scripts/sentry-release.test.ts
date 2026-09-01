@@ -183,10 +183,12 @@ test("the release workflow uploads plugin maps after build and before publish", 
   expect(publish).toBeGreaterThan(upload);
   expect(workflow).toContain("SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}");
   expect(workflow).toContain("SENTRY_ORG: ${{ vars.SENTRY_ORG }}");
-  expect(workflow).toContain("SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}");
-  for (const path of ["plugins/amp", "plugins/gitbutler", "plugins/nanocodex", "plugins/notify"]) {
-    expect(workflow.slice(upload, publish)).toContain(`"${path}"`);
+  expect(workflow).not.toContain("SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}");
+  for (const plugin of ["amp", "dotfiles", "nanocodex", "notify"]) {
+    expect(workflow.slice(upload, publish)).toContain(`plugins/${plugin}`);
+    expect(workflow.slice(upload, publish)).toContain(`SENTRY_PROJECT=bb-plugin-${plugin}`);
   }
+  expect(workflow.slice(upload, publish)).not.toContain("plugins/gitbutler");
 });
 
 test("Amp's npm allowlist keeps source maps out of both published package names", () => {

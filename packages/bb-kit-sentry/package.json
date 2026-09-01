@@ -22,6 +22,10 @@
     "LICENSE"
   ],
   "exports": {
+    "./context": {
+      "types": "./dist/context.d.ts",
+      "import": "./dist/context.js"
+    },
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
@@ -36,7 +40,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/node.ts src/performance.ts src/telemetry.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
+    "build": "bun build src/context.ts src/node.ts src/performance.ts src/telemetry.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun run build && bun test --timeout=30000",
     "clean": "rm -rf dist"

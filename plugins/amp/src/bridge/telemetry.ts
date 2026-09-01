@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
+  sentryPluginEnvironment,
   sentryPerformanceReporter,
   type SentryPerformanceReporter,
 } from "@bb-kit/sentry/performance";
@@ -64,7 +65,7 @@ export function createAmpPerformanceReporter(
     return sentryPerformanceReporter({
       dsn,
       release: ampSentryRelease(meta),
-      environment: env[AMP_SENTRY_ENV[1]],
+      environment: sentryPluginEnvironment(env),
     })({ pluginId });
   } catch {
     return undefined;

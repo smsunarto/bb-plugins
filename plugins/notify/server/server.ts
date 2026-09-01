@@ -17,7 +17,7 @@ import { playSound } from "./sound.ts";
 const telemetry = sentryPluginTelemetry({
   pluginId: "notify",
   serverEntryUrl: import.meta.url,
-  dsn: "https://56f8b9fe016877d46b7d379c17a1e6ea@o4506475620204544.ingest.us.sentry.io/4511947654758400",
+  dsn: "https://c4d32c5ebd100ee5cd27afe79ec6ebd4@o4506475620204544.ingest.us.sentry.io/4512009353560065",
 });
 
 export default definePlugin({

@@ -1,6 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
+import {
+  sentryPluginEnvironment,
+  sentryPluginRelease,
+  type SentryPluginArtifactIdentity,
+} from "./context.ts";
 import { sentryErrorReporter } from "./node.ts";
 import { sentryPerformanceReporter } from "./performance.ts";
+
+export { sentryPluginRelease, type SentryPluginArtifactIdentity } from "./context.ts";
 
 export { TELEMETRY_SETTINGS_BLOCK, type SentryTelemetryHost } from "./telemetry-gate.ts";
 
@@ -9,19 +16,11 @@ export const SENTRY_PLUGIN_ENV = [
   "SENTRY_DSN",
   "SENTRY_ENVIRONMENT",
   "SENTRY_TRACES_SAMPLE_RATE",
+  "NODE_ENV",
 ] as const;
 
 /** Per-call traces are chattier than startup traces, so sample conservatively. */
 const DEFAULT_TRACES_SAMPLE_RATE = 0.1;
-
-export interface SentryPluginArtifactIdentity {
-  readonly pluginId: string;
-  readonly pluginVersion: string;
-}
-
-export function sentryPluginRelease(identity: SentryPluginArtifactIdentity): string {
-  return `bb-plugin-${identity.pluginId}@${identity.pluginVersion}`;
-}
 
 export type SentryPluginTelemetryOptions = Readonly<{
   pluginId: string;
@@ -61,7 +60,9 @@ const DISABLED: SentryPluginTelemetry = {
  * partial install reports nothing rather than reporting under a wrong
  * release.
  */
-export function sentryPluginTelemetry(options: SentryPluginTelemetryOptions): SentryPluginTelemetry {
+export function sentryPluginTelemetry(
+  options: SentryPluginTelemetryOptions,
+): SentryPluginTelemetry {
   try {
     const env = options.env ?? process.env;
     const dsn = trimmedOrUndefined(env.SENTRY_DSN) ?? trimmedOrUndefined(options.dsn);
@@ -71,7 +72,7 @@ export function sentryPluginTelemetry(options: SentryPluginTelemetryOptions): Se
     const shared = {
       dsn,
       release: sentryPluginRelease(identity),
-      ...(env.SENTRY_ENVIRONMENT === undefined ? {} : { environment: env.SENTRY_ENVIRONMENT }),
+      environment: sentryPluginEnvironment(env),
     };
     return {
       errorReporter: sentryErrorReporter(shared),
@@ -93,7 +94,10 @@ function trimmedOrUndefined(value: string | undefined): string | undefined {
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
 }
 
-function resolveTracesSampleRate(fromEnv: string | undefined, fallback: number | undefined): number {
+function resolveTracesSampleRate(
+  fromEnv: string | undefined,
+  fallback: number | undefined,
+): number {
   if (fromEnv !== undefined && fromEnv.trim().length > 0) {
     const parsed = Number(fromEnv);
     if (Number.isFinite(parsed)) return Math.min(1, Math.max(0, parsed));

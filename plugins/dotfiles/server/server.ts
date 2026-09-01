@@ -1,4 +1,5 @@
 import { definePlugin } from "@bb-kit/core/plugin";
+import { sentryPluginTelemetry } from "@bb-kit/sentry/telemetry";
 import { cat } from "./command/cat.ts";
 import { check } from "./command/check.ts";
 import { list } from "./command/list.ts";
@@ -14,8 +15,16 @@ import { runTask } from "./rpc/run-task.ts";
 import { saveFile } from "./rpc/save-file.ts";
 import { bindGit, createDotfilesGit } from "./git.ts";
 
+const telemetry = sentryPluginTelemetry({
+  pluginId: "dotfiles",
+  serverEntryUrl: import.meta.url,
+  dsn: "https://6fea0895aa83da28802285cfb381a70f@o4506475620204544.ingest.us.sentry.io/4512009353691136",
+});
+
 export default definePlugin({
   pluginId: "dotfiles",
+  errorReporter: telemetry.errorReporter,
+  performanceReporter: telemetry.performanceReporter,
   rpc: { monacoAssets, overview, publish, readFile, removeSkill, runTask, saveFile },
   command: { cat, check, list, render, status, sync },
   async setup(bb) {

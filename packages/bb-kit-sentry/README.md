@@ -81,7 +81,8 @@ settings store fails open to the default.
 Environment overrides:
 
 - `SENTRY_DSN` — overrides the baked `dsn` option. When neither is set, no telemetry.
-- `SENTRY_ENVIRONMENT` — optional environment label.
+- `SENTRY_ENVIRONMENT` — optional environment override. Otherwise `NODE_ENV=development` maps to
+  `development`, and every other runtime maps to `production`.
 - `SENTRY_TRACES_SAMPLE_RATE` — trace sampling in `[0, 1]`. Defaults to `0.1`.
 
 ## License

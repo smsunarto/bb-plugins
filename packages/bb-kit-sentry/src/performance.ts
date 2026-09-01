@@ -3,6 +3,8 @@ import { performance } from "node:perf_hooks";
 import { sanitizeSentryTransaction } from "./privacy.ts";
 import { telemetryGate, type SentryTelemetryHost } from "./telemetry-gate.ts";
 
+export { sentryPluginEnvironment, sentryPluginRelease } from "./context.ts";
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
 
