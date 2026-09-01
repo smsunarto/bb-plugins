@@ -77,8 +77,8 @@ jobs:
           fi
           bun run --filter "$package_name" build
 
-      - name: Upload Amp source maps
-        if: ${{ matrix.path == 'plugins/amp' }}
+      - name: Upload plugin source maps
+        if: ${{ contains(fromJSON('["plugins/amp", "plugins/gitbutler", "plugins/nanocodex", "plugins/notify"]'), matrix.path) }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}

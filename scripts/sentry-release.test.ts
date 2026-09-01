@@ -55,6 +55,25 @@ describe("Sentry release artifacts", () => {
     }
   });
 
+  test("stages only the server pair for plugins without a host bundle", () => {
+    const fixture = createPluginFixture({ host: false });
+    try {
+      const prepared = prepareSentryRelease(fixture.pluginDir, SENTRY_CLI);
+      try {
+        expect(prepared.release).toBe("bb-plugin-amp@1.2.3");
+        expect(prepared.artifactDigest).toBeUndefined();
+        expect(prepared.files.map((path) => basename(path)).sort()).toEqual([
+          "server.js",
+          "server.js.map",
+        ]);
+      } finally {
+        prepared.cleanup();
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test("requires every upload credential before artifact preparation", () => {
     expect(() => requireSentryUploadCredentials({})).toThrow(
       /SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT/u,
@@ -74,12 +93,12 @@ describe("Sentry release artifacts", () => {
     ).toEqual({ SENTRY_AUTH_TOKEN: "token", SENTRY_ORG: "org", SENTRY_PROJECT: "project" });
   });
 
-  test("rejects host metadata that drifts from the plugin manifest", () => {
+  test("rejects artifact metadata that drifts from the plugin manifest", () => {
     const wrongVersion = createPluginFixture({ manifestVersion: "1.2.4" });
     try {
       expect(() =>
         prepareSentryRelease(wrongVersion.pluginDir, join(wrongVersion.pluginDir, "missing-cli")),
-      ).toThrow(/metadata version 1\.2\.3 does not match package version 1\.2\.4/u);
+      ).toThrow(/server\.meta\.json version 1\.2\.3 does not match package version 1\.2\.4/u);
     } finally {
       wrongVersion.cleanup();
     }
@@ -88,21 +107,21 @@ describe("Sentry release artifacts", () => {
     try {
       expect(() =>
         prepareSentryRelease(wrongName.pluginDir, join(wrongName.pluginDir, "missing-cli")),
-      ).toThrow(/metadata plugin amp does not match package plugin other/u);
+      ).toThrow(/server\.meta\.json plugin amp does not match package plugin other/u);
     } finally {
       wrongName.cleanup();
     }
   });
 
-  test("rejects a host map that cannot resolve to the bridge entry", () => {
+  test("rejects a staged map that cannot resolve to a TypeScript source", () => {
     const fixture = createPluginFixture();
     const mapPath = join(fixture.pluginDir, "dist", "host.js.map");
     const map = JSON.parse(readFileSync(mapPath, "utf8")) as Record<string, unknown>;
-    map.sources = ["../src/not-the-entry.ts"];
+    map.sources = ["../src/not-the-entry.js"];
     writeFileSync(mapPath, JSON.stringify(map));
     try {
       expect(() => prepareSentryRelease(fixture.pluginDir, SENTRY_CLI)).toThrow(
-        /cannot resolve a position to src\/bridge\/entry\.ts/u,
+        /host\.js\.map cannot resolve any position to a TypeScript source/u,
       );
     } finally {
       fixture.cleanup();
@@ -154,10 +173,10 @@ describe("Sentry release artifacts", () => {
   });
 });
 
-test("the release workflow uploads Amp maps after build and before publish", () => {
+test("the release workflow uploads plugin maps after build and before publish", () => {
   const workflow = readFileSync(join(ROOT, ".github", "workflows", "release.yaml"), "utf8");
   const build = workflow.indexOf("name: Build released package");
-  const upload = workflow.indexOf("name: Upload Amp source maps");
+  const upload = workflow.indexOf("name: Upload plugin source maps");
   const publish = workflow.indexOf("name: Publish package");
   expect(build).toBeGreaterThan(-1);
   expect(upload).toBeGreaterThan(build);
@@ -165,6 +184,9 @@ test("the release workflow uploads Amp maps after build and before publish", () 
   expect(workflow).toContain("SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}");
   expect(workflow).toContain("SENTRY_ORG: ${{ vars.SENTRY_ORG }}");
   expect(workflow).toContain("SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}");
+  for (const path of ["plugins/amp", "plugins/gitbutler", "plugins/nanocodex", "plugins/notify"]) {
+    expect(workflow.slice(upload, publish)).toContain(`"${path}"`);
+  }
 });
 
 test("Amp's npm allowlist keeps source maps out of both published package names", () => {
@@ -177,12 +199,13 @@ test("Amp's npm allowlist keeps source maps out of both published package names"
 });
 
 function createPluginFixture(
-  options: Readonly<{ manifestName?: string; manifestVersion?: string }> = {},
+  options: Readonly<{ manifestName?: string; manifestVersion?: string; host?: boolean }> = {},
 ): { pluginDir: string; cleanup(): void } {
   const pluginDir = mkdtempSync(join(tmpdir(), "bb-sentry-release-test-"));
   const distDir = join(pluginDir, "dist");
   mkdirSync(distDir);
-  for (const name of ["host", "server"]) {
+  const bundles = options.host === false ? ["server"] : ["host", "server"];
+  for (const name of bundles) {
     writeFileSync(
       join(distDir, `${name}.js`),
       `function ${name}(){return ${JSON.stringify(name)}}\nconsole.log(${name}())\n//# sourceMappingURL=${name}.js.map\n`,
@@ -197,16 +220,16 @@ function createPluginFixture(
         mappings: "AAAA;AACA",
       }),
     );
+    writeFileSync(
+      join(distDir, `${name}.meta.json`),
+      JSON.stringify({
+        artifactFormatVersion: 1,
+        pluginId: "amp",
+        pluginVersion: "1.2.3",
+        ...(name === "host" ? { artifactDigest: "before-injection" } : {}),
+      }),
+    );
   }
-  writeFileSync(
-    join(distDir, "host.meta.json"),
-    JSON.stringify({
-      artifactFormatVersion: 1,
-      pluginId: "amp",
-      pluginVersion: "1.2.3",
-      artifactDigest: "before-injection",
-    }),
-  );
   writeFileSync(
     join(pluginDir, "package.json"),
     JSON.stringify({

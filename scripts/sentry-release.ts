@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { SourceMap, type SourceMapPayload, type SourceMapping } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ampSentryRelease } from "../plugins/amp/lib/telemetry.ts";
+import { sentryPluginRelease } from "../packages/bb-kit-sentry/src/telemetry.ts";
 import { derivePluginId } from "./plugin-package.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -23,14 +23,18 @@ export interface SentryUploadCredentials {
 export interface PreparedSentryRelease {
   readonly release: string;
   readonly stageDir: string;
-  readonly artifactDigest: string;
+  /** Digest of the injected host bundle; absent for plugins without a host. */
+  readonly artifactDigest: string | undefined;
   readonly files: readonly string[];
   cleanup(): void;
 }
 
-interface HostArtifactMeta {
+interface ArtifactIdentityMeta {
   readonly pluginId: string;
   readonly pluginVersion: string;
+}
+
+interface HostArtifactMeta extends ArtifactIdentityMeta {
   artifactDigest: string;
 }
 
@@ -48,7 +52,7 @@ export function requireSentryUploadCredentials(env: NodeJS.ProcessEnv): SentryUp
     else values[name] = value;
   }
   if (missing.length > 0) {
-    throw new Error(`Amp source-map upload requires ${missing.join(", ")}`);
+    throw new Error(`Sentry source-map upload requires ${missing.join(", ")}`);
   }
   return values;
 }
@@ -59,34 +63,47 @@ export function prepareSentryRelease(
 ): PreparedSentryRelease {
   const pluginDir = resolve(pluginDirectory);
   const distDir = join(pluginDir, "dist");
-  const bundlePaths = [join(distDir, "host.js"), join(distDir, "server.js")];
+  const serverBundlePath = join(distDir, "server.js");
+  const hostBundlePath = join(distDir, "host.js");
+  const hasHost = existsSync(hostBundlePath);
+  const bundlePaths = hasHost ? [hostBundlePath, serverBundlePath] : [serverBundlePath];
   const mapPaths = bundlePaths.map((bundlePath) => `${bundlePath}.map`);
-  const metaPath = join(distDir, "host.meta.json");
+  const serverMetaPath = join(distDir, "server.meta.json");
+  const hostMetaPath = join(distDir, "host.meta.json");
+  const metaPaths = hasHost ? [serverMetaPath, hostMetaPath] : [serverMetaPath];
   const manifestPath = join(pluginDir, "package.json");
 
-  for (const path of [...bundlePaths, ...mapPaths, metaPath, manifestPath]) readFileSync(path);
-  const meta = readHostArtifactMeta(metaPath);
+  for (const path of [...bundlePaths, ...mapPaths, ...metaPaths, manifestPath]) readFileSync(path);
   const manifest = readPluginReleaseManifest(manifestPath);
-  if (manifest.version !== meta.pluginVersion) {
-    throw new Error(
-      `Amp host metadata version ${meta.pluginVersion} does not match package version ${manifest.version}`,
-    );
-  }
   const manifestPluginId = derivePluginId(manifest.name);
-  if (manifestPluginId !== meta.pluginId) {
-    throw new Error(
-      `Amp host metadata plugin ${meta.pluginId} does not match package plugin ${manifestPluginId}`,
-    );
+  for (const metaPath of metaPaths) {
+    const identity = readArtifactIdentityMeta(metaPath);
+    if (manifest.version !== identity.pluginVersion) {
+      throw new Error(
+        `${basename(metaPath)} version ${identity.pluginVersion} does not match package version ${manifest.version}`,
+      );
+    }
+    if (manifestPluginId !== identity.pluginId) {
+      throw new Error(
+        `${basename(metaPath)} plugin ${identity.pluginId} does not match package plugin ${manifestPluginId}`,
+      );
+    }
   }
   execFileSync(cliPath, ["sourcemaps", "inject", ...bundlePaths, ...mapPaths], {
     stdio: "inherit",
   });
 
-  const artifactDigest = sha256(bundlePaths[0]!);
-  meta.artifactDigest = artifactDigest;
-  writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
-  if (readHostArtifactMeta(metaPath).artifactDigest !== sha256(bundlePaths[0]!)) {
-    throw new Error("Amp host artifact digest does not match the injected host bundle");
+  // Only the host sidecar carries an artifact digest; bb checks it at load
+  // time, so it must be restamped after injection rewrites the bundle.
+  let artifactDigest: string | undefined;
+  if (hasHost) {
+    const hostMeta = readHostArtifactMeta(hostMetaPath);
+    artifactDigest = sha256(hostBundlePath);
+    hostMeta.artifactDigest = artifactDigest;
+    writeFileSync(hostMetaPath, `${JSON.stringify(hostMeta, null, 2)}\n`);
+    if (readHostArtifactMeta(hostMetaPath).artifactDigest !== sha256(hostBundlePath)) {
+      throw new Error("the host artifact digest does not match the injected host bundle");
+    }
   }
 
   const stageDir = mkdtempSync(join(tmpdir(), "bb-sentry-sourcemaps-"));
@@ -102,11 +119,11 @@ export function prepareSentryRelease(
     }
     for (const bundlePath of stagedFiles.filter((path) => path.endsWith(".js"))) {
       checkDebugIdPair(bundlePath, `${bundlePath}.map`);
+      checkLocalSourceMap(bundlePath, `${bundlePath}.map`);
     }
-    checkLocalSourceMap(join(stageDir, "host.js"), join(stageDir, "host.js.map"));
 
     return {
-      release: ampSentryRelease(meta),
+      release: sentryPluginRelease(readArtifactIdentityMeta(serverMetaPath)),
       stageDir,
       artifactDigest,
       files: stagedFiles,
@@ -161,16 +178,23 @@ function defaultSentryCliPath(): string {
   return join(ROOT, "node_modules", ".bin", "sentry-cli");
 }
 
-function readHostArtifactMeta(path: string): HostArtifactMeta {
+function readArtifactIdentityMeta(path: string): ArtifactIdentityMeta {
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   if (
     typeof value !== "object" ||
     value === null ||
     typeof (value as { pluginId?: unknown }).pluginId !== "string" ||
-    typeof (value as { pluginVersion?: unknown }).pluginVersion !== "string" ||
-    typeof (value as { artifactDigest?: unknown }).artifactDigest !== "string"
+    typeof (value as { pluginVersion?: unknown }).pluginVersion !== "string"
   ) {
-    throw new Error("Amp host metadata has no complete artifact identity");
+    throw new Error(`${basename(path)} has no complete plugin identity`);
+  }
+  return value as ArtifactIdentityMeta;
+}
+
+function readHostArtifactMeta(path: string): HostArtifactMeta {
+  const value = readArtifactIdentityMeta(path);
+  if (typeof (value as { artifactDigest?: unknown }).artifactDigest !== "string") {
+    throw new Error(`${basename(path)} has no artifact digest`);
   }
   return value as HostArtifactMeta;
 }
@@ -183,7 +207,7 @@ function readPluginReleaseManifest(path: string): PluginReleaseManifest {
     typeof (value as { name?: unknown }).name !== "string" ||
     typeof (value as { version?: unknown }).version !== "string"
   ) {
-    throw new Error("Amp package manifest has no complete plugin identity");
+    throw new Error("the plugin package manifest has no complete plugin identity");
   }
   return value as PluginReleaseManifest;
 }
@@ -219,14 +243,11 @@ function checkLocalSourceMap(bundlePath: string, mapPath: string): void {
   const sourceMap = new SourceMap(toSourceMapPayload(payload));
   for (let line = 0; line < bundleLines.length; line += 1) {
     const entry = sourceMap.findEntry(line, bundleLines[line]?.length ?? 0);
-    if (
-      isSourceMapping(entry) &&
-      entry.originalSource.replaceAll("\\", "/").endsWith("/src/bridge/entry.ts")
-    ) {
+    if (isSourceMapping(entry) && entry.originalSource.endsWith(".ts")) {
       return;
     }
   }
-  throw new Error("the staged host source map cannot resolve a position to src/bridge/entry.ts");
+  throw new Error(`${basename(mapPath)} cannot resolve any position to a TypeScript source`);
 }
 
 interface LooseSourceMap {
@@ -257,7 +278,7 @@ function toSourceMapPayload(payload: LooseSourceMap): SourceMapPayload {
     !payload.sources.every((value) => typeof value === "string") ||
     typeof payload.mappings !== "string"
   ) {
-    throw new Error("the staged host map has an unsupported source-map shape");
+    throw new Error("a staged map has an unsupported source-map shape");
   }
   return {
     version: 3,
