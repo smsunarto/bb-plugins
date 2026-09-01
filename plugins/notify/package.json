@@ -58,6 +58,7 @@
   ],
   "dependencies": {
     "@bb-kit/core": "0.1.0",
+    "@bb-kit/sentry": "0.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

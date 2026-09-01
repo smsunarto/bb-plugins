@@ -1,4 +1,5 @@
 import { definePlugin } from "@bb-kit/core/plugin";
+import { sentryPluginTelemetry } from "@bb-kit/sentry/telemetry";
 
 import { send as sendCommand } from "./command/send.ts";
 import { status as statusCommand } from "./command/status.ts";
@@ -13,8 +14,15 @@ import { runTracker } from "./run-tracker.ts";
 import { bindSettings, SETTINGS_BLOCK } from "./settings.ts";
 import { playSound } from "./sound.ts";
 
+const telemetry = sentryPluginTelemetry({
+  pluginId: "notify",
+  serverEntryUrl: import.meta.url,
+});
+
 export default definePlugin({
   pluginId: "notify",
+  errorReporter: telemetry.errorReporter,
+  performanceReporter: telemetry.performanceReporter,
   rpc: { send, status },
   command: { send: sendCommand, status: statusCommand, test: testCommand },
   agents: { tools: { user } },
