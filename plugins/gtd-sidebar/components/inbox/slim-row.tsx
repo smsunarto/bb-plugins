@@ -15,6 +15,7 @@ import {
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
+import { useThreadNaming } from "@/hooks/use-thread-naming";
 
 /**
  * A parked thread: one line instead of a card. Density comes from the user
@@ -44,6 +45,7 @@ export function SlimRow({
 }) {
   const actions = useSidebarThreadActions();
   const { splitProps, isAvailable: isSplitAvailable } = useSidebarThreadSplit(thread.id);
+  const { renameThread } = useThreadNaming(thread.id);
   const title = threadDisplayTitle(thread);
   const plan = buildThreadActionPlan({
     lifecycle:
@@ -61,6 +63,7 @@ export function SlimRow({
     isPinned: thread.isPinned,
     setRead: (read) => void actions.setRead(thread.id, read),
     setPinned: (pinned) => void actions.setPinned(thread.id, pinned),
+    renameThread: () => void renameThread(),
     archive: () => actions.archive(thread.id),
     requestDelete: () => actions.requestDelete(thread.id),
   });

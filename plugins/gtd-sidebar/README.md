@@ -64,7 +64,8 @@ reinstall.
 ## Requirements
 
 - bb 0.40+
-- Nothing else. No accounts, keys, or external services.
+- Sidebar organization needs nothing else.
+- Thread naming needs an existing Codex login on bb's primary host.
 
 ## Usage
 
@@ -113,16 +114,30 @@ screen. Two chips in the thread header carry the relation instead: on a parent, 
 chip that opens its children and reads **Needs you** when one is blocked on you; on
 a child, a chip that names the parent and opens it.
 
+### Thread names
+
+An untitled root thread gets a generated name after its first completed turn. The
+plugin sends bb's 36-character thread-title prompt through its own Codex inference
+service. The service requests strict JSON with no reasoning and creates no agent
+thread. It uses bb's configured Codex primary and fallback models when available.
+
+Use **Generate thread name** in the thread header or card menu to replace a title.
+You can also run `bb gtd-sidebar rename [<threadId>]`. The command uses the current
+thread when you omit the id.
+
 ### The rest
 
 - A project scope picker — the one control the plugin adds.
-- Right-click for open in split, mark read/unread, pin, archive, delete.
+- Right-click to generate a name, open in split, mark read/unread, pin, archive, or delete.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - bb's search, its thread shortcuts, and modifier-click split-open all keep working.
 
 ## Configuration
 
-One setting, in **Settings → Plugins → GTD Sidebar**:
+Two settings, in **Settings → Plugins → GTD Sidebar**:
+
+- **Automatically name threads** — on. Turn it off to keep new threads untitled.
+  Manual naming from the header, card menu, and CLI still works.
 
 - **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
   glyph and give the branch that space back. Every card follows it together, so the
@@ -165,6 +180,10 @@ snoozed state lives in the old plugin's database and goes with it.
 | -------- | --------------------------------------------------------------------------------------------------------------- |
 | Upstream | [`get-bb/bb` → `examples/plugins/t3sidebar`](https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar) |
 | Commit   | `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07)                                                         |
+
+Thread naming adapts the lifecycle design from
+[`suiramdev/bb-plugin-thread-namer`](https://github.com/suiramdev/bb-plugin-thread-namer)
+at commit `023d1229db020330a940e4bff060e23bd4b278d8`.
 
 The provider brand marks are vendored SVG geometry from `get-bb/bb` and depict
 third-party brands. A host-served logo always wins over them, rendered as a muted

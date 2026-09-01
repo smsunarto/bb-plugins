@@ -13,6 +13,7 @@ import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provid
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
+import { useThreadNaming } from "@/hooks/use-thread-naming";
 
 /**
  * One thread as a two-line card: title and status, then project, branch and
@@ -59,6 +60,7 @@ export function ThreadCard({
   // Opt-in per row: this costs a git-host lookup, and threads sharing a
   // worktree share one.
   const { pullRequest } = useSidebarThreadPullRequest(thread.id);
+  const { renameThread } = useThreadNaming(thread.id);
   const plan = buildThreadActionPlan({
     lifecycle: {
       kind: "active",
@@ -82,6 +84,7 @@ export function ThreadCard({
     isPinned: thread.isPinned,
     setRead: (read) => void actions.setRead(thread.id, read),
     setPinned: (pinned) => void actions.setPinned(thread.id, pinned),
+    renameThread: () => void renameThread(),
     archive: () => actions.archive(thread.id),
     requestDelete: () => actions.requestDelete(thread.id),
   });

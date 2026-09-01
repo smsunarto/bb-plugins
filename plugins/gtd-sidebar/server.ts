@@ -12,7 +12,9 @@ import { z } from "zod";
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { parseArchivedThreadIds, threadEventWakesSettledRow } from "./lib/lifecycle.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
-import { gitButlerHostContract } from "./lib/gitbutler.ts";
+import { GTD_SIDEBAR_AI_SERVICE_ID, gtdSidebarHostContract } from "./lib/host-contract.ts";
+import { createThreadNamer } from "./thread-namer.ts";
+import { createThreadTitleInference } from "./thread-title-inference.ts";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -123,6 +125,13 @@ export const gtdSidebarRpcContract = defineRpcContract({
       ),
     }),
   },
+  renameThread: {
+    input: threadIdSchema,
+    output: z.union([
+      z.object({ ok: z.literal(true), title: z.string() }),
+      z.object({ ok: z.literal(false), error: z.string() }),
+    ]),
+  },
   settle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
   unsettle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
   snooze: {
@@ -140,11 +149,13 @@ export const gtdSidebarRpcContract = defineRpcContract({
 export const LIFECYCLE_CHANNEL = "lifecycle";
 
 export default function plugin(bb: BbPluginApi) {
-  const gitButlerHost = bb.hosts.experimental_client({ contract: gitButlerHostContract });
-  // Declared, never read here. The card is the only consumer and it reads the
-  // value through `useSettings()`, so this exists to put the toggle in the
-  // plugin's settings form and give it its default.
-  bb.settings.define({
+  const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
+  bb.experimental_aiServices.register({
+    id: GTD_SIDEBAR_AI_SERVICE_ID,
+    displayName: "GTD Sidebar Codex",
+    kinds: ["inference"],
+  });
+  const settings = bb.settings.define({
     showProviderIcon: {
       type: "boolean",
       label: "Show the agent icon on each card",
@@ -152,6 +163,16 @@ export default function plugin(bb: BbPluginApi) {
         "The trailing glyph naming the agent a thread runs on. Turn it off to give the branch that space back.",
       default: true,
     },
+    automaticallyNameThreads: {
+      type: "boolean",
+      label: "Automatically name threads",
+      description: "Generate a title after the first turn when the thread has no title.",
+      default: true,
+    },
+  });
+  const threadNamer = createThreadNamer(bb, {
+    automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
+    inference: createThreadTitleInference(bb),
   });
 
   const db = bb.storage.database();
@@ -326,7 +347,7 @@ export default function plugin(bb: BbPluginApi) {
               return null;
             }
 
-            const summary = await gitButlerHost.call(
+            const summary = await host.call(
               "branchSummary",
               { cwd: environment.path },
               { hostId: environment.hostId },
@@ -359,6 +380,9 @@ export default function plugin(bb: BbPluginApi) {
     },
     async listLifecycle() {
       return { rows: readAll() };
+    },
+    renameThread({ threadId }) {
+      return threadNamer.nameThread(threadId, { kind: "forced" });
     },
     /**
      * The archived threads this plugin settled in the last day, and only
@@ -510,4 +534,42 @@ export default function plugin(bb: BbPluginApi) {
   bb.events.on("thread.active", wakeIfSettled);
   bb.events.on("thread.idle", wakeIfSettled);
   bb.events.on("thread.failed", wakeIfSettled);
+
+  bb.events.on("thread.idle", ({ thread }) => {
+    void threadNamer.nameThread(thread.id, { kind: "automatic" });
+  });
+
+  bb.cli.register({
+    name: "gtd-sidebar",
+    summary: "Manage GTD Sidebar threads.",
+    commands: [
+      {
+        name: "rename",
+        summary: "Generate a new title for a thread.",
+        usage: "bb gtd-sidebar rename [<threadId>]",
+      },
+    ],
+    async run(argv, context) {
+      const [command, ...args] = argv;
+      if (command !== "rename") {
+        return {
+          exitCode: 2,
+          stderr: `Unknown subcommand "${command ?? ""}". Use "bb gtd-sidebar rename [<threadId>]".\n`,
+        };
+      }
+
+      const threadId = args[0] ?? context.threadId;
+      if (threadId === undefined) {
+        return {
+          exitCode: 2,
+          stderr: "Pass a thread id or run this command from a thread.\n",
+        };
+      }
+
+      const result = await threadNamer.nameThread(threadId, { kind: "forced" });
+      return result.ok
+        ? { exitCode: 0, stdout: `${result.title}\n` }
+        : { exitCode: 1, stderr: `${result.error}\n` };
+    },
+  });
 }

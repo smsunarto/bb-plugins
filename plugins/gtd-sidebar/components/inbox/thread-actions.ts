@@ -16,6 +16,7 @@ export type ThreadActionId =
   | "unsettle"
   | "toggle-read"
   | "toggle-pin"
+  | "rename-thread"
   | "archive"
   | "request-delete";
 
@@ -45,6 +46,7 @@ export interface BuildThreadActionPlanOptions {
   isPinned: boolean;
   setRead: (read: boolean) => void;
   setPinned: (pinned: boolean) => void;
+  renameThread: () => void;
   archive: () => void;
   requestDelete: () => void;
 }
@@ -58,6 +60,7 @@ export function buildThreadActionPlan({
   isPinned,
   setRead,
   setPinned,
+  renameThread,
   archive,
   requestDelete,
 }: BuildThreadActionPlanOptions): ThreadActionPlan {
@@ -89,6 +92,11 @@ export function buildThreadActionPlan({
   return {
     primary,
     organization: [
+      {
+        id: "rename-thread",
+        label: "Generate thread name",
+        execute: renameThread,
+      },
       {
         id: "toggle-read",
         label: isUnread ? "Mark read" : "Mark unread",

@@ -30,6 +30,7 @@ function plan(state: RowLifecycleState, overrides: Partial<BuildThreadActionPlan
     isPinned: false,
     setRead: noop,
     setPinned: noop,
+    renameThread: noop,
     archive: noop,
     requestDelete: noop,
     ...overrides,
@@ -97,13 +98,13 @@ describe("buildThreadActionPlan", () => {
       name: "read and pinned",
       isUnread: false,
       isPinned: true,
-      labels: ["Mark unread", "Unpin"],
+      labels: ["Generate thread name", "Mark unread", "Unpin"],
     },
     {
       name: "unread and unpinned",
       isUnread: true,
       isPinned: false,
-      labels: ["Mark read", "Pin"],
+      labels: ["Generate thread name", "Mark read", "Pin"],
     },
   ] as const;
 
