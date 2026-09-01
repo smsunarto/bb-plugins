@@ -31,12 +31,28 @@ export const RESERVED_CONTROLS = [
     char: "n",
   },
   { selector: 'button[aria-label^="Search threads"]', char: "s" },
+  { selector: 'button[aria-label="Go back"]', char: "[" },
+  { selector: 'button[aria-label="Go forward"]', char: "]" },
+  { selector: 'a[href^="/settings"]', char: "," },
+  { selector: 'button[aria-label^="Toggle sidebar"]', char: "\\" },
+  {
+    selector:
+      'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
+    char: "/",
+  },
+] as const;
+
+export const TEXT_CONTROLS = [
+  { selector: 'button[aria-roledescription="sortable"]', text: "Extensions", char: "e" },
 ] as const;
 
 /** Thread rows count up from 1 in list order, ten and beyond fall back to letters. */
 export const THREAD_DIGITS = "123456789";
 
-const RESERVED_CHARS = new Set<string>(RESERVED_CONTROLS.map((control) => control.char));
+const RESERVED_CHARS = new Set<string>([
+  ...RESERVED_CONTROLS.map((control) => control.char),
+  ...TEXT_CONTROLS.map((control) => control.char),
+]);
 
 /**
  * The alphabet for everything that is not a reserved control or a thread row.
@@ -50,6 +66,83 @@ const EXTRA_GENERAL_CHARS = "uortnbiyqxz";
 export const GENERAL_ALPHABET = [...HINT_ALPHABET + EXTRA_GENERAL_CHARS]
   .filter((char) => !RESERVED_CHARS.has(char))
   .join("");
+
+export type ScopedKind = "generic" | "provider-model" | "project" | "permission";
+
+export type ScopedRole =
+  | "provider"
+  | "search"
+  | "choice"
+  | "project"
+  | "new-project"
+  | "projectless"
+  | "permission"
+  | "other";
+
+export interface ScopedFact {
+  readonly role: ScopedRole;
+}
+
+const MODEL_CHARS = "fjdkslahgewcmprtyuozbnv";
+const PROJECT_CHARS = "fjdkslahgewcmprtyuozbnv";
+const PERMISSION_CHARS = "asdfgh";
+const FALLBACK_PREFIX = "q";
+
+function fillScopedLabels(
+  labels: (string | null)[],
+  facts: readonly ScopedFact[],
+  role: ScopedRole,
+  chars: string,
+): void {
+  let next = 0;
+  for (const [index, fact] of facts.entries()) {
+    if (labels[index] !== null || fact.role !== role || next >= chars.length) continue;
+    labels[index] = chars.charAt(next);
+    next += 1;
+  }
+}
+
+function completeScopedLabels(labels: (string | null)[]): string[] {
+  const missing = labels.filter((label) => label === null).length;
+  const suffixes = hintLabels(missing, HINT_ALPHABET);
+  let next = 0;
+  return labels.map((label) => label ?? FALLBACK_PREFIX + (suffixes[next++] ?? ""));
+}
+
+/**
+ * Labels inside a popup. Stable popup controls get explicit one-character
+ * bindings. Remaining items use q-prefixed labels, which keeps the mixed set
+ * prefix-free without taking a useful single key.
+ */
+export function assignScopedLabels(
+  kind: ScopedKind,
+  facts: readonly ScopedFact[],
+): string[] {
+  if (kind === "generic") return hintLabels(facts.length, DROPDOWN_ALPHABET);
+
+  const labels: (string | null)[] = facts.map(() => null);
+  if (kind === "provider-model") {
+    let provider = 0;
+    for (const [index, fact] of facts.entries()) {
+      if (fact.role === "provider" && provider < THREAD_DIGITS.length) {
+        labels[index] = THREAD_DIGITS.charAt(provider);
+        provider += 1;
+      }
+    }
+    const search = facts.findIndex((fact) => fact.role === "search");
+    if (search >= 0) labels[search] = "i";
+    fillScopedLabels(labels, facts, "choice", MODEL_CHARS);
+  } else if (kind === "project") {
+    const create = facts.findIndex((fact) => fact.role === "new-project");
+    const projectless = facts.findIndex((fact) => fact.role === "projectless");
+    if (create >= 0) labels[create] = "i";
+    if (projectless >= 0) labels[projectless] = "x";
+    fillScopedLabels(labels, facts, "project", PROJECT_CHARS);
+  } else {
+    fillScopedLabels(labels, facts, "permission", PERMISSION_CHARS);
+  }
+  return completeScopedLabels(labels);
+}
 
 /** What the top-level labeler needs to know about one hint target, in DOM order. */
 export interface TopLevelFact {

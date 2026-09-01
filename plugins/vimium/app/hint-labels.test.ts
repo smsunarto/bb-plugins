@@ -3,6 +3,8 @@ import {
   GENERAL_ALPHABET,
   HINT_ALPHABET,
   RESERVED_CONTROLS,
+  TEXT_CONTROLS,
+  assignScopedLabels,
   assignTopLevelLabels,
   hintLabels,
   type TopLevelFact,
@@ -61,7 +63,7 @@ describe("hintLabels", () => {
 
 describe("GENERAL_ALPHABET", () => {
   test("excludes every reserved composer character", () => {
-    for (const control of RESERVED_CONTROLS) {
+    for (const control of [...RESERVED_CONTROLS, ...TEXT_CONTROLS]) {
       expect(GENERAL_ALPHABET).not.toContain(control.char);
     }
   });
@@ -81,7 +83,18 @@ describe("GENERAL_ALPHABET", () => {
       '[data-app-composer] button[aria-label="Branch"]': "b",
       'button[aria-label="New thread"], button[aria-label^="New thread ("]': "n",
       'button[aria-label^="Search threads"]': "s",
+      'button[aria-label="Go back"]': "[",
+      'button[aria-label="Go forward"]': "]",
+      'a[href^="/settings"]': ",",
+      'button[aria-label^="Toggle sidebar"]': "\\",
+      'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "/",
     });
+  });
+
+  test("pins the text-only Extensions control to e", () => {
+    expect(TEXT_CONTROLS).toEqual([
+      { selector: 'button[aria-roledescription="sortable"]', text: "Extensions", char: "e" },
+    ]);
   });
 
   test("has no duplicates and enough range to keep a diff-heavy screen at two characters", () => {
@@ -136,5 +149,68 @@ describe("assignTopLevelLabels", () => {
         expect(a.startsWith(b)).toBe(false);
       }
     }
+  });
+});
+
+
+describe("assignScopedLabels", () => {
+  const facts = (roles: Parameters<typeof assignScopedLabels>[1][number]["role"][]) =>
+    roles.map((role) => ({ role }));
+
+  test("numbers provider tabs and pins model search to i", () => {
+    expect(
+      assignScopedLabels(
+        "provider-model",
+        facts(["provider", "provider", "search", "choice", "choice", "choice"]),
+      ),
+    ).toEqual(["1", "2", "i", "f", "j", "d"]);
+  });
+
+  test("keeps model and reasoning choices on unique ergonomic single keys", () => {
+    const labels = assignScopedLabels(
+      "provider-model",
+      facts(Array.from({ length: 12 }, () => "choice" as const)),
+    );
+    expect(labels).toEqual(["f", "j", "d", "k", "s", "l", "a", "h", "g", "e", "w", "c"]);
+  });
+
+  test("pins project actions while projects use single keys", () => {
+    expect(
+      assignScopedLabels(
+        "project",
+        facts(["project", "new-project", "project", "projectless"]),
+      ),
+    ).toEqual(["f", "i", "j", "x"]);
+  });
+
+  test("puts permission modes on the left home row first", () => {
+    expect(
+      assignScopedLabels(
+        "permission",
+        facts(["permission", "permission", "permission", "permission", "permission", "permission"]),
+      ),
+    ).toEqual(["a", "s", "d", "f", "g", "h"]);
+  });
+
+  test("uses q-prefixed fallbacks without breaking prefix freedom", () => {
+    const labels = assignScopedLabels(
+      "provider-model",
+      facts(["provider", "search", ...Array.from({ length: 25 }, () => "choice" as const), "other"]),
+    );
+    expect(labels.at(-1)?.startsWith("q")).toBe(true);
+    for (const a of labels) {
+      for (const b of labels) {
+        if (a === b) continue;
+        expect(a.startsWith(b)).toBe(false);
+      }
+    }
+  });
+
+  test("leaves generic dropdowns on the existing home-row order", () => {
+    expect(assignScopedLabels("generic", facts(["other", "other", "other"]))).toEqual([
+      "f",
+      "j",
+      "d",
+    ]);
   });
 });

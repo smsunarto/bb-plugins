@@ -26,10 +26,12 @@ import type {
   PluginContentScriptDisposer,
 } from "@get-bb/plugin-sdk/app";
 import {
-  DROPDOWN_ALPHABET,
   RESERVED_CONTROLS,
+  TEXT_CONTROLS,
+  assignScopedLabels,
   assignTopLevelLabels,
-  hintLabels,
+  type ScopedFact,
+  type ScopedKind,
   type TopLevelFact,
 } from "./hint-labels.ts";
 
@@ -43,6 +45,8 @@ type HintMode =
       scopeRoot: HTMLElement | null;
       /** True when picking from this scope should hand focus back to the composer. */
       refocusComposer: boolean;
+      /** The label policy retained while a popup changes its contents. */
+      scopeKind: ScopedKind;
     };
 
 interface Hint {
@@ -301,10 +305,47 @@ function topLevelFact(element: HTMLElement): TopLevelFact {
   const reserved = RESERVED_CONTROLS.find((control) =>
     element.matches(control.selector),
   );
+  const textReserved = TEXT_CONTROLS.find(
+    (control) =>
+      element.matches(control.selector) && element.textContent?.trim() === control.text,
+  );
   return {
-    reservedChar: reserved?.char ?? null,
+    reservedChar: reserved?.char ?? textReserved?.char ?? null,
     isThreadRow: element.matches(THREAD_ROW_SELECTOR),
   };
+}
+
+function dropdownScopeKind(trigger: HTMLElement): ScopedKind {
+  if (trigger.matches('[data-app-composer] button[aria-label^="Provider, model"]')) {
+    return "provider-model";
+  }
+  if (trigger.matches("[data-app-composer] [data-promptbox-project-control]")) {
+    return "project";
+  }
+  if (trigger.matches('[data-app-composer] button[aria-label="Permission mode"]')) {
+    return "permission";
+  }
+  return "generic";
+}
+
+function scopedFact(kind: ScopedKind, element: HTMLElement, root: HTMLElement): ScopedFact {
+  if (kind === "provider-model") {
+    if (isTextEntry(element)) return { role: "search" };
+    if (element.getAttribute("role") === "switch") return { role: "other" };
+    const choices = root.querySelector<HTMLElement>('[class~="overflow-y-auto"]');
+    return { role: choices?.contains(element) === false ? "provider" : "choice" };
+  }
+  if (kind === "project") {
+    if (isTextEntry(element)) return { role: "other" };
+    const text = (element.textContent ?? "").trim().toLowerCase();
+    if (text.includes("new project")) return { role: "new-project" };
+    if (text.includes("work in a project")) return { role: "projectless" };
+    return { role: "project" };
+  }
+  if (kind === "permission") {
+    return { role: isTextEntry(element) ? "other" : "permission" };
+  }
+  return { role: "other" };
 }
 
 function findPopupRoot(trigger: HTMLElement): HTMLElement | null {
@@ -397,6 +438,7 @@ export function mountLinkHints(
     labels: readonly string[],
     scopeRoot: HTMLElement | null,
     refocusComposer: boolean,
+    scopeKind: ScopedKind,
   ): void {
     const layer = document.createElement("div");
     layer.className = "vimium-hint-layer";
@@ -408,21 +450,29 @@ export function mountLinkHints(
     });
     document.body.appendChild(layer);
     container = layer;
-    mode = { kind: "active", hints, typed: "", scopeRoot, refocusComposer };
+    mode = { kind: "active", hints, typed: "", scopeRoot, refocusComposer, scopeKind };
     if (scopeRoot !== null) watchPopup(scopeRoot);
   }
 
   function enterTopLevel(): boolean {
     const targets = collectTargets(document);
     if (targets.length === 0) return false;
-    show(targets, assignTopLevelLabels(targets.map(topLevelFact)), null, false);
+    show(targets, assignTopLevelLabels(targets.map(topLevelFact)), null, false, "generic");
     return true;
   }
 
-  function enterScoped(root: HTMLElement, refocusComposer: boolean): boolean {
+  function enterScoped(
+    root: HTMLElement,
+    refocusComposer: boolean,
+    scopeKind: ScopedKind,
+  ): boolean {
     const targets = collectTargets(root);
     if (targets.length === 0) return false;
-    show(targets, hintLabels(targets.length, DROPDOWN_ALPHABET), root, refocusComposer);
+    const labels = assignScopedLabels(
+      scopeKind,
+      targets.map((target) => scopedFact(scopeKind, target, root)),
+    );
+    show(targets, labels, root, refocusComposer, scopeKind);
     return true;
   }
 
@@ -530,6 +580,7 @@ export function mountLinkHints(
     const chosen = mode.hints.find((hint) => hint.label === action.label);
     const scopeRoot = mode.scopeRoot;
     const wantsComposerBack = mode.refocusComposer;
+    const scopeKind = mode.scopeKind;
     exit();
     if (!chosen) return;
     activate(chosen.target);
@@ -538,18 +589,19 @@ export function mountLinkHints(
       scheduleReprompt(chosen.target);
       return;
     }
-    if (scopeRoot !== null) afterScopedPick(scopeRoot, wantsComposerBack);
+    if (scopeRoot !== null) afterScopedPick(scopeRoot, wantsComposerBack, scopeKind);
   }
 
   // The popup portals in and animates open after the click, so poll briefly
   // and reprompt with hints scoped to it once it holds viable options.
   function scheduleReprompt(trigger: HTMLElement): void {
     const refocusComposer = trigger.closest(COMPOSER_SELECTOR) !== null;
+    const scopeKind = dropdownScopeKind(trigger);
     let attempts = 0;
     const poll = (): void => {
       if (context.signal.aborted || mode.kind !== "idle") return;
       const root = findPopupRoot(trigger);
-      if (root && enterScoped(root, refocusComposer)) return;
+      if (root && enterScoped(root, refocusComposer, scopeKind)) return;
       attempts += 1;
       if (attempts < 10) window.setTimeout(poll, 60);
     };
@@ -560,7 +612,11 @@ export function mountLinkHints(
   // stays up after a pick, and its Providers tab swaps the option list. Follow
   // the popup — once it closes, hand focus back to the composer when the
   // trigger came from there; while it stays open, re-prompt scoped to it.
-  function afterScopedPick(popup: HTMLElement, refocusComposer: boolean): void {
+  function afterScopedPick(
+    popup: HTMLElement,
+    refocusComposer: boolean,
+    scopeKind: ScopedKind,
+  ): void {
     let ticks = 0;
     const poll = (): void => {
       if (context.signal.aborted || mode.kind !== "idle") return;
@@ -573,7 +629,7 @@ export function mountLinkHints(
         window.setTimeout(poll, 80);
         return;
       }
-      enterScoped(popup, refocusComposer);
+      enterScoped(popup, refocusComposer, scopeKind);
     };
     window.setTimeout(poll, 80);
   }

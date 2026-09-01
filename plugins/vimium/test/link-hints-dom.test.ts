@@ -53,14 +53,15 @@ function markers(): string[] {
 function installMenuTrigger(
   trigger: HTMLElement,
   picked: string[],
-  options: { closeOnPick?: boolean } = {},
+  options: { closeOnPick?: boolean; names?: readonly string[] } = {},
 ): void {
   const closeOnPick = options.closeOnPick ?? true;
+  const names = options.names ?? ["Sol", "Luna"];
   trigger.addEventListener("click", () => {
     const menu = document.createElement("div");
     menu.id = "trigger-menu";
     menu.setAttribute("role", "menu");
-    for (const name of ["Sol", "Luna"]) {
+    for (const name of names) {
       const item = document.createElement("div");
       item.setAttribute("role", "menuitem");
       item.textContent = name;
@@ -71,8 +72,9 @@ function installMenuTrigger(
       menu.appendChild(item);
     }
     document.body.appendChild(menu);
-    giveRect(menu.children[0] as Element, 10, 40);
-    giveRect(menu.children[1] as Element, 10, 70);
+    for (const [index, item] of [...menu.children].entries()) {
+      giveRect(item, 10, 40 + index * 30);
+    }
     trigger.setAttribute("aria-controls", "trigger-menu");
   });
 }
@@ -142,6 +144,12 @@ describe("mountLinkHints", () => {
       '<button id="send" data-promptbox-submit-action>Send</button></div>' +
       '<button id="new-thread" aria-label="New thread (⌘ N)">New thread</button>' +
       '<button id="search" aria-label="Search threads (⌘ K)">Search</button>' +
+      '<button id="back" aria-label="Go back">Back</button>' +
+      '<button id="forward" aria-label="Go forward">Forward</button>' +
+      '<button id="extensions" aria-roledescription="sortable">Extensions</button>' +
+      '<a id="settings" href="/settings">Settings</a>' +
+      '<button id="sidebar" aria-label="Toggle sidebar (⌘ B)">Sidebar</button>' +
+      '<button id="right-panel" aria-label="Show right panel (⌘ J)">Panel</button>' +
       '<button id="context" aria-label="Context window 42% used">42%</button>' +
       '<button id="plain">Plain</button>';
     for (const [index, id] of [
@@ -155,6 +163,12 @@ describe("mountLinkHints", () => {
       "send",
       "new-thread",
       "search",
+      "back",
+      "forward",
+      "extensions",
+      "settings",
+      "sidebar",
+      "right-panel",
       "context",
       "plain",
     ].entries()) {
@@ -166,7 +180,25 @@ describe("mountLinkHints", () => {
       ?.addEventListener("click", () => clicked.push("model"));
 
     pressKey("f");
-    expect(markers()).toEqual(["m", "p", "i", "a", "k", "l", "b", "j", "n", "s", "dd"]);
+    expect(markers()).toEqual([
+      "m",
+      "p",
+      "i",
+      "a",
+      "k",
+      "l",
+      "b",
+      "j",
+      "n",
+      "s",
+      "[",
+      "]",
+      "e",
+      ",",
+      "\\",
+      "/",
+      "dd",
+    ]);
 
     pressKey("m");
     expect(clicked).toEqual(["model"]);
@@ -189,7 +221,9 @@ describe("mountLinkHints", () => {
     giveRect(editor, 10, 40);
     giveRect(document.getElementById("plain") as HTMLElement, 10, 70);
     const picked: string[] = [];
-    installMenuTrigger(project, picked);
+    installMenuTrigger(project, picked, {
+      names: ["bb", "New project", "docs", "Don’t work in a project"],
+    });
 
     pressKey("f");
     expect(markers()).toEqual(["p", "i", "dd"]);
@@ -197,7 +231,65 @@ describe("mountLinkHints", () => {
     pressKey("p");
     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    expect(markers()).toEqual(["f", "i", "j", "x"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+
+  test("the provider dialog numbers tabs and gives search plus choices single keys", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><button id="model" aria-label="Provider, model and reasoning" aria-haspopup="dialog">Model</button></div>';
+    const trigger = document.getElementById("model") as HTMLElement;
+    giveRect(trigger, 10, 10);
+    trigger.addEventListener("click", () => {
+      const dialog = document.createElement("div");
+      dialog.id = "model-dialog";
+      dialog.setAttribute("role", "dialog");
+      dialog.innerHTML =
+        '<button id="codex">Codex</button><button id="claude">Claude</button>' +
+        '<div class="overflow-y-auto"><input id="model-search" placeholder="Search models">' +
+        '<button id="sol">Sol</button><button id="terra">Terra</button>' +
+        '<button id="none">none</button><button id="high">high</button>' +
+        '<button id="fast" role="switch">Fast mode</button></div>';
+      document.body.appendChild(dialog);
+      for (const [index, target] of [
+        ...dialog.querySelectorAll<HTMLElement>("button,input"),
+      ].entries()) {
+        giveRect(target, 10, 40 + index * 30);
+      }
+      trigger.setAttribute("aria-controls", "model-dialog");
+    });
+
+    pressKey("f");
+    pressKey("m");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(markers()).toEqual(["1", "2", "i", "f", "j", "d", "k", "qs"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("permission modes use the left home row", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><button id="permission" aria-label="Permission mode" aria-haspopup="menu">Ask</button></div>';
+    const trigger = document.getElementById("permission") as HTMLElement;
+    giveRect(trigger, 10, 10);
+    installMenuTrigger(trigger, [], {
+      names: ["Ask", "Plan", "Auto", "Read only", "Full", "Custom"],
+    });
+
+    pressKey("f");
+    pressKey("k");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(markers()).toEqual(["a", "s", "d", "f", "g", "h"]);
 
     void dispose();
     controller.abort();
@@ -322,7 +414,7 @@ describe("mountLinkHints", () => {
     const propagated = pressKey("F", window, { code: "KeyF", metaKey: true, shiftKey: true });
     expect(propagated).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 700));
-    expect(markers()).toEqual(["dd", "df", "de"]);
+    expect(markers()).toEqual(["dd", "df", "dw"]);
 
     void dispose();
     controller.abort();
