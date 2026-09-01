@@ -9,30 +9,34 @@ export const HINT_ALPHABET = "sadfjklewcmpgh";
 export const DROPDOWN_ALPHABET = "fjdkslahgewcmp";
 
 /**
- * bb's built-in composer controls, each pinned to one character so the
- * binding never shifts with what else is on screen: g opens the project
- * selector, j submits (the strongest right-index key), and the mnemonics are
- * m(odel), a(ctions), v(oice), s for the permission-mode picker
- * (safety), h for the machine picker (host). Only these built-ins get
- * single-character labels; plugin-contributed buttons come and go, so a
- * single character there would never stay stable enough for muscle memory.
- * The picker entries match nothing on screens without those pickers, and
- * their characters stay carved out of the general alphabet anyway.
+ * bb's stable controls, each pinned to one character so the binding never
+ * shifts with what else is on screen. Only built-ins get single-character
+ * labels; plugin-contributed buttons come and go, so a single character there
+ * would never stay stable enough for muscle memory. Entries match nothing on
+ * screens without their control, and their characters stay carved out of the
+ * general alphabet anyway.
  */
-export const RESERVED_COMPOSER_CONTROLS = [
+export const RESERVED_CONTROLS = [
   { selector: '[data-app-composer] button[aria-label^="Provider, model"]', char: "m" },
-  { selector: "[data-app-composer] [data-promptbox-project-control]", char: "g" },
+  { selector: "[data-app-composer] [data-promptbox-project-control]", char: "p" },
+  { selector: '[data-app-composer] [role="textbox"]', char: "i" },
   { selector: '[data-app-composer] button[aria-label="Prompt actions"]', char: "a" },
   { selector: '[data-app-composer] button[aria-label="Start voice input"]', char: "v" },
   { selector: "[data-app-composer] [data-promptbox-submit-action]", char: "j" },
-  { selector: '[data-app-composer] button[aria-label="Permission mode"]', char: "s" },
-  { selector: '[data-app-composer] button[aria-label="Machine"]', char: "h" },
+  { selector: '[data-app-composer] button[aria-label="Permission mode"]', char: "k" },
+  { selector: '[data-app-composer] button[aria-label="Environment"]', char: "l" },
+  { selector: '[data-app-composer] button[aria-label="Branch"]', char: "b" },
+  {
+    selector: 'button[aria-label="New thread"], button[aria-label^="New thread ("]',
+    char: "n",
+  },
+  { selector: 'button[aria-label^="Search threads"]', char: "s" },
 ] as const;
 
 /** Thread rows count up from 1 in list order, ten and beyond fall back to letters. */
 export const THREAD_DIGITS = "123456789";
 
-const RESERVED_CHARS = new Set<string>(RESERVED_COMPOSER_CONTROLS.map((control) => control.char));
+const RESERVED_CHARS = new Set<string>(RESERVED_CONTROLS.map((control) => control.char));
 
 /**
  * The alphabet for everything that is not a reserved control or a thread row.
@@ -40,9 +44,9 @@ const RESERVED_CHARS = new Set<string>(RESERVED_COMPOSER_CONTROLS.map((control) 
  * so no general label ever starts with one and the whole set stays
  * prefix-free. The reserved controls remove most home-row characters, and a
  * thread with an open diff panel can exceed the remaining two-character range.
- * Extra characters extend the general set to 256 two-character labels.
+ * Extra characters extend the general set past 196 two-character labels.
  */
-const EXTRA_GENERAL_CHARS = "uortnbiy";
+const EXTRA_GENERAL_CHARS = "uortnbiyqxz";
 export const GENERAL_ALPHABET = [...HINT_ALPHABET + EXTRA_GENERAL_CHARS]
   .filter((char) => !RESERVED_CHARS.has(char))
   .join("");

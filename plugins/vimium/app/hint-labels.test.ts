@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   GENERAL_ALPHABET,
   HINT_ALPHABET,
-  RESERVED_COMPOSER_CONTROLS,
+  RESERVED_CONTROLS,
   assignTopLevelLabels,
   hintLabels,
   type TopLevelFact,
@@ -61,9 +61,27 @@ describe("hintLabels", () => {
 
 describe("GENERAL_ALPHABET", () => {
   test("excludes every reserved composer character", () => {
-    for (const control of RESERVED_COMPOSER_CONTROLS) {
+    for (const control of RESERVED_CONTROLS) {
       expect(GENERAL_ALPHABET).not.toContain(control.char);
     }
+  });
+
+  test("pins the stable controls to their requested characters", () => {
+    expect(
+      Object.fromEntries(RESERVED_CONTROLS.map(({ selector, char }) => [selector, char])),
+    ).toEqual({
+      '[data-app-composer] button[aria-label^="Provider, model"]': "m",
+      "[data-app-composer] [data-promptbox-project-control]": "p",
+      '[data-app-composer] [role="textbox"]': "i",
+      '[data-app-composer] button[aria-label="Prompt actions"]': "a",
+      '[data-app-composer] button[aria-label="Start voice input"]': "v",
+      "[data-app-composer] [data-promptbox-submit-action]": "j",
+      '[data-app-composer] button[aria-label="Permission mode"]': "k",
+      '[data-app-composer] button[aria-label="Environment"]': "l",
+      '[data-app-composer] button[aria-label="Branch"]': "b",
+      'button[aria-label="New thread"], button[aria-label^="New thread ("]': "n",
+      'button[aria-label^="Search threads"]': "s",
+    });
   });
 
   test("has no duplicates and enough range to keep a diff-heavy screen at two characters", () => {

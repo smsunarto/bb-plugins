@@ -27,7 +27,7 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import {
   DROPDOWN_ALPHABET,
-  RESERVED_COMPOSER_CONTROLS,
+  RESERVED_CONTROLS,
   assignTopLevelLabels,
   hintLabels,
   type TopLevelFact,
@@ -225,10 +225,11 @@ const NON_TABINDEX_SELECTOR = CLICKABLE_SELECTORS.join(", ");
 // Hint-free regions. The conversation timeline rerenders and auto-scrolls
 // while an agent streams, so its hints would be stale the moment they drew,
 // and its per-message action bars are the bulk of a busy screen's clutter.
-// Pierre's per-line action buttons ride the same exclusion. closest() matches
-// the element itself, so [data-utility-button] excludes the button proper.
+// Pierre's per-line action buttons ride the same exclusion. The context-window
+// tracker is informational rather than navigation. closest() matches the
+// element itself, so these selectors exclude each control proper.
 const QUIET_ZONE_SELECTOR =
-  "[data-timeline-row-list], [data-timeline-file-diff], [data-utility-button]";
+  '[data-timeline-row-list], [data-timeline-file-diff], [data-utility-button], [aria-label^="Context window "]';
 
 // Radix layers that trap focus and aria-hide the rest of the page while open.
 const OPEN_LAYER_SELECTOR =
@@ -297,7 +298,7 @@ function collectTargets(scope: ParentNode): HTMLElement[] {
 }
 
 function topLevelFact(element: HTMLElement): TopLevelFact {
-  const reserved = RESERVED_COMPOSER_CONTROLS.find((control) =>
+  const reserved = RESERVED_CONTROLS.find((control) =>
     element.matches(control.selector),
   );
   return {

@@ -127,18 +127,37 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("built-in composer controls keep their reserved single-character labels", () => {
+  test("stable app controls keep their reserved single-character labels", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
     document.body.innerHTML =
       '<div data-app-composer><button id="model" aria-label="Provider, model and reasoning (⇧ ⌘ M)" aria-haspopup="dialog">Sol</button>' +
+      '<button id="project" data-promptbox-project-control>Project</button>' +
+      '<div id="editor" role="textbox"></div>' +
       '<button id="actions" aria-label="Prompt actions" aria-haspopup="menu">+</button>' +
       '<button id="permission" aria-label="Permission mode" aria-haspopup="menu">Ask</button>' +
-      '<button id="machine" aria-label="Machine" aria-haspopup="menu">Mac</button>' +
+      '<button id="machine" aria-label="Environment" aria-haspopup="menu">Mac</button>' +
+      '<button id="branch" aria-label="Branch" aria-haspopup="menu">main</button>' +
       '<button id="send" data-promptbox-submit-action>Send</button></div>' +
+      '<button id="new-thread" aria-label="New thread (⌘ N)">New thread</button>' +
+      '<button id="search" aria-label="Search threads (⌘ K)">Search</button>' +
+      '<button id="context" aria-label="Context window 42% used">42%</button>' +
       '<button id="plain">Plain</button>';
-    for (const [index, id] of ["model", "actions", "permission", "machine", "send", "plain"].entries()) {
+    for (const [index, id] of [
+      "model",
+      "project",
+      "editor",
+      "actions",
+      "permission",
+      "machine",
+      "branch",
+      "send",
+      "new-thread",
+      "search",
+      "context",
+      "plain",
+    ].entries()) {
       giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
     }
     const clicked: string[] = [];
@@ -147,7 +166,7 @@ describe("mountLinkHints", () => {
       ?.addEventListener("click", () => clicked.push("model"));
 
     pressKey("f");
-    expect(markers()).toEqual(["m", "a", "s", "h", "j", "dd"]);
+    expect(markers()).toEqual(["m", "p", "i", "a", "k", "l", "b", "j", "n", "s", "dd"]);
 
     pressKey("m");
     expect(clicked).toEqual(["model"]);
@@ -156,7 +175,7 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("the project selector gets g and picking it opens the dropdown", async () => {
+  test("the project selector gets p and picking it opens the dropdown", async () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
@@ -173,9 +192,9 @@ describe("mountLinkHints", () => {
     installMenuTrigger(project, picked);
 
     pressKey("f");
-    expect(markers()).toEqual(["g", "dd", "df"]);
+    expect(markers()).toEqual(["p", "i", "dd"]);
 
-    pressKey("g");
+    pressKey("p");
     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(markers()).toEqual(["f", "j"]);
@@ -303,7 +322,7 @@ describe("mountLinkHints", () => {
     const propagated = pressKey("F", window, { code: "KeyF", metaKey: true, shiftKey: true });
     expect(propagated).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 700));
-    expect(markers()).toEqual(["dd", "df", "dk"]);
+    expect(markers()).toEqual(["dd", "df", "de"]);
 
     void dispose();
     controller.abort();
