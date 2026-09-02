@@ -98,9 +98,33 @@ Source: <https://github.com/colinhacks/zod>
 
 ---
 
+## ios-haptics — `tijnjh/ios-haptics`
+
+MIT License, Copyright (c) 2025 tijn.
+
+`hapticTrigger` and `isIos` from v3.1.1 are copied verbatim into
+`lib/ios-haptics.ts` and compiled into `dist/app.js`. Vendored rather than
+depended on so the switch overlay can be reasoned about next to the menu it
+serves.
+
+Source: <https://github.com/tijnjh/ios-haptics>
+
+---
+
+## @uidotdev/usehooks
+
+MIT License, Copyright (c) 2023 ui.dev.
+
+`useLongPress` times the compact row's long press. Compiled into `dist/app.js`.
+
+Source: <https://github.com/uidotdev/usehooks>
+
+---
+
 ## Not shipped here
 
-React, `@radix-ui/react-select`, `@radix-ui/react-context-menu` and `@get-bb/plugin-sdk`
+React, `@radix-ui/react-select`, `@radix-ui/react-context-menu`,
+`@radix-ui/react-dropdown-menu` and `@get-bb/plugin-sdk`
 are **not** bundled in this package. The bb app provides them at run time, so their
 licences travel with bb, not with this plugin.
 

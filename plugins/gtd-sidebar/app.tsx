@@ -4,6 +4,7 @@
 // Active threads are grouped by who acts next. Every section sorts by its most
 // recently updated thread.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import "./app.css";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
 import { SubagentsChip } from "@/components/inbox/subagents-chip";

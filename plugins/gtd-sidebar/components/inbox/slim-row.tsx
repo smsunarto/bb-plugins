@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
@@ -16,6 +17,7 @@ import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot"
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
 import { useThreadNaming } from "@/hooks/use-thread-naming";
+import { useIosLongPress } from "@/hooks/use-ios-long-press";
 
 /**
  * A parked thread: one line instead of a card. Density comes from the user
@@ -68,15 +70,44 @@ export function SlimRow({
     requestDelete: () => actions.requestDelete(thread.id),
   });
   const restoreAction = findThreadAction(plan, shelf === "snoozed" ? "wake-now" : "unsettle");
+  const [isMenuOpen, setMenuOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
+    enabled: isCompactViewport,
+  });
+
+  const highlightContent = isCompactViewport ? (
+    <div className="flex h-11 items-center gap-2 px-2.5 text-xs">
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          isActive ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {title}
+      </span>
+      <span className={cn(STATUS_SLOT_CLASS, "tabular-nums text-2xs", "text-muted-foreground")}>
+        {shelf === "snoozed" && wakeAt !== null ? (
+          snoozeWakeLabel(wakeAt, now)
+        ) : (
+          <StatusOrTime thread={thread} now={now} />
+        )}
+      </span>
+    </div>
+  ) : null;
 
   return (
-    <RowContextMenu plan={plan}>
+    <RowContextMenu plan={plan} disabled={isCompactViewport}>
       <li className="list-none">
         <div
+          ref={rowRef}
+          {...handlers}
           className={cn(
-            "group/slim relative flex items-center gap-2 rounded-md px-2.5 text-xs",
-            isCompactViewport ? "h-11" : "h-7",
+            "group/slim relative flex items-center gap-2 rounded-xl px-2.5 text-xs transition-all duration-150",
+            isCompactViewport ? "h-11" : "h-7 rounded-md",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+            isPressing && "scale-[0.98] bg-sidebar-accent",
+            isMenuOpen && "scale-100 bg-sidebar-accent",
           )}
         >
           {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
@@ -95,7 +126,7 @@ export function SlimRow({
               });
               onNavigate();
             }}
-            className="absolute inset-0 cursor-pointer rounded-md"
+            className="absolute inset-0 cursor-pointer rounded-xl"
           />
           <span
             className={cn(
@@ -145,7 +176,15 @@ export function SlimRow({
           {isCompactViewport && restoreAction !== undefined ? (
             <RestoreButton action={restoreAction} shelf={shelf} isCompactViewport />
           ) : null}
-          {isCompactViewport ? <CompactThreadActionMenu plan={plan} /> : null}
+          {isCompactViewport ? (
+            <CompactThreadActionMenu
+              plan={plan}
+              open={isMenuOpen}
+              onOpenChange={setMenuOpen}
+              anchorRef={rowRef}
+              highlightContent={highlightContent}
+            />
+          ) : null}
         </div>
       </li>
     </RowContextMenu>

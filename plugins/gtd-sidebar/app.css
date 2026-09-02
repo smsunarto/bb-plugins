@@ -1,0 +1,54 @@
+/* Keyframe animations for the sheet and dimming overlay. */
+@keyframes gtd-sheet-in {
+  from {
+    transform: scale(0.82);
+  }
+}
+
+@keyframes gtd-sheet-out {
+  to {
+    transform: scale(0.92);
+  }
+}
+
+@keyframes gtd-sheet-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes gtd-sheet-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes gtd-dim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes gtd-dim-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes gtd-highlight-in {
+  from {
+    transform: scale(0.98);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes gtd-highlight-out {
+  to {
+    opacity: 0;
+  }
+}

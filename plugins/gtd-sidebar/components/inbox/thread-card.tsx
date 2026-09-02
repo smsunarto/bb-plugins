@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
@@ -14,6 +15,7 @@ import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot"
 import { threadDisplayTitle } from "@/lib/inbox";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
 import { useThreadNaming } from "@/hooks/use-thread-naming";
+import { useIosLongPress } from "@/hooks/use-ios-long-press";
 
 /**
  * One thread as a two-line card: title and status, then project, branch and
@@ -90,18 +92,72 @@ export function ThreadCard({
   });
   const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
   const settleAction = findThreadAction(plan, "settle");
+  const [isMenuOpen, setMenuOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
+    enabled: isCompactViewport,
+  });
+
+  const highlightContent = isCompactViewport ? (
+    <div className="pointer-events-none relative flex h-10 items-center gap-1.5 px-2.5">
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm",
+          isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
+        )}
+      >
+        {threadDisplayTitle(thread)}
+      </span>
+      <span className={cn(STATUS_SLOT_CLASS, "tabular-nums text-2xs text-muted-foreground")}>
+        <StatusOrTime thread={thread} now={now} />
+      </span>
+      {thread.activity.workflows > 0 ? (
+        <ActivityCount label="workflows" count={thread.activity.workflows} isCompactViewport />
+      ) : null}
+      {thread.activity.backgroundAgents > 0 ? (
+        <ActivityCount
+          label="background agents"
+          count={thread.activity.backgroundAgents}
+          isCompactViewport
+        />
+      ) : null}
+      {pullRequest ? (
+        <span
+          className={cn(
+            "relative z-[1] shrink-0 font-mono",
+            pullRequest.state === "merged"
+              ? "text-[color:var(--pr-merged)]"
+              : pullRequest.attention === "checks_failed" || pullRequest.attention === "conflicts"
+                ? "text-destructive-text"
+                : pullRequest.attention === "ready_to_merge"
+                  ? "text-success-foreground"
+                  : "text-muted-foreground",
+          )}
+        >
+          #{pullRequest.number}
+        </span>
+      ) : null}
+      {showProviderIcon ? (
+        <ProviderGlyph providerId={thread.providerId} provider={provider} />
+      ) : null}
+    </div>
+  ) : null;
 
   return (
-    <RowContextMenu plan={plan}>
+    <RowContextMenu plan={plan} disabled={isCompactViewport}>
       <li className="list-none">
         <div
+          ref={cardRef}
+          {...handlers}
           className={cn(
-            "group/card relative rounded-md px-2.5 transition-colors",
-            isCompactViewport ? "min-h-10 py-0" : "py-1.5",
+            "group/card relative rounded-xl px-2.5 transition-all duration-150",
+            isCompactViewport ? "min-h-10 py-0" : "rounded-md py-1.5 transition-colors",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             // A thread open in another pane gets a weaker tint than the active
             // row, so the two states stay distinguishable.
             !isActive && layout !== null && "bg-sidebar-accent/30",
+            isPressing && "scale-[0.98] bg-sidebar-accent",
+            isMenuOpen && "scale-100 bg-sidebar-accent",
           )}
         >
           {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
@@ -122,17 +178,24 @@ export function ThreadCard({
               });
               onNavigate();
             }}
-            className="absolute inset-0 cursor-pointer rounded-md"
+            className={cn(
+              "absolute inset-0 cursor-pointer",
+              isCompactViewport ? "rounded-xl" : "rounded-md",
+            )}
           />
           {isCompactViewport ? (
-            <div className="pointer-events-auto absolute right-1 top-1/2 z-[1] -translate-y-1/2">
-              <CompactThreadActionMenu plan={plan} />
-            </div>
+            <CompactThreadActionMenu
+              plan={plan}
+              open={isMenuOpen}
+              onOpenChange={setMenuOpen}
+              anchorRef={cardRef}
+              highlightContent={highlightContent}
+            />
           ) : null}
           <div
             className={cn(
               "pointer-events-none relative flex items-center gap-1.5",
-              isCompactViewport ? "h-10 pr-10" : "h-5",
+              isCompactViewport ? "h-10" : "h-5",
             )}
           >
             <span

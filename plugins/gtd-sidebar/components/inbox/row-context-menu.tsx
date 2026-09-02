@@ -4,18 +4,27 @@ import { cn } from "@/lib/utils";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { getThreadActionGroups, type ThreadActionPlan } from "@/components/inbox/thread-actions";
 
+/**
+ * The desktop menu. Pass `disabled` on the compact viewport, where the row
+ * runs its own 500 ms long press: Radix keeps a 700 ms touch timer of its
+ * own and would open a second menu on top.
+ */
 export function RowContextMenu({
   plan,
+  disabled = false,
   children,
 }: {
   plan: ThreadActionPlan;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   const groups = getThreadActionGroups(plan);
 
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Trigger asChild disabled={disabled}>
+        {children}
+      </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
           {...usePortalScopeProps()}

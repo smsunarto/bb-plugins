@@ -10,5 +10,5 @@
     },
     "skipLibCheck": false
   },
-  "include": ["server.ts", "host.ts", "app.tsx", "components", "hooks", "lib", "test"]
+  "include": ["server.ts", "host.ts", "app.tsx", "types", "components", "hooks", "lib", "test"]
 }

@@ -127,6 +127,8 @@ thread when you omit the id.
 
 - A project scope picker — the one control the plugin adds.
 - Right-click to generate a name, open in split, mark read/unread, pin, archive, or delete.
+- On a phone, hold a row for half a second (iOS's own long-press timing) for the same
+  menu, drawn as an iOS-style frosted sheet. Menu taps play a haptic on iOS.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - bb's search, its thread shortcuts, and modifier-click split-open all keep working.
 
