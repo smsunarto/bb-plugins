@@ -77,11 +77,15 @@ export function SlimRow({
   });
 
   const highlightContent = isCompactViewport ? (
-    <div className="flex h-11 items-center gap-2 px-2.5 text-xs">
+    <div className="flex h-full items-center gap-2 px-2.5 text-xs">
       <span
         className={cn(
           "min-w-0 flex-1 truncate",
-          isActive ? "text-foreground" : "text-muted-foreground",
+          isActive
+            ? "text-foreground"
+            : isCompactViewport
+              ? "text-muted-foreground"
+              : "text-muted-foreground/70",
         )}
       >
         {title}
@@ -106,8 +110,8 @@ export function SlimRow({
             "group/slim relative flex items-center gap-2 rounded-xl px-2.5 text-xs transition-all duration-150",
             isCompactViewport ? "h-11" : "h-7 rounded-md",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
-            isPressing && "scale-[0.98] bg-sidebar-accent",
-            isMenuOpen && "scale-100 bg-sidebar-accent",
+            isPressing && "bg-sidebar-accent",
+            isMenuOpen && "bg-sidebar-accent opacity-0",
           )}
         >
           {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an

@@ -11,6 +11,7 @@ import { RowContextMenu } from "@/components/inbox/row-context-menu";
 import { CompactThreadActionMenu } from "@/components/inbox/thread-action-menu";
 import { buildThreadActionPlan, findThreadAction } from "@/components/inbox/thread-actions";
 import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
+import { StatusGlyph, hasStatusGlyph } from "@/components/inbox/status-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
@@ -99,18 +100,19 @@ export function ThreadCard({
   });
 
   const highlightContent = isCompactViewport ? (
-    <div className="pointer-events-none relative flex h-10 items-center gap-1.5 px-2.5">
+    <div className="pointer-events-none relative flex h-full items-center gap-1.5 px-2.5">
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-sm",
           isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
+          thread.isUnread && "font-medium",
         )}
       >
         {threadDisplayTitle(thread)}
       </span>
-      <span className={cn(STATUS_SLOT_CLASS, "tabular-nums text-2xs text-muted-foreground")}>
-        <StatusOrTime thread={thread} now={now} />
-      </span>
+      {hasStatusGlyph(thread.indicator) ? (
+        <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />
+      ) : null}
       {thread.activity.workflows > 0 ? (
         <ActivityCount label="workflows" count={thread.activity.workflows} isCompactViewport />
       ) : null}
@@ -156,8 +158,8 @@ export function ThreadCard({
             // A thread open in another pane gets a weaker tint than the active
             // row, so the two states stay distinguishable.
             !isActive && layout !== null && "bg-sidebar-accent/30",
-            isPressing && "scale-[0.98] bg-sidebar-accent",
-            isMenuOpen && "scale-100 bg-sidebar-accent",
+            isPressing && "bg-sidebar-accent",
+            isMenuOpen && "bg-sidebar-accent opacity-0",
           )}
         >
           {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
@@ -226,14 +228,13 @@ export function ThreadCard({
                 />
               </span>
             ) : null}
-            <span
-              className={cn(
-                STATUS_SLOT_CLASS,
-                !isCompactViewport && canPark && "group-hover/card:hidden",
-              )}
-            >
-              <StatusOrTime thread={thread} now={now} />
-            </span>
+            {!isCompactViewport ? (
+              <span className={cn(STATUS_SLOT_CLASS, canPark && "group-hover/card:hidden")}>
+                <StatusOrTime thread={thread} now={now} />
+              </span>
+            ) : hasStatusGlyph(thread.indicator) ? (
+              <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />
+            ) : null}
             {isCompactViewport && thread.activity.workflows > 0 ? (
               <ActivityCount
                 label="workflows"
