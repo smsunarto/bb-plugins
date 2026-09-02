@@ -487,10 +487,10 @@ function stackFixture() {
     ],
     [
       28,
-      "docs(skills): clarify BB testing targets",
+      "docs(skills): narrow BB app testing scope",
       24,
       23,
-      ".dotfiles/.agents/skills/bb-plugin-testing/SKILL.md",
+      ".dotfiles/.agents/skills/bb-app-testing/SKILL.md",
     ],
     [
       29,
