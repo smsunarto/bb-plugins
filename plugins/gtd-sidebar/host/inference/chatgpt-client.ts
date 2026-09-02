@@ -1,11 +1,11 @@
-import type {
-  ExperimentalAiInferenceCompleteInput,
-  ExperimentalAiInferenceCompleteOutput,
-  ExperimentalAiServiceErrorCode,
-  ExperimentalAiVoiceTranscribeInput,
-  ExperimentalAiVoiceTranscribeOutput,
-} from "@get-bb/plugin-sdk/ai-services";
 import type { JsonValue } from "@get-bb/plugin-sdk";
+import type {
+  GtdSidebarAiInferenceCompleteInput,
+  GtdSidebarAiInferenceCompleteOutput,
+  GtdSidebarAiServiceErrorCode,
+  GtdSidebarAiVoiceTranscribeInput,
+  GtdSidebarAiVoiceTranscribeOutput,
+} from "../../lib/host-contract.ts";
 import { fetchChatGpt, isCloudflareChallenge } from "./chatgpt-fetch.ts";
 import {
   parseJsonValue,
@@ -17,8 +17,8 @@ import {
 } from "./codex-auth.ts";
 import { AiServiceFailure } from "./failure.ts";
 
-type InferenceCompleteCommand = ExperimentalAiInferenceCompleteInput;
-type VoiceTranscribeCommand = ExperimentalAiVoiceTranscribeInput;
+type InferenceCompleteCommand = GtdSidebarAiInferenceCompleteInput;
+type VoiceTranscribeCommand = GtdSidebarAiVoiceTranscribeInput;
 
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CHATGPT_TRANSCRIBE_URL = "https://chatgpt.com/backend-api/transcribe";
@@ -330,7 +330,7 @@ async function readErrorText(response: Response, deadline: CodexRequestDeadline)
   return text.length > 400 ? `${text.slice(0, 400)}...` : text;
 }
 
-type FailureCodes = [generic: ExperimentalAiServiceErrorCode, detail: string];
+type FailureCodes = [generic: GtdSidebarAiServiceErrorCode, detail: string];
 
 function codexRequestErrorCode(status: number): FailureCodes {
   if (status === 401) {
@@ -777,7 +777,7 @@ async function fetchResponses(args: ResponsesFetchArgs): Promise<Response> {
 
 export async function completeCodexInference(
   command: InferenceCompleteCommand,
-): Promise<Extract<ExperimentalAiInferenceCompleteOutput, { ok: true }>> {
+): Promise<Extract<GtdSidebarAiInferenceCompleteOutput, { ok: true }>> {
   const deadline = createCodexRequestDeadline(command.timeoutMs);
   const auth = await readCodexAuthCredentials();
   const request = buildCodexResponsesRequest(command);
@@ -890,7 +890,7 @@ async function fetchTranscription(args: TranscriptionFetchArgs): Promise<Respons
 
 export async function transcribeCodexVoice(
   command: VoiceTranscribeCommand,
-): Promise<Extract<ExperimentalAiVoiceTranscribeOutput, { ok: true }>> {
+): Promise<Extract<GtdSidebarAiVoiceTranscribeOutput, { ok: true }>> {
   const deadline = createCodexRequestDeadline(command.timeoutMs);
   const auth = await readCodexAuthCredentials();
   const response = await fetchTranscription({ auth, command, deadline });

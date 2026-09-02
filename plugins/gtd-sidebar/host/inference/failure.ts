@@ -1,10 +1,10 @@
-import type { ExperimentalAiServiceErrorCode } from "@get-bb/plugin-sdk/ai-services";
+import type { GtdSidebarAiServiceErrorCode } from "../../lib/host-contract.ts";
 
 export class AiServiceFailure extends Error {
-  readonly code: ExperimentalAiServiceErrorCode;
+  readonly code: GtdSidebarAiServiceErrorCode;
   readonly detailCode: string;
 
-  constructor(code: ExperimentalAiServiceErrorCode, detailCode: string, message: string) {
+  constructor(code: GtdSidebarAiServiceErrorCode, detailCode: string, message: string) {
     super(message);
     this.name = "AiServiceFailure";
     this.code = code;
@@ -14,7 +14,7 @@ export class AiServiceFailure extends Error {
 
 export function toAiServiceFailure(error: unknown): {
   ok: false;
-  code: ExperimentalAiServiceErrorCode;
+  code: GtdSidebarAiServiceErrorCode;
   message: string;
 } {
   if (error instanceof AiServiceFailure) {

@@ -1,6 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ExperimentalAiInferenceCompleteOutput } from "@get-bb/plugin-sdk/ai-services";
-import { GTD_SIDEBAR_AI_SERVICE_ID, gtdSidebarHostContract } from "./lib/host-contract.ts";
+import {
+  GTD_SIDEBAR_AI_SERVICE_ID,
+  gtdSidebarHostContract,
+  type GtdSidebarAiInferenceCompleteOutput,
+} from "./lib/host-contract.ts";
 
 const DEFAULT_PRIMARY_MODEL = "gpt-5.6-luna";
 const DEFAULT_FALLBACK_MODEL = "gpt-5.4-mini";
@@ -27,7 +30,7 @@ interface InferenceModels {
 }
 
 interface CompleteWithFallbackInput extends InferenceModels {
-  complete(model: string): Promise<ExperimentalAiInferenceCompleteOutput>;
+  complete(model: string): Promise<GtdSidebarAiInferenceCompleteOutput>;
   sleep?: (durationMs: number) => Promise<void>;
 }
 
