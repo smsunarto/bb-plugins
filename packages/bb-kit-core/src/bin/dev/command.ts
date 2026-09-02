@@ -2,12 +2,14 @@ import { dirname } from "node:path";
 import type { BinResult } from "../shared.ts";
 import { asDevError, DevError } from "./error.ts";
 import { DevManager, type InstanceResult, type ManagerOptions } from "./manager.ts";
+import { runWorkspace } from "./workspace.ts";
 
 export const DEV_USAGE = [
   "usage:",
   "  bb-kit dev-instance start [--name NAME] [--revision SELECTOR] [--repo PATH]",
   "  bb-kit dev-instance start [--name NAME] --attach PATH",
   "                   [--desktop] [--open] [--timeout SECONDS] [--json]",
+  "  bb-kit dev-instance workspace [start options] [--watch] [--json]",
   "  bb-kit dev-instance list [--json]",
   "  bb-kit dev-instance status [NAME] [--json]",
   "  bb-kit dev-instance stop [NAME] [--timeout SECONDS] [--json]",
@@ -51,6 +53,14 @@ export async function runDev(
       effectiveName = manager.resolveName(parsed.name);
       const result = await manager.start(parsed);
       return success(command, result, parsed.json, `${result.appUrl ?? ""}\n`);
+    }
+    if (command === "workspace") {
+      const parsed = parseWorkspace(args);
+      effectiveName = manager.resolveName(parsed.name);
+      const result = await runWorkspace(manager, parsed, {
+        progress: options.progress,
+      });
+      return success(command, result, parsed.json, `${result.instance.appUrl ?? ""}\n`);
     }
     if (command === "list") {
       const parsed = parseNoPositionals(args, ["--json"]);
@@ -145,6 +155,22 @@ export async function runDev(
       stderr: `${effectiveName === undefined ? "" : `Instance: ${effectiveName}\n`}[${failure.code}] ${failure.message}\nNext action: ${failure.action}\n`,
     };
   }
+}
+
+function parseWorkspace(args: readonly string[]): ReturnType<typeof parseStart> & {
+  watch: boolean;
+} {
+  const watch = args.includes("--watch");
+  const parsed = parseStart(args.filter((argument) => argument !== "--watch"));
+  if (parsed.attach !== undefined) {
+    throw usageError(
+      "dev-instance workspace does not accept --attach. Use dev-instance start --attach for bb core development.",
+    );
+  }
+  if (watch && parsed.json) {
+    throw usageError("dev-instance workspace does not combine --watch with --json.");
+  }
+  return { ...parsed, watch };
 }
 
 function parseStart(args: readonly string[]): {

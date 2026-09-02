@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { DevError, asDevError } from "./error.ts";
 import {
   assertLauncherSupported,
@@ -67,6 +68,13 @@ const DEFAULT_CONTROL_TIMEOUT_MS = 30_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 30_000;
 const MAX_CHECKOUT_CANDIDATES = 16;
 
+async function readChildStream(stream: Readable | null): Promise<string> {
+  if (stream === null) return "";
+  let value = "";
+  for await (const chunk of stream) value += chunk.toString();
+  return value;
+}
+
 export type ManagerOptions = {
   cwd?: string;
   environment?: NodeJS.ProcessEnv;
@@ -83,6 +91,12 @@ export type StartOptions = {
   desktop?: boolean;
   open?: boolean;
   timeoutMs?: number;
+};
+
+export type CapturedCommand = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
 };
 
 export type { EnvironmentResult, InstanceResult } from "./model.ts";
@@ -611,20 +625,38 @@ export class DevManager {
     args: readonly string[],
     timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
   ): Promise<number> {
+    return (
+      await this.runTracked(
+        nameOption,
+        (plan) => [plan.shimPath, ...args] as [string, ...string[]],
+        false,
+        timeoutMs,
+      )
+    ).exitCode;
+  }
+
+  async captureExec(
+    nameOption: string | undefined,
+    args: readonly string[],
+    timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
+  ): Promise<CapturedCommand> {
     return this.runTracked(
       nameOption,
       (plan) => [plan.shimPath, ...args] as [string, ...string[]],
       false,
       timeoutMs,
+      { stdout: "capture" },
     );
   }
 
   async run(
     nameOption: string | undefined,
     argv: readonly [string, ...string[]],
-    options: { stdout?: "inherit" | "stderr" } = {},
+    options: { stdout?: "inherit" | "stderr"; cwd?: string } = {},
   ): Promise<number> {
-    return this.runTracked(nameOption, () => argv, true, DEFAULT_CONTROL_TIMEOUT_MS, options);
+    return (
+      await this.runTracked(nameOption, () => argv, true, DEFAULT_CONTROL_TIMEOUT_MS, options)
+    ).exitCode;
   }
 
   private async runTracked(
@@ -632,8 +664,8 @@ export class DevManager {
     command: (plan: CompleteInstancePlan) => readonly [string, ...string[]],
     requireRunning: boolean,
     timeoutMs: number,
-    options: { stdout?: "inherit" | "stderr" } = {},
-  ): Promise<number> {
+    options: { stdout?: "inherit" | "stderr" | "capture"; cwd?: string } = {},
+  ): Promise<CapturedCommand> {
     const name = this.resolveName(nameOption);
     const store = this.store(name);
     const owner = store.readOwner();
@@ -665,8 +697,12 @@ export class DevManager {
       const route = this.environmentForPlan(name, plan);
       child = spawn(argv[0], argv.slice(1), {
         stdio:
-          options.stdout === "stderr" ? ["inherit", process.stderr, process.stderr] : "inherit",
-        cwd: this.cwd,
+          options.stdout === "capture"
+            ? ["inherit", "pipe", "pipe"]
+            : options.stdout === "stderr"
+              ? ["inherit", process.stderr, process.stderr]
+              : "inherit",
+        cwd: options.cwd === undefined ? this.cwd : resolve(options.cwd),
         env: routedEnvironment(this.environment, route),
       });
       const pid = child.pid;
@@ -684,9 +720,15 @@ export class DevManager {
       release();
     }
     if (child === null || execRecord === null) {
-      return 1;
+      return { exitCode: 1, stdout: "", stderr: "" };
     }
-    const exitCode = await waitForChild(child);
+    const stdout = readChildStream(child.stdout);
+    const stderr = readChildStream(child.stderr);
+    const [exitCode, capturedStdout, capturedStderr] = await Promise.all([
+      waitForChild(child),
+      stdout,
+      stderr,
+    ]);
     try {
       const cleanupRelease = await store.lock(owner.ownerToken, timeoutMs);
       try {
@@ -695,9 +737,9 @@ export class DevManager {
         cleanupRelease();
       }
     } catch {
-      return exitCode;
+      return { exitCode, stdout: capturedStdout, stderr: capturedStderr };
     }
-    return exitCode;
+    return { exitCode, stdout: capturedStdout, stderr: capturedStderr };
   }
 
   private environmentForPlan(name: string, plan: CompleteInstancePlan): EnvironmentResult {
