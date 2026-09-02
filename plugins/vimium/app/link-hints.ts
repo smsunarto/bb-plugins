@@ -2,7 +2,7 @@
 //
 // One content script, one capture-phase keydown listener, one state machine:
 // idle until a plain `f` lands outside an editable target — or `Cmd+Shift+F`
-// lands anywhere, since bb keeps its composer focused — then a marker per
+// lands anywhere — then a marker per
 // visible clickable element until the typed characters pick one — or Escape,
 // Backspace past the start, a non-hint key, a scroll, a resize, or a blur
 // exits. Built-in composer controls keep pinned single-character labels and
@@ -15,7 +15,9 @@
 // row; the scoped prompt follows the popup — exiting when it is dismissed,
 // re-prompting when a pick leaves it open (the model dialog and its tabs),
 // and handing focus back to the composer when a pick from one of the
-// composer's own dropdowns closes it. `Cmd+Shift+F` always means the whole
+// composer's own dropdowns closes it. Passive composer focus is released so
+// normal mode survives navigation; `i`, a direct pointer press, and Tab focus
+// enter the composer intentionally. `Cmd+Shift+F` always means the whole
 // screen: it replaces a scoped prompt, and first closes any open popup layer,
 // which would otherwise aria-hide the rest of the page. The transitions and
 // predicates are pure functions so they test without a DOM; only mounting,
@@ -419,9 +421,12 @@ function isTextEntry(target: HTMLElement): boolean {
   return false;
 }
 
-function activate(target: HTMLElement): void {
+function activate(
+  target: HTMLElement,
+  focusTextEntry: (target: HTMLElement) => void = (entry) => entry.focus(),
+): void {
   if (isTextEntry(target)) {
-    target.focus();
+    focusTextEntry(target);
     return;
   }
   if (typeof target.focus === "function") target.focus({ preventScroll: true });
@@ -453,6 +458,53 @@ export function mountLinkHints(
   let mode: HintMode = { kind: "idle" };
   let container: HTMLElement | null = null;
   let popupWatch: number | null = null;
+  let composerFocusAllowed = false;
+  let composerPointerOrTabFocusAllowed = false;
+  let composerFocusWindow: number | null = null;
+
+  function withComposerFocusAllowed(action: () => void): void {
+    const wasAllowed = composerFocusAllowed;
+    composerFocusAllowed = true;
+    try {
+      action();
+    } finally {
+      composerFocusAllowed = wasAllowed;
+    }
+  }
+
+  // Pointer focus and the browser's Tab focus happen after their triggering
+  // event listener returns. Keep that one default action open until the next
+  // task, while programmatic focus from bb remains blocked.
+  function allowComposerFocusForDefaultAction(): void {
+    composerPointerOrTabFocusAllowed = true;
+    if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
+    composerFocusWindow = window.setTimeout(() => {
+      composerPointerOrTabFocusAllowed = false;
+      composerFocusWindow = null;
+    }, 0);
+  }
+
+  function focusTextEntry(target: HTMLElement): void {
+    if (!target.matches(COMPOSER_TEXTBOX_SELECTOR)) {
+      target.focus();
+      return;
+    }
+    withComposerFocusAllowed(() => target.focus());
+  }
+
+  function onFocusIn(event: FocusEvent): void {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.matches(COMPOSER_TEXTBOX_SELECTOR)) return;
+    if (composerFocusAllowed || composerPointerOrTabFocusAllowed) return;
+    target.blur();
+  }
+
+  function onPointerDown(event: PointerEvent): void {
+    const target = event.target;
+    if (target instanceof Element && target.closest(COMPOSER_SELECTOR) !== null) {
+      allowComposerFocusForDefaultAction();
+    }
+  }
 
   function exit(): void {
     if (popupWatch !== null) {
@@ -566,13 +618,22 @@ export function mountLinkHints(
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    if (
+      mode.kind === "idle" &&
+      event.key === "Tab" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      allowComposerFocusForDefaultAction();
+    }
     const plainComposerFocus =
       event.key === "i" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
     if (mode.kind === "idle" && plainComposerFocus) {
       if (isEditableTarget(event.target)) return;
       const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
       if (textbox === null) return;
-      textbox.focus();
+      withComposerFocusAllowed(() => textbox.focus());
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
@@ -629,7 +690,7 @@ export function mountLinkHints(
     const scopeKind = mode.scopeKind;
     exit();
     if (!chosen) return;
-    activate(chosen.target);
+    activate(chosen.target, focusTextEntry);
     if (isTextEntry(chosen.target)) return;
     if (opensDropdown(chosen.target)) {
       scheduleReprompt(chosen.target);
@@ -689,7 +750,9 @@ export function mountLinkHints(
       if (context.signal.aborted) return;
       const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
       if (!textbox) return;
-      if (document.activeElement !== textbox) textbox.focus();
+      if (document.activeElement !== textbox) {
+        withComposerFocusAllowed(() => textbox.focus());
+      }
       ticks += 1;
       if (ticks < 6) window.setTimeout(claim, 80);
     };
@@ -712,12 +775,24 @@ export function mountLinkHints(
     exit();
   }
 
+  window.addEventListener("focusin", onFocusIn, { capture: true, signal: context.signal });
+  window.addEventListener("pointerdown", onPointerDown, {
+    capture: true,
+    signal: context.signal,
+  });
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });
   window.addEventListener("scroll", onScroll, { capture: true, signal: context.signal });
   window.addEventListener("resize", exitIfActive, { signal: context.signal });
   window.addEventListener("blur", exitIfActive, { signal: context.signal });
 
+  // The content script can mount after React has already applied autofocus.
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active.matches(COMPOSER_TEXTBOX_SELECTOR)) {
+    active.blur();
+  }
+
   return () => {
+    if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
     exit();
   };
 }

@@ -5,7 +5,8 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 ## What it does
 
 - Press `f` anywhere outside a text field. Every clickable element on screen gets a small yellow hint label.
-- Press `Cmd+Shift+F` anywhere, including bb's composer, which grabs focus by default. `Escape` also leaves the composer, so `Escape` then `f` works too.
+- bb's passive composer autofocus is released. Press `i`, click the composer, or Tab to it when you want to type.
+- Press `Cmd+Shift+F` anywhere, including bb's composer. `Escape` also leaves the composer, so `Escape` then `f` works too.
 - Type a label's letters to click that element. Already-typed letters dim, and non-matching labels disappear.
 - `Backspace` drops the last typed letter. `Escape`, any other key, scrolling, or resizing exits hint mode.
 - A hint on a text field focuses it instead of clicking, so `f` can drop you straight into typing.
@@ -21,4 +22,4 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 - Sidebar thread rows (bb's own or any sidebar honoring the thread-shortcut contract) count `1`-`9` in list order.
 - Everything else gets two-character labels from the remaining alphabet, extended past the reserved carve-outs so even a diff-heavy screen stays at two characters.
 
-Only the `f` hint mode ships — no scrolling keys, search, or other Vimium bindings.
+The plugin ships `f` hint mode and the `i` composer shortcut. It does not add scrolling keys or search.

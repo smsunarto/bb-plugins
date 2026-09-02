@@ -172,6 +172,40 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("releases passive composer focus but allows explicit keyboard and pointer focus", () => {
+    document.body.innerHTML =
+      '<button id="outside">Outside</button>' +
+      '<div data-app-composer><div id="editor" role="textbox" tabindex="0"></div></div>';
+    const outside = document.getElementById("outside") as HTMLElement;
+    const editor = document.getElementById("editor") as HTMLElement;
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    expect(document.activeElement).not.toBe(editor);
+
+    editor.focus();
+    expect(document.activeElement).not.toBe(editor);
+
+    expect(pressKey("i")).toBe(false);
+    expect(document.activeElement).toBe(editor);
+
+    editor.blur();
+    editor.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    editor.blur();
+    outside.focus();
+    pressKey("Tab", outside);
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    void dispose();
+    controller.abort();
+  });
+
   test("plain i stays available to editable targets while hint mode is idle", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
