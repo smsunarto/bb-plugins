@@ -286,7 +286,7 @@ export function requireCompletePlan(
     throw new DevError(
       "instance_not_prepared",
       `Instance ${state.name} has not completed preparation.`,
-      "Run bb-kit dev start to resume preparation.",
+      "Run bb-kit dev-instance start to resume preparation.",
     );
   }
   return plan;

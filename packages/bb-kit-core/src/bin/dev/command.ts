@@ -4,15 +4,15 @@ import { DevManager, type InstanceResult, type ManagerOptions } from "./manager.
 
 export const DEV_USAGE = [
   "usage:",
-  "  bb-kit dev start [--name NAME] [--revision SELECTOR] [--repo PATH]",
+  "  bb-kit dev-instance start [--name NAME] [--revision SELECTOR] [--repo PATH]",
   "                   [--desktop] [--open] [--timeout SECONDS] [--json]",
-  "  bb-kit dev list [--json]",
-  "  bb-kit dev status [NAME] [--json]",
-  "  bb-kit dev stop [NAME] [--timeout SECONDS] [--json]",
-  "  bb-kit dev destroy [NAME] [--timeout SECONDS] [--json]",
-  "  bb-kit dev logs [NAME] [dev|desktop|launcher] [--lines COUNT] [--follow]",
-  "  bb-kit dev env [NAME] [--json]",
-  "  bb-kit dev exec [NAME] -- <bb arguments...>",
+  "  bb-kit dev-instance list [--json]",
+  "  bb-kit dev-instance status [NAME] [--json]",
+  "  bb-kit dev-instance stop [NAME] [--timeout SECONDS] [--json]",
+  "  bb-kit dev-instance destroy [NAME] [--timeout SECONDS] [--json]",
+  "  bb-kit dev-instance logs [NAME] [dev|desktop|launcher] [--lines COUNT] [--follow]",
+  "  bb-kit dev-instance env [NAME] [--json]",
+  "  bb-kit dev-instance exec [NAME] -- <bb arguments...>",
   "",
 ].join("\n");
 
@@ -340,7 +340,11 @@ function shellQuote(value: string): string {
 }
 
 function usageError(message: string): DevError {
-  return new DevError("invalid_arguments", message, "Run bb-kit dev --help.");
+  return new DevError(
+    "invalid_arguments",
+    message,
+    "Run bb-kit dev-instance --help.",
+  );
 }
 
 function isUsageCode(code: string): boolean {

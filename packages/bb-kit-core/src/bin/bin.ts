@@ -19,7 +19,7 @@ const USAGE = [
   "  bb-kit add <query|mutation|command|tool> <kebab-name>",
   "                                      generate one unit + sibling test",
   "  bb-kit check                        verify wiring, naming, and manifest",
-  "  bb-kit dev <command>                manage an isolated bb dev instance",
+  "  bb-kit dev-instance <command>       manage an isolated bb dev instance",
   "",
 ].join("\n");
 
@@ -52,7 +52,7 @@ async function main(argv: readonly string[]): Promise<BinResult> {
     }
     return runCheck({ cwd: process.cwd() });
   }
-  if (command === "dev") {
+  if (command === "dev-instance") {
     if (rest.length === 0) {
       return { exitCode: 2, stdout: "", stderr: DEV_USAGE };
     }

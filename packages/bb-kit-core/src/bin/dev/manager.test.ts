@@ -280,7 +280,7 @@ test("destroy removes an owned partial checkout plan without a launcher target",
 test("dev help, start options, env keys, and invalid arguments have stable parsing", async () => {
   const help = await runDev(["--help"]);
   assert.equal(help.exitCode, 0);
-  assert.match(help.stdout, /bb-kit dev start/);
+  assert.match(help.stdout, /bb-kit dev-instance start/);
 
   let received: unknown;
   const recordingManager = {

@@ -46,7 +46,7 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 Start the latest official desktop release:
 
 ```sh
-bb-kit dev start
+bb-kit dev-instance start
 ```
 
 The command resolves the highest `desktop-v*` semver tag from `get-bb/bb`.
@@ -56,7 +56,7 @@ that recorded commit without contacting the network.
 Use an explicit `latest` selector when you want to check for a newer release:
 
 ```sh
-bb-kit dev start --revision latest
+bb-kit dev-instance start --revision latest
 ```
 
 The command refuses to replace an instance when `latest` resolves to another
@@ -65,7 +65,7 @@ commit. Pass another `--name`, or destroy the stopped instance first.
 Start a branch from a local bb repository:
 
 ```sh
-bb-kit dev start --name my-branch \
+bb-kit dev-instance start --name my-branch \
   --revision local:my-branch \
   --repo ~/git/bb
 ```
@@ -84,12 +84,12 @@ it uses a stable hash of the Git workspace or current directory. Pass
 Inspect and control an instance with these commands:
 
 ```sh
-bb-kit dev list
-bb-kit dev status [NAME]
-bb-kit dev logs [NAME] [dev|desktop|launcher] --lines 100
-bb-kit dev logs [NAME] dev --follow
-bb-kit dev stop [NAME]
-bb-kit dev destroy [NAME]
+bb-kit dev-instance list
+bb-kit dev-instance status [NAME]
+bb-kit dev-instance logs [NAME] [dev|desktop|launcher] --lines 100
+bb-kit dev-instance logs [NAME] dev --follow
+bb-kit dev-instance stop [NAME]
+bb-kit dev-instance destroy [NAME]
 ```
 
 `stop` keeps the checkout and immutable revision. `destroy` removes only
@@ -98,8 +98,8 @@ paths whose owner token and recorded path match the instance state.
 Run the selected checkout's bb CLI without ambient thread routing:
 
 ```sh
-bb-kit dev exec [NAME] -- plugin types .
-eval "$(bb-kit dev env [NAME])"
+bb-kit dev-instance exec [NAME] -- plugin types .
+eval "$(bb-kit dev-instance env [NAME])"
 ```
 
 The generated bb shim clears known bb routing variables. It then runs

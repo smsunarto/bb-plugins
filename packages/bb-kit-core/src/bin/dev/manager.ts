@@ -141,7 +141,7 @@ export class DevManager {
         throw new DevError(
           "instance_destroying",
           `Instance ${name} has an incomplete destroy operation.`,
-          "Run bb-kit dev destroy again before starting this name.",
+          "Run bb-kit dev-instance destroy again before starting this name.",
         );
       }
       const desired = options.desktop === true ? "desktop" : (existingRuntime(state) ?? "web");
@@ -528,7 +528,7 @@ export class DevManager {
         throw new DevError(
           "instance_not_found",
           `Instance ${name} does not exist.`,
-          "Run bb-kit dev start first.",
+          "Run bb-kit dev-instance start first.",
         );
       }
       const plan = requireCompletePlan(state);
@@ -686,7 +686,7 @@ export class DevManager {
       throw new DevError(
         "instance_destroying",
         `Instance ${state.name} has an incomplete destroy operation.`,
-        "Run bb-kit dev destroy again.",
+        "Run bb-kit dev-instance destroy again.",
       );
     }
     if (store.activeExecs(ownerToken).length > 0) {
@@ -894,7 +894,7 @@ export class DevManager {
       throw new DevError(
         "instance_not_found",
         `Instance ${name} does not exist.`,
-        "Run bb-kit dev start first.",
+        "Run bb-kit dev-instance start first.",
       );
     }
     return state;

@@ -227,7 +227,7 @@ export async function resolveRevision(
     throw new DevError(
       "unsupported_revision",
       "An official commit needs an owned resolution repository.",
-      "Retry through bb-kit dev start or select a local repository with --repo.",
+      "Retry through bb-kit dev-instance start or select a local repository with --repo.",
     );
   }
   const commit = resolveOfficialCommit(request.commit, resolverPath, ownerToken, run);
