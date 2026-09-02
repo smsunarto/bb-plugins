@@ -191,6 +191,50 @@ test("run routes one running instance and blocks lifecycle changes while the chi
   );
 });
 
+test("runSingleton reuses one live command and starts again after it exits", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "singleton", attach: fixture.repository });
+  const startsPath = join(fixture.root, "singleton-starts");
+  const readyPath = join(fixture.root, "singleton-ready");
+  const command = [
+    process.execPath,
+    "-e",
+    `const fs = require("node:fs"); fs.appendFileSync(process.argv[1], "start\\n"); fs.writeFileSync(process.argv[2], "ready"); setTimeout(() => {}, 300);`,
+    startsPath,
+    readyPath,
+  ] as const;
+
+  const first = manager.runSingleton("singleton", command, {
+    key: "plugin-watchers",
+    cwd: fixture.repository,
+  });
+  await waitForFile(readyPath);
+  const reused = await manager.runSingleton("singleton", command, {
+    key: "plugin-watchers",
+    cwd: fixture.repository,
+  });
+
+  assert.equal(reused.kind, "reused");
+  assert.equal(readFileSync(startsPath, "utf8"), "start\n");
+  assert.deepEqual(await first, { kind: "exited", exitCode: 0 });
+
+  assert.deepEqual(
+    await manager.runSingleton(
+      "singleton",
+      [
+        process.execPath,
+        "-e",
+        `require("node:fs").appendFileSync(process.argv[1], "start\\n")`,
+        startsPath,
+      ],
+      { key: "plugin-watchers", cwd: fixture.repository },
+    ),
+    { kind: "exited", exitCode: 0 },
+  );
+  assert.equal(readFileSync(startsPath, "utf8"), "start\nstart\n");
+});
+
 test("resolveName prefers routed name, then Git workspace, then environment id", () => {
   const fixture = createFixture();
   assert.equal(fixture.manager({ BB_KIT_DEV_NAME: "routed-name" }).resolveName(), "routed-name");
