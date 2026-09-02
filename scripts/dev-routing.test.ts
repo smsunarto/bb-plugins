@@ -5,16 +5,21 @@ import { join } from "node:path";
 const ROOT = join(import.meta.dir, "..");
 
 describe("managed dev routing", () => {
-  test("root scripts route preparation, setup, screenshots, and watchers", () => {
+  test("root scripts route workspace preparation and screenshots through bb-kit", () => {
     const packageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
+      bbKit: { devInstance: { watchExclude: string[] } };
     };
-    expect(packageJson.scripts.dev).toBe("bun scripts/bb-dev-instance.ts --watch");
-    expect(packageJson.scripts["dev:instance"]).toBe("bun scripts/bb-dev-instance.ts");
-    expect(packageJson.scripts["build:managed"]).toBe(
-      "bun run build:framework && bun scripts/build-plugins-managed.ts",
+    expect(packageJson.scripts.dev).toBe(
+      "bun packages/bb-kit-core/src/bin/bin.ts dev-instance workspace --watch",
     );
-    for (const name of ["dev:setup", "screenshots", "screenshots:fixtures"]) {
+    expect(packageJson.scripts["dev:instance"]).toBe(
+      "bun packages/bb-kit-core/src/bin/bin.ts dev-instance workspace",
+    );
+    expect(packageJson.scripts["dev:setup"]).toBeUndefined();
+    expect(packageJson.scripts["build:managed"]).toBeUndefined();
+    expect(packageJson.bbKit.devInstance.watchExclude).toContain("agent-proxy");
+    for (const name of ["screenshots", "screenshots:fixtures"]) {
       expect(packageJson.scripts[name]).toContain("dev-instance run --");
     }
   });
@@ -37,11 +42,14 @@ describe("managed dev routing", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("the legacy adapter delegates and owns no checkout path", () => {
-    const adapter = readFileSync(join(ROOT, "scripts", "bb-dev-cli"), "utf8");
-    expect(adapter).toContain("packages/bb-kit-core/src/bin/bin.ts");
-    expect(adapter).toContain("dev-instance exec --");
-    expect(adapter).not.toContain("worktrees/dev");
-    expect(adapter).not.toMatch(new RegExp(["BB_DEV_", "REPO\\b"].join("")));
+  test("manual dev scripts stay deleted", () => {
+    for (const file of [
+      "bb-dev-cli",
+      "bb-dev-instance.ts",
+      "bb-dev-instance-setup.ts",
+      "build-plugins-managed.ts",
+    ]) {
+      expect(existsSync(join(ROOT, "scripts", file))).toBe(false);
+    }
   });
 });

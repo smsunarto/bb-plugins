@@ -43,12 +43,12 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 
 ## Run an isolated bb dev instance
 
-| Goal                                     | Source mode | Command                                           |
-| ---------------------------------------- | ----------- | ------------------------------------------------- |
-| Test plugins against the current release | Owned       | `bb-kit dev-instance start`                       |
-| Test against a branch, tag, or commit    | Owned       | `bb-kit dev-instance start --revision <selector>` |
-| Develop bb with uncommitted changes      | Attached    | `bb-kit dev-instance start --attach .`            |
-| Run a tool with instance routing         | Either      | `bb-kit dev-instance run -- <program>`            |
+| Goal                                     | Source mode | Command                                               |
+| ---------------------------------------- | ----------- | ----------------------------------------------------- |
+| Prepare a plugin workspace               | Owned       | `bb-kit dev-instance workspace`                       |
+| Test plugins against another bb revision | Owned       | `bb-kit dev-instance workspace --revision <selector>` |
+| Develop bb with uncommitted changes      | Attached    | `bb-kit dev-instance start --attach .`                |
+| Run a tool with instance routing         | Either      | `bb-kit dev-instance run -- <program>`                |
 
 Start the latest official desktop release:
 
@@ -138,13 +138,26 @@ The generated bb shim clears known bb routing variables. It then runs
 the caller's directory. `env` prints the same App URL, source, instance name,
 and `PATH` prefix for an interactive shell.
 
-Repository-specific preparation stays outside bb-kit. For example, bb-plugins
-provides `bun run dev:instance`, which starts the instance and then applies its
-plugin, experiment, setting, and theme baseline.
+Prepare a plugin workspace from its root:
 
-Add `--json` to `start`, `list`, `status`, `stop`, `destroy`, or `env`.
+```sh
+bb-kit dev-instance workspace
+bb-kit dev-instance workspace --watch
+```
+
+The root `package.json` stores the workspace policy in `bbKit.devInstance`.
+The command builds every plugin package in order. It installs plugins whose
+recorded source differs from the workspace. It then enables the plugins,
+applies the configured experiment and theme values, resets non-secret plugin
+settings to their declared defaults, and checks the resulting state.
+
+The workspace command accepts the same owned revision options as `start`. It
+does not accept `--attach`. Use `start --attach` for bb core development.
+
+Add `--json` to `start`, `workspace`, `list`, `status`, `stop`, `destroy`, or `env`.
 The command writes one schema-versioned JSON object to stdout. Start progress
-and diagnostics stay on stderr.
+and diagnostics stay on stderr. The workspace command rejects `--json` with
+`--watch` because a watcher does not produce one final result.
 
 Set `BB_KIT_DEV_HOME` to replace the state root. The default is
 `$XDG_STATE_HOME/bb-kit/dev`, or `~/.local/state/bb-kit/dev` when XDG state is

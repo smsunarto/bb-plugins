@@ -2,11 +2,12 @@ import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { workspacePlugins } from "./plugin-package";
+import { loadWorkspaceDefinition } from "../packages/bb-kit-core/src/bin/dev/workspace.ts";
 
 export const SCREENSHOT_ROOT = fileURLToPath(new URL("..", import.meta.url));
-export const SCREENSHOT_THEME_ID = "plugin:monokai:bb-monokai";
-export const SCREENSHOT_PREFLIGHT_PLUGINS = workspacePlugins(SCREENSHOT_ROOT).map(
+const SCREENSHOT_WORKSPACE = loadWorkspaceDefinition(SCREENSHOT_ROOT);
+export const SCREENSHOT_THEME_ID = SCREENSHOT_WORKSPACE.profile.theme;
+export const SCREENSHOT_PREFLIGHT_PLUGINS = SCREENSHOT_WORKSPACE.plugins.map(
   ({ id, directory }) => ({ id, directory }),
 );
 
@@ -56,7 +57,7 @@ export function routedBbCli(environment: NodeJS.ProcessEnv = process.env): strin
   const executable = environment.BB_CLI;
   if (!executable) {
     throw new Error(
-      "BB_CLI is not set. Run this command through bun run dev:instance and bb-kit dev-instance run.",
+      "BB_CLI is not set. Run bb-kit dev-instance workspace, then route this command through bb-kit dev-instance run.",
     );
   }
   return executable;

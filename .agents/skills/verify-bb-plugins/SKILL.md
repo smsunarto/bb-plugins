@@ -9,13 +9,15 @@ Prove the changed user path in the pinned bb app. Static checks support this pro
 
 ## Launch
 
-Start the one-command repository dev loop before the first plugin edit. Leave it running.
+Start the repository dev loop before the first plugin edit. The package alias
+calls `bb-kit dev-instance workspace --watch`. Leave it running.
 
 ```bash
 bun run dev
 ```
 
-Create one run ID. The helper prepares the managed release fixture and reserves one browser session.
+Create one run ID. The helper calls the native workspace command, checks the
+managed release fixture, and reserves one browser session.
 
 ```bash
 RUN_ID="verify-$(date +%Y%m%d-%H%M%S)"
