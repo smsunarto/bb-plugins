@@ -65,6 +65,10 @@ what selects it. You can also switch in bb under
 
 Disabling or removing the plugin returns bb to the default palette.
 
+Choose **Inter (Default)** or **SF Pro** under **Settings → bb Monokai → UI
+font**. The choice applies to the full interface at desktop and mobile widths.
+Code, diffs, file paths, and terminal text keep the Berkeley Mono stack.
+
 ## Requirements
 
 - bb 0.40+ (code themes arrived in bb 0.39)
@@ -74,6 +78,8 @@ Disabling or removing the plugin returns bb to the default palette.
   type stack picks it up. Without it the
   stack falls back to `ui-monospace`, Menlo, then `monospace`. The terminal
   additionally prefers `BerkeleyMono Nerd Font Mono` when present.
+- Optional: **SF Pro**. bb uses the Apple system font on Apple platforms. Other
+  platforms need SF Pro installed or use the generic sans-serif fallback.
 
 ## The palette
 

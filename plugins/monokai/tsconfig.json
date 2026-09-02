@@ -9,9 +9,12 @@
   },
   "include": [
     ".storybook/**/*.ts",
+    "app/**/*.ts",
+    "app.ts",
     "docs/**/*.ts",
     "scripts/**/*.ts",
     "server.ts",
+    "shared/**/*.ts",
     "storybook/**/*.ts"
   ]
 }

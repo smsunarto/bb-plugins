@@ -1,5 +1,17 @@
 # @smsunarto/bb-plugin-monokai
 
+## Unreleased
+
+### Minor Changes
+
+- Add a UI font setting with Inter as the default and SF Pro as the alternative.
+  The selection updates every open mobile and desktop bb client without a
+  plugin reload. Code and terminal typography remain on Berkeley Mono.
+
+### Patch Changes
+
+- Keep SF Pro composer placeholders at regular weight on mobile layouts.
+
 ## 0.3.2
 
 ### Patch Changes

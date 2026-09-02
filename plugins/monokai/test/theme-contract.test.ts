@@ -17,6 +17,19 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toBe(renderTheme(template));
   });
 
+  test("defaults the full UI to Inter through the runtime font variable", () => {
+    expect(theme).toContain(
+      '--font-sans: var(--bb-monokai-ui-font, "Inter Variable", Inter, sans-serif)',
+    );
+    expect(theme).toContain('--font-mono: "Berkeley Mono", ui-monospace, Menlo, monospace');
+  });
+
+  test("keeps mobile composer placeholders at a readable regular weight", () => {
+    expect(theme).toContain("@media (max-width: 767px)");
+    expect(theme).toContain("p.is-editor-empty:first-child::before");
+    expect(theme).toContain("font-weight: 400");
+  });
+
   test("rejects an unknown template role", () => {
     expect(() => renderTheme(`${template}\n.x { color: {{text.foreign}}; }\n`)).toThrow(
       "Unknown theme role(s): text.foreign",

@@ -40,6 +40,7 @@
       }
     },
     "server": "./server.ts",
+    "app": "./app.ts",
     "themes": [
       {
         "id": "bb-monokai",
@@ -56,14 +57,22 @@
   "files": [
     "dist/server.js",
     "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
     "themes/",
     "assets/",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "server.ts"
+    "server.ts",
+    "app.ts",
+    "app/",
+    "shared/"
   ],
-  "dependencies": {},
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.34",
     "@storybook/react-vite": "10.5.7",

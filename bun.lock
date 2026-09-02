@@ -334,6 +334,9 @@
     "plugins/monokai": {
       "name": "@smsunarto/bb-plugin-monokai",
       "version": "0.3.2",
+      "dependencies": {
+        "zod": "^4.3.6",
+      },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.4.34",
         "@storybook/react-vite": "10.5.7",

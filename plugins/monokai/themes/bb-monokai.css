@@ -47,10 +47,13 @@
 
 :root,
 .light {
-  /* Fonts are the only genuinely mode-independent values here.
+  /* Fonts are the only genuinely mode-independent values here. The frontend
+   * sets --bb-monokai-ui-font from the plugin setting. The fallback keeps the
+   * default deterministic before that setting arrives.
    * --font-mono covers code in the app document; --diffs-font-family covers the
    * code/diff views, which render in shadow DOM but only ever READ this name,
    * never declare it on :host, so the document value inherits in. */
+  --font-sans: var(--bb-monokai-ui-font, "Inter Variable", Inter, sans-serif);
   --font-mono: "Berkeley Mono", ui-monospace, Menlo, monospace;
   --diffs-font-family: "Berkeley Mono", ui-monospace, Menlo, monospace;
 }
@@ -358,6 +361,19 @@
  * responsible for the edge. */
 .dark [data-promptbox] {
   background-color: #1e1e1e;
+}
+
+/* bb gives empty composer placeholders font-light (300). SF Pro loses too much
+ * stroke weight at phone scale, so mobile placeholders use the regular text
+ * weight. Typed composer text already uses 400 and needs no override. */
+@media (max-width: 767px) {
+  .dark
+    [data-promptbox]
+    [data-promptbox-editor-content]
+    .ProseMirror
+    p.is-editor-empty:first-child::before {
+    font-weight: 400;
+  }
 }
 
 /* Chat image thumbnails already have a clipped rounded silhouette. Remove the
