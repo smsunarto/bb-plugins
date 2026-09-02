@@ -116,8 +116,8 @@ a child, a chip that names the parent and opens it.
 
 An untitled root thread gets a generated name after its first completed turn. The
 plugin sends bb's 36-character thread-title prompt through its own Codex inference
-service. The service requests strict JSON with no reasoning and creates no agent
-thread. It uses bb's configured Codex primary and fallback models when available.
+service. The service requests strict JSON from GPT-5.6-Luna with low reasoning and
+creates no agent thread. A transient failure retries once with GPT-5.4-Mini.
 
 Use **Generate thread name** in the thread header or card menu to replace a title.
 You can also run `bb gtd-sidebar rename [<threadId>]`. The command uses the current

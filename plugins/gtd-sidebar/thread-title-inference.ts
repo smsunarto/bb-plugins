@@ -5,8 +5,9 @@ import {
   type GtdSidebarAiInferenceCompleteOutput,
 } from "./lib/host-contract.ts";
 
-const DEFAULT_PRIMARY_MODEL = "gpt-5.6-luna";
-const DEFAULT_FALLBACK_MODEL = "gpt-5.4-mini";
+const TITLE_PRIMARY_MODEL = "gpt-5.6-luna";
+const TITLE_FALLBACK_MODEL = "gpt-5.4-mini";
+const TITLE_REASONING_EFFORT = "low";
 const INFERENCE_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 250;
 const TRANSIENT_FAILURES = new Set(["timeout", "rate_limited", "service_unavailable"]);
@@ -32,18 +33,6 @@ interface InferenceModels {
 interface CompleteWithFallbackInput extends InferenceModels {
   complete(model: string): Promise<GtdSidebarAiInferenceCompleteOutput>;
   sleep?: (durationMs: number) => Promise<void>;
-}
-
-export function resolveCodexInferenceModels(input: {
-  inference: string;
-  inferenceFallback: string;
-}): InferenceModels {
-  const primary = codexModel(input.inference) ?? codexModel(input.inferenceFallback);
-  const fallback = codexModel(input.inferenceFallback);
-  return {
-    primary: primary ?? DEFAULT_PRIMARY_MODEL,
-    fallback: fallback ?? DEFAULT_FALLBACK_MODEL,
-  };
 }
 
 export async function completeThreadTitleWithFallback({
@@ -85,16 +74,16 @@ export function createThreadTitleInference(bb: BbPluginApi): ThreadTitleInferenc
         throw new Error("No host is available for thread title inference.");
       }
 
-      const models = resolveCodexInferenceModels(config.aiServices);
       return completeThreadTitleWithFallback({
-        ...models,
+        primary: TITLE_PRIMARY_MODEL,
+        fallback: TITLE_FALLBACK_MODEL,
         complete: (model) =>
           host.call(
             "ai.inference.complete",
             {
               serviceId: GTD_SIDEBAR_AI_SERVICE_ID,
               model,
-              reasoningEffort: "none",
+              reasoningEffort: TITLE_REASONING_EFFORT,
               prompt,
               outputSchema: TITLE_OUTPUT_SCHEMA,
               timeoutMs: INFERENCE_TIMEOUT_MS,
@@ -104,14 +93,6 @@ export function createThreadTitleInference(bb: BbPluginApi): ThreadTitleInferenc
       });
     },
   };
-}
-
-function codexModel(selection: string): string | null {
-  const separator = selection.indexOf("/");
-  if (separator <= 0 || separator === selection.length - 1) return null;
-  const serviceId = selection.slice(0, separator);
-  if (serviceId !== "codex" && serviceId !== GTD_SIDEBAR_AI_SERVICE_ID) return null;
-  return selection.slice(separator + 1);
 }
 
 function wait(durationMs: number): Promise<void> {

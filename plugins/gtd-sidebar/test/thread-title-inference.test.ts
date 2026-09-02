@@ -1,29 +1,60 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { gtdSidebarHostContract } from "../lib/host-contract.ts";
 import {
   completeThreadTitleWithFallback,
-  resolveCodexInferenceModels,
+  createThreadTitleInference,
 } from "../thread-title-inference.ts";
 
-describe("resolveCodexInferenceModels", () => {
-  test("uses bb's configured Codex primary and fallback models", () => {
-    assert.deepEqual(
-      resolveCodexInferenceModels({
-        inference: "codex/gpt-primary",
-        inferenceFallback: "gtd-sidebar/gpt-fallback",
-      }),
-      { primary: "gpt-primary", fallback: "gpt-fallback" },
-    );
+describe("thread title inference policy", () => {
+  test("calls GPT-5.6-Luna with low reasoning on the primary host", async () => {
+    const calls: Array<{ input: Record<string, unknown>; hostId: string }> = [];
+    const bb = {
+      hosts: {
+        experimental_client: () => ({
+          call: async (
+            _method: string,
+            input: Record<string, unknown>,
+            options: { hostId: string },
+          ) => {
+            calls.push({ input, hostId: options.hostId });
+            return { ok: true, model: String(input.model), value: { title: "Name threads" } };
+          },
+        }),
+      },
+      sdk: {
+        system: {
+          config: async () => ({ primaryHostId: "host-primary" }),
+        },
+      },
+    } as unknown as BbPluginApi;
+
+    const title = await createThreadTitleInference(bb).complete({
+      environmentId: null,
+      prompt: "Generate a title",
+    });
+
+    assert.equal(title, "Name threads");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.hostId, "host-primary");
+    assert.equal(calls[0]?.input.model, "gpt-5.6-luna");
+    assert.equal(calls[0]?.input.reasoningEffort, "low");
   });
 
-  test("falls back to supported Codex defaults for another inference service", () => {
-    assert.deepEqual(
-      resolveCodexInferenceModels({
-        inference: "anthropic/claude-fast",
-        inferenceFallback: "google/gemini-fast",
-      }),
-      { primary: "gpt-5.6-luna", fallback: "gpt-5.4-mini" },
-    );
+  test("keeps standard none requests and GTD low requests contract-valid", () => {
+    const input = {
+      serviceId: "gtd-sidebar",
+      model: "gpt-5.6-luna",
+      prompt: "Generate a title",
+      outputSchema: { type: "object" },
+      timeoutMs: 5_000,
+    };
+    const schema = gtdSidebarHostContract["ai.inference.complete"].input;
+
+    assert.equal(schema.parse({ ...input, reasoningEffort: "none" }).reasoningEffort, "none");
+    assert.equal(schema.parse({ ...input, reasoningEffort: "low" }).reasoningEffort, "low");
+    assert.throws(() => schema.parse({ ...input, reasoningEffort: "medium" }));
   });
 });
 

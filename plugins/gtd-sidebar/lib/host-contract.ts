@@ -12,6 +12,13 @@ import { gitButlerHostContract } from "./gitbutler.ts";
 
 export const GTD_SIDEBAR_AI_SERVICE_ID = "gtd-sidebar";
 
+export type GtdSidebarAiInferenceCompleteInput = Omit<
+  ExperimentalAiInferenceCompleteInput,
+  "reasoningEffort"
+> & {
+  reasoningEffort: "none" | "low";
+};
+
 // bb 0.41 aliases every @get-bb/plugin-sdk import in a server source graph to
 // its root runtime file. That alias also catches /ai-services and turns it into
 // the invalid path plugin-sdk-runtime.js/ai-services. Keep the SDK as the type
@@ -46,12 +53,12 @@ const aiInferenceCompleteInputSchema = z
   .object({
     serviceId: z.string().min(1),
     model: z.string().min(1),
-    reasoningEffort: z.literal("none"),
+    reasoningEffort: z.enum(["none", "low"]),
     prompt: z.string().min(1),
     outputSchema: jsonObjectSchema,
     timeoutMs: z.number().int().positive(),
   })
-  .strict() satisfies z.ZodType<ExperimentalAiInferenceCompleteInput>;
+  .strict() satisfies z.ZodType<GtdSidebarAiInferenceCompleteInput>;
 const aiInferenceCompleteOutputSchema = z.union([
   z
     .object({
@@ -100,7 +107,6 @@ export const gtdSidebarHostContract = defineRpcContract({
   ...gtdSidebarAiServicesHostContract,
 });
 
-export type GtdSidebarAiInferenceCompleteInput = ExperimentalAiInferenceCompleteInput;
 export type GtdSidebarAiInferenceCompleteOutput = ExperimentalAiInferenceCompleteOutput;
 export type GtdSidebarAiServiceErrorCode = ExperimentalAiServiceErrorCode;
 export type GtdSidebarAiVoiceTranscribeInput = ExperimentalAiVoiceTranscribeInput;
