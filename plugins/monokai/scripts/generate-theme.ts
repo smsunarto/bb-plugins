@@ -442,6 +442,24 @@ const requiredRules: Array<{
     declarations: { "--sidebar": palette.ground.content },
   },
   {
+    selector: '.dark [data-sidebar="panel"]',
+    declarations: { "border-color": "var(--sidebar-border)" },
+  },
+  {
+    selector: ".dark #thread-detail-secondary-panel > aside",
+    declarations: { "border-color": "var(--sidebar-border)" },
+  },
+  {
+    selector:
+      '.dark #thread-detail-secondary-panel-handle[data-panel-resize-handle-enabled="true"]',
+    declarations: { "--border-seam": "var(--sidebar-border)" },
+  },
+  {
+    selector:
+      '.dark #thread-detail-secondary-panel-handle[data-panel-resize-handle-enabled="true"] + #thread-detail-secondary-panel > aside',
+    declarations: { "border-color": "transparent" },
+  },
+  {
     selector: ".dark .rounded-xl.border.border-border-seam.bg-surface-recessed",
     declarations: {
       "background-color": "var(--agent-surface-background)",

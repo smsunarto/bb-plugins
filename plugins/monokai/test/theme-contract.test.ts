@@ -33,6 +33,18 @@ describe("bb Monokai contract audit", () => {
     expect(() => auditTheme(theme)).not.toThrow();
   });
 
+  test("paints each outer sidebar edge with one solid pane divider", () => {
+    expect(theme).toContain(
+      '.dark [data-sidebar="panel"],\n.dark #thread-detail-secondary-panel > aside {\n  border-color: var(--sidebar-border);\n}',
+    );
+    expect(theme).toContain(
+      '.dark #thread-detail-secondary-panel-handle[data-panel-resize-handle-enabled="true"] {\n  --border-seam: var(--sidebar-border);\n}',
+    );
+    expect(theme).toContain(
+      '.dark\n  #thread-detail-secondary-panel-handle[data-panel-resize-handle-enabled="true"]\n  + #thread-detail-secondary-panel\n  > aside {\n  border-color: transparent;\n}',
+    );
+  });
+
   test("rejects an off-contract rendered color", () => {
     const changed = theme.replace("--background: #181818", "--background: #123456");
     expect(() => auditTheme(changed)).toThrow("#123456 is off-contract");

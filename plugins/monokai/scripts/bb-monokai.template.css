@@ -303,6 +303,25 @@
   --sidebar: {{ground.content}};
 }
 
+/* Both outer sidebars spend the solid pane-divider role. The active right
+ * resize handle owns that boundary, so suppress the panel border beneath it
+ * instead of painting the divider twice. */
+.dark [data-sidebar="panel"],
+.dark #thread-detail-secondary-panel > aside {
+  border-color: var(--sidebar-border);
+}
+
+.dark #thread-detail-secondary-panel-handle[data-panel-resize-handle-enabled="true"] {
+  --border-seam: var(--sidebar-border);
+}
+
+.dark
+  #thread-detail-secondary-panel-handle[data-panel-resize-handle-enabled="true"]
+  + #thread-detail-secondary-panel
+  > aside {
+  border-color: transparent;
+}
+
 /* Cursor Monokai leaves chat.request* unset. Its visible user request bubble is
  * #1E1E1E with a faint edge. Match those colors while preserving bb's native
  * bubble geometry. Agent replies stay flat on the #181818 panel ground. */
