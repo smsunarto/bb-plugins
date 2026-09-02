@@ -6,8 +6,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +17,12 @@ import { join } from "node:path";
 import { runDev } from "./command.ts";
 import { DevError } from "./error.ts";
 import { DevManager } from "./manager.ts";
-import { instancePaths, STATE_SCHEMA_VERSION, type InstanceState } from "./model.ts";
+import {
+  instancePaths,
+  STATE_SCHEMA_VERSION,
+  type InstanceState,
+  type ProcessIdentity,
+} from "./model.ts";
 import { processIdentity, processMatches, runCommand, spawnAndWait } from "./process.ts";
 import {
   claimDirectoryAtomically,
@@ -197,6 +204,8 @@ test("runSingleton reuses one live command and starts again after it exits", asy
   await manager.start({ name: "singleton", attach: fixture.repository });
   const startsPath = join(fixture.root, "singleton-starts");
   const readyPath = join(fixture.root, "singleton-ready");
+  const cwdAlias = join(fixture.root, "singleton-cwd");
+  symlinkSync(fixture.repository, cwdAlias);
   const command = [
     process.execPath,
     "-e",
@@ -210,14 +219,38 @@ test("runSingleton reuses one live command and starts again after it exits", asy
     cwd: fixture.repository,
   });
   await waitForFile(readyPath);
+  const execs = join(fixture.home, "instances", "singleton", "execs");
+  const recordName = readdirSync(execs).find((file) => file.startsWith("singleton-"));
+  if (recordName === undefined) assert.fail("singleton record was not created");
+  assert.match(recordName, /^singleton-[a-f0-9]{64}\.json$/);
+  const record = JSON.parse(readFileSync(join(execs, recordName), "utf8")) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(record["kind"], "singleton");
+  assert.equal(record["schemaVersion"], 1);
+  assert.equal(record["cwd"], realpathSync(fixture.repository));
+  assert.equal(record["key"], "plugin-watchers");
+  assert.match(String(record["commandDigest"]), /^[a-f0-9]{64}$/);
+  assert.equal(typeof record["recordToken"], "string");
+  assert.equal(typeof record["createdAt"], "string");
+  assert.equal(typeof (record["identity"] as { pid?: unknown }).pid, "number");
   const reused = await manager.runSingleton("singleton", command, {
     key: "plugin-watchers",
-    cwd: fixture.repository,
+    cwd: cwdAlias,
   });
 
   assert.equal(reused.kind, "reused");
   assert.equal(readFileSync(startsPath, "utf8"), "start\n");
+  await assert.rejects(
+    manager.runSingleton("singleton", [process.execPath, "-e", "setTimeout(() => {}, 50)"], {
+      key: "plugin-watchers",
+      cwd: fixture.repository,
+    }),
+    (error) => error instanceof DevError && error.code === "singleton_command_mismatch",
+  );
   assert.deepEqual(await first, { kind: "exited", exitCode: 0 });
+  assert.deepEqual(readdirSync(execs), []);
 
   assert.deepEqual(
     await manager.runSingleton(
@@ -233,6 +266,261 @@ test("runSingleton reuses one live command and starts again after it exits", asy
     { kind: "exited", exitCode: 0 },
   );
   assert.equal(readFileSync(startsPath, "utf8"), "start\nstart\n");
+});
+
+test("concurrent singleton claims start one child", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "singleton-race", attach: fixture.repository });
+  const startsPath = join(fixture.root, "singleton-race-starts");
+  const command = [
+    process.execPath,
+    "-e",
+    `require("node:fs").appendFileSync(process.argv[1], "start\\n"); setTimeout(() => {}, 150);`,
+    startsPath,
+  ] as const;
+  const results = await Promise.all([
+    manager.runSingleton("singleton-race", command, {
+      key: "plugin-watchers",
+      cwd: fixture.repository,
+    }),
+    manager.runSingleton("singleton-race", command, {
+      key: "plugin-watchers",
+      cwd: fixture.repository,
+    }),
+  ]);
+  assert.deepEqual(results.map((result) => result.kind).toSorted(), ["exited", "reused"]);
+  assert.equal(readFileSync(startsPath, "utf8"), "start\n");
+});
+
+test("ordinary runs stay concurrent", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "concurrent-runs", attach: fixture.repository });
+  const startsPath = join(fixture.root, "ordinary-starts");
+  const ordinaryCommand = [
+    process.execPath,
+    "-e",
+    `const fs = require("node:fs"); fs.appendFileSync(process.argv[1], "start\\n"); const deadline = Date.now() + 1000; const lines = () => fs.readFileSync(process.argv[1], "utf8").trim().split("\\n").length; while (lines() < 2 && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10); process.exit(lines() >= 2 ? 0 : 9);`,
+    startsPath,
+  ] as const;
+  const first = manager.run("concurrent-runs", ordinaryCommand);
+  const second = manager.run("concurrent-runs", ordinaryCommand);
+  assert.deepEqual(await Promise.all([first, second]), [0, 0]);
+  assert.equal(readFileSync(startsPath, "utf8"), "start\nstart\n");
+});
+
+test("live legacy execs block the first singleton claim and dead legacy execs are removed", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "legacy-singleton", attach: fixture.repository });
+  const root = join(fixture.home, "instances", "legacy-singleton");
+  const owner = JSON.parse(readFileSync(join(root, "owner.json"), "utf8")) as {
+    ownerToken: string;
+  };
+  const identity = processIdentity(process.pid);
+  assert.notEqual(identity, null);
+  const execs = join(root, "execs");
+  const legacyPath = join(execs, "legacy.json");
+  const startedPath = join(fixture.root, "legacy-singleton-started");
+  mkdirSync(execs);
+  writeFileSync(
+    legacyPath,
+    `${JSON.stringify({ ownerToken: owner.ownerToken, identity, createdAt: new Date().toISOString() })}\n`,
+  );
+
+  await assert.rejects(
+    manager.runSingleton(
+      "legacy-singleton",
+      [
+        process.execPath,
+        "-e",
+        `require("node:fs").writeFileSync(process.argv[1], "yes")`,
+        startedPath,
+      ],
+      { key: "plugin-watchers", cwd: fixture.repository },
+    ),
+    (error) =>
+      error instanceof DevError &&
+      error.code === "legacy_exec_ambiguous" &&
+      Array.isArray(error.details?.["pids"]) &&
+      error.details["pids"].includes(process.pid),
+  );
+  assert.equal(existsSync(startedPath), false);
+
+  writeFileSync(
+    legacyPath,
+    `${JSON.stringify({
+      ownerToken: owner.ownerToken,
+      identity: { pid: 999_999, started: "dead" },
+      createdAt: new Date().toISOString(),
+    })}\n`,
+  );
+  assert.deepEqual(
+    await manager.runSingleton(
+      "legacy-singleton",
+      [
+        process.execPath,
+        "-e",
+        `require("node:fs").writeFileSync(process.argv[1], "yes"); setTimeout(() => {}, 25)`,
+        startedPath,
+      ],
+      { key: "plugin-watchers", cwd: fixture.repository },
+    ),
+    { kind: "exited", exitCode: 0 },
+  );
+  assert.equal(readFileSync(startedPath, "utf8"), "yes");
+  assert.equal(existsSync(legacyPath), false);
+});
+
+test("singleton records fail closed and cleanup cannot remove a replacement", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "singleton-records", attach: fixture.repository });
+  const store = new InstanceStore(instancePaths(fixture.home, "singleton-records"));
+  const owner = store.readOwner();
+  const identity = processIdentity(process.pid);
+  if (identity === null) assert.fail("manager process identity is unavailable");
+  const spec = {
+    cwd: realpathSync(fixture.repository),
+    key: "plugin-watchers",
+    commandDigest: "a".repeat(64),
+  };
+
+  const first = store.addSingleton(owner.ownerToken, spec, identity);
+  assert.throws(
+    () => store.addSingleton(owner.ownerToken, spec, identity),
+    (error) => error instanceof DevError && error.code === "singleton_slot_busy",
+  );
+  store.removeSingleton(first);
+  const replacement = store.addSingleton(owner.ownerToken, spec, identity);
+  store.removeSingleton(first);
+  assert.equal(existsSync(replacement.path), true);
+  const validRecord = JSON.parse(readFileSync(replacement.path, "utf8")) as Record<string, unknown>;
+
+  writeFileSync(
+    replacement.path,
+    `${JSON.stringify({ ...validRecord, commandDigest: "b".repeat(64) })}\n`,
+  );
+  assert.throws(
+    () => store.reconcileSingleton(owner.ownerToken, spec),
+    (error) => error instanceof DevError && error.code === "singleton_command_mismatch",
+  );
+  assert.equal(existsSync(replacement.path), true);
+
+  writeFileSync(
+    replacement.path,
+    `${JSON.stringify({ ...validRecord, cwd: join(fixture.root, "other") })}\n`,
+  );
+  assert.throws(
+    () => store.reconcileSingleton(owner.ownerToken, spec),
+    (error) => error instanceof DevError && error.code === "singleton_key_mismatch",
+  );
+  assert.equal(existsSync(replacement.path), true);
+
+  writeFileSync(
+    replacement.path,
+    `${JSON.stringify({ ...validRecord, ownerToken: "another-owner" })}\n`,
+  );
+  assert.throws(
+    () => store.reconcileSingleton(owner.ownerToken, spec),
+    (error) => error instanceof DevError && error.code === "owner_mismatch",
+  );
+  assert.equal(existsSync(replacement.path), true);
+
+  writeFileSync(replacement.path, "not json\n");
+  assert.throws(
+    () => store.reconcileSingleton(owner.ownerToken, spec),
+    (error) => error instanceof DevError && error.code === "ambiguous_exec",
+  );
+  assert.equal(existsSync(replacement.path), true);
+
+  writeFileSync(replacement.path, `${JSON.stringify(validRecord)}\n`);
+  store.removeSingleton(replacement);
+  const stale = store.addSingleton(owner.ownerToken, spec, {
+    pid: 999_999,
+    started: "dead",
+  });
+  assert.deepEqual(store.reconcileSingleton(owner.ownerToken, spec), { kind: "vacant" });
+  assert.equal(existsSync(stale.path), false);
+
+  const otherCwd = join(fixture.root, "other-cwd");
+  mkdirSync(otherCwd);
+  const otherWorkspace = store.addSingleton(
+    owner.ownerToken,
+    { ...spec, cwd: realpathSync(otherCwd) },
+    identity,
+  );
+  const otherKey = store.addSingleton(owner.ownerToken, { ...spec, key: "other-job" }, identity);
+  assert.notEqual(otherWorkspace.path, otherKey.path);
+  assert.notEqual(otherWorkspace.path, stale.path);
+  assert.notEqual(otherKey.path, stale.path);
+  store.removeSingleton(otherWorkspace);
+  store.removeSingleton(otherKey);
+});
+
+test("a dead manager lock is reclaimable while a tracked exec remains live", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "exec-lock", attach: fixture.repository });
+  const readyPath = join(fixture.root, "exec-lock-ready");
+  const command = [
+    process.execPath,
+    "-e",
+    `require("node:fs").writeFileSync(process.argv[1], "ready"); setTimeout(() => {}, 250)`,
+    readyPath,
+  ] as const;
+  const running = manager.runSingleton("exec-lock", command, {
+    key: "plugin-watchers",
+    cwd: fixture.repository,
+  });
+  await waitForFile(readyPath);
+  const store = new InstanceStore(instancePaths(fixture.home, "exec-lock"));
+  const owner = store.readOwner();
+  mkdirSync(store.paths.lock);
+  writeFileSync(
+    join(store.paths.lock, "owner.json"),
+    `${JSON.stringify({
+      ownerToken: owner.ownerToken,
+      manager: { pid: 999_999, started: "dead" },
+      createdAt: new Date().toISOString(),
+    })}\n`,
+  );
+  assert.deepEqual(
+    await manager.runSingleton("exec-lock", command, {
+      key: "plugin-watchers",
+      cwd: fixture.repository,
+    }),
+    { kind: "reused" },
+  );
+  assert.deepEqual(await running, { kind: "exited", exitCode: 0 });
+});
+
+test("a singleton child exits when its record cannot be created", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "singleton-record-failure", attach: fixture.repository });
+  const failure = new Error("record failed");
+  const addSingleton = InstanceStore.prototype.addSingleton;
+  let childIdentity: ProcessIdentity | null = null;
+  InstanceStore.prototype.addSingleton = function (ownerToken, spec, identity) {
+    childIdentity = identity;
+    throw failure;
+  };
+  try {
+    await assert.rejects(
+      manager.runSingleton(
+        "singleton-record-failure",
+        [process.execPath, "-e", "setInterval(() => {}, 1000)"],
+        { key: "plugin-watchers", cwd: fixture.repository },
+      ),
+      (error) => error === failure,
+    );
+  } finally {
+    InstanceStore.prototype.addSingleton = addSingleton;
+  }
+  if (childIdentity === null) assert.fail("singleton spawn did not produce an identity");
+  assert.equal(processMatches(childIdentity), false);
 });
 
 test("resolveName prefers routed name, then Git workspace, then environment id", () => {

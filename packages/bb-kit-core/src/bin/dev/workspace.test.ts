@@ -8,6 +8,8 @@ import type {
   CapturedCommand,
   DevManager,
   InstanceResult,
+  SingletonRunOptions,
+  SingletonRunResult,
   StartOptions,
 } from "./manager.ts";
 import {
@@ -78,10 +80,30 @@ test("workspace reconciliation is ordered, safe, and idempotent", async () => {
 test("workspace watch uses selected packages and excludes agent-proxy", async () => {
   const fixture = createWorkspace({ watchExclude: ["beta"] });
   const runtime = new FakeRuntime(fixture.root, fixture.pluginRoots);
-  await runWorkspace(runtime, { watch: true }, { sleep: async () => {} });
+  runtime.singletonResult = { kind: "reused" };
+  const progress: string[] = [];
+  await runWorkspace(
+    runtime,
+    { watch: true },
+    {
+      sleep: async () => {},
+      progress: (message) => progress.push(message),
+    },
+  );
   assert.equal(
     runtime.events.at(-1),
-    `run:${fixture.root}:bun run --filter @scope/bb-plugin-alpha --parallel --no-orphans dev`,
+    `singleton:plugin-watchers:${fixture.root}:bun run --filter @scope/bb-plugin-alpha --parallel --no-orphans dev`,
+  );
+  assert.equal(progress.at(-1), "Plugin watchers are already running");
+});
+
+test("workspace watch reports singleton watcher failures", async () => {
+  const fixture = createWorkspace({ watchExclude: ["beta"] });
+  const runtime = new FakeRuntime(fixture.root, fixture.pluginRoots);
+  runtime.singletonResult = { kind: "exited", exitCode: 7 };
+  await assert.rejects(
+    runWorkspace(runtime, { watch: true }, { sleep: async () => {} }),
+    (error) => error instanceof Error && "code" in error && error.code === "watch_failed",
   );
 });
 
@@ -204,6 +226,7 @@ class FakeRuntime implements WorkspaceRuntime {
   theme = "bb:light";
   bbWrites = 0;
   startOptions: StartOptions | undefined;
+  singletonResult: SingletonRunResult = { kind: "exited", exitCode: 0 };
 
   constructor(cwd: string, pluginRoots: { alpha: string; beta: string }) {
     this.cwd = cwd;
@@ -236,6 +259,15 @@ class FakeRuntime implements WorkspaceRuntime {
   ): Promise<number> {
     this.events.push(`run:${options.cwd ?? this.cwd}:${argv.join(" ")}`);
     return 0;
+  }
+
+  async runSingleton(
+    _name: string | undefined,
+    argv: readonly [string, ...string[]],
+    options: SingletonRunOptions,
+  ): Promise<SingletonRunResult> {
+    this.events.push(`singleton:${options.key}:${options.cwd ?? this.cwd}:${argv.join(" ")}`);
+    return this.singletonResult;
   }
 
   async captureExec(_name: string | undefined, args: readonly string[]): Promise<CapturedCommand> {

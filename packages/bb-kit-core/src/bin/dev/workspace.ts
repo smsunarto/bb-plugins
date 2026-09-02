@@ -6,6 +6,8 @@ import type {
   CapturedCommand,
   DevManager,
   InstanceResult,
+  SingletonRunOptions,
+  SingletonRunResult,
   StartOptions,
 } from "./manager.ts";
 
@@ -72,6 +74,11 @@ export interface WorkspaceRuntime {
     argv: readonly [string, ...string[]],
     options?: RunOptions,
   ): Promise<number>;
+  runSingleton(
+    name: string | undefined,
+    argv: readonly [string, ...string[]],
+    options: SingletonRunOptions,
+  ): Promise<SingletonRunResult>;
   captureExec(
     name: string | undefined,
     args: readonly string[],
@@ -259,11 +266,16 @@ export async function runWorkspace(
     const watchCommand: [string, ...string[]] = [definition.profile.packageManager, "run"];
     for (const plugin of watched) watchCommand.push("--filter", plugin.packageName);
     watchCommand.push("--parallel", "--no-orphans", "dev");
-    const exitCode = await runtime.run(instance.name, watchCommand, { cwd: definition.root });
-    if (exitCode !== 0) {
+    const result = await runtime.runSingleton(instance.name, watchCommand, {
+      key: "plugin-watchers",
+      cwd: definition.root,
+    });
+    if (result.kind === "reused") {
+      progress("Plugin watchers are already running");
+    } else if (result.exitCode !== 0) {
       throw new DevError(
         "watch_failed",
-        `Plugin watchers exited with status ${exitCode}.`,
+        `Plugin watchers exited with status ${result.exitCode}.`,
         "Fix the watcher error, then rerun the workspace command.",
       );
     }

@@ -62,6 +62,8 @@ import {
   InstanceStore,
   releaseLease,
   safeRemoveOwned,
+  type SingletonExecHandle,
+  type SingletonExecSpec,
 } from "./store.ts";
 
 const DEFAULT_CONTROL_TIMEOUT_MS = 30_000;
@@ -98,6 +100,14 @@ export type CapturedCommand = {
   stdout: string;
   stderr: string;
 };
+
+export type SingletonRunOptions = {
+  key: string;
+  cwd?: string;
+  stdout?: "inherit" | "stderr";
+};
+
+export type SingletonRunResult = { kind: "reused" } | { kind: "exited"; exitCode: number };
 
 export type { EnvironmentResult, InstanceResult } from "./model.ts";
 
@@ -659,6 +669,97 @@ export class DevManager {
     ).exitCode;
   }
 
+  async runSingleton(
+    nameOption: string | undefined,
+    argv: readonly [string, ...string[]],
+    options: SingletonRunOptions,
+  ): Promise<SingletonRunResult> {
+    const name = this.resolveName(nameOption);
+    const store = this.store(name);
+    const owner = store.readOwner();
+    const cwd = realpathOrResolved(options.cwd ?? this.cwd);
+    const spec: SingletonExecSpec = {
+      cwd,
+      key: options.key,
+      commandDigest: createHash("sha256").update(JSON.stringify(argv)).digest("hex"),
+    };
+    const release = await store.lock(owner.ownerToken, DEFAULT_CONTROL_TIMEOUT_MS);
+    let execRecord: SingletonExecHandle | null = null;
+    let child: ReturnType<typeof spawn> | null = null;
+    try {
+      const state = store.read();
+      if (state === null) {
+        throw new DevError(
+          "instance_not_found",
+          `Instance ${name} does not exist.`,
+          "Run bb-kit dev-instance start first.",
+        );
+      }
+      const plan = requireCompletePlan(state);
+      const live = readLauncherStatus(launcherOptions(plan, this.environment));
+      assertSameStoredTarget(plan.target, live);
+      if (!(await runtimeSatisfied(live, plan.desiredRuntime, this.healthProbe))) {
+        throw new DevError(
+          "instance_not_running",
+          `Instance ${name} is not running.`,
+          "Run bb-kit dev-instance start first.",
+        );
+      }
+      const existing = store.reconcileSingleton(owner.ownerToken, spec);
+      if (existing.kind === "reused") return existing;
+      if (existing.kind === "legacy-conflict") {
+        throw new DevError(
+          "legacy_exec_ambiguous",
+          `Instance ${name} has live commands without singleton ownership.`,
+          "Stop the recorded legacy commands, then retry.",
+          { pids: existing.identities.map((identity) => identity.pid) },
+        );
+      }
+      const route = this.environmentForPlan(name, plan);
+      child = spawn(argv[0], argv.slice(1), {
+        stdio:
+          options.stdout === "stderr" ? ["inherit", process.stderr, process.stderr] : "inherit",
+        cwd,
+        env: routedEnvironment(this.environment, route),
+      });
+      const pid = child.pid;
+      const identity = pid === undefined ? null : processIdentity(pid);
+      if (identity === null) {
+        await terminateStartedChild(child);
+        child = null;
+        throw new DevError(
+          "process_identity_unavailable",
+          "Could not record the singleton command process identity.",
+          "Retry from a normal local shell.",
+        );
+      }
+      try {
+        execRecord = store.addSingleton(owner.ownerToken, spec, identity);
+      } catch (error) {
+        await terminateStartedChild(child);
+        child = null;
+        throw error;
+      }
+    } finally {
+      release();
+    }
+    if (child === null || execRecord === null) {
+      return { kind: "exited", exitCode: 1 };
+    }
+    const exitCode = await waitForChild(child);
+    try {
+      const cleanupRelease = await store.lock(owner.ownerToken, DEFAULT_CONTROL_TIMEOUT_MS);
+      try {
+        store.removeSingleton(execRecord);
+      } finally {
+        cleanupRelease();
+      }
+    } catch {
+      return { kind: "exited", exitCode };
+    }
+    return { kind: "exited", exitCode };
+  }
+
   private async runTracked(
     nameOption: string | undefined,
     command: (plan: CompleteInstancePlan) => readonly [string, ...string[]],
@@ -1196,6 +1297,28 @@ function realpathOrResolved(path: string): string {
     return realpathSync(path);
   } catch {
     return resolve(path);
+  }
+}
+
+async function terminateStartedChild(child: ReturnType<typeof spawn>): Promise<void> {
+  const exited = waitForChild(child);
+  child.kill("SIGTERM");
+  if (await settlesWithin(exited, 1_000)) return;
+  child.kill("SIGKILL");
+  await exited;
+}
+
+async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then(() => true),
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 

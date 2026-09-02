@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DevError } from "./error.ts";
 import {
   STATE_SCHEMA_VERSION,
@@ -39,11 +39,43 @@ type LockRecord = {
   createdAt: string;
 };
 
-type ExecRecord = {
+type ExecRecordBase = {
   ownerToken: string;
   identity: ProcessIdentity;
   createdAt: string;
 };
+
+type UnkeyedExecRecord = ExecRecordBase & {
+  kind: "unkeyed";
+};
+
+type SingletonExecRecord = ExecRecordBase & {
+  kind: "singleton";
+  schemaVersion: 1;
+  recordToken: string;
+  cwd: string;
+  key: string;
+  commandDigest: string;
+};
+
+type ExecRecord = UnkeyedExecRecord | SingletonExecRecord;
+
+export type SingletonExecSpec = {
+  cwd: string;
+  key: string;
+  commandDigest: string;
+};
+
+export type SingletonExecHandle = {
+  path: string;
+  ownerToken: string;
+  recordToken: string;
+};
+
+export type SingletonExecLookup =
+  | { kind: "vacant" }
+  | { kind: "reused" }
+  | { kind: "legacy-conflict"; identities: readonly ProcessIdentity[] };
 
 export const OWNER_MARKER = ".bb-kit-owner.json";
 
@@ -135,14 +167,9 @@ export class InstanceStore {
       }
       const path = join(this.paths.execs, file);
       try {
-        const record = parseExec(readJson(path));
-        if (record.ownerToken !== ownerToken) {
-          throw new DevError(
-            "owner_mismatch",
-            `Exec record ${path} has another owner.`,
-            "Wait for the owner to remove the record.",
-          );
-        }
+        const record = readExec(path);
+        assertExecOwner(path, record, ownerToken);
+        if (record.kind === "singleton") assertSingletonSlot(path, record);
         if (processMatches(record.identity)) {
           active.push(record.identity);
         } else {
@@ -169,8 +196,96 @@ export class InstanceStore {
     return path;
   }
 
+  reconcileSingleton(ownerToken: string, expected: SingletonExecSpec): SingletonExecLookup {
+    const path = singletonExecPath(this.paths.execs, expected.cwd, expected.key);
+    if (existsSync(path)) {
+      const record = readExec(path);
+      assertExecOwner(path, record, ownerToken);
+      if (record.kind !== "singleton") {
+        throw new DevError(
+          "singleton_record_mismatch",
+          `Singleton slot ${path} contains an unkeyed exec record.`,
+          "Inspect the record before retrying the singleton command.",
+        );
+      }
+      assertSingletonMatch(path, record, expected);
+      if (processMatches(record.identity)) {
+        return { kind: "reused" };
+      }
+      unlinkSync(path);
+    }
+
+    const legacy: ProcessIdentity[] = [];
+    if (!existsSync(this.paths.execs)) {
+      return { kind: "vacant" };
+    }
+    for (const file of readdirSync(this.paths.execs)) {
+      if (!file.endsWith(".json")) continue;
+      const candidatePath = join(this.paths.execs, file);
+      if (candidatePath === path) continue;
+      const record = readExec(candidatePath);
+      assertExecOwner(candidatePath, record, ownerToken);
+      if (record.kind === "singleton") assertSingletonSlot(candidatePath, record);
+      if (!processMatches(record.identity)) {
+        unlinkSync(candidatePath);
+      } else if (record.kind === "unkeyed") {
+        legacy.push(record.identity);
+      }
+    }
+    return legacy.length === 0
+      ? { kind: "vacant" }
+      : { kind: "legacy-conflict", identities: legacy };
+  }
+
+  addSingleton(
+    ownerToken: string,
+    spec: SingletonExecSpec,
+    identity: ProcessIdentity,
+  ): SingletonExecHandle {
+    mkdirSync(this.paths.execs, { recursive: true });
+    const path = singletonExecPath(this.paths.execs, spec.cwd, spec.key);
+    const recordToken = randomUUID();
+    try {
+      writeExclusiveJson(path, {
+        kind: "singleton",
+        schemaVersion: 1,
+        ownerToken,
+        recordToken,
+        cwd: spec.cwd,
+        key: spec.key,
+        commandDigest: spec.commandDigest,
+        identity,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      if (isAlreadyExists(error)) {
+        throw new DevError(
+          "singleton_slot_busy",
+          `Singleton slot ${path} appeared while the instance lock was held.`,
+          "Inspect the instance lock and singleton record before retrying.",
+        );
+      }
+      throw error;
+    }
+    return { path, ownerToken, recordToken };
+  }
+
   removeExec(path: string): void {
     rmSync(path, { force: true });
+  }
+
+  removeSingleton(handle: SingletonExecHandle): void {
+    if (!existsSync(handle.path)) return;
+    const record = readExec(handle.path);
+    assertExecOwner(handle.path, record, handle.ownerToken);
+    if (record.kind !== "singleton") {
+      throw new DevError(
+        "singleton_record_mismatch",
+        `Singleton slot ${handle.path} contains an unkeyed exec record.`,
+        "Inspect the record before retrying cleanup.",
+      );
+    }
+    if (record.recordToken === handle.recordToken) unlinkSync(handle.path);
   }
 
   readOwner(): OwnerRecord {
@@ -197,7 +312,7 @@ export class InstanceStore {
     ) {
       return false;
     }
-    return this.activeExecs(ownerToken).length === 0;
+    return true;
   }
 
   private releaseLock(expected: LockRecord): void {
@@ -630,11 +745,98 @@ function parseLock(value: unknown): LockRecord {
 
 function parseExec(value: unknown): ExecRecord {
   const object = record(value, "exec");
-  return {
+  const base = {
     ownerToken: stringField(object, "ownerToken"),
     identity: parseIdentity(object["identity"]),
     createdAt: stringField(object, "createdAt"),
   };
+  if (object["kind"] === undefined) {
+    return { kind: "unkeyed", ...base };
+  }
+  const kind = stringField(object, "kind");
+  if (kind === "singleton" && object["schemaVersion"] === 1) {
+    return {
+      kind,
+      schemaVersion: 1,
+      ...base,
+      recordToken: stringField(object, "recordToken"),
+      cwd: stringField(object, "cwd"),
+      key: stringField(object, "key"),
+      commandDigest: stringField(object, "commandDigest"),
+    };
+  }
+  invalid("exec kind");
+}
+
+function readExec(path: string): ExecRecord {
+  try {
+    return parseExec(readJson(path));
+  } catch (error) {
+    if (error instanceof DevError && error.code === "owner_mismatch") throw error;
+    throw new DevError(
+      "ambiguous_exec",
+      `Cannot validate exec record ${path}.`,
+      "Inspect the record before retrying the lifecycle command.",
+    );
+  }
+}
+
+function assertExecOwner(path: string, record: ExecRecord, ownerToken: string): void {
+  if (record.ownerToken !== ownerToken) {
+    throw new DevError(
+      "owner_mismatch",
+      `Exec record ${path} has another owner.`,
+      "Wait for the owner to remove the record.",
+    );
+  }
+}
+
+function assertSingletonMatch(
+  path: string,
+  record: SingletonExecRecord,
+  expected: SingletonExecSpec,
+): void {
+  if (record.cwd !== expected.cwd || record.key !== expected.key) {
+    throw new DevError(
+      "singleton_key_mismatch",
+      `Singleton slot ${path} contains another full key.`,
+      "Inspect the singleton record before retrying.",
+    );
+  }
+  if (record.commandDigest !== expected.commandDigest) {
+    throw new DevError(
+      "singleton_command_mismatch",
+      `Singleton key ${record.key} already identifies another command.`,
+      "Stop the existing singleton command or choose another key.",
+    );
+  }
+}
+
+function assertSingletonSlot(path: string, record: SingletonExecRecord): void {
+  const expected = singletonExecPath(dirname(path), record.cwd, record.key);
+  if (path !== expected) {
+    throw new DevError(
+      "singleton_key_mismatch",
+      `Singleton record ${path} does not match its full key.`,
+      "Inspect the singleton record before retrying.",
+    );
+  }
+}
+
+function singletonExecPath(execs: string, cwd: string, key: string): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([cwd, key]))
+    .digest("hex");
+  return join(execs, `singleton-${digest}.json`);
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "EEXIST"
+  );
 }
 
 function parseIdentity(value: unknown): ProcessIdentity {
