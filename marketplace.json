@@ -184,6 +184,26 @@
           "tagPrefix": "novnc/"
         }
       }
+    },
+    {
+      "id": "vimium",
+      "displayName": "Vimium",
+      "description": "Vimium-style f-key link hints: press f, type the hint, click without the mouse.",
+      "icon": {
+        "url": "plugins/vimium/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/vimium",
+          "range": "*",
+          "tagPrefix": "vimium/"
+        }
+      }
     }
   ]
 }
