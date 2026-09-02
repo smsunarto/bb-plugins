@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -25,15 +25,13 @@ import { useSettledThreads } from "@/hooks/use-settled-threads";
 import { mergeSettledThreads, pendingSettledCount } from "@/lib/settled-threads";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
-  type ActiveSectionOrder,
   filterByProject,
   hideChildrenOfVisibleParents,
   nextThreadIdAfterSettle,
   partitionActiveSections,
   partitionPinned,
-  reconcileActiveSectionOrder,
   searchThreadsByTitle,
-  sortByCreatedAtDescending,
+  sortByUpdatedAtDescending,
   visibleInboxThreads,
 } from "@/lib/inbox";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
@@ -44,8 +42,7 @@ const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
 const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
   maskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
-  WebkitMaskImage:
-    "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
+  WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
 };
 
 /**
@@ -178,23 +175,6 @@ export function ThreadInbox({
     [projects],
   );
 
-  // Entrance order observes the whole active, unpinned set. Project scope,
-  // search, and child hiding are presentation filters; applying them here
-  // would make hiding and showing a row look like a new section entrance.
-  const activeUnpinned = useMemo(
-    () =>
-      visibleInboxThreads(threads, lifecycle.parkedThreadIds).filter(
-        (thread) => !thread.isPinned && lifecycle.shelfFor(thread) === "active",
-      ),
-    [lifecycle, threads],
-  );
-  const activeSectionOrderRef = useRef<ActiveSectionOrder | null>(null);
-  const activeSectionOrder = reconcileActiveSectionOrder(
-    activeSectionOrderRef.current,
-    activeUnpinned,
-  );
-  activeSectionOrderRef.current = activeSectionOrder;
-
   const { pinned, nextAction, waiting, snoozed, settled } = useMemo(() => {
     const scoped = filterByProject(
       // Settling archives the thread in bb, so the parked set is what keeps
@@ -215,17 +195,14 @@ export function ThreadInbox({
       else active.push(thread);
     }
     const split = partitionPinned(active);
-    const activeSections = partitionActiveSections(split.inbox, activeSectionOrder);
+    const activeSections = partitionActiveSections(split.inbox);
     return {
-      pinned: sortByCreatedAtDescending(split.pinned),
+      pinned: sortByUpdatedAtDescending(split.pinned),
       ...activeSections,
-      // Soonest wake first: "what comes back next" is the shelf's question.
-      snoozed: [...onSnoozeShelf].sort(
-        (left, right) => (lifecycle.wakeAtFor(left) ?? 0) - (lifecycle.wakeAtFor(right) ?? 0),
-      ),
-      settled: sortByCreatedAtDescending(onSettledShelf),
+      snoozed: sortByUpdatedAtDescending(onSnoozeShelf),
+      settled: sortByUpdatedAtDescending(onSettledShelf),
     };
-  }, [activeSectionOrder, lifecycle, scope, searchQuery, threads]);
+  }, [lifecycle, scope, searchQuery, threads]);
 
   // The settled shelf's rows arrive on a second and slower read, while the
   // lifecycle rows naming those same threads are already warm. Counting them is
@@ -311,10 +288,7 @@ export function ThreadInbox({
       </div>
 
       <div
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-1.5",
-          isCompactViewport ? "pb-8" : "pb-2",
-        )}
+        className={cn("min-h-0 flex-1 overflow-y-auto px-1.5", isCompactViewport ? "pb-8" : "pb-2")}
         // bb's compact footer overlays the list edge. Fade content into that
         // surface, while the matching padding lets the final row scroll clear.
         style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}

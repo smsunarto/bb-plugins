@@ -4,7 +4,7 @@
 
 - GTD Sidebar choice in Appearance settings.
 - Inbox, Next Action, and Waiting sections.
-- Ordering by section entrance.
+- Most recently updated threads first in every section.
 
 ## How to get to it (user POV)
 
@@ -18,7 +18,7 @@ Return to the main surface. The sidebar groups threads under the GTD sections.
 agent-browser --session "$BROWSER_SESSION" find role link click --name "Settings (⌘ ,)"
 agent-browser --session "$BROWSER_SESSION" find role link click --name "Appearance"
 agent-browser --session "$BROWSER_SESSION" find role button click --name "Sidebar thread list"
-agent-browser --session "$BROWSER_SESSION" find role menuitem click --name "GTD Sidebar (inbox) Next Action and Waiting, ordered by section entrance."
+agent-browser --session "$BROWSER_SESSION" find role menuitem click --name "GTD Sidebar (inbox) Next Action and Waiting, with recent threads first."
 ```
 
 Capture the selected setting. Then return to the main surface and capture the grouped sidebar.

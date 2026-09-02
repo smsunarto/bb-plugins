@@ -1,8 +1,8 @@
 // @smsunarto/bb-plugin-gtd-sidebar — an action-oriented replacement for bb's
 // sidebar thread list, and a reference for `app.slots.experimental_threadList`.
 //
-// Active threads are grouped by who acts next. Each section holds entrance
-// order, oldest first, so a new handoff always arrives at the bottom.
+// Active threads are grouped by who acts next. Every section sorts by its most
+// recently updated thread.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
@@ -13,7 +13,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "inbox",
     title: "GTD Sidebar (inbox)",
-    description: "Next Action and Waiting, ordered by section entrance.",
+    description: "Next Action and Waiting, with recent threads first.",
     component: ThreadInbox,
   });
 

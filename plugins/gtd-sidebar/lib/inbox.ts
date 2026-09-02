@@ -1,16 +1,15 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { isThreadWorking } from "./lifecycle.ts";
 
-/**
- * The static sort for user-controlled shelves: newest thread on top.
- *
- * Ties break on id so the order is total and stable across renders.
- */
-export function sortByCreatedAtDescending<
-  T extends { readonly id: string; readonly createdAt: number },
+/** Most recently updated thread first for every sidebar section. */
+export function sortByUpdatedAtDescending<
+  T extends { readonly id: string; readonly createdAt: number; readonly updatedAt: number },
 >(threads: readonly T[]): T[] {
   return [...threads].sort(
-    (left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id),
+    (left, right) =>
+      right.updatedAt - left.updatedAt ||
+      right.createdAt - left.createdAt ||
+      left.id.localeCompare(right.id),
   );
 }
 
@@ -27,73 +26,8 @@ export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
   return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
 }
 
-interface ActiveSectionOrderEntry {
-  section: ActiveSection;
-  sequence: number;
-}
-
-/**
- * Mounted-list entrance order for the two active sections.
- *
- * The SDK has no historical section-entry timestamp. `updatedAt` is therefore
- * only the deterministic first-mount seed and batch tie-breaker; after that,
- * sequence changes only when a thread enters a section.
- */
-export interface ActiveSectionOrder {
-  entries: ReadonlyMap<string, ActiveSectionOrderEntry>;
-  nextSequence: number;
-}
-
-function compareInitialEntrance(left: PluginSidebarThread, right: PluginSidebarThread): number {
-  return (
-    left.updatedAt - right.updatedAt ||
-    left.createdAt - right.createdAt ||
-    left.id.localeCompare(right.id)
-  );
-}
-
-/**
- * Reconcile every active, unpinned thread against its mounted-list order.
- *
- * Callers must pass the unfiltered active set. Project scope, search, and child
- * hiding affect presentation only and must not look like section exits.
- */
-export function reconcileActiveSectionOrder(
-  current: ActiveSectionOrder | null,
-  threads: readonly PluginSidebarThread[],
-): ActiveSectionOrder {
-  const entries = new Map<string, ActiveSectionOrderEntry>();
-  const entrants: PluginSidebarThread[] = [];
-  let nextSequence = current?.nextSequence ?? 0;
-
-  for (const thread of threads) {
-    const section = activeSectionFor(thread);
-    const existing = current?.entries.get(thread.id);
-    if (existing?.section === section) entries.set(thread.id, existing);
-    else entrants.push(thread);
-  }
-
-  entrants.sort(compareInitialEntrance);
-  for (const thread of entrants) {
-    entries.set(thread.id, {
-      section: activeSectionFor(thread),
-      sequence: nextSequence++,
-    });
-  }
-
-  return { entries, nextSequence };
-}
-
-/**
- * Split visible active threads and retain their mounted entrance order.
- *
- * Next Action keeps its oldest entrant first. Waiting puts its newest entrant
- * first so the work the user most recently handed off stays at the top.
- */
-export function partitionActiveSections(
-  threads: readonly PluginSidebarThread[],
-  order: ActiveSectionOrder,
-): {
+/** Split active threads by owner and sort both sections newest first. */
+export function partitionActiveSections(threads: readonly PluginSidebarThread[]): {
   nextAction: PluginSidebarThread[];
   waiting: PluginSidebarThread[];
 } {
@@ -102,13 +36,10 @@ export function partitionActiveSections(
   for (const thread of threads) {
     (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(thread);
   }
-  const byEntrance = (left: PluginSidebarThread, right: PluginSidebarThread) =>
-    (order.entries.get(left.id)?.sequence ?? Number.MAX_SAFE_INTEGER) -
-      (order.entries.get(right.id)?.sequence ?? Number.MAX_SAFE_INTEGER) ||
-    left.id.localeCompare(right.id);
-  nextAction.sort(byEntrance);
-  waiting.sort((left, right) => byEntrance(right, left));
-  return { nextAction, waiting };
+  return {
+    nextAction: sortByUpdatedAtDescending(nextAction),
+    waiting: sortByUpdatedAtDescending(waiting),
+  };
 }
 
 export function threadDisplayTitle(thread: PluginSidebarThread): string {

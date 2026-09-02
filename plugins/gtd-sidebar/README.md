@@ -22,12 +22,7 @@
 GTD Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
 
 Active threads split into **Next Action** when the user can act and **Waiting** while
-the agent works. Each section is oldest first. A thread that enters a section goes
-to its bottom and holds that place until its next handoff.
-
-While the sidebar stays mounted, this is exact entrance order. After an app reload,
-bb does not provide historical section-entry times, so existing rows seed oldest
-first from their last update time.
+the agent works. Every section shows the most recently updated thread first.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
 **settle** it when you are done. Both shelves collapse to one counted header.
@@ -80,10 +75,13 @@ disable the plugin.
 ### Active and parked sections
 
 - **Pinned** — the user's explicit priority, kept in its own shelf above active work.
-- **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet. The oldest handoff is first.
-- **Waiting** — foreground or background agent work is live. The oldest wait is first.
+- **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet.
+- **Waiting** — foreground or background agent work is live.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 - **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
+
+Each section sorts the most recently updated threads first. The Snoozed and Settled
+order is visible when you expand those shelves.
 
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
