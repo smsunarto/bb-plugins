@@ -1,0 +1,63 @@
+# Flaky test triage for bb-plugins CI
+
+Fourteen suites failed at least once in the last 200 `main` runs. Three of them
+account for 78% of the noise and all three touch the shared dev-instance port.
+
+<Row gap="md">
+  <Stat label="Runs sampled" value="200" caption="main, last 9 days" />
+  <Stat label="Flaky suites" value="14" delta="+3" tone="warning" />
+  <Stat label="CI hours lost" value="31.4" caption="rerun time only" />
+</Row>
+
+<Callout tone="warning" title="One root cause, three symptoms">
+  Every top offender calls `dev:setup` without releasing port 4317. The failures look unrelated in
+  the log because each suite times out on a different assertion.
+</Callout>
+
+<BarChart
+  title="Failure count by suite"
+  xAxisLabel="Suite"
+  yAxisLabel="Failures per 200 runs"
+  categories={["dev-instance", "screenshots", "gtd-sidebar", "notify", "amp"]}
+  series={[
+    { name: "timeout", data: [41, 33, 22, 6, 4] },
+    { name: "assertion", data: [3, 2, 9, 11, 7] },
+  ]}
+  caption="Source: gh run list --branch main --limit 200"
+/>
+
+<Table
+  caption="Top offenders, ranked by rerun cost"
+  headers={["Suite", "Fail rate", "Mean rerun", "Owner"]}
+  align={["left", "right", "right", "left"]}
+  rows={[
+    ["dev-instance", "22%", "4m12s", "scott"],
+    ["screenshots", "17%", "3m05s", "scott"],
+    ["gtd-sidebar", "15%", "1m48s", "scott"],
+  ]}
+  rowTone={["danger", "warning", null]}
+/>
+
+## The fix
+
+The teardown handler registers after `bootstrap`, so a throw inside `bootstrap`
+leaks the claim. The call site is linked below.
+
+<FileLink path="scripts/bb-dev-cli" line={87} label="scripts/bb-dev-cli:87" />
+
+<Card title="scripts/bb-dev-cli" collapsible>
+<Toggle id="show-patch" label="Show the proposed patch" default={true}>
+<DiffView path="scripts/bb-dev-cli">
+```diff
+@@ -84,7 +84,9 @@
+   const port = await claimPort();
+-  await bootstrap(port);
++  try {
++    await bootstrap(port);
++  } finally {
++    release(port);
++  }
+```
+</DiffView>
+</Toggle>
+</Card>

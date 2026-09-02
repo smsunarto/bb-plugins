@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ArtboardIcon,
   BellIcon,
   ChatFeedbackIcon,
   Layers01Icon,
@@ -150,6 +151,10 @@ const customIcons = {
   agentation: {
     name: "ChatFeedback",
     nodes: ChatFeedbackIcon,
+  },
+  canvas: {
+    name: "Artboard",
+    nodes: ArtboardIcon,
   },
   // Amp ships its own wordmark glyph, so this entry renders Sourcegraph's mark
   // rather than a stand-in from the icon set. `src/amp-brand.ts` is the single
