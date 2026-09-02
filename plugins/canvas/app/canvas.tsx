@@ -240,9 +240,11 @@ function CanvasFrame(props: {
       ) : null}
       <ProblemBar diagnostics={diagnostics} />
       <div
-        className={`min-h-0 flex-1 overflow-auto px-4 py-3 text-foreground ${stale || unreadable !== null ? "opacity-60" : ""}`}
+        className={`canvas-scroll min-h-0 flex-1 overflow-auto ${stale || unreadable !== null ? "opacity-60" : ""}`}
       >
-        <Nodes nodes={showing.nodes} />
+        <div className="canvas-prose">
+          <Nodes nodes={showing.nodes} />
+        </div>
       </div>
     </div>
   );

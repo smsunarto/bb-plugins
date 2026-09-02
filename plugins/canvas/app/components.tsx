@@ -45,6 +45,17 @@ export const toneText: Readonly<Record<Tone, string>> = {
   danger: "text-red-600 dark:text-red-400",
 };
 
+/* Table rows carry a tone across a whole line of body text, so they use a
+ * quieter tint than a Pill or Callout title. A saturated accent that reads as
+ * emphasis on a short label reads as a rainbow across four table rows. */
+const toneRowText: Readonly<Record<Tone, string>> = {
+  neutral: "",
+  info: "text-sky-900 dark:text-sky-200/80",
+  success: "text-emerald-900 dark:text-emerald-200/80",
+  warning: "text-amber-900 dark:text-amber-200/80",
+  danger: "text-red-900 dark:text-red-200/80",
+};
+
 const toneSurface: Readonly<Record<Tone, string>> = {
   neutral: "border-border bg-muted/40",
   info: "border-sky-500/40 bg-sky-500/10",
@@ -74,7 +85,7 @@ function Row(props: CanvasComponentProps): ReactElement {
   }[align];
   return (
     <div
-      className={`my-3 flex ${wrap ? "flex-wrap" : ""} ${gapClass[gap]} ${alignClass} [&>*]:min-w-32 [&>*]:flex-1`}
+      className={`canvas-block flex ${wrap ? "flex-wrap" : ""} ${gapClass[gap]} ${alignClass} [&>*]:min-w-32 [&>*]:flex-1 [&>*]:[overflow-wrap:anywhere]`}
     >
       {props.renderNodes(props.nodes)}
     </div>
@@ -87,7 +98,7 @@ function Grid(props: CanvasComponentProps): ReactElement {
     gap?: "sm" | "md" | "lg";
   }>(props.props);
   return (
-    <div className={`my-3 grid ${columnsClass[columns]} ${gapClass[gap]}`}>
+    <div className={`canvas-block grid ${columnsClass[columns]} ${gapClass[gap]}`}>
       {props.renderNodes(props.nodes)}
     </div>
   );
@@ -101,18 +112,18 @@ function Collapsible(props: {
   readonly children: ReactNode;
 }): ReactElement {
   const frame = props.bordered ? "rounded-md border border-border bg-background" : "";
-  const headerClass = `text-sm font-medium text-foreground ${props.bordered ? "border-b border-border px-3 py-2" : "py-1"}`;
-  const bodyClass = props.bordered ? "px-3 py-2" : "";
+  const headerClass = `text-[0.9em] font-medium text-foreground ${props.bordered ? "border-b border-border px-3 py-2" : "py-1"}`;
+  const bodyClass = props.bordered ? "canvas-nested px-3 py-2" : "canvas-nested";
   if (props.collapsible) {
     return (
-      <details className={`my-3 ${frame}`} open={props.defaultOpen}>
+      <details className={`canvas-block ${frame}`} open={props.defaultOpen}>
         <summary className={`cursor-pointer select-none ${headerClass}`}>{props.title}</summary>
         <div className={bodyClass}>{props.children}</div>
       </details>
     );
   }
   return (
-    <section className={`my-3 ${frame}`}>
+    <section className={`canvas-block ${frame}`}>
       {props.title !== undefined ? <h3 className={`m-0 ${headerClass}`}>{props.title}</h3> : null}
       <div className={bodyClass}>{props.children}</div>
     </section>
@@ -161,11 +172,13 @@ function Section(props: CanvasComponentProps): ReactElement {
 function Callout(props: CanvasComponentProps): ReactElement {
   const { tone = "neutral", title } = typed<{ tone?: Tone; title?: string }>(props.props);
   return (
-    <aside className={`my-3 rounded-md border px-3 py-2 ${toneSurface[tone]}`} role="note">
+    <aside className={`canvas-block rounded-md border px-3 py-2 ${toneSurface[tone]}`} role="note">
       {title !== undefined ? (
-        <p className={`m-0 mb-1 text-sm font-medium ${toneText[tone]}`}>{title}</p>
+        <p className={`m-0 mb-1 text-[0.875em] font-semibold ${toneText[tone]}`}>{title}</p>
       ) : null}
-      <div className="text-sm text-foreground">{props.renderNodes(props.nodes)}</div>
+      <div className="canvas-nested text-[0.875em] text-foreground">
+        {props.renderNodes(props.nodes)}
+      </div>
     </aside>
   );
 }
@@ -186,13 +199,17 @@ function Stat(props: CanvasComponentProps): ReactElement {
   }>(props.props);
   return (
     <div className="rounded-md border border-border bg-background px-3 py-2">
-      <p className="m-0 text-xs text-muted-foreground">{label}</p>
+      <p className="m-0 text-[0.75em] text-muted-foreground">{label}</p>
       <p className="m-0 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold text-foreground">{value}</span>
-        {delta !== undefined ? <span className={`text-xs ${toneText[tone]}`}>{delta}</span> : null}
+        <span className="text-[1.5em] font-semibold leading-tight tracking-[-0.015em] text-foreground">
+          {value}
+        </span>
+        {delta !== undefined ? (
+          <span className={`text-[0.75em] ${toneText[tone]}`}>{delta}</span>
+        ) : null}
       </p>
       {caption !== undefined ? (
-        <p className="m-0 text-xs text-muted-foreground">{caption}</p>
+        <p className="m-0 text-[0.75em] text-muted-foreground">{caption}</p>
       ) : null}
     </div>
   );
@@ -202,7 +219,7 @@ function Pill(props: CanvasComponentProps): ReactElement {
   const { label, tone = "neutral" } = typed<{ label: string; tone?: Tone }>(props.props);
   return (
     <span
-      className={`my-1 inline-block rounded-full border px-2 py-0.5 text-xs ${toneSurface[tone]} ${toneText[tone]}`}
+      className={`my-1 inline-block rounded-full border px-2 py-0.5 text-[0.75em] ${toneSurface[tone]} ${toneText[tone]}`}
     >
       {label}
     </span>
@@ -230,17 +247,19 @@ function Table(props: CanvasComponentProps): ReactElement {
   const columns = keyed(headers, (header) => header);
   const keyedRows = keyed(rows, (row) => row.map((cell) => String(cell)).join("\u0000"));
   return (
-    <div className="my-3 overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+    <div className="canvas-block overflow-x-auto">
+      <table className="w-full border-collapse text-[0.875em] leading-[1.3]">
         {caption !== undefined ? (
-          <caption className="mb-1 text-left text-xs text-muted-foreground">{caption}</caption>
+          <caption className="mb-1 text-left text-[0.75em] text-muted-foreground">
+            {caption}
+          </caption>
         ) : null}
         <thead>
-          <tr className="border-b border-border">
+          <tr className="border-b [border-color:var(--canvas-prose-rule)]">
             {columns.map((column, index) => (
               <th
                 key={column.key}
-                className={`px-2 py-1 font-medium text-muted-foreground ${alignClass(index)}`}
+                className={`py-[0.25em] pl-0 pr-[0.625em] font-semibold text-foreground ${alignClass(index)}`}
               >
                 {column.item}
               </th>
@@ -254,10 +273,13 @@ function Table(props: CanvasComponentProps): ReactElement {
             return (
               <tr
                 key={row.key}
-                className={`border-b border-border ${stripe} ${tone === null ? "" : toneText[tone]}`}
+                className={`border-b [border-color:var(--canvas-prose-rule)] ${stripe} ${tone === null ? "" : toneRowText[tone]}`}
               >
                 {columns.map((column, cellIndex) => (
-                  <td key={column.key} className={`px-2 py-1 ${alignClass(cellIndex)}`}>
+                  <td
+                    key={column.key}
+                    className={`py-[0.25em] pl-0 pr-[0.625em] ${alignClass(cellIndex)}`}
+                  >
                     {row.item[cellIndex] ?? ""}
                   </td>
                 ))}
@@ -275,7 +297,7 @@ function DiffView(props: CanvasComponentProps): ReactElement {
     props.props,
   );
   return (
-    <div className="my-3 overflow-hidden rounded-md border border-border">
+    <div className="canvas-block overflow-hidden rounded-md border border-border">
       <Diff patch={patch} path={path} view={view} />
     </div>
   );
@@ -286,7 +308,7 @@ function Source(props: CanvasComponentProps): ReactElement {
     props.props,
   );
   return (
-    <div className="my-3 overflow-hidden rounded-md border border-border">
+    <div className="canvas-block overflow-hidden rounded-md border border-border">
       <SourceCode content={content} path={path} />
     </div>
   );
@@ -303,14 +325,14 @@ function FileLinkComponent(props: CanvasComponentProps): ReactElement {
   const canvas = useCanvas();
   const text = label ?? (line === undefined ? path : `${path}:${line}`);
   if (canvas.target === null) {
-    return <code className="text-sm text-muted-foreground">{text}</code>;
+    return <code className="text-muted-foreground">{text}</code>;
   }
   const target = { ...canvas.target, path: resolveLinkPath(canvas.path, canvas.source.kind, path) };
   return (
     <FileLink
       target={target}
       location={line === undefined ? null : { kind: "line", line, column: null }}
-      className="text-sm text-primary underline underline-offset-2"
+      className="text-primary underline [text-decoration-thickness:from-font] [text-underline-offset:0.12em]"
     >
       {text}
     </FileLink>
@@ -341,8 +363,8 @@ function Toggle(props: CanvasComponentProps): ReactElement {
   const stored = state.values[id];
   const on = typeof stored === "boolean" ? stored : fallback;
   return (
-    <div className="my-3">
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+    <div className="canvas-block">
+      <label className="flex cursor-pointer items-center gap-2 text-[0.875em] text-foreground">
         <input
           type="checkbox"
           checked={on}
@@ -350,7 +372,7 @@ function Toggle(props: CanvasComponentProps): ReactElement {
         />
         {label}
       </label>
-      {on ? <div className="mt-2">{props.renderNodes(props.nodes)}</div> : null}
+      {on ? <div className="canvas-nested mt-2">{props.renderNodes(props.nodes)}</div> : null}
     </div>
   );
 }
@@ -374,10 +396,10 @@ function Select(props: CanvasComponentProps): ReactElement {
       ? stored
       : (fallback ?? options[0] ?? "");
   return (
-    <label className="my-3 flex items-center gap-2 text-sm text-foreground">
+    <label className="canvas-block flex items-center gap-2 text-[0.875em] text-foreground">
       {label}
       <select
-        className="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
+        className="rounded-md border border-border bg-background px-2 py-1 text-[0.875em] text-foreground"
         value={selected}
         onChange={(event) => state.set(id, event.target.value)}
       >
@@ -408,7 +430,7 @@ function Tabs(props: CanvasComponentProps): ReactElement {
   const active = tabs[labels.indexOf(selected)];
   const others = props.nodes.filter((node) => node.kind === "diagnostic");
   return (
-    <div className="my-3">
+    <div className="canvas-block">
       <div role="tablist" className="flex gap-1 border-b border-border">
         {labels.map((label) => (
           <button
@@ -416,7 +438,7 @@ function Tabs(props: CanvasComponentProps): ReactElement {
             type="button"
             role="tab"
             aria-selected={label === selected}
-            className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
+            className={`-mb-px border-b-2 px-3 py-1.5 text-[0.875em] ${
               label === selected
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -427,7 +449,7 @@ function Tabs(props: CanvasComponentProps): ReactElement {
           </button>
         ))}
       </div>
-      <div role="tabpanel" className="pt-2">
+      <div role="tabpanel" className="canvas-nested pt-2">
         {active !== undefined && active.kind === "component"
           ? props.renderNodes(active.children)
           : null}
@@ -450,12 +472,12 @@ function Checklist(props: CanvasComponentProps): ReactElement {
       ? (stored as Readonly<Record<string, JsonValue>>)
       : {};
   return (
-    <ul className="my-3 flex list-none flex-col gap-1 p-0">
+    <ul className="canvas-block flex list-none flex-col gap-1 p-0">
       {items.map((item) => {
         const done = checked[item.id] === true;
         return (
           <li key={item.id}>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <label className="flex cursor-pointer items-center gap-2 text-[0.875em] text-foreground">
               <input
                 type="checkbox"
                 checked={done}
@@ -483,11 +505,11 @@ function Todos(props: CanvasComponentProps): ReactElement {
     props.props,
   );
   return (
-    <ul className="my-3 flex list-none flex-col gap-1 p-0">
+    <ul className="canvas-block flex list-none flex-col gap-1 p-0">
       {items.map((item) => {
         const glyph = todoGlyph[item.status];
         return (
-          <li key={item.id} className="flex items-center gap-2 text-sm text-foreground">
+          <li key={item.id} className="flex items-center gap-2 text-[0.875em] text-foreground">
             <span
               aria-label={glyph.title}
               title={glyph.title}

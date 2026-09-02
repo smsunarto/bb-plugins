@@ -507,3 +507,17 @@ diffs-container {
   --diffs-dark-bg: #181818;
   --diffs-dark: #e3e3dd;
 }
+
+/* The canvas plugin renders `.canvas-mdx` prose on the Cursor theme's rendered
+ * Markdown contract. Its stylesheet exposes these hooks so a theme can supply
+ * the accent hues; without them it falls back to bb's neutral tokens. */
+.dark .canvas-prose {
+  --canvas-prose-heading: #e3e3dd;
+  --canvas-prose-strong: #51dae9;
+  --canvas-prose-link: #51dae9;
+  --canvas-prose-link-hover: #75f0ff;
+  --canvas-prose-marker: #7c7865;
+  --canvas-prose-quote-rule: #fe5d86;
+  --canvas-prose-rule: #e3e3dd11;
+  --canvas-prose-code-well: #262626;
+}

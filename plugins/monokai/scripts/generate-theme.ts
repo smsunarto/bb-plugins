@@ -577,6 +577,22 @@ const requiredRules: Array<{
       "--diffs-dark": palette.text.ink,
     },
   },
+  {
+    selector: ".dark .canvas-prose",
+    declarations: {
+      // Headings are display-size text, not code. The syntax entity green is
+      // tuned for dense tokens and reads as neon at 1.5rem, so prose headings
+      // take the strongest ink and leave links as the only colored prose.
+      "--canvas-prose-heading": palette.text.ink,
+      "--canvas-prose-strong": palette.code.type,
+      "--canvas-prose-link": palette.code.type,
+      "--canvas-prose-link-hover": palette.contentTint.cyan,
+      "--canvas-prose-marker": palette.contentTint.comment,
+      "--canvas-prose-quote-rule": palette.code.keyword,
+      "--canvas-prose-rule": roleValues["text.ink07"],
+      "--canvas-prose-code-well": palette.ground.raised,
+    },
+  },
 ];
 
 function assertExpected(

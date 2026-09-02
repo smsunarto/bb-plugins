@@ -1,0 +1,268 @@
+/*
+ * Rendered-prose typography for the canvas opener. It mirrors the rendered
+ * Markdown layer of the smsunarto-theme contract: a 700px border-box measure,
+ * 17px body with 1.5 leading, compact headings, 1.75rem block rhythm, and
+ * fenced code that breaks out of the measure to fit 100 mono columns.
+ *
+ * Hues stay on host tokens so the canvas reads on any bb theme. A theme can
+ * recolor the prose by setting the --canvas-prose-* properties on
+ * .canvas-prose; the Monokai plugin does this for the contract palette.
+ *
+ * Plain rules here are unlayered, so they outrank the host renderer's
+ * Tailwind utilities without !important.
+ */
+
+.canvas-scroll {
+  container-type: inline-size;
+}
+
+.canvas-prose {
+  --canvas-prose-font:
+    "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --canvas-prose-heading: var(--foreground);
+  --canvas-prose-strong: var(--foreground);
+  --canvas-prose-link: var(--primary);
+  --canvas-prose-link-hover: var(--primary);
+  --canvas-prose-marker: var(--muted-foreground);
+  --canvas-prose-quote-rule: var(--border);
+  --canvas-prose-rule: var(--border-seam, var(--border));
+  --canvas-prose-code-well: var(--secondary);
+
+  box-sizing: border-box;
+  margin: 0 auto;
+  max-width: 700px;
+  padding: 48px clamp(24px, 4cqw, 56px) 96px;
+  color: var(--foreground);
+  font-family: var(--canvas-prose-font);
+  font-size: 17px;
+  font-kerning: normal;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+}
+
+.canvas-prose [data-markdown-preview] {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.canvas-prose > [data-markdown-preview]:first-child > :first-child {
+  margin-top: 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(h1, h2, h3, h4) {
+  color: var(--canvas-prose-heading);
+  font-family: inherit;
+  margin: 1.75rem 0;
+}
+
+.canvas-prose [data-markdown-preview] h1 {
+  font-size: 1.125em;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.canvas-prose [data-markdown-preview] h2 {
+  font-size: 1.05em;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  line-height: 1.2;
+}
+
+.canvas-prose [data-markdown-preview] h3 {
+  font-size: 1em;
+  font-weight: 500;
+  letter-spacing: -0.008em;
+  line-height: 1.3;
+}
+
+.canvas-prose [data-markdown-preview] h4 {
+  font-size: 0.9em;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.canvas-prose [data-markdown-preview] p {
+  margin: 1.75rem 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(ul, ol) {
+  margin: 1.75rem 0;
+  padding-inline-start: 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(ul, ol) > li {
+  margin: 0 0 0 30px;
+}
+
+.canvas-prose [data-markdown-preview] :is(ol ol, ul ul, ol ul, ul ol) > li {
+  margin-inline-start: 32px;
+}
+
+.canvas-prose [data-markdown-preview] li + li {
+  margin-top: 0.075em;
+}
+
+.canvas-prose [data-markdown-preview] li > p {
+  margin: 0;
+}
+
+.canvas-prose [data-markdown-preview] li > :is(ul, ol) {
+  margin: 0;
+}
+
+.canvas-prose [data-markdown-preview] li::marker {
+  color: var(--canvas-prose-marker);
+}
+
+.canvas-prose [data-markdown-preview] strong {
+  color: var(--canvas-prose-strong);
+  font-weight: 600;
+}
+
+.canvas-prose [data-markdown-preview] em {
+  color: color-mix(in srgb, currentColor 84%, transparent);
+}
+
+.canvas-prose [data-markdown-preview] a {
+  color: var(--canvas-prose-link);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.12em;
+}
+
+.canvas-prose [data-markdown-preview] a:hover {
+  color: var(--canvas-prose-link-hover);
+}
+
+.canvas-prose [data-markdown-preview] blockquote {
+  border-left: 1px solid var(--canvas-prose-quote-rule);
+  color: var(--muted-foreground);
+  margin: 1rem 0;
+  padding: 0 0 0 1.1em;
+}
+
+.canvas-prose [data-markdown-preview] blockquote > :first-child {
+  margin-top: 0;
+}
+
+.canvas-prose [data-markdown-preview] blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(code, pre) {
+  font-family: var(--font-mono);
+}
+
+.canvas-prose [data-markdown-preview] code {
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+
+.canvas-prose [data-markdown-preview] :not(pre) > code {
+  background: var(--canvas-prose-code-well);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15em 0.3em;
+}
+
+/* The host renderer wraps each fenced block in a div that carries the
+ * language label, wrap toggle, and copy button. The breakout applies to that
+ * wrapper so the chrome travels with the code. Its font is set to the code
+ * font so 100ch measures mono columns. */
+.canvas-prose [data-markdown-preview] :where(div):has(> pre.bb-code-highlight) {
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  left: 50%;
+  line-height: 19.5px;
+  margin: 1rem 0;
+  max-width: none;
+  position: relative;
+  transform: translateX(-50%);
+  width: min(calc(100ch + 34px), calc(100cqw - 64px));
+}
+
+.canvas-prose [data-markdown-preview] pre.bb-code-highlight {
+  margin: 0;
+  padding: 4px 17px 12.75px;
+  word-break: normal;
+}
+
+.canvas-prose [data-markdown-preview] pre code {
+  font-size: inherit;
+  line-height: inherit;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* The host renderer breaks Markdown tables out of the measure with inline
+ * width and margin, so !important is the only handle. The theme keeps tables
+ * at the prose measure; wide tables scroll inside the host's inner wrapper.
+ * The canvas Table component is styled in components.tsx on the same scale. */
+.canvas-prose [data-markdown-preview] :where(div):has(> :where(div) > table) {
+  justify-content: flex-start;
+  margin: 1.75rem 0;
+  margin-inline: 0 !important;
+  width: 100% !important;
+}
+
+.canvas-prose [data-markdown-preview] table {
+  border: 0;
+  border-collapse: collapse;
+  border-radius: 0;
+  font-size: 0.875em;
+  line-height: 1.3;
+}
+
+.canvas-prose [data-markdown-preview] thead {
+  background: transparent;
+}
+
+.canvas-prose [data-markdown-preview] :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--canvas-prose-rule);
+  padding: 0.25em 0.625em 0.25em 0;
+}
+
+.canvas-prose [data-markdown-preview] th {
+  color: inherit;
+  font-weight: 600;
+}
+
+.canvas-prose [data-markdown-preview] hr {
+  border-color: var(--canvas-prose-rule);
+  margin: 1.75rem 0;
+}
+
+/* Block components share the prose rhythm at the top level. */
+.canvas-block {
+  margin-block: 1.75rem;
+}
+
+/* Prose nested inside a Card, Section, Callout, Toggle, or Tabs panel uses a
+ * compact rhythm so the container's own padding frames it. */
+.canvas-nested [data-markdown-preview] :is(h1, h2, h3, h4, p, ul, ol, blockquote, hr) {
+  margin-block: 0.75em;
+}
+
+.canvas-nested [data-markdown-preview] :where(div):has(> :where(div) > table) {
+  margin-block: 0.75em;
+}
+
+.canvas-nested .canvas-block {
+  margin-block: 0.75rem;
+}
+
+.canvas-nested > [data-markdown-preview] > :first-child {
+  margin-top: 0;
+}
+
+.canvas-nested > [data-markdown-preview]:last-child > :last-child {
+  margin-bottom: 0;
+}
