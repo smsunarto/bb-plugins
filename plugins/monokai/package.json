@@ -65,7 +65,7 @@
   ],
   "dependencies": {},
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.24",
+    "@get-bb/plugin-sdk": "0.4.34",
     "@storybook/react-vite": "10.5.7",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",

@@ -6,8 +6,8 @@
  * `prepareBbForScreenshots` already enforces plugin enablement and the theme on
  * every capture run, so this covers what preflight cannot: it installs the
  * workspace plugins (preflight only errors and prints the commands), returns
- * plugin settings to their declared defaults, and pins the experiment that
- * gates the onboarding overlay.
+ * plugin settings to their declared defaults, and pins the release's
+ * experiment baselines.
  *
  * Idempotent by design — running it twice is how you confirm it converged, and
  * it is the first thing to run after moving the worktree, because the instance
@@ -42,7 +42,6 @@ export const BB_DEV_EXPERIMENTS: Readonly<Record<string, boolean>> = {
   changelogPreview: false,
   editMessages: true,
   mobileApp: false,
-  providerSessionReaping: false,
   timelineWindowing: false,
 };
 

@@ -4,7 +4,7 @@ Use one file for the changed user path. Each file defines the user entry, browse
 
 ## Baseline
 
-The control helper prepares one pinned bb app. It installs all eight workspace plugins from this checkout. It also resets plugin settings and selects bb Monokai.
+The control helper prepares one pinned bb app. It installs every workspace plugin from this checkout. It also resets plugin settings and selects bb Monokai.
 
 ## Browser conventions
 
