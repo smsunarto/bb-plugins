@@ -1,0 +1,15 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint staged files
+      glob: "*.{js,jsx,ts,tsx}"
+      run: bun run oxlint {staged_files}
+
+    - name: check staged formatting
+      glob: "*.{css,html,js,json,jsonc,jsx,md,mdx,toml,ts,tsx,yaml,yml}"
+      run: bun run oxfmt --check {staged_files}
+
+pre-push:
+  jobs:
+    - name: check repository
+      run: bun run typecheck && bun run test
