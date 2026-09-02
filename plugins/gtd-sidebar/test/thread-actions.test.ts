@@ -6,6 +6,7 @@ import {
   type BuildThreadActionPlanOptions,
   type RowLifecycleState,
 } from "../components/inbox/thread-actions.ts";
+import { getCompactActions } from "../components/inbox/thread-action-menu.tsx";
 
 const noop = () => {};
 
@@ -125,4 +126,21 @@ describe("buildThreadActionPlan", () => {
       );
     });
   }
+
+  test("getCompactActions filters and orders actions for compact long press menu", () => {
+    const activePlan = plan(lifecycle("active", true), {
+      isPinned: false,
+    });
+    const compactActions = getCompactActions(activePlan);
+
+    assert.deepEqual(
+      compactActions.map((a) => ({ id: a.id, label: a.label })),
+      [
+        { id: "settle", label: "Settle" },
+        { id: "snooze-tomorrow", label: "Snooze" },
+        { id: "toggle-pin", label: "Pin" },
+        { id: "request-delete", label: "Delete" },
+      ],
+    );
+  });
 });
