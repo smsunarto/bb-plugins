@@ -66,6 +66,7 @@ The task usually has to do with coding work, such as fixing a bug, changing a fe
 Generate a concise UI title of at most 36 characters.
 Use a single line of plain text only.
 Do not include quotes, markdown, formatting characters, or trailing punctuation.
+Use sentence case: capitalize only the first word, proper nouns, and identifiers. Do not use Title Case.
 If the prompt includes a ticket reference, include it verbatim.
 Prefer an imperative verb when the user is asking for a change.
 Do not answer the user or attempt the task.
