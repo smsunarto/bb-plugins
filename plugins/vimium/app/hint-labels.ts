@@ -45,8 +45,8 @@ export const TEXT_CONTROLS = [
   { selector: 'button[aria-roledescription="sortable"]', text: "Extensions", char: "e" },
 ] as const;
 
-/** Thread rows count up from 1 in list order, ten and beyond fall back to letters. */
-export const THREAD_DIGITS = "123456789";
+/** Thread rows count across the number row in list order, then fall back to letters. */
+export const THREAD_DIGITS = "1234567890";
 
 const RESERVED_CHARS = new Set<string>([
   ...RESERVED_CONTROLS.map((control) => control.char),
@@ -149,7 +149,7 @@ export interface TopLevelFact {
 /**
  * Labels for a top-level prompt: reserved composer controls keep their pinned
  * character (first match wins if the selector somehow matches twice), the
- * first nine thread rows count 1-9, and everything else gets two-character
+ * first ten thread rows count 1-0, and everything else gets two-character
  * general labels — never one, so a stray button can't squat on a character a
  * user has learned.
  */

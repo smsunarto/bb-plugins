@@ -555,27 +555,34 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("thread rows count 1-9 and a digit picks its row", () => {
+  test("thread rows count 1-0 and zero picks the tenth row", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
-    document.body.innerHTML =
-      '<a id="t1" href="/threads/a">A</a><a id="t2" href="/threads/b">B</a>' +
-      '<a id="t3" data-sidebar-thread-shortcut-target href="#">C</a><button id="other">Other</button>';
-    for (const [index, id] of ["t1", "t2", "t3", "other"].entries()) {
+    document.body.innerHTML = `${Array.from(
+      { length: 11 },
+      (_, index) =>
+        `<a id="t${index + 1}" data-sidebar-thread-shortcut-target href="#">${index + 1}</a>`,
+    ).join("")}<button id="other">Other</button>`;
+    for (const [index, id] of [
+      ...Array.from({ length: 11 }, (_, row) => `t${row + 1}`),
+      "other",
+    ].entries()) {
       giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
     }
     const clicked: string[] = [];
-    document.getElementById("t2")?.addEventListener("click", (event) => {
+    document.getElementById("t10")?.addEventListener("click", (event) => {
       event.preventDefault();
-      clicked.push("t2");
+      clicked.push("t10");
     });
 
     pressKey("f");
-    expect(markers()).toEqual(["1", "2", "3", "dd"]);
+    const labels = markers();
+    expect(labels.slice(0, 10)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
+    expect(labels[10]?.length).toBe(2);
 
-    pressKey("2");
-    expect(clicked).toEqual(["t2"]);
+    pressKey("0");
+    expect(clicked).toEqual(["t10"]);
     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
 
     void dispose();

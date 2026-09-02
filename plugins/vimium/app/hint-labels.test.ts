@@ -122,11 +122,11 @@ describe("assignTopLevelLabels", () => {
     expect(labels[1]?.length).toBe(2);
   });
 
-  test("thread rows count 1-9 in order, the tenth goes general", () => {
-    const facts = Array.from({ length: 10 }, thread);
+  test("thread rows count 1-0 in order, the eleventh goes general", () => {
+    const facts = Array.from({ length: 11 }, thread);
     const labels = assignTopLevelLabels([general(), ...facts]);
-    expect(labels.slice(1, 10)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    expect(labels[10]?.length).toBe(2);
+    expect(labels.slice(1, 11)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
+    expect(labels[11]?.length).toBe(2);
   });
 
   test("general labels are never a single character", () => {
