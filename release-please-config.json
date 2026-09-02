@@ -38,11 +38,6 @@
       "component": "gh-stack",
       "package-name": "@smsunarto/bb-plugin-gh-stack"
     },
-    "plugins/gitbutler": {
-      "release-type": "node",
-      "component": "gitbutler",
-      "package-name": "@smsunarto/bb-plugin-gitbutler"
-    },
     "plugins/gtd-sidebar": {
       "release-type": "node",
       "component": "gtd-sidebar",
