@@ -17,7 +17,12 @@ import { DevError } from "./error.ts";
 import { DevManager } from "./manager.ts";
 import { instancePaths, STATE_SCHEMA_VERSION, type InstanceState } from "./model.ts";
 import { processIdentity, processMatches, runCommand, spawnAndWait } from "./process.ts";
-import { claimDirectoryAtomically, ensureOwnedDirectory, InstanceStore } from "./store.ts";
+import {
+  claimDirectoryAtomically,
+  ensureOwnedDirectory,
+  InstanceStore,
+  parseState,
+} from "./store.ts";
 
 test("start is retry-safe, explicit revision mismatch fails, and destroy is idempotent", async () => {
   const fixture = createFixture();
@@ -65,6 +70,143 @@ test("start is retry-safe, explicit revision mismatch fails, and destroy is idem
   assert.equal(existsSync(join(fixture.home, "instances", "repeat")), false);
   const repeated = await manager.destroy("repeat");
   assert.equal(repeated.phase, "absent");
+});
+
+test("attached start converges in place, leases its ports, and destroy preserves external paths", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  const dirtyPath = join(fixture.repository, "dirty.txt");
+  writeFileSync(dirtyPath, "keep this edit\n");
+
+  const first = await manager.start({ name: "attached", attach: fixture.repository });
+  assert.equal(first.source, "attached");
+  assert.equal(first.revision, null);
+  assert.equal(first.checkoutPath, realpathSync(fixture.repository));
+  assert.equal(readFileSync(dirtyPath, "utf8"), "keep this edit\n");
+  assert.equal(readFileSync(`${fixture.repository}.fake-launcher-name`, "utf8").trim(), "<unset>");
+  assert.equal(existsSync(join(fixture.home, "leases", "11001-19001-27001", "owner.json")), true);
+  assert.equal(existsSync(join(fixture.repository, ".bb-kit-owner.json")), false);
+  assert.equal(existsSync(join(`${fixture.repository}.data`, ".bb-kit-owner.json")), false);
+  assert.equal(existsSync(join(`${fixture.repository}.logs`, ".bb-kit-owner.json")), false);
+
+  const second = await manager.start({ name: "attached" });
+  assert.equal(second.source, "attached");
+  assert.equal(readFileSync(`${fixture.repository}.fake-starts`, "utf8").trim(), "1");
+
+  mkdirSync(`${fixture.repository}.data`, { recursive: true });
+  writeFileSync(join(`${fixture.repository}.data`, "preserved"), "data\n");
+  writeFileSync(join(`${fixture.repository}.logs`, "preserved"), "logs\n");
+  await manager.destroy("attached");
+  assert.equal(existsSync(fixture.repository), true);
+  assert.equal(readFileSync(dirtyPath, "utf8"), "keep this edit\n");
+  assert.equal(readFileSync(join(`${fixture.repository}.data`, "preserved"), "utf8"), "data\n");
+  assert.equal(readFileSync(join(`${fixture.repository}.logs`, "preserved"), "utf8"), "logs\n");
+  assert.equal(existsSync(join(fixture.home, "instances", "attached")), false);
+  assert.equal(existsSync(join(fixture.home, "leases", "11001-19001-27001")), false);
+});
+
+test("attached and owned source requests refuse mismatches", async () => {
+  const fixture = createFixture();
+  const other = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "attached-source", attach: fixture.repository });
+  await assert.rejects(
+    manager.start({ name: "attached-source", attach: other.repository }),
+    (error) => error instanceof DevError && error.code === "source_mismatch",
+  );
+  await assert.rejects(
+    manager.start({
+      name: "attached-source",
+      revision: "local:main",
+      repository: fixture.repository,
+    }),
+    (error) => error instanceof DevError && error.code === "source_mismatch",
+  );
+  await manager.destroy("attached-source");
+
+  await manager.start({
+    name: "owned-source",
+    revision: "local:main",
+    repository: fixture.repository,
+  });
+  await assert.rejects(
+    manager.start({ name: "owned-source", attach: fixture.repository }),
+    (error) => error instanceof DevError && error.code === "source_mismatch",
+  );
+});
+
+test("one port lease prevents two records from controlling an attached runtime", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  await manager.start({ name: "first-attachment", attach: fixture.repository });
+  await assert.rejects(
+    manager.start({ name: "second-attachment", attach: fixture.repository }),
+    (error) => error instanceof DevError && error.code === "lease_mismatch",
+  );
+  const removed = await manager.destroy("second-attachment");
+  assert.equal(removed.phase, "absent");
+  assert.equal((await manager.status("first-attachment")).running, true);
+  assert.equal(existsSync(fixture.repository), true);
+});
+
+test("run routes one running instance and blocks lifecycle changes while the child lives", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager({
+    BB_THREAD_ID: "ambient-thread",
+    BB_SERVER_URL: "http://localhost:9999",
+  });
+  await manager.start({ name: "routed", attach: fixture.repository });
+  const environmentPath = join(fixture.root, "routed-environment.json");
+  const readyPath = join(fixture.root, "routed-ready");
+  const running = manager.run("routed", [
+    process.execPath,
+    "-e",
+    `const fs = require("node:fs"); fs.writeFileSync(process.argv[1], JSON.stringify(process.env)); fs.writeFileSync(process.argv[2], "ready"); setTimeout(() => {}, 300);`,
+    environmentPath,
+    readyPath,
+  ]);
+  await waitForFile(readyPath);
+  await assert.rejects(
+    manager.stop("routed", 50),
+    (error) => error instanceof DevError && error.code === "instance_busy",
+  );
+  assert.equal(await running, 0);
+  const environment = JSON.parse(readFileSync(environmentPath, "utf8")) as NodeJS.ProcessEnv;
+  const routed = manager.environmentFor("routed");
+  assert.equal(environment["BB_CLI"], routed.BB_CLI);
+  assert.equal(environment["BB_SERVER_URL"], "http://localhost:11001");
+  assert.equal(environment["BB_HOST_DAEMON_PORT"], "27001");
+  assert.equal(environment["BB_KIT_DEV_NAME"], "routed");
+  assert.equal(environment["BB_KIT_DEV_SOURCE"], "attached");
+  assert.equal(environment["BB_THREAD_ID"], undefined);
+  assert.equal(
+    environment["PATH"]?.split(":")[0],
+    join(fixture.home, "instances", "routed", "bin"),
+  );
+
+  await manager.stop("routed");
+  await assert.rejects(
+    manager.run("routed", [process.execPath, "-e", "process.exit(0)"]),
+    (error) => error instanceof DevError && error.code === "instance_not_running",
+  );
+});
+
+test("resolveName prefers routed name, then Git workspace, then environment id", () => {
+  const fixture = createFixture();
+  assert.equal(fixture.manager({ BB_KIT_DEV_NAME: "routed-name" }).resolveName(), "routed-name");
+  const workspaceManager = new DevManager({
+    cwd: fixture.repository,
+    environment: {
+      ...process.env,
+      BB_KIT_DEV_HOME: fixture.home,
+      BB_ENVIRONMENT_ID: "ambient-environment",
+    },
+  });
+  assert.match(workspaceManager.resolveName(), /^workspace-/);
+  assert.match(
+    fixture.manager({ BB_ENVIRONMENT_ID: "ambient-environment" }).resolveName(),
+    /^environment-/,
+  );
 });
 
 test("a live lock returns the stable busy error after the bounded wait", async () => {
@@ -205,6 +347,38 @@ test("JSON output uses one versioned envelope", async () => {
   assert.equal(envelope["command"], "status");
 });
 
+test("stored schema 1 plans upgrade to an owned source union", () => {
+  const parsed = parseState({
+    schemaVersion: 1,
+    name: "legacy",
+    ownerToken: "owner",
+    createdAt: "created",
+    updatedAt: "updated",
+    phase: "preparing",
+    step: "checkout",
+    plan: {
+      revision: {
+        selector: "commit:abc",
+        canonical: `commit:${"a".repeat(40)}`,
+        source: "official",
+        repository: "https://example.com/bb.git",
+        label: "legacy",
+        commit: "a".repeat(40),
+      },
+      checkoutPath: "/tmp/legacy",
+      launcherPath: "/tmp/legacy/scripts/bb-dev-app",
+      launcherName: "legacy-launcher",
+      desiredRuntime: "web",
+      shimPath: "/tmp/legacy-bin/bb",
+      leaseKey: null,
+      target: null,
+    },
+  });
+  assert.equal(parsed.schemaVersion, STATE_SCHEMA_VERSION);
+  if (parsed.phase !== "preparing") assert.fail("legacy state did not stay in preparation");
+  assert.equal(parsed.plan.source, "owned");
+});
+
 test("atomic directory claims recover an empty interruption without replacing owned data", () => {
   const root = mkdtempSync(join(tmpdir(), "bb-kit-atomic-"));
   const target = join(root, "claim");
@@ -263,6 +437,7 @@ test("destroy removes an owned partial checkout plan without a launcher target",
     phase: "preparing",
     step: "checkout",
     plan: {
+      source: "owned",
       revision: {
         selector: "local:main",
         canonical: "local:main",
@@ -290,6 +465,8 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
   const help = await runDev(["--help"]);
   assert.equal(help.exitCode, 0);
   assert.match(help.stdout, /bb-kit dev-instance start/);
+  assert.match(help.stdout, /--attach PATH/);
+  assert.match(help.stdout, /dev-instance run \[NAME\]/);
 
   let received: unknown;
   const recordingManager = {
@@ -299,6 +476,7 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
       return {
         name: "options",
         phase: "running",
+        source: "owned",
         revision: "tag:desktop-v1.2.3",
         commit: "a".repeat(40),
         desiredRuntime: "desktop",
@@ -354,11 +532,13 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
     "BB_CLI",
     "BB_HOST_DAEMON_PORT",
     "BB_KIT_DEV_NAME",
+    "BB_KIT_DEV_SOURCE",
     "BB_SERVER_URL",
     "name",
   ]);
   assert.equal(environment.BB_SERVER_URL, "http://localhost:11001");
   assert.equal(environment.BB_HOST_DAEMON_PORT, "27001");
+  assert.equal(environment.BB_KIT_DEV_SOURCE, "owned");
   const envResult = await runDev(["env", "environment"], { manager });
   assert.equal(
     envResult.stdout,
@@ -367,12 +547,15 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
       "export BB_SERVER_URL='http://localhost:11001'",
       "export BB_HOST_DAEMON_PORT='27001'",
       "export BB_KIT_DEV_NAME='environment'",
+      "export BB_KIT_DEV_SOURCE='owned'",
+      `export PATH='${join(fixture.home, "instances", "environment", "bin")}':"$PATH"`,
       "",
     ].join("\n"),
   );
   assert.doesNotMatch(envResult.stdout, /BB_HOST_DAEMON_URL/);
   const statusResult = await runDev(["status", "environment"], { manager });
   assert.match(statusResult.stdout, /Checkout: .*checkout/);
+  assert.match(statusResult.stdout, /Source: owned/);
   assert.match(statusResult.stdout, /Branch: detached \(fixture\)/);
   assert.match(statusResult.stdout, /Node: fixture/);
   assert.match(statusResult.stdout, /Codex: fixture/);
@@ -387,6 +570,50 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
   const missingSeparator = await runDev(["exec", "environment", "status"], { manager });
   assert.equal(missingSeparator.exitCode, 2);
   assert.match(missingSeparator.stderr, /requires --/);
+
+  const invalidAttachRevision = await runDev([
+    "start",
+    "--attach",
+    fixture.repository,
+    "--revision",
+    "latest",
+  ]);
+  assert.equal(invalidAttachRevision.exitCode, 2);
+  assert.match(invalidAttachRevision.stderr, /cannot be combined/);
+  const invalidAttachRepo = await runDev([
+    "start",
+    "--attach",
+    fixture.repository,
+    "--repo",
+    fixture.repository,
+  ]);
+  assert.equal(invalidAttachRepo.exitCode, 2);
+  const missingAttach = await runDev(["start", "--attach", join(fixture.root, "missing-bb")], {
+    cwd: fixture.root,
+    environment: { ...process.env, BB_KIT_DEV_HOME: fixture.home },
+  });
+  assert.equal(missingAttach.exitCode, 2);
+  assert.match(missingAttach.stderr, /invalid_attach/);
+  const missingRunSeparator = await runDev(["run", "environment", process.execPath], { manager });
+  assert.equal(missingRunSeparator.exitCode, 2);
+  assert.match(missingRunSeparator.stderr, /requires --/);
+
+  let runArguments: unknown;
+  const runManager = {
+    resolveName: (name?: string) => name ?? "implicit",
+    run: async (name: string | undefined, argv: readonly string[]) => {
+      runArguments = { name, argv };
+      return 0;
+    },
+  } as unknown as DevManager;
+  const runResult = await runDev(["run", "environment", "--", "node", "script.js"], {
+    manager: runManager,
+  });
+  assert.equal(runResult.exitCode, 0);
+  assert.deepEqual(runArguments, {
+    name: "environment",
+    argv: ["node", "script.js"],
+  });
 });
 
 test("launcher start and stop timeouts terminate their checkpointed process groups", async () => {
@@ -455,6 +682,7 @@ test("spawnAndWait terminates the owned group when its checkpoint callback throw
 });
 
 function createFixture(): {
+  root: string;
   home: string;
   repository: string;
   manager: (environment?: NodeJS.ProcessEnv) => DevManager;
@@ -473,6 +701,7 @@ function createFixture(): {
   git(repository, ["add", "scripts/bb-dev-app"]);
   git(repository, ["commit", "-m", "add fake launcher"]);
   return {
+    root,
     home,
     repository,
     manager: (environment = {}) =>
@@ -515,6 +744,7 @@ case "\${1:-}" in
     echo "Logs: \${logs}/dev.log, \${logs}/desktop.log"
     ;;
   current)
+    printf '%s\n' "\${BB_DEV_LAUNCHER_NAME:-<unset>}" > "\${checkout}.fake-launcher-name"
     delay="\${FAKE_START_DELAY:-0}"
     if [[ "\${delay}" != "0" ]]; then
       sleep "\${delay}" &

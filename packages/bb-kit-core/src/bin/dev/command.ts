@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import type { BinResult } from "../shared.ts";
 import { asDevError, DevError } from "./error.ts";
 import { DevManager, type InstanceResult, type ManagerOptions } from "./manager.ts";
@@ -5,6 +6,7 @@ import { DevManager, type InstanceResult, type ManagerOptions } from "./manager.
 export const DEV_USAGE = [
   "usage:",
   "  bb-kit dev-instance start [--name NAME] [--revision SELECTOR] [--repo PATH]",
+  "  bb-kit dev-instance start [--name NAME] --attach PATH",
   "                   [--desktop] [--open] [--timeout SECONDS] [--json]",
   "  bb-kit dev-instance list [--json]",
   "  bb-kit dev-instance status [NAME] [--json]",
@@ -13,6 +15,7 @@ export const DEV_USAGE = [
   "  bb-kit dev-instance logs [NAME] [dev|desktop|launcher] [--lines COUNT] [--follow]",
   "  bb-kit dev-instance env [NAME] [--json]",
   "  bb-kit dev-instance exec [NAME] -- <bb arguments...>",
+  "  bb-kit dev-instance run [NAME] -- <program> [arguments...]",
   "",
 ].join("\n");
 
@@ -83,6 +86,8 @@ export async function runDev(
         `export BB_SERVER_URL=${shellQuote(result.BB_SERVER_URL)}`,
         `export BB_HOST_DAEMON_PORT=${shellQuote(result.BB_HOST_DAEMON_PORT)}`,
         `export BB_KIT_DEV_NAME=${shellQuote(result.BB_KIT_DEV_NAME)}`,
+        `export BB_KIT_DEV_SOURCE=${shellQuote(result.BB_KIT_DEV_SOURCE)}`,
+        `export PATH=${shellQuote(dirname(result.BB_CLI))}:"$PATH"`,
         "",
       ].join("\n");
       return success(command, result, parsed.json, human);
@@ -104,6 +109,12 @@ export async function runDev(
       const parsed = parseExec(args);
       effectiveName = manager.resolveName(parsed.name);
       const exitCode = await manager.exec(parsed.name, parsed.args);
+      return { exitCode, stdout: "", stderr: "" };
+    }
+    if (command === "run") {
+      const parsed = parseRun(args);
+      effectiveName = manager.resolveName(parsed.name);
+      const exitCode = await manager.run(parsed.name, parsed.argv);
       return { exitCode, stdout: "", stderr: "" };
     }
     throw usageError(`Unknown dev command "${command}".`);
@@ -140,6 +151,7 @@ function parseStart(args: readonly string[]): {
   name?: string;
   revision?: string;
   repository?: string;
+  attach?: string;
   desktop?: boolean;
   open?: boolean;
   timeoutMs?: number;
@@ -149,6 +161,7 @@ function parseStart(args: readonly string[]): {
     name?: string;
     revision?: string;
     repository?: string;
+    attach?: string;
     desktop?: boolean;
     open?: boolean;
     timeoutMs?: number;
@@ -168,11 +181,22 @@ function parseStart(args: readonly string[]): {
       parsed.revision = requiredOption(args, ++index, arg);
     } else if (arg === "--repo") {
       parsed.repository = requiredOption(args, ++index, arg);
+    } else if (arg === "--attach") {
+      parsed.attach = requiredOption(args, ++index, arg);
     } else if (arg === "--timeout") {
       parsed.timeoutMs = secondsOption(requiredOption(args, ++index, arg), arg);
     } else {
       throw usageError(`Unknown start argument "${arg ?? ""}".`);
     }
+  }
+  if (
+    parsed.attach !== undefined &&
+    (parsed.revision !== undefined || parsed.repository !== undefined)
+  ) {
+    throw usageError("--attach cannot be combined with --revision or --repo.");
+  }
+  if (parsed.repository !== undefined && parsed.revision === undefined) {
+    throw usageError("--repo requires --revision.");
   }
   return parsed;
 }
@@ -267,17 +291,37 @@ function parseLogs(args: readonly string[]): {
 function parseExec(args: readonly string[]): { name?: string; args: readonly string[] } {
   const separator = args.indexOf("--");
   if (separator < 0) {
-    throw usageError("dev exec requires -- before the bb arguments.");
+    throw usageError("dev-instance exec requires -- before the bb arguments.");
   }
   const prefix = args.slice(0, separator);
   if (prefix.length > 1) {
-    throw usageError("dev exec accepts at most one instance name before --.");
+    throw usageError("dev-instance exec accepts at most one instance name before --.");
   }
   const commandArgs = args.slice(separator + 1);
   if (commandArgs.length === 0) {
-    throw usageError("dev exec requires at least one bb argument after --.");
+    throw usageError("dev-instance exec requires at least one bb argument after --.");
   }
   return { name: prefix[0], args: commandArgs };
+}
+
+function parseRun(args: readonly string[]): {
+  name?: string;
+  argv: readonly [string, ...string[]];
+} {
+  const separator = args.indexOf("--");
+  if (separator < 0) {
+    throw usageError("dev-instance run requires -- before the program.");
+  }
+  const prefix = args.slice(0, separator);
+  if (prefix.length > 1) {
+    throw usageError("dev-instance run accepts at most one instance name before --.");
+  }
+  const commandArgs = args.slice(separator + 1);
+  const program = commandArgs[0];
+  if (program === undefined) {
+    throw usageError("dev-instance run requires a program after --.");
+  }
+  return { name: prefix[0], argv: [program, ...commandArgs.slice(1)] };
 }
 
 function success(command: string, result: unknown, json: boolean, human: string): BinResult {
@@ -289,15 +333,20 @@ function success(command: string, result: unknown, json: boolean, human: string)
 }
 
 function formatListRow(result: InstanceResult): string {
-  return [result.name, result.phase, result.revision ?? "unresolved", result.appUrl ?? "-"].join(
-    "\t",
-  );
+  return [
+    result.name,
+    result.phase,
+    result.source ?? "unresolved",
+    result.revision ?? result.checkoutPath ?? "unresolved",
+    result.appUrl ?? "-",
+  ].join("\t");
 }
 
 function formatStatus(result: InstanceResult): string {
   return [
     `Name: ${result.name}`,
     `Phase: ${result.phase}`,
+    `Source: ${result.source ?? "unresolved"}`,
     `Revision: ${result.revision ?? "unresolved"}`,
     `Commit: ${result.commit ?? "unresolved"}`,
     `Runtime: ${result.desiredRuntime ?? "none"}`,
@@ -357,5 +406,10 @@ function usageError(message: string): DevError {
 }
 
 function isUsageCode(code: string): boolean {
-  return code === "invalid_arguments" || code === "invalid_name" || code === "invalid_revision";
+  return (
+    code === "invalid_arguments" ||
+    code === "invalid_attach" ||
+    code === "invalid_name" ||
+    code === "invalid_revision"
+  );
 }

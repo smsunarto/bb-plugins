@@ -1,21 +1,28 @@
 #!/usr/bin/env bun
 import type { BinResult } from "../packages/bb-kit-core/src/bin/shared.ts";
 import { runDev } from "../packages/bb-kit-core/src/bin/dev/command.ts";
-import {
-  DevManager,
-  type EnvironmentResult,
-  type InstanceResult,
-} from "../packages/bb-kit-core/src/bin/dev/manager.ts";
-import { setUpBbDevInstance } from "./bb-dev-instance-setup.ts";
-import type { BbCommandRunner } from "./plugin-screenshot-runtime.ts";
+import { DevManager, type InstanceResult } from "../packages/bb-kit-core/src/bin/dev/manager.ts";
 
 const USAGE = [
   "usage:",
-  "  bun run dev:instance -- [bb-kit dev-instance start options]",
+  "  bun run dev:instance -- [owned bb-kit dev-instance start options]",
   "",
-  "Starts an isolated bb instance, then installs and resets this workspace's plugins.",
+  "Starts an owned bb instance, builds this workspace, then applies the plugin baseline.",
   "",
 ].join("\n");
+
+const BUILD_COMMAND = ["bun", "run", "build:managed"] as const;
+export const WATCH_COMMAND = [
+  "bun",
+  "run",
+  "--filter",
+  "@smsunarto/bb-plugin-*",
+  "--filter",
+  "!@smsunarto/bb-plugin-agent-proxy",
+  "--parallel",
+  "--no-orphans",
+  "dev",
+] as const;
 
 type SuccessEnvelope = {
   schemaVersion: 1;
@@ -39,8 +46,11 @@ type ErrorEnvelope = {
 
 type Dependencies = {
   manager?: DevManager;
-  setup?: typeof setUpBbDevInstance;
-  commandRunner?: (environment: EnvironmentResult) => BbCommandRunner;
+  runProgram?: (
+    name: string,
+    argv: readonly [string, ...string[]],
+    options: { stdout: "inherit" | "stderr" },
+  ) => Promise<number>;
   log?: (message: string) => void;
 };
 
@@ -53,9 +63,22 @@ export async function runPreparedDevInstance(
   }
 
   const json = argv.includes("--json");
-  const startArgs = argv.filter((arg) => arg !== "--json");
+  const watch = argv.includes("--watch");
+  const startArgs = argv.filter((arg) => arg !== "--json" && arg !== "--watch");
   const log = dependencies.log ?? (() => {});
   const manager = dependencies.manager ?? new DevManager({ progress: log });
+  if (startArgs.includes("--attach")) {
+    return failureResult(
+      json,
+      undefined,
+      "attached_source_unsupported",
+      "The bb-plugins workflow cannot reset an attached bb instance.",
+      "Use bb-kit dev-instance start --attach for bb core development.",
+    );
+  }
+  const runProgram =
+    dependencies.runProgram ??
+    ((name, command, options) => manager.run(name, command, { stdout: options.stdout }));
   const started = await runDev(["start", ...startArgs, "--json"], { manager });
   const envelope = parseEnvelope(started.stdout);
   if (!envelope.ok) {
@@ -68,30 +91,66 @@ export async function runPreparedDevInstance(
         };
   }
 
-  const environment = manager.environmentFor(envelope.result.name);
-  const commandRunner =
-    dependencies.commandRunner?.(environment) ??
-    instanceCommandRunner(environment.BB_CLI, manager.cwd);
-  try {
-    await (dependencies.setup ?? setUpBbDevInstance)(commandRunner, log);
-  } catch (error) {
-    const failure: ErrorEnvelope = {
-      schemaVersion: 1,
-      ok: false,
-      command: "start",
-      name: envelope.result.name,
-      error: {
-        code: "setup_failed",
-        message: error instanceof Error ? error.message : String(error),
-        action: "Fix the setup error, then rerun bun run dev:instance with the same arguments.",
-      },
-    };
-    return json
-      ? { exitCode: 1, stdout: `${JSON.stringify(failure)}\n`, stderr: "" }
-      : { exitCode: 1, stdout: "", stderr: formatError(failure) };
+  const name = envelope.result.name;
+  const buildExit = await runProgram(name, BUILD_COMMAND, { stdout: "stderr" });
+  if (buildExit !== 0) {
+    return failureResult(
+      json,
+      name,
+      "build_failed",
+      `Workspace build exited with status ${buildExit}.`,
+      "Fix the build, then rerun bun run dev:instance.",
+    );
+  }
+  if (envelope.result.source === "attached") {
+    return failureResult(
+      json,
+      name,
+      "baseline_refused",
+      "The bb-plugins baseline cannot reset an attached bb instance.",
+      "Use an owned revision selector for bun run dev:instance.",
+    );
+  }
+  const dataDir = envelope.result.dataDir;
+  if (dataDir === null) {
+    return failureResult(
+      json,
+      name,
+      "baseline_target_missing",
+      "The managed instance did not report its data directory.",
+      "Inspect bb-kit dev-instance status, then retry bun run dev:instance.",
+    );
   }
 
-  const result = { ...envelope.result, prepared: true };
+  const baselineExit = await runProgram(
+    name,
+    ["bun", "scripts/bb-dev-instance-setup.ts", "--expected-data-dir", dataDir],
+    { stdout: "stderr" },
+  );
+  if (baselineExit !== 0) {
+    return failureResult(
+      json,
+      name,
+      "setup_failed",
+      `Plugin baseline exited with status ${baselineExit}.`,
+      "Fix the baseline error, then rerun bun run dev:instance.",
+    );
+  }
+
+  if (watch) {
+    const watchExit = await runProgram(name, WATCH_COMMAND, { stdout: "inherit" });
+    if (watchExit !== 0) {
+      return failureResult(
+        json,
+        name,
+        "watch_failed",
+        `Plugin watchers exited with status ${watchExit}.`,
+        "Fix the watcher error, then rerun bun run dev.",
+      );
+    }
+  }
+
+  const result = { ...envelope.result, built: true, prepared: true };
   return {
     exitCode: 0,
     stdout: json
@@ -101,24 +160,23 @@ export async function runPreparedDevInstance(
   };
 }
 
-function instanceCommandRunner(executable: string, cwd: string): BbCommandRunner {
-  return async (args) => {
-    const child = Bun.spawn([executable, ...args], {
-      cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (exitCode !== 0) {
-      const detail = stderr.trim() || stdout.trim() || `exit code ${exitCode}`;
-      throw new Error(`bb ${args.join(" ")} failed: ${detail}`);
-    }
-    return stdout;
+function failureResult(
+  json: boolean,
+  name: string | undefined,
+  code: string,
+  message: string,
+  action: string,
+): BinResult {
+  const failure: ErrorEnvelope = {
+    schemaVersion: 1,
+    ok: false,
+    command: "start",
+    ...(name === undefined ? {} : { name }),
+    error: { code, message, action },
   };
+  return json
+    ? { exitCode: 1, stdout: `${JSON.stringify(failure)}\n`, stderr: "" }
+    : { exitCode: 1, stdout: "", stderr: formatError(failure) };
 }
 
 function parseEnvelope(raw: string): SuccessEnvelope | ErrorEnvelope {

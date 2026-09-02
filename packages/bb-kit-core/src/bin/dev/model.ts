@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { DevError } from "./error.ts";
 
 export const OFFICIAL_REPOSITORY = "https://github.com/get-bb/bb.git";
-export const STATE_SCHEMA_VERSION = 1;
+export const STATE_SCHEMA_VERSION = 2;
 
 export type DesiredRuntime = "web" | "desktop";
 
@@ -49,15 +49,32 @@ export type ProcessIdentity = {
   started: string;
 };
 
-export type InstancePlan = {
-  revision: ResolvedRevision;
+type PlanBase = {
   checkoutPath: string;
   launcherPath: string;
-  launcherName: string;
   desiredRuntime: DesiredRuntime;
   shimPath: string;
   leaseKey: string | null;
   target: LauncherTarget | null;
+};
+
+export type OwnedInstancePlan = PlanBase & {
+  source: "owned";
+  revision: ResolvedRevision;
+  launcherName: string;
+};
+
+export type AttachedInstancePlan = PlanBase & {
+  source: "attached";
+  revision: null;
+  launcherName: null;
+};
+
+export type InstancePlan = OwnedInstancePlan | AttachedInstancePlan;
+
+export type CompleteInstancePlan = InstancePlan & {
+  target: LauncherTarget;
+  leaseKey: string;
 };
 
 type StateBase = {
@@ -85,35 +102,35 @@ export type PreparingCheckoutState = StateBase & {
 export type PreparingExternalState = StateBase & {
   phase: "preparing";
   step: "external";
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+  plan: CompleteInstancePlan;
 };
 
 export type PreparedState = StateBase & {
   phase: "prepared";
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+  plan: CompleteInstancePlan;
 };
 
 export type StartingState = StateBase & {
   phase: "starting";
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+  plan: CompleteInstancePlan;
   child: ProcessIdentity;
 };
 
 export type RunningState = StateBase & {
   phase: "running";
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+  plan: CompleteInstancePlan;
   observedAt: string;
 };
 
 export type StoppingState = StateBase & {
   phase: "stopping";
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+  plan: CompleteInstancePlan;
   child: ProcessIdentity | null;
 };
 
 export type DestroyingState = StateBase & {
   phase: "destroying";
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+  plan: CompleteInstancePlan;
   step: "runtime" | "checkout" | "external" | "lease";
 };
 
@@ -140,6 +157,7 @@ export type InstanceState =
 export type InstanceResult = {
   name: string;
   phase: string;
+  source: "owned" | "attached" | null;
   revision: string | null;
   commit: string | null;
   desiredRuntime: DesiredRuntime | null;
@@ -166,6 +184,7 @@ export type EnvironmentResult = {
   BB_SERVER_URL: string;
   BB_HOST_DAEMON_PORT: string;
   BB_KIT_DEV_NAME: string;
+  BB_KIT_DEV_SOURCE: "owned" | "attached";
 };
 
 export type InstancePaths = {
@@ -284,9 +303,7 @@ export function recoveringResolution(
   );
 }
 
-export function completePlan(
-  state: InstanceState,
-): (InstancePlan & { target: LauncherTarget; leaseKey: string }) | null {
+export function completePlan(state: InstanceState): CompleteInstancePlan | null {
   const plan = statePlan(state);
   if (plan === null || plan.target === null || plan.leaseKey === null) {
     return null;
@@ -294,9 +311,7 @@ export function completePlan(
   return { ...plan, target: plan.target, leaseKey: plan.leaseKey };
 }
 
-export function requireCompletePlan(
-  state: InstanceState,
-): InstancePlan & { target: LauncherTarget; leaseKey: string } {
+export function requireCompletePlan(state: InstanceState): CompleteInstancePlan {
   const plan = completePlan(state);
   if (plan === null) {
     throw new DevError(
@@ -308,9 +323,7 @@ export function requireCompletePlan(
   return plan;
 }
 
-export function requireTargetPlan(
-  plan: InstancePlan,
-): InstancePlan & { target: LauncherTarget; leaseKey: string } {
+export function requireTargetPlan(plan: InstancePlan): CompleteInstancePlan {
   if (plan.target === null || plan.leaseKey === null) {
     throw new DevError(
       "instance_not_prepared",
@@ -331,8 +344,9 @@ export function resultFromState(
   return {
     name: state.name,
     phase: state.phase,
-    revision: plan?.revision.canonical ?? null,
-    commit: plan?.revision.commit ?? null,
+    source: plan?.source ?? null,
+    revision: plan?.revision?.canonical ?? null,
+    commit: plan?.revision?.commit ?? null,
     desiredRuntime:
       plan?.desiredRuntime ?? (state.phase === "resolving" ? state.desiredRuntime : null),
     checkoutPath: plan?.checkoutPath ?? null,
@@ -357,6 +371,7 @@ export function emptyResult(name: string): InstanceResult {
   return {
     name,
     phase: "absent",
+    source: null,
     revision: null,
     commit: null,
     desiredRuntime: null,

@@ -85,7 +85,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
-    "dev": "\"${BB_CLI:-bb}\" plugin dev .",
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",

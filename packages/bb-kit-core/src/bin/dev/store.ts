@@ -391,7 +391,11 @@ export function safeRemoveOwned(
 
 export function parseState(value: unknown): InstanceState {
   const object = record(value, "state");
-  numberField(object, "schemaVersion", STATE_SCHEMA_VERSION);
+  const storedSchemaVersion = integerField(object, "schemaVersion");
+  if (storedSchemaVersion !== 1 && storedSchemaVersion !== STATE_SCHEMA_VERSION) {
+    invalid("schemaVersion");
+  }
+  const legacy = storedSchemaVersion === 1;
   const base = {
     schemaVersion: STATE_SCHEMA_VERSION,
     name: stringField(object, "name"),
@@ -422,10 +426,10 @@ export function parseState(value: unknown): InstanceState {
       message: stringField(object, "message"),
       retryFrom: retryFrom as "resolution" | "preparation" | "start" | "stop" | "destroy",
       resolving: object["resolving"] === null ? null : parseResolvingPayload(object["resolving"]),
-      plan: object["plan"] === null ? null : parsePlan(object["plan"]),
+      plan: object["plan"] === null ? null : parsePlan(object["plan"], legacy),
     };
   }
-  const plan = parsePlan(object["plan"]);
+  const plan = parsePlan(object["plan"], legacy);
   if (phase === "preparing") {
     const step = stringField(object, "step");
     if (step === "checkout") {
@@ -477,18 +481,40 @@ export function parseState(value: unknown): InstanceState {
   invalid("phase");
 }
 
-function parsePlan(value: unknown): InstancePlan {
+function parsePlan(value: unknown, legacy: boolean): InstancePlan {
   const object = record(value, "plan");
-  return {
-    revision: parseRevision(object["revision"]),
+  const common = {
     checkoutPath: stringField(object, "checkoutPath"),
     launcherPath: stringField(object, "launcherPath"),
-    launcherName: stringField(object, "launcherName"),
     desiredRuntime: runtimeField(object, "desiredRuntime"),
     shimPath: stringField(object, "shimPath"),
     leaseKey: nullableString(object["leaseKey"], "leaseKey"),
     target: object["target"] === null ? null : parseTarget(object["target"]),
   };
+  if (legacy) {
+    return {
+      ...common,
+      source: "owned",
+      revision: parseRevision(object["revision"]),
+      launcherName: stringField(object, "launcherName"),
+    };
+  }
+  const source = stringField(object, "source");
+  if (source === "owned") {
+    return {
+      ...common,
+      source,
+      revision: parseRevision(object["revision"]),
+      launcherName: stringField(object, "launcherName"),
+    };
+  }
+  if (source === "attached") {
+    if (object["revision"] !== null || object["launcherName"] !== null) {
+      invalid("attached plan source");
+    }
+    return { ...common, source, revision: null, launcherName: null };
+  }
+  invalid("plan source");
 }
 
 function parseRevision(value: unknown): ResolvedRevision {
@@ -658,12 +684,6 @@ function stringField(object: Record<string, unknown>, key: string): string {
     invalid(key);
   }
   return value;
-}
-
-function numberField(object: Record<string, unknown>, key: string, expected: number): void {
-  if (object[key] !== expected) {
-    invalid(key);
-  }
 }
 
 function integerField(object: Record<string, unknown>, key: string): number {

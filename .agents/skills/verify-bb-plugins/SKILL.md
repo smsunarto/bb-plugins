@@ -9,13 +9,13 @@ Prove the changed user path in the pinned bb app. Static checks support this pro
 
 ## Launch
 
-Start the repository watcher before the first plugin edit. Leave it running.
+Start the one-command repository dev loop before the first plugin edit. Leave it running.
 
 ```bash
-env BB_CLI="$PWD/scripts/bb-dev-cli" bun run dev
+bun run dev
 ```
 
-Create one run ID. The helper starts the pinned app, resets its test baseline, and reserves one browser session.
+Create one run ID. The helper prepares the managed release fixture and reserves one browser session.
 
 ```bash
 RUN_ID="verify-$(date +%Y%m%d-%H%M%S)"
@@ -89,7 +89,7 @@ Do not stop the repository watcher. Do not reload the live desktop app.
 
 ## Gotchas
 
-- The pinned app uses `http://localhost:16493` today. Always use the URL that the helper reads from `bb-dev-app status`.
+- Always use the URL that the helper reads from `bb-kit dev-instance status`.
 - The app port is not the Server port. Set browser and `BB_SERVER_URL` traffic to the App port.
 - The pinned and desktop instances share `dist/`. Never load a test change into the desktop app without approval.
 - Keep screenshots and snapshots under `.scratch/verify-bb-plugins/runs/<run-id>/evidence/`.

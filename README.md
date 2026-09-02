@@ -100,17 +100,35 @@ bun run build                            # bb plugin build for every plugin
 bb plugin install ./plugins/<id>         # from the repo root
 ```
 
-## Develop against an isolated bb
+## Develop bb plugins against an isolated bb
 
-Start the latest bb release and prepare it with this workspace's plugins:
+| Goal                                        | Command                                         | bb source                               |
+| ------------------------------------------- | ----------------------------------------------- | --------------------------------------- |
+| Develop plugins against the current release | `bun run dev`                                   | Managed release checkout                |
+| Develop plugins against another revision    | `bun run dev:instance -- --revision <selector>` | Managed branch, tag, or commit checkout |
+| Develop bb with uncommitted source changes  | `bb-kit dev-instance start --attach .`          | Existing checkout in place              |
+| Run tools against the selected instance     | `bb-kit dev-instance run -- <program>`          | Current managed or attached source      |
+
+Start the latest bb release, build the workspace, apply the baseline, and run
+the plugin watchers:
+
+```sh
+bun run dev
+```
+
+The command routes the build, baseline, and watchers through one managed bb
+instance. It does not reload `agent-proxy` automatically.
+
+To prepare the fixture without starting watchers, run:
 
 ```sh
 bun run dev:instance
 ```
 
-The command installs workspace plugins, pins experiments, resets plugin settings,
-and selects the repository theme. It is safe to repeat. Pass bb-kit start options
-after `--` when you need another revision or a named instance:
+The prepare-only command installs workspace plugins, pins experiments, resets
+plugin settings, and selects the repository theme. It is safe to repeat. Pass
+any owned bb-kit start selector after `--` when you need another revision or a
+named instance:
 
 ```sh
 bun run dev:instance -- --name my-branch \
@@ -119,4 +137,18 @@ bun run dev:instance -- --name my-branch \
 ```
 
 Use `bb-kit dev-instance` directly when you need lifecycle control without the
-bb-plugins baseline.
+bb-plugins baseline. `bun run dev:instance` refuses `--attach` because the
+baseline resets instance plugin state.
+
+## Develop bb core from its checkout
+
+Attach bb-kit to the checkout that you are editing:
+
+```sh
+cd ~/git/bb
+bb-kit dev-instance start --attach .
+bb-kit dev-instance run -- pnpm test
+```
+
+The attached instance uses that checkout in place. bb-kit preserves dirty
+files and never removes the checkout, its data directory, or its logs.

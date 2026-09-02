@@ -6,9 +6,7 @@ repo_root="$(cd "${script_dir}/../../../.." && pwd)"
 state_root="${repo_root}/.scratch/verify-bb-plugins"
 runs_root="${state_root}/runs"
 lock_dir="${state_root}/active"
-bb_repo="${BB_DEV_REPO:-${HOME}/.bb/worktrees/dev/bb}"
-bb_app="${bb_repo}/scripts/bb-dev-app"
-bb_cli="${repo_root}/scripts/bb-dev-cli"
+bb_kit="${repo_root}/packages/bb-kit-core/src/bin/bin.ts"
 theme_id="plugin:monokai:bb-monokai"
 
 fail() {
@@ -16,10 +14,17 @@ fail() {
   exit 1
 }
 
+dev_instance() {
+  (cd "${repo_root}" && bun "${bb_kit}" dev-instance "$@")
+}
+
 app_url() {
   local status
-  status="$("${bb_app}" status)"
-  awk '/^App: / { print $2; exit }' <<<"${status}"
+  status="$(dev_instance status --json)"
+  bun -e '
+    const value = JSON.parse(await Bun.stdin.text());
+    process.stdout.write(String(value.result?.appUrl ?? ""));
+  ' <<<"${status}"
 }
 
 browser_session_for() {
@@ -30,17 +35,18 @@ browser_session_for() {
 }
 
 doctor() {
-  [[ -x "${bb_app}" ]] || fail "missing pinned app helper at ${bb_app}"
-  [[ -x "${bb_cli}" ]] || fail "missing pinned CLI shim at ${bb_cli}"
-
   local status url settings plugins theme
-  status="$("${bb_app}" status)"
-  grep -q '^Dev session: running$' <<<"${status}" || fail "pinned dev session is not running"
-  url="$(awk '/^App: / { print $2; exit }' <<<"${status}")"
+  status="$(dev_instance status --json)"
+  bun -e '
+    const value = JSON.parse(await Bun.stdin.text()).result;
+    if (!value?.running) throw new Error("managed dev instance is not running");
+    if (value.source !== "owned") throw new Error(`unsafe source: ${value.source ?? "missing"}`);
+  ' <<<"${status}"
+  url="$(app_url)"
   [[ -n "${url}" ]] || fail "pinned app status has no App URL"
   curl --fail --silent --show-error "${url}" >/dev/null || fail "pinned app did not answer at ${url}"
 
-  settings="$("${bb_cli}" settings show --json)"
+  settings="$(dev_instance exec -- settings show --json)"
   bun -e '
     const value = JSON.parse(await Bun.stdin.text());
     if (!String(value.dataDir ?? "").includes("/.bb-dev/")) {
@@ -48,7 +54,7 @@ doctor() {
     }
   ' <<<"${settings}"
 
-  plugins="$("${bb_cli}" plugin list --json)"
+  plugins="$(dev_instance exec -- plugin list --json)"
   REPO_ROOT="${repo_root}" bun -e '
     import { join } from "node:path";
     import { workspacePlugins } from "./scripts/plugin-package.ts";
@@ -70,7 +76,7 @@ doctor() {
     if (failures.length) throw new Error(failures.join("\n"));
   ' <<<"${plugins}"
 
-  theme="$("${bb_cli}" theme show --json)"
+  theme="$(dev_instance exec -- theme show --json)"
   grep -q "${theme_id}" <<<"${theme}" || fail "selected theme is not ${theme_id}"
 
   printf 'doctor: pinned app %s is ready\n' "${url}"
@@ -90,8 +96,7 @@ launch() {
   printf '%s\n' "${run_id}" >"${lock_dir}/run-id"
   trap 'rm -rf "${lock_dir}"' ERR INT TERM
 
-  "${bb_app}" current
-  (cd "${repo_root}" && env BB_CLI="${bb_cli}" bun run dev:setup)
+  (cd "${repo_root}" && bun run dev:instance -- --json >/dev/null)
   doctor
 
   local run_dir evidence_dir url session env_file

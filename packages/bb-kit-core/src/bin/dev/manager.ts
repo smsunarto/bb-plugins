@@ -35,11 +35,12 @@ import {
   STATE_SCHEMA_VERSION,
   statePlan,
   type DesiredRuntime,
+  type CompleteInstancePlan,
   type EnvironmentResult,
   type InstancePlan,
   type InstanceResult,
   type InstanceState,
-  type LauncherTarget,
+  type OwnedInstancePlan,
   type ResolvedRevision,
   type RevisionRequest,
 } from "./model.ts";
@@ -51,6 +52,8 @@ import {
   waitForChild,
 } from "./process.ts";
 import { parseRevisionSelector, prepareCheckout, resolveRevision } from "./revision.ts";
+import { routedEnvironment } from "./routing.ts";
+import { resolveAttachedCheckout } from "./source.ts";
 import {
   assertLeaseOwned,
   claimLease,
@@ -76,6 +79,7 @@ export type StartOptions = {
   name?: string;
   revision?: string;
   repository?: string;
+  attach?: string;
   desktop?: boolean;
   open?: boolean;
   timeoutMs?: number;
@@ -111,6 +115,14 @@ export class DevManager {
       }
       return explicit;
     }
+    const routedName = this.environment["BB_KIT_DEV_NAME"];
+    if (routedName !== undefined && routedName !== "") {
+      return this.resolveName(routedName);
+    }
+    const gitRoot = runCommand("git", ["-C", this.cwd, "rev-parse", "--show-toplevel"]);
+    if (gitRoot.status === 0 && gitRoot.stdout.trim() !== "") {
+      return hashedName("workspace", realpathOrResolved(gitRoot.stdout.trim()));
+    }
     const environmentId = this.environment["BB_ENVIRONMENT_ID"];
     if (environmentId !== undefined && environmentId !== "") {
       const sanitized = sanitizeName(environmentId);
@@ -119,15 +131,38 @@ export class DevManager {
         return `environment-${sanitized.slice(0, 40)}-${hash}`;
       }
     }
-    const gitRoot = runCommand("git", ["-C", this.cwd, "rev-parse", "--show-toplevel"]);
-    if (gitRoot.status === 0 && gitRoot.stdout.trim() !== "") {
-      return hashedName("workspace", realpathOrResolved(gitRoot.stdout.trim()));
-    }
     return hashedName("directory", realpathOrResolved(this.cwd));
   }
 
   async start(options: StartOptions = {}): Promise<InstanceResult> {
+    if (
+      options.attach !== undefined &&
+      (options.revision !== undefined || options.repository !== undefined)
+    ) {
+      throw new DevError(
+        "invalid_arguments",
+        "--attach cannot be combined with --revision or --repo.",
+        "Choose an attached checkout or an owned revision.",
+      );
+    }
+    if (options.repository !== undefined && options.revision === undefined) {
+      throw new DevError(
+        "invalid_arguments",
+        "--repo requires --revision.",
+        "Pass both options, or omit --repo to use the latest official release.",
+      );
+    }
     const name = this.resolveName(options.name);
+    const attachedPath =
+      options.attach === undefined ? undefined : resolveAttachedCheckout(options.attach, this.cwd);
+    if (attachedPath !== undefined) {
+      assertLauncherSupported({
+        launcherPath: join(attachedPath, "scripts", "bb-dev-app"),
+        launcherName: null,
+        checkoutPath: attachedPath,
+        environment: this.environment,
+      });
+    }
     const deadline = options.timeoutMs === undefined ? null : Date.now() + options.timeoutMs;
     const store = this.store(name);
     const owner = store.claim(name);
@@ -151,7 +186,21 @@ export class DevManager {
       const explicitRequest =
         options.revision === undefined ? undefined : parseRevisionSelector(options.revision);
 
-      if (state === null) {
+      if (state === null && attachedPath !== undefined) {
+        const now = new Date().toISOString();
+        const plan = this.newAttachedPlan(store, attachedPath, desired);
+        state = {
+          schemaVersion: STATE_SCHEMA_VERSION,
+          name,
+          ownerToken: owner.ownerToken,
+          createdAt: now,
+          updatedAt: now,
+          phase: "preparing",
+          step: "checkout",
+          plan,
+        };
+        store.write(state);
+      } else if (state === null) {
         state = this.createResolvingState(
           name,
           owner.ownerToken,
@@ -163,7 +212,23 @@ export class DevManager {
       }
 
       let plan = statePlan(state);
+      if (plan !== null && attachedPath !== undefined) {
+        if (plan.source !== "attached" || plan.checkoutPath !== attachedPath) {
+          throw new DevError(
+            "source_mismatch",
+            `Instance ${name} owns ${describeSource(plan)}, not attached checkout ${attachedPath}.`,
+            "Choose another --name or destroy this stopped instance first.",
+          );
+        }
+      }
       if (plan !== null && explicitRequest !== undefined) {
+        if (plan.source !== "owned") {
+          throw new DevError(
+            "source_mismatch",
+            `Instance ${name} owns attached checkout ${plan.checkoutPath}, not an owned revision.`,
+            "Choose another --name or destroy this stopped instance first.",
+          );
+        }
         this.progress(`Resolving ${options.revision} for ${name}`);
         const resolvedCommit =
           explicitRequest.kind === "commit"
@@ -199,7 +264,7 @@ export class DevManager {
             owner.ownerToken,
           );
           this.removeResolver(store.paths.root, owner.ownerToken);
-          plan = this.newPlan(store, name, owner.ownerToken, revision, desired, 0);
+          plan = this.newOwnedPlan(store, name, owner.ownerToken, revision, desired, 0);
           state = checkpoint(state, {
             phase: "preparing",
             step: "checkout",
@@ -253,12 +318,16 @@ export class DevManager {
       if (store.activeExecs(owner.ownerToken).length > 0) {
         throw new DevError(
           "instance_busy",
-          `Instance ${name} has an active bb command.`,
-          "Wait for dev exec to finish, then retry start.",
+          `Instance ${name} has an active routed command.`,
+          "Wait for dev-instance exec or dev-instance run to finish, then retry start.",
         );
       }
 
-      this.progress(`Starting ${name} at ${plan.revision.label}`);
+      this.progress(
+        plan.source === "owned"
+          ? `Starting ${name} at ${plan.revision.label}`
+          : `Starting ${name} from ${plan.checkoutPath}`,
+      );
       const startingPlan = requireTargetPlan(plan);
       const stateBeforeStart = state;
       let exitCode: number;
@@ -413,15 +482,15 @@ export class DevManager {
       if (store.activeExecs(owner.ownerToken).length > 0) {
         throw new DevError(
           "instance_busy",
-          `Instance ${name} has an active bb command.`,
-          "Wait for dev exec to finish, then retry destroy.",
+          `Instance ${name} has an active routed command.`,
+          "Wait for dev-instance exec or dev-instance run to finish, then retry destroy.",
         );
       }
       if (completePlan(state) === null) {
         this.destroyPreRuntime(store, state, owner.ownerToken);
         return emptyResult(name);
       }
-      let plan: InstancePlan & { target: LauncherTarget; leaseKey: string };
+      let plan: CompleteInstancePlan;
       if (state.phase === "destroying") {
         plan = requireCompletePlan(state);
       } else {
@@ -430,7 +499,11 @@ export class DevManager {
         const live = readLauncherStatus(launcherOptions(plan, this.environment));
         assertSameStoredTarget(plan.target, live);
         plan = { ...plan, target: live };
-        state = checkpoint(state, { phase: "destroying", plan, step: "checkout" });
+        state = checkpoint(state, {
+          phase: "destroying",
+          plan,
+          step: plan.source === "owned" ? "checkout" : "lease",
+        });
         store.write(state);
       }
 
@@ -443,17 +516,35 @@ export class DevManager {
       }
       let destroyStep = state.step;
       if (destroyStep === "runtime") {
-        state = checkpoint(state, { phase: "destroying", plan, step: "checkout" });
+        state = checkpoint(state, {
+          phase: "destroying",
+          plan,
+          step: plan.source === "owned" ? "checkout" : "lease",
+        });
         store.write(state);
-        destroyStep = "checkout";
+        destroyStep = plan.source === "owned" ? "checkout" : "lease";
       }
       if (destroyStep === "checkout") {
+        if (plan.source !== "owned") {
+          throw new DevError(
+            "invalid_state",
+            `Attached instance ${name} entered owned checkout cleanup.`,
+            "Inspect state.json before retrying destroy.",
+          );
+        }
         safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, owner.ownerToken);
         state = checkpoint(state, { phase: "destroying", plan, step: "external" });
         store.write(state);
         destroyStep = "external";
       }
       if (destroyStep === "external") {
+        if (plan.source !== "owned") {
+          throw new DevError(
+            "invalid_state",
+            `Attached instance ${name} entered owned external cleanup.`,
+            "Inspect state.json before retrying destroy.",
+          );
+        }
         safeRemoveOwned(
           plan.target.dataDir,
           dirname(plan.target.dataDir),
@@ -486,13 +577,7 @@ export class DevManager {
     const name = this.resolveName(nameOption);
     const state = this.requiredState(name);
     const plan = requireCompletePlan(state);
-    return {
-      name,
-      BB_CLI: plan.shimPath,
-      BB_SERVER_URL: plan.target.appUrl,
-      BB_HOST_DAEMON_PORT: String(plan.target.hostDaemonPort),
-      BB_KIT_DEV_NAME: name,
-    };
+    return this.environmentForPlan(name, plan);
   }
 
   finiteLogs(
@@ -526,6 +611,29 @@ export class DevManager {
     args: readonly string[],
     timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
   ): Promise<number> {
+    return this.runTracked(
+      nameOption,
+      (plan) => [plan.shimPath, ...args] as [string, ...string[]],
+      false,
+      timeoutMs,
+    );
+  }
+
+  async run(
+    nameOption: string | undefined,
+    argv: readonly [string, ...string[]],
+    options: { stdout?: "inherit" | "stderr" } = {},
+  ): Promise<number> {
+    return this.runTracked(nameOption, () => argv, true, DEFAULT_CONTROL_TIMEOUT_MS, options);
+  }
+
+  private async runTracked(
+    nameOption: string | undefined,
+    command: (plan: CompleteInstancePlan) => readonly [string, ...string[]],
+    requireRunning: boolean,
+    timeoutMs: number,
+    options: { stdout?: "inherit" | "stderr" } = {},
+  ): Promise<number> {
     const name = this.resolveName(nameOption);
     const store = this.store(name);
     const owner = store.readOwner();
@@ -542,10 +650,24 @@ export class DevManager {
         );
       }
       const plan = requireCompletePlan(state);
-      child = spawn(plan.shimPath, [...args], {
-        stdio: "inherit",
+      if (requireRunning) {
+        const live = readLauncherStatus(launcherOptions(plan, this.environment));
+        assertSameStoredTarget(plan.target, live);
+        if (!(await runtimeSatisfied(live, plan.desiredRuntime, this.healthProbe))) {
+          throw new DevError(
+            "instance_not_running",
+            `Instance ${name} is not running.`,
+            "Run bb-kit dev-instance start first.",
+          );
+        }
+      }
+      const argv = command(plan);
+      const route = this.environmentForPlan(name, plan);
+      child = spawn(argv[0], argv.slice(1), {
+        stdio:
+          options.stdout === "stderr" ? ["inherit", process.stderr, process.stderr] : "inherit",
         cwd: this.cwd,
-        env: this.environment,
+        env: routedEnvironment(this.environment, route),
       });
       const pid = child.pid;
       const identity = pid === undefined ? null : processIdentity(pid);
@@ -553,7 +675,7 @@ export class DevManager {
         child.kill();
         throw new DevError(
           "process_identity_unavailable",
-          "Could not record the bb command process identity.",
+          "Could not record the routed command process identity.",
           "Retry from a normal local shell.",
         );
       }
@@ -578,10 +700,88 @@ export class DevManager {
     return exitCode;
   }
 
+  private environmentForPlan(name: string, plan: CompleteInstancePlan): EnvironmentResult {
+    return {
+      name,
+      BB_CLI: plan.shimPath,
+      BB_SERVER_URL: plan.target.appUrl,
+      BB_HOST_DAEMON_PORT: String(plan.target.hostDaemonPort),
+      BB_KIT_DEV_NAME: name,
+      BB_KIT_DEV_SOURCE: plan.source,
+    };
+  }
+
   private async prepare(
     store: InstanceStore,
     state: InstanceState,
     initialPlan: InstancePlan,
+    ownerToken: string,
+  ): Promise<InstanceState> {
+    if (initialPlan.source === "attached") {
+      return this.prepareAttached(store, state, initialPlan, ownerToken);
+    }
+    return this.prepareOwned(store, state, initialPlan, ownerToken);
+  }
+
+  private async prepareAttached(
+    store: InstanceStore,
+    state: InstanceState,
+    plan: Extract<InstancePlan, { source: "attached" }>,
+    ownerToken: string,
+  ): Promise<InstanceState> {
+    assertLauncherSupported(launcherOptions(plan, this.environment));
+    const live = readLauncherStatus(launcherOptions(plan, this.environment));
+    if (plan.target !== null) {
+      assertSameStoredTarget(plan.target, live);
+    }
+    const leaseKey = plan.leaseKey ?? leaseKeyFor(live);
+    const complete: CompleteInstancePlan = { ...plan, target: live, leaseKey };
+    state = checkpoint(state, { phase: "preparing", step: "external", plan: complete });
+    store.write(state);
+    const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
+    if (!leaseClaimed) {
+      const failure = new DevError(
+        "lease_mismatch",
+        `Attached launcher target for ${state.name} has another lease owner.`,
+        "Use the instance that owns this runtime, or destroy its stopped record first.",
+      );
+      store.write(
+        failedFromPlan(state, { ...plan, target: null, leaseKey: null }, failure, "preparation"),
+      );
+      throw failure;
+    }
+    const portsBusy = await Promise.all([
+      this.portProbe(live.appPort),
+      this.portProbe(live.serverPort),
+      this.portProbe(live.hostDaemonPort),
+    ]);
+    const launcherOwnsRuntime = live.devSession === "running" || live.desktopSession === "running";
+    if (portsBusy.some(Boolean) && !launcherOwnsRuntime) {
+      if (plan.leaseKey === null) {
+        releaseLease(this.home, leaseKey, ownerToken);
+      }
+      const failure = new DevError(
+        "ambiguous_launcher_target",
+        `Attached instance ${state.name} has no launcher session but its target ports are occupied.`,
+        "Stop the conflicting listeners before retrying start.",
+      );
+      if (plan.leaseKey === null) {
+        store.write(
+          failedFromPlan(state, { ...plan, target: null, leaseKey: null }, failure, "preparation"),
+        );
+      }
+      throw failure;
+    }
+    writeShim(complete, store.paths.bin);
+    const prepared = checkpoint(state, { phase: "prepared", plan: complete });
+    store.write(prepared);
+    return prepared;
+  }
+
+  private async prepareOwned(
+    store: InstanceStore,
+    state: InstanceState,
+    initialPlan: OwnedInstancePlan,
     ownerToken: string,
   ): Promise<InstanceState> {
     let plan = initialPlan;
@@ -622,7 +822,7 @@ export class DevManager {
         ownerToken,
       );
       safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
-      plan = this.newPlan(
+      plan = this.newOwnedPlan(
         store,
         state.name,
         ownerToken,
@@ -638,7 +838,7 @@ export class DevManager {
       candidate += 1
     ) {
       if (candidate > checkoutIndex(plan.checkoutPath)) {
-        plan = this.newPlan(
+        plan = this.newOwnedPlan(
           store,
           state.name,
           ownerToken,
@@ -702,8 +902,8 @@ export class DevManager {
     if (store.activeExecs(ownerToken).length > 0) {
       throw new DevError(
         "instance_busy",
-        `Instance ${state.name} has an active bb command.`,
-        "Wait for dev exec to finish, then retry stop.",
+        `Instance ${state.name} has an active routed command.`,
+        "Wait for dev-instance exec or dev-instance run to finish, then retry stop.",
       );
     }
     const plan = requireCompletePlan(state);
@@ -830,21 +1030,40 @@ export class DevManager {
     });
   }
 
-  private newPlan(
+  private newOwnedPlan(
     store: InstanceStore,
     name: string,
     ownerToken: string,
     revision: ResolvedRevision,
     desiredRuntime: DesiredRuntime,
     candidate: number,
-  ): InstancePlan {
+  ): OwnedInstancePlan {
     const instanceRoot = realpathSync(store.paths.root);
     const checkoutPath = join(instanceRoot, candidate === 0 ? "checkout" : `checkout-${candidate}`);
     return {
+      source: "owned",
       revision,
       checkoutPath,
       launcherPath: join(checkoutPath, "scripts", "bb-dev-app"),
       launcherName: `bb-kit-${sanitizeName(name)}-${ownerToken.slice(0, 8)}`,
+      desiredRuntime,
+      shimPath: join(store.paths.bin, "bb"),
+      leaseKey: null,
+      target: null,
+    };
+  }
+
+  private newAttachedPlan(
+    store: InstanceStore,
+    checkoutPath: string,
+    desiredRuntime: DesiredRuntime,
+  ): InstancePlan {
+    return {
+      source: "attached",
+      revision: null,
+      checkoutPath,
+      launcherPath: join(checkoutPath, "scripts", "bb-dev-app"),
+      launcherName: null,
       desiredRuntime,
       shimPath: join(store.paths.bin, "bb"),
       leaseKey: null,
@@ -869,7 +1088,9 @@ export class DevManager {
           "Inspect state.json before retrying destroy.",
         );
       }
-      safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
+      if (plan.source === "owned") {
+        safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
+      }
     }
     const resolverPath =
       state.phase === "resolving"
@@ -939,6 +1160,12 @@ function realpathOrResolved(path: string): string {
 function checkoutIndex(path: string): number {
   const match = /\/checkout-(\d+)$/.exec(path);
   return match?.[1] === undefined ? 0 : Number(match[1]);
+}
+
+function describeSource(plan: InstancePlan): string {
+  return plan.source === "owned"
+    ? `owned revision ${plan.revision.canonical}`
+    : `attached checkout ${plan.checkoutPath}`;
 }
 
 function remainingTimeout(deadline: number, name: string, operation: string): number {

@@ -5,7 +5,7 @@ import { DevError } from "./error.ts";
 import {
   expandHome,
   OFFICIAL_REPOSITORY,
-  type InstancePlan,
+  type OwnedInstancePlan,
   type ResolvedRevision,
   type RevisionRequest,
 } from "./model.ts";
@@ -140,7 +140,18 @@ export async function resolveRevision(
         "Retry after checking GitHub access.",
       );
     }
-    return revision("latest", `tag:${tag}`, "official", OFFICIAL_REPOSITORY, tag, commit);
+    const resolverPath = options.resolverPath;
+    const ownerToken = options.ownerToken;
+    if (resolverPath === undefined || ownerToken === undefined) {
+      throw new DevError(
+        "unsupported_revision",
+        "The latest official release needs an owned resolution repository.",
+        "Retry through bb-kit dev-instance start.",
+      );
+    }
+    const resolved = resolveOfficialCommit(commit, resolverPath, ownerToken, run);
+    assertOfficialLatestAncestor(resolverPath, resolved, run);
+    return revision("latest", `tag:${tag}`, "official", OFFICIAL_REPOSITORY, tag, resolved);
   }
 
   const selected = selectedRepository(request, options.repositoryOption, environment);
@@ -241,7 +252,7 @@ export async function resolveRevision(
   );
 }
 
-export function prepareCheckout(plan: InstancePlan, ownerToken: string): void {
+export function prepareCheckout(plan: OwnedInstancePlan, ownerToken: string): void {
   ensureOwnedDirectory(plan.checkoutPath, ownerToken, "checkout");
   if (!existsSync(join(plan.checkoutPath, ".git"))) {
     requireSuccess(
@@ -474,6 +485,41 @@ function resolveOfficialCommit(
     );
   }
   return revParse(resolverPath, `${requested}^{commit}`, run);
+}
+
+function assertOfficialLatestAncestor(
+  resolverPath: string,
+  commit: string,
+  run: typeof runCommand,
+): void {
+  requireSuccess(
+    run("git", [
+      "-C",
+      resolverPath,
+      "fetch",
+      "--filter=blob:none",
+      "--no-tags",
+      "origin",
+      "+refs/heads/main:refs/remotes/origin/main",
+    ]),
+    "revision_resolution_failed",
+    "Could not fetch origin/main while validating the latest release.",
+  );
+  const ancestor = run("git", [
+    "-C",
+    resolverPath,
+    "merge-base",
+    "--is-ancestor",
+    commit,
+    "refs/remotes/origin/main",
+  ]);
+  if (ancestor.status !== 0) {
+    throw new DevError(
+      "release_not_on_main",
+      `The latest official desktop release commit ${commit} is not on origin/main.`,
+      "Wait for the official repository to publish a release from origin/main, or select another revision.",
+    );
+  }
 }
 
 function revision(

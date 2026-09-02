@@ -1,27 +1,6 @@
 #!/usr/bin/env bun
-/**
- * Put the pinned dev instance into a known baseline: the one bb that every
- * bb-plugins task targets, for captures and for live plugin testing alike.
- *
- * `prepareBbForScreenshots` already enforces plugin enablement and the theme on
- * every capture run, so this covers what preflight cannot: it installs the
- * workspace plugins (preflight only errors and prints the commands), returns
- * plugin settings to their declared defaults, and pins the release's
- * experiment baselines.
- *
- * Idempotent by design — running it twice is how you confirm it converged, and
- * it is the first thing to run after moving the worktree, because the instance
- * id derives from the worktree path and a moved worktree is a fresh instance.
- *
- * Resetting settings is the point, which makes it the wrong thing to run in the
- * middle of a test that deliberately set one. Run it to establish a baseline,
- * not to recover from a surprise.
- *
- * It rewrites settings, so it refuses to run against anything but a dev
- * instance. Pointed at the desktop app it would reset the developer's own
- * plugin configuration.
- */
 import { join } from "node:path";
+import { DevError } from "../packages/bb-kit-core/src/bin/dev/error.ts";
 import {
   runBbCommand,
   SCREENSHOT_PREFLIGHT_PLUGINS,
@@ -83,17 +62,38 @@ export function driftingConfigKeys(config: PluginConfig): string[] {
  * directory rather than against `BB_CLI`, because the shim is only a wrapper
  * and the URL it talks to is what decides which bb gets written to.
  */
-export function assertDevInstance(config: { dataDir?: string }): void {
+export function assertDevInstance(config: { dataDir?: string }, expectedDataDir?: string): void {
   const dataDir = config.dataDir ?? "";
   if (!/\/\.bb-dev\//.test(dataDir)) {
     throw new Error(
       [
         `refusing to configure a non-dev bb (data dir ${dataDir || "unknown"})`,
         "This rewrites settings and is only for the pinned screenshot instance.",
-        "Point BB_CLI at scripts/bb-dev-cli and try again.",
+        "Run the baseline through bb-kit dev-instance run and try again.",
       ].join("\n"),
     );
   }
+  if (expectedDataDir !== undefined && dataDir !== expectedDataDir) {
+    throw new Error(
+      [
+        `refusing to configure the wrong dev bb (data dir ${dataDir})`,
+        `Expected the managed data dir ${expectedDataDir}.`,
+        "Run the baseline through the matching bb-kit dev-instance.",
+      ].join("\n"),
+    );
+  }
+}
+
+export function routedSource(environment: NodeJS.ProcessEnv = process.env): "owned" | "attached" {
+  const source = environment.BB_KIT_DEV_SOURCE;
+  if (source === "owned" || source === "attached") {
+    return source;
+  }
+  throw new DevError(
+    "baseline_source_missing",
+    "BB_KIT_DEV_SOURCE is not set to owned or attached. Run bun run dev:setup through the managed instance.",
+    "Run bun run dev:setup through the managed dev-instance environment.",
+  );
 }
 
 function parseJson<T>(raw: string, label: string): T {
@@ -150,15 +150,34 @@ async function waitForRunningPlugins(
   }
 }
 
-export async function setUpBbDevInstance(
+export async function prepareOwnedPluginFixture(
   runCommand: BbCommandRunner = runBbCommand,
+  source: "owned" | "attached" = routedSource(),
   log: (message: string) => void = console.log,
+  expectedDataDir?: string,
 ): Promise<void> {
+  if (source === "attached") {
+    throw new DevError(
+      "baseline_refused",
+      "The bb-plugins baseline cannot reset an attached bb instance.",
+      "Start an owned release fixture with bun run dev:instance.",
+    );
+  }
   const settingsArgs = ["settings", "show", "--json"] as const;
   assertDevInstance(
     parseJson<{ dataDir?: string }>(await runCommand(settingsArgs), "bb settings show"),
+    expectedDataDir,
   );
 
+  await installWorkspacePlugins(runCommand, log);
+  await resetPluginFixtureBaseline(runCommand, log);
+  log("bb dev instance ready");
+}
+
+async function installWorkspacePlugins(
+  runCommand: BbCommandRunner,
+  log: (message: string) => void,
+): Promise<void> {
   const listArgs = ["plugin", "list", "--json"] as const;
   const installed = pluginSources(
     parseJson<{ plugins?: InstalledPlugin[] }>(await runCommand(listArgs), "bb plugin list"),
@@ -175,7 +194,12 @@ export async function setUpBbDevInstance(
   }
   if (stale.length === 0) log("all workspace plugins already installed from this checkout");
   else await waitForRunningPlugins(runCommand);
+}
 
+async function resetPluginFixtureBaseline(
+  runCommand: BbCommandRunner,
+  log: (message: string) => void,
+): Promise<void> {
   for (const [key, value] of Object.entries(BB_DEV_EXPERIMENTS)) {
     await runCommand(["settings", "experiment", key, String(value), "--json"]);
   }
@@ -210,9 +234,17 @@ export async function setUpBbDevInstance(
   if (remaining.length > 0) {
     throw new Error(`settings did not return to their defaults: ${remaining.join(", ")}`);
   }
-  log("bb dev instance ready");
 }
 
 if (import.meta.main) {
-  await setUpBbDevInstance();
+  const expectedFlag = process.argv.indexOf("--expected-data-dir");
+  const expectedDataDir = expectedFlag < 0 ? undefined : process.argv[expectedFlag + 1];
+  if (expectedFlag >= 0 && expectedDataDir === undefined) {
+    throw new DevError(
+      "invalid_arguments",
+      "--expected-data-dir requires a value.",
+      "Run the setup through bun run dev:instance.",
+    );
+  }
+  await prepareOwnedPluginFixture(runBbCommand, routedSource(), console.log, expectedDataDir);
 }

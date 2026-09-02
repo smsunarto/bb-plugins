@@ -6,11 +6,17 @@ import type { Page } from "playwright";
 import {
   parseScreenshotArguments,
   prepareBbForScreenshots,
+  routedBbCli,
   SCREENSHOT_PREFLIGHT_PLUGINS,
   SCREENSHOT_ROOT,
   SCREENSHOT_THEME_ID,
   withScreenshotBatch,
 } from "./plugin-screenshot-runtime";
+
+test("screenshot bb commands require the managed BB_CLI", () => {
+  expect(() => routedBbCli({})).toThrow("BB_CLI is not set");
+  expect(routedBbCli({ BB_CLI: "/tmp/managed-bb" })).toBe("/tmp/managed-bb");
+});
 
 function pluginList(
   options: {

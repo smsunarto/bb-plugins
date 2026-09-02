@@ -58,7 +58,7 @@
   },
   "scripts": {
     "generate:binding": "bun run scripts/generate-binding.ts",
-    "dev": "bun run generate:binding && \"${BB_CLI:-bb}\" plugin dev .",
+    "dev": "bun run generate:binding && \"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
     "build": "bun run generate:binding && bb plugin build .",
     "test": "bun test --timeout=30000",
     "typecheck": "tsc --noEmit",

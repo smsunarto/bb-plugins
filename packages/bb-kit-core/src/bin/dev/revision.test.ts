@@ -37,10 +37,12 @@ test("latest desktop release uses semver order and peeled annotated tags", async
   const tagObject = "1".repeat(40);
   const peeled = "2".repeat(40);
   const latest = "3".repeat(40);
-  const resolved = await resolveRevision(
-    { kind: "latest" },
-    {
-      run: (_command, _args) => ({
+  const resolverRoot = mkdtempSync(join(tmpdir(), "bb-kit-latest-"));
+  const calls: string[][] = [];
+  const run = (_command: string, args: readonly string[]) => {
+    calls.push([...args]);
+    if (args[0] === "ls-remote") {
+      return {
         status: 0,
         stdout: [
           `${tagObject}\trefs/tags/desktop-v1.9.0`,
@@ -49,11 +51,41 @@ test("latest desktop release uses semver order and peeled annotated tags", async
           "",
         ].join("\n"),
         stderr: "",
-      }),
+      };
+    }
+    if (args.includes("get-url")) return { status: 1, stdout: "", stderr: "" };
+    if (args.includes("rev-parse")) return { status: 0, stdout: `${latest}\n`, stderr: "" };
+    return { status: 0, stdout: "", stderr: "" };
+  };
+  const resolved = await resolveRevision(
+    { kind: "latest" },
+    {
+      run,
+      resolverPath: join(resolverRoot, "resolver"),
+      ownerToken: "latest-owner",
     },
   );
   assert.equal(resolved.canonical, "tag:desktop-v1.10.0");
   assert.equal(resolved.commit, latest);
+  assert.equal(
+    calls.some((args) => args.includes("merge-base") && args.includes("refs/remotes/origin/main")),
+    true,
+  );
+
+  await assert.rejects(
+    resolveRevision(
+      { kind: "latest" },
+      {
+        run: (command, args) => {
+          const result = run(command, args);
+          return args.includes("merge-base") ? { ...result, status: 1 } : result;
+        },
+        resolverPath: join(resolverRoot, "rejected"),
+        ownerToken: "rejected-owner",
+      },
+    ),
+    (error) => error instanceof DevError && error.code === "release_not_on_main",
+  );
 });
 
 test("temporary Git repositories resolve local, origin, tags, and commits exactly", async () => {

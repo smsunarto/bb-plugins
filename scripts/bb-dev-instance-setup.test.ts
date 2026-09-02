@@ -4,7 +4,8 @@ import {
   assertDevInstance,
   driftingConfigKeys,
   BB_DEV_EXPERIMENTS,
-  setUpBbDevInstance,
+  prepareOwnedPluginFixture,
+  routedSource,
 } from "./bb-dev-instance-setup";
 import {
   SCREENSHOT_PREFLIGHT_PLUGINS,
@@ -90,6 +91,15 @@ describe("assertDevInstance", () => {
     expect(() => assertDevInstance({ dataDir: "/Users/e/.bb-dev/inst" })).not.toThrow();
   });
 
+  test("requires the exact managed data dir when supplied", () => {
+    expect(() =>
+      assertDevInstance({ dataDir: "/Users/e/.bb-dev/other" }, "/Users/e/.bb-dev/expected"),
+    ).toThrow(/wrong dev bb/);
+    expect(() =>
+      assertDevInstance({ dataDir: "/Users/e/.bb-dev/expected" }, "/Users/e/.bb-dev/expected"),
+    ).not.toThrow();
+  });
+
   test("refuses production", () => {
     expect(() => assertDevInstance({ dataDir: "/Users/e/.bb" })).toThrow(/refusing/);
   });
@@ -99,15 +109,16 @@ describe("assertDevInstance", () => {
   });
 });
 
-describe("setUpBbDevInstance", () => {
+describe("prepareOwnedPluginFixture", () => {
   test("refuses before writing anything when the target is not a dev instance", async () => {
     const calls: string[][] = [];
     await expect(
-      setUpBbDevInstance(
+      prepareOwnedPluginFixture(
         async (args) => {
           calls.push([...args]);
           return JSON.stringify({ dataDir: "/Users/e/.bb" });
         },
+        "owned",
         () => {},
       ),
     ).rejects.toThrow(/refusing/);
@@ -116,21 +127,21 @@ describe("setUpBbDevInstance", () => {
 
   test("reinstalls nothing when every plugin already comes from this checkout", async () => {
     const bb = fakeBb();
-    await setUpBbDevInstance(bb.run, () => {});
+    await prepareOwnedPluginFixture(bb.run, "owned", () => {});
     expect(bb.calls.filter((call) => call[1] === "install")).toEqual([]);
   });
 
   test("installs only the plugins sourced from somewhere else, by absolute path", async () => {
     const id = SCREENSHOT_PREFLIGHT_PLUGINS[1]!;
     const bb = fakeBb({ missing: [id.id] });
-    await setUpBbDevInstance(bb.run, () => {});
+    await prepareOwnedPluginFixture(bb.run, "owned", () => {});
     const installs = bb.calls.filter((call) => call[1] === "install").map((call) => call[2]);
     expect(installs).toEqual([join(SCREENSHOT_ROOT, "plugins", id.directory)]);
   });
 
   test("pins every experiment and sets the theme", async () => {
     const bb = fakeBb();
-    await setUpBbDevInstance(bb.run, () => {});
+    await prepareOwnedPluginFixture(bb.run, "owned", () => {});
     const experiments = bb.calls
       .filter((call) => call[1] === "experiment")
       .map((call) => [call[2], call[3]]);
@@ -143,7 +154,7 @@ describe("setUpBbDevInstance", () => {
   test("unsets a drifting key and leaves a defaulted one alone", async () => {
     const id = SCREENSHOT_PREFLIGHT_PLUGINS[0]!.id;
     const bb = fakeBb({ drift: { [id]: { tidy: false } } });
-    await setUpBbDevInstance(bb.run, () => {});
+    await prepareOwnedPluginFixture(bb.run, "owned", () => {});
     const unsets = bb.calls.filter((call) => call[3] === "unset");
     expect(unsets).toEqual([["plugin", "config", id, "unset", "tidy", "--json"]]);
   });
@@ -151,7 +162,7 @@ describe("setUpBbDevInstance", () => {
   test("fails when a key does not return to its default", async () => {
     const id = SCREENSHOT_PREFLIGHT_PLUGINS[0]!.id;
     await expect(
-      setUpBbDevInstance(
+      prepareOwnedPluginFixture(
         async (args) => {
           if (args[0] === "settings" && args[1] === "show") return DEV_SETTINGS;
           if (args[0] === "plugin" && args[1] === "list") {
@@ -171,8 +182,28 @@ describe("setUpBbDevInstance", () => {
           }
           return JSON.stringify({ ok: true });
         },
+        "owned",
         () => {},
       ),
     ).rejects.toThrow(new RegExp(`did not return to their defaults: ${id}\\.tidy`));
+  });
+
+  test("refuses attached sources before the first bb command", async () => {
+    const calls: string[][] = [];
+    await expect(
+      prepareOwnedPluginFixture(async (args) => {
+        calls.push([...args]);
+        return "{}";
+      }, "attached"),
+    ).rejects.toMatchObject({ code: "baseline_refused" });
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("routedSource", () => {
+  test("parses the managed source and rejects an ambient setup", () => {
+    expect(routedSource({ BB_KIT_DEV_SOURCE: "owned" })).toBe("owned");
+    expect(routedSource({ BB_KIT_DEV_SOURCE: "attached" })).toBe("attached");
+    expect(() => routedSource({})).toThrow("bun run dev:setup");
   });
 });

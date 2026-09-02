@@ -43,6 +43,13 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 
 ## Run an isolated bb dev instance
 
+| Goal                                     | Source mode | Command                                           |
+| ---------------------------------------- | ----------- | ------------------------------------------------- |
+| Test plugins against the current release | Owned       | `bb-kit dev-instance start`                       |
+| Test against a branch, tag, or commit    | Owned       | `bb-kit dev-instance start --revision <selector>` |
+| Develop bb with uncommitted changes      | Attached    | `bb-kit dev-instance start --attach .`            |
+| Run a tool with instance routing         | Either      | `bb-kit dev-instance run -- <program>`            |
+
 Start the latest official desktop release:
 
 ```sh
@@ -50,8 +57,9 @@ bb-kit dev-instance start
 ```
 
 The command resolves the highest `desktop-v*` semver tag from `get-bb/bb`.
-It records the full commit before it creates the checkout. A bare repeat uses
-that recorded commit without contacting the network.
+It checks that the release commit is on `origin/main`. It records the full
+commit before it creates the checkout. A bare repeat uses that recorded commit
+without contacting the network.
 
 Use an explicit `latest` selector when you want to check for a newer release:
 
@@ -77,14 +85,26 @@ commits use the official repository unless `--repo` selects another one.
 Add `--desktop` to persist the desktop shell as desired runtime state. Add
 `--open` to open the app once, after the app health check passes.
 
+To develop bb itself, attach the checkout that you are editing:
+
+```sh
+cd ~/git/bb
+bb-kit dev-instance start --attach .
+```
+
+Attached instances run `scripts/bb-dev-app` in place. bb-kit does not fetch,
+switch, reset, mark, or remove the checkout, its data directory, or its logs.
+`--attach` cannot be combined with `--revision` or `--repo`.
+
 Cold starts can fetch a checkout, install dependencies, build bb's plugin SDK,
 and install Electron before startup. By default, bb-kit keeps a short lock wait
 and lets bb's launcher enforce its own readiness timeouts. Use `--timeout
 SECONDS` when the caller needs an overall start budget.
 
-The implicit instance name uses `BB_ENVIRONMENT_ID` when present. Otherwise,
-it uses a stable hash of the Git workspace or current directory. Pass
-`--name` only when callers should share one instance.
+The implicit instance name first uses `BB_KIT_DEV_NAME`, then a stable hash of
+the Git workspace. Outside a Git workspace, it uses `BB_ENVIRONMENT_ID`, then
+the current directory. Pass `--name` only when callers should share one
+instance.
 
 Inspect and control an instance with these commands:
 
@@ -97,19 +117,26 @@ bb-kit dev-instance stop [NAME]
 bb-kit dev-instance destroy [NAME]
 ```
 
-`stop` keeps the checkout and immutable revision. `destroy` removes only
-paths whose owner token and recorded path match the instance state.
+`stop` keeps the source. For an owned instance, `destroy` removes only paths
+whose owner token and recorded path match the instance state. For an attached
+instance, `destroy` leaves the checkout, data directory, and logs in place.
 
 Run the selected checkout's bb CLI without ambient thread routing:
 
 ```sh
 bb-kit dev-instance exec [NAME] -- plugin types .
+bb-kit dev-instance run [NAME] -- pnpm test
 eval "$(bb-kit dev-instance env [NAME])"
 ```
 
+`exec` runs a bb command. `run` requires a running instance and runs any
+program with the generated bb shim on `PATH`. Both commands clear ambient bb
+routing and track the child. `stop` and `destroy` refuse while that child runs.
+
 The generated bb shim clears known bb routing variables. It then runs
 `pnpm -C <checkout> --silent bb:dev`. Relative plugin paths still resolve from
-the caller's directory.
+the caller's directory. `env` prints the same App URL, source, instance name,
+and `PATH` prefix for an interactive shell.
 
 Repository-specific preparation stays outside bb-kit. For example, bb-plugins
 provides `bun run dev:instance`, which starts the instance and then applies its

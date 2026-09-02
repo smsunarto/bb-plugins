@@ -3,12 +3,19 @@ import { chmodSync, closeSync, mkdirSync, openSync, renameSync, writeFileSync } 
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { DevError } from "./error.ts";
-import type { DesiredRuntime, InstancePlan, LauncherTarget, ProcessIdentity } from "./model.ts";
+import type {
+  CompleteInstancePlan,
+  DesiredRuntime,
+  InstancePlan,
+  LauncherTarget,
+  ProcessIdentity,
+} from "./model.ts";
 import { ProcessTimeoutError, requireExecutable, runCommand, spawnAndWait } from "./process.ts";
+import { BB_ROUTING_KEYS, cleanBbEnvironment } from "./routing.ts";
 
 export type LauncherOptions = {
   launcherPath: string;
-  launcherName: string;
+  launcherName: string | null;
   checkoutPath: string;
   environment?: NodeJS.ProcessEnv;
 };
@@ -245,10 +252,7 @@ export function logPath(target: LauncherTarget, kind: "dev" | "desktop" | "launc
   return target.launcherLog;
 }
 
-export function writeShim(
-  plan: InstancePlan & { target: LauncherTarget; leaseKey: string },
-  binDir: string,
-): void {
+export function writeShim(plan: CompleteInstancePlan, binDir: string): void {
   mkdirSync(binDir, { recursive: true });
   const content = shimSource(plan.checkoutPath);
   const temporary = `${plan.shimPath}.${process.pid}.${randomUUID()}.tmp`;
@@ -273,18 +277,10 @@ export function sameTarget(left: LauncherTarget, right: LauncherTarget): boolean
 }
 
 export function launcherEnvironment(options: LauncherOptions): NodeJS.ProcessEnv {
-  const environment = { ...(options.environment ?? process.env) };
-  for (const key of [
-    "BB_SERVER_URL",
-    "BB_CLI",
-    "BB_THREAD_ID",
-    "BB_ENVIRONMENT_ID",
-    "BB_THREAD_STORAGE",
-    "BB_PROJECT_ID",
-  ]) {
-    delete environment[key];
+  const environment = cleanBbEnvironment(options.environment ?? process.env);
+  if (options.launcherName !== null) {
+    environment["BB_DEV_LAUNCHER_NAME"] = options.launcherName;
   }
-  environment["BB_DEV_LAUNCHER_NAME"] = options.launcherName;
   environment["BB_DEV_REPO_ROOT"] = options.checkoutPath;
   return environment;
 }
@@ -325,14 +321,7 @@ if (
   }
 }
 const environment = { ...process.env };
-for (const key of [
-  "BB_SERVER_URL",
-  "BB_CLI",
-  "BB_THREAD_ID",
-  "BB_ENVIRONMENT_ID",
-  "BB_THREAD_STORAGE",
-  "BB_PROJECT_ID",
-]) {
+for (const key of ${JSON.stringify(BB_ROUTING_KEYS)}) {
   delete environment[key];
 }
 const child = spawn("pnpm", ["-C", checkout, "--silent", "bb:dev", ...args], {

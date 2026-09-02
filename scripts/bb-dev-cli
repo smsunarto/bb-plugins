@@ -1,54 +1,7 @@
 #!/usr/bin/env bash
-# The bb CLI of the pinned dev worktree, for BB_CLI.
-#
-# Every bb-plugins task that touches a running bb goes through this: captures,
-# live plugin testing, and the reload the watcher performs. Two things have to
-# be true for any of them to be reproducible, and this is where both are
-# enforced.
-#
-# The ambient environment is cleared first. A shell inside a bb thread exports
-# BB_SERVER_URL and BB_CLI pointing at the desktop app, and the dev CLI honours
-# them — so without `env -u` this silently drives the developer's real bb and
-# reports its personal plugin set as if it were the fixture instance.
-#
-# The worktree is pinned second. It is checked out at a release commit rather
-# than at main, so what you see is the bb that users actually run instead of
-# whatever is landing this week.
 set -euo pipefail
 
-# Under bb's own worktrees directory rather than beside the source checkouts:
-# nobody edits this checkout, so it should not sit in the working directory as
-# if it were one.
-repo="${BB_DEV_REPO:-${HOME}/.bb/worktrees/dev/bb}"
-caller_dir="${PWD}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
 
-if [[ ! -d "${repo}" ]]; then
-  echo "bb-dev-cli: no worktree at ${repo}" >&2
-  echo "Create one, or point BB_DEV_REPO at an existing checkout." >&2
-  exit 1
-fi
-
-args=("$@")
-case "${args[0]:-}:${args[1]:-}" in
-  plugin:build | plugin:dev | plugin:migrate | plugin:types)
-    if [[ ${#args[@]} -lt 3 || "${args[2]}" == -* ]]; then
-      args=("${args[0]}" "${args[1]}" "${caller_dir}" "${args[@]:2}")
-    else
-      case "${args[2]}" in
-        .) args[2]="${caller_dir}" ;;
-        ./* | ../*) args[2]="${caller_dir}/${args[2]}" ;;
-      esac
-    fi
-    ;;
-esac
-
-# `bb:dev` sends its build chatter to stderr already, so stdout stays parseable
-# JSON for the callers that ask for --json.
-exec env \
-  -u BB_SERVER_URL \
-  -u BB_CLI \
-  -u BB_THREAD_ID \
-  -u BB_ENVIRONMENT_ID \
-  -u BB_THREAD_STORAGE \
-  -u BB_PROJECT_ID \
-  pnpm -C "${repo}" --silent bb:dev "${args[@]}"
+exec bun "${repo_root}/packages/bb-kit-core/src/bin/bin.ts" dev-instance exec -- "$@"

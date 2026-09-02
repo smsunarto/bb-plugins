@@ -1,88 +1,117 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type {
-  EnvironmentResult,
-  InstanceResult,
-} from "../packages/bb-kit-core/src/bin/dev/model.ts";
+import type { InstanceResult } from "../packages/bb-kit-core/src/bin/dev/model.ts";
 import { DevManager } from "../packages/bb-kit-core/src/bin/dev/manager.ts";
-import { runPreparedDevInstance } from "./bb-dev-instance.ts";
+import { runPreparedDevInstance, WATCH_COMMAND } from "./bb-dev-instance.ts";
 
-test("the repository command starts and prepares one named instance", async () => {
+test("the repository command builds before it applies the owned baseline", async () => {
   let startOptions: unknown;
-  let setupCalls = 0;
-  const environment: EnvironmentResult = {
-    name: "prepared",
-    BB_CLI: "/tmp/prepared-bb",
-    BB_SERVER_URL: "http://localhost:11001",
-    BB_HOST_DAEMON_PORT: "27001",
-    BB_KIT_DEV_NAME: "prepared",
-  };
-  const manager = {
-    cwd: "/workspace",
-    resolveName: (name?: string) => name ?? "implicit",
-    start: async (options: unknown) => {
-      startOptions = options;
-      return runningResult("prepared");
-    },
-    environmentFor: () => environment,
-  } as unknown as DevManager;
+  const calls: Array<{ argv: readonly string[]; stdout: string }> = [];
+  const manager = recordingManager((options) => {
+    startOptions = options;
+    return runningResult("prepared", "owned");
+  });
 
   const result = await runPreparedDevInstance(["--name", "prepared"], {
     manager,
-    commandRunner: (received) => {
-      assert.deepEqual(received, environment);
-      return async (args) => {
-        assert.deepEqual(args, ["settings", "show", "--json"]);
-        return '{"dataDir":"/tmp/.bb-dev/prepared"}\n';
-      };
-    },
-    setup: async (runCommand, log) => {
-      setupCalls += 1;
-      assert.equal(
-        await runCommand?.(["settings", "show", "--json"]),
-        '{"dataDir":"/tmp/.bb-dev/prepared"}\n',
-      );
-      log?.("prepared fixture");
+    runProgram: async (_name, argv, options) => {
+      calls.push({ argv, stdout: options.stdout });
+      return 0;
     },
   });
 
   assert.deepEqual(startOptions, { name: "prepared", json: true });
-  assert.equal(setupCalls, 1);
+  assert.deepEqual(calls, [
+    { argv: ["bun", "run", "build:managed"], stdout: "stderr" },
+    {
+      argv: [
+        "bun",
+        "scripts/bb-dev-instance-setup.ts",
+        "--expected-data-dir",
+        "/tmp/.bb-dev/prepared",
+      ],
+      stdout: "stderr",
+    },
+  ]);
   assert.equal(result.exitCode, 0);
   assert.equal(result.stdout, "http://localhost:11001\n");
 
-  const jsonResult = await runPreparedDevInstance(["--name", "help", "--json"], {
+  const jsonResult = await runPreparedDevInstance(["--name", "prepared", "--json"], {
     manager,
-    commandRunner: () => async () => "",
-    setup: async () => {},
+    runProgram: async () => 0,
   });
   const jsonEnvelope = JSON.parse(jsonResult.stdout) as {
     ok: boolean;
-    result: { prepared: boolean };
+    result: { built: boolean; prepared: boolean };
   };
   assert.equal(jsonEnvelope.ok, true);
+  assert.equal(jsonEnvelope.result.built, true);
   assert.equal(jsonEnvelope.result.prepared, true);
 });
 
-test("the repository command keeps JSON parseable and reports setup failures", async () => {
-  const manager = {
-    cwd: "/workspace",
-    resolveName: (name?: string) => name ?? "implicit",
-    start: async () => runningResult("broken"),
-    environmentFor: () => ({
-      name: "broken",
-      BB_CLI: "/tmp/broken-bb",
-      BB_SERVER_URL: "http://localhost:11001",
-      BB_HOST_DAEMON_PORT: "27001",
-      BB_KIT_DEV_NAME: "broken",
+test("the repository command forwards owned revision selectors", async () => {
+  let startOptions: unknown;
+  await runPreparedDevInstance(["--revision", "local:feature", "--repo", "/tmp/bb", "--desktop"], {
+    manager: recordingManager((options) => {
+      startOptions = options;
+      return runningResult("selected", "owned");
     }),
-  } as unknown as DevManager;
-  const result = await runPreparedDevInstance(["--name", "broken", "--json"], {
-    manager,
-    commandRunner: () => async () => "",
-    setup: async () => {
-      throw new Error("baseline did not converge");
+    runProgram: async () => 0,
+  });
+  assert.deepEqual(startOptions, {
+    revision: "local:feature",
+    repository: "/tmp/bb",
+    desktop: true,
+    json: true,
+  });
+});
+
+test("the root dev loop starts, builds, baselines, then routes every watcher", async () => {
+  const calls: string[][] = [];
+  const result = await runPreparedDevInstance(["--watch"], {
+    manager: recordingManager(() => runningResult("watch", "owned")),
+    runProgram: async (_name, argv) => {
+      calls.push([...argv]);
+      return 0;
     },
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(calls, [
+    ["bun", "run", "build:managed"],
+    ["bun", "scripts/bb-dev-instance-setup.ts", "--expected-data-dir", "/tmp/.bb-dev/prepared"],
+    [...WATCH_COMMAND],
+  ]);
+  assert.equal(WATCH_COMMAND.includes("!@smsunarto/bb-plugin-agent-proxy"), true);
+});
+
+test("attached preparation is refused before it starts or builds", async () => {
+  let startOptions: unknown;
+  const calls: string[][] = [];
+  const manager = recordingManager((options) => {
+    startOptions = options;
+    return runningResult("attached", "attached");
+  });
+  const result = await runPreparedDevInstance(["--attach", "/tmp/bb", "--json"], {
+    manager,
+    runProgram: async (_name, argv) => {
+      calls.push([...argv]);
+      return 0;
+    },
+  });
+
+  assert.equal(startOptions, undefined);
+  assert.deepEqual(calls, []);
+  assert.equal(result.exitCode, 1);
+  const envelope = JSON.parse(result.stdout) as { error: { code: string } };
+  assert.equal(envelope.error.code, "attached_source_unsupported");
+});
+
+test("the repository command keeps JSON parseable and reports baseline failures", async () => {
+  const result = await runPreparedDevInstance(["--name", "broken", "--json"], {
+    manager: recordingManager(() => runningResult("broken", "owned")),
+    runProgram: async (_name, argv) =>
+      argv.some((argument) => argument.endsWith("bb-dev-instance-setup.ts")) ? 7 : 0,
   });
 
   assert.equal(result.exitCode, 1);
@@ -95,15 +124,23 @@ test("the repository command keeps JSON parseable and reports setup failures", a
   assert.equal(envelope.ok, false);
   assert.equal(envelope.name, "broken");
   assert.equal(envelope.error.code, "setup_failed");
-  assert.equal(envelope.error.message, "baseline did not converge");
+  assert.match(envelope.error.message, /status 7/);
 });
 
-function runningResult(name: string): InstanceResult {
+function recordingManager(start: (options: unknown) => InstanceResult): DevManager {
+  return {
+    resolveName: (name?: string) => name ?? "implicit",
+    start: async (options: unknown) => start(options),
+  } as unknown as DevManager;
+}
+
+function runningResult(name: string, source: "owned" | "attached"): InstanceResult {
   return {
     name,
     phase: "running",
-    revision: "tag:desktop-v1.2.3",
-    commit: "a".repeat(40),
+    source,
+    revision: source === "owned" ? "tag:desktop-v1.2.3" : null,
+    commit: source === "owned" ? "a".repeat(40) : null,
     desiredRuntime: "web",
     checkoutPath: "/tmp/checkout",
     branch: "detached (fixture)",

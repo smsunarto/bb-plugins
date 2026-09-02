@@ -52,6 +52,16 @@ export interface ScreenshotBatch {
 
 export type BbCommandRunner = (args: readonly string[]) => Promise<string>;
 
+export function routedBbCli(environment: NodeJS.ProcessEnv = process.env): string {
+  const executable = environment.BB_CLI;
+  if (!executable) {
+    throw new Error(
+      "BB_CLI is not set. Run this command through bun run dev:instance and bb-kit dev-instance run.",
+    );
+  }
+  return executable;
+}
+
 export function parseScreenshotArguments(args: readonly string[]): ScreenshotOptions {
   const plugins: string[] = [];
   let outputDir: string | null = null;
@@ -148,7 +158,7 @@ function activeTheme(output: string, args: readonly string[]): string {
 }
 
 export async function runBbCommand(args: readonly string[]): Promise<string> {
-  const executable = process.env.BB_CLI ?? "bb";
+  const executable = routedBbCli();
   const child = Bun.spawn([executable, ...args], {
     cwd: SCREENSHOT_ROOT,
     stdout: "pipe",
