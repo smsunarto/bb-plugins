@@ -7,7 +7,8 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { prepareRemoteSession, type RemoteSessionState } from "./remote-session.ts";
 
 export type PipMode = "hidden" | "pip" | "expanded";
 
@@ -63,6 +64,7 @@ function ChromeButton(props: { label: string; onClick?: () => void; href?: strin
         aria-label={props.label}
         className={CHROME_BUTTON_CLASS}
         href={props.href}
+        onPointerDown={(event) => event.stopPropagation()}
         rel="noreferrer"
         target="_blank"
         title={props.label}
@@ -185,8 +187,49 @@ function PipFrame(props: {
   const { mode, url, dockCorner, onExpand, onMinimize } = props;
   const [hovered, setHovered] = useState(false);
   const [frameKey, setFrameKey] = useState(0);
+  const [sessionState, setSessionState] = useState<RemoteSessionState | "preparing">("preparing");
+  const [waitingForLogin, setWaitingForLogin] = useState(false);
   const layout = useDockLayout();
   const expanded = mode === "expanded";
+
+  const prepareSession = useCallback(async () => {
+    setSessionState("preparing");
+    const next = await prepareRemoteSession();
+    setSessionState(next);
+    if (next === "ready") {
+      setFrameKey((key) => key + 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    void prepareSession();
+  }, [prepareSession]);
+
+  useEffect(() => {
+    if (!waitingForLogin) return;
+    let leftBb = false;
+    const markLeft = () => {
+      leftBb = true;
+    };
+    const reloadAfterReturn = () => {
+      if (!leftBb || document.visibilityState === "hidden") return;
+      setWaitingForLogin(false);
+      setSessionState("ready");
+      setFrameKey((key) => key + 1);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") markLeft();
+      else reloadAfterReturn();
+    };
+    window.addEventListener("blur", markLeft);
+    window.addEventListener("focus", reloadAfterReturn);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", markLeft);
+      window.removeEventListener("focus", reloadAfterReturn);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [waitingForLogin]);
 
   // attributes is left unspread: its role="button" would nest the chrome's
   // real buttons inside a button role. Dragging is pointer-only.
@@ -231,16 +274,16 @@ function PipFrame(props: {
     "bottom-right": { left: midX, right: area.right, top: midY, bottom: area.bottom },
   };
 
-  // Signing in cannot happen inside the iframe: the gate's sign-in link
-  // navigates the frame into GitHub OAuth, and GitHub sends
-  // frame-ancestors 'none', so the frame goes blank. The browser-tab link
-  // completes auth top-level, then reload picks up the new session.
+  // GitHub OAuth cannot run inside the iframe. The server normally installs a
+  // short-lived Connect session before this frame mounts. The browser link is
+  // the fallback for local origins that cannot set the gate's parent-domain
+  // cookie; returning to bb reloads the frame automatically.
   const chrome = (
     <div className="absolute right-3 top-3 flex gap-2">
       <ChromeButton label="Reload" onClick={() => setFrameKey((key) => key + 1)}>
         <ChromeIcon path="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5" />
       </ChromeButton>
-      <ChromeButton href={url} label="Open in browser tab">
+      <ChromeButton href={url} label="Open remote screen in browser tab">
         <ChromeIcon path="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       </ChromeButton>
       {expanded ? (
@@ -286,24 +329,69 @@ function PipFrame(props: {
             resizing its display to a 320px window. Scaling instead of
             remounting also keeps one VNC session across pip and expanded. */}
         {/* oxlint-disable react/iframe-missing-sandbox -- the embed is cross-origin, so allow-same-origin only grants NoVNC its own origin's storage, which it needs alongside scripts. */}
-        <iframe
-          allow="clipboard-read; clipboard-write"
-          className={`border-0 ${isDragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"}`}
-          key={frameKey}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
-          src={url}
-          style={{
-            width: expandedWidth,
-            height: expandedHeight,
-            transform: expanded ? "scale(1)" : `scale(${PIP_WIDTH / expandedWidth})`,
-            transformOrigin: "top left",
-          }}
-          title="Remote screen"
-        />
+        {sessionState === "ready" ? (
+          <iframe
+            allow="clipboard-read; clipboard-write"
+            className={`border-0 ${isDragging ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"}`}
+            key={frameKey}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
+            src={url}
+            style={{
+              width: expandedWidth,
+              height: expandedHeight,
+              transform: expanded ? "scale(1)" : `scale(${PIP_WIDTH / expandedWidth})`,
+              transformOrigin: "top left",
+            }}
+            title="Remote screen"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-background px-6 text-center">
+            {sessionState === "preparing" ? (
+              <div className="space-y-2">
+                <div
+                  aria-hidden="true"
+                  className="mx-auto size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground"
+                />
+                <p className="text-sm font-medium text-foreground">Preparing remote screen…</p>
+              </div>
+            ) : (
+              <div className="max-w-sm space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Sign in to remote access</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {waitingForLogin
+                      ? "Finish sign-in in the new tab, then return here."
+                      : "Open one browser tab to sign in. The screen reloads when you return."}
+                  </p>
+                </div>
+                <div className="flex justify-center gap-2">
+                  <a
+                    className="rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background"
+                    href={url}
+                    onClick={() => setWaitingForLogin(true)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {waitingForLogin ? "Open sign-in again" : "Sign in in browser"}
+                  </a>
+                  <button
+                    className="rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground"
+                    onClick={() => void prepareSession()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    type="button"
+                  >
+                    Try again
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* oxlint-enable react/iframe-missing-sandbox */}
         {expanded ? (
           chrome
-        ) : (
+        ) : sessionState === "ready" ? (
           // A cross-origin iframe swallows mouse events, so this overlay
           // owns hover and keeps the pip a click-to-expand preview.
           <div className="absolute inset-0 flex items-center justify-center">
@@ -321,7 +409,7 @@ function PipFrame(props: {
               </>
             ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </>
   );
