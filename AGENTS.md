@@ -3,6 +3,8 @@
 ## Dev loop
 
 - Start `bun run dev` before the first plugin edit. Leave it running.
+- After each plugin install or reload, immediately tell the user the plugin ID, target (`dev bb` or `live bb`), and result.
+- Before handoff, name each target where you did not install or reload the change.
 - Close a change by naming what to exercise in bb. Do not tell the user to run plugin build or reload commands.
 - Before handoff, run root `typecheck`, `test`, and `lint`. Also run `build` when a manifest, frontend bundle, build input, dependency, or workspace tooling changed.
 - After a plugin change passes dev-instance verification, run `bb plugin reload <id>` against the live bb and confirm it is running.
