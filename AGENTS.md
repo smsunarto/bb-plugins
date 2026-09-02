@@ -3,9 +3,10 @@
 ## Dev loop
 
 - Start `bun run dev` before the first plugin edit. Leave it running.
-- Close a change by naming what to exercise in bb. Never prescribe `bb plugin build` or `bb plugin reload`.
+- Close a change by naming what to exercise in bb. Do not tell the user to run plugin build or reload commands.
 - Before handoff, run root `typecheck`, `test`, and `lint`. Also run `build` when a manifest, frontend bundle, build input, dependency, or workspace tooling changed.
-- Use direct `bb plugin reload` only for recovery.
+- After a plugin change passes dev-instance verification, run `bb plugin reload <id>` against the live bb and confirm it is running.
+- Keep `agent-proxy` out of automatic live reloads. Reload it only when the user explicitly asks.
 - Use `clean` only to diagnose stale `dist/`.
 
 ## Traps
@@ -17,7 +18,6 @@
 - The `bb-plugin-` segment in the package name is load-bearing. The directory name is not identity.
 - Put runtime imports in `dependencies`.
 - Drive a running bb through the pinned dev instance (`bun run dev:setup`, `scripts/bb-dev-cli`).
-- Ask before the live desktop app loads a change.
 - `dist/` is shared between the two instances.
 - When you capture plugin screenshots, follow the `bb-plugin-screenshots` skill.
 - Point `BB_SERVER_URL` at the dev App port, not the Server port.
