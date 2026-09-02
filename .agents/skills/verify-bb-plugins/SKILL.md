@@ -45,9 +45,12 @@ Load the current browser command reference before the first browser command.
 
 ```bash
 agent-browser skills get core --full
+agent-browser --session "$BROWSER_SESSION" set viewport 1728 1117 2
 agent-browser --session "$BROWSER_SESSION" open "$BB_APP_URL"
 agent-browser --session "$BROWSER_SESSION" wait --load networkidle
 ```
+
+Set the viewport before the first `open`. A fresh session renders at device pixel ratio 1 on a 1280x577 window, which rasterises 16px icons onto 16 physical pixels and crops the app. The 2x setting persists for the session across `open` and `reload`.
 
 Drive the same controls a user drives. Prefer roles, labels, and visible text. Use CSS only for stable plugin contracts listed in the feature file.
 

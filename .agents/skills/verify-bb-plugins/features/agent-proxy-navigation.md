@@ -15,6 +15,7 @@ The result shows `Anything OpenAI-compatible`. The URL ends with `/plugins/agent
 ## Driving it with agent-browser
 
 ```bash
+agent-browser --session "$BROWSER_SESSION" set viewport 1728 1117 2
 agent-browser --session "$BROWSER_SESSION" open "$BB_APP_URL"
 agent-browser --session "$BROWSER_SESSION" find role button click --name "Agent Proxy"
 agent-browser --session "$BROWSER_SESSION" wait --text "CLIProxyAPI core"
