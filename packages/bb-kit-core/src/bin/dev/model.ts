@@ -25,6 +25,9 @@ export type ResolvedRevision = {
 
 export type LauncherTarget = {
   repository: string;
+  branch: string | null;
+  node: string | null;
+  codex: string | null;
   instanceId: string;
   dataDir: string;
   appUrl: string;
@@ -140,7 +143,20 @@ export type InstanceResult = {
   revision: string | null;
   commit: string | null;
   desiredRuntime: DesiredRuntime | null;
+  checkoutPath: string | null;
+  branch: string | null;
+  node: string | null;
+  codex: string | null;
+  dataDir: string | null;
   appUrl: string | null;
+  serverUrl: string | null;
+  hostDaemonUrl: string | null;
+  desktopUserDataDir: string | null;
+  devSession: "running" | "stopped" | null;
+  desktopSession: "running" | "stopped" | null;
+  devLog: string | null;
+  desktopLog: string | null;
+  launcherLog: string | null;
   running: boolean;
 };
 
@@ -305,8 +321,13 @@ export function requireTargetPlan(
   return { ...plan, target: plan.target, leaseKey: plan.leaseKey };
 }
 
-export function resultFromState(state: InstanceState, running: boolean): InstanceResult {
+export function resultFromState(
+  state: InstanceState,
+  running: boolean,
+  observedTarget?: LauncherTarget,
+): InstanceResult {
   const plan = statePlan(state);
+  const target = observedTarget ?? plan?.target ?? null;
   return {
     name: state.name,
     phase: state.phase,
@@ -314,7 +335,20 @@ export function resultFromState(state: InstanceState, running: boolean): Instanc
     commit: plan?.revision.commit ?? null,
     desiredRuntime:
       plan?.desiredRuntime ?? (state.phase === "resolving" ? state.desiredRuntime : null),
-    appUrl: plan?.target?.appUrl ?? null,
+    checkoutPath: plan?.checkoutPath ?? null,
+    branch: target?.branch ?? null,
+    node: target?.node ?? null,
+    codex: target?.codex ?? null,
+    dataDir: target?.dataDir ?? null,
+    appUrl: target?.appUrl ?? null,
+    serverUrl: target?.serverUrl ?? null,
+    hostDaemonUrl: target?.hostDaemonUrl ?? null,
+    desktopUserDataDir: target?.desktopUserDataDir ?? null,
+    devSession: target?.devSession ?? null,
+    desktopSession: target?.desktopSession ?? null,
+    devLog: target?.devLog ?? null,
+    desktopLog: target?.desktopLog ?? null,
+    launcherLog: target?.launcherLog ?? null,
     running,
   };
 }
@@ -326,7 +360,20 @@ export function emptyResult(name: string): InstanceResult {
     revision: null,
     commit: null,
     desiredRuntime: null,
+    checkoutPath: null,
+    branch: null,
+    node: null,
+    codex: null,
+    dataDir: null,
     appUrl: null,
+    serverUrl: null,
+    hostDaemonUrl: null,
+    desktopUserDataDir: null,
+    devSession: null,
+    desktopSession: null,
+    devLog: null,
+    desktopLog: null,
+    launcherLog: null,
     running: false,
   };
 }

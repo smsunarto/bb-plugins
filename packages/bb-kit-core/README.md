@@ -77,6 +77,11 @@ commits use the official repository unless `--repo` selects another one.
 Add `--desktop` to persist the desktop shell as desired runtime state. Add
 `--open` to open the app once, after the app health check passes.
 
+Cold starts can fetch a checkout, install dependencies, build bb's plugin SDK,
+and install Electron before startup. By default, bb-kit keeps a short lock wait
+and lets bb's launcher enforce its own readiness timeouts. Use `--timeout
+SECONDS` when the caller needs an overall start budget.
+
 The implicit instance name uses `BB_ENVIRONMENT_ID` when present. Otherwise,
 it uses a stable hash of the Git workspace or current directory. Pass
 `--name` only when callers should share one instance.
@@ -105,6 +110,10 @@ eval "$(bb-kit dev-instance env [NAME])"
 The generated bb shim clears known bb routing variables. It then runs
 `pnpm -C <checkout> --silent bb:dev`. Relative plugin paths still resolve from
 the caller's directory.
+
+Repository-specific preparation stays outside bb-kit. For example, bb-plugins
+provides `bun run dev:instance`, which starts the instance and then applies its
+plugin, experiment, setting, and theme baseline.
 
 Add `--json` to `start`, `list`, `status`, `stop`, `destroy`, or `env`.
 The command writes one schema-versioned JSON object to stdout. Start progress

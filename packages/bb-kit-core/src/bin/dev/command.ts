@@ -142,7 +142,7 @@ function parseStart(args: readonly string[]): {
   repository?: string;
   desktop?: boolean;
   open?: boolean;
-  timeoutMs: number;
+  timeoutMs?: number;
   json: boolean;
 } {
   const parsed: {
@@ -151,9 +151,9 @@ function parseStart(args: readonly string[]): {
     repository?: string;
     desktop?: boolean;
     open?: boolean;
-    timeoutMs: number;
+    timeoutMs?: number;
     json: boolean;
-  } = { timeoutMs: 30_000, json: false };
+  } = { json: false };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--desktop") {
@@ -301,7 +301,20 @@ function formatStatus(result: InstanceResult): string {
     `Revision: ${result.revision ?? "unresolved"}`,
     `Commit: ${result.commit ?? "unresolved"}`,
     `Runtime: ${result.desiredRuntime ?? "none"}`,
+    `Checkout: ${result.checkoutPath ?? "unavailable"}`,
+    `Branch: ${result.branch ?? "unavailable"}`,
+    `Node: ${result.node ?? "unavailable"}`,
+    `Codex: ${result.codex ?? "unavailable"}`,
+    `Data dir: ${result.dataDir ?? "unavailable"}`,
     `App: ${result.appUrl ?? "unavailable"}`,
+    `Server: ${result.serverUrl ?? "unavailable"}`,
+    `Host daemon: ${result.hostDaemonUrl ?? "unavailable"}`,
+    `Desktop user data: ${result.desktopUserDataDir ?? "unavailable"}`,
+    `Dev session: ${result.devSession ?? "unknown"}`,
+    `Desktop session: ${result.desktopSession ?? "unknown"}`,
+    `Dev log: ${result.devLog ?? "unavailable"}`,
+    `Desktop log: ${result.desktopLog ?? "unavailable"}`,
+    `Launcher log: ${result.launcherLog ?? "unavailable"}`,
     `Running: ${result.running ? "yes" : "no"}`,
     "",
   ].join("\n");
@@ -340,11 +353,7 @@ function shellQuote(value: string): string {
 }
 
 function usageError(message: string): DevError {
-  return new DevError(
-    "invalid_arguments",
-    message,
-    "Run bb-kit dev-instance --help.",
-  );
+  return new DevError("invalid_arguments", message, "Run bb-kit dev-instance --help.");
 }
 
 function isUsageCode(code: string): boolean {

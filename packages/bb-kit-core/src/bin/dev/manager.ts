@@ -60,7 +60,8 @@ import {
   safeRemoveOwned,
 } from "./store.ts";
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_CONTROL_TIMEOUT_MS = 30_000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 30_000;
 const MAX_CHECKOUT_CANDIDATES = 16;
 
 export type ManagerOptions = {
@@ -127,11 +128,13 @@ export class DevManager {
 
   async start(options: StartOptions = {}): Promise<InstanceResult> {
     const name = this.resolveName(options.name);
-    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const deadline = Date.now() + timeoutMs;
+    const deadline = options.timeoutMs === undefined ? null : Date.now() + options.timeoutMs;
     const store = this.store(name);
     const owner = store.claim(name);
-    const release = await store.lock(owner.ownerToken, remainingTimeout(deadline, name, "start"));
+    const release = await store.lock(
+      owner.ownerToken,
+      deadline === null ? DEFAULT_CONTROL_TIMEOUT_MS : remainingTimeout(deadline, name, "start"),
+    );
     try {
       let state = store.read();
       if (state !== null && state.ownerToken !== owner.ownerToken) {
@@ -268,7 +271,7 @@ export class DevManager {
             state = checkpoint(stateBeforeStart, { phase: "starting", plan: startingPlan, child });
             store.write(state);
           },
-          remainingTimeout(deadline, name, "start"),
+          deadline === null ? undefined : remainingTimeout(deadline, name, "start"),
         );
       } catch (error) {
         const failure = asDevError(error);
@@ -286,13 +289,14 @@ export class DevManager {
         throw failure;
       }
 
+      const healthDeadline = deadline ?? Date.now() + DEFAULT_HEALTH_TIMEOUT_MS;
       while (true) {
         live = readLauncherStatus(launcher);
         assertSameStoredTarget(startingPlan.target, live);
         if (await runtimeSatisfied(live, desired, this.healthProbe)) {
           break;
         }
-        if (Date.now() >= deadline) {
+        if (Date.now() >= healthDeadline) {
           const failure = new DevError(
             "health_timeout",
             `Instance ${name} did not become healthy before the timeout.`,
@@ -338,7 +342,10 @@ export class DevManager {
       const live = readLauncherStatus(launcherOptions(plan, this.environment));
       assertSameStoredTarget(plan.target, live);
       const running = await runtimeSatisfied(live, plan.desiredRuntime, this.healthProbe);
-      return { ...resultFromState(state, running), phase: running ? "running" : "stopped" };
+      return {
+        ...resultFromState(state, running, live),
+        phase: running ? "running" : "stopped",
+      };
     } catch {
       return resultFromState(state, false);
     }
@@ -358,7 +365,7 @@ export class DevManager {
     return results.toSorted((left, right) => left.name.localeCompare(right.name));
   }
 
-  async stop(nameOption?: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<InstanceResult> {
+  async stop(nameOption?: string, timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS): Promise<InstanceResult> {
     const name = this.resolveName(nameOption);
     const deadline = Date.now() + timeoutMs;
     const store = this.store(name);
@@ -379,7 +386,10 @@ export class DevManager {
     }
   }
 
-  async destroy(nameOption?: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<InstanceResult> {
+  async destroy(
+    nameOption?: string,
+    timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
+  ): Promise<InstanceResult> {
     const name = this.resolveName(nameOption);
     const deadline = Date.now() + timeoutMs;
     const store = this.store(name);
@@ -514,7 +524,7 @@ export class DevManager {
   async exec(
     nameOption: string | undefined,
     args: readonly string[],
-    timeoutMs = DEFAULT_TIMEOUT_MS,
+    timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
   ): Promise<number> {
     const name = this.resolveName(nameOption);
     const store = this.store(name);

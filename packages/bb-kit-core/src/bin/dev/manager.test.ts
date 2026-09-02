@@ -29,6 +29,15 @@ test("start is retry-safe, explicit revision mismatch fails, and destroy is idem
   });
   assert.equal(first.running, true);
   assert.equal(first.desiredRuntime, "web");
+  assert.equal(first.branch, "detached (fixture)");
+  assert.equal(first.node, "fixture");
+  assert.equal(first.codex, "fixture");
+  assert.equal(first.dataDir?.endsWith("checkout.data"), true);
+  assert.equal(first.serverUrl, "http://localhost:19001");
+  assert.equal(first.hostDaemonUrl, "http://127.0.0.1:27001");
+  assert.equal(first.devSession, "running");
+  assert.equal(first.desktopSession, "stopped");
+  assert.equal(first.devLog?.endsWith("checkout.logs/dev.log"), true);
   const state = JSON.parse(
     readFileSync(join(fixture.home, "instances", "repeat", "state.json"), "utf8"),
   ) as { plan: { checkoutPath: string } };
@@ -325,6 +334,13 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
     timeoutMs: 2_500,
     json: true,
   });
+  await runDev(["start", "--name", "default-timeout", "--json"], {
+    manager: recordingManager,
+  });
+  assert.deepEqual(received, {
+    name: "default-timeout",
+    json: true,
+  });
 
   const fixture = createFixture();
   const manager = fixture.manager();
@@ -355,6 +371,15 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
     ].join("\n"),
   );
   assert.doesNotMatch(envResult.stdout, /BB_HOST_DAEMON_URL/);
+  const statusResult = await runDev(["status", "environment"], { manager });
+  assert.match(statusResult.stdout, /Checkout: .*checkout/);
+  assert.match(statusResult.stdout, /Branch: detached \(fixture\)/);
+  assert.match(statusResult.stdout, /Node: fixture/);
+  assert.match(statusResult.stdout, /Codex: fixture/);
+  assert.match(statusResult.stdout, /Server: http:\/\/localhost:19001/);
+  assert.match(statusResult.stdout, /Host daemon: http:\/\/127\.0\.0\.1:27001/);
+  assert.match(statusResult.stdout, /Dev session: running/);
+  assert.match(statusResult.stdout, /Launcher log: .*launcher\.log/);
 
   const invalid = await runDev(["start", "--unknown"], { manager });
   assert.equal(invalid.exitCode, 2);

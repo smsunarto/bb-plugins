@@ -61,6 +61,9 @@ export function parseLauncherStatus(output: string): LauncherTarget {
   }
   return {
     repository: resolve(repository),
+    branch: optionalValue(values, "Branch"),
+    node: optionalValue(values, "Node"),
+    codex: optionalValue(values, "Codex"),
     instanceId: required(values, "Instance"),
     dataDir: resolve(dataDir),
     appUrl: appUrl.href.replace(/\/$/, ""),
@@ -139,7 +142,7 @@ export function startLauncher(
   desiredRuntime: DesiredRuntime,
   launcherLog: string,
   onSpawn: (identity: ProcessIdentity) => void,
-  timeoutMs: number,
+  timeoutMs?: number,
 ): Promise<number> {
   return runLauncherCommand(
     options,
@@ -155,7 +158,7 @@ export function runLauncherCommand(
   args: readonly string[],
   launcherLog: string,
   onSpawn: (identity: ProcessIdentity) => void,
-  timeoutMs: number,
+  timeoutMs?: number,
 ): Promise<number> {
   const descriptor = openSync(launcherLog, "a");
   return spawnAndWait(
@@ -296,6 +299,11 @@ function required(values: ReadonlyMap<string, string>, key: string): string {
     );
   }
   return value;
+}
+
+function optionalValue(values: ReadonlyMap<string, string>, key: string): string | null {
+  const value = values.get(key);
+  return value === undefined || value === "" ? null : value;
 }
 
 function shimSource(checkoutPath: string): string {

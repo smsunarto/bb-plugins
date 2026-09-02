@@ -25,6 +25,7 @@
     "build": "bun run build:framework && bun run --filter '@smsunarto/bb-plugin-*' --parallel build",
     "build:framework": "bun run --filter '@bb-kit/*' --parallel build",
     "dev": "bun run --filter '@smsunarto/bb-plugin-*' --parallel --no-orphans dev",
+    "dev:instance": "bun scripts/bb-dev-instance.ts",
     "dev:setup": "bun scripts/bb-dev-instance-setup.ts",
     "icons": "bun scripts/plugin-icons.ts",
     "icons:check": "bun scripts/plugin-icons.ts --check",

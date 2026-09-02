@@ -523,6 +523,9 @@ function parseTarget(value: unknown): LauncherTarget {
   }
   return {
     repository: stringField(object, "repository"),
+    branch: optionalStringField(object, "branch"),
+    node: optionalStringField(object, "node"),
+    codex: optionalStringField(object, "codex"),
     instanceId: stringField(object, "instanceId"),
     dataDir: stringField(object, "dataDir"),
     appUrl: stringField(object, "appUrl"),
@@ -623,6 +626,17 @@ function runtimeField(object: Record<string, unknown>, key: string): "web" | "de
 
 function nullableString(value: unknown, key: string): string | null {
   if (value === null) {
+    return null;
+  }
+  if (typeof value !== "string" || value === "") {
+    invalid(key);
+  }
+  return value;
+}
+
+function optionalStringField(object: Record<string, unknown>, key: string): string | null {
+  const value = object[key];
+  if (value === undefined || value === null) {
     return null;
   }
   if (typeof value !== "string" || value === "") {

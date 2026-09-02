@@ -99,3 +99,24 @@ bun install                              # one hoisted node_modules at the repo 
 bun run build                            # bb plugin build for every plugin
 bb plugin install ./plugins/<id>         # from the repo root
 ```
+
+## Develop against an isolated bb
+
+Start the latest bb release and prepare it with this workspace's plugins:
+
+```sh
+bun run dev:instance
+```
+
+The command installs workspace plugins, pins experiments, resets plugin settings,
+and selects the repository theme. It is safe to repeat. Pass bb-kit start options
+after `--` when you need another revision or a named instance:
+
+```sh
+bun run dev:instance -- --name my-branch \
+  --revision local:my-branch \
+  --repo ~/git/bb
+```
+
+Use `bb-kit dev-instance` directly when you need lifecycle control without the
+bb-plugins baseline.
