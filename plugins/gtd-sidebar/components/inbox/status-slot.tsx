@@ -38,7 +38,7 @@ export function StatusOrTime({
     return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
   return (
-    <span className="tabular-nums text-2xs text-muted-foreground">
+    <span className="tabular-nums text-2xs text-muted-foreground/40">
       {relativeTimeLabel(thread.updatedAt, now)}
     </span>
   );
