@@ -566,6 +566,17 @@ export function mountLinkHints(
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    const plainComposerFocus =
+      event.key === "i" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+    if (mode.kind === "idle" && plainComposerFocus) {
+      if (isEditableTarget(event.target)) return;
+      const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
+      if (textbox === null) return;
+      textbox.focus();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (mode.kind === "idle") {
       const trigger = isIdleTrigger({
         key: event.key,

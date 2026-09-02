@@ -129,6 +129,116 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("plain i focuses the composer from idle and active hint modes", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><div id="editor" role="textbox"></div></div>' +
+      '<button id="only">Only</button>';
+    giveRect(document.getElementById("editor") as HTMLElement, 10, 10);
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+    let focusCalls = 0;
+    (document.getElementById("editor") as HTMLElement).focus = () => {
+      focusCalls += 1;
+    };
+
+    for (const init of [
+      { ctrlKey: true },
+      { metaKey: true },
+      { altKey: true },
+      { shiftKey: true },
+    ]) {
+      expect(pressKey("i", window, init)).toBe(true);
+    }
+    expect(focusCalls).toBe(0);
+
+    expect(pressKey("i")).toBe(false);
+    expect(focusCalls).toBe(1);
+
+    pressKey("f");
+    expect(markers()).toEqual(["i", "dd"]);
+    expect(pressKey("i", window, { metaKey: true })).toBe(true);
+    expect(focusCalls).toBe(1);
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    pressKey("f");
+    expect(markers()).toEqual(["i", "dd"]);
+    expect(pressKey("i")).toBe(false);
+    expect(focusCalls).toBe(2);
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("plain i stays available to editable targets while hint mode is idle", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><div id="composer" role="textbox"></div></div>' +
+      '<input id="input"><textarea id="textarea"></textarea><select id="select"></select>' +
+      '<div id="contenteditable" contenteditable="true"></div>' +
+      '<div id="textbox" role="textbox"></div><button id="only">Only</button>';
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+    let focusCalls = 0;
+    (document.getElementById("composer") as HTMLElement).focus = () => {
+      focusCalls += 1;
+    };
+
+    for (const id of ["input", "textarea", "select", "contenteditable", "textbox"]) {
+      expect(pressKey("i", document.getElementById(id) as HTMLElement)).toBe(true);
+    }
+    expect(focusCalls).toBe(0);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("plain i focuses the composer from an editable target while hint mode is active", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><div id="composer" role="textbox"></div></div>' +
+      '<input id="input"><button id="only">Only</button>';
+    giveRect(document.getElementById("composer") as HTMLElement, 10, 10);
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+    let focusCalls = 0;
+    (document.getElementById("composer") as HTMLElement).focus = () => {
+      focusCalls += 1;
+    };
+
+    const input = document.getElementById("input") as HTMLElement;
+    let received = 0;
+    input.addEventListener("keydown", () => {
+      received += 1;
+    });
+    pressKey("F", input, { code: "KeyF", metaKey: true, shiftKey: true });
+    expect(document.querySelector(".vimium-hint-layer")).not.toBeNull();
+    expect(pressKey("i", input)).toBe(false);
+    expect(received).toBe(0);
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+    expect(focusCalls).toBe(1);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("plain i is not swallowed when no composer textbox exists", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML = '<button id="only">Only</button>';
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+
+    expect(pressKey("i")).toBe(true);
+
+    void dispose();
+    controller.abort();
+  });
+
   test("stable app controls keep their reserved single-character labels", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
@@ -269,6 +379,10 @@ describe("mountLinkHints", () => {
     pressKey("m");
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(markers()).toEqual(["1", "2", "i", "f", "j", "d", "k", "qs"]);
+
+    pressKey("i");
+    expect((document.activeElement as HTMLElement).id).toBe("model-search");
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
 
     void dispose();
     controller.abort();
