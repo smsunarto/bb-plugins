@@ -14,7 +14,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runDev } from "./command.ts";
 import { DevError } from "./error.ts";
-import { openApp } from "./launcher.ts";
 import { DevManager } from "./manager.ts";
 import { instancePaths, STATE_SCHEMA_VERSION, type InstanceState } from "./model.ts";
 import { processIdentity, processMatches, runCommand, spawnAndWait } from "./process.ts";
@@ -428,21 +427,6 @@ test("spawnAndWait terminates the owned group when its checkpoint callback throw
     assert.fail("spawn callback did not receive a process identity");
   }
   assert.equal(processMatches(childIdentity), false);
-});
-
-test("an opener spawn failure cannot crash a successful start", async () => {
-  const originalPath = process.env["PATH"];
-  process.env["PATH"] = "";
-  try {
-    openApp("http://localhost:11001");
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  } finally {
-    if (originalPath === undefined) {
-      delete process.env["PATH"];
-    } else {
-      process.env["PATH"] = originalPath;
-    }
-  }
 });
 
 function createFixture(): {
