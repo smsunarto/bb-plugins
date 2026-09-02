@@ -1,5 +1,5 @@
 diff --git a/dist/index.js b/dist/index.js
-index 07036659fc11b8a3c9d300536631056ec3f58297..4af0d4af56aba12751a85f6b556b215c12b95045 100644
+index 07036659fc11b8a3c9d300536631056ec3f58297..33e4dbeab30ec8b47532f11829aa447c8e0dca5c 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -6962,7 +6962,7 @@ var reactDetectionCache = null;
@@ -11,7 +11,30 @@ index 07036659fc11b8a3c9d300536631056ec3f58297..4af0d4af56aba12751a85f6b556b215c
    );
  }
  function isReactPage() {
-@@ -8479,7 +8479,7 @@ function PageFeedbackToolbarCSS({
+@@ -7881,6 +7881,8 @@ function SettingsPanel({
+     "div",
+     {
+       className: `${styles_module_default9.settingsPanel} ${isVisible ? styles_module_default9.enter : styles_module_default9.exit}`,
++      inert: !isVisible,
++      "aria-hidden": !isVisible,
+       style: toolbarNearBottom ? { bottom: "auto", top: "calc(100% + 0.5rem)" } : void 0,
+       "data-agentation-settings-panel": true,
+       children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: styles_module_default9.settingsPanelContainer, children: [
+@@ -7890,2 +7892,4 @@ function SettingsPanel({
+             className: `${styles_module_default9.settingsPage} ${settingsPage === "automations" ? styles_module_default9.slideLeft : ""}`,
++            inert: settingsPage === "automations",
++            "aria-hidden": settingsPage === "automations",
+             children: [
+@@ -8093,6 +8097,8 @@ function SettingsPanel({
+           "div",
+           {
+             className: `${styles_module_default9.settingsPage} ${styles_module_default9.automationsPage} ${settingsPage === "automations" ? styles_module_default9.slideIn : ""}`,
++            inert: settingsPage !== "automations",
++            "aria-hidden": settingsPage !== "automations",
+             children: [
+               /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+                 "button",
+@@ -8479,7 +8485,7 @@ function PageFeedbackToolbarCSS({
        portalWrapperRef.current?.classList.remove(styles_module_default4.disableTransitions);
      });
    };
@@ -20,8 +43,17 @@ index 07036659fc11b8a3c9d300536631056ec3f58297..4af0d4af56aba12751a85f6b556b215c
    const effectiveReactMode = isDevMode && settings.reactEnabled ? OUTPUT_TO_REACT_MODE[settings.outputDetail] : "off";
    const [currentSessionId, setCurrentSessionId] = (0, import_react8.useState)(
      initialSessionId ?? null
+@@ -10786,6 +10792,8 @@ function PageFeedbackToolbarCSS({
+                   "div",
+                   {
+                     className: `${styles_module_default4.controlsContent} ${isActive ? styles_module_default4.visible : styles_module_default4.hidden} ${toolbarPosition && toolbarPosition.y < 100 ? styles_module_default4.tooltipBelow : ""} ${tooltipsHidden || showSettings ? styles_module_default4.tooltipsHidden : ""} ${tooltipSessionActive ? styles_module_default4.tooltipsInSession : ""}`,
++                    inert: !isActive,
++                    "aria-hidden": !isActive,
+                     onMouseEnter: handleControlsMouseEnter,
+                     onMouseLeave: handleControlsMouseLeave,
+                     children: [
 diff --git a/dist/index.mjs b/dist/index.mjs
-index b6662bd6b8bcc9555e22a4d1a0de99198e0c11b5..700f90ec084c21af232c95026963609f89883dab 100644
+index b6662bd6b8bcc9555e22a4d1a0de99198e0c11b5..1edef2662ba6ef77a2d2d99198b8daf3f9a04e63 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
 @@ -6878,7 +6878,7 @@ var reactDetectionCache = null;
@@ -33,7 +65,30 @@ index b6662bd6b8bcc9555e22a4d1a0de99198e0c11b5..700f90ec084c21af232c95026963609f
    );
  }
  function isReactPage() {
-@@ -8395,7 +8395,7 @@ function PageFeedbackToolbarCSS({
+@@ -7797,6 +7797,8 @@ function SettingsPanel({
+     "div",
+     {
+       className: `${styles_module_default9.settingsPanel} ${isVisible ? styles_module_default9.enter : styles_module_default9.exit}`,
++      inert: !isVisible,
++      "aria-hidden": !isVisible,
+       style: toolbarNearBottom ? { bottom: "auto", top: "calc(100% + 0.5rem)" } : void 0,
+       "data-agentation-settings-panel": true,
+       children: /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsPanelContainer, children: [
+@@ -7806,2 +7808,4 @@ function SettingsPanel({
+             className: `${styles_module_default9.settingsPage} ${settingsPage === "automations" ? styles_module_default9.slideLeft : ""}`,
++            inert: settingsPage === "automations",
++            "aria-hidden": settingsPage === "automations",
+             children: [
+@@ -8009,6 +8013,8 @@ function SettingsPanel({
+           "div",
+           {
+             className: `${styles_module_default9.settingsPage} ${styles_module_default9.automationsPage} ${settingsPage === "automations" ? styles_module_default9.slideIn : ""}`,
++            inert: settingsPage !== "automations",
++            "aria-hidden": settingsPage !== "automations",
+             children: [
+               /* @__PURE__ */ jsxs12(
+                 "button",
+@@ -8395,7 +8401,7 @@ function PageFeedbackToolbarCSS({
        portalWrapperRef.current?.classList.remove(styles_module_default4.disableTransitions);
      });
    };
@@ -42,3 +97,12 @@ index b6662bd6b8bcc9555e22a4d1a0de99198e0c11b5..700f90ec084c21af232c95026963609f
    const effectiveReactMode = isDevMode && settings.reactEnabled ? OUTPUT_TO_REACT_MODE[settings.outputDetail] : "off";
    const [currentSessionId, setCurrentSessionId] = useState6(
      initialSessionId ?? null
+@@ -10702,6 +10708,8 @@ function PageFeedbackToolbarCSS({
+                   "div",
+                   {
+                     className: `${styles_module_default4.controlsContent} ${isActive ? styles_module_default4.visible : styles_module_default4.hidden} ${toolbarPosition && toolbarPosition.y < 100 ? styles_module_default4.tooltipBelow : ""} ${tooltipsHidden || showSettings ? styles_module_default4.tooltipsHidden : ""} ${tooltipSessionActive ? styles_module_default4.tooltipsInSession : ""}`,
++                    inert: !isActive,
++                    "aria-hidden": !isActive,
+                     onMouseEnter: handleControlsMouseEnter,
+                     onMouseLeave: handleControlsMouseLeave,
+                     children: [
