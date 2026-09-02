@@ -112,11 +112,15 @@ Run `bb plugin config notify set <key> <value>`. Changes apply without a reload.
 | `includeChildThreads`  | `false` | Include subagent threads                           |
 | `includeHiddenThreads` | `false` | Include hidden plugin worker threads               |
 | `minRunSeconds`        | `0`     | Skip shorter runs. The maximum is 30 days          |
-| `sound`                | `off`   | Use `off`, `system default`, or a named macOS tone |
+| `sound`                | `off`   | Use `off`, `system default`, `Cursor completion`, or a named macOS tone |
 | `agentTool`            | `false` | Offer `notify_user` to agents                      |
 
 Notify is quiet by default. It skips child and hidden threads, suppresses a turn
 you stopped manually, and collapses duplicate events for three seconds.
+
+`Cursor completion` plays Cursor's installed `done1.mp3`. Notify does not copy
+or ship that file. The option stays silent when Cursor is not installed in
+`/Applications`.
 
 ## Delivery behavior
 

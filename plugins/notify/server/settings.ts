@@ -54,7 +54,7 @@ export const SETTINGS_BLOCK = {
     type: "select" as const,
     label: "Sound",
     description:
-      "off is silent. system default lets macOS choose. A named tone silences the notification and plays that tone after BB shows it.",
+      "off is silent. system default lets macOS choose. Cursor completion uses Cursor's installed agent sound. A named tone plays after BB shows the notification.",
     options: [...SOUND_OPTIONS],
     default: SETTINGS_DEFAULTS.sound,
   },
