@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
+  useBbNavigate,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
@@ -16,6 +17,7 @@ import {
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
+import { openParkedThread } from "@/lib/parked-thread-navigation";
 import { useThreadNaming } from "@/hooks/use-thread-naming";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
 
@@ -46,6 +48,7 @@ export function SlimRow({
   onRestore: () => void;
 }) {
   const actions = useSidebarThreadActions();
+  const navigate = useBbNavigate();
   const { splitProps, isAvailable: isSplitAvailable } = useSidebarThreadSplit(thread.id);
   const { renameThread } = useThreadNaming(thread.id);
   const title = threadDisplayTitle(thread);
@@ -124,11 +127,13 @@ export function SlimRow({
             href="#"
             aria-label={title}
             onClick={(event) => {
+              if (event.button !== 0) return;
               event.preventDefault();
-              actions.open(thread.id, {
-                split: event.metaKey || event.ctrlKey,
+              openParkedThread(shelf, thread.id, event.metaKey || event.ctrlKey, {
+                openVisibleThread: (threadId, split) => actions.open(threadId, { split }),
+                openAnyThread: navigate.toThread,
+                onNavigate,
               });
-              onNavigate();
             }}
             className="absolute inset-0 cursor-pointer rounded-xl"
           />
