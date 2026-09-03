@@ -56,9 +56,7 @@ function useCachedEmbed(request: EmbedRequest | null) {
     (listener: () => void) => (key === null ? () => {} : embedCache.subscribe(key, listener)),
     [key],
   );
-  const entry = useSyncExternalStore(subscribe, () =>
-    key === null ? null : embedCache.read(key),
-  );
+  const entry = useSyncExternalStore(subscribe, () => (key === null ? null : embedCache.read(key)));
 
   useEffect(() => {
     if (request === null || key === null || entry === null) return;

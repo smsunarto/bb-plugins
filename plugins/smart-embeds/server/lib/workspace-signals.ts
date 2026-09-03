@@ -1,9 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
-import {
-  WORKSPACE_CHANGED_CHANNEL,
-  type WorkspaceChangedSignal,
-} from "../../shared/contract.ts";
+import { WORKSPACE_CHANGED_CHANNEL, type WorkspaceChangedSignal } from "../../shared/contract.ts";
 
 /**
  * Tell every connected app when a thread's workspace may have changed, so the
