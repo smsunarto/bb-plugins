@@ -201,12 +201,7 @@ export interface CandidateView {
 /** True when the element deserves a hint marker. */
 export function isViableCandidate(view: CandidateView): boolean {
   if (view.tabindex === "-1" && !view.clickableBeyondTabindex) return false;
-  if (
-    view.disabled ||
-    view.insideAriaHidden ||
-    view.insideQuietZone ||
-    view.blockedByActiveAgent
-  ) {
+  if (view.disabled || view.insideAriaHidden || view.insideQuietZone || view.blockedByActiveAgent) {
     return false;
   }
   if (view.rect.width <= 0 || view.rect.height <= 0) return false;
@@ -291,23 +286,15 @@ function findActivePrimaryComposer(): HTMLElement | null {
   return null;
 }
 
-function isBlockedByActiveAgent(
-  element: Element,
-  activeComposer: HTMLElement | null,
-): boolean {
+function isBlockedByActiveAgent(element: Element, activeComposer: HTMLElement | null): boolean {
   if (activeComposer === null) return false;
   if (element.matches('button[aria-label="Scroll to latest event"]')) return true;
 
-  const footer = activeComposer.querySelector<HTMLElement>(
-    "[data-follow-up-composer-footer]",
-  );
+  const footer = activeComposer.querySelector<HTMLElement>("[data-follow-up-composer-footer]");
   return footer?.firstElementChild?.contains(element) === true;
 }
 
-function candidateView(
-  element: Element,
-  activeComposer: HTMLElement | null,
-): CandidateView {
+function candidateView(element: Element, activeComposer: HTMLElement | null): CandidateView {
   const style = window.getComputedStyle(element);
   const rect = element.getBoundingClientRect();
   return {
@@ -342,12 +329,9 @@ function collectTargets(scope: ParentNode): HTMLElement[] {
 }
 
 function topLevelFact(element: HTMLElement): TopLevelFact {
-  const reserved = RESERVED_CONTROLS.find((control) =>
-    element.matches(control.selector),
-  );
+  const reserved = RESERVED_CONTROLS.find((control) => element.matches(control.selector));
   const textReserved = TEXT_CONTROLS.find(
-    (control) =>
-      element.matches(control.selector) && element.textContent?.trim() === control.text,
+    (control) => element.matches(control.selector) && element.textContent?.trim() === control.text,
   );
   return {
     reservedChar: reserved?.char ?? textReserved?.char ?? null,
@@ -769,10 +753,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   function onScroll(event: Event): void {
     if (mode.kind !== "active") return;
     const scrolled = event.target;
-    if (
-      scrolled instanceof Element &&
-      !mode.hints.some((hint) => scrolled.contains(hint.target))
-    ) {
+    if (scrolled instanceof Element && !mode.hints.some((hint) => scrolled.contains(hint.target))) {
       return;
     }
     exit();

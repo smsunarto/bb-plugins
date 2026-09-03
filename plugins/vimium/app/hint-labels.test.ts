@@ -152,7 +152,6 @@ describe("assignTopLevelLabels", () => {
   });
 });
 
-
 describe("assignScopedLabels", () => {
   const facts = (roles: Parameters<typeof assignScopedLabels>[1][number]["role"][]) =>
     roles.map((role) => ({ role }));
@@ -176,10 +175,7 @@ describe("assignScopedLabels", () => {
 
   test("pins project actions while projects use single keys", () => {
     expect(
-      assignScopedLabels(
-        "project",
-        facts(["project", "new-project", "project", "projectless"]),
-      ),
+      assignScopedLabels("project", facts(["project", "new-project", "project", "projectless"])),
     ).toEqual(["f", "i", "j", "x"]);
   });
 
@@ -195,7 +191,12 @@ describe("assignScopedLabels", () => {
   test("uses q-prefixed fallbacks without breaking prefix freedom", () => {
     const labels = assignScopedLabels(
       "provider-model",
-      facts(["provider", "search", ...Array.from({ length: 25 }, () => "choice" as const), "other"]),
+      facts([
+        "provider",
+        "search",
+        ...Array.from({ length: 25 }, () => "choice" as const),
+        "other",
+      ]),
     );
     expect(labels.at(-1)?.startsWith("q")).toBe(true);
     for (const a of labels) {

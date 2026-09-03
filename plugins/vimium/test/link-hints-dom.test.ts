@@ -350,9 +350,7 @@ describe("mountLinkHints", () => {
       giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
     }
     const clicked: string[] = [];
-    document
-      .getElementById("model")
-      ?.addEventListener("click", () => clicked.push("model"));
+    document.getElementById("model")?.addEventListener("click", () => clicked.push("model"));
 
     pressKey("f");
     expect(markers()).toEqual([
@@ -411,7 +409,6 @@ describe("mountLinkHints", () => {
     void dispose();
     controller.abort();
   });
-
 
   test("the provider dialog numbers tabs and gives search plus choices single keys", async () => {
     const controller = newController();
@@ -502,7 +499,7 @@ describe("mountLinkHints", () => {
       '<div data-app-composer data-app-composer-role="primary">' +
       '<div id="editor" role="textbox"></div>' +
       '<button id="stop" aria-label="Stop run" data-promptbox-submit-action>Stop</button>' +
-      '<div data-follow-up-composer-footer>' +
+      "<div data-follow-up-composer-footer>" +
       '<div><button id="project" data-promptbox-project-control>Monorepo</button>' +
       '<button id="machine" aria-label="Environment">Dev Mac</button></div>' +
       '<div><button id="permission" aria-label="Permission mode">Ask</button></div>' +
@@ -543,9 +540,7 @@ describe("mountLinkHints", () => {
     pressKey("f");
     expect(document.querySelector(".vimium-hint-layer")).not.toBeNull();
 
-    document
-      .getElementById("quiet")
-      ?.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+    document.getElementById("quiet")?.dispatchEvent(new window.Event("scroll", { bubbles: true }));
     expect(document.querySelector(".vimium-hint-layer")).not.toBeNull();
 
     document.dispatchEvent(new window.Event("scroll", { bubbles: true }));
