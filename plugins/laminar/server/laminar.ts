@@ -362,6 +362,119 @@ function fullItemAttributes(item: CompletedItem): OtlpAttribute[] {
   }
 }
 
+interface ItemRecord {
+  completedAt: number;
+  item: CompletedItem;
+  seq: number;
+  startMs: number;
+}
+
+/**
+ * One provider round trip inside a BB turn. BB does not emit model request
+ * boundaries, so a step is inferred from the item stream: it starts when the
+ * previous step's tools have all finished and ends when its own first tool
+ * starts. Steps without tools end when their last item completes.
+ */
+interface LlmStep {
+  endMs: number;
+  items: ItemRecord[];
+  startMs: number;
+  tools: ItemRecord[];
+}
+
+const GEN_AI_SYSTEM_BY_PROVIDER: Record<string, string> = {
+  "claude-code": "anthropic",
+  codex: "openai",
+  nanocodex: "openai",
+};
+
+function genAiSystem(providerId: string): string {
+  return GEN_AI_SYSTEM_BY_PROVIDER[providerId] ?? providerId;
+}
+
+/** BB model IDs may carry a context suffix such as `claude-opus-5[1m]`. */
+function pricingModel(model: string): string {
+  return model.replace(/\[[^\]]*\]$/, "");
+}
+
+function isToolItem(item: CompletedItem): boolean {
+  return TOOL_ITEM_TYPES.has(item.type);
+}
+
+function groupLlmSteps(records: readonly ItemRecord[], turnStartMs: number): LlmStep[] {
+  const steps: LlmStep[] = [];
+  let current: LlmStep | null = null;
+  let nextStart = turnStartMs;
+
+  const close = (step: LlmStep): void => {
+    if (step.tools.length > 0) {
+      step.endMs = Math.min(...step.tools.map((tool) => tool.startMs));
+      nextStart = Math.max(...step.tools.map((tool) => tool.completedAt));
+    } else {
+      step.endMs = Math.max(...step.items.map((record) => record.completedAt));
+      nextStart = step.endMs;
+    }
+    step.endMs = Math.max(step.startMs, step.endMs);
+    steps.push(step);
+  };
+
+  for (const record of records) {
+    const tool = isToolItem(record.item);
+    const toolsDone =
+      current !== null &&
+      current.tools.length > 0 &&
+      record.startMs >= Math.max(...current.tools.map((entry) => entry.completedAt));
+    if (current !== null && current.tools.length > 0 && (!tool || toolsDone)) {
+      close(current);
+      current = null;
+    }
+    current ??= { startMs: nextStart, endMs: nextStart, items: [], tools: [] };
+    if (tool) current.tools.push(record);
+    else current.items.push(record);
+  }
+  if (current !== null) close(current);
+  return steps;
+}
+
+function toolCallArguments(item: CompletedItem): unknown {
+  switch (item.type) {
+    case "commandExecution":
+      return { command: item.command, cwd: item.cwd };
+    case "toolCall":
+      return item.arguments ?? {};
+    case "webSearch":
+      return { queries: item.queries };
+    case "webFetch":
+      return { url: item.url, pattern: item.pattern, prompt: item.prompt };
+    case "imageView":
+      return { path: item.path };
+    case "fileRead":
+      return { path: item.path, command: item.cmd };
+    case "search":
+      return { query: item.query, path: item.path, mode: item.mode, command: item.cmd };
+    case "fileChange":
+      return { changes: item.changes.map((change) => change.path) };
+    default:
+      return {};
+  }
+}
+
+function toolCallResponse(item: CompletedItem): unknown {
+  switch (item.type) {
+    case "commandExecution":
+      return { exitCode: item.exitCode, output: item.aggregatedOutput };
+    case "toolCall":
+      return { status: item.status, result: item.result, error: item.error };
+    case "webSearch":
+    case "webFetch":
+      return { result: item.resultText };
+    case "fileChange":
+      return { changes: item.changes };
+    default:
+      return "status" in item ? { status: item.status } : {};
+  }
+}
+
 function visibleUserText(events: readonly ThreadEventRow[]): string | null {
   const request = events.findLast(
     (event): event is Extract<ThreadEventRow, { type: "client/turn/requested" }> =>
@@ -387,10 +500,6 @@ function assistantText(items: readonly CompletedItem[]): string | null {
 
 function chatMessages(role: "assistant" | "user", text: string): string {
   return boundedJson([{ role, content: text }]);
-}
-
-function genAiMessages(role: "assistant" | "user", text: string): string {
-  return boundedJson([{ role, parts: [{ type: "text", content: text }] }]);
 }
 
 export function assembleTurnTrace({
@@ -430,8 +539,29 @@ export function assembleTurnTrace({
     if (event.type === "item/completed") {
       completed.set(event.data.item.id, { item: event.data.item, completedAt: event.createdAt });
     }
+    // Background tasks complete on the thread scope. Keep the ones this turn started.
+    if (event.type === "item/backgroundTask/completed" && starts.has(event.data.item.id)) {
+      completed.set(event.data.item.id, { item: event.data.item, completedAt: event.createdAt });
+    }
   }
   const items = [...completed.values()].map(({ item }) => item);
+  const itemIds = new Set(completed.keys());
+  const records: ItemRecord[] = [...completed.entries()]
+    .map(([itemId, record], seq) => ({
+      completedAt: record.completedAt,
+      item: record.item,
+      seq,
+      startMs: Math.min(starts.get(itemId) ?? record.completedAt, record.completedAt),
+    }))
+    .sort((a, b) => a.startMs - b.startMs || a.seq - b.seq);
+  const topLevel = records.filter(
+    (record) =>
+      record.item.parentToolCallId === undefined || !itemIds.has(record.item.parentToolCallId),
+  );
+  const steps = groupLlmSteps(topLevel, startMs);
+  if (steps.length === 0) {
+    steps.push({ startMs, endMs: completion.createdAt, items: [], tools: [] });
+  }
 
   const request = turnEvents.findLast(
     (event): event is Extract<ThreadEventRow, { type: "client/turn/requested" }> =>
@@ -448,12 +578,9 @@ export function assembleTurnTrace({
   const fullContent = contentMode === "full";
 
   const rootAttributes: OtlpAttribute[] = [
-    stringAttribute("lmnr.span.type", "LLM"),
+    stringAttribute("lmnr.span.type", "DEFAULT"),
     stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
     stringAttribute("lmnr.association.properties.session_id", thread.id),
-    stringAttribute("gen_ai.operation.name", "chat"),
-    stringAttribute("gen_ai.system", thread.providerId),
-    stringAttribute("gen_ai.provider.name", thread.providerId),
     stringAttribute("gen_ai.agent.name", "bb"),
     stringAttribute("bb.thread.id", thread.id),
     stringAttribute("bb.turn.id", turnId),
@@ -501,8 +628,7 @@ export function assembleTurnTrace({
       stringAttribute("bb.request.permission_mode", request.data.execution.permissionMode),
       stringAttribute("bb.request.reasoning_level", request.data.execution.reasoningLevel),
       stringAttribute("bb.request.service_tier", request.data.execution.serviceTier),
-      stringAttribute("gen_ai.request.model", request.data.execution.model),
-      stringAttribute("gen_ai.request.service_tier", request.data.execution.serviceTier),
+      stringAttribute("bb.request.model", request.data.execution.model),
       metadataAttribute("requestId", request.data.requestId),
       metadataAttribute("turnInitiator", request.data.initiator),
       metadataAttribute("turnSource", request.data.source),
@@ -550,7 +676,6 @@ export function assembleTurnTrace({
   }
   if (fallback !== undefined) {
     rootAttributes.push(
-      stringAttribute("gen_ai.response.model", fallback.data.fallbackModel),
       stringAttribute("bb.model.original", fallback.data.originalModel),
       stringAttribute("bb.model.fallback", fallback.data.fallbackModel),
       stringAttribute("bb.model.fallback_reason", fallback.data.reason),
@@ -561,31 +686,22 @@ export function assembleTurnTrace({
   }
   if (tokenUsage !== undefined) {
     rootAttributes.push(
-      intAttribute("gen_ai.usage.input_tokens", tokenUsage.inputTokens),
-      intAttribute("gen_ai.usage.output_tokens", tokenUsage.outputTokens),
-      intAttribute("gen_ai.usage.cache_read.input_tokens", tokenUsage.cachedInputTokens),
-      intAttribute("gen_ai.usage.reasoning_tokens", tokenUsage.reasoningOutputTokens),
-      intAttribute("gen_ai.usage.reasoning.output_tokens", tokenUsage.reasoningOutputTokens),
+      intAttribute("bb.usage.input_tokens", tokenUsage.inputTokens),
+      intAttribute("bb.usage.output_tokens", tokenUsage.outputTokens),
       intAttribute("bb.usage.cached_input_tokens", tokenUsage.cachedInputTokens),
       intAttribute("bb.usage.reasoning_output_tokens", tokenUsage.reasoningOutputTokens),
       intAttribute("bb.usage.total_tokens", tokenUsage.totalTokens),
     );
   }
-  if (fullContent) {
-    const input = visibleUserText(turnEvents);
-    const output = assistantText(items);
-    if (input !== null) {
-      rootAttributes.push(
-        stringAttribute("lmnr.span.input", chatMessages("user", input)),
-        stringAttribute("gen_ai.input.messages", genAiMessages("user", input)),
-      );
-    }
-    if (output !== null) {
-      rootAttributes.push(
-        stringAttribute("lmnr.span.output", chatMessages("assistant", output)),
-        stringAttribute("gen_ai.output.messages", genAiMessages("assistant", output)),
-      );
-    }
+  const userInput = fullContent ? visibleUserText(turnEvents) : null;
+  const finalOutput = fullContent ? assistantText(items) : null;
+  if (userInput !== null) {
+    rootAttributes.push(stringAttribute("lmnr.span.input", chatMessages("user", userInput)));
+  }
+  if (finalOutput !== null) {
+    rootAttributes.push(
+      stringAttribute("lmnr.span.output", chatMessages("assistant", finalOutput)),
+    );
   }
 
   const root: OtlpSpan = {
@@ -604,13 +720,121 @@ export function assembleTurnTrace({
           : { code: 0 },
   };
 
-  const itemIds = new Set(completed.keys());
-  const children = [...completed.entries()].map(([itemId, record]): OtlpSpan => {
-    const { item, completedAt } = record;
-    const itemStartMs = Math.min(starts.get(itemId) ?? completedAt, completedAt);
+  const stepSpanId = (index: number): string => stableHex("llm-span", `${turnId}:${index}`, 8);
+  const stepOfItem = new Map<string, number>();
+  steps.forEach((step, index) => {
+    for (const record of step.items) stepOfItem.set(record.item.id, index);
+  });
+  const requestModel = request?.data.execution.model;
+  const llmSpans = steps.map((step, index): OtlpSpan => {
+    const attributes: OtlpAttribute[] = [
+      stringAttribute("lmnr.span.type", "LLM"),
+      stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
+      stringAttribute("gen_ai.operation.name", "chat"),
+      stringAttribute("gen_ai.system", genAiSystem(thread.providerId)),
+      stringAttribute("gen_ai.provider.name", genAiSystem(thread.providerId)),
+      stringAttribute("bb.thread.id", thread.id),
+      stringAttribute("bb.turn.id", turnId),
+      stringAttribute("bb.provider.id", thread.providerId),
+      stringAttribute("bb.project.id", thread.projectId),
+      intAttribute("bb.llm.step", index + 1),
+      intAttribute("bb.llm.step_count", steps.length),
+      intAttribute("bb.llm.tool_count", step.tools.length),
+      intAttribute("bb.history.revision", historyRevision),
+    ];
+    if (requestModel !== undefined) {
+      attributes.push(
+        stringAttribute("gen_ai.request.model", pricingModel(requestModel)),
+        stringAttribute("bb.request.model", requestModel),
+      );
+    }
+    if (request !== undefined) {
+      attributes.push(
+        stringAttribute("gen_ai.request.service_tier", request.data.execution.serviceTier),
+      );
+    }
+    if (fallback !== undefined) {
+      attributes.push(
+        stringAttribute("gen_ai.response.model", pricingModel(fallback.data.fallbackModel)),
+      );
+    }
+    if (providerThreadId !== null && providerThreadId !== undefined) {
+      attributes.push(stringAttribute("bb.provider.thread_id", providerThreadId));
+    }
+    // BB reports usage once per turn, so the last step carries the turn total.
+    if (tokenUsage !== undefined && index === steps.length - 1) {
+      attributes.push(
+        stringAttribute("bb.usage.scope", "turn"),
+        intAttribute("gen_ai.usage.input_tokens", tokenUsage.inputTokens),
+        intAttribute("gen_ai.usage.output_tokens", tokenUsage.outputTokens),
+        intAttribute("gen_ai.usage.cache_read.input_tokens", tokenUsage.cachedInputTokens),
+        intAttribute("gen_ai.usage.reasoning_tokens", tokenUsage.reasoningOutputTokens),
+        intAttribute("gen_ai.usage.reasoning.output_tokens", tokenUsage.reasoningOutputTokens),
+        intAttribute("llm.usage.total_tokens", tokenUsage.totalTokens),
+      );
+    }
+    if (fullContent) {
+      const inputParts: unknown[] = [];
+      if (index === 0 && userInput !== null) {
+        inputParts.push({ role: "user", parts: [{ type: "text", content: userInput }] });
+      }
+      const previous = steps[index - 1];
+      if (previous !== undefined && previous.tools.length > 0) {
+        inputParts.push({
+          role: "tool",
+          parts: previous.tools.map((tool) => ({
+            type: "tool_call_response",
+            id: tool.item.id,
+            response: toolCallResponse(tool.item),
+          })),
+        });
+      }
+      const outputParts: unknown[] = [];
+      for (const record of step.items) {
+        if (record.item.type === "agentMessage") {
+          outputParts.push({ type: "text", content: record.item.text.slice(0, TEXT_MAX_CHARS) });
+        }
+      }
+      for (const tool of step.tools) {
+        outputParts.push({
+          type: "tool_call",
+          id: tool.item.id,
+          name: itemName(tool.item),
+          arguments: toolCallArguments(tool.item),
+        });
+      }
+      if (inputParts.length > 0) {
+        attributes.push(stringAttribute("gen_ai.input.messages", boundedJson(inputParts)));
+      }
+      if (outputParts.length > 0) {
+        attributes.push(
+          stringAttribute(
+            "gen_ai.output.messages",
+            boundedJson([{ role: "assistant", parts: outputParts }]),
+          ),
+        );
+      }
+    }
+    const failed = step.items.some((record) => itemStatus(record.item).code === 2);
+    return {
+      traceId,
+      spanId: stepSpanId(index),
+      parentSpanId: rootSpanId,
+      name: "bb.agent.llm",
+      kind: 1,
+      startTimeUnixNano: unixNano(step.startMs),
+      endTimeUnixNano: unixNano(step.endMs),
+      attributes,
+      status: failed ? { code: 2, message: "BB item failed" } : { code: 1 },
+    };
+  });
+
+  const children = records.map((record): OtlpSpan => {
+    const { item, completedAt, startMs: itemStartMs } = record;
+    const itemId = item.id;
     const parentId = item.parentToolCallId;
     const attributes: OtlpAttribute[] = [
-      stringAttribute("lmnr.span.type", TOOL_ITEM_TYPES.has(item.type) ? "TOOL" : "DEFAULT"),
+      stringAttribute("lmnr.span.type", isToolItem(item) ? "TOOL" : "DEFAULT"),
       stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
       stringAttribute("bb.thread.id", thread.id),
       stringAttribute("bb.turn.id", turnId),
@@ -632,13 +856,17 @@ export function assembleTurnTrace({
     if ("status" in item) attributes.push(stringAttribute("bb.item.status", item.status));
     attributes.push(...itemMetadataAttributes(item));
     if (fullContent) attributes.push(...fullItemAttributes(item));
+    const stepIndex = stepOfItem.get(itemId);
+    const parentSpanId =
+      parentId !== undefined && itemIds.has(parentId)
+        ? stableHex("item-span", parentId, 8)
+        : stepIndex !== undefined
+          ? stepSpanId(stepIndex)
+          : rootSpanId;
     return {
       traceId,
       spanId: stableHex("item-span", itemId, 8),
-      parentSpanId:
-        parentId !== undefined && itemIds.has(parentId)
-          ? stableHex("item-span", parentId, 8)
-          : rootSpanId,
+      parentSpanId,
       name: itemName(item),
       kind: 1,
       startTimeUnixNano: unixNano(itemStartMs),
@@ -691,7 +919,7 @@ export function assembleTurnTrace({
         scopeSpans: [
           {
             scope: { name: "bb-plugin-laminar", version: "0.1.0" },
-            spans: [root, ...children, ...traceIo],
+            spans: [root, ...llmSpans, ...children, ...traceIo],
           },
         ],
       },

@@ -4,6 +4,16 @@ Laminar exports each completed BB thread turn as one OTLP trace. The BB thread I
 
 The plugin observes BB's server-side thread event stream. It covers every provider, visible thread, hidden subagent, and background worker without changing an agent CLI or reading provider session files. Provider IDs remain trace attributes for filtering only.
 
+## Trace shape
+
+Each trace follows the span layout Laminar documents for custom exporters:
+
+- `bb.agent.turn` is the `DEFAULT` root span. It carries the session ID, trace metadata, and the turn's Input and Output.
+- `bb.agent.llm` is one `LLM` span per provider round trip. BB does not report model request boundaries, so the plugin infers them from the item stream: a round trip starts when the previous round trip's tools have all finished and ends when its own first tool starts. Reasoning and assistant message items nest under their round trip. In `full` mode the span carries `gen_ai.input.messages` and `gen_ai.output.messages` with text, `tool_call`, and `tool_call_response` parts.
+- Tool items (`commandExecution`, `toolCall`, `fileChange`, and the other tool types) are `TOOL` spans directly under the root, so Laminar's transcript view interleaves them with the LLM round trips in time order. Background tasks nest under the command that started them.
+
+BB reports token usage once per turn. The plugin attaches that total to the last `bb.agent.llm` span with `bb.usage.scope = turn`, because Laminar only counts `LLM` spans toward trace tokens and cost. `gen_ai.system` maps BB provider IDs to Laminar pricing names (`claude-code` to `anthropic`, `codex` to `openai`), and `gen_ai.request.model` drops BB context suffixes such as `[1m]`. The raw values stay in `bb.provider.id` and `bb.request.model`.
+
 ## Configure the plugin
 
 Install the plugin, then set these values in the BB plugin settings:

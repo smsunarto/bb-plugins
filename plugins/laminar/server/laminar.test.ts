@@ -4,6 +4,7 @@ import {
   exportOtlpTrace,
   LaminarExportError,
   traceIoOnly,
+  type OtlpSpan,
   type ThreadEventRow,
   type TraceThread,
 } from "./laminar.ts";
@@ -196,22 +197,40 @@ describe("turn assembly", () => {
     const parent = first.find((span) => attributes(span)["bb.item.id"] === "tool-parent")!;
     const child = first.find((span) => attributes(span)["bb.item.id"] === "tool-child")!;
 
-    expect(first).toHaveLength(5);
+    const llm = first.filter((span) => attributes(span)["lmnr.span.type"] === "LLM");
+    const lastLlm = llm.at(-1)!;
+
+    expect(first).toHaveLength(7);
     expect(root.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(root.spanId).toMatch(/^[0-9a-f]{16}$/);
     expect(second[0]!.traceId).toBe(root.traceId);
     expect(second[0]!.spanId).toBe(root.spanId);
     expect(second.map((span) => span.spanId)).toEqual(first.map((span) => span.spanId));
     expect(parent.name).toBe("final-name");
+    expect(parent.parentSpanId).toBe(root.spanId);
     expect(child.parentSpanId).toBe(parent.spanId);
-    expect(attributes(root)["gen_ai.usage.input_tokens"]).toBe("11");
+    expect(attributes(root)["lmnr.span.type"]).toBe("DEFAULT");
+    expect(attributes(root)["gen_ai.usage.input_tokens"]).toBeUndefined();
     expect(attributes(root)["bb.usage.total_tokens"]).toBe("18");
-    expect(attributes(root)["gen_ai.system"]).toBe("provider-1");
-    expect(attributes(root)["gen_ai.provider.name"]).toBe("provider-1");
-    expect(attributes(root)["gen_ai.operation.name"]).toBe("chat");
-    expect(attributes(root)["gen_ai.usage.cache_read.input_tokens"]).toBe("2");
-    expect(attributes(root)["gen_ai.usage.reasoning_tokens"]).toBe("3");
     expect(attributes(root)["bb.usage.cached_input_tokens"]).toBe("2");
+    expect(llm).toHaveLength(2);
+    expect(llm.map((span) => attributes(span)["bb.llm.step"])).toEqual(["1", "2"]);
+    expect(llm[0]!.parentSpanId).toBe(root.spanId);
+    expect(attributes(llm[0]!)["gen_ai.usage.input_tokens"]).toBeUndefined();
+    expect(attributes(lastLlm)["gen_ai.usage.input_tokens"]).toBe("11");
+    expect(attributes(lastLlm)["gen_ai.usage.output_tokens"]).toBe("7");
+    expect(attributes(lastLlm)["llm.usage.total_tokens"]).toBe("18");
+    expect(attributes(lastLlm)["bb.usage.scope"]).toBe("turn");
+    expect(attributes(lastLlm)["gen_ai.system"]).toBe("provider-1");
+    expect(attributes(lastLlm)["gen_ai.provider.name"]).toBe("provider-1");
+    expect(attributes(lastLlm)["gen_ai.operation.name"]).toBe("chat");
+    expect(attributes(lastLlm)["gen_ai.request.model"]).toBe("model-from-bb");
+    expect(attributes(lastLlm)["gen_ai.usage.cache_read.input_tokens"]).toBe("2");
+    expect(attributes(lastLlm)["gen_ai.usage.reasoning_tokens"]).toBe("3");
+    const reasoning = first.find((span) => attributes(span)["bb.item.id"] === "reasoning-1")!;
+    const assistant = first.find((span) => attributes(span)["bb.item.id"] === "assistant-1")!;
+    expect(reasoning.parentSpanId).toBe(lastLlm.spanId);
+    expect(assistant.parentSpanId).toBe(lastLlm.spanId);
     expect(attributes(root)["lmnr.association.properties.session_id"]).toBe("thread-1");
     expect(attributes(root)["lmnr.association.properties.metadata.threadTitle"]).toBe(
       "Trace metadata audit",
@@ -252,8 +271,10 @@ describe("turn assembly", () => {
       }),
     );
 
-    const root = spans("metadata", events)[0]!;
-    expect(attributes(root)["gen_ai.response.model"]).toBe("fallback-model");
+    const all = spans("metadata", events);
+    const root = all[0]!;
+    const llm = all.find((span) => attributes(span)["lmnr.span.type"] === "LLM")!;
+    expect(attributes(llm)["gen_ai.response.model"]).toBe("fallback-model");
     expect(attributes(root)["bb.model.original"]).toBe("model-from-bb");
     expect(attributes(root)["lmnr.association.properties.metadata.responseModel"]).toBe(
       "fallback-model",
@@ -306,10 +327,40 @@ describe("turn assembly", () => {
     expect(JSON.parse(String(root["lmnr.span.output"]))).toEqual([
       { role: "assistant", content: "assistant answer" },
     ]);
-    expect(JSON.parse(String(root["gen_ai.input.messages"]))).toEqual([
+    expect(root["gen_ai.input.messages"]).toBeUndefined();
+    const llm = full
+      .filter((span) => attributes(span)["lmnr.span.type"] === "LLM")
+      .map((span) => attributes(span));
+    expect(llm).toHaveLength(2);
+    expect(JSON.parse(String(llm[0]!["gen_ai.input.messages"]))).toEqual([
       { role: "user", parts: [{ type: "text", content: "visible prompt" }] },
     ]);
-    expect(JSON.parse(String(root["gen_ai.output.messages"]))).toEqual([
+    expect(JSON.parse(String(llm[0]!["gen_ai.output.messages"]))).toEqual([
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool_call",
+            id: "tool-parent",
+            name: "final-name",
+            arguments: { value: "latest-argument" },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.parse(String(llm[1]!["gen_ai.input.messages"]))).toEqual([
+      {
+        role: "tool",
+        parts: [
+          {
+            type: "tool_call_response",
+            id: "tool-parent",
+            response: { status: "completed", result: { text: "latest-result" } },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.parse(String(llm[1]!["gen_ai.output.messages"]))).toEqual([
       { role: "assistant", parts: [{ type: "text", content: "assistant answer" }] },
     ]);
 
@@ -344,7 +395,11 @@ describe("turn assembly", () => {
 
     const contentAttributes = full.flatMap((span) =>
       span.attributes.filter(
-        (attribute) => attribute.key === "lmnr.span.input" || attribute.key === "lmnr.span.output",
+        (attribute) =>
+          attribute.key === "lmnr.span.input" ||
+          attribute.key === "lmnr.span.output" ||
+          attribute.key === "gen_ai.input.messages" ||
+          attribute.key === "gen_ai.output.messages",
       ),
     );
     for (const attribute of contentAttributes) {
@@ -381,6 +436,179 @@ describe("turn assembly", () => {
     expect(attributes(traceIo)["lmnr.internal.trace_output_hashes"]).toEqual([
       "62de9a778101786ad11155c8c3fb646ef17ec1aaadd5b1d72e2dfdd624f1485d",
     ]);
+  });
+
+  test("splits provider round trips on tool completion and keeps parallel tools together", () => {
+    const startedAt = (id: string, type: "commandExecution" | "reasoning", at: number) =>
+      event("item/started", at, {
+        providerThreadId: "provider-thread-1",
+        item:
+          type === "reasoning"
+            ? { id, type, content: [], summary: [] }
+            : {
+                aggregatedOutput: "",
+                approvalStatus: null,
+                command: `run ${id}`,
+                cwd: "/workspace",
+                exitCode: undefined,
+                id,
+                status: "pending",
+                type,
+              },
+      });
+    const done = (id: string, type: "commandExecution" | "reasoning", at: number) =>
+      event("item/completed", at, {
+        providerThreadId: "provider-thread-1",
+        item:
+          type === "reasoning"
+            ? { id, type, content: [], summary: [] }
+            : {
+                aggregatedOutput: "ok",
+                approvalStatus: null,
+                command: `run ${id}`,
+                cwd: "/workspace",
+                exitCode: 0,
+                id,
+                status: "completed",
+                type,
+              },
+      });
+    const events: ThreadEventRow[] = [
+      requestEvent(),
+      event("turn/started", 10, { providerThreadId: "provider-thread-1" }),
+      startedAt("think-1", "reasoning", 12),
+      done("think-1", "reasoning", 20),
+      // Two tools from one response: the second starts before the first finishes.
+      startedAt("cmd-a", "commandExecution", 21),
+      startedAt("cmd-b", "commandExecution", 22),
+      done("cmd-a", "commandExecution", 30),
+      done("cmd-b", "commandExecution", 35),
+      // A tool from a later response starts after every earlier tool finished.
+      startedAt("cmd-c", "commandExecution", 40),
+      done("cmd-c", "commandExecution", 45),
+      startedAt("think-2", "reasoning", 50),
+      done("think-2", "reasoning", 55),
+      event("item/completed", 56, {
+        providerThreadId: "provider-thread-1",
+        item: { id: "answer", type: "agentMessage", text: "done" },
+      }),
+      event("turn/completed", 60, { providerThreadId: "provider-thread-1", status: "completed" }),
+    ];
+
+    const all = spans("metadata", events);
+    const llm = all.filter((span) => attributes(span)["lmnr.span.type"] === "LLM");
+    const window = (span: OtlpSpan) => [
+      Number(BigInt(span.startTimeUnixNano) / 1_000_000n),
+      Number(BigInt(span.endTimeUnixNano) / 1_000_000n),
+    ];
+
+    expect(llm.map(window)).toEqual([
+      [10, 21],
+      [35, 40],
+      [45, 56],
+    ]);
+    expect(llm.map((span) => attributes(span)["bb.llm.tool_count"])).toEqual(["2", "1", "0"]);
+    const byItem = (id: string) => all.find((span) => attributes(span)["bb.item.id"] === id)!;
+    expect(byItem("think-1").parentSpanId).toBe(llm[0]!.spanId);
+    expect(byItem("cmd-a").parentSpanId).toBe(all[0]!.spanId);
+    expect(byItem("cmd-c").parentSpanId).toBe(all[0]!.spanId);
+    expect(byItem("think-2").parentSpanId).toBe(llm[2]!.spanId);
+    expect(byItem("answer").parentSpanId).toBe(llm[2]!.spanId);
+    expect(window(byItem("cmd-b"))).toEqual([22, 35]);
+  });
+
+  test("exports background tasks completed on the thread scope under their command", () => {
+    const task = {
+      description: "Typecheck",
+      familyId: "family-1",
+      id: "task-1",
+      parentToolCallId: "cmd-1",
+      skipTranscript: false,
+      status: "completed" as const,
+      taskStatus: "completed" as const,
+      taskType: "local_bash",
+      type: "backgroundTask" as const,
+    };
+    const events: ThreadEventRow[] = [
+      requestEvent(),
+      event("turn/started", 10, { providerThreadId: "provider-thread-1" }),
+      event("item/started", 11, {
+        providerThreadId: "provider-thread-1",
+        item: {
+          aggregatedOutput: "",
+          approvalStatus: null,
+          command: "bun tsc",
+          cwd: "/workspace",
+          id: "cmd-1",
+          status: "pending",
+          type: "commandExecution",
+        },
+      }),
+      event("item/started", 12, {
+        providerThreadId: "provider-thread-1",
+        item: { ...task, status: "pending", taskStatus: "running" as const },
+      }),
+      event("item/completed", 13, {
+        providerThreadId: "provider-thread-1",
+        item: {
+          aggregatedOutput: "started",
+          approvalStatus: null,
+          command: "bun tsc",
+          cwd: "/workspace",
+          exitCode: 0,
+          id: "cmd-1",
+          status: "completed",
+          type: "commandExecution",
+        },
+      }),
+      event(
+        "item/backgroundTask/completed",
+        14,
+        { providerThreadId: "provider-thread-1", item: task },
+        { kind: "thread" },
+      ),
+      event(
+        "item/backgroundTask/completed",
+        15,
+        { providerThreadId: "provider-thread-1", item: { ...task, id: "task-from-earlier-turn" } },
+        { kind: "thread" },
+      ),
+      event("turn/completed", 20, { providerThreadId: "provider-thread-1", status: "completed" }),
+    ];
+
+    const all = spans("metadata", events);
+    const command = all.find((span) => attributes(span)["bb.item.id"] === "cmd-1")!;
+    const background = all.find((span) => attributes(span)["bb.item.id"] === "task-1")!;
+    expect(background.parentSpanId).toBe(command.spanId);
+    expect(background.startTimeUnixNano).toBe("12000000");
+    expect(background.endTimeUnixNano).toBe("14000000");
+    expect(attributes(background)["lmnr.span.type"]).toBe("TOOL");
+    expect(all.some((span) => attributes(span)["bb.item.id"] === "task-from-earlier-turn")).toBe(
+      false,
+    );
+  });
+
+  test("maps BB providers and model suffixes onto Laminar pricing keys", () => {
+    const events = turnEvents();
+    const request = events[0];
+    if (request?.type !== "client/turn/requested") throw new Error("missing request fixture");
+    request.data.execution.model = "claude-opus-5[1m]";
+
+    const llm = assembleTurnTrace({
+      contentMode: "metadata",
+      deploymentEnvironment: "test",
+      events,
+      historyRevision: 0,
+      thread: { ...thread, providerId: "claude-code" },
+    })
+      .resourceSpans[0]!.scopeSpans[0]!.spans.filter(
+        (span) => attributes(span)["lmnr.span.type"] === "LLM",
+      )
+      .map((span) => attributes(span));
+
+    expect(llm[0]!["gen_ai.system"]).toBe("anthropic");
+    expect(llm[0]!["gen_ai.request.model"]).toBe("claude-opus-5");
+    expect(llm[0]!["bb.request.model"]).toBe("claude-opus-5[1m]");
   });
 
   test("uses native OTLP status codes for completed, interrupted, and failed turns", () => {

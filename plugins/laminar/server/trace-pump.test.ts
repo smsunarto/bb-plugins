@@ -310,7 +310,7 @@ describe("trace pump cursor and retry behavior", () => {
     expect(
       runtime.listEvents.mock.calls.filter(([args]) => args.threadId === completeThread.id),
     ).toHaveLength(2);
-    expect(exporter.mock.calls[0]![1].resourceSpans[0]!.scopeSpans[0]!.spans).toHaveLength(2);
+    expect(exporter.mock.calls[0]![1].resourceSpans[0]!.scopeSpans[0]!.spans).toHaveLength(3);
     await stopPump(run);
   });
 
