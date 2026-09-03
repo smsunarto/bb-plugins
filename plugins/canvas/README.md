@@ -20,7 +20,7 @@ An agent writes one `.canvas.mdx` file. bb opens it beside the chat and renders 
 - **Live.** The opener polls the file. A new write renders in about two seconds. A write that no longer parses keeps the last good render and shows a banner that names the line.
 - **Safe.** Every prop value is a literal. Identifiers, calls, and expressions are rejected with a positioned diagnostic. There is no fetch and no code execution.
 - **Forgiving.** An unknown component, a bad prop, or a disallowed child becomes a red problem card in place. The rest of the document still renders. The problem bar and each problem card switch to the raw source, and "Back to canvas" returns.
-- **Persisted controls.** `Toggle`, `Select`, `Tabs`, and `Checklist` keep their state per file across reloads. Reset state clears it.
+- **Persisted controls.** `Toggle`, `Select`, `Tabs`, and `Checklist` keep their state per file and control id across reloads.
 - **Skill included.** The bundled `canvas` skill tells the agent when to use a canvas, where to write it, and how to check it.
 
 ## The sample canvas

@@ -43,11 +43,7 @@ function formatTime(ms: number): string {
   });
 }
 
-function Toolbar(props: {
-  readonly renderedAt: number | null;
-  readonly refreshing: boolean;
-  readonly onRefresh: () => void;
-}): ReactElement {
+function Toolbar(props: { readonly renderedAt: number | null }): ReactElement {
   const canvas = useCanvas();
   const state = useCanvasState();
   return (
@@ -73,21 +69,6 @@ function Toolbar(props: {
           Could not save state. Retry
         </button>
       ) : null}
-      <span className="flex-1" />
-      <button
-        type="button"
-        className={buttonClass}
-        onClick={props.onRefresh}
-        disabled={props.refreshing}
-      >
-        Refresh
-      </button>
-      <button type="button" className={buttonClass} onClick={state.reset}>
-        Reset state
-      </button>
-      <button type="button" className={buttonClass} onClick={() => canvas.setView("source")}>
-        Open source
-      </button>
     </div>
   );
 }
@@ -112,21 +93,16 @@ function CanvasFrame(props: {
   const [lastGood, setLastGood] = useState<LastGood | null>(null);
   const [lastBad, setLastBad] = useState<LastBad | null>(null);
   const known = useRef<string | null>(null);
-  const [forced, setForced] = useState(0);
   const query = rpc.render.useQuery(
     {
       source: canvas.source,
-      knownSha256: forced > 0 && known.current === null ? null : known.current,
+      knownSha256: known.current,
     },
     {
       refetchInterval: pollIntervalMs,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
       staleTime: 0,
-      // The key carries the known sha, so a forced refresh switches keys. A
-      // zero gcTime drops the abandoned entry at once, or its stale document
-      // would come back as cached data the next time the key flips.
-      gcTime: 0,
       placeholderData: (previous) => previous,
     },
   );
@@ -143,12 +119,6 @@ function CanvasFrame(props: {
       setLastBad({ sha256: data.sha256, diagnostic: data.diagnostic });
     }
   }, [data]);
-
-  const refresh = () => {
-    known.current = null;
-    setForced((count) => count + 1);
-    void query.refetch();
-  };
 
   const stale = lastBad !== null && lastGood !== null && lastBad.sha256 !== lastGood.sha256;
   const unparseable = lastBad?.diagnostic ?? null;
@@ -176,7 +146,7 @@ function CanvasFrame(props: {
   if (showing === null && data === undefined) {
     return (
       <div className="flex h-full flex-col">
-        <Toolbar renderedAt={null} refreshing={query.isFetching} onRefresh={refresh} />
+        <Toolbar renderedAt={null} />
         <p className="px-3 py-2 text-sm text-muted-foreground">Loading canvas</p>
       </div>
     );
@@ -185,12 +155,12 @@ function CanvasFrame(props: {
   if (showing === null && unreadable !== null) {
     return (
       <div className="flex h-full flex-col">
-        <Toolbar renderedAt={null} refreshing={query.isFetching} onRefresh={refresh} />
+        <Toolbar renderedAt={null} />
         <div className="m-3 rounded-md border border-border px-3 py-2 text-sm">
           <p className="m-0 font-medium text-foreground">{unreadableText[unreadable.reason]}</p>
           <p className="m-0 mt-1 text-muted-foreground">{unreadable.detail}</p>
           <p className="m-0 mt-1 font-mono text-xs text-muted-foreground">{canvas.path}</p>
-          <button type="button" className={`mt-2 ${buttonClass}`} onClick={refresh}>
+          <button type="button" className={`mt-2 ${buttonClass}`} onClick={() => query.refetch()}>
             Retry
           </button>
         </div>
@@ -201,11 +171,11 @@ function CanvasFrame(props: {
   if (showing === null && query.error !== null) {
     return (
       <div className="flex h-full flex-col">
-        <Toolbar renderedAt={null} refreshing={query.isFetching} onRefresh={refresh} />
+        <Toolbar renderedAt={null} />
         <div className="m-3 rounded-md border border-border px-3 py-2 text-sm">
           <p className="m-0 font-medium text-foreground">The canvas could not be loaded.</p>
           <p className="m-0 mt-1 text-muted-foreground">{query.error.message}</p>
-          <button type="button" className={`mt-2 ${buttonClass}`} onClick={refresh}>
+          <button type="button" className={`mt-2 ${buttonClass}`} onClick={() => query.refetch()}>
             Retry
           </button>
         </div>
@@ -216,7 +186,7 @@ function CanvasFrame(props: {
   if (showing === null) {
     return (
       <div className="flex h-full flex-col">
-        <Toolbar renderedAt={null} refreshing={query.isFetching} onRefresh={refresh} />
+        <Toolbar renderedAt={null} />
         {unparseable !== null ? <Banner diagnostic={unparseable} stale={false} /> : null}
         <div className="min-h-0 flex-1">
           <props.Original />
@@ -227,11 +197,7 @@ function CanvasFrame(props: {
 
   return (
     <div className="flex h-full flex-col">
-      <Toolbar
-        renderedAt={lastGood?.renderedAt ?? null}
-        refreshing={query.isFetching}
-        onRefresh={refresh}
-      />
+      <Toolbar renderedAt={lastGood?.renderedAt ?? null} />
       {unparseable !== null && stale ? <Banner diagnostic={unparseable} stale /> : null}
       {unreadable !== null ? (
         <div className="border-b border-border bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">

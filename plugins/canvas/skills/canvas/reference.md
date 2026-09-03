@@ -393,7 +393,7 @@ Persisted switch. Children render only while it is on.
 
 Children: blocks.
 
-State persists under `id` across reloads. Reset state clears it.
+State persists under `id` across reloads.
 
 | Prop      | Type               | Required |
 | --------- | ------------------ | -------- |
@@ -414,7 +414,7 @@ Persisted single choice from a fixed list of options.
 
 Children: none.
 
-State persists under `id` across reloads. Reset state clears it.
+State persists under `id` across reloads.
 
 | Prop      | Type                                | Required |
 | --------- | ----------------------------------- | -------- |
@@ -434,7 +434,7 @@ Persisted tab strip. Children must be Tab components.
 
 Children: only Tab.
 
-State persists under `id` across reloads. Reset state clears it.
+State persists under `id` across reloads.
 
 | Prop | Type               | Required |
 | ---- | ------------------ | -------- |
@@ -475,7 +475,7 @@ Persisted checkboxes. Each item keeps its own checked state.
 
 Children: none.
 
-State persists under `id` across reloads. Reset state clears it.
+State persists under `id` across reloads.
 
 | Prop    | Type                                                                 | Required |
 | ------- | -------------------------------------------------------------------- | -------- |

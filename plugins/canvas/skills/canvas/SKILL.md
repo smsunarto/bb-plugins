@@ -103,7 +103,7 @@ Both can apply at once. One or two sentences total is enough. Skip the intro for
 ## Troubleshooting
 
 - The canvas opens as plain text. The file name does not end in `.canvas.mdx`. Rename it. The opener also offers an "Open as canvas" button for any `.mdx` file.
-- The canvas shows an unreadable message. The path is wrong, the file is larger than 2 MB, the file is not UTF-8, or the host that owns it is offline. Fix the path or the host and press Refresh.
+- The canvas shows an unreadable message. The path is wrong, the file is larger than 2 MB, the file is not UTF-8, or the host that owns it is offline. Fix the path or host. The open canvas retries automatically.
 - The canvas shows the last good render with a banner. The latest write does not parse. Run `bb canvas check` and fix the reported line. The banner names it too.
 - A component shows a red problem card in place. The name, a prop, or a child is wrong. The card names the fix and links to the line. The rest of the document still renders.
-- To see the raw source, choose `Open with` on the file and pick the default viewer, or press Open source in the toolbar.
+- To see the raw source, choose `Open with` on the file and pick the default viewer.

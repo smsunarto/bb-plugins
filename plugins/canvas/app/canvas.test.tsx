@@ -11,7 +11,7 @@ installDom();
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { CanvasOpener } = await import("./canvas.tsx");
+const { CanvasOpener, pollIntervalMs } = await import("./canvas.tsx");
 
 const sample = readFileSync(
   new URL("../examples/flaky-test-triage.canvas.mdx", import.meta.url),
@@ -50,20 +50,29 @@ test("renders markdown and components from a rendered document", async () => {
   await slot.findByText("One root cause, three symptoms");
   assert.ok(slot.container.textContent?.includes("Flaky test triage for bb-plugins CI"));
   assert.equal(slot.container.querySelectorAll('[data-testid="bb-diff"]').length, 1);
+  assert.equal(slot.queryByRole("button", { name: "Refresh" }), null);
+  assert.equal(slot.queryByRole("button", { name: "Reset state" }), null);
+  assert.equal(slot.queryByRole("button", { name: "Open source" }), null);
   slot.unmount();
 });
 
-test("keeps the last good render and shows a banner when the file stops parsing", async () => {
+test("auto-refreshes and keeps the last good render when the file stops parsing", async () => {
   let calls = 0;
+  let broken = false;
   const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/stale.canvas.mdx"), {
     rpc: {
-      render: () => {
+      render: (input) => {
         calls += 1;
-        if (calls === 1) return rendered('# Good\n\n<Pill label="ok" />\n', "sha-good");
-        if (calls === 2) {
+        const knownSha256 = (input as { knownSha256: string | null }).knownSha256;
+        if (!broken) {
+          return knownSha256 === "sha-good"
+            ? { status: "unchanged", sha256: "sha-good" }
+            : rendered('# Good\n\n<Pill label="ok" />\n', "sha-good");
+        }
+        if (knownSha256 !== "sha-bad") {
           return {
             status: "unparseable",
-            sha256: "sha-2",
+            sha256: "sha-bad",
             diagnostic: {
               code: "syntax-error",
               message: "unexpected end",
@@ -71,17 +80,23 @@ test("keeps the last good render and shows a banner when the file stops parsing"
             },
           };
         }
-        return { status: "unchanged", sha256: "sha-2" };
+        return { status: "unchanged", sha256: "sha-bad" };
       },
       state: () => emptyState,
     },
   });
   await slot.findByText("ok");
-  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
-  await slot.findByText("The file changed but no longer parses. Showing the last good render.");
+  await waitFor(() => assert.ok(calls >= 2));
+  broken = true;
+  await slot.findByText(
+    "The file changed but no longer parses. Showing the last good render.",
+    {},
+    {
+      timeout: pollIntervalMs * 3,
+    },
+  );
   assert.ok(slot.container.textContent?.includes("ok"));
-  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
-  await waitFor(() => assert.ok(calls >= 3));
+  await waitFor(() => assert.ok(calls >= 4), { timeout: pollIntervalMs * 3 });
   await waitFor(() =>
     assert.ok(
       slot.container.textContent?.includes("no longer parses"),
@@ -101,7 +116,7 @@ test("gates non-canvas paths behind an opt-in button", async () => {
   slot.unmount();
 });
 
-test("problem bar and toolbar switch to the source view and back", async () => {
+test("problem links switch to the source view and back", async () => {
   const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/problem.canvas.mdx"), {
     rpc: { render: () => rendered("# Title\n\n<Widget />\n"), state: () => emptyState },
   });
@@ -111,8 +126,6 @@ test("problem bar and toolbar switch to the source view and back", async () => {
   await slot.findByText("ORIGINAL SOURCE");
   fireEvent.click(slot.getByRole("button", { name: "Back to canvas" }));
   await slot.findByText("1 problem");
-  fireEvent.click(slot.getByRole("button", { name: "Open source" }));
-  await slot.findByText("ORIGINAL SOURCE");
   slot.unmount();
 });
 

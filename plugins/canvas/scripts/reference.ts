@@ -289,7 +289,7 @@ export function renderReference(): string {
     const spec = specOf(name);
     out.push(`## ${name}`, "", spec.summary, "", `Children: ${childrenText(spec.children)}.`);
     if (isStateful(name)) {
-      out.push("", "State persists under `id` across reloads. Reset state clears it.");
+      out.push("", "State persists under `id` across reloads.");
     }
     // oxfmt would reflow the MDX inside the fence, so the marker keeps the
     // example byte-identical to what the parser test checks.
