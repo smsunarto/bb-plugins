@@ -36,7 +36,7 @@ Each trace follows the span layouts both backends document for custom OTLP expor
 
 BB reports token usage once per turn. The plugin attaches that total to the last `bb.agent.llm` span, because both backends only count model spans toward trace tokens and cost. Laminar receives `gen_ai.usage.*` counts. Langfuse receives exclusive usage buckets (`input`, `input_cached_tokens`, `output`, `output_reasoning_tokens`, `total`) as `langfuse.observation.usage_details`. Earlier round trips in the same turn receive zero usage, because Langfuse otherwise estimates tokens for a named model and would double count the turn total. Their `usageScope` metadata says `counted-on-last-step`. `gen_ai.system` maps BB provider IDs to pricing names (`claude-code` to `anthropic`, `codex` to `openai`), and the model name drops BB context suffixes such as `[1m]`. The raw values stay in `bb.provider.id` and `bb.request.model`.
 
-Each backend receives only the attribute families it reads. Laminar-only keys (`lmnr.*`) never reach Langfuse, and Langfuse-only keys (`langfuse.*`) never reach Laminar.
+Langfuse reads session, environment, tags, and trace metadata per observation, so every span carries them and the session view lists generations and tool calls, not only the root. Each backend receives only the attribute families it reads. Laminar-only keys (`lmnr.*`) never reach Langfuse, and Langfuse-only keys (`langfuse.*`) never reach Laminar.
 
 ## Self-hosted Laminar dashboard
 

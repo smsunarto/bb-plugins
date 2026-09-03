@@ -73,6 +73,12 @@ const TEXT_MAX_CHARS = 12_000;
 const INSTRUMENTATION_SOURCE = "bb-plugin-agent-trace";
 const TRACE_METADATA_PREFIX = "lmnr.association.properties.metadata";
 const LANGFUSE_TRACE_METADATA_PREFIX = "langfuse.trace.metadata";
+const LANGFUSE_TRACE_LEVEL_KEYS = new Set([
+  "langfuse.session.id",
+  "langfuse.trace.name",
+  "langfuse.environment",
+  "langfuse.trace.tags",
+]);
 const LANGFUSE_OBSERVATION_METADATA_PREFIX = "langfuse.observation.metadata";
 const TOOL_ITEM_TYPES = new Set<CompletedItem["type"]>([
   "commandExecution",
@@ -655,6 +661,7 @@ export function assembleTurnTrace({
     stringAttribute("lmnr.association.properties.session_id", thread.id),
     stringAttribute("langfuse.observation.type", "agent"),
     stringAttribute("langfuse.session.id", thread.id),
+    stringAttribute("langfuse.trace.name", "bb.agent.turn"),
     stringAttribute("langfuse.environment", deploymentEnvironment),
     stringArrayAttribute("langfuse.trace.tags", [
       `provider:${thread.providerId}`,
@@ -1048,6 +1055,15 @@ export function assembleTurnTrace({
       });
     }
   }
+
+  // Langfuse reads session, environment, tags, and trace metadata per
+  // observation, so the session view only lists observations that carry them.
+  const traceLevel = rootAttributes.filter(
+    (attribute) =>
+      LANGFUSE_TRACE_LEVEL_KEYS.has(attribute.key) ||
+      attribute.key.startsWith(`${LANGFUSE_TRACE_METADATA_PREFIX}.`),
+  );
+  for (const span of [...llmSpans, ...children]) span.attributes.push(...traceLevel);
 
   return {
     resourceSpans: [

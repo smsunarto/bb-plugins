@@ -684,6 +684,17 @@ describe("Langfuse mapping", () => {
     const last = generations.at(-1)!;
 
     expect(last["langfuse.observation.model.name"]).toBe("model-from-bb");
+    for (const span of all) {
+      const spanAttributes = attributes(span);
+      expect(spanAttributes["langfuse.session.id"]).toBe("thread-1");
+      expect(spanAttributes["langfuse.trace.name"]).toBe("bb.agent.turn");
+      expect(spanAttributes["langfuse.environment"]).toBe("test");
+      expect(spanAttributes["langfuse.trace.tags"]).toEqual([
+        "provider:provider-1",
+        "visibility:visible",
+      ]);
+      expect(spanAttributes["langfuse.trace.metadata.turnId"]).toBe("turn-1");
+    }
     expect(JSON.parse(String(last["langfuse.observation.usage_details"]))).toEqual({
       input: 11,
       output: 4,
