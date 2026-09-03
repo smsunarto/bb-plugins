@@ -1,0 +1,76 @@
+{
+  "name": "@smsunarto/bb-plugin-smart-embeds",
+  "version": "0.1.0",
+  "description": "Rich assistant-message embeds for verifiable diffs and workspace code citations.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/smart-embeds",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/smart-embeds"
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "rich-embeds",
+    "diffs",
+    "code-citations"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.21"
+  },
+  "bb": {
+    "name": "Smart Embeds",
+    "description": "Render verifiable diffs and workspace code citations inside assistant messages.",
+    "branding": {
+      "icon": "./assets/icon.svg"
+    },
+    "server": "./server/server.ts",
+    "app": "./app/app.tsx",
+    "skills": []
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
+    "assets/",
+    "server/",
+    "app/",
+    "shared/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.34",
+    "@pierre/diffs": "^1.2.9",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "jsdom": "25.0.1",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout=30000",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "clean": "rm -rf dist"
+  }
+}

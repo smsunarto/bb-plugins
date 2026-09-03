@@ -1,0 +1,124 @@
+.smart-embed {
+  --smart-embed-target-width: calc(100ch + 8rem + 4px);
+  width: min(var(--smart-embed-target-width), calc(100% + 16rem), calc(100vw - 2rem));
+  max-width: none;
+  margin: 0.75rem 0 0.75rem 50%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(
+    --diffs-font-family,
+    "SF Mono",
+    Monaco,
+    Consolas,
+    "Ubuntu Mono",
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  );
+  font-size: var(--diffs-font-size, 13px);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+  transform: translateX(-50%);
+}
+
+.smart-embed-header {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 55%, transparent);
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.smart-embed-open,
+.smart-embed-header-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.smart-embed-open {
+  cursor: pointer;
+}
+
+.smart-embed-open:hover {
+  background: color-mix(in oklch, var(--accent) 70%, transparent);
+}
+
+.smart-embed-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.smart-embed-kind,
+.smart-embed-warning,
+.smart-embed-powered {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1rem;
+}
+
+.smart-embed-kind {
+  color: var(--foreground);
+}
+
+.smart-embed-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-embed-warning {
+  color: var(--destructive);
+}
+
+.smart-embed-powered {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.smart-embed-body {
+  max-height: min(32rem, 65vh);
+  overflow: auto;
+  background: var(--background);
+}
+
+.smart-embed-renderer {
+  display: block;
+  min-width: 100%;
+}
+
+.smart-embed-notice {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--card);
+  font-size: 0.8125rem;
+}
+
+.smart-embed-notice-muted {
+  color: var(--muted-foreground);
+}
+
+.smart-embed-notice-error {
+  border-color: color-mix(in oklch, var(--destructive) 45%, var(--border));
+  color: var(--destructive);
+}
