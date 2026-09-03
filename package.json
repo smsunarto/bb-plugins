@@ -18,7 +18,7 @@
     "lefthook"
   ],
   "config": {
-    "bbVersion": "0.40.0"
+    "bbVersion": "0.41.0"
   },
   "bbKit": {
     "devInstance": {
