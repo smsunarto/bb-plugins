@@ -1,8 +1,10 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { usePortalScopeProps } from "@/lib/portal-scope";
-import { getThreadActionGroups, type ThreadActionPlan } from "@/components/inbox/thread-actions";
+import { type ThreadActionPlan } from "@/components/inbox/thread-actions";
+import { getCompactActions } from "@/components/inbox/thread-action-menu";
 
 /**
  * The desktop menu. Pass `disabled` on the compact viewport, where the row
@@ -18,7 +20,7 @@ export function RowContextMenu({
   disabled?: boolean;
   children: ReactNode;
 }) {
-  const groups = getThreadActionGroups(plan);
+  const actions = getCompactActions(plan);
 
   return (
     <ContextMenu.Root>
@@ -31,19 +33,15 @@ export function RowContextMenu({
           aria-label="Thread actions"
           className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
         >
-          {groups.map((group, index) => (
-            <Fragment key={group.id}>
-              {index === 0 ? null : <Separator />}
-              {group.actions.map((action) => (
-                <Item
-                  key={action.id}
-                  destructive={group.id === "destructive"}
-                  onSelect={action.execute}
-                >
-                  {action.label}
-                </Item>
-              ))}
-            </Fragment>
+          {actions.map((action) => (
+            <Item
+              key={action.id}
+              icon={action.icon}
+              destructive={action.destructive}
+              onSelect={action.execute}
+            >
+              {action.label}
+            </Item>
           ))}
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -53,10 +51,12 @@ export function RowContextMenu({
 
 function Item({
   children,
+  icon,
   destructive = false,
   onSelect,
 }: {
   children: ReactNode;
+  icon: IconName;
   destructive?: boolean;
   onSelect: () => void;
 }) {
@@ -64,16 +64,13 @@ function Item({
     <ContextMenu.Item
       onSelect={onSelect}
       className={cn(
-        "cursor-pointer rounded-md px-2 py-1.5 text-sm outline-none",
+        "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none",
         "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground",
         destructive && "text-destructive-text",
       )}
     >
+      <Icon name={icon} className="size-4 shrink-0" />
       {children}
     </ContextMenu.Item>
   );
-}
-
-function Separator() {
-  return <ContextMenu.Separator className="my-1 h-px bg-border" />;
 }
