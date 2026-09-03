@@ -1,0 +1,8 @@
+.monaco-editor .bb-monokai-syntax-function {
+  color: var(--bb-monokai-code-entity, var(--ansi-10)) !important;
+  font-style: normal !important;
+}
+
+.monaco-editor .bb-monokai-syntax-function-declaration {
+  font-weight: 700 !important;
+}

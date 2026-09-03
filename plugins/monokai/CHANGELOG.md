@@ -10,6 +10,15 @@
 
 ### Patch Changes
 
+- Keep Monaco on the Cursor code contract. JavaScript and TypeScript lexical
+  fallbacks no longer spend VS Dark teal or pale green on ambiguous identifiers
+  and numbers. A syntax-derived token layer now recovers declaration keywords,
+  types, function declarations and calls, plus parameter declarations and
+  references without loading TypeScript language services. Bracket depth uses
+  the Cursor palette instead of VS Dark. Existing Monokai pages activate the
+  token layer immediately after a plugin reload. Desktop clients retain a DOM
+  token fallback when Electron cannot attach the Monaco provider.
+
 - Keep SF Pro composer placeholders at regular weight on mobile layouts.
 
 ## 0.3.2

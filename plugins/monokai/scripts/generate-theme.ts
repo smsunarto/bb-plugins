@@ -43,6 +43,13 @@ const palette = {
     // not because a CSS token spends it.
     parameter: "#ff8342",
   },
+  depth: {
+    blue: "#3093f4",
+    magenta: "#c860cf",
+    gold: "#b28b11",
+    teal: "#04a891",
+    violet: "#8a6ae6",
+  },
   contentTint: {
     comment: "#7c7865",
     white: "#adada9",
@@ -102,6 +109,11 @@ const roleValues = {
   "code.constant": palette.code.constant,
   "code.constant63": withAlpha(palette.code.constant, 0xa0),
   "code.parameter": palette.code.parameter,
+  "depth.blue": palette.depth.blue,
+  "depth.magenta": palette.depth.magenta,
+  "depth.gold": palette.depth.gold,
+  "depth.teal": palette.depth.teal,
+  "depth.violet": palette.depth.violet,
   "content.comment": palette.contentTint.comment,
   "content.white": palette.contentTint.white,
   "content.blue": palette.contentTint.blue,
@@ -239,6 +251,25 @@ export function renderCodeTheme(rules: readonly CodeThemeRule[]): CodeTheme {
     colors: {
       "editor.background": roleValues["ground.content"],
       "editor.foreground": roleValues["text.ink"],
+      "editorBracketHighlight.foreground1": roleValues["text.ink"],
+      "editorBracketHighlight.foreground2": roleValues["depth.blue"],
+      "editorBracketHighlight.foreground3": roleValues["depth.magenta"],
+      "editorBracketHighlight.foreground4": roleValues["depth.gold"],
+      "editorBracketHighlight.foreground5": roleValues["depth.teal"],
+      "editorBracketHighlight.foreground6": roleValues["depth.violet"],
+      "editorBracketHighlight.unexpectedBracket.foreground": roleValues["feedback.error"],
+      "editorBracketPairGuide.background1": roleValues["text.ink07"],
+      "editorBracketPairGuide.background2": roleValues["text.ink07"],
+      "editorBracketPairGuide.background3": roleValues["text.ink07"],
+      "editorBracketPairGuide.background4": roleValues["text.ink07"],
+      "editorBracketPairGuide.background5": roleValues["text.ink07"],
+      "editorBracketPairGuide.background6": roleValues["text.ink07"],
+      "editorBracketPairGuide.activeBackground1": roleValues["text.ink17"],
+      "editorBracketPairGuide.activeBackground2": roleValues["text.ink17"],
+      "editorBracketPairGuide.activeBackground3": roleValues["text.ink17"],
+      "editorBracketPairGuide.activeBackground4": roleValues["text.ink17"],
+      "editorBracketPairGuide.activeBackground5": roleValues["text.ink17"],
+      "editorBracketPairGuide.activeBackground6": roleValues["text.ink17"],
     },
     tokenColors,
   };
@@ -330,6 +361,8 @@ const ansiForegrounds = [
 // cannot silently inherit an upstream color or borrow a legal color for the
 // wrong role.
 const darkExpected = declarationMap({
+  "--bb-monokai-active": "1",
+  "--bb-monokai-code-entity": palette.code.entity,
   "--canvas": palette.ground.content,
   "--ink": palette.text.ink,
   "--background": palette.ground.content,

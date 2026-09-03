@@ -75,7 +75,10 @@ function workbenchColors(theme: PluginCodeThemeData): Record<string, string> {
 export function toMonacoTheme(theme: PluginCodeThemeData): MonacoNs.editor.IStandaloneThemeData {
   return {
     base: theme.type === "light" ? "vs" : "vs-dark",
-    inherit: true,
+    // The BB document is a complete color theme. Inheriting Monaco's base
+    // theme leaks its blue and teal identifier rules into palettes whose
+    // default identifier color is intentionally plain foreground.
+    inherit: false,
     rules: tokenRules(theme),
     colors: workbenchColors(theme),
   };

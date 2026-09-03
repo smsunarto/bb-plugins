@@ -99,6 +99,24 @@ describe("bb Monokai code theme", () => {
     // theme has none — the code surface would render on bb's default ground.
     expect(parsed.colors["editor.background"]).toBe("#181818");
     expect(parsed.colors["editor.foreground"]).toBe("#e3e3dd");
+    expect(
+      Array.from(
+        { length: 6 },
+        (_, index) => parsed.colors[`editorBracketHighlight.foreground${index + 1}`],
+      ),
+    ).toEqual(["#e3e3dd", "#3093f4", "#c860cf", "#b28b11", "#04a891", "#8a6ae6"]);
+    expect(
+      Array.from(
+        { length: 6 },
+        (_, index) => parsed.colors[`editorBracketPairGuide.background${index + 1}`],
+      ),
+    ).toEqual(Array.from({ length: 6 }, () => "#e3e3dd11"));
+    expect(
+      Array.from(
+        { length: 6 },
+        (_, index) => parsed.colors[`editorBracketPairGuide.activeBackground${index + 1}`],
+      ),
+    ).toEqual(Array.from({ length: 6 }, () => "#e3e3dd2c"));
     expect(parsed.tokenColors.length).toBeGreaterThan(0);
   });
 
@@ -118,6 +136,13 @@ describe("bb Monokai code theme", () => {
     expect(foregroundByScope.get("attribute.value.number.css")).toBe("#a895fe");
     expect(foregroundByScope.get("attribute.value.hex.scss")).toBe("#a895fe");
     expect(foregroundByScope.get("attribute.value.unit.less")).toBe("#a895fe");
+    expect(foregroundByScope.get("number.ts")).toBe("#a895fe");
+    expect(foregroundByScope.get("number.hex.js")).toBe("#a895fe");
+    expect(foregroundByScope.get("regexp.ts")).toBe("#f7d05c");
+    expect(foregroundByScope.get("regexp.escape.control.js")).toBe("#a895fe");
+    expect(foregroundByScope.get("string.escape.ts")).toBe("#a895fe");
+    expect(foregroundByScope.get("identifier.ts")).toBe("#e3e3dd");
+    expect(foregroundByScope.get("type.identifier.ts")).toBe("#e3e3dd");
     expect(foregroundByScope.get("delimiter")).toBe("#e3e3dd");
   });
 

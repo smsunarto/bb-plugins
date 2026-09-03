@@ -23,7 +23,7 @@ const theme: PluginCodeThemeData = {
 test("translates BB code themes into Monaco theme data", () => {
   assert.deepEqual(toMonacoTheme(theme), {
     base: "vs-dark",
-    inherit: true,
+    inherit: false,
     rules: [
       { token: "", foreground: "aabbcc" },
       { token: "keyword", foreground: "aabbcc", fontStyle: "bold" },

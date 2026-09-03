@@ -69,6 +69,9 @@
 }
 
 .dark {
+  --bb-monokai-active: 1;
+  --bb-monokai-code-entity: #9ddd54;
+
   /* ---- Anchors --------------------------------------------------------
    * bb derives every surface, border and state fill as
    * color-mix(in oklch, var(--ink) N%, var(--canvas)). Left alone those land
