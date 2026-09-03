@@ -70,7 +70,21 @@ export type AttachedInstancePlan = PlanBase & {
   launcherName: null;
 };
 
-export type InstancePlan = OwnedInstancePlan | AttachedInstancePlan;
+/**
+ * An instance that borrows another instance's checkout.
+ *
+ * It owns a name, an instance id, a data directory, a port triple, a shim, and
+ * its own dev processes. It owns no source: `sourceInstance` names the owned
+ * instance whose checkout it runs, and destroying a runtime never touches it.
+ */
+export type RuntimeInstancePlan = PlanBase & {
+  source: "runtime";
+  revision: ResolvedRevision;
+  launcherName: string;
+  sourceInstance: string;
+};
+
+export type InstancePlan = OwnedInstancePlan | AttachedInstancePlan | RuntimeInstancePlan;
 
 export type CompleteInstancePlan = InstancePlan & {
   target: LauncherTarget;
@@ -157,7 +171,8 @@ export type InstanceState =
 export type InstanceResult = {
   name: string;
   phase: string;
-  source: "owned" | "attached" | null;
+  source: "owned" | "attached" | "runtime" | null;
+  sourceInstance: string | null;
   revision: string | null;
   commit: string | null;
   desiredRuntime: DesiredRuntime | null;
@@ -184,7 +199,7 @@ export type EnvironmentResult = {
   BB_SERVER_URL: string;
   BB_HOST_DAEMON_PORT: string;
   BB_KIT_DEV_NAME: string;
-  BB_KIT_DEV_SOURCE: "owned" | "attached";
+  BB_KIT_DEV_SOURCE: "owned" | "attached" | "runtime";
 };
 
 export type InstancePaths = {
@@ -345,6 +360,7 @@ export function resultFromState(
     name: state.name,
     phase: state.phase,
     source: plan?.source ?? null,
+    sourceInstance: plan?.source === "runtime" ? plan.sourceInstance : null,
     revision: plan?.revision?.canonical ?? null,
     commit: plan?.revision?.commit ?? null,
     desiredRuntime:
@@ -372,6 +388,7 @@ export function emptyResult(name: string): InstanceResult {
     name,
     phase: "absent",
     source: null,
+    sourceInstance: null,
     revision: null,
     commit: null,
     desiredRuntime: null,

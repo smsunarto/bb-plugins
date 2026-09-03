@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   chmodSync,
   existsSync,
@@ -13,10 +15,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { runDev } from "./command.ts";
 import { DevError } from "./error.ts";
-import { DevManager } from "./manager.ts";
+import { DevManager, type ManagerOptions } from "./manager.ts";
 import {
   instancePaths,
   STATE_SCHEMA_VERSION,
@@ -24,6 +26,7 @@ import {
   type ProcessIdentity,
 } from "./model.ts";
 import { processIdentity, processMatches, runCommand, spawnAndWait } from "./process.ts";
+import { assertRuntimeEnvContract, RUNTIME_ENV_KEYS } from "./runtime.ts";
 import {
   claimDirectoryAtomically,
   ensureOwnedDirectory,
@@ -1013,15 +1016,214 @@ test("spawnAndWait terminates the owned group when its checkpoint callback throw
   assert.equal(processMatches(childIdentity), false);
 });
 
+test("a runtime shares the source checkout but owns its ports, data dir, and shim", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  const host = await manager.start({
+    name: "host",
+    revision: "local:main",
+    repository: fixture.repository,
+  });
+  // A source checkout only qualifies once its dependencies are installed.
+  mkdirSync(join(host.checkoutPath ?? "", "node_modules"), { recursive: true });
+
+  const guest = await manager.start({
+    name: "guest",
+    revision: "local:main",
+    repository: fixture.repository,
+    from: "host",
+    timeoutMs: 10_000,
+  });
+
+  assert.equal(guest.running, true);
+  assert.equal(guest.checkoutPath, host.checkoutPath);
+  assert.notEqual(guest.dataDir, host.dataDir);
+  assert.notEqual(guest.appUrl, host.appUrl);
+  // Directly under ~/.bb-dev and ending in 12 hex characters: the shape bb's own
+  // dev data directories have, and the one agent-proxy refuses to load without.
+  assert.equal(dirname(guest.dataDir ?? ""), join(fixture.userHome, ".bb-dev"));
+  assert.match(basename(guest.dataDir ?? ""), /^bb-kit-runtime-guest-[0-9a-f]{12}$/u);
+
+  // The runtime's own checkout directory is never created.
+  assert.equal(existsSync(join(fixture.home, "instances", "guest", "checkout")), false);
+
+  // Its shim points the bb CLI at this runtime rather than clearing the routing.
+  const shim = readFileSync(join(fixture.home, "instances", "guest", "bin", "bb"), "utf8");
+  assert.match(shim, /environment\.BB_SERVER_URL = /);
+  assert.match(shim, /environment\.BB_HOST_DAEMON_PORT = /);
+  assert.doesNotMatch(
+    readFileSync(join(fixture.home, "instances", "host", "bin", "bb"), "utf8"),
+    /environment\.BB_SERVER_URL = /,
+  );
+
+  // Destroying the runtime leaves the checkout it borrowed alone.
+  await manager.stop("guest");
+  await manager.destroy("guest");
+  assert.equal(existsSync(host.checkoutPath ?? ""), true);
+  assert.equal((await manager.status("host")).running, true);
+  assert.equal(existsSync(guest.dataDir ?? ""), false);
+});
+
+test("two runtimes on one checkout lease distinct port triples", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  const host = await manager.start({
+    name: "shared",
+    revision: "local:main",
+    repository: fixture.repository,
+  });
+  mkdirSync(join(host.checkoutPath ?? "", "node_modules"), { recursive: true });
+
+  const options = {
+    revision: "local:main",
+    repository: fixture.repository,
+    timeoutMs: 10_000,
+  } as const;
+  const first = await manager.start({ ...options, name: "runtime-one" });
+  const second = await manager.start({ ...options, name: "runtime-two" });
+
+  assert.equal(first.checkoutPath, host.checkoutPath);
+  assert.equal(second.checkoutPath, host.checkoutPath);
+  assert.notEqual(first.appUrl, second.appUrl);
+  assert.notEqual(first.dataDir, second.dataDir);
+  assert.equal(
+    new Set([host.appUrl, first.appUrl, second.appUrl]).size,
+    3,
+    "each runtime holds its own app port",
+  );
+});
+
+test("a runtime keeps its ports across a restart and refuses to borrow from itself", async () => {
+  const fixture = createFixture();
+  const manager = fixture.manager();
+  const host = await manager.start({
+    name: "steady-host",
+    revision: "local:main",
+    repository: fixture.repository,
+  });
+  mkdirSync(join(host.checkoutPath ?? "", "node_modules"), { recursive: true });
+
+  const options = {
+    name: "steady",
+    revision: "local:main",
+    repository: fixture.repository,
+    timeoutMs: 10_000,
+  } as const;
+  const first = await manager.start(options);
+  await manager.stop("steady");
+  const second = await manager.start(options);
+  assert.equal(second.appUrl, first.appUrl, "a restarted runtime keeps its URL");
+  assert.equal(second.dataDir, first.dataDir);
+
+  // One lease, not one per restart.
+  assert.deepEqual(readdirSync(join(fixture.home, "leases")).length, 2);
+
+  await assert.rejects(
+    manager.start({ ...options, name: "self", from: "self" }),
+    (error) => error instanceof DevError && error.code === "runtime_source_unavailable",
+  );
+});
+
+test("a runtime refuses a checkout whose dev environment contract has moved", () => {
+  const root = mkdtempSync(join(tmpdir(), "bb-kit-contract-"));
+  const configDir = join(root, "packages", "config", "src");
+  mkdirSync(configDir, { recursive: true });
+  const contract = join(configDir, "runtime.ts");
+
+  writeFileSync(contract, devProcessEnvSource(RUNTIME_ENV_KEYS));
+  assertRuntimeEnvContract(root);
+
+  writeFileSync(contract, devProcessEnvSource([...RUNTIME_ENV_KEYS, "BB_SOMETHING_NEW"]));
+  assert.throws(
+    () => assertRuntimeEnvContract(root),
+    (error) =>
+      error instanceof DevError &&
+      error.code === "runtime_env_drift" &&
+      error.message.includes("BB_SOMETHING_NEW"),
+  );
+
+  writeFileSync(contract, "export function toDevProcessEnv() { return somethingElse; }\n");
+  assert.throws(
+    () => assertRuntimeEnvContract(root),
+    (error) => error instanceof DevError && error.code === "unsupported_runtime_host",
+  );
+  assert.throws(
+    () => assertRuntimeEnvContract(join(root, "absent")),
+    (error) => error instanceof DevError && error.code === "unsupported_runtime_host",
+  );
+});
+
+test("an opener spawn failure cannot crash a successful start", async () => {
+  const fixture = createFixture();
+  const opened: string[] = [];
+
+  // A browser command that is missing, or rejects its arguments, throws right
+  // out of spawn. The instance is already up by then, so start owes the caller
+  // its result either way.
+  const thrower = fixture.manager(
+    {},
+    {
+      opener: (url) => {
+        opened.push(url);
+        throw new Error("spawn open ENOENT");
+      },
+    },
+  );
+  const thrown = await thrower.start({
+    name: "throws",
+    revision: "local:main",
+    repository: fixture.repository,
+    open: true,
+  });
+  assert.equal(thrown.running, true);
+  assert.equal(thrown.phase, "running");
+  assert.deepEqual(opened, [thrown.appUrl]);
+
+  // A browser that fails after spawn reports it on the child, long after start
+  // returned. The opener hands back void and is never awaited, so the failure
+  // has nowhere to reach.
+  const child = new EventEmitter();
+  let asyncFailure: unknown = null;
+  child.on("error", (error) => {
+    asyncFailure = error;
+  });
+  // Its own fixture: the fake launcher reports one fixed port triple, so two
+  // owned instances cannot share a workspace.
+  const second = createFixture();
+  const deferred = second.manager(
+    {},
+    {
+      opener: () => {
+        setTimeout(() => child.emit("error", new Error("browser exited")), 0);
+      },
+    },
+  );
+  const late = await deferred.start({
+    name: "defers",
+    revision: "local:main",
+    repository: second.repository,
+    open: true,
+  });
+  assert.equal(late.running, true);
+  assert.equal(asyncFailure, null, "start returned before the opener failed");
+
+  await new Promise((resolveWait) => setTimeout(resolveWait, 5));
+  assert.match(String(asyncFailure), /browser exited/u);
+  assert.equal((await deferred.status("defers")).running, true);
+});
+
 function createFixture(): {
   root: string;
   home: string;
+  userHome: string;
   repository: string;
-  manager: (environment?: NodeJS.ProcessEnv) => DevManager;
+  manager: (environment?: NodeJS.ProcessEnv, overrides?: Partial<ManagerOptions>) => DevManager;
 } {
   const root = mkdtempSync(join(tmpdir(), "bb-kit-manager-"));
   const home = join(root, "state");
+  const fakeHome = join(root, "home");
   const repository = join(root, "bb");
+  mkdirSync(fakeHome, { recursive: true });
   mkdirSync(repository);
   git(repository, ["init", "-b", "main"]);
   git(repository, ["config", "user.email", "test@example.com"]);
@@ -1030,20 +1232,70 @@ function createFixture(): {
   const launcher = join(repository, "scripts", "bb-dev-app");
   writeFileSync(launcher, fakeLauncher());
   chmodSync(launcher, 0o755);
-  git(repository, ["add", "scripts/bb-dev-app"]);
+  // A runtime checks its source checkout for a package.json and reads the dev
+  // environment contract out of it, so the fixture checkout carries both.
+  writeFileSync(join(repository, "package.json"), '{ "name": "bb", "private": true }\n');
+  mkdirSync(join(repository, "packages", "config", "src"), { recursive: true });
+  writeFileSync(
+    join(repository, "packages", "config", "src", "runtime.ts"),
+    devProcessEnvSource(RUNTIME_ENV_KEYS),
+  );
+  git(repository, ["add", "-A"]);
   git(repository, ["commit", "-m", "add fake launcher"]);
+
+  // Ports a fake runtime is "serving" on, so the readiness probe can succeed
+  // without a real dev stack. A port stops answering when the process holding
+  // it exits, the way a real socket would.
+  const listeners = new Map<number, ProcessIdentity>();
   return {
     root,
     home,
+    userHome: fakeHome,
     repository,
-    manager: (environment = {}) =>
+    manager: (environment = {}, overrides = {}) =>
       new DevManager({
         cwd: root,
-        environment: { ...process.env, ...environment, BB_KIT_DEV_HOME: home },
+        environment: { ...process.env, ...environment, BB_KIT_DEV_HOME: home, HOME: fakeHome },
         healthProbe: async () => true,
-        portProbe: async () => false,
+        portProbe: async (port) => {
+          const holder = listeners.get(port);
+          return holder !== undefined && processMatches(holder);
+        },
+        runtimeSpawn: (args) => {
+          const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+            detached: true,
+            stdio: "ignore",
+          });
+          child.unref();
+          const identity = child.pid === undefined ? null : processIdentity(child.pid);
+          assert.notEqual(identity, null, "fake runtime did not start");
+          for (const port of [
+            args.ports.appPort,
+            args.ports.serverPort,
+            args.ports.hostDaemonPort,
+          ]) {
+            listeners.set(port, identity!);
+          }
+          return { identity: identity!, ports: args.ports };
+        },
+        // Never the real opener: a test must not open the user's browser.
+        opener: () => {},
+        ...overrides,
       }),
   };
+}
+
+/** A stand-in for bb's toDevProcessEnv, so the drift guard has a file to read. */
+function devProcessEnvSource(keys: readonly string[]): string {
+  const body = keys.map((key) => `    ${key}: "value",`).join("\n");
+  return `export function toDevProcessEnv(args: DevProcessEnvArgs): NodeJS.ProcessEnv {
+  const env = stripThreadContextEnv(args.baseEnv);
+  return {
+    ...env,
+${body}
+  };
+}
+`;
 }
 
 function fakeLauncher(): string {

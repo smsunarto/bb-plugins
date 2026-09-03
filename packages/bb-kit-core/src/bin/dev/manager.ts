@@ -20,6 +20,20 @@ import {
   writeShim,
 } from "./launcher.ts";
 import {
+  assertRuntimeEnvContract,
+  clearRuntimeRecord,
+  readRuntimeRecord,
+  runtimeInstanceId,
+  runtimeIsRunning,
+  runtimePortOffset,
+  runtimePorts,
+  runtimeTarget,
+  startRuntimeProcess,
+  stopRuntimeProcess,
+  writeRuntimeRecord,
+  type RuntimePorts,
+} from "./runtime.ts";
+import {
   checkpoint,
   completePlan,
   devHome,
@@ -41,7 +55,9 @@ import {
   type InstancePlan,
   type InstanceResult,
   type InstanceState,
+  type LauncherTarget,
   type OwnedInstancePlan,
+  type RuntimeInstancePlan,
   type ResolvedRevision,
   type RevisionRequest,
 } from "./model.ts";
@@ -69,6 +85,7 @@ import {
 const DEFAULT_CONTROL_TIMEOUT_MS = 30_000;
 const DEFAULT_HEALTH_TIMEOUT_MS = 30_000;
 const MAX_CHECKOUT_CANDIDATES = 16;
+const MAX_RUNTIME_PORT_CANDIDATES = 64;
 
 async function readChildStream(stream: Readable | null): Promise<string> {
   if (stream === null) return "";
@@ -81,8 +98,12 @@ export type ManagerOptions = {
   cwd?: string;
   environment?: NodeJS.ProcessEnv;
   healthProbe?: (url: string) => Promise<boolean>;
+  /** The seam tests drive --open through, so no test opens a real browser. */
+  opener?: (url: string) => void;
   portProbe?: (port: number) => Promise<boolean>;
   progress?: (message: string) => void;
+  /** The seam tests drive a runtime through, beside healthProbe and portProbe. */
+  runtimeSpawn?: typeof startRuntimeProcess;
 };
 
 export type StartOptions = {
@@ -93,6 +114,10 @@ export type StartOptions = {
   desktop?: boolean;
   open?: boolean;
   timeoutMs?: number;
+  /** Borrow this instance's checkout instead of owning one. */
+  from?: string;
+  /** Own a checkout even when a sibling instance could have been borrowed. */
+  owned?: boolean;
 };
 
 export type CapturedCommand = {
@@ -116,16 +141,20 @@ export class DevManager {
   readonly environment: NodeJS.ProcessEnv;
   readonly home: string;
   private readonly healthProbe: (url: string) => Promise<boolean>;
+  private readonly opener: (url: string) => void;
   private readonly portProbe: (port: number) => Promise<boolean>;
   private readonly progress: (message: string) => void;
+  private readonly runtimeSpawn: typeof startRuntimeProcess;
 
   constructor(options: ManagerOptions = {}) {
     this.cwd = resolve(options.cwd ?? process.cwd());
     this.environment = options.environment ?? process.env;
     this.home = devHome(this.environment);
     this.healthProbe = options.healthProbe ?? probeApp;
+    this.opener = options.opener ?? openApp;
     this.portProbe = options.portProbe ?? isPortListening;
     this.progress = options.progress ?? (() => {});
+    this.runtimeSpawn = options.runtimeSpawn ?? startRuntimeProcess;
   }
 
   resolveName(explicit?: string): string {
@@ -174,6 +203,20 @@ export class DevManager {
         "invalid_arguments",
         "--repo requires --revision.",
         "Pass both options, or omit --repo to use the latest official release.",
+      );
+    }
+    if (options.from !== undefined && options.owned === true) {
+      throw new DevError(
+        "invalid_arguments",
+        "--from cannot be combined with --owned.",
+        "Borrow a checkout or prepare one, not both.",
+      );
+    }
+    if (options.from !== undefined && options.attach !== undefined) {
+      throw new DevError(
+        "invalid_arguments",
+        "--from cannot be combined with --attach.",
+        "An attached checkout is already someone else's.",
       );
     }
     const name = this.resolveName(options.name);
@@ -246,7 +289,9 @@ export class DevManager {
         }
       }
       if (plan !== null && explicitRequest !== undefined) {
-        if (plan.source !== "owned") {
+        // A runtime pins a revision too -- the one its source checkout is on --
+        // so it is checked the same way. Only an attached checkout has none.
+        if (plan.source === "attached") {
           throw new DevError(
             "source_mismatch",
             `Instance ${name} owns attached checkout ${plan.checkoutPath}, not an owned revision.`,
@@ -288,7 +333,19 @@ export class DevManager {
             owner.ownerToken,
           );
           this.removeResolver(store.paths.root, owner.ownerToken);
-          plan = this.newOwnedPlan(store, name, owner.ownerToken, revision, desired, 0);
+          // An unnamed start is the workspace host: it owns the checkout every
+          // runtime borrows, so it never borrows one itself.
+          const borrowFrom =
+            options.owned === true || (options.name === undefined && options.from === undefined)
+              ? null
+              : this.findRuntimeSource(name, revision, options.from);
+          if (borrowFrom !== null) {
+            this.progress(`Borrowing ${borrowFrom.name}'s checkout for ${name}`);
+          }
+          plan =
+            borrowFrom === null
+              ? this.newOwnedPlan(store, name, owner.ownerToken, revision, desired, 0)
+              : this.newRuntimePlan(store, name, revision, desired, borrowFrom);
           state = checkpoint(state, {
             phase: "preparing",
             step: "checkout",
@@ -321,12 +378,12 @@ export class DevManager {
       const completePlan = requireCompletePlan(state);
       plan = completePlan;
       const launcher = launcherOptions(completePlan, this.environment);
-      let live = readLauncherStatus(launcher);
+      let live = this.liveTarget(store, completePlan);
       assertSameStoredTarget(completePlan.target, live);
       const livePlan = { ...completePlan, target: live, desiredRuntime: desired };
       plan = livePlan;
 
-      if (await runtimeSatisfied(live, desired, this.healthProbe)) {
+      if (await this.satisfied(livePlan, live, desired)) {
         state = checkpoint(state, {
           phase: "running",
           plan: livePlan,
@@ -334,7 +391,7 @@ export class DevManager {
         });
         store.write(state);
         if (options.open === true) {
-          openApp(live.appUrl);
+          this.openApp(live.appUrl);
         }
         return resultFromState(state, true);
       }
@@ -348,46 +405,81 @@ export class DevManager {
       }
 
       this.progress(
-        plan.source === "owned"
-          ? `Starting ${name} at ${plan.revision.label}`
-          : `Starting ${name} from ${plan.checkoutPath}`,
+        plan.source === "attached"
+          ? `Starting ${name} from ${plan.checkoutPath}`
+          : `Starting ${name} at ${plan.revision.label}`,
       );
       const startingPlan = requireTargetPlan(plan);
       const stateBeforeStart = state;
-      let exitCode: number;
       try {
-        exitCode = await startLauncher(
-          launcher,
-          desired,
-          startingPlan.target.launcherLog,
-          (child) => {
-            state = checkpoint(stateBeforeStart, { phase: "starting", plan: startingPlan, child });
-            store.write(state);
-          },
-          deadline === null ? undefined : remainingTimeout(deadline, name, "start"),
-        );
+        if (startingPlan.source === "runtime") {
+          // No launcher to ask: bb-kit owns this stack, so it spawns it and
+          // records the process it has to be able to stop later.
+          const started = this.runtimeSpawn({
+            checkoutPath: startingPlan.checkoutPath,
+            target: startingPlan.target,
+            ports: runtimePortsFor(startingPlan.target),
+            homeDir: this.homeDirectory(),
+            base: this.environment,
+          });
+          writeRuntimeRecord(store.paths.root, started);
+          state = checkpoint(stateBeforeStart, {
+            phase: "starting",
+            plan: startingPlan,
+            child: started.identity,
+          });
+          store.write(state);
+        } else {
+          const exitCode = await startLauncher(
+            launcher,
+            desired,
+            startingPlan.target.launcherLog,
+            (child) => {
+              state = checkpoint(stateBeforeStart, {
+                phase: "starting",
+                plan: startingPlan,
+                child,
+              });
+              store.write(state);
+            },
+            deadline === null ? undefined : remainingTimeout(deadline, name, "start"),
+          );
+          if (exitCode !== 0) {
+            const failure = new DevError(
+              "launcher_start_failed",
+              `Launcher exited with status ${exitCode} for instance ${name}.`,
+              "Inspect the launcher log and retry start.",
+              { logPath: startingPlan.target.launcherLog },
+            );
+            store.write(failedFromPlan(state, startingPlan, failure, "start"));
+            throw failure;
+          }
+        }
       } catch (error) {
         const failure = asDevError(error);
-        store.write(failedFromPlan(state, startingPlan, failure, "start"));
-        throw failure;
-      }
-      if (exitCode !== 0) {
-        const failure = new DevError(
-          "launcher_start_failed",
-          `Launcher exited with status ${exitCode} for instance ${name}.`,
-          "Inspect the launcher log and retry start.",
-          { logPath: startingPlan.target.launcherLog },
-        );
         store.write(failedFromPlan(state, startingPlan, failure, "start"));
         throw failure;
       }
 
       const healthDeadline = deadline ?? Date.now() + DEFAULT_HEALTH_TIMEOUT_MS;
       while (true) {
-        live = readLauncherStatus(launcher);
+        live = this.liveTarget(store, startingPlan);
         assertSameStoredTarget(startingPlan.target, live);
-        if (await runtimeSatisfied(live, desired, this.healthProbe)) {
+        if (await this.satisfied(startingPlan, live, desired)) {
           break;
+        }
+        // A launcher supervises its own stack; bb-kit supervises a runtime's.
+        // Waiting out the full health timeout on a process that already died
+        // hides the reason, which is in the dev log this points at.
+        if (startingPlan.source === "runtime" && live.devSession === "stopped") {
+          const failure = new DevError(
+            "runtime_start_failed",
+            `Runtime ${name} exited before it became healthy.`,
+            "Inspect the dev log and retry start.",
+            { logPath: live.devLog },
+          );
+          store.write(failedFromPlan(state, { ...startingPlan, target: live }, failure, "start"));
+          throw failure;
         }
         if (Date.now() >= healthDeadline) {
           const failure = new DevError(
@@ -409,7 +501,7 @@ export class DevManager {
       });
       store.write(state);
       if (options.open === true) {
-        openApp(live.appUrl);
+        this.openApp(live.appUrl);
       }
       return resultFromState(state, true);
     } finally {
@@ -432,9 +524,9 @@ export class DevManager {
       return resultFromState(state, false);
     }
     try {
-      const live = readLauncherStatus(launcherOptions(plan, this.environment));
+      const live = this.liveTarget(store, plan);
       assertSameStoredTarget(plan.target, live);
-      const running = await runtimeSatisfied(live, plan.desiredRuntime, this.healthProbe);
+      const running = await this.satisfied(plan, live, plan.desiredRuntime);
       return {
         ...resultFromState(state, running, live),
         phase: running ? "running" : "stopped",
@@ -520,13 +612,13 @@ export class DevManager {
       } else {
         state = await this.stopLocked(store, state, owner.ownerToken, deadline);
         plan = requireCompletePlan(state);
-        const live = readLauncherStatus(launcherOptions(plan, this.environment));
+        const live = this.liveTarget(store, plan);
         assertSameStoredTarget(plan.target, live);
         plan = { ...plan, target: live };
         state = checkpoint(state, {
           phase: "destroying",
           plan,
-          step: plan.source === "owned" ? "checkout" : "lease",
+          step: firstDestroyStep(plan.source),
         });
         store.write(state);
       }
@@ -540,19 +632,17 @@ export class DevManager {
       }
       let destroyStep = state.step;
       if (destroyStep === "runtime") {
-        state = checkpoint(state, {
-          phase: "destroying",
-          plan,
-          step: plan.source === "owned" ? "checkout" : "lease",
-        });
+        destroyStep = firstDestroyStep(plan.source);
+        state = checkpoint(state, { phase: "destroying", plan, step: destroyStep });
         store.write(state);
-        destroyStep = plan.source === "owned" ? "checkout" : "lease";
       }
       if (destroyStep === "checkout") {
+        // Only an owned instance has a checkout of its own. A runtime borrows
+        // one and must never remove it.
         if (plan.source !== "owned") {
           throw new DevError(
             "invalid_state",
-            `Attached instance ${name} entered owned checkout cleanup.`,
+            `Instance ${name} owns no checkout but entered checkout cleanup.`,
             "Inspect state.json before retrying destroy.",
           );
         }
@@ -562,7 +652,7 @@ export class DevManager {
         destroyStep = "external";
       }
       if (destroyStep === "external") {
-        if (plan.source !== "owned") {
+        if (plan.source === "attached") {
           throw new DevError(
             "invalid_state",
             `Attached instance ${name} entered owned external cleanup.`,
@@ -696,9 +786,9 @@ export class DevManager {
         );
       }
       const plan = requireCompletePlan(state);
-      const live = readLauncherStatus(launcherOptions(plan, this.environment));
+      const live = this.liveTarget(store, plan);
       assertSameStoredTarget(plan.target, live);
-      if (!(await runtimeSatisfied(live, plan.desiredRuntime, this.healthProbe))) {
+      if (!(await this.satisfied(plan, live, plan.desiredRuntime))) {
         throw new DevError(
           "instance_not_running",
           `Instance ${name} is not running.`,
@@ -784,9 +874,9 @@ export class DevManager {
       }
       const plan = requireCompletePlan(state);
       if (requireRunning) {
-        const live = readLauncherStatus(launcherOptions(plan, this.environment));
+        const live = this.liveTarget(store, plan);
         assertSameStoredTarget(plan.target, live);
-        if (!(await runtimeSatisfied(live, plan.desiredRuntime, this.healthProbe))) {
+        if (!(await this.satisfied(plan, live, plan.desiredRuntime))) {
           throw new DevError(
             "instance_not_running",
             `Instance ${name} is not running.`,
@@ -862,6 +952,9 @@ export class DevManager {
   ): Promise<InstanceState> {
     if (initialPlan.source === "attached") {
       return this.prepareAttached(store, state, initialPlan, ownerToken);
+    }
+    if (initialPlan.source === "runtime") {
+      return this.prepareRuntime(store, state, initialPlan, ownerToken);
     }
     return this.prepareOwned(store, state, initialPlan, ownerToken);
   }
@@ -1051,7 +1144,7 @@ export class DevManager {
     }
     const plan = requireCompletePlan(state);
     const launcher = launcherOptions(plan, this.environment);
-    const live = readLauncherStatus(launcher);
+    const live = this.liveTarget(store, plan);
     assertSameStoredTarget(plan.target, live);
     assertLeaseOwned(this.home, plan.leaseKey, ownerToken);
     const ports = await Promise.all([
@@ -1068,6 +1161,27 @@ export class DevManager {
     }
     if (live.devSession === "stopped" && live.desktopSession === "stopped") {
       const prepared = checkpoint(state, { phase: "prepared", plan: { ...plan, target: live } });
+      store.write(prepared);
+      return prepared;
+    }
+    if (plan.source === "runtime") {
+      // bb-kit started this process group, so bb-kit ends it. There is no
+      // launcher to run `stop` against.
+      await stopRuntimeProcess(readRuntimeRecord(store.paths.root));
+      clearRuntimeRecord(store.paths.root);
+      const stoppedTarget = this.liveTarget(store, plan);
+      if (stoppedTarget.devSession !== "stopped") {
+        throw new DevError(
+          "runtime_stop_failed",
+          `Runtime ${state.name} survived stop.`,
+          "Inspect the dev log and retry stop.",
+          { logPath: live.devLog },
+        );
+      }
+      const prepared = checkpoint(state, {
+        phase: "prepared",
+        plan: { ...plan, target: stoppedTarget },
+      });
       store.write(prepared);
       return prepared;
     }
@@ -1171,6 +1285,266 @@ export class DevManager {
       resolverPath: join(instanceRoot, "resolver"),
       ownerToken,
     });
+  }
+
+  /**
+   * What the instance actually looks like right now.
+   *
+   * An owned or attached instance has a launcher to ask. A runtime does not:
+   * bb-kit spawned its stack, so the recorded process is the only session it
+   * has, and the rest of the target is what preparation leased.
+   */
+  private liveTarget(store: InstanceStore, plan: InstancePlan): LauncherTarget {
+    if (plan.source !== "runtime") {
+      return readLauncherStatus(launcherOptions(plan, this.environment));
+    }
+    if (plan.target === null) {
+      throw new DevError(
+        "instance_not_prepared",
+        `Runtime ${plan.sourceInstance} has no leased ports yet.`,
+        "Run bb-kit dev-instance start to resume preparation.",
+      );
+    }
+    return {
+      ...plan.target,
+      devSession: runtimeIsRunning(readRuntimeRecord(store.paths.root)) ? "running" : "stopped",
+      desktopSession: "stopped",
+    };
+  }
+
+  /**
+   * Whether the instance is serving what was asked of it.
+   *
+   * A runtime also has to hold all three of its ports. bb's launcher waits on
+   * its own log for that; bb-kit spawned the stack itself, so it checks the
+   * sockets directly.
+   */
+  private async satisfied(
+    plan: InstancePlan,
+    target: LauncherTarget,
+    desired: DesiredRuntime,
+  ): Promise<boolean> {
+    if (plan.source !== "runtime") {
+      return runtimeSatisfied(target, desired, this.healthProbe);
+    }
+    if (target.devSession !== "running") {
+      return false;
+    }
+    const ports = await Promise.all([
+      this.portProbe(target.appPort),
+      this.portProbe(target.serverPort),
+      this.portProbe(target.hostDaemonPort),
+    ]);
+    if (!ports.every(Boolean)) {
+      return false;
+    }
+    return this.healthProbe(target.appUrl);
+  }
+
+  /**
+   * Lease a port triple and a data directory for a runtime.
+   *
+   * No checkout work happens here: the source instance already fetched,
+   * installed, and built it. What a runtime does need is ports nothing else
+   * holds, which it finds by probing rather than by hashing its path -- every
+   * runtime on one checkout shares that path.
+   */
+  private async prepareRuntime(
+    store: InstanceStore,
+    state: InstanceState,
+    initialPlan: RuntimeInstancePlan,
+    ownerToken: string,
+  ): Promise<InstanceState> {
+    if (initialPlan.desiredRuntime === "desktop") {
+      throw new DevError(
+        "desktop_unsupported",
+        `Runtime ${state.name} cannot run the desktop shell.`,
+        "Start this instance with its own checkout, or drop --desktop.",
+      );
+    }
+    if (!existsSync(join(initialPlan.checkoutPath, "package.json"))) {
+      throw new DevError(
+        "runtime_source_unavailable",
+        `Source checkout ${initialPlan.checkoutPath} is gone.`,
+        "Start the source instance again, or pass --owned to prepare a checkout of your own.",
+      );
+    }
+    assertRuntimeEnvContract(initialPlan.checkoutPath);
+
+    const record = readRuntimeRecord(store.paths.root);
+    const startOffset = runtimePortOffset(state.name);
+    // Ports this runtime already holds, so a restart keeps its URL rather than
+    // drifting to another triple every time the first choice happens to be free.
+    const held: RuntimePorts | null =
+      record !== null && runtimeIsRunning(record)
+        ? record.ports
+        : initialPlan.target === null
+          ? null
+          : runtimePortsFor(initialPlan.target);
+    for (let candidate = 0; candidate < MAX_RUNTIME_PORT_CANDIDATES; candidate += 1) {
+      const ports: RuntimePorts =
+        candidate === 0 && held !== null ? held : runtimePorts(startOffset + candidate);
+      const target = runtimeTarget({
+        name: state.name,
+        checkoutPath: initialPlan.checkoutPath,
+        launcherName: initialPlan.launcherName,
+        homeDir: this.homeDirectory(),
+        ports,
+        running: false,
+        toolchain: this.sourceToolchain(initialPlan.sourceInstance),
+      });
+      const leaseKey = leaseKeyFor(target);
+      const complete = { ...initialPlan, target, leaseKey };
+      const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
+      const portsBusy = await Promise.all([
+        this.portProbe(target.appPort),
+        this.portProbe(target.serverPort),
+        this.portProbe(target.hostDaemonPort),
+      ]);
+      const ownsRunningStack = runtimeIsRunning(record) && record?.ports.appPort === ports.appPort;
+      if (leaseClaimed && (!portsBusy.some(Boolean) || ownsRunningStack)) {
+        // Moving to another triple leaves the previous lease behind otherwise.
+        if (initialPlan.leaseKey !== null && initialPlan.leaseKey !== leaseKey) {
+          releaseLease(this.home, initialPlan.leaseKey, ownerToken);
+        }
+        ensureOwnedDirectory(target.dataDir, ownerToken, "data");
+        ensureOwnedDirectory(dirname(target.launcherLog), ownerToken, "logs");
+        writeShim(complete, store.paths.bin);
+        const prepared = checkpoint(state, { phase: "prepared", plan: complete });
+        store.write(prepared);
+        return prepared;
+      }
+      if (leaseClaimed) {
+        releaseLease(this.home, leaseKey, ownerToken);
+      }
+    }
+    throw new DevError(
+      "ports_busy",
+      `Could not find a free port triple for runtime ${state.name}.`,
+      "Stop some bb instances, then retry start.",
+    );
+  }
+
+  /**
+   * The owned instance whose checkout a runtime borrows.
+   *
+   * Only an instance that is prepared or running, sits on the same commit, and
+   * has its dependencies installed can host one. Without `--from` this scans
+   * for the first such sibling and returns null when there is none, so the
+   * caller falls back to owning a checkout.
+   */
+  private findRuntimeSource(
+    name: string,
+    revision: ResolvedRevision,
+    explicit?: string,
+  ): { name: string; checkoutPath: string } | null {
+    const root = join(this.home, "instances");
+    if (!existsSync(root)) {
+      return null;
+    }
+    if (explicit === name) {
+      throw new DevError(
+        "runtime_source_unavailable",
+        `Instance ${name} cannot borrow its own checkout.`,
+        "Name the instance that owns the checkout, or pass --owned.",
+      );
+    }
+    const candidates =
+      explicit === undefined
+        ? readdirSync(root, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory() && entry.name !== name)
+            .map((entry) => entry.name)
+            .toSorted()
+        : [explicit];
+    for (const candidate of candidates) {
+      const plan = this.readablePlan(candidate);
+      if (
+        plan === null ||
+        plan.source !== "owned" ||
+        plan.revision.commit !== revision.commit ||
+        !existsSync(join(plan.checkoutPath, "node_modules"))
+      ) {
+        if (explicit !== undefined) {
+          throw new DevError(
+            "runtime_source_unavailable",
+            `Instance ${explicit} cannot host a runtime at ${revision.commit.slice(0, 12)}.`,
+            "Start that instance first, or pass --owned to prepare a checkout of your own.",
+          );
+        }
+        continue;
+      }
+      return { name: candidate, checkoutPath: plan.checkoutPath };
+    }
+    return null;
+  }
+
+  private readablePlan(name: string): CompleteInstancePlan | null {
+    try {
+      const state = new InstanceStore(instancePaths(this.home, name)).read();
+      if (state === null || (state.phase !== "prepared" && state.phase !== "running")) {
+        return null;
+      }
+      return completePlan(state);
+    } catch {
+      return null;
+    }
+  }
+
+  /** A runtime runs the source's checkout, so it reports the source's toolchain. */
+  private sourceToolchain(sourceInstance: string): {
+    branch: string | null;
+    node: string | null;
+    codex: string | null;
+  } {
+    const target = this.readablePlan(sourceInstance)?.target ?? null;
+    return {
+      branch: target?.branch ?? null,
+      node: target?.node ?? null,
+      codex: target?.codex ?? null,
+    };
+  }
+
+  private newRuntimePlan(
+    store: InstanceStore,
+    name: string,
+    revision: ResolvedRevision,
+    desiredRuntime: DesiredRuntime,
+    source: { name: string; checkoutPath: string },
+  ): RuntimeInstancePlan {
+    return {
+      source: "runtime",
+      sourceInstance: source.name,
+      revision,
+      checkoutPath: source.checkoutPath,
+      launcherPath: join(source.checkoutPath, "scripts", "bb-dev-app"),
+      launcherName: runtimeInstanceId(sanitizeName(name)),
+      desiredRuntime,
+      shimPath: join(store.paths.bin, "bb"),
+      leaseKey: null,
+      target: null,
+    };
+  }
+
+  private homeDirectory(): string {
+    const configured = this.environment["HOME"];
+    return configured === undefined || configured === "" ? homedir() : configured;
+  }
+
+  /**
+   * Show the app to the user, and never let that decide whether start worked.
+   *
+   * The instance is up by the time this runs. Opening a browser is a courtesy
+   * on top, so a spawn that throws is worth a line of progress and nothing
+   * more. The opener's own async failures cannot reach here at all: it returns
+   * void and is never awaited.
+   */
+  private openApp(url: string): void {
+    try {
+      this.opener(url);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.progress(`Could not open ${url}: ${detail}`);
+    }
   }
 
   private newOwnedPlan(
@@ -1279,6 +1653,33 @@ export class DevManager {
   }
 }
 
+/**
+ * The port set behind a leased target.
+ *
+ * The three bb ports are recorded on the target; the packaged-app port is not,
+ * because bb's launcher never reports it. It is derived from the same offset.
+ */
+/**
+ * Where destroy starts for each kind of instance.
+ *
+ * An owned instance made a checkout, a data directory, and logs. A runtime made
+ * everything but the checkout, which belongs to the instance it borrowed. An
+ * attached instance made none of it, and only holds a lease.
+ */
+function firstDestroyStep(source: InstancePlan["source"]): "checkout" | "external" | "lease" {
+  if (source === "owned") return "checkout";
+  return source === "runtime" ? "external" : "lease";
+}
+
+function runtimePortsFor(target: LauncherTarget): RuntimePorts {
+  return {
+    ...runtimePorts(target.appPort - runtimePorts(0).appPort),
+    appPort: target.appPort,
+    serverPort: target.serverPort,
+    hostDaemonPort: target.hostDaemonPort,
+  };
+}
+
 function sanitizeName(value: string): string {
   return value
     .toLowerCase()
@@ -1328,9 +1729,9 @@ function checkoutIndex(path: string): number {
 }
 
 function describeSource(plan: InstancePlan): string {
-  return plan.source === "owned"
-    ? `owned revision ${plan.revision.canonical}`
-    : `attached checkout ${plan.checkoutPath}`;
+  if (plan.source === "owned") return `owned revision ${plan.revision.canonical}`;
+  if (plan.source === "runtime") return `${plan.sourceInstance}'s checkout`;
+  return `attached checkout ${plan.checkoutPath}`;
 }
 
 function remainingTimeout(deadline: number, name: string, operation: string): number {

@@ -8,6 +8,7 @@ export const DEV_USAGE = [
   "usage:",
   "  bb-kit dev-instance start [--name NAME] [--revision SELECTOR] [--repo PATH]",
   "  bb-kit dev-instance start [--name NAME] --attach PATH",
+  "  bb-kit dev-instance start --name NAME [--from INSTANCE | --owned]",
   "                   [--desktop] [--open] [--timeout SECONDS] [--json]",
   "  bb-kit dev-instance workspace [start options] [--watch] [--json]",
   "  bb-kit dev-instance list [--json]",
@@ -178,6 +179,8 @@ function parseStart(args: readonly string[]): {
   revision?: string;
   repository?: string;
   attach?: string;
+  from?: string;
+  owned?: boolean;
   desktop?: boolean;
   open?: boolean;
   timeoutMs?: number;
@@ -188,6 +191,8 @@ function parseStart(args: readonly string[]): {
     revision?: string;
     repository?: string;
     attach?: string;
+    from?: string;
+    owned?: boolean;
     desktop?: boolean;
     open?: boolean;
     timeoutMs?: number;
@@ -209,6 +214,10 @@ function parseStart(args: readonly string[]): {
       parsed.repository = requiredOption(args, ++index, arg);
     } else if (arg === "--attach") {
       parsed.attach = requiredOption(args, ++index, arg);
+    } else if (arg === "--from") {
+      parsed.from = requiredOption(args, ++index, arg);
+    } else if (arg === "--owned") {
+      parsed.owned = true;
     } else if (arg === "--timeout") {
       parsed.timeoutMs = secondsOption(requiredOption(args, ++index, arg), arg);
     } else {
@@ -223,6 +232,12 @@ function parseStart(args: readonly string[]): {
   }
   if (parsed.repository !== undefined && parsed.revision === undefined) {
     throw usageError("--repo requires --revision.");
+  }
+  if (parsed.from !== undefined && parsed.owned === true) {
+    throw usageError("--from cannot be combined with --owned.");
+  }
+  if (parsed.from !== undefined && parsed.attach !== undefined) {
+    throw usageError("--from cannot be combined with --attach.");
   }
   return parsed;
 }
@@ -373,6 +388,7 @@ function formatStatus(result: InstanceResult): string {
     `Name: ${result.name}`,
     `Phase: ${result.phase}`,
     `Source: ${result.source ?? "unresolved"}`,
+    `Borrows: ${result.sourceInstance ?? "nothing"}`,
     `Revision: ${result.revision ?? "unresolved"}`,
     `Commit: ${result.commit ?? "unresolved"}`,
     `Runtime: ${result.desiredRuntime ?? "none"}`,

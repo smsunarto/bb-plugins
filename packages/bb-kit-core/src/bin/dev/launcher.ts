@@ -254,7 +254,15 @@ export function logPath(target: LauncherTarget, kind: "dev" | "desktop" | "launc
 
 export function writeShim(plan: CompleteInstancePlan, binDir: string): void {
   mkdirSync(binDir, { recursive: true });
-  const content = shimSource(plan.checkoutPath);
+  // An owned shim clears the bb routing keys so the CLI finds its own instance
+  // through the checkout. A runtime shares that checkout with its source, so
+  // clearing them would route it to the source's bb. It sets them instead.
+  const content = shimSource(
+    plan.checkoutPath,
+    plan.source === "runtime"
+      ? { serverUrl: plan.target.serverUrl, hostDaemonPort: plan.target.hostDaemonPort }
+      : null,
+  );
   const temporary = `${plan.shimPath}.${process.pid}.${randomUUID()}.tmp`;
   writeFileSync(temporary, content, { mode: 0o755 });
   renameSync(temporary, plan.shimPath);
@@ -302,7 +310,16 @@ function optionalValue(values: ReadonlyMap<string, string>, key: string): string
   return value === undefined || value === "" ? null : value;
 }
 
-function shimSource(checkoutPath: string): string {
+function shimSource(
+  checkoutPath: string,
+  runtime: { serverUrl: string; hostDaemonPort: number } | null,
+): string {
+  const routing =
+    runtime === null
+      ? ""
+      : `environment.BB_SERVER_URL = ${JSON.stringify(runtime.serverUrl)};
+environment.BB_HOST_DAEMON_PORT = ${JSON.stringify(String(runtime.hostDaemonPort))};
+`;
   return `#!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
@@ -324,7 +341,7 @@ const environment = { ...process.env };
 for (const key of ${JSON.stringify(BB_ROUTING_KEYS)}) {
   delete environment[key];
 }
-const child = spawn("pnpm", ["-C", checkout, "--silent", "bb:dev", ...args], {
+${routing}const child = spawn("pnpm", ["-C", checkout, "--silent", "bb:dev", ...args], {
   cwd: caller,
   env: environment,
   stdio: "inherit",

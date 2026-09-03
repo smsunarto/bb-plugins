@@ -139,6 +139,8 @@ test("workspace CLI keeps selectors and JSON stable and refuses attached or JSON
     desktop: undefined,
     open: undefined,
     timeoutMs: undefined,
+    from: undefined,
+    owned: undefined,
   });
 
   const attached = await runDev(["workspace", "--attach", "/tmp/bb", "--json"], {
@@ -331,6 +333,7 @@ function runningResult(name: string, dataDir: string): InstanceResult {
     name,
     phase: "running",
     source: "owned",
+    sourceInstance: null,
     revision: "tag:desktop-v1.2.3",
     commit: "a".repeat(40),
     desiredRuntime: "web",
