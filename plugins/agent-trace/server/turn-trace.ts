@@ -152,6 +152,11 @@ function stableHex(kind: string, id: string, bytes: number): string {
   return /^0+$/.test(hex) ? `${hex.slice(0, -1)}1` : hex;
 }
 
+/** The deterministic trace ID every backend receives for one BB turn. */
+export function turnTraceId(turnId: string): string {
+  return stableHex("trace", turnId, 16);
+}
+
 function unixNano(epochMs: number): string {
   return (BigInt(Math.max(0, Math.trunc(epochMs))) * 1_000_000n).toString();
 }
@@ -454,7 +459,7 @@ function groupLlmSteps(records: readonly ItemRecord[], turnStartMs: number): Llm
 function toolCallArguments(item: CompletedItem): unknown {
   switch (item.type) {
     case "commandExecution":
-      return { command: item.command, cwd: item.cwd };
+      return item.cwd ? { command: item.command, cwd: item.cwd } : { command: item.command };
     case "toolCall":
       return item.arguments ?? {};
     case "webSearch":
@@ -509,6 +514,8 @@ type TurnTokenUsage = Extract<
  * `output` excludes reasoning output. BB reports cached input separately but
  * counts reasoning inside output tokens.
  */
+const ZERO_USAGE: Record<string, number> = { input: 0, output: 0, total: 0 };
+
 function langfuseUsageDetails(usage: TurnTokenUsage): Record<string, number> {
   const reasoning = Math.min(usage.reasoningOutputTokens, usage.outputTokens);
   const details: Record<string, number> = {
@@ -585,11 +592,18 @@ export function assembleTurnTrace({
     (event): event is Extract<ThreadEventRow, { type: "turn/started" }> =>
       event.type === "turn/started",
   );
+  const request = turnEvents.findLast(
+    (event): event is Extract<ThreadEventRow, { type: "client/turn/requested" }> =>
+      event.type === "client/turn/requested",
+  );
+  // BB emits turn/started together with the first provider item, so the user's
+  // request time is the only signal for the first round trip's latency.
   const startMs = Math.min(
-    started?.createdAt ?? turnEvents[0]?.createdAt ?? completion.createdAt,
+    request?.createdAt ?? started?.createdAt ?? turnEvents[0]?.createdAt ?? completion.createdAt,
+    started?.createdAt ?? completion.createdAt,
     completion.createdAt,
   );
-  const traceId = stableHex("trace", turnId, 16);
+  const traceId = turnTraceId(turnId);
   const rootSpanId = stableHex("turn-span", turnId, 8);
 
   const starts = new Map<string, number>();
@@ -625,10 +639,6 @@ export function assembleTurnTrace({
     steps.push({ startMs, endMs: completion.createdAt, items: [], tools: [] });
   }
 
-  const request = turnEvents.findLast(
-    (event): event is Extract<ThreadEventRow, { type: "client/turn/requested" }> =>
-      event.type === "client/turn/requested",
-  );
   const tokenUsage = turnEvents.findLast(
     (event): event is Extract<ThreadEventRow, { type: "thread/tokenUsage/updated" }> =>
       event.type === "thread/tokenUsage/updated",
@@ -858,6 +868,13 @@ export function assembleTurnTrace({
         ),
         langfuseObservationMetadata("usageScope", "turn"),
       );
+    } else if (tokenUsage !== undefined) {
+      // Langfuse estimates tokens for a named model without usage, which would
+      // double count against the turn total on the last step.
+      attributes.push(
+        stringAttribute("langfuse.observation.usage_details", JSON.stringify(ZERO_USAGE)),
+        langfuseObservationMetadata("usageScope", "counted-on-last-step"),
+      );
     }
     if (fullContent) {
       const inputParts: unknown[] = [];
@@ -913,14 +930,13 @@ export function assembleTurnTrace({
           });
         }
       }
-      const openAiOutput: Record<string, unknown> = {
-        role: "assistant",
-        content: step.items
-          .filter((record) => record.item.type === "agentMessage")
-          .map((record) => (record.item.type === "agentMessage" ? record.item.text : ""))
-          .join("\n")
-          .slice(0, TEXT_MAX_CHARS),
-      };
+      const assistantText = step.items
+        .filter((record) => record.item.type === "agentMessage")
+        .map((record) => (record.item.type === "agentMessage" ? record.item.text : ""))
+        .join("\n")
+        .slice(0, TEXT_MAX_CHARS);
+      const openAiOutput: Record<string, unknown> = { role: "assistant" };
+      if (assistantText !== "" || step.tools.length === 0) openAiOutput.content = assistantText;
       if (step.tools.length > 0) {
         openAiOutput.tool_calls = step.tools.map((tool) => ({
           id: tool.item.id,

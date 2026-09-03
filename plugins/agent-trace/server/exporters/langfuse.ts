@@ -1,6 +1,6 @@
 import type { LangfuseConfig } from "../../shared/settings.ts";
 import type { ExportTraceServiceRequest, OtlpSpan } from "../turn-trace.ts";
-import { mapSpans, postOtlpJson } from "./otlp.ts";
+import { ExportError, mapSpans, postOtlpJson } from "./otlp.ts";
 
 const LANGFUSE_OTLP_PATH = "/api/public/otel/v1/traces";
 
@@ -36,18 +36,58 @@ export function langfuseTracesUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${LANGFUSE_OTLP_PATH}`;
 }
 
+/** Langfuse redirects `/trace/<id>` to the owning project's trace page. */
+export function langfuseTraceUrl(baseUrl: string, traceId: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/trace/${traceId}`;
+}
+
+function basicAuth(config: LangfuseConfig): string {
+  return `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`;
+}
+
+export interface LangfuseObservation {
+  endTime?: string | null;
+  id: string;
+  input?: unknown;
+  name: string;
+  output?: unknown;
+  parentObservationId?: string | null;
+  model?: string | null;
+  startTime: string;
+  type: string;
+  usageDetails?: Record<string, number> | null;
+}
+
+/** Read one trace back through the v2 observations API (the v3 trace endpoint is deprecated). */
+export async function fetchLangfuseObservations(
+  config: LangfuseConfig,
+  traceId: string,
+  signal?: AbortSignal,
+): Promise<LangfuseObservation[]> {
+  const url = new URL(`${config.baseUrl.replace(/\/+$/, "")}/api/public/v2/observations`);
+  url.searchParams.set("traceId", traceId);
+  url.searchParams.set("fields", "core,basic,io,model,usage");
+  url.searchParams.set("limit", "1000");
+  const response = await fetch(url, {
+    headers: { accept: "application/json", authorization: basicAuth(config) },
+    signal,
+  });
+  if (!response.ok) throw new ExportError("langfuse", response.status);
+  const body = (await response.json()) as { data?: LangfuseObservation[] };
+  return body.data ?? [];
+}
+
 export async function exportToLangfuse(
   config: LangfuseConfig,
   request: ExportTraceServiceRequest,
   signal?: AbortSignal,
 ): Promise<void> {
-  const credentials = Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64");
   await postOtlpJson(
     {
       backend: "langfuse",
       url: langfuseTracesUrl(config.baseUrl),
       headers: {
-        Authorization: `Basic ${credentials}`,
+        Authorization: basicAuth(config),
         "x-langfuse-ingestion-version": "4",
       },
     },

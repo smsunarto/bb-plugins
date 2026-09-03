@@ -34,7 +34,7 @@ Each trace follows the span layouts both backends document for custom OTLP expor
 - `bb.agent.llm` is one span per provider round trip. Laminar sees it as `LLM`; Langfuse sees it as a `generation`. BB does not report model request boundaries, so the plugin infers them from the item stream: a round trip starts when the previous round trip's tools have all finished and ends when its own first tool starts. Reasoning and assistant message items nest under their round trip. In `full` mode the span carries GenAI semantic-convention messages for Laminar and OpenAI-format messages with `tool_calls` for Langfuse.
 - Tool items (`commandExecution`, `toolCall`, `fileChange`, and the other tool types) sit directly under the root as `TOOL` spans (Laminar) or `tool` observations (Langfuse), interleaved with the round trips in time order. Web search, web fetch, and search items are `retriever` observations on Langfuse. Delegations are `agent` observations. Background tasks nest under the command that started them.
 
-BB reports token usage once per turn. The plugin attaches that total to the last `bb.agent.llm` span, because both backends only count model spans toward trace tokens and cost. Laminar receives `gen_ai.usage.*` counts. Langfuse receives exclusive usage buckets (`input`, `input_cached_tokens`, `output`, `output_reasoning_tokens`, `total`) as `langfuse.observation.usage_details`. `gen_ai.system` maps BB provider IDs to pricing names (`claude-code` to `anthropic`, `codex` to `openai`), and the model name drops BB context suffixes such as `[1m]`. The raw values stay in `bb.provider.id` and `bb.request.model`.
+BB reports token usage once per turn. The plugin attaches that total to the last `bb.agent.llm` span, because both backends only count model spans toward trace tokens and cost. Laminar receives `gen_ai.usage.*` counts. Langfuse receives exclusive usage buckets (`input`, `input_cached_tokens`, `output`, `output_reasoning_tokens`, `total`) as `langfuse.observation.usage_details`. Earlier round trips in the same turn receive zero usage, because Langfuse otherwise estimates tokens for a named model and would double count the turn total. Their `usageScope` metadata says `counted-on-last-step`. `gen_ai.system` maps BB provider IDs to pricing names (`claude-code` to `anthropic`, `codex` to `openai`), and the model name drops BB context suffixes such as `[1m]`. The raw values stay in `bb.provider.id` and `bb.request.model`.
 
 Each backend receives only the attribute families it reads. Laminar-only keys (`lmnr.*`) never reach Langfuse, and Langfuse-only keys (`langfuse.*`) never reach Laminar.
 
@@ -70,6 +70,16 @@ The plugin advances a thread checkpoint only after every configured backend retu
 
 If BB rewrites a thread history, the plugin rebases to the new head and increments `bb.history.revision`. It does not replay the rewritten rows.
 
+## Check a delivered trace
+
+Read a thread's latest turn back from Langfuse and print its observation tree with timing, model, usage, and Input/Output previews:
+
+```sh
+bb agent-trace check --thread <thread-id>
+```
+
+Add `--raw` for the observations as JSON. The first line is the Langfuse trace URL. The command is Langfuse-only; use the Laminar UI for Laminar traces.
+
 ## Status limits
 
-BB reports missing or invalid settings as `needs-configuration`. The plugin log records export failures with the backend name and HTTP status, never a key. The plugin has no per-trace delivery screen, so use Laminar or Langfuse to check received traces.
+BB reports missing or invalid settings as `needs-configuration`. The plugin log records export failures with the backend name and HTTP status, never a key.

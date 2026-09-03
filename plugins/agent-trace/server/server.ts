@@ -1,13 +1,14 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 import { parseAgentTraceSettings, type AgentTraceConfig } from "../shared/settings.ts";
 import { backfill } from "./command/backfill.ts";
+import { check } from "./command/check.ts";
 import { createRemoteSessionResponse } from "./remote-session.ts";
 import { agentTraceSettings } from "./lib/settings.ts";
 import { TracePump } from "./trace-pump.ts";
 
 export default definePlugin({
   pluginId: "agent-trace",
-  command: { backfill },
+  command: { backfill, check },
   rpc: {},
   async setup(bb) {
     const settings = agentTraceSettings(bb);

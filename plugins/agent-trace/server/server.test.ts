@@ -10,6 +10,7 @@ test("the headless plugin registers its service and reports missing configuratio
   expect(harness.registrations.rpcMethods).toEqual([]);
   expect(harness.registrations.cli?.commands.map((command) => command.name)).toEqual([
     "backfill",
+    "check",
     "rpc",
   ]);
   expect(

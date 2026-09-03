@@ -253,8 +253,9 @@ describe("turn assembly", () => {
     expect(attributes(child)["bb.provider.id"]).toBe("provider-1");
     expect(parent.status.code).toBe(1);
     expect(child.status.code).toBe(1);
-    expect(root.startTimeUnixNano).toBe("2000000");
+    expect(root.startTimeUnixNano).toBe("1000000");
     expect(root.endTimeUnixNano).toBe("9000000");
+    expect(llm[0]!.startTimeUnixNano).toBe("1000000");
   });
 
   test("maps model fallback to Laminar response model and trace metadata", () => {
@@ -503,7 +504,7 @@ describe("turn assembly", () => {
     ];
 
     expect(llm.map(window)).toEqual([
-      [10, 21],
+      [1, 21],
       [35, 40],
       [45, 56],
     ]);
@@ -690,14 +691,20 @@ describe("Langfuse mapping", () => {
       output_reasoning_tokens: 3,
       total: 20,
     });
-    expect(generations[0]!["langfuse.observation.usage_details"]).toBeUndefined();
+    expect(JSON.parse(String(generations[0]!["langfuse.observation.usage_details"]))).toEqual({
+      input: 0,
+      output: 0,
+      total: 0,
+    });
+    expect(generations[0]!["langfuse.observation.metadata.usageScope"]).toBe(
+      "counted-on-last-step",
+    );
     expect(JSON.parse(String(generations[0]!["langfuse.observation.input"]))).toEqual([
       { role: "user", content: "visible prompt" },
     ]);
     expect(JSON.parse(String(generations[0]!["langfuse.observation.output"]))).toEqual([
       {
         role: "assistant",
-        content: "",
         tool_calls: [
           {
             id: "tool-parent",
