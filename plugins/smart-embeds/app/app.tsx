@@ -89,10 +89,8 @@ function SmartEmbed({
     path.length === 0
       ? "This Smart Embed needs a worktree-relative path."
       : start === null || end === null
-        ? "Code citation lines must be positive integers."
-        : kind === "diff" && (start !== undefined || end !== undefined)
-          ? "Diff embeds accept only a path."
-          : null;
+        ? "Smart Embed lines must be positive integers."
+        : null;
 
   useWorkspaceChangeSignals();
   const threadId = message.threadId;

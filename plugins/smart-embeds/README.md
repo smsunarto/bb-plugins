@@ -5,6 +5,7 @@ Smart Embeds is a kitchen-sink bb plugin for rich assistant-message embeds.
 The first two directives use [Diffs](https://diffs.com) to render project evidence:
 
 - `::smart-diff{path="src/example.ts"}` renders branch and working-tree changes for one file.
+- `::smart-diff{path="src/example.ts" start="40" end="72"}` renders only the hunks that touch those lines of the changed file, with nearby context. Deleted lines count at the position where they used to be.
 - `::smart-code{path="src/example.ts" start="12" end="28"}` renders an exact code citation with nearby context.
 
 Both directives resolve from the message thread's current workspace. Clicking the header opens the file in bb's workspace viewer.

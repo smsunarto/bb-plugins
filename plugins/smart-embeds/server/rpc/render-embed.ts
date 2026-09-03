@@ -6,6 +6,7 @@ import {
   type RenderEmbedOutput,
 } from "../../shared/contract.ts";
 import { citationPatch } from "../lib/citation-patch.ts";
+import { rangePatch } from "../lib/diff-range.ts";
 
 const MAX_PATH_LENGTH = 1_024;
 const MAX_FILE_BYTES = 1_500_000;
@@ -73,12 +74,25 @@ export const renderEmbed = defineQuery({
             message: `No branch or working-tree changes found for ${path}.`,
           };
         }
+        if (input.start === undefined && input.end === undefined) {
+          return {
+            status: "ready",
+            kind: "diff",
+            path,
+            label: path,
+            patch: file.patch,
+            truncated: file.truncated,
+          };
+        }
+        const range = rangePatch(path, file.patch, input.start, input.end);
+        if ("error" in range) return { status: "error", message: range.error };
+        if ("empty" in range) return { status: "empty", message: range.empty };
         return {
           status: "ready",
           kind: "diff",
           path,
-          label: path,
-          patch: file.patch,
+          label: range.label,
+          patch: range.patch,
           truncated: file.truncated,
         };
       }

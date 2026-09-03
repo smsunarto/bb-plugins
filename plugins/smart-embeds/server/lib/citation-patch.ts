@@ -1,7 +1,7 @@
 const MAX_CITED_LINES = 200;
 const CITATION_CONTEXT_LINES = 2;
 
-function lineLabel(path: string, start: number, end: number): string {
+export function lineLabel(path: string, start: number, end: number): string {
   return start === end ? `${path}:L${start}` : `${path}:L${start}-L${end}`;
 }
 
