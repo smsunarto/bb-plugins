@@ -22,6 +22,9 @@ Every run must show the initial state, the user action, and its visible result. 
 
 - [Agent Proxy navigation](agent-proxy-navigation.md)
 - [Agentation feedback](agentation-feedback.md)
+- [Canvas file opener](canvas-file-opener.md)
 - [GitHub Stack panel](github-stack-panel.md)
 - [GTD sidebar](gtd-sidebar.md)
 - [bb Monokai](bb-monokai.md)
+- [NoVNC remote screen](novnc-remote-screen.md)
+- [Vimium link hints](vimium-link-hints.md)

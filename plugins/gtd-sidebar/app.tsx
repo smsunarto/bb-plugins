@@ -8,7 +8,6 @@ import "./app.css";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
 import { SubagentsChip } from "@/components/inbox/subagents-chip";
-import { RenameThreadAction } from "@/components/inbox/rename-thread-action";
 
 export default definePluginApp((app) => {
   app.slots.experimental_threadList({
@@ -35,11 +34,5 @@ export default definePluginApp((app) => {
     id: "children",
     title: "Child threads",
     component: SubagentsChip,
-  });
-
-  app.slots.experimental_threadHeaderAction({
-    id: "rename-thread",
-    title: "Thread name",
-    component: RenameThreadAction,
   });
 });

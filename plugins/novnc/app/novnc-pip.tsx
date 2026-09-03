@@ -57,7 +57,12 @@ function ChromeIcon(props: { path: string }) {
   );
 }
 
-function ChromeButton(props: { label: string; onClick?: () => void; href?: string; children: ReactNode }) {
+function ChromeButton(props: {
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  children: ReactNode;
+}) {
   if (props.href !== undefined) {
     return (
       <a
@@ -93,7 +98,9 @@ function ChromeButton(props: { label: string; onClick?: () => void; href?: strin
 // app internals, so each has a fallback when the class disappears.
 function measureLayout(): DockLayout {
   const stackElement = document.querySelector(".chat-prompt-box");
-  const areaElement = stackElement?.closest(".thread-scrollbar") ?? document.querySelector('main[data-sidebar="inset"]');
+  const areaElement =
+    stackElement?.closest(".thread-scrollbar") ??
+    document.querySelector('main[data-sidebar="inset"]');
   const areaRect = areaElement?.getBoundingClientRect();
   const area: Rect =
     areaRect === undefined
@@ -117,7 +124,8 @@ function dockPosition(corner: DockCorner, layout: DockLayout): { left: number; t
   if (corner === "top-left" || corner === "top-right") {
     return { left, top: area.top + PIP_MARGIN };
   }
-  const clearance = stack === null ? Infinity : onLeft ? stack.left - area.left : area.right - stack.right;
+  const clearance =
+    stack === null ? Infinity : onLeft ? stack.left - area.left : area.right - stack.right;
   const besideStackFits = clearance >= PIP_MARGIN + PIP_WIDTH + PIP_STACK_GAP;
   const top =
     stack !== null && !besideStackFits
@@ -135,7 +143,11 @@ function useDockLayout() {
     // The scrollbar element resizes on both sidebars; the prompt box
     // resizes when a bar is injected above the composer.
     const observer = new ResizeObserver(measure);
-    for (const selector of [".chat-prompt-box", ".thread-scrollbar", 'main[data-sidebar="inset"]']) {
+    for (const selector of [
+      ".chat-prompt-box",
+      ".thread-scrollbar",
+      'main[data-sidebar="inset"]',
+    ]) {
       const element = document.querySelector(selector);
       if (element !== null) {
         observer.observe(element);
@@ -151,7 +163,11 @@ function useDockLayout() {
   return layout;
 }
 
-function DockZone(props: { corner: DockCorner; zone: Rect; target: { left: number; top: number } }) {
+function DockZone(props: {
+  corner: DockCorner;
+  zone: Rect;
+  target: { left: number; top: number };
+}) {
   const { isOver, setNodeRef } = useDroppable({ id: props.corner });
   return (
     <>
@@ -170,7 +186,12 @@ function DockZone(props: { corner: DockCorner; zone: Rect; target: { left: numbe
       {isOver ? (
         <div
           className="pointer-events-none fixed z-[9998] rounded-xl border-2 border-dashed border-foreground/30"
-          style={{ left: props.target.left, top: props.target.top, width: PIP_WIDTH, height: PIP_HEIGHT }}
+          style={{
+            left: props.target.left,
+            top: props.target.top,
+            width: PIP_WIDTH,
+            height: PIP_HEIGHT,
+          }}
         />
       ) : null}
     </>
@@ -298,7 +319,12 @@ function PipFrame(props: {
     <>
       {isDragging
         ? DOCK_CORNERS.map((corner) => (
-            <DockZone corner={corner} key={corner} target={dockPosition(corner, layout)} zone={zoneRects[corner]} />
+            <DockZone
+              corner={corner}
+              key={corner}
+              target={dockPosition(corner, layout)}
+              zone={zoneRects[corner]}
+            />
           ))
         : null}
       {/* The pip portals into document.body, outside the plugin's
@@ -320,7 +346,8 @@ function PipFrame(props: {
           top: frameTop,
           width: frameWidth,
           height: frameHeight,
-          transform: transform === null ? undefined : `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+          transform:
+            transform === null ? undefined : `translate3d(${transform.x}px, ${transform.y}px, 0)`,
         }}
         {...(expanded ? {} : listeners)}
       >

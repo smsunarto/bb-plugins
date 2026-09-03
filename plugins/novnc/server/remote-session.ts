@@ -100,9 +100,7 @@ export async function createRemoteSessionResponse(
     return json({ ok: false, reason: "browser-login-required" }, 409);
   }
 
-  return json(
-    { ok: true, expiresAt: session.cookie.expiresAt },
-    200,
-    { "set-cookie": serializeRemoteSessionCookie(session.cookie) },
-  );
+  return json({ ok: true, expiresAt: session.cookie.expiresAt }, 200, {
+    "set-cookie": serializeRemoteSessionCookie(session.cookie),
+  });
 }

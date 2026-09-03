@@ -206,9 +206,7 @@ describe("isViableCandidate", () => {
   });
 
   test("tabindex -1 disqualifies unless the element is otherwise clickable", () => {
-    expect(isViableCandidate(view({ tabindex: "-1", clickableBeyondTabindex: false }))).toBe(
-      false,
-    );
+    expect(isViableCandidate(view({ tabindex: "-1", clickableBeyondTabindex: false }))).toBe(false);
     expect(isViableCandidate(view({ tabindex: "-1" }))).toBe(true);
     expect(isViableCandidate(view({ tabindex: "0", clickableBeyondTabindex: false }))).toBe(true);
   });

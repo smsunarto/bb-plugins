@@ -105,15 +105,15 @@ bb plugin config notify set agentTool true
 
 Run `bb plugin config notify set <key> <value>`. Changes apply without a reload.
 
-| Key                    | Default | Meaning                                            |
-| ---------------------- | ------- | -------------------------------------------------- |
-| `notifyOnIdle`         | `true`  | Notify when a thread finishes                      |
-| `notifyOnFailed`       | `true`  | Notify when a thread fails                         |
-| `includeChildThreads`  | `false` | Include subagent threads                           |
-| `includeHiddenThreads` | `false` | Include hidden plugin worker threads               |
-| `minRunSeconds`        | `0`     | Skip shorter runs. The maximum is 30 days          |
+| Key                    | Default | Meaning                                                                 |
+| ---------------------- | ------- | ----------------------------------------------------------------------- |
+| `notifyOnIdle`         | `true`  | Notify when a thread finishes                                           |
+| `notifyOnFailed`       | `true`  | Notify when a thread fails                                              |
+| `includeChildThreads`  | `false` | Include subagent threads                                                |
+| `includeHiddenThreads` | `false` | Include hidden plugin worker threads                                    |
+| `minRunSeconds`        | `0`     | Skip shorter runs. The maximum is 30 days                               |
 | `sound`                | `off`   | Use `off`, `system default`, `Cursor completion`, or a named macOS tone |
-| `agentTool`            | `false` | Offer `notify_user` to agents                      |
+| `agentTool`            | `false` | Offer `notify_user` to agents                                           |
 
 Notify is quiet by default. It skips child and hidden threads, suppresses a turn
 you stopped manually, and collapses duplicate events for three seconds.

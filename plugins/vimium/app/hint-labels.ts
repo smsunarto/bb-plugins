@@ -36,8 +36,7 @@ export const RESERVED_CONTROLS = [
   { selector: 'a[href^="/settings"]', char: "," },
   { selector: 'button[aria-label^="Toggle sidebar"]', char: "q" },
   {
-    selector:
-      'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
+    selector: 'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
     char: "\\",
   },
 ] as const;
@@ -63,7 +62,7 @@ const RESERVED_CHARS = new Set<string>([
  * Extra characters extend the general set past 196 two-character labels.
  */
 const EXTRA_GENERAL_CHARS = "uortnbiyqxz;";
-export const GENERAL_ALPHABET = [...HINT_ALPHABET + EXTRA_GENERAL_CHARS]
+export const GENERAL_ALPHABET = [...(HINT_ALPHABET + EXTRA_GENERAL_CHARS)]
   .filter((char) => !RESERVED_CHARS.has(char))
   .join("");
 
@@ -114,10 +113,7 @@ function completeScopedLabels(labels: (string | null)[]): string[] {
  * bindings. Remaining items use q-prefixed labels, which keeps the mixed set
  * prefix-free without taking a useful single key.
  */
-export function assignScopedLabels(
-  kind: ScopedKind,
-  facts: readonly ScopedFact[],
-): string[] {
+export function assignScopedLabels(kind: ScopedKind, facts: readonly ScopedFact[]): string[] {
   if (kind === "generic") return hintLabels(facts.length, DROPDOWN_ALPHABET);
 
   const labels: (string | null)[] = facts.map(() => null);
