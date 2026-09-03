@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { FileView } from "./file-view.tsx";
+import { useMonacoPrewarm } from "./monaco/prewarm.ts";
 import { DotfilesBoundary } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
 import { useDotfilesRoute } from "./route.ts";
@@ -10,13 +11,10 @@ import { errorMessage } from "./tasks.ts";
 function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
   const nav = useDotfilesRoute(props.subPath);
   const overview = rpc.overview.useQuery();
+  useMonacoPrewarm();
 
   if (overview.isPending) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading dotfiles…
-      </div>
-    );
+    return <div className="h-full" aria-busy="true" aria-label="Loading dotfiles" />;
   }
   if (overview.isError) {
     return (

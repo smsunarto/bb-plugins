@@ -106,3 +106,19 @@ test("disposes the binding before releasing the acquisition", async () => {
     acquire.mockRestore();
   }
 });
+
+test("paints the file text while the editor boots", async () => {
+  const acquire = spyOn(monacoRuntime, "acquire").mockImplementation(
+    () => new Promise<MonacoAcquisition>(() => {}),
+  );
+
+  try {
+    const slot = renderSlot({ component: WorkingFileEditor }, props);
+    // The pane shows the file, not an empty "Loading editor…" panel.
+    await slot.findByText("initial");
+    await slot.findByText("Loading editor…");
+    slot.unmount();
+  } finally {
+    acquire.mockRestore();
+  }
+});

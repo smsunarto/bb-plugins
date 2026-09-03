@@ -48,6 +48,33 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown loading error";
 }
 
+// A screenful is enough to hide the Monaco boot, and a cap keeps a long file
+// from paying for DOM the editor discards a moment later.
+const PLACEHOLDER_LINE_LIMIT = 200;
+
+// Monaco arrives a few hundred milliseconds after the file does. Painting the
+// text in the editor's own metrics keeps the pane from flashing empty, so the
+// swap reads as syntax colour arriving rather than content arriving.
+function EditorPlaceholder({ value }: { readonly value: string }): ReactElement {
+  const lines = value.split("\n", PLACEHOLDER_LINE_LIMIT);
+  const gutterCh = `${String(lines.length).length}ch`;
+
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute inset-0 flex overflow-hidden font-mono text-xs leading-5"
+    >
+      <div
+        style={{ minWidth: gutterCh }}
+        className="select-none whitespace-pre pl-5 pr-[42px] text-right text-muted-foreground"
+      >
+        {lines.map((_line, index) => `${index + 1}`).join("\n")}
+      </div>
+      <div className="whitespace-pre text-foreground">{lines.join("\n")}</div>
+    </div>
+  );
+}
+
 export function WorkingFileEditor({
   path,
   value,
@@ -116,9 +143,10 @@ export function WorkingFileEditor({
         className={`absolute inset-0 ${status.kind === "ready" ? "visible" : "invisible"}`}
       />
       {status.kind === "loading" && (
-        <output className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-          Loading editor…
-        </output>
+        <>
+          <EditorPlaceholder value={value} />
+          <output className="sr-only">Loading editor…</output>
+        </>
       )}
       {status.kind === "error" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">

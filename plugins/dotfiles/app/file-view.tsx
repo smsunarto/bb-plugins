@@ -17,11 +17,9 @@ export function FileView({ path }: FileViewProps): ReactElement {
   const tasks = useTasks();
 
   if (editor.status === "loading") {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        Loading {path}…
-      </div>
-    );
+    // A read takes a moment. A message that flashes for it costs more attention
+    // than the wait does, so the pane stays quiet until the file arrives.
+    return <div className="flex-1" aria-busy="true" aria-label={`Loading ${path}`} />;
   }
   if (editor.status === "error") {
     return (
@@ -52,11 +50,11 @@ function ReadyFileView({
   readonly editor: ReadyFileEditor;
   readonly tasks: Tasks;
 }): ReactElement {
-  const [diffStyle, setDiffStyle] = useState<"unified" | "split">("unified");
+  const [view, setView] = useState<"source" | "diff">("source");
   const deferredContent = useDeferredValue(editor.content);
   const diff = useMemo(
-    () => buildDiff(path, editor.headContent, deferredContent),
-    [deferredContent, editor.headContent, path],
+    () => (view === "diff" ? buildDiff(path, editor.headContent, deferredContent) : null),
+    [deferredContent, editor.headContent, path, view],
   );
 
   return (
@@ -78,19 +76,19 @@ function ReadyFileView({
           <div className="flex rounded-md border border-border p-0.5">
             <Button
               size="sm"
-              variant={diffStyle === "unified" ? "secondary" : "ghost"}
-              aria-pressed={diffStyle === "unified"}
-              onClick={() => setDiffStyle("unified")}
+              variant={view === "source" ? "secondary" : "ghost"}
+              aria-pressed={view === "source"}
+              onClick={() => setView("source")}
             >
-              Unified
+              Source
             </Button>
             <Button
               size="sm"
-              variant={diffStyle === "split" ? "secondary" : "ghost"}
-              aria-pressed={diffStyle === "split"}
-              onClick={() => setDiffStyle("split")}
+              variant={view === "diff" ? "secondary" : "ghost"}
+              aria-pressed={view === "diff"}
+              onClick={() => setView("diff")}
             >
-              Split
+              Diff
             </Button>
           </div>
           <Button size="sm" variant="outline" onClick={editor.reload} disabled={editor.saving}>
@@ -132,21 +130,8 @@ function ReadyFileView({
         </div>
       )}
 
-      <div
-        className={
-          diffStyle === "split"
-            ? "grid min-h-0 flex-1 grid-cols-1 lg:grid-rows-[minmax(16rem,2fr)_minmax(16rem,3fr)]"
-            : "grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2"
-        }
-      >
-        <section
-          className={`flex min-h-64 flex-col border-b border-border lg:min-h-0 ${
-            diffStyle === "unified" ? "lg:border-b-0 lg:border-r" : ""
-          }`}
-        >
-          <div className="border-b border-border px-3 py-1.5 text-xs font-medium text-muted-foreground">
-            Working file
-          </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <section className={`flex min-h-0 flex-1 flex-col ${view === "source" ? "" : "hidden"}`}>
           <WorkingFileEditor
             path={path}
             value={editor.content}
@@ -154,22 +139,20 @@ function ReadyFileView({
             onSave={editor.flush}
           />
         </section>
-        <section className="min-h-64 overflow-auto lg:min-h-0">
-          <div className="sticky top-0 z-10 border-b border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground">
-            Diff from HEAD
-          </div>
-          {diff ? (
-            <FileDiff
-              key={`${path}:${contentKey(deferredContent)}:${diffStyle}`}
-              fileDiff={diff}
-              options={{ disableFileHeader: true, diffStyle, overflow: "wrap" }}
-              disableWorkerPool
-            />
-          ) : (
-            <div className="p-4 text-sm text-muted-foreground">
-              The diff preview could not parse this file.
-            </div>
-          )}
+        <section className={`min-h-0 flex-1 overflow-auto ${view === "diff" ? "" : "hidden"}`}>
+          {view === "diff" &&
+            (diff ? (
+              <FileDiff
+                key={`${path}:${contentKey(deferredContent)}`}
+                fileDiff={diff}
+                options={{ disableFileHeader: true, diffStyle: "split", overflow: "wrap" }}
+                disableWorkerPool
+              />
+            ) : (
+              <div className="p-4 text-sm text-muted-foreground">
+                The diff preview could not parse this file.
+              </div>
+            ))}
         </section>
       </div>
     </div>

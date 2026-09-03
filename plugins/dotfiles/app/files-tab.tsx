@@ -51,11 +51,7 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
   }
 
   if (overview.isPending) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading dotfiles…
-      </div>
-    );
+    return <div className="h-full" aria-busy="true" aria-label="Loading dotfiles" />;
   }
   if (overview.isError) {
     return (
