@@ -121,6 +121,19 @@ message, so the title follows the thread's current task. The plugin sends a
 requests strict JSON from GPT-5.6-Luna with low reasoning and creates no agent
 thread. A transient failure retries once with GPT-5.4-Mini.
 
+Add `.agents/GTD_TITLE.md` at the project root to give title generation extra
+instructions for that project. The plugin reads it from the thread's active
+workspace for every automatic or manual rename, so changes apply without a
+plugin reload. For example:
+
+```md
+Prefix titles with the package name when the prompt names one.
+Keep Linear ticket IDs verbatim.
+```
+
+The file is optional. Empty, missing, and non-UTF-8 files use the default title
+instructions. The plugin reads at most 8,000 characters.
+
 Use **Generate thread name** in the thread header or card menu to replace a title.
 You can also run `bb gtd-sidebar rename [<threadId>]`. The command uses the current
 thread when you omit the id.

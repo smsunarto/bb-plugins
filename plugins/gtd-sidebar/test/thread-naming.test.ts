@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 import {
   normalizeInitialUserPrompt,
+  normalizeProjectTitleInstructions,
   planThreadNaming,
   renderThreadNamingPrompt,
   sanitizeGeneratedTitle,
@@ -107,6 +108,39 @@ Fix the login test`,
       /User prompt:\nNow fix signup\n\nUse the agent's last turn handoff message to understand the current task state\.\n\nAgent's last turn handoff message:\n\*\*Fixed:\*\* login\n\nTests pass\.$/u,
     );
   });
+
+  test("injects project-specific instructions before the user prompt", () => {
+    assert.equal(
+      renderThreadNamingPrompt(
+        "Fix the login test",
+        "",
+        "  Start every title with `API:`.\r\nKeep ticket IDs.  ",
+      ),
+      `You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt.
+The task usually has to do with coding work, such as fixing a bug, changing a feature, or answering a question about a codebase.
+Generate a concise UI title of at most 36 characters.
+Use a single line of plain text only.
+Do not include quotes, markdown, formatting characters, or trailing punctuation.
+Use sentence case: capitalize only the first word, proper nouns, and identifiers. Do not use Title Case.
+If the prompt includes a ticket reference, include it verbatim.
+Prefer an imperative verb when the user is asking for a change.
+Do not answer the user or attempt the task.
+
+Project-specific title instructions:
+Start every title with \`API:\`.
+Keep ticket IDs.
+
+User prompt:
+Fix the login test`,
+    );
+  });
+});
+
+describe("normalizeProjectTitleInstructions", () => {
+  test("normalizes line endings and caps instructions at 8,000 characters", () => {
+    assert.equal(normalizeProjectTitleInstructions("  first\r\nsecond\r  "), "first\nsecond");
+    assert.equal(normalizeProjectTitleInstructions("x".repeat(8_100)).length, 8_000);
+  });
 });
 
 describe("planThreadNaming", () => {
@@ -167,6 +201,30 @@ describe("planThreadNaming", () => {
         kind: "title-unchanged",
         expectedTitle: "Previous title",
       });
+    }
+  });
+
+  test("adds project instructions to automatic and forced naming", () => {
+    for (const intent of [
+      { kind: "automatic", lastAssistantText: null } as const,
+      { kind: "forced" } as const,
+    ]) {
+      const result = planThreadNaming({
+        automaticallyNameThreads: true,
+        events: [request(1, [{ type: "text", text: "Fix it" }]), completed(2)],
+        intent,
+        pluginId: "gtd-sidebar",
+        projectInstructions: "Prefix titles with WEB:",
+        thread,
+      });
+
+      assert.equal(result.kind, "run");
+      if (result.kind === "run") {
+        assert.match(
+          result.prompt,
+          /Project-specific title instructions:\nPrefix titles with WEB:/u,
+        );
+      }
     }
   });
 

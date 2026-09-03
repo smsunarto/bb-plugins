@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
+  normalizeProjectTitleInstructions,
   planThreadNaming,
   sanitizeGeneratedTitle,
   type NamingIntent,
@@ -9,6 +11,7 @@ import {
 import type { ThreadTitleInference } from "./thread-title-inference.ts";
 
 const EVENT_PAGE_SIZE = 100;
+const PROJECT_TITLE_INSTRUCTIONS_PATH = ".agents/GTD_TITLE.md";
 
 export type ThreadNamingResult = { ok: true; title: string } | { ok: false; error: string };
 
@@ -65,15 +68,24 @@ async function performThreadNaming(
       bb.sdk.threads.get({ threadId }),
       loadNamingEvents(bb, threadId),
     ]);
-    const plan = planThreadNaming({
+    const planInput = {
       automaticallyNameThreads,
       events,
       intent,
       pluginId: bb.pluginId,
       thread,
-    });
+    } as const;
+    let plan = planThreadNaming(planInput);
     if (plan.kind === "skip") {
       return { ok: false, error: describeSkip(plan.reason) };
+    }
+
+    const projectInstructions = await loadProjectTitleInstructions(bb, thread.environmentId);
+    if (projectInstructions !== "") {
+      plan = planThreadNaming({ ...planInput, projectInstructions });
+      if (plan.kind === "skip") {
+        return { ok: false, error: describeSkip(plan.reason) };
+      }
     }
 
     const output = await options.inference.complete({
@@ -102,6 +114,47 @@ async function performThreadNaming(
     bb.log.warn(`could not name thread ${threadId}: ${message}`);
     return { ok: false, error: message };
   }
+}
+
+async function loadProjectTitleInstructions(
+  bb: BbPluginApi,
+  environmentId: string | null,
+): Promise<string> {
+  if (environmentId === null) return "";
+
+  try {
+    const environment = await bb.sdk.environments.get({ environmentId });
+    if (environment.path === null) return "";
+
+    const file = await bb.sdk.files.read({
+      hostId: environment.hostId,
+      path: join(environment.path, PROJECT_TITLE_INSTRUCTIONS_PATH),
+      rootPath: environment.path,
+    });
+    if (file.contentEncoding !== "utf8") {
+      bb.log.warn(
+        `${PROJECT_TITLE_INSTRUCTIONS_PATH} is not UTF-8; using default title instructions`,
+      );
+      return "";
+    }
+    return normalizeProjectTitleInstructions(file.content);
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      bb.log.warn(
+        `could not read ${PROJECT_TITLE_INSTRUCTIONS_PATH} for environment ${environmentId}: ${describeError(error)}`,
+      );
+    }
+    return "";
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  if (code === "ENOENT" || code === "ENOTDIR") return true;
+  return /ENOENT|ENOTDIR|no such file|not found|does not exist/iu.test(describeError(error));
 }
 
 async function loadNamingEvents(bb: BbPluginApi, threadId: string): Promise<ThreadNamingEvent[]> {

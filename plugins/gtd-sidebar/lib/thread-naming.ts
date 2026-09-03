@@ -60,14 +60,16 @@ export interface PlanThreadNamingInput {
   events: readonly ThreadNamingEvent[];
   intent: NamingIntent;
   pluginId: string;
+  projectInstructions?: string;
   thread: NamingThreadFacts;
 }
 
 const MAX_USER_PROMPT_LENGTH = 4_000;
 const MAX_AGENT_HANDOFF_LENGTH = 4_000;
+const MAX_PROJECT_INSTRUCTIONS_LENGTH = 8_000;
 const MAX_GENERATED_TITLE_LENGTH = 36;
 
-const THREAD_TITLE_PROMPT_PREFIX = `You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt.
+const THREAD_TITLE_INSTRUCTIONS = `You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt.
 The task usually has to do with coding work, such as fixing a bug, changing a feature, or answering a question about a codebase.
 Generate a concise UI title of at most 36 characters.
 Use a single line of plain text only.
@@ -75,18 +77,26 @@ Do not include quotes, markdown, formatting characters, or trailing punctuation.
 Use sentence case: capitalize only the first word, proper nouns, and identifiers. Do not use Title Case.
 If the prompt includes a ticket reference, include it verbatim.
 Prefer an imperative verb when the user is asking for a change.
-Do not answer the user or attempt the task.
+Do not answer the user or attempt the task.`;
 
-User prompt:
-`;
-
-export function renderThreadNamingPrompt(userPrompt: string, agentHandoff = ""): string {
+export function renderThreadNamingPrompt(
+  userPrompt: string,
+  agentHandoff = "",
+  projectInstructions = "",
+): string {
   const handoff = normalizeAgentHandoff(agentHandoff);
-  return `${THREAD_TITLE_PROMPT_PREFIX}${userPrompt}${
+  const project = normalizeProjectTitleInstructions(projectInstructions);
+  return `${THREAD_TITLE_INSTRUCTIONS}${
+    project === "" ? "" : `\n\nProject-specific title instructions:\n${project}`
+  }\n\nUser prompt:\n${userPrompt}${
     handoff === ""
       ? ""
       : `\n\nUse the agent's last turn handoff message to understand the current task state.\n\nAgent's last turn handoff message:\n${handoff}`
   }`;
+}
+
+export function normalizeProjectTitleInstructions(value: string): string {
+  return value.replace(/\r\n?/gu, "\n").trim().slice(0, MAX_PROJECT_INSTRUCTIONS_LENGTH);
 }
 
 export function normalizeInitialUserPrompt(events: readonly ThreadNamingEvent[]): string {
@@ -148,6 +158,7 @@ export function planThreadNaming({
   events,
   intent,
   pluginId,
+  projectInstructions = "",
   thread,
 }: PlanThreadNamingInput): ThreadNamingPlan {
   if (intent.kind === "automatic" && !automaticallyNameThreads) {
@@ -187,7 +198,7 @@ export function planThreadNaming({
     kind: "run",
     intent,
     userPrompt,
-    prompt: renderThreadNamingPrompt(userPrompt, agentHandoff),
+    prompt: renderThreadNamingPrompt(userPrompt, agentHandoff, projectInstructions),
     writeGuard:
       intent.kind === "automatic"
         ? { kind: "title-unchanged", expectedTitle: thread.title }

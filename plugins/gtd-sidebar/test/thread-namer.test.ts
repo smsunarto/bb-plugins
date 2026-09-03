@@ -61,12 +61,17 @@ function createHost(
     rereadTitle?: string | null;
     title?: string | null;
     archivedAt?: number | null;
+    environmentPath?: string | null;
     inferenceComplete?: (input: unknown) => Promise<string>;
     inferenceError?: Error;
     inferenceOutput?: string;
+    projectInstructionEncoding?: "base64" | "utf8";
+    projectInstructionError?: Error;
+    projectInstructions?: string;
   } = {},
 ) {
   let getCount = 0;
+  const fileReads: unknown[] = [];
   const updates: unknown[] = [];
   const inferenceCalls: unknown[] = [];
   const thread = makeThreadResponse({
@@ -80,6 +85,34 @@ function createHost(
   const host = createFakePluginHost({
     pluginId: "gtd-sidebar",
     sdk: {
+      environments: {
+        get: async ({ environmentId }) => {
+          assert.equal(environmentId, "env_1");
+          return {
+            id: "env_1",
+            hostId: "host_1",
+            path: options.environmentPath === undefined ? "/workspace" : options.environmentPath,
+          };
+        },
+      },
+      files: {
+        read: async (args) => {
+          fileReads.push(args);
+          if (options.projectInstructionError !== undefined) {
+            throw options.projectInstructionError;
+          }
+          if (options.projectInstructions === undefined) {
+            throw Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
+          }
+          return {
+            content: options.projectInstructions,
+            contentEncoding: options.projectInstructionEncoding ?? "utf8",
+            modifiedAtMs: 1,
+            sha256: "abc",
+            sizeBytes: options.projectInstructions.length,
+          };
+        },
+      },
       threads: {
         get: async ({ threadId }: { threadId: string }) => {
           assert.equal(threadId, THREAD_ID);
@@ -110,7 +143,7 @@ function createHost(
     },
   });
 
-  return { inferenceCalls, namer, updates };
+  return { fileReads, host, inferenceCalls, namer, updates };
 }
 
 describe("createThreadNamer", () => {
@@ -144,6 +177,18 @@ describe("createThreadNamer", () => {
     }
   });
 
+  test("does not read project instructions when naming will be skipped", async () => {
+    const { fileReads, namer } = createHost({ automatic: false });
+
+    const result = await namer.nameThread(THREAD_ID, {
+      kind: "automatic",
+      lastAssistantText: null,
+    });
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(fileReads, []);
+  });
+
   test("regenerates an existing title from the latest prompt and agent handoff", async () => {
     const { inferenceCalls, namer, updates } = createHost({
       events: [requested(), completed(), requested(3, "Now fix signup", "new-turn"), completed(4)],
@@ -164,6 +209,53 @@ describe("createThreadNamer", () => {
       call.prompt,
       /Agent's last turn handoff message:\nLogin is fixed and all tests pass\.$/u,
     );
+  });
+
+  test("reads project title instructions from the active workspace", async () => {
+    const { fileReads, inferenceCalls, namer } = createHost({
+      projectInstructions: "Prefix every title with API:",
+    });
+
+    const result = await namer.nameThread(THREAD_ID, { kind: "forced" });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(fileReads, [
+      {
+        hostId: "host_1",
+        path: "/workspace/.agents/GTD_TITLE.md",
+        rootPath: "/workspace",
+      },
+    ]);
+    const call = inferenceCalls[0] as { prompt: string };
+    assert.match(
+      call.prompt,
+      /Project-specific title instructions:\nPrefix every title with API:\n\nUser prompt:/u,
+    );
+  });
+
+  test("falls back to default instructions when the project file is unusable", async () => {
+    for (const options of [
+      {},
+      { projectInstructions: "encoded", projectInstructionEncoding: "base64" as const },
+      { projectInstructionError: new Error("host unavailable") },
+    ]) {
+      const { inferenceCalls, namer } = createHost(options);
+
+      const result = await namer.nameThread(THREAD_ID, { kind: "forced" });
+
+      assert.equal(result.ok, true);
+      const call = inferenceCalls[0] as { prompt: string };
+      assert.doesNotMatch(call.prompt, /Project-specific title instructions:/u);
+    }
+  });
+
+  test("skips the project file when the environment has no workspace", async () => {
+    const { fileReads, namer } = createHost({ environmentPath: null });
+
+    const result = await namer.nameThread(THREAD_ID, { kind: "forced" });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(fileReads, []);
   });
 
   test("queues another automatic name while inference is still running", async () => {
