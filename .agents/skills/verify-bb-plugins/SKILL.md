@@ -16,8 +16,10 @@ calls `bb-kit dev-instance workspace --watch`. Leave it running.
 bun run dev
 ```
 
-Create one run ID. The helper calls the native workspace command, checks the
-managed release fixture, and reserves one browser session.
+Create one run ID. The helper starts a bb runtime for this run alone: it borrows
+the workspace instance's checkout, comes up on its own ports and its own data
+directory, installs the workspace plugins into it, and reserves one browser
+session. Runs do not share a bb, so several can be in flight at once.
 
 ```bash
 RUN_ID="verify-$(date +%Y%m%d-%H%M%S)"
@@ -25,9 +27,13 @@ RUN_ID="verify-$(date +%Y%m%d-%H%M%S)"
 source ".scratch/verify-bb-plugins/runs/$RUN_ID/run.env"
 ```
 
-Wait until launch exits and `run.env` exists. The pinned app setup can take more than one tool yield.
+Wait until launch exits and `run.env` exists. Starting the runtime is seconds,
+but installing the plugins into its empty bb can take more than one tool yield.
+A first-ever workspace instance clones and installs bb, which is minutes.
 
-The helper prints the app URL, browser session, and evidence directory. Use those values for the whole run.
+The helper prints the app URL, the runtime name, the instance whose checkout it
+borrowed, the browser session, and the evidence directory. Use those values for
+the whole run.
 
 ## Doctor
 
@@ -37,7 +43,7 @@ Run the doctor before browser work and after unexpected behavior.
 .agents/skills/verify-bb-plugins/scripts/control doctor
 ```
 
-The doctor checks the pinned app, its isolated data directory, every workspace plugin, and the bb Monokai theme. Fix a failed check before driving the UI.
+The doctor checks this run's runtime, its isolated data directory, every workspace plugin, and the bb Monokai theme. Fix a failed check before driving the UI.
 
 ## Drive
 
@@ -84,15 +90,16 @@ Do not stop the repository watcher. Do not reload the live desktop app.
 
 ## Helpers
 
-- `scripts/control launch <run-id>` starts and prepares the pinned app.
-- `scripts/control doctor` checks the current pinned baseline.
-- `scripts/control cleanup <run-id>` closes the owned browser session and releases its lock.
+- `scripts/control launch <run-id>` starts this run's bb runtime and prepares it.
+- `scripts/control doctor [run-id]` checks this run's runtime. It reads `RUN_ID` when you omit one.
+- `scripts/control cleanup <run-id>` closes the browser session and destroys the runtime. The evidence stays.
 - `features/README.md` maps the eight representative plugin paths.
 
 ## Gotchas
 
-- Always use the URL that the helper reads from `bb-kit dev-instance status`.
+- Always use this run's URL from `run.env`. Every runtime has its own, and it is never the workspace instance's.
+- Run `cleanup` even when the run fails. A runtime left running holds three ports and a data directory.
 - The app port is not the Server port. Set browser and `BB_SERVER_URL` traffic to the App port.
-- The pinned and desktop instances share `dist/`. Never load a test change into the desktop app without approval.
+- Every runtime shares one checkout and one plugin `dist/`. Never load a test change into the desktop app without approval.
 - Keep screenshots and snapshots under `.scratch/verify-bb-plugins/runs/<run-id>/evidence/`.
 - Do not drive one browser session from concurrent commands. Commands can reset or race the active page.
