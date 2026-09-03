@@ -23,63 +23,85 @@ export function createThreadNamer(
     inference: ThreadTitleInference;
   },
 ): ThreadNamer {
-  const inFlight = new Set<string>();
+  const inFlight = new Map<string, Promise<void>>();
 
   return {
     async nameThread(threadId, intent) {
-      if (inFlight.has(threadId)) {
+      const previous = inFlight.get(threadId);
+      if (previous !== undefined && intent.kind === "forced") {
         return { ok: false, error: "This thread is already being named." };
       }
 
-      inFlight.add(threadId);
+      const operation = (previous ?? Promise.resolve()).then(() =>
+        performThreadNaming(bb, options, threadId, intent),
+      );
+      const tail = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      inFlight.set(threadId, tail);
       try {
-        const automaticallyNameThreads =
-          intent.kind === "automatic" ? await options.automaticallyNameThreads() : true;
-        const [thread, events] = await Promise.all([
-          bb.sdk.threads.get({ threadId }),
-          loadNamingEvents(bb, threadId),
-        ]);
-        const plan = planThreadNaming({
-          automaticallyNameThreads,
-          events,
-          intent,
-          pluginId: bb.pluginId,
-          thread,
-        });
-        if (plan.kind === "skip") {
-          return { ok: false, error: describeSkip(plan.reason) };
-        }
-
-        const output = await options.inference.complete({
-          environmentId: thread.environmentId,
-          prompt: plan.prompt,
-        });
-        const title = sanitizeGeneratedTitle(output);
-        if (title === null) {
-          return { ok: false, error: "The naming agent returned an empty title." };
-        }
-
-        if (plan.writeGuard.kind === "title-still-blank") {
-          const current = await bb.sdk.threads.get({ threadId });
-          if (current.title !== null && current.title.trim() !== "") {
-            return {
-              ok: false,
-              error: "The thread received a title while naming was in progress.",
-            };
-          }
-        }
-
-        await bb.sdk.threads.update({ threadId, title });
-        return { ok: true, title };
-      } catch (error) {
-        const message = describeError(error);
-        bb.log.warn(`could not name thread ${threadId}: ${message}`);
-        return { ok: false, error: message };
+        return await operation;
       } finally {
-        inFlight.delete(threadId);
+        if (inFlight.get(threadId) === tail) inFlight.delete(threadId);
       }
     },
   };
+}
+
+async function performThreadNaming(
+  bb: BbPluginApi,
+  options: {
+    automaticallyNameThreads: () => Promise<boolean>;
+    inference: ThreadTitleInference;
+  },
+  threadId: string,
+  intent: NamingIntent,
+): Promise<ThreadNamingResult> {
+  try {
+    const automaticallyNameThreads =
+      intent.kind === "automatic" ? await options.automaticallyNameThreads() : true;
+    const [thread, events] = await Promise.all([
+      bb.sdk.threads.get({ threadId }),
+      loadNamingEvents(bb, threadId),
+    ]);
+    const plan = planThreadNaming({
+      automaticallyNameThreads,
+      events,
+      intent,
+      pluginId: bb.pluginId,
+      thread,
+    });
+    if (plan.kind === "skip") {
+      return { ok: false, error: describeSkip(plan.reason) };
+    }
+
+    const output = await options.inference.complete({
+      environmentId: thread.environmentId,
+      prompt: plan.prompt,
+    });
+    const title = sanitizeGeneratedTitle(output);
+    if (title === null) {
+      return { ok: false, error: "The naming agent returned an empty title." };
+    }
+
+    if (plan.writeGuard.kind === "title-unchanged") {
+      const current = await bb.sdk.threads.get({ threadId });
+      if (current.title !== plan.writeGuard.expectedTitle) {
+        return {
+          ok: false,
+          error: "The thread title changed while naming was in progress.",
+        };
+      }
+    }
+
+    await bb.sdk.threads.update({ threadId, title });
+    return { ok: true, title };
+  } catch (error) {
+    const message = describeError(error);
+    bb.log.warn(`could not name thread ${threadId}: ${message}`);
+    return { ok: false, error: message };
+  }
 }
 
 async function loadNamingEvents(bb: BbPluginApi, threadId: string): Promise<ThreadNamingEvent[]> {
@@ -106,6 +128,9 @@ async function loadNamingEvents(bb: BbPluginApi, threadId: string): Promise<Thre
         type: event.type,
         data: {
           initiator: event.data.initiator,
+          ...(event.data.retryOfRequestId === undefined
+            ? {}
+            : { retryOfRequestId: event.data.retryOfRequestId }),
           target: { kind: event.data.target.kind },
           input: event.data.input.map((input) => {
             const normalized: {
@@ -138,18 +163,18 @@ function describeSkip(reason: ThreadNamingSkipReason): string {
       return "Automatic naming skips archived threads.";
     case "child-thread":
       return "Child threads are named by their parent.";
-    case "completed-turn-count":
-      return "Automatic naming only runs after the first completed turn.";
     case "deleted-thread":
       return "Deleted threads cannot be named.";
     case "hidden-thread":
       return "Hidden threads cannot be named.";
+    case "latest-turn-incomplete":
+      return "Automatic naming waits for the latest user turn to complete.";
+    case "latest-turn-not-user":
+      return "Automatic naming only runs after a user turn.";
     case "missing-user-prompt":
       return "This thread has no initial user prompt to name.";
     case "plugin-worker":
       return "Plugin worker threads cannot be named.";
-    case "title-already-set":
-      return "Automatic naming does not replace an existing title.";
   }
 }
 

@@ -5,7 +5,11 @@ import { createThreadNamer } from "../thread-namer.ts";
 
 const THREAD_ID = "thr_target";
 
-function requested(seq = 1) {
+function requested(
+  seq = 1,
+  text = "Fix the login test",
+  target: "thread-start" | "new-turn" = "thread-start",
+) {
   return {
     id: `evt_${seq}`,
     seq,
@@ -19,8 +23,8 @@ function requested(seq = 1) {
       source: "tell" as const,
       initiator: "user" as const,
       senderThreadId: null,
-      input: [{ type: "text" as const, text: "Fix the login test", mentions: [] }],
-      target: { kind: "thread-start" as const },
+      input: [{ type: "text" as const, text, mentions: [] }],
+      target: { kind: target },
       request: { method: "thread/start" as const, params: {} },
       execution: {
         model: "claude-opus-5",
@@ -57,6 +61,7 @@ function createHost(
     rereadTitle?: string | null;
     title?: string | null;
     archivedAt?: number | null;
+    inferenceComplete?: (input: unknown) => Promise<string>;
     inferenceError?: Error;
     inferenceOutput?: string;
   } = {},
@@ -98,6 +103,7 @@ function createHost(
     inference: {
       async complete(input) {
         inferenceCalls.push(input);
+        if (options.inferenceComplete !== undefined) return options.inferenceComplete(input);
         if (options.inferenceError !== undefined) throw options.inferenceError;
         return options.inferenceOutput ?? "Fix the login test";
       },
@@ -111,17 +117,26 @@ describe("createThreadNamer", () => {
   test("names an untitled thread after its first completed turn", async () => {
     const { namer, updates } = createHost();
 
-    const result = await namer.nameThread(THREAD_ID, { kind: "automatic" });
+    const result = await namer.nameThread(THREAD_ID, {
+      kind: "automatic",
+      lastAssistantText: "Login tests pass.",
+    });
 
     assert.deepEqual(result, { ok: true, title: "Fix the login test" });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix the login test" }]);
   });
 
-  test("gates automatic naming on exactly one completed turn", async () => {
-    for (const events of [[requested()], [requested(), completed(), completed(3)]]) {
+  test("waits until the latest user turn completes", async () => {
+    for (const events of [
+      [requested()],
+      [requested(), completed(), requested(3, "Now fix signup", "new-turn")],
+    ]) {
       const { inferenceCalls, namer, updates } = createHost({ events });
 
-      const result = await namer.nameThread(THREAD_ID, { kind: "automatic" });
+      const result = await namer.nameThread(THREAD_ID, {
+        kind: "automatic",
+        lastAssistantText: "Login tests pass.",
+      });
 
       assert.equal(result.ok, false);
       assert.equal(inferenceCalls.length, 0);
@@ -129,10 +144,69 @@ describe("createThreadNamer", () => {
     }
   });
 
+  test("regenerates an existing title from the latest prompt and agent handoff", async () => {
+    const { inferenceCalls, namer, updates } = createHost({
+      events: [requested(), completed(), requested(3, "Now fix signup", "new-turn"), completed(4)],
+      inferenceOutput: "Fix the signup test",
+      title: "Fix the login test",
+    });
+
+    const result = await namer.nameThread(THREAD_ID, {
+      kind: "automatic",
+      lastAssistantText: "Login is fixed and all tests pass.",
+    });
+
+    assert.deepEqual(result, { ok: true, title: "Fix the signup test" });
+    assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix the signup test" }]);
+    const call = inferenceCalls[0] as { prompt: string };
+    assert.match(call.prompt, /User prompt:\nNow fix signup/u);
+    assert.match(
+      call.prompt,
+      /Agent's last turn handoff message:\nLogin is fixed and all tests pass\.$/u,
+    );
+  });
+
+  test("queues another automatic name while inference is still running", async () => {
+    let releaseFirstInference = () => {};
+    const firstInference = new Promise<void>((resolve) => {
+      releaseFirstInference = resolve;
+    });
+    let markFirstInferenceStarted = () => {};
+    const firstInferenceStarted = new Promise<void>((resolve) => {
+      markFirstInferenceStarted = resolve;
+    });
+    let inferenceCount = 0;
+    const { namer, updates } = createHost({
+      inferenceComplete: async () => {
+        inferenceCount += 1;
+        if (inferenceCount === 1) {
+          markFirstInferenceStarted();
+          await firstInference;
+        }
+        return `Generated title ${inferenceCount}`;
+      },
+    });
+    const intent = { kind: "automatic", lastAssistantText: null } as const;
+
+    const first = namer.nameThread(THREAD_ID, intent);
+    await firstInferenceStarted;
+    const second = namer.nameThread(THREAD_ID, intent);
+    await Promise.resolve();
+
+    assert.equal(inferenceCount, 1);
+    releaseFirstInference();
+    await Promise.all([first, second]);
+    assert.equal(inferenceCount, 2);
+    assert.equal(updates.length, 2);
+  });
+
   test("keeps a manual title written while automatic naming runs", async () => {
     const { namer, updates } = createHost({ rereadTitle: "My title" });
 
-    const result = await namer.nameThread(THREAD_ID, { kind: "automatic" });
+    const result = await namer.nameThread(THREAD_ID, {
+      kind: "automatic",
+      lastAssistantText: "Login tests pass.",
+    });
 
     assert.equal(result.ok, false);
     assert.equal(updates.length, 0);

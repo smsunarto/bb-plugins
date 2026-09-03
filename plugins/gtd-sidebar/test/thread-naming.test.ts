@@ -100,31 +100,104 @@ User prompt:
 Fix the login test`,
     );
   });
+
+  test("includes the agent handoff after a follow-up prompt", () => {
+    assert.match(
+      renderThreadNamingPrompt("Now fix signup", "  **Fixed:** login\n\nTests pass.  "),
+      /User prompt:\nNow fix signup\n\nUse the agent's last turn handoff message to understand the current task state\.\n\nAgent's last turn handoff message:\n\*\*Fixed:\*\* login\n\nTests pass\.$/u,
+    );
+  });
 });
 
 describe("planThreadNaming", () => {
-  test("runs automatic naming only after exactly one completed turn", () => {
-    assert.equal(plan({ kind: "automatic" }).kind, "run");
-    assert.deepEqual(plan({ kind: "automatic" }, { events: [] }), {
+  test("runs automatic naming after every completed user turn", () => {
+    const firstTurn = plan({ kind: "automatic", lastAssistantText: "First handoff" });
+    assert.equal(firstTurn.kind, "run");
+    if (firstTurn.kind === "run") {
+      assert.doesNotMatch(firstTurn.prompt, /Agent's last turn handoff message/u);
+    }
+    assert.deepEqual(plan({ kind: "automatic", lastAssistantText: null }, { events: [] }), {
       kind: "skip",
-      reason: "completed-turn-count",
+      reason: "missing-user-prompt",
     });
     assert.deepEqual(
       plan(
-        { kind: "automatic" },
+        { kind: "automatic", lastAssistantText: null },
         {
-          events: [request(1, [{ type: "text", text: "Fix it" }]), completed(2), completed(3)],
+          events: [request(1, [{ type: "text", text: "Fix it" }])],
         },
       ),
-      { kind: "skip", reason: "completed-turn-count" },
+      { kind: "skip", reason: "latest-turn-incomplete" },
     );
+
+    const followUp = plan(
+      { kind: "automatic", lastAssistantText: "Login is fixed and tests pass." },
+      {
+        events: [
+          request(1, [{ type: "text", text: "Fix login" }]),
+          completed(2),
+          request(3, [{ type: "text", text: "Now fix signup" }], {
+            target: { kind: "new-turn" },
+          }),
+          completed(4),
+        ],
+        thread: { title: "Fix login" },
+      },
+    );
+    assert.equal(followUp.kind, "run");
+    if (followUp.kind === "run") {
+      assert.equal(followUp.userPrompt, "Now fix signup");
+      assert.match(followUp.prompt, /Agent's last turn handoff message:\nLogin is fixed/u);
+      assert.deepEqual(followUp.writeGuard, {
+        kind: "title-unchanged",
+        expectedTitle: "Fix login",
+      });
+    }
   });
 
-  test("protects manual titles during automatic naming", () => {
-    assert.deepEqual(plan({ kind: "automatic" }, { thread: { title: "Hand title" } }), {
-      kind: "skip",
-      reason: "title-already-set",
-    });
+  test("plans to replace an unchanged existing title", () => {
+    const result = plan(
+      { kind: "automatic", lastAssistantText: null },
+      { thread: { title: "Previous title" } },
+    );
+
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.deepEqual(result.writeGuard, {
+        kind: "title-unchanged",
+        expectedTitle: "Previous title",
+      });
+    }
+  });
+
+  test("skips idle transitions not caused by an original user prompt", () => {
+    const cases: ThreadNamingEvent[][] = [
+      [
+        request(1, [{ type: "text", text: "Fix it" }]),
+        completed(2),
+        request(3, [{ type: "text", text: "Continue" }], {
+          initiator: "agent",
+          target: { kind: "new-turn" },
+        }),
+        completed(4),
+      ],
+      [
+        request(1, [{ type: "text", text: "Fix it" }]),
+        completed(2),
+        request(3, [{ type: "text", text: "Fix it again" }], {
+          retryOfRequestId: "req_1",
+          target: { kind: "auto" },
+        }),
+        completed(4),
+      ],
+    ];
+
+    for (const events of cases) {
+      assert.deepEqual(
+        plan({ kind: "automatic", lastAssistantText: "Agent handoff" }, { events }),
+        { kind: "skip", reason: "latest-turn-not-user" },
+      );
+    }
   });
 
   test("lets forced naming replace an archived hand title", () => {

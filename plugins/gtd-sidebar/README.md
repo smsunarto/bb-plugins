@@ -114,10 +114,12 @@ a child, a chip that names the parent and opens it.
 
 ### Thread names
 
-An untitled root thread gets a generated name after its first completed turn. The
-plugin sends bb's 36-character thread-title prompt through its own Codex inference
-service. The service requests strict JSON from GPT-5.6-Luna with low reasoning and
-creates no agent thread. A transient failure retries once with GPT-5.4-Mini.
+A root thread gets a regenerated name after every completed user turn. The first
+name uses the initial user prompt. Later names also use the agent's latest handoff
+message, so the title follows the thread's current task. The plugin sends a
+36-character title prompt through its own Codex inference service. The service
+requests strict JSON from GPT-5.6-Luna with low reasoning and creates no agent
+thread. A transient failure retries once with GPT-5.4-Mini.
 
 Use **Generate thread name** in the thread header or card menu to replace a title.
 You can also run `bb gtd-sidebar rename [<threadId>]`. The command uses the current
@@ -136,8 +138,8 @@ thread when you omit the id.
 
 Two settings, in **Settings → Plugins → GTD Sidebar**:
 
-- **Automatically name threads** — on. Turn it off to keep new threads untitled.
-  Manual naming from the header, card menu, and CLI still works.
+- **Automatically name threads** — on. Turn it off to stop automatic title
+  regeneration. Manual naming from the header, card menu, and CLI still works.
 
 - **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
   glyph and give the branch that space back. Every card follows it together, so the

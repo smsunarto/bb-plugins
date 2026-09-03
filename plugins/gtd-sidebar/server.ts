@@ -166,7 +166,7 @@ export default function plugin(bb: BbPluginApi) {
     automaticallyNameThreads: {
       type: "boolean",
       label: "Automatically name threads",
-      description: "Generate a title after the first turn when the thread has no title.",
+      description: "Regenerate the title after every completed user turn.",
       default: true,
     },
   });
@@ -535,8 +535,8 @@ export default function plugin(bb: BbPluginApi) {
   bb.events.on("thread.idle", wakeIfSettled);
   bb.events.on("thread.failed", wakeIfSettled);
 
-  bb.events.on("thread.idle", ({ thread }) => {
-    void threadNamer.nameThread(thread.id, { kind: "automatic" });
+  bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
+    void threadNamer.nameThread(thread.id, { kind: "automatic", lastAssistantText });
   });
 
   bb.cli.register({
