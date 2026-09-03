@@ -58,12 +58,13 @@ test("telemetry stays disabled when artifact identity is missing or drifted", ()
   }
 });
 
-test("enabled telemetry derives the release from the sidecar in both layouts", async () => {
+test("enabled telemetry derives the release from every supported sidecar layout", async () => {
   const target = await startEnvelopeTarget();
   const built = createArtifactFixture("built", IDENTITY);
   const source = createArtifactFixture("source", IDENTITY);
+  const rootSource = createArtifactFixture("root-source", IDENTITY);
   try {
-    for (const fixture of [built, source]) {
+    for (const fixture of [built, source, rootSource]) {
       const telemetry = sentryPluginTelemetry({
         pluginId: "demo",
         serverEntryUrl: fixture.serverEntryUrl,
@@ -78,7 +79,7 @@ test("enabled telemetry derives the release from the sidecar in both layouts", a
       performance.start({ operation: "plugin.startup" }).finish("ok");
       await performance.dispose?.(5_000);
     }
-    assert.equal(target.bodies.length, 2);
+    assert.equal(target.bodies.length, 3);
     for (const body of target.bodies) {
       assert.match(body, /"release":"bb-plugin-demo@9\.9\.9"/u);
       assert.match(body, /"environment":"ci"/u);
@@ -86,6 +87,7 @@ test("enabled telemetry derives the release from the sidecar in both layouts", a
   } finally {
     built.cleanup();
     source.cleanup();
+    rootSource.cleanup();
     await target.close();
   }
 });
@@ -250,7 +252,10 @@ test("the baked dsn option enables telemetry and SENTRY_DSN overrides it", async
 });
 
 test("the release name matches the source-map pipeline convention", () => {
-  assert.equal(sentryPluginRelease({ pluginId: "amp", pluginVersion: "1.2.3" }), "bb-plugin-amp@1.2.3");
+  assert.equal(
+    sentryPluginRelease({ pluginId: "amp", pluginVersion: "1.2.3" }),
+    "bb-plugin-amp@1.2.3",
+  );
 });
 
 function fakeSettingsHost(stored: { telemetry: boolean } | "reject"): {
@@ -292,7 +297,7 @@ async function waitFor(condition: () => boolean): Promise<void> {
 }
 
 function createArtifactFixture(
-  layout: "built" | "source",
+  layout: "built" | "root-source" | "source",
   meta: unknown,
 ): { serverEntryUrl: string; cleanup(): void } {
   const dir = mkdtempSync(join(tmpdir(), "bb-kit-sentry-telemetry-"));
@@ -301,9 +306,12 @@ function createArtifactFixture(
     writeFileSync(join(dir, "server.meta.json"), JSON.stringify(meta));
     return { serverEntryUrl: pathToFileURL(join(dir, "server.js")).href, cleanup };
   }
-  mkdirSync(join(dir, "server"));
   mkdirSync(join(dir, "dist"));
   writeFileSync(join(dir, "dist", "server.meta.json"), JSON.stringify(meta));
+  if (layout === "root-source") {
+    return { serverEntryUrl: pathToFileURL(join(dir, "server.ts")).href, cleanup };
+  }
+  mkdirSync(join(dir, "server"));
   return { serverEntryUrl: pathToFileURL(join(dir, "server", "server.ts")).href, cleanup };
 }
 

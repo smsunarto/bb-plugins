@@ -21,6 +21,9 @@ test("the provider declaration preserves NanoCodex models, reasoning, fast tier,
     "CODEX_HOME",
     "NANOCODEX_AUTH_FILE",
     "PARALLEL_API_KEY",
+    "SENTRY_DSN",
+    "SENTRY_ENVIRONMENT",
+    "NODE_ENV",
   ]);
 });
 

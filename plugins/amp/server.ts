@@ -4,6 +4,8 @@
 // spawns the Amp CLI directly and drives it over its stream-json execute
 // wire. No separate bridge process, no launch spec.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { type SentryPluginReporter } from "@bb-kit/sentry/node";
+import { sentryPluginTelemetry } from "@bb-kit/sentry/telemetry";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -28,6 +30,19 @@ import {
   readOrbIntent,
 } from "./src/orb-intent.js";
 import { threadLinkToOrbUsageView } from "./src/orb-usage.js";
+import { PLUGIN_TELEMETRY } from "./shared/telemetry.js";
+
+// Amp's source entry lives at the plugin root. Published bundles have their
+// metadata beside this module, while source runs need the older nested-entry
+// fallback until every loaded bb-kit copy knows the root-source layout.
+const telemetryEntryUrl = existsSync(new URL("./server.meta.json", import.meta.url))
+  ? import.meta.url
+  : new URL("./server/server.ts", import.meta.url);
+
+const telemetry = sentryPluginTelemetry({
+  ...PLUGIN_TELEMETRY,
+  serverEntryUrl: telemetryEntryUrl,
+});
 
 const orbUsageViewSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("hidden") }).strict(),
@@ -100,7 +115,30 @@ const HOST_BUNDLE = existsSync(join(MODULE_DIR, "host.js"))
  *  Other kinds may interleave; the thread-link row is normally first. */
 const THREAD_LINK_SCAN_LIMIT = 50;
 
-export default async function plugin(bb: BbPluginApi) {
+export function createAmpPlugin(errorReporter = telemetry.errorReporter) {
+  return async function plugin(bb: BbPluginApi) {
+    let reporter = errorReporter({ pluginId: PLUGIN_TELEMETRY.pluginId, host: bb });
+    if (reporter !== undefined) {
+      try {
+        bb.onDispose(() => reporter?.dispose(2_000));
+      } catch {
+        void reporter.dispose(2_000);
+        reporter = undefined;
+      }
+    }
+    try {
+      await registerPlugin(bb, reporter);
+    } catch (error) {
+      reporter?.capture({ boundary: "plugin.factory", error });
+      await reporter?.dispose(2_000);
+      throw error;
+    }
+  };
+}
+
+export default createAmpPlugin();
+
+async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | undefined) {
   bb.log.info("loaded");
 
   /** Amp CLI path the registration resolved; `bb amp status` reuses it. */
@@ -108,23 +146,25 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.rpc.register(rpcContract, {
     async getOrbUsage({ threadId }) {
-      const thread = await bb.sdk.threads.get({ threadId });
-      if (thread.providerId !== AMP_AGENT.providerId) return { state: "hidden" as const };
-      const rows = await bb.sdk.threads.events.list({
-        threadId,
-        types: ["thread/extensionState/updated"],
-        order: "desc",
-        limit: String(THREAD_LINK_SCAN_LIMIT),
+      return observeFailure(reporter, "rpc.execute", "getOrbUsage", async () => {
+        const thread = await bb.sdk.threads.get({ threadId });
+        if (thread.providerId !== AMP_AGENT.providerId) return { state: "hidden" as const };
+        const rows = await bb.sdk.threads.events.list({
+          threadId,
+          types: ["thread/extensionState/updated"],
+          order: "desc",
+          limit: String(THREAD_LINK_SCAN_LIMIT),
+        });
+        for (const row of rows) {
+          if (row.type !== "thread/extensionState/updated") continue;
+          if (row.data.kind !== AMP_THREAD_LINK_KIND) continue;
+          // Ingest already validated the payload against this same schema; a
+          // miss here means the schemas drifted, and hiding is the safe answer.
+          const link = threadLinkStateSchema.safeParse(row.data.payload);
+          return link.success ? threadLinkToOrbUsageView(link.data) : { state: "hidden" as const };
+        }
+        return { state: "hidden" as const };
       });
-      for (const row of rows) {
-        if (row.type !== "thread/extensionState/updated") continue;
-        if (row.data.kind !== AMP_THREAD_LINK_KIND) continue;
-        // Ingest already validated the payload against this same schema; a
-        // miss here means the schemas drifted, and hiding is the safe answer.
-        const link = threadLinkStateSchema.safeParse(row.data.payload);
-        return link.success ? threadLinkToOrbUsageView(link.data) : { state: "hidden" as const };
-      }
-      return { state: "hidden" as const };
     },
     // The Orb toggle arms the next thread here. The provider bridge consumes
     // the intent at thread/start in its own process, so the slot is a file
@@ -132,23 +172,29 @@ export default async function plugin(bb: BbPluginApi) {
     // derives from experimental_dataDir but only ever touches the plugin's
     // own bridge storage, never a bb-managed file.
     getOrbIntent() {
-      return { armed: readOrbIntent(bridgeDataDirFor(bb.server.experimental_dataDir)) };
+      return observeFailure(reporter, "rpc.execute", "getOrbIntent", () => ({
+        armed: readOrbIntent(bridgeDataDirFor(bb.server.experimental_dataDir)),
+      }));
     },
     setOrbIntent({ armed }) {
-      const dir = bridgeDataDirFor(bb.server.experimental_dataDir);
-      if (armed) armOrbIntent(dir);
-      else disarmOrbIntent(dir);
-      return { armed };
+      return observeFailure(reporter, "rpc.execute", "setOrbIntent", () => {
+        const dir = bridgeDataDirFor(bb.server.experimental_dataDir);
+        if (armed) armOrbIntent(dir);
+        else disarmOrbIntent(dir);
+        return { armed };
+      });
     },
     getOracleReport({ reportId }) {
-      const report = loadOracleReport(reportId);
-      return report === null
-        ? {
-            report: null,
-            error:
-              "The Oracle report is unavailable. Open the native tool call to view its output.",
-          }
-        : { report, error: null };
+      return observeFailure(reporter, "rpc.execute", "getOracleReport", () => {
+        const report = loadOracleReport(reportId);
+        return report === null
+          ? {
+              report: null,
+              error:
+                "The Oracle report is unavailable. Open the native tool call to view its output.",
+            }
+          : { report, error: null };
+      });
     },
   });
 
@@ -211,22 +257,24 @@ export default async function plugin(bb: BbPluginApi) {
   // failure, so the plugin stays installed and says what is missing.
   bb.background.service("register", {
     async start() {
-      const amp = resolveAmpCli(process.env);
-      if (amp === null) {
-        bb.status.needsConfiguration(`The Amp CLI was not found. ${AMP_CLI_HINT}`);
-        return;
-      }
-      ampCliPath = amp;
-      try {
-        bb.providers.register(buildAmpProviderDeclaration({ ampCliPath: amp }));
-      } catch (error) {
-        bb.log.error(`Could not register the Amp provider: ${String(error)}`);
-        bb.status.needsConfiguration(
-          `Could not register the Amp provider: ${String(error)}. Fix the problem, then run \`bb plugin reload amp\`.`,
-        );
-        return;
-      }
-      await removeLegacyEntry();
+      return observeFailure(reporter, "background.service", "register", async () => {
+        const amp = resolveAmpCli(process.env);
+        if (amp === null) {
+          bb.status.needsConfiguration(`The Amp CLI was not found. ${AMP_CLI_HINT}`);
+          return;
+        }
+        ampCliPath = amp;
+        try {
+          bb.providers.register(buildAmpProviderDeclaration({ ampCliPath: amp }));
+        } catch (error) {
+          bb.log.error(`Could not register the Amp provider: ${String(error)}`);
+          bb.status.needsConfiguration(
+            `Could not register the Amp provider: ${String(error)}. Fix the problem, then run \`bb plugin reload amp\`.`,
+          );
+          return;
+        }
+        await removeLegacyEntry();
+      });
     },
   });
 
@@ -280,11 +328,13 @@ export default async function plugin(bb: BbPluginApi) {
       },
     ],
     async run(argv) {
-      const command = argv[0] ?? "status";
-      if (command === "status") {
-        return { exitCode: 0, stdout: `${(await statusLines()).join("\n")}\n` };
-      }
-      return { exitCode: 2, stderr: `Unknown subcommand "${command}". Use "bb amp status".\n` };
+      return observeFailure(reporter, "command.execute", argv[0] ?? "status", async () => {
+        const command = argv[0] ?? "status";
+        if (command === "status") {
+          return { exitCode: 0, stdout: `${(await statusLines()).join("\n")}\n` };
+        }
+        return { exitCode: 2, stderr: `Unknown subcommand "${command}". Use "bb amp status".\n` };
+      });
     },
   });
 
@@ -292,10 +342,33 @@ export default async function plugin(bb: BbPluginApi) {
   // lives on the thread's own extension-state events, which leave with the
   // thread; this sweep only clears leftovers from before the migration.
   bb.events.on("thread.deleted", async ({ thread }) => {
-    await Promise.all([
-      bb.storage.kv.delete(`amp-thread-link:${thread.id}`),
-      bb.storage.kv.delete(`orb-usage:${thread.id}`),
-      bb.storage.kv.delete(`amp-archive-watch:${thread.id}`),
-    ]);
+    return observeFailure(reporter, "event.handler", "thread.deleted", async () => {
+      await Promise.all([
+        bb.storage.kv.delete(`amp-thread-link:${thread.id}`),
+        bb.storage.kv.delete(`orb-usage:${thread.id}`),
+        bb.storage.kv.delete(`amp-archive-watch:${thread.id}`),
+      ]);
+    });
   });
+}
+
+function observeFailure<T>(
+  reporter: SentryPluginReporter | undefined,
+  boundary: string,
+  operation: string,
+  callback: () => T,
+): T {
+  try {
+    const result = callback();
+    if (result instanceof Promise) {
+      return result.catch((error: unknown) => {
+        reporter?.capture({ boundary, operation, error });
+        throw error;
+      }) as T;
+    }
+    return result;
+  } catch (error) {
+    reporter?.capture({ boundary, operation, error });
+    throw error;
+  }
 }

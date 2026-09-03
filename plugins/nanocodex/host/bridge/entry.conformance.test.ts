@@ -31,6 +31,7 @@ test("accepted RPC replies precede notifications and every request settles once"
   let writer: ThreadWriter | undefined;
   let busy = false;
   let failActivation = false;
+  const failures: Array<{ operation: string; error: unknown }> = [];
   const registry: SessionRegistry = {
     prepareNew: async (options) => ({
       providerThreadId: options.providerThreadId,
@@ -80,6 +81,7 @@ test("accepted RPC replies precede notifications and every request settles once"
     createStorage: createNanocodexStorage,
     createBinding: () => new FakeNativeBinding(),
     createRegistry: () => registry,
+    captureFailure: (operation, error) => failures.push({ operation, error }),
   });
   bridge.start({ dataDir: root });
   try {
@@ -151,6 +153,15 @@ test("accepted RPC replies precede notifications and every request settles once"
     await settle();
     assert.equal(output.messages.filter((message) => message.id === 6).length, 1);
     assert.equal(output.messages.find((message) => message.id === 6)?.error, undefined);
+    assert.deepEqual(
+      failures.map(({ operation }) => operation),
+      [
+        BRIDGE_REQUEST_METHODS.threadStop,
+        "thread/activate",
+        "thread/activate/dispose",
+        "thread/activate/stop",
+      ],
+    );
   } finally {
     await bridge.close();
     output.restore();

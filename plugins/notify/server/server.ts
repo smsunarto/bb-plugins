@@ -13,11 +13,11 @@ import { registerRendererMailboxRoutes, rendererMailbox } from "./renderer-mailb
 import { runTracker } from "./run-tracker.ts";
 import { bindSettings, SETTINGS_BLOCK } from "./settings.ts";
 import { playSound } from "./sound.ts";
+import { PLUGIN_TELEMETRY } from "../shared/telemetry.ts";
 
 const telemetry = sentryPluginTelemetry({
-  pluginId: "notify",
+  ...PLUGIN_TELEMETRY,
   serverEntryUrl: import.meta.url,
-  dsn: "https://c4d32c5ebd100ee5cd27afe79ec6ebd4@o4506475620204544.ingest.us.sentry.io/4512009353560065",
 });
 
 export default definePlugin({

@@ -19,7 +19,7 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       /^parallel-web$/,
       /^zod$/,
       /^@bb-kit\/core\/(?:command|plugin)$/,
-      /^@bb-kit\/sentry\/telemetry$/,
+      /^@bb-kit\/sentry\/(?:context|node|telemetry)$/,
       /^nanocodex\/(?:durability|host|node(?:\/transport)?|worker)$/,
       // The scanner extends its allowlist for `*.test.*` files only; the
       // tests assemble deltas through the SDK's public testing kits.

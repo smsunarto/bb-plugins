@@ -12,9 +12,9 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       /^bun:test$/,
       /^zod$/,
       /^react$/,
-      // The host bridge's opt-in startup telemetry. This is a declared
-      // runtime dependency. Its performance entry point stays lazy.
-      /^@bb-kit\/sentry\/performance$/,
+      // Browser, server, and host telemetry use public bb-kit entrypoints.
+      // The host paths stay lazy without a DSN.
+      /^@bb-kit\/sentry\/(?:app|node|performance|telemetry)$/,
       // The scanner extends its allowlist for `*.test.*` files only; the
       // manual parity recorder (test/helpers/record-parity.ts) legitimately
       // imports the same public testing kit the parity test uses.

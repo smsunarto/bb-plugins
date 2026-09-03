@@ -1,9 +1,9 @@
 # @bb-kit/sentry
 
-`@bb-kit/sentry` adds Node-only Sentry reporting to `@bb-kit/core` plugins. Reporting is on by
-default when a DSN is available, and every reporter auto-injects a `telemetry` boolean into the
-plugin's bb settings so users can opt out. It creates an isolated client for each plugin factory
-execution. A missing or blank DSN disables reporting.
+`@bb-kit/sentry` adds privacy-filtered Sentry reporting to bb plugin servers and browser apps.
+Reporting is on by default when a DSN is available. The server reporter adds a `telemetry` boolean
+to the plugin's bb settings so users can opt out. Each plugin gets an isolated client. A missing or
+blank DSN disables reporting.
 
 ```ts
 import { definePlugin } from "@bb-kit/core/plugin";
@@ -22,6 +22,32 @@ export default definePlugin({
 
 The adapter sends a fixed exception message, sanitized stack frames, and controlled `bb.*` tags.
 It does not send callback input, raw error messages, user data, breadcrumbs, or request data.
+
+## Browser apps
+
+`@bb-kit/sentry/app` wraps a plugin app's registrations. It reports setup, render, registered
+callback, content-script, and plugin-owned global errors. Errors still propagate to bb's existing
+containment boundaries.
+
+```tsx
+import { sentryAppTelemetry } from "@bb-kit/sentry/app";
+import { definePluginApp } from "@get-bb/plugin-sdk/app";
+
+const telemetry = sentryAppTelemetry({
+  pluginId: "my-plugin",
+  pluginVersion: "1.0.0",
+  dsn: "https://public-key@example.ingest.sentry.io/project-id",
+});
+
+export default definePluginApp(
+  telemetry.instrument((app) => {
+    app.slots.navPanel({/* registration */});
+  }),
+);
+```
+
+The browser client reads the same `telemetry` setting before every send. It limits each page to 25
+events and only attributes global errors whose stack points at that plugin's app bundle.
 
 Performance tracing is a separate, lightweight entry point. It records elapsed numeric checkpoints
 and emits a Sentry envelope only after the measured work has finished, without loading the Sentry

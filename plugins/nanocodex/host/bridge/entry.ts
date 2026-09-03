@@ -31,6 +31,8 @@ import {
 } from "../session.ts";
 import { createNanocodexStorage, type NanocodexStorage } from "../storage.ts";
 import { createThreadWriter } from "./timeline.ts";
+import { createNanocodexErrorReporter } from "../telemetry.ts";
+import type { SentryPluginReporter } from "@bb-kit/sentry/node";
 
 export const CAPABILITIES: BridgeCapabilities = {
   grammarVersions: [3, 3],
@@ -56,6 +58,7 @@ interface BridgeDependencies {
     binding: NativeBinding;
     storage: NanocodexStorage;
   }) => SessionRegistry;
+  readonly captureFailure?: (operation: string, error: unknown) => void;
 }
 
 export interface NanocodexBridge {
@@ -71,6 +74,13 @@ export function createBridge(dependencies: BridgeDependencies = {}): NanocodexBr
   let registry: SessionRegistry | undefined;
   let binding: NativeBinding | undefined;
   let storage: NanocodexStorage | undefined;
+  const captureFailure = (operation: string, error: unknown): void => {
+    try {
+      dependencies.captureFailure?.(operation, error);
+    } catch {
+      return;
+    }
+  };
 
   const requireRuntime = (): {
     registry: SessionRegistry;
@@ -123,9 +133,14 @@ export function createBridge(dependencies: BridgeDependencies = {}): NanocodexBr
         });
         afterReply();
       }
-    } catch {
-      void prepared.dispose().catch(() => {});
-      void registry?.stop(args.threadId, "release").catch(() => {});
+    } catch (error) {
+      captureFailure("thread/activate", error);
+      void prepared.dispose().catch((disposeError) => {
+        captureFailure("thread/activate/dispose", disposeError);
+      });
+      void registry?.stop(args.threadId, "release").catch((stopError) => {
+        captureFailure("thread/activate/stop", stopError);
+      });
     }
   };
 
@@ -260,7 +275,9 @@ export function createBridge(dependencies: BridgeDependencies = {}): NanocodexBr
         throw error;
       }
       io.sendResult(id, {});
-      void afterReply().catch(() => {});
+      void afterReply().catch((error) => {
+        captureFailure(BRIDGE_REQUEST_METHODS.turnSteer, error);
+      });
     },
     [BRIDGE_REQUEST_METHODS.threadStop]: (id, params) => {
       const parsed = threadStopParamsSchema.safeParse(params);
@@ -269,7 +286,9 @@ export function createBridge(dependencies: BridgeDependencies = {}): NanocodexBr
       io.sendResult(id, {});
       void requireRuntime()
         .registry.stop(parsed.data.threadId, parsed.data.intent)
-        .catch(() => {});
+        .catch((error) => {
+          captureFailure(BRIDGE_REQUEST_METHODS.threadStop, error);
+        });
     },
     [BRIDGE_REQUEST_METHODS.threadDiscard]: (id, params) => {
       const parsed = threadDiscardParamsSchema.safeParse(params);
@@ -278,7 +297,9 @@ export function createBridge(dependencies: BridgeDependencies = {}): NanocodexBr
       io.sendResult(id, {});
       void requireRuntime()
         .registry.discard(parsed.data.threadId, parsed.data.providerThreadId)
-        .catch(() => {});
+        .catch((error) => {
+          captureFailure(BRIDGE_REQUEST_METHODS.threadDiscard, error);
+        });
     },
     [BRIDGE_REQUEST_METHODS.threadArchive]: (id) =>
       methodNotFound(id, BRIDGE_REQUEST_METHODS.threadArchive),
@@ -317,14 +338,24 @@ export function createBridge(dependencies: BridgeDependencies = {}): NanocodexBr
       runBridgeRequest({
         request: { id: request.id, method: request.method, params: request.params },
         sendError: io.sendError,
-        handleRequest: async (decoded) => handler(decoded.id, decoded.params),
+        handleRequest: async (decoded) => {
+          try {
+            await handler(decoded.id, decoded.params);
+          } catch (error) {
+            captureFailure(decoded.method, error);
+            throw error;
+          }
+        },
       });
     },
     async close() {
-      await registry?.close();
-      registry = undefined;
-      binding = undefined;
-      storage = undefined;
+      try {
+        await registry?.close();
+      } finally {
+        registry = undefined;
+        binding = undefined;
+        storage = undefined;
+      }
     },
   };
 }
@@ -384,22 +415,51 @@ function mintProviderThreadId(): string {
 }
 
 let runtime: NanocodexBridge | undefined;
+let errors: SentryPluginReporter | undefined;
+let closing: Promise<void> | undefined;
+
+function captureHostFailure(operation: string, error: unknown): void {
+  errors?.capture({ boundary: "host.bridge", operation, error });
+}
+
+function closeRuntime(): Promise<void> {
+  closing ??= (async () => {
+    try {
+      await runtime?.close();
+    } catch (error) {
+      captureHostFailure("bridge/close", error);
+    } finally {
+      runtime = undefined;
+      await errors?.dispose(2_000);
+      errors = undefined;
+    }
+  })();
+  return closing;
+}
 
 export const experimental_providerBridge = experimental_defineProviderBridge({
   start(context) {
-    runtime = createBridge();
-    runtime.start(context);
+    closing = undefined;
+    errors = createNanocodexErrorReporter(context.pluginId);
+    runtime = createBridge({ captureFailure: captureHostFailure });
+    try {
+      runtime.start(context);
+    } catch (error) {
+      captureHostFailure("bridge/start", error);
+      void closeRuntime();
+      throw error;
+    }
   },
   handleLine(line) {
     runtime?.handleLine(line);
   },
   onSigterm() {
-    void runtime?.close();
+    void closeRuntime();
   },
   onSigint() {
-    void runtime?.close();
+    void closeRuntime();
   },
   onClose() {
-    void runtime?.close();
+    void closeRuntime();
   },
 });

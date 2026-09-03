@@ -10,6 +10,8 @@ import {
   type PluginMessageDirectiveProps,
   type PluginTimelineRendererProps,
 } from "@get-bb/plugin-sdk/app";
+import { sentryAppTelemetry } from "@bb-kit/sentry/app";
+import { PLUGIN_TELEMETRY } from "./shared/telemetry";
 import { isOracleReportId, ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
 import { AMP_AGENT } from "./src/execution-target";
@@ -453,40 +455,44 @@ function OrbToggleAction() {
   );
 }
 
-export default definePluginApp((app) => {
-  // The composer-action slot has no selected-provider signal, so the toggle
-  // gates itself on the host DOM (useAmpComposerGate). It stays scoped to new
-  // threads: the Orb flip is first-prompt-only, and the thread-scope banner
-  // above covers the rest.
-  app.composer.customize({
-    id: "orb-toggle",
-    scopes: ["new-thread"],
-    actions: [{ id: "orb-toggle", component: OrbToggleAction }],
-  });
+const telemetry = sentryAppTelemetry(PLUGIN_TELEMETRY);
 
-  app.composer.customize({
-    id: "orb-usage-banner",
-    scopes: ["thread"],
-    banners: [
-      {
-        id: "orb-usage",
-        chrome: "bare",
-        component: AmpOrbBanner,
-      },
-    ],
-  });
+export default definePluginApp(
+  telemetry.instrument((app) => {
+    // The composer-action slot has no selected-provider signal, so the toggle
+    // gates itself on the host DOM (useAmpComposerGate). It stays scoped to new
+    // threads: the Orb flip is first-prompt-only, and the thread-scope banner
+    // above covers the rest.
+    app.composer.customize({
+      id: "orb-toggle",
+      scopes: ["new-thread"],
+      actions: [{ id: "orb-toggle", component: OrbToggleAction }],
+    });
 
-  // AMP_ORACLE_KIND (src/bridge/shapes.ts). The app bundle must stay
-  // node-free, so the literal repeats here rather than importing it.
-  app.slots.experimental_timelineRenderer({
-    kind: "amp/oracle",
-    component: OracleTimelineItem,
-  });
+    app.composer.customize({
+      id: "orb-usage-banner",
+      scopes: ["thread"],
+      banners: [
+        {
+          id: "orb-usage",
+          chrome: "bare",
+          component: AmpOrbBanner,
+        },
+      ],
+    });
 
-  // ACP-era threads carry Oracle results as message directives; keep their
-  // renderer so history stays readable.
-  app.slots.messageDirective({
-    id: ORACLE_DIRECTIVE_ID,
-    component: OracleDirective,
-  });
-});
+    // AMP_ORACLE_KIND (src/bridge/shapes.ts). The app bundle must stay
+    // node-free, so the literal repeats here rather than importing it.
+    app.slots.experimental_timelineRenderer({
+      kind: "amp/oracle",
+      component: OracleTimelineItem,
+    });
+
+    // ACP-era threads carry Oracle results as message directives; keep their
+    // renderer so history stays readable.
+    app.slots.messageDirective({
+      id: ORACLE_DIRECTIVE_ID,
+      component: OracleDirective,
+    });
+  }),
+);

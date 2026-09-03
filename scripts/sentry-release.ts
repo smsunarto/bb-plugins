@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { SourceMap, type SourceMapPayload, type SourceMapping } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -63,14 +70,27 @@ export function prepareSentryRelease(
 ): PreparedSentryRelease {
   const pluginDir = resolve(pluginDirectory);
   const distDir = join(pluginDir, "dist");
+  const appBundlePath = join(distDir, "app.js");
+  const appMapPath = `${appBundlePath}.map`;
   const serverBundlePath = join(distDir, "server.js");
   const hostBundlePath = join(distDir, "host.js");
+  const hasApp = existsSync(appBundlePath);
+  const hasAppSourceMap = hasApp && existsSync(appMapPath);
   const hasHost = existsSync(hostBundlePath);
-  const bundlePaths = hasHost ? [hostBundlePath, serverBundlePath] : [serverBundlePath];
+  const bundlePaths = [
+    ...(hasAppSourceMap ? [appBundlePath] : []),
+    ...(hasHost ? [hostBundlePath] : []),
+    serverBundlePath,
+  ];
   const mapPaths = bundlePaths.map((bundlePath) => `${bundlePath}.map`);
+  const appMetaPath = join(distDir, "app.meta.json");
   const serverMetaPath = join(distDir, "server.meta.json");
   const hostMetaPath = join(distDir, "host.meta.json");
-  const metaPaths = hasHost ? [serverMetaPath, hostMetaPath] : [serverMetaPath];
+  const metaPaths = [
+    serverMetaPath,
+    ...(hasApp ? [appMetaPath] : []),
+    ...(hasHost ? [hostMetaPath] : []),
+  ];
   const manifestPath = join(pluginDir, "package.json");
 
   for (const path of [...bundlePaths, ...mapPaths, ...metaPaths, manifestPath]) readFileSync(path);
@@ -243,7 +263,10 @@ function checkLocalSourceMap(bundlePath: string, mapPath: string): void {
   const sourceMap = new SourceMap(toSourceMapPayload(payload));
   for (let line = 0; line < bundleLines.length; line += 1) {
     const entry = sourceMap.findEntry(line, bundleLines[line]?.length ?? 0);
-    if (isSourceMapping(entry) && entry.originalSource.endsWith(".ts")) {
+    if (
+      isSourceMapping(entry) &&
+      (entry.originalSource.endsWith(".ts") || entry.originalSource.endsWith(".tsx"))
+    ) {
       return;
     }
   }

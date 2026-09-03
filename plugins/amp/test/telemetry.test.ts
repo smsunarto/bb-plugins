@@ -9,6 +9,7 @@ import { test } from "bun:test";
 import { AMP_SENTRY_ENV, ampSentryRelease } from "../lib/telemetry.ts";
 import {
   ampStartupVariant,
+  createAmpErrorReporter,
   createAmpPerformanceReporter,
   createIdempotentShutdown,
   startAmpStartupTrace,
@@ -20,6 +21,38 @@ test("Amp forwards the complete Sentry environment contract", () => {
     ampSentryRelease({ pluginId: "amp", pluginVersion: "1.2.3" }),
     "bb-plugin-amp@1.2.3",
   );
+});
+
+test("Amp host errors use artifact identity and sanitized envelopes", async () => {
+  const target = await startEnvelopeTarget();
+  const dir = await mkdtemp(join(tmpdir(), "bb-amp-error-telemetry-"));
+  const metaPath = join(dir, "host.meta.json");
+  writeFileSync(metaPath, JSON.stringify({ pluginId: "amp", pluginVersion: "1.2.3" }));
+  try {
+    const reporter = createAmpErrorReporter(
+      "amp",
+      { SENTRY_DSN: target.dsn, SENTRY_ENVIRONMENT: "test" },
+      pathToFileURL(metaPath),
+    );
+    assert.ok(reporter);
+    reporter.capture({
+      boundary: "host.bridge",
+      operation: "thread/start",
+      error: new Error("private host failure"),
+    });
+    await reporter.dispose(5_000);
+
+    const event = parseEnvelopeEvent(target.bodies[0] ?? "");
+    assert.equal(event.release, "bb-plugin-amp@1.2.3");
+    assert.equal(event.environment, "test");
+    assert.equal(readRecord(event, "tags")["bb.plugin.id"], "amp");
+    assert.equal(readRecord(event, "tags")["bb.kit.boundary"], "host.bridge");
+    assert.equal(readRecord(event, "tags")["bb.kit.operation"], "thread/start");
+    assert.equal(exceptionValue(event), "Unexpected plugin callback failure");
+    assert.equal(JSON.stringify(event).includes("private host failure"), false);
+  } finally {
+    await Promise.all([target.close(), rm(dir, { recursive: true, force: true })]);
+  }
 });
 
 test("Amp derives the performance release from final host metadata", async () => {
@@ -178,4 +211,15 @@ function readRecord(record: Record<string, unknown>, key: string): Record<string
     throw new Error(`expected ${key} to be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function exceptionValue(event: Record<string, unknown>): unknown {
+  const exception = readRecord(event, "exception");
+  const values = exception.values;
+  if (!Array.isArray(values)) throw new Error("expected exception values");
+  const first = values[0];
+  if (typeof first !== "object" || first === null || Array.isArray(first)) {
+    throw new Error("expected exception value");
+  }
+  return (first as Record<string, unknown>).value;
 }

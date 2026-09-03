@@ -14,11 +14,11 @@ import { removeSkill } from "./rpc/remove-skill.ts";
 import { runTask } from "./rpc/run-task.ts";
 import { saveFile } from "./rpc/save-file.ts";
 import { bindGit, createDotfilesGit } from "./git.ts";
+import { PLUGIN_TELEMETRY } from "../shared/telemetry.ts";
 
 const telemetry = sentryPluginTelemetry({
-  pluginId: "dotfiles",
+  ...PLUGIN_TELEMETRY,
   serverEntryUrl: import.meta.url,
-  dsn: "https://6fea0895aa83da28802285cfb381a70f@o4506475620204544.ingest.us.sentry.io/4512009353691136",
 });
 
 export default definePlugin({

@@ -106,9 +106,12 @@ function resolveTracesSampleRate(
 }
 
 function readServerArtifactIdentity(serverEntryUrl: string | URL): SentryPluginArtifactIdentity {
-  const bundled = new URL("./server.meta.json", serverEntryUrl);
-  const sourceFallback = new URL("../dist/server.meta.json", serverEntryUrl);
-  const metaUrl = existsSync(bundled) ? bundled : sourceFallback;
+  const candidates = [
+    new URL("./server.meta.json", serverEntryUrl),
+    new URL("./dist/server.meta.json", serverEntryUrl),
+    new URL("../dist/server.meta.json", serverEntryUrl),
+  ];
+  const metaUrl = candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
   const parsed: unknown = JSON.parse(readFileSync(metaUrl, "utf8"));
   if (
     typeof parsed !== "object" ||

@@ -60,6 +60,7 @@
     "app.css",
     "host.ts",
     "lib/",
+    "shared/",
     "src/"
   ],
   "dependencies": {

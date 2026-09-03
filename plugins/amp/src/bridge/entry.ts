@@ -60,9 +60,11 @@ import {
 } from "./session.ts";
 import { createThreadWriter, type ThreadWriter } from "./timeline.ts";
 import {
+  createAmpErrorReporter,
   createAmpPerformanceReporter,
   createIdempotentShutdown,
   startAmpStartupTrace,
+  type AmpErrorReporter,
   type AmpPerformanceReporter,
 } from "./telemetry.ts";
 import { runMcpStdioChild, startToolProxy, type ToolProxy } from "./tool-proxy.ts";
@@ -105,6 +107,7 @@ interface ManagedSession {
 interface BridgeState {
   store: SessionStore;
   oracle: OracleReports;
+  errors: AmpErrorReporter | undefined;
   performance: AmpPerformanceReporter | undefined;
   /** The bridge's persistent data directory. The composer's armed Orb
    * intent (src/orb-intent.ts) is consumed from here at thread/start. */
@@ -620,7 +623,12 @@ const handlers: Record<string, RequestHandler> = {
 };
 
 function handleResponse(message: unknown): void {
-  tracker.handleToolCallResponse(message as Parameters<typeof tracker.handleToolCallResponse>[0]);
+  try {
+    tracker.handleToolCallResponse(message as Parameters<typeof tracker.handleToolCallResponse>[0]);
+  } catch (error) {
+    state?.errors?.capture({ boundary: "host.bridge", operation: "tool/call/response", error });
+    throw error;
+  }
 }
 
 export function handleLine(line: string): void {
@@ -647,7 +655,18 @@ export function handleLine(line: string): void {
     request: { id, method: record.method, params: record.params },
     sendError: io.sendError,
     handleRequest: async (request) => {
-      await handler(request.id, request.params);
+      try {
+        await handler(request.id, request.params);
+      } catch (error) {
+        if (!(error instanceof BridgeRecoveryError)) {
+          state?.errors?.capture({
+            boundary: "host.bridge",
+            operation: request.method,
+            error,
+          });
+        }
+        throw error;
+      }
     },
   });
 }
@@ -656,17 +675,26 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
   handleLine,
   start(context) {
     installStderrGuard();
-    state = {
-      store: createSessionStore({ dir: join(context.dataDir, "sessions") }),
-      oracle: createOracleReports(),
-      performance: createAmpPerformanceReporter(context.pluginId),
-      dataDir: context.dataDir,
-    };
+    const errors = createAmpErrorReporter(context.pluginId);
+    try {
+      state = {
+        store: createSessionStore({ dir: join(context.dataDir, "sessions") }),
+        oracle: createOracleReports(),
+        errors,
+        performance: createAmpPerformanceReporter(context.pluginId),
+        dataDir: context.dataDir,
+      };
+    } catch (error) {
+      errors?.capture({ boundary: "host.bridge", operation: "bridge/start", error });
+      void errors?.dispose(2_000);
+      throw error;
+    }
     shutdownBridge = createIdempotentShutdown(async () => {
       for (const threadId of Array.from(sessions.keys())) {
         dropSession(threadId, "the bridge is shutting down");
       }
-      await state?.performance?.dispose(2_000);
+      await Promise.all([state?.errors?.dispose(2_000), state?.performance?.dispose(2_000)]);
+      state = null;
     });
   },
   onClose() {

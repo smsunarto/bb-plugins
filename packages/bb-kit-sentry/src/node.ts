@@ -8,13 +8,13 @@ export type SentryErrorReporterOptions = Readonly<{
   environment?: string;
 }>;
 
-type SentryPluginFailure = Readonly<{
+export type SentryPluginFailure = Readonly<{
   boundary: string;
   operation?: string;
   error: unknown;
 }>;
 
-type SentryPluginReporter = {
+export type SentryPluginReporter = {
   capture(failure: SentryPluginFailure): undefined;
   dispose(timeoutMs: number): Promise<void>;
 };

@@ -5,6 +5,7 @@ import {
   NANOCODEX_REASONING_LEVELS,
   NANOCODEX_SERVICE_TIERS,
 } from "../shared/provider-catalog.ts";
+import { NANOCODEX_SENTRY_ENV } from "../shared/telemetry.ts";
 
 export const nanocodexProvider: PluginProviderDeclaration = {
   id: NANOCODEX_PROVIDER_ID,
@@ -31,5 +32,7 @@ export const nanocodexProvider: PluginProviderDeclaration = {
     expiredHint: "Start ChatGPT device login from provider health.",
     installUrl: "https://github.com/gakonst/nanocodex",
   },
-  env: { passthrough: ["CODEX_HOME", "NANOCODEX_AUTH_FILE", "PARALLEL_API_KEY"] },
+  env: {
+    passthrough: ["CODEX_HOME", "NANOCODEX_AUTH_FILE", "PARALLEL_API_KEY", ...NANOCODEX_SENTRY_ENV],
+  },
 };

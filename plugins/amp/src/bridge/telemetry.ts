@@ -4,6 +4,7 @@ import {
   sentryPerformanceReporter,
   type SentryPerformanceReporter,
 } from "@bb-kit/sentry/performance";
+import { sentryErrorReporter, type SentryPluginReporter } from "@bb-kit/sentry/node";
 import { AMP_SENTRY_ENV, ampSentryRelease } from "../../lib/telemetry.ts";
 
 export const AMP_STARTUP_OPERATION = "cli.startup" as const;
@@ -38,6 +39,7 @@ export interface AmpExecutionTrace {
 }
 
 export type AmpPerformanceReporter = SentryPerformanceReporter;
+export type AmpErrorReporter = SentryPluginReporter;
 
 export interface AmpStartupTraceContext {
   readonly executor: AmpStartupExecutor;
@@ -65,6 +67,26 @@ export function createAmpPerformanceReporter(
     return sentryPerformanceReporter({
       dsn,
       release: ampSentryRelease(meta),
+      environment: sentryPluginEnvironment(env),
+    })({ pluginId });
+  } catch {
+    return undefined;
+  }
+}
+
+export function createAmpErrorReporter(
+  pluginId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  metaUrl?: URL,
+): SentryPluginReporter | undefined {
+  const dsn = env[AMP_SENTRY_ENV[0]]?.trim();
+  if (dsn === undefined || dsn.length === 0) return undefined;
+  try {
+    const identity = readAmpHostMeta(metaUrl ?? resolveAmpHostMetaUrl());
+    if (identity.pluginId !== pluginId) return undefined;
+    return sentryErrorReporter({
+      dsn,
+      release: ampSentryRelease(identity),
       environment: sentryPluginEnvironment(env),
     })({ pluginId });
   } catch {

@@ -9,6 +9,10 @@ import {
   requireSentryUploadCredentials,
   uploadSentryRelease,
 } from "./sentry-release.ts";
+import { PLUGIN_TELEMETRY as dotfilesTelemetry } from "../plugins/dotfiles/shared/telemetry.ts";
+import { PLUGIN_TELEMETRY as ampTelemetry } from "../plugins/amp/shared/telemetry.ts";
+import { PLUGIN_TELEMETRY as nanocodexTelemetry } from "../plugins/nanocodex/shared/telemetry.ts";
+import { PLUGIN_TELEMETRY as notifyTelemetry } from "../plugins/notify/shared/telemetry.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SENTRY_CLI = join(ROOT, "node_modules", ".bin", "sentry-cli");
@@ -21,12 +25,14 @@ describe("Sentry release artifacts", () => {
       try {
         expect(prepared.release).toBe("bb-plugin-amp@1.2.3");
         expect(prepared.files.map((path) => basename(path)).sort()).toEqual([
+          "app.js",
+          "app.js.map",
           "host.js",
           "host.js.map",
           "server.js",
           "server.js.map",
         ]);
-        for (const name of ["host", "server"]) {
+        for (const name of ["app", "host", "server"]) {
           const bundle = readFileSync(join(prepared.stageDir, `${name}.js`), "utf8");
           const map = JSON.parse(
             readFileSync(join(prepared.stageDir, `${name}.js.map`), "utf8"),
@@ -55,8 +61,8 @@ describe("Sentry release artifacts", () => {
     }
   });
 
-  test("stages only the server pair for plugins without a host bundle", () => {
-    const fixture = createPluginFixture({ host: false });
+  test("stages only the server pair for plugins without app or host bundles", () => {
+    const fixture = createPluginFixture({ app: false, host: false });
     try {
       const prepared = prepareSentryRelease(fixture.pluginDir, SENTRY_CLI);
       try {
@@ -191,6 +197,25 @@ test("the release workflow uploads plugin maps after build and before publish", 
   expect(workflow.slice(upload, publish)).not.toContain("plugins/gitbutler");
 });
 
+test("telemetry identities match their plugin manifests", () => {
+  const plugins = [
+    ["amp", ampTelemetry],
+    ["dotfiles", dotfilesTelemetry],
+    ["nanocodex", nanocodexTelemetry],
+    ["notify", notifyTelemetry],
+  ] as const;
+  for (const [plugin, telemetry] of plugins) {
+    const manifest = JSON.parse(
+      readFileSync(join(ROOT, "plugins", plugin, "package.json"), "utf8"),
+    ) as { name: string; version: string };
+    expect(telemetry.pluginId).toBe(plugin);
+    expect(String(telemetry.pluginVersion)).toBe(manifest.version);
+    expect(telemetry.dsn).toMatch(/^https:\/\/.+@.+\.sentry\.io\/[0-9]+$/u);
+    expect(manifest.name).toBe(`@smsunarto/bb-plugin-${plugin}`);
+  }
+  expect(new Set(plugins.map(([, telemetry]) => telemetry.dsn)).size).toBe(plugins.length);
+});
+
 test("Amp's npm allowlist keeps source maps out of both published package names", () => {
   const manifest = JSON.parse(
     readFileSync(join(ROOT, "plugins", "amp", "package.json"), "utf8"),
@@ -201,12 +226,21 @@ test("Amp's npm allowlist keeps source maps out of both published package names"
 });
 
 function createPluginFixture(
-  options: Readonly<{ manifestName?: string; manifestVersion?: string; host?: boolean }> = {},
+  options: Readonly<{
+    manifestName?: string;
+    manifestVersion?: string;
+    app?: boolean;
+    host?: boolean;
+  }> = {},
 ): { pluginDir: string; cleanup(): void } {
   const pluginDir = mkdtempSync(join(tmpdir(), "bb-sentry-release-test-"));
   const distDir = join(pluginDir, "dist");
   mkdirSync(distDir);
-  const bundles = options.host === false ? ["server"] : ["host", "server"];
+  const bundles = [
+    ...(options.app === false ? [] : ["app"]),
+    ...(options.host === false ? [] : ["host"]),
+    "server",
+  ];
   for (const name of bundles) {
     writeFileSync(
       join(distDir, `${name}.js`),
@@ -216,7 +250,13 @@ function createPluginFixture(
       join(distDir, `${name}.js.map`),
       JSON.stringify({
         version: 3,
-        sources: [name === "host" ? "../src/bridge/entry.ts" : "../src/server.ts"],
+        sources: [
+          name === "app"
+            ? "../app/app.tsx"
+            : name === "host"
+              ? "../src/bridge/entry.ts"
+              : "../src/server.ts",
+        ],
         sourcesContent: [`export const ${name} = ${JSON.stringify(name)};`],
         names: [],
         mappings: "AAAA;AACA",
@@ -247,7 +287,7 @@ function createPluginFixture(
 
 function artifactHashes(pluginDir: string): Record<string, string> {
   return Object.fromEntries(
-    ["host.js", "host.js.map", "server.js", "server.js.map"].map((name) => [
+    ["app.js", "app.js.map", "host.js", "host.js.map", "server.js", "server.js.map"].map((name) => [
       name,
       sha256(join(pluginDir, "dist", name)),
     ]),

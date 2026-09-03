@@ -166,10 +166,14 @@ request, the response, and a trace that streams while it runs.
 
 A healthy install does not need this command.
 
-Cold-start performance tracing is opt-in. Set `SENTRY_DSN` in the environment
-that runs bb to send one `amp.cli.startup` transaction per actual Amp CLI spawn.
-`SENTRY_ENVIRONMENT` is optional. Otherwise `NODE_ENV=development` labels development traces and
-all other runtimes use `production`. Amp derives the versioned release from built plugin metadata.
+Anonymous crash reporting is enabled by default for Amp's server and browser app. Disable it with
+the plugin's telemetry setting. Provider bridges cannot read plugin settings, so bridge crash and
+cold-start performance reporting remain opt-in. Set `SENTRY_DSN` in the environment that runs bb to
+enable both bridge reporters and override the server DSN. `SENTRY_ENVIRONMENT` is optional.
+Otherwise `NODE_ENV=development` labels development reports and all other runtimes use
+`production`. Amp derives the versioned release from built plugin metadata.
+
+The bridge sends one `amp.cli.startup` transaction per actual Amp CLI spawn.
 The trace records numeric elapsed checkpoints from execute entry through
 `system/init` and the first model event. It includes only finite dimensions
 (Local or Orb, fresh or continued, MCP presence, mode, and retry attempt), never

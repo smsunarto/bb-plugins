@@ -26,6 +26,10 @@
       "types": "./dist/context.d.ts",
       "import": "./dist/context.js"
     },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js"
+    },
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
@@ -40,17 +44,26 @@
     }
   },
   "scripts": {
-    "build": "bun build src/context.ts src/node.ts src/performance.ts src/telemetry.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
+    "build": "bun build src/app.ts src/context.ts src/node.ts src/performance.ts src/telemetry.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun run build && bun test --timeout=30000",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@sentry/browser": "10.72.0",
     "@sentry/node": "^10.72.0"
+  },
+  "peerDependencies": {
+    "react": ">=19"
   },
   "devDependencies": {
     "@bb-kit/core": "0.1.0",
+    "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "typescript": "^6.0.0"
   }
 }
