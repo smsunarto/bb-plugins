@@ -31,7 +31,7 @@ import {
   partitionActiveSections,
   partitionPinned,
   searchThreadsByTitle,
-  sortByUpdatedAtDescending,
+  sortByLatestAttentionDescending,
   visibleInboxThreads,
 } from "@/lib/inbox";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
@@ -197,10 +197,10 @@ export function ThreadInbox({
     const split = partitionPinned(active);
     const activeSections = partitionActiveSections(split.inbox);
     return {
-      pinned: sortByUpdatedAtDescending(split.pinned),
+      pinned: sortByLatestAttentionDescending(split.pinned),
       ...activeSections,
-      snoozed: sortByUpdatedAtDescending(onSnoozeShelf),
-      settled: sortByUpdatedAtDescending(onSettledShelf),
+      snoozed: sortByLatestAttentionDescending(onSnoozeShelf),
+      settled: sortByLatestAttentionDescending(onSettledShelf),
     };
   }, [lifecycle, scope, searchQuery, threads]);
 

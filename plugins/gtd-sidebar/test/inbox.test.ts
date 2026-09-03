@@ -11,6 +11,7 @@ import {
   partitionActiveSections,
   partitionPinned,
   searchThreadsByTitle,
+  sortByLatestAttentionDescending,
   sortByUpdatedAtDescending,
   threadDisplayTitle,
   visibleInboxThreads,
@@ -50,12 +51,61 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
   };
 }
 
+describe("sortByLatestAttentionDescending", () => {
+  it("puts the thread that last needed the user first", () => {
+    const ordered = sortByLatestAttentionDescending([
+      thread({ id: "a", latestAttentionAt: 1 }),
+      thread({ id: "b", latestAttentionAt: 3 }),
+      thread({ id: "c", latestAttentionAt: 2 }),
+    ]);
+    assert.deepEqual(
+      ordered.map((t) => t.id),
+      ["b", "c", "a"],
+    );
+  });
+
+  it("uses creation time, then id, for stable ties", () => {
+    const ordered = sortByLatestAttentionDescending([
+      thread({ id: "b", createdAt: 1, latestAttentionAt: 5 }),
+      thread({ id: "c", createdAt: 2, latestAttentionAt: 5 }),
+      thread({ id: "a", createdAt: 1, latestAttentionAt: 5 }),
+    ]);
+    assert.deepEqual(
+      ordered.map((t) => t.id),
+      ["c", "a", "b"],
+    );
+  });
+
+  it("ignores updatedAt, which a rename moves and attention does not", () => {
+    const ordered = sortByLatestAttentionDescending([
+      thread({ id: "renamed", latestAttentionAt: 1, updatedAt: 9 }),
+      thread({ id: "worked", latestAttentionAt: 5, updatedAt: 5 }),
+    ]);
+    assert.deepEqual(
+      ordered.map((t) => t.id),
+      ["worked", "renamed"],
+    );
+  });
+
+  it("does not mutate its input", () => {
+    const input = [
+      thread({ id: "a", latestAttentionAt: 1 }),
+      thread({ id: "b", latestAttentionAt: 2 }),
+    ];
+    sortByLatestAttentionDescending(input);
+    assert.deepEqual(
+      input.map((t) => t.id),
+      ["a", "b"],
+    );
+  });
+});
+
 describe("sortByUpdatedAtDescending", () => {
-  it("puts the most recently updated thread first", () => {
+  it("puts the most recently written row first, ignoring attention", () => {
     const ordered = sortByUpdatedAtDescending([
-      thread({ id: "a", updatedAt: 1 }),
-      thread({ id: "b", updatedAt: 3 }),
-      thread({ id: "c", updatedAt: 2 }),
+      thread({ id: "a", updatedAt: 1, latestAttentionAt: 9 }),
+      thread({ id: "b", updatedAt: 3, latestAttentionAt: 1 }),
+      thread({ id: "c", updatedAt: 2, latestAttentionAt: 5 }),
     ]);
     assert.deepEqual(
       ordered.map((t) => t.id),
@@ -72,15 +122,6 @@ describe("sortByUpdatedAtDescending", () => {
     assert.deepEqual(
       ordered.map((t) => t.id),
       ["c", "a", "b"],
-    );
-  });
-
-  it("does not mutate its input", () => {
-    const input = [thread({ id: "a", updatedAt: 1 }), thread({ id: "b", updatedAt: 2 })];
-    sortByUpdatedAtDescending(input);
-    assert.deepEqual(
-      input.map((t) => t.id),
-      ["a", "b"],
     );
   });
 });
@@ -123,12 +164,24 @@ describe("active sections", () => {
     );
   });
 
-  it("sorts both active sections by most recent update", () => {
+  it("sorts next action by attention and waiting by the last row write", () => {
+    // Every thread carries both clocks, disagreeing, so each section can only
+    // pass by reading the one it is supposed to read.
     const threads = [
-      thread({ id: "quiet-old", updatedAt: 10 }),
-      thread({ id: "quiet-new", updatedAt: 20 }),
-      thread({ id: "waiting-old", updatedAt: 30, indicator: "runtime" }),
-      thread({ id: "waiting-new", updatedAt: 40, indicator: "runtime" }),
+      thread({ id: "quiet-old", latestAttentionAt: 10, updatedAt: 40 }),
+      thread({ id: "quiet-new", latestAttentionAt: 20, updatedAt: 30 }),
+      thread({
+        id: "started-first",
+        latestAttentionAt: 40,
+        updatedAt: 10,
+        indicator: "runtime",
+      }),
+      thread({
+        id: "started-last",
+        latestAttentionAt: 30,
+        updatedAt: 20,
+        indicator: "runtime",
+      }),
     ];
     const sections = partitionActiveSections(threads);
     assert.deepEqual(
@@ -137,7 +190,7 @@ describe("active sections", () => {
     );
     assert.deepEqual(
       sections.waiting.map((candidate) => candidate.id),
-      ["waiting-new", "waiting-old"],
+      ["started-last", "started-first"],
     );
   });
 });

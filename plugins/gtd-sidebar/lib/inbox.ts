@@ -1,7 +1,40 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { isThreadWorking } from "./lifecycle.ts";
 
-/** Most recently updated thread first for every sidebar section. */
+/**
+ * Most recent attention first: the default clock for every section but Waiting.
+ *
+ * `latestAttentionAt` and not `updatedAt`, which is bb's row-write clock: it
+ * moves for a title write too, so sorting on it threw a renamed thread to the
+ * top of its section for a change to its label. bb's own thread list sorts on
+ * this field for the same reason, down to the createdAt tie-break.
+ *
+ * bb advances it when a root thread's turn completes or errors, and at nothing
+ * else, so it says nothing about a thread that is working right now. See
+ * {@link partitionActiveSections} for the one section that has to care.
+ */
+export function sortByLatestAttentionDescending<
+  T extends {
+    readonly id: string;
+    readonly createdAt: number;
+    readonly latestAttentionAt: number;
+  },
+>(threads: readonly T[]): T[] {
+  return [...threads].sort(
+    (left, right) =>
+      right.latestAttentionAt - left.latestAttentionAt ||
+      right.createdAt - left.createdAt ||
+      left.id.localeCompare(right.id),
+  );
+}
+
+/**
+ * Most recently changed thread first.
+ *
+ * `updatedAt` is bb's row-write clock, so a rename moves a thread here. Only
+ * the Waiting section pays that, and it is the section where it costs least —
+ * see {@link partitionActiveSections}.
+ */
 export function sortByUpdatedAtDescending<
   T extends { readonly id: string; readonly createdAt: number; readonly updatedAt: number },
 >(threads: readonly T[]): T[] {
@@ -26,7 +59,24 @@ export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
   return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
 }
 
-/** Split active threads by owner and sort both sections newest first. */
+/**
+ * Split active threads by owner, and sort each section by the clock that
+ * section can answer for.
+ *
+ * Next Action holds quiet threads, so `latestAttentionAt` — the completion
+ * that made them quiet — is the newest thing that happened to them, and a
+ * rename leaves it alone.
+ *
+ * Waiting holds threads that are working, and bb does not advance
+ * `latestAttentionAt` when a turn starts. Sorting them by it would rank the
+ * work the user just sent by the turn BEFORE it, which is the one ordering
+ * question this section exists to answer. So Waiting reads `updatedAt`, whose
+ * last write for a working thread is the status transition that set it going.
+ *
+ * A rename can still move a Waiting row. Nothing automatic does it: this
+ * plugin names threads on `thread.idle`, which is the moment a thread LEAVES
+ * this section, so reaching it takes a hand-typed rename of a thread mid-turn.
+ */
 export function partitionActiveSections(threads: readonly PluginSidebarThread[]): {
   nextAction: PluginSidebarThread[];
   waiting: PluginSidebarThread[];
@@ -37,7 +87,7 @@ export function partitionActiveSections(threads: readonly PluginSidebarThread[])
     (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(thread);
   }
   return {
-    nextAction: sortByUpdatedAtDescending(nextAction),
+    nextAction: sortByLatestAttentionDescending(nextAction),
     waiting: sortByUpdatedAtDescending(waiting),
   };
 }

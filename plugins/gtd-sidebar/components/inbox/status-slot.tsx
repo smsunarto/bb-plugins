@@ -39,7 +39,7 @@ export function StatusOrTime({
   }
   return (
     <span className="tabular-nums text-2xs text-muted-foreground/40">
-      {relativeTimeLabel(thread.updatedAt, now)}
+      {relativeTimeLabel(thread.latestAttentionAt, now)}
     </span>
   );
 }
