@@ -106,11 +106,11 @@
       }
     },
     {
-      "id": "laminar",
-      "displayName": "Laminar",
-      "description": "Export completed BB agent turns to Laminar over direct OTLP/HTTP JSON.",
+      "id": "agent-trace",
+      "displayName": "Agent Trace",
+      "description": "Export completed BB agent turns to Laminar and Langfuse over direct OTLP/HTTP JSON.",
       "icon": {
-        "url": "plugins/laminar/assets/icon.svg"
+        "url": "plugins/agent-trace/assets/icon.svg"
       },
       "author": {
         "name": "Scott Sunarto",
@@ -119,9 +119,9 @@
       "source": {
         "git": {
           "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/laminar",
+          "subdir": "plugins/agent-trace",
           "range": "*",
-          "tagPrefix": "laminar/"
+          "tagPrefix": "agent-trace/"
         }
       }
     },

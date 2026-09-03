@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.ts";
 
 test("the headless plugin registers its service and reports missing configuration", async () => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "laminar" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "agent-trace" });
 
   await plugin(bb);
 
@@ -16,21 +16,25 @@ test("the headless plugin registers its service and reports missing configuratio
     harness.registrations.httpRoutes.map(({ method, path, auth }) => ({ method, path, auth })),
   ).toEqual([{ method: "POST", path: "/remote-session", auth: "local" }]);
   expect(harness.registrations.services.map((service) => service.name)).toEqual(["trace-pump"]);
-  expect(harness.registrations.settingsDescriptors.apiKey).toEqual(
+  expect(harness.registrations.settingsDescriptors.laminarApiKey).toEqual(
+    expect.objectContaining({ type: "string", secret: true }),
+  );
+  expect(harness.registrations.settingsDescriptors.langfuseSecretKey).toEqual(
     expect.objectContaining({ type: "string", secret: true }),
   );
   expect(harness.needsConfigurationMessages).toEqual([
-    "Set the Laminar project API key in plugin settings.",
+    "Set a Laminar project API key or Langfuse public and secret keys in plugin settings.",
   ]);
   await harness.dispose();
 });
 
 test("invalid endpoints report needs-configuration without crashing setup", async () => {
   const { bb, harness } = createFakePluginHost({
-    pluginId: "laminar",
+    pluginId: "agent-trace",
     settings: {
-      apiKey: "secret",
-      endpoint: "ftp://example.com/v1/traces",
+      laminarApiKey: "secret",
+      laminarEndpoint: "ftp://example.com/v1/traces",
+      langfuseBaseUrl: "https://cloud.langfuse.com",
       deploymentEnvironment: "test",
       contentMode: "metadata",
     },

@@ -45,7 +45,7 @@ test("installs a connect session for an authenticated remote BB request", async 
   const response = await createRemoteSessionResponse(fakeBb({ cookie }), {
     gateAuth: "session",
     host: "127.0.0.1:38886",
-    requestUrl: "http://127.0.0.1:38886/api/v1/plugins/laminar/http/remote-session",
+    requestUrl: "http://127.0.0.1:38886/api/v1/plugins/agent-trace/http/remote-session",
   });
 
   assert.equal(response.status, 200);
@@ -56,7 +56,7 @@ test("installs a connect session for an authenticated remote BB request", async 
 test("requires top-level login when a local response cannot set the connect cookie", async () => {
   const response = await createRemoteSessionResponse(fakeBb({ cookie }), {
     host: "127.0.0.1:38886",
-    requestUrl: "http://127.0.0.1:38886/api/v1/plugins/laminar/http/remote-session",
+    requestUrl: "http://127.0.0.1:38886/api/v1/plugins/agent-trace/http/remote-session",
   });
 
   assert.equal(response.status, 409);
@@ -67,7 +67,7 @@ test("requires top-level login when a local response cannot set the connect cook
 test("requires top-level login when connect cannot mint a session", async () => {
   const response = await createRemoteSessionResponse(fakeBb(new Error("not paired")), {
     host: "scott.getbb.app",
-    requestUrl: "https://scott.getbb.app/api/v1/plugins/laminar/http/remote-session",
+    requestUrl: "https://scott.getbb.app/api/v1/plugins/agent-trace/http/remote-session",
   });
 
   assert.equal(response.status, 503);

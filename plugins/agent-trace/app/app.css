@@ -1,4 +1,4 @@
-.laminar-dashboard {
+.agent-trace-dashboard {
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -6,7 +6,7 @@
   background: var(--background);
 }
 
-.laminar-dashboard iframe {
+.agent-trace-dashboard iframe {
   display: block;
   width: 100%;
   height: 100%;
@@ -14,7 +14,7 @@
   background: var(--background);
 }
 
-.laminar-dashboard-state {
+.agent-trace-dashboard-state {
   display: flex;
   width: 100%;
   height: 100%;
@@ -27,23 +27,23 @@
   color: var(--foreground);
 }
 
-.laminar-dashboard-state h2,
-.laminar-dashboard-state p {
+.agent-trace-dashboard-state h2,
+.agent-trace-dashboard-state p {
   margin: 0;
 }
 
-.laminar-dashboard-state h2 {
+.agent-trace-dashboard-state h2 {
   font-size: 16px;
   font-weight: 600;
 }
 
-.laminar-dashboard-state p {
+.agent-trace-dashboard-state p {
   margin-top: 4px;
   color: var(--muted-foreground);
   font-size: 13px;
 }
 
-.laminar-dashboard-spinner {
+.agent-trace-dashboard-spinner {
   width: 20px;
   height: 20px;
   border: 2px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
@@ -52,13 +52,13 @@
   animation: laminar-dashboard-spin 0.8s linear infinite;
 }
 
-.laminar-dashboard-actions {
+.agent-trace-dashboard-actions {
   display: flex;
   gap: 8px;
 }
 
-.laminar-dashboard-actions a,
-.laminar-dashboard-actions button {
+.agent-trace-dashboard-actions a,
+.agent-trace-dashboard-actions button {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
@@ -71,7 +71,7 @@
   cursor: pointer;
 }
 
-.laminar-dashboard-actions a {
+.agent-trace-dashboard-actions a {
   border-color: var(--foreground);
   background: var(--foreground);
   color: var(--background);

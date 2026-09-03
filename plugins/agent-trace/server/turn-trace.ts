@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { blake3 } from "@noble/hashes/blake3.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LaminarConfig } from "../shared/settings.ts";
 
 export type ThreadEventRow = Awaited<
   ReturnType<BbPluginApi["sdk"]["threads"]["events"]["list"]>
@@ -71,7 +70,10 @@ export interface AssembleTurnTraceInput {
 
 const CONTENT_MAX_BYTES = 16_384;
 const TEXT_MAX_CHARS = 12_000;
+const INSTRUMENTATION_SOURCE = "bb-plugin-agent-trace";
 const TRACE_METADATA_PREFIX = "lmnr.association.properties.metadata";
+const LANGFUSE_TRACE_METADATA_PREFIX = "langfuse.trace.metadata";
+const LANGFUSE_OBSERVATION_METADATA_PREFIX = "langfuse.observation.metadata";
 const TOOL_ITEM_TYPES = new Set<CompletedItem["type"]>([
   "commandExecution",
   "fileChange",
@@ -109,6 +111,19 @@ function metadataAttribute(key: string, value: string | number | boolean): OtlpA
   return boolAttribute(`${TRACE_METADATA_PREFIX}.${key}`, value);
 }
 
+/** Langfuse maps `langfuse.trace.metadata.*` string attributes onto filterable trace metadata. */
+function langfuseMetadataAttribute(key: string, value: string | number | boolean): OtlpAttribute {
+  return stringAttribute(`${LANGFUSE_TRACE_METADATA_PREFIX}.${key}`, String(value));
+}
+
+function langfuseObservationMetadata(key: string, value: string | number | boolean): OtlpAttribute {
+  return stringAttribute(`${LANGFUSE_OBSERVATION_METADATA_PREFIX}.${key}`, String(value));
+}
+
+function traceMetadata(key: string, value: string | number | boolean): OtlpAttribute[] {
+  return [metadataAttribute(key, value), langfuseMetadataAttribute(key, value)];
+}
+
 function pushOptionalString(
   attributes: OtlpAttribute[],
   key: string,
@@ -125,7 +140,7 @@ function pushMetadata(
   value: string | number | boolean | null | undefined,
 ): void {
   if (value !== null && value !== undefined && value !== "") {
-    attributes.push(metadataAttribute(key, value));
+    attributes.push(...traceMetadata(key, value));
   }
 }
 
@@ -475,6 +490,53 @@ function toolCallResponse(item: CompletedItem): unknown {
   }
 }
 
+function langfuseObservationType(item: CompletedItem): string {
+  if (item.type === "delegation") return "agent";
+  if (item.type === "webSearch" || item.type === "webFetch" || item.type === "search") {
+    return "retriever";
+  }
+  if (isToolItem(item)) return "tool";
+  return "span";
+}
+
+type TurnTokenUsage = Extract<
+  ThreadEventRow,
+  { type: "thread/tokenUsage/updated" }
+>["data"]["tokenUsage"]["last"];
+
+/**
+ * Langfuse stores usage as exclusive buckets: `input` excludes cached input and
+ * `output` excludes reasoning output. BB reports cached input separately but
+ * counts reasoning inside output tokens.
+ */
+function langfuseUsageDetails(usage: TurnTokenUsage): Record<string, number> {
+  const reasoning = Math.min(usage.reasoningOutputTokens, usage.outputTokens);
+  const details: Record<string, number> = {
+    input: usage.inputTokens,
+    output: usage.outputTokens - reasoning,
+  };
+  if (usage.cachedInputTokens > 0) details.input_cached_tokens = usage.cachedInputTokens;
+  if (reasoning > 0) details.output_reasoning_tokens = reasoning;
+  details.total = usage.inputTokens + usage.cachedInputTokens + usage.outputTokens;
+  return details;
+}
+
+function langfuseItemContent(item: CompletedItem): OtlpAttribute[] {
+  const attributes: OtlpAttribute[] = [];
+  const input = toolCallArguments(item);
+  if (isToolItem(item)) {
+    attributes.push(stringAttribute("langfuse.observation.input", boundedJson(input)));
+    attributes.push(
+      stringAttribute("langfuse.observation.output", boundedJson(toolCallResponse(item))),
+    );
+  } else if (item.type === "agentMessage") {
+    attributes.push(
+      stringAttribute("langfuse.observation.output", boundedJson({ text: item.text })),
+    );
+  }
+  return attributes;
+}
+
 function visibleUserText(events: readonly ThreadEventRow[]): string | null {
   const request = events.findLast(
     (event): event is Extract<ThreadEventRow, { type: "client/turn/requested" }> =>
@@ -579,8 +641,15 @@ export function assembleTurnTrace({
 
   const rootAttributes: OtlpAttribute[] = [
     stringAttribute("lmnr.span.type", "DEFAULT"),
-    stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
+    stringAttribute("lmnr.span.instrumentation_source", INSTRUMENTATION_SOURCE),
     stringAttribute("lmnr.association.properties.session_id", thread.id),
+    stringAttribute("langfuse.observation.type", "agent"),
+    stringAttribute("langfuse.session.id", thread.id),
+    stringAttribute("langfuse.environment", deploymentEnvironment),
+    stringArrayAttribute("langfuse.trace.tags", [
+      `provider:${thread.providerId}`,
+      `visibility:${thread.visibility}`,
+    ]),
     stringAttribute("gen_ai.agent.name", "bb"),
     stringAttribute("bb.thread.id", thread.id),
     stringAttribute("bb.turn.id", turnId),
@@ -590,14 +659,14 @@ export function assembleTurnTrace({
     stringAttribute("bb.thread.visibility", thread.visibility),
     boolAttribute("bb.thread.archived", thread.archivedAt !== null),
     intAttribute("bb.history.revision", historyRevision),
-    metadataAttribute("threadId", thread.id),
-    metadataAttribute("turnId", turnId),
-    metadataAttribute("turnStatus", completion.data.status),
-    metadataAttribute("providerId", thread.providerId),
-    metadataAttribute("projectId", thread.projectId),
-    metadataAttribute("threadVisibility", thread.visibility),
-    metadataAttribute("threadArchived", thread.archivedAt !== null),
-    metadataAttribute("historyRevision", historyRevision),
+    ...traceMetadata("threadId", thread.id),
+    ...traceMetadata("turnId", turnId),
+    ...traceMetadata("turnStatus", completion.data.status),
+    ...traceMetadata("providerId", thread.providerId),
+    ...traceMetadata("projectId", thread.projectId),
+    ...traceMetadata("threadVisibility", thread.visibility),
+    ...traceMetadata("threadArchived", thread.archivedAt !== null),
+    ...traceMetadata("historyRevision", historyRevision),
   ];
   const threadTitle = thread.title ?? thread.titleFallback;
   pushOptionalString(rootAttributes, "bb.thread.title", threadTitle);
@@ -612,11 +681,11 @@ export function assembleTurnTrace({
   pushMetadata(rootAttributes, "sectionId", thread.sectionId);
   if (thread.environmentId !== null) {
     rootAttributes.push(stringAttribute("bb.environment.id", thread.environmentId));
-    rootAttributes.push(metadataAttribute("environmentId", thread.environmentId));
+    rootAttributes.push(...traceMetadata("environmentId", thread.environmentId));
   }
   if (thread.parentThreadId !== null) {
     rootAttributes.push(stringAttribute("bb.thread.parent_id", thread.parentThreadId));
-    rootAttributes.push(metadataAttribute("parentThreadId", thread.parentThreadId));
+    rootAttributes.push(...traceMetadata("parentThreadId", thread.parentThreadId));
   }
   if (request !== undefined) {
     rootAttributes.push(
@@ -629,20 +698,20 @@ export function assembleTurnTrace({
       stringAttribute("bb.request.reasoning_level", request.data.execution.reasoningLevel),
       stringAttribute("bb.request.service_tier", request.data.execution.serviceTier),
       stringAttribute("bb.request.model", request.data.execution.model),
-      metadataAttribute("requestId", request.data.requestId),
-      metadataAttribute("turnInitiator", request.data.initiator),
-      metadataAttribute("turnSource", request.data.source),
-      metadataAttribute("turnTarget", request.data.target.kind),
-      metadataAttribute("model", request.data.execution.model),
-      metadataAttribute("permissionMode", request.data.execution.permissionMode),
-      metadataAttribute("reasoningLevel", request.data.execution.reasoningLevel),
-      metadataAttribute("serviceTier", request.data.execution.serviceTier),
+      ...traceMetadata("requestId", request.data.requestId),
+      ...traceMetadata("turnInitiator", request.data.initiator),
+      ...traceMetadata("turnSource", request.data.source),
+      ...traceMetadata("turnTarget", request.data.target.kind),
+      ...traceMetadata("model", request.data.execution.model),
+      ...traceMetadata("permissionMode", request.data.execution.permissionMode),
+      ...traceMetadata("reasoningLevel", request.data.execution.reasoningLevel),
+      ...traceMetadata("serviceTier", request.data.execution.serviceTier),
     );
     pushOptionalString(rootAttributes, "bb.turn.sender_thread_id", request.data.senderThreadId);
     pushMetadata(rootAttributes, "senderThreadId", request.data.senderThreadId);
     if (request.data.retryAttempt !== undefined) {
       rootAttributes.push(intAttribute("bb.turn.retry_attempt", request.data.retryAttempt));
-      rootAttributes.push(metadataAttribute("retryAttempt", request.data.retryAttempt));
+      rootAttributes.push(...traceMetadata("retryAttempt", request.data.retryAttempt));
     }
     pushOptionalString(
       rootAttributes,
@@ -660,7 +729,7 @@ export function assembleTurnTrace({
   const providerThreadId = completion.data.providerThreadId ?? started?.data.providerThreadId;
   if (providerThreadId !== null && providerThreadId !== undefined) {
     rootAttributes.push(stringAttribute("bb.provider.thread_id", providerThreadId));
-    rootAttributes.push(metadataAttribute("providerThreadId", providerThreadId));
+    rootAttributes.push(...traceMetadata("providerThreadId", providerThreadId));
   }
   pushOptionalString(
     rootAttributes,
@@ -671,7 +740,7 @@ export function assembleTurnTrace({
   if (started?.data.parentToolCallId !== undefined) {
     rootAttributes.push(
       stringAttribute("bb.turn.parent_tool_call_id", started.data.parentToolCallId),
-      metadataAttribute("parentToolCallId", started.data.parentToolCallId),
+      ...traceMetadata("parentToolCallId", started.data.parentToolCallId),
     );
   }
   if (fallback !== undefined) {
@@ -679,9 +748,9 @@ export function assembleTurnTrace({
       stringAttribute("bb.model.original", fallback.data.originalModel),
       stringAttribute("bb.model.fallback", fallback.data.fallbackModel),
       stringAttribute("bb.model.fallback_reason", fallback.data.reason),
-      metadataAttribute("originalModel", fallback.data.originalModel),
-      metadataAttribute("responseModel", fallback.data.fallbackModel),
-      metadataAttribute("modelFallbackReason", fallback.data.reason),
+      ...traceMetadata("originalModel", fallback.data.originalModel),
+      ...traceMetadata("responseModel", fallback.data.fallbackModel),
+      ...traceMetadata("modelFallbackReason", fallback.data.reason),
     );
   }
   if (tokenUsage !== undefined) {
@@ -696,11 +765,15 @@ export function assembleTurnTrace({
   const userInput = fullContent ? visibleUserText(turnEvents) : null;
   const finalOutput = fullContent ? assistantText(items) : null;
   if (userInput !== null) {
-    rootAttributes.push(stringAttribute("lmnr.span.input", chatMessages("user", userInput)));
+    rootAttributes.push(
+      stringAttribute("lmnr.span.input", chatMessages("user", userInput)),
+      stringAttribute("langfuse.observation.input", chatMessages("user", userInput)),
+    );
   }
   if (finalOutput !== null) {
     rootAttributes.push(
       stringAttribute("lmnr.span.output", chatMessages("assistant", finalOutput)),
+      stringAttribute("langfuse.observation.output", chatMessages("assistant", finalOutput)),
     );
   }
 
@@ -729,7 +802,10 @@ export function assembleTurnTrace({
   const llmSpans = steps.map((step, index): OtlpSpan => {
     const attributes: OtlpAttribute[] = [
       stringAttribute("lmnr.span.type", "LLM"),
-      stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
+      stringAttribute("lmnr.span.instrumentation_source", INSTRUMENTATION_SOURCE),
+      stringAttribute("langfuse.observation.type", "generation"),
+      langfuseObservationMetadata("llmStep", index + 1),
+      langfuseObservationMetadata("llmStepCount", steps.length),
       stringAttribute("gen_ai.operation.name", "chat"),
       stringAttribute("gen_ai.system", genAiSystem(thread.providerId)),
       stringAttribute("gen_ai.provider.name", genAiSystem(thread.providerId)),
@@ -745,6 +821,7 @@ export function assembleTurnTrace({
     if (requestModel !== undefined) {
       attributes.push(
         stringAttribute("gen_ai.request.model", pricingModel(requestModel)),
+        stringAttribute("langfuse.observation.model.name", pricingModel(requestModel)),
         stringAttribute("bb.request.model", requestModel),
       );
     }
@@ -756,6 +833,10 @@ export function assembleTurnTrace({
     if (fallback !== undefined) {
       attributes.push(
         stringAttribute("gen_ai.response.model", pricingModel(fallback.data.fallbackModel)),
+        stringAttribute(
+          "langfuse.observation.model.name",
+          pricingModel(fallback.data.fallbackModel),
+        ),
       );
     }
     if (providerThreadId !== null && providerThreadId !== undefined) {
@@ -771,6 +852,11 @@ export function assembleTurnTrace({
         intAttribute("gen_ai.usage.reasoning_tokens", tokenUsage.reasoningOutputTokens),
         intAttribute("gen_ai.usage.reasoning.output_tokens", tokenUsage.reasoningOutputTokens),
         intAttribute("llm.usage.total_tokens", tokenUsage.totalTokens),
+        stringAttribute(
+          "langfuse.observation.usage_details",
+          JSON.stringify(langfuseUsageDetails(tokenUsage)),
+        ),
+        langfuseObservationMetadata("usageScope", "turn"),
       );
     }
     if (fullContent) {
@@ -814,6 +900,45 @@ export function assembleTurnTrace({
           ),
         );
       }
+      const openAiInput: unknown[] = [];
+      if (index === 0 && userInput !== null) {
+        openAiInput.push({ role: "user", content: userInput });
+      }
+      if (previous !== undefined && previous.tools.length > 0) {
+        for (const tool of previous.tools) {
+          openAiInput.push({
+            role: "tool",
+            tool_call_id: tool.item.id,
+            content: JSON.stringify(toolCallResponse(tool.item)),
+          });
+        }
+      }
+      const openAiOutput: Record<string, unknown> = {
+        role: "assistant",
+        content: step.items
+          .filter((record) => record.item.type === "agentMessage")
+          .map((record) => (record.item.type === "agentMessage" ? record.item.text : ""))
+          .join("\n")
+          .slice(0, TEXT_MAX_CHARS),
+      };
+      if (step.tools.length > 0) {
+        openAiOutput.tool_calls = step.tools.map((tool) => ({
+          id: tool.item.id,
+          type: "function",
+          function: {
+            name: itemName(tool.item),
+            arguments: JSON.stringify(toolCallArguments(tool.item)),
+          },
+        }));
+      }
+      if (openAiInput.length > 0) {
+        attributes.push(stringAttribute("langfuse.observation.input", boundedJson(openAiInput)));
+      }
+      if (openAiOutput.content !== "" || openAiOutput.tool_calls !== undefined) {
+        attributes.push(
+          stringAttribute("langfuse.observation.output", boundedJson([openAiOutput])),
+        );
+      }
     }
     const failed = step.items.some((record) => itemStatus(record.item).code === 2);
     return {
@@ -835,7 +960,10 @@ export function assembleTurnTrace({
     const parentId = item.parentToolCallId;
     const attributes: OtlpAttribute[] = [
       stringAttribute("lmnr.span.type", isToolItem(item) ? "TOOL" : "DEFAULT"),
-      stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
+      stringAttribute("lmnr.span.instrumentation_source", INSTRUMENTATION_SOURCE),
+      stringAttribute("langfuse.observation.type", langfuseObservationType(item)),
+      langfuseObservationMetadata("itemType", item.type),
+      langfuseObservationMetadata("itemId", itemId),
       stringAttribute("bb.thread.id", thread.id),
       stringAttribute("bb.turn.id", turnId),
       stringAttribute("bb.item.id", itemId),
@@ -855,7 +983,7 @@ export function assembleTurnTrace({
     }
     if ("status" in item) attributes.push(stringAttribute("bb.item.status", item.status));
     attributes.push(...itemMetadataAttributes(item));
-    if (fullContent) attributes.push(...fullItemAttributes(item));
+    if (fullContent) attributes.push(...fullItemAttributes(item), ...langfuseItemContent(item));
     const stepIndex = stepOfItem.get(itemId);
     const parentSpanId =
       parentId !== undefined && itemIds.has(parentId)
@@ -925,86 +1053,4 @@ export function assembleTurnTrace({
       },
     ],
   };
-}
-
-export function traceIoOnly(request: ExportTraceServiceRequest): ExportTraceServiceRequest | null {
-  const resourceSpans = request.resourceSpans
-    .map((resourceSpan) => ({
-      ...resourceSpan,
-      scopeSpans: resourceSpan.scopeSpans
-        .map((scopeSpan) => ({
-          ...scopeSpan,
-          spans: scopeSpan.spans.filter((span) =>
-            span.attributes.some(
-              (attribute) =>
-                attribute.key === "lmnr.internal.metadata_only" &&
-                attribute.value.boolValue === true,
-            ),
-          ),
-        }))
-        .filter((scopeSpan) => scopeSpan.spans.length > 0),
-    }))
-    .filter((resourceSpan) => resourceSpan.scopeSpans.length > 0);
-  return resourceSpans.length === 0 ? null : { resourceSpans };
-}
-
-export function traceIoBackfill(
-  request: ExportTraceServiceRequest,
-): ExportTraceServiceRequest | null {
-  const patch = traceIoOnly(request);
-  if (patch === null) return null;
-
-  const spans = request.resourceSpans.flatMap((resourceSpan) =>
-    resourceSpan.scopeSpans.flatMap((scopeSpan) => scopeSpan.spans),
-  );
-  const root = spans.find((span) => span.parentSpanId === undefined);
-  const output = root?.attributes.find((attribute) => attribute.key === "lmnr.span.output");
-  if (root === undefined || output?.value.stringValue === undefined) return patch;
-
-  const carrier: OtlpSpan = {
-    traceId: root.traceId,
-    spanId: stableHex("trace-output-backfill-span", root.traceId, 8),
-    parentSpanId: root.spanId,
-    name: "bb.trace.output.backfill",
-    kind: 1,
-    startTimeUnixNano: root.endTimeUnixNano,
-    endTimeUnixNano: root.endTimeUnixNano,
-    attributes: [
-      stringAttribute("lmnr.span.type", "LLM"),
-      stringAttribute("lmnr.span.instrumentation_source", "bb-plugin-laminar"),
-      boolAttribute("bb.backfill.content_carrier", true),
-      output,
-    ],
-    status: { code: 1 },
-  };
-  patch.resourceSpans[0]?.scopeSpans[0]?.spans.unshift(carrier);
-  return patch;
-}
-
-export class LaminarExportError extends Error {
-  readonly status: number;
-
-  constructor(status: number) {
-    super(`Laminar returned HTTP ${status}`);
-    this.name = "LaminarExportError";
-    this.status = status;
-  }
-}
-
-export async function exportOtlpTrace(
-  config: Pick<LaminarConfig, "apiKey" | "endpoint">,
-  request: ExportTraceServiceRequest,
-  signal?: AbortSignal,
-): Promise<void> {
-  const response = await fetch(config.endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
-    signal,
-  });
-  if (!response.ok) throw new LaminarExportError(response.status);
-  await response.body?.cancel();
 }

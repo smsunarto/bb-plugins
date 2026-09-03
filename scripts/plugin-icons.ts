@@ -203,7 +203,7 @@ const customIcons = {
     name: "PanelLeft",
     nodes: PanelLeftIcon,
   },
-  laminar: {
+  "agent-trace": {
     name: "ActivitySpark",
     nodes: ActivitySparkIcon,
   },

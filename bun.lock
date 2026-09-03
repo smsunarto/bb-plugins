@@ -111,6 +111,26 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/agent-trace": {
+      "name": "@smsunarto/bb-plugin-agent-trace",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.1.0",
+        "@noble/hashes": "^2.4.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.34",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "better-sqlite3": "^12.0.0",
+        "bun-types": "^1.4.0",
+        "jsdom": "25.0.1",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/agentation": {
       "name": "@smsunarto/bb-plugin-agentation",
       "version": "0.2.3",
@@ -381,26 +401,6 @@
         "tailwind-merge": "^3.4.0",
         "typescript": "^7.0.0",
         "vaul": "^1.1.2",
-      },
-    },
-    "plugins/laminar": {
-      "name": "@smsunarto/bb-plugin-laminar",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.1.0",
-        "@noble/hashes": "^2.4.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.4.34",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "better-sqlite3": "^12.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
       },
     },
     "plugins/monokai": {
@@ -1113,6 +1113,8 @@
 
     "@smsunarto/bb-plugin-agent-proxy": ["@smsunarto/bb-plugin-agent-proxy@workspace:plugins/agent-proxy"],
 
+    "@smsunarto/bb-plugin-agent-trace": ["@smsunarto/bb-plugin-agent-trace@workspace:plugins/agent-trace"],
+
     "@smsunarto/bb-plugin-agentation": ["@smsunarto/bb-plugin-agentation@workspace:plugins/agentation"],
 
     "@smsunarto/bb-plugin-amp": ["@smsunarto/bb-plugin-amp@workspace:plugins/amp"],
@@ -1126,8 +1128,6 @@
     "@smsunarto/bb-plugin-gh-stack": ["@smsunarto/bb-plugin-gh-stack@workspace:plugins/gh-stack"],
 
     "@smsunarto/bb-plugin-gtd-sidebar": ["@smsunarto/bb-plugin-gtd-sidebar@workspace:plugins/gtd-sidebar"],
-
-    "@smsunarto/bb-plugin-laminar": ["@smsunarto/bb-plugin-laminar@workspace:plugins/laminar"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
 

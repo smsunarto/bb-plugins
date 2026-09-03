@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { exportToLaminar, traceIoOnly } from "./exporters/laminar.ts";
+import { exportToLangfuse, langfuseRequest } from "./exporters/langfuse.ts";
+import { ExportError } from "./exporters/otlp.ts";
 import {
   assembleTurnTrace,
-  exportOtlpTrace,
-  LaminarExportError,
-  traceIoOnly,
   type OtlpSpan,
   type ThreadEventRow,
   type TraceThread,
-} from "./laminar.ts";
+} from "./turn-trace.ts";
 
 type EventOf<T extends ThreadEventRow["type"]> = Extract<ThreadEventRow, { type: T }>;
 
@@ -628,6 +628,110 @@ describe("turn assembly", () => {
   });
 });
 
+describe("Langfuse mapping", () => {
+  function langfuseSpans(mode: "metadata" | "full", events = turnEvents()) {
+    const mapped = langfuseRequest(
+      assembleTurnTrace({
+        contentMode: mode,
+        deploymentEnvironment: "test",
+        events,
+        historyRevision: 2,
+        thread,
+      }),
+    );
+    if (mapped === null) throw new Error("missing Langfuse request");
+    return mapped.resourceSpans[0]!.scopeSpans[0]!.spans;
+  }
+
+  test("types observations, sets session and environment, and drops Laminar-only keys", () => {
+    const all = langfuseSpans("full");
+    const root = attributes(all[0]!);
+    const keys = all.flatMap((span) => span.attributes.map((attribute) => attribute.key));
+
+    expect(root["langfuse.observation.type"]).toBe("agent");
+    expect(root["langfuse.session.id"]).toBe("thread-1");
+    expect(root["langfuse.environment"]).toBe("test");
+    expect(root["langfuse.trace.tags"]).toEqual(["provider:provider-1", "visibility:visible"]);
+    expect(root["langfuse.trace.metadata.threadTitle"]).toBe("Trace metadata audit");
+    expect(root["langfuse.trace.metadata.historyRevision"]).toBe("2");
+    expect(JSON.parse(String(root["langfuse.observation.input"]))).toEqual([
+      { role: "user", content: "visible prompt" },
+    ]);
+    expect(JSON.parse(String(root["langfuse.observation.output"]))).toEqual([
+      { role: "assistant", content: "assistant answer" },
+    ]);
+    expect(keys.some((key) => key.startsWith("lmnr."))).toBe(false);
+    expect(keys.some((key) => key.startsWith("gen_ai.usage."))).toBe(false);
+    expect(keys).not.toContain("gen_ai.input.messages");
+    expect(all.some((span) => span.name === "bb.trace.io")).toBe(false);
+    expect(all.map((span) => [span.name, attributes(span)["langfuse.observation.type"]])).toEqual([
+      ["bb.agent.turn", "agent"],
+      ["bb.agent.llm", "generation"],
+      ["bb.agent.llm", "generation"],
+      ["final-name", "tool"],
+      ["bb.agent.commandExecution", "tool"],
+      ["bb.agent.reasoning", "span"],
+      ["bb.agent.agentMessage", "span"],
+    ]);
+  });
+
+  test("emits generations with exclusive usage buckets and OpenAI-format tool calls", () => {
+    const all = langfuseSpans("full");
+    const generations = all
+      .filter((span) => attributes(span)["langfuse.observation.type"] === "generation")
+      .map((span) => attributes(span));
+    const last = generations.at(-1)!;
+
+    expect(last["langfuse.observation.model.name"]).toBe("model-from-bb");
+    expect(JSON.parse(String(last["langfuse.observation.usage_details"]))).toEqual({
+      input: 11,
+      output: 4,
+      input_cached_tokens: 2,
+      output_reasoning_tokens: 3,
+      total: 20,
+    });
+    expect(generations[0]!["langfuse.observation.usage_details"]).toBeUndefined();
+    expect(JSON.parse(String(generations[0]!["langfuse.observation.input"]))).toEqual([
+      { role: "user", content: "visible prompt" },
+    ]);
+    expect(JSON.parse(String(generations[0]!["langfuse.observation.output"]))).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          {
+            id: "tool-parent",
+            type: "function",
+            function: { name: "final-name", arguments: '{"value":"latest-argument"}' },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.parse(String(generations[1]!["langfuse.observation.input"]))).toEqual([
+      {
+        role: "tool",
+        tool_call_id: "tool-parent",
+        content: '{"status":"completed","result":{"text":"latest-result"}}',
+      },
+    ]);
+    expect(JSON.parse(String(generations[1]!["langfuse.observation.output"]))).toEqual([
+      { role: "assistant", content: "assistant answer" },
+    ]);
+    const tool = all.find((span) => attributes(span)["bb.item.id"] === "tool-parent")!;
+    expect(JSON.parse(String(attributes(tool)["langfuse.observation.input"]))).toEqual({
+      value: "latest-argument",
+    });
+  });
+
+  test("metadata mode keeps Langfuse content fields empty", () => {
+    const body = JSON.stringify(langfuseSpans("metadata"));
+    expect(body).not.toContain("langfuse.observation.input");
+    expect(body).not.toContain("langfuse.observation.output");
+    expect(body).not.toContain("visible prompt");
+    expect(body).not.toContain("assistant answer");
+  });
+});
+
 describe("OTLP HTTP export", () => {
   const servers: Bun.Server<unknown>[] = [];
 
@@ -651,7 +755,7 @@ describe("OTLP HTTP export", () => {
       thread,
     });
 
-    await exportOtlpTrace(
+    await exportToLaminar(
       { apiKey: "test-api-key", endpoint: new URL("/v1/traces", server.url).toString() },
       body,
     );
@@ -678,6 +782,37 @@ describe("OTLP HTTP export", () => {
     );
   });
 
+  test("posts to the Langfuse OTLP path with basic auth and the v4 ingestion header", async () => {
+    let received: { headers: Headers; pathname: string } | undefined;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        received = { headers: request.headers, pathname: new URL(request.url).pathname };
+        return Response.json({ ok: true });
+      },
+    });
+    servers.push(server);
+
+    await exportToLangfuse(
+      {
+        baseUrl: server.url.toString().replace(/\/$/, ""),
+        publicKey: "pk-lf-1",
+        secretKey: "sk-lf-1",
+      },
+      { resourceSpans: [] },
+    );
+
+    expect(received).toBeDefined();
+    if (received === undefined) throw new Error("missing request");
+    expect(received.pathname).toBe("/api/public/otel/v1/traces");
+    expect(received.headers.get("authorization")).toBe(
+      `Basic ${Buffer.from("pk-lf-1:sk-lf-1").toString("base64")}`,
+    );
+    expect(received.headers.get("x-langfuse-ingestion-version")).toBe("4");
+    expect(received.headers.get("content-type")).toBe("application/json");
+  });
+
   test("reports non-success HTTP status without including response data", async () => {
     const server = Bun.serve({
       hostname: "127.0.0.1",
@@ -687,12 +822,12 @@ describe("OTLP HTTP export", () => {
     servers.push(server);
 
     await expect(
-      exportOtlpTrace(
+      exportToLaminar(
         { apiKey: "test-api-key", endpoint: new URL("/v1/traces", server.url).toString() },
         { resourceSpans: [] },
       ),
     ).rejects.toEqual(
-      expect.objectContaining({ status: 429 } satisfies Partial<LaminarExportError>),
+      expect.objectContaining({ backend: "laminar", status: 429 } satisfies Partial<ExportError>),
     );
   });
 });

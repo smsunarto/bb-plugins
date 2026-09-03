@@ -4,12 +4,12 @@ import { installDom } from "@bb-kit/core/testing";
 installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
-test("registers a Laminar dashboard sidebar panel", async () => {
+test("registers an Agent Trace dashboard sidebar panel", async () => {
   const app = await loadPluginApp(() => import("./app.tsx"));
   const panel = app.navPanels[0];
 
   expect(panel).toBeDefined();
-  expect(panel).toMatchObject({ id: "dashboard", title: "Laminar", path: "dashboard" });
+  expect(panel).toMatchObject({ id: "dashboard", title: "Agent Trace", path: "dashboard" });
 });
 
 test("renders the configured dashboard in a sandboxed iframe", async () => {
@@ -25,23 +25,33 @@ test("renders the configured dashboard in a sandboxed iframe", async () => {
       settings: { dashboardUrl: "https://laminar.example.test/projects" },
     },
   );
-  const frame = await slot.findByTitle("Laminar dashboard");
+  const frame = await slot.findByTitle("Trace dashboard");
 
   expect(frame.getAttribute("src")).toBe("https://laminar.example.test/projects");
   expect(frame.getAttribute("sandbox")).toContain("allow-same-origin");
   slot.unmount();
 });
 
-test("defaults the dashboard to bb desktop's loopback site", async () => {
+test("offers backend links when no embedded dashboard is configured", async () => {
   const app = await loadPluginApp(() => import("./app.tsx"));
   const panel = app.navPanels[0];
   expect(panel).toBeDefined();
   if (!panel) return;
 
-  const slot = renderSlot(panel, { subPath: "" });
-  const frame = await slot.findByTitle("Laminar dashboard");
+  const slot = renderSlot(
+    panel,
+    { subPath: "" },
+    {
+      settings: {
+        langfusePublicKey: "pk-lf-test",
+        langfuseBaseUrl: "https://us.cloud.langfuse.com",
+      },
+    },
+  );
+  const langfuse = await slot.findByText("Open Langfuse");
 
-  expect(frame.getAttribute("src")).toBe("http://127.0.0.1:5668/");
+  expect(langfuse.getAttribute("href")).toBe("https://us.cloud.langfuse.com/");
+  expect(slot.container.querySelector("iframe")).toBeNull();
   slot.unmount();
 });
 
@@ -66,10 +76,10 @@ test("prepares a Connect session before rendering a remote dashboard share", asy
         settings: { dashboardUrl: "https://scott--5668.getbb.app/" },
       },
     );
-    const frame = await slot.findByTitle("Laminar dashboard");
+    const frame = await slot.findByTitle("Trace dashboard");
 
     expect(frame.getAttribute("src")).toBe("https://scott--5668.getbb.app/");
-    expect(requests).toEqual(["/api/v1/plugins/laminar/http/remote-session"]);
+    expect(requests).toEqual(["/api/v1/plugins/agent-trace/http/remote-session"]);
     slot.unmount();
   } finally {
     globalThis.fetch = originalFetch;

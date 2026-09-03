@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 
 import plugin from "../server.ts";
-import type { ExportTraceServiceRequest, ThreadEventRow } from "../laminar.ts";
+import type { ExportTraceServiceRequest, ThreadEventRow } from "../turn-trace.ts";
 
 const servers: Bun.Server<unknown>[] = [];
 
@@ -73,10 +73,11 @@ test("backfills only Laminar's trace-level input/output span", async () => {
     },
   ] as ThreadEventRow[];
   const { bb, harness } = createFakePluginHost({
-    pluginId: "laminar",
+    pluginId: "agent-trace",
     settings: {
-      apiKey: "test-key",
-      endpoint: new URL("/v1/traces", server.url).toString(),
+      laminarApiKey: "test-key",
+      laminarEndpoint: new URL("/v1/traces", server.url).toString(),
+      langfuseBaseUrl: "https://cloud.langfuse.com",
       deploymentEnvironment: "test",
       contentMode: "full",
     },

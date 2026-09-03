@@ -1,13 +1,14 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { AgentTraceConfig } from "../shared/settings.ts";
+import { exportToLaminar, laminarRequest } from "./exporters/laminar.ts";
+import { exportToLangfuse, langfuseRequest } from "./exporters/langfuse.ts";
+import { ExportError } from "./exporters/otlp.ts";
 import {
   assembleTurnTrace,
-  exportOtlpTrace,
-  LaminarExportError,
   type ExportTraceServiceRequest,
   type ThreadEventRow,
   type TraceThread,
-} from "./laminar.ts";
-import type { LaminarConfig } from "../shared/settings.ts";
+} from "./turn-trace.ts";
 
 const ACTIVATION_KEY = "state:v1:activation";
 const CHECKPOINT_PREFIX = "state:v1:thread:";
@@ -34,14 +35,30 @@ interface WorkerState {
 }
 
 export type TraceExporter = (
-  config: LaminarConfig,
+  config: AgentTraceConfig,
   request: ExportTraceServiceRequest,
   signal: AbortSignal,
 ) => Promise<void>;
 
+/** Send one assembled turn to every configured backend. Any failure keeps the checkpoint. */
+export async function exportToBackends(
+  config: AgentTraceConfig,
+  request: ExportTraceServiceRequest,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (config.laminar !== null) {
+    const mapped = laminarRequest(request);
+    if (mapped !== null) await exportToLaminar(config.laminar, mapped, signal);
+  }
+  if (config.langfuse !== null) {
+    const mapped = langfuseRequest(request);
+    if (mapped !== null) await exportToLangfuse(config.langfuse, mapped, signal);
+  }
+}
+
 export interface TracePumpOptions {
   bb: BbPluginApi;
-  getConfig: () => LaminarConfig | null;
+  getConfig: () => AgentTraceConfig | null;
   now?: () => number;
   exporter?: TraceExporter;
 }
@@ -102,7 +119,7 @@ function isAbort(error: unknown, signal: AbortSignal): boolean {
 
 export class TracePump {
   private readonly bb: BbPluginApi;
-  private readonly getConfig: () => LaminarConfig | null;
+  private readonly getConfig: () => AgentTraceConfig | null;
   private readonly now: () => number;
   private readonly exporter: TraceExporter;
   private readonly workers = new Map<string, WorkerState>();
@@ -115,7 +132,7 @@ export class TracePump {
   private active = false;
   private signal: AbortSignal | null = null;
 
-  constructor({ bb, getConfig, now = Date.now, exporter = exportOtlpTrace }: TracePumpOptions) {
+  constructor({ bb, getConfig, now = Date.now, exporter = exportToBackends }: TracePumpOptions) {
     this.bb = bb;
     this.getConfig = getConfig;
     this.now = now;
@@ -203,7 +220,7 @@ export class TracePump {
       } catch (error) {
         this.reconcileRewriteCount += rewriteCount;
         if (!isAbort(error, signal)) {
-          this.bb.log.warn("Laminar thread discovery failed; it will retry after another wake.");
+          this.bb.log.warn("Trace thread discovery failed; it will retry after another wake.");
         }
         return;
       }
@@ -291,9 +308,11 @@ export class TracePump {
       } catch (error) {
         if (!isAbort(error, signal)) {
           const reason =
-            error instanceof LaminarExportError ? `HTTP ${error.status}` : "an internal error";
+            error instanceof ExportError
+              ? `${error.backend} HTTP ${error.status}`
+              : "an internal error";
           this.bb.log.warn(
-            `Laminar export for thread ${threadId} failed with ${reason}; checkpoint unchanged.`,
+            `Trace export for thread ${threadId} failed with ${reason}; checkpoint unchanged.`,
           );
         }
         return;

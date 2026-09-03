@@ -1,18 +1,18 @@
 import { definePlugin } from "@bb-kit/core/plugin";
-import { parseLaminarSettings, type LaminarConfig } from "../shared/settings.ts";
+import { parseAgentTraceSettings, type AgentTraceConfig } from "../shared/settings.ts";
 import { backfill } from "./command/backfill.ts";
 import { createRemoteSessionResponse } from "./remote-session.ts";
-import { laminarSettings } from "./lib/settings.ts";
+import { agentTraceSettings } from "./lib/settings.ts";
 import { TracePump } from "./trace-pump.ts";
 
 export default definePlugin({
-  pluginId: "laminar",
+  pluginId: "agent-trace",
   command: { backfill },
   rpc: {},
   async setup(bb) {
-    const settings = laminarSettings(bb);
-    let parsed = parseLaminarSettings(await settings.get());
-    let config: LaminarConfig | null = parsed.ok ? parsed.value : null;
+    const settings = agentTraceSettings(bb);
+    let parsed = parseAgentTraceSettings(await settings.get());
+    let config: AgentTraceConfig | null = parsed.ok ? parsed.value : null;
     if (!parsed.ok) bb.status.needsConfiguration(parsed.message);
 
     const pump = new TracePump({ bb, getConfig: () => config });
@@ -29,7 +29,7 @@ export default definePlugin({
       { auth: "local" },
     );
     settings.onChange((next) => {
-      parsed = parseLaminarSettings(next);
+      parsed = parseAgentTraceSettings(next);
       config = parsed.ok ? parsed.value : null;
       if (!parsed.ok) bb.status.needsConfiguration(parsed.message);
       pump.configurationChanged();

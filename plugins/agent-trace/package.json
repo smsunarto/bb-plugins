@@ -1,22 +1,23 @@
 {
-  "name": "@smsunarto/bb-plugin-laminar",
+  "name": "@smsunarto/bb-plugin-agent-trace",
   "version": "0.1.0",
-  "description": "Export every BB thread turn across all providers to Laminar over OTLP/HTTP JSON.",
+  "description": "Export every BB thread turn across all providers to Laminar and Langfuse over OTLP/HTTP JSON.",
   "license": "MIT",
   "author": "Scott Sunarto",
-  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/laminar#readme",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/agent-trace#readme",
   "bugs": {
     "url": "https://github.com/smsunarto/bb-plugins/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/smsunarto/bb-plugins.git",
-    "directory": "plugins/laminar"
+    "directory": "plugins/agent-trace"
   },
   "keywords": [
     "bb",
     "bb-plugin",
     "laminar",
+    "langfuse",
     "observability",
     "opentelemetry",
     "tracing"
@@ -30,8 +31,8 @@
     "bbPluginSdk": ">=0.4.34 <1.0.0"
   },
   "bb": {
-    "name": "Laminar",
-    "description": "Export every BB thread turn across all providers to Laminar over OTLP/HTTP JSON.",
+    "name": "Agent Trace",
+    "description": "Export every BB thread turn across all providers to Laminar and Langfuse over OTLP/HTTP JSON.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

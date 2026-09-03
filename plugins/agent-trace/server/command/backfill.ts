@@ -2,14 +2,10 @@ import { argv, CommandError, defineCommand } from "@bb-kit/core/command";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
-import { parseLaminarSettings } from "../../shared/settings.ts";
-import {
-  assembleTurnTrace,
-  exportOtlpTrace,
-  traceIoBackfill,
-  type ThreadEventRow,
-} from "../laminar.ts";
-import { laminarSettings } from "../lib/settings.ts";
+import { parseAgentTraceSettings } from "../../shared/settings.ts";
+import { exportToLaminar, traceIoBackfill } from "../exporters/laminar.ts";
+import { agentTraceSettings } from "../lib/settings.ts";
+import { assembleTurnTrace, type ThreadEventRow } from "../turn-trace.ts";
 
 const EVENT_PAGE_SIZE = 200;
 const BACKFILL_KEY_PREFIX = "backfill:trace-io:v1:";
@@ -53,8 +49,14 @@ export const backfill = defineCommand({
       });
     }
 
-    const parsed = parseLaminarSettings(await laminarSettings(ctx.bb).get());
+    const parsed = parseAgentTraceSettings(await agentTraceSettings(ctx.bb).get());
     if (!parsed.ok) throw new CommandError(parsed.message, { exitCode: 2 });
+    const laminar = parsed.value.laminar;
+    if (laminar === null) {
+      throw new CommandError("Backfill only applies to Laminar; set the Laminar project API key.", {
+        exitCode: 2,
+      });
+    }
     if (parsed.value.contentMode !== "full") {
       throw new CommandError("Set Laminar trace content to full before backfilling.", {
         exitCode: 2,
@@ -93,7 +95,7 @@ export const backfill = defineCommand({
           pending.length = 0;
           continue;
         }
-        await exportOtlpTrace(parsed.value, request, signal);
+        await exportToLaminar(laminar, request, signal);
         if (traceId !== undefined) {
           await ctx.bb.storage.kv.set(`${BACKFILL_KEY_PREFIX}${traceId}`, true);
         }

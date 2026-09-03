@@ -1,7 +1,7 @@
 export type RemoteSessionState = "ready" | "browser-login-required";
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-export const REMOTE_SESSION_URL = "/api/v1/plugins/laminar/http/remote-session";
+export const REMOTE_SESSION_URL = "/api/v1/plugins/agent-trace/http/remote-session";
 
 export function requiresConnectSession(dashboardUrl: string): boolean {
   try {

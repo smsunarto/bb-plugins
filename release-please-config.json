@@ -43,10 +43,10 @@
       "component": "gtd-sidebar",
       "package-name": "@smsunarto/bb-plugin-gtd-sidebar"
     },
-    "plugins/laminar": {
+    "plugins/agent-trace": {
       "release-type": "node",
-      "component": "laminar",
-      "package-name": "@smsunarto/bb-plugin-laminar"
+      "component": "agent-trace",
+      "package-name": "@smsunarto/bb-plugin-agent-trace"
     },
     "plugins/monokai": {
       "release-type": "node",

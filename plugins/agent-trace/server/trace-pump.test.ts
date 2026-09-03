@@ -1,12 +1,9 @@
 import { describe, expect, mock, test, type Mock } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import {
-  LaminarExportError,
-  type ExportTraceServiceRequest,
-  type ThreadEventRow,
-} from "./laminar.ts";
-import type { LaminarConfig } from "../shared/settings.ts";
+import { ExportError } from "./exporters/otlp.ts";
+import type { ExportTraceServiceRequest, ThreadEventRow } from "./turn-trace.ts";
+import type { AgentTraceConfig } from "../shared/settings.ts";
 import {
   checkpointKey,
   TracePump,
@@ -19,11 +16,11 @@ type Thread = ReturnType<typeof makeThreadResponse>;
 type ListedThread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["list"]>>[number];
 type EventOf<T extends ThreadEventRow["type"]> = Extract<ThreadEventRow, { type: T }>;
 
-const config: LaminarConfig = {
-  apiKey: "test-key",
-  endpoint: "http://127.0.0.1/v1/traces",
-  deploymentEnvironment: "test",
+const config: AgentTraceConfig = {
   contentMode: "metadata",
+  deploymentEnvironment: "test",
+  laminar: { apiKey: "test-key", endpoint: "http://127.0.0.1/v1/traces" },
+  langfuse: null,
 };
 
 function row<T extends ThreadEventRow["type"]>(
@@ -190,7 +187,7 @@ function createRuntime(initialThreads: Thread[] = []): Runtime {
     },
   );
   const { bb } = createFakePluginHost({
-    pluginId: "laminar",
+    pluginId: "agent-trace",
     sdk: {
       subscribe: subscribe as BbPluginApi["sdk"]["subscribe"],
       threads: {
@@ -319,7 +316,7 @@ describe("trace pump cursor and retry behavior", () => {
     const runtime = createRuntime([thread]);
     runtime.events.set(thread.id, [started(thread.id), completed(thread.id)]);
     const exporter = mock<TraceExporter>(async () => {
-      throw new LaminarExportError(status);
+      throw new ExportError("laminar", status);
     });
     const run = startPump(runtime, exporter);
 
@@ -365,7 +362,7 @@ describe("trace pump cursor and retry behavior", () => {
     const firstRequests: ExportTraceServiceRequest[] = [];
     const firstExporter = mock<TraceExporter>(async (_config, request) => {
       firstRequests.push(request);
-      throw new LaminarExportError(500);
+      throw new ExportError("laminar", 500);
     });
     const firstRun = startPump(runtime, firstExporter);
     await waitFor(() => firstExporter.mock.calls.length === 1, "first failed export");
