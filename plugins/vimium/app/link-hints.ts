@@ -15,10 +15,12 @@
 // row; the scoped prompt follows the popup — exiting when it is dismissed,
 // re-prompting when a pick leaves it open (the model dialog and its tabs),
 // and handing focus back to the composer when a pick from one of the
-// composer's own dropdowns closes it. Passive composer focus is released so
-// normal mode survives navigation; `i`, a direct pointer press, and Tab focus
-// enter the composer intentionally. `Cmd+Shift+F` always means the whole
-// screen: it replaces a scoped prompt, and first closes any open popup layer,
+// composer's own dropdowns closes it. On fine-pointer devices, passive
+// composer focus is released so normal mode survives navigation; `i`, a
+// direct pointer press, and Tab focus enter the composer intentionally.
+// Coarse-pointer devices retain native composer focus. `Cmd+Shift+F` always
+// means the whole screen: it replaces a scoped prompt, and first closes any
+// open popup layer,
 // which would otherwise aria-hide the rest of the page. The transitions and
 // predicates are pure functions so they test without a DOM; only mounting,
 // marker drawing, and activation touch one.
@@ -255,6 +257,7 @@ const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut
 
 const COMPOSER_SELECTOR = "[data-app-composer]";
 const COMPOSER_TEXTBOX_SELECTOR = '[data-app-composer] [role="textbox"]';
+const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
@@ -452,9 +455,8 @@ function activate(
   }
 }
 
-export function mountLinkHints(
-  context: PluginContentScriptContext,
-): PluginContentScriptDisposer {
+export function mountLinkHints(context: PluginContentScriptContext): PluginContentScriptDisposer {
+  const releasePassiveComposerFocus = window.matchMedia?.(COARSE_POINTER_QUERY).matches !== true;
   let mode: HintMode = { kind: "idle" };
   let container: HTMLElement | null = null;
   let popupWatch: number | null = null;
@@ -493,6 +495,7 @@ export function mountLinkHints(
   }
 
   function onFocusIn(event: FocusEvent): void {
+    if (!releasePassiveComposerFocus) return;
     const target = event.target;
     if (!(target instanceof HTMLElement) || !target.matches(COMPOSER_TEXTBOX_SELECTOR)) return;
     if (composerFocusAllowed || composerPointerOrTabFocusAllowed) return;
@@ -787,7 +790,11 @@ export function mountLinkHints(
 
   // The content script can mount after React has already applied autofocus.
   const active = document.activeElement;
-  if (active instanceof HTMLElement && active.matches(COMPOSER_TEXTBOX_SELECTOR)) {
+  if (
+    releasePassiveComposerFocus &&
+    active instanceof HTMLElement &&
+    active.matches(COMPOSER_TEXTBOX_SELECTOR)
+  ) {
     active.blur();
   }
 

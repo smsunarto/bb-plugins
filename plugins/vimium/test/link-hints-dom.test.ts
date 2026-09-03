@@ -206,6 +206,37 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("keeps the composer focusable on coarse-pointer devices", () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({ matches: query === "(pointer: coarse)", media: query }),
+    });
+
+    try {
+      document.body.innerHTML =
+        '<div data-app-composer><div id="editor" role="textbox" tabindex="0"></div></div>';
+      const editor = document.getElementById("editor") as HTMLElement;
+      editor.focus();
+
+      const controller = newController();
+      const dispose = mountLinkHints(contextWith(controller.signal));
+      expect(document.activeElement).toBe(editor);
+
+      editor.blur();
+      editor.focus();
+      expect(document.activeElement).toBe(editor);
+
+      void dispose();
+      controller.abort();
+    } finally {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
   test("plain i stays available to editable targets while hint mode is idle", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
