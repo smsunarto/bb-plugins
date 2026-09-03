@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-gitbutler",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Inspect GitButler stacks and commit selected worktree hunks from BB threads.",
   "license": "MIT",
   "author": "Scott Sunarto",
