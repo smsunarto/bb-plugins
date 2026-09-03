@@ -48,6 +48,11 @@
       "component": "gtd-sidebar",
       "package-name": "@smsunarto/bb-plugin-gtd-sidebar"
     },
+    "plugins/laminar": {
+      "release-type": "node",
+      "component": "laminar",
+      "package-name": "@smsunarto/bb-plugin-laminar"
+    },
     "plugins/monokai": {
       "release-type": "node",
       "component": "monokai",

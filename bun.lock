@@ -417,6 +417,26 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/laminar": {
+      "name": "@smsunarto/bb-plugin-laminar",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.1.0",
+        "@noble/hashes": "^2.4.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.34",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "better-sqlite3": "^12.0.0",
+        "bun-types": "^1.4.0",
+        "jsdom": "25.0.1",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/monokai": {
       "name": "@smsunarto/bb-plugin-monokai",
       "version": "0.3.2",
@@ -1142,6 +1162,8 @@
     "@smsunarto/bb-plugin-gitbutler": ["@smsunarto/bb-plugin-gitbutler@workspace:plugins/gitbutler"],
 
     "@smsunarto/bb-plugin-gtd-sidebar": ["@smsunarto/bb-plugin-gtd-sidebar@workspace:plugins/gtd-sidebar"],
+
+    "@smsunarto/bb-plugin-laminar": ["@smsunarto/bb-plugin-laminar@workspace:plugins/laminar"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
 

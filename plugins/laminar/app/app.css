@@ -1,0 +1,84 @@
+.laminar-dashboard {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.laminar-dashboard iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--background);
+}
+
+.laminar-dashboard-state {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  color: var(--foreground);
+}
+
+.laminar-dashboard-state h2,
+.laminar-dashboard-state p {
+  margin: 0;
+}
+
+.laminar-dashboard-state h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.laminar-dashboard-state p {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.laminar-dashboard-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+  border-top-color: var(--foreground);
+  border-radius: 999px;
+  animation: laminar-dashboard-spin 0.8s linear infinite;
+}
+
+.laminar-dashboard-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.laminar-dashboard-actions a,
+.laminar-dashboard-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.laminar-dashboard-actions a {
+  border-color: var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+}
+
+@keyframes laminar-dashboard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

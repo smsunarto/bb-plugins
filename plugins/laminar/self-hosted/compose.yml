@@ -1,0 +1,14 @@
+name: bb-laminar-embed
+
+services:
+  dashboard-proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "${LAMINAR_EMBED_PORT:-5668}:5668"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      LAMINAR_FRAME_ANCESTORS: "${LAMINAR_FRAME_ANCESTORS:-http://localhost:* http://127.0.0.1:*}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro

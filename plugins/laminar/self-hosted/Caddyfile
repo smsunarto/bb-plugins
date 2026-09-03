@@ -1,0 +1,7 @@
+:5668 {
+	reverse_proxy host.docker.internal:5667 {
+		header_up Origin http://localhost:5667
+		header_down -X-Frame-Options
+		header_down Content-Security-Policy "frame-ancestors 'none';" "frame-ancestors {$LAMINAR_FRAME_ANCESTORS};"
+	}
+}

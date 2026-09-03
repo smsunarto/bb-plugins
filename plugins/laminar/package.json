@@ -1,0 +1,87 @@
+{
+  "name": "@smsunarto/bb-plugin-laminar",
+  "version": "0.1.0",
+  "description": "Export every BB thread turn across all providers to Laminar over OTLP/HTTP JSON.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/laminar#readme",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/laminar"
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "laminar",
+    "observability",
+    "opentelemetry",
+    "tracing"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.34 <1.0.0"
+  },
+  "bb": {
+    "name": "Laminar",
+    "description": "Export every BB thread turn across all providers to Laminar over OTLP/HTTP JSON.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./server/server.ts",
+    "app": "./app/app.tsx",
+    "skills": []
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
+    "assets/",
+    "README.md",
+    "LICENSE",
+    "server/",
+    "app/",
+    "types/",
+    "self-hosted/",
+    "shared/"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0",
+    "@noble/hashes": "^2.4.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.34",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "better-sqlite3": "^12.0.0",
+    "bun-types": "^1.4.0",
+    "jsdom": "25.0.1",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout=30000",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "verify": "oxlint && tsc --noEmit && bun test --timeout=30000 && node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check && bb plugin build . && bun pm pack --dry-run",
+    "clean": "rm -rf dist"
+  }
+}
