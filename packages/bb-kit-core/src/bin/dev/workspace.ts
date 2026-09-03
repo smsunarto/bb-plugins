@@ -172,16 +172,24 @@ export async function runWorkspace(
     desktop: options.desktop,
     open: options.open,
     timeoutMs: options.timeoutMs,
+    from: options.from,
+    owned: options.owned,
   });
-  assertOwnedTarget(instance);
+  assertManagedTarget(instance);
 
+  // A runtime borrows an owned instance's checkout, and the plugin sources and
+  // their build output live in this workspace, which that instance already
+  // built. Building again would write the same dist directories from several
+  // runtimes at once for no gain, so a runtime installs what is already there.
   const built: string[] = [];
-  for (const script of definition.profile.beforeBuild) {
-    await runPackageScript(runtime, instance.name, definition.root, script, "build_failed");
-  }
-  for (const plugin of definition.plugins) {
-    await runPackageScript(runtime, instance.name, plugin.root, "build", "plugin_build_failed");
-    built.push(plugin.id);
+  if (instance.source === "owned") {
+    for (const script of definition.profile.beforeBuild) {
+      await runPackageScript(runtime, instance.name, definition.root, script, "build_failed");
+    }
+    for (const plugin of definition.plugins) {
+      await runPackageScript(runtime, instance.name, plugin.root, "build", "plugin_build_failed");
+      built.push(plugin.id);
+    }
   }
 
   const initial = pluginMap(
@@ -262,7 +270,7 @@ export async function runWorkspace(
   const watched = definition.plugins
     .filter((plugin) => !definition.profile.watchExclude.includes(plugin.id))
     .filter((plugin) => typeof plugin.scripts["dev"] === "string");
-  if (options.watch && watched.length > 0) {
+  if (options.watch && instance.source === "owned" && watched.length > 0) {
     const watchCommand: [string, ...string[]] = [definition.profile.packageManager, "run"];
     for (const plugin of watched) watchCommand.push("--filter", plugin.packageName);
     watchCommand.push("--parallel", "--no-orphans", "dev");
@@ -290,7 +298,8 @@ export async function runWorkspace(
       installed,
       unchanged,
       enabled,
-      watched: options.watch ? watched.map((plugin) => plugin.id) : [],
+      watched:
+        options.watch && instance.source === "owned" ? watched.map((plugin) => plugin.id) : [],
     },
     baseline: { experimentsSet, configKeysReset, themeChanged, converged: true },
   };
@@ -473,14 +482,14 @@ function parseProfile(
   };
 }
 
-function assertOwnedTarget(instance: InstanceResult): asserts instance is InstanceResult & {
-  source: "owned";
+function assertManagedTarget(instance: InstanceResult): asserts instance is InstanceResult & {
+  source: "owned" | "runtime";
   dataDir: string;
 } {
-  if (instance.source !== "owned") {
+  if (instance.source !== "owned" && instance.source !== "runtime") {
     throw new DevError(
       "baseline_refused",
-      "A plugin workspace can configure only an owned bb instance.",
+      "A plugin workspace can configure only a bb instance bb-kit owns.",
       "Use an owned revision selector with bb-kit dev-instance workspace.",
     );
   }

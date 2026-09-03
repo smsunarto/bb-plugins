@@ -1,52 +1,119 @@
 #!/usr/bin/env bash
+#
+# One bb runtime per verification run.
+#
+# Runs used to share the single managed dev instance, so a lock directory kept
+# them from colliding and a run that failed before releasing it blocked every
+# later run. A run now starts a bb-kit runtime instead: it borrows the workspace
+# instance's checkout and starts only the dev stack, on its own ports and its
+# own data directory. Nothing is cloned, installed, or built, so it comes up in
+# seconds. There is no lock and no shared state, and two runs can drive their
+# own bb at the same time.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../../.." && pwd)"
-state_root="${repo_root}/.scratch/verify-bb-plugins"
-runs_root="${state_root}/runs"
-lock_dir="${state_root}/active"
+runs_root="${repo_root}/.scratch/verify-bb-plugins/runs"
 bb_kit="${repo_root}/packages/bb-kit-core/src/bin/bin.ts"
 theme_id="plugin:monokai:bb-monokai"
+
+# A cold workspace instance clones bb and installs its dependencies, which is
+# minutes. A runtime on top of it is a dev-server start plus a plugin install.
+# Neither suits the 30s default, which only fits an instance already up.
+host_timeout="${VERIFY_HOST_TIMEOUT:-2400}"
+run_timeout="${VERIFY_RUN_TIMEOUT:-600}"
 
 fail() {
   printf 'verify-bb-plugins: %s\n' "$*" >&2
   exit 1
 }
 
+# bb-kit runs from source, from the repository root, and with the ambient bb
+# thread context cleared. Both matter for the host instance's identity: bb-kit
+# names an unnamed instance after BB_ENVIRONMENT_ID when a bb thread exports it,
+# and after the caller's Git workspace otherwise. Left alone, that is a fresh
+# 4.5 GB checkout per thread and per directory instead of the one every runtime
+# borrows.
 dev_instance() {
-  (cd "${repo_root}" && bun "${bb_kit}" dev-instance "$@")
+  local output status=0
+  output="$(cd "${repo_root}" && env -u BB_SERVER_URL \
+      -u BB_CLI \
+      -u BB_THREAD_ID \
+      -u BB_ENVIRONMENT_ID \
+      -u BB_THREAD_STORAGE \
+      -u BB_PROJECT_ID \
+    bun "${bb_kit}" dev-instance "$@")" || status=$?
+  if ((status != 0)); then
+    # A --json failure is an envelope on stdout. Every caller reads stdout
+    # through a command substitution, and set -e stops the script before that
+    # substitution reaches json_field, so the message would never be shown.
+    bun -e '
+      const text = await Bun.stdin.text();
+      let message = text.trim();
+      try {
+        message = JSON.parse(text).error?.message ?? message;
+      } catch {}
+      if (message) console.error(`verify-bb-plugins: ${message}`);
+    ' <<<"${output}"
+    return "${status}"
+  fi
+  printf '%s' "${output}"
 }
 
-app_url() {
-  local status
-  status="$(dev_instance status --json)"
-  bun -e '
-    const value = JSON.parse(await Bun.stdin.text());
-    process.stdout.write(String(value.result?.appUrl ?? ""));
-  ' <<<"${status}"
+# Read one field out of a bb-kit --json envelope. Progress goes to stderr, so
+# stdout is the envelope alone.
+json_field() {
+  local field="$1"
+  FIELD="${field}" bun -e '
+    const envelope = JSON.parse(await Bun.stdin.text());
+    if (envelope.ok !== true) {
+      throw new Error(envelope.error?.message ?? "bb-kit reported a failure");
+    }
+    const parts = process.env.FIELD.split(".");
+    let value = envelope.result;
+    for (const part of parts) value = value?.[part];
+    if (value === undefined || value === null) {
+      throw new Error(`bb-kit result has no ${process.env.FIELD}`);
+    }
+    process.stdout.write(String(value));
+  '
+}
+
+runtime_name_for() {
+  local run_id="$1" safe_id
+  safe_id="$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')"
+  safe_id="${safe_id#"${safe_id%%[!._-]*}"}"
+  printf 'verify-%s\n' "${safe_id:0:55}"
 }
 
 browser_session_for() {
-  local run_id="$1"
-  local safe_id
+  local run_id="$1" safe_id
   safe_id="$(printf '%s' "${run_id}" | tr -cs 'A-Za-z0-9._-' '-')"
   printf 'verify-bb-plugins-%s\n' "${safe_id}"
 }
 
-doctor() {
-  local status url settings plugins theme
-  status="$(dev_instance status --json)"
-  bun -e '
-    const value = JSON.parse(await Bun.stdin.text()).result;
-    if (!value?.running) throw new Error("managed dev instance is not running");
-    if (value.source !== "owned") throw new Error(`unsafe source: ${value.source ?? "missing"}`);
-  ' <<<"${status}"
-  url="$(app_url)"
-  [[ -n "${url}" ]] || fail "pinned app status has no App URL"
-  curl --fail --silent --show-error "${url}" >/dev/null || fail "pinned app did not answer at ${url}"
+# The run ID when one was passed, otherwise the one this shell is already
+# sourced into. Lets `doctor` be run bare in the middle of a session.
+resolve_run_id() {
+  local run_id="${1:-${RUN_ID:-}}"
+  [[ -n "${run_id}" ]] || fail "no run ID: pass one, or source the run's run.env first"
+  [[ "${run_id}" =~ ^[A-Za-z0-9._-]+$ ]] || fail "run ID may use letters, numbers, dot, underscore, and dash"
+  printf '%s\n' "${run_id}"
+}
 
-  settings="$(dev_instance exec -- settings show --json)"
+doctor() {
+  local run_id name status url shim settings plugins theme
+  run_id="$(resolve_run_id "${1:-}")"
+  name="$(runtime_name_for "${run_id}")"
+
+  status="$(dev_instance status "${name}" --json)" || fail "no bb runtime named ${name}"
+  [[ "$(json_field running <<<"${status}")" == "true" ]] || fail "runtime ${name} is not running"
+  [[ "$(json_field source <<<"${status}")" == "runtime" ]] || fail "${name} is not a runtime"
+  url="$(json_field appUrl <<<"${status}")"
+  curl --fail --silent --show-error "${url}" >/dev/null || fail "runtime ${name} did not answer at ${url}"
+  shim="$(dev_instance env "${name}" --json | json_field BB_CLI)"
+
+  settings="$(env BB_CLI="${shim}" "${shim}" settings show --json)"
   bun -e '
     const value = JSON.parse(await Bun.stdin.text());
     if (!String(value.dataDir ?? "").includes("/.bb-dev/")) {
@@ -54,7 +121,7 @@ doctor() {
     }
   ' <<<"${settings}"
 
-  plugins="$(dev_instance exec -- plugin list --json)"
+  plugins="$("${shim}" plugin list --json)"
   REPO_ROOT="${repo_root}" bun -e '
     import { join } from "node:path";
     import { workspacePlugins } from "./scripts/plugin-package.ts";
@@ -76,66 +143,136 @@ doctor() {
     if (failures.length) throw new Error(failures.join("\n"));
   ' <<<"${plugins}"
 
-  theme="$(dev_instance exec -- theme show --json)"
+  theme="$("${shim}" theme show --json)"
   grep -q "${theme_id}" <<<"${theme}" || fail "selected theme is not ${theme_id}"
 
-  printf 'doctor: pinned app %s is ready\n' "${url}"
+  printf 'doctor: %s at %s is ready\n' "${name}" "${url}"
+}
+
+# An instance whose data directory already holds plugin secrets, other than the
+# one being seeded. Any bb-kit instance of this workspace will do: they are all
+# the same user's dev instances of the same plugins.
+secret_donor() {
+  local target="$1" candidate
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" && "${candidate}" != "${target}" ]] || continue
+    if [[ -n "$(find "${candidate}/plugins" -mindepth 3 -maxdepth 3 -type f -path '*/secrets/*' -print -quit 2>/dev/null)" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done < <(dev_instance list --json | bun -e '
+    const envelope = JSON.parse(await Bun.stdin.text());
+    for (const row of envelope.result ?? []) {
+      if (row.dataDir) console.log(row.dataDir);
+    }
+  ')
+}
+
+# Copy the plugin secrets this instance is missing.
+#
+# bb keeps a secret plugin setting as a 0600 file at
+# <dataDir>/plugins/<id>/secrets/<key>. Every runtime starts on an empty data
+# directory, so a plugin that needs a key stays in needs-configuration and the
+# workspace readiness gate fails on it -- laminar's apiKey does exactly that.
+# Seeding before install works: bb's plugin install leaves an existing secret
+# file alone, and the baseline never resets a key the schema marks secret.
+#
+# The values are only ever copied file to file. Nothing reads one into the
+# shell, into an argument, or into a log. Only the key's path is reported.
+seed_plugin_secrets() {
+  local name="$1" target="$2" donor relative source_file id seeded="" installed
+  [[ -n "${target}" && -d "${target}" ]] || return 0
+  donor="$(secret_donor "${target}")"
+  [[ -n "${donor}" ]] || return 0
+  # Exactly plugins/<id>/secrets/<key>: a plugin setting the schema marks
+  # secret. Anything deeper is a plugin's own store, such as agent-proxy's
+  # generated keys, which each instance creates for itself.
+  while IFS= read -r -d '' source_file; do
+    relative="${source_file#"${donor}/"}"
+    if [[ ! -e "${target}/${relative}" ]]; then
+      mkdir -p "$(dirname "${target}/${relative}")"
+      install -m 600 "${source_file}" "${target}/${relative}"
+      id="${relative#plugins/}"
+      seeded+="${id%%/*}"$'\n'
+      printf 'seeded %s\n' "${relative}" >&2
+    fi
+  done < <(find "${donor}/plugins" -mindepth 3 -maxdepth 3 -type f -path '*/secrets/*' -print0 2>/dev/null)
+  [[ -n "${seeded}" ]] || return 0
+
+  # A plugin that is not installed yet reads the seeded file when the workspace
+  # command installs it. One that is already loaded read its settings at start,
+  # so it is still in needs-configuration and only a reload picks the key up.
+  installed="$(dev_instance exec ${name:+"${name}"} -- plugin list --json | bun -e '
+    const list = JSON.parse(await Bun.stdin.text()).plugins ?? [];
+    console.log(list.map((plugin) => plugin.id).join("\n"));
+  ')"
+  while IFS= read -r id; do
+    [[ -n "${id}" ]] || continue
+    grep -qxF "${id}" <<<"${installed}" || continue
+    dev_instance exec ${name:+"${name}"} -- plugin reload "${id}" --json >/dev/null
+    printf 'reloaded %s\n' "${id}" >&2
+  done < <(printf '%s' "${seeded}" | sort -u)
 }
 
 launch() {
-  local run_id="${1:-}"
-  [[ -n "${run_id}" ]] || fail "launch needs a run ID"
-  [[ "${run_id}" =~ ^[A-Za-z0-9._-]+$ ]] || fail "run ID may use letters, numbers, dot, underscore, and dash"
+  local run_id name host host_name revision runtime url run_dir evidence_dir session env_file
+  run_id="$(resolve_run_id "${1:-}")"
+  name="$(runtime_name_for "${run_id}")"
 
-  mkdir -p "${runs_root}"
-  if ! mkdir "${lock_dir}" 2>/dev/null; then
-    local owner="unknown"
-    [[ -f "${lock_dir}/run-id" ]] && owner="$(<"${lock_dir}/run-id")"
-    fail "run ${owner} owns the verification lock"
-  fi
-  printf '%s\n' "${run_id}" >"${lock_dir}/run-id"
-  trap 'rm -rf "${lock_dir}"' ERR INT TERM
+  # The workspace instance owns the checkout every run borrows. Starting it is
+  # near a no-op when it is already up, and its name and revision are what this
+  # run pins to, so the runtime always lands on a checkout that is already
+  # installed and built. Start it before configuring it, so its data directory
+  # exists to seed.
+  host="$(dev_instance start --json --timeout "${host_timeout}")"
+  host_name="$(json_field name <<<"${host}")"
+  revision="$(json_field revision <<<"${host}")"
+  seed_plugin_secrets "" "$(json_field dataDir <<<"${host}")"
+  dev_instance workspace --json --timeout "${host_timeout}" >/dev/null
 
-  (cd "${repo_root}" && bun run dev:instance -- --json >/dev/null)
-  doctor
+  # A runtime borrows the bb source, never another runtime's data directory, so
+  # it starts with an empty bb. The same workspace command installs the plugins
+  # and pins the baseline into it -- per run now, not per machine. It skips the
+  # builds, which the checkout owner already did.
+  runtime="$(dev_instance start --name "${name}" --revision "${revision}" --from "${host_name}" \
+    --json --timeout "${run_timeout}")"
+  seed_plugin_secrets "${name}" "$(json_field dataDir <<<"${runtime}")"
+  url="$(dev_instance workspace --name "${name}" --revision "${revision}" --from "${host_name}" \
+    --json --timeout "${run_timeout}" | json_field instance.appUrl)"
+  doctor "${run_id}"
 
-  local run_dir evidence_dir url session env_file
   run_dir="${runs_root}/${run_id}"
   evidence_dir="${run_dir}/evidence"
-  url="$(app_url)"
   session="$(browser_session_for "${run_id}")"
   mkdir -p "${evidence_dir}"
   env_file="${run_dir}/run.env"
   {
     printf 'export RUN_ID=%q\n' "${run_id}"
     printf 'export BB_APP_URL=%q\n' "${url}"
+    printf 'export BB_KIT_DEV_NAME=%q\n' "${name}"
+    printf 'export BB_CLI=%q\n' "$(dev_instance env "${name}" --json | json_field BB_CLI)"
     printf 'export BROWSER_SESSION=%q\n' "${session}"
     printf 'export ARTIFACT_DIR=%q\n' "${evidence_dir}"
   } >"${env_file}"
-  printf '%s\n' "${run_id}" >"${lock_dir}/run-id"
-  printf '%s\n' "${session}" >"${lock_dir}/browser-session"
-  trap - ERR INT TERM
 
-  printf 'run: %s\napp: %s\nsession: %s\nevidence: %s\n' \
-    "${run_id}" "${url}" "${session}" "${evidence_dir}"
+  printf 'run: %s\nruntime: %s\ncheckout owner: %s\napp: %s\nsession: %s\nevidence: %s\n' \
+    "${run_id}" "${name}" "${host_name}" "${url}" "${session}" "${evidence_dir}"
 }
 
 cleanup() {
-  local run_id="${1:-}"
-  [[ -n "${run_id}" ]] || fail "cleanup needs a run ID"
-  [[ -d "${lock_dir}" ]] || fail "no verification run owns the lock"
-  local owner session
-  owner="$(<"${lock_dir}/run-id")"
-  [[ "${owner}" == "${run_id}" ]] || fail "run ${owner} owns the verification lock"
-  session="$(<"${lock_dir}/browser-session")"
+  local run_id name session
+  run_id="$(resolve_run_id "${1:-}")"
+  name="$(runtime_name_for "${run_id}")"
+  session="$(browser_session_for "${run_id}")"
   agent-browser --session "${session}" close >/dev/null 2>&1 || true
-  rm -rf "${lock_dir}"
-  printf 'cleanup: closed %s and kept %s\n' "${session}" "${runs_root}/${run_id}/evidence"
+  dev_instance destroy "${name}" --timeout 300 >/dev/null
+  printf 'cleanup: destroyed %s, closed %s, kept %s\n' \
+    "${name}" "${session}" "${runs_root}/${run_id}/evidence"
 }
 
 case "${1:-}" in
   launch) launch "${2:-}" ;;
-  doctor) doctor ;;
+  doctor) doctor "${2:-}" ;;
   cleanup) cleanup "${2:-}" ;;
-  *) fail "use: control {launch <run-id>|doctor|cleanup <run-id>}" ;;
+  *) fail "use: control {launch <run-id>|doctor [run-id]|cleanup <run-id>}" ;;
 esac

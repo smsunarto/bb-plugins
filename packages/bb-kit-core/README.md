@@ -47,6 +47,7 @@ tests. `npx bb-kit add query|mutation|command <name>` grows the surface;
 | ---------------------------------------- | ----------- | ----------------------------------------------------- |
 | Prepare a plugin workspace               | Owned       | `bb-kit dev-instance workspace`                       |
 | Test plugins against another bb revision | Owned       | `bb-kit dev-instance workspace --revision <selector>` |
+| Give one task its own throwaway bb       | Runtime     | `bb-kit dev-instance workspace --name <name>`         |
 | Develop bb with uncommitted changes      | Attached    | `bb-kit dev-instance start --attach .`                |
 | Run a tool with instance routing         | Either      | `bb-kit dev-instance run -- <program>`                |
 
@@ -84,6 +85,46 @@ commits use the official repository unless `--repo` selects another one.
 
 Add `--desktop` to persist the desktop shell as desired runtime state. Add
 `--open` to open the app once, after the app health check passes.
+
+### Many runtimes on one checkout
+
+An owned instance is a checkout. It clones bb, installs the dependencies, builds
+the plugin SDK, and hands the rest to `scripts/bb-dev-app`. That is minutes and
+several gigabytes, and there is no reason to repeat it for a task that only
+needs a bb of its own.
+
+A runtime is the cheap half. It borrows an owned instance's checkout and starts
+only the dev stack, with its own instance id, data directory, port triple, shim,
+and logs. It never fetches, installs, builds, or writes to the checkout, so it
+comes up in seconds and several can run at once:
+
+```sh
+bb-kit dev-instance workspace --name review-1234
+```
+
+A named start borrows by default. bb-kit picks the first sibling instance that
+is prepared or running, sits on the same commit, and has its dependencies
+installed. Name one with `--from <instance>`, or refuse to borrow at all with
+`--owned`. An unnamed start never borrows: it is the workspace host that owns
+the checkout the runtimes share.
+
+`status` reports which instance a runtime borrowed. `destroy` removes its data
+directory, its logs, and its lease, and never the checkout.
+
+Two limits are deliberate. A runtime is web only, because the desktop shell
+reads build output the runtime does not own. A runtime also skips the plugin
+builds in `workspace`, because the checkout owner already ran them and the
+output is shared.
+
+#### What this bypasses
+
+`scripts/bb-dev-app` and bb's `pnpm dev` both derive the instance id, the data
+directory, and the port offset from the checkout's own path, so two stacks on
+one path would collide. bb-kit spawns the dev tasks itself and passes those
+three as environment instead. It asserts on every start that bb's
+`toDevProcessEnv` still exports the same set of keys it mirrors, and fails with
+`runtime_env_drift` when that moves, rather than starting a stack wired to a
+stale contract.
 
 To develop bb itself, attach the checkout that you are editing:
 

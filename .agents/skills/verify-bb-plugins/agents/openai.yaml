@@ -1,4 +1,4 @@
 interface:
   display_name: "Verify bb plugins"
-  short_description: "Drive the pinned bb app and capture user-path proof"
-  default_prompt: "Use $verify-bb-plugins to prove this plugin change in the pinned bb dev app."
+  short_description: "Drive a per-run bb app and capture user-path proof"
+  default_prompt: "Use $verify-bb-plugins to prove this plugin change in a bb dev app this run owns."

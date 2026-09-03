@@ -629,6 +629,15 @@ function parsePlan(value: unknown, legacy: boolean): InstancePlan {
     }
     return { ...common, source, revision: null, launcherName: null };
   }
+  if (source === "runtime") {
+    return {
+      ...common,
+      source,
+      revision: parseRevision(object["revision"]),
+      launcherName: stringField(object, "launcherName"),
+      sourceInstance: stringField(object, "sourceInstance"),
+    };
+  }
   invalid("plan source");
 }
 
