@@ -7,10 +7,14 @@ import {
   ArtboardIcon,
   BellIcon,
   ChatFeedbackIcon,
+  ComputerScreenShareIcon,
+  Doc01Icon,
+  KeyboardIcon,
   Layers01Icon,
   PanelLeftIcon,
   ServerStack01Icon,
   Settings01Icon,
+  SourceCodeIcon,
 } from "@hugeicons/core-free-icons";
 import { workspacePlugins } from "./plugin-package";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "../plugins/amp/src/amp-brand";
@@ -164,6 +168,10 @@ const customIcons = {
     name: "Amp (brand mark)",
     brand: { paths: AMP_LOGO_PATHS, viewBox: AMP_LOGO_VIEW_BOX },
   },
+  docs: {
+    name: "Doc",
+    nodes: Doc01Icon,
+  },
   dotfiles: {
     name: "Settings",
     nodes: Settings01Icon,
@@ -175,6 +183,18 @@ const customIcons = {
   notify: {
     name: "Bell",
     nodes: BellIcon,
+  },
+  novnc: {
+    name: "ComputerScreenShare",
+    nodes: ComputerScreenShareIcon,
+  },
+  "smart-embeds": {
+    name: "SourceCode",
+    nodes: SourceCodeIcon,
+  },
+  vimium: {
+    name: "Keyboard",
+    nodes: KeyboardIcon,
   },
   // Upstream t3sidebar, which this plugin was forked from, declares BB's named
   // "PanelLeft" icon; Hugeicons ships the same glyph, so the rename keeps that

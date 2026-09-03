@@ -30,7 +30,11 @@
     "name": "Vimium",
     "description": "Press f to label every clickable element with a hint, then type the hint to click it.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server/server.ts",
     "app": "./app/app.tsx",

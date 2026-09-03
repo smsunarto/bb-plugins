@@ -39,7 +39,11 @@
     "name": "Docs",
     "description": "Create and edit Markdown documents with the smsunarto Monokai reading theme.",
     "branding": {
-      "icon": "FileText"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

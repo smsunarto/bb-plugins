@@ -30,7 +30,11 @@
     "name": "NoVNC",
     "description": "Watch a thread's remote screen through NoVNC in a floating picture-in-picture panel.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server/server.ts",
     "app": "./app/app.tsx",
