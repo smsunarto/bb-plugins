@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import type { SentryPluginFailure } from "@bb-kit/sentry/node";
-import ampPlugin, { createAmpPlugin } from "../server.ts";
+import { sentryErrorReporter, type SentryPluginFailure } from "@bb-kit/sentry/node";
+import { createAmpPlugin } from "../server.ts";
 
 test("Amp enables scrubbed telemetry through its plugin setting", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "amp" });
+  // The default export only reports once `bb plugin build` has written
+  // dist/server.meta.json, which a source checkout (and CI) lacks. Inject a
+  // reporter so the test covers Amp's own wiring: handing bb to the reporter
+  // is what injects the opt-out setting.
+  const plugin = createAmpPlugin(sentryErrorReporter({ dsn: "https://key@localhost:1/1" }));
 
-  await ampPlugin(bb);
+  await plugin(bb);
   expect(harness.inspection.registrations.settingsDescriptors.telemetry).toMatchObject({
     type: "boolean",
     default: true,
