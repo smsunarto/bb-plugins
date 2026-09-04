@@ -27,24 +27,9 @@ function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
 export interface LifecycleApi {
   shelfFor(thread: PluginSidebarThread): ThreadShelf;
   /**
-   * Every thread the plugin has parked. Settling archives a thread in bb, so
-   * the list needs this to keep showing the ones it put away itself.
-   */
-  parkedThreadIds: ReadonlySet<string>;
-  /**
-   * The parked rows themselves, keyed by thread id.
-   *
-   * `parkedThreadIds` answers whether a thread already on screen is parked.
-   * This answers what the plugin knows about a thread that is not on screen at
-   * all, which is the only question a settled thread can be asked before
-   * `listSettledThreads` lands: settling archives it, so bb reports nothing and
-   * the row is the whole of what a fresh mount holds about it.
-   */
-  parkedRows: ReadonlyMap<string, ThreadLifecycleRow>;
-  /**
    * Whether the shelves are worth painting yet. True from the first render
-   * when a cached snapshot seeds them, and true once the first read settles
-   * either way — a FAILED read counts as ready on purpose, because a gate that
+   * when a cached snapshot seeds them, and true once the first read resolves
+   * or rejects — a FAILED read counts as ready on purpose, because a gate that
    * waits forever on a backend that is down leaves the sidebar permanently
    * blank, which is worse than any flicker.
    *
@@ -54,8 +39,6 @@ export interface LifecycleApi {
   shelvesReady: boolean;
   canPark(thread: PluginSidebarThread): boolean;
   wakeAtFor(thread: PluginSidebarThread): number | null;
-  settle(threadId: string): void;
-  unsettle(threadId: string): void;
   snooze(threadId: string, snoozedUntil: number): void;
   unsnooze(threadId: string): void;
 }
@@ -186,31 +169,21 @@ export function useLifecycle(): LifecycleApi {
     return () => clearTimeout(timer);
   }, [now, rows]);
 
-  // Hoisted out of the api object below, which the clock invalidates every
-  // minute: this set decides which archived threads stay visible, and a new
-  // one re-filters and re-sorts the entire list.
-  const parkedThreadIds = useMemo(() => new Set(rows.keys()), [rows]);
-
-  return useMemo<LifecycleApi>(() => {
-    // One read per mutation: the write publishes on the realtime channel, and
-    // that subscription already triggers a refresh for every client.
-    const mutate = async (method: "settle" | "unsettle" | "unsnooze", threadId: string) => {
-      await rpc.call(method, { threadId });
-    };
-    return {
+  // No read after a mutation: the write publishes on the realtime channel, and
+  // that subscription already triggers a refresh for every client.
+  return useMemo<LifecycleApi>(
+    () => ({
       shelfFor: (thread) => resolveShelf(rows.get(thread.id), signalsFor(thread), now),
-      // A row only ever exists for a parked thread, so its keys are the set.
-      parkedThreadIds,
-      parkedRows: rows,
       shelvesReady,
       canPark: (thread) => canPark(signalsFor(thread)),
       wakeAtFor: (thread) => rows.get(thread.id)?.snoozedUntil ?? null,
-      settle: (threadId) => void mutate("settle", threadId),
-      unsettle: (threadId) => void mutate("unsettle", threadId),
-      unsnooze: (threadId) => void mutate("unsnooze", threadId),
+      unsnooze: (threadId) => {
+        void rpc.call("unsnooze", { threadId });
+      },
       snooze: (threadId, snoozedUntil) => {
         void rpc.call("snooze", { threadId, snoozedUntil });
       },
-    };
-  }, [now, parkedThreadIds, rows, rpc, shelvesReady]);
+    }),
+    [now, rows, rpc, shelvesReady],
+  );
 }

@@ -124,22 +124,6 @@ export function filterByProject(
   return threads.filter((thread) => thread.projectId === projectId);
 }
 
-/**
- * Archived threads never belong in the inbox — except the ones this plugin
- * parked, which it archives itself.
- *
- * Settling a thread archives it in bb, so leaving the flag alone to decide
- * visibility would empty the settled shelf the instant anything landed on it.
- * A parked row is the plugin saying "I put it there", and that outranks the
- * archive it set.
- */
-export function visibleInboxThreads(
-  threads: readonly PluginSidebarThread[],
-  parkedThreadIds: ReadonlySet<string>,
-): PluginSidebarThread[] {
-  return threads.filter((thread) => !thread.isArchived || parkedThreadIds.has(thread.id));
-}
-
 /** Pinned first (they are the user's own ordering), then the static sort. */
 export function partitionPinned(threads: readonly PluginSidebarThread[]): {
   pinned: PluginSidebarThread[];

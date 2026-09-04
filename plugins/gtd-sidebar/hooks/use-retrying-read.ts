@@ -4,13 +4,12 @@ import { refreshRetryDelayMs } from "@/lib/lifecycle";
 /**
  * A list read that comes back on its own after a rejection.
  *
- * Both of this plugin's list reads recover from a `lifecycle` publish or from a
- * socket re-connection, and a plugin-RPC failure produces neither: `rpc.call`
- * rejects on any non-ok response, the realtime channel it travels beside stays
- * up, and the next publish only comes from a mutation the user may never make.
- * So one bad answer at mount time strands that mount — the settled shelf stays
- * empty and the lifecycle rows stay a guess that never becomes a fact — with
- * nothing on screen saying so.
+ * The lifecycle read recovers from a `lifecycle` publish or from a socket
+ * re-connection, and a plugin-RPC failure produces neither: `rpc.call` rejects
+ * on any non-ok response, the realtime channel it travels beside stays up, and
+ * the next publish only comes from a mutation the user may never make. So one
+ * bad answer at mount time strands that mount — the lifecycle rows stay a
+ * guess that never becomes a fact — with nothing on screen saying so.
  *
  * The attempt count belongs to the chain rather than to the hook: a call made
  * from anywhere else starts its own, so a publish or a reconnect always gets a

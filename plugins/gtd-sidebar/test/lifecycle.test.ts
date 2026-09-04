@@ -8,7 +8,6 @@ import {
   resolveSnoozePresets,
   rowsMatch,
   snoozeWakeLabel,
-  threadEventWakesSettledRow,
   MAX_TIMEOUT_MS,
   REFRESH_RETRY_DELAYS_MS,
   type ThreadActivitySignals,
@@ -24,7 +23,6 @@ const quiet: ThreadActivitySignals = {
 
 const row = (overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow => ({
   threadId: "thr_1",
-  settledAt: null,
   snoozedUntil: null,
   snoozedAt: null,
   ...overrides,
@@ -51,29 +49,8 @@ describe("resolveShelf", () => {
     assert.equal(resolveShelf(undefined, quiet, 1_000), "active");
   });
 
-  it("settles a parked, quiet thread", () => {
-    assert.equal(resolveShelf(row({ settledAt: 500 }), quiet, 1_000), "settled");
-  });
-
-  it("brings a settled thread back when it starts working", () => {
-    assert.equal(
-      resolveShelf(row({ settledAt: 500 }), { ...quiet, isWorking: true }, 1_000),
-      "active",
-    );
-  });
-
-  it("brings a settled thread back when it asks a question", () => {
-    assert.equal(
-      resolveShelf(row({ settledAt: 500 }), { ...quiet, hasPendingInteraction: true }, 1_000),
-      "active",
-    );
-  });
-
-  it("un-settles on new attention after the settle", () => {
-    assert.equal(
-      resolveShelf(row({ settledAt: 500 }), { ...quiet, latestAttentionAt: 900 }, 1_000),
-      "active",
-    );
+  it("keeps a row with no snooze active", () => {
+    assert.equal(resolveShelf(row(), quiet, 1_000), "active");
   });
 
   it("keeps a snoozed thread hidden until its wake time", () => {
@@ -120,24 +97,6 @@ describe("resolveShelf", () => {
   });
 });
 
-describe("threadEventWakesSettledRow", () => {
-  it("ignores a stale event that predates the settle", () => {
-    assert.equal(threadEventWakesSettledRow(row({ settledAt: 500 }), 499), false);
-    assert.equal(threadEventWakesSettledRow(row({ settledAt: 500 }), 500), false);
-  });
-
-  it("wakes a settled thread after a newer event", () => {
-    assert.equal(threadEventWakesSettledRow(row({ settledAt: 500 }), 501), true);
-  });
-
-  it("ignores a snoozed row", () => {
-    assert.equal(
-      threadEventWakesSettledRow(row({ snoozedUntil: 900, snoozedAt: 500 }), 1_000),
-      false,
-    );
-  });
-});
-
 describe("rowsMatch", () => {
   const asMap = (rows: readonly ThreadLifecycleRow[]) =>
     new Map(rows.map((entry) => [entry.threadId, entry]));
@@ -146,14 +105,17 @@ describe("rowsMatch", () => {
   // publish any window makes afterwards. Recognising that is what keeps a
   // no-op refresh from re-partitioning the whole sidebar.
   it("matches a list that says what the rows already say", () => {
-    const rows = [row({ threadId: "a", settledAt: 500 }), row({ threadId: "b" })];
+    const rows = [
+      row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
+      row({ threadId: "b" }),
+    ];
     assert.equal(rowsMatch(asMap(rows), [...rows].reverse()), true);
   });
 
   it("notices a timestamp that moved", () => {
     assert.equal(
-      rowsMatch(asMap([row({ threadId: "a", settledAt: 500 })]), [
-        row({ threadId: "a", settledAt: 900 }),
+      rowsMatch(asMap([row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })]), [
+        row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 900 }),
       ]),
       false,
     );

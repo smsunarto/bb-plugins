@@ -1,5 +1,5 @@
 /**
- * The settled / snoozed lifecycle, as pure functions over stored rows.
+ * The snooze lifecycle, as pure functions over stored rows.
  *
  * This state lives in the PLUGIN's own database, never on bb's thread. That
  * keeps a plugin concept out of bb's schema and out of the host-daemon
@@ -25,32 +25,10 @@ export function isThreadWorking(thread: PluginSidebarThread): boolean {
 
 export interface ThreadLifecycleRow {
   threadId: string;
-  /** When the user settled it; null when it is active. */
-  settledAt: number | null;
   /** Wake time for a snooze; null when it is not snoozed. */
   snoozedUntil: number | null;
   /** When the snooze was set — used to detect activity since. */
   snoozedAt: number | null;
-}
-
-/**
- * The ids a settle's archive took, read back from the store.
- *
- * bb's archive cascades to child threads, so un-settling has to give back more
- * than the one id the user acted on. Rows written before that was recorded
- * hold nothing, and a JSON column is only as good as what wrote it — both
- * cases return an empty list, and the caller falls back to the thread's own
- * id, which is exactly what the old behaviour did.
- */
-export function parseArchivedThreadIds(value: string | null): string[] {
-  if (value === null) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((id): id is string => typeof id === "string");
-  } catch {
-    return [];
-  }
 }
 
 /** The activity signals that outrank a user's parking decision. */
@@ -63,7 +41,7 @@ export interface ThreadActivitySignals {
   latestAttentionAt: number;
 }
 
-export type ThreadShelf = "active" | "snoozed" | "settled";
+export type ThreadShelf = "active" | "snoozed";
 
 /**
  * Whether a thread may be parked at all.
@@ -80,50 +58,22 @@ export function canPark(signals: ThreadActivitySignals): boolean {
 /**
  * Which shelf a thread belongs on right now.
  *
- * Order matters. Live work and a raised hand always win, so a parked thread
- * that starts working or asks a question comes straight back. Then snooze,
- * because a wake time is a stronger statement than a settle. Then settled.
+ * Live work and a raised hand always win, so a snoozed thread that starts
+ * working or asks a question comes straight back.
  */
 export function resolveShelf(
   row: ThreadLifecycleRow | undefined,
   signals: ThreadActivitySignals,
   now: number,
 ): ThreadShelf {
-  if (row === undefined) return "active";
+  if (row === undefined || row.snoozedUntil === null) return "active";
   if (!canPark(signals)) return "active";
 
-  if (row.snoozedUntil !== null) {
-    // A timer that has elapsed wakes the thread; so does anything that
-    // happened after the snooze was set.
-    const wokeOnTimer = row.snoozedUntil <= now;
-    const wokeOnActivity = row.snoozedAt !== null && signals.latestAttentionAt > row.snoozedAt;
-    if (!wokeOnTimer && !wokeOnActivity) return "snoozed";
-    return "active";
-  }
-
-  if (row.settledAt !== null) {
-    // New attention since the settle un-settles it: the thread has more to
-    // say than it did when the user filed it away.
-    if (signals.latestAttentionAt > row.settledAt) return "active";
-    return "settled";
-  }
-
-  return "active";
-}
-
-/**
- * Whether an authoritative thread event happened after this settle.
- *
- * The backend owns this decision. A browser can hold a stale sidebar snapshot,
- * so letting every open client reconcile live work would let one old window
- * undo a settle another window just wrote. The event timestamp and settle
- * timestamp come from the same server clock.
- */
-export function threadEventWakesSettledRow(
-  row: ThreadLifecycleRow,
-  eventUpdatedAt: number,
-): boolean {
-  return row.settledAt !== null && eventUpdatedAt > row.settledAt;
+  // A timer that has elapsed wakes the thread; so does anything that
+  // happened after the snooze was set.
+  const wokeOnTimer = row.snoozedUntil <= now;
+  const wokeOnActivity = row.snoozedAt !== null && signals.latestAttentionAt > row.snoozedAt;
+  return wokeOnTimer || wokeOnActivity ? "active" : "snoozed";
 }
 
 /**
@@ -131,9 +81,8 @@ export function threadEventWakesSettledRow(
  *
  * Once the shelves are seeded from a cache, most responses agree with what is
  * already rendered — the mount read, and every realtime publish any window
- * makes. Swapping the map in anyway would hand out a new `parkedThreadIds`
- * set, re-partition and re-sort every thread, and re-run the reconcile effect,
- * all to arrive back where the screen already was.
+ * makes. Swapping the map in anyway would re-partition and re-sort every
+ * thread, all to arrive back where the screen already was.
  */
 export function rowsMatch(
   current: ReadonlyMap<string, ThreadLifecycleRow>,
@@ -144,7 +93,6 @@ export function rowsMatch(
     const existing = current.get(row.threadId);
     return (
       existing !== undefined &&
-      existing.settledAt === row.settledAt &&
       existing.snoozedUntil === row.snoozedUntil &&
       existing.snoozedAt === row.snoozedAt
     );

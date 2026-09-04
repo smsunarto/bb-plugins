@@ -88,11 +88,11 @@ export function ThreadCard({
     setRead: (read) => void actions.setRead(thread.id, read),
     setPinned: (pinned) => void actions.setPinned(thread.id, pinned),
     renameThread: () => void renameThread(),
-    archive: () => actions.archive(thread.id),
     requestDelete: () => actions.requestDelete(thread.id),
   });
   const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
   const settleAction = findThreadAction(plan, "settle");
+  const hasParkButtons = snoozeAction !== undefined || settleAction !== undefined;
   const [isMenuOpen, setMenuOpen] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
@@ -214,22 +214,26 @@ export function ThreadCard({
             </span>
             {/* Status at rest, park actions on hover. Only the status yields,
                 so the title never shifts. */}
-            {!isCompactViewport && snoozeAction !== undefined && settleAction !== undefined ? (
+            {!isCompactViewport && hasParkButtons ? (
               <span className="pointer-events-auto hidden items-center gap-0.5 group-hover/card:flex">
-                <ParkButton
-                  label={snoozeAction.label}
-                  icon="Clock"
-                  onActivate={snoozeAction.execute}
-                />
-                <ParkButton
-                  label={settleAction.label}
-                  icon="Check"
-                  onActivate={settleAction.execute}
-                />
+                {snoozeAction !== undefined ? (
+                  <ParkButton
+                    label={snoozeAction.label}
+                    icon="Clock"
+                    onActivate={snoozeAction.execute}
+                  />
+                ) : null}
+                {settleAction !== undefined ? (
+                  <ParkButton
+                    label={settleAction.label}
+                    icon="Check"
+                    onActivate={settleAction.execute}
+                  />
+                ) : null}
               </span>
             ) : null}
             {!isCompactViewport ? (
-              <span className={cn(STATUS_SLOT_CLASS, canPark && "group-hover/card:hidden")}>
+              <span className={cn(STATUS_SLOT_CLASS, hasParkButtons && "group-hover/card:hidden")}>
                 <StatusOrTime thread={thread} now={now} />
               </span>
             ) : hasStatusGlyph(thread.indicator) ? (

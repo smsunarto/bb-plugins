@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -21,8 +21,7 @@ import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle } from "@/hooks/use-lifecycle";
-import { useSettledThreads } from "@/hooks/use-settled-threads";
-import { mergeSettledThreads, pendingSettledCount } from "@/lib/settled-threads";
+import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
   filterByProject,
@@ -32,7 +31,6 @@ import {
   partitionPinned,
   searchThreadsByTitle,
   sortByLatestAttentionDescending,
-  visibleInboxThreads,
 } from "@/lib/inbox";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 import { resolveSidebarBranchLabel } from "@/lib/gitbutler";
@@ -58,26 +56,23 @@ export function ThreadInbox({
   onNavigate,
   searchQuery,
 }: PluginThreadListProps) {
-  const { status, threads: hostThreads, projects } = useSidebarThreads();
+  const { status, threads, projects } = useSidebarThreads();
   const threadActions = useSidebarThreadActions();
+  // The palette's settle row archives through this same host action, and a
+  // mounted list is the only place the action exists.
+  useEffect(() => {
+    publishSidebarActions(threadActions);
+    return () => forgetSidebarActions(threadActions);
+  }, [threadActions]);
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   // One clock for every card in a render, quantized to the minute so the
-  // labels do not disagree and do not churn on unrelated re-renders. It is
-  // read first because the settled shelf's day-long window is cut against it.
+  // labels do not disagree and do not churn on unrelated re-renders.
   const [nowMinute, setNowMinute] = useState(() => Math.floor(Date.now() / 60_000));
   useEffect(() => {
     const timer = setInterval(() => setNowMinute(Math.floor(Date.now() / 60_000)), 60_000);
     return () => clearInterval(timer);
   }, []);
   const now = nowMinute * 60_000;
-  // The host reports no archived thread, and settling archives one. Everything
-  // below — the shelves, the un-settle rule, search, the project scope — reads
-  // this merged list so the settled shelf has rows to draw at all.
-  const { threads: settledThreads, rowsPending: settledRowsPending } = useSettledThreads(now);
-  const threads = useMemo(
-    () => mergeSettledThreads(hostThreads, settledThreads),
-    [hostThreads, settledThreads],
-  );
   const lifecycle = useLifecycle();
   // Seeded from the same cache the shelves use, and for the same reason: a
   // remount would otherwise draw every glyph from a fallback and swap it a
@@ -168,31 +163,21 @@ export function ThreadInbox({
     };
   }, [rpc]);
   const [showSnoozed, setShowSnoozed] = useState(false);
-  const [showSettled, setShowSettled] = useState(false);
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects],
   );
 
-  const { pinned, nextAction, waiting, snoozed, settled } = useMemo(() => {
-    const scoped = filterByProject(
-      // Settling archives the thread in bb, so the parked set is what keeps
-      // the settled shelf from filtering itself away.
-      visibleInboxThreads(threads, lifecycle.parkedThreadIds),
-      scope === ALL_PROJECTS ? null : scope,
-    );
+  const { pinned, nextAction, waiting, snoozed } = useMemo(() => {
+    const scoped = filterByProject(threads, scope === ALL_PROJECTS ? null : scope);
     // Children live in their parent's header chip instead of the flat list;
     // an orphan whose parent is not on screen stays here.
     const matched = searchThreadsByTitle(hideChildrenOfVisibleParents(scoped), searchQuery);
     const active: typeof matched = [];
     const onSnoozeShelf: typeof matched = [];
-    const onSettledShelf: typeof matched = [];
     for (const thread of matched) {
-      const shelf = lifecycle.shelfFor(thread);
-      if (shelf === "snoozed") onSnoozeShelf.push(thread);
-      else if (shelf === "settled") onSettledShelf.push(thread);
-      else active.push(thread);
+      (lifecycle.shelfFor(thread) === "snoozed" ? onSnoozeShelf : active).push(thread);
     }
     const split = partitionPinned(active);
     const activeSections = partitionActiveSections(split.inbox);
@@ -200,54 +185,35 @@ export function ThreadInbox({
       pinned: sortByLatestAttentionDescending(split.pinned),
       ...activeSections,
       snoozed: sortByLatestAttentionDescending(onSnoozeShelf),
-      settled: sortByLatestAttentionDescending(onSettledShelf),
     };
   }, [lifecycle, scope, searchQuery, threads]);
 
-  // The settled shelf's rows arrive on a second and slower read, while the
-  // lifecycle rows naming those same threads are already warm. Counting them is
-  // what lets the collapsed header draw itself on the first frame instead of
-  // popping in a round trip late — and, because the total below is what decides
-  // the empty state, it is also the only thing standing between a user whose
-  // threads are all settled and a "No threads yet" that is simply false.
-  //
-  // Only while that read still owes an answer. Once one has resolved, a row it
-  // did not bring back is a row it CANNOT bring back — a thread deleted while
-  // the plugin was stopped, or one sitting past the backend's archived-listing
-  // cap — and counting those past the round trip would leave a header standing
-  // over a list nothing will ever fill.
-  //
-  // A search or a project scope suppresses it. The count is global and knows
-  // neither a title nor a project, so drawing it under a filter would claim
-  // matches this frame cannot back up; falling to zero there leaves the filter
-  // behaving exactly as it did before.
-  const pendingSettled = useMemo(() => {
-    if (!settledRowsPending) return 0;
-    if (searchQuery.trim().length > 0 || scope !== ALL_PROJECTS) return 0;
-    return pendingSettledCount(
-      lifecycle.parkedRows.values(),
-      new Set(threads.map((thread) => thread.id)),
-      now,
-    );
-  }, [lifecycle.parkedRows, now, scope, searchQuery, settledRowsPending, threads]);
-
-  const shelvedTotal =
-    pinned.length +
-    nextAction.length +
-    waiting.length +
-    snoozed.length +
-    settled.length +
-    pendingSettled;
+  const shelvedTotal = pinned.length + nextAction.length + waiting.length + snoozed.length;
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
 
+  // bb's archive sends the viewer to the compose screen once the mutation
+  // resolves. Route changes commit inside a React transition, so against a
+  // local server that lands before the neighbour's route does and wins. The
+  // neighbour is therefore opened twice if need be: eagerly, and again from
+  // this effect once the view has left the settled thread for nothing.
+  const pendingAdvanceRef = useRef<{ settledThreadId: string; nextThreadId: string } | null>(null);
+  useEffect(() => {
+    const pending = pendingAdvanceRef.current;
+    if (pending === null || activeThreadId === pending.settledThreadId) return;
+    pendingAdvanceRef.current = null;
+    if (activeThreadId === null) threadActions.open(pending.nextThreadId);
+  }, [activeThreadId, threadActions]);
+
   const settleAndAdvance = (threadId: string, sectionThreads: readonly PluginSidebarThread[]) => {
-    lifecycle.settle(threadId);
     const nextThreadId = nextThreadIdAfterSettle(sectionThreads, threadId, activeThreadId);
-    if (nextThreadId === null) return;
-    threadActions.open(nextThreadId);
-    onNavigate();
+    if (nextThreadId !== null) {
+      pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId };
+      threadActions.open(nextThreadId);
+      onNavigate();
+    }
+    threadActions.archive(threadId);
   };
 
   return (
@@ -301,22 +267,7 @@ export function ThreadInbox({
             it is reached whenever nothing seeded the shelves: a first-ever
             run, a cleared origin, or any browser with web storage switched
             off or partitioned, where the seed misses on every page load.
-            `shelvesReady`'s own deadline is behind all of them.
-
-            There is deliberately no second gate for the settled rows. The
-            shelves are ready by then, so waiting on the slower read would blank
-            pinned and active sections, and snoozed — every one of them already
-            in hand — to protect one line at the bottom, and any wait bounded
-            enough not to hang the sidebar ends by opening on the same false
-            empty state it postponed. `shelvedTotal` counts the settled rows
-            still in flight instead. That closes this branch outright on a
-            cache HIT: the rows are already there, so a user whose threads are
-            all settled has a non-zero total from the first frame. On a MISS it
-            only shortens the exposure — there is nothing to count, so once
-            `SHELF_GATE_MS` gives up on a `listLifecycle` still in flight the
-            branch is reachable again and says "No threads yet" until that read
-            lands. Nothing short of the seed can close it there: on a cold
-            origin the plugin knows nothing about this user at all. */}
+            `shelvesReady`'s own deadline is behind all of them. */}
         {status === "loading" ? null : status === "error" ? (
           // `output` is for calculation results; a polite live region for a
           // status message is exactly what `role="status"` is for.
@@ -411,20 +362,6 @@ export function ThreadInbox({
               threads={snoozed}
               expanded={showSnoozed}
               onToggle={() => setShowSnoozed((open) => !open)}
-              shelf="snoozed"
-              activeThreadId={activeThreadId}
-              lifecycle={lifecycle}
-              isCompactViewport={isCompactViewport}
-              onNavigate={onNavigate}
-              now={now}
-            />
-            <ParkedShelf
-              label="Settled"
-              threads={settled}
-              pendingCount={pendingSettled}
-              expanded={showSettled}
-              onToggle={() => setShowSettled((open) => !open)}
-              shelf="settled"
               activeThreadId={activeThreadId}
               lifecycle={lifecycle}
               isCompactViewport={isCompactViewport}
@@ -439,19 +376,15 @@ export function ThreadInbox({
 }
 
 /**
- * A collapsed shelf of parked threads. The header stays while anything is
- * parked — the count is the whole footprint when collapsed — and the shelf
- * vanishes entirely at zero. A thread whose row has not arrived counts as
- * parked: this shelf is the only place it can be, and a header that turned up a
- * round trip later would be the flicker the count exists to remove.
+ * A collapsed shelf of snoozed threads. The header stays while anything is
+ * snoozed — the count is the whole footprint when collapsed — and the shelf
+ * vanishes entirely at zero.
  */
 function ParkedShelf({
   label,
   threads,
-  pendingCount = 0,
   expanded,
   onToggle,
-  shelf,
   activeThreadId,
   lifecycle,
   isCompactViewport,
@@ -460,23 +393,8 @@ function ParkedShelf({
 }: {
   label: string;
   threads: readonly PluginSidebarThread[];
-  /**
-   * Threads this shelf owns whose rows have not arrived yet. Only the settled
-   * shelf has a second, slower source to wait on, so only it passes one, and it
-   * falls to zero the moment that read answers — with the rows, or without the
-   * ones it turns out it cannot resolve. Expanding inside that window draws a
-   * header over an empty list, costing one line of nothing and a second click.
-   *
-   * "That window" is a round trip only while the read is answering. A backend
-   * that cannot list archived threads at all never answers, and the header then
-   * stands over an empty list for as long as the rows stay inside the settled
-   * window. That is the deliberate direction: the alternative is telling a user
-   * whose threads are all settled that they have none.
-   */
-  pendingCount?: number;
   expanded: boolean;
   onToggle: () => void;
-  shelf: "snoozed" | "settled";
   activeThreadId: string | null;
   lifecycle: ReturnType<typeof useLifecycle>;
   isCompactViewport: boolean;
@@ -485,7 +403,7 @@ function ParkedShelf({
    * seeded first paint could now disagree with. */
   now: number;
 }) {
-  const count = threads.length + pendingCount;
+  const count = threads.length;
   if (count === 0) return null;
   return (
     <section aria-label={label}>
@@ -529,14 +447,11 @@ function ParkedShelf({
               key={thread.id}
               thread={thread}
               isActive={thread.id === activeThreadId}
-              shelf={shelf}
               wakeAt={lifecycle.wakeAtFor(thread)}
               now={now}
               isCompactViewport={isCompactViewport}
               onNavigate={onNavigate}
-              onRestore={() =>
-                shelf === "snoozed" ? lifecycle.unsnooze(thread.id) : lifecycle.unsettle(thread.id)
-              }
+              onRestore={() => lifecycle.unsnooze(thread.id)}
             />
           ))}
         </ul>

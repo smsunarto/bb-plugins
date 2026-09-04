@@ -21,7 +21,6 @@ import type { ThreadLifecycleRow } from "../lib/lifecycle.ts";
 
 const row = (overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow => ({
   threadId: "thr_1",
-  settledAt: null,
   snoozedUntil: null,
   snoozedAt: null,
   ...overrides,
@@ -63,12 +62,9 @@ describe("decodeWarmStartRows", () => {
   // Newest park first, because that is the order the cap keeps. Order is not
   // load-bearing anywhere else: the hook rebuilds a Map from these.
   it("round-trips what encodeWarmStartRows wrote", () => {
-    const settled = row({ threadId: "a", settledAt: 500 });
-    const snoozed = row({ threadId: "b", snoozedUntil: 9_000, snoozedAt: 700 });
-    assert.deepEqual(decodeWarmStartRows(encodeWarmStartRows([settled, snoozed])), [
-      snoozed,
-      settled,
-    ]);
+    const older = row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 });
+    const newer = row({ threadId: "b", snoozedUntil: 9_000, snoozedAt: 700 });
+    assert.deepEqual(decodeWarmStartRows(encodeWarmStartRows([older, newer])), [newer, older]);
   });
 
   it("reads nothing stored as a miss", () => {
@@ -95,7 +91,7 @@ describe("decodeWarmStartRows", () => {
   it("rejects a row without a usable thread id", () => {
     assert.equal(decodeWarmStartRows(`[{"threadId":7}]`), null);
     assert.equal(decodeWarmStartRows(`[{"threadId":"  "}]`), null);
-    assert.equal(decodeWarmStartRows(`[{"settledAt":500}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"snoozedAt":500}]`), null);
   });
 
   it("rejects an entry that is not an object", () => {
@@ -105,10 +101,10 @@ describe("decodeWarmStartRows", () => {
   });
 
   it("rejects a timestamp the wire could not have produced", () => {
-    assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":0}]`), null);
-    assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":-1}]`), null);
-    assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":1.5}]`), null);
-    assert.equal(decodeWarmStartRows(`[{"threadId":"a","settledAt":"500"}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","snoozedAt":0}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","snoozedAt":-1}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","snoozedAt":1.5}]`), null);
+    assert.equal(decodeWarmStartRows(`[{"threadId":"a","snoozedAt":"500"}]`), null);
   });
 
   // `1e999` parses to Infinity, which passes `typeof x === "number"` and then
@@ -124,12 +120,20 @@ describe("decodeWarmStartRows", () => {
     assert.deepEqual(decodeWarmStartRows(`[{"threadId":"a"}]`), [row({ threadId: "a" })]);
   });
 
-  // Half-accepting is the failure that hurts: settling archives the thread in
-  // bb, so a dropped row does not make its thread read active, it makes the
-  // thread disappear from the sidebar entirely.
+  // Rows written before settle became bb's archive carry a `settledAt`. The
+  // key is unchanged because such a row decodes into one with no snooze, which
+  // the shelves read as active until the mount read replaces it.
+  it("ignores a settledAt an older version wrote", () => {
+    assert.deepEqual(decodeWarmStartRows(`[{"threadId":"a","settledAt":500}]`), [
+      row({ threadId: "a" }),
+    ]);
+  });
+
+  // A half-accepted cache claims to know the shelves and is wrong about them;
+  // a miss simply waits for the read.
   it("rejects the whole payload when one row is bad", () => {
     assert.equal(
-      decodeWarmStartRows(`[{"threadId":"a","settledAt":500},{"threadId":"b","settledAt":true}]`),
+      decodeWarmStartRows(`[{"threadId":"a","snoozedAt":500},{"threadId":"b","snoozedAt":true}]`),
       null,
     );
   });
@@ -138,7 +142,7 @@ describe("decodeWarmStartRows", () => {
   // shape only something other than this plugin can have written.
   it("rejects more rows than the encoder would ever write", () => {
     const rows = Array.from({ length: MAX_WARM_START_ROWS + 1 }, (_, index) =>
-      row({ threadId: `thr_${index}`, settledAt: index + 1 }),
+      row({ threadId: `thr_${index}`, snoozedUntil: 9_000_000, snoozedAt: index + 1 }),
     );
     assert.equal(decodeWarmStartRows(JSON.stringify(rows)), null);
     assert.notEqual(decodeWarmStartRows(JSON.stringify(rows.slice(0, MAX_WARM_START_ROWS))), null);
@@ -155,12 +159,12 @@ describe("decodeWarmStartRows", () => {
 describe("encodeWarmStartRows", () => {
   it("writes an array, which is the only shape that survives the trip", () => {
     assert.equal(
-      encodeWarmStartRows([row({ threadId: "a", settledAt: 500 })]),
-      `[{"threadId":"a","settledAt":500,"snoozedUntil":null,"snoozedAt":null}]`,
+      encodeWarmStartRows([row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })]),
+      `[{"threadId":"a","snoozedUntil":9000,"snoozedAt":500}]`,
     );
   });
 
-  it("carries only the four fields a row is made of", () => {
+  it("carries only the three fields a row is made of", () => {
     const encoded = encodeWarmStartRows([
       { ...row({ threadId: "a" }), extra: "leak" } as ThreadLifecycleRow,
     ]);
@@ -172,7 +176,7 @@ describe("encodeWarmStartRows", () => {
   // does not warm-start and flickers exactly as it did before this cache.
   it("caps the entry and keeps the newest parks", () => {
     const rows = Array.from({ length: MAX_WARM_START_ROWS + 2 }, (_, index) =>
-      row({ threadId: `thr_${index}`, settledAt: index + 1 }),
+      row({ threadId: `thr_${index}`, snoozedUntil: 9_000_000, snoozedAt: index + 1 }),
     );
     const kept = decodeWarmStartRows(encodeWarmStartRows(rows));
     assert.equal(kept?.length, MAX_WARM_START_ROWS);
@@ -180,23 +184,21 @@ describe("encodeWarmStartRows", () => {
   });
 
   // A wake time is absolute and in the future — "Next week" is about now+7d —
-  // so ranking on it would put a month-old snooze above a settle made seconds
-  // ago, in the one order whose whole job is to say which park is newest.
-  it("ranks a park by when it was made, not by when a snooze ends", () => {
-    const settled = row({ threadId: "a", settledAt: 1_000 });
-    const snoozed = row({ threadId: "b", snoozedUntil: 9_000, snoozedAt: 500 });
-    const kept = decodeWarmStartRows(encodeWarmStartRows([snoozed, settled]));
+  // so ranking on it would put a month-old snooze above one made seconds ago,
+  // in the one order whose whole job is to say which snooze is newest.
+  it("ranks a snooze by when it was made, not by when it ends", () => {
+    const shortRecent = row({ threadId: "a", snoozedUntil: 2_000, snoozedAt: 1_000 });
+    const longOld = row({ threadId: "b", snoozedUntil: 9_000, snoozedAt: 500 });
+    const kept = decodeWarmStartRows(encodeWarmStartRows([longOld, shortRecent]));
     assert.deepEqual(
       kept?.map((entry) => entry.threadId),
       ["a", "b"],
     );
   });
 
-  // Where that ordering stops being a quibble. Ranked on the wake time, a full
-  // cap of long snoozes evicts every settled row, `pendingSettledCount` reads
-  // zero on every warm start, and the Settled header goes back to popping in a
-  // round trip late — for the one user with enough parked state to reach the cap.
-  it("keeps a fresh settle over a full cap of long snoozes", () => {
+  // Where that ordering stops being a quibble: ranked on the wake time, a full
+  // cap of long snoozes would evict the one the user just made.
+  it("keeps a fresh short snooze over a full cap of long snoozes", () => {
     const snoozes = Array.from({ length: MAX_WARM_START_ROWS }, (_, index) =>
       row({
         threadId: `snoozed_${index}`,
@@ -205,10 +207,13 @@ describe("encodeWarmStartRows", () => {
       }),
     );
     const kept = decodeWarmStartRows(
-      encodeWarmStartRows([...snoozes, row({ threadId: "settled", settledAt: 8_000 })]),
+      encodeWarmStartRows([
+        ...snoozes,
+        row({ threadId: "fresh", snoozedUntil: 9_000, snoozedAt: 8_000 }),
+      ]),
     );
     assert.equal(kept?.length, MAX_WARM_START_ROWS);
-    assert.equal(kept?.[0]?.threadId, "settled");
+    assert.equal(kept?.[0]?.threadId, "fresh");
   });
 });
 
@@ -216,9 +221,13 @@ describe("readWarmStartRows", () => {
   it("serves what was stored", () => {
     resetWarmStartMemoryForTests();
     const store = storage({
-      [WARM_START_ROWS_KEY]: encodeWarmStartRows([row({ threadId: "a", settledAt: 500 })]),
+      [WARM_START_ROWS_KEY]: encodeWarmStartRows([
+        row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
+      ]),
     });
-    assert.deepEqual(readWarmStartRows(store), [row({ threadId: "a", settledAt: 500 })]);
+    assert.deepEqual(readWarmStartRows(store), [
+      row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
+    ]);
   });
 
   it("does not throw when the store does", () => {
@@ -231,8 +240,13 @@ describe("readWarmStartRows", () => {
   // all, so a store that refuses every call must not disable the cache.
   it("still serves from memory after the store failed", () => {
     resetWarmStartMemoryForTests();
-    writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], brokenStorage);
-    assert.deepEqual(readWarmStartRows(brokenStorage), [row({ threadId: "a", settledAt: 500 })]);
+    writeWarmStartRows(
+      [row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })],
+      brokenStorage,
+    );
+    assert.deepEqual(readWarmStartRows(brokenStorage), [
+      row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
+    ]);
   });
 
   // Memory before storage is the decision the two tiers rest on: a `setItem`
@@ -242,12 +256,14 @@ describe("readWarmStartRows", () => {
   it("prefers the memory tier over what the store holds", () => {
     resetWarmStartMemoryForTests();
     const store = storage();
-    writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], store);
+    writeWarmStartRows([row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })], store);
     store.entries.set(
       WARM_START_ROWS_KEY,
-      encodeWarmStartRows([row({ threadId: "b", settledAt: 900 })]),
+      encodeWarmStartRows([row({ threadId: "b", snoozedUntil: 9_000, snoozedAt: 900 })]),
     );
-    assert.deepEqual(readWarmStartRows(store), [row({ threadId: "a", settledAt: 500 })]);
+    assert.deepEqual(readWarmStartRows(store), [
+      row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
+    ]);
   });
 
   // The seed runs inside a render, so a value that cannot be decoded must not
@@ -264,7 +280,7 @@ describe("readWarmStartRows", () => {
     assert.equal(WARM_START_ROWS_KEY, "gtd-sidebar:v1:lifecycle-rows");
     const store = storage({
       "gtd-sidebar:v0:lifecycle-rows": encodeWarmStartRows([
-        row({ threadId: "a", settledAt: 500 }),
+        row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
       ]),
     });
     assert.equal(readWarmStartRows(store), null);
@@ -281,9 +297,9 @@ describe("writeWarmStartRows", () => {
   it("writes under the versioned key", () => {
     resetWarmStartMemoryForTests();
     const store = storage();
-    writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], store);
+    writeWarmStartRows([row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })], store);
     assert.deepEqual(decodeWarmStartRows(store.entries.get(WARM_START_ROWS_KEY) ?? null), [
-      row({ threadId: "a", settledAt: 500 }),
+      row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
     ]);
   });
 
@@ -297,7 +313,7 @@ describe("writeWarmStartRows", () => {
       "t3sidebar:v1:lifecycle-rows": encodeWarmStartRows([row()]),
       "t3sidebar:v1:providers": "[]",
     });
-    writeWarmStartRows([row({ threadId: "a", settledAt: 500 })], store);
+    writeWarmStartRows([row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })], store);
     assert.equal(store.entries.has("t3sidebar:v1:lifecycle-rows"), false);
     assert.equal(store.entries.has("t3sidebar:v1:providers"), false);
     assert.equal(store.entries.has(WARM_START_ROWS_KEY), true);
@@ -330,7 +346,7 @@ describe("writeWarmStartRows", () => {
   // good by one transient throw.
   it("offers a refused value to the store again", () => {
     resetWarmStartMemoryForTests();
-    const rows = [row({ threadId: "a", settledAt: 500 })];
+    const rows = [row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })];
     const store = storage();
     let refusing = true;
     const flaky: FakeStorage = {

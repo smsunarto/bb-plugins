@@ -11,15 +11,13 @@ import { getCompactActions } from "../components/inbox/thread-action-menu.tsx";
 const noop = () => {};
 
 function lifecycle(kind: "active", canPark: boolean): RowLifecycleState;
-function lifecycle(kind: "snoozed" | "settled"): RowLifecycleState;
+function lifecycle(kind: "snoozed"): RowLifecycleState;
 function lifecycle(kind: RowLifecycleState["kind"], canPark = false): RowLifecycleState {
   switch (kind) {
     case "active":
       return { kind, canPark, snoozeUntilTomorrow: noop, settle: noop };
     case "snoozed":
       return { kind, wakeNow: noop };
-    case "settled":
-      return { kind, unsettle: noop };
   }
 }
 
@@ -32,10 +30,13 @@ function plan(state: RowLifecycleState, overrides: Partial<BuildThreadActionPlan
     setRead: noop,
     setPinned: noop,
     renameThread: noop,
-    archive: noop,
     requestDelete: noop,
     ...overrides,
   });
+}
+
+function allLabels(result: ReturnType<typeof plan>): string[] {
+  return getThreadActionGroups(result).flatMap(({ actions }) => actions.map(({ label }) => label));
 }
 
 const lifecycleCases: readonly {
@@ -54,7 +55,7 @@ const lifecycleCases: readonly {
     name: "active and not parkable with split",
     lifecycle: lifecycle("active", false),
     splitAvailable: true,
-    primaryLabels: ["Open in split"],
+    primaryLabels: ["Open in split", "Settle thread"],
   },
   {
     name: "active and parkable without split",
@@ -69,10 +70,10 @@ const lifecycleCases: readonly {
     primaryLabels: ["Open in split", "Wake thread now"],
   },
   {
-    name: "settled without split",
-    lifecycle: lifecycle("settled"),
+    name: "snoozed without split",
+    lifecycle: lifecycle("snoozed"),
     splitAvailable: false,
-    primaryLabels: ["Un-settle thread"],
+    primaryLabels: ["Wake thread now"],
   },
 ];
 
@@ -93,6 +94,17 @@ describe("buildThreadActionPlan", () => {
       );
     });
   }
+
+  // Settle is bb's archive, which bb offers on every thread, so a working
+  // thread keeps it while losing snooze — and nothing lists Archive twice.
+  test("offers settle on a thread that cannot park, and never a separate archive", () => {
+    const result = plan(lifecycle("active", false));
+    const labels = allLabels(result);
+    assert.equal(labels.includes("Settle thread"), true);
+    assert.equal(labels.includes("Snooze until tomorrow"), false);
+    assert.equal(labels.includes("Archive"), false);
+    assert.equal(allLabels(plan(lifecycle("snoozed"))).includes("Archive"), false);
+  });
 
   const labelCases = [
     {
@@ -122,7 +134,7 @@ describe("buildThreadActionPlan", () => {
       );
       assert.deepEqual(
         result.destructive.map(({ label }) => label),
-        ["Archive", "Delete"],
+        ["Delete"],
       );
     });
   }
@@ -141,6 +153,14 @@ describe("buildThreadActionPlan", () => {
         { id: "toggle-pin", label: "Pin" },
         { id: "request-delete", label: "Delete" },
       ],
+    );
+  });
+
+  test("getCompactActions offers wake on a snoozed row", () => {
+    const compactActions = getCompactActions(plan(lifecycle("snoozed")));
+    assert.deepEqual(
+      compactActions.map((a) => a.id),
+      ["wake-now", "toggle-pin", "request-delete"],
     );
   });
 });

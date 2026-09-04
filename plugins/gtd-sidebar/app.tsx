@@ -8,6 +8,7 @@ import "./app.css";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
 import { SubagentsChip } from "@/components/inbox/subagents-chip";
+import { archiveThread, hasSidebarActions } from "@/lib/sidebar-actions-bridge";
 
 export default definePluginApp((app) => {
   app.slots.experimental_threadList({
@@ -34,5 +35,14 @@ export default definePluginApp((app) => {
     id: "children",
     title: "Child threads",
     component: SubagentsChip,
+  });
+
+  app.slots.commandPaletteAction({
+    id: "settle-thread",
+    title: "GTD Sidebar: settle thread",
+    isAvailable: ({ threadId }) => threadId !== null && hasSidebarActions(),
+    run: ({ threadId }) => {
+      if (threadId !== null) archiveThread(threadId);
+    },
   });
 });

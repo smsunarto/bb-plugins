@@ -51,26 +51,15 @@ export function getCompactActions(plan: ThreadActionPlan): CompactActionItem[] {
       icon: "Check",
       execute: settle.execute,
     });
-  } else {
-    // For already settled or snoozed rows, preserve wake / unsettle
-    const unsettle = actionMap.get("unsettle");
-    if (unsettle) {
-      items.push({
-        id: "unsettle",
-        label: "Un-settle",
-        icon: "ArrowTurnBackward",
-        execute: unsettle.execute,
-      });
-    }
-    const wakeNow = actionMap.get("wake-now");
-    if (wakeNow) {
-      items.push({
-        id: "wake-now",
-        label: "Wake now",
-        icon: "AlarmClock",
-        execute: wakeNow.execute,
-      });
-    }
+  }
+  const wakeNow = actionMap.get("wake-now");
+  if (wakeNow) {
+    items.push({
+      id: "wake-now",
+      label: "Wake now",
+      icon: "AlarmClock",
+      execute: wakeNow.execute,
+    });
   }
 
   // 2. Snooze (remove "until tomorrow" from label)

@@ -14,7 +14,6 @@ import {
   sortByLatestAttentionDescending,
   sortByUpdatedAtDescending,
   threadDisplayTitle,
-  visibleInboxThreads,
 } from "../lib/inbox.ts";
 
 function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
@@ -243,24 +242,6 @@ describe("filtering", () => {
       ["a"],
     );
     assert.equal(filterByProject(threads, null).length, 2);
-  });
-
-  it("drops archived threads", () => {
-    const threads = [thread({ id: "a" }), thread({ id: "b", isArchived: true })];
-    assert.deepEqual(
-      visibleInboxThreads(threads, new Set()).map((t) => t.id),
-      ["a"],
-    );
-  });
-
-  // Settling archives the thread in bb, so the archive flag alone would empty
-  // the settled shelf the moment anything landed on it.
-  it("keeps an archived thread the plugin parked", () => {
-    const threads = [thread({ id: "a", isArchived: true }), thread({ id: "b", isArchived: true })];
-    assert.deepEqual(
-      visibleInboxThreads(threads, new Set(["a"])).map((t) => t.id),
-      ["a"],
-    );
   });
 
   it("splits pinned from the rest, keeping order", () => {

@@ -5,9 +5,8 @@
  * bb renders a different component for the settings routes, so the whole
  * thread list unmounts and comes back with every piece of local state reset —
  * while bb's own thread data returns from its cache instantly. That asymmetry
- * is the flicker: for one RPC round trip there are no rows, so every parked
- * thread reads as active, and a settled thread is filtered out of the list
- * altogether before it pops back onto its shelf.
+ * is the flicker: for one RPC round trip there are no rows, so every snoozed
+ * thread reads as active before it pops back onto its shelf.
  *
  * Two tiers, and each covers a case the other cannot. The module-level tier
  * outlives a component unmount and is the only one still standing when
@@ -18,7 +17,7 @@
  * memory cannot see is another WINDOW's write, and the settings route is
  * exactly where that bites: bb unmounts the list there and takes its
  * `lifecycle` subscription with it, so a window parked on settings is told
- * nothing about a thread settled next door. A `storage` event fires in every
+ * nothing about a thread snoozed next door. A `storage` event fires in every
  * other document on the origin, so a foreign write drops the entry it names
  * and the next read falls through to the fresher copy.
  *
@@ -241,13 +240,10 @@ function decodeRow(value: unknown): ThreadLifecycleRow | null {
   const raw = value as Record<string, unknown>;
   const threadId = raw.threadId;
   if (typeof threadId !== "string" || threadId.trim().length === 0) return null;
-  const settledAt = decodeTimestamp(raw.settledAt);
   const snoozedUntil = decodeTimestamp(raw.snoozedUntil);
   const snoozedAt = decodeTimestamp(raw.snoozedAt);
-  if (settledAt === undefined || snoozedUntil === undefined || snoozedAt === undefined) {
-    return null;
-  }
-  return { threadId, settledAt, snoozedUntil, snoozedAt };
+  if (snoozedUntil === undefined || snoozedAt === undefined) return null;
+  return { threadId, snoozedUntil, snoozedAt };
 }
 
 /**
@@ -261,13 +257,9 @@ function decodeRow(value: unknown): ThreadLifecycleRow | null {
  * a park made minutes ago is the one whose shelf the user still has in mind.
  *
  * Past the cap the tail simply does not warm-start, and that costs something
- * rather than nothing. A snoozed row over the line renders in the Inbox for one
+ * rather than nothing: a snoozed row over the line renders in the Inbox for one
  * round trip and then jumps onto its shelf — the exact behaviour this file
- * removes for every row under the cap. A settled row over the line costs a
- * line of arithmetic instead: nothing can draw the thread until
- * `listSettledThreads` lands either way, but the collapsed shelf counts the
- * rows it is still waiting for, so a row past the cap leaves that header one
- * short until the slower read arrives.
+ * removes for every row under the cap.
  */
 export const MAX_WARM_START_ROWS = 200;
 
@@ -292,9 +284,8 @@ export const MAX_WARM_START_ENTRY_CHARS = 64 * 1024;
  * every start for most users. So an empty array is a value and null is the
  * miss.
  *
- * One bad row rejects the whole payload. Half-accepting is the failure that
- * hurts: settling archives a thread in bb, so a dropped row does not make its
- * thread read active, it makes the thread vanish from the sidebar entirely.
+ * One bad row rejects the whole payload: a half-accepted cache claims to know
+ * the shelves and is wrong about them, while a miss simply waits for the read.
  * An over-long payload is rejected the same way and for the same reason — the
  * encoder never writes one, so anything over the cap was written by something
  * that is not this plugin.
@@ -321,18 +312,12 @@ export function decodeWarmStartRows(stored: string | null): ThreadLifecycleRow[]
 }
 
 /**
- * When the park was MADE — pointedly not when a snooze ends.
- *
- * `snoozedUntil` is an absolute future time, so "Next week" scores about now+7d
- * while a settle made this morning scores about now. Ranking on it would sort
- * every snoozed row above every settled one whatever the user touched last, and
- * at the cap that stops being an ordering quibble: the rows dropped would be
- * exactly the ones the collapsed Settled header is counted from, so the user
- * with enough parked state to reach the cap at all is the one whose settled
- * shelf goes back to popping in a round trip late.
+ * When the snooze was MADE — pointedly not when it ends. `snoozedUntil` is an
+ * absolute future time, so "Next week" would outrank a snooze made seconds
+ * ago, and the cap is meant to keep the ones the user still has in mind.
  */
 function parkedAt(row: ThreadLifecycleRow): number {
-  return Math.max(row.settledAt ?? 0, row.snoozedAt ?? 0);
+  return row.snoozedAt ?? 0;
 }
 
 /**
@@ -351,9 +336,8 @@ export function encodeWarmStartRows(rows: readonly ThreadLifecycleRow[]): string
     )
     .slice(0, MAX_WARM_START_ROWS);
   return JSON.stringify(
-    kept.map(({ threadId, settledAt, snoozedUntil, snoozedAt }) => ({
+    kept.map(({ threadId, snoozedUntil, snoozedAt }) => ({
       threadId,
-      settledAt,
       snoozedUntil,
       snoozedAt,
     })),
