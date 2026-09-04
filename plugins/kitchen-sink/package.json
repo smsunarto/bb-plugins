@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-kitchen-sink",
   "version": "0.1.0",
-  "description": "Scott's kitchen sink of personal composer commands and mentions: ship-it and sync skills, plus a home for mention providers.",
+  "description": "Scott's kitchen sink of personal bb surfaces: ship-it and sync composer commands, mention providers, and Smart Embeds for verifiable diffs and code citations.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/kitchen-sink",
@@ -19,7 +19,10 @@
     "skills",
     "gitbutler",
     "ship-it",
-    "sync"
+    "sync",
+    "rich-embeds",
+    "diffs",
+    "code-citations"
   ],
   "type": "module",
   "private": true,
@@ -29,7 +32,7 @@
   },
   "bb": {
     "name": "Kitchen Sink",
-    "description": "Personal composer commands and mentions: /ship-it runs the CI gates and lands or opens a PR, /sync rebases and resolves conflicts.",
+    "description": "Personal composer commands and message embeds: /ship-it lands or opens a PR after the CI gates pass, /sync rebases and resolves conflicts, and ::smart-diff / ::smart-code render verifiable diffs and citations.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -37,7 +40,8 @@
         "dark": "./assets/logo-dark.svg"
       }
     },
-    "server": "./server/server.ts",
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
     "skills": [
       "skills"
     ]
@@ -45,19 +49,29 @@
   "files": [
     "dist/server.js",
     "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
     "assets/",
     "README.md",
     "LICENSE",
-    "server/",
+    "src/server/",
+    "src/app/",
+    "src/shared/",
     "skills/"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.1.0"
+    "@bb-kit/core": "0.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.34",
+    "@pierre/diffs": "^1.2.9",
+    "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
     "bun-types": "^1.4.0",
+    "jsdom": "25.0.1",
     "tsx": "4.23.12",
     "typescript": "^6.0.0"
   },
@@ -66,7 +80,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000",
+    "test": "bun test src test eval/score.test.ts --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
     "clean": "rm -rf dist"
   }

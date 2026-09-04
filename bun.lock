@@ -403,6 +403,25 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/kitchen-sink": {
+      "name": "@smsunarto/bb-plugin-kitchen-sink",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.1.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.34",
+        "@pierre/diffs": "^1.2.9",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "jsdom": "25.0.1",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/monokai": {
       "name": "@smsunarto/bb-plugin-monokai",
       "version": "0.3.2",
@@ -508,25 +527,6 @@
         "tsx": "4.23.12",
         "typescript": "^6.0.0",
         "vaul": "^1.1.2",
-      },
-    },
-    "plugins/smart-embeds": {
-      "name": "@smsunarto/bb-plugin-smart-embeds",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.1.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.4.34",
-        "@pierre/diffs": "^1.2.9",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
       },
     },
     "plugins/vimium": {
@@ -1129,6 +1129,8 @@
 
     "@smsunarto/bb-plugin-gtd-sidebar": ["@smsunarto/bb-plugin-gtd-sidebar@workspace:plugins/gtd-sidebar"],
 
+    "@smsunarto/bb-plugin-kitchen-sink": ["@smsunarto/bb-plugin-kitchen-sink@workspace:plugins/kitchen-sink"],
+
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
 
     "@smsunarto/bb-plugin-nanocodex": ["@smsunarto/bb-plugin-nanocodex@workspace:plugins/nanocodex"],
@@ -1136,8 +1138,6 @@
     "@smsunarto/bb-plugin-notify": ["@smsunarto/bb-plugin-notify@workspace:plugins/notify"],
 
     "@smsunarto/bb-plugin-novnc": ["@smsunarto/bb-plugin-novnc@workspace:plugins/novnc"],
-
-    "@smsunarto/bb-plugin-smart-embeds": ["@smsunarto/bb-plugin-smart-embeds@workspace:plugins/smart-embeds"],
 
     "@smsunarto/bb-plugin-vimium": ["@smsunarto/bb-plugin-vimium@workspace:plugins/vimium"],
 

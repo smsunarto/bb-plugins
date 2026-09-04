@@ -2,10 +2,11 @@ import { expect, test } from "bun:test";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 
-import plugin from "../server/server.ts";
-import { mentionProviders } from "../server/mentions.ts";
+import plugin, { SMART_EMBED_INSTRUCTIONS } from "../src/server/server.ts";
+import { mentionProviders } from "../src/server/mentions.ts";
+import { WORKSPACE_CHANGED_CHANNEL } from "../src/shared/contract.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const skillsRoot = join(root, "skills");
@@ -14,7 +15,7 @@ test("the plugin loads against the fake host and registers every mention provide
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
-  expect(harness.registrations.rpcMethods).toEqual([]);
+  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed"]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(
     mentionProviders.map((provider) => provider.id),
   );
@@ -58,4 +59,41 @@ test("both commands route GitButler repositories through the gitbutler skill", a
     expect(skill).toContain("`gitbutler` skill");
     expect(skill).toContain("but status");
   }
+});
+
+test("the measured baseline prompt is the shipped Smart Embed text", async () => {
+  const baseline = await readFile(new URL("../eval/prompts/baseline.md", import.meta.url), "utf8");
+  expect(baseline).toBe(`${SMART_EMBED_INSTRUCTIONS}\n`);
+});
+
+test("injects the Smart Embed instructions into every agent session", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  await plugin(bb);
+
+  const instructions = harness.registrations.instructionProvider?.({
+    threadId: "thread-1",
+    projectId: "project-1",
+  });
+  expect(instructions).toBe(SMART_EMBED_INSTRUCTIONS);
+  expect(instructions).toContain("::smart-diff");
+  expect(instructions).toContain("::smart-code");
+});
+
+test("publishes a workspace-changed signal when a thread settles, fails, or goes away", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  await plugin(bb);
+  const thread = makeThreadResponse({ id: "thread-9" });
+
+  await harness.emitThreadEvent("thread.idle", { thread, lastAssistantText: null });
+  await harness.emitThreadEvent("thread.failed", { thread, error: "boom" });
+  await harness.emitThreadEvent("thread.archived", { thread });
+  await harness.emitThreadEvent("thread.deleted", { thread });
+  await harness.emitThreadEvent("thread.active", { thread });
+
+  expect(harness.realtimeSignals).toEqual([
+    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "idle" } },
+    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "failed" } },
+    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "archived" } },
+    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "deleted" } },
+  ]);
 });

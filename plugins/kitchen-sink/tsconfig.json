@@ -1,14 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2023",
-    "lib": ["es2023"],
+    "target": "ES2022",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
     "types": ["node", "bun-types/test"],
-    "erasableSyntaxOnly": true,
-    "noUncheckedIndexedAccess": true,
-    "useUnknownInCatchVariables": true,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true
-  }
+    "skipLibCheck": false
+  },
+  "include": ["src", "test", "eval"],
+  "exclude": ["eval/cases"]
 }

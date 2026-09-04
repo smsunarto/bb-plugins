@@ -10,21 +10,21 @@ if (typeof CSSStyleSheet.prototype.replaceSync !== "function") {
   });
 }
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-const { embedCache } = await import("../app/embed-cache.ts");
-const { WORKSPACE_CHANGED_CHANNEL } = await import("../shared/contract.ts");
+const { embedCache } = await import("../src/app/embed-cache.ts");
+const { WORKSPACE_CHANGED_CHANNEL } = await import("../src/shared/contract.ts");
 
 const patch =
   "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1 +1 @@\n-old\n+new\n";
 
 test("reserves room for 100 monospace columns without exceeding the viewport", async () => {
-  const stylesheet = await readFile(new URL("../app/app.css", import.meta.url), "utf8");
+  const stylesheet = await readFile(new URL("../src/app/app.css", import.meta.url), "utf8");
   expect(stylesheet).toContain("--smart-embed-target-width: calc(100ch + 8rem + 4px)");
   expect(stylesheet).toContain("calc(100vw - 2rem)");
   expect(stylesheet).toContain("transform: translateX(-50%)");
 });
 
 test("registers the smart diff and code message directives", async () => {
-  const captured = await loadPluginApp(() => import("../app/app.tsx"));
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(captured.messageDirectives.map((directive) => directive.id)).toEqual([
     "smart-diff",
     "smart-code",
@@ -43,7 +43,7 @@ function readyDiff(patchText: string) {
 }
 
 async function renderDiffEmbed(renderEmbed: () => Promise<ReturnType<typeof readyDiff>>) {
-  const captured = await loadPluginApp(() => import("../app/app.tsx"));
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   const directive = captured.messageDirectives.find((item) => item.id === "smart-diff");
   expect(directive).toBeDefined();
   return renderSlot(
@@ -122,7 +122,7 @@ test("frees the thread's entries when it is deleted and refetches after a reconn
 
 test("renders through bb's themed diff component and opens its workspace file", async () => {
   embedCache.clear();
-  const captured = await loadPluginApp(() => import("../app/app.tsx"));
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   const directive = captured.messageDirectives.find((item) => item.id === "smart-diff");
   expect(directive).toBeDefined();
   const openWorkspaceFile = mock(() => true);

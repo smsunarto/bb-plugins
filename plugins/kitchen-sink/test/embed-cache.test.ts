@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import type { RenderEmbedOutput } from "../shared/contract.ts";
-import { EmbedCache, embedCacheKey } from "../app/embed-cache.ts";
+import type { RenderEmbedOutput } from "../src/shared/contract.ts";
+import { EmbedCache, embedCacheKey } from "../src/app/embed-cache.ts";
 
 function ready(patch: string): RenderEmbedOutput {
   return { status: "ready", kind: "code", path: "a.ts", label: "a.ts", patch, truncated: false };
