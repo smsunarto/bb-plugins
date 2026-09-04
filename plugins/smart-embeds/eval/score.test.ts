@@ -6,6 +6,13 @@ import { newSideRanges, overlaps } from "./lib/hunks.ts";
 
 const NONE = new Map<string, boolean>();
 
+/** Every directive in the text, accepted by the judge, so the proxy is what is under test. */
+function judgedTrue(response: string): Map<string, boolean> {
+  return new Map(
+    scanDirectives(response).directives.map((one) => [directiveKey("sample", 1, one), true]),
+  );
+}
+
 function makeCase(overrides: Partial<EvalCase>): EvalCase {
   return {
     id: "sample",
@@ -125,7 +132,7 @@ describe("necessity", () => {
         response: 'doThing evicts here.\n::smart-code{path="src/a.ts" start="41" end="43"}\n',
         diff: "",
       },
-      NONE,
+      judgedTrue('doThing evicts here.\n::smart-code{path="src/a.ts" start="41" end="43"}\n'),
     );
     expect(result.necessity).toBe(true);
     expect(result.coverage).toBe(true);
@@ -204,7 +211,7 @@ describe("range-fits", () => {
         response: 'I fixed doThing.\n::smart-diff{path="src/a.ts" start="38" end="46"}\n',
         diff: DIFF,
       },
-      NONE,
+      judgedTrue('I fixed doThing.\n::smart-diff{path="src/a.ts" start="38" end="46"}\n'),
     );
     expect(result.rangeFits).toBe(true);
     expect(result.pass).toBe(true);
@@ -222,7 +229,7 @@ describe("placement", () => {
         response: 'I fixed doThing in src/a.ts.\n\n::smart-diff{path="src/a.ts"}\n',
         diff: DIFF,
       },
-      NONE,
+      judgedTrue('I fixed doThing in src/a.ts.\n\n::smart-diff{path="src/a.ts"}\n'),
     );
     expect(result.placement).toBe(true);
   });
@@ -286,6 +293,17 @@ describe("placement", () => {
     expect(result.placement).toBe(false);
   });
 
+  test("counts an embed the judge never returned as a failure", () => {
+    const response = 'I fixed doThing in src/a.ts.\n::smart-diff{path="src/a.ts"}\n';
+    const other = scanDirectives('doThing\n::smart-diff{path="src/other.ts"}\n').directives[0]!;
+    const result = scoreRun(
+      makeCase({ expectDiffFor: ["src/a.ts"] }),
+      { caseId: "sample", rep: 1, timedOut: false, response, diff: DIFF },
+      new Map([[directiveKey("sample", 1, other), true]]),
+    );
+    expect(result.placement).toBe(false);
+  });
+
   test("passes an embed sitting under the sentence that names it", () => {
     const result = scoreRun(
       makeCase({ expectDiffFor: ["src/a.ts"] }),
@@ -296,7 +314,7 @@ describe("placement", () => {
         response: 'I fixed doThing in src/a.ts.\n::smart-diff{path="src/a.ts"}\n\nDone.\n',
         diff: DIFF,
       },
-      NONE,
+      judgedTrue('I fixed doThing in src/a.ts.\n::smart-diff{path="src/a.ts"}\n\nDone.\n'),
     );
     expect(result.placement).toBe(true);
     expect(result.pass).toBe(true);

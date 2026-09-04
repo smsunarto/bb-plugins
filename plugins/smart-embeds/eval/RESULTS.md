@@ -28,7 +28,10 @@ Every quote is from `baseline-sonnet-2026-09-04T02-23-30-014Z`.
 
 ### Placement: "in the final response" reads as "at the end of the response"
 
-The dominant failure. Ten of twelve cases show it. The shipped text says to place
+The dominant failure. Ten of the twelve cases show it: `config-retries`,
+`discount-rounding`, `ledger-format-amount`, `lru-eviction`, `refresh-twice`,
+`restock-limit`, `scheduler-tz-offset`, `slug-lowercase`, `toc-slugify`, and
+`widget-units`. Only `cli-dry-run` and `retry-jitter` are clean. The shipped text says to place
 the directive "on its own line in the final response", which names the message,
 not the position. Every model read it as the position. `discount-rounding` rep2 in
 full:
@@ -147,8 +150,20 @@ Two repetitions each, one judge pass over both.
 | budget (gate)   | 100.0%        | 100.0%                   |
 | mean cost       | $0.287        | $0.270                   |
 
-Opus confirms, +16.6 points against a 4.1 point band, with coverage and budget
-unchanged. Opus never once used a line range under the old text, 0.0%.
+Opus confirms, +16.6 points, with coverage and budget unchanged. Opus never once
+used a line range under the old text, 0.0%.
+
+Three honest limits on that table. It is 2 repetitions, not 3, so it is a
+confirmation and not a measurement of the same weight as the Sonnet climb. The
+4.1 point band was measured on Sonnet and is not known to transfer to Opus. And
+the win is dominated by one criterion: range-fits moves 0 to 75 points while
+placement moves only 66.7 to 70.8. Range applies to 4 of the 12 cases, so a
+single number makes a narrow win read broader than it is. Necessity going 91.7 to
+100 is the one other real gain.
+
+Every candidate ran under `--dangerously-skip-permissions`, which is not how a bb
+agent runs. It is constant across every variant and every baseline, so it cannot
+bias one against another, but it does mean these are not absolute rates.
 
 ## Iterations
 

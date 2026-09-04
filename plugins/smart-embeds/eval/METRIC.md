@@ -121,14 +121,44 @@ times the band, so the ruler distinguishes a bad prompt from the shipped one.
 
 Frozen on 2026-09-04 at this point. Every number above and after comes from the
 same criteria. The three runs above were scored twice, before and after the two
-criteria revisions, from the same stored artifacts, because scoring is a pure
-function of the response text and the diff.
+criteria revisions, from the same stored artifacts. Rescoring is deterministic
+given the response, the diff, and a stored `judgments.json`. It is not free of
+the judge: placement depends on a GPT-5.2 pass, so rescoring only reproduces a
+number when the same stored verdicts are reused.
+
+Two limits on the band, stated plainly rather than smoothed over.
+
+- It comes from two measurements. That is a spread, not a variance estimate, and
+  two points cannot tell you the shape of the distribution. With 36 runs and a
+  rate near 0.66, binomial noise alone puts the standard deviation of a single
+  measurement near 8 points on `clean runs`; `embed-score` is graded and steadier,
+  but 4.1 is a floor on the real noise, not a ceiling.
+- The kept variant was measured four times on Sonnet across four separate judge
+  passes over the same candidate outputs: 79.6, 78.2, 79.6, 79.6. That 1.4 point
+  spread isolates judge noise only, since the candidate runs were identical. It
+  does not bound candidate-side noise.
+
+Treat a gap under about 5 points as unresolved. Both accepted results here, +13.1
+on Sonnet and +16.6 on Opus, sit far outside that.
 
 ## Stop predicate
 
-Stop only when all three hold. Never relax it to declare a win.
+The original predicate was: embed-score at least 30 points above baseline, at
+least 6 iterations logged, gate green. It was written against the all-or-nothing
+metric, whose baseline was near 46%. After the metric was regraded the baseline
+rose to 66.5%, which put +30 at 96.5% and required near-perfect placement. The
+run did not meet it. It reached +13.1.
 
-1. embed-score is at least 30 points above baseline.
-2. At least 6 iterations are logged in `decisions.tsv`.
-3. The gate is green: `bun run test` passes, and coverage and budget are within 5
-   points of baseline.
+Partway through, the operator replaced the target with a different rule: stop
+once a kept variant beats baseline past the noise band, does not regress coverage
+or budget by more than 5 points, and the cheap placement hypotheses are spent.
+That is the rule the run stopped under, and it is recorded here so nobody reads
+the +30 as met.
+
+The run stopped with:
+
+1. embed-score 66.5% to 79.6% on Sonnet, +13.1 against a 4.1 point band. Short of
+   the original +30.
+2. Eleven iterations logged, one kept and ten reverted.
+3. Gate green. Coverage 91.7% against 94.4%, budget 100% against 100%, and
+   `bun run test` passing from the repository root.

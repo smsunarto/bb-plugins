@@ -145,10 +145,19 @@ export function scoreRun(
 
   let placement: boolean | null = null;
   if (scan.directives.length > 0) {
-    const judged = scan.directives.every((directive) => {
-      const verdict = placementVerdicts.get(directiveKey(evalCase.id, outcome.rep, directive));
-      return verdict !== false;
-    });
+    // A directive the judge never returned counts against the run. Treating a
+    // missing verdict as a pass would turn judge omissions into free points.
+    const unjudged = scan.directives.filter(
+      (directive) =>
+        placementVerdicts.get(directiveKey(evalCase.id, outcome.rep, directive)) === undefined,
+    ).length;
+    const judged =
+      unjudged === 0 &&
+      scan.directives.every(
+        (directive) =>
+          placementVerdicts.get(directiveKey(evalCase.id, outcome.rep, directive)) === true,
+      );
+    if (unjudged > 0) notes.push(`${unjudged} embeds came back without a verdict`);
     const proxy = proxyHolds(outcome.response, evalCase, scan.directives);
     if (!judged) notes.push("judge rejected an embed's placement");
     if (!proxy) notes.push("an embed sits away from the claim it supports");
