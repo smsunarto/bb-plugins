@@ -91,11 +91,8 @@ export async function scoreRunId(runId: string): Promise<RunScore> {
     judged: judgments !== null,
     runs: results.length,
     embedScore:
-      results.length === 0
-        ? 0
-        : results.reduce((sum, one) => sum + one.score, 0) / results.length,
-    cleanRuns:
-      results.length === 0 ? 0 : results.filter((one) => one.pass).length / results.length,
+      results.length === 0 ? 0 : results.reduce((sum, one) => sum + one.score, 0) / results.length,
+    cleanRuns: results.length === 0 ? 0 : results.filter((one) => one.pass).length / results.length,
     necessity: rate(results.map((one) => one.necessity)),
     rangeFits: rate(results.map((one) => one.rangeFits)),
     placement: rate(results.map((one) => one.placement)),

@@ -109,8 +109,8 @@ Recorded once the sensitivity proof runs. Baseline is measured twice for the
 band. `worst.md` appends every full-file diff in one block at the bottom, and
 must land below baseline by more than the band before any hypothesis is tried.
 
-| measurement | run id                                    | embed-score |
-| ----------- | ----------------------------------------- | ----------- |
+| measurement | run id                                     | embed-score |
+| ----------- | ------------------------------------------ | ----------- |
 | baseline 1  | `baseline-sonnet-2026-09-04T02-23-30-014Z` | 64.4%       |
 | baseline 2  | `baseline-sonnet-2026-09-04T02-28-09-603Z` | 68.5%       |
 | worst       | `worst-sonnet-2026-09-04T02-30-04-227Z`    | 50.9%       |

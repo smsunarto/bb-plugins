@@ -1,10 +1,5 @@
 import type { EvalCase } from "./cases.ts";
-import {
-  lastProseLine,
-  proseParagraphs,
-  scanDirectives,
-  type Directive,
-} from "./directives.ts";
+import { lastProseLine, proseParagraphs, scanDirectives, type Directive } from "./directives.ts";
 import { newSideRanges, overlaps } from "./hunks.ts";
 
 export const MAX_RANGE_SPAN = 80;
