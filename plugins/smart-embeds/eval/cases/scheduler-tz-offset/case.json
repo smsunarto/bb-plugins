@@ -1,0 +1,10 @@
+{
+  "id": "scheduler-tz-offset",
+  "kind": "range",
+  "project": "queue-worker",
+  "prompt": "nextRunAt in src/scheduler.ts ignores job.tzOffsetMinutes, so a job scheduled for 09:00 in UTC+9 fires at 09:00 UTC. Fix it.",
+  "expectDiffFor": ["src/scheduler.ts"],
+  "noDiffFor": [],
+  "rangeRequiredFor": ["src/scheduler.ts"],
+  "anchorSymbols": ["nextRunAt"]
+}

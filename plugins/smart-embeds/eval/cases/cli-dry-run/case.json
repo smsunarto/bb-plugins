@@ -1,0 +1,10 @@
+{
+  "id": "cli-dry-run",
+  "kind": "incidental",
+  "project": "notes-sync",
+  "prompt": "Add a --dry-run flag to src/cli.ts that lists what would be synced without writing anything.",
+  "expectDiffFor": ["src/cli.ts"],
+  "noDiffFor": ["src/format.ts"],
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["dry-run", "dryRun"]
+}

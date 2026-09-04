@@ -1,8 +1,14 @@
 import { expect, test } from "bun:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import { readFile } from "node:fs/promises";
 
 import plugin, { SMART_EMBED_INSTRUCTIONS } from "../server/server.ts";
 import { WORKSPACE_CHANGED_CHANNEL } from "../shared/contract.ts";
+
+test("the measured baseline prompt is the shipped text", async () => {
+  const baseline = await readFile(new URL("../eval/prompts/baseline.md", import.meta.url), "utf8");
+  expect(baseline).toBe(`${SMART_EMBED_INSTRUCTIONS}\n`);
+});
 
 test("registers the RPC and injects Smart Embed instructions", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "smart-embeds" });

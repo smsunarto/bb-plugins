@@ -1,0 +1,13 @@
+{
+  "name": "weather-widget",
+  "version": "2.1.0",
+  "description": "Small embeddable weather readout, bundled into a single script with no runtime dependencies.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/widget.ts"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts"
+  }
+}

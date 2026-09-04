@@ -1,0 +1,10 @@
+{
+  "id": "retry-jitter",
+  "kind": "small",
+  "project": "retry-helper",
+  "prompt": "Add full jitter to the backoff delay in src/retry.ts, still capped at maxDelayMs.",
+  "expectDiffFor": ["src/retry.ts"],
+  "noDiffFor": [],
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["backoff", "jitter"]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "slug-util",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "description": "URL slug helpers shared by the docs site build and the CMS importer.",
+  "main": "src/index.ts"
+}

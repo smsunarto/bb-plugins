@@ -1,0 +1,10 @@
+{
+  "id": "discount-rounding",
+  "kind": "incidental",
+  "project": "pricing-engine",
+  "prompt": "applyDiscount in src/pricing.ts rounds 19.995 down to 19.99. It should round half up to 20.00. Fix it.",
+  "expectDiffFor": ["src/pricing.ts"],
+  "noDiffFor": ["src/tax.ts"],
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["applyDiscount"]
+}

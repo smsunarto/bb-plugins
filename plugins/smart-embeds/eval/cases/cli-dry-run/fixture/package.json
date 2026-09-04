@@ -1,0 +1,10 @@
+{
+  "name": "notes-sync",
+  "version": "0.6.2",
+  "private": true,
+  "type": "module",
+  "description": "Publishes authored markdown notes into the static site input tree.",
+  "scripts": {
+    "sync": "bun src/cli.ts"
+  }
+}

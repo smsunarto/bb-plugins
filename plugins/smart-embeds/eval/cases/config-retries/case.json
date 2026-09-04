@@ -1,0 +1,10 @@
+{
+  "id": "config-retries",
+  "kind": "generated",
+  "project": "config-schema",
+  "prompt": "Add an optional retries number (0 to 10) to the Config type in src/config.ts and regenerate the schema with bun run gen.",
+  "expectDiffFor": ["src/config.ts"],
+  "noDiffFor": ["generated/schema.json"],
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["Config", "retries"]
+}

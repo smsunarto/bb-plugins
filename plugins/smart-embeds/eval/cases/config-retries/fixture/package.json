@@ -1,0 +1,13 @@
+{
+  "name": "config-schema",
+  "version": "0.7.2",
+  "description": "The service config surface: field table, runtime validator, and the JSON Schema built from them.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/config.ts"
+  },
+  "scripts": {
+    "gen": "bun scripts/gen.ts"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "pricing-engine",
+  "version": "3.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Cart pricing, discounts and sales tax for the storefront checkout.",
+  "main": "src/pricing.ts"
+}

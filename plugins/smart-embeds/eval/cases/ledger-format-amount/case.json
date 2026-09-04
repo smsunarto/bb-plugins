@@ -1,0 +1,10 @@
+{
+  "id": "ledger-format-amount",
+  "kind": "range",
+  "project": "ledger-cli",
+  "prompt": "formatAmount in src/ledger.ts renders negatives as (12.50). Switch it to a leading minus, so -12.50, and keep the thousands separators working.",
+  "expectDiffFor": ["src/ledger.ts"],
+  "noDiffFor": [],
+  "rangeRequiredFor": ["src/ledger.ts"],
+  "anchorSymbols": ["formatAmount"]
+}

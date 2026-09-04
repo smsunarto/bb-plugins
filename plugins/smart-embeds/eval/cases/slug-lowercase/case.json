@@ -1,0 +1,10 @@
+{
+  "id": "slug-lowercase",
+  "kind": "small",
+  "project": "slug-util",
+  "prompt": "slugify in src/slug.ts should lowercase its output.",
+  "expectDiffFor": ["src/slug.ts"],
+  "noDiffFor": [],
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["slugify"]
+}

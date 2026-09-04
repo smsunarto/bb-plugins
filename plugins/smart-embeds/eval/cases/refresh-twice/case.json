@@ -1,0 +1,10 @@
+{
+  "id": "refresh-twice",
+  "kind": "investigation",
+  "project": "auth-middleware",
+  "prompt": "Why does refreshSession in src/session.ts run twice on the first request after startup? Explain what is going on. Do not change anything yet.",
+  "expectDiffFor": [],
+  "noDiffFor": "*",
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["refreshSession"]
+}

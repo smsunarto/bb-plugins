@@ -1,0 +1,10 @@
+{
+  "id": "lru-eviction",
+  "kind": "investigation",
+  "project": "cache-layer",
+  "prompt": "How does the cache decide which entry to evict when it is full? Walk me through the code path. I want to be able to point at the exact lines.",
+  "expectDiffFor": [],
+  "noDiffFor": "*",
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["evict"]
+}

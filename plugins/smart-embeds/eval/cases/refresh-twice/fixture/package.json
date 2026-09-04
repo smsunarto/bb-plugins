@@ -1,0 +1,13 @@
+{
+  "name": "auth-middleware",
+  "version": "2.3.1",
+  "description": "Session lookup, token rotation, and the request guard that sits in front of the edge service.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/middleware.ts"
+  },
+  "scripts": {
+    "start": "bun src/boot.ts"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "restock-limit",
+  "kind": "range",
+  "project": "inventory-api",
+  "prompt": "handleRestock in src/handlers.ts accepts any quantity. Reject anything above 10000 with a 422 and a clear error message.",
+  "expectDiffFor": ["src/handlers.ts"],
+  "noDiffFor": [],
+  "rangeRequiredFor": ["src/handlers.ts"],
+  "anchorSymbols": ["handleRestock"]
+}

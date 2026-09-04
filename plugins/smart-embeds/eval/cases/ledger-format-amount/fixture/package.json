@@ -1,0 +1,8 @@
+{
+  "name": "ledger-cli",
+  "version": "0.3.2",
+  "private": true,
+  "description": "Plain-text ledger reader with running balances and aligned terminal output.",
+  "type": "module",
+  "main": "src/ledger.ts"
+}

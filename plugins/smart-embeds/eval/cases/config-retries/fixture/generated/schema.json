@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.internal/config-schema/config.json",
+  "title": "Config",
+  "description": "Runtime configuration for the service.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "host",
+    "port"
+  ],
+  "properties": {
+    "host": {
+      "type": "string",
+      "description": "Hostname the service binds to."
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "TCP port the service binds to."
+    },
+    "protocol": {
+      "type": "string",
+      "enum": [
+        "http",
+        "https"
+      ],
+      "description": "Scheme used when building absolute URLs.",
+      "default": "https"
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 120000,
+      "description": "How long an upstream call may take before it is cut off.",
+      "default": 5000
+    },
+    "logLevel": {
+      "type": "string",
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error"
+      ],
+      "description": "Lowest level written to the log stream.",
+      "default": "info"
+    },
+    "allowedOrigins": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Origins the CORS handler accepts. Empty means same origin only.",
+      "default": []
+    },
+    "verifyTls": {
+      "type": "boolean",
+      "description": "Whether upstream TLS certificates are checked.",
+      "default": true
+    }
+  }
+}

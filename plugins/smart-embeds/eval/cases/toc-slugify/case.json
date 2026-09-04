@@ -1,0 +1,10 @@
+{
+  "id": "toc-slugify",
+  "kind": "range",
+  "project": "markdown-toc",
+  "prompt": "Headings with emoji produce ugly anchors in the table of contents. Make slugify in src/toc.ts drop emoji and collapse repeated dashes into one.",
+  "expectDiffFor": ["src/toc.ts"],
+  "noDiffFor": [],
+  "rangeRequiredFor": ["src/toc.ts"],
+  "anchorSymbols": ["slugify"]
+}

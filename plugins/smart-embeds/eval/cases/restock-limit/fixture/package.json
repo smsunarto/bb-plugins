@@ -1,0 +1,8 @@
+{
+  "name": "inventory-api",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Small stock-keeping service over an in-memory item store.",
+  "type": "module",
+  "main": "src/router.ts"
+}

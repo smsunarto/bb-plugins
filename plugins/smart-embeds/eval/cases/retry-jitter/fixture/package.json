@@ -1,0 +1,8 @@
+{
+  "name": "retry-helper",
+  "version": "2.1.3",
+  "private": true,
+  "type": "module",
+  "description": "Retry wrapper used by the webhook sender and the object storage client.",
+  "main": "src/retry.ts"
+}

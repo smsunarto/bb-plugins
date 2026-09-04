@@ -1,0 +1,8 @@
+{
+  "name": "queue-worker",
+  "version": "2.1.4",
+  "private": true,
+  "description": "Recurring job queue with daily and interval schedules plus retry backoff.",
+  "type": "module",
+  "main": "src/worker.ts"
+}

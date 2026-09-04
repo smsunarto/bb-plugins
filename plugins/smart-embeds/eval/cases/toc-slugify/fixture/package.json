@@ -1,0 +1,8 @@
+{
+  "name": "markdown-toc",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Builds a linked table of contents from the headings of a markdown document.",
+  "type": "module",
+  "main": "src/toc.ts"
+}

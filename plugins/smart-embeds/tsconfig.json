@@ -7,5 +7,6 @@
     "types": ["node", "bun-types/test"],
     "skipLibCheck": false
   },
-  "include": ["app", "server", "test"]
+  "include": ["app", "server", "test", "eval"],
+  "exclude": ["eval/cases"]
 }

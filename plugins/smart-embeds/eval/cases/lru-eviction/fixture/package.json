@@ -1,0 +1,10 @@
+{
+  "name": "cache-layer",
+  "version": "1.4.0",
+  "description": "In-process cache with recency ordering, byte ceilings, deadlines, and pinned entries.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/cache.ts"
+  }
+}

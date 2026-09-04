@@ -1,0 +1,10 @@
+{
+  "id": "widget-units",
+  "kind": "generated",
+  "project": "weather-widget",
+  "prompt": "Add a units option to formatTemperature in src/widget.ts, \"metric\" by default or \"imperial\", then rebuild the bundle with bun run build.",
+  "expectDiffFor": ["src/widget.ts"],
+  "noDiffFor": ["generated/widget.js"],
+  "rangeRequiredFor": [],
+  "anchorSymbols": ["formatTemperature"]
+}
