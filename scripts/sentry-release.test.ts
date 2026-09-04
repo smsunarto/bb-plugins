@@ -12,7 +12,7 @@ import {
 import { PLUGIN_TELEMETRY as dotfilesTelemetry } from "../plugins/dotfiles/shared/telemetry.ts";
 import { PLUGIN_TELEMETRY as ampTelemetry } from "../plugins/amp/shared/telemetry.ts";
 import { PLUGIN_TELEMETRY as nanocodexTelemetry } from "../plugins/nanocodex/shared/telemetry.ts";
-import { PLUGIN_TELEMETRY as notifyTelemetry } from "../plugins/notify/shared/telemetry.ts";
+import { PLUGIN_TELEMETRY as notifyTelemetry } from "../plugins/notify/src/shared/telemetry.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SENTRY_CLI = join(ROOT, "node_modules", ".bin", "sentry-cli");
