@@ -26,7 +26,7 @@ the agent works. Every section shows the most recently updated thread first.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
 **settle** it when you are done. Settle archives the thread in bb, and bb's Undo toast
-brings it back. The Snoozed shelf collapses to one counted header.
+brings it back. The Snoozed and Settled shelves collapse to one counted header each.
 
 ## Install
 
@@ -110,6 +110,11 @@ The hover button snoozes until **09:00 tomorrow**.
 The check button, the card menu, and the **GTD Sidebar: settle thread** row in bb's
 quick palette all archive the thread in bb. bb's Undo toast brings it back. Settling
 the open thread moves you to the next row in its section.
+
+The **Settled** shelf lists every thread archived in the last 24 hours, whether it was
+settled here or archived from bb's own sidebar. The hover button un-settles it, which
+unarchives the thread in bb. After a day a thread stops being drawn on the shelf and
+stays in bb's archive.
 
 ### Child threads
 

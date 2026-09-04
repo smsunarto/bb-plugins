@@ -52,6 +52,15 @@ export function getCompactActions(plan: ThreadActionPlan): CompactActionItem[] {
       execute: settle.execute,
     });
   }
+  const unsettle = actionMap.get("unsettle");
+  if (unsettle) {
+    items.push({
+      id: "unsettle",
+      label: "Un-settle",
+      icon: "ArrowTurnBackward",
+      execute: unsettle.execute,
+    });
+  }
   const wakeNow = actionMap.get("wake-now");
   if (wakeNow) {
     items.push({

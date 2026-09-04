@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
+  useBbNavigate,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
@@ -20,8 +21,8 @@ import { useThreadNaming } from "@/hooks/use-thread-naming";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
 
 /**
- * A snoozed thread: one line instead of a card. Density comes from the user
- * actually snoozing work, never from the sidebar guessing what still matters.
+ * A parked thread: one line instead of a card. Density comes from the user
+ * actually parking work, never from the sidebar guessing what still matters.
  *
  * Same structure as the card — a full-bleed anchor under the restore button,
  * because a `<button>` inside an `<a>` is invalid interactive nesting.
@@ -29,6 +30,7 @@ import { useIosLongPress } from "@/hooks/use-ios-long-press";
 export function SlimRow({
   thread,
   isActive,
+  shelf,
   wakeAt,
   now,
   isCompactViewport,
@@ -37,6 +39,7 @@ export function SlimRow({
 }: {
   thread: PluginSidebarThread;
   isActive: boolean;
+  shelf: "snoozed" | "settled";
   wakeAt: number | null;
   now: number;
   isCompactViewport: boolean;
@@ -44,11 +47,15 @@ export function SlimRow({
   onRestore: () => void;
 }) {
   const actions = useSidebarThreadActions();
+  const navigate = useBbNavigate();
   const { splitProps, isAvailable: isSplitAvailable } = useSidebarThreadSplit(thread.id);
   const { renameThread } = useThreadNaming(thread.id);
   const title = threadDisplayTitle(thread);
   const plan = buildThreadActionPlan({
-    lifecycle: { kind: "snoozed", wakeNow: onRestore },
+    lifecycle:
+      shelf === "snoozed"
+        ? { kind: "snoozed", wakeNow: onRestore }
+        : { kind: "settled", unsettle: onRestore },
     split: {
       isAvailable: isSplitAvailable,
       open: () => {
@@ -63,7 +70,7 @@ export function SlimRow({
     renameThread: () => void renameThread(),
     requestDelete: () => actions.requestDelete(thread.id),
   });
-  const restoreAction = findThreadAction(plan, "wake-now");
+  const restoreAction = findThreadAction(plan, shelf === "snoozed" ? "wake-now" : "unsettle");
   const [isMenuOpen, setMenuOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
@@ -85,7 +92,7 @@ export function SlimRow({
         {title}
       </span>
       <span className={cn(STATUS_SLOT_CLASS, "tabular-nums text-2xs", "text-muted-foreground")}>
-        {wakeAt !== null ? (
+        {shelf === "snoozed" && wakeAt !== null ? (
           snoozeWakeLabel(wakeAt, now)
         ) : (
           <StatusOrTime thread={thread} now={now} />
@@ -120,7 +127,12 @@ export function SlimRow({
             onClick={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
-              actions.open(thread.id, { split: event.metaKey || event.ctrlKey });
+              // A settled thread is archived, so the sidebar action — which
+              // ignores ids outside bb's own thread view — cannot open it.
+              // General navigation reads the thread first and can route to
+              // archived work; it has no split form.
+              if (shelf === "settled") navigate.toThread(thread.id);
+              else actions.open(thread.id, { split: event.metaKey || event.ctrlKey });
               onNavigate();
             }}
             className="absolute inset-0 cursor-pointer rounded-xl"
@@ -160,18 +172,18 @@ export function SlimRow({
                 !isCompactViewport && "group-hover/slim:opacity-0",
               )}
             >
-              {wakeAt !== null ? (
+              {shelf === "snoozed" && wakeAt !== null ? (
                 snoozeWakeLabel(wakeAt, now)
               ) : (
                 <StatusOrTime thread={thread} now={now} />
               )}
             </span>
             {!isCompactViewport && restoreAction !== undefined ? (
-              <RestoreButton action={restoreAction} isCompactViewport={false} />
+              <RestoreButton action={restoreAction} shelf={shelf} isCompactViewport={false} />
             ) : null}
           </span>
           {isCompactViewport && restoreAction !== undefined ? (
-            <RestoreButton action={restoreAction} isCompactViewport />
+            <RestoreButton action={restoreAction} shelf={shelf} isCompactViewport />
           ) : null}
           {isCompactViewport ? (
             <CompactThreadActionMenu
@@ -190,9 +202,11 @@ export function SlimRow({
 
 function RestoreButton({
   action,
+  shelf,
   isCompactViewport,
 }: {
   action: ThreadAction;
+  shelf: "snoozed" | "settled";
   isCompactViewport: boolean;
 }) {
   return (
@@ -213,7 +227,10 @@ function RestoreButton({
           : "absolute -right-0.5 top-1/2 -translate-y-1/2 p-0.5 opacity-0 focus-visible:opacity-100 group-hover/slim:opacity-100",
       )}
     >
-      <Icon name="Clock" className={isCompactViewport ? "size-4" : "size-3.5"} />
+      <Icon
+        name={shelf === "snoozed" ? "Clock" : "ArrowTurnBackward"}
+        className={isCompactViewport ? "size-4" : "size-3.5"}
+      />
     </button>
   );
 }

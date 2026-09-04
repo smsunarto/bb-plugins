@@ -6,10 +6,11 @@
 
 - Settle is now bb's archive. The check button, the card menu, and a new
   **GTD Sidebar: settle thread** row in bb's quick palette archive the thread, and
-  bb's Undo toast brings it back. The Settled shelf, its 24-hour window, un-settle,
-  and the automatic un-settle on new activity are gone; the plugin's database keeps
-  only snoozes, and rows without a snooze are removed on the next start. Snooze is
-  unchanged.
+  bb's Undo toast brings it back. The Settled shelf is now a view of bb's archive:
+  it lists every thread archived in the last 24 hours, however it was archived, and
+  un-settle unarchives it in bb. The automatic un-settle on new activity is gone;
+  the plugin's database keeps only snoozes, and rows without a snooze are removed on
+  the next start. Snooze is unchanged.
 
 ## 0.4.2
 

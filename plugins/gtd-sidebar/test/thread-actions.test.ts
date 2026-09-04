@@ -11,13 +11,15 @@ import { getCompactActions } from "../components/inbox/thread-action-menu.tsx";
 const noop = () => {};
 
 function lifecycle(kind: "active", canPark: boolean): RowLifecycleState;
-function lifecycle(kind: "snoozed"): RowLifecycleState;
+function lifecycle(kind: "snoozed" | "settled"): RowLifecycleState;
 function lifecycle(kind: RowLifecycleState["kind"], canPark = false): RowLifecycleState {
   switch (kind) {
     case "active":
       return { kind, canPark, snoozeUntilTomorrow: noop, settle: noop };
     case "snoozed":
       return { kind, wakeNow: noop };
+    case "settled":
+      return { kind, unsettle: noop };
   }
 }
 
@@ -74,6 +76,12 @@ const lifecycleCases: readonly {
     lifecycle: lifecycle("snoozed"),
     splitAvailable: false,
     primaryLabels: ["Wake thread now"],
+  },
+  {
+    name: "settled without split",
+    lifecycle: lifecycle("settled"),
+    splitAvailable: false,
+    primaryLabels: ["Un-settle thread"],
   },
 ];
 
@@ -161,6 +169,14 @@ describe("buildThreadActionPlan", () => {
     assert.deepEqual(
       compactActions.map((a) => a.id),
       ["wake-now", "toggle-pin", "request-delete"],
+    );
+  });
+
+  test("getCompactActions offers un-settle on a settled row", () => {
+    const compactActions = getCompactActions(plan(lifecycle("settled")));
+    assert.deepEqual(
+      compactActions.map((a) => a.id),
+      ["unsettle", "toggle-pin", "request-delete"],
     );
   });
 });

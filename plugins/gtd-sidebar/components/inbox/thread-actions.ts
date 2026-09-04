@@ -5,13 +5,15 @@ export type RowLifecycleState =
       snoozeUntilTomorrow: () => void;
       settle: () => void;
     }
-  | { kind: "snoozed"; wakeNow: () => void };
+  | { kind: "snoozed"; wakeNow: () => void }
+  | { kind: "settled"; unsettle: () => void };
 
 export type ThreadActionId =
   | "open-in-split"
   | "snooze-tomorrow"
   | "settle"
   | "wake-now"
+  | "unsettle"
   | "toggle-read"
   | "toggle-pin"
   | "rename-thread"
@@ -78,6 +80,9 @@ export function buildThreadActionPlan({
       break;
     case "snoozed":
       primary.push({ id: "wake-now", label: "Wake thread now", execute: lifecycle.wakeNow });
+      break;
+    case "settled":
+      primary.push({ id: "unsettle", label: "Un-settle thread", execute: lifecycle.unsettle });
       break;
   }
 

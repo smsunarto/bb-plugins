@@ -1,4 +1,5 @@
-// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store.
+// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store and the
+// Settled shelf's read of bb's archive.
 //
 // Snoozes live in the plugin's own SQLite database, never on bb's thread.
 // Putting them on the thread would mean a schema change, a wire change, and a
@@ -11,6 +12,7 @@ import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { GTD_SIDEBAR_AI_SERVICE_ID, gtdSidebarHostContract } from "./lib/host-contract.ts";
+import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 
@@ -77,6 +79,45 @@ export const gtdSidebarRpcContract = defineRpcContract({
       ),
     }),
   },
+  // The Settled shelf's rows. bb's sidebar view is built from queries pinned
+  // to `archived: false`, so an archived thread never reaches the frontend
+  // through the host. It comes through here instead, and only for the last
+  // day: see `SETTLED_WINDOW_MS`. Fields are deliberately loose (`status`,
+  // `originKind` as plain strings) so a new bb value degrades in the mapper
+  // rather than failing output validation and blanking the shelf.
+  listSettledThreads: {
+    input: z.object({}),
+    output: z.object({
+      threads: z.array(
+        z.object({
+          id: z.string(),
+          settledAt: z.number(),
+          projectId: z.string(),
+          title: z.string().nullable(),
+          titleFallback: z.string().nullable(),
+          parentThreadId: z.string().nullable(),
+          sectionId: z.string().nullable(),
+          originKind: z.string().nullable(),
+          originPluginId: z.string().nullable(),
+          providerId: z.string(),
+          status: z.string(),
+          hasPendingInteraction: z.boolean(),
+          isPinned: z.boolean(),
+          activity: z.object({
+            workflows: z.number(),
+            backgroundAgents: z.number(),
+            backgroundCommands: z.number(),
+            planMode: z.number(),
+            goals: z.number(),
+          }),
+          createdAt: z.number(),
+          updatedAt: z.number(),
+          lastReadAt: z.number().nullable(),
+          latestAttentionAt: z.number(),
+        }),
+      ),
+    }),
+  },
   renameThread: {
     input: threadIdSchema,
     output: z.union([
@@ -93,6 +134,8 @@ export const gtdSidebarRpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean() }),
   },
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
+  /** bb's unarchive. The thread comes back through the host's own view. */
+  unsettle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
 });
 
 /** Channel the frontend re-reads on. */
@@ -178,6 +221,24 @@ export default function plugin(bb: BbPluginApi) {
     return result;
   };
 
+  /** One page is already generous; the loop is for the account that isn't. */
+  const ARCHIVED_PAGE_SIZE = 200;
+  const ARCHIVED_PAGE_LIMIT = 50;
+
+  const listArchivedThreads = async () => {
+    const collected = [];
+    for (let page = 0; page < ARCHIVED_PAGE_LIMIT; page++) {
+      const rows = await bb.sdk.threads.list({
+        archived: true,
+        limit: ARCHIVED_PAGE_SIZE,
+        offset: page * ARCHIVED_PAGE_SIZE,
+      });
+      collected.push(...rows);
+      if (rows.length < ARCHIVED_PAGE_SIZE) break;
+    }
+    return collected;
+  };
+
   bb.rpc.register(gtdSidebarRpcContract, {
     async listEnvironmentBranches({ environmentIds }) {
       const environments = await Promise.all(
@@ -229,6 +290,69 @@ export default function plugin(bb: BbPluginApi) {
     renameThread({ threadId }) {
       return threadNamer.nameThread(threadId, { kind: "forced" });
     },
+    /**
+     * bb's archived threads from the last day, whoever archived them: the
+     * shelf is a view of bb's archive, so a thread archived from bb's own
+     * sidebar sits on it too. One archived longer ago keeps its archive and
+     * simply stops being drawn.
+     *
+     * The window is applied here as well as on the frontend. The frontend's is
+     * the live one — it re-cuts on its own clock, so a row ages off screen
+     * without a refetch — and this one keeps the response proportional to the
+     * shelf instead of to the whole archive.
+     */
+    async listSettledThreads() {
+      const now = Date.now();
+      const archived = await listArchivedThreads();
+      return {
+        threads: archived.flatMap((thread) => {
+          if (thread.archivedAt === null || !isWithinSettledWindow(thread.archivedAt, now)) {
+            return [];
+          }
+          return [
+            {
+              id: thread.id,
+              settledAt: thread.archivedAt,
+              projectId: thread.projectId,
+              title: thread.title,
+              titleFallback: thread.titleFallback,
+              parentThreadId: thread.parentThreadId,
+              sectionId: thread.sectionId,
+              originKind: thread.originKind,
+              originPluginId: thread.originPluginId,
+              providerId: thread.providerId,
+              status: thread.status,
+              hasPendingInteraction: thread.hasPendingInteraction,
+              isPinned: thread.pinnedAt !== null,
+              activity: {
+                workflows: thread.activity.activeWorkflowCount,
+                backgroundAgents: thread.activity.activeBackgroundAgentCount,
+                backgroundCommands: thread.activity.activeBackgroundCommandCount,
+                planMode: thread.activity.activePlanModeCount,
+                goals: thread.activity.activeGoalCount,
+              },
+              createdAt: thread.createdAt,
+              updatedAt: thread.updatedAt,
+              lastReadAt: thread.lastReadAt,
+              latestAttentionAt: thread.latestAttentionAt,
+            },
+          ];
+        }),
+      };
+    },
+    async unsettle({ threadId }) {
+      try {
+        await bb.sdk.threads.unarchive({ threadId });
+      } catch (error) {
+        // Unarchiving reaches the thread's host, which can be offline. The row
+        // stays on the shelf, which is where the thread still is.
+        bb.log.warn(`unarchive failed for thread ${threadId}: ${String(error)}`);
+        return { ok: false };
+      }
+      // bb has no unarchive event, so the shelf learns the row is gone here.
+      bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
+      return { ok: true };
+    },
     async snooze({ threadId, snoozedUntil }) {
       return serializeLifecycleMutation(threadId, () => {
         write({ threadId, snoozedUntil, snoozedAt: Date.now() });
@@ -247,6 +371,13 @@ export default function plugin(bb: BbPluginApi) {
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
     clear(thread.id);
+  });
+
+  // Settle is bb's archive, made through the host action on the frontend, so
+  // the shelf hears about it from bb's event rather than from an RPC here.
+  // Cascade archives fire this once per child, and every publish is cheap.
+  bb.events.on("thread.archived", ({ thread }) => {
+    bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: thread.id });
   });
 
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {

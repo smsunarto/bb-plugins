@@ -21,6 +21,7 @@ import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle } from "@/hooks/use-lifecycle";
+import { useSettledThreads } from "@/hooks/use-settled-threads";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
@@ -32,6 +33,7 @@ import {
   searchThreadsByTitle,
   sortByLatestAttentionDescending,
 } from "@/lib/inbox";
+import { mergeSettledThreads } from "@/lib/settled-threads";
 import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
 import { resolveSidebarBranchLabel } from "@/lib/gitbutler";
 
@@ -56,7 +58,7 @@ export function ThreadInbox({
   onNavigate,
   searchQuery,
 }: PluginThreadListProps) {
-  const { status, threads, projects } = useSidebarThreads();
+  const { status, threads: hostThreads, projects } = useSidebarThreads();
   const threadActions = useSidebarThreadActions();
   // The palette's settle row archives through this same host action, and a
   // mounted list is the only place the action exists.
@@ -74,6 +76,13 @@ export function ThreadInbox({
   }, []);
   const now = nowMinute * 60_000;
   const lifecycle = useLifecycle();
+  // bb's view never carries an archived thread, so the Settled shelf's rows
+  // come from a second read and are merged in before anything partitions.
+  const settledThreads = useSettledThreads(now);
+  const threads = useMemo(
+    () => mergeSettledThreads(hostThreads, settledThreads.threads),
+    [hostThreads, settledThreads.threads],
+  );
   // Seeded from the same cache the shelves use, and for the same reason: a
   // remount would otherwise draw every glyph from a fallback and swap it a
   // round trip later. Nothing gates on it — a fallback glyph is a different
@@ -163,21 +172,27 @@ export function ThreadInbox({
     };
   }, [rpc]);
   const [showSnoozed, setShowSnoozed] = useState(false);
+  const [showSettled, setShowSettled] = useState(false);
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects],
   );
 
-  const { pinned, nextAction, waiting, snoozed } = useMemo(() => {
+  const { pinned, nextAction, waiting, snoozed, settled } = useMemo(() => {
     const scoped = filterByProject(threads, scope === ALL_PROJECTS ? null : scope);
     // Children live in their parent's header chip instead of the flat list;
     // an orphan whose parent is not on screen stays here.
     const matched = searchThreadsByTitle(hideChildrenOfVisibleParents(scoped), searchQuery);
     const active: typeof matched = [];
     const onSnoozeShelf: typeof matched = [];
+    const onSettledShelf: typeof matched = [];
     for (const thread of matched) {
-      (lifecycle.shelfFor(thread) === "snoozed" ? onSnoozeShelf : active).push(thread);
+      // Archived outranks a snooze row the thread may still hold: the archive
+      // is bb's fact, and the row is only what the plugin last wrote.
+      if (thread.isArchived) onSettledShelf.push(thread);
+      else if (lifecycle.shelfFor(thread) === "snoozed") onSnoozeShelf.push(thread);
+      else active.push(thread);
     }
     const split = partitionPinned(active);
     const activeSections = partitionActiveSections(split.inbox);
@@ -185,10 +200,13 @@ export function ThreadInbox({
       pinned: sortByLatestAttentionDescending(split.pinned),
       ...activeSections,
       snoozed: sortByLatestAttentionDescending(onSnoozeShelf),
+      // Already newest-archive-first from the hook; the merge kept that order.
+      settled: onSettledShelf,
     };
   }, [lifecycle, scope, searchQuery, threads]);
 
-  const shelvedTotal = pinned.length + nextAction.length + waiting.length + snoozed.length;
+  const shelvedTotal =
+    pinned.length + nextAction.length + waiting.length + snoozed.length + settled.length;
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
@@ -275,7 +293,7 @@ export function ThreadInbox({
           <p role="status" className={EMPTY_STATE_CLASS}>
             Could not load threads.
           </p>
-        ) : !lifecycle.shelvesReady ? null : shelvedTotal === 0 ? (
+        ) : !lifecycle.shelvesReady || !settledThreads.ready ? null : shelvedTotal === 0 ? (
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
           <p role="status" className={EMPTY_STATE_CLASS}>
             {searchQuery.trim() ? "No threads found" : "No threads yet"}
@@ -359,11 +377,26 @@ export function ThreadInbox({
             ) : null}
             <ParkedShelf
               label="Snoozed"
+              shelf="snoozed"
               threads={snoozed}
               expanded={showSnoozed}
               onToggle={() => setShowSnoozed((open) => !open)}
               activeThreadId={activeThreadId}
-              lifecycle={lifecycle}
+              wakeAtFor={lifecycle.wakeAtFor}
+              onRestore={lifecycle.unsnooze}
+              isCompactViewport={isCompactViewport}
+              onNavigate={onNavigate}
+              now={now}
+            />
+            <ParkedShelf
+              label="Settled"
+              shelf="settled"
+              threads={settled}
+              expanded={showSettled}
+              onToggle={() => setShowSettled((open) => !open)}
+              activeThreadId={activeThreadId}
+              wakeAtFor={() => null}
+              onRestore={settledThreads.unsettle}
               isCompactViewport={isCompactViewport}
               onNavigate={onNavigate}
               now={now}
@@ -376,27 +409,31 @@ export function ThreadInbox({
 }
 
 /**
- * A collapsed shelf of snoozed threads. The header stays while anything is
- * snoozed — the count is the whole footprint when collapsed — and the shelf
+ * A collapsed shelf of parked threads. The header stays while anything is
+ * parked — the count is the whole footprint when collapsed — and the shelf
  * vanishes entirely at zero.
  */
 function ParkedShelf({
   label,
+  shelf,
   threads,
   expanded,
   onToggle,
   activeThreadId,
-  lifecycle,
+  wakeAtFor,
+  onRestore,
   isCompactViewport,
   onNavigate,
   now,
 }: {
   label: string;
+  shelf: "snoozed" | "settled";
   threads: readonly PluginSidebarThread[];
   expanded: boolean;
   onToggle: () => void;
   activeThreadId: string | null;
-  lifecycle: ReturnType<typeof useLifecycle>;
+  wakeAtFor: (thread: PluginSidebarThread) => number | null;
+  onRestore: (threadId: string) => void;
   isCompactViewport: boolean;
   onNavigate: () => void;
   /** Quantized clock, shared by every row — never a fresh read, which a
@@ -447,11 +484,12 @@ function ParkedShelf({
               key={thread.id}
               thread={thread}
               isActive={thread.id === activeThreadId}
-              wakeAt={lifecycle.wakeAtFor(thread)}
+              shelf={shelf}
+              wakeAt={wakeAtFor(thread)}
               now={now}
               isCompactViewport={isCompactViewport}
               onNavigate={onNavigate}
-              onRestore={() => lifecycle.unsnooze(thread.id)}
+              onRestore={() => onRestore(thread.id)}
             />
           ))}
         </ul>
