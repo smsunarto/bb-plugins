@@ -38,8 +38,8 @@
         "dark": "./assets/logo-dark.svg"
       }
     },
-    "server": "./server/server.ts",
-    "app": "./app/app.tsx",
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
     "skills": []
   },
   "files": [
@@ -52,9 +52,9 @@
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "server/",
-    "app/",
-    "shared/"
+    "src/server/",
+    "src/app/",
+    "src/shared/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.1.0",
