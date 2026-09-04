@@ -16,7 +16,7 @@
 </div>
 
 <div align="center">
-<picture><img src="docs/media/hero.png" alt="The GTD Sidebar inbox beside its shelf model: Next Action, Waiting, Snoozed, and Settled" width="100%" /></picture>
+<picture><img src="docs/media/hero.png" alt="The GTD Sidebar inbox beside its shelf model: Pinned, Next Action, Waiting, and Snoozed" width="100%" /></picture>
 </div>
 
 GTD Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
@@ -25,7 +25,8 @@ Active threads split into **Next Action** when the user can act and **Waiting** 
 the agent works. Every section shows the most recently updated thread first.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
-**settle** it when you are done. Both shelves collapse to one counted header.
+**settle** it when you are done. Settle archives the thread in bb, and bb's Undo toast
+brings it back. The Snoozed shelf collapses to one counted header.
 
 ## Install
 
@@ -78,10 +79,9 @@ disable the plugin.
 - **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet.
 - **Waiting** — foreground or background agent work is live.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
-- **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
 
-Each section sorts the most recently updated threads first. The Snoozed and Settled
-order is visible when you expand those shelves.
+Each section sorts the most recently updated threads first. The Snoozed order is
+visible when you expand that shelf.
 
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
@@ -93,17 +93,23 @@ branch, activity counts, PR number, and the agent (which you can turn off — se
 [Configuration](#configuration)). The status slot shows what the
 thread needs — failed, waiting on you, working, or finished while you were away —
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
-the two park buttons.
+the park buttons.
 
-### A working thread can never be parked
+### A working thread can never be snoozed
 
 Workflows, background agents, background commands, plan mode, and goals all count as
-live work. Any of them blocks parking and wakes a parked thread, so running work is
+live work. Any of them blocks snoozing and wakes a snoozed thread, so running work is
 never hidden.
 
 ### Snoozing
 
 The hover button snoozes until **09:00 tomorrow**.
+
+### Settling
+
+The check button, the card menu, and the **GTD Sidebar: settle thread** row in bb's
+quick palette all archive the thread in bb. bb's Undo toast brings it back. Settling
+the open thread moves you to the next row in its section.
 
 ### Child threads
 
@@ -141,7 +147,7 @@ thread when you omit the id.
 ### The rest
 
 - A project scope picker — the one control the plugin adds.
-- Right-click to generate a name, open in split, mark read/unread, pin, archive, or delete.
+- Right-click to generate a name, open in split, mark read/unread, pin, settle, or delete.
 - On a phone, hold a row for half a second (iOS's own long-press timing) for the same
   menu, drawn as an iOS-style frosted sheet. Menu taps play a haptic on iOS.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
@@ -159,37 +165,28 @@ Two settings, in **Settings → Plugins → GTD Sidebar**:
   meta line keeps a straight right edge either way.
 
 The snooze presets assume a 09:00 morning, an 18:00 evening, and a week starting
-Monday, in your local timezone. The settled shelf reaches back 24 hours. None of
-these are settings.
+Monday, in your local timezone. None of these are settings.
 
 ## Troubleshooting
 
 **My sidebar looks the same after installing.** Choose GTD Sidebar in Settings →
 Appearance → Sidebar. Installing alone changes nothing.
 
-**A thread I settled is not on the Settled shelf.** The shelf only reaches back 24
-hours. Older work is still settled and still archived — look for it in bb's archived
-view.
-
 **A snoozed thread came back early.** That is the design: a snoozed thread wakes when
 it starts working or asks you a question.
 
-**Un-settling did not bring the thread back.** Archive and unarchive run on the
-thread's host, which can be offline. When an unarchive fails, bb keeps the thread
-archived and the thread leaves the sidebar until you unarchive it in bb yourself.
-
-**Uninstalling left data behind.** The shelves live in the plugin's own database,
+**Uninstalling left data behind.** Snoozes live in the plugin's own database,
 which bb removes with the plugin — but a copy of them is cached in the browser's
-`localStorage` under `gtd-sidebar:v1:*` (thread ids, park timestamps, and provider ids,
-names, and logo paths). bb's uninstall does not clear web storage. Clear site data if
-that matters to you.
+`localStorage` under `gtd-sidebar:v1:*` (thread ids, snooze timestamps, and provider
+ids, names, and logo paths). bb's uninstall does not clear web storage. Clear site
+data if that matters to you.
 
 ## Credits
 
 Forked from bb's own example, and released as `t3sidebar` until 0.3.0. bb keys a
 plugin by its id, so the renamed plugin installs as a separate one: install
-`gtd-sidebar`, then uninstall `t3sidebar`. Shelves do not carry over — settled and
-snoozed state lives in the old plugin's database and goes with it.
+`gtd-sidebar`, then uninstall `t3sidebar`. Snoozes do not carry over — they live in
+the old plugin's database and go with it.
 
 |          |                                                                                                                 |
 | -------- | --------------------------------------------------------------------------------------------------------------- |
