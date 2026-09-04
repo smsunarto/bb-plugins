@@ -42,10 +42,10 @@ Identifiers, calls, and expressions are rejected with a diagnostic.
 A canvas declares its style with frontmatter at the very top of the file.
 Without frontmatter the style is `default`.
 
-| Style     | Summary                                                                 |
-| --------- | ----------------------------------------------------------------------- |
-| `default` | Compact prose, toned surfaces, and bb's own palette.                    |
-| `github`  | The GitHub markdown body with rules under headings and bordered tables. |
+| Style     | Summary                                                                                         |
+| --------- | ----------------------------------------------------------------------------------------------- |
+| `default` | Compact prose, toned surfaces, and bb's own palette.                                            |
+| `github`  | GitHub's light markdown body, white on every bb theme, with ruled headings and bordered tables. |
 
 <!-- prettier-ignore -->
 ```mdx

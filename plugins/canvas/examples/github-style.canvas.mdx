@@ -8,7 +8,7 @@ The canvas plugin renders a `.canvas.mdx` file beside the chat. A document picks
 its look with one frontmatter key, and the opener applies it through a single
 `data-canvas-style` attribute on the prose container. The `github` style takes
 its values from [github-markdown-css](https://github.com/sindresorhus/github-markdown-css)
-and maps every color to a host token.
+and Primer's light palette, so the page is white on every bb theme.
 
 ## What a style may change
 
@@ -16,8 +16,8 @@ and maps every color to a host token.
 - Surfaces: borders, table cells, code wells, and card headers.
 - Never the content: the parser produces the same document for every style.
 
-> A style maps every color to a host token, so the same file reads on a light
-> or dark bb theme without a second stylesheet.
+> The default style follows the host theme. The github style does not, because
+> a pull request preview should look like the page on github.com.
 
 ```ts
 import { defaultStyle, isStyleName } from "../shared/styles.ts";

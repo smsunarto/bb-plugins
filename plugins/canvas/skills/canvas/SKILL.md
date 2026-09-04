@@ -55,7 +55,7 @@ style: github
 Two styles exist:
 
 - `default`. Compact prose, toned surfaces, and bb's own palette.
-- `github`. The GitHub markdown body with rules under headings and bordered tables.
+- `github`. GitHub's light markdown body, white on every bb theme, with ruled headings and bordered tables.
 
 Pick `github` when the artifact mirrors a GitHub surface: a pull request, an issue, a release note, or a README draft. Stay on `default` for analytical canvases.
 

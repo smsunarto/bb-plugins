@@ -1,19 +1,71 @@
 /*
- * The `github` canvas style: the GitHub markdown body (github-markdown-css,
- * light build) with every color mapped to a host token so it reads on any bb
- * theme. Every selector carries the data attribute, so the default style is
- * untouched, and the extra attribute is what lets these rules outrank the
- * default rules in app.css.
+ * The `github` canvas style: GitHub's own light markdown body, taken from
+ * github-markdown-css 5 (light build) and Primer's light palette. Unlike the
+ * default style it does not follow the host theme. The page is white and every
+ * color is a Primer value, so a pull request or issue preview looks like the
+ * page on github.com even when bb runs a dark theme.
+ *
+ * The root redefines the host tokens the default rules and the Tailwind
+ * utilities read (--foreground, --border, --muted, ...), so every component
+ * picks up the palette without a per-component color rule. Tones and the
+ * host's fenced code blocks are the only parts that need explicit colors.
+ * The host diff viewer is left alone on purpose: it keeps the bb theme.
  */
 
-.canvas-prose[data-canvas-style="github"] {
+.canvas-scroll:has(> .canvas-prose[data-canvas-style="github"]) {
+  background: #ffffff;
+  color-scheme: light;
+}
+
+/* One more compound than `.dark .canvas-prose`, so this wins over a theme's
+ * prose overrides regardless of stylesheet order. */
+.canvas-scroll > .canvas-prose[data-canvas-style="github"] {
+  --gh-fg: #1f2328;
+  --gh-fg-muted: #59636e;
+  --gh-accent: #0969da;
+  --gh-success: #1a7f37;
+  --gh-success-emphasis: #1f883d;
+  --gh-danger: #d1242f;
+  --gh-danger-emphasis: #cf222e;
+  --gh-attention: #9a6700;
+  --gh-done: #8250df;
+  --gh-bg: #ffffff;
+  --gh-bg-muted: #f6f8fa;
+  --gh-bg-neutral-muted: #818b981f;
+  --gh-border: #d1d9e0;
+  --gh-border-muted: #d1d9e0b3;
+  --gh-font:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  --gh-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --foreground: var(--gh-fg);
+  --muted-foreground: var(--gh-fg-muted);
+  --background: var(--gh-bg);
+  --muted: var(--gh-bg-muted);
+  --secondary: var(--gh-bg-muted);
+  --border: var(--gh-border);
+  --border-seam: var(--gh-border);
+  --primary: var(--gh-accent);
+  --font-mono: var(--gh-mono);
+
+  --canvas-prose-font: var(--gh-font);
+  --canvas-prose-heading: var(--gh-fg);
+  --canvas-prose-strong: var(--gh-fg);
+  --canvas-prose-link: var(--gh-accent);
+  --canvas-prose-link-hover: var(--gh-accent);
+  --canvas-prose-marker: var(--gh-fg);
+  --canvas-prose-quote-rule: var(--gh-border);
+  --canvas-prose-rule: var(--gh-border);
+  --canvas-prose-code-well: var(--gh-bg-neutral-muted);
+
   box-sizing: border-box;
   max-width: 1012px;
   padding: 32px;
-  color: var(--foreground);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--gh-bg);
+  color: var(--gh-fg);
+  color-scheme: light;
+  font-family: var(--gh-font);
   font-size: 16px;
   line-height: 1.5;
   word-wrap: break-word;
@@ -31,7 +83,7 @@
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(h1, h2) {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--gh-border-muted);
   padding-bottom: 0.3em;
 }
 
@@ -89,18 +141,15 @@
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] a {
-  color: var(--primary);
-  text-decoration: none;
+  color: var(--gh-accent);
+  text-decoration: underline;
+  text-decoration-thickness: auto;
   text-underline-offset: 0.2rem;
 }
 
-.canvas-prose[data-canvas-style="github"] [data-markdown-preview] a:hover {
-  text-decoration: underline;
-}
-
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] blockquote {
-  border-left: 0.25em solid var(--border);
-  color: var(--muted-foreground);
+  border-left: 0.25em solid var(--gh-border);
+  color: var(--gh-fg-muted);
   margin: 0 0 16px;
   padding: 0 1em;
 }
@@ -110,7 +159,7 @@
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] :not(pre) > code {
-  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  background: var(--gh-bg-neutral-muted);
   border: 0;
   border-radius: 6px;
   margin: 0;
@@ -118,12 +167,17 @@
   white-space: break-spaces;
 }
 
-/* Undo the default style's centered breakout on the host's fenced-code
- * wrapper; the wrapper stays positioned so its copy button keeps its anchor. */
+/* The host wraps fenced code in a div with its own dark surface and border.
+ * GitHub draws a flat #f6f8fa block, so the wrapper loses the border and the
+ * default style's centered breakout; it stays positioned for the copy button. */
 .canvas-prose[data-canvas-style="github"]
   [data-markdown-preview]
   :where(div):has(> pre.bb-code-highlight) {
+  background: var(--gh-bg-muted);
+  border-color: transparent;
   border-radius: 6px;
+  color: var(--gh-fg);
+  font-family: var(--gh-mono);
   font-size: 85%;
   left: auto;
   line-height: 1.45;
@@ -133,7 +187,23 @@
   width: auto;
 }
 
-.canvas-prose[data-canvas-style="github"] [data-markdown-preview] pre.bb-code-highlight {
+/* The host sets the sugar-high token colors on the pre itself under `.dark`,
+ * so the light values need a rule on the pre that outranks it. These are
+ * Primer's prettylights light colors. */
+.canvas-prose[data-canvas-style="github"]
+  [data-markdown-preview]
+  pre.bb-code-highlight.bb-code-highlight {
+  --sh-class: #953800;
+  --sh-identifier: #1f2328;
+  --sh-sign: #1f2328;
+  --sh-property: #0550ae;
+  --sh-entity: #6639ba;
+  --sh-jsxliterals: #0550ae;
+  --sh-string: #0a3069;
+  --sh-keyword: #cf222e;
+  --sh-comment: #59636e;
+  --sh-space: inherit;
+  color: var(--gh-fg);
   overflow: auto;
   padding: 16px;
 }
@@ -159,27 +229,45 @@
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(th, td),
 .canvas-prose[data-canvas-style="github"] .canvas-table :is(th, td) {
-  border: 1px solid var(--border);
+  border: 1px solid var(--gh-border);
   padding: 6px 13px;
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] th,
 .canvas-prose[data-canvas-style="github"] .canvas-table th {
+  color: var(--gh-fg);
   font-weight: 600;
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] tr,
 .canvas-prose[data-canvas-style="github"] .canvas-table tr {
-  border-top: 1px solid var(--border);
+  background: var(--gh-bg);
+  border-top: 1px solid var(--gh-border-muted);
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] tbody tr:nth-child(2n),
 .canvas-prose[data-canvas-style="github"] .canvas-table tbody tr:nth-child(2n) {
-  background: var(--muted);
+  background: var(--gh-bg-muted);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-table tr[data-tone="info"] {
+  color: var(--gh-accent);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-table tr[data-tone="success"] {
+  color: var(--gh-success);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-table tr[data-tone="warning"] {
+  color: var(--gh-attention);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-table tr[data-tone="danger"] {
+  color: var(--gh-danger);
 }
 
 .canvas-prose[data-canvas-style="github"] [data-markdown-preview] hr {
-  background: var(--border);
+  background: var(--gh-border);
   border: 0;
   height: 0.25em;
   margin: 24px 0;
@@ -190,44 +278,115 @@
   margin-block: 0 16px;
 }
 
+/* Pills as GitHub issue labels: filled for a tone, outlined when neutral. */
 .canvas-prose[data-canvas-style="github"] .canvas-pill {
+  background: var(--gh-bg-neutral-muted);
+  border: 1px solid var(--gh-border);
   border-radius: 2em;
-  border-width: 1px;
+  color: var(--gh-fg);
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
   padding: 0 7px;
 }
 
-/* The aside's color is the tone (see components.tsx), so currentColor draws
- * the alert rule in the tone without a per-tone rule here. */
+.canvas-prose[data-canvas-style="github"] .canvas-pill[data-tone="info"] {
+  background: var(--gh-accent);
+  border-color: var(--gh-accent);
+  color: #ffffff;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-pill[data-tone="success"] {
+  background: var(--gh-success-emphasis);
+  border-color: var(--gh-success-emphasis);
+  color: #ffffff;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-pill[data-tone="warning"] {
+  background: var(--gh-attention);
+  border-color: var(--gh-attention);
+  color: #ffffff;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-pill[data-tone="danger"] {
+  background: var(--gh-danger-emphasis);
+  border-color: var(--gh-danger-emphasis);
+  color: #ffffff;
+}
+
+/* Callouts as GitHub markdown alerts: a left rule and a toned title, no fill. */
 .canvas-prose[data-canvas-style="github"] .canvas-callout {
   background: transparent;
-  border-left-color: currentColor;
+  border: 0;
+  border-left: 0.25em solid var(--gh-border);
   border-radius: 0;
-  border-width: 0 0 0 0.25em;
+  color: var(--gh-fg);
   padding: 0.5rem 1rem;
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-callout-title {
+  color: var(--gh-fg-muted);
   font-size: 1em;
-  font-weight: 600;
-  margin-bottom: 0.5em;
+  font-weight: 500;
+  line-height: 1;
+  margin-bottom: 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout[data-tone="info"] {
+  border-left-color: var(--gh-accent);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout[data-tone="info"] .canvas-callout-title {
+  color: var(--gh-accent);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout[data-tone="success"] {
+  border-left-color: var(--gh-success);
+}
+
+.canvas-prose[data-canvas-style="github"]
+  .canvas-callout[data-tone="success"]
+  .canvas-callout-title {
+  color: var(--gh-success);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout[data-tone="warning"] {
+  border-left-color: var(--gh-attention);
+}
+
+.canvas-prose[data-canvas-style="github"]
+  .canvas-callout[data-tone="warning"]
+  .canvas-callout-title {
+  color: var(--gh-attention);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout[data-tone="danger"] {
+  border-left-color: var(--gh-danger-emphasis);
+}
+
+.canvas-prose[data-canvas-style="github"]
+  .canvas-callout[data-tone="danger"]
+  .canvas-callout-title {
+  color: var(--gh-danger);
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-callout > .canvas-nested {
+  color: var(--gh-fg);
   font-size: 1em;
 }
 
+/* Cards as Primer boxes. */
 .canvas-prose[data-canvas-style="github"] .canvas-card {
-  border: 1px solid var(--border);
+  background: var(--gh-bg);
+  border: 1px solid var(--gh-border);
   border-radius: 6px;
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-card-header {
-  background: var(--muted);
-  border-bottom: 1px solid var(--border);
+  background: var(--gh-bg-muted);
+  border-bottom: 1px solid var(--gh-border);
   border-radius: 5px 5px 0 0;
+  color: var(--gh-fg);
   font-size: 14px;
   font-weight: 600;
   padding: 8px 16px;
@@ -243,34 +402,68 @@
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-section > :is(summary, h3) {
+  color: var(--gh-fg);
   font-size: 1.25em;
   font-weight: 600;
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-stat {
-  border: 1px solid var(--border);
+  background: var(--gh-bg);
+  border: 1px solid var(--gh-border);
   border-radius: 6px;
   padding: 16px;
 }
 
-/* Nested prose keeps the compact rhythm from app.css; these repeat it with the
- * data attribute so the wider github rules above do not win on specificity. */
+.canvas-prose[data-canvas-style="github"] .canvas-stat[data-tone="info"] .canvas-stat-delta {
+  color: var(--gh-accent);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-stat[data-tone="success"] .canvas-stat-delta {
+  color: var(--gh-success);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-stat[data-tone="warning"] .canvas-stat-delta {
+  color: var(--gh-attention);
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-stat[data-tone="danger"] .canvas-stat-delta {
+  color: var(--gh-danger);
+}
+
+/* The Ask button as a Primer default button. */
+.canvas-prose[data-canvas-style="github"] .canvas-ask {
+  background: var(--gh-bg-muted);
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  color: var(--gh-fg);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  padding: 5px 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-ask:hover {
+  background: #eff2f5;
+}
+
+/* Nested prose keeps GitHub's 16px rhythm inside a card or callout, with the
+ * last block flush against the container padding. */
 .canvas-prose[data-canvas-style="github"]
   .canvas-nested
   [data-markdown-preview]
   :is(h1, h2, h3, h4, p, ul, ol, blockquote, hr) {
-  margin-block: 0.75em;
+  margin-block: 0 16px;
 }
 
 .canvas-prose[data-canvas-style="github"]
   .canvas-nested
   [data-markdown-preview]
   :where(div):has(> :where(div) > table) {
-  margin-block: 0.75em;
+  margin-block: 0 16px;
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-nested .canvas-block {
-  margin-block: 0.75rem;
+  margin-block: 0 16px;
 }
 
 .canvas-prose[data-canvas-style="github"] .canvas-nested > [data-markdown-preview] > :first-child {
@@ -280,6 +473,7 @@
 .canvas-prose[data-canvas-style="github"]
   .canvas-nested
   > [data-markdown-preview]:last-child
-  > :last-child {
+  > :last-child,
+.canvas-prose[data-canvas-style="github"] .canvas-nested > .canvas-block:last-child {
   margin-bottom: 0;
 }

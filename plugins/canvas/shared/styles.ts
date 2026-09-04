@@ -8,7 +8,10 @@ export type StyleName = (typeof styleNames)[number];
 
 export const styles: Readonly<Record<StyleName, { readonly summary: string }>> = {
   default: { summary: "Compact prose, toned surfaces, and bb's own palette." },
-  github: { summary: "The GitHub markdown body with rules under headings and bordered tables." },
+  github: {
+    summary:
+      "GitHub's light markdown body, white on every bb theme, with ruled headings and bordered tables.",
+  },
 };
 
 export const defaultStyle: StyleName = "default";

@@ -74,6 +74,8 @@ test("applies the document style through data-canvas-style", async () => {
     "github",
   );
   assert.equal(slot.container.querySelectorAll(".canvas-pill").length, 2);
+  assert.equal(slot.container.querySelectorAll('.canvas-pill[data-tone="success"]').length, 1);
+  assert.equal(slot.container.querySelectorAll('.canvas-callout[data-tone="warning"]').length, 1);
   assert.equal(slot.container.querySelectorAll(".canvas-callout-title").length, 1);
   assert.equal(slot.container.querySelectorAll(".canvas-card > .canvas-card-body").length, 1);
   assert.equal(slot.container.querySelectorAll(".canvas-card .canvas-table").length, 1);

@@ -178,6 +178,7 @@ function Callout(props: CanvasComponentProps): ReactElement {
     // currentColor; both children set their own color, so nothing visible changes.
     <aside
       className={`canvas-callout canvas-block rounded-md border px-3 py-2 ${toneSurface[tone]} ${toneText[tone]}`}
+      data-tone={tone}
       role="note"
     >
       {title !== undefined ? (
@@ -209,14 +210,17 @@ function Stat(props: CanvasComponentProps): ReactElement {
     tone?: Tone;
   }>(props.props);
   return (
-    <div className="canvas-stat rounded-md border border-border bg-background px-3 py-2">
+    <div
+      className="canvas-stat rounded-md border border-border bg-background px-3 py-2"
+      data-tone={tone}
+    >
       <p className="m-0 text-[0.75em] text-muted-foreground">{label}</p>
       <p className="m-0 flex items-baseline gap-2">
         <span className="text-[1.5em] font-semibold leading-tight tracking-[-0.015em] text-foreground">
           {value}
         </span>
         {delta !== undefined ? (
-          <span className={`text-[0.75em] ${toneText[tone]}`}>{delta}</span>
+          <span className={`canvas-stat-delta text-[0.75em] ${toneText[tone]}`}>{delta}</span>
         ) : null}
       </p>
       {caption !== undefined ? (
@@ -231,6 +235,7 @@ function Pill(props: CanvasComponentProps): ReactElement {
   return (
     <span
       className={`canvas-pill my-1 inline-block rounded-full border px-2 py-0.5 text-[0.75em] ${toneSurface[tone]} ${toneText[tone]}`}
+      data-tone={tone}
     >
       {label}
     </span>
@@ -285,6 +290,7 @@ function Table(props: CanvasComponentProps): ReactElement {
               <tr
                 key={row.key}
                 className={`border-b [border-color:var(--canvas-prose-rule)] ${stripe} ${tone === null ? "" : toneRowText[tone]}`}
+                data-tone={tone ?? undefined}
               >
                 {columns.map((column, cellIndex) => (
                   <td
@@ -356,7 +362,7 @@ function Ask(props: CanvasComponentProps): ReactElement {
   return (
     <button
       type="button"
-      className={`my-2 ${buttonClass}`}
+      className={`canvas-ask my-2 ${buttonClass}`}
       onClick={() => navigate.toCompose({ initialPrompt: prompt, focusPrompt: true })}
     >
       {label}
