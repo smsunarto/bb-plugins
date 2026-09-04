@@ -53,3 +53,15 @@ The `m` press must show scoped markers over the model dialog. The `]` press must
 - Agent-run locked controls do not receive hints.
 - Use `Meta` for Command on macOS.
 - Drive one command at a time. Concurrent commands can race the browser session.
+
+### Conversation scroll keys
+
+On a thread route with enough rows to scroll, `k` moves the conversation up one 60px step, `j` moves it down, and `J` jumps to the bottom. Read the scroller's `scrollTop` between presses. The scroller is the nearest `overflow-y: auto` ancestor of `[data-timeline-row-list="top-level"]`.
+
+```bash
+agent-browser --session "$BROWSER_SESSION" press k
+agent-browser --session "$BROWSER_SESSION" press j
+agent-browser --session "$BROWSER_SESSION" press J
+```
+
+`k` must lower `scrollTop` by 60 and must not open the permission-mode menu. `J` must land on `scrollHeight - clientHeight`. Inside the composer, `j` and `k` must type and leave `scrollTop` alone.
