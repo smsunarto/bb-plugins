@@ -1,0 +1,54 @@
+---
+style: github
+---
+
+# Canvas styles
+
+The canvas plugin renders a `.canvas.mdx` file beside the chat. A document picks
+its look with one frontmatter key, and the opener applies it through a single
+`data-canvas-style` attribute on the prose container. The `github` style takes
+its values from [github-markdown-css](https://github.com/sindresorhus/github-markdown-css)
+and maps every color to a host token.
+
+## What a style may change
+
+- Type: the measure, font stack, heading scale, and block rhythm.
+- Surfaces: borders, table cells, code wells, and card headers.
+- Never the content: the parser produces the same document for every style.
+
+> A style maps every color to a host token, so the same file reads on a light
+> or dark bb theme without a second stylesheet.
+
+```ts
+import { defaultStyle, isStyleName } from "../shared/styles.ts";
+
+export function resolveStyle(value: string) {
+  return isStyleName(value) ? value : defaultStyle;
+}
+```
+
+| Style     | Measure | Body size | Headings                |
+| --------- | ------- | --------- | ----------------------- |
+| `default` | 700px   | 17px      | compact, no rules       |
+| `github`  | 1012px  | 16px      | scaled, ruled h1 and h2 |
+
+<Row gap="sm">
+  <Pill label="style: github" tone="info" />
+  <Pill label="frontmatter parsed" tone="success" />
+</Row>
+
+<Callout tone="warning" title="Frontmatter must come first">
+  The parser reads `style` only from a YAML block at the very top of the file. A block further down
+  is plain markdown and renders as a rule followed by text.
+</Callout>
+
+<Card title="Frontmatter diagnostics" collapsible>
+  <Table
+    headers={["Code", "Cause"]}
+    rows={[
+      ["unknown-style", "the style name is not in the registry"],
+      ["unknown-frontmatter-key", "a key other than style"],
+      ["invalid-frontmatter", "a line that is not key: value"],
+    ]}
+  />
+</Card>

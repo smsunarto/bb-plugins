@@ -17,6 +17,10 @@ const sample = readFileSync(
   new URL("../examples/flaky-test-triage.canvas.mdx", import.meta.url),
   "utf8",
 );
+const githubSample = readFileSync(
+  new URL("../examples/github-style.canvas.mdx", import.meta.url),
+  "utf8",
+);
 
 function documentOf(source: string): CanvasDocument {
   const parsed = parseCanvas(source);
@@ -50,9 +54,29 @@ test("renders markdown and components from a rendered document", async () => {
   await slot.findByText("One root cause, three symptoms");
   assert.ok(slot.container.textContent?.includes("Flaky test triage for bb-plugins CI"));
   assert.equal(slot.container.querySelectorAll('[data-testid="bb-diff"]').length, 1);
+  assert.equal(
+    slot.container.querySelector(".canvas-prose")?.getAttribute("data-canvas-style"),
+    "default",
+  );
   assert.equal(slot.queryByRole("button", { name: "Refresh" }), null);
   assert.equal(slot.queryByRole("button", { name: "Reset state" }), null);
   assert.equal(slot.queryByRole("button", { name: "Open source" }), null);
+  slot.unmount();
+});
+
+test("applies the document style through data-canvas-style", async () => {
+  const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/styled.canvas.mdx"), {
+    rpc: { render: () => rendered(githubSample), state: () => emptyState },
+  });
+  await slot.findByText("Frontmatter must come first");
+  assert.equal(
+    slot.container.querySelector(".canvas-prose")?.getAttribute("data-canvas-style"),
+    "github",
+  );
+  assert.equal(slot.container.querySelectorAll(".canvas-pill").length, 2);
+  assert.equal(slot.container.querySelectorAll(".canvas-callout-title").length, 1);
+  assert.equal(slot.container.querySelectorAll(".canvas-card > .canvas-card-body").length, 1);
+  assert.equal(slot.container.querySelectorAll(".canvas-card .canvas-table").length, 1);
   slot.unmount();
 });
 

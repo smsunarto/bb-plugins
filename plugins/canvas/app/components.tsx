@@ -111,9 +111,11 @@ function Collapsible(props: {
   readonly bordered: boolean;
   readonly children: ReactNode;
 }): ReactElement {
-  const frame = props.bordered ? "rounded-md border border-border bg-background" : "";
-  const headerClass = `text-[0.9em] font-medium text-foreground ${props.bordered ? "border-b border-border px-3 py-2" : "py-1"}`;
-  const bodyClass = props.bordered ? "canvas-nested px-3 py-2" : "canvas-nested";
+  const frame = props.bordered
+    ? "canvas-card rounded-md border border-border bg-background"
+    : "canvas-section";
+  const headerClass = `text-[0.9em] font-medium text-foreground ${props.bordered ? "canvas-card-header border-b border-border px-3 py-2" : "py-1"}`;
+  const bodyClass = props.bordered ? "canvas-card-body canvas-nested px-3 py-2" : "canvas-nested";
   if (props.collapsible) {
     return (
       <details className={`canvas-block ${frame}`} open={props.defaultOpen}>
@@ -172,9 +174,18 @@ function Section(props: CanvasComponentProps): ReactElement {
 function Callout(props: CanvasComponentProps): ReactElement {
   const { tone = "neutral", title } = typed<{ tone?: Tone; title?: string }>(props.props);
   return (
-    <aside className={`canvas-block rounded-md border px-3 py-2 ${toneSurface[tone]}`} role="note">
+    // The aside carries the tone as its color so a style can draw its rule with
+    // currentColor; both children set their own color, so nothing visible changes.
+    <aside
+      className={`canvas-callout canvas-block rounded-md border px-3 py-2 ${toneSurface[tone]} ${toneText[tone]}`}
+      role="note"
+    >
       {title !== undefined ? (
-        <p className={`m-0 mb-1 text-[0.875em] font-semibold ${toneText[tone]}`}>{title}</p>
+        <p
+          className={`canvas-callout-title m-0 mb-1 text-[0.875em] font-semibold ${toneText[tone]}`}
+        >
+          {title}
+        </p>
       ) : null}
       <div className="canvas-nested text-[0.875em] text-foreground">
         {props.renderNodes(props.nodes)}
@@ -198,7 +209,7 @@ function Stat(props: CanvasComponentProps): ReactElement {
     tone?: Tone;
   }>(props.props);
   return (
-    <div className="rounded-md border border-border bg-background px-3 py-2">
+    <div className="canvas-stat rounded-md border border-border bg-background px-3 py-2">
       <p className="m-0 text-[0.75em] text-muted-foreground">{label}</p>
       <p className="m-0 flex items-baseline gap-2">
         <span className="text-[1.5em] font-semibold leading-tight tracking-[-0.015em] text-foreground">
@@ -219,7 +230,7 @@ function Pill(props: CanvasComponentProps): ReactElement {
   const { label, tone = "neutral" } = typed<{ label: string; tone?: Tone }>(props.props);
   return (
     <span
-      className={`my-1 inline-block rounded-full border px-2 py-0.5 text-[0.75em] ${toneSurface[tone]} ${toneText[tone]}`}
+      className={`canvas-pill my-1 inline-block rounded-full border px-2 py-0.5 text-[0.75em] ${toneSurface[tone]} ${toneText[tone]}`}
     >
       {label}
     </span>
@@ -248,7 +259,7 @@ function Table(props: CanvasComponentProps): ReactElement {
   const keyedRows = keyed(rows, (row) => row.map((cell) => String(cell)).join("\u0000"));
   return (
     <div className="canvas-block overflow-x-auto">
-      <table className="w-full border-collapse text-[0.875em] leading-[1.3]">
+      <table className="canvas-table w-full border-collapse text-[0.875em] leading-[1.3]">
         {caption !== undefined ? (
           <caption className="mb-1 text-left text-[0.75em] text-muted-foreground">
             {caption}

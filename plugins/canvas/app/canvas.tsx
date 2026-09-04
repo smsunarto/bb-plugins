@@ -208,7 +208,7 @@ function CanvasFrame(props: {
       <div
         className={`canvas-scroll min-h-0 flex-1 overflow-auto ${stale || unreadable !== null ? "opacity-60" : ""}`}
       >
-        <div className="canvas-prose">
+        <div className="canvas-prose" data-canvas-style={showing.style}>
           <Nodes nodes={showing.nodes} />
         </div>
       </div>

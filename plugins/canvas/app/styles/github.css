@@ -1,0 +1,285 @@
+/*
+ * The `github` canvas style: the GitHub markdown body (github-markdown-css,
+ * light build) with every color mapped to a host token so it reads on any bb
+ * theme. Every selector carries the data attribute, so the default style is
+ * untouched, and the extra attribute is what lets these rules outrank the
+ * default rules in app.css.
+ */
+
+.canvas-prose[data-canvas-style="github"] {
+  box-sizing: border-box;
+  max-width: 1012px;
+  padding: 32px;
+  color: var(--foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 16px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.canvas-prose[data-canvas-style="github"] > [data-markdown-preview]:first-child > :first-child {
+  margin-top: 0;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.25;
+  margin: 24px 0 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(h1, h2) {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] h1 {
+  font-size: 2em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] h2 {
+  font-size: 1.5em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] h3 {
+  font-size: 1.25em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] h4 {
+  font-size: 1em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(h1, h2, h3, h4) code {
+  font-size: inherit;
+  padding: 0 0.2em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] p {
+  margin: 0 0 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(ul, ol) {
+  margin: 0 0 16px;
+  padding-inline-start: 2em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(ul, ol) > li {
+  margin: 0;
+}
+
+.canvas-prose[data-canvas-style="github"]
+  [data-markdown-preview]
+  :is(ol ol, ul ul, ol ul, ul ol)
+  > li {
+  margin-inline-start: 0;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] li + li {
+  margin-top: 0.25em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] li > :is(ul, ol) {
+  margin: 0;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] em {
+  color: inherit;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] a {
+  color: var(--primary);
+  text-decoration: none;
+  text-underline-offset: 0.2rem;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] a:hover {
+  text-decoration: underline;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] blockquote {
+  border-left: 0.25em solid var(--border);
+  color: var(--muted-foreground);
+  margin: 0 0 16px;
+  padding: 0 1em;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] code {
+  font-size: 85%;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :not(pre) > code {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  border: 0;
+  border-radius: 6px;
+  margin: 0;
+  padding: 0.2em 0.4em;
+  white-space: break-spaces;
+}
+
+/* Undo the default style's centered breakout on the host's fenced-code
+ * wrapper; the wrapper stays positioned so its copy button keeps its anchor. */
+.canvas-prose[data-canvas-style="github"]
+  [data-markdown-preview]
+  :where(div):has(> pre.bb-code-highlight) {
+  border-radius: 6px;
+  font-size: 85%;
+  left: auto;
+  line-height: 1.45;
+  margin: 0 0 16px;
+  max-width: 100%;
+  transform: none;
+  width: auto;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] pre.bb-code-highlight {
+  overflow: auto;
+  padding: 16px;
+}
+
+.canvas-prose[data-canvas-style="github"]
+  [data-markdown-preview]
+  :where(div):has(> :where(div) > table) {
+  margin: 0 0 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] table,
+.canvas-prose[data-canvas-style="github"] .canvas-table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  display: block;
+  font-size: inherit;
+  font-variant: tabular-nums;
+  line-height: 1.5;
+  max-width: 100%;
+  overflow: auto;
+  width: max-content;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] :is(th, td),
+.canvas-prose[data-canvas-style="github"] .canvas-table :is(th, td) {
+  border: 1px solid var(--border);
+  padding: 6px 13px;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] th,
+.canvas-prose[data-canvas-style="github"] .canvas-table th {
+  font-weight: 600;
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] tr,
+.canvas-prose[data-canvas-style="github"] .canvas-table tr {
+  border-top: 1px solid var(--border);
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] tbody tr:nth-child(2n),
+.canvas-prose[data-canvas-style="github"] .canvas-table tbody tr:nth-child(2n) {
+  background: var(--muted);
+}
+
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] hr {
+  background: var(--border);
+  border: 0;
+  height: 0.25em;
+  margin: 24px 0;
+  padding: 0;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-block {
+  margin-block: 0 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-pill {
+  border-radius: 2em;
+  border-width: 1px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  padding: 0 7px;
+}
+
+/* The aside's color is the tone (see components.tsx), so currentColor draws
+ * the alert rule in the tone without a per-tone rule here. */
+.canvas-prose[data-canvas-style="github"] .canvas-callout {
+  background: transparent;
+  border-left-color: currentColor;
+  border-radius: 0;
+  border-width: 0 0 0 0.25em;
+  padding: 0.5rem 1rem;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout-title {
+  font-size: 1em;
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-callout > .canvas-nested {
+  font-size: 1em;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-card-header {
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] details.canvas-card:not([open]) > .canvas-card-header {
+  border-bottom: 0;
+  border-radius: 5px;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-card-body {
+  padding: 16px;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-section > :is(summary, h3) {
+  font-size: 1.25em;
+  font-weight: 600;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-stat {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+/* Nested prose keeps the compact rhythm from app.css; these repeat it with the
+ * data attribute so the wider github rules above do not win on specificity. */
+.canvas-prose[data-canvas-style="github"]
+  .canvas-nested
+  [data-markdown-preview]
+  :is(h1, h2, h3, h4, p, ul, ol, blockquote, hr) {
+  margin-block: 0.75em;
+}
+
+.canvas-prose[data-canvas-style="github"]
+  .canvas-nested
+  [data-markdown-preview]
+  :where(div):has(> :where(div) > table) {
+  margin-block: 0.75em;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-nested .canvas-block {
+  margin-block: 0.75rem;
+}
+
+.canvas-prose[data-canvas-style="github"] .canvas-nested > [data-markdown-preview] > :first-child {
+  margin-top: 0;
+}
+
+.canvas-prose[data-canvas-style="github"]
+  .canvas-nested
+  > [data-markdown-preview]:last-child
+  > :last-child {
+  margin-bottom: 0;
+}

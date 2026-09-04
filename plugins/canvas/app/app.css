@@ -1,3 +1,6 @@
+/* This file is the `default` canvas style; other styles live in app/styles/. */
+@import "./styles/github.css";
+
 /*
  * Rendered-prose typography for the canvas opener. It mirrors the rendered
  * Markdown layer of the smsunarto-theme contract: a 700px border-box measure,
