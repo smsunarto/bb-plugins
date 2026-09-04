@@ -1,7 +1,7 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { styleNames, styles } from "../shared/styles.ts";
+import { styleNames, styles } from "../src/shared/styles.ts";
 
 const skillPath = new URL("../skills/canvas/SKILL.md", import.meta.url);
 

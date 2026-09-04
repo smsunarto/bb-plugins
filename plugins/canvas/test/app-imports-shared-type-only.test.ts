@@ -5,12 +5,20 @@ import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const appDir = fileURLToPath(new URL("../app", import.meta.url));
-const sharedDir = fileURLToPath(new URL("../shared", import.meta.url));
+const appDir = fileURLToPath(new URL("../src/app", import.meta.url));
+const sharedDir = fileURLToPath(new URL("../src/shared", import.meta.url));
 
 // Zod-free shared modules the browser bundle may import as values. Everything
 // else in shared/ pulls zod into the app bundle and must stay type-only.
-const valueSafeShared = new Set(["source.ts", "styles.ts", "suggest.ts", "walk.ts"]);
+const valueSafeShared = new Set([
+  "anchor.ts",
+  "ids.ts",
+  "ops.ts",
+  "source.ts",
+  "styles.ts",
+  "suggest.ts",
+  "walk.ts",
+]);
 
 const importPattern = /^import\s+(type\s+)?([^'"]+?)\s+from\s+["']([^"']+)["']/gm;
 
@@ -19,7 +27,7 @@ async function sourceFiles(dir: string): Promise<readonly string[]> {
   return entries.filter((name) => /\.tsx?$/.test(name) && !name.includes(".test.")).sort();
 }
 
-test("app/ imports shared/document.ts and shared/registry.ts type-only", async () => {
+test("src/app/ imports src/shared/document.ts and src/shared/registry.ts type-only", async () => {
   for (const file of await sourceFiles(appDir)) {
     const text = await readFile(join(appDir, file), "utf8");
     for (const match of text.matchAll(importPattern)) {

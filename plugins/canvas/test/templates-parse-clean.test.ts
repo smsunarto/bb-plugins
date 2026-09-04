@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCanvas } from "../server/parse.ts";
-import { collectDiagnostics } from "../shared/document.ts";
+import { parseCanvas } from "../src/server/parse.ts";
+import { collectDiagnostics } from "../src/shared/document.ts";
 
 const templatesDir = fileURLToPath(new URL("../skills/canvas/templates/", import.meta.url));
 const expectedTemplates = ["issue.canvas.mdx", "pull-request.canvas.mdx"];

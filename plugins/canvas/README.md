@@ -7,7 +7,7 @@
 
 # Canvas
 
-**Render `.canvas.mdx` files in their own split pane as durable analytical artifacts.**
+**Render `.canvas.mdx` files beside the chat as durable analytical artifacts.**
 
 ![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
 
@@ -15,7 +15,7 @@
 
 ## What it does
 
-An agent writes one `.canvas.mdx` file. bb opens it in its own split pane beside the chat and renders markdown plus a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The server parses it, validates every component against a registry, and the app draws the result with the host theme.
+An agent writes one `.canvas.mdx` file. bb opens it beside the chat and renders markdown plus a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The server parses it, validates every component against a registry, and the app draws the result with the host theme.
 
 - **Live.** The opener polls the file. A new write renders in about two seconds. A write that no longer parses keeps the last good render and shows a banner that names the line.
 - **Safe.** Every prop value is a literal. Identifiers, calls, and expressions are rejected with a positioned diagnostic. There is no fetch and no code execution.
@@ -54,23 +54,23 @@ An agent writes one `.canvas.mdx` file. bb opens it in its own split pane beside
 
 ## Components
 
-| Component                               | Summary                                                                                        | Persisted |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------- | --------- |
-| `Row`, `Grid`                           | Horizontal row or fixed column grid for layout.                                                | no        |
-| `Card`, `Section`                       | Bordered or open container with an optional collapsible body.                                  | no        |
-| `Callout`                               | Toned note with an optional title.                                                             | no        |
-| `Stat`                                  | One headline number with a label, caption, and delta.                                          | no        |
-| `Pill`                                  | Small toned label.                                                                             | no        |
-| `Table`                                 | Data table with per column alignment and per row tone.                                         | no        |
-| `BarChart`, `LineChart`, `PieChart`     | Inline SVG charts with legends, axis labels, and reference lines.                              | no        |
-| `UsageBar`                              | Segmented bar showing parts of a total.                                                        | no        |
-| `DiffView`, `Source`                    | Fenced diff rendered by Pierre's collapsible file diff, or a code block in the bb code viewer. | no        |
-| `FileLink`                              | Link that opens a file beside the chat, optionally at a line.                                  | no        |
-| `Ask`                                   | Button that opens a new chat with a prefilled prompt.                                          | no        |
-| `Toggle`, `Select`, `Tabs`, `Checklist` | Controls whose state persists per file.                                                        | yes       |
-| `Todos`                                 | Read only task list with a status icon per item.                                               | no        |
+| Component                               | Summary                                                                                                              | Persisted |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------- |
+| `Row`, `Grid`                           | Horizontal row or fixed column grid for layout.                                                                      | no        |
+| `Card`, `Section`                       | Bordered or open container with an optional collapsible body.                                                        | no        |
+| `Callout`                               | Toned note with an optional title.                                                                                   | no        |
+| `Stat`                                  | One headline number with a label, caption, and delta.                                                                | no        |
+| `Pill`                                  | Small toned label.                                                                                                   | no        |
+| `Table`                                 | Data table with per column alignment and per row tone.                                                               | no        |
+| `BarChart`, `LineChart`, `PieChart`     | Inline SVG charts with legends, axis labels, and reference lines.                                                    | no        |
+| `UsageBar`                              | Segmented bar showing parts of a total.                                                                              | no        |
+| `DiffView`, `Source`                    | Fenced diff rendered by Pierre's collapsible file diff in Pierre's own theme, or a code block in the bb code viewer. | no        |
+| `FileLink`                              | Link that opens a file beside the chat, optionally at a line.                                                        | no        |
+| `Ask`                                   | Button that opens a new chat with a prefilled prompt.                                                                | no        |
+| `Toggle`, `Select`, `Tabs`, `Checklist` | Controls whose state persists per file.                                                                              | yes       |
+| `Todos`                                 | Read only task list with a status icon per item.                                                                     | no        |
 
-[`skills/canvas/reference.md`](skills/canvas/reference.md) lists every prop and one example per component. It is generated from `shared/registry.ts` by `bun run reference`.
+[`skills/canvas/reference.md`](skills/canvas/reference.md) lists every prop and one example per component. It is generated from `src/shared/registry.ts` by `bun run reference`.
 
 ## Styles
 
@@ -90,11 +90,59 @@ Two styles exist. `default` is the canvas prose look, and `github` renders the b
 
 ## How a canvas opens
 
-A canvas link in the chat opens a file tab in the thread's side panel, as any file does. For a `.canvas.mdx` file that tab does not render the canvas. It hands off to the plugin's `Canvas` page and opens that page in a split pane, following bb's split placement rules: a new pane to the right of the focused one, focus when the same canvas is already open, replacement at the pane cap. The page route carries the file identity in its sub-path, so the pane restores across reloads and can be bookmarked. The automatic handoff runs once per canvas for the life of the browser tab. bb restores thread tabs on every visit and remounts the side panel whenever the thread pane regains focus, so a handoff on every mount would reopen the pane in a loop and make it impossible to close. The side-panel tab keeps two buttons: `Open pane` repeats the handoff and `Show here` renders the canvas inside the tab instead.
+A canvas link in the chat opens a file tab in the thread's side panel, and for a `.canvas.mdx` file that tab renders the canvas. Any other `.mdx` file shows the default preview with an `Open as canvas` button.
 
 ## Where canvases live
 
 The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the thread, so the file survives the conversation without touching the repo. A canvas goes into the worktree only when the user wants it committed. The `.canvas.mdx` suffix is required. Any `.mdx` file still shows an "Open as canvas" button.
+
+## Comments
+
+A reader can leave Google Docs style comments on a rendered canvas, and the agent reads and answers them from the CLI.
+
+**In the pane.** Hover any block and a small comment button appears at its right edge. Select text inside a block and a floating "Comment" button appears next to the selection. Either one opens a composer directly under the block. A commented block gets a subtle tint and a count badge, and its threads sit under it as collapsed cards (author, relative time, first line, reply count). Click a card to read the replies, reply, or resolve. Resolved threads hide behind the toolbar's "Show resolved (n)" toggle. When an edit removes the block a thread pointed at, the thread moves to a "Detached comments" section at the end of the canvas with its saved quote.
+
+**From the CLI.** The agent lists comments with where each one sits now, then replies or resolves as `agent`.
+
+```
+bb canvas comments /abs/path/report.canvas.mdx            # open threads, in block order
+bb canvas comments /abs/path/report.canvas.mdx --all      # resolved ones too
+bb canvas comments /abs/path/report.canvas.mdx --json     # {path, sidecarPath, parses, threads: [{thread, match, context}]}
+bb canvas comment  /abs/path/report.canvas.mdx cmt_7f3k2a9x1p --reply "Verified 4m02s, table fixed." --resolve
+bb canvas comment  /abs/path/report.canvas.mdx cmt_7f3k2a9x1p --reopen
+```
+
+`bb canvas comments` exits 0 whether or not comments exist. A thread line names the block (`block 4 Table "Top offenders"`), adds `edited since` when the block changed under the comment, and shows the exact `quote` or, for a detached thread, what the block `was`. For thread-storage canvases, the agent's thread instructions also gain an "Open canvas comments" line after the first comment write since the server started.
+
+**The sidecar.** Comments live beside the canvas in `<name>.canvas.mdx.comments.json`, so they travel with the file, show up in git, and can be read with `cat`. The shape is a supported contract:
+
+```json
+{
+  "version": 1,
+  "threads": [
+    {
+      "id": "cmt_7f3k2a9x1p",
+      "anchor": {
+        "blockId": "3f9a1c0b7d2e",
+        "index": 9,
+        "quote": "dev-instance | 22% | 4m12s",
+        "preview": "Table Suite | Fail rate ..."
+      },
+      "resolvedAtMs": null,
+      "messages": [
+        {
+          "id": "msg_x2k9",
+          "author": "user",
+          "body": "This rerun time looks wrong.",
+          "createdAtMs": 1756900000000
+        }
+      ]
+    }
+  ]
+}
+```
+
+An anchor is a fingerprint of the block's text (`blockId`), its ordinal at write time (`index`), the exact selected text or `null` for a whole-block comment (`quote`), and a 240 character `preview` shown when the thread is detached. Anchors are never rewritten. On every render the plugin re-places each thread: an exact fingerprint match wins, then a block that still contains the quote, then a fuzzy text match, else the thread is detached. Both the pane and the CLI write through one compare-and-swap loop, and every op is idempotent by id, so a retried save or a rerun command cannot double post. A sidecar that does not validate reads as empty with a toolbar warning and refuses writes until it is fixed or deleted.
 
 ## `bb canvas check`
 

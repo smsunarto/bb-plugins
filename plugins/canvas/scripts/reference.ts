@@ -6,8 +6,8 @@ import {
   specOf,
   type ChildPolicy,
   type ComponentName,
-} from "../shared/registry.ts";
-import { defaultStyle, styleNames, styles } from "../shared/styles.ts";
+} from "../src/shared/registry.ts";
+import { defaultStyle, styleNames, styles } from "../src/shared/styles.ts";
 
 // Renders skills/canvas/reference.md from the registry so the component table
 // the agent reads can never drift from what the parser accepts.
@@ -258,7 +258,7 @@ export function renderReference(): string {
   const out: string[] = [
     "# Canvas component reference",
     "",
-    "Generated from `shared/registry.ts` by `bun run reference`. Do not edit by hand.",
+    "Generated from `src/shared/registry.ts` by `bun run reference`. Do not edit by hand.",
     "",
     "Every component is a block. Put it on its own line with a blank line before and after.",
     "Every prop value is a literal. Strings, numbers, booleans, null, arrays, and objects are allowed.",

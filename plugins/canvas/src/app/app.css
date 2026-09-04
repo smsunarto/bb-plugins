@@ -1,0 +1,593 @@
+/* This file is the `default` canvas style; other styles live in app/styles/. */
+@import "./styles/github.css";
+
+/*
+ * Rendered-prose typography for the canvas opener. It mirrors the rendered
+ * Markdown layer of the smsunarto-theme contract: a 700px border-box measure,
+ * 17px body with 1.5 leading, compact headings, 1.75rem block rhythm, and
+ * fenced code that breaks out of the measure to fit 100 mono columns.
+ *
+ * Hues stay on host tokens so the canvas reads on any bb theme. A theme can
+ * recolor the prose by setting the --canvas-prose-* properties on
+ * .canvas-prose; the Monokai plugin does this for the contract palette.
+ *
+ * Plain rules here are unlayered, so they outrank the host renderer's
+ * Tailwind utilities without !important.
+ */
+
+.canvas-scroll {
+  container-type: inline-size;
+}
+
+.dark .canvas-prose {
+  --canvas-tone-info: oklch(0.75 0.13 240);
+}
+
+.canvas-prose {
+  --canvas-prose-font:
+    "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --canvas-prose-heading: var(--foreground);
+  --canvas-prose-strong: var(--foreground);
+  --canvas-prose-link: var(--primary);
+  --canvas-prose-link-hover: var(--primary);
+  --canvas-prose-marker: var(--muted-foreground);
+  --canvas-prose-quote-rule: var(--border);
+  --canvas-prose-rule: var(--border-seam, var(--border));
+  --canvas-prose-code-well: var(--secondary);
+  /* Tones follow the host status tokens. The host has no info token, so info is
+   * a fixed blue with a dark variant below. */
+  --canvas-tone-info: oklch(0.55 0.15 240);
+  --canvas-tone-success: var(--success);
+  --canvas-tone-warning: var(--warning-text, var(--warning));
+  --canvas-tone-danger: var(--destructive-text, var(--destructive));
+
+  box-sizing: border-box;
+  margin: 0 auto;
+  max-width: 700px;
+  padding: 48px clamp(24px, 4cqw, 56px) 96px;
+  color: var(--foreground);
+  font-family: var(--canvas-prose-font);
+  font-size: 17px;
+  font-kerning: normal;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+}
+
+.canvas-prose [data-markdown-preview] {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.canvas-prose > [data-markdown-preview]:first-child > :first-child {
+  margin-top: 0;
+}
+
+/* Heading scale follows the Cursor theme's rendered Markdown contract:
+ * 1.5 / 1.25 / 1.1 / 1 em at weight 600, with more room above than below. */
+.canvas-prose [data-markdown-preview] :is(h1, h2, h3, h4) {
+  color: var(--canvas-prose-heading);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.canvas-prose [data-markdown-preview] h1 {
+  font-size: 1.5em;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 2.5rem 0 1rem;
+}
+
+.canvas-prose [data-markdown-preview] h2 {
+  font-size: 1.25em;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  margin: 2.25rem 0 0.875rem;
+}
+
+.canvas-prose [data-markdown-preview] h3 {
+  font-size: 1.1em;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 1.75rem 0 0.75rem;
+}
+
+.canvas-prose [data-markdown-preview] h4 {
+  font-size: 1em;
+  letter-spacing: 0;
+  line-height: 1.3;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.canvas-prose [data-markdown-preview] p {
+  margin: 1.75rem 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(ul, ol) {
+  margin: 1.75rem 0;
+  padding-inline-start: 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(ul, ol) > li {
+  margin: 0 0 0 30px;
+}
+
+.canvas-prose [data-markdown-preview] :is(ol ol, ul ul, ol ul, ul ol) > li {
+  margin-inline-start: 32px;
+}
+
+/* List spacing steps by depth so siblings read as a group and a child list
+ * hugs its parent item: 0.5em between top-level items, 0.25em between nested
+ * siblings, 0.25em from a parent item's text to its child list. */
+.canvas-prose [data-markdown-preview] li + li {
+  margin-top: 0.5em;
+}
+
+.canvas-prose [data-markdown-preview] li li + li {
+  margin-top: 0.25em;
+}
+
+.canvas-prose [data-markdown-preview] li > p {
+  margin: 0;
+}
+
+.canvas-prose [data-markdown-preview] li > :is(ul, ol) {
+  margin: 0.25em 0 0;
+}
+
+.canvas-prose [data-markdown-preview] li::marker {
+  color: var(--canvas-prose-marker);
+}
+
+.canvas-prose [data-markdown-preview] strong {
+  color: var(--canvas-prose-strong);
+  font-weight: 600;
+}
+
+.canvas-prose [data-markdown-preview] em {
+  color: color-mix(in srgb, currentColor 84%, transparent);
+}
+
+.canvas-prose [data-markdown-preview] a {
+  color: var(--canvas-prose-link);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.12em;
+}
+
+.canvas-prose [data-markdown-preview] a:hover {
+  color: var(--canvas-prose-link-hover);
+}
+
+.canvas-prose [data-markdown-preview] blockquote {
+  border-left: 1px solid var(--canvas-prose-quote-rule);
+  color: var(--muted-foreground);
+  margin: 1rem 0;
+  padding: 0 0 0 1.1em;
+}
+
+.canvas-prose [data-markdown-preview] blockquote > :first-child {
+  margin-top: 0;
+}
+
+.canvas-prose [data-markdown-preview] blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.canvas-prose [data-markdown-preview] :is(code, pre) {
+  font-family: var(--font-mono);
+}
+
+.canvas-prose [data-markdown-preview] code {
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+
+.canvas-prose [data-markdown-preview] :not(pre) > code {
+  background: var(--canvas-prose-code-well);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15em 0.3em;
+}
+
+/* The host renderer wraps each fenced block in a div that carries the
+ * language label, wrap toggle, and copy button. The breakout applies to that
+ * wrapper so the chrome travels with the code. Its font is set to the code
+ * font so 100ch measures mono columns. */
+.canvas-prose [data-markdown-preview] :where(div):has(> pre.bb-code-highlight) {
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  left: 50%;
+  line-height: 19.5px;
+  margin: 1rem 0;
+  max-width: none;
+  position: relative;
+  transform: translateX(-50%);
+  width: min(calc(100ch + 34px), calc(100cqw - 64px));
+}
+
+.canvas-prose [data-markdown-preview] pre.bb-code-highlight {
+  margin: 0;
+  padding: 4px 17px 12.75px;
+  word-break: normal;
+}
+
+.canvas-prose [data-markdown-preview] pre code {
+  font-size: inherit;
+  line-height: inherit;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* The host renderer breaks Markdown tables out of the measure with inline
+ * width and margin, so !important is the only handle. The theme keeps tables
+ * at the prose measure; wide tables scroll inside the host's inner wrapper.
+ * The canvas Table component is styled in components.tsx on the same scale. */
+.canvas-prose [data-markdown-preview] :where(div):has(> :where(div) > table) {
+  justify-content: flex-start;
+  margin: 1.75rem 0;
+  margin-inline: 0 !important;
+  width: 100% !important;
+}
+
+.canvas-prose [data-markdown-preview] table {
+  border: 0;
+  border-collapse: collapse;
+  border-radius: 0;
+  font-size: 0.875em;
+  line-height: 1.3;
+}
+
+.canvas-prose [data-markdown-preview] thead {
+  background: transparent;
+}
+
+.canvas-prose [data-markdown-preview] :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--canvas-prose-rule);
+  padding: 0.375em 0.625em 0.375em 0;
+  vertical-align: top;
+}
+
+.canvas-prose [data-markdown-preview] th {
+  color: inherit;
+  font-weight: 600;
+}
+
+.canvas-prose [data-markdown-preview] hr {
+  border-color: var(--canvas-prose-rule);
+  margin: 1.75rem 0;
+}
+
+/* Block components share the prose rhythm at the top level. */
+.canvas-block {
+  margin-block: 1.75rem;
+}
+
+/* Prose nested inside a Card, Section, Callout, Toggle, or Tabs panel uses a
+ * compact rhythm so the container's own padding frames it. */
+.canvas-nested [data-markdown-preview] :is(h1, h2, h3, h4, p, ul, ol, blockquote, hr) {
+  margin-block: 0.75em;
+}
+
+.canvas-nested [data-markdown-preview] :where(div):has(> :where(div) > table) {
+  margin-block: 0.75em;
+}
+
+.canvas-nested .canvas-block {
+  margin-block: 0.75rem;
+}
+
+.canvas-nested > [data-markdown-preview] > :first-child {
+  margin-top: 0;
+}
+
+.canvas-nested > [data-markdown-preview]:last-child > :last-child {
+  margin-bottom: 0;
+}
+
+/* Toned components are coloured here via data-tone so the default style follows
+ * the host theme. Rows carry a tone across a whole line of body text, so they
+ * use a quieter mix than a Pill or Callout title. */
+.canvas-prose .canvas-pill[data-tone="info"],
+.canvas-prose .canvas-callout[data-tone="info"],
+.canvas-prose .canvas-callout[data-tone="info"] .canvas-callout-title,
+.canvas-prose .canvas-todo-glyph[data-tone="info"],
+.canvas-prose .canvas-stat[data-tone="info"] .canvas-stat-delta {
+  color: var(--canvas-tone-info);
+}
+
+.canvas-prose .canvas-pill[data-tone="info"],
+.canvas-prose .canvas-callout[data-tone="info"] {
+  background: color-mix(in srgb, var(--canvas-tone-info) 10%, transparent);
+  border-color: color-mix(in srgb, var(--canvas-tone-info) 40%, transparent);
+}
+
+.canvas-prose .canvas-table tr[data-tone="info"] {
+  color: color-mix(in srgb, var(--canvas-tone-info) 70%, var(--foreground));
+}
+
+.canvas-prose .canvas-pill[data-tone="success"],
+.canvas-prose .canvas-callout[data-tone="success"],
+.canvas-prose .canvas-callout[data-tone="success"] .canvas-callout-title,
+.canvas-prose .canvas-todo-glyph[data-tone="success"],
+.canvas-prose .canvas-stat[data-tone="success"] .canvas-stat-delta {
+  color: var(--canvas-tone-success);
+}
+
+.canvas-prose .canvas-pill[data-tone="success"],
+.canvas-prose .canvas-callout[data-tone="success"] {
+  background: color-mix(in srgb, var(--canvas-tone-success) 10%, transparent);
+  border-color: color-mix(in srgb, var(--canvas-tone-success) 40%, transparent);
+}
+
+.canvas-prose .canvas-table tr[data-tone="success"] {
+  color: color-mix(in srgb, var(--canvas-tone-success) 70%, var(--foreground));
+}
+
+.canvas-prose .canvas-pill[data-tone="warning"],
+.canvas-prose .canvas-callout[data-tone="warning"],
+.canvas-prose .canvas-callout[data-tone="warning"] .canvas-callout-title,
+.canvas-prose .canvas-todo-glyph[data-tone="warning"],
+.canvas-prose .canvas-stat[data-tone="warning"] .canvas-stat-delta {
+  color: var(--canvas-tone-warning);
+}
+
+.canvas-prose .canvas-pill[data-tone="warning"],
+.canvas-prose .canvas-callout[data-tone="warning"] {
+  background: color-mix(in srgb, var(--canvas-tone-warning) 10%, transparent);
+  border-color: color-mix(in srgb, var(--canvas-tone-warning) 40%, transparent);
+}
+
+.canvas-prose .canvas-table tr[data-tone="warning"] {
+  color: color-mix(in srgb, var(--canvas-tone-warning) 70%, var(--foreground));
+}
+
+.canvas-prose .canvas-pill[data-tone="danger"],
+.canvas-prose .canvas-callout[data-tone="danger"],
+.canvas-prose .canvas-callout[data-tone="danger"] .canvas-callout-title,
+.canvas-prose .canvas-todo-glyph[data-tone="danger"],
+.canvas-prose .canvas-stat[data-tone="danger"] .canvas-stat-delta {
+  color: var(--canvas-tone-danger);
+}
+
+.canvas-prose .canvas-pill[data-tone="danger"],
+.canvas-prose .canvas-callout[data-tone="danger"] {
+  background: color-mix(in srgb, var(--canvas-tone-danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--canvas-tone-danger) 40%, transparent);
+}
+
+.canvas-prose .canvas-table tr[data-tone="danger"] {
+  color: color-mix(in srgb, var(--canvas-tone-danger) 70%, var(--foreground));
+}
+
+/* Row stretches its children so Stats and Cards share the line evenly. A Pill
+ * is a label, so it hugs its text instead of growing into a bar. Each child
+ * arrives wrapped in a comment anchor, so the rule targets the wrapper too. */
+.canvas-row > .canvas-pill,
+.canvas-row > .canvas-comment-block:has(> .canvas-pill) {
+  align-self: center;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* DiffView frames Pierre the way the diffs.com landing page does: Berkeley
+ * Mono at Pierre's 13px/20px, a 10px radius, and the host hairline border.
+ * Pierre draws everything inside. */
+.canvas-diff {
+  --diffs-font-family:
+    "Berkeley Mono", "BerkeleyMono", "SF Mono", Monaco, Consolas, "Ubuntu Mono", "Liberation Mono",
+    "Courier New", monospace;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Pierre reads its palette from custom properties on the diffs-container
+ * host. A bb theme such as Monokai pins its own values there from the
+ * document, and those beat the theme CSS Pierre injects into the shadow root.
+ * Declaring the diffs.com values on the host itself wins over both, and
+ * `initial` on the -override family lets Pierre fall back to the theme. */
+.canvas-diff > diffs-container {
+  --diffs-dark: #fafafa;
+  --diffs-dark-bg: #0a0a0a;
+  --diffs-dark-addition-color: #07c480;
+  --diffs-dark-deletion-color: #ff2e3f;
+  --diffs-dark-modified-color: #009fff;
+  --diffs-light: #0a0a0a;
+  --diffs-light-bg: #ffffff;
+  --diffs-light-addition-color: #18a46c;
+  --diffs-light-deletion-color: #d52c36;
+  --diffs-light-modified-color: #009fff;
+  --diffs-addition-color-override: initial;
+  --diffs-deletion-color-override: initial;
+  --diffs-modified-color-override: initial;
+  --diffs-bg-context-override: initial;
+  --diffs-bg-context-gutter-override: initial;
+  --diffs-bg-buffer-override: initial;
+  --diffs-bg-separator-override: initial;
+  --diffs-bg-addition-override: initial;
+  --diffs-bg-addition-emphasis-override: initial;
+  --diffs-bg-deletion-override: initial;
+  --diffs-bg-deletion-emphasis-override: initial;
+  --diffs-bg-hover-override: initial;
+  --diffs-bg-selection-override: initial;
+  --diffs-bg-addition-number-override: initial;
+  --diffs-bg-deletion-number-override: initial;
+  --diffs-bg-selection-number-override: initial;
+  --diffs-fg-number-override: initial;
+  --diffs-fg-number-addition-override: initial;
+  --diffs-fg-number-deletion-override: initial;
+  --diffs-fg-conflict-marker-override: initial;
+}
+
+/* The DiffView toggle sits in Pierre's header prefix slot. The chevron turns
+ * to point down while the diff is open. */
+.canvas-diff-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  margin-right: 4px;
+  padding: 0;
+}
+
+.canvas-diff-toggle svg {
+  transition: transform 120ms ease;
+}
+
+.canvas-diff-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+/* Comments. A commented block is tinted as a whole (the host Markdown DOM is
+ * opaque, so no character highlights); the exact quote lives in the card. */
+.canvas-comment-block {
+  position: relative;
+}
+
+.canvas-commented {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary) 7%, transparent);
+}
+
+.canvas-comment-add {
+  align-items: center;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11px;
+  height: 20px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 20px;
+  opacity: 0;
+  padding: 0 5px;
+  position: absolute;
+  right: -1.5rem;
+  top: 0;
+  transition: opacity 120ms ease;
+  z-index: 5;
+}
+
+.canvas-comment-add[data-count],
+.canvas-comment-add:focus-visible,
+.canvas-comment-block:hover:not(:has(.canvas-comment-block:hover)) > .canvas-comment-add {
+  opacity: 1;
+}
+
+.canvas-comment-add[data-count] {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.canvas-comment-float {
+  position: absolute;
+  z-index: 10;
+}
+
+.canvas-comment-cards {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8125em;
+  gap: 0.5rem;
+  line-height: 1.4;
+  margin: 0.5rem 0 1rem;
+}
+
+.canvas-comment-card,
+.canvas-comment-composer {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  padding: 0.5rem 0.75rem;
+}
+
+.canvas-comment-card[data-resolved] {
+  opacity: 0.7;
+}
+
+.canvas-comment-head {
+  align-items: baseline;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  font: inherit;
+  gap: 0.5rem;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.canvas-comment-first {
+  flex: 1 1 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-comment-flag {
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+  padding: 0 0.4em;
+}
+
+.canvas-comment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.canvas-comment-quote {
+  border-left: 2px solid var(--primary);
+  color: var(--muted-foreground);
+  font-size: 0.95em;
+  margin: 0 0 0.5rem;
+  padding: 0 0 0 0.6em;
+}
+
+.canvas-comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.canvas-comment-textarea {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--foreground);
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.canvas-detached {
+  border-top: 1px solid var(--canvas-prose-rule);
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+}
+
+.canvas-detached-title {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}

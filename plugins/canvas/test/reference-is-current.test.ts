@@ -1,9 +1,9 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { parseCanvas } from "../server/parse.ts";
-import { collectDiagnostics } from "../shared/document.ts";
-import { componentNames } from "../shared/registry.ts";
+import { parseCanvas } from "../src/server/parse.ts";
+import { collectDiagnostics } from "../src/shared/document.ts";
+import { componentNames } from "../src/shared/registry.ts";
 import { examples, referencePath, renderReference } from "../scripts/reference.ts";
 
 test("skills/canvas/reference.md matches the registry", async () => {
