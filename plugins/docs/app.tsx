@@ -300,10 +300,11 @@ const EDITOR_CSS = `
   font-weight: 600;
   padding-bottom: 0;
 }
-.bb-simple-notes-editor .tiptap h1 { font-size: 1.125em; line-height: 1.2; letter-spacing: -0.015em; margin: 1.75rem 0; }
-.bb-simple-notes-editor .tiptap h2 { font-size: 1.05em; line-height: 1.2; letter-spacing: -0.011em; margin: 1.75rem 0; }
-.bb-simple-notes-editor .tiptap h3 { font-size: 1em; line-height: 1.3; letter-spacing: -0.008em; margin: 1.75rem 0; font-weight: 500; }
-.bb-simple-notes-editor .tiptap h4 { font-size: 0.9em; line-height: 1.3; letter-spacing: 0; margin: 1.75rem 0; font-weight: 500; }
+/* Heading scale: 1.5 / 1.25 / 1.1 / 1 em at weight 600, more room above than below. */
+.bb-simple-notes-editor .tiptap h1 { font-size: 1.5em; line-height: 1.2; letter-spacing: -0.02em; margin: 2.5rem 0 1rem; }
+.bb-simple-notes-editor .tiptap h2 { font-size: 1.25em; line-height: 1.25; letter-spacing: -0.015em; margin: 2.25rem 0 0.875rem; }
+.bb-simple-notes-editor .tiptap h3 { font-size: 1.1em; line-height: 1.3; letter-spacing: -0.01em; margin: 1.75rem 0 0.75rem; }
+.bb-simple-notes-editor .tiptap h4 { font-size: 1em; line-height: 1.3; letter-spacing: 0; margin: 1.75rem 0 0.5rem; }
 .bb-simple-notes-editor .tiptap h5 { font-size: 0.85em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
 .bb-simple-notes-editor .tiptap h6 { font-size: 0.8em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
 .bb-simple-notes-editor .tiptap ul,
@@ -313,8 +314,12 @@ const EDITOR_CSS = `
 .bb-simple-notes-editor .tiptap :is(ul, ol) > li { margin-inline-start: 30px; }
 .bb-simple-notes-editor .tiptap ol ol > li,
 .bb-simple-notes-editor .tiptap ul ul > li { margin-inline-start: 32px; }
-.bb-simple-notes-editor .tiptap li + li { margin-top: 0.075em; }
+/* List spacing steps by depth: 0.5em between top-level items, 0.25em between
+   nested siblings, 0.25em from a parent item's text to its child list. */
+.bb-simple-notes-editor .tiptap li + li { margin-top: 0.5em; }
+.bb-simple-notes-editor .tiptap li li + li { margin-top: 0.25em; }
 .bb-simple-notes-editor .tiptap li > p { margin: 0; }
+.bb-simple-notes-editor .tiptap li > :is(ul, ol) { margin: 0.25em 0 0; }
 .bb-simple-notes-editor .tiptap li::marker { color: #7c7866; }
 .bb-simple-notes-editor .tiptap strong { color: #51dae9; font-weight: 600; }
 .bb-simple-notes-editor .tiptap em { color: #e3e3ddd6; }
