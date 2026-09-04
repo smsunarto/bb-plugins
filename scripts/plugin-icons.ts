@@ -10,6 +10,7 @@ import {
   ComputerScreenShareIcon,
   Doc01Icon,
   KeyboardIcon,
+  KitchenUtensilsIcon,
   Layers01Icon,
   PanelLeftIcon,
   ServerStack01Icon,
@@ -195,6 +196,10 @@ const customIcons = {
   vimium: {
     name: "Keyboard",
     nodes: KeyboardIcon,
+  },
+  "kitchen-sink": {
+    name: "KitchenUtensils",
+    nodes: KitchenUtensilsIcon,
   },
   // Upstream t3sidebar, which this plugin was forked from, declares BB's named
   // "PanelLeft" icon; Hugeicons ships the same glyph, so the rename keeps that
