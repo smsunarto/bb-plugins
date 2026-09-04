@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { suggest } from "./suggest.ts";
 
 export type ChildPolicy =
   | { readonly kind: "none" }
@@ -294,30 +295,6 @@ export function isStateful(name: ComponentName): boolean {
   return specOf(name).stateful === true;
 }
 
-function levenshtein(a: string, b: string): number {
-  const previous: number[] = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i += 1) {
-    let diagonal = previous[0] ?? 0;
-    previous[0] = i;
-    for (let j = 1; j <= b.length; j += 1) {
-      const above = previous[j] ?? 0;
-      const left = previous[j - 1] ?? 0;
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      previous[j] = Math.min(above + 1, left + 1, diagonal + cost);
-      diagonal = above;
-    }
-  }
-  return previous[b.length] ?? 0;
-}
-
 export function suggestComponentName(typo: string): string | undefined {
-  const needle = typo.toLowerCase();
-  let best: { name: string; distance: number } | undefined;
-  for (const name of componentNames) {
-    const distance = levenshtein(needle, name.toLowerCase());
-    if (distance <= 2 && (best === undefined || distance < best.distance)) {
-      best = { name, distance };
-    }
-  }
-  return best?.name;
+  return suggest(typo, componentNames);
 }

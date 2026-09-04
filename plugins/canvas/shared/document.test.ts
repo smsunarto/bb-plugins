@@ -41,7 +41,7 @@ const nodes: readonly CanvasNode[] = [
 ];
 
 test("collectDiagnostics walks nested components in document order", () => {
-  const codes = collectDiagnostics({ nodes, stateIds: [] }).map((d) => d.code);
+  const codes = collectDiagnostics({ style: "default", nodes, stateIds: [] }).map((d) => d.code);
   assert.deepEqual(codes, ["disallowed-child", "syntax-error"]);
 });
 
@@ -50,8 +50,14 @@ test("collectStateIds returns ids of stateful components only", () => {
 });
 
 test("canvasDocumentSchema round-trips the node tree", () => {
-  const parsed = canvasDocumentSchema.parse({ nodes, stateIds: ["a", "b"] });
+  const parsed = canvasDocumentSchema.parse({ style: "github", nodes, stateIds: ["a", "b"] });
   assert.deepEqual(parsed.nodes, nodes);
+  assert.equal(parsed.style, "github");
+  assert.equal(
+    canvasDocumentSchema.safeParse({ style: "gh", nodes, stateIds: [] }).success,
+    false,
+    "an unknown style must not pass the wire schema",
+  );
 });
 
 test("renderInputSchema defaults knownSha256 to null", () => {

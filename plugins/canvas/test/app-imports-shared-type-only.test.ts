@@ -10,7 +10,7 @@ const sharedDir = fileURLToPath(new URL("../shared", import.meta.url));
 
 // Zod-free shared modules the browser bundle may import as values. Everything
 // else in shared/ pulls zod into the app bundle and must stay type-only.
-const valueSafeShared = new Set(["source.ts", "walk.ts"]);
+const valueSafeShared = new Set(["source.ts", "styles.ts", "suggest.ts", "walk.ts"]);
 
 const importPattern = /^import\s+(type\s+)?([^'"]+?)\s+from\s+["']([^"']+)["']/gm;
 

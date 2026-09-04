@@ -1,5 +1,6 @@
 import type { Program } from "estree";
-import type { Code, Node, Root, RootContent } from "mdast";
+import type { Code, Node, Root, RootContent, Yaml } from "mdast";
+import remarkFrontmatter from "remark-frontmatter";
 import remarkMdx from "remark-mdx";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
@@ -19,6 +20,7 @@ import {
   type ChildPolicy,
   type ComponentName,
 } from "../shared/registry.ts";
+import { defaultStyle, isStyleName, suggestStyleName, type StyleName } from "../shared/styles.ts";
 import { foldLiteral } from "./literal.ts";
 
 export type ParseResult =
@@ -28,7 +30,7 @@ export type ParseResult =
 type JsxFlowElement = Extract<RootContent, { type: "mdxJsxFlowElement" }>;
 type JsxAttribute = JsxFlowElement["attributes"][number];
 
-const processor = unified().use(remarkParse).use(remarkMdx);
+const processor = unified().use(remarkParse).use(remarkFrontmatter).use(remarkMdx);
 
 export const maxCanvasBytes = 2 * 1024 * 1024;
 
@@ -86,6 +88,80 @@ class Walker {
   spanAt(offset: number, endOffset = offset): Span {
     const { line, column } = this.lines.at(offset);
     return { line, column, startOffset: offset, endOffset: Math.max(offset, endOffset) };
+  }
+
+  // remark-frontmatter only emits `yaml` for a block at the very top of the
+  // file, so the root walk peels it here and `blocks` never sees one.
+  document(children: readonly RootContent[]): { style: StyleName; nodes: CanvasNode[] } {
+    const [first, ...rest] = children;
+    if (first === undefined || first.type !== "yaml") {
+      return { style: defaultStyle, nodes: this.blocks(children) };
+    }
+    const frontmatter = this.frontmatter(first);
+    return { style: frontmatter.style, nodes: [...frontmatter.problems, ...this.blocks(rest)] };
+  }
+
+  private frontmatter(node: Yaml): { style: StyleName; problems: CanvasNode[] } {
+    const span = this.spanOf(node);
+    const problems: CanvasNode[] = [];
+    const seen = new Set<string>();
+    let style: StyleName = defaultStyle;
+    const lines = node.value.split("\n");
+    for (const [index, raw] of lines.entries()) {
+      const line = raw.trim();
+      if (line.length === 0) continue;
+      const lineNumber = span.line + 1 + index;
+      const match = frontmatterLine.exec(line);
+      if (match === null) {
+        problems.push(
+          diagnosticNode(
+            "invalid-frontmatter",
+            `invalid frontmatter at line ${lineNumber}: expected \`key: value\`, got \`${line}\``,
+            span,
+          ),
+        );
+        continue;
+      }
+      const key = match[1] ?? "";
+      const value = match[2] ?? "";
+      if (key !== "style") {
+        problems.push(
+          diagnosticNode(
+            "unknown-frontmatter-key",
+            `unknown frontmatter key \`${key}\`; only \`style\` is allowed`,
+            span,
+          ),
+        );
+        continue;
+      }
+      if (seen.has(key)) {
+        problems.push(
+          diagnosticNode(
+            "invalid-frontmatter",
+            `invalid frontmatter at line ${lineNumber}: \`${key}\` is already set`,
+            span,
+          ),
+        );
+        continue;
+      }
+      seen.add(key);
+      if (isStyleName(value)) {
+        style = value;
+        continue;
+      }
+      const didYouMean = suggestStyleName(value);
+      const hint = didYouMean === undefined ? "" : `; did you mean \`${didYouMean}\`?`;
+      problems.push({
+        kind: "diagnostic",
+        diagnostic: {
+          code: "unknown-style",
+          message: `unknown style \`${value}\`${hint}`,
+          span,
+          ...(didYouMean === undefined ? {} : { didYouMean }),
+        },
+      });
+    }
+    return { style, problems };
   }
 
   blocks(children: readonly RootContent[], only?: readonly string[]): CanvasNode[] {
@@ -388,6 +464,8 @@ class Walker {
   }
 }
 
+const frontmatterLine = /^([A-Za-z_][A-Za-z0-9_]*):\s+(\S.*)$/;
+
 function diagnosticNode(code: Diagnostic["code"], message: string, span: Span): CanvasNode {
   return { kind: "diagnostic", diagnostic: { code, message, span } };
 }
@@ -400,12 +478,13 @@ export function parseCanvas(source: string): ParseResult {
   } catch (error) {
     return { ok: false, diagnostic: walker.syntaxError(error) };
   }
-  const nodes = walker.blocks(root.children);
+  const { style, nodes } = walker.document(root.children);
   const stateIds = [...new Set(collectStateIds(nodes))];
-  return { ok: true, document: { nodes, stateIds } };
+  return { ok: true, document: { style, nodes, stateIds } };
 }
 
 export interface DocumentStats {
+  readonly style: StyleName;
   readonly blocks: number;
   readonly components: readonly string[];
   readonly stateIds: readonly string[];
@@ -421,5 +500,10 @@ export function documentStats(document: CanvasDocument): DocumentStats {
     }
   };
   walk(document.nodes);
-  return { blocks: document.nodes.length, components, stateIds: document.stateIds };
+  return {
+    style: document.style,
+    blocks: document.nodes.length,
+    components,
+    stateIds: document.stateIds,
+  };
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { componentNameSchema, type ComponentName } from "./registry.ts";
+import { styleNames, type StyleName } from "./styles.ts";
 
 export type JsonValue =
   | string
@@ -46,6 +47,9 @@ export const diagnosticCodes = [
   "inline-component",
   "fragment-not-allowed",
   "duplicate-state-id",
+  "unknown-style",
+  "unknown-frontmatter-key",
+  "invalid-frontmatter",
   "syntax-error",
 ] as const;
 
@@ -91,16 +95,21 @@ export const canvasNodeSchema: z.ZodType<CanvasNode, CanvasNode> = z.lazy(() =>
 );
 
 export interface CanvasDocument {
+  readonly style: StyleName;
   readonly nodes: readonly CanvasNode[];
   readonly stateIds: readonly string[];
 }
 
 export const canvasDocumentSchema: z.ZodType<CanvasDocument, CanvasDocument> = z.object({
+  style: z.enum(styleNames),
   nodes: z.array(canvasNodeSchema),
   stateIds: z.array(z.string()),
 });
 
 export { collectDiagnostics, collectStateIds } from "./walk.ts";
+
+export type { StyleName } from "./styles.ts";
+export { defaultStyle, isStyleName, styleNames, styles, suggestStyleName } from "./styles.ts";
 
 export type { CanvasSource, NarrowSourceResult, StateSignal } from "./source.ts";
 export {

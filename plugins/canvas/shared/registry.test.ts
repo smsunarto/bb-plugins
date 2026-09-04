@@ -68,6 +68,7 @@ test("suggestComponentName finds a close name and ignores far ones", () => {
   assert.equal(suggestComponentName("card"), "Card");
   assert.equal(suggestComponentName("BarChar"), "BarChart");
   assert.equal(suggestComponentName("Widget"), undefined);
+  assert.equal(suggestComponentName("BC"), "BarChart");
 });
 
 test("chart props accept Cursor's series shape", () => {

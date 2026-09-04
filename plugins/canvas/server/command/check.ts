@@ -2,6 +2,7 @@ import { argv, CommandError, defineCommand } from "@bb-kit/core/command";
 import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import { collectDiagnostics, type Diagnostic } from "../../shared/document.ts";
+import { defaultStyle } from "../../shared/styles.ts";
 import { documentStats, type DocumentStats } from "../parse.ts";
 import { render } from "../rpc/render.ts";
 
@@ -24,7 +25,7 @@ function successLine(stats: DocumentStats): string {
     stats.stateIds.length === 0
       ? "0 state ids"
       : `${plural(stats.stateIds.length, "state id")} (${stats.stateIds.join(", ")})`;
-  return `ok — ${plural(stats.blocks, "block")}, ${components}, ${stateIds}`;
+  return `ok — style ${stats.style}, ${plural(stats.blocks, "block")}, ${components}, ${stateIds}`;
 }
 
 function reportOf(diagnostics: readonly Diagnostic[], stats: DocumentStats): CheckReport {
@@ -73,7 +74,12 @@ export const check = defineCommand({
     }
     const report =
       rendered.status === "unparseable"
-        ? reportOf([rendered.diagnostic], { blocks: 0, components: [], stateIds: [] })
+        ? reportOf([rendered.diagnostic], {
+            style: defaultStyle,
+            blocks: 0,
+            components: [],
+            stateIds: [],
+          })
         : reportOf(collectDiagnostics(rendered.document), documentStats(rendered.document));
     const stdout = json === true ? `${JSON.stringify(report)}\n` : textOf(path, report);
     return { exitCode: report.ok ? 0 : 1, stdout };

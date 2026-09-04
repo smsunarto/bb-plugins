@@ -230,3 +230,89 @@ test("literal grammar covers negatives, templates, and bare booleans", () => {
   assert.equal(toggle?.kind, "component");
   if (toggle?.kind === "component") assert.equal(toggle.props["default"], true);
 });
+
+test("frontmatter at the top sets the style and never becomes markdown", () => {
+  const document = parsed('---\nstyle: github\n---\n\n# T\n\n<Pill label="x" />\n');
+  assert.equal(document.style, "github");
+  assert.deepEqual(document.nodes.map(labelOf), ["markdown", "Pill"]);
+  for (const node of document.nodes) {
+    if (node.kind === "markdown") {
+      assert.ok(!node.source.includes("---"), `markdown kept the frontmatter: ${node.source}`);
+      assert.equal(node.source, "# T");
+      assert.equal(node.span.line, 5);
+    }
+  }
+  assert.deepEqual(collectDiagnostics(document), []);
+  assert.equal(documentStats(document).style, "github");
+  const tight = parsed("---\nstyle: github\n---\n# T\n");
+  assert.equal(tight.style, "github");
+  assert.deepEqual(tight.nodes.map(labelOf), ["markdown"]);
+});
+
+test("a canvas without frontmatter uses the default style", () => {
+  const document = parsed("# T\n");
+  assert.equal(document.style, "default");
+  assert.equal(documentStats(document).style, "default");
+});
+
+test("an unknown style is a diagnostic with a suggestion and the style stays default", () => {
+  const document = parsed("---\nstyle: gh\n---\n\n# T\n");
+  assert.equal(document.style, "default");
+  assert.deepEqual(document.nodes.map(labelOf), ["!unknown-style", "markdown"]);
+  const diagnostics = collectDiagnostics(document);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.message, "unknown style `gh`; did you mean `github`?");
+  assert.equal(diagnostics[0]?.didYouMean, "github");
+  assert.equal(diagnostics[0]?.span?.line, 1);
+  assert.equal(diagnostics[0]?.span?.startOffset, 0);
+  assert.equal(diagnostics[0]?.span?.endOffset, "---\nstyle: gh\n---".length);
+  const far = parsed("---\nstyle: solarized\n---\n");
+  const [only] = collectDiagnostics(far);
+  assert.equal(only?.message, "unknown style `solarized`");
+  assert.equal(only?.didYouMean, undefined);
+});
+
+test("an unknown frontmatter key is a diagnostic and does not block the style", () => {
+  const document = parsed("---\nfoo: bar\nstyle: github\n---\n\n# T\n");
+  assert.equal(document.style, "github");
+  assert.deepEqual(document.nodes.map(labelOf), ["!unknown-frontmatter-key", "markdown"]);
+  assert.equal(
+    collectDiagnostics(document)[0]?.message,
+    "unknown frontmatter key `foo`; only `style` is allowed",
+  );
+});
+
+test("a malformed frontmatter line names the line", () => {
+  const document = parsed("---\nstyle github\n\nstyle: github\nstyle: default\n---\n\n# T\n");
+  assert.equal(document.style, "github");
+  assert.deepEqual(
+    collectDiagnostics(document).map((diagnostic) => [diagnostic.code, diagnostic.message]),
+    [
+      [
+        "invalid-frontmatter",
+        "invalid frontmatter at line 2: expected `key: value`, got `style github`",
+      ],
+      ["invalid-frontmatter", "invalid frontmatter at line 5: `style` is already set"],
+    ],
+  );
+  const empty = parsed("---\nstyle:\n---\n");
+  assert.equal(collectDiagnostics(empty)[0]?.code, "invalid-frontmatter");
+  const blank = parsed("---\n\n---\n\n# T\n");
+  assert.equal(blank.style, "default");
+  assert.deepEqual(blank.nodes.map(labelOf), ["markdown"]);
+});
+
+test("frontmatter below the top or inside a component is ordinary markdown", () => {
+  const below = parsed("# T\n\n---\nstyle: github\n---\n");
+  assert.equal(below.style, "default");
+  assert.deepEqual(below.nodes.map(labelOf), ["markdown"]);
+  assert.deepEqual(collectDiagnostics(below), []);
+  const nested = parsed("<Card>\n\n---\nstyle: github\n---\n\n</Card>\n");
+  assert.equal(nested.style, "default");
+  const card = nested.nodes[0];
+  assert.equal(card?.kind, "component");
+  if (card?.kind === "component") {
+    assert.deepEqual(card.children.map(labelOf), ["markdown"]);
+  }
+  assert.deepEqual(collectDiagnostics(nested), []);
+});

@@ -18,7 +18,7 @@ test("check prints the success line for a clean canvas at an absolute path", asy
   assert.deepEqual(result, {
     exitCode: 0,
     stdout:
-      "ok — 8 blocks, 9 components (Row, Stat, Callout, BarChart, Table, FileLink, Card, Toggle, DiffView), 1 state id (show-patch)\n",
+      "ok — style default, 8 blocks, 9 components (Row, Stat, Callout, BarChart, Table, FileLink, Card, Toggle, DiffView), 1 state id (show-patch)\n",
   });
   assert.deepEqual(bb.calls.filesRead, [{ path: "/abs/a.canvas.mdx" }]);
 });
@@ -29,7 +29,56 @@ test("check resolves a relative path against the command cwd", async () => {
   });
   const result = await check.execute({ bb, cwd: "/work" }, { path: "notes/a.canvas.mdx" });
   assert.equal(result.exitCode, 0);
-  assert.equal(result.stdout, "ok — 1 block, 0 components, 0 state ids\n");
+  assert.equal(result.stdout, "ok — style default, 1 block, 0 components, 0 state ids\n");
+});
+
+test("check names the frontmatter style in the success line", async () => {
+  const bb = fakeBb({
+    files: {
+      [fileKeyOf(undefined, undefined, "/w/a.canvas.mdx")]: {
+        content: "---\nstyle: github\n---\n\n# hi\n",
+      },
+    },
+  });
+  const result = await check.execute({ bb, cwd: "/w" }, { path: "a.canvas.mdx" });
+  assert.deepEqual(result, {
+    exitCode: 0,
+    stdout: "ok — style github, 1 block, 0 components, 0 state ids\n",
+  });
+});
+
+test("check --json stats carry the frontmatter style", async () => {
+  const bb = fakeBb({
+    files: {
+      [fileKeyOf(undefined, undefined, "/w/a.canvas.mdx")]: {
+        content: "---\nstyle: github\n---\n\n# hi\n",
+      },
+    },
+  });
+  const result = await check.execute({ bb, cwd: "/w" }, { path: "a.canvas.mdx", json: true });
+  assert.equal(result.exitCode, 0);
+  const report = JSON.parse(result.stdout ?? "");
+  assert.deepEqual(report, {
+    ok: true,
+    diagnostics: [],
+    stats: { style: "github", blocks: 1, components: [], stateIds: [] },
+  });
+});
+
+test("check reports an unknown style with a suggestion and exits 1", async () => {
+  const bb = fakeBb({
+    files: {
+      [fileKeyOf(undefined, undefined, "/w/a.canvas.mdx")]: {
+        content: "---\nstyle: gh\n---\n\n# hi\n",
+      },
+    },
+  });
+  const result = await check.execute({ bb, cwd: "/w" }, { path: "a.canvas.mdx" });
+  assert.equal(result.exitCode, 1);
+  assert.equal(
+    result.stdout,
+    "a.canvas.mdx:1:1: unknown style `gh`; did you mean `github`?\n1 problem\n",
+  );
 });
 
 test("check lists each diagnostic as path:line:col and exits 1", async () => {
@@ -66,7 +115,12 @@ test("check --json prints ok, diagnostics, and stats", async () => {
   assert.equal(report.diagnostics[0].line, 2);
   assert.equal(report.diagnostics[0].column, 1);
   assert.match(report.diagnostics[0].message, /already used at 1:1/);
-  assert.deepEqual(report.stats, { blocks: 2, components: ["Toggle"], stateIds: ["a"] });
+  assert.deepEqual(report.stats, {
+    style: "default",
+    blocks: 2,
+    components: ["Toggle"],
+    stateIds: ["a"],
+  });
 });
 
 test("check reports a hard syntax error as one problem", async () => {
