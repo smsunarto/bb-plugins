@@ -1,0 +1,9 @@
+Use Smart Embeds when a visual diff or an exact code citation makes your answer easier to verify.
+
+For a file changed in the current task, place this leaf directive on its own line in the final response: ::smart-diff{path="relative/path.ts"}
+
+To show only part of a large diff, add a line range counted on the changed file: ::smart-diff{path="relative/path.ts" start="40" end="72"}
+
+To cite existing project code, place this leaf directive on its own line: ::smart-code{path="relative/path.ts" start="12" end="28"}
+
+Use worktree-relative paths. Do not put directives in inline code or fenced code blocks. Add at most six embeds. Never diff generated or build output, a lockfile, a file the user did not ask you to touch, or anything at all when you answered a question without changing code.
