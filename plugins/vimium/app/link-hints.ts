@@ -23,18 +23,21 @@
 // open popup layer,
 // which would otherwise aria-hide the rest of the page. In idle mode a few
 // plain keys skip the prompt: the pinned control keys (`n`, `m`, `p`, `l`,
-// `b`, `k`, `s`, `,`) drive their control directly, `[` and `]` step the
-// sidebar's thread list, and `e` settles the current thread. The transitions
-// and predicates are pure functions so they test without a DOM; only
-// mounting, marker drawing, and activation touch one.
+// `b`, `s`, `,`) drive their control directly, `[` and `]` step the
+// sidebar's thread list, `e` settles the current thread, and `j`, `k`, and
+// `J` scroll the conversation a step down, a step up, and to the bottom. The
+// transitions and predicates are pure functions so they test without a DOM;
+// only mounting, marker drawing, and activation touch one.
 
 import type {
   PluginContentScriptContext,
   PluginContentScriptDisposer,
 } from "@get-bb/plugin-sdk/app";
 import {
+  SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
+  scrollTopFor,
   threadIdFromPath,
   type DirectShortcut,
 } from "./direct-shortcuts.ts";
@@ -263,6 +266,10 @@ const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut
 // shows on hover, but a dispatched pointer press reaches it either way.
 const SETTLE_BUTTON_SELECTOR = 'button[aria-label="Settle thread"]';
 
+// The conversation's top-level row list. Its scroller is a plain Tailwind
+// `overflow-y-auto` div with no data attribute, found by walking up from here.
+const CONVERSATION_LIST_SELECTOR = '[data-timeline-row-list="top-level"]';
+
 /** How long after a keyboard thread switch self-focusing editors stay blurred. */
 const NAVIGATION_FOCUS_GUARD_MS = 2000;
 
@@ -374,6 +381,16 @@ function findControl(selector: string): HTMLElement | null {
   const activeComposer = findActivePrimaryComposer();
   for (const element of document.querySelectorAll<HTMLElement>(selector)) {
     if (isViableCandidate(candidateView(element, activeComposer))) return element;
+  }
+  return null;
+}
+
+/** The nearest scrolling ancestor of the conversation's row list, or null. */
+function findConversationScrollArea(): HTMLElement | null {
+  const list = document.querySelector<HTMLElement>(CONVERSATION_LIST_SELECTOR);
+  for (let element = list?.parentElement; element; element = element.parentElement) {
+    const overflowY = window.getComputedStyle(element).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return element;
   }
   return null;
 }
@@ -707,6 +724,26 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
           row?.element.parentElement?.querySelector<HTMLElement>(SETTLE_BUTTON_SELECTOR);
         if (!settle) return false;
         activate(settle, focusTextEntry);
+        return true;
+      }
+      case "scroll": {
+        const area = findConversationScrollArea();
+        if (area === null) return false;
+        if (shortcut.motion !== "bottom") {
+          // bb's bottom-anchored scroll body only treats a scroll as the user
+          // leaving the bottom when it saw recent wheel, touch, pointer, or
+          // arrow-key intent; without one a `k` during a streaming reply snaps
+          // back to the bottom on the next chunk. A synthetic wheel is exactly
+          // how bb classifies a mouse wheel. `J` needs none: landing on the
+          // max scrollTop makes bb's own handler re-attach to the bottom.
+          area.dispatchEvent(
+            new WheelEvent("wheel", {
+              deltaY: shortcut.motion === "down" ? SCROLL_STEP_PX : -SCROLL_STEP_PX,
+              bubbles: true,
+            }),
+          );
+        }
+        area.scrollTop = scrollTopFor(shortcut.motion, area);
         return true;
       }
     }

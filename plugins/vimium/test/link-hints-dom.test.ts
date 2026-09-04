@@ -143,14 +143,11 @@ describe("mountLinkHints", () => {
       focusCalls += 1;
     };
 
-    for (const init of [
-      { ctrlKey: true },
-      { metaKey: true },
-      { altKey: true },
-      { shiftKey: true },
-    ]) {
+    for (const init of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
       expect(pressKey("i", window, init)).toBe(true);
     }
+    // Shift+i arrives as "I", which is not a direct key.
+    expect(pressKey("I", window, { shiftKey: true })).toBe(true);
     expect(focusCalls).toBe(0);
 
     expect(pressKey("i")).toBe(false);
@@ -877,6 +874,45 @@ describe("mountLinkHints", () => {
     expect(settled).toEqual(["settle-2"]);
 
     window.history.pushState({}, "", "/");
+    void dispose();
+    controller.abort();
+  });
+
+  test("j, k, and J scroll the conversation's scroller with wheel intent", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div id="area" style="overflow-y: auto"><div data-timeline-row-list="top-level"><button>In</button></div></div>' +
+      '<textarea id="editor"></textarea>';
+    const area = document.getElementById("area") as HTMLElement;
+    // jsdom does not lay out, so the scroller's metrics are declared by hand.
+    Object.defineProperty(area, "scrollTop", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(area, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(area, "clientHeight", { configurable: true, value: 400 });
+    const wheelDeltas: number[] = [];
+    area.addEventListener("wheel", (event) => wheelDeltas.push((event as WheelEvent).deltaY));
+
+    expect(pressKey("j")).toBe(false);
+    expect(area.scrollTop).toBe(60);
+    expect(wheelDeltas).toEqual([60]);
+
+    expect(pressKey("k")).toBe(false);
+    expect(area.scrollTop).toBe(0);
+    expect(wheelDeltas).toEqual([60, -60]);
+
+    expect(pressKey("J", window, { shiftKey: true })).toBe(false);
+    expect(area.scrollTop).toBe(600);
+    expect(wheelDeltas).toEqual([60, -60]);
+
+    // Inside a text field the same keys are just typing.
+    expect(pressKey("j", document.getElementById("editor") as HTMLElement)).toBe(true);
+    expect(area.scrollTop).toBe(600);
+
+    // With no timeline on the page the key falls through to bb.
+    document.body.innerHTML = '<div style="overflow-y: auto"><button>Only</button></div>';
+    expect(pressKey("j")).toBe(true);
+
     void dispose();
     controller.abort();
   });

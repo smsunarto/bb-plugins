@@ -1,16 +1,19 @@
 // Single keys that act without a hint prompt. Each one either drives a
 // pinned control straight away — the same control its hint label would pick
-// after `f` — or steps the sidebar's thread list. All of them read only in
-// idle mode, with no modifier held, outside an editable target, so typing in
-// the composer never trips one.
+// after `f` — steps the sidebar's thread list, or scrolls the conversation.
+// All of them read only in idle mode, with no ctrl, meta, or alt held,
+// outside an editable target, so typing in the composer never trips one.
 
 import { RESERVED_CONTROLS } from "./hint-labels.ts";
+
+export type ScrollMotion = "down" | "up" | "bottom";
 
 export type DirectShortcut =
   | { readonly kind: "control"; readonly selector: string }
   | { readonly kind: "focus-composer" }
   | { readonly kind: "thread-step"; readonly step: -1 | 1 }
-  | { readonly kind: "settle-thread" };
+  | { readonly kind: "settle-thread" }
+  | { readonly kind: "scroll"; readonly motion: ScrollMotion };
 
 function pinnedControl(char: string): DirectShortcut {
   const control = RESERVED_CONTROLS.find((entry) => entry.char === char);
@@ -20,9 +23,10 @@ function pinnedControl(char: string): DirectShortcut {
 
 /**
  * The direct keys. The control keys reuse their hint-mode characters so one
- * mnemonic serves both paths. `[`, `]`, and `e` differ from their hint labels
- * on purpose: the hint keeps bb's back, forward, and Extensions controls,
- * while the direct key steps threads and settles the current one.
+ * mnemonic serves both paths. `[`, `]`, `e`, `j`, and `k` differ from their
+ * hint labels on purpose: the hint keeps bb's back, forward, Extensions,
+ * send, and permission-mode controls, while the direct key steps threads,
+ * settles the current one, and scrolls the conversation.
  */
 export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["n", pinnedControl("n")],
@@ -30,13 +34,15 @@ export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["p", pinnedControl("p")],
   ["l", pinnedControl("l")],
   ["b", pinnedControl("b")],
-  ["k", pinnedControl("k")],
   ["s", pinnedControl("s")],
   [",", pinnedControl(",")],
   ["i", { kind: "focus-composer" }],
   ["[", { kind: "thread-step", step: -1 }],
   ["]", { kind: "thread-step", step: 1 }],
   ["e", { kind: "settle-thread" }],
+  ["j", { kind: "scroll", motion: "down" }],
+  ["k", { kind: "scroll", motion: "up" }],
+  ["J", { kind: "scroll", motion: "bottom" }],
 ]);
 
 /** The keydown facts the direct-shortcut decision reads. */
@@ -49,11 +55,33 @@ export interface DirectKey {
   readonly editableTarget: boolean;
 }
 
-/** The shortcut a plain keydown maps to in idle mode, or null. */
+/**
+ * The shortcut a plain keydown maps to in idle mode, or null. Shift is not a
+ * gate: the exact-key lookup already leaves `M` and `{` unbound, and `J`
+ * needs it.
+ */
 export function directShortcutFor(key: DirectKey): DirectShortcut | null {
-  if (key.ctrlKey || key.metaKey || key.altKey || key.shiftKey) return null;
+  if (key.ctrlKey || key.metaKey || key.altKey) return null;
   if (key.editableTarget) return null;
   return DIRECT_SHORTCUTS.get(key.key) ?? null;
+}
+
+export const SCROLL_STEP_PX = 60;
+
+/** The scrollTop a conversation scroll key lands on, clamped to the view. */
+export function scrollTopFor(
+  motion: ScrollMotion,
+  view: { scrollTop: number; scrollHeight: number; clientHeight: number },
+): number {
+  const max = Math.max(0, view.scrollHeight - view.clientHeight);
+  switch (motion) {
+    case "down":
+      return Math.min(view.scrollTop + SCROLL_STEP_PX, max);
+    case "up":
+      return Math.max(view.scrollTop - SCROLL_STEP_PX, 0);
+    case "bottom":
+      return max;
+  }
 }
 
 const THREAD_PATH = /\/threads\/([^/?#]+)/;

@@ -28,7 +28,7 @@
   },
   "bb": {
     "name": "Vimium",
-    "description": "Press f to label every clickable element with a hint, then type the hint to click it. Single keys drive the composer controls and step between threads.",
+    "description": "Press f to label every clickable element with a hint, then type the hint to click it. Single keys drive the composer controls, step between threads, and scroll the conversation.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   DIRECT_SHORTCUTS,
+  SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
+  scrollTopFor,
   threadIdFromPath,
   type DirectKey,
 } from "./direct-shortcuts.ts";
@@ -22,7 +24,7 @@ function key(overrides: Partial<DirectKey> = {}): DirectKey {
 
 describe("directShortcutFor", () => {
   test("control keys reuse the reserved hint selectors", () => {
-    for (const char of ["n", "m", "p", "l", "b", "k", "s", ","]) {
+    for (const char of ["n", "m", "p", "l", "b", "s", ","]) {
       const reserved = RESERVED_CONTROLS.find((control) => control.char === char);
       expect(directShortcutFor(key({ key: char }))).toEqual({
         kind: "control",
@@ -38,6 +40,15 @@ describe("directShortcutFor", () => {
     expect(directShortcutFor(key({ key: "i" }))).toEqual({ kind: "focus-composer" });
   });
 
+  test("j and k scroll the conversation a step and shift+j goes to the bottom", () => {
+    expect(directShortcutFor(key({ key: "j" }))).toEqual({ kind: "scroll", motion: "down" });
+    expect(directShortcutFor(key({ key: "k" }))).toEqual({ kind: "scroll", motion: "up" });
+    expect(directShortcutFor(key({ key: "J", shiftKey: true }))).toEqual({
+      kind: "scroll",
+      motion: "bottom",
+    });
+  });
+
   test("modifiers, editable targets, and unbound keys map to nothing", () => {
     expect(directShortcutFor(key({ ctrlKey: true }))).toBeNull();
     expect(directShortcutFor(key({ metaKey: true }))).toBeNull();
@@ -50,6 +61,27 @@ describe("directShortcutFor", () => {
 
   test("every direct key is a single character", () => {
     for (const bound of DIRECT_SHORTCUTS.keys()) expect(bound).toHaveLength(1);
+  });
+});
+
+describe("scrollTopFor", () => {
+  const view = { scrollTop: 100, scrollHeight: 1000, clientHeight: 400 };
+
+  test("steps down and up by one step", () => {
+    expect(scrollTopFor("down", view)).toBe(100 + SCROLL_STEP_PX);
+    expect(scrollTopFor("up", view)).toBe(100 - SCROLL_STEP_PX);
+  });
+
+  test("clamps to the top and to the bottom", () => {
+    expect(scrollTopFor("up", { ...view, scrollTop: 10 })).toBe(0);
+    expect(scrollTopFor("down", { ...view, scrollTop: 590 })).toBe(600);
+    expect(scrollTopFor("bottom", view)).toBe(600);
+  });
+
+  test("a view that does not overflow stays at zero", () => {
+    const flat = { scrollTop: 0, scrollHeight: 300, clientHeight: 400 };
+    expect(scrollTopFor("down", flat)).toBe(0);
+    expect(scrollTopFor("bottom", flat)).toBe(0);
   });
 });
 

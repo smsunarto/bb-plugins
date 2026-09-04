@@ -20,12 +20,13 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 Outside a text field, these keys act without a hint prompt:
 
 - `n` new thread, `s` thread search, `,` Settings.
-- `m` model, `p` project, `l` machine, `b` branch, `k` permission mode. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
+- `m` model, `p` project, `l` machine, `b` branch. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
+- `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. A step is 60px. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it.
 - `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom. For two seconds after a keyboard thread switch, an editor that focuses itself on load (the docs panel's markdown editor does) is blurred, so the next `]` or `[` still lands. A click or any other key ends that guard.
 - `e` settles the current thread. This needs a sidebar with a settle button on each row, such as gtd-sidebar.
 - `i` focuses the composer.
 
-A direct key with nothing to act on, such as `e` on a settings page, falls through to bb. Inside a text field every key is just typing. In hint mode `[`, `]`, and `e` keep their hint meanings below.
+A direct key with nothing to act on, such as `e` on a settings page or `j` on a page without a conversation, falls through to bb. Inside a text field every key is just typing. In hint mode `[`, `]`, `e`, `j`, and `k` keep their hint meanings below.
 
 ## Labels
 
@@ -34,4 +35,4 @@ A direct key with nothing to act on, such as `e` on a settings page, falls throu
 - Sidebar thread rows (bb's own or any sidebar honoring the thread-shortcut contract) count `1`-`0` across the number row.
 - Everything else gets two-character labels from the remaining alphabet, extended past the reserved carve-outs so even a diff-heavy screen stays at two characters.
 
-The plugin ships `f` hint mode and the direct keys above. It does not add scrolling keys or search.
+The plugin ships `f` hint mode and the direct keys above, including `j`, `k`, and `J` for conversation scrolling. It does not add search.
