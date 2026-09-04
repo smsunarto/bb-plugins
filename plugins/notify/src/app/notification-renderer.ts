@@ -214,11 +214,14 @@ function browserDependencies(): RendererDependencies {
   };
 }
 
-export async function mountNotificationRenderer(options: {
+export type RendererOptions = {
   signal: AbortSignal;
   pluginId: string;
   dependencies?: RendererDependencies;
-}): Promise<void> {
+};
+
+/** Runs the mailbox poller until `signal` aborts. Resolves only when polling ends. */
+export async function runNotificationRenderer(options: RendererOptions): Promise<void> {
   const dependencies = options.dependencies ?? browserDependencies();
   if (dependencies.desktopBridge === undefined) return;
   const attention = createThreadAttention({
@@ -237,4 +240,17 @@ export async function mountNotificationRenderer(options: {
   } catch {
     if (!options.signal.aborted) throw new Error("notification renderer stopped");
   }
+}
+
+/**
+ * Content-script mount. It must return promptly: bb aborts any mount that has
+ * not resolved within 10 seconds, which would kill the poller. The poll loop
+ * therefore runs detached and stops when bb aborts `signal` on dispose.
+ */
+export function mountNotificationRenderer(options: RendererOptions): void {
+  void runNotificationRenderer(options).catch((error: unknown) => {
+    if (options.signal.aborted) return;
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[notify] ${detail}`);
+  });
 }

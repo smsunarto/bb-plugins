@@ -1,7 +1,11 @@
 import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
-import { mountNotificationRenderer, type RendererDependencies } from "./notification-renderer.ts";
+import {
+  mountNotificationRenderer,
+  runNotificationRenderer,
+  type RendererDependencies,
+} from "./notification-renderer.ts";
 import type { AttentionEventTarget, AttentionSource } from "./thread-attention.ts";
 
 class FakeEvents implements AttentionEventTarget {
@@ -123,7 +127,7 @@ test("an open BB renderer shows, acknowledges, and opens one notification", asyn
     ...attentionDependencies(),
   };
 
-  await mountNotificationRenderer({ pluginId: "notify", signal: controller.signal, dependencies });
+  await runNotificationRenderer({ pluginId: "notify", signal: controller.signal, dependencies });
 
   assert.deepEqual(
     notifications.map(({ title, options }) => ({ title, options })),
@@ -147,7 +151,7 @@ test("an open BB renderer shows, acknowledges, and opens one notification", asyn
 
 test("a browser tab never starts the renderer mailbox", async () => {
   const fetch = mock<typeof globalThis.fetch>(async () => new Response(null, { status: 204 }));
-  await mountNotificationRenderer({
+  await runNotificationRenderer({
     pluginId: "notify",
     signal: new AbortController().signal,
     dependencies: {
@@ -205,7 +209,7 @@ test("an active visible focused target acknowledges suppressed without construct
     throw new Error(`unexpected URL: ${url}`);
   });
 
-  await mountNotificationRenderer({
+  await runNotificationRenderer({
     pluginId: "notify",
     signal: controller.signal,
     dependencies: {
@@ -276,7 +280,7 @@ test("the target in an unfocused window shows then closes when that window gains
     throw new Error(`unexpected URL: ${url}`);
   });
 
-  const mounted = mountNotificationRenderer({
+  const mounted = runNotificationRenderer({
     pluginId: "notify",
     signal: controller.signal,
     dependencies: {
@@ -297,4 +301,42 @@ test("the target in an unfocused window shows then closes when that window gains
   assert.equal(records[0]?.closed, true);
   controller.abort();
   await mounted;
+});
+
+test("mount returns before the poller stops so bb's mount timeout never aborts it", async () => {
+  const controller = new AbortController();
+  let polling = false;
+  const fetch = mock<typeof globalThis.fetch>(
+    (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        polling = true;
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      }),
+  );
+  class FakeNotification {
+    static permission: NotificationPermission = "granted";
+    static async requestPermission(): Promise<NotificationPermission> {
+      return "granted";
+    }
+    addEventListener(): void {}
+    close(): void {}
+  }
+
+  const result = mountNotificationRenderer({
+    pluginId: "notify",
+    signal: controller.signal,
+    dependencies: {
+      fetch,
+      Notification: FakeNotification as unknown as RendererDependencies["Notification"],
+      locks: { request: async (_name, _options, callback) => callback() },
+      desktopBridge: {},
+      focus() {},
+      ...attentionDependencies(),
+    },
+  });
+
+  assert.equal(result, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(polling, true);
+  controller.abort();
 });

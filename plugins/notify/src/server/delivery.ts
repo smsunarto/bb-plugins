@@ -45,6 +45,8 @@ export async function deliver(
       bb.log.debug("notification suppressed because its thread is already in view");
     } else if (result === "failed") {
       bb.log.warn("the BB renderer could not show the notification");
+    } else {
+      bb.log.info("notification dropped: no BB desktop window was polling");
     }
     return result;
   } catch (error) {

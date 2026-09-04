@@ -134,8 +134,9 @@ or ship that file. The option stays silent when Cursor is not installed in
 ## Troubleshooting
 
 **Nothing arrives.** Open a BB desktop window, then run `bb notify test`. If it
-fails, inspect `bb plugin logs notify`. If it succeeds, check macOS notification
-settings for BB.
+fails, inspect `bb plugin logs notify`. A `notification dropped: no BB desktop
+window was polling` line means no window was listening at that moment. If the
+test succeeds, check macOS notification settings for BB.
 
 **`bb notify` is not a command.** Run `bb plugin list` and confirm that `notify`
 is installed and loaded.
