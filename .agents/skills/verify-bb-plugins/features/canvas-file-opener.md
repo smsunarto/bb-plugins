@@ -36,6 +36,7 @@ Capture the file picker, the two-pane layout with the rendered Canvas, and the c
 - The thread must expose repository or thread-storage files.
 - Search files is a combobox. Fill it by its `Search files` placeholder; the accessible name only appears once the launcher is open.
 - The split hides the thread's side panel, so the **Open pane** stub is not visible after the handoff. Widen the thread pane or close the split to see it.
+- The automatic handoff fires once per canvas per browser tab. A restored or refocused tab shows the stub without reopening the pane, so use **Open pane** or a fresh browser session to repeat it. Closing the canvas pane must not reopen it.
 - Narrow the search to one result before selecting the option.
 - Restore changed controls before cleanup when their state can persist.
 - Use `plugins/canvas/examples/flaky-test-triage.canvas.mdx` for the repository fixture.

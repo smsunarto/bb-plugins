@@ -257,6 +257,52 @@ export function openRouteInSplit(anchor: HTMLAnchorElement, fallback: () => void
   doc.removeEventListener("click", settle);
 }
 
+// A file tab mounts far more often than a user opens a canvas: bb restores the
+// thread's tabs on every visit, and the side panel remounts whenever focus
+// returns to the thread pane, including right after the canvas pane is closed.
+// Firing the handoff on each mount would reopen the pane in a loop, so the
+// automatic handoff runs once per canvas for the life of the browser tab and
+// the explicit Open pane button covers every later open.
+const HANDOFF_KEY_PREFIX = "canvas:handed-off:";
+const handoffFallback = new Set<string>();
+
+function handoffStore(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function hasHandedOff(subPath: string): boolean {
+  const store = handoffStore();
+  if (store === null) return handoffFallback.has(subPath);
+  return store.getItem(HANDOFF_KEY_PREFIX + subPath) !== null;
+}
+
+function rememberHandoff(subPath: string): void {
+  const store = handoffStore();
+  if (store === null) {
+    handoffFallback.add(subPath);
+    return;
+  }
+  try {
+    store.setItem(HANDOFF_KEY_PREFIX + subPath, "1");
+  } catch {
+    handoffFallback.add(subPath);
+  }
+}
+
+export function forgetHandoffs(): void {
+  handoffFallback.clear();
+  const store = handoffStore();
+  if (store === null) return;
+  for (let index = store.length - 1; index >= 0; index -= 1) {
+    const key = store.key(index);
+    if (key?.startsWith(HANDOFF_KEY_PREFIX)) store.removeItem(key);
+  }
+}
+
 function CanvasHandoff(props: {
   readonly source: CanvasSource;
   readonly path: string;
@@ -273,9 +319,13 @@ function CanvasHandoff(props: {
     openRouteInSplit(element, () => navigate.toPluginPanel(PANEL_PATH, { subPath }));
   }, [navigate, subPath]);
 
+  const handedOff = useRef(false);
   useEffect(() => {
+    if (handedOff.current || hasHandedOff(subPath)) return;
+    handedOff.current = true;
+    rememberHandoff(subPath);
     openPane();
-  }, [openPane]);
+  }, [openPane, subPath]);
 
   if (inline) return <CanvasView source={source} path={path} Original={props.Original} />;
   return (

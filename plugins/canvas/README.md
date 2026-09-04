@@ -90,7 +90,7 @@ Two styles exist. `default` is the canvas prose look, and `github` renders the b
 
 ## How a canvas opens
 
-A canvas link in the chat opens a file tab in the thread's side panel, as any file does. For a `.canvas.mdx` file that tab does not render the canvas. It hands off to the plugin's `Canvas` page and opens that page in a split pane, following bb's split placement rules: a new pane to the right of the focused one, focus when the same canvas is already open, replacement at the pane cap. The page route carries the file identity in its sub-path, so the pane restores across reloads and can be bookmarked. The side-panel tab keeps two buttons: `Open pane` repeats the handoff and `Show here` renders the canvas inside the tab instead.
+A canvas link in the chat opens a file tab in the thread's side panel, as any file does. For a `.canvas.mdx` file that tab does not render the canvas. It hands off to the plugin's `Canvas` page and opens that page in a split pane, following bb's split placement rules: a new pane to the right of the focused one, focus when the same canvas is already open, replacement at the pane cap. The page route carries the file identity in its sub-path, so the pane restores across reloads and can be bookmarked. The automatic handoff runs once per canvas for the life of the browser tab. bb restores thread tabs on every visit and remounts the side panel whenever the thread pane regains focus, so a handoff on every mount would reopen the pane in a loop and make it impossible to close. The side-panel tab keeps two buttons: `Open pane` repeats the handoff and `Show here` renders the canvas inside the tab instead.
 
 ## Where canvases live
 

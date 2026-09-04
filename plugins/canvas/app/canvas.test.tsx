@@ -16,7 +16,7 @@ mock.module("@pierre/diffs/react", () => ({
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { CanvasOpener, pollIntervalMs } = await import("./canvas.tsx");
+const { CanvasOpener, forgetHandoffs, pollIntervalMs } = await import("./canvas.tsx");
 const { CanvasPage } = await import("./page.tsx");
 const { canvasPanelRoute, encodeCanvasSubPath } = await import("./route.ts");
 
@@ -207,6 +207,7 @@ const threadSource = {
 } as const;
 
 test("a canvas file tab hands off to its own pane instead of rendering inline", async () => {
+  forgetHandoffs();
   const modifierClicks: Event[] = [];
   const record = (event: Event): void => {
     if (event instanceof MouseEvent && event.metaKey) modifierClicks.push(event);
@@ -238,6 +239,35 @@ test("a canvas file tab hands off to its own pane instead of rendering inline", 
   await slot.findByText("Runs sampled");
   document.removeEventListener("click", record, true);
   slot.unmount();
+});
+
+test("a remounted canvas tab does not hand off again", async () => {
+  forgetHandoffs();
+  const modifierClicks: Event[] = [];
+  const record = (event: Event): void => {
+    if (event instanceof MouseEvent && event.metaKey) modifierClicks.push(event);
+  };
+  document.addEventListener("click", record, true);
+  const rpcs = { render: () => rendered(sample), state: () => emptyState };
+  const first = renderSlot({ component: CanvasOpener }, propsFor(threadSource.path), { rpc: rpcs });
+  await first.findByRole("link", { name: "Open pane" });
+  await waitFor(() => assert.equal(modifierClicks.length, 1));
+  // bb restores thread tabs on every visit and remounts the side panel when
+  // the thread pane regains focus, including right after the canvas pane closes.
+  first.unmount();
+  const second = renderSlot({ component: CanvasOpener }, propsFor(threadSource.path), {
+    rpc: rpcs,
+  });
+  const anchor = await second.findByRole("link", { name: "Open pane" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(modifierClicks.length, 1, "the restored tab stays quiet");
+  assert.deepEqual(second.navigateCalls, []);
+  // The button still opens the pane on demand.
+  fireEvent.click(anchor);
+  await waitFor(() => assert.equal(modifierClicks.length, 2));
+  assert.equal(second.navigateCalls.length, 1);
+  document.removeEventListener("click", record, true);
+  second.unmount();
 });
 
 test("the page renders the canvas named by its sub-path", async () => {
