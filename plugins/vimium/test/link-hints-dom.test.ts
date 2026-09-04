@@ -39,32 +39,77 @@ function pressKey(
   );
 }
 
-interface Scroller {
+interface ScrollFixture {
   readonly area: HTMLElement;
   readonly scrolls: Array<{ top: number; behavior: ScrollBehavior | undefined }>;
-  /** Whether a scrollTo call lands its target on scrollTop straight away. */
-  settles: boolean;
 }
 
-/** A conversation scroller. jsdom does not lay out or scroll, so both are stubbed. */
-function installScroller(): Scroller {
+/** A conversation scroller. jsdom neither lays out nor scrolls, so both are stubbed. */
+function installScroller(): ScrollFixture {
   document.body.innerHTML =
     '<div id="area" style="overflow-y: auto"><div data-timeline-row-list="top-level"><button>In</button></div></div>' +
     '<textarea id="editor"></textarea>';
   const area = document.getElementById("area") as HTMLElement;
-  const scroller: Scroller = { area, scrolls: [], settles: true };
+  const fixture: ScrollFixture = { area, scrolls: [] };
   Object.defineProperty(area, "scrollTop", { configurable: true, writable: true, value: 0 });
   Object.defineProperty(area, "scrollHeight", { configurable: true, value: 1000 });
   Object.defineProperty(area, "clientHeight", { configurable: true, value: 400 });
-  Object.defineProperty(area, "scrollTo", {
+  Object.defineProperty(area, "scrollBy", {
     configurable: true,
     value: (options: ScrollToOptions) => {
       const top = options.top ?? 0;
-      scroller.scrolls.push({ top, behavior: options.behavior });
-      if (scroller.settles) area.scrollTop = top;
+      fixture.scrolls.push({ top, behavior: options.behavior });
+      area.scrollTop = Math.max(0, Math.min(area.scrollTop + top, 600));
     },
   });
-  return scroller;
+  return fixture;
+}
+
+/**
+ * The scroll animator runs on animation frames, so tests drive them by hand.
+ * Each run() advances one frame of 16ms.
+ */
+function installFrames(): { run: (frames: number) => void; restore: () => void } {
+  const original = window.requestAnimationFrame;
+  let pending: Array<(timestamp: number) => void> = [];
+  let now = 0;
+  Object.defineProperty(window, "requestAnimationFrame", {
+    configurable: true,
+    writable: true,
+    value: (callback: (timestamp: number) => void) => {
+      pending.push(callback);
+      return pending.length;
+    },
+  });
+  return {
+    run(frames: number) {
+      for (let index = 0; index < frames; index += 1) {
+        const due = pending;
+        pending = [];
+        now += 16;
+        for (const callback of due) callback(now);
+      }
+    },
+    restore() {
+      Object.defineProperty(window, "requestAnimationFrame", {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    },
+  };
+}
+
+/** A press and its release, the pair the scroll animator tracks. */
+function tapKey(
+  key: string,
+  code: string,
+  target: EventTarget = window,
+  init: Omit<KeyboardEventInit, "key"> = {},
+): boolean {
+  const accepted = pressKey(key, target, { code, ...init });
+  target.dispatchEvent(new KeyboardEvent("keyup", { key, code, bubbles: true }));
+  return accepted;
 }
 
 function markers(): string[] {
@@ -910,49 +955,60 @@ describe("mountLinkHints", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
+    const frames = installFrames();
     const { area, scrolls } = installScroller();
     const wheelDeltas: number[] = [];
     area.addEventListener("wheel", (event) => wheelDeltas.push((event as WheelEvent).deltaY));
 
-    expect(pressKey("j")).toBe(false);
+    expect(tapKey("j", "KeyJ")).toBe(false);
+    frames.run(20);
     expect(area.scrollTop).toBe(60);
     expect(wheelDeltas).toEqual([60]);
-    expect(scrolls).toEqual([{ top: 60, behavior: "smooth" }]);
+    expect(scrolls.every((call) => call.behavior === "instant")).toBe(true);
 
-    expect(pressKey("k")).toBe(false);
+    expect(tapKey("k", "KeyK")).toBe(false);
+    frames.run(20);
     expect(area.scrollTop).toBe(0);
     expect(wheelDeltas).toEqual([60, -60]);
-    expect(scrolls.at(-1)).toEqual({ top: 0, behavior: "smooth" });
 
-    expect(pressKey("J", window, { shiftKey: true })).toBe(false);
+    expect(tapKey("J", "KeyJ", window, { shiftKey: true })).toBe(false);
+    frames.run(30);
     expect(area.scrollTop).toBe(600);
     expect(wheelDeltas).toEqual([60, -60]);
-    expect(scrolls.at(-1)).toEqual({ top: 600, behavior: "smooth" });
 
     // Inside a text field the same keys are just typing.
-    expect(pressKey("j", document.getElementById("editor") as HTMLElement)).toBe(true);
+    expect(tapKey("j", "KeyJ", document.getElementById("editor") as HTMLElement)).toBe(true);
+    frames.run(20);
     expect(area.scrollTop).toBe(600);
 
     // With no timeline on the page the key falls through to bb.
     document.body.innerHTML = '<div style="overflow-y: auto"><button>Only</button></div>';
-    expect(pressKey("j")).toBe(true);
+    expect(pressKey("j", window, { code: "KeyJ" })).toBe(true);
 
+    frames.restore();
     void dispose();
     controller.abort();
   });
 
-  test("a repeated j steps from the last target while the scroll is still in flight", () => {
+  test("a held j keeps scrolling past one step until its keyup", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
-    const scroller = installScroller();
-    scroller.settles = false;
+    const frames = installFrames();
+    const { area } = installScroller();
 
-    expect(pressKey("j")).toBe(false);
-    expect(pressKey("j")).toBe(false);
-    expect(scroller.area.scrollTop).toBe(0);
-    expect(scroller.scrolls.map((call) => call.top)).toEqual([60, 120]);
+    expect(pressKey("j", window, { code: "KeyJ" })).toBe(false);
+    // A keyboard repeat starts no second animator; the running one carries on.
+    expect(pressKey("j", window, { code: "KeyJ", repeat: true })).toBe(false);
+    frames.run(20);
+    const held = area.scrollTop;
+    expect(held).toBeGreaterThan(60);
 
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "j", code: "KeyJ" }));
+    frames.run(10);
+    expect(area.scrollTop).toBe(held);
+
+    frames.restore();
     void dispose();
     controller.abort();
   });

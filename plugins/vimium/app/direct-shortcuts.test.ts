@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   DIRECT_SHORTCUTS,
-  SCROLL_GOAL_MS,
   SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
-  scrollBaseFor,
-  scrollTopFor,
+  scrollAmountFor,
   threadIdFromPath,
   type DirectKey,
 } from "./direct-shortcuts.ts";
@@ -66,24 +64,24 @@ describe("directShortcutFor", () => {
   });
 });
 
-describe("scrollTopFor", () => {
+describe("scrollAmountFor", () => {
   const view = { scrollTop: 100, scrollHeight: 1000, clientHeight: 400 };
 
-  test("steps down and up by one step", () => {
-    expect(scrollTopFor("down", view)).toBe(100 + SCROLL_STEP_PX);
-    expect(scrollTopFor("up", view)).toBe(100 - SCROLL_STEP_PX);
+  test("a step is one step in either direction, wherever the view sits", () => {
+    expect(scrollAmountFor("down", view)).toBe(SCROLL_STEP_PX);
+    expect(scrollAmountFor("up", view)).toBe(-SCROLL_STEP_PX);
+    expect(scrollAmountFor("down", { ...view, scrollTop: 599 })).toBe(SCROLL_STEP_PX);
+    expect(scrollAmountFor("up", { ...view, scrollTop: 0 })).toBe(-SCROLL_STEP_PX);
   });
 
-  test("clamps to the top and to the bottom", () => {
-    expect(scrollTopFor("up", { ...view, scrollTop: 10 })).toBe(0);
-    expect(scrollTopFor("down", { ...view, scrollTop: 590 })).toBe(600);
-    expect(scrollTopFor("bottom", view)).toBe(600);
+  test("the bottom is the distance left to the last scrollable pixel", () => {
+    expect(scrollAmountFor("bottom", view)).toBe(500);
+    expect(scrollAmountFor("bottom", { ...view, scrollTop: 600 })).toBe(0);
   });
 
-  test("a view that does not overflow stays at zero", () => {
+  test("a view that does not overflow has nowhere to go", () => {
     const flat = { scrollTop: 0, scrollHeight: 300, clientHeight: 400 };
-    expect(scrollTopFor("down", flat)).toBe(0);
-    expect(scrollTopFor("bottom", flat)).toBe(0);
+    expect(scrollAmountFor("bottom", flat)).toBe(0);
   });
 });
 
@@ -119,19 +117,5 @@ describe("adjacentThreadIndex", () => {
 
   test("an empty list has nowhere to go", () => {
     expect(adjacentThreadIndex([], "a", 1)).toBeNull();
-  });
-});
-
-describe("scrollBaseFor", () => {
-  test("a fresh goal is the base", () => {
-    expect(scrollBaseFor({ top: 120, at: 1000 }, 1000 + SCROLL_GOAL_MS - 1, 75)).toBe(120);
-  });
-
-  test("a stale goal yields to the live scrollTop", () => {
-    expect(scrollBaseFor({ top: 120, at: 1000 }, 1000 + SCROLL_GOAL_MS, 75)).toBe(75);
-  });
-
-  test("no goal yields to the live scrollTop", () => {
-    expect(scrollBaseFor(null, 1000, 75)).toBe(75);
   });
 });

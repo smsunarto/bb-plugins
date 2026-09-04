@@ -68,37 +68,22 @@ export function directShortcutFor(key: DirectKey): DirectShortcut | null {
 
 export const SCROLL_STEP_PX = 60;
 
-/** The scrollTop a conversation scroll key lands on, clamped to the view. */
-export function scrollTopFor(
+/**
+ * The relative distance a conversation scroll key asks for. A step needs no
+ * clamp, because the scroller stops as soon as the area no longer moves.
+ */
+export function scrollAmountFor(
   motion: ScrollMotion,
   view: { scrollTop: number; scrollHeight: number; clientHeight: number },
 ): number {
-  const max = Math.max(0, view.scrollHeight - view.clientHeight);
   switch (motion) {
     case "down":
-      return Math.min(view.scrollTop + SCROLL_STEP_PX, max);
+      return SCROLL_STEP_PX;
     case "up":
-      return Math.max(view.scrollTop - SCROLL_STEP_PX, 0);
+      return -SCROLL_STEP_PX;
     case "bottom":
-      return max;
+      return Math.max(0, view.scrollHeight - view.clientHeight) - view.scrollTop;
   }
-}
-
-/**
- * How long a smooth-scroll target stays the base for the next step. A held
- * key repeats faster than the animation finishes, so stepping from the live
- * scrollTop would restart each step mid-flight and stutter.
- */
-export const SCROLL_GOAL_MS = 300;
-
-/** The scrollTop the next step counts from: the fresh goal, else the live value. */
-export function scrollBaseFor(
-  goal: { top: number; at: number } | null,
-  now: number,
-  scrollTop: number,
-): number {
-  if (goal !== null && now - goal.at < SCROLL_GOAL_MS) return goal.top;
-  return scrollTop;
 }
 
 const THREAD_PATH = /\/threads\/([^/?#]+)/;

@@ -37,11 +37,11 @@ import {
   SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
-  scrollBaseFor,
-  scrollTopFor,
+  scrollAmountFor,
   threadIdFromPath,
   type DirectShortcut,
 } from "./direct-shortcuts.ts";
+import { createScroller } from "./scroller.ts";
 import {
   RESERVED_CONTROLS,
   TEXT_CONTROLS,
@@ -536,10 +536,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // would otherwise swallow the next `[` or `]`. The user's next pointer
   // press or key ends the guard early.
   let editableFocusGuardUntil = 0;
-  // The last smooth-scroll target. A key repeat that lands mid-animation
-  // steps from here rather than from the in-flight scrollTop.
-  let scrollGoal: { readonly area: HTMLElement; readonly top: number; readonly at: number } | null =
-    null;
+  const scroller = createScroller();
 
   function guardEditableFocus(): void {
     editableFocusGuardUntil = performance.now() + NAVIGATION_FOCUS_GUARD_MS;
@@ -754,19 +751,15 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
             }),
           );
         }
-        const now = performance.now();
-        const base = scrollBaseFor(
-          scrollGoal?.area === area ? scrollGoal : null,
-          now,
-          area.scrollTop,
-        );
-        const top = scrollTopFor(shortcut.motion, {
-          scrollTop: base,
+        const amount = scrollAmountFor(shortcut.motion, {
+          scrollTop: area.scrollTop,
           scrollHeight: area.scrollHeight,
           clientHeight: area.clientHeight,
         });
-        scrollGoal = { area, top, at: now };
-        area.scrollTo({ top, behavior: prefersReducedMotion() ? "instant" : "smooth" });
+        if (amount !== 0) {
+          if (prefersReducedMotion()) area.scrollBy({ top: amount, behavior: "instant" });
+          else scroller.scrollBy(area, amount, shortcut.motion !== "bottom");
+        }
         return true;
       }
     }
@@ -783,6 +776,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    scroller.noteKeydown({ code: event.code, repeat: event.repeat });
     if (!MODIFIER_KEYS.has(event.key)) editableFocusGuardUntil = 0;
     if (
       mode.kind === "idle" &&
@@ -932,6 +926,15 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     claim();
   }
 
+  function onKeyup(event: KeyboardEvent): void {
+    scroller.noteKeyup(event.code);
+  }
+
+  function onBlur(): void {
+    scroller.cancel();
+    exitIfActive();
+  }
+
   // Markers are pinned to rects measured at entry, so a scroll that moves a
   // hinted target makes them stale — but the timeline's streaming auto-scroll
   // moves no hint (it is a quiet zone) and must not dismiss the prompt. A
@@ -951,9 +954,10 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     signal: context.signal,
   });
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });
+  window.addEventListener("keyup", onKeyup, { capture: true, signal: context.signal });
   window.addEventListener("scroll", onScroll, { capture: true, signal: context.signal });
   window.addEventListener("resize", exitIfActive, { signal: context.signal });
-  window.addEventListener("blur", exitIfActive, { signal: context.signal });
+  window.addEventListener("blur", onBlur, { signal: context.signal });
 
   // The content script can mount after React has already applied autofocus.
   const active = document.activeElement;
