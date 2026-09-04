@@ -16,7 +16,9 @@ import {
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import "./app.css";
 
-type EmbedKind = "code" | "diff";
+type EmbedKind = "code" | "diff" | "patch";
+
+const KIND_LABEL: Record<EmbedKind, string> = { code: "Code", diff: "Changes", patch: "Proposed" };
 
 function positiveInteger(value: string | undefined): number | undefined | null {
   if (value === undefined) return undefined;
@@ -80,15 +82,18 @@ function SmartEmbed({
   openWorkspaceFile,
 }: PluginMessageDirectiveProps & { kind: EmbedKind }) {
   const path = attributes.path?.trim() ?? "";
+  const file = attributes.file?.trim() ?? "";
   const start = positiveInteger(attributes.start);
   const end = positiveInteger(attributes.end);
 
   const invalid =
-    path.length === 0
-      ? "This Smart Embed needs a worktree-relative path."
-      : start === null || end === null
-        ? "Smart Embed lines must be positive integers."
-        : null;
+    kind === "patch" && file.length === 0
+      ? "This Smart Embed needs a thread-storage-relative patch file."
+      : kind !== "patch" && path.length === 0
+        ? "This Smart Embed needs a worktree-relative path."
+        : start === null || end === null
+          ? "Smart Embed lines must be positive integers."
+          : null;
 
   useWorkspaceChangeSignals();
   const threadId = message.threadId;
@@ -99,23 +104,25 @@ function SmartEmbed({
         : {
             kind,
             threadId,
-            path,
+            ...(path.length > 0 ? { path } : {}),
+            ...(kind === "patch" ? { file } : {}),
             ...(typeof start === "number" ? { start } : {}),
             ...(typeof end === "number" ? { end } : {}),
           },
-    [end, invalid, kind, path, start, threadId],
+    [end, file, invalid, kind, path, start, threadId],
   );
   const result = useCachedEmbed(request)?.value ?? null;
 
   if (invalid !== null) return <Notice tone="error">{invalid}</Notice>;
-  if (result === null) return <Notice tone="muted">{`Loading ${path}…`}</Notice>;
+  const subject = kind === "patch" ? file : path;
+  if (result === null) return <Notice tone="muted">{`Loading ${subject}…`}</Notice>;
   if (result.status !== "ready") {
     return <Notice tone={result.status === "error" ? "error" : "muted"}>{result.message}</Notice>;
   }
 
   const header = (
     <>
-      <span className="smart-embed-kind">{result.kind === "diff" ? "Changes" : "Code"}</span>
+      <span className="smart-embed-kind">{KIND_LABEL[result.kind]}</span>
       <span className="smart-embed-path" title={result.label}>
         {result.label}
       </span>
@@ -163,7 +170,12 @@ function SmartCodeDirective(props: PluginMessageDirectiveProps) {
   return <SmartEmbed {...props} kind="code" />;
 }
 
+function SmartPatchDirective(props: PluginMessageDirectiveProps) {
+  return <SmartEmbed {...props} kind="patch" />;
+}
+
 export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "smart-diff", component: SmartDiffDirective });
   app.slots.messageDirective({ id: "smart-code", component: SmartCodeDirective });
+  app.slots.messageDirective({ id: "smart-patch", component: SmartPatchDirective });
 });

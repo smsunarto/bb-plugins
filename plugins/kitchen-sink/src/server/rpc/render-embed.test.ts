@@ -5,15 +5,19 @@ import { getSingularPatch } from "@pierre/diffs";
 
 import { citationPatch } from "../lib/citation-patch.ts";
 import { rangePatch } from "../lib/diff-range.ts";
+import { splitPatchFiles } from "../lib/patch-file.ts";
 import { renderEmbed } from "./render-embed.ts";
 
-function context(options: { content?: string; patch?: string } = {}) {
+function context(options: { content?: string; patch?: string; storage?: string } = {}) {
   const calls: { read: unknown[]; diffPatch: unknown[] } = { read: [], diffPatch: [] };
   const bb = {
     sdk: {
       threads: {
         async get() {
           return { environmentId: "environment-1" };
+        },
+        async storageLocation() {
+          return { hostId: "host-1", storageRootPath: "/home/user/.bb/thread-storage/thread-1" };
         },
       },
       environments: {
@@ -39,9 +43,12 @@ function context(options: { content?: string; patch?: string } = {}) {
         },
       },
       files: {
-        async read(input: unknown) {
+        async read(input: { path: string }) {
           calls.read.push(input);
-          return { contentEncoding: "utf8", content: options.content ?? "one\ntwo\nthree\n" };
+          const content = input.path.includes("thread-storage")
+            ? (options.storage ?? "")
+            : (options.content ?? "one\ntwo\nthree\n");
+          return { contentEncoding: "utf8", content };
         },
       },
     },
@@ -219,5 +226,113 @@ test("renderEmbed trims a diff to the requested range", async () => {
     patch:
       "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -3,4 +3,4 @@\n three\n four\n-five\n+FIVE\n six\n",
     truncated: false,
+  });
+});
+
+const multiFilePatch = [
+  "diff --git a/src/a.ts b/src/a.ts",
+  "--- a/src/a.ts",
+  "+++ b/src/a.ts",
+  "@@ -1,3 +1,3 @@",
+  " one",
+  "-two",
+  "+TWO",
+  " three",
+  "diff --git a/src/b.ts b/src/b.ts",
+  "new file mode 100644",
+  "--- /dev/null",
+  "+++ b/src/b.ts",
+  "@@ -0,0 +1 @@",
+  "+hello",
+  "",
+].join("\n");
+
+describe("splitPatchFiles", () => {
+  test("splits a git patch per file and keeps each file's own header", () => {
+    const files = splitPatchFiles(multiFilePatch);
+    expect(files.map((file) => file.path)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(files[1]?.patch).toBe(
+      "diff --git a/src/b.ts b/src/b.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/b.ts\n@@ -0,0 +1 @@\n+hello\n",
+    );
+    for (const file of files) expect(() => getSingularPatch(file.patch)).not.toThrow();
+  });
+
+  test("splits a plain unified diff on its file headers and skips chunks without hunks", () => {
+    const files = splitPatchFiles(
+      "some notes\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-a\n+b\n--- y.ts\n+++ y.ts\n@@ -1 +1 @@\n-c\n+d\n--- z.ts\n+++ z.ts\n",
+    );
+    expect(files.map((file) => file.path)).toEqual(["x.ts", "y.ts"]);
+  });
+});
+
+describe("renderEmbed patch", () => {
+  test("reads the patch under the thread storage root fence and infers a single file", async () => {
+    const storage =
+      "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const { ctx, calls } = context({ storage });
+    const result = await renderEmbed.execute(ctx, {
+      kind: "patch",
+      threadId: "thread-1",
+      file: "proposal.patch",
+    });
+    expect(result).toEqual({
+      status: "ready",
+      kind: "patch",
+      path: "src/a.ts",
+      label: "src/a.ts",
+      patch: storage,
+      truncated: false,
+    });
+    expect(calls.read).toEqual([
+      {
+        hostId: "host-1",
+        path: "/home/user/.bb/thread-storage/thread-1/proposal.patch",
+        rootPath: "/home/user/.bb/thread-storage/thread-1",
+      },
+    ]);
+  });
+
+  test("selects one file from a multi-file patch and trims it to a range", async () => {
+    const { ctx } = context({ storage: multiFilePatch });
+    expect(
+      await renderEmbed.execute(ctx, { kind: "patch", threadId: "thread-1", file: "p.patch" }),
+    ).toEqual({ status: "error", message: "p.patch touches 2 files. Add path= to choose one." });
+    expect(
+      await renderEmbed.execute(ctx, {
+        kind: "patch",
+        threadId: "thread-1",
+        file: "p.patch",
+        path: "src/c.ts",
+      }),
+    ).toEqual({ status: "error", message: "p.patch has no changes for src/c.ts." });
+    expect(
+      await renderEmbed.execute(ctx, {
+        kind: "patch",
+        threadId: "thread-1",
+        file: "p.patch",
+        path: "src/a.ts",
+        start: 2,
+        end: 2,
+      }),
+    ).toEqual({
+      status: "ready",
+      kind: "patch",
+      path: "src/a.ts",
+      label: "src/a.ts:L2",
+      patch:
+        "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n",
+      truncated: false,
+    });
+  });
+
+  test("rejects patch files that can escape thread storage and reports an empty patch", async () => {
+    const { ctx, calls } = context({ storage: "not a diff\n" });
+    expect(
+      await renderEmbed.execute(ctx, { kind: "patch", threadId: "thread-1", file: "../x.patch" }),
+    ).toEqual({ status: "error", message: "Expected a thread-storage-relative patch file." });
+    expect(calls.read).toEqual([]);
+    expect(
+      await renderEmbed.execute(ctx, { kind: "patch", threadId: "thread-1", file: "x.patch" }),
+    ).toEqual({ status: "empty", message: "No file changes found in x.patch." });
   });
 });

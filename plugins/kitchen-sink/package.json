@@ -32,7 +32,7 @@
   },
   "bb": {
     "name": "Kitchen Sink",
-    "description": "Personal composer commands and message embeds: /ship-it lands or opens a PR after the CI gates pass, /sync rebases and resolves conflicts, and ::smart-diff / ::smart-code render verifiable diffs and citations.",
+    "description": "Personal composer commands and message embeds: /ship-it lands or opens a PR after the CI gates pass, /sync rebases and resolves conflicts, and ::smart-diff / ::smart-code / ::smart-patch render verifiable diffs, citations, and proposed patches.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

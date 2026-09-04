@@ -16,7 +16,7 @@ type Item = { id: string; key: string; runId: string; excerpt: string };
 
 const RUBRIC = `You grade where a widget was placed inside a written answer.
 
-A directive line renders as an inline panel. ::smart-diff{...} renders the diff of a file. ::smart-code{...} renders a snippet of a file.
+A directive line renders as an inline panel. ::smart-diff{...} renders the diff of a file. ::smart-code{...} renders a snippet of a file. ::smart-patch{...} renders a proposed diff the agent has not applied.
 
 Each item below is an excerpt of an answer. The line marked with ${MARK.trim()} is the directive under review. Decide one thing only: does that directive sit directly under the specific sentence or claim it supports, so the reader meets the evidence exactly where the claim is made?
 

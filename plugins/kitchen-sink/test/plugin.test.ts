@@ -77,6 +77,7 @@ test("injects the Smart Embed instructions into every agent session", async () =
   expect(instructions).toBe(SMART_EMBED_INSTRUCTIONS);
   expect(instructions).toContain("::smart-diff");
   expect(instructions).toContain("::smart-code");
+  expect(instructions).toContain("::smart-patch");
 });
 
 test("publishes a workspace-changed signal when a thread settles, fails, or goes away", async () => {

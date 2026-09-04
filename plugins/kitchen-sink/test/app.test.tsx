@@ -23,12 +23,77 @@ test("reserves room for 100 monospace columns without exceeding the viewport", a
   expect(stylesheet).toContain("transform: translateX(-50%)");
 });
 
-test("registers the smart diff and code message directives", async () => {
+test("registers the smart diff, code, and patch message directives", async () => {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(captured.messageDirectives.map((directive) => directive.id)).toEqual([
     "smart-diff",
     "smart-code",
+    "smart-patch",
   ]);
+});
+
+test("renders a proposed patch from thread storage with its own header label", async () => {
+  embedCache.clear();
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-patch");
+  expect(directive).toBeDefined();
+  const slot = renderSlot(
+    directive!,
+    {
+      attributes: { file: "proposal.patch", path: "src/example.ts" },
+      source: '::smart-patch{file="proposal.patch" path="src/example.ts"}',
+      message: {
+        id: "message-1",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        projectId: "project-1",
+      },
+      openWorkspaceFile: null,
+    },
+    {
+      rpc: {
+        renderEmbed: async () => ({
+          status: "ready" as const,
+          kind: "patch" as const,
+          path: "src/example.ts",
+          label: "src/example.ts",
+          patch,
+          truncated: false,
+        }),
+      },
+    },
+  );
+  const diff = await slot.findByTestId("bb-diff");
+  expect(diff.dataset.path).toBe("src/example.ts");
+  expect(slot.getByText("Proposed")).toBeDefined();
+  expect(slot.rpcCalls[0]?.input).toEqual({
+    kind: "patch",
+    threadId: "thread-1",
+    path: "src/example.ts",
+    file: "proposal.patch",
+  });
+  slot.unmount();
+  embedCache.clear();
+});
+
+test("a smart patch without a file reports the missing attribute instead of calling the server", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-patch");
+  const slot = renderSlot(
+    directive!,
+    {
+      attributes: {},
+      source: "::smart-patch",
+      message: { id: "m", threadId: "thread-1", turnId: "t", projectId: "p" },
+      openWorkspaceFile: null,
+    },
+    { rpc: { renderEmbed: async () => readyDiff(patch) } },
+  );
+  expect(
+    slot.getByText("This Smart Embed needs a thread-storage-relative patch file."),
+  ).toBeDefined();
+  expect(slot.rpcCalls).toEqual([]);
+  slot.unmount();
 });
 
 function readyDiff(patchText: string) {

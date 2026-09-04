@@ -6,4 +6,6 @@ Leave start and end off only when the file is new, or the whole diff runs under 
 
 To cite existing project code, place this leaf directive on its own line: ::smart-code{path="relative/path.ts" start="12" end="28"}
 
+To show a change before you apply it, write a unified diff to "$BB_THREAD_STORAGE/<name>.patch" and place this leaf directive on its own line: ::smart-patch{file="<name>.patch" path="relative/path.ts"}
+
 Use worktree-relative paths. Do not put directives in inline code or fenced code blocks. Add at most six embeds, and only for material files or claims.

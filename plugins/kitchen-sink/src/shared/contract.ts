@@ -2,9 +2,12 @@ import { z } from "zod";
 
 export const renderEmbedInputSchema = z
   .object({
-    kind: z.enum(["code", "diff"]),
+    kind: z.enum(["code", "diff", "patch"]),
     threadId: z.string().min(1),
-    path: z.string().min(1).max(1_024),
+    /** Worktree-relative file. Optional for `patch`, which can infer it from a single-file patch. */
+    path: z.string().max(1_024).optional(),
+    /** Thread-storage-relative patch file. Only for `patch`. */
+    file: z.string().min(1).max(1_024).optional(),
     start: z.number().int().positive().optional(),
     end: z.number().int().positive().optional(),
   })
@@ -14,7 +17,7 @@ export const renderEmbedOutputSchema = z.discriminatedUnion("status", [
   z
     .object({
       status: z.literal("ready"),
-      kind: z.enum(["code", "diff"]),
+      kind: z.enum(["code", "diff", "patch"]),
       path: z.string(),
       label: z.string(),
       patch: z.string(),

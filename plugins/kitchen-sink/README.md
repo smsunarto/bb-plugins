@@ -26,13 +26,14 @@ Both commands detect GitButler with `but status` and route every write through t
 
 ## Smart Embeds
 
-Two message directives render project evidence inside assistant messages with [Diffs](https://diffs.com):
+Three message directives render project evidence inside assistant messages with [Diffs](https://diffs.com):
 
 - `::smart-diff{path="src/example.ts" start="40" end="72"}` renders only the hunks that touch those lines of the changed file, with nearby context. Deleted lines count at the position where they used to be. This is the form the agent instructions ask for by default.
 - `::smart-diff{path="src/example.ts"}` renders the whole file's branch and working-tree changes. Meant for a new file, or one whose diff is short enough to read at a glance.
 - `::smart-code{path="src/example.ts" start="12" end="28"}` renders an exact code citation with nearby context.
+- `::smart-patch{file="proposal.patch" path="src/example.ts"}` renders a diff the agent has not applied yet. The agent writes a unified diff to `$BB_THREAD_STORAGE/proposal.patch` first. `path` picks one file out of a multi-file patch and can be left off when the patch touches exactly one. `start` and `end` trim it the same way `::smart-diff` does.
 
-Both directives resolve from the message thread's current workspace. Clicking the header opens the file in bb's workspace viewer.
+`::smart-diff` and `::smart-code` resolve from the message thread's current workspace. `::smart-patch` reads from the thread's storage directory, so it survives the worktree being deleted and never touches the repository. Clicking the header opens the file in bb's workspace viewer.
 
 The instructions the plugin injects into agents live in `SMART_EMBED_INSTRUCTIONS` in `src/server/server.ts`. They are measured, not guessed. `eval/METRIC.md` defines the metric and `eval/RESULTS.md` records the climb: leading with the ranged form took embed-score from 66.5% to 79.6% on Sonnet and from 68.1% to 84.7% on Opus. Change that text through the harness, not by hand. `eval/prompts/baseline.md` must stay byte-identical to the shipped constant, and a test enforces it.
 

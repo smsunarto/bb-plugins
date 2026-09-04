@@ -11,9 +11,12 @@ const onThrow = (): RenderEmbedOutput => ({ status: "error", message: "failed" }
 
 test("keys include every request field", () => {
   expect(embedCacheKey({ kind: "code", threadId: "t", path: "a.ts", start: 1, end: 2 })).toBe(
-    "code t a.ts 1 2",
+    "code t a.ts 1 2 ",
   );
-  expect(embedCacheKey({ kind: "diff", threadId: "t", path: "a.ts" })).toBe("diff t a.ts  ");
+  expect(embedCacheKey({ kind: "diff", threadId: "t", path: "a.ts" })).toBe("diff t a.ts   ");
+  expect(embedCacheKey({ kind: "patch", threadId: "t", file: "p.patch" })).toBe(
+    "patch t    p.patch",
+  );
 });
 
 test("shares one fetch between concurrent loads and serves later reads without fetching", async () => {

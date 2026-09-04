@@ -8,7 +8,9 @@ import { renderEmbed } from "./rpc/render-embed.ts";
  * Composer commands ship as skills under `skills/` (bb's `/` menu lists
  * skills, so there is no plugin slash-command surface). Mention providers
  * live in `src/server/mentions.ts`. Smart Embeds are the `::smart-diff` and
- * `::smart-code` message directives backed by the `renderEmbed` RPC.
+ * `::smart-code` message directives backed by the `renderEmbed` RPC, plus
+ * `::smart-patch` for a diff the agent wrote to thread storage but has not
+ * applied.
  */
 
 /**
@@ -23,6 +25,8 @@ For a file changed in the current task, place this leaf directive on its own lin
 Leave start and end off only when the file is new, or the whole diff runs under about twenty lines: ::smart-diff{path="relative/path.ts"}
 
 To cite existing project code, place this leaf directive on its own line: ::smart-code{path="relative/path.ts" start="12" end="28"}
+
+To show a change before you apply it, write a unified diff to "$BB_THREAD_STORAGE/<name>.patch" and place this leaf directive on its own line: ::smart-patch{file="<name>.patch" path="relative/path.ts"}
 
 Use worktree-relative paths. Do not put directives in inline code or fenced code blocks. Add at most six embeds, and only for material files or claims.`;
 

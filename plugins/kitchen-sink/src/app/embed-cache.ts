@@ -18,9 +18,10 @@ import type { RenderEmbedOutput } from "../shared/contract.ts";
  */
 
 export type EmbedRequest = {
-  readonly kind: "code" | "diff";
+  readonly kind: "code" | "diff" | "patch";
   readonly threadId: string;
-  readonly path: string;
+  readonly path?: string;
+  readonly file?: string;
   readonly start?: number;
   readonly end?: number;
 };
@@ -53,9 +54,10 @@ export function embedCacheKey(request: EmbedRequest): string {
   return [
     request.kind,
     request.threadId,
-    request.path,
+    request.path ?? "",
     request.start ?? "",
     request.end ?? "",
+    request.file ?? "",
   ].join(" ");
 }
 
