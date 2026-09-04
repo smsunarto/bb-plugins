@@ -29,6 +29,11 @@
   prose leading, and tighten `diagram` and `patch` fences to 1.3 so
   box-drawing glyphs in file trees and tree diffs connect between rows.
 
+- Frame inline images so they no longer blend into the panel. Markdown images,
+  attachment thumbnails, and timeline previews share the theme's standard
+  border; markdown images also pick up the rounded corner radius and extra
+  block margin against the surrounding prose.
+
 ## 0.3.2
 
 ### Patch Changes

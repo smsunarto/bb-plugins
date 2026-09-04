@@ -379,11 +379,24 @@
   }
 }
 
-/* Chat image thumbnails already have a clipped rounded silhouette. Remove the
- * selected-surface keyline so screenshots sit cleanly in the message bubble;
- * keep a transparent 1px edge to avoid changing their measured size. */
-.dark button.cursor-zoom-in:has(> img.object-cover) {
-  border-color: transparent;
+/* Inline images must read as pictures, not as part of the panel. Most of them
+ * are dark screenshots on the #181818 ground, so without an edge they merge
+ * into the message. Every image surface gets the theme's standard --border
+ * keyline: markdown images (which bb ships frameless), attachment thumbnails
+ * in both bubbles, and timeline row previews. Markdown images also get bb's
+ * rounded-md radius, a border-box so max-w-full holds, and more block margin
+ * than bb's my-2 so the frame is not packed against the surrounding prose.
+ * vertical-align drops the inline baseline gap under the frame. */
+.dark img.cursor-zoom-in,
+.dark button.cursor-zoom-in:has(> img) {
+  border: 1px solid var(--border);
+}
+
+.dark img.cursor-zoom-in {
+  border-radius: 0.375rem; /* = rounded-md; bb defines no --radius token */
+  box-sizing: border-box;
+  margin-block: 1.25rem;
+  vertical-align: middle;
 }
 
 /* Keep button fills on the neutral ground ramp without changing --primary,
