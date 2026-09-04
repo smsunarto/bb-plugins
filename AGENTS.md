@@ -5,6 +5,18 @@
 - Start `bun run dev` before the first plugin edit. Leave it running.
 - Author every new plugin with the bb-kit framework (`@bb-kit/core`).
 
+## Catalogs
+
+`marketplace.json` (repo root) is the public catalog `bb marketplace add` reads.
+`.bb/plugins.json` is the collection index `bb plugin install --plugin` reads.
+They are not interchangeable, and bb will not look for `marketplace.json` under
+`.bb/`.
+
+When you add, rename, or remove a catalog plugin, update both files in the same
+change: every `marketplace.json` `id` needs a matching `.bb/plugins.json`
+`{ "name", "source": "./plugins/<id>" }`. Leave unpublished personal plugins
+out of `marketplace.json`. `.bb/plugins.json` may list those extras.
+
 ## Environment
 
 - By default, running `bb` commands points to the user's live bb instance. Run `bb --version` to see what bb version the user have installed.

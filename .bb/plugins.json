@@ -8,6 +8,10 @@
       "source": "./plugins/agent-proxy"
     },
     {
+      "name": "agent-trace",
+      "source": "./plugins/agent-trace"
+    },
+    {
       "name": "agentation",
       "source": "./plugins/agentation"
     },
@@ -34,6 +38,10 @@
     {
       "name": "monokai",
       "source": "./plugins/monokai"
+    },
+    {
+      "name": "nanocodex",
+      "source": "./plugins/nanocodex"
     },
     {
       "name": "notify",
