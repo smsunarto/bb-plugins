@@ -1,13 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BinResult } from "./shared.ts";
-import {
-  UNIT_NAME_PATTERN,
-  camelName,
-  compositionRootFromPkg,
-  relativeImport,
-  unitDir,
-} from "./shared.ts";
+import { UNIT_NAME_PATTERN, camelName, relativeImport } from "./shared.ts";
+import { defaultLayout, parseLayout, unitDir, unitFile, type SrcLayout } from "./layout.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
 import { toolName } from "../tools/tools.ts";
 
@@ -163,20 +158,29 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   const isProcedure = kind === "query" || kind === "mutation";
   const isTool = kind === "tool";
   const publicName = isProcedure ? camelName(name) : undefined;
+  const unitKind = isProcedure ? "rpc" : isTool ? "tools" : "command";
 
-  let compositionRoot = "server/server.ts";
+  let layout: SrcLayout;
   let packageName: string | undefined;
   try {
     const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as Record<string, unknown>;
-    compositionRoot = compositionRootFromPkg(pkg) ?? compositionRoot;
+    const parsed = parseLayout(pkg);
+    if (!parsed.ok) {
+      return {
+        exitCode: 1,
+        stdout: "",
+        stderr: `${parsed.message}\n`,
+      };
+    }
+    layout = parsed.value;
     const rawName = pkg["name"];
     packageName = typeof rawName === "string" ? rawName : undefined;
   } catch {
-    // Unparseable JSON still writes beside the scaffold default.
+    layout = defaultLayout();
   }
 
-  const dir = unitDir(compositionRoot, isProcedure ? "rpc" : isTool ? "tools" : "command");
-  const unitRelative = `${dir}/${name}.ts`;
+  const dir = unitDir(layout, unitKind);
+  const unitRelative = unitFile(layout, unitKind, name);
   const testRelative = `${dir}/${name}.test.ts`;
   for (const relative of [unitRelative, testRelative]) {
     if (existsSync(join(options.cwd, relative))) {
@@ -207,10 +211,10 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   writeFileSync(join(options.cwd, unitRelative), unitContent);
   writeFileSync(join(options.cwd, testRelative), testContent);
 
-  const importSpecifier = relativeImport(compositionRoot, unitRelative);
+  const importSpecifier = relativeImport(layout.compositionRoot, unitRelative);
 
   const lines = [`created ${unitRelative}`, `created ${testRelative}`, ""];
-  lines.push(`wire it in ${compositionRoot} — the import:`, "");
+  lines.push(`wire it in ${layout.compositionRoot} — the import:`, "");
   lines.push(`  import { ${exportName} } from "${importSpecifier}";`, "");
   if (isProcedure) {
     lines.push("and the rpc entry:", "", `  ${exportName},`, "");

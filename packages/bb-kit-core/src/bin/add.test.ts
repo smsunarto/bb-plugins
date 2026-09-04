@@ -7,7 +7,7 @@ import { runAdd } from "./add.ts";
 
 function pluginRoot(
   name = "bb-plugin-notes",
-  bb: Record<string, unknown> = { server: "./server/server.ts" },
+  bb: Record<string, unknown> = { server: "./src/server/server.ts" },
 ): string {
   const cwd = mkdtempSync(join(tmpdir(), "bb-kit-add-"));
   writeFileSync(join(cwd, "package.json"), `${JSON.stringify({ name, bb })}\n`);
@@ -18,12 +18,12 @@ test("add query writes the unit and sibling test and prints the wiring", () => {
   const cwd = pluginRoot();
   const result = runAdd("query", "read-url", { cwd });
   assert.equal(result.exitCode, 0);
-  const unit = readFileSync(join(cwd, "server/rpc/read-url.ts"), "utf8");
+  const unit = readFileSync(join(cwd, "src/server/rpc/read-url.ts"), "utf8");
   assert.match(unit, /export const readUrl = defineQuery\(/);
   assert.match(unit, /async execute\(_ctx\)/);
-  const sibling = readFileSync(join(cwd, "server/rpc/read-url.test.ts"), "utf8");
+  const sibling = readFileSync(join(cwd, "src/server/rpc/read-url.test.ts"), "utf8");
   assert.match(sibling, /import { readUrl } from ".\/read-url";/);
-  assert.match(result.stdout, /wire it in server\/server.ts/);
+  assert.match(result.stdout, /wire it in src\/server\/server.ts/);
   assert.match(result.stdout, /import { readUrl } from "\.\/rpc\/read-url";/);
   assert.match(result.stdout, /readUrl,/);
   assert.match(result.stdout, /name: readUrl/);
@@ -33,10 +33,10 @@ test("add mutation takes an input and tests with one", () => {
   const cwd = pluginRoot();
   const result = runAdd("mutation", "save-2fa", { cwd });
   assert.equal(result.exitCode, 0);
-  const unit = readFileSync(join(cwd, "server/rpc/save-2fa.ts"), "utf8");
+  const unit = readFileSync(join(cwd, "src/server/rpc/save-2fa.ts"), "utf8");
   assert.match(unit, /export const save2fa = defineMutation\(/);
   assert.match(unit, /input: z.object\(/);
-  const sibling = readFileSync(join(cwd, "server/rpc/save-2fa.test.ts"), "utf8");
+  const sibling = readFileSync(join(cwd, "src/server/rpc/save-2fa.test.ts"), "utf8");
   assert.match(sibling, /save2fa.execute\(stubHostContext\(\), { value: "x" }\)/);
   assert.match(result.stdout, /name: save2fa/);
 });
@@ -45,9 +45,9 @@ test("add command wires by kebab key when the name is hyphenated", () => {
   const cwd = pluginRoot();
   const result = runAdd("command", "sync-all", { cwd });
   assert.equal(result.exitCode, 0);
-  const unit = readFileSync(join(cwd, "server/command/sync-all.ts"), "utf8");
+  const unit = readFileSync(join(cwd, "src/server/command/sync-all.ts"), "utf8");
   assert.match(unit, /export const syncAll = defineCommand\(/);
-  const sibling = readFileSync(join(cwd, "server/command/sync-all.test.ts"), "utf8");
+  const sibling = readFileSync(join(cwd, "src/server/command/sync-all.test.ts"), "utf8");
   assert.match(sibling, /import { syncAll } from ".\/sync-all";/);
   assert.match(sibling, /syncAll\.execute\(stubHostContext\(\)\)/);
   assert.match(result.stdout, /"sync-all": syncAll,/);
@@ -61,14 +61,13 @@ test("add command uses shorthand when the name has no hyphen", () => {
   assert.match(result.stdout, /\n {2}status,\n/);
 });
 
-test("printed wiring is relative to bb.server at the package root", () => {
+test("add reports a parse failure and does not fall back to the scaffold layout", () => {
   const cwd = pluginRoot("bb-plugin-notes", { server: "./server.ts" });
   const result = runAdd("query", "read-url", { cwd });
-  assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /wire it in server.ts/);
-  assert.match(result.stdout, /import { readUrl } from "\.\/rpc\/read-url";/);
-  assert.ok(existsSync(join(cwd, "rpc/read-url.ts")));
-  assert.ok(!existsSync(join(cwd, "server/rpc/read-url.ts")));
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /bb\.server must live under src\/server/);
+  assert.ok(!existsSync(join(cwd, "rpc/read-url.ts")));
+  assert.ok(!existsSync(join(cwd, "src/server/rpc/read-url.ts")));
 });
 
 test("an unknown kind is a usage error (exit 2)", () => {
@@ -82,7 +81,7 @@ test("a non-kebab name exits 1", () => {
   const cwd = pluginRoot();
   const result = runAdd("query", "ReadUrl", { cwd });
   assert.equal(result.exitCode, 1);
-  assert.ok(!existsSync(join(cwd, "server/rpc/ReadUrl.ts")));
+  assert.ok(!existsSync(join(cwd, "src/server/rpc/ReadUrl.ts")));
 });
 
 test("add outside a plugin root exits 1", () => {
@@ -95,21 +94,21 @@ test("add outside a plugin root exits 1", () => {
 test("add never overwrites an existing unit (ADR-0009)", () => {
   const cwd = pluginRoot();
   assert.equal(runAdd("query", "ping", { cwd }).exitCode, 0);
-  const before = readFileSync(join(cwd, "server/rpc/ping.ts"), "utf8");
+  const before = readFileSync(join(cwd, "src/server/rpc/ping.ts"), "utf8");
   const again = runAdd("query", "ping", { cwd });
   assert.equal(again.exitCode, 1);
   assert.match(again.stderr, /already exists — add never overwrites/);
-  assert.equal(readFileSync(join(cwd, "server/rpc/ping.ts"), "utf8"), before);
+  assert.equal(readFileSync(join(cwd, "src/server/rpc/ping.ts"), "utf8"), before);
 });
 
 test("add tool writes the unit and prints the derived name", () => {
   const cwd = pluginRoot();
   const result = runAdd("tool", "beacon", { cwd });
   assert.equal(result.exitCode, 0);
-  const unit = readFileSync(join(cwd, "server/tools/beacon.ts"), "utf8");
+  const unit = readFileSync(join(cwd, "src/server/tools/beacon.ts"), "utf8");
   assert.match(unit, /export const beacon = defineTool\(/);
   assert.match(unit, /parameters: z.object\(/);
-  const sibling = readFileSync(join(cwd, "server/tools/beacon.test.ts"), "utf8");
+  const sibling = readFileSync(join(cwd, "src/server/tools/beacon.test.ts"), "utf8");
   assert.match(sibling, /import { beacon } from ".\/beacon";/);
   assert.match(sibling, /beacon\.execute\(ctx, { value: "x" }\)/);
   assert.match(sibling, /signal: new AbortController\(\)\.signal/);

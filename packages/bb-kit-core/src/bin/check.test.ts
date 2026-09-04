@@ -61,9 +61,9 @@ function edit(root: string, relative: string, from: string, to: string): void {
 
 /** A tools unit whose export is camel(base), optionally gated. */
 function addToolUnit(root: string, base: string, { enabled = false } = {}): void {
-  mkdirSync(join(root, "server", "tools"), { recursive: true });
+  mkdirSync(join(root, "src", "server", "tools"), { recursive: true });
   writeFileSync(
-    join(root, "server", "tools", `${base}.ts`),
+    join(root, "src", "server", "tools", `${base}.ts`),
     [
       'import { defineTool } from "@bb-kit/core/tools";',
       'import { z } from "zod";',
@@ -77,20 +77,20 @@ function addToolUnit(root: string, base: string, { enabled = false } = {}): void
       "",
     ].join("\n"),
   );
-  writeFileSync(join(root, "server", "tools", `${base}.test.ts`), "export {};\n");
+  writeFileSync(join(root, "src", "server", "tools", `${base}.test.ts`), "export {};\n");
 }
 
 /** Import the unit into server.ts and add the given agents entry. */
 function wireAgents(root: string, base: string, entry: string): void {
   edit(
     root,
-    "server/server.ts",
+    "src/server/server.ts",
     'import { definePlugin } from "@bb-kit/core/plugin";',
     `import { definePlugin } from "@bb-kit/core/plugin";\nimport { ${camelName(base)} } from "./tools/${base}.ts";`,
   );
   edit(
     root,
-    "server/server.ts",
+    "src/server/server.ts",
     "command: { status },",
     `command: { status },\n  agents: ${entry},`,
   );
@@ -153,49 +153,49 @@ test("a fresh scaffold passes with the wire table", async () => {
 
 test("an unwired unit file breaks the bijection (rule 1)", async () => {
   const root = makeFixture();
-  writeFileSync(join(root, "server", "rpc", "extra.ts"), "export const extra = 1;\n");
-  writeFileSync(join(root, "server", "rpc", "extra.test.ts"), "export {};\n");
+  writeFileSync(join(root, "src", "server", "rpc", "extra.ts"), "export const extra = 1;\n");
+  writeFileSync(join(root, "src", "server", "rpc", "extra.test.ts"), "export {};\n");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /error: server\/rpc\/extra\.ts — not wired into server\/server.ts rpc — rule 1/,
+    /error: src\/server\/rpc\/extra\.ts — not wired into src\/server\/server.ts rpc — rule 1/,
   );
 });
 
 test("a bare unit specifier fails rule 1 instead of resolving as a local path", async () => {
   const root = makeFixture();
-  edit(root, "server/server.ts", './rpc/ping"', 'rpc/ping"');
+  edit(root, "src/server/server.ts", './rpc/ping"', 'rpc/ping"');
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /imports "rpc\/ping" — a relative server\/rpc\/ unit file/);
+  assert.match(result.stderr, /imports "rpc\/ping" — a relative src\/server\/rpc\/ unit file/);
 });
 
 test("a wrong unit export name fails rule 1", async () => {
   const root = makeFixture();
-  edit(root, "server/rpc/ping.ts", "export const ping =", "export const pong =");
+  edit(root, "src/server/rpc/ping.ts", "export const ping =", "export const pong =");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /server\/rpc\/ping\.ts:5 — must have exactly one value export named "ping" \(found: pong\)/,
+    /src\/server\/rpc\/ping\.ts:5 — must have exactly one value export named "ping" \(found: pong\)/,
   );
 });
 
 test("two keys wiring one unit file break the bijection (rule 1)", async () => {
   const root = makeFixture();
-  edit(root, "server/server.ts", "rpc: { ping },", "rpc: { ping, pingAlias: ping },");
+  edit(root, "src/server/server.ts", "rpc: { ping },", "rpc: { ping, pingAlias: ping },");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /RPC key "pingAlias" wires server\/rpc\/ping\.ts, which is already wired — rule 1/,
+    /RPC key "pingAlias" wires src\/server\/rpc\/ping\.ts, which is already wired — rule 1/,
   );
 });
 
 test("a commands key that is not the unit basename fails rule 1", async () => {
   const root = makeFixture();
-  edit(root, "server/server.ts", "command: { status }", "command: { stat: status }");
+  edit(root, "src/server/server.ts", "command: { status }", "command: { stat: status }");
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /commands key "stat" must equal the unit's kebab basename "status"/);
@@ -203,7 +203,7 @@ test("a commands key that is not the unit basename fails rule 1", async () => {
 
 test("a definePlugin id that is not the derived plugin id fails rule 2", async () => {
   const root = makeFixture();
-  edit(root, "server/server.ts", 'pluginId: "notes",', 'pluginId: "other",');
+  edit(root, "src/server/server.ts", 'pluginId: "notes",', 'pluginId: "other",');
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /plugin id "other" must equal derivePluginID.* = "notes" — rule 2/);
@@ -211,10 +211,15 @@ test("a definePlugin id that is not the derived plugin id fails rule 2", async (
 
 test("a manifest path that does not exist fails rule 4", async () => {
   const root = makeFixture();
-  edit(root, "package.json", '"server": "./server/server.ts",', '"server": "./missing.ts",');
+  edit(
+    root,
+    "package.json",
+    '"server": "./src/server/server.ts",',
+    '"server": "./src/server/missing.ts",',
+  );
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /bb\.server "\.\/missing\.ts" does not exist — rule 4/);
+  assert.match(result.stderr, /bb\.server "\.\/src\/server\/missing\.ts" does not exist — rule 4/);
 });
 
 test("bb.host is validated as a source manifest path", async () => {
@@ -222,8 +227,8 @@ test("bb.host is validated as a source manifest path", async () => {
   edit(
     root,
     "package.json",
-    '"app": "./app/app.tsx",',
-    '"app": "./app/app.tsx",\n    "host": "./missing-host.ts",',
+    '"app": "./src/app/app.tsx",',
+    '"app": "./src/app/app.tsx",\n    "host": "./missing-host.ts",',
   );
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 1);
@@ -236,37 +241,67 @@ test("a root host entry warns in favor of the canonical runtime directory", asyn
   edit(
     root,
     "package.json",
-    '"app": "./app/app.tsx",',
-    '"app": "./app/app.tsx",\n    "host": "./host.ts",',
+    '"app": "./src/app/app.tsx",',
+    '"app": "./src/app/app.tsx",\n    "host": "./host.ts",',
   );
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
-  assert.match(result.stderr, /bb\.host should use the canonical host\/host\.ts runtime entry/);
+  assert.match(result.stderr, /bb\.host should use src\/host\/host\.ts, not "host\.ts"/);
 });
 
-test("a plugin-level src directory warns when it hides shipped source", async () => {
+test("loose src TypeScript fails check", async () => {
   const root = makeFixture();
-  mkdirSync(join(root, "src"));
   writeFileSync(join(root, "src", "helper.ts"), "export const helper = true;\n");
   const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /src\/helper\.ts — no runtime owner — rule 8/);
+});
+
+test("a leftover root server tree is displaced", async () => {
+  const root = makeFixture();
+  mkdirSync(join(root, "server"));
+  writeFileSync(join(root, "server", "legacy.ts"), "export const leftover = true;\n");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /server\/ is displaced\. move it under src\//);
+});
+
+test("a legacy root server.ts plugin is not a src-layout parse error", async () => {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), "bb-kit-legacy-")));
+  const root = join(parent, "legacy-sdk");
+  mkdirSync(root);
+  writeFileSync(
+    join(root, "package.json"),
+    `${JSON.stringify({
+      name: "bb-plugin-legacy",
+      bb: {
+        name: "legacy",
+        server: "./server.ts",
+        branding: { icon: "./assets/icon.svg" },
+      },
+    })}\n`,
+  );
+  writeFileSync(join(root, "server.ts"), "export {};\n");
+  const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
-  assert.match(result.stderr, /plugin-level src\/ hides runtime ownership/);
+  assert.match(result.stdout, /check skipped: legacy SDK plugin/);
+  assert.doesNotMatch(result.stderr, /bb\.server must live under src\/server/);
 });
 
 test("cross-runtime implementation imports warn", async () => {
   const root = makeFixture();
-  mkdirSync(join(root, "host"));
-  writeFileSync(join(root, "host", "host.ts"), "export {};\n");
-  writeFileSync(join(root, "host", "local.ts"), "export const local = true;\n");
+  mkdirSync(join(root, "src", "host"));
+  writeFileSync(join(root, "src", "host", "host.ts"), "export {};\n");
+  writeFileSync(join(root, "src", "host", "local.ts"), "export const local = true;\n");
   edit(
     root,
     "package.json",
-    '"app": "./app/app.tsx",',
-    '"app": "./app/app.tsx",\n    "host": "./host/host.ts",',
+    '"app": "./src/app/app.tsx",',
+    '"app": "./src/app/app.tsx",\n    "host": "./src/host/host.ts",',
   );
   edit(
     root,
-    "server/server.ts",
+    "src/server/server.ts",
     'import { definePlugin } from "@bb-kit/core/plugin";',
     'import { definePlugin } from "@bb-kit/core/plugin";\nimport "../host/local.ts";',
   );
@@ -277,11 +312,11 @@ test("cross-runtime implementation imports warn", async () => {
 
 test("dynamic cross-runtime imports warn", async () => {
   const root = makeFixture();
-  mkdirSync(join(root, "host"));
-  writeFileSync(join(root, "host", "local.ts"), "export const local = true;\n");
+  mkdirSync(join(root, "src", "host"));
+  writeFileSync(join(root, "src", "host", "local.ts"), "export const local = true;\n");
   edit(
     root,
-    "server/server.ts",
+    "src/server/server.ts",
     'import { definePlugin } from "@bb-kit/core/plugin";',
     'import { definePlugin } from "@bb-kit/core/plugin";\nvoid import("../host/local.ts");',
   );
@@ -292,9 +327,9 @@ test("dynamic cross-runtime imports warn", async () => {
 
 test("app code cannot import the Node-only shared subtree", async () => {
   const root = makeFixture();
-  mkdirSync(join(root, "shared", "node"), { recursive: true });
-  writeFileSync(join(root, "shared", "node", "auth.ts"), "export const auth = true;\n");
-  const appPath = join(root, "app", "app.tsx");
+  mkdirSync(join(root, "src", "shared", "node"), { recursive: true });
+  writeFileSync(join(root, "src", "shared", "node", "auth.ts"), "export const auth = true;\n");
+  const appPath = join(root, "src", "app", "app.tsx");
   writeFileSync(appPath, `import "../shared/node/auth.ts";\n${readFileSync(appPath, "utf8")}`);
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
@@ -303,9 +338,9 @@ test("app code cannot import the Node-only shared subtree", async () => {
 
 test("portable shared code cannot import Node builtins", async () => {
   const root = makeFixture();
-  mkdirSync(join(root, "shared"));
-  writeFileSync(join(root, "shared", "portable.ts"), 'import "node:fs";\n');
-  const appPath = join(root, "app", "app.tsx");
+  mkdirSync(join(root, "src", "shared"));
+  writeFileSync(join(root, "src", "shared", "portable.ts"), 'import "node:fs";\n');
+  const appPath = join(root, "src", "app", "app.tsx");
   writeFileSync(appPath, `import "../shared/portable.ts";\n${readFileSync(appPath, "utf8")}`);
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
@@ -321,12 +356,12 @@ test("a reserved plugin CLI name fails rule 5", async () => {
 
 test("a missing sibling test is a warning, not a failure (rule 6)", async () => {
   const root = makeFixture();
-  rmSync(join(root, "server", "rpc", "ping.test.ts"));
+  rmSync(join(root, "src", "server", "rpc", "ping.test.ts"));
   const result = await runCheck({ cwd: root });
   assert.equal(result.exitCode, 0);
   assert.match(
     result.stderr,
-    /warning: server\/rpc\/ping\.ts — no sibling test server\/rpc\/ping\.test\.ts — rule 6/,
+    /warning: src\/server\/rpc\/ping\.ts — no sibling test src\/server\/rpc\/ping\.test\.ts — rule 6/,
   );
   assert.match(result.stdout, /check passed with 1 warning\n$/);
 });
@@ -336,10 +371,10 @@ test("a unit file the tsconfig include omits still parses via the composition ro
   const tsconfigPath = join(root, "tsconfig.json");
   const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as Record<string, unknown>;
   tsconfig["include"] = [
-    "server/server.ts",
-    "server/server.test.ts",
-    "server/command/**/*",
-    "app/**/*",
+    "src/server/server.ts",
+    "src/server/server.test.ts",
+    "src/server/command/**/*",
+    "src/app/**/*",
   ];
   writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
   const result = await runCheck({ cwd: root });
@@ -425,7 +460,7 @@ test("a tools unit with no agents entry fails rule 5", async () => {
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /server\/tools\/ has unit files but definePlugin has no agents entry — rule 5/,
+    /src\/server\/tools\/ has unit files but definePlugin has no agents entry — rule 5/,
   );
 });
 
@@ -438,7 +473,7 @@ test("an unwired tools unit breaks the bijection (rule 1)", async () => {
   assert.equal(result.exitCode, 1);
   assert.match(
     result.stderr,
-    /server\/tools\/extra\.ts — not wired into server\/server\.ts agents — rule 1/,
+    /src\/server\/tools\/extra\.ts — not wired into src\/server\/server\.ts agents — rule 1/,
   );
 });
 
@@ -448,7 +483,7 @@ test("a hand .agents.configure( beside an agents entry warns (rule 5)", async ()
   wireAgents(root, "beacon", "{ tools: { beacon } }");
   edit(
     root,
-    "server/server.ts",
+    "src/server/server.ts",
     "});",
     "  async setup(bb) {\n    bb.agents.configure(() => ({ tools: [], skills: [] }));\n  },\n});",
   );
@@ -456,7 +491,7 @@ test("a hand .agents.configure( beside an agents entry warns (rule 5)", async ()
   assert.equal(result.exitCode, 0);
   assert.match(
     result.stderr,
-    /warning: server\/server\.ts:\d+ — `\.agents\.configure\(` beside an agents entry/,
+    /warning: src\/server\/server\.ts:\d+ — `\.agents\.configure\(` beside an agents entry/,
   );
 });
 
@@ -500,7 +535,7 @@ test("a gated tool with manifest skills and no agents.skills fails rule 7", asyn
   assert.match(failing.stderr, /synthesized configure sends skills: \[\]/);
   edit(
     root,
-    "server/server.ts",
+    "src/server/server.ts",
     "agents: { tools: { beacon } },",
     'agents: { tools: { beacon }, skills: ["how-to"] },',
   );
@@ -559,7 +594,7 @@ test("a command unit that imports commander fails", async () => {
   const root = makeFixture();
   edit(
     root,
-    "server/command/status.ts",
+    "src/server/command/status.ts",
     'import { defineCommand } from "@bb-kit/core/command";',
     'import { Command } from "commander";\nimport { defineCommand } from "@bb-kit/core/command";',
   );
@@ -571,7 +606,7 @@ test("a command unit that imports commander fails", async () => {
 test("a bound field wrapped in .optional() fails", async () => {
   const root = makeFixture();
   writeFileSync(
-    join(root, "server/command/status.ts"),
+    join(root, "src/server/command/status.ts"),
     [
       'import { argv, defineCommand } from "@bb-kit/core/command";',
       'import { z } from "zod";',

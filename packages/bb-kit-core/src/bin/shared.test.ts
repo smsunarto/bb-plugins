@@ -21,6 +21,6 @@ test("UNIT_NAME_PATTERN accepts kebab-case and rejects the rest", () => {
 });
 
 test("relativeImport omits TypeScript extensions", () => {
-  assert.equal(relativeImport("server/server.ts", "server/rpc/ping.ts"), "./rpc/ping");
-  assert.equal(relativeImport("server/server.ts", "server/tools/panel.tsx"), "./tools/panel");
+  assert.equal(relativeImport("src/server/server.ts", "src/server/rpc/ping.ts"), "./rpc/ping");
+  assert.equal(relativeImport("src/app/rpc.ts", "src/server/server.ts"), "../server/server");
 });

@@ -9,7 +9,7 @@ plugin mounts an `rpc` subtree automatically, one entry per RPC, JSON
 object in, JSON object out.
 
 ```ts
-// server/server.ts
+// src/server/server.ts
 import { definePlugin } from "@bb-kit/core/plugin";
 import { overview } from "./rpc/overview.ts";
 import { status } from "./command/status.ts";

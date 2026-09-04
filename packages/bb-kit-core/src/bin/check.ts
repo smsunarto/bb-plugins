@@ -4,14 +4,16 @@ import { isAbsolute, join, normalize, posix, relative as pathRelative } from "no
 import { pathToFileURL } from "node:url";
 import type * as TS from "typescript";
 import type { BinResult } from "./shared.ts";
+import { UNIT_NAME_PATTERN, camelName, pluginRelative, resolveImport } from "./shared.ts";
 import {
-  UNIT_NAME_PATTERN,
-  camelName,
-  compositionRootFromPkg,
-  pluginRelative,
-  resolveImport,
+  classifyRootEntry,
+  isLegacySdkPlugin,
+  isTypeEdge,
+  locate,
+  parseLayout,
   unitDir,
-} from "./shared.ts";
+  type SrcLayout,
+} from "./layout.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
 import { TOOL_KEY_PATTERN, toolName } from "../tools/tools.ts";
 
@@ -41,8 +43,6 @@ type Project = {
   ts: TSModule;
   program: TS.Program;
 };
-
-type RuntimeZone = "app" | "server" | "host" | "shared" | "shared-node";
 
 const NODE_BUILTINS = new Set(builtinModules);
 
@@ -111,15 +111,6 @@ function lineOfNode(sourceFile: TS.SourceFile, node: TS.Node): number {
   return lineAt(sourceFile, node.getStart(sourceFile));
 }
 
-function runtimeZone(relativePath: string): RuntimeZone | undefined {
-  if (relativePath.startsWith("app/")) return "app";
-  if (relativePath.startsWith("server/")) return "server";
-  if (relativePath.startsWith("host/")) return "host";
-  if (relativePath.startsWith("shared/node/")) return "shared-node";
-  if (relativePath.startsWith("shared/")) return "shared";
-  return undefined;
-}
-
 function isTestPath(relativePath: string): boolean {
   return (
     relativePath.startsWith("test/") ||
@@ -156,6 +147,27 @@ function containsTypeScriptSource(directory: string): boolean {
   return false;
 }
 
+function listPluginTypeScript(directory: string, prefix: string): string[] {
+  if (!existsSync(directory)) {
+    return [];
+  }
+  const files: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+      continue;
+    }
+    const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...listPluginTypeScript(join(directory, entry.name), relative));
+      continue;
+    }
+    if (entry.isFile() && /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+      files.push(relative);
+    }
+  }
+  return files;
+}
+
 function manifestEntry(
   pkg: Record<string, unknown> | undefined,
   key: "app" | "host" | "server",
@@ -176,6 +188,8 @@ function unitBasename(relativePath: string): string {
 function checkRuntimeBoundaries(
   cwd: string,
   project: Project,
+  layout: SrcLayout,
+  fail: (message: string, file?: string, line?: number) => void,
   warn: (message: string, file?: string, line?: number) => void,
 ): void {
   const { ts } = project;
@@ -193,15 +207,25 @@ function checkRuntimeBoundaries(
     const relativePath = pluginRelative(
       pathRelative(cwd, sourceFile.fileName).replaceAll("\\", "/"),
     );
-    const sourceZone = runtimeZone(relativePath);
     if (
-      sourceZone === undefined ||
       relativePath.startsWith("../") ||
       isTestPath(relativePath) ||
       sourceFile.isDeclarationFile
     ) {
       continue;
     }
+    const located = locate(layout, relativePath);
+    if (located.kind === "loose-src") {
+      continue;
+    }
+    if (located.kind === "displaced") {
+      fail(`runtime code belongs under ${layout.sourceRoot}/ — rule 8`, relativePath);
+      continue;
+    }
+    if (located.kind !== "owned") {
+      continue;
+    }
+    const sourceZone = located.zone;
 
     const checkSpecifier = (node: TS.Node, specifier: string, typeOnly: boolean): void => {
       if ((sourceZone === "app" || sourceZone === "shared") && isNodeBuiltin(specifier)) {
@@ -225,16 +249,10 @@ function checkRuntimeBoundaries(
         return;
       }
 
-      const targetZone = runtimeZone(targetPath);
-      if (targetZone === undefined || targetZone === sourceZone) return;
-
-      const rpcTypeEdge =
-        sourceZone === "app" &&
-        targetZone === "server" &&
-        relativePath === "app/rpc.ts" &&
-        targetPath.replace(/\.(?:js|ts)$/, "") === "server/server" &&
-        typeOnly;
-      if (rpcTypeEdge) return;
+      const targetLocated = locate(layout, targetPath);
+      if (targetLocated.kind !== "owned" || targetLocated.zone === sourceZone) return;
+      const targetZone = targetLocated.zone;
+      if (isTypeEdge(layout, relativePath, targetPath, typeOnly)) return;
 
       const allowed =
         targetZone === "shared" ||
@@ -312,29 +330,66 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     }
   }
 
-  // ---- rule 4: manifest paths + engines (filesystem only) -----------
+  if (pkg && isLegacySdkPlugin(pkg)) {
+    return { exitCode: 0, stdout: "check skipped: legacy SDK plugin\n", stderr: "" };
+  }
+
+  let layout: SrcLayout | undefined;
   if (pkg) {
+    const parsed = parseLayout(pkg);
+    if (!parsed.ok) {
+      fail(parsed.message, parsed.path ?? "package.json");
+      return finishCheck(errors, warnings, table);
+    }
+    layout = parsed.value;
+  }
+
+  // ---- rule 4: manifest paths + engines (filesystem only) -----------
+  if (pkg && layout) {
     checkManifest(pkg, cwd, fail);
     const hostEntry = manifestEntry(pkg, "host");
-    if (hostEntry !== undefined && hostEntry !== "host/host.ts") {
+    if (hostEntry !== undefined && hostEntry !== layout.hostEntry) {
       warn(
-        `bb.host should use the canonical host/host.ts runtime entry, not ${JSON.stringify(hostEntry)} — rule 8`,
+        `bb.host should use ${layout.hostEntry}, not ${JSON.stringify(hostEntry)} — rule 8`,
         "package.json",
       );
     }
-    if (containsTypeScriptSource(join(cwd, "src"))) {
-      warn(
-        "plugin-level src/ hides runtime ownership; move code into server/, app/, host/, or shared/ — rule 8",
-        "src/",
-      );
+    for (const entry of readdirSync(cwd, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (
+        classifyRootEntry(layout, entry.name) === "displaced-runtime" &&
+        containsTypeScriptSource(join(cwd, entry.name))
+      ) {
+        fail(
+          `${entry.name}/ is displaced. move it under ${layout.sourceRoot}/ — rule 8`,
+          `${entry.name}/`,
+        );
+      }
+    }
+    for (const relativePath of listPluginTypeScript(
+      join(cwd, layout.sourceRoot),
+      layout.sourceRoot,
+    )) {
+      if (isTestPath(relativePath)) {
+        continue;
+      }
+      if (locate(layout, relativePath).kind === "loose-src") {
+        fail("no runtime owner — rule 8", relativePath);
+      }
     }
   }
 
+  if (layout === undefined) {
+    return finishCheck(errors, warnings, table);
+  }
+
   // ---- unit inventory, rule 1 basenames, rule 6 sibling tests -------
-  const compositionRoot = compositionRootFromPkg(pkg) ?? "server/server.ts";
-  const rpcDir = unitDir(compositionRoot, "rpc");
-  const commandDir = unitDir(compositionRoot, "command");
-  const toolsDir = unitDir(compositionRoot, "tools");
+  const compositionRoot = layout.compositionRoot;
+  const rpcDir = unitDir(layout, "rpc");
+  const commandDir = unitDir(layout, "command");
+  const toolsDir = unitDir(layout, "tools");
   const listUnits = (dir: string): string[] => {
     const absolute = join(cwd, dir);
     if (!existsSync(absolute)) {
@@ -371,7 +426,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     fail(`${failure} (parse-dependent rules skipped)`);
   }
   if (project !== undefined) {
-    checkRuntimeBoundaries(cwd, project, warn);
+    checkRuntimeBoundaries(cwd, project, layout, fail, warn);
   }
 
   let pluginId: string | undefined;
@@ -556,7 +611,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     }
 
     // ---- composition root (rules 1, 2, 3, 5, 7) --------------------
-    const serverRelative = compositionRootFromPkg(pkg);
+    const serverRelative = layout.compositionRoot;
     let proceduresRead = false;
     let commandsRead = false;
     let toolsRead = false;
@@ -885,7 +940,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
             );
             return undefined;
           }
-          const expectedDir = unitDir(serverRelative, expectDir);
+          const expectedDir = unitDir(layout, expectDir);
           // resolveImport joins against the composition root's directory, so a
           // bare specifier shaped like the unit path ("rpc/ping") resolves to
           // the same string a relative one would. TypeScript does not resolve
@@ -1171,7 +1226,10 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     }
   }
 
-  // ---- report -------------------------------------------------------
+  return finishCheck(errors, warnings, table);
+}
+
+function finishCheck(errors: Finding[], warnings: Finding[], table: string): BinResult {
   const format = (finding: Finding, label: string): string => {
     const location =
       finding.file !== undefined

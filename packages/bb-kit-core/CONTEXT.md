@@ -2,62 +2,64 @@
 
 The framework a bb plugin is written in: the shapes a plugin is made of
 and the names they answer to. One context; the consuming plugins under
-`plugins/` sit outside it. The runtime directories (`app/`, `server/`, `host/`)
-have no collective term — prose says "directories";
-avoid "slot" and "surface". In identifiers, an acronym is always fully
-capitalized — `CLI`, `RPC`, `ID`, `URL` — never `Cli`, `Rpc`, `Id`;
-host-owned names (`pluginId`, `BbPluginApi`) stay as bb spells them.
+`plugins/` sit outside it. Runtime directories live under `src/`
+(`src/app/`, `src/server/`, `src/host/`). They have no collective term —
+prose says "directories"; avoid "slot" and "surface". In identifiers, an
+acronym is always fully capitalized — `CLI`, `RPC`, `ID`, `URL` — never
+`Cli`, `Rpc`, `Id`; host-owned names (`pluginId`, `BbPluginApi`) stay as
+bb spells them.
 
 ## Language
 
 **Plugin**:
 One npm package that bb installs and runs. The package root is the plugin
-root. Runtime directories (`server/`, `app/`, and `host/`) are siblings.
+root. Runtime directories (`src/server/`, `src/app/`, and `src/host/`)
+are siblings under `src/`.
 _Avoid_: extension, app
 
 **Composition root**:
-`server/server.ts` — the one file that wires RPCs, Commands, and Agent tools together, and
+`src/server/server.ts` — the one file that wires RPCs, Commands, and Agent tools together, and
 the only file a generator may ask a human to edit. It is `bb.server`.
 _Avoid_: entrypoint, index
 
-**`server/rpc/`**:
+**`src/server/rpc/`**:
 The directory of RPCs beside the composition root — one per file, its
-test beside it. Follows `dirname(bb.server)`, so a root `server.ts`
-keeps units in `rpc/`.
+test beside it. Follows `dirname(bb.server)`.
 
-**`server/command/`**:
+**`src/server/command/`**:
 The directory of Commands beside the composition root — one per file,
-its test beside it. Same `dirname(bb.server)` rule as `server/rpc/`.
+its test beside it. Same `dirname(bb.server)` rule as `src/server/rpc/`.
 
-**`server/tools/`**:
+**`src/server/tools/`**:
 The directory of Agent tools beside the composition root — one per
 file, its test beside it. Same `dirname(bb.server)` rule as
-`server/rpc/`.
+`src/server/rpc/`.
 
-**`app/`**:
-Everything browser-bound; `app/app.tsx` is the app entry. App code may
-import portable `shared/` modules. Its only server edge is the type-only
-`app/rpc.ts` import of `server/server.ts`.
+**`src/app/`**:
+Everything browser-bound; `src/app/app.tsx` is the app entry. App code may
+import portable `src/shared/` modules. Its only server edge is the type-only
+`src/app/rpc.ts` import of `src/server/server.ts`.
 
-**`server/`**:
-The server concern. `server/server.ts` is the composition root. Interned
+**`src/server/`**:
+The server concern. `src/server/server.ts` is the composition root. Interned
 collaborators, domain modules, `rpc/`, `command/`, and `tools/` are siblings. A plugin
 without a backend omits the directory.
 
-**`host/`**:
+**`src/host/`**:
 Everything bundled into the supervised Node worker that runs on an enrolled
-host; `host/host.ts` is `bb.host`. A plugin without machine-local work omits
+host; `src/host/host.ts` is `bb.host`. A plugin without machine-local work omits
 the directory. Server code calls it through the typed BB host client rather
 than importing its implementation.
 
-**`shared/`**:
+**`src/shared/`**:
 Portable contracts and values consumed by at least two shipped runtimes.
 It imports no runtime directory and stays browser-safe. Node-only code shared
-by `server/` and `host/` uses the explicit `shared/node/` exception; `app/`
+by `src/server/` and `src/host/` uses the explicit `src/shared/node/` exception; `src/app/`
 never imports that subtree. A one-runtime helper stays with its runtime owner.
+A loose `src/*.ts` file is not owned.
 
 **`testing/`**:
-Reusable test helpers owned by one runtime, such as `host/testing/`. Shipped
+Reusable test helpers owned by one runtime, such as `src/host/testing/`. Shipped
 entry graphs never import it. Tests with one subject remain beside that
 subject.
 
@@ -125,11 +127,11 @@ _Avoid_: `{ args, options }`, commander `configure`, `.invoke`
 
 **RPC hooks**:
 The per-RPC React hooks UI code reaches RPCs through — a Query's
-`useQuery`, a Mutation's `useMutation` — bound once in `app/rpc.ts`.
+`useQuery`, a Mutation's `useMutation` — bound once in `src/app/rpc.ts`.
 _Avoid_: query hooks
 
 **Command**:
-One `defineCommand` unit in `server/command/`, wired into `definePlugin`'s
+One `defineCommand` unit in `src/server/command/`, wired into `definePlugin`'s
 `command` map. The only "command" in this context; an RPC that writes is a
 Mutation. `execute` returns CommandResult. Throw CommandError to exit with
 a chosen code.
@@ -154,7 +156,7 @@ _Avoid_: auto-commands, generated CLI
 **Agent tool**:
 A capability a plugin exposes to the coding agent driving a thread; the
 agent invokes it by name with schema-validated input. Defined with
-`defineTool`, one per file in `server/tools/`.
+`defineTool`, one per file in `src/server/tools/`.
 _Avoid_: MCP tool, model tool
 
 **Tool name**:

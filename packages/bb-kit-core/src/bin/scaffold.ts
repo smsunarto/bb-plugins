@@ -1,4 +1,5 @@
 import { derivePluginID } from "./derive-plugin-id.ts";
+import { defaultLayout, typeEdgeSpecifier, unitFile, type SrcLayout } from "./layout.ts";
 
 /**
  * The scaffold templates behind `bb-kit create` (§8). One function, no
@@ -44,7 +45,7 @@ export const SCAFFOLD_DEV_DEPENDENCIES: Readonly<Record<string, string>> = {
   typescript: "6.0.3",
 };
 
-function packageJson(name: string, id: string): string {
+function packageJson(name: string, id: string, layout: SrcLayout): string {
   return `${JSON.stringify(
     {
       name,
@@ -61,8 +62,8 @@ function packageJson(name: string, id: string): string {
       bb: {
         name: id,
         description: "A bb plugin.",
-        server: "./server/server.ts",
-        app: "./app/app.tsx",
+        server: `./${layout.compositionRoot}`,
+        app: `./${layout.appEntry}`,
         branding: { icon: "./assets/icon.svg" },
         skills: [],
       },
@@ -187,10 +188,10 @@ const CLI_STATUS_TEST_TS = [
   "",
 ].join("\n");
 
-function appRPCTs(_id: string): string {
+function appRPCTs(layout: SrcLayout): string {
   return [
     'import { createRPC } from "@bb-kit/core/rpc/query";',
-    'import type plugin from "../server/server";',
+    `import type plugin from "${typeEdgeSpecifier(layout)}";`,
     "",
     'export const rpc = createRPC<(typeof plugin)["rpc"]>();',
     "",
@@ -272,7 +273,7 @@ const ICON_SVG = [
   "",
 ].join("\n");
 
-function readme(name: string, id: string, dirName: string): string {
+function readme(name: string, id: string, dirName: string, layout: SrcLayout): string {
   return [
     `# ${name}`,
     "",
@@ -288,7 +289,7 @@ function readme(name: string, id: string, dirName: string): string {
     "```",
     "",
     "Add a unit with `npx bb-kit add query|mutation|command|tool <kebab-name>`;",
-    "it prints the exact lines to wire into server/server.ts. Generators never",
+    `it prints the exact lines to wire into ${layout.compositionRoot}. Generators never`,
     "edit existing files.",
     "",
     "## Install into bb (tag-and-install)",
@@ -316,20 +317,25 @@ export function scaffoldFiles(packageName: string): {
   const dirName = packageName.startsWith("@")
     ? packageName.slice(packageName.indexOf("/") + 1)
     : packageName;
+  const layout = defaultLayout();
+  const ping = unitFile(layout, "rpc", "ping");
+  const status = unitFile(layout, "command", "status");
+  const serverTest = layout.compositionRoot.replace(/\.ts$/, ".test.ts");
+  const appTest = layout.appEntry.replace(/\.tsx$/, ".test.ts");
   const files: Record<string, string> = {
-    "package.json": packageJson(packageName, id),
+    "package.json": packageJson(packageName, id, layout),
     "tsconfig.json": TSCONFIG,
-    "server/server.ts": serverTs(id),
-    "server/server.test.ts": serverTestTs(id),
-    "server/rpc/ping.ts": RPC_PING_TS,
-    "server/rpc/ping.test.ts": RPC_PING_TEST_TS,
-    "server/command/status.ts": CLI_STATUS_TS,
-    "server/command/status.test.ts": CLI_STATUS_TEST_TS,
-    "app/rpc.ts": appRPCTs(id),
-    "app/app.tsx": appTsx(id),
-    "app/app.test.ts": appTestTs(id),
+    [layout.compositionRoot]: serverTs(id),
+    [serverTest]: serverTestTs(id),
+    [ping]: RPC_PING_TS,
+    [ping.replace(/\.ts$/, ".test.ts")]: RPC_PING_TEST_TS,
+    [status]: CLI_STATUS_TS,
+    [status.replace(/\.ts$/, ".test.ts")]: CLI_STATUS_TEST_TS,
+    [layout.rpcBridge]: appRPCTs(layout),
+    [layout.appEntry]: appTsx(id),
+    [appTest]: appTestTs(id),
     "assets/icon.svg": ICON_SVG,
-    "README.md": readme(packageName, id, dirName),
+    "README.md": readme(packageName, id, dirName, layout),
   };
   return { id, files };
 }

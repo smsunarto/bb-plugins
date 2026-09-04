@@ -19,15 +19,15 @@ test("create writes the full scaffold tree and prints the plugin id", () => {
   const expected = [
     "package.json",
     "tsconfig.json",
-    "server/server.ts",
-    "server/server.test.ts",
-    "server/rpc/ping.ts",
-    "server/rpc/ping.test.ts",
-    "server/command/status.ts",
-    "server/command/status.test.ts",
-    "app/rpc.ts",
-    "app/app.tsx",
-    "app/app.test.ts",
+    "src/server/server.ts",
+    "src/server/server.test.ts",
+    "src/server/rpc/ping.ts",
+    "src/server/rpc/ping.test.ts",
+    "src/server/command/status.ts",
+    "src/server/command/status.test.ts",
+    "src/app/rpc.ts",
+    "src/app/app.tsx",
+    "src/app/app.test.ts",
     "assets/icon.svg",
     "README.md",
   ];
@@ -61,8 +61,8 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
   assert.ok(!(pkg["devDependencies"] as Record<string, string>)["@bb-kit/core"]);
   const bb = pkg["bb"] as Record<string, unknown>;
   assert.equal(bb["name"], "notes");
-  assert.equal(bb["server"], "./server/server.ts");
-  assert.equal(bb["app"], "./app/app.tsx");
+  assert.equal(bb["server"], "./src/server/server.ts");
+  assert.equal(bb["app"], "./src/app/app.tsx");
   assert.deepEqual(bb["branding"], { icon: "./assets/icon.svg" });
   assert.deepEqual(bb["skills"], []);
   const scripts = pkg["scripts"] as Record<string, unknown>;
@@ -73,20 +73,20 @@ test("the scaffold package.json carries the manifest and the exact pins", () => 
 test("the scaffold templates bake the derived id into server, app, and tests", () => {
   const { id, files } = scaffoldFiles("@acme/bb-plugin-notes");
   assert.equal(id, "notes");
-  assert.match(files["server/server.ts"] ?? "", /pluginId: "notes"/);
-  assert.match(files["server/server.ts"] ?? "", /rpc: \{ ping \}/);
-  assert.equal((files["server/server.ts"] ?? "").includes("export const rpc"), false);
-  assert.equal((files["server/server.ts"] ?? "").includes("export type RPC"), false);
-  assert.equal((files["server/server.ts"] ?? "").includes("ClientFor"), false);
-  assert.equal((files["server/server.ts"] ?? "").includes("export type Client"), false);
-  assert.match(files["server/server.ts"] ?? "", /from "\.\/rpc\/ping"/);
-  assert.match(files["app/rpc.ts"] ?? "", /from "\.\.\/server\/server"/);
-  assert.match(files["app/rpc.ts"] ?? "", /\["rpc"\]/);
-  assert.match(files["app/rpc.ts"] ?? "", /createRPC<\(typeof plugin\)\["rpc"\]>\(\)/);
-  assert.match(files["server/server.test.ts"] ?? "", /callRpc\("ping"\)/);
-  assert.match(files["app/app.test.ts"] ?? "", /rpc: \{ ping: async/);
+  assert.match(files["src/server/server.ts"] ?? "", /pluginId: "notes"/);
+  assert.match(files["src/server/server.ts"] ?? "", /rpc: \{ ping \}/);
+  assert.equal((files["src/server/server.ts"] ?? "").includes("export const rpc"), false);
+  assert.equal((files["src/server/server.ts"] ?? "").includes("export type RPC"), false);
+  assert.equal((files["src/server/server.ts"] ?? "").includes("ClientFor"), false);
+  assert.equal((files["src/server/server.ts"] ?? "").includes("export type Client"), false);
+  assert.match(files["src/server/server.ts"] ?? "", /from "\.\/rpc\/ping"/);
+  assert.match(files["src/app/rpc.ts"] ?? "", /from "\.\.\/server\/server"/);
+  assert.match(files["src/app/rpc.ts"] ?? "", /\["rpc"\]/);
+  assert.match(files["src/app/rpc.ts"] ?? "", /createRPC<\(typeof plugin\)\["rpc"\]>\(\)/);
+  assert.match(files["src/server/server.test.ts"] ?? "", /callRpc\("ping"\)/);
+  assert.match(files["src/app/app.test.ts"] ?? "", /rpc: \{ ping: async/);
   assert.match(
-    files["server/command/status.test.ts"] ?? "",
+    files["src/server/command/status.test.ts"] ?? "",
     /status\.execute\(stubHostContext\(\)\)/,
   );
 });
@@ -126,7 +126,7 @@ test("an install failure exits 1 but leaves the scaffold intact", () => {
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /npm install failed — the scaffold is intact/);
-  assert.ok(existsSync(join(cwd, "bb-plugin-offline", "server/server.ts")));
+  assert.ok(existsSync(join(cwd, "bb-plugin-offline", "src/server/server.ts")));
 });
 
 test("transient npm failures retry up to three times", () => {
