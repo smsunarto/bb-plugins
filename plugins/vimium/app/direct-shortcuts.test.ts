@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   DIRECT_SHORTCUTS,
+  SCROLL_GOAL_MS,
   SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
+  scrollBaseFor,
   scrollTopFor,
   threadIdFromPath,
   type DirectKey,
@@ -117,5 +119,19 @@ describe("adjacentThreadIndex", () => {
 
   test("an empty list has nowhere to go", () => {
     expect(adjacentThreadIndex([], "a", 1)).toBeNull();
+  });
+});
+
+describe("scrollBaseFor", () => {
+  test("a fresh goal is the base", () => {
+    expect(scrollBaseFor({ top: 120, at: 1000 }, 1000 + SCROLL_GOAL_MS - 1, 75)).toBe(120);
+  });
+
+  test("a stale goal yields to the live scrollTop", () => {
+    expect(scrollBaseFor({ top: 120, at: 1000 }, 1000 + SCROLL_GOAL_MS, 75)).toBe(75);
+  });
+
+  test("no goal yields to the live scrollTop", () => {
+    expect(scrollBaseFor(null, 1000, 75)).toBe(75);
   });
 });

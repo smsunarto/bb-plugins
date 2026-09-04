@@ -84,6 +84,23 @@ export function scrollTopFor(
   }
 }
 
+/**
+ * How long a smooth-scroll target stays the base for the next step. A held
+ * key repeats faster than the animation finishes, so stepping from the live
+ * scrollTop would restart each step mid-flight and stutter.
+ */
+export const SCROLL_GOAL_MS = 300;
+
+/** The scrollTop the next step counts from: the fresh goal, else the live value. */
+export function scrollBaseFor(
+  goal: { top: number; at: number } | null,
+  now: number,
+  scrollTop: number,
+): number {
+  if (goal !== null && now - goal.at < SCROLL_GOAL_MS) return goal.top;
+  return scrollTop;
+}
+
 const THREAD_PATH = /\/threads\/([^/?#]+)/;
 
 /** The thread id a bb route shows, from `/threads/:id` or `/projects/:p/threads/:id`. */

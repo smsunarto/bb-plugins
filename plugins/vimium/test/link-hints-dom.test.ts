@@ -39,6 +39,34 @@ function pressKey(
   );
 }
 
+interface Scroller {
+  readonly area: HTMLElement;
+  readonly scrolls: Array<{ top: number; behavior: ScrollBehavior | undefined }>;
+  /** Whether a scrollTo call lands its target on scrollTop straight away. */
+  settles: boolean;
+}
+
+/** A conversation scroller. jsdom does not lay out or scroll, so both are stubbed. */
+function installScroller(): Scroller {
+  document.body.innerHTML =
+    '<div id="area" style="overflow-y: auto"><div data-timeline-row-list="top-level"><button>In</button></div></div>' +
+    '<textarea id="editor"></textarea>';
+  const area = document.getElementById("area") as HTMLElement;
+  const scroller: Scroller = { area, scrolls: [], settles: true };
+  Object.defineProperty(area, "scrollTop", { configurable: true, writable: true, value: 0 });
+  Object.defineProperty(area, "scrollHeight", { configurable: true, value: 1000 });
+  Object.defineProperty(area, "clientHeight", { configurable: true, value: 400 });
+  Object.defineProperty(area, "scrollTo", {
+    configurable: true,
+    value: (options: ScrollToOptions) => {
+      const top = options.top ?? 0;
+      scroller.scrolls.push({ top, behavior: options.behavior });
+      if (scroller.settles) area.scrollTop = top;
+    },
+  });
+  return scroller;
+}
+
 function markers(): string[] {
   return [...document.querySelectorAll(".vimium-hint-marker")].map(
     (marker) => marker.textContent ?? "",
@@ -882,28 +910,24 @@ describe("mountLinkHints", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
-    document.body.innerHTML =
-      '<div id="area" style="overflow-y: auto"><div data-timeline-row-list="top-level"><button>In</button></div></div>' +
-      '<textarea id="editor"></textarea>';
-    const area = document.getElementById("area") as HTMLElement;
-    // jsdom does not lay out, so the scroller's metrics are declared by hand.
-    Object.defineProperty(area, "scrollTop", { configurable: true, writable: true, value: 0 });
-    Object.defineProperty(area, "scrollHeight", { configurable: true, value: 1000 });
-    Object.defineProperty(area, "clientHeight", { configurable: true, value: 400 });
+    const { area, scrolls } = installScroller();
     const wheelDeltas: number[] = [];
     area.addEventListener("wheel", (event) => wheelDeltas.push((event as WheelEvent).deltaY));
 
     expect(pressKey("j")).toBe(false);
     expect(area.scrollTop).toBe(60);
     expect(wheelDeltas).toEqual([60]);
+    expect(scrolls).toEqual([{ top: 60, behavior: "smooth" }]);
 
     expect(pressKey("k")).toBe(false);
     expect(area.scrollTop).toBe(0);
     expect(wheelDeltas).toEqual([60, -60]);
+    expect(scrolls.at(-1)).toEqual({ top: 0, behavior: "smooth" });
 
     expect(pressKey("J", window, { shiftKey: true })).toBe(false);
     expect(area.scrollTop).toBe(600);
     expect(wheelDeltas).toEqual([60, -60]);
+    expect(scrolls.at(-1)).toEqual({ top: 600, behavior: "smooth" });
 
     // Inside a text field the same keys are just typing.
     expect(pressKey("j", document.getElementById("editor") as HTMLElement)).toBe(true);
@@ -912,6 +936,22 @@ describe("mountLinkHints", () => {
     // With no timeline on the page the key falls through to bb.
     document.body.innerHTML = '<div style="overflow-y: auto"><button>Only</button></div>';
     expect(pressKey("j")).toBe(true);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("a repeated j steps from the last target while the scroll is still in flight", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    const scroller = installScroller();
+    scroller.settles = false;
+
+    expect(pressKey("j")).toBe(false);
+    expect(pressKey("j")).toBe(false);
+    expect(scroller.area.scrollTop).toBe(0);
+    expect(scroller.scrolls.map((call) => call.top)).toEqual([60, 120]);
 
     void dispose();
     controller.abort();

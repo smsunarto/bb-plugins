@@ -21,7 +21,7 @@ Outside a text field, these keys act without a hint prompt:
 
 - `n` new thread, `s` thread search, `,` Settings.
 - `m` model, `p` project, `l` machine, `b` branch. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
-- `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. A step is 60px. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it.
+- `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. A step is 60px. The scroll is smooth, and a held key keeps stepping from the last target so it does not stutter. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it.
 - `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom. For two seconds after a keyboard thread switch, an editor that focuses itself on load (the docs panel's markdown editor does) is blurred, so the next `]` or `[` still lands. A click or any other key ends that guard.
 - `e` settles the current thread. This needs a sidebar with a settle button on each row, such as gtd-sidebar.
 - `i` focuses the composer.

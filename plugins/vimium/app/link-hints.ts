@@ -37,6 +37,7 @@ import {
   SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
+  scrollBaseFor,
   scrollTopFor,
   threadIdFromPath,
   type DirectShortcut,
@@ -385,6 +386,12 @@ function findControl(selector: string): HTMLElement | null {
   return null;
 }
 
+/** Whether the user asked for reduced motion. jsdom has no matchMedia. */
+function prefersReducedMotion(): boolean {
+  if (typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 /** The nearest scrolling ancestor of the conversation's row list, or null. */
 function findConversationScrollArea(): HTMLElement | null {
   const list = document.querySelector<HTMLElement>(CONVERSATION_LIST_SELECTOR);
@@ -529,6 +536,10 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // would otherwise swallow the next `[` or `]`. The user's next pointer
   // press or key ends the guard early.
   let editableFocusGuardUntil = 0;
+  // The last smooth-scroll target. A key repeat that lands mid-animation
+  // steps from here rather than from the in-flight scrollTop.
+  let scrollGoal: { readonly area: HTMLElement; readonly top: number; readonly at: number } | null =
+    null;
 
   function guardEditableFocus(): void {
     editableFocusGuardUntil = performance.now() + NAVIGATION_FOCUS_GUARD_MS;
@@ -743,7 +754,19 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
             }),
           );
         }
-        area.scrollTop = scrollTopFor(shortcut.motion, area);
+        const now = performance.now();
+        const base = scrollBaseFor(
+          scrollGoal?.area === area ? scrollGoal : null,
+          now,
+          area.scrollTop,
+        );
+        const top = scrollTopFor(shortcut.motion, {
+          scrollTop: base,
+          scrollHeight: area.scrollHeight,
+          clientHeight: area.clientHeight,
+        });
+        scrollGoal = { area, top, at: now };
+        area.scrollTo({ top, behavior: prefersReducedMotion() ? "instant" : "smooth" });
         return true;
       }
     }
