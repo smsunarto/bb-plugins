@@ -1,43 +1,15 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { renderInputSchema, renderOutputSchema, type RenderOutput } from "../../shared/document.ts";
-import { locateSource } from "../locate.ts";
-import { maxCanvasBytes, parseCanvas } from "../parse.ts";
-
-function classifyReadError(error: unknown): RenderOutput {
-  const detail = error instanceof Error ? error.message : String(error);
-  if (/ENOENT|no such file|not found|does not exist|ENOTDIR/i.test(detail)) {
-    return { status: "unreadable", reason: "missing", detail };
-  }
-  if (/too large|exceeds|size limit/i.test(detail)) {
-    return { status: "unreadable", reason: "too-large", detail };
-  }
-  return { status: "unreadable", reason: "host-offline", detail };
-}
+import { parseCanvas } from "../parse.ts";
+import { readCanvasFile } from "../read.ts";
 
 export const render = defineQuery({
   input: renderInputSchema,
   output: renderOutputSchema,
   async execute(ctx, { source, knownSha256 }): Promise<RenderOutput> {
-    const located = await locateSource(ctx.bb, source);
-    if (!located.ok) {
-      return { status: "unreadable", reason: located.reason, detail: located.detail };
-    }
-    let file: Awaited<ReturnType<typeof ctx.bb.sdk.files.read>>;
-    try {
-      file = await ctx.bb.sdk.files.read(located.location);
-    } catch (error) {
-      return classifyReadError(error);
-    }
-    if (file.contentEncoding !== "utf8") {
-      return { status: "unreadable", reason: "binary", detail: "the file is not UTF-8 text" };
-    }
-    if (file.content.length > maxCanvasBytes) {
-      return {
-        status: "unreadable",
-        reason: "too-large",
-        detail: `the file is ${file.content.length} bytes; the limit is ${maxCanvasBytes}`,
-      };
-    }
+    const read = await readCanvasFile(ctx.bb, source);
+    if (!read.ok) return { status: "unreadable", reason: read.reason, detail: read.detail };
+    const { file } = read;
     if (knownSha256 !== null && knownSha256 === file.sha256) {
       return { status: "unchanged", sha256: file.sha256 };
     }
@@ -48,7 +20,7 @@ export const render = defineQuery({
     return {
       status: "rendered",
       sha256: file.sha256,
-      modifiedAtMs: file.modifiedAtMs ?? null,
+      modifiedAtMs: file.modifiedAtMs,
       document: parsed.document,
     };
   },

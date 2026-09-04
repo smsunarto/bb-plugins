@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
 import type { CanvasDocument, Diagnostic, RenderOutput } from "../shared/document.ts";
 import { collectDiagnostics } from "../shared/walk.ts";
-import { isCanvasPath, narrowSource } from "../shared/source.ts";
+import { fileNameOf, isCanvasPath, narrowSource } from "../shared/source.ts";
 import type { CanvasSource } from "../shared/source.ts";
 import { PaletteProvider } from "./charts.tsx";
 import { buttonClass } from "./components.tsx";
 import { CanvasBoundary } from "./query-client.ts";
 import { Nodes, ProblemBar, ProblemCard } from "./render.tsx";
+import { canvasPanelRoute, encodeCanvasSubPath, PANEL_PATH } from "./route.ts";
 import { rpc } from "./rpc.ts";
 import { CanvasProvider, CanvasStateProvider, useCanvas, useCanvasState } from "./state.tsx";
 
@@ -216,7 +218,7 @@ function CanvasFrame(props: {
   );
 }
 
-function CanvasView(props: {
+export function CanvasView(props: {
   readonly source: CanvasSource;
   readonly path: string;
   readonly Original: PluginFileOpenerProps["Original"];
@@ -231,6 +233,75 @@ function CanvasView(props: {
         </PaletteProvider>
       </CanvasProvider>
     </CanvasBoundary>
+  );
+}
+
+// bb opens an app-route anchor in a split pane when a plugin slot receives a
+// modifier click on it (the same rule as cmd-clicking a sidebar row). The SDK
+// has no split API for panels, so the opener drives that host rule with a
+// synthetic click. A document listener runs after the host's delegate: when
+// nothing claimed the click, it cancels the anchor's own navigation and falls
+// back to plain panel navigation instead.
+export function openRouteInSplit(anchor: HTMLAnchorElement, fallback: () => void): void {
+  const doc = anchor.ownerDocument;
+  const settle = (event: Event): void => {
+    doc.removeEventListener("click", settle);
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    fallback();
+  };
+  doc.addEventListener("click", settle);
+  anchor.dispatchEvent(
+    new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true, button: 0 }),
+  );
+  doc.removeEventListener("click", settle);
+}
+
+function CanvasHandoff(props: {
+  readonly source: CanvasSource;
+  readonly path: string;
+  readonly Original: PluginFileOpenerProps["Original"];
+}): ReactElement {
+  const { source, path } = props;
+  const navigate = useBbNavigate();
+  const [inline, setInline] = useState(false);
+  const anchor = useRef<HTMLAnchorElement | null>(null);
+  const subPath = encodeCanvasSubPath(source);
+  const openPane = useCallback(() => {
+    const element = anchor.current;
+    if (element === null) return;
+    openRouteInSplit(element, () => navigate.toPluginPanel(PANEL_PATH, { subPath }));
+  }, [navigate, subPath]);
+
+  useEffect(() => {
+    openPane();
+  }, [openPane]);
+
+  if (inline) return <CanvasView source={source} path={path} Original={props.Original} />;
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-xs">
+        <span className="font-medium text-foreground">{fileNameOf(path)}</span>
+        <span className="text-muted-foreground">opens in its own pane</span>
+      </div>
+      <div className="m-3 flex flex-wrap items-center gap-2 text-sm">
+        <a
+          ref={anchor}
+          href={canvasPanelRoute(source)}
+          className={buttonClass}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey) return;
+            event.preventDefault();
+            openPane();
+          }}
+        >
+          Open pane
+        </a>
+        <button type="button" className={buttonClass} onClick={() => setInline(true)}>
+          Show here
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -264,5 +335,8 @@ export function CanvasOpener(props: PluginFileOpenerProps): ReactElement {
       </div>
     );
   }
-  return <CanvasView source={narrowed.value} path={props.path} Original={props.Original} />;
+  if (optedIn) {
+    return <CanvasView source={narrowed.value} path={props.path} Original={props.Original} />;
+  }
+  return <CanvasHandoff source={narrowed.value} path={props.path} Original={props.Original} />;
 }

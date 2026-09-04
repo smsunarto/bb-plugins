@@ -17,6 +17,13 @@ const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
 const { CanvasOpener, pollIntervalMs } = await import("./canvas.tsx");
+const { CanvasPage } = await import("./page.tsx");
+const { canvasPanelRoute, encodeCanvasSubPath } = await import("./route.ts");
+
+// A canvas file tab hands off to its own pane; "Show here" renders it inline.
+async function showHere(slot: ReturnType<typeof renderSlot>): Promise<void> {
+  fireEvent.click(await slot.findByRole("button", { name: "Show here" }));
+}
 
 const sample = readFileSync(
   new URL("../examples/flaky-test-triage.canvas.mdx", import.meta.url),
@@ -55,6 +62,7 @@ test("renders markdown and components from a rendered document", async () => {
   const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/triage.canvas.mdx"), {
     rpc: { render: () => rendered(sample), state: () => emptyState },
   });
+  await showHere(slot);
   await slot.findByText("Runs sampled");
   await slot.findByText("One root cause, three symptoms");
   assert.ok(slot.container.textContent?.includes("Flaky test triage for bb-plugins CI"));
@@ -79,6 +87,7 @@ test("applies the document style through data-canvas-style", async () => {
   const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/styled.canvas.mdx"), {
     rpc: { render: () => rendered(githubSample), state: () => emptyState },
   });
+  await showHere(slot);
   await slot.findByText("Frontmatter must come first");
   assert.equal(
     slot.container.querySelector(".canvas-prose")?.getAttribute("data-canvas-style"),
@@ -122,6 +131,7 @@ test("auto-refreshes and keeps the last good render when the file stops parsing"
       state: () => emptyState,
     },
   });
+  await showHere(slot);
   await slot.findByText("ok");
   await waitFor(() => assert.ok(calls >= 2));
   broken = true;
@@ -157,6 +167,7 @@ test("problem links switch to the source view and back", async () => {
   const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/problem.canvas.mdx"), {
     rpc: { render: () => rendered("# Title\n\n<Widget />\n"), state: () => emptyState },
   });
+  await showHere(slot);
   await slot.findByText("1 problem");
   assert.equal(slot.queryByText("ORIGINAL SOURCE"), null);
   fireEvent.click(slot.getByRole("button", { name: /Widget/u }));
@@ -181,9 +192,89 @@ test("toggle persists through setState and hides children while off", async () =
       },
     },
   });
+  await showHere(slot);
   await slot.findByText("Hidden body");
   fireEvent.click(slot.getByLabelText("Show details"));
   await waitFor(() => assert.equal(setCalls.length, 1));
   await waitFor(() => assert.ok(!slot.container.textContent?.includes("Hidden body")));
+  slot.unmount();
+});
+
+const threadSource = {
+  kind: "thread-storage",
+  threadId: "thread-1",
+  path: "canvases/triage.canvas.mdx",
+} as const;
+
+test("a canvas file tab hands off to its own pane instead of rendering inline", async () => {
+  const modifierClicks: Event[] = [];
+  const record = (event: Event): void => {
+    if (event instanceof MouseEvent && event.metaKey) modifierClicks.push(event);
+  };
+  document.addEventListener("click", record, true);
+  const slot = renderSlot({ component: CanvasOpener }, propsFor(threadSource.path), {
+    rpc: { render: () => rendered(sample), state: () => emptyState },
+  });
+  const anchor = await slot.findByRole("link", { name: "Open pane" });
+  assert.equal(anchor.getAttribute("href"), canvasPanelRoute(threadSource));
+  // The host's split delegate is absent here, so the handoff falls back to
+  // plain panel navigation after its synthetic modifier click goes unclaimed.
+  await waitFor(() => assert.equal(modifierClicks.length, 1));
+  assert.ok(modifierClicks[0]?.defaultPrevented, "the fallback cancels the anchor navigation");
+  assert.deepEqual(slot.navigateCalls, [
+    {
+      method: "toPluginPanel",
+      path: "canvas",
+      options: { subPath: encodeCanvasSubPath(threadSource) },
+    },
+  ]);
+  assert.equal(slot.queryByText("Runs sampled"), null);
+
+  fireEvent.click(anchor);
+  await waitFor(() => assert.equal(modifierClicks.length, 2));
+  assert.equal(slot.navigateCalls.length, 2);
+
+  await showHere(slot);
+  await slot.findByText("Runs sampled");
+  document.removeEventListener("click", record, true);
+  slot.unmount();
+});
+
+test("the page renders the canvas named by its sub-path", async () => {
+  const slot = renderSlot(
+    { component: CanvasPage },
+    { subPath: encodeCanvasSubPath(threadSource) },
+    { rpc: { render: () => rendered(sample), state: () => emptyState } },
+  );
+  await slot.findByText("Runs sampled");
+  assert.equal(slot.queryByText("Show here"), null);
+  slot.unmount();
+});
+
+test("the page source view reads the raw text through the source rpc", async () => {
+  const slot = renderSlot(
+    { component: CanvasPage },
+    { subPath: encodeCanvasSubPath(threadSource) },
+    {
+      rpc: {
+        render: () => rendered("# Title\n\n<Widget />\n"),
+        state: () => emptyState,
+        source: () => ({ status: "ok", sha256: "s", content: "# Title\n\n<Widget />\n" }),
+      },
+    },
+  );
+  await slot.findByText("1 problem");
+  fireEvent.click(slot.getByRole("button", { name: /Widget/u }));
+  await waitFor(() =>
+    assert.equal(slot.container.querySelectorAll('[data-testid="bb-source-code"]').length, 1),
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Back to canvas" }));
+  await slot.findByText("1 problem");
+  slot.unmount();
+});
+
+test("the page explains itself when the sub-path names no canvas", async () => {
+  const slot = renderSlot({ component: CanvasPage }, { subPath: "" }, { rpc: {} });
+  await slot.findByText(/Open a canvas link from a chat/u);
   slot.unmount();
 });

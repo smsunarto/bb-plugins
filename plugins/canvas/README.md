@@ -7,7 +7,7 @@
 
 # Canvas
 
-**Render `.canvas.mdx` files beside the chat as durable analytical artifacts.**
+**Render `.canvas.mdx` files in their own split pane as durable analytical artifacts.**
 
 ![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
 
@@ -15,7 +15,7 @@
 
 ## What it does
 
-An agent writes one `.canvas.mdx` file. bb opens it beside the chat and renders markdown plus a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The server parses it, validates every component against a registry, and the app draws the result with the host theme.
+An agent writes one `.canvas.mdx` file. bb opens it in its own split pane beside the chat and renders markdown plus a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The server parses it, validates every component against a registry, and the app draws the result with the host theme.
 
 - **Live.** The opener polls the file. A new write renders in about two seconds. A write that no longer parses keeps the last good render and shows a banner that names the line.
 - **Safe.** Every prop value is a literal. Identifiers, calls, and expressions are rejected with a positioned diagnostic. There is no fetch and no code execution.
@@ -87,6 +87,10 @@ Two styles exist. `default` is the canvas prose look, and `github` renders the b
 ## Templates
 
 [`skills/canvas/templates/`](skills/canvas/templates/) holds two read-only starting points in the `github` style: `pull-request.canvas.mdx` and `issue.canvas.mdx`. The skill tells the agent to write a copy to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx` and replace every sample value.
+
+## How a canvas opens
+
+A canvas link in the chat opens a file tab in the thread's side panel, as any file does. For a `.canvas.mdx` file that tab does not render the canvas. It hands off to the plugin's `Canvas` page and opens that page in a split pane, following bb's split placement rules: a new pane to the right of the focused one, focus when the same canvas is already open, replacement at the pane cap. The page route carries the file identity in its sub-path, so the pane restores across reloads and can be bookmarked. The side-panel tab keeps two buttons: `Open pane` repeats the handoff and `Show here` renders the canvas inside the tab instead.
 
 ## Where canvases live
 

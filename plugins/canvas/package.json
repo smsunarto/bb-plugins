@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-canvas",
   "version": "0.1.0",
-  "description": "Render .canvas.mdx files as durable analytical artifacts beside the chat: markdown plus a fixed set of tables, charts, callouts, diffs, and persisted controls.",
+  "description": "Render .canvas.mdx files as durable analytical artifacts in their own split pane: markdown plus a fixed set of tables, charts, callouts, diffs, and persisted controls.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/canvas",
@@ -29,7 +29,7 @@
   },
   "bb": {
     "name": "Canvas",
-    "description": "Open a .canvas.mdx file beside the chat as a rendered artifact with tables, charts, callouts, diffs, and persisted controls.",
+    "description": "Open a .canvas.mdx file in its own split pane as a rendered artifact with tables, charts, callouts, diffs, and persisted controls.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

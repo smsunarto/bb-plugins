@@ -1,11 +1,11 @@
 ---
 name: canvas
-description: Write a .canvas.mdx file that bb renders beside the chat as a durable standalone artifact. Use when the agent produces new analytical output the user will revisit, such as quantitative analyses and metric breakdowns, billing or account investigations, security audits or architecture reviews with categorized findings, cross-system data analyses, structured data from MCP tools where the artifact is the deliverable, financial analyses and usage trend reports, large tables the user wants to refine, or a pull request or issue preview that mirrors the GitHub page. Do not use it for work inside a specific tool, for a specific deliverable like a draft or a code fix, for edits to an existing artifact, for targeted debugging, or for short factual answers.
+description: Write a .canvas.mdx file that bb renders in its own split pane as a durable standalone artifact. Use when the agent produces new analytical output the user will revisit, such as quantitative analyses and metric breakdowns, billing or account investigations, security audits or architecture reviews with categorized findings, cross-system data analyses, structured data from MCP tools where the artifact is the deliverable, financial analyses and usage trend reports, large tables the user wants to refine, or a pull request or issue preview that mirrors the GitHub page. Do not use it for work inside a specific tool, for a specific deliverable like a draft or a code fix, for edits to an existing artifact, for targeted debugging, or for short factual answers.
 ---
 
 # Canvas
 
-A canvas is one `.canvas.mdx` file. bb opens it beside the chat and renders markdown plus a fixed set of components. Nothing in the file runs. The server parses it, validates every component, and the app draws the result. Follow the workflow below in order.
+A canvas is one `.canvas.mdx` file. bb opens it in its own split pane beside the chat and renders markdown plus a fixed set of components. Nothing in the file runs. The server parses it, validates every component, and the app draws the result. Follow the workflow below in order.
 
 ## Workflow
 
@@ -74,7 +74,7 @@ To use one:
 
 **Check the file.** Run `bb canvas check <absolute path>` after every write. Fix every reported line and check again until the output starts with `ok`. Add `--json` to get the report as JSON.
 
-**Link the file.** Whenever you mention the canvas, link it with a markdown link that uses the absolute path, for example `[flaky-test-triage](/Users/me/.bb/thread-storage/t1/canvases/flaky-test-triage.canvas.mdx)`. bb opens the link beside the chat.
+**Link the file.** Whenever you mention the canvas, link it with a markdown link that uses the absolute path, for example `[flaky-test-triage](/Users/me/.bb/thread-storage/t1/canvases/flaky-test-triage.canvas.mdx)`. bb opens the link in its own split pane.
 
 **Layout.** Every component sits alone at the block level with a blank line before and after. Inline JSX inside a paragraph, list, or quote is rejected. Prose between components is markdown. bb renders it with GFM, so tables and task lists work. Fenced `diff` and code blocks feed `DiffView` and `Source`. See `reference.md` for the props of every component and one example each.
 
@@ -122,7 +122,7 @@ Before returning the canvas, verify:
 
 Whenever you mention a canvas to the user, one you created, updated, or want them to open, **always** include a markdown link to that `.canvas.mdx` file using its full absolute path. Use a short descriptive label as the link text. Do not refer to a canvas by name or path alone without the link.
 
-When you create a canvas, add a short note in your chat response telling the user they can open it beside the chat, with that link:
+When you create a canvas, add a short note in your chat response telling the user they can open it in its own pane, with that link:
 
 - **First canvas.** If no other `.canvas.mdx` files exist in the thread's `canvases/` directory, include one sentence explaining what a canvas is.
 - **Unsolicited canvas.** If the user did not ask for a canvas, include one sentence explaining why you chose it over plain text.

@@ -186,6 +186,17 @@ export const renderOutputSchema = z.discriminatedUnion("status", [
 
 export type RenderOutput = z.infer<typeof renderOutputSchema>;
 
+export const sourceOutputSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("ok"), sha256: z.string(), content: z.string() }),
+  z.object({
+    status: z.literal("unreadable"),
+    reason: z.enum(unreadableReasons),
+    detail: z.string(),
+  }),
+]);
+
+export type SourceOutput = z.infer<typeof sourceOutputSchema>;
+
 export const stateInputSchema = z.object({ source: canvasSourceSchema });
 
 export const setStateInputSchema = z.object({
