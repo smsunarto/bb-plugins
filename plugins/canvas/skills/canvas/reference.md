@@ -37,6 +37,25 @@ Identifiers, calls, and expressions are rejected with a diagnostic.
 
 `neutral`, `info`, `success`, `warning`, `danger`. Tones map to host theme colors.
 
+## Styles
+
+A canvas declares its style with frontmatter at the very top of the file.
+Without frontmatter the style is `default`.
+
+| Style     | Summary                                                                 |
+| --------- | ----------------------------------------------------------------------- |
+| `default` | Compact prose, toned surfaces, and bb's own palette.                    |
+| `github`  | The GitHub markdown body with rules under headings and bordered tables. |
+
+<!-- prettier-ignore -->
+```mdx
+---
+style: github
+---
+
+# Release notes for 0.2.0
+```
+
 ## Row
 
 Horizontal flex row. Children share the width equally and wrap on narrow panels.

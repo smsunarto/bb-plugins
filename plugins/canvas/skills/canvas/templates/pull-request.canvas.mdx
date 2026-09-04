@@ -1,0 +1,141 @@
+---
+style: github
+---
+
+# feat(canvas): add style frontmatter #142
+
+<Row gap="sm">
+  <Pill label="Open" tone="success" />
+  <Pill label="size/M" />
+</Row>
+
+scott wants to merge 3 commits into main from scott/canvas-styles
+
+## Summary
+
+A canvas can now declare how it should look. Frontmatter at the top of the file names a style, and the parser records it on the document. Two styles ship: `default` keeps the current look, and `github` renders the body the way GitHub renders a markdown file, so a pull request or issue preview reads like the real page.
+
+The parser accepts `style` as the only frontmatter key. An unknown style, an unknown key, or a malformed line becomes a positioned diagnostic, and the canvas falls back to `default`, so a typo never blanks the render. `bb canvas check` prints the resolved style in its success line.
+
+The app side lands in a follow-up. This pull request covers the parser and the shared style module. Start the review at `shared/styles.ts`.
+
+## Commits
+
+<Table
+  headers={["Commit", "Message", "Files"]}
+  align={["left", "left", "right"]}
+  rows={[
+    ["a41c2f9", "feat(canvas): add the shared styles module", 1],
+    ["7d0e8b3", "feat(canvas): parse style frontmatter into the document", 1],
+    ["c93f1a0", "fix(canvas): suggest a style name on a typo", 2],
+  ]}
+/>
+
+## Files changed
+
+<Row gap="md">
+  <Stat label="Files changed" value="2" />
+  <Stat label="Additions" value="+94" tone="success" />
+  <Stat label="Deletions" value="-3" tone="danger" />
+</Row>
+
+### `shared/styles.ts`
+
+<DiffView path="shared/styles.ts">
+```diff
+diff --git a/shared/styles.ts b/shared/styles.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/styles.ts
+@@ -0,0 +1,20 @@
++import { suggest } from "./suggest.ts";
++
++export const styleNames = ["default", "github"] as const;
++
++export type StyleName = (typeof styleNames)[number];
++
++export const styles: Readonly<Record<StyleName, { readonly summary: string }>> = {
++  default: { summary: "Compact prose, toned surfaces, and bb's own palette." },
++  github: { summary: "The GitHub markdown body with rules under headings and bordered tables." },
++};
++
++export const defaultStyle: StyleName = "default";
++
++export function isStyleName(name: string): name is StyleName {
++  return Object.hasOwn(styles, name);
++}
++
++export function suggestStyleName(typo: string): string | undefined {
++  return suggest(typo, styleNames);
++}
+```
+</DiffView>
+
+### `server/parse.ts`
+
+<DiffView path="server/parse.ts">
+```diff
+diff --git a/server/parse.ts b/server/parse.ts
+--- a/server/parse.ts
++++ b/server/parse.ts
+@@ -1,5 +1,6 @@
+ import type { Program } from "estree";
+-import type { Code, Node, Root, RootContent } from "mdast";
++import type { Code, Node, Root, RootContent, Yaml } from "mdast";
++import remarkFrontmatter from "remark-frontmatter";
+ import remarkMdx from "remark-mdx";
+ import remarkParse from "remark-parse";
+ import { unified } from "unified";
+@@ -30,7 +31,7 @@
+ type JsxFlowElement = Extract<RootContent, { type: "mdxJsxFlowElement" }>;
+ type JsxAttribute = JsxFlowElement["attributes"][number];
+ 
+-const processor = unified().use(remarkParse).use(remarkMdx);
++const processor = unified().use(remarkParse).use(remarkFrontmatter).use(remarkMdx);
+ 
+ export const maxCanvasBytes = 2 * 1024 * 1024;
+ 
+@@ -474,7 +475,7 @@
+   } catch (error) {
+     return { ok: false, diagnostic: walker.syntaxError(error) };
+   }
+-  const nodes = walker.blocks(root.children);
++  const { style, nodes } = walker.document(root.children);
+   const stateIds = [...new Set(collectStateIds(nodes))];
+-  return { ok: true, document: { nodes, stateIds } };
++  return { ok: true, document: { style, nodes, stateIds } };
+ }
+```
+</DiffView>
+
+## Checks
+
+<Table
+  headers={["Check", "Status", "Duration"]}
+  align={["left", "left", "right"]}
+  rows={[
+    ["typecheck", "passed", "48s"],
+    ["test", "failed", "1m 12s"],
+    ["lint", "passed", "7s"],
+    ["check", "passed", "11s"],
+  ]}
+  rowTone={[null, "danger", null, null]}
+/>
+
+`test` fails on `reference-is-current`. The committed `reference.md` predates the new frontmatter section, and `bun run reference` regenerates it.
+
+## Review
+
+<Checklist
+  id="review"
+  items={[
+    { id: "diff", label: "Diff matches the description" },
+    { id: "tests", label: "Tests cover the new branch" },
+    { id: "docs", label: "Docs updated" },
+  ]}
+/>
+
+<Ask
+  label="Address review comments"
+  prompt="Open pull request #142 (feat(canvas): add style frontmatter) in smsunarto/bb-plugins. Read every unresolved review comment, make the change on scott/canvas-styles, and reply on each thread with what changed."
+/>

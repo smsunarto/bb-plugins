@@ -7,6 +7,7 @@ import {
   type ChildPolicy,
   type ComponentName,
 } from "../shared/registry.ts";
+import { defaultStyle, styleNames, styles } from "../shared/styles.ts";
 
 // Renders skills/canvas/reference.md from the registry so the component table
 // the agent reads can never drift from what the parser accepts.
@@ -283,6 +284,25 @@ export function renderReference(): string {
     "## Tones",
     "",
     "`neutral`, `info`, `success`, `warning`, `danger`. Tones map to host theme colors.",
+    "",
+    "## Styles",
+    "",
+    "A canvas declares its style with frontmatter at the very top of the file.",
+    `Without frontmatter the style is \`${defaultStyle}\`.`,
+    "",
+    table(
+      ["Style", "Summary"],
+      styleNames.map((name) => [`\`${name}\``, styles[name].summary]),
+    ),
+    "",
+    "<!-- prettier-ignore -->",
+    "```mdx",
+    "---",
+    "style: github",
+    "---",
+    "",
+    "# Release notes for 0.2.0",
+    "```",
     "",
   );
   for (const name of componentNames) {

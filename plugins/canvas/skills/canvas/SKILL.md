@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Write a .canvas.mdx file that bb renders beside the chat as a durable standalone artifact. Use when the agent produces new analytical output the user will revisit, such as quantitative analyses and metric breakdowns, billing or account investigations, security audits or architecture reviews with categorized findings, cross-system data analyses, structured data from MCP tools where the artifact is the deliverable, financial analyses and usage trend reports, or large tables the user wants to refine. Do not use it for work inside a specific tool, for a specific deliverable like a draft or a code fix, for edits to an existing artifact, for targeted debugging, or for short factual answers.
+description: Write a .canvas.mdx file that bb renders beside the chat as a durable standalone artifact. Use when the agent produces new analytical output the user will revisit, such as quantitative analyses and metric breakdowns, billing or account investigations, security audits or architecture reviews with categorized findings, cross-system data analyses, structured data from MCP tools where the artifact is the deliverable, financial analyses and usage trend reports, large tables the user wants to refine, or a pull request or issue preview that mirrors the GitHub page. Do not use it for work inside a specific tool, for a specific deliverable like a draft or a code fix, for edits to an existing artifact, for targeted debugging, or for short factual answers.
 ---
 
 # Canvas
@@ -22,6 +22,7 @@ The trigger is **user intent**, not response shape. Ask: would the user benefit 
 - Structured data from MCP tools (Databricks, Datadog, etc.) where a durable standalone artifact is the deliverable
 - Financial analyses, margin decompositions, usage trend reports
 - Large tables the user wants to revisit or refine
+- Pull request or issue previews that mirror the GitHub page, built from the templates in step 2
 
 **Do NOT use a canvas when:**
 
@@ -42,6 +43,34 @@ The trigger is **user intent**, not response shape. Ask: would the user benefit 
 - Exactly one `.canvas.mdx` file per canvas. No helper files, no imports, no exports.
 - Use only the components listed in `reference.md` next to this file. Every prop value is a literal. Strings, numbers, booleans, null, arrays, and objects are allowed. Identifiers, calls, and expressions are rejected.
 - Embed all data inline. There is no fetch and no network.
+
+**Styles.** A canvas declares its style with frontmatter at the very top of the file. Leave the frontmatter out for `default`.
+
+```mdx
+---
+style: github
+---
+```
+
+Two styles exist:
+
+- `default`. Compact prose, toned surfaces, and bb's own palette.
+- `github`. The GitHub markdown body with rules under headings and bordered tables.
+
+Pick `github` when the artifact mirrors a GitHub surface: a pull request, an issue, a release note, or a README draft. Stay on `default` for analytical canvases.
+
+**Templates.** Two ready templates sit in `templates/` next to this file. They are read-only reference files. Never edit them in place.
+
+- `templates/pull-request.canvas.mdx` applies when the user wants to preview a pull request before the agent opens it.
+- `templates/issue.canvas.mdx` applies when the user wants to preview an issue before the agent files it.
+
+To use one:
+
+1. Read the template.
+2. Write a new file to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx` with the same section order.
+3. Replace every sample value with real content.
+4. Drop a section that has no real content. Never leave sample text in place.
+5. Run `bb canvas check` on the new file.
 
 **Check the file.** Run `bb canvas check <absolute path>` after every write. Fix every reported line and check again until the output starts with `ok`. Add `--json` to get the report as JSON.
 

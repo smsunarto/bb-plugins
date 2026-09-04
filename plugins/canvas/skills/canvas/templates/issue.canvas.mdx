@@ -1,0 +1,83 @@
+---
+style: github
+---
+
+# `style: GitHub` is rejected as an unknown style #147
+
+<Row gap="sm">
+  <Pill label="Open" tone="success" />
+  <Pill label="bug" tone="danger" />
+  <Pill label="canvas" />
+  <Pill label="good first issue" />
+</Row>
+
+Opened by scott · 2 comments
+
+## Summary
+
+The frontmatter style lookup is case sensitive. A canvas that declares `style: GitHub` gets an `unknown-style` diagnostic and renders with the default style. The message suggests `github`, so the parser already knows what the author meant. An editor that capitalizes the first word of a value triggers this on every save.
+
+## Steps to reproduce
+
+1. Write a canvas whose first three lines are `---`, `style: GitHub`, and `---`.
+2. Run `bb canvas check` on the file.
+3. Open the file beside the chat.
+
+## Expected
+
+`bb canvas check` prints a success line that names `style github`, and the canvas renders with the GitHub look. Case should not matter for a value drawn from a fixed list of two names.
+
+## Actual
+
+`bb canvas check` prints `unknown style GitHub; did you mean github?` and exits 1. The canvas opens with the default style and a problem card at line 1.
+
+## Environment
+
+<Table
+  headers={["Key", "Value"]}
+  rows={[
+    ["bb", "0.41.2"],
+    ["canvas plugin", "0.1.0"],
+    ["OS", "macOS 26.0"],
+  ]}
+/>
+
+## Relevant code
+
+<Source path="server/parse.ts">
+```ts
+seen.add(key);
+if (isStyleName(value)) {
+  style = value;
+  continue;
+}
+const didYouMean = suggestStyleName(value);
+problems.push({
+  kind: "diagnostic",
+  diagnostic: { code: "unknown-style", message: `unknown style ${value}`, span },
+});
+```
+</Source>
+
+## Acceptance criteria
+
+<Todos
+  items={[
+    {
+      id: "repro",
+      label: "Reproduce with a canvas that declares style: GitHub",
+      status: "completed",
+    },
+    {
+      id: "fold",
+      label: "Fold the style value to lowercase before the lookup",
+      status: "in_progress",
+    },
+    { id: "test", label: "Add a parse test for a mixed-case style name", status: "pending" },
+  ]}
+/>
+
+<Ask
+  label="Start a fix"
+  prompt="Fix smsunarto/bb-plugins#147 (style: GitHub is rejected as an unknown style). Reproduce it with bb canvas check first, then fold the style value to lowercase in server/parse.ts and add a parse test for a mixed-case name."
+/>

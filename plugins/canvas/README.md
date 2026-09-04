@@ -72,6 +72,22 @@ An agent writes one `.canvas.mdx` file. bb opens it beside the chat and renders 
 
 [`skills/canvas/reference.md`](skills/canvas/reference.md) lists every prop and one example per component. It is generated from `shared/registry.ts` by `bun run reference`.
 
+## Styles
+
+A canvas declares its look with frontmatter at the very top of the file.
+
+```mdx
+---
+style: github
+---
+```
+
+Two styles exist. `default` is the canvas prose look, and `github` renders the body the way GitHub renders a markdown file. Leave the frontmatter out for `default`.
+
+## Templates
+
+[`skills/canvas/templates/`](skills/canvas/templates/) holds two read-only starting points in the `github` style: `pull-request.canvas.mdx` and `issue.canvas.mdx`. The skill tells the agent to write a copy to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx` and replace every sample value.
+
 ## Where canvases live
 
 The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the thread, so the file survives the conversation without touching the repo. A canvas goes into the worktree only when the user wants it committed. The `.canvas.mdx` suffix is required. Any `.mdx` file still shows an "Open as canvas" button.
