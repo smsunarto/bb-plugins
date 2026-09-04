@@ -755,6 +755,173 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("a direct control key presses its control and follows a dropdown into a scoped prompt", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><button id="model" aria-label="Provider, model and reasoning (⇧ ⌘ M)" aria-haspopup="dialog">Sol</button>' +
+      '<div id="editor" role="textbox"></div></div>' +
+      '<button id="new-thread" aria-label="New thread (⌘ N)">New thread</button>' +
+      '<a id="settings" href="/settings">Settings</a>';
+    for (const [index, id] of ["model", "editor", "new-thread", "settings"].entries()) {
+      giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
+    }
+    const clicked: string[] = [];
+    for (const id of ["new-thread", "settings"]) {
+      document.getElementById(id)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicked.push(id);
+      });
+    }
+    const picked: string[] = [];
+    installMenuTrigger(document.getElementById("model") as HTMLElement, picked);
+
+    expect(pressKey("n")).toBe(false);
+    expect(pressKey(",")).toBe(false);
+    expect(clicked).toEqual(["new-thread", "settings"]);
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    expect(pressKey("m")).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(markers()).toEqual(["f", "j"]);
+    pressKey("j");
+    expect(picked).toEqual(["Luna"]);
+
+    // Inside the composer the same keys are just typing.
+    const editor = document.getElementById("editor") as HTMLElement;
+    expect(pressKey("n", editor)).toBe(true);
+    expect(pressKey("m", editor)).toBe(true);
+    expect(clicked).toEqual(["new-thread", "settings"]);
+    expect(picked).toEqual(["Luna"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("a direct key with no control on screen is left to bb", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML = '<button id="only">Only</button>';
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+
+    for (const key of ["n", "m", "p", "l", "b", "k", "s", ",", "[", "]", "e"]) {
+      expect(pressKey(key)).toBe(true);
+    }
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("] and [ step through sidebar thread rows around the active thread", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<a id="t1" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_1" href="#">One</a>' +
+      '<a id="t2" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_2" href="#">Two</a>' +
+      '<a id="t3" href="/projects/p/threads/thr_3">Three</a>' +
+      '<div aria-hidden="true"><a id="t4" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_4" href="#">Four</a></div>';
+    const clicked: string[] = [];
+    for (const id of ["t1", "t2", "t3", "t4"]) {
+      document.getElementById(id)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicked.push(id);
+      });
+    }
+
+    window.history.pushState({}, "", "/projects/p/threads/thr_2");
+    expect(pressKey("]")).toBe(false);
+    expect(clicked).toEqual(["t3"]);
+    expect(pressKey("[")).toBe(false);
+    expect(clicked).toEqual(["t3", "t1"]);
+
+    // From the last thread ] wraps to the first; the hidden row never counts.
+    window.history.pushState({}, "", "/projects/p/threads/thr_3");
+    expect(pressKey("]")).toBe(false);
+    expect(clicked).toEqual(["t3", "t1", "t1"]);
+
+    // Off any thread, ] starts at the top and [ at the bottom.
+    window.history.pushState({}, "", "/settings");
+    pressKey("]");
+    pressKey("[");
+    expect(clicked).toEqual(["t3", "t1", "t1", "t1", "t3"]);
+
+    window.history.pushState({}, "", "/");
+    void dispose();
+    controller.abort();
+  });
+
+  test("e settles the active thread through its row's settle button", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div><a id="t1" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_1" href="#">One</a>' +
+      '<span style="display:none"><button id="settle-1" aria-label="Settle thread"></button></span></div>' +
+      '<div><a id="t2" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_2" href="#">Two</a>' +
+      '<span style="display:none"><button id="settle-2" aria-label="Settle thread"></button></span></div>';
+    const settled: string[] = [];
+    for (const id of ["settle-1", "settle-2"]) {
+      document.getElementById(id)?.addEventListener("pointerdown", () => settled.push(id));
+    }
+
+    window.history.pushState({}, "", "/threads/thr_2");
+    expect(pressKey("e")).toBe(false);
+    expect(settled).toEqual(["settle-2"]);
+
+    window.history.pushState({}, "", "/settings");
+    expect(pressKey("e")).toBe(true);
+    expect(settled).toEqual(["settle-2"]);
+
+    window.history.pushState({}, "", "/");
+    void dispose();
+    controller.abort();
+  });
+
+  test("a thread step keeps a self-focusing editor from stealing focus", async () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<a id="t1" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_1" href="#">One</a>' +
+      '<a id="t2" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_2" href="#">Two</a>' +
+      '<div id="editor" contenteditable="true" tabindex="0"></div>';
+    const editor = document.getElementById("editor") as HTMLElement;
+    const clicked: string[] = [];
+    for (const id of ["t1", "t2"]) {
+      document.getElementById(id)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicked.push(id);
+        // The docs panel's markdown editor autofocuses as it remounts.
+        window.setTimeout(() => editor.focus(), 20);
+      });
+    }
+
+    window.history.pushState({}, "", "/threads/thr_1");
+    expect(pressKey("]")).toBe(false);
+    expect(clicked).toEqual(["t2"]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(document.activeElement).not.toBe(editor);
+
+    window.history.pushState({}, "", "/threads/thr_2");
+    expect(pressKey("[")).toBe(false);
+    expect(clicked).toEqual(["t2", "t1"]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(document.activeElement).not.toBe(editor);
+
+    // A pointer press means the user wants the editor, so focus stays.
+    editor.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    window.history.pushState({}, "", "/");
+    void dispose();
+    controller.abort();
+  });
+
   test("Escape exits and the disposer plus abort remove everything", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));

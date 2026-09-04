@@ -31,6 +31,22 @@ agent-browser --session "$BROWSER_SESSION" get count '.vimium-hint-marker'
 
 The first marker count must be greater than zero. The final count must be zero.
 
+### Direct keys
+
+Outside editable controls, single keys act without a prompt. Press `,` on a thread route to open Settings, `m` to open the model dropdown with a scoped prompt, and `]` or `[` to move to the next or previous sidebar thread.
+
+```bash
+agent-browser --session "$BROWSER_SESSION" press Escape
+agent-browser --session "$BROWSER_SESSION" press "m"
+agent-browser --session "$BROWSER_SESSION" wait '.vimium-hint-layer'
+agent-browser --session "$BROWSER_SESSION" screenshot body "$ARTIFACT_DIR/vimium-direct-m.png"
+agent-browser --session "$BROWSER_SESSION" press Escape
+agent-browser --session "$BROWSER_SESSION" press "]"
+agent-browser --session "$BROWSER_SESSION" get url
+```
+
+The `m` press must show scoped markers over the model dialog. The `]` press must change the thread id in the URL when the sidebar lists more than one thread.
+
 ## Gotchas
 
 - Do not use the single-key shortcut while an editable control has focus.

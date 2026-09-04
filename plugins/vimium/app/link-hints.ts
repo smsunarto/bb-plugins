@@ -21,14 +21,23 @@
 // Coarse-pointer devices retain native composer focus. `Cmd+Shift+F` always
 // means the whole screen: it replaces a scoped prompt, and first closes any
 // open popup layer,
-// which would otherwise aria-hide the rest of the page. The transitions and
-// predicates are pure functions so they test without a DOM; only mounting,
-// marker drawing, and activation touch one.
+// which would otherwise aria-hide the rest of the page. In idle mode a few
+// plain keys skip the prompt: the pinned control keys (`n`, `m`, `p`, `l`,
+// `b`, `k`, `s`, `,`) drive their control directly, `[` and `]` step the
+// sidebar's thread list, and `e` settles the current thread. The transitions
+// and predicates are pure functions so they test without a DOM; only
+// mounting, marker drawing, and activation touch one.
 
 import type {
   PluginContentScriptContext,
   PluginContentScriptDisposer,
 } from "@get-bb/plugin-sdk/app";
+import {
+  adjacentThreadIndex,
+  directShortcutFor,
+  threadIdFromPath,
+  type DirectShortcut,
+} from "./direct-shortcuts.ts";
 import {
   RESERVED_CONTROLS,
   TEXT_CONTROLS,
@@ -250,6 +259,13 @@ const OPEN_LAYER_SELECTOR =
 // contract (gtd-sidebar rows are `href="#"` anchors carrying the data attribute).
 const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut-target]';
 
+// gtd-sidebar parks a settle button beside each inbox row's anchor. It only
+// shows on hover, but a dispatched pointer press reaches it either way.
+const SETTLE_BUTTON_SELECTOR = 'button[aria-label="Settle thread"]';
+
+/** How long after a keyboard thread switch self-focusing editors stay blurred. */
+const NAVIGATION_FOCUS_GUARD_MS = 2000;
+
 const COMPOSER_SELECTOR = "[data-app-composer]";
 const COMPOSER_TEXTBOX_SELECTOR = '[data-app-composer] [role="textbox"]';
 const COARSE_POINTER_QUERY = "(pointer: coarse)";
@@ -317,6 +333,49 @@ function candidateView(element: Element, activeComposer: HTMLElement | null): Ca
         ? element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
         : null,
   };
+}
+
+interface ThreadRow {
+  readonly id: string;
+  readonly element: HTMLElement;
+}
+
+/**
+ * The thread id a sidebar row opens: bb's own rows and gtd-sidebar rows carry
+ * it as a data attribute, and older bb rows only in their href.
+ */
+function threadRowId(element: HTMLElement): string | null {
+  const dataId = element.getAttribute("data-sidebar-thread-id");
+  if (dataId) return dataId;
+  const href = element.getAttribute("href");
+  return href === null ? null : threadIdFromPath(href);
+}
+
+/**
+ * Rendered sidebar thread rows in list order, one per thread. Rows scrolled
+ * out of the sidebar's viewport still count, as they do for bb's own
+ * previous/next commands; rows in a collapsed shelf or a hidden layer do not.
+ */
+function collectThreadRows(): ThreadRow[] {
+  const rows: ThreadRow[] = [];
+  const seen = new Set<string>();
+  for (const element of document.querySelectorAll<HTMLElement>(THREAD_ROW_SELECTOR)) {
+    const id = threadRowId(element);
+    if (id === null || seen.has(id)) continue;
+    if (element.closest('[aria-hidden="true"]') !== null) continue;
+    if (typeof element.checkVisibility === "function" && !element.checkVisibility()) continue;
+    seen.add(id);
+    rows.push({ id, element });
+  }
+  return rows;
+}
+
+function findControl(selector: string): HTMLElement | null {
+  const activeComposer = findActivePrimaryComposer();
+  for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+    if (isViableCandidate(candidateView(element, activeComposer))) return element;
+  }
+  return null;
 }
 
 function collectTargets(scope: ParentNode): HTMLElement[] {
@@ -447,6 +506,16 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   let composerFocusAllowed = false;
   let composerPointerOrTabFocusAllowed = false;
   let composerFocusWindow: number | null = null;
+  // While set in the future, editable elements that take focus on their own
+  // are blurred. A thread opened from the keyboard remounts the thread's
+  // panels, and an editor there (the docs panel's markdown editor autofocuses)
+  // would otherwise swallow the next `[` or `]`. The user's next pointer
+  // press or key ends the guard early.
+  let editableFocusGuardUntil = 0;
+
+  function guardEditableFocus(): void {
+    editableFocusGuardUntil = performance.now() + NAVIGATION_FOCUS_GUARD_MS;
+  }
 
   function withComposerFocusAllowed(action: () => void): void {
     const wasAllowed = composerFocusAllowed;
@@ -479,14 +548,19 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   function onFocusIn(event: FocusEvent): void {
-    if (!releasePassiveComposerFocus) return;
     const target = event.target;
-    if (!(target instanceof HTMLElement) || !target.matches(COMPOSER_TEXTBOX_SELECTOR)) return;
-    if (composerFocusAllowed || composerPointerOrTabFocusAllowed) return;
-    target.blur();
+    if (!(target instanceof HTMLElement)) return;
+    if (target.matches(COMPOSER_TEXTBOX_SELECTOR)) {
+      if (!releasePassiveComposerFocus) return;
+      if (composerFocusAllowed || composerPointerOrTabFocusAllowed) return;
+      target.blur();
+      return;
+    }
+    if (performance.now() < editableFocusGuardUntil && isEditableTarget(target)) target.blur();
   }
 
   function onPointerDown(event: PointerEvent): void {
+    editableFocusGuardUntil = 0;
     const target = event.target;
     if (target instanceof Element && target.closest(COMPOSER_SELECTOR) !== null) {
       allowComposerFocusForDefaultAction();
@@ -594,6 +668,50 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     }, 100);
   }
 
+  // A direct key does what its hint would: press the control, and follow a
+  // dropdown into a scoped prompt so the pick is one more key away. True when
+  // the key did something, so the caller knows whether to swallow it.
+  function runDirectShortcut(shortcut: DirectShortcut): boolean {
+    switch (shortcut.kind) {
+      case "focus-composer": {
+        const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
+        if (textbox === null) return false;
+        withComposerFocusAllowed(() => textbox.focus());
+        return true;
+      }
+      case "control": {
+        const control = findControl(shortcut.selector);
+        if (control === null) return false;
+        activate(control, focusTextEntry);
+        if (!isTextEntry(control) && opensDropdown(control)) scheduleReprompt(control);
+        return true;
+      }
+      case "thread-step": {
+        const rows = collectThreadRows();
+        const index = adjacentThreadIndex(
+          rows.map((row) => row.id),
+          threadIdFromPath(window.location.pathname),
+          shortcut.step,
+        );
+        const row = index === null ? undefined : rows[index];
+        if (row === undefined) return false;
+        activate(row.element, focusTextEntry);
+        guardEditableFocus();
+        return true;
+      }
+      case "settle-thread": {
+        const activeId = threadIdFromPath(window.location.pathname);
+        if (activeId === null) return false;
+        const row = collectThreadRows().find((candidate) => candidate.id === activeId);
+        const settle =
+          row?.element.parentElement?.querySelector<HTMLElement>(SETTLE_BUTTON_SELECTOR);
+        if (!settle) return false;
+        activate(settle, focusTextEntry);
+        return true;
+      }
+    }
+  }
+
   function applyTyped(typed: string): void {
     if (mode.kind !== "active") return;
     mode = { ...mode, typed };
@@ -605,6 +723,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   function onKeydown(event: KeyboardEvent): void {
+    if (!MODIFIER_KEYS.has(event.key)) editableFocusGuardUntil = 0;
     if (
       mode.kind === "idle" &&
       event.key === "Tab" &&
@@ -614,16 +733,22 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     ) {
       allowComposerFocusForDefaultAction();
     }
-    const plainComposerFocus =
-      event.key === "i" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
-    if (mode.kind === "idle" && plainComposerFocus) {
-      if (isEditableTarget(event.target)) return;
-      const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
-      if (textbox === null) return;
-      withComposerFocusAllowed(() => textbox.focus());
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
+    if (mode.kind === "idle") {
+      const shortcut = directShortcutFor({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        editableTarget: isEditableTarget(event.target),
+      });
+      if (shortcut !== null) {
+        // A shortcut with nothing to act on leaves the key to bb.
+        if (!runDirectShortcut(shortcut)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
     }
     if (mode.kind === "idle") {
       const trigger = isIdleTrigger({
@@ -679,6 +804,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     if (!chosen) return;
     activate(chosen.target, focusTextEntry);
     if (isTextEntry(chosen.target)) return;
+    if (chosen.target.matches(THREAD_ROW_SELECTOR)) guardEditableFocus();
     if (opensDropdown(chosen.target)) {
       scheduleReprompt(chosen.target);
       return;

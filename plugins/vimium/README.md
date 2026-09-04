@@ -15,6 +15,18 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 - Picking from one of the composer's own dropdowns hands focus back to the composer once the popup closes, so you can keep typing.
 - The conversation timeline never gets hints. It rerenders and auto-scrolls while an agent streams, and its own scrolling never dismisses a prompt — only a scroll that moves a hinted element does.
 
+## Direct keys
+
+Outside a text field, these keys act without a hint prompt:
+
+- `n` new thread, `s` thread search, `,` Settings.
+- `m` model, `p` project, `l` machine, `b` branch, `k` permission mode. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
+- `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom. For two seconds after a keyboard thread switch, an editor that focuses itself on load (the docs panel's markdown editor does) is blurred, so the next `]` or `[` still lands. A click or any other key ends that guard.
+- `e` settles the current thread. This needs a sidebar with a settle button on each row, such as gtd-sidebar.
+- `i` focuses the composer.
+
+A direct key with nothing to act on, such as `e` on a settings page, falls through to bb. Inside a text field every key is just typing. In hint mode `[`, `]`, and `e` keep their hint meanings below.
+
 ## Labels
 
 - bb's stable controls keep pinned single-character labels for muscle memory: `p` project, `i` composer input, `l` machine, `b` branch, `n` new thread, `s` thread search, `k` permission mode, `j` send, `m` model, `a` prompt actions, and `v` voice.
@@ -22,4 +34,4 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 - Sidebar thread rows (bb's own or any sidebar honoring the thread-shortcut contract) count `1`-`0` across the number row.
 - Everything else gets two-character labels from the remaining alphabet, extended past the reserved carve-outs so even a diff-heavy screen stays at two characters.
 
-The plugin ships `f` hint mode and the `i` composer shortcut. It does not add scrolling keys or search.
+The plugin ships `f` hint mode and the direct keys above. It does not add scrolling keys or search.
