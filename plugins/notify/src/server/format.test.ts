@@ -78,9 +78,24 @@ test("plainText strips line-leading furniture", () => {
   assert.equal(plainText("---"), "");
 });
 
+test("plainText drops table rows and keeps the prose around them", () => {
+  const reply = [
+    "Pick one.",
+    "",
+    "| | [A] Fast | [B] Safe |",
+    "|:--|:--|:--|",
+    "| **What** | skip it | keep it |",
+    "",
+    "Reply A or B.",
+  ].join("\n");
+  assert.equal(oneLine(plainText(reply), 160), "Pick one. Reply A or B.");
+  assert.equal(plainText("| only | a | table |\n|---|---|---|"), "");
+});
+
 test("plainText leaves prose that only looks like syntax", () => {
   assert.equal(plainText("snake_case_name"), "snake_case_name");
   assert.equal(plainText("2 * 3 = 6"), "2 * 3 = 6");
+  assert.equal(plainText("a | b"), "a | b");
 });
 
 test("plainText restores backslash-escaped markers as literals", () => {

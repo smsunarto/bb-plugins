@@ -129,7 +129,8 @@ or ship that file. The option stays silent when Cursor is not installed in
   bounded and never persists across a plugin reload or server restart.
 - The renderer acknowledges shown, suppressed, or failed outcomes. Notify never
   replays an unacknowledged alert.
-- Notification bodies are plain text. Notify removes common Markdown syntax.
+- Notification bodies are plain text. Notify removes common Markdown syntax
+  and drops tables entirely.
 
 ## Troubleshooting
 

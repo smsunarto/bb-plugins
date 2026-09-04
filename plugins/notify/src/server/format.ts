@@ -62,6 +62,9 @@ export function notificationLines(
  *
  * The emphasis patterns require a non-word boundary so `snake_case` and
  * `2 * 3` survive; only genuine emphasis runs are unwrapped.
+ *
+ * Tables are removed outright. The result can therefore be empty; callers
+ * fall back to a stock message in that case.
  */
 export function plainText(markdown: string): string {
   return (
@@ -84,6 +87,9 @@ export function plainText(markdown: string): string {
       .replaceAll(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/gu, "$1")
       .replaceAll(/(?<![\w_])_([^_\n]+)_(?![\w_])/gu, "$1")
       .replaceAll(/~~([^~\n]+)~~/gu, "$1")
+      // Tables cannot survive a one-line body: the cells run together into
+      // pipe soup. Drop every row and let the surrounding prose carry the news.
+      .replaceAll(/^\s{0,3}\|.*\|\s*$\n?/gmu, "")
       // Line-leading furniture: headings, quotes, bullets, numbering, rules.
       .replaceAll(/^\s{0,3}#{1,6}\s+/gmu, "")
       .replaceAll(/^\s{0,3}>\s?/gmu, "")

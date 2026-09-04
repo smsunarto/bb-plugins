@@ -57,7 +57,8 @@ export async function notifyThread(
   await tracker.notifyOnce(thread.id, minRunMs, async () => {
     const project = await projectName(bb, thread.projectId);
     const fallback = outcome === "failed" ? "Thread failed." : "Turn finished.";
-    const said = oneLine(plainText(detail?.trim() || fallback), BODY_MAX_CHARS);
+    // Strip first: a reply that was only a table leaves nothing to say.
+    const said = oneLine(plainText(detail ?? ""), BODY_MAX_CHARS) || fallback;
     await deliver(bb, {
       project,
       heading: threadLabel(thread),
