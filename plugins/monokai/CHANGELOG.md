@@ -21,6 +21,10 @@
 
 - Keep SF Pro composer placeholders at regular weight on mobile layouts.
 
+- Set fenced code block leading in the thread to 1.5 instead of the host's
+  prose leading, and tighten `diagram` and `patch` fences to 1.3 so
+  box-drawing glyphs in file trees and tree diffs connect between rows.
+
 ## 0.3.2
 
 ### Patch Changes

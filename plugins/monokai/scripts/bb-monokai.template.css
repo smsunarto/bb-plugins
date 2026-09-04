@@ -471,14 +471,33 @@
   --sh-class: {{code.type}}; /* compile-time structure — 9.85:1 */
   --sh-entity: {{code.entity}}; /* callables — 10.13:1 */
   --sh-jsxliterals: {{code.keyword}}; /* JSX tags are machinery, same as keywords */
+  /* The pre inherits the prose `leading-relaxed` strut from the thread
+   * container, while sugar-high renders each line as an inline-block. The
+   * strut wins the line box, so every row carries prose leading. Remove the
+   * strut and let the code child below own each row at code leading. */
+  line-height: 0;
 }
 
-/* Diagram fences use adjacent rows of box-drawing glyphs. They describe
- * structure rather than source code, but sugar-high still classifies capitalized
- * labels and connectors as code tokens. Collapse every token to the text color
- * so the diagram stays legible instead of acquiring arbitrary syntax hues.
- * Remove the pre's strut and let the code child own each row. */
-.dark .bb-code-highlight.bb-code-highlight:has(> .language-diagram) {
+.dark .bb-code-highlight.bb-code-highlight > code {
+  line-height: 1.5;
+}
+
+/* Diagram fences use adjacent rows of box-drawing glyphs. Berkeley Mono draws
+ * those glyphs 1.2em tall, so the rows must sit at or under 1.3 leading or the
+ * vertical connectors split (measured in bb at 12px: 1.3 joins, 1.35 gaps).
+ * Source code keeps the 1.5 above; only these fences pay the tighter leading.
+ * `patch` is a diagram diff: bb keeps the raw fence name on the element while
+ * sugar-high treats `patch` as an alias of `diff`, so the rows keep their
+ * add/remove shading. Plain `diff` fences stay at 1.5 for source code. */
+.dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {
+  line-height: 1.3;
+}
+
+/* Diagram fences describe structure rather than source code, but sugar-high
+ * still classifies capitalized labels and connectors as code tokens. Collapse
+ * every token to the text color so the diagram stays legible instead of
+ * acquiring arbitrary syntax hues. */
+.dark .bb-code-highlight.bb-code-highlight:has(> :is(.language-diagram, .language-patch)) {
   --sh-identifier: var(--foreground);
   --sh-property: var(--foreground);
   --sh-sign: var(--foreground);
@@ -488,11 +507,6 @@
   --sh-class: var(--foreground);
   --sh-entity: var(--foreground);
   --sh-jsxliterals: var(--foreground);
-  line-height: 0;
-}
-
-.dark .bb-code-highlight > .language-diagram {
-  line-height: 1.25;
 }
 
 /* Code and diff surface ground. `--diffs-bg` and `--diffs-fg` have no
