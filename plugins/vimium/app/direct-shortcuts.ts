@@ -23,10 +23,12 @@ function pinnedControl(char: string): DirectShortcut {
 
 /**
  * The direct keys. The control keys reuse their hint-mode characters so one
- * mnemonic serves both paths. `[`, `]`, `e`, `j`, and `k` differ from their
- * hint labels on purpose: the hint keeps bb's back, forward, Extensions,
- * send, and permission-mode controls, while the direct key steps threads,
- * settles the current one, and scrolls the conversation.
+ * mnemonic serves both paths. `[`, `]`, `e`, `j`, `k`, and `a` differ from
+ * their hint labels on purpose: the hint keeps bb's back, forward,
+ * Extensions, send, permission-mode, and prompt-actions controls, while the
+ * direct key steps threads, settles the current one, scrolls the
+ * conversation, and opens permission mode (`a` as in allow, since `k` is
+ * scroll up).
  */
 export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["n", pinnedControl("n")],
@@ -35,6 +37,7 @@ export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["l", pinnedControl("l")],
   ["b", pinnedControl("b")],
   ["s", pinnedControl("s")],
+  ["a", pinnedControl("k")],
   [",", pinnedControl(",")],
   ["i", { kind: "focus-composer" }],
   ["[", { kind: "thread-step", step: -1 }],

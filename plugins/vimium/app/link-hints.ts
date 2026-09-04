@@ -23,9 +23,10 @@
 // open popup layer,
 // which would otherwise aria-hide the rest of the page. In idle mode a few
 // plain keys skip the prompt: the pinned control keys (`n`, `m`, `p`, `l`,
-// `b`, `s`, `,`) drive their control directly, `[` and `]` step the
-// sidebar's thread list, `e` settles the current thread, and `j`, `k`, and
-// `J` scroll the conversation a step down, a step up, and to the bottom. The
+// `b`, `s`, `,`) drive their control directly, `a` opens permission mode,
+// `[` and `]` step the sidebar's thread list, `e` settles the current thread,
+// and `j`, `k`, and `J` scroll the conversation a step down, a step up, and
+// to the bottom. The
 // transitions and predicates are pure functions so they test without a DOM;
 // only mounting, marker drawing, and activation touch one.
 

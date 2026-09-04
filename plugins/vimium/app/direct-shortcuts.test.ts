@@ -33,6 +33,14 @@ describe("directShortcutFor", () => {
     }
   });
 
+  test("a opens permission mode, whose hint label k is the scroll-up key", () => {
+    const permission = RESERVED_CONTROLS.find((control) => control.char === "k");
+    expect(directShortcutFor(key({ key: "a" }))).toEqual({
+      kind: "control",
+      selector: permission?.selector ?? "",
+    });
+  });
+
   test("brackets step threads and e settles", () => {
     expect(directShortcutFor(key({ key: "[" }))).toEqual({ kind: "thread-step", step: -1 });
     expect(directShortcutFor(key({ key: "]" }))).toEqual({ kind: "thread-step", step: 1 });
