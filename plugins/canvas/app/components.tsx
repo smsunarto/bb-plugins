@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
+import { processFile } from "@pierre/diffs";
+import { FileDiff } from "@pierre/diffs/react";
 import {
-  experimental_Diff as Diff,
   experimental_FileLink as FileLink,
   experimental_SourceCode as SourceCode,
   useBbNavigate,
@@ -309,13 +311,59 @@ function Table(props: CanvasComponentProps): ReactElement {
   );
 }
 
+const gitHeaderPattern = /^(diff --git |--- )/;
+
+// Agents write hunks without the git header, so the patch gets one from the
+// path before Pierre parses it, the same completion the host viewer does.
+function completePatch(path: string, patch: string): string {
+  if (gitHeaderPattern.test(patch)) return patch;
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${patch}`;
+}
+
+// `@pierre/diffs` and `@pierre/diffs/react` resolve to the host's own Pierre
+// runtime at load time, so the diff follows the bb code theme like the
+// built-in viewer. Pierre's header has no toggle of its own; the block owns
+// `collapsed` and projects a button into the header's prefix slot.
 function DiffView(props: CanvasComponentProps): ReactElement {
-  const { path, patch, view } = typed<{ path: string; patch: string; view?: "unified" | "split" }>(
-    props.props,
-  );
+  const {
+    path,
+    patch,
+    view = "unified",
+    collapsed: initiallyCollapsed = false,
+  } = typed<{
+    path: string;
+    patch: string;
+    view?: "unified" | "split";
+    collapsed?: boolean;
+  }>(props.props);
+  const [collapsed, setCollapsed] = useState(initiallyCollapsed);
+  const fileDiff = processFile(completePatch(path, patch));
+  if (fileDiff === undefined) {
+    return (
+      <pre className="canvas-block overflow-x-auto rounded-md border border-border p-3 text-[0.8em]">
+        {patch}
+      </pre>
+    );
+  }
   return (
-    <div className="canvas-block overflow-hidden rounded-md border border-border">
-      <Diff patch={patch} path={path} view={view} />
+    <div className="canvas-block canvas-diff" data-collapsed={collapsed ? "" : undefined}>
+      <FileDiff
+        fileDiff={fileDiff}
+        options={{ collapsed, diffStyle: view }}
+        renderHeaderPrefix={() => (
+          <button
+            type="button"
+            className="canvas-diff-toggle"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? `Expand ${path}` : `Collapse ${path}`}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
+              <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
+            </svg>
+          </button>
+        )}
+      />
     </div>
   );
 }

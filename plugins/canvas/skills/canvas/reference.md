@@ -8,30 +8,30 @@ Identifiers, calls, and expressions are rejected with a diagnostic.
 
 ## Components
 
-| Component   | Summary                                                                          | Children                                   | Persisted |
-| ----------- | -------------------------------------------------------------------------------- | ------------------------------------------ | --------- |
-| `Row`       | Horizontal flex row. Children share the width equally and wrap on narrow panels. | blocks                                     | no        |
-| `Grid`      | Fixed column grid. Use for two to four equal panels.                             | blocks                                     | no        |
-| `Card`      | Bordered surface with an optional header. Set collapsible to fold the body.      | blocks                                     | no        |
-| `Section`   | Titled open section without a border. Set collapsible to fold the body.          | blocks                                     | no        |
-| `Callout`   | Toned note with an optional title. The body is markdown.                         | blocks                                     | no        |
-| `Stat`      | One headline number with a label, an optional caption, and an optional delta.    | none                                       | no        |
-| `Pill`      | Small toned label for a status or a tag.                                         | none                                       | no        |
-| `Table`     | Data table with per column alignment and per row tone.                           | none                                       | no        |
-| `BarChart`  | Grouped or stacked bars over categories. Inline SVG with a legend.               | none                                       | no        |
-| `LineChart` | One line per series over categories. Inline SVG with a legend.                   | none                                       | no        |
-| `PieChart`  | Share of a whole as a donut with a legend.                                       | none                                       | no        |
-| `UsageBar`  | Segmented horizontal bar showing parts of a total.                               | none                                       | no        |
-| `DiffView`  | Unified patch from a fenced diff block, rendered by the bb diff viewer.          | one fenced code block, stored as `patch`   | no        |
-| `Source`    | Source excerpt from a fenced block, rendered by the bb code viewer.              | one fenced code block, stored as `content` | no        |
-| `FileLink`  | Link that opens a file beside the chat, optionally at a line.                    | none                                       | no        |
-| `Ask`       | Button that opens a new chat with a prefilled prompt.                            | none                                       | no        |
-| `Toggle`    | Persisted switch. Children render only while it is on.                           | blocks                                     | yes       |
-| `Select`    | Persisted single choice from a fixed list of options.                            | none                                       | yes       |
-| `Tabs`      | Persisted tab strip. Children must be Tab components.                            | only Tab                                   | yes       |
-| `Tab`       | One tab panel inside Tabs.                                                       | blocks                                     | no        |
-| `Checklist` | Persisted checkboxes. Each item keeps its own checked state.                     | none                                       | yes       |
-| `Todos`     | Read only task list with a status icon per item.                                 | none                                       | no        |
+| Component   | Summary                                                                                             | Children                                   | Persisted |
+| ----------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------- |
+| `Row`       | Horizontal flex row. Children share the width equally and wrap on narrow panels.                    | blocks                                     | no        |
+| `Grid`      | Fixed column grid. Use for two to four equal panels.                                                | blocks                                     | no        |
+| `Card`      | Bordered surface with an optional header. Set collapsible to fold the body.                         | blocks                                     | no        |
+| `Section`   | Titled open section without a border. Set collapsible to fold the body.                             | blocks                                     | no        |
+| `Callout`   | Toned note with an optional title. The body is markdown.                                            | blocks                                     | no        |
+| `Stat`      | One headline number with a label, an optional caption, and an optional delta.                       | none                                       | no        |
+| `Pill`      | Small toned label for a status or a tag.                                                            | none                                       | no        |
+| `Table`     | Data table with per column alignment and per row tone.                                              | none                                       | no        |
+| `BarChart`  | Grouped or stacked bars over categories. Inline SVG with a legend.                                  | none                                       | no        |
+| `LineChart` | One line per series over categories. Inline SVG with a legend.                                      | none                                       | no        |
+| `PieChart`  | Share of a whole as a donut with a legend.                                                          | none                                       | no        |
+| `UsageBar`  | Segmented horizontal bar showing parts of a total.                                                  | none                                       | no        |
+| `DiffView`  | Unified patch from a fenced diff block, rendered by the Pierre file diff with a collapsible header. | one fenced code block, stored as `patch`   | no        |
+| `Source`    | Source excerpt from a fenced block, rendered by the bb code viewer.                                 | one fenced code block, stored as `content` | no        |
+| `FileLink`  | Link that opens a file beside the chat, optionally at a line.                                       | none                                       | no        |
+| `Ask`       | Button that opens a new chat with a prefilled prompt.                                               | none                                       | no        |
+| `Toggle`    | Persisted switch. Children render only while it is on.                                              | blocks                                     | yes       |
+| `Select`    | Persisted single choice from a fixed list of options.                                               | none                                       | yes       |
+| `Tabs`      | Persisted tab strip. Children must be Tab components.                                               | only Tab                                   | yes       |
+| `Tab`       | One tab panel inside Tabs.                                                                          | blocks                                     | no        |
+| `Checklist` | Persisted checkboxes. Each item keeps its own checked state.                                        | none                                       | yes       |
+| `Todos`     | Read only task list with a status icon per item.                                                    | none                                       | no        |
 
 ## Tones
 
@@ -324,15 +324,16 @@ Children: none.
 
 ## DiffView
 
-Unified patch from a fenced diff block, rendered by the bb diff viewer.
+Unified patch from a fenced diff block, rendered by the Pierre file diff with a collapsible header.
 
 Children: one fenced code block, stored as `patch`.
 
-| Prop    | Type                   | Required |
-| ------- | ---------------------- | -------- |
-| `path`  | `non-empty string`     | yes      |
-| `patch` | `string`               | yes      |
-| `view`  | `"unified" \| "split"` | no       |
+| Prop        | Type                   | Required |
+| ----------- | ---------------------- | -------- |
+| `path`      | `non-empty string`     | yes      |
+| `patch`     | `string`               | yes      |
+| `view`      | `"unified" \| "split"` | no       |
+| `collapsed` | `boolean`              | no       |
 
 <!-- prettier-ignore -->
 ````mdx

@@ -269,3 +269,24 @@
 .canvas-nested > [data-markdown-preview]:last-child > :last-child {
   margin-bottom: 0;
 }
+
+/* The DiffView toggle sits in Pierre's header prefix slot. The chevron turns
+ * to point down while the diff is open. */
+.canvas-diff-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  margin-right: 4px;
+  padding: 0;
+}
+
+.canvas-diff-toggle svg {
+  transition: transform 120ms ease;
+}
+
+.canvas-diff-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}

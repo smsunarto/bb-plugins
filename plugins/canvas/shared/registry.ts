@@ -178,9 +178,11 @@ export const registry = {
       path: z.string().min(1),
       patch: z.string(),
       view: z.enum(["unified", "split"]).optional(),
+      collapsed: z.boolean().optional(),
     }),
     children: { kind: "code", prop: "patch" },
-    summary: "Unified patch from a fenced diff block, rendered by the bb diff viewer.",
+    summary:
+      "Unified patch from a fenced diff block, rendered by the Pierre file diff with a collapsible header.",
   },
   Source: {
     props: z.object({

@@ -1,4 +1,4 @@
-import { test } from "bun:test";
+import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { installDom } from "@bb-kit/core/testing";
@@ -8,6 +8,11 @@ import { parseCanvas } from "../server/parse.ts";
 import type { CanvasDocument, RenderOutput } from "../shared/document.ts";
 
 installDom();
+mock.module("@pierre/diffs/react", () => ({
+  FileDiff: (props: { readonly renderHeaderPrefix?: () => ReactElement }) => (
+    <div data-testid="pierre-file-diff">{props.renderHeaderPrefix?.()}</div>
+  ),
+}));
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
@@ -53,7 +58,13 @@ test("renders markdown and components from a rendered document", async () => {
   await slot.findByText("Runs sampled");
   await slot.findByText("One root cause, three symptoms");
   assert.ok(slot.container.textContent?.includes("Flaky test triage for bb-plugins CI"));
-  assert.equal(slot.container.querySelectorAll('[data-testid="bb-diff"]').length, 1);
+  assert.equal(slot.container.querySelectorAll(".canvas-diff").length, 1);
+  const toggle = slot.getByRole("button", { name: "Collapse scripts/bb-dev-cli" });
+  fireEvent.click(toggle);
+  assert.equal(
+    slot.getByRole("button", { name: "Expand scripts/bb-dev-cli" }).getAttribute("aria-expanded"),
+    "false",
+  );
   assert.equal(
     slot.container.querySelector(".canvas-prose")?.getAttribute("data-canvas-style"),
     "default",

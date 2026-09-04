@@ -54,21 +54,21 @@ An agent writes one `.canvas.mdx` file. bb opens it beside the chat and renders 
 
 ## Components
 
-| Component                               | Summary                                                             | Persisted |
-| --------------------------------------- | ------------------------------------------------------------------- | --------- |
-| `Row`, `Grid`                           | Horizontal row or fixed column grid for layout.                     | no        |
-| `Card`, `Section`                       | Bordered or open container with an optional collapsible body.       | no        |
-| `Callout`                               | Toned note with an optional title.                                  | no        |
-| `Stat`                                  | One headline number with a label, caption, and delta.               | no        |
-| `Pill`                                  | Small toned label.                                                  | no        |
-| `Table`                                 | Data table with per column alignment and per row tone.              | no        |
-| `BarChart`, `LineChart`, `PieChart`     | Inline SVG charts with legends, axis labels, and reference lines.   | no        |
-| `UsageBar`                              | Segmented bar showing parts of a total.                             | no        |
-| `DiffView`, `Source`                    | Fenced diff or code block rendered by the bb diff and code viewers. | no        |
-| `FileLink`                              | Link that opens a file beside the chat, optionally at a line.       | no        |
-| `Ask`                                   | Button that opens a new chat with a prefilled prompt.               | no        |
-| `Toggle`, `Select`, `Tabs`, `Checklist` | Controls whose state persists per file.                             | yes       |
-| `Todos`                                 | Read only task list with a status icon per item.                    | no        |
+| Component                               | Summary                                                                                        | Persisted |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- | --------- |
+| `Row`, `Grid`                           | Horizontal row or fixed column grid for layout.                                                | no        |
+| `Card`, `Section`                       | Bordered or open container with an optional collapsible body.                                  | no        |
+| `Callout`                               | Toned note with an optional title.                                                             | no        |
+| `Stat`                                  | One headline number with a label, caption, and delta.                                          | no        |
+| `Pill`                                  | Small toned label.                                                                             | no        |
+| `Table`                                 | Data table with per column alignment and per row tone.                                         | no        |
+| `BarChart`, `LineChart`, `PieChart`     | Inline SVG charts with legends, axis labels, and reference lines.                              | no        |
+| `UsageBar`                              | Segmented bar showing parts of a total.                                                        | no        |
+| `DiffView`, `Source`                    | Fenced diff rendered by Pierre's collapsible file diff, or a code block in the bb code viewer. | no        |
+| `FileLink`                              | Link that opens a file beside the chat, optionally at a line.                                  | no        |
+| `Ask`                                   | Button that opens a new chat with a prefilled prompt.                                          | no        |
+| `Toggle`, `Select`, `Tabs`, `Checklist` | Controls whose state persists per file.                                                        | yes       |
+| `Todos`                                 | Read only task list with a status icon per item.                                               | no        |
 
 [`skills/canvas/reference.md`](skills/canvas/reference.md) lists every prop and one example per component. It is generated from `shared/registry.ts` by `bun run reference`.
 
