@@ -29,6 +29,27 @@
   prose leading, and tighten `diagram` and `patch` fences to 1.3 so
   box-drawing glyphs in file trees and tree diffs connect between rows.
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.3.2...monokai/v0.4.0) (2026-09-05)
+
+
+### Features
+
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+* **canvas:** mirror theme prose typography ([b6e3255](https://github.com/smsunarto/bb-plugins/commit/b6e325587df093e1738366952ce01c50c4d35b93))
+* **monokai:** add UI font setting ([adfe18d](https://github.com/smsunarto/bb-plugins/commit/adfe18d8c2f9dc94228841613edceb111c290dd9))
+* **monokai:** center all toast notifications above conversation ([21f3d15](https://github.com/smsunarto/bb-plugins/commit/21f3d1519f0e9bddb858d9031d9cadc332af2dac))
+* **monokai:** supply canvas prose accent hues ([b6e3255](https://github.com/smsunarto/bb-plugins/commit/b6e325587df093e1738366952ce01c50c4d35b93))
+
+
+### Bug Fixes
+
+* **canvas,monokai:** stop Row links overlapping and quiet prose color ([b6e3255](https://github.com/smsunarto/bb-plugins/commit/b6e325587df093e1738366952ce01c50c4d35b93))
+* **monokai:** align Monaco with Cursor colors ([7425a32](https://github.com/smsunarto/bb-plugins/commit/7425a32284a422430687655b07d3bcf545ed6f44))
+* **monokai:** tighten fenced code block leading so box-drawing rows connect ([c1e6789](https://github.com/smsunarto/bb-plugins/commit/c1e6789ab842c6976a9f57bdfc5ba44a0b73a47c))
+* **monokai:** unify sidebar dividers ([1521665](https://github.com/smsunarto/bb-plugins/commit/15216657f4e303040b4e5cbbdbbe29023b02b312))
+* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+* **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
+
 ## 0.3.2
 
 ### Patch Changes
