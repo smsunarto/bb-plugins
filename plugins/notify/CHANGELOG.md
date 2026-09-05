@@ -1,5 +1,23 @@
 # @smsunarto/bb-plugin-notify
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/notify/v0.3.0...notify/v0.4.0) (2026-09-05)
+
+
+### Features
+
+* **bb-kit:** enable plugin telemetry by default with settings opt-out ([abd398b](https://github.com/smsunarto/bb-plugins/commit/abd398b361a19044b486bfec212bb9020f6dbaba))
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+* **notify:** add Cursor completion sound ([6902e8a](https://github.com/smsunarto/bb-plugins/commit/6902e8acd6b61720c7c33ad5cdccad954777fc57))
+* **plugins:** wire Sentry telemetry into gitbutler, nanocodex, notify ([fbc94a8](https://github.com/smsunarto/bb-plugins/commit/fbc94a8f99b37e6f4f0c8748506a5e700bc880fc))
+* **sentry:** report plugin failures across runtimes ([3cb8b76](https://github.com/smsunarto/bb-plugins/commit/3cb8b76c64e171e85e640a89c8156db4690f38c1))
+* **sentry:** split plugin telemetry projects ([e6ffff9](https://github.com/smsunarto/bb-plugins/commit/e6ffff9495c140bb8334af1ab916405c5ffc492f))
+
+
+### Bug Fixes
+
+* **notify:** keep the renderer poller alive past bb's content-script mount timeout ([7c81342](https://github.com/smsunarto/bb-plugins/commit/7c81342cb9a35347f851f254646e61865323e671))
+* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+
 ## 0.3.0
 
 ### Minor Changes
