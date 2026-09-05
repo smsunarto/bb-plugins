@@ -33,11 +33,13 @@ Three message directives render project evidence inside assistant messages with 
 - `::smart-code{path="src/example.ts" start="12" end="28"}` renders an exact code citation with nearby context.
 - `::smart-patch{file="proposal.patch" path="src/example.ts"}` renders a diff the agent has not applied yet. The agent writes a unified diff to `$BB_THREAD_STORAGE/proposal.patch` first. `path` picks one file out of a multi-file patch and can be left off when the patch touches exactly one. `start` and `end` trim it the same way `::smart-diff` does.
 
-`::smart-diff` and `::smart-code` resolve from the message thread's current workspace. `::smart-patch` reads from the thread's storage directory, so it survives the worktree being deleted and never touches the repository. Clicking the header opens the file in bb's workspace viewer.
+`::smart-diff` saves its first successful display in plugin storage, separately for each message, file, and line range. That snapshot survives shipping, later workspace changes, page reloads, and plugin reloads. Empty results and errors remain retryable. A diff that has never displayed has no snapshot. Its first display reads the thread's current workspace, so it cannot recover changes already shipped before that display. Deleting a thread removes its snapshots.
+
+`::smart-code` resolves from the message thread's current workspace. `::smart-patch` reads from the thread's storage directory, so it survives the worktree being deleted and never touches the repository. Clicking the header opens the file in bb's workspace viewer.
 
 The instructions the plugin injects into agents live in `SMART_EMBED_INSTRUCTIONS` in `src/server/server.ts`. They are measured, not guessed. `eval/METRIC.md` defines the metric and `eval/RESULTS.md` records the climb: leading with the ranged form took embed-score from 66.5% to 79.6% on Sonnet and from 68.1% to 84.7% on Opus. Change that text through the harness, not by hand. `eval/prompts/baseline.md` must stay byte-identical to the shipped constant, and a test enforces it.
 
-Rendered embeds are cached in the browser for the page session, so remounts and thread revisits render at once. The server publishes a `workspace-changed` realtime signal when a thread goes idle, fails, is archived, or is deleted. Idle and failed refresh that thread's embeds in place. Archived and deleted free them. A realtime reconnect refreshes everything, and the cache also drops least recently used entries past 128 entries or 4 MB of patches.
+Rendered embeds are cached in the browser for the page session, so remounts and thread revisits render at once. The server publishes a `workspace-changed` realtime signal when a thread goes idle, fails, is archived, or is deleted. Idle and failed refresh that thread's embeds in place, with saved diffs returning their original snapshot. Archived and deleted free the browser entries. A realtime reconnect refreshes everything, and the cache also drops least recently used entries past 128 entries or 4 MB of patches.
 
 ## Add a command
 

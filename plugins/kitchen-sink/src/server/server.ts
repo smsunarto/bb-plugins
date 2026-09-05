@@ -1,5 +1,6 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 
+import { diffSnapshotMigrations } from "./lib/diff-snapshot.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
@@ -34,6 +35,11 @@ export default definePlugin({
   pluginId: "kitchen-sink",
   rpc: { renderEmbed },
   setup(bb) {
+    const db = bb.storage.database();
+    bb.storage.migrate(db, diffSnapshotMigrations);
+    bb.events.on("thread.deleted", ({ thread }) => {
+      db.prepare("DELETE FROM diff_snapshots WHERE thread_id = ?").run(thread.id);
+    });
     for (const provider of mentionProviders) {
       bb.ui.registerMentionProvider(provider);
     }

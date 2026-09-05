@@ -133,6 +133,12 @@ test("serves a remount from the cache without a loading state or a second RPC ca
   const first = await renderDiffEmbed(async () => readyDiff(patch));
   await first.findByTestId("bb-diff");
   expect(first.rpcCalls.map((call) => call.method)).toEqual(["renderEmbed"]);
+  expect(first.rpcCalls[0]?.input).toEqual({
+    kind: "diff",
+    threadId: "thread-1",
+    messageId: "message-1",
+    path: "src/example.ts",
+  });
   first.unmount();
 
   const second = await renderDiffEmbed(async () => readyDiff(patch));

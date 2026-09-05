@@ -9,6 +9,7 @@ import {
 } from "../../shared/contract.ts";
 import { citationPatch } from "../lib/citation-patch.ts";
 import { rangePatch } from "../lib/diff-range.ts";
+import { readDiffSnapshot, saveDiffSnapshot, type DiffSnapshotKey } from "../lib/diff-snapshot.ts";
 import { splitPatchFiles } from "../lib/patch-file.ts";
 
 const MAX_PATH_LENGTH = 1_024;
@@ -50,6 +51,19 @@ export const renderEmbed = defineQuery({
     }
 
     try {
+      const snapshotKey: DiffSnapshotKey | null =
+        input.kind === "diff" && input.messageId !== undefined
+          ? { ...input, kind: "diff", messageId: input.messageId, path }
+          : null;
+      if (snapshotKey !== null) {
+        try {
+          const saved = readDiffSnapshot(ctx.bb.storage.database(), snapshotKey);
+          if (saved !== null) return saved;
+        } catch (error) {
+          ctx.bb.log.warn(`smart diff snapshot read failed: ${String(error)}`);
+          return { status: "error", message: `Could not read the saved diff for ${path}.` };
+        }
+      }
       const thread = await ctx.bb.sdk.threads.get({ threadId: input.threadId });
       if (thread.environmentId === null) {
         return { status: "error", message: "This thread has no workspace environment." };
@@ -72,35 +86,34 @@ export const renderEmbed = defineQuery({
         if (result.outcome !== "available") {
           return { status: "error", message: "The workspace diff is not available." };
         }
-        const file =
-          result.patches.find((candidate) => candidate.path === path) ?? result.patches[0];
+        const file = result.patches.find((candidate) => candidate.path === path);
         if (file === undefined || file.patch.trim().length === 0) {
           return {
             status: "empty",
             message: `No branch or working-tree changes found for ${path}.`,
           };
         }
-        if (input.start === undefined && input.end === undefined) {
-          return {
-            status: "ready",
-            kind: "diff",
-            path,
-            label: path,
-            patch: file.patch,
-            truncated: file.truncated,
-          };
-        }
-        const range = rangePatch(path, file.patch, input.start, input.end);
+        const range =
+          input.start === undefined && input.end === undefined
+            ? { label: path, patch: file.patch }
+            : rangePatch(path, file.patch, input.start, input.end);
         if ("error" in range) return { status: "error", message: range.error };
         if ("empty" in range) return { status: "empty", message: range.empty };
-        return {
-          status: "ready",
-          kind: "diff",
+        const output = {
+          status: "ready" as const,
+          kind: "diff" as const,
           path,
           label: range.label,
           patch: range.patch,
           truncated: file.truncated,
         };
+        if (snapshotKey === null) return output;
+        try {
+          return saveDiffSnapshot(ctx.bb.storage.database(), snapshotKey, output);
+        } catch (error) {
+          ctx.bb.log.warn(`smart diff snapshot save failed: ${String(error)}`);
+          return { status: "error", message: `Could not save the diff for ${path}.` };
+        }
       }
 
       if (environment.path === null) {

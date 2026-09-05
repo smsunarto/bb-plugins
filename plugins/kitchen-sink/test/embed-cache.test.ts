@@ -13,10 +13,30 @@ test("keys include every request field", () => {
   expect(embedCacheKey({ kind: "code", threadId: "t", path: "a.ts", start: 1, end: 2 })).toBe(
     "code t a.ts 1 2 ",
   );
-  expect(embedCacheKey({ kind: "diff", threadId: "t", path: "a.ts" })).toBe("diff t a.ts   ");
+  expect(embedCacheKey({ kind: "diff", threadId: "t", path: "a.ts" })).toBe(
+    '["diff","t",null,"a.ts",null,null]',
+  );
   expect(embedCacheKey({ kind: "patch", threadId: "t", file: "p.patch" })).toBe(
     "patch t    p.patch",
   );
+});
+
+test("diff keys separate messages and ranges without changing code or patch identity", () => {
+  const request = { kind: "diff", threadId: "t", messageId: "m1", path: "a.ts" } as const;
+  const keys = [
+    request,
+    { ...request, messageId: "m2" },
+    { ...request, start: 1 },
+    { ...request, end: 1 },
+    { ...request, path: "a.ts 1" },
+    { ...request, threadId: "t m1", messageId: "" },
+  ].map(embedCacheKey);
+  expect(new Set(keys).size).toBe(keys.length);
+  for (const kind of ["code", "patch"] as const) {
+    expect(embedCacheKey({ ...request, kind })).toBe(
+      embedCacheKey({ ...request, kind, messageId: "m2" }),
+    );
+  }
 });
 
 test("shares one fetch between concurrent loads and serves later reads without fetching", async () => {

@@ -20,6 +20,7 @@ import type { RenderEmbedOutput } from "../shared/contract.ts";
 export type EmbedRequest = {
   readonly kind: "code" | "diff" | "patch";
   readonly threadId: string;
+  readonly messageId?: string;
   readonly path?: string;
   readonly file?: string;
   readonly start?: number;
@@ -51,6 +52,16 @@ export type EmbedCacheLimits = {
 const MISSING: EmbedEntry = { value: null, stale: true };
 
 export function embedCacheKey(request: EmbedRequest): string {
+  if (request.kind === "diff") {
+    return JSON.stringify([
+      request.kind,
+      request.threadId,
+      request.messageId ?? null,
+      request.path ?? null,
+      request.start ?? null,
+      request.end ?? null,
+    ]);
+  }
   return [
     request.kind,
     request.threadId,

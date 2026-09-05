@@ -4,6 +4,7 @@ export const renderEmbedInputSchema = z
   .object({
     kind: z.enum(["code", "diff", "patch"]),
     threadId: z.string().min(1),
+    messageId: z.string().min(1).optional(),
     /** Worktree-relative file. Optional for `patch`, which can infer it from a single-file patch. */
     path: z.string().max(1_024).optional(),
     /** Thread-storage-relative patch file. Only for `patch`. */

@@ -97,6 +97,7 @@ function SmartEmbed({
 
   useWorkspaceChangeSignals();
   const threadId = message.threadId;
+  const messageId = message.id;
   const request = useMemo<EmbedRequest | null>(
     () =>
       invalid !== null
@@ -104,12 +105,13 @@ function SmartEmbed({
         : {
             kind,
             threadId,
+            ...(kind === "diff" ? { messageId } : {}),
             ...(path.length > 0 ? { path } : {}),
             ...(kind === "patch" ? { file } : {}),
             ...(typeof start === "number" ? { start } : {}),
             ...(typeof end === "number" ? { end } : {}),
           },
-    [end, file, invalid, kind, path, start, threadId],
+    [end, file, invalid, kind, messageId, path, start, threadId],
   );
   const result = useCachedEmbed(request)?.value ?? null;
 
