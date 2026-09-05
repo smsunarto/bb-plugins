@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-nanocodex",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "NanoCodex as a native bb provider through its JavaScript binding",
   "license": "MIT",
   "author": "Scott Sunarto",
