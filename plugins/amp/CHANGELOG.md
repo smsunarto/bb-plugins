@@ -1,5 +1,25 @@
 # @smsunarto/bb-plugin-amp
 
+## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.4.1...amp/v0.5.0) (2026-09-05)
+
+
+### Features
+
+* **amp:** add startup performance tracing ([9df50eb](https://github.com/smsunarto/bb-plugins/commit/9df50ebc5e73b0f8a6fada09dad09a5b922e44ba))
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+* **sentry:** harden plugin telemetry ([5408358](https://github.com/smsunarto/bb-plugins/commit/5408358a95cf60d207e0a0bc69dfef431bfd7dd8))
+* **sentry:** report plugin failures across runtimes ([3cb8b76](https://github.com/smsunarto/bb-plugins/commit/3cb8b76c64e171e85e640a89c8156db4690f38c1))
+* **sentry:** split plugin telemetry projects ([e6ffff9](https://github.com/smsunarto/bb-plugins/commit/e6ffff9495c140bb8334af1ab916405c5ffc492f))
+
+
+### Bug Fixes
+
+* **amp:** document bb 0.40 release line ([fb887e3](https://github.com/smsunarto/bb-plugins/commit/fb887e36cbeeccef7aac0409bb7075bc159697af))
+* **amp:** recover from websocket disconnects ([#109](https://github.com/smsunarto/bb-plugins/issues/109)) ([0e4498d](https://github.com/smsunarto/bb-plugins/commit/0e4498d83342c3dcec0d28d03fe1a27377d8e64a))
+* **plugins:** ship provider sdk at runtime ([52b8dc5](https://github.com/smsunarto/bb-plugins/commit/52b8dc513e731f223c17d3f9c4f4bcb7b07771f0))
+* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+* **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
+
 ## 0.4.1
 
 ### Patch Changes
