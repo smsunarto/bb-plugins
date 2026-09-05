@@ -69,6 +69,12 @@ Choose **Inter (Default)** or **SF Pro** under **Settings → bb Monokai → UI
 font**. The choice applies to the full interface at desktop and mobile widths.
 Code, diffs, file paths, and terminal text keep the Berkeley Mono stack.
 
+All toast notifications use a compact shadcn Sonner-style layout at the top
+center of the focused conversation. Undo, links, dismissal, and stacking keep
+bb's existing behavior. This is a theme-only CSS override. Switching palettes
+restores bb's placement. Browsers without CSS anchor positioning center toasts
+over the viewport instead.
+
 ## Requirements
 
 - bb 0.40+ (code themes arrived in bb 0.39)
