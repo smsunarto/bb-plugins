@@ -1,5 +1,19 @@
 # @smsunarto/bb-plugin-agentation
 
+## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-05)
+
+
+### Features
+
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+
+
+### Bug Fixes
+
+* **agentation:** hide inactive toolbar controls ([b87bfa8](https://github.com/smsunarto/bb-plugins/commit/b87bfa89104ada30ce97d856cb1b9937f60acb38))
+* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+* **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
+
 ## 0.2.3
 
 ### Patch Changes
