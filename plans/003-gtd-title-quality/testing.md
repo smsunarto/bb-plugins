@@ -2,6 +2,8 @@
 
 [Plan overview](overview.md)
 
+Execution note: the user reduced this protocol before execution. The actual run used 32 physical inference attempts, entirely synthetic cases, no model grader, and one setup exploration across six repositories. See [results](results.md) for scope and limitations. The comprehensive protocol below was not executed.
+
 All numeric values below are proposed defaults. Freeze the workload, gates, and budget before candidate scores are visible. Report uncertainty honestly. A small pilot is not statistical proof of a universal improvement.
 
 ## Frozen workload

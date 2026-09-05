@@ -5,10 +5,11 @@ import { gtdSidebarHostContract } from "../lib/host-contract.ts";
 import {
   completeThreadTitleWithFallback,
   createThreadTitleInference,
+  formatInferredTitle,
 } from "../thread-title-inference.ts";
 
 describe("thread title inference policy", () => {
-  test("calls GPT-5.6-Luna with low reasoning on the primary host", async () => {
+  test("calls GPT-5.6-Luna without reasoning on the primary host", async () => {
     const calls: Array<{ input: Record<string, unknown>; hostId: string }> = [];
     const bb = {
       hosts: {
@@ -19,7 +20,11 @@ describe("thread title inference policy", () => {
             options: { hostId: string },
           ) => {
             calls.push({ input, hostId: options.hostId });
-            return { ok: true, model: String(input.model), value: { title: "Name threads" } };
+            return {
+              ok: true,
+              model: String(input.model),
+              value: { activity: "explore", scope: "", title: "Name threads" },
+            };
           },
         }),
       },
@@ -39,7 +44,7 @@ describe("thread title inference policy", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.hostId, "host-primary");
     assert.equal(calls[0]?.input.model, "gpt-5.6-luna");
-    assert.equal(calls[0]?.input.reasoningEffort, "low");
+    assert.equal(calls[0]?.input.reasoningEffort, "none");
   });
 
   test("keeps standard none requests and GTD low requests contract-valid", () => {
@@ -66,7 +71,11 @@ describe("completeThreadTitleWithFallback", () => {
       fallback: "fallback",
       complete: async (model) => {
         models.push(model);
-        return { ok: true, model, value: { title: "Fix the login test" } };
+        return {
+          ok: true,
+          model,
+          value: { activity: "explore", scope: "", title: "Fix the login test" },
+        };
       },
     });
 
@@ -84,7 +93,7 @@ describe("completeThreadTitleWithFallback", () => {
         models.push(model);
         return model === "primary"
           ? { ok: false, code: "timeout", message: "timed out" }
-          : { ok: true, model, value: { title: "Fallback title" } };
+          : { ok: true, model, value: { activity: "explore", scope: "", title: "Fallback title" } };
       },
       sleep: async (durationMs) => {
         delays.push(durationMs);
@@ -120,7 +129,131 @@ describe("completeThreadTitleWithFallback", () => {
         fallback: "fallback",
         complete: async (model) => ({ ok: true, model, value: {} }),
       }),
-      /returned no title/u,
+      /returned an invalid title/u,
     );
   });
+
+  test("records failed and successful attempts without inventing missing usage", async () => {
+    const attempts: unknown[] = [];
+    const title = await completeThreadTitleWithFallback({
+      primary: "primary",
+      fallback: "fallback",
+      sleep: async () => {},
+      onAttempt: (attempt) => attempts.push(attempt),
+      complete: async (model) =>
+        model === "primary"
+          ? { ok: false, code: "timeout", message: "timed out" }
+          : {
+              ok: true,
+              model,
+              value: { activity: "explore", scope: "", title: "Named" },
+              usage: { inputTokens: 20, outputTokens: 5 },
+            },
+    });
+    assert.equal(title, "Named");
+    assert.equal(attempts.length, 2);
+    assert.deepEqual((attempts[0] as { usage?: unknown }).usage, undefined);
+    assert.deepEqual((attempts[1] as { usage: unknown }).usage, {
+      inputTokens: 20,
+      outputTokens: 5,
+    });
+  });
+
+  test("observer errors cannot fail a valid title", async () => {
+    assert.equal(
+      await completeThreadTitleWithFallback({
+        primary: "primary",
+        fallback: "fallback",
+        onAttempt: () => {
+          throw new Error("logger");
+        },
+        complete: async (model) => ({
+          ok: true,
+          model,
+          value: { activity: "explore", scope: "", title: "Named" },
+        }),
+      }),
+      "Named",
+    );
+  });
+});
+
+test("formats activity and multiple scopes deterministically", () => {
+  assert.equal(
+    formatInferredTitle({
+      activity: "fix",
+      scope: "Invoices + Accounts",
+      title: "Sorting and selection fixes",
+    }),
+    "🐛 [Invoices + Accounts] Sorting and selection fixes",
+  );
+  assert.equal(
+    formatInferredTitle({
+      activity: "explore",
+      scope: "Editor",
+      title: "Can TextMate distinguish symbols?",
+    }),
+    "[Editor] Can TextMate distinguish symbols?",
+  );
+  assert.throws(() => formatInferredTitle({ activity: "🔥", scope: "", title: "Task" }));
+});
+
+test("front-loads task nouns without cutting identifiers or questions", () => {
+  assert.equal(
+    formatInferredTitle({
+      activity: "review",
+      scope: "Snapshots",
+      title: "Review snapshot writer races",
+    }),
+    "🔎 [Snapshots] Snapshot writer races",
+  );
+  assert.equal(
+    formatInferredTitle({
+      activity: "build",
+      scope: "",
+      title: "Continue CSV export implementation",
+    }),
+    "🛠️ CSV export implementation",
+  );
+  assert.equal(
+    formatInferredTitle({ activity: "install", scope: "", title: "BuildKit setup" }),
+    "📦 BuildKit setup",
+  );
+  assert.equal(
+    formatInferredTitle({ activity: "fix", scope: "", title: "Fixation tracking" }),
+    "🐛 Fixation tracking",
+  );
+  assert.equal(
+    formatInferredTitle({ activity: "explore", scope: "", title: "Review or rewrite?" }),
+    "Review or rewrite?",
+  );
+  assert.throws(() =>
+    formatInferredTitle({ activity: "review", scope: "Snapshots", title: "Review" }),
+  );
+});
+
+test("removes repeated scope from legacy prefix instructions without losing other labels", () => {
+  assert.equal(
+    formatInferredTitle({
+      activity: "explore",
+      scope: "Monaco editor plugin",
+      title: "[Monaco Editor] Use TextMate rules without TS LSP?",
+    }),
+    "[Monaco editor plugin] Use TextMate rules without TS LSP?",
+  );
+  assert.equal(
+    formatInferredTitle({
+      activity: "fix",
+      scope: "GTD + Vimium",
+      title: "[GTD] Waiting sort & focus fixes",
+    }),
+    "🐛 [GTD + Vimium] Waiting sort & focus fixes",
+  );
+  assert.equal(
+    formatInferredTitle({ activity: "plan", scope: "Transport", title: "[RFC] Retry design" }),
+    "📝 [Transport] [RFC] Retry design",
+  );
+  assert.throws(() =>
+    formatInferredTitle({ activity: "explore", scope: "Editor", title: "[Editor]" }),
+  );
 });

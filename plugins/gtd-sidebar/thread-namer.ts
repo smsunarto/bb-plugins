@@ -11,7 +11,7 @@ import {
 import type { ThreadTitleInference } from "./thread-title-inference.ts";
 
 const EVENT_PAGE_SIZE = 100;
-const PROJECT_TITLE_INSTRUCTIONS_PATH = ".agents/GTD_TITLE.md";
+const PROJECT_TITLE_INSTRUCTIONS_PATHS = [".agents/GTD_NAMING.md", ".agents/GTD_TITLE.md"];
 
 export type ThreadNamingResult = { ok: true; title: string } | { ok: false; error: string };
 
@@ -92,18 +92,34 @@ async function performThreadNaming(
       environmentId: thread.environmentId,
       prompt: plan.prompt,
     });
-    const title = sanitizeGeneratedTitle(output);
+    const title = sanitizeGeneratedTitle(output, plan.allowedShipped);
     if (title === null) {
-      return { ok: false, error: "The naming agent returned an empty title." };
+      return { ok: false, error: "The naming agent returned no usable task title." };
     }
 
     if (plan.writeGuard.kind === "title-unchanged") {
-      const current = await bb.sdk.threads.get({ threadId });
+      const [current, currentEvents] = await Promise.all([
+        bb.sdk.threads.get({ threadId }),
+        loadNamingEvents(bb, threadId),
+      ]);
       if (current.title !== plan.writeGuard.expectedTitle) {
         return {
           ok: false,
           error: "The thread title changed while naming was in progress.",
         };
+      }
+      const currentPlan = planThreadNaming({
+        ...planInput,
+        thread: current,
+        events: currentEvents,
+        automaticallyNameThreads: await options.automaticallyNameThreads(),
+      });
+      if (
+        currentPlan.kind !== "run" ||
+        currentPlan.writeGuard.kind !== "title-unchanged" ||
+        currentPlan.writeGuard.expectedRequestSeq !== plan.writeGuard.expectedRequestSeq
+      ) {
+        return { ok: false, error: "The thread changed while naming was in progress." };
       }
     }
 
@@ -126,22 +142,27 @@ async function loadProjectTitleInstructions(
     const environment = await bb.sdk.environments.get({ environmentId });
     if (environment.path === null) return "";
 
-    const file = await bb.sdk.files.read({
-      hostId: environment.hostId,
-      path: join(environment.path, PROJECT_TITLE_INSTRUCTIONS_PATH),
-      rootPath: environment.path,
-    });
-    if (file.contentEncoding !== "utf8") {
-      bb.log.warn(
-        `${PROJECT_TITLE_INSTRUCTIONS_PATH} is not UTF-8; using default title instructions`,
-      );
-      return "";
+    for (const path of PROJECT_TITLE_INSTRUCTIONS_PATHS) {
+      try {
+        const file = await bb.sdk.files.read({
+          hostId: environment.hostId,
+          path: join(environment.path, path),
+          rootPath: environment.path,
+        });
+        if (file.contentEncoding !== "utf8") {
+          bb.log.warn(`${path} is not UTF-8; using default title instructions`);
+          return "";
+        }
+        return normalizeProjectTitleInstructions(file.content);
+      } catch (error) {
+        if (!isMissingFileError(error)) throw error;
+      }
     }
-    return normalizeProjectTitleInstructions(file.content);
+    return "";
   } catch (error) {
     if (!isMissingFileError(error)) {
       bb.log.warn(
-        `could not read ${PROJECT_TITLE_INSTRUCTIONS_PATH} for environment ${environmentId}: ${describeError(error)}`,
+        `could not read naming rules for environment ${environmentId}: ${describeError(error)}`,
       );
     }
     return "";

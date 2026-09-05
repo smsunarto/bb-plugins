@@ -5,6 +5,7 @@ import type {
   GtdSidebarAiServiceErrorCode,
   GtdSidebarAiVoiceTranscribeInput,
   GtdSidebarAiVoiceTranscribeOutput,
+  InferenceUsage,
 } from "../../lib/host-contract.ts";
 import { fetchChatGpt, isCloudflareChallenge } from "./chatgpt-fetch.ts";
 import {
@@ -138,6 +139,7 @@ interface CodexInputContent {
 interface ResponseTextResult {
   failure: CodexStreamFailure | null;
   text: string;
+  usage?: InferenceUsage;
 }
 
 interface CodexStreamFailure {
@@ -474,6 +476,22 @@ function getCodexFailure(response: JsonObject): CodexStreamFailure | null {
   };
 }
 
+function getInferenceUsage(response: JsonObject | null): InferenceUsage | undefined {
+  const raw = response ? jsonObject(response.usage ?? null) : null;
+  if (!raw) return undefined;
+  const tokenCount = (value: JsonValue | undefined): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  if (!tokenCount(raw.input_tokens) || !tokenCount(raw.output_tokens)) return undefined;
+  const cached = jsonObject(raw.input_tokens_details ?? null)?.cached_tokens;
+  const reasoning = jsonObject(raw.output_tokens_details ?? null)?.reasoning_tokens;
+  return {
+    inputTokens: raw.input_tokens,
+    outputTokens: raw.output_tokens,
+    ...(tokenCount(cached) ? { cachedInputTokens: cached } : {}),
+    ...(tokenCount(reasoning) ? { reasoningTokens: reasoning } : {}),
+  };
+}
+
 function extractTextFromSseEvent(event: JsonObject): ResponseTextResult {
   const type = optionalString(event.type);
   if (type === "error") {
@@ -514,6 +532,7 @@ function extractTextFromSseEvent(event: JsonObject): ResponseTextResult {
     return {
       failure,
       text: text ?? "",
+      usage: getInferenceUsage(response),
     };
   }
 
@@ -535,10 +554,10 @@ function parseSseEventValue(eventData: string): JsonValue {
   }
 }
 
-async function readResponseTextFromSse(
+export async function readInferenceResponse(
   response: Response,
   args: ReadResponseTextFromSseArgs,
-): Promise<string> {
+): Promise<{ text: string; usage?: InferenceUsage }> {
   if (!response.body) {
     throw new AiServiceFailure(
       "invalid_response",
@@ -553,6 +572,7 @@ async function readResponseTextFromSse(
   let deltaText = "";
   let finalText: string | null = null;
   let totalBytes = 0;
+  let usage: InferenceUsage | undefined;
 
   try {
     while (true) {
@@ -592,6 +612,7 @@ async function readResponseTextFromSse(
           const event = jsonObject(eventValue);
           if (event) {
             const result = extractTextFromSseEvent(event);
+            usage = result.usage ?? usage;
             if (result.failure) {
               throw new AiServiceFailure(
                 ...codexStreamFailureErrorCode(result.failure),
@@ -627,7 +648,7 @@ async function readResponseTextFromSse(
       "Codex response did not include structured output text.",
     );
   }
-  return text;
+  return { text, ...(usage === undefined ? {} : { usage }) };
 }
 
 function parseStructuredResult(rawText: string): JsonObject {
@@ -791,7 +812,7 @@ export async function completeCodexInference(
     });
   }
 
-  const rawText = await readResponseTextFromSse(response, {
+  const result = await readInferenceResponse(response, {
     deadline,
     maxBytes: CODEX_SSE_RESPONSE_MAX_BYTES,
     maxEventChars: CODEX_SSE_EVENT_MAX_CHARS,
@@ -799,7 +820,8 @@ export async function completeCodexInference(
   return {
     ok: true,
     model: command.model,
-    value: parseStructuredResult(rawText),
+    value: parseStructuredResult(result.text),
+    ...(result.usage === undefined ? {} : { usage: result.usage }),
   };
 }
 

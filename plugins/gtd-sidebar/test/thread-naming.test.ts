@@ -84,54 +84,63 @@ describe("normalizeInitialUserPrompt", () => {
 });
 
 describe("renderThreadNamingPrompt", () => {
-  test("pins bb's thread-title prompt plus the sentence-case rule", () => {
-    assert.equal(
-      renderThreadNamingPrompt("Fix the login test"),
-      `You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt.
-The task usually has to do with coding work, such as fixing a bug, changing a feature, or answering a question about a codebase.
-Generate a concise UI title of at most 36 characters.
-Use a single line of plain text only.
-Do not include quotes, markdown, formatting characters, or trailing punctuation.
-Use sentence case: capitalize only the first word, proper nouns, and identifiers. Do not use Title Case.
-If the prompt includes a ticket reference, include it verbatim.
-Prefer an imperative verb when the user is asking for a change.
-Do not answer the user or attempt the task.
-
-User prompt:
-Fix the login test`,
+  test("supports scoped activity titles and preserves question intent", () => {
+    const prompt = renderThreadNamingPrompt("Can Monaco use TextMate?");
+    assert.match(prompt, /specific task nouns first, <=48 chars, questions stay questions/u);
+    assert.match(
+      prompt,
+      /scope \(product area\(s\) joined ' \+ '; empty if unclear; never repo\)/u,
     );
+    assert.match(prompt, /review=code review; verify=running tests/u);
+    assert.match(prompt, /questions\/exploration=explore; writing skills\/docs=build/u);
+    assert.match(prompt, /requested work, never suggested next steps/u);
+    assert.match(prompt, /Current request:\nCan Monaco use TextMate\?/u);
+    assert.ok(renderThreadNamingPrompt("").length < 800);
   });
 
-  test("includes the agent handoff after a follow-up prompt", () => {
+  test("includes the handoff and project instructions", () => {
     assert.match(
       renderThreadNamingPrompt("Now fix signup", "  **Fixed:** login\n\nTests pass.  "),
-      /User prompt:\nNow fix signup\n\nUse the agent's last turn handoff message to understand the current task state\.\n\nAgent's last turn handoff message:\n\*\*Fixed:\*\* login\n\nTests pass\.$/u,
+      /Latest handoff:\n\*\*Fixed:\*\* login\n\nTests pass\.$/u,
+    );
+    assert.match(
+      renderThreadNamingPrompt("Fix login", "", "  Keep ticket IDs.\r\nUse [Auth].  "),
+      /Project title rules:\nKeep ticket IDs\.\nUse \[Auth\]\./u,
     );
   });
 
-  test("injects project-specific instructions before the user prompt", () => {
-    assert.equal(
-      renderThreadNamingPrompt(
-        "Fix the login test",
-        "",
-        "  Start every title with `API:`.\r\nKeep ticket IDs.  ",
-      ),
-      `You are a helpful assistant. You will be presented with a user prompt, and your job is to provide a short title for a task that will be created from that prompt.
-The task usually has to do with coding work, such as fixing a bug, changing a feature, or answering a question about a codebase.
-Generate a concise UI title of at most 36 characters.
-Use a single line of plain text only.
-Do not include quotes, markdown, formatting characters, or trailing punctuation.
-Use sentence case: capitalize only the first word, proper nouns, and identifiers. Do not use Title Case.
-If the prompt includes a ticket reference, include it verbatim.
-Prefer an imperative verb when the user is asking for a change.
-Do not answer the user or attempt the task.
+  test("caps combined context even when every source is large", () => {
+    const prompt = renderThreadNamingPrompt(
+      "U".repeat(5_000),
+      "H".repeat(5_000),
+      `${"P".repeat(99)}\n`.repeat(90),
+      {
+        priorUserPrompt: "A".repeat(5_000),
+        currentTitle: "T".repeat(5_000),
+      },
+    );
+    const selected = prompt.match(/[UHPAT]{2,}/gu) ?? [];
+    assert.ok(selected.reduce((length, section) => length + section.length, 0) <= 2_400);
+    assert.match(prompt, /Current request:\nU/u);
+    assert.match(prompt, /Latest handoff:\nH/u);
+    assert.ok(prompt.length < 3_100);
+  });
 
-Project-specific title instructions:
-Start every title with \`API:\`.
-Keep ticket IDs.
+  test("keeps complete scope rules while prioritizing the current request", () => {
+    const prompt = renderThreadNamingPrompt(
+      "Current task ".repeat(100),
+      "",
+      ["Use [Auth].", "X".repeat(600), "Use [Billing]."].join("\n"),
+    );
+    assert.match(prompt, /Project title rules:\nUse \[Auth\]\.\nUse \[Billing\]\./u);
+    assert.doesNotMatch(prompt, /XXX/u);
+    assert.ok(prompt.indexOf("Current request:") < prompt.indexOf("Project title rules:"));
+  });
 
-User prompt:
-Fix the login test`,
+  test("omits a duplicate task anchor", () => {
+    assert.doesNotMatch(
+      renderThreadNamingPrompt("Fix login", "", "", { priorUserPrompt: "Fix login" }),
+      /Task anchor:/u,
     );
   });
 });
@@ -148,7 +157,7 @@ describe("planThreadNaming", () => {
     const firstTurn = plan({ kind: "automatic", lastAssistantText: "First handoff" });
     assert.equal(firstTurn.kind, "run");
     if (firstTurn.kind === "run") {
-      assert.doesNotMatch(firstTurn.prompt, /Agent's last turn handoff message/u);
+      assert.match(firstTurn.prompt, /Latest handoff:\nFirst handoff/u);
     }
     assert.deepEqual(plan({ kind: "automatic", lastAssistantText: null }, { events: [] }), {
       kind: "skip",
@@ -181,10 +190,11 @@ describe("planThreadNaming", () => {
     assert.equal(followUp.kind, "run");
     if (followUp.kind === "run") {
       assert.equal(followUp.userPrompt, "Now fix signup");
-      assert.match(followUp.prompt, /Agent's last turn handoff message:\nLogin is fixed/u);
+      assert.match(followUp.prompt, /Latest handoff:\nLogin is fixed/u);
       assert.deepEqual(followUp.writeGuard, {
         kind: "title-unchanged",
         expectedTitle: "Fix login",
+        expectedRequestSeq: 3,
       });
     }
   });
@@ -200,6 +210,7 @@ describe("planThreadNaming", () => {
       assert.deepEqual(result.writeGuard, {
         kind: "title-unchanged",
         expectedTitle: "Previous title",
+        expectedRequestSeq: 1,
       });
     }
   });
@@ -220,11 +231,148 @@ describe("planThreadNaming", () => {
 
       assert.equal(result.kind, "run");
       if (result.kind === "run") {
-        assert.match(
-          result.prompt,
-          /Project-specific title instructions:\nPrefix titles with WEB:/u,
-        );
+        assert.match(result.prompt, /Project title rules:\nPrefix titles with WEB:/u);
       }
+    }
+  });
+
+  test("anchors continuation to the latest substantive request and current title", () => {
+    const result = plan(
+      { kind: "automatic", lastAssistantText: "Signup validation is ready for review." },
+      {
+        events: [
+          request(1, [{ type: "text", text: "Fix login" }]),
+          request(3, [{ type: "text", text: "Now fix signup validation" }]),
+          request(5, [{ type: "text", text: "continue" }]),
+          request(7, [{ type: "text", text: "do it" }]),
+          completed(8),
+        ],
+        thread: { title: "🐛 [Auth] Signup validation" },
+      },
+    );
+
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.match(result.prompt, /Current request:\ndo it/u);
+      assert.match(result.prompt, /Task anchor:\nNow fix signup validation/u);
+      assert.match(result.prompt, /Current title:\n🐛 \[Auth\] Signup validation/u);
+      assert.doesNotMatch(result.prompt, /Fix login/u);
+    }
+  });
+
+  test("short followups retain their substantive subject without exact continuation wording", () => {
+    const result = plan(
+      {
+        kind: "automatic",
+        lastAssistantText: "The roles coordinate planning, coding, and review.",
+      },
+      {
+        events: [
+          request(1, [{ type: "text", text: "Explain the agent roles in Ember" }]),
+          request(3, [{ type: "text", text: "Give me a short summary of each role" }]),
+          completed(4),
+        ],
+      },
+    );
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.match(result.prompt, /Current request:\nGive me a short summary of each role/u);
+      assert.match(result.prompt, /Task anchor:\nExplain the agent roles in Ember/u);
+    }
+  });
+
+  test("new explicit requests take priority over older context", () => {
+    const result = plan(
+      { kind: "automatic", lastAssistantText: "The older login work is complete." },
+      {
+        events: [
+          request(1, [{ type: "text", text: "Fix login" }]),
+          request(3, [{ type: "text", text: "Can Monaco use TextMate?" }]),
+          completed(4),
+        ],
+        thread: { title: "🐛 [Auth] Login" },
+      },
+    );
+
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.equal(result.userPrompt, "Can Monaco use TextMate?");
+      assert.match(result.prompt, /Classify requested work/u);
+      assert.doesNotMatch(result.prompt, /Current title:/u);
+      assert.ok(result.prompt.indexOf("Current request:") < result.prompt.indexOf("Task anchor:"));
+    }
+  });
+
+  test("forced naming uses the latest original user request without a handoff", () => {
+    const result = plan(
+      { kind: "forced" },
+      {
+        events: [
+          request(1, [{ type: "text", text: "Configure Cloudflare" }]),
+          request(3, [{ type: "text", text: "Evaluate title accuracy vs cost" }]),
+          request(4, [{ type: "text", text: "Retry this" }], { retryOfRequestId: "req_3" }),
+          request(5, [{ type: "text", text: "Agent continuation" }], { initiator: "agent" }),
+        ],
+      },
+    );
+
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.equal(result.userPrompt, "Evaluate title accuracy vs cost");
+      assert.doesNotMatch(result.prompt, /Latest handoff:|Retry this/u);
+      assert.equal(result.allowedShipped, false);
+    }
+  });
+
+  test("shipment eligibility requires a current standalone ship it request and success", () => {
+    const cases: readonly [string, string, boolean][] = [
+      ["ship it", "Shipped. Pushed to origin/main.", true],
+      ["Ship it!", "✅ Pushed to origin/main.", true],
+      ["ship it", "Merged into main.", true],
+      ["ship it", "Ready to ship.", false],
+      ["ship it", "Pushed to origin/main. Deployment failed.", false],
+      ["ship it", "I have not pushed to origin/main.", false],
+      ["ship it", "Would have shipped if the push succeeded.", false],
+      ["ship it", 'Example: "Shipped."', false],
+      ['Use ☑️ after a user says "ship it".', "Shipped. Pushed to origin/main.", false],
+      ['"ship it"', "Shipped. Pushed to origin/main.", false],
+      ["Now fix signup", "Shipped. Pushed to origin/main.", false],
+    ];
+    for (const [userPrompt, handoff, allowed] of cases) {
+      const result = plan(
+        { kind: "automatic", lastAssistantText: handoff },
+        {
+          events: [
+            request(1, [{ type: "text", text: "Fix login" }]),
+            request(3, [{ type: "text", text: "ship it" }]),
+            request(5, [{ type: "text", text: userPrompt }]),
+            completed(6),
+          ],
+        },
+      );
+      assert.equal(result.kind, "run");
+      if (result.kind === "run") {
+        assert.equal(result.allowedShipped, allowed, `${userPrompt}: ${handoff}`);
+      }
+    }
+  });
+
+  test("shipment eligibility survives continuation but resets after a new task", () => {
+    for (const newTask of [false, true]) {
+      const result = plan(
+        { kind: "automatic", lastAssistantText: "Pushed to origin/main." },
+        {
+          events: [
+            request(1, [{ type: "text", text: "Fix login" }]),
+            request(3, [{ type: "text", text: "ship it" }]),
+            ...(newTask ? [request(5, [{ type: "text", text: "Now fix signup" }])] : []),
+            request(7, [{ type: "text", text: "continue" }]),
+            completed(8),
+          ],
+        },
+      );
+      assert.equal(result.kind, "run");
+      if (result.kind === "run") assert.equal(result.allowedShipped, !newTask);
     }
   });
 
@@ -293,13 +441,37 @@ describe("planThreadNaming", () => {
 });
 
 describe("sanitizeGeneratedTitle", () => {
-  test("matches bb's 36-character sanitizer", () => {
+  test("preserves useful scope, detail, and question punctuation", () => {
     assert.equal(
-      sanitizeGeneratedTitle("Investigate Extremely Long Generated Thread Title Output"),
-      "Investigate Extremely Long Generated",
+      sanitizeGeneratedTitle("  🧪 [GTD Sidebar] Title accuracy   vs cost  "),
+      "🧪 [GTD Sidebar] Title accuracy vs cost",
     );
-    assert.equal(sanitizeGeneratedTitle("   "), null);
+    assert.equal(
+      sanitizeGeneratedTitle("[Monaco] Can TextMate work?"),
+      "[Monaco] Can TextMate work?",
+    );
     assert.equal(sanitizeGeneratedTitle('  Keep   "quotes".  '), 'Keep "quotes".');
-    assert.equal(sanitizeGeneratedTitle("x".repeat(40)), "x".repeat(36));
+  });
+
+  test("enforces a grapheme-safe defensive cap", () => {
+    const grapheme = "👩🏽‍💻";
+    assert.equal(
+      sanitizeGeneratedTitle(`Task ${grapheme.repeat(100)}`),
+      `Task ${grapheme.repeat(91)}`,
+    );
+    assert.equal(sanitizeGeneratedTitle("e\u0301".repeat(100)), "e\u0301".repeat(96));
+    assert.equal(sanitizeGeneratedTitle("x".repeat(100)), "x".repeat(96));
+  });
+
+  test("removes unsupported shipped status without losing the task", () => {
+    const title = "☑️ [Auth] Signup validation";
+    assert.equal(sanitizeGeneratedTitle(title), "[Auth] Signup validation");
+    assert.equal(sanitizeGeneratedTitle(title, true), title);
+  });
+
+  test("rejects empty or prefix-only output", () => {
+    for (const title of ["   ", "☑️", "🧪 [GTD Sidebar]", "[GTD + Vimium]", "♻️ [GTD] ---"]) {
+      assert.equal(sanitizeGeneratedTitle(title), null, title);
+    }
   });
 });

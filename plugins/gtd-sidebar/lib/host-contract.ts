@@ -65,6 +65,15 @@ const aiInferenceCompleteOutputSchema = z.union([
       ok: z.literal(true),
       model: z.string().min(1),
       value: jsonObjectSchema,
+      usage: z
+        .object({
+          inputTokens: z.number().int().nonnegative(),
+          outputTokens: z.number().int().nonnegative(),
+          cachedInputTokens: z.number().int().nonnegative().optional(),
+          reasoningTokens: z.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
   aiServiceFailureSchema,
@@ -107,7 +116,16 @@ export const gtdSidebarHostContract = defineRpcContract({
   ...gtdSidebarAiServicesHostContract,
 });
 
-export type GtdSidebarAiInferenceCompleteOutput = ExperimentalAiInferenceCompleteOutput;
+export interface InferenceUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+}
+
+export type GtdSidebarAiInferenceCompleteOutput =
+  | Extract<ExperimentalAiInferenceCompleteOutput, { ok: false }>
+  | (Extract<ExperimentalAiInferenceCompleteOutput, { ok: true }> & { usage?: InferenceUsage });
 export type GtdSidebarAiServiceErrorCode = ExperimentalAiServiceErrorCode;
 export type GtdSidebarAiVoiceTranscribeInput = ExperimentalAiVoiceTranscribeInput;
 export type GtdSidebarAiVoiceTranscribeOutput = ExperimentalAiVoiceTranscribeOutput;

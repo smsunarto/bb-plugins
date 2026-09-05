@@ -1,0 +1,1 @@
+Use the owning plugin's official display name as scope. Use GTD Sidebar for gtd-sidebar. For substantive work across plugins, join their names with +. GTD is allowed as a short name in combined scopes. Omit scope for shared or uncertain work.

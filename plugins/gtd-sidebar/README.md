@@ -125,25 +125,32 @@ a child, a chip that names the parent and opens it.
 
 ### Thread names
 
-A root thread gets a regenerated name after every completed user turn. The first
-name uses the initial user prompt. Later names also use the agent's latest handoff
-message, so the title follows the thread's current task. The plugin sends a
-36-character title prompt through its own Codex inference service. The service
-requests strict JSON from GPT-5.6-Luna with low reasoning and creates no agent
-thread. A transient failure retries once with GPT-5.4-Mini.
+A root thread gets a regenerated name after every completed user turn. The title
+tracks the latest request, with a short task anchor for follow-ups and the latest
+handoff. Titles use `Emoji [Scope] Task`, for example
+`🔎 [GTD Sidebar] Waiting sort review`. Scopes identify product areas, never the
+repository. Questions and exploration have no emoji. `🚀` indicates confirmed
+readiness. `☑️` requires a successful explicit `ship it` request.
 
-Add `.agents/GTD_TITLE.md` at the project root to give title generation extra
-instructions for that project. The plugin reads it from the thread's active
-workspace for every automatic or manual rename, so changes apply without a
-plugin reload. For example:
+The plugin sends a tool-free prompt to GPT-5.6-Luna with reasoning disabled. It
+requests structured activity, scope, and task fields, then formats the title
+locally. Context is capped at 2,400 characters, with a 48-character task target
+and a defensive 96-grapheme limit for the assembled title. A transient failure
+retries once with GPT-5.4-Mini. Each attempt has a five-second deadline. Logs
+record timing and available token usage without recording the prompt.
+
+Add `.agents/GTD_NAMING.md` at the project root for compact scope rules:
 
 ```md
-Prefix titles with the package name when the prompt names one.
-Keep Linear ticket IDs verbatim.
+Use GTD Sidebar for sidebar work and Vimium for keyboard navigation.
+For substantive work in both, use GTD + Vimium. Omit uncertain scopes.
 ```
 
-The file is optional. Empty, missing, and non-UTF-8 files use the default title
-instructions. The plugin reads at most 8,000 characters.
+The plugin reads the file from the active workspace on every rename. It loads
+at most 8,000 characters and injects up to 500 characters of whole lines. Keep
+rules short. The older `.agents/GTD_TITLE.md` is used only when the new file is
+missing. An empty or non-UTF-8 new file uses default instructions. Repository
+exploration to draft these rules is a separate, one-time setup task.
 
 Use **Generate thread name** in the thread header or card menu to replace a title.
 You can also run `bb gtd-sidebar rename [<threadId>]`. The command uses the current

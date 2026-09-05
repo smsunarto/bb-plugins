@@ -58,6 +58,8 @@ function createHost(
   options: {
     automatic?: boolean;
     events?: readonly unknown[];
+    rereadEvents?: readonly unknown[];
+    legacyOnly?: boolean;
     rereadTitle?: string | null;
     title?: string | null;
     archivedAt?: number | null;
@@ -71,6 +73,7 @@ function createHost(
   } = {},
 ) {
   let getCount = 0;
+  let eventReadCount = 0;
   const fileReads: unknown[] = [];
   const updates: unknown[] = [];
   const inferenceCalls: unknown[] = [];
@@ -98,6 +101,9 @@ function createHost(
       files: {
         read: async (args) => {
           fileReads.push(args);
+          if (options.legacyOnly && args.path.endsWith("GTD_NAMING.md")) {
+            throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+          }
           if (options.projectInstructionError !== undefined) {
             throw options.projectInstructionError;
           }
@@ -122,7 +128,13 @@ function createHost(
             : thread;
         },
         events: {
-          list: async () => options.events ?? [requested(), completed()],
+          list: async () => {
+            eventReadCount++;
+            return (
+              (eventReadCount > 1 ? options.rereadEvents : undefined) ??
+              options.events ?? [requested(), completed()]
+            );
+          },
         },
         update: async (args: unknown) => {
           updates.push(args);
@@ -204,11 +216,8 @@ describe("createThreadNamer", () => {
     assert.deepEqual(result, { ok: true, title: "Fix the signup test" });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix the signup test" }]);
     const call = inferenceCalls[0] as { prompt: string };
-    assert.match(call.prompt, /User prompt:\nNow fix signup/u);
-    assert.match(
-      call.prompt,
-      /Agent's last turn handoff message:\nLogin is fixed and all tests pass\.$/u,
-    );
+    assert.match(call.prompt, /Current request:\nNow fix signup/u);
+    assert.match(call.prompt, /Latest handoff:\nLogin is fixed and all tests pass\.$/u);
   });
 
   test("reads project title instructions from the active workspace", async () => {
@@ -222,15 +231,12 @@ describe("createThreadNamer", () => {
     assert.deepEqual(fileReads, [
       {
         hostId: "host_1",
-        path: "/workspace/.agents/GTD_TITLE.md",
+        path: "/workspace/.agents/GTD_NAMING.md",
         rootPath: "/workspace",
       },
     ]);
     const call = inferenceCalls[0] as { prompt: string };
-    assert.match(
-      call.prompt,
-      /Project-specific title instructions:\nPrefix every title with API:\n\nUser prompt:/u,
-    );
+    assert.match(call.prompt, /Project title rules:\nPrefix every title with API:/u);
   });
 
   test("falls back to default instructions when the project file is unusable", async () => {
@@ -245,7 +251,7 @@ describe("createThreadNamer", () => {
 
       assert.equal(result.ok, true);
       const call = inferenceCalls[0] as { prompt: string };
-      assert.doesNotMatch(call.prompt, /Project-specific title instructions:/u);
+      assert.doesNotMatch(call.prompt, /Project title rules:/u);
     }
   });
 
@@ -312,7 +318,7 @@ describe("createThreadNamer", () => {
     assert.equal(inferenceCalls.length, 1);
     const call = inferenceCalls[0] as { environmentId: string; prompt: string };
     assert.equal(call.environmentId, "env_1");
-    assert.match(call.prompt, /User prompt:\nFix the login test$/u);
+    assert.match(call.prompt, /Current request:\nFix the login test$/u);
   });
 
   test("forced naming replaces an archived hand title", async () => {
@@ -322,6 +328,48 @@ describe("createThreadNamer", () => {
 
     assert.deepEqual(result, { ok: true, title: "Fix the login test" });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix the login test" }]);
+  });
+
+  test("loads the legacy file only when the canonical file is missing", async () => {
+    const { fileReads, inferenceCalls, namer } = createHost({
+      legacyOnly: true,
+      projectInstructions: "Use API as scope.",
+    });
+    await namer.nameThread(THREAD_ID, { kind: "forced" });
+    assert.deepEqual(
+      fileReads.map((read) => (read as { path: string }).path),
+      ["/workspace/.agents/GTD_NAMING.md", "/workspace/.agents/GTD_TITLE.md"],
+    );
+    assert.match((inferenceCalls[0] as { prompt: string }).prompt, /Use API as scope/u);
+  });
+
+  test("rejects an automatic result after a newer request arrives with the same title", async () => {
+    const { namer, updates } = createHost({
+      rereadEvents: [requested(), completed(), requested(3, "Build billing", "new-turn")],
+    });
+    const result = await namer.nameThread(THREAD_ID, {
+      kind: "automatic",
+      lastAssistantText: "Login fixed.",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(updates.length, 0);
+  });
+
+  test("requires explicit successful ship it evidence before storing the shipped marker", async () => {
+    for (const [request, handoff, expected] of [
+      ["ship it", "Shipped the login fix.", "☑️ [Login] Test fix"],
+      ["ship it", "Push failed. Not shipped.", "[Login] Test fix"],
+      ["Fix the login test", "Shipped the login fix.", "[Login] Test fix"],
+    ] as const) {
+      const { namer } = createHost({
+        events: [requested(1, request), completed()],
+        inferenceOutput: "☑️ [Login] Test fix",
+      });
+      assert.deepEqual(
+        await namer.nameThread(THREAD_ID, { kind: "automatic", lastAssistantText: handoff }),
+        { ok: true, title: expected },
+      );
+    }
   });
 
   test("reports inference failures without changing the title", async () => {

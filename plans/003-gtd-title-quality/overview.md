@@ -1,6 +1,6 @@
 # GTD title quality hillclimb
 
-Status: proposed plan. No naming code, repository setup runs, or generation experiments have been executed for this plan.
+Status: implemented as a small synthetic pilot under the user's reduced evaluation budget. See [results](results.md). The original phase documents below preserve the broader proposal and are not a claim that those experiments ran.
 
 ## Outcome
 
@@ -19,7 +19,7 @@ Start with context selection and title formatting at the current low effort. Tes
 | [First automatic turn omits handoff](../../plugins/gtd-sidebar/lib/thread-naming.ts)              | Continuation requests can lose their strongest subject evidence.                  |
 | [Forced naming uses the initial request](../../plugins/gtd-sidebar/lib/thread-naming.ts)          | Manual generation can describe an obsolete task.                                  |
 | [Only final title JSON is returned](../../plugins/gtd-sidebar/host/inference/chatgpt-client.ts)   | Current records cannot establish token cost or generation quality by model.       |
-| [Existing workspace configuration](../../.agents/GTD_TITLE.md)                                    | `.agents/GTD_TITLE.md` is an existing user-facing contract requiring migration.   |
+| [Existing workspace configuration](../../.agents/GTD_NAMING.md)                                   | `.agents/GTD_TITLE.md` is an existing user-facing contract requiring migration.   |
 
 The earlier local review sampled 104 applied title updates across 39 root threads over 72 hours. They include mixed naming sources, not captured requests to this generator. Examples lost Laminar, BB Connect, pstack, and Pokémon GO subjects. A Monaco feasibility question became an implementation title. The sample motivates cases but cannot isolate the benefit of reasoning effort.
 
@@ -43,7 +43,7 @@ The generator receives every fact in its prompt. Server-side preparation may sel
 
 Keep raw thread history, prompts, evaluation outputs, and setup drafts in local task artifacts. Commit only the harness, synthetic or carefully de-identified fixtures, and deliberately adopted naming rules. Do not batch rename historical live threads during evaluation.
 
-This plan does not authorize implementation now. It does not include Cloudflare changes, a general agent-memory service, or a sidebar redesign. Do not push or open a PR without the user's instruction.
+The user subsequently authorized implementation with a strict preference for low usage and stopping early. It does not include Cloudflare changes, a general agent-memory service, or a sidebar redesign. Do not push or open a PR without the user's instruction.
 
 ## Design choices
 
