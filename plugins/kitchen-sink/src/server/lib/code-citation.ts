@@ -5,12 +5,12 @@ export function lineLabel(path: string, start: number, end: number): string {
   return start === end ? `${path}:L${start}` : `${path}:L${start}-L${end}`;
 }
 
-export function citationPatch(
+export function codeCitation(
   path: string,
   content: string,
   requestedStart?: number,
   requestedEnd?: number,
-): { label: string; patch: string } | { error: string } {
+): { label: string; content: string; startLine: number } | { error: string } {
   const normalized = content.replaceAll("\r\n", "\n");
   const lines = normalized.endsWith("\n")
     ? normalized.slice(0, -1).split("\n")
@@ -35,15 +35,9 @@ export function citationPatch(
   const renderStart = Math.max(1, start - CITATION_CONTEXT_LINES);
   const renderEnd = Math.min(lines.length, boundedEnd + CITATION_CONTEXT_LINES);
   const excerpt = lines.slice(renderStart - 1, renderEnd);
-  const count = excerpt.length;
-  const body = excerpt.map((line) => ` ${line}`).join("\n");
-  const patch = [
-    `diff --git a/${path} b/${path}`,
-    `--- a/${path}`,
-    `+++ b/${path}`,
-    `@@ -${renderStart},${count} +${renderStart},${count} @@`,
-    body,
-    "",
-  ].join("\n");
-  return { label: lineLabel(path, start, boundedEnd), patch };
+  return {
+    label: lineLabel(path, start, boundedEnd),
+    content: excerpt.join("\n"),
+    startLine: renderStart,
+  };
 }

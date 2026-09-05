@@ -1,4 +1,4 @@
-import { lineLabel } from "./citation-patch.ts";
+import { lineLabel } from "./code-citation.ts";
 
 const RANGE_CONTEXT_LINES = 2;
 

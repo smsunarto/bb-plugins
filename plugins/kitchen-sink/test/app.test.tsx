@@ -107,7 +107,9 @@ function readyDiff(patchText: string) {
   };
 }
 
-async function renderDiffEmbed(renderEmbed: () => Promise<ReturnType<typeof readyDiff>>) {
+async function renderDiffEmbed(
+  renderEmbed: () => Promise<import("../src/shared/contract.ts").RenderEmbedOutput>,
+) {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   const directive = captured.messageDirectives.find((item) => item.id === "smart-diff");
   expect(directive).toBeDefined();
@@ -127,6 +129,29 @@ async function renderDiffEmbed(renderEmbed: () => Promise<ReturnType<typeof read
     { rpc: { renderEmbed } },
   );
 }
+
+test("labels a non-Git diff preview as current code", async () => {
+  embedCache.clear();
+  const slot = await renderDiffEmbed(async () => ({
+    status: "ready",
+    kind: "code",
+    path: "src/example.ts",
+    label: "src/example.ts:L99-L100",
+    content: "const value = 1;\nreturn value;",
+    startLine: 99,
+    truncated: false,
+  }));
+  await slot.findByText("const value = 1;");
+  expect(slot.getByText("return value;")).toBeDefined();
+  expect(slot.getByText("99")).toBeDefined();
+  expect(slot.getByText("100")).toBeDefined();
+  expect(slot.queryByTestId("bb-diff")).toBeNull();
+  expect(slot.getByText("Code")).toBeDefined();
+  expect(slot.getByText("No Git history. Showing current code.")).toBeDefined();
+  expect(slot.queryByText("Changes")).toBeNull();
+  slot.unmount();
+  embedCache.clear();
+});
 
 test("serves a remount from the cache without a loading state or a second RPC call", async () => {
   embedCache.clear();

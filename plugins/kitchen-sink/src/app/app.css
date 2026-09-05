@@ -124,3 +124,25 @@
   border-color: color-mix(in oklch, var(--destructive) 45%, var(--border));
   color: var(--destructive);
 }
+
+.smart-embed-code {
+  margin: 0;
+  padding: 0.5rem 0;
+  font: inherit;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.smart-embed-code-line {
+  display: flex;
+  min-height: 1.5em;
+}
+
+.smart-embed-line-number {
+  flex: 0 0 5ch;
+  margin-right: 2ch;
+  padding-left: 1ch;
+  color: var(--muted-foreground);
+  text-align: right;
+  user-select: none;
+}

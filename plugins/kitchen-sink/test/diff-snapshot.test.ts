@@ -68,6 +68,29 @@ test("a displayed diff survives shipping and browser cache invalidation", async 
   expect(host.harness.sdk.callsTo("environments.diffPatch")).toHaveLength(1);
 });
 
+test("a non-Git preview is not persisted as a historical diff", async () => {
+  const host = await snapshotHost();
+  host.harness.sdk.stub("environments.get", () => ({
+    id: "environment-1",
+    hostId: "host-1",
+    path: "/workspace/project",
+  }));
+  host.harness.sdk.stub("environments.diffPatch", () => ({
+    outcome: "not_applicable",
+    reason: "non_git_environment",
+    message: "No Git history",
+  }));
+  let content = "first\n";
+  host.harness.sdk.stub("files.read", () => ({ contentEncoding: "utf8", content }));
+  const first = await host.harness.behavior.callRpc("renderEmbed", request);
+  expect(first).toMatchObject({ status: "ready", kind: "code" });
+  content = "second\n";
+  const second = await host.harness.behavior.callRpc("renderEmbed", request);
+  expect(second).toMatchObject({ status: "ready", kind: "code" });
+  expect(second).not.toEqual(first);
+  expect(host.harness.sdk.callsTo("files.read")).toHaveLength(2);
+});
+
 test("a fresh plugin load reads the saved diff before accessing its removed workspace", async () => {
   const host = await snapshotHost();
   const before = await host.harness.behavior.callRpc("renderEmbed", request);

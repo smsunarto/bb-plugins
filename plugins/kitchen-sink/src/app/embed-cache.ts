@@ -73,7 +73,8 @@ export function embedCacheKey(request: EmbedRequest): string {
 }
 
 function outputBytes(value: RenderEmbedOutput): number {
-  return value.status === "ready" ? value.patch.length : value.message.length;
+  if (value.status !== "ready") return value.message.length;
+  return value.kind === "code" ? value.content.length : value.patch.length;
 }
 
 export class EmbedCache {

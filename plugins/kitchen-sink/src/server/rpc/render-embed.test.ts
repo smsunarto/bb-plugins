@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { stubHostContext } from "@bb-kit/core/testing";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getSingularPatch } from "@pierre/diffs";
 
-import { citationPatch } from "../lib/citation-patch.ts";
+import { codeCitation } from "../lib/code-citation.ts";
 import { rangePatch } from "../lib/diff-range.ts";
 import { splitPatchFiles } from "../lib/patch-file.ts";
 import { renderEmbed } from "./render-embed.ts";
@@ -57,28 +57,79 @@ function context(options: { content?: string; patch?: string; storage?: string }
   return { ctx: stubHostContext({ bb }), calls };
 }
 
-describe("citationPatch", () => {
+describe("codeCitation", () => {
   test("keeps the source line numbers and adds bounded context", () => {
-    const result = citationPatch("src/example.ts", "one\ntwo\nthree\nfour\nfive\n", 3, 4);
+    const result = codeCitation("src/example.ts", "one\ntwo\nthree\nfour\nfive\n", 3, 4);
     expect(result).toEqual({
       label: "src/example.ts:L3-L4",
-      patch:
-        "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,5 +1,5 @@\n one\n two\n three\n four\n five\n",
+      content: "one\ntwo\nthree\nfour\nfive",
+      startLine: 1,
     });
-    if ("patch" in result) expect(() => getSingularPatch(result.patch)).not.toThrow();
   });
 
   test("rejects reversed and oversized ranges", () => {
-    expect(citationPatch("x.ts", "one\ntwo", 2, 1)).toEqual({
+    expect(codeCitation("x.ts", "one\ntwo", 2, 1)).toEqual({
       error: "The citation end line must not come before its start line.",
     });
-    expect(citationPatch("x.ts", `${"line\n".repeat(205)}`, 1, 201)).toEqual({
+    expect(codeCitation("x.ts", `${"line\n".repeat(205)}`, 1, 201)).toEqual({
       error: "A code citation can include at most 200 lines.",
     });
   });
 });
 
 describe("renderEmbed", () => {
+  test("shows current source when a diff is not applicable to a non-Git workspace", async () => {
+    const { ctx, calls } = context({ content: "one\ntwo\nthree\n" });
+    ctx.bb.sdk.environments.diffPatch = mock(async () => ({
+      outcome: "not_applicable" as const,
+      reason: "non_git_environment" as const,
+      message: "Workspace diff is not available for non-git environments",
+    }));
+    const result = await renderEmbed.execute(ctx, {
+      kind: "diff",
+      threadId: "thread-1",
+      path: "src/example.ts",
+      start: 2,
+      end: 2,
+    });
+    expect(result).toEqual({
+      status: "ready",
+      kind: "code",
+      path: "src/example.ts",
+      label: "src/example.ts:L2",
+      content: "one\ntwo\nthree",
+      startLine: 1,
+      truncated: false,
+    });
+    expect(calls.read).toEqual([
+      {
+        hostId: "host-1",
+        path: "/workspace/project/src/example.ts",
+        rootPath: "/workspace/project",
+      },
+    ]);
+  });
+
+  test("preserves workspace failures instead of substituting current code", async () => {
+    const { ctx, calls } = context();
+    ctx.bb.sdk.environments.diffPatch = mock(async () => ({
+      outcome: "unavailable" as const,
+      failure: {
+        code: "permission_denied" as const,
+        message: "Workspace permission denied",
+        workspacePath: "/workspace/project",
+      },
+    }));
+    expect(
+      await renderEmbed.execute(ctx, {
+        kind: "diff",
+        threadId: "thread-1",
+        path: "src/example.ts",
+      }),
+    ).toEqual({ status: "error", message: "Workspace permission denied" });
+    expect(calls.read).toEqual([]);
+  });
+
   test("reads a citation through the environment host and root fence", async () => {
     const { ctx, calls } = context({ content: "one\ntwo\nthree\n" });
     const result = await renderEmbed.execute(ctx, {

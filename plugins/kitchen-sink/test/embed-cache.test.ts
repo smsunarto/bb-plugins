@@ -3,8 +3,16 @@ import { expect, test } from "bun:test";
 import type { RenderEmbedOutput } from "../src/shared/contract.ts";
 import { EmbedCache, embedCacheKey } from "../src/app/embed-cache.ts";
 
-function ready(patch: string): RenderEmbedOutput {
-  return { status: "ready", kind: "code", path: "a.ts", label: "a.ts", patch, truncated: false };
+function ready(content: string): RenderEmbedOutput {
+  return {
+    status: "ready",
+    kind: "code",
+    path: "a.ts",
+    label: "a.ts",
+    content,
+    startLine: 1,
+    truncated: false,
+  };
 }
 
 const onThrow = (): RenderEmbedOutput => ({ status: "error", message: "failed" });

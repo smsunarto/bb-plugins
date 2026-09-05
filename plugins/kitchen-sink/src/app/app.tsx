@@ -129,7 +129,7 @@ function SmartEmbed({
         {result.label}
       </span>
       {result.truncated ? <span className="smart-embed-warning">Truncated</span> : null}
-      <span className="smart-embed-powered">Diffs</span>
+      {result.kind !== "code" ? <span className="smart-embed-powered">Diffs</span> : null}
     </>
   );
 
@@ -149,16 +149,37 @@ function SmartEmbed({
           </button>
         )}
       </figcaption>
+      {kind === "diff" && result.kind === "code" ? (
+        <Notice tone="muted">No Git history. Showing current code.</Notice>
+      ) : null}
       <div className="smart-embed-body">
-        <Diff
-          key={result.patch}
-          patch={result.patch}
-          path={result.path}
-          view="unified"
-          overflow="scroll"
-          showLineNumbers
-          className="smart-embed-renderer"
-        />
+        {result.kind === "code" ? (
+          <pre className="smart-embed-code" aria-label={result.label}>
+            <code>
+              {result.content.split("\n").map((line, index) => {
+                const lineNumber = result.startLine + index;
+                return (
+                  <span className="smart-embed-code-line" key={lineNumber}>
+                    <span className="smart-embed-line-number" aria-hidden="true">
+                      {lineNumber}
+                    </span>
+                    <span>{line || "\n"}</span>
+                  </span>
+                );
+              })}
+            </code>
+          </pre>
+        ) : (
+          <Diff
+            key={result.patch}
+            patch={result.patch}
+            path={result.path}
+            view="unified"
+            overflow="scroll"
+            showLineNumbers
+            className="smart-embed-renderer"
+          />
+        )}
       </div>
     </figure>
   );

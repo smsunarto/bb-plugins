@@ -33,6 +33,8 @@ Three message directives render project evidence inside assistant messages with 
 - `::smart-code{path="src/example.ts" start="12" end="28"}` renders an exact code citation with nearby context.
 - `::smart-patch{file="proposal.patch" path="src/example.ts"}` renders a diff the agent has not applied yet. The agent writes a unified diff to `$BB_THREAD_STORAGE/proposal.patch` first. `path` picks one file out of a multi-file patch and can be left off when the patch touches exactly one. `start` and `end` trim it the same way `::smart-diff` does.
 
+In a workspace without Git, `::smart-diff` shows the requested current code with a “No Git history” note. Without a line range, it previews the first 40 lines plus context. This code preview refreshes with workspace changes and is not saved as a historical diff. Workspace access failures still show their reported error.
+
 `::smart-diff` saves its first successful display in plugin storage, separately for each message, file, and line range. That snapshot survives shipping, later workspace changes, page reloads, and plugin reloads. Empty results and errors remain retryable. A diff that has never displayed has no snapshot. Its first display reads the thread's current workspace, so it cannot recover changes already shipped before that display. Deleting a thread removes its snapshots.
 
 `::smart-code` resolves from the message thread's current workspace. `::smart-patch` reads from the thread's storage directory, so it survives the worktree being deleted and never touches the repository. Clicking the header opens the file in bb's workspace viewer.

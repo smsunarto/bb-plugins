@@ -14,11 +14,22 @@ export const renderEmbedInputSchema = z
   })
   .strict();
 
-export const renderEmbedOutputSchema = z.discriminatedUnion("status", [
+export const renderEmbedOutputSchema = z.union([
   z
     .object({
       status: z.literal("ready"),
-      kind: z.enum(["code", "diff", "patch"]),
+      kind: z.literal("code"),
+      path: z.string(),
+      label: z.string(),
+      content: z.string(),
+      startLine: z.number().int().positive(),
+      truncated: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("ready"),
+      kind: z.enum(["diff", "patch"]),
       path: z.string(),
       label: z.string(),
       patch: z.string(),
