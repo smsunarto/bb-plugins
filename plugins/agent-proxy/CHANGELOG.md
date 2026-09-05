@@ -1,5 +1,19 @@
 # @smsunarto/bb-plugin-agent-proxy
 
+## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agent-proxy/v0.2.4...agent-proxy/v0.3.0) (2026-09-05)
+
+
+### Features
+
+* **agent-proxy:** add Cloudflare tunnel support for Agent Proxy Cursor BYOK ([#108](https://github.com/smsunarto/bb-plugins/issues/108)) ([c5d1347](https://github.com/smsunarto/bb-plugins/commit/c5d1347b96b7456c905566825a13ae97284801bb))
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+
+
+### Bug Fixes
+
+* **agent-proxy:** isolate dev service and port ([e5c1e40](https://github.com/smsunarto/bb-plugins/commit/e5c1e4022cdd49578eea1d11960af16e0276597f))
+* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+
 ## 0.2.4
 
 ### Patch Changes
