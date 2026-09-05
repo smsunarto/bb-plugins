@@ -43,6 +43,7 @@ import {
   type DirectShortcut,
 } from "./direct-shortcuts.ts";
 import { createScroller } from "./scroller.ts";
+import { mountArchiveUndo } from "./archive-undo.ts";
 import {
   RESERVED_CONTROLS,
   TEXT_CONTROLS,
@@ -699,6 +700,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // the key did something, so the caller knows whether to swallow it.
   function runDirectShortcut(shortcut: DirectShortcut): boolean {
     switch (shortcut.kind) {
+      case "undo-archive":
+        return archiveUndo.undoLatest();
       case "focus-composer": {
         const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
         if (textbox === null) return false;
@@ -798,6 +801,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         editableTarget: isEditableTarget(event.target),
       });
       if (shortcut !== null) {
+        if (shortcut.kind === "undo-archive" && event.repeat) return;
         // A shortcut with nothing to act on leaves the key to bb.
         if (!runDirectShortcut(shortcut)) return;
         event.preventDefault();
@@ -949,6 +953,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     exit();
   }
 
+  const archiveUndo = mountArchiveUndo();
+  context.signal.addEventListener("abort", archiveUndo.dispose, { once: true });
   window.addEventListener("focusin", onFocusIn, { capture: true, signal: context.signal });
   window.addEventListener("pointerdown", onPointerDown, {
     capture: true,
@@ -971,6 +977,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   return () => {
+    archiveUndo.dispose();
     if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
     exit();
   };

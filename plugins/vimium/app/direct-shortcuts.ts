@@ -13,6 +13,7 @@ export type DirectShortcut =
   | { readonly kind: "focus-composer" }
   | { readonly kind: "thread-step"; readonly step: -1 | 1 }
   | { readonly kind: "settle-thread" }
+  | { readonly kind: "undo-archive" }
   | { readonly kind: "scroll"; readonly motion: ScrollMotion };
 
 function pinnedControl(char: string): DirectShortcut {
@@ -43,6 +44,7 @@ export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["[", { kind: "thread-step", step: -1 }],
   ["]", { kind: "thread-step", step: 1 }],
   ["e", { kind: "settle-thread" }],
+  ["E", { kind: "undo-archive" }],
   ["j", { kind: "scroll", motion: "down" }],
   ["k", { kind: "scroll", motion: "up" }],
   ["J", { kind: "scroll", motion: "bottom" }],
