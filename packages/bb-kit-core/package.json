@@ -1,6 +1,6 @@
 {
   "name": "@bb-kit/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The framework a bb plugin is written in.",
   "license": "MIT",
   "author": "Scott Sunarto",
