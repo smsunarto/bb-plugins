@@ -30,6 +30,24 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("font-weight: 400");
   });
 
+  test("styles bb's notification center without replacing responsive placement", () => {
+    expect(theme).toContain('.dark [data-testid="notification-center"]');
+    expect(theme).toContain(
+      '.dark [data-testid="notification-row"][data-focused="true"] {\n  background: var(--surface-selected);\n}',
+    );
+    expect(theme).toContain(
+      '@media (min-width: 768px) {\n  .dark [data-testid="notification-center"] {\n    overflow: hidden;\n    border-color: var(--border);\n    border-radius: 16px;',
+    );
+    expect(template).toContain("0 0 0 1px {{text.ink12}}");
+  });
+
+  test("leaves compact mobile toasts on bb's native layout", () => {
+    expect(theme).toContain(
+      '@media (min-width: 768px) {\n  .dark [data-testid="app-layout-content-shell"] > main,',
+    );
+    expect(theme).not.toContain("On narrow screens, keep the full text column");
+  });
+
   test("rejects an unknown template role", () => {
     expect(() => renderTheme(`${template}\n.x { color: {{text.foreign}}; }\n`)).toThrow(
       "Unknown theme role(s): text.foreign",

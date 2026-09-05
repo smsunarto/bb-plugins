@@ -10,9 +10,10 @@
 
 ### Patch Changes
 
-- Refine notifications with Codex-inspired rounded cards, tighter spacing,
-  subtle borders, and an inline dismiss button. Actions wrap below the copy
-  on narrow screens.
+- Style bb's in-app notification center with Monokai surfaces, selected and
+  hover states, controls, dividers, and a rounded desktop card. Refine desktop
+  transient toasts with a compact Codex-inspired layout. Compact layouts keep
+  bb's native drawer and toast geometry.
 
 - Keep Monaco on the Cursor code contract. JavaScript and TypeScript lexical
   fallbacks no longer spend VS Dark teal or pale green on ambiguous identifiers

@@ -69,13 +69,17 @@ Choose **Inter (Default)** or **SF Pro** under **Settings → bb Monokai → UI
 font**. The choice applies to the full interface at desktop and mobile widths.
 Code, diffs, file paths, and terminal text keep the Berkeley Mono stack.
 
-All toast notifications use a compact Codex-inspired layout at the top center
-of the focused conversation: rounded cards, a subtle border, quiet icons,
-and an inline dismiss button. Actions sit beside the copy on desktop and wrap
-below it on narrow screens. Undo, links, dismissal, and stacking keep
-bb's existing behavior. This is a theme-only CSS override. Switching palettes
-restores bb's placement. Browsers without CSS anchor positioning center toasts
-over the viewport instead.
+The in-app notification center now uses the same Monokai surfaces and states as
+the rest of bb, including its selected row, controls, dividers, and desktop
+card. On desktop, transient toasts also use a compact Codex-inspired layout at
+the top center of the focused conversation: rounded cards, a subtle border,
+quiet icons, and an inline dismiss button. Compact layouts keep bb's native
+drawer and toast geometry. Undo, links, dismissal, and stacking keep bb's
+existing behavior. This is a theme-only CSS override. Switching palettes
+restores bb's placement. Desktop browsers without CSS anchor positioning center
+toasts over the viewport instead. Native browser and operating-system banners
+from bb's push-notifications plugin are system-owned and cannot be restyled by a
+bb theme.
 
 ## Requirements
 
@@ -126,6 +130,7 @@ ratio against the ground it sits on.
 | File tree            | the git-status column — added, untracked, renamed, modified, deleted, ignored         |
 | Inline code          | the sugar-high token set, measured on the `#1E1E1E` well                              |
 | Composer stop button | repainted to the danger hue                                                           |
+| Notifications        | in-app history center and desktop transient toasts                                    |
 
 ### Syntax tokens
 

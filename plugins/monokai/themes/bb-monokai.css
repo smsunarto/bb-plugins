@@ -549,14 +549,62 @@ diffs-container {
   --canvas-prose-code-well: #262626;
 }
 
-/* Sonner owns toast state and actions. The theme changes presentation only.
- * The last matching anchor is the focused conversation, with the app's main
- * area covering compose/settings routes. Viewport coordinates are the CSS
- * fallback when an anchor is unavailable. */
-.dark [data-testid="app-layout-content-shell"] > main,
-.dark [data-testid="app-layout-content-shell"] [data-thread-window] {
-  anchor-name: --bb-monokai-conversation;
+/* bb's notification history is a first-class themed surface, separate from
+ * the native browser and operating-system banners delivered by the push
+ * notification plugin. The host owns responsive placement: a popover on
+ * desktop and its persistent drawer on compact layouts. */
+.dark [data-testid="notification-center"] {
+  font-family: var(--font-sans);
 }
+
+.dark [data-testid="notification-center"] > div:first-child {
+  border-color: var(--border-seam);
+}
+
+.dark [data-testid="notification-row"] {
+  transition: background-color 120ms ease-out;
+}
+
+.dark [data-testid="notification-row"]:hover {
+  background: var(--state-hover);
+}
+
+.dark [data-testid="notification-row"][data-focused="true"] {
+  background: var(--surface-selected);
+}
+
+.dark [data-testid="notification-center"] button:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+.dark [data-testid="notification-center"] button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .dark [data-testid="notification-center"] {
+    overflow: hidden;
+    border-color: var(--border);
+    border-radius: 16px;
+    background: var(--popover);
+    box-shadow:
+      0 0 0 1px #e3e3dd1e,
+      0 4px 12px -4px #141414eb;
+  }
+}
+
+/* Sonner owns toast state and actions. On desktop the theme changes
+ * presentation only. Compact mobile layouts keep bb's native notification
+ * geometry. The last matching anchor is the focused conversation, with the
+ * app's main area covering compose/settings routes. Viewport coordinates are
+ * the CSS fallback when an anchor is unavailable. */
+@media (min-width: 768px) {
+  .dark [data-testid="app-layout-content-shell"] > main,
+  .dark [data-testid="app-layout-content-shell"] [data-thread-window] {
+    anchor-name: --bb-monokai-conversation;
+  }
 
 .dark [data-split-pane-id][data-focused="false"] [data-thread-window] {
   anchor-name: none;
@@ -610,7 +658,9 @@ diffs-container {
   background: var(--popover);
   border-color: var(--border);
   color: var(--popover-foreground);
-  box-shadow: 0 8px 24px -8px #141414eb;
+  box-shadow:
+    0 0 0 1px #e3e3dd1e,
+    0 4px 12px -4px #141414eb;
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div {
@@ -704,16 +754,4 @@ diffs-container {
   outline-offset: 2px;
 }
 
-/* On narrow screens, keep the full text column available above the actions. */
-@media (max-width: 480px) {
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) {
-    display: flex;
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:first-child,
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
-    flex-basis: 100%;
-  }
 }
