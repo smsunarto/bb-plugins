@@ -1,5 +1,35 @@
 # @smsunarto/bb-plugin-gtd-sidebar
 
+## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.4.2...gtd-sidebar/v0.5.0) (2026-09-05)
+
+
+### Features
+
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+* **gtd-sidebar:** add thread naming ([2b79e63](https://github.com/smsunarto/bb-plugins/commit/2b79e6335b8ff3e73867bff51e7a629cd056c736))
+* **gtd-sidebar:** compact mobile thread cards ([6f632d9](https://github.com/smsunarto/bb-plugins/commit/6f632d97970626ff55dce53959f261b824d44294))
+* **gtd-sidebar:** iOS long-press frosted menu on mobile ([08559f4](https://github.com/smsunarto/bb-plugins/commit/08559f4f91a2d3ca7041a58f4f64169e40b69424))
+* **gtd-sidebar:** refresh titles after user turns ([a010c7a](https://github.com/smsunarto/bb-plugins/commit/a010c7abd71b744951e67db905e6a353aaeb765d))
+* **gtd-sidebar:** reorder compact menu actions and drop archive ([6883c93](https://github.com/smsunarto/bb-plugins/commit/6883c93ea2ce81b4281c2305cb207a58d62748d5))
+* **gtd-sidebar:** sort every section by recent activity ([fe8556a](https://github.com/smsunarto/bb-plugins/commit/fe8556acee521fa8c4edd1b0964b8efa0b012f11))
+* **gtd-sidebar:** support project title instructions ([9da1aa8](https://github.com/smsunarto/bb-plugins/commit/9da1aa888849fe28e3a497b696da891dea941945))
+* **gtd:** improve GTD Sidebar mobile usability ([#110](https://github.com/smsunarto/bb-plugins/issues/110)) ([b288159](https://github.com/smsunarto/bb-plugins/commit/b288159709a3eb258f53916aaab8edc83f230c6c))
+
+
+### Bug Fixes
+
+* **gtd-sidebar:** align desktop menu with mobile ([171806d](https://github.com/smsunarto/bb-plugins/commit/171806d62174b2b2d2e731ce038d031453c0ebd4))
+* **gtd-sidebar:** align menu and highlight with shared layer styling ([d4ad410](https://github.com/smsunarto/bb-plugins/commit/d4ad4100a62773d5a8c8667ef78e98f0264795a1))
+* **gtd-sidebar:** ask for sentence-case thread titles ([97878eb](https://github.com/smsunarto/bb-plugins/commit/97878eb2b43cadd99e8b699c93b466a0a7a72040))
+* **gtd-sidebar:** focus next thread after settle ([18d6c74](https://github.com/smsunarto/bb-plugins/commit/18d6c74d46415babc341e079fa22950167a6c08d))
+* **gtd-sidebar:** keep settles authoritative ([244c4a7](https://github.com/smsunarto/bb-plugins/commit/244c4a72c4cf3251bb4c5fe713ef30eb206b2dec))
+* **gtd-sidebar:** open settled threads ([7350ed3](https://github.com/smsunarto/bb-plugins/commit/7350ed34f8c68f9b5c515c4903209773ac8597a8))
+* **gtd-sidebar:** show newest waiting entries first ([1f30711](https://github.com/smsunarto/bb-plugins/commit/1f30711f4ed2eec3ddf0af98ce14c87816e3d394))
+* **gtd-sidebar:** sort each section by the clock it can answer for ([70168ae](https://github.com/smsunarto/bb-plugins/commit/70168aef75565db89890257f5b9fb8c423835661))
+* **gtd-sidebar:** support bb 0.41 ([2c97e1a](https://github.com/smsunarto/bb-plugins/commit/2c97e1ac7d3d52a03d399dc9e0404841ab13e3fe))
+* **gtd-sidebar:** use Luna for thread naming ([1259aca](https://github.com/smsunarto/bb-plugins/commit/1259acaa32d2bce1815daccbcfbdb7571cefb407))
+* **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
+
 ## 0.4.2
 
 ### Patch Changes
