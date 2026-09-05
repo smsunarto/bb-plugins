@@ -10,6 +10,10 @@
 
 ### Patch Changes
 
+- Refine notifications with Codex-inspired rounded cards, tighter spacing,
+  subtle borders, and an inline dismiss button. Actions wrap below the copy
+  on narrow screens.
+
 - Keep Monaco on the Cursor code contract. JavaScript and TypeScript lexical
   fallbacks no longer spend VS Dark teal or pale green on ambiguous identifiers
   and numbers. A syntax-derived token layer now recovers declaration keywords,

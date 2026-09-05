@@ -553,7 +553,7 @@ diffs-container {
   right: auto !important;
   bottom: auto !important;
   left: 50% !important;
-  width: min(356px, calc(100vw - 32px)) !important;
+  width: min(384px, calc(100vw - 32px)) !important;
   transform: translateX(-50%) !important;
   font-family: var(--font-sans);
   --normal-bg: var(--popover);
@@ -568,7 +568,7 @@ diffs-container {
       calc(anchor(top, 0px) + 16px)
     ) !important;
     left: anchor(center, 50%) !important;
-    width: min(356px, calc(anchor-size(width, 100vw) - 32px)) !important;
+    width: min(384px, calc(anchor-size(width, 100vw) - 32px)) !important;
   }
 }
 
@@ -590,12 +590,12 @@ diffs-container {
   position: relative;
   width: 100%;
   max-width: 100%;
-  padding: 16px;
-  border-radius: 8px;
+  padding: 12px;
+  border-radius: 16px;
   background: var(--popover);
   border-color: var(--border);
   color: var(--popover-foreground);
-  box-shadow: 0 4px 12px {{ground.chromeScrim}};
+  box-shadow: 0 8px 24px -8px {{ground.chromeScrim}};
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div {
@@ -605,28 +605,38 @@ diffs-container {
 
 .dark [data-sonner-toast].bb-app-toast > div > div > div:first-child {
   margin-top: 0;
+  color: var(--muted-foreground);
 }
 
-/* Keep the existing content and controls, but give actions their own columns
- * beside the title and description, as in shadcn's Sonner layout. */
+/* Keep actions beside the copy and the dismiss control inside the card.
+ * These structural selectors also cover bb's plain description container. */
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-auto-columns: auto;
   grid-auto-flow: column;
   column-gap: 8px;
-  row-gap: 3px;
+  row-gap: 2px;
   align-items: center;
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:first-child {
   grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+/* A title without a description shares the actions' full height. */
+.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2):has(> div:nth-child(2) > div) > div:first-child {
   grid-row: 1;
+}
+
+.dark [data-sonner-toast].bb-app-toast svg {
+  margin: 0;
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:first-child > div {
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 20px;
   font-weight: 500;
 }
 
@@ -634,35 +644,61 @@ diffs-container {
   display: contents;
 }
 
-.dark [data-sonner-toast] [data-testid="app-toast-description"] {
+.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
   grid-column: 1;
   grid-row: 2;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--muted-foreground);
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button {
   grid-row: 1 / span 2;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--input);
-  border-radius: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   background: var(--secondary);
   color: var(--secondary-foreground);
   text-decoration: none;
 }
 
+.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button:hover {
+  background: var(--state-active);
+}
+
 .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 20px;
-  height: 20px;
+  position: static;
+  width: 28px;
+  height: 28px;
   margin: 0;
-  transform: translate(-50%, -50%);
-  border: 1px solid var(--border);
+  transform: none;
+  border: 0;
   border-radius: 50%;
-  background: var(--popover);
+  background: transparent;
   color: var(--muted-foreground);
+}
+
+.dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
+  background: var(--state-hover);
+  color: var(--popover-foreground);
+}
+
+.dark [data-sonner-toast].bb-app-toast button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* On narrow screens, keep the full text column available above the actions. */
+@media (max-width: 480px) {
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:first-child,
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
+    flex-basis: 100%;
+  }
 }
