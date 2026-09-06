@@ -126,26 +126,6 @@
       }
     },
     {
-      "id": "agent-trace",
-      "displayName": "Agent Trace",
-      "description": "Export completed BB agent turns to Laminar and Langfuse over direct OTLP/HTTP JSON.",
-      "icon": {
-        "url": "plugins/agent-trace/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/agent-trace",
-          "range": "*",
-          "tagPrefix": "agent-trace/"
-        }
-      }
-    },
-    {
       "id": "monokai",
       "displayName": "bb Monokai",
       "description": "A dark Monokai-family palette for bb: one meaning per hue, a single text ladder, and a matching terminal.",

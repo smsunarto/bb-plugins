@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  ActivitySparkIcon,
   ArtboardIcon,
   BellIcon,
   ChatFeedbackIcon,
@@ -207,10 +206,6 @@ const customIcons = {
   "gtd-sidebar": {
     name: "PanelLeft",
     nodes: PanelLeftIcon,
-  },
-  "agent-trace": {
-    name: "ActivitySpark",
-    nodes: ActivitySparkIcon,
   },
   nanocodex: {
     name: "Terminal",

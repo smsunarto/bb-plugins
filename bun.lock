@@ -112,26 +112,6 @@
         "vaul": "^1.1.2",
       },
     },
-    "plugins/agent-trace": {
-      "name": "@smsunarto/bb-plugin-agent-trace",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.1.0",
-        "@noble/hashes": "^2.4.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.4.34",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "better-sqlite3": "^12.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
-      },
-    },
     "plugins/agentation": {
       "name": "@smsunarto/bb-plugin-agentation",
       "version": "0.2.3",
@@ -1135,8 +1115,6 @@
     "@shikijs/vscode-textmate": ["@shikijs/vscode-textmate@10.0.2", "", {}, "sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg=="],
 
     "@smsunarto/bb-plugin-agent-proxy": ["@smsunarto/bb-plugin-agent-proxy@workspace:plugins/agent-proxy"],
-
-    "@smsunarto/bb-plugin-agent-trace": ["@smsunarto/bb-plugin-agent-trace@workspace:plugins/agent-trace"],
 
     "@smsunarto/bb-plugin-agentation": ["@smsunarto/bb-plugin-agentation@workspace:plugins/agentation"],
 

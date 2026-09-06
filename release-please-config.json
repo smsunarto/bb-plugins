@@ -48,11 +48,6 @@
       "component": "gtd-sidebar",
       "package-name": "@smsunarto/bb-plugin-gtd-sidebar"
     },
-    "plugins/agent-trace": {
-      "release-type": "node",
-      "component": "agent-trace",
-      "package-name": "@smsunarto/bb-plugin-agent-trace"
-    },
     "plugins/monokai": {
       "release-type": "node",
       "component": "monokai",

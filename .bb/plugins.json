@@ -8,10 +8,6 @@
       "source": "./plugins/agent-proxy"
     },
     {
-      "name": "agent-trace",
-      "source": "./plugins/agent-trace"
-    },
-    {
       "name": "agentation",
       "source": "./plugins/agentation"
     },
