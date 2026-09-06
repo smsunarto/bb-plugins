@@ -11,10 +11,14 @@ import { setupService } from "./lib/service.ts";
 import { oauthStatus } from "./rpc/oauth-status.ts";
 import { oauthConnect } from "./rpc/oauth-connect.ts";
 import { oauthDisconnect } from "./rpc/oauth-disconnect.ts";
+import { tunnelDetails } from "./rpc/tunnel-details.ts";
+import { editTunnel } from "./rpc/edit-tunnel.ts";
 export default definePlugin({
   pluginId: "cloudflare",
   rpc: {
     overview,
+    tunnelDetails,
+    editTunnel,
     create,
     update,
     start,

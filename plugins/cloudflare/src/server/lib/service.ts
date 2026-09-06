@@ -5,6 +5,12 @@ import { z } from "zod";
 import { cloudflareHostContract } from "../../shared/host-contract.ts";
 import {
   shareSchema,
+  tunnelTargetSchema,
+  type TunnelWriteState,
+  type TunnelTarget,
+  type TunnelDetails,
+  type EditTunnel,
+  type TunnelWriteResult,
   type CreateShare,
   type Spec,
   type Share,
@@ -16,6 +22,7 @@ import {
   CloudflareError,
   tunnelSchema,
   connectionSchema,
+  connectorResponseSchema,
   policySchema,
   appSchema,
   dnsSchema,
@@ -25,6 +32,64 @@ import {
   appOverlaps,
   policyEmails,
 } from "./api.ts";
+
+import {
+  TunnelDraftError,
+  connectorView,
+  configurationFingerprint,
+  applyRouteDraft,
+  editableConfiguration,
+  inspectConfiguration,
+  sameConfiguration,
+} from "./tunnels.ts";
+
+class TunnelBlocked extends Error {
+  readonly reason: "stale" | "ownership" | "source" | "connection";
+  constructor(reason: "stale" | "ownership" | "source" | "connection", message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+function tunnelPreparationFailure(error: unknown): TunnelWriteResult {
+  if (error instanceof TunnelBlocked)
+    return { kind: "blocked", reason: error.reason, message: error.message };
+  if (error instanceof TunnelDraftError) return { kind: "rejected", message: error.message };
+  return {
+    kind: "rejected",
+    message:
+      error instanceof CloudflareError && !error.uncertain && error.status !== 0
+        ? error.message
+        : "The request could not be prepared. No change was sent. Check the route fields, permissions, and connection.",
+  };
+}
+
+const tunnelWriteFenceSchema = z
+  .object({
+    target: tunnelTargetSchema,
+    intent: z.discriminatedUnion("kind", [
+      z
+        .object({ kind: z.literal("rename"), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict(),
+      z
+        .object({ kind: z.literal("routes"), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict(),
+    ]),
+  })
+  .strict();
+type TunnelWriteIntent = z.infer<typeof tunnelWriteFenceSchema>["intent"];
+const tunnelWriteKey = (target: TunnelTarget) =>
+  `tunnel-write:${target.accountId}:${target.tunnelId}`;
+const pendingTunnelWrite: Extract<TunnelWriteState, { kind: "unconfirmed" }> = {
+  kind: "unconfirmed",
+  message:
+    "An earlier tunnel write is still unconfirmed. Further writes are blocked until Cloudflare shows its intended result. Refresh status to check again.",
+};
+const unavailableTunnelWrite: Extract<TunnelWriteState, { kind: "unconfirmed" }> = {
+  kind: "unconfirmed",
+  message:
+    "Tunnel write status could not be safely recorded or checked. Further writes are blocked. Refresh status after storage and Cloudflare connectivity recover.",
+};
 
 const recordSchema = shareSchema.extend({
   config: z.record(z.string(), z.unknown()).optional(),
@@ -136,6 +201,258 @@ export class CloudflareService {
       account: credentials.accountId,
       path: settings.cloudflaredPath,
     };
+  }
+  private async tunnelCredentials(target: TunnelTarget) {
+    let credentials;
+    try {
+      credentials = await this.deps.oauth.credentials();
+    } catch {
+      throw new TunnelBlocked(
+        "connection",
+        "Cloudflare authorization is unavailable. Reconnect and reload this tunnel.",
+      );
+    }
+    if (credentials.accountId !== target.accountId || credentials.clientId !== target.clientId)
+      throw new TunnelBlocked(
+        "connection",
+        "The connected account or OAuth client changed. Reload this tunnel.",
+      );
+    return this.deps.api(credentials.token);
+  }
+  private async tunnelOwner(target: TunnelTarget) {
+    try {
+      return (await this.records()).find(
+        (record) =>
+          record.accountId === target.accountId && record.resources.tunnelId === target.tunnelId,
+      );
+    } catch {
+      throw new TunnelBlocked(
+        "ownership",
+        "Development share ownership could not be checked. No change was sent.",
+      );
+    }
+  }
+  private async writableTunnel(target: TunnelTarget) {
+    if (await this.tunnelOwner(target))
+      throw new TunnelBlocked(
+        "ownership",
+        "This tunnel belongs to a development share. Manage it through the share controls.",
+      );
+    return this.tunnelCredentials(target);
+  }
+  tunnelDetails(target: TunnelTarget): Promise<TunnelDetails> {
+    return this.serialize(() => this.readTunnelDetails(target));
+  }
+  private async readTunnelDetails(target: TunnelTarget): Promise<TunnelDetails> {
+    const api = await this.tunnelCredentials(target);
+    const owner = await this.tunnelOwner(target);
+    const writeState = await this.reconcileTunnelWrite(target, api);
+    const path = `/accounts/${target.accountId}/cfd_tunnel/${target.tunnelId}`;
+    const tunnel = await api.request("GET", path, tunnelSchema);
+    if (tunnel.id !== target.tunnelId || tunnel.deleted_at)
+      throw new CloudflareError("This tunnel is no longer available.");
+    const details: TunnelDetails = {
+      target,
+      writeState,
+      name: tunnel.name,
+      status: tunnel.status ?? "unknown",
+      configSource: tunnel.config_src ?? "unknown",
+      owner: owner ? { kind: "share", shareId: owner.id } : { kind: "account" },
+      routes: { kind: "unavailable", message: "Routes could not be read." },
+      connectors: { kind: "unavailable", message: "Connector details could not be read." },
+      observedAt: new Date().toISOString(),
+    };
+    await Promise.all([
+      (async () => {
+        if (owner) {
+          details.routes = {
+            kind: "readonly",
+            reason: "share",
+            message: "This tunnel belongs to a development share. Use the share controls.",
+          };
+          return;
+        }
+        if (tunnel.config_src !== "cloudflare") {
+          details.routes = {
+            kind: "readonly",
+            reason: tunnel.config_src === "local" ? "local" : "unsupported",
+            message: "Routes are not managed remotely by Cloudflare.",
+          };
+          return;
+        }
+        try {
+          details.routes = inspectConfiguration(
+            await api.request("GET", `${path}/configurations`, configSchema),
+            target,
+          );
+        } catch {
+          details.routes = {
+            kind: "unavailable",
+            message: "Routes could not be read. Check Cloudflare permissions and refresh.",
+          };
+        }
+      })(),
+      (async () => {
+        try {
+          const connectors = await api.list(`${path}/connections`, connectorResponseSchema);
+          details.connectors = {
+            kind: "ready",
+            value: connectors.map(connectorView),
+          };
+        } catch {
+          details.connectors = {
+            kind: "unavailable",
+            message:
+              "Connector details could not be read. Check Cloudflare permissions and refresh.",
+          };
+        }
+      })(),
+    ]);
+    await this.tunnelCredentials(target);
+    return details;
+  }
+  editTunnel(input: EditTunnel): Promise<TunnelWriteResult> {
+    return this.serialize(async () => {
+      try {
+        const api = await this.writableTunnel(input);
+        const writeState = await this.reconcileTunnelWrite(input, api);
+        if (writeState.kind === "unconfirmed") return writeState;
+        const path = `/accounts/${input.accountId}/cfd_tunnel/${input.tunnelId}`;
+        const tunnel = await api.request("GET", path, tunnelSchema);
+        if (tunnel.id !== input.tunnelId || tunnel.deleted_at)
+          throw new TunnelBlocked("source", "This tunnel is no longer available.");
+        const edit = input.edit;
+        if (edit.kind === "rename") {
+          if (tunnel.name === edit.name)
+            return {
+              kind: "confirmed",
+              changed: false,
+              message: "The tunnel already has this name.",
+            };
+          if (tunnel.name !== edit.expectedName)
+            throw new TunnelBlocked(
+              "stale",
+              "The tunnel name changed. Discard and reload before saving again.",
+            );
+          return this.writeTunnel(
+            input,
+            { kind: "rename", fingerprint: configurationFingerprint(edit.name) },
+            (currentAPI) => currentAPI.request("PATCH", path, tunnelSchema, { name: edit.name }),
+            "Tunnel name saved and verified.",
+          );
+        }
+        if (tunnel.config_src !== "cloudflare")
+          throw new TunnelBlocked(
+            "source",
+            "This tunnel's routes are not managed remotely by Cloudflare.",
+          );
+        const configPath = `${path}/configurations`;
+        const raw = await api.request("GET", configPath, configSchema);
+        const routes = inspectConfiguration(raw, input);
+        if (routes.kind !== "editable") throw new TunnelBlocked("source", routes.message);
+        if (routes.revision !== edit.expectedRevision)
+          throw new TunnelBlocked(
+            "stale",
+            "The tunnel configuration changed. Your draft is retained. Discard and reload before saving again.",
+          );
+        const config = editableConfiguration(raw)!;
+        const desired = applyRouteDraft(config, edit.routes);
+        if (sameConfiguration(config, desired))
+          return {
+            kind: "confirmed",
+            changed: false,
+            message: "The routes already match this draft.",
+          };
+        return this.writeTunnel(
+          input,
+          { kind: "routes", fingerprint: configurationFingerprint(desired) },
+          (currentAPI) => currentAPI.request("PUT", configPath, configSchema, { config: desired }),
+          "Routes saved and verified. DNS and Access settings are managed separately.",
+        );
+      } catch (error) {
+        return tunnelPreparationFailure(error);
+      }
+    });
+  }
+  private async reconcileTunnelWrite(
+    target: TunnelTarget,
+    api: CloudflareAPI,
+  ): Promise<TunnelWriteState> {
+    let fence: z.infer<typeof tunnelWriteFenceSchema>;
+    try {
+      const raw = await this.deps.storage.get(tunnelWriteKey(target));
+      if (raw === undefined) return { kind: "ready" };
+      fence = tunnelWriteFenceSchema.parse(raw);
+      if (fence.target.accountId !== target.accountId || fence.target.tunnelId !== target.tunnelId)
+        return unavailableTunnelWrite;
+    } catch {
+      return unavailableTunnelWrite;
+    }
+    const path = `/accounts/${target.accountId}/cfd_tunnel/${target.tunnelId}`;
+    try {
+      let matches: boolean;
+      if (fence.intent.kind === "rename") {
+        const actual = await api.request("GET", path, tunnelSchema);
+        matches =
+          actual.id === target.tunnelId &&
+          !actual.deleted_at &&
+          configurationFingerprint(actual.name) === fence.intent.fingerprint;
+      } else {
+        const actual = await api.request("GET", `${path}/configurations`, configSchema);
+        matches =
+          actual.source === "cloudflare" &&
+          configurationFingerprint(actual.config) === fence.intent.fingerprint;
+      }
+      if (!matches) return pendingTunnelWrite;
+      await this.deps.storage.delete(tunnelWriteKey(target));
+      return { kind: "ready" };
+    } catch {
+      return pendingTunnelWrite;
+    }
+  }
+  private async writeTunnel(
+    target: TunnelTarget,
+    intent: TunnelWriteIntent,
+    write: (api: CloudflareAPI) => Promise<unknown>,
+    message: string,
+  ): Promise<TunnelWriteResult> {
+    try {
+      await this.deps.storage.set(tunnelWriteKey(target), {
+        target: {
+          accountId: target.accountId,
+          clientId: target.clientId,
+          tunnelId: target.tunnelId,
+        },
+        intent,
+      });
+    } catch {
+      return unavailableTunnelWrite;
+    }
+    let api: CloudflareAPI;
+    try {
+      api = await this.writableTunnel(target);
+    } catch (error) {
+      try {
+        await this.deps.storage.delete(tunnelWriteKey(target));
+      } catch {
+        return unavailableTunnelWrite;
+      }
+      return tunnelPreparationFailure(error);
+    }
+    try {
+      await write(api);
+    } catch (error) {
+      if (error instanceof CloudflareError && !error.uncertain) {
+        try {
+          await this.deps.storage.delete(tunnelWriteKey(target));
+        } catch {
+          return unavailableTunnelWrite;
+        }
+        return { kind: "rejected", message: error.message };
+      }
+    }
+    const writeState = await this.reconcileTunnelWrite(target, api);
+    return writeState.kind === "ready" ? { kind: "confirmed", changed: true, message } : writeState;
   }
   async overview(): Promise<Overview> {
     const oauth = await this.deps.oauth.status();

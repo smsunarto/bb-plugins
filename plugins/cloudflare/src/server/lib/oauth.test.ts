@@ -86,7 +86,11 @@ test("connect issues unique expiring state and S256 PKCE without exposing the ve
     url.searchParams.get("code_challenge")!,
   );
   expect(f.save).toHaveBeenCalledTimes(1);
-  expect(await f.auth.credentials()).toEqual({ token: "ACCESS-SECRET-one", accountId });
+  expect(await f.auth.credentials()).toEqual({
+    token: "ACCESS-SECRET-one",
+    accountId,
+    clientId: "client",
+  });
   expect(JSON.stringify(await f.auth.status())).not.toContain("SECRET");
 });
 

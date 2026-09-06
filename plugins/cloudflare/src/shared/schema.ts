@@ -179,3 +179,149 @@ export type CreateShare = z.infer<typeof createSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type ShareResult = z.infer<typeof resultSchema>;
 export type OAuthStatus = z.infer<typeof oauthStatusSchema>;
+
+export const tunnelTargetSchema = z
+  .object({
+    accountId: idSchema,
+    clientId: idSchema,
+    tunnelId: idSchema,
+  })
+  .strict();
+const routeFields = {
+  hostname: z.string().min(1).max(253),
+  path: z.string().max(2048).nullable(),
+  service: z.string().min(1).max(4096),
+};
+export const routeDraftSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("existing"),
+      originalIndex: z.number().int().nonnegative(),
+      patch: z.object(routeFields).partial().strict(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("new"), ...routeFields }).strict(),
+]);
+export const tunnelEditSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("rename"),
+      expectedName: z.string(),
+      name: z
+        .string()
+        .trim()
+        .min(1)
+        .max(100)
+        .refine((value) => !/\p{Cc}/u.test(value), "Name cannot contain control characters"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("routes"),
+      expectedRevision: z.string().regex(/^[a-f0-9]{64}$/),
+      routes: z.array(routeDraftSchema).max(1000),
+    })
+    .strict(),
+]);
+export const editTunnelSchema = tunnelTargetSchema.extend({ edit: tunnelEditSchema }).strict();
+export const originViewSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("plain"), service: z.string() }).strict(),
+  z.object({ kind: z.literal("private"), label: z.string() }).strict(),
+]);
+export const routeEditorSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("editable"),
+      revision: z.string(),
+      version: z.number().optional(),
+      advanced: z.boolean(),
+      rules: z.array(
+        z
+          .object({
+            originalIndex: z.number().int().nonnegative(),
+            hostname: z.string(),
+            path: z.string().nullable(),
+            origin: originViewSchema,
+            advanced: z.boolean(),
+          })
+          .strict(),
+      ),
+      fallback: originViewSchema,
+      fallbackAdvanced: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("readonly"),
+      reason: z.enum(["local", "unsupported", "share"]),
+      message: z.string(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("unavailable"), message: z.string() }).strict(),
+]);
+export const connectorSchema = z
+  .object({
+    id: z.string().optional(),
+    architecture: z.string().optional(),
+    version: z.string().optional(),
+    startedAt: z.string().optional(),
+    configVersion: z.number().optional(),
+    connections: z.array(
+      z
+        .object({
+          id: z.string().optional(),
+          colo: z.string().optional(),
+          openedAt: z.string().optional(),
+          originIp: z.string().optional(),
+          version: z.string().optional(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export const tunnelWriteStateSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("ready") }).strict(),
+  z.object({ kind: z.literal("unconfirmed"), message: z.string() }).strict(),
+]);
+export const tunnelDetailsSchema = z
+  .object({
+    target: tunnelTargetSchema,
+    name: z.string(),
+    status: z.string(),
+    configSource: z.string(),
+    owner: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("account") }).strict(),
+      z.object({ kind: z.literal("share"), shareId: z.string() }).strict(),
+    ]),
+    routes: routeEditorSchema,
+    writeState: tunnelWriteStateSchema,
+    connectors: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("ready"), value: z.array(connectorSchema) }).strict(),
+      z.object({ kind: z.literal("unavailable"), message: z.string() }).strict(),
+    ]),
+    observedAt: z.string(),
+  })
+  .strict();
+export const tunnelWriteResultSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("confirmed"), changed: z.boolean(), message: z.string() }).strict(),
+  z
+    .object({
+      kind: z.literal("blocked"),
+      reason: z.enum(["stale", "ownership", "source", "connection"]),
+      message: z.string(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("rejected"), message: z.string() }).strict(),
+  z.object({ kind: z.literal("unconfirmed"), message: z.string() }).strict(),
+]);
+export type TunnelTarget = z.infer<typeof tunnelTargetSchema>;
+export type TunnelEdit = z.infer<typeof tunnelEditSchema>;
+export type EditTunnel = z.infer<typeof editTunnelSchema>;
+export type RouteDraft = z.infer<typeof routeDraftSchema>;
+export type OriginView = z.infer<typeof originViewSchema>;
+export type RouteEditor = z.infer<typeof routeEditorSchema>;
+export type TunnelDetails = z.infer<typeof tunnelDetailsSchema>;
+export type TunnelWriteResult = z.infer<typeof tunnelWriteResultSchema>;
+export type Connector = z.infer<typeof connectorSchema>;
+
+export type TunnelWriteState = z.infer<typeof tunnelWriteStateSchema>;

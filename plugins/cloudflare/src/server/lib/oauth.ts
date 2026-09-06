@@ -277,7 +277,7 @@ export class CloudflareOAuth {
       this.pending.clear();
     });
   }
-  credentials(): Promise<{ token: string; accountId: string }> {
+  credentials(): Promise<{ token: string; accountId: string; clientId: string }> {
     const generation = this.generation;
     return this.serialize(async () => {
       const settings = await this.settings();
@@ -303,7 +303,11 @@ export class CloudflareOAuth {
         await this.persistCurrent(credentials, generation, settings.oauthCredentials);
       }
       await this.assertCurrent(config, generation);
-      return { token: credentials.accessToken, accountId: credentials.accountId };
+      return {
+        token: credentials.accessToken,
+        accountId: credentials.accountId,
+        clientId: credentials.clientId,
+      };
     });
   }
   disconnect(): Promise<{ ok: true; message: string }> {

@@ -139,7 +139,7 @@ function fixture() {
       }),
       credentials: async () => {
         if (!token) throw new CloudflareError("Connect Cloudflare again.");
-        return { token, accountId: account };
+        return { token, accountId: account, clientId: "client" };
       },
     },
     api: (secret) => new CloudflareAPI(secret, fetcher),

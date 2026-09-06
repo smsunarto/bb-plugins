@@ -118,11 +118,30 @@ export const tunnelSchema = z.object({
   id: z.string(),
   name: z.string(),
   config_src: z.string().optional(),
+  deleted_at: z.string().nullish(),
   status: z.string().optional(),
 });
 export const connectionSchema = z.object({
   id: z.string(),
   conns: z.array(z.object({ client_id: z.string().optional() })).default([]),
+});
+export const connectorResponseSchema = z.object({
+  id: z.string().nullish(),
+  arch: z.string().nullish(),
+  version: z.string().nullish(),
+  run_at: z.string().nullish(),
+  config_version: z.number().nullish(),
+  conns: z
+    .array(
+      z.object({
+        id: z.string().nullish(),
+        colo_name: z.string().nullish(),
+        opened_at: z.string().nullish(),
+        origin_ip: z.string().nullish(),
+        client_version: z.string().nullish(),
+      }),
+    )
+    .nullish(),
 });
 export const policySchema = z
   .object({
@@ -165,6 +184,8 @@ export const zoneSchema = z.object({
 });
 export const idpSchema = z.object({ id: z.string(), name: z.string(), type: z.string() });
 export const configSchema = z.object({
+  source: z.string().optional(),
+  version: z.number().optional(),
   config: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export const ingressConfigSchema = z.object({
