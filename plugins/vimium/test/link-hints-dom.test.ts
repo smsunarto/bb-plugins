@@ -930,9 +930,9 @@ describe("mountLinkHints", () => {
 
     document.body.innerHTML =
       '<div><a id="t1" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_1" href="#">One</a>' +
-      '<span style="display:none"><button id="settle-1" aria-label="Settle thread"></button></span></div>' +
+      '<span style="display:none"><button id="settle-1" aria-label="Settle"></button></span></div>' +
       '<div><a id="t2" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_2" href="#">Two</a>' +
-      '<span style="display:none"><button id="settle-2" aria-label="Settle thread"></button></span></div>';
+      '<span style="display:none"><button id="settle-2" aria-label="Settle"></button></span></div>';
     const settled: string[] = [];
     for (const id of ["settle-1", "settle-2"]) {
       document.getElementById(id)?.addEventListener("pointerdown", () => settled.push(id));

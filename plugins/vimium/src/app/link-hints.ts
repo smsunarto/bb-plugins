@@ -267,7 +267,7 @@ const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut
 
 // gtd-sidebar parks a settle button beside each inbox row's anchor. It only
 // shows on hover, but a dispatched pointer press reaches it either way.
-const SETTLE_BUTTON_SELECTOR = 'button[aria-label="Settle thread"]';
+const SETTLE_BUTTON_SELECTOR = 'button[aria-label="Settle"]';
 
 // The conversation's top-level row list. Its scroller is a plain Tailwind
 // `overflow-y-auto` div with no data attribute, found by walking up from here.
