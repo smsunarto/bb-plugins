@@ -186,6 +186,26 @@
       }
     },
     {
+      "id": "smooth-thread-switch",
+      "displayName": "Smooth Thread Switch",
+      "description": "Fades a switched-to conversation in once bb has scrolled it into place, instead of flashing its top and jumping to the bottom.",
+      "icon": {
+        "url": "plugins/smooth-thread-switch/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/smooth-thread-switch",
+          "range": "*",
+          "tagPrefix": "smooth-thread-switch/"
+        }
+      }
+    },
+    {
       "id": "traces",
       "displayName": "Traces",
       "description": "Explore Claude Code and Codex sessions, agent context, and tool activity with keyboard navigation.",

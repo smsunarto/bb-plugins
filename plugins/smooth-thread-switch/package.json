@@ -1,0 +1,75 @@
+{
+  "name": "@smsunarto/bb-plugin-smooth-thread-switch",
+  "version": "0.1.0",
+  "description": "Fades a switched-to conversation in once bb has scrolled it into place, instead of flashing its top and jumping to the bottom.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/smooth-thread-switch",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/smooth-thread-switch"
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "scroll",
+    "thread",
+    "transition"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.34"
+  },
+  "bb": {
+    "name": "Smooth Thread Switch",
+    "description": "Holds a freshly opened conversation invisible while bb scrolls it into place, then fades it in. No more flash of the top of the thread before the jump to the bottom.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "skills": []
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
+    "assets/",
+    "README.md",
+    "LICENSE",
+    "src/server/",
+    "src/app/"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.34",
+    "@types/node": "^22.0.0",
+    "bun-types": "^1.4.0",
+    "jsdom": "25.0.1",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout=30000",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "clean": "rm -rf dist"
+  }
+}
