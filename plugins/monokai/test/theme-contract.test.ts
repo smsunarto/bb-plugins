@@ -60,6 +60,29 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("gates every hover fill behind a hover-capable pointer", () => {
+    const bareHoverRules = theme.split("\n").filter((line) => /^\.dark[^\n]*:hover/.test(line));
+    expect(bareHoverRules).toEqual([]);
+    expect(theme).toContain(
+      "@media (hover: hover) {\n  .dark button.bg-primary:hover,\n  .dark button.bg-foreground:hover {",
+    );
+    expect(theme).toContain(
+      '@media (hover: hover) {\n  .dark [data-testid="notification-row"]:hover {',
+    );
+  });
+
+  test("joins diagram connectors at the phone code size", () => {
+    expect(theme).toContain(
+      "@media (max-width: 767px) and (pointer: coarse) {\n  .dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {\n    line-height: 1.2;",
+    );
+  });
+
+  test("keeps phone text fields at the 16px iOS zoom floor", () => {
+    expect(theme).toContain(
+      '@media (max-width: 767px) and (pointer: coarse) {\n  .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror,\n  .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),\n  .dark textarea,\n  .dark select {\n    font-size: 16px;',
+    );
+  });
+
   test("the shipped theme follows the shared contract", () => {
     expect(() => auditTheme(theme)).not.toThrow();
   });

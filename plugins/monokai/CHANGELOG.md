@@ -26,6 +26,18 @@
 
 - Keep SF Pro composer placeholders at regular weight on mobile layouts.
 
+- Gate every theme hover fill behind `@media (hover: hover)`, matching bb's
+  own Tailwind hover utilities, so a tapped button on a phone no longer keeps
+  its raised hover fill until the next tap.
+
+- Tighten `diagram` and `patch` fence leading to 1.2 on compact
+  coarse-pointer layouts, where bb raises thread code to 14px and the 1.3
+  leading splits box-drawing connectors again.
+
+- Keep the composer editor, the thread search field, and other text fields at
+  16px on compact coarse-pointer layouts so iOS Safari does not zoom the page
+  when a field takes focus.
+
 - Set fenced code block leading in the thread to 1.5 instead of the host's
   prose leading, and tighten `diagram` and `patch` fences to 1.3 so
   box-drawing glyphs in file trees and tree diffs connect between rows.

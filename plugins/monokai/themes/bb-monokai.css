@@ -407,18 +407,25 @@
   color: var(--foreground);
 }
 
-.dark button.bg-primary:hover,
-.dark button.bg-foreground:hover {
-  background-color: #404040;
-}
-
 .dark button.bg-secondary {
   background-color: #1e1e1e;
   border: 1px solid var(--input);
 }
 
-.dark button.bg-secondary:hover {
-  background-color: #262626;
+/* Hover fills only where a pointer can hover. bb's own `hover:` utilities sit
+ * inside Tailwind's `@media (hover: hover)`, but a bare `:hover` rule also
+ * matches the element a finger last tapped, so on a phone the raised fill would
+ * stay stuck on the button until the next tap lands somewhere else. Every
+ * theme hover rule lives under this query for the same reason. */
+@media (hover: hover) {
+  .dark button.bg-primary:hover,
+  .dark button.bg-foreground:hover {
+    background-color: #404040;
+  }
+
+  .dark button.bg-secondary:hover {
+    background-color: #262626;
+  }
 }
 
 /* Tooltips use the same bg-primary utility as action buttons upstream, but
@@ -463,8 +470,10 @@
                              * `fill-current`, so it tracks this. */
 }
 
-.dark [data-promptbox-submit-action][aria-label="Stop run"]:hover {
-  background-color: color-mix(in oklab, var(--destructive) 90%, transparent);
+@media (hover: hover) {
+  .dark [data-promptbox-submit-action][aria-label="Stop run"]:hover {
+    background-color: color-mix(in oklab, var(--destructive) 90%, transparent);
+  }
 }
 
 /* Lightweight code highlighter (sugar-high) used for inline code and code
@@ -506,6 +515,31 @@
  * add/remove shading. Plain `diff` fences stay at 1.5 for source code. */
 .dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {
   line-height: 1.3;
+}
+
+/* bb raises thread code from 12px to 14px on compact coarse-pointer layouts,
+ * and at 14px the 1.3 leading opens the connectors again (measured on an
+ * iPhone 14 viewport: 1.3 and 1.25 gap, 1.2 joins). The glyphs are 1.2em tall,
+ * so 1.2 joins at any size; only the phone case pays the tighter leading. */
+@media (max-width: 767px) and (pointer: coarse) {
+  .dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {
+    line-height: 1.2;
+  }
+}
+
+/* iOS Safari zooms the page into any focused field that renders text under
+ * 16px, and bb's viewport meta sets no maximum-scale to stop it. bb keeps the
+ * composer editor and the thread search field at 13px, so every field a phone
+ * user types into sits at 16px on compact coarse-pointer layouts. The composer
+ * placeholder inherits the size through its ::before. Checkbox, radio, range,
+ * and file inputs draw no text and keep their native size. */
+@media (max-width: 767px) and (pointer: coarse) {
+  .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror,
+  .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+  .dark textarea,
+  .dark select {
+    font-size: 16px;
+  }
 }
 
 /* Diagram fences describe structure rather than source code, but sugar-high
@@ -565,17 +599,19 @@ diffs-container {
   transition: background-color 120ms ease-out;
 }
 
-.dark [data-testid="notification-row"]:hover {
-  background: var(--state-hover);
-}
-
 .dark [data-testid="notification-row"][data-focused="true"] {
   background: var(--surface-selected);
 }
 
-.dark [data-testid="notification-center"] button:hover {
-  background: var(--state-hover);
-  color: var(--foreground);
+@media (hover: hover) {
+  .dark [data-testid="notification-row"]:hover {
+    background: var(--state-hover);
+  }
+
+  .dark [data-testid="notification-center"] button:hover {
+    background: var(--state-hover);
+    color: var(--foreground);
+  }
 }
 
 .dark [data-testid="notification-center"] button:focus-visible {
@@ -728,8 +764,10 @@ diffs-container {
   text-decoration: none;
 }
 
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button:hover {
-  background: var(--state-active);
+@media (hover: hover) {
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button:hover {
+    background: var(--state-active);
+  }
 }
 
 .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
@@ -744,9 +782,11 @@ diffs-container {
   color: var(--muted-foreground);
 }
 
-.dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
-  background: var(--state-hover);
-  color: var(--popover-foreground);
+@media (hover: hover) {
+  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
+    background: var(--state-hover);
+    color: var(--popover-foreground);
+  }
 }
 
 .dark [data-sonner-toast].bb-app-toast button:focus-visible {
