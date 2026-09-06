@@ -6,6 +6,7 @@ import {
   isWithinSettledWindow,
   mergeSettledThreads,
   settledIndicator,
+  settledRowsMatch,
   toSidebarThread,
   SETTLED_WINDOW_MS,
   type SettledThreadRow,
@@ -44,6 +45,70 @@ function row(overrides: Partial<SettledThreadRow> = {}): SettledThreadRow {
 function hostThread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return { ...toSidebarThread(row()), isArchived: false, ...overrides };
 }
+
+describe("settledRowsMatch", () => {
+  it("matches identical snapshots with separately allocated rows and activity", () => {
+    const current = [row(), row({ id: "thr_2" })];
+    assert.equal(settledRowsMatch(current, structuredClone(current)), true);
+    assert.equal(settledRowsMatch(current, current), true);
+    assert.equal(settledRowsMatch([], []), true);
+  });
+
+  it("detects every snapshot field change", () => {
+    const changedFields = {
+      id: "thr_2",
+      settledAt: 1_001,
+      projectId: "proj_2",
+      title: null,
+      titleFallback: "Fallback title",
+      parentThreadId: "thr_parent",
+      sectionId: "section_1",
+      originKind: "fork",
+      originPluginId: "plugin_1",
+      providerId: "claude",
+      status: "active",
+      hasPendingInteraction: true,
+      isPinned: true,
+      activity: { ...row().activity, workflows: 1 },
+      createdAt: 101,
+      updatedAt: 101,
+      lastReadAt: null,
+      latestAttentionAt: 101,
+    } satisfies SettledThreadRow;
+    for (const key of Object.keys(changedFields) as Array<keyof SettledThreadRow>) {
+      const changed = row({ [key]: changedFields[key] });
+      assert.equal(settledRowsMatch([row()], [changed]), false, key);
+      assert.equal(settledRowsMatch([changed], [row()]), false, key);
+    }
+  });
+
+  it("detects each nested activity change", () => {
+    const changedActivity = {
+      workflows: 1,
+      backgroundAgents: 1,
+      backgroundCommands: 1,
+      planMode: 1,
+      goals: 1,
+    } satisfies SettledThreadRow["activity"];
+    for (const key of Object.keys(changedActivity) as Array<keyof SettledThreadRow["activity"]>) {
+      assert.equal(
+        settledRowsMatch([row()], [row({ activity: { ...row().activity, [key]: 1 } })]),
+        false,
+        key,
+      );
+    }
+  });
+
+  it("detects row additions, deletions, and order changes", () => {
+    const first = row();
+    const second = row({ id: "thr_2" });
+    assert.equal(settledRowsMatch([first], [first, second]), false);
+    assert.equal(settledRowsMatch([first, second], [first]), false);
+    assert.equal(settledRowsMatch([first, second], [second, first]), false);
+    assert.equal(settledRowsMatch([first], []), false);
+    assert.equal(settledRowsMatch([], [first]), false);
+  });
+});
 
 describe("isUnread", () => {
   it("is bb's own rule: last read has to catch up with last attention", () => {

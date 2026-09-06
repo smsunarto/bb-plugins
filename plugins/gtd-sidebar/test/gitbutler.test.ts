@@ -1,6 +1,37 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseGitButlerBranchSummary, resolveSidebarBranchLabel } from "../lib/gitbutler.ts";
+import {
+  gitButlerLabelsMatch,
+  parseGitButlerBranchSummary,
+  resolveSidebarBranchLabel,
+} from "../lib/gitbutler.ts";
+
+describe("gitButlerLabelsMatch", () => {
+  it("matches identical labels regardless of insertion order", () => {
+    const current = new Map([
+      ["env_1", "scott/api"],
+      ["env_2", "scott/ui"],
+    ]);
+    assert.equal(gitButlerLabelsMatch(current, new Map([...current].reverse())), true);
+    assert.equal(gitButlerLabelsMatch(current, current), true);
+    assert.equal(gitButlerLabelsMatch(new Map(), new Map()), true);
+  });
+
+  it("detects changed labels and replaced environments", () => {
+    const current = new Map([["env_1", "scott/api"]]);
+    assert.equal(gitButlerLabelsMatch(current, new Map([["env_1", "scott/ui"]])), false);
+    assert.equal(gitButlerLabelsMatch(current, new Map([["env_2", "scott/api"]])), false);
+  });
+
+  it("detects added and removed labels, including a cleared map", () => {
+    const current = new Map([["env_1", "scott/api"]]);
+    const expanded = new Map([...current, ["env_2", "scott/ui"]]);
+    assert.equal(gitButlerLabelsMatch(current, expanded), false);
+    assert.equal(gitButlerLabelsMatch(expanded, current), false);
+    assert.equal(gitButlerLabelsMatch(current, new Map()), false);
+    assert.equal(gitButlerLabelsMatch(new Map(), current), false);
+  });
+});
 
 describe("parseGitButlerBranchSummary", () => {
   it("uses the real name when one virtual branch is applied", () => {

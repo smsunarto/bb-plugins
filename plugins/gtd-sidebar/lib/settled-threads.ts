@@ -67,6 +67,62 @@ export interface SettledThreadRow {
   latestAttentionAt: number;
 }
 
+const SETTLED_ROW_SCALAR_FIELDS = {
+  id: true,
+  settledAt: true,
+  projectId: true,
+  title: true,
+  titleFallback: true,
+  parentThreadId: true,
+  sectionId: true,
+  originKind: true,
+  originPluginId: true,
+  providerId: true,
+  status: true,
+  hasPendingInteraction: true,
+  isPinned: true,
+  createdAt: true,
+  updatedAt: true,
+  lastReadAt: true,
+  latestAttentionAt: true,
+} satisfies Record<Exclude<keyof SettledThreadRow, "activity">, true>;
+
+const SETTLED_ACTIVITY_FIELDS = {
+  workflows: true,
+  backgroundAgents: true,
+  backgroundCommands: true,
+  planMode: true,
+  goals: true,
+} satisfies Record<keyof SettledThreadRow["activity"], true>;
+
+const settledRowScalarKeys = Object.keys(SETTLED_ROW_SCALAR_FIELDS) as Array<
+  keyof typeof SETTLED_ROW_SCALAR_FIELDS
+>;
+const settledActivityKeys = Object.keys(SETTLED_ACTIVITY_FIELDS) as Array<
+  keyof typeof SETTLED_ACTIVITY_FIELDS
+>;
+
+export function settledRowsMatch(
+  current: readonly SettledThreadRow[],
+  next: readonly SettledThreadRow[],
+): boolean {
+  if (current === next) return true;
+  if (current.length !== next.length) return false;
+
+  return current.every((row, index) => {
+    const nextRow = next[index];
+    if (row === nextRow) return true;
+    if (nextRow === undefined) return false;
+    for (const key of settledRowScalarKeys) {
+      if (row[key] !== nextRow[key]) return false;
+    }
+    for (const key of settledActivityKeys) {
+      if (row.activity[key] !== nextRow.activity[key]) return false;
+    }
+    return true;
+  });
+}
+
 /** bb's own rule: read means the last read caught up with the last attention. */
 export function isUnread(row: SettledThreadRow): boolean {
   return (row.lastReadAt ?? 0) < row.latestAttentionAt;

@@ -63,6 +63,18 @@ export function resolveSidebarBranchLabel(
   return gitButlerLabels.get(environmentId) ?? branchName;
 }
 
+export function gitButlerLabelsMatch(
+  current: ReadonlyMap<string, string>,
+  next: ReadonlyMap<string, string>,
+): boolean {
+  if (current === next) return true;
+  if (current.size !== next.size) return false;
+  for (const [environmentId, label] of next) {
+    if (current.get(environmentId) !== label) return false;
+  }
+  return true;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
