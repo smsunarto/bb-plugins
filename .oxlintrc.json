@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "oxc", "unicorn", "import", "promise", "react", "jsx-a11y"],
+  "jsPlugins": ["oxlint-plugin-complexity"],
   "categories": {
     "correctness": "error",
     "perf": "error",
@@ -23,6 +24,8 @@
     "**/*.d.ts"
   ],
   "rules": {
+    "complexity/complexity": ["warn", { "cyclomatic": 18, "cognitive": 20 }],
+
     "no-console": "off",
     "typescript/no-explicit-any": "off",
 

@@ -68,6 +68,7 @@
     "lefthook": "2.1.12",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.77.0",
+    "oxlint-plugin-complexity": "^2.1.8",
     "playwright": "1.62.1",
     "typescript": "^6.0.0"
   }
