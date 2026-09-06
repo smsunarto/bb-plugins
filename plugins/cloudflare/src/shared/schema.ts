@@ -106,6 +106,21 @@ export const overviewSchema = z
     shares: z.array(shareSchema),
     hosts: section(z.object({ id: z.string(), name: z.string(), online: z.boolean() }).strict()),
     zones: section(z.object({ id: z.string(), name: z.string() }).strict()),
+    dnsRecords: section(
+      z
+        .object({
+          id: z.string(),
+          zoneId: z.string(),
+          zoneName: z.string(),
+          name: z.string(),
+          type: z.string(),
+          content: z.string(),
+          proxied: z.boolean().optional(),
+          ttl: z.number().optional(),
+          tunnelId: z.string().optional(),
+        })
+        .strict(),
+    ),
     identityProviders: section(
       z.object({ id: z.string(), name: z.string(), type: z.string() }).strict(),
     ),
@@ -118,6 +133,17 @@ export const overviewSchema = z
           configSource: z.string(),
           connections: z.number(),
           connectionError: z.string().optional(),
+          dnsTarget: z.string(),
+          publicHostnames: z.array(
+            z
+              .object({
+                hostname: z.string(),
+                url: z.url().optional(),
+                source: z.enum(["dns", "ingress", "dns+ingress"]),
+              })
+              .strict(),
+          ),
+          hostnameError: z.string().optional(),
         })
         .strict(),
     ),

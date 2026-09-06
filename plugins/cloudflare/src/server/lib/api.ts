@@ -155,7 +155,8 @@ export const dnsSchema = z.object({
   type: z.string(),
   content: z.string(),
   proxied: z.boolean().optional(),
-  comment: z.string().optional(),
+  ttl: z.number().int().nonnegative().optional(),
+  comment: z.string().nullish(),
 });
 export const zoneSchema = z.object({
   id: z.string(),
@@ -165,6 +166,16 @@ export const zoneSchema = z.object({
 export const idpSchema = z.object({ id: z.string(), name: z.string(), type: z.string() });
 export const configSchema = z.object({
   config: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export const ingressConfigSchema = z.object({
+  config: z
+    .object({
+      ingress: z
+        .array(z.object({ hostname: z.string().optional(), service: z.string() }))
+        .default([]),
+    })
+    .nullable()
+    .optional(),
 });
 export type App = z.infer<typeof appSchema>;
 export type Policy = z.infer<typeof policySchema>;

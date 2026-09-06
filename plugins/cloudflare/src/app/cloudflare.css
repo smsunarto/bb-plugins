@@ -165,6 +165,7 @@
 }
 .cf-tabs {
   display: flex;
+  overflow-x: auto;
   gap: 18px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 23px;
@@ -191,7 +192,7 @@
   background: var(--muted);
   padding: 1px 5px;
   font-size: 10px;
-  min-width: 1ch;
+  min-width: calc(3ch + 10px);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -354,6 +355,69 @@
   margin-top: 18px !important;
   font-size: 11px;
 }
+.cf-tunnel-links {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.cf-hostname-list {
+  display: grid;
+  gap: 12px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cf-hostname-list .cf-button {
+  box-sizing: border-box;
+}
+.cf-routing-target {
+  margin-top: 16px;
+}
+.cf-routing-target > .cf-row {
+  margin-top: 8px;
+}
+.cf-routing-target code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cf-copy {
+  min-width: 0;
+}
+.cf-copy button {
+  min-width: 86px;
+}
+.cf-panel .cf-copy-error {
+  color: var(--destructive);
+  font-size: 11px;
+}
+.cf-dns-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  gap: 14px;
+}
+.cf-dns-results {
+  margin: 14px 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cf-dns-value {
+  margin: 16px 0 0;
+}
+.cf-dns-value dt {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cf-dns-value dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.cf-dns-value code {
+  font-size: 12px;
+}
+.cf-dns-details {
+  margin-top: 14px;
+}
 @media (max-width: 580px) {
   .cf-content {
     padding: 20px 14px 36px;
@@ -372,6 +436,9 @@
     flex-wrap: wrap;
   }
   .cf-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cf-dns-filters {
     grid-template-columns: minmax(0, 1fr);
   }
   .cf-tabs {

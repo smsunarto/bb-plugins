@@ -1,5 +1,6 @@
 import type { BbPluginApi, PluginKvStorage } from "@get-bb/plugin-sdk";
 import { CloudflareOAuth, oauthCallbackResponse } from "./oauth.ts";
+import { readNetworkInventory, tunnelDNSTarget } from "./inventory.ts";
 import { z } from "zod";
 import { cloudflareHostContract } from "../../shared/host-contract.ts";
 import {
@@ -153,6 +154,7 @@ export class CloudflareService {
       shares: records.map((s) => shareSchema.strip().parse(s)),
       hosts: { items: [] },
       zones: { items: [] },
+      dnsRecords: { items: [] },
       identityProviders: { items: [] },
       tunnels: { items: [] },
       apps: { items: [] },
@@ -219,6 +221,8 @@ export class CloudflareService {
             status: tunnel.status ?? "unknown",
             configSource: tunnel.config_src ?? "unknown",
             connections: 0,
+            dnsTarget: tunnelDNSTarget(tunnel.id),
+            publicHostnames: [],
           };
           try {
             row.connections = (
@@ -232,6 +236,14 @@ export class CloudflareService {
         return output;
       }),
     ]);
+    const network = await readNetworkInventory(
+      api,
+      credentials.accountId,
+      result.zones,
+      result.tunnels.items,
+    );
+    result.dnsRecords = network.dnsRecords;
+    result.tunnels.items = network.tunnels;
     await this.observeShares(result);
     return result;
   }

@@ -1,6 +1,6 @@
 # Cloudflare
 
-Inspect Cloudflare Tunnel and Access resources, and share a development HTTP port from an enrolled BB host behind an email allowlist.
+Inspect Cloudflare DNS, Tunnel, and Access resources, and share a development HTTP port from an enrolled BB host behind an email allowlist.
 
 ## Setup
 
@@ -29,6 +29,16 @@ All four settings are required before connecting. A private client can connect m
 Choose an existing Zero Trust identity provider when creating a share. The plugin does not create identity providers or change account-wide authentication.
 
 Install `cloudflared` on each host that will serve a share. The executable defaults to `cloudflared` on that host’s PATH. Set `cloudflaredPath` when another path is needed. Run the development HTTP server on the selected host before creating its share.
+
+## DNS and tunnel links
+
+The **DNS** tab lists records across the connected account's zones. Filter by zone or search record names, types, and values. Records that point directly to an account tunnel show that tunnel's name. A failed zone lookup leaves records from other zones visible with an error.
+
+The **Tunnels** tab shows public hostnames found in DNS records and remotely managed ingress configuration. Open or copy an available HTTPS link. Hostnames found only in ingress are labeled separately because their DNS may still need configuration. Wildcards and non-HTTP routes are shown as text. Configured links do not establish application reachability or successful Access login.
+
+Every named tunnel also shows its Cloudflare-generated `<tunnel-id>.cfargotunnel.com` DNS target for copying. This is a CNAME routing target, not a public website URL. [Cloudflare's routing documentation](https://developers.cloudflare.com/tunnel/routing/) explains the relationship.
+
+[Quick Tunnels](https://developers.cloudflare.com/tunnel/setup/#quick-tunnels-development) generate temporary `trycloudflare.com` links in the connector's terminal. They are independent of the connected account inventory. This plugin manages named tunnels and does not discover Quick Tunnel processes or generate substitute links for them.
 
 ## Development shares
 

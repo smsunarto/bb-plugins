@@ -5,6 +5,7 @@ import type { FormEvent, ReactNode } from "react";
 import { createSchema, specSchema } from "../shared/schema.ts";
 import type { CreateShare, Overview, Share, Spec } from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
+import { DnsInventory, TunnelLinks } from "./inventory.tsx";
 import "./cloudflare.css";
 
 const TABS = [
@@ -28,7 +29,21 @@ const TABS = [
     description:
       "Read-only account inventory. Application configuration does not verify that login succeeds.",
   },
+  {
+    path: "dns",
+    label: "DNS",
+    title: "DNS records",
+    description: "Read-only records across your account's zones, including tunnel associations.",
+  },
 ] as const;
+
+function tabCount(overview: Overview | undefined, path: string) {
+  if (!overview) return 0;
+  if (path === "") return overview.shares.filter((share) => share.state !== "removed").length;
+  if (path === "tunnels") return overview.tunnels.items.length;
+  if (path === "dns") return overview.dnsRecords.items.length;
+  return overview.apps.items.length;
+}
 
 function Notice({ children, error = false }: { children: ReactNode; error?: boolean }) {
   return (
@@ -126,6 +141,7 @@ function SetupCard({
     overview.tunnels,
     overview.apps,
     overview.policies,
+    overview.dnsRecords,
   ].some((section) => section.error);
   return (
     <section className="cf-card cf-connection" aria-label="Account connection">
@@ -632,9 +648,14 @@ function Tunnels({ overview }: { overview: Overview }) {
             {tunnel.connectionError && (
               <Notice error>Connection count unavailable. {tunnel.connectionError}</Notice>
             )}
+            <TunnelLinks tunnel={tunnel} />
           </article>
         ))}
       </div>
+      <p className="cf-footnote">
+        The account API does not list temporary trycloudflare.com URLs. This plugin does not start
+        Quick Tunnels.
+      </p>
     </section>
   );
 }
@@ -709,6 +730,7 @@ function Inventory({
 }) {
   if (!overview) return loading ? <ContentSkeleton shares={false} /> : null;
   if (!overview.setup.configured) return <Notice>Connect your account to load inventory.</Notice>;
+  if (path === "dns") return <DnsInventory overview={overview} />;
   return path === "tunnels" ? <Tunnels overview={overview} /> : <Access overview={overview} />;
 }
 
@@ -725,8 +747,8 @@ function CloudflareHeader({
     <header className="cf-row cf-header">
       <div>
         <div className="cf-eyebrow">CLOUDFLARE</div>
-        <h1>Development access</h1>
-        <p>Your local apps, shared through your own account.</p>
+        <h1>Account overview</h1>
+        <p>Manage your domains, tunnels and protected shares.</p>
       </div>
       <button className="cf-refresh" type="button" disabled={fetching || busy} onClick={onRefresh}>
         {fetching ? "Refreshing…" : "Refresh"}
@@ -837,13 +859,7 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
             >
               {tab.label}
               <span className={data ? undefined : "cf-count-loading"} aria-hidden={!data}>
-                {data
-                  ? tab.path === ""
-                    ? data.shares.filter((share) => share.state !== "removed").length
-                    : tab.path === "tunnels"
-                      ? data.tunnels.items.length
-                      : data.apps.items.length
-                  : "0"}
+                {tabCount(data, tab.path)}
               </span>
             </button>
           ))}

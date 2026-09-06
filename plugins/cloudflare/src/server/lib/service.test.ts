@@ -467,3 +467,31 @@ test("account settings cannot repoint an existing share", async () => {
   expect(stopped.message).toContain("different account");
   expect(f.calls.some((call) => call.path.startsWith("/accounts/other"))).toBe(false);
 });
+
+test("overview exposes observed DNS and safe tunnel links without writing or returning raw configuration", async () => {
+  const f = fixture();
+  const created = await create(f);
+  const before = f.calls.length;
+  const overview = await f.service.overview();
+  expect(overview.dnsRecords.items).toEqual([
+    {
+      id: created.share.resources.dnsId!,
+      zoneId: "zone",
+      zoneName: "example.com",
+      name: f.input.hostname,
+      type: "CNAME",
+      content: `${created.share.resources.tunnelId}.cfargotunnel.com`,
+      proxied: true,
+      ttl: 1,
+      tunnelId: created.share.resources.tunnelId!,
+    },
+  ]);
+  expect(overview.tunnels.items[0]?.publicHostnames).toEqual([
+    { hostname: f.input.hostname, url: `https://${f.input.hostname}`, source: "dns+ingress" },
+  ]);
+  expect(overview.tunnels.items[0]?.dnsTarget).toBe(
+    `${created.share.resources.tunnelId}.cfargotunnel.com`,
+  );
+  expect(f.calls.slice(before).every((call) => call.method === "GET")).toBe(true);
+  expect(JSON.stringify(overview)).not.toContain("originRequest");
+});
