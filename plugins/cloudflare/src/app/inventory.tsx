@@ -1,7 +1,8 @@
-import { useState } from "react";
-import type { Overview } from "../shared/schema.ts";
+import { useState, useSyncExternalStore } from "react";
+import type { Overview, TunnelTarget } from "../shared/schema.ts";
 import {
   HOSTNAME_SOURCES,
+  TUNNEL_EDITOR,
   configSourceLabel,
   dnsEmptyMessage,
   dnsTypes,
@@ -12,6 +13,9 @@ import {
   tunnelTone,
 } from "./labels.ts";
 import type { DnsRecord, Tunnel } from "./labels.ts";
+import { TunnelEditor } from "./tunnel-editor.tsx";
+import { tunnelDrafts } from "./tunnel-drafts.ts";
+import type { TunnelClient } from "./tunnel-drafts.ts";
 import { Badge, CopyButton, EmptyState, KeyValue, Label, Mono, Notice } from "./ui.tsx";
 
 export function TunnelLinks({ tunnel }: { tunnel: Tunnel }) {
@@ -74,7 +78,17 @@ export function TunnelLinks({ tunnel }: { tunnel: Tunnel }) {
   );
 }
 
-function TunnelCard({ tunnel }: { tunnel: Tunnel }) {
+function TunnelCard({
+  tunnel,
+  target,
+  client,
+  open,
+}: {
+  tunnel: Tunnel;
+  target: TunnelTarget;
+  client: TunnelClient;
+  open: boolean;
+}) {
   return (
     <article className="cf-card" aria-label={`Tunnel ${tunnel.name}`}>
       <div className="cf-row">
@@ -92,12 +106,20 @@ function TunnelCard({ tunnel }: { tunnel: Tunnel }) {
       {tunnel.connectionError && (
         <Notice error>Connection count unavailable. {tunnel.connectionError}</Notice>
       )}
+      <div className="cf-actions cf-tunnel-manage">
+        <button type="button" aria-expanded={open} onClick={() => tunnelDrafts.toggle(target)}>
+          {open ? TUNNEL_EDITOR.close : TUNNEL_EDITOR.manage}
+        </button>
+      </div>
+      {open && <TunnelEditor target={target} client={client} />}
       <TunnelLinks tunnel={tunnel} />
     </article>
   );
 }
 
-export function Tunnels({ overview }: { overview: Overview }) {
+export function Tunnels({ overview, client }: { overview: Overview; client: TunnelClient }) {
+  useSyncExternalStore(tunnelDrafts.subscribe, tunnelDrafts.getSnapshot);
+  const binding = { accountId: overview.setup.accountId, clientId: overview.setup.oauth.clientId };
   const { items, error } = overview.tunnels;
   return (
     <section aria-label="Tunnel inventory">
@@ -109,7 +131,13 @@ export function Tunnels({ overview }: { overview: Overview }) {
       )}
       <div className="cf-stack">
         {items.map((tunnel) => (
-          <TunnelCard key={tunnel.id} tunnel={tunnel} />
+          <TunnelCard
+            key={tunnel.id}
+            tunnel={tunnel}
+            target={{ ...binding, tunnelId: tunnel.id }}
+            client={client}
+            open={tunnelDrafts.openTunnelId === tunnel.id}
+          />
         ))}
       </div>
       <p className="cf-footnote">

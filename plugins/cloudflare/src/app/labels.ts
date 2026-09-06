@@ -15,7 +15,8 @@ export const TABS = [
     path: "tunnels",
     label: "Tunnels",
     title: "Account tunnels",
-    description: "Read-only inventory. Share controls manage only tunnels created by this plugin.",
+    description:
+      "Manage account tunnel names and public routes. Share tunnels stay under share controls.",
   },
   {
     path: "access",
@@ -155,3 +156,83 @@ export function dnsEmptyMessage(records: DnsRecord[], error?: string) {
   if (records.length > 0) return "No DNS records match these filters.";
   return error ? "No DNS records could be loaded." : "No DNS records found in this account.";
 }
+
+export const TUNNEL_EDITOR = {
+  manage: "Manage",
+  close: "Close editor",
+  title: "Manage tunnel",
+  loading: "Loading tunnel details…",
+  refreshing: "Refreshing tunnel details…",
+  loadFailed:
+    "Tunnel details could not be loaded. Your draft has been kept. Try loading the details again.",
+  changedTarget: "The account connection changed. Reload tunnel details.",
+  lostResponse:
+    "The save response was lost. The change may have applied. Refresh status to check the server before another save.",
+  savedRefreshFailed:
+    "The change was confirmed, but fresh details could not be loaded. Discard and reload before another save.",
+  reloadRequired:
+    "The server is ready. Review your retained draft, then discard and reload the current configuration before saving again.",
+  reload: "Reload details",
+  refreshStatus: "Refresh status",
+  discard: "Discard and reload",
+  accountOwner: "Account tunnel",
+  shareOwner: "Development share",
+  owner: "Managed by",
+  shareReadonly: "This tunnel belongs to a development share. Manage it from the Shares tab.",
+  name: "Tunnel name",
+  saveName: "Save name",
+  savingName: "Saving name…",
+  saveRoutes: "Save routes",
+  savingRoutes: "Saving routes…",
+  routes: "Public routes",
+  routeOrder: "Routes match from top to bottom. The first matching route handles the request.",
+  publicWarning:
+    "Saving changes public ingress for this tunnel. DNS records and Access protection are managed separately.",
+  conflictWarning:
+    "Changes made in Cloudflare during a save can conflict. Reload before editing elsewhere.",
+  advanced: "Advanced settings preserved",
+  rootAdvanced: "Tunnel-wide advanced settings are preserved when routes are saved.",
+  emptyRoutes: "No named public routes. All requests use the fallback.",
+  addRoute: "Add route",
+  hostname: "Hostname",
+  hostnamePlaceholder: "app.example.com",
+  path: "Path (optional)",
+  pathPlaceholder: "/api/.*",
+  origin: "Origin service",
+  originPlaceholder: "http://localhost:3000",
+  privateOrigin: "Leave empty to preserve the private origin. Enter a service only to replace it.",
+  allPaths: "All paths",
+  fallback: "Fallback",
+  fallbackHelp:
+    "Unmatched requests use this final rule. The fallback is preserved and cannot be edited here.",
+  up: "Move up",
+  down: "Move down",
+  remove: "Remove",
+  connectors: "Connectors",
+  noConnectors: "No connectors were reported by Cloudflare.",
+  connectorId: "Connector ID",
+  architecture: "Architecture",
+  version: "cloudflared version",
+  startedAt: "Started",
+  configVersion: "Applied config version",
+  connectionId: "Connection ID",
+  colo: "Cloudflare location",
+  openedAt: "Opened",
+  originIp: "Origin IP",
+  noConnections: "No connections were reported for this connector.",
+  unavailable: "Unavailable",
+  observedAt: "Observed",
+  configLag:
+    "This connector reports an older configuration version. It may still be applying the saved configuration.",
+  readonly: {
+    local: "Routes are managed on the connector host.",
+    unsupported: "This configuration cannot be edited safely here.",
+    share: "Routes belong to a development share.",
+  },
+} as const;
+export const tunnelRouteLabel = (index: number) => `Route ${index + 1}`;
+export const tunnelRouteActionLabel = (action: string, index: number) =>
+  `${action} route ${index + 1}`;
+export const tunnelConnectorLabel = (index: number) => `Connector ${index + 1}`;
+export const tunnelConnectionLabel = (index: number) => `Connection ${index + 1}`;
+export const tunnelConfigVersionLabel = (version: number) => `Configuration version ${version}`;

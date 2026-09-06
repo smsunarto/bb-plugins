@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import type { Overview } from "../shared/schema.ts";
+import type { Overview, TunnelDetails } from "../shared/schema.ts";
 
 // The DOM must exist before the SDK's render harness is evaluated.
 installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-const { fireEvent } = await import("@testing-library/react");
+const { fireEvent, waitFor } = await import("@testing-library/react");
 
 const tunnelId = "996b473a-4a3e-4c5f-b8f1-b109e60f19de";
 const overview: Overview = {
@@ -126,4 +126,49 @@ test("the tunnels tab colours status and exposes copyable targets", async () => 
   expect(slot.getByRole("button", { name: `Copy target: ${tunnelId}.cfargotunnel.com` }));
   expect(slot.getByText("Remotely managed", { exact: false })).toBeTruthy();
   slot.unmount();
+});
+
+test("Manage opens the registered editor and keeps an unsaved draft across panel tab remounts", async () => {
+  const detail: TunnelDetails = {
+    target: {
+      accountId: overview.setup.accountId,
+      clientId: overview.setup.oauth.clientId,
+      tunnelId,
+    },
+    name: "bb-remote",
+    status: "healthy",
+    configSource: "cloudflare",
+    owner: { kind: "account" },
+    writeState: { kind: "ready" },
+    observedAt: "2026-09-06T12:00:00Z",
+    connectors: { kind: "ready", value: [] },
+    routes: {
+      kind: "editable",
+      revision: "a".repeat(64),
+      advanced: false,
+      rules: [],
+      fallback: { kind: "plain", service: "http_status:404" },
+      fallbackAdvanced: false,
+    },
+  };
+  const client = { ...rpc, tunnelDetails: async () => detail };
+  const first = renderSlot(await panel(), { subPath: "tunnels" }, { rpc: client });
+  fireEvent.click(await first.findByRole("button", { name: "Manage" }));
+  const input = await first.findByLabelText("Tunnel name");
+  fireEvent.change(input, { target: { value: "Unsaved tunnel name" } });
+  expect(
+    first.getByRole("button", { name: `Copy target: ${tunnelId}.cfargotunnel.com` }),
+  ).toBeTruthy();
+  first.unmount();
+  const dns = renderSlot(await panel(), { subPath: "dns" }, { rpc: client });
+  expect(dns.getByText("blog.example.com")).toBeTruthy();
+  dns.unmount();
+  const returned = renderSlot(await panel(), { subPath: "tunnels" }, { rpc: client });
+  await waitFor(() =>
+    expect((returned.getByLabelText("Tunnel name") as HTMLInputElement).value).toBe(
+      "Unsaved tunnel name",
+    ),
+  );
+  expect(returned.getByRole("button", { name: "Close editor" })).toBeTruthy();
+  returned.unmount();
 });

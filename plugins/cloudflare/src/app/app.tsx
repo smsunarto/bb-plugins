@@ -1,10 +1,11 @@
 import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { QueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { CreateShare, Overview, Share, Spec } from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
+import { tunnelDrafts } from "./tunnel-drafts.ts";
 import { Access, DnsInventory, Tunnels } from "./inventory.tsx";
 import { CreateForm, ShareCard, newShareLabel } from "./shares.tsx";
 import {
@@ -166,7 +167,9 @@ function Inventory({
   overview,
   path,
   loading,
+  client,
 }: {
+  client: Client;
   overview?: Overview;
   path: TabPath;
   loading: boolean;
@@ -180,7 +183,11 @@ function Inventory({
     );
   }
   if (path === "dns") return <DnsInventory overview={overview} />;
-  return path === "tunnels" ? <Tunnels overview={overview} /> : <Access overview={overview} />;
+  return path === "tunnels" ? (
+    <Tunnels overview={overview} client={client} />
+  ) : (
+    <Access overview={overview} />
+  );
 }
 
 function CloudflareHeader({
@@ -411,6 +418,13 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
   const shares = useShareController(client, () => overview.refetch());
   const active = activeTab(subPath);
   const data = overview.data;
+  const accountId = data?.setup.accountId;
+  const clientId = data?.setup.oauth.clientId;
+  const connected = data?.setup.oauth.connected;
+  useLayoutEffect(() => {
+    if (connected === undefined) return;
+    tunnelDrafts.bind(connected && accountId && clientId ? { accountId, clientId } : null);
+  }, [accountId, clientId, connected]);
   const hasShares = data?.shares.some((share) => share.state !== "removed") ?? false;
   const newShareButton = (
     <button
@@ -467,7 +481,12 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
             newShareButton={newShareButton}
           />
         ) : (
-          <Inventory overview={data} path={active.path} loading={overview.isPending} />
+          <Inventory
+            overview={data}
+            path={active.path}
+            loading={overview.isPending}
+            client={client}
+          />
         )}
       </div>
     </main>

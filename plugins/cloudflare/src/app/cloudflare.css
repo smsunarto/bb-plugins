@@ -843,3 +843,48 @@
     transition: none !important;
   }
 }
+
+.cf-tunnel-manage,
+.cf-tunnel-save {
+  margin-top: 12px;
+}
+.cf-tunnel-owner {
+  margin-top: 12px;
+}
+.cf-route-list {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  margin: 12px 0;
+  min-width: 0;
+}
+.cf-route-list > button {
+  justify-self: start;
+}
+.cf-route,
+.cf-connector {
+  border: 1px solid var(--cf-hairline);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+.cf-route-fields {
+  margin: 12px 0 0;
+}
+.cf-fallback {
+  background: var(--cf-recessed);
+  margin-bottom: 12px;
+}
+.cf-connector h4 {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.cf-connector-connection {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--cf-hairline);
+}
+.cf-connector-connection .cf-kv {
+  padding-top: 6px;
+}

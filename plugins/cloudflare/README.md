@@ -40,11 +40,27 @@ Every named tunnel also shows its Cloudflare-generated `<tunnel-id>.cfargotunnel
 
 [Quick Tunnels](https://developers.cloudflare.com/tunnel/setup/#quick-tunnels-development) generate temporary `trycloudflare.com` links in the connector's terminal. They are independent of the connected account inventory. This plugin manages named tunnels and does not discover Quick Tunnel processes or generate substitute links for them.
 
+## Manage existing tunnels
+
+Select **Manage** on a tunnel card to inspect connectors, rename the tunnel, or edit its ordered public ingress routes. Connector details include cloudflared version, architecture, start time, applied configuration version, and observed connections. Missing metadata is shown as unavailable. This does not restart or stop a connector.
+
+Name and route changes have separate save buttons. Add, edit, remove, or move named routes, then save the route layout in one operation. The final catch-all is read-only. Advanced configuration stays on the server and is preserved, including unknown settings, origin overrides, unchanged paths, and private origin URLs. Private origins appear as a label and remain unchanged unless explicitly replaced. New or replaced origins cannot contain embedded credentials, query parameters, fragments, or URL paths.
+
+Locally configured tunnels support rename and connector details, but their routes must be changed in the connector configuration. Unsupported ingress layouts are also read-only. Tunnels recorded by development shares remain under the share controls, including partial or removed share records.
+
+Drafts survive tab changes and polling for the same account, OAuth client, and tunnel. Changing the connection binding clears them. Each route save checks a revision covering the full current configuration, including hidden settings. A stale result retains the draft and requires an explicit discard and reload before another save. An unconfirmed write offers **Refresh status** and keeps both saves locked. Refreshing or reopening the editor cannot bypass a pending write.
+
+Before each write, the plugin stores a durable pending record with the target and a hash of the intended name or configuration. The record contains no raw configuration, private origins, or plaintext tunnel name. It survives server restarts and blocks later writes to the same account tunnel, including from another tab or OAuth client. The plugin clears it after a definite rejection or after observing the intended result. Storage failures keep writes blocked. A pending record does not expire automatically. If Cloudflare never shows the intended result, the plugin cannot safely assume that a delayed request will never apply.
+
+The plugin sends one write and reads the result back. It does not retry or roll back an uncertain write. Once status refresh confirms the pending result, explicitly discard and reload the old draft before saving again. Cloudflare does not document a compare-and-swap operation for tunnel configuration. The plugin serializes its own edits and detects changes made before its last read, but an external edit can still race the write. Confirmation describes the state observed during readback.
+
+Saving routes changes public ingress only. It does not create DNS records or change Access protection. Configure those separately before relying on a new hostname. Tunnel deletion, credential rotation, connector termination, and host process control are outside these controls.
+
 ## Development shares
 
 Select an enrolled host, DNS zone, unused hostname, localhost port, existing identity provider, and one or more allowed email addresses. Each share owns a dedicated remotely managed tunnel, Access application, reusable allow policy, and proxied CNAME.
 
-The plugin blocks ingress while configuring Access, verifies the allowlist, and requires Access JWT validation at the connector before publishing DNS. A final catch-all returns 404. Existing tunnels, applications, policies, and DNS records remain read-only. Overlapping Access applications and DNS collisions are rejected.
+The plugin blocks ingress while configuring Access, verifies the allowlist, and requires Access JWT validation at the connector before publishing DNS. A final catch-all returns 404. Existing applications, policies, and DNS records remain read-only. Account tunnels have separate management controls described above. Overlapping Access applications and DNS collisions are rejected.
 
 Port and email edits retain the share identity. Removing an email or changing the identity provider blocks ingress, stops the owned connector, updates Access, and revokes existing Access sessions before restarting. Existing connections are not promised instant termination across Cloudflare replicas.
 
