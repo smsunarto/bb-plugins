@@ -1,126 +1,69 @@
 import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
-import { createSchema, specSchema } from "../shared/schema.ts";
+import type { ReactNode } from "react";
 import type { CreateShare, Overview, Share, Spec } from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
-import { DnsInventory, TunnelLinks } from "./inventory.tsx";
+import { Access, DnsInventory, Tunnels } from "./inventory.tsx";
+import { CreateForm, ShareCard, newShareLabel } from "./shares.tsx";
+import {
+  TABS,
+  activeTab,
+  connectionLabel,
+  connectionTone,
+  sectionErrors,
+  tabCount,
+} from "./labels.ts";
+import type { TabPath } from "./labels.ts";
+import { Badge, CopyButton, EmptyState, Mono, Notice, SettingsLink } from "./ui.tsx";
 import "./cloudflare.css";
 
-const TABS = [
-  {
-    path: "",
-    label: "Shares",
-    title: "Development shares",
-    description: "Each share pairs a host app with an email allowlist.",
-  },
-  {
-    path: "tunnels",
-    label: "Tunnels",
-    title: "Account tunnels",
-    description:
-      "Read-only inventory. Share controls manage only resources created by this plugin.",
-  },
-  {
-    path: "access",
-    label: "Access",
-    title: "Access applications",
-    description:
-      "Read-only account inventory. Application configuration does not verify that login succeeds.",
-  },
-  {
-    path: "dns",
-    label: "DNS",
-    title: "DNS records",
-    description: "Read-only records across your account's zones, including tunnel associations.",
-  },
-] as const;
-
-function tabCount(overview: Overview | undefined, path: string) {
-  if (!overview) return 0;
-  if (path === "") return overview.shares.filter((share) => share.state !== "removed").length;
-  if (path === "tunnels") return overview.tunnels.items.length;
-  if (path === "dns") return overview.dnsRecords.items.length;
-  return overview.apps.items.length;
-}
-
-function Notice({ children, error = false }: { children: ReactNode; error?: boolean }) {
-  return (
-    <div className={`cf-notice${error ? " cf-error" : ""}`} role={error ? "alert" : "status"}>
-      {children}
-    </div>
-  );
-}
-
-function Badge({ children, good = false }: { children: ReactNode; good?: boolean }) {
-  return <span className={`cf-badge${good ? " cf-good" : ""}`}>{children}</span>;
-}
-
-function SettingsLink() {
-  return (
-    <a className="cf-button" href="/settings/plugins/cloudflare">
-      Open settings
-    </a>
-  );
-}
-
-function connectionLabel(oauth: Overview["setup"]["oauth"], hasErrors: boolean) {
-  if (!oauth.configured) return "Setup required";
-  if (!oauth.connected) return "Not connected";
-  return hasErrors ? "Partial access" : "Connected with OAuth";
-}
+// bb remounts the panel on every sub-path change. A client owned by the
+// boundary would be discarded with it, so each tab switch would reload the
+// account and flash skeletons. Sharing one client keeps the overview cached
+// across tabs and lets the interval refetch update it in the background.
+const queryClient = new QueryClient();
 
 function ConnectionSkeleton() {
   return (
     <section className="cf-card cf-connection" aria-hidden="true">
-      <div className="cf-row">
-        <div>
-          <h2>
-            <span className="cf-skeleton-text">Account connected</span>
-          </h2>
-          <p>
-            <span className="cf-mono cf-skeleton-text">{"0".repeat(32)}</span>
-          </p>
-        </div>
-        <span className="cf-badge cf-good cf-skeleton-text">Connected with OAuth</span>
-      </div>
       <div className="cf-row cf-wrap">
-        <p>
-          <span className="cf-skeleton-text">Disconnecting leaves existing shares running.</span>
-        </p>
-        <div className="cf-actions">
-          <button type="button" className="cf-skeleton-text" disabled>
-            Disconnect
-          </button>
+        <div className="cf-connection-summary">
+          <span className="cf-badge cf-skeleton-text">Connected</span>
+          <span className="cf-mono cf-skeleton-text">{"0".repeat(32)}</span>
         </div>
+        <button type="button" className="cf-skeleton-text" disabled>
+          Disconnect
+        </button>
       </div>
     </section>
   );
 }
 
-function ContentSkeleton({ shares }: { shares: boolean }) {
+function ContentSkeleton() {
   return (
-    <div className="cf-empty" aria-hidden="true">
-      {shares ? (
-        <>
-          <h3>
-            <span className="cf-skeleton-text">No development shares yet</span>
-          </h3>
-          <p>
-            <span className="cf-skeleton-text">
-              Choose a host and hostname to share your first local app.
-            </span>
-          </p>
-        </>
-      ) : (
-        <span className="cf-skeleton-text">Loading account inventory</span>
-      )}
+    <div className="cf-stack" aria-hidden="true">
+      {[0, 1].map((index) => (
+        <div className="cf-card" key={index}>
+          <div className="cf-row">
+            <div>
+              <h3>
+                <span className="cf-skeleton-text">Loading account inventory</span>
+              </h3>
+              <p>
+                <span className="cf-skeleton-text">Waiting for Cloudflare to answer.</span>
+              </p>
+            </div>
+            <span className="cf-badge cf-skeleton-text">Loading</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function SetupCard({
+function ConnectionCard({
   overview,
   busy,
   connecting,
@@ -135,587 +78,87 @@ function SetupCard({
 }) {
   const setup = overview.setup;
   const oauth = setup.oauth;
-  const hasErrors = [
-    overview.zones,
-    overview.identityProviders,
-    overview.tunnels,
-    overview.apps,
-    overview.policies,
-    overview.dnsRecords,
-  ].some((section) => section.error);
-  return (
-    <section className="cf-card cf-connection" aria-label="Account connection">
-      <div className="cf-row">
-        <div>
-          <h2>
-            {!oauth.connected
-              ? "Connect your Cloudflare account"
-              : hasErrors
-                ? "Account needs attention"
-                : "Account connected"}
-          </h2>
-          <p>
-            {!oauth.configured ? (
-              "Add your account and OAuth client in plugin settings to get started."
-            ) : !oauth.connected ? (
-              "Sign in with Cloudflare to manage your tunnels and protected shares."
-            ) : (
-              <span className="cf-mono">{setup.accountId}</span>
-            )}
-          </p>
+  const hasErrors = sectionErrors(overview);
+  if (oauth.connected) {
+    return (
+      <section className="cf-card cf-connection" aria-label="Account connection">
+        <div className="cf-row cf-wrap">
+          <div className="cf-connection-summary">
+            <Badge tone={connectionTone(oauth, hasErrors)} dot>
+              {connectionLabel(oauth, hasErrors)}
+            </Badge>
+            <span className="cf-meta">
+              Account <Mono>{setup.accountId}</Mono>
+            </span>
+            <CopyButton value={setup.accountId} label="Copy ID" />
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDisconnect}
+            title="Existing shares keep running after you disconnect."
+          >
+            Disconnect
+          </button>
         </div>
-        <Badge good={setup.configured && !hasErrors}>{connectionLabel(oauth, hasErrors)}</Badge>
-      </div>
-      {!oauth.configured && oauth.missing.length > 0 && (
-        <p>Complete setup: {oauth.missing.join(", ")}.</p>
-      )}
-      {oauth.error && <Notice error>{oauth.error}</Notice>}
-      {hasErrors && (
-        <p>
-          Some account sections could not be read. Review the errors below and check the access
-          granted to this connection.
-        </p>
-      )}
+        {oauth.error && <Notice error>{oauth.error}</Notice>}
+        {hasErrors && (
+          <Notice error>
+            Some account sections could not be read. Review the errors in each tab and check the
+            access granted to this connection.
+          </Notice>
+        )}
+      </section>
+    );
+  }
+  return (
+    <section className="cf-card cf-connection cf-connect" aria-label="Account connection">
       <div className="cf-row cf-wrap">
-        <p>
-          {oauth.connected
-            ? "Disconnecting leaves existing shares running."
-            : "Cloudflare will ask you to approve access to Tunnel, Access and DNS."}
-        </p>
+        <div>
+          <h2>Connect your Cloudflare account</h2>
+          <p>
+            {oauth.configured
+              ? "Sign in with Cloudflare to manage tunnels, Access and protected shares."
+              : "Add your account ID and OAuth client in plugin settings to get started."}
+          </p>
+          {!oauth.configured && oauth.missing.length > 0 && (
+            <p className="cf-help">Missing: {oauth.missing.join(", ")}.</p>
+          )}
+        </div>
         <div className="cf-actions">
-          {!oauth.configured && <SettingsLink />}
-          {oauth.configured && !oauth.connected && (
+          {oauth.configured ? (
             <button className="cf-primary" type="button" disabled={busy} onClick={onConnect}>
               {connecting ? "Connecting…" : "Connect with Cloudflare"}
             </button>
-          )}
-          {oauth.connected && (
-            <button type="button" disabled={busy} onClick={onDisconnect}>
-              Disconnect
-            </button>
+          ) : (
+            <SettingsLink />
           )}
         </div>
       </div>
+      {oauth.error && <Notice error>{oauth.error}</Notice>}
+      {oauth.configured && (
+        <p className="cf-help">Cloudflare asks you to approve access to Tunnel, Access and DNS.</p>
+      )}
     </section>
   );
 }
 
-function SpecFields({
-  overview,
-  spec,
-  onChange,
-  prefix,
-}: {
-  overview: Overview;
-  spec: { port: string; emails: string; identityProviderId: string };
-  onChange: (next: typeof spec) => void;
-  prefix: string;
-}) {
+function SectionErrors({ overview }: { overview: Overview }) {
+  const sections: [string, { error?: string }][] = [
+    ["Hosts", overview.hosts],
+    ["Zones", overview.zones],
+    ["Identity providers", overview.identityProviders],
+  ];
   return (
     <>
-      <label htmlFor={`${prefix}-port`}>
-        Local port
-        <input
-          id={`${prefix}-port`}
-          name="port"
-          type="number"
-          min="1"
-          max="65535"
-          required
-          value={spec.port}
-          onChange={(event) => onChange({ ...spec, port: event.target.value })}
-          placeholder="3000"
-        />
-      </label>
-      <label htmlFor={`${prefix}-idp`}>
-        Identity provider
-        <select
-          id={`${prefix}-idp`}
-          name="identityProviderId"
-          required
-          value={spec.identityProviderId}
-          onChange={(event) => onChange({ ...spec, identityProviderId: event.target.value })}
-        >
-          <option value="">Choose an identity provider</option>
-          {spec.identityProviderId &&
-            !overview.identityProviders.items.some(
-              (provider) => provider.id === spec.identityProviderId,
-            ) && (
-              <option value={spec.identityProviderId}>{spec.identityProviderId} (current)</option>
-            )}
-          {overview.identityProviders.items.map((provider) => (
-            <option key={provider.id} value={provider.id}>
-              {provider.name} · {provider.type}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="cf-span" htmlFor={`${prefix}-emails`}>
-        Allowed email addresses
-        <textarea
-          id={`${prefix}-emails`}
-          name="allowedEmails"
-          required
-          rows={3}
-          value={spec.emails}
-          onChange={(event) => onChange({ ...spec, emails: event.target.value })}
-          placeholder="you@example.com"
-        />
-        <span className="cf-help">
-          Separate addresses with commas or new lines. Only these addresses may sign in.
-        </span>
-      </label>
+      {sections.map(([name, section]) =>
+        section.error ? (
+          <Notice error key={name}>
+            {name} could not be loaded. {section.error}
+          </Notice>
+        ) : null,
+      )}
     </>
-  );
-}
-
-function parseSpec(spec: { port: string; emails: string; identityProviderId: string }) {
-  return {
-    port: Number(spec.port),
-    allowedEmails: spec.emails.split(/[\s,;]+/).filter(Boolean),
-    identityProviderId: spec.identityProviderId,
-  };
-}
-
-const EMPTY_CREATE: CreateShare = {
-  id: "",
-  hostId: "",
-  zoneId: "",
-  hostname: "",
-  spec: { port: 3000, allowedEmails: [], identityProviderId: "" },
-};
-
-function createButtonLabel(busy: boolean, pending: CreateShare | null) {
-  if (busy) return "Creating…";
-  return pending ? "Retry same request" : "Create protected share";
-}
-
-function newShareLabel(open: boolean, pending: CreateShare | null) {
-  if (open) return "Hide form";
-  return pending ? "Resume request" : "New share";
-}
-
-function CreateForm({
-  overview,
-  pending,
-  busy,
-  onSubmit,
-  onClose,
-}: {
-  overview: Overview;
-  pending: CreateShare | null;
-  busy: boolean;
-  onSubmit: (input: CreateShare) => Promise<void>;
-  onClose: () => void;
-}) {
-  const initial = pending ?? EMPTY_CREATE;
-  const [hostId, setHostId] = useState(initial.hostId);
-  const [zoneId, setZoneId] = useState(initial.zoneId);
-  const [hostname, setHostname] = useState(initial.hostname);
-  const [spec, setSpec] = useState({
-    port: String(initial.spec.port),
-    emails: initial.spec.allowedEmails.join("\n"),
-    identityProviderId: initial.spec.identityProviderId,
-  });
-  const [error, setError] = useState("");
-  const ready =
-    overview.setup.configured &&
-    overview.hosts.items.some((host) => host.online) &&
-    overview.zones.items.length > 0 &&
-    overview.identityProviders.items.length > 0;
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending) {
-      void onSubmit(pending);
-      return;
-    }
-    const result = createSchema.safeParse({
-      id: crypto.randomUUID(),
-      hostId,
-      zoneId,
-      hostname: hostname.trim(),
-      spec: parseSpec(spec),
-    });
-    if (!result.success) {
-      setError(result.error.issues[0]?.message ?? "Check the share details.");
-      return;
-    }
-    setError("");
-    void onSubmit(result.data);
-  }
-  return (
-    <form className="cf-card cf-create" onSubmit={submit} aria-label="Create development share">
-      <div className="cf-row">
-        <div>
-          <h2>New development share</h2>
-          <p>Publish one localhost app behind Cloudflare Access.</p>
-        </div>
-        <button type="button" onClick={onClose} disabled={busy} aria-label="Close share form">
-          Close
-        </button>
-      </div>
-      {pending && (
-        <Notice>
-          This request is saved for retry. Its host, hostname and access rules stay the same until
-          setup completes.
-        </Notice>
-      )}
-      {!ready && (
-        <Notice error>
-          To create a share, connect an account with an accessible zone and identity provider, and
-          bring a BB host online.
-        </Notice>
-      )}
-      {error && <Notice error>{error}</Notice>}
-      <fieldset className="cf-form-grid" disabled={busy || !!pending}>
-        <label htmlFor="cf-host">
-          BB host
-          <select
-            id="cf-host"
-            name="hostId"
-            value={hostId}
-            onChange={(event) => setHostId(event.target.value)}
-            required
-          >
-            <option value="">Choose an online host</option>
-            {overview.hosts.items.map((host) => (
-              <option key={host.id} value={host.id} disabled={!host.online}>
-                {host.name}
-                {host.online ? "" : " · Offline"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label htmlFor="cf-zone">
-          Zone
-          <select
-            id="cf-zone"
-            name="zoneId"
-            value={zoneId}
-            onChange={(event) => setZoneId(event.target.value)}
-            required
-          >
-            <option value="">Choose a zone</option>
-            {overview.zones.items.map((zone) => (
-              <option key={zone.id} value={zone.id}>
-                {zone.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="cf-span" htmlFor="cf-hostname">
-          Public hostname
-          <input
-            id="cf-hostname"
-            name="hostname"
-            required
-            value={hostname}
-            onChange={(event) => setHostname(event.target.value)}
-            placeholder={
-              zoneId
-                ? `preview.${overview.zones.items.find((zone) => zone.id === zoneId)?.name ?? "example.com"}`
-                : "preview.example.com"
-            }
-            autoCapitalize="none"
-            autoCorrect="off"
-          />
-          <span className="cf-help">
-            Use an unused hostname in the selected zone. The host, zone and hostname are fixed after
-            creation.
-          </span>
-        </label>
-        <SpecFields overview={overview} spec={spec} onChange={setSpec} prefix="cf-create" />
-      </fieldset>
-      <div className="cf-row cf-wrap">
-        <p>Run your app and install cloudflared on the selected host before creating a share.</p>
-        <button className="cf-primary" type="submit" disabled={busy || (!pending && !ready)}>
-          {createButtonLabel(busy, pending)}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function ShareCard({
-  share,
-  overview,
-  busy,
-  onAction,
-  onUpdate,
-  onResume,
-}: {
-  share: Share;
-  overview: Overview;
-  busy: boolean;
-  onAction: (action: "start" | "stop" | "remove", share: Share) => void;
-  onUpdate: (share: Share, spec: Spec) => Promise<boolean>;
-  onResume: (share: Share) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [editRevision, setEditRevision] = useState(share.revision);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [spec, setSpec] = useState({
-    port: String(share.desiredSpec.port),
-    emails: share.desiredSpec.allowedEmails.join("\n"),
-    identityProviderId: share.desiredSpec.identityProviderId,
-  });
-  const [error, setError] = useState("");
-  const host = overview.hosts.items.find((item) => item.id === share.hostId);
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const parsed = specSchema.safeParse(parseSpec(spec));
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Check the access rules.");
-      return;
-    }
-    setError("");
-    if (await onUpdate({ ...share, revision: editRevision }, parsed.data)) setEditing(false);
-  }
-  return (
-    <article className="cf-card" data-share-id={share.id} aria-label={`Share ${share.hostname}`}>
-      <div className="cf-row">
-        <div>
-          <h3 className="cf-hostname">
-            {share.state === "running" ? (
-              <a href={`https://${share.hostname}`} target="_blank" rel="noreferrer">
-                {share.hostname} ↗
-              </a>
-            ) : (
-              share.hostname
-            )}
-          </h3>
-          <p>
-            {host?.name ?? share.hostId} · localhost:{share.desiredSpec.port}
-            {host && !host.online ? " · Host offline" : ""}
-          </p>
-        </div>
-        <Badge good={share.state === "running"}>{share.state}</Badge>
-      </div>
-      <p className="cf-email-list">{share.desiredSpec.allowedEmails.join(", ")}</p>
-      {share.state === "starting" && <p>Waiting for Cloudflare to observe a healthy connector.</p>}
-      {share.lastError && <Notice error>{share.lastError}</Notice>}
-      {share.pendingOperation && (
-        <Notice error>
-          Unconfirmed {share.pendingOperation} operation. Inspect the saved resources before
-          retrying.
-        </Notice>
-      )}
-      {editing && share.desiredState !== "removed" && (
-        <form
-          onSubmit={(event) => void save(event)}
-          className="cf-edit"
-          aria-label={`Edit ${share.hostname}`}
-        >
-          <fieldset className="cf-form-grid" disabled={busy}>
-            <SpecFields
-              overview={overview}
-              spec={spec}
-              onChange={setSpec}
-              prefix={`cf-edit-${share.id}`}
-            />
-          </fieldset>
-          <p>Access changes may require users to sign in again.</p>
-          {error && <Notice error>{error}</Notice>}
-          <div className="cf-actions">
-            <button className="cf-primary" type="submit" disabled={busy}>
-              Save changes
-            </button>
-            <button type="button" disabled={busy} onClick={() => setEditing(false)}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-      <div className="cf-row cf-wrap">
-        <details className="cf-resources">
-          <summary>Resource details</summary>
-          <dl>
-            <dt>Share</dt>
-            <dd>{share.id}</dd>
-            {Object.entries(share.resources).map(([key, value]) => (
-              <div key={key}>
-                <dt>{key.replace("Id", "")}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-            <dt>Revision</dt>
-            <dd>{share.revision}</dd>
-          </dl>
-        </details>
-        <div className="cf-actions">
-          {share.desiredState === "removed" ? (
-            <button
-              className="cf-danger"
-              type="button"
-              disabled={busy}
-              onClick={() => onAction("remove", share)}
-            >
-              Retry removal
-            </button>
-          ) : (
-            <>
-              {!share.appliedSpec && (
-                <button type="button" disabled={busy} onClick={() => onResume(share)}>
-                  Resume setup
-                </button>
-              )}
-              <>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setSpec({
-                      port: String(share.desiredSpec.port),
-                      emails: share.desiredSpec.allowedEmails.join("\n"),
-                      identityProviderId: share.desiredSpec.identityProviderId,
-                    });
-                    setEditRevision(share.revision);
-                    setEditing(!editing);
-                  }}
-                >
-                  Edit
-                </button>
-                {share.appliedSpec && share.state !== "running" && (
-                  <button type="button" disabled={busy} onClick={() => onAction("start", share)}>
-                    Start
-                  </button>
-                )}
-              </>
-              {share.state !== "stopped" && (
-                <button type="button" disabled={busy} onClick={() => onAction("stop", share)}>
-                  Stop
-                </button>
-              )}
-              <button
-                className="cf-danger"
-                type="button"
-                disabled={busy}
-                onClick={() => setConfirmRemove(!confirmRemove)}
-              >
-                Remove
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-      {confirmRemove && share.desiredState !== "removed" && (
-        <div className="cf-remove-confirm">
-          <p>Remove this share and its owned tunnel, DNS record and Access resources?</p>
-          <div className="cf-actions">
-            <button
-              type="button"
-              className="cf-danger"
-              disabled={busy}
-              onClick={() => onAction("remove", share)}
-            >
-              Confirm removal
-            </button>
-            <button type="button" disabled={busy} onClick={() => setConfirmRemove(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function Tunnels({ overview }: { overview: Overview }) {
-  return (
-    <section aria-label="Tunnel inventory">
-      {overview.tunnels.error && <Notice error>{overview.tunnels.error}</Notice>}
-      {overview.tunnels.items.length === 0 && !overview.tunnels.error && (
-        <div className="cf-empty">No tunnels found in this account.</div>
-      )}
-      <div className="cf-stack">
-        {overview.tunnels.items.map((tunnel) => (
-          <article className="cf-card" key={tunnel.id}>
-            <div className="cf-row">
-              <div>
-                <h3>{tunnel.name}</h3>
-                <p className="cf-mono">{tunnel.id}</p>
-              </div>
-              <Badge good={tunnel.status === "healthy"}>{tunnel.status}</Badge>
-            </div>
-            <p>
-              {!tunnel.connectionError && (
-                <>
-                  {tunnel.connections} connection{tunnel.connections === 1 ? "" : "s"} ·{" "}
-                </>
-              )}
-              {tunnel.configSource} configuration
-            </p>
-            {tunnel.connectionError && (
-              <Notice error>Connection count unavailable. {tunnel.connectionError}</Notice>
-            )}
-            <TunnelLinks tunnel={tunnel} />
-          </article>
-        ))}
-      </div>
-      <p className="cf-footnote">
-        The account API does not list temporary trycloudflare.com URLs. This plugin does not start
-        Quick Tunnels.
-      </p>
-    </section>
-  );
-}
-
-function Access({ overview }: { overview: Overview }) {
-  return (
-    <section aria-label="Access inventory">
-      {overview.apps.error && <Notice error>{overview.apps.error}</Notice>}
-      {!overview.apps.items.length && !overview.apps.error && (
-        <div className="cf-empty">No Access applications found.</div>
-      )}
-      <div className="cf-stack">
-        {overview.apps.items.map((app) => (
-          <article className="cf-card" key={app.id}>
-            <div className="cf-row">
-              <div>
-                <h3>{app.name}</h3>
-                <p className="cf-hostname">{app.domain}</p>
-              </div>
-              <Badge>{app.type}</Badge>
-            </div>
-            <p>
-              {app.policyIds.length} associated {app.policyIds.length === 1 ? "policy" : "policies"}
-            </p>
-            <details>
-              <summary>Application details</summary>
-              <p className="cf-mono">{app.id}</p>
-              {app.policyIds.map((id) => (
-                <p className="cf-mono" key={id}>
-                  {id}
-                </p>
-              ))}
-            </details>
-          </article>
-        ))}
-      </div>
-      <div className="cf-section-heading">
-        <h2>Reusable policies</h2>
-      </div>
-      {overview.policies.error && <Notice error>{overview.policies.error}</Notice>}
-      {!overview.policies.items.length && !overview.policies.error && (
-        <div className="cf-empty">No reusable policies found.</div>
-      )}
-      <div className="cf-stack">
-        {overview.policies.items.map((policy) => (
-          <article className="cf-card" key={policy.id}>
-            <div className="cf-row">
-              <h3>{policy.name}</h3>
-              <Badge>{policy.decision}</Badge>
-            </div>
-            <p className="cf-email-list">
-              {policy.allowedEmails.length
-                ? policy.allowedEmails.join(", ")
-                : "No explicit email addresses in this policy."}
-            </p>
-            <p className="cf-mono">{policy.id}</p>
-          </article>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -725,11 +168,17 @@ function Inventory({
   loading,
 }: {
   overview?: Overview;
-  path: string;
+  path: TabPath;
   loading: boolean;
 }) {
-  if (!overview) return loading ? <ContentSkeleton shares={false} /> : null;
-  if (!overview.setup.configured) return <Notice>Connect your account to load inventory.</Notice>;
+  if (!overview) return loading ? <ContentSkeleton /> : null;
+  if (!overview.setup.configured) {
+    return (
+      <EmptyState title="Connect your account">
+        Tunnel, Access and DNS inventory loads once the account is connected.
+      </EmptyState>
+    );
+  }
   if (path === "dns") return <DnsInventory overview={overview} />;
   return path === "tunnels" ? <Tunnels overview={overview} /> : <Access overview={overview} />;
 }
@@ -746,9 +195,8 @@ function CloudflareHeader({
   return (
     <header className="cf-row cf-header">
       <div>
-        <div className="cf-eyebrow">CLOUDFLARE</div>
         <h1>Account overview</h1>
-        <p>Manage your domains, tunnels and protected shares.</p>
+        <p>Tunnels, Access and DNS for the connected account, plus protected development shares.</p>
       </div>
       <button className="cf-refresh" type="button" disabled={fetching || busy} onClick={onRefresh}>
         {fetching ? "Refreshing…" : "Refresh"}
@@ -757,43 +205,38 @@ function CloudflareHeader({
   );
 }
 
-function CloudflarePanel({ subPath }: { subPath: string }) {
-  const navigate = useBbNavigate();
-  const client = rpc.useClient();
-  const overview = rpc.overview.useQuery({ refetchInterval: 20_000, retry: false });
+type ShareAction = "start" | "stop" | "remove";
+type Client = ReturnType<typeof rpc.useClient>;
+type MutationResult = { ok: boolean; message: string };
+
+function useShareController(client: Client, refetch: () => Promise<unknown>) {
   const [newOpen, setNewOpen] = useState(false);
   const [pendingCreate, setPendingCreate] = useState<CreateShare | null>(null);
   const [busy, setBusy] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const mutationLock = useRef(false);
   const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
-  const active = TABS.find((tab) => tab.path === subPath.split("/")[0]) ?? TABS[0];
-  async function mutate(
-    operation: () => Promise<{ ok: boolean; message: string }>,
-  ): Promise<boolean> {
+  const mutationLock = useRef(false);
+  function fail(error: unknown, fallback: string) {
+    setNotice({ message: error instanceof Error ? error.message : fallback, error: true });
+  }
+  async function mutate(operation: () => Promise<MutationResult>): Promise<boolean> {
     if (mutationLock.current) return false;
     mutationLock.current = true;
     setBusy(true);
     setNotice(null);
+    let ok = false;
     try {
       const result = await operation();
       setNotice({ message: result.message, error: !result.ok });
-      await overview.refetch();
-      return result.ok;
+      ok = result.ok;
     } catch (error) {
-      setNotice({
-        message:
-          error instanceof Error
-            ? error.message
-            : "The request failed. Refresh the account and try again.",
-        error: true,
-      });
-      await overview.refetch();
-      return false;
+      fail(error, "The request failed. Refresh the account and try again.");
     } finally {
+      await refetch();
       mutationLock.current = false;
       setBusy(false);
     }
+    return ok;
   }
   async function connect() {
     if (mutationLock.current) return;
@@ -805,10 +248,7 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
       const result = await client.oauthConnect();
       window.location.assign(result.authorizationUrl);
     } catch (error) {
-      setNotice({
-        message: error instanceof Error ? error.message : "Cloudflare sign-in could not start.",
-        error: true,
-      });
+      fail(error, "Cloudflare sign-in could not start.");
     } finally {
       mutationLock.current = false;
       setBusy(false);
@@ -824,13 +264,170 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
       return result;
     });
   }
+  function onAction(action: ShareAction, target: Share) {
+    void mutate(async () => {
+      const result = await client[action]({ id: target.id, expectedRevision: target.revision });
+      if (action === "remove" && result.ok && pendingCreate?.id === target.id) {
+        setPendingCreate(null);
+        setNewOpen(false);
+      }
+      return result;
+    });
+  }
+  function onResume(target: Share) {
+    setNewOpen(true);
+    void create({
+      id: target.id,
+      hostId: target.hostId,
+      zoneId: target.zoneId,
+      hostname: target.hostname,
+      spec: target.desiredSpec,
+    });
+  }
+  return {
+    newOpen,
+    setNewOpen,
+    pendingCreate,
+    busy,
+    connecting,
+    notice,
+    connect: () => void connect(),
+    disconnect: () => void mutate(() => client.oauthDisconnect()),
+    create,
+    onAction,
+    onResume,
+    onUpdate: (target: Share, spec: Spec) =>
+      mutate(() => client.update({ id: target.id, expectedRevision: target.revision, spec })),
+  };
+}
+type ShareController = ReturnType<typeof useShareController>;
+
+function ShareList({ data, shares }: { data: Overview; shares: ShareController }) {
+  return (
+    <div className="cf-stack">
+      {data.shares
+        .filter((share) => share.state !== "removed")
+        .map((share) => (
+          <ShareCard
+            key={share.id}
+            share={share}
+            overview={data}
+            busy={shares.busy || !data.setup.configured}
+            onAction={shares.onAction}
+            onUpdate={shares.onUpdate}
+            onResume={shares.onResume}
+          />
+        ))}
+    </div>
+  );
+}
+
+function SharesSection({
+  data,
+  loading,
+  shares,
+  newShareButton,
+}: {
+  data?: Overview;
+  loading: boolean;
+  shares: ShareController;
+  newShareButton: ReactNode;
+}) {
+  const configured = data?.setup.configured ?? false;
+  const hasShares = data?.shares.some((share) => share.state !== "removed") ?? false;
+  return (
+    <section aria-label="Development shares">
+      {loading && <ContentSkeleton />}
+      {data && (
+        <>
+          <SectionErrors overview={data} />
+          {shares.newOpen && (
+            <CreateForm
+              key={shares.pendingCreate?.id ?? "new"}
+              overview={data}
+              pending={shares.pendingCreate}
+              busy={shares.busy}
+              onSubmit={shares.create}
+              onClose={() => shares.setNewOpen(false)}
+            />
+          )}
+          {!hasShares && !shares.newOpen && (
+            <EmptyState
+              title="No development shares yet"
+              action={configured ? newShareButton : undefined}
+            >
+              {configured
+                ? "Share a local port from an enrolled host behind an email allowlist."
+                : "Connect your account above to create a protected share."}
+            </EmptyState>
+          )}
+          {hasShares && <ShareList data={data} shares={shares} />}
+        </>
+      )}
+      <p className="cf-footnote">
+        Running means the tunnel is healthy and the connector is up. Open a share signed out and
+        complete login to confirm Access works.
+      </p>
+    </section>
+  );
+}
+
+function Tabs({
+  active,
+  data,
+  onSelect,
+}: {
+  active: TabPath;
+  data?: Overview;
+  onSelect: (path: TabPath) => void;
+}) {
+  return (
+    <nav className="cf-tabs" aria-label="Cloudflare sections">
+      {TABS.map((tab) => (
+        <button
+          key={tab.path}
+          type="button"
+          aria-current={active === tab.path ? "page" : undefined}
+          onClick={() => onSelect(tab.path)}
+        >
+          {tab.label}
+          <span className={data ? undefined : "cf-count-loading"} aria-hidden={!data}>
+            {tabCount(data, tab.path)}
+          </span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function CloudflarePanel({ subPath }: { subPath: string }) {
+  const navigate = useBbNavigate();
+  const client = rpc.useClient();
+  const overview = rpc.overview.useQuery({
+    refetchInterval: 20_000,
+    retry: false,
+    staleTime: 10_000,
+  });
+  const shares = useShareController(client, () => overview.refetch());
+  const active = activeTab(subPath);
   const data = overview.data;
+  const hasShares = data?.shares.some((share) => share.state !== "removed") ?? false;
+  const newShareButton = (
+    <button
+      className="cf-primary"
+      type="button"
+      disabled={!data?.setup.configured || shares.busy}
+      onClick={() => shares.setNewOpen(!shares.newOpen)}
+    >
+      {newShareLabel(shares.newOpen, shares.pendingCreate)}
+    </button>
+  );
   return (
     <main className="cf-panel" aria-busy={overview.isPending}>
       <div className="cf-content">
         <CloudflareHeader
           fetching={overview.isFetching}
-          busy={busy}
+          busy={shares.busy}
           onRefresh={() => void overview.refetch()}
         />
         {overview.isPending && <output className="cf-sr-only">Loading Cloudflare account…</output>}
@@ -841,139 +438,35 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
         )}
         {overview.isPending && <ConnectionSkeleton />}
         {data && (
-          <SetupCard
+          <ConnectionCard
             overview={data}
-            busy={busy}
-            connecting={connecting}
-            onConnect={() => void connect()}
-            onDisconnect={() => void mutate(() => client.oauthDisconnect())}
+            busy={shares.busy}
+            connecting={shares.connecting}
+            onConnect={shares.connect}
+            onDisconnect={shares.disconnect}
           />
         )}
-        <nav className="cf-tabs" aria-label="Cloudflare sections">
-          {TABS.map((tab) => (
-            <button
-              key={tab.path}
-              type="button"
-              aria-current={active.path === tab.path ? "page" : undefined}
-              onClick={() => navigate.toPluginPanel("cloudflare", { subPath: tab.path })}
-            >
-              {tab.label}
-              <span className={data ? undefined : "cf-count-loading"} aria-hidden={!data}>
-                {tabCount(data, tab.path)}
-              </span>
-            </button>
-          ))}
-        </nav>
-        {notice && <Notice error={notice.error}>{notice.message}</Notice>}
+        <Tabs
+          active={active.path}
+          data={data}
+          onSelect={(path) => navigate.toPluginPanel("cloudflare", { subPath: path })}
+        />
+        {shares.notice && <Notice error={shares.notice.error}>{shares.notice.message}</Notice>}
         <div className="cf-row cf-section-heading">
           <div>
-            <h2>{active.title}</h2>
+            <h2 className="cf-sr-only">{active.title}</h2>
             <p>{active.description}</p>
           </div>
-          {active.path === "" && (
-            <button
-              className="cf-primary"
-              type="button"
-              disabled={!data?.setup.configured || busy}
-              onClick={() => setNewOpen(!newOpen)}
-            >
-              {newShareLabel(newOpen, pendingCreate)}
-            </button>
-          )}
+          {active.path === "" && hasShares && newShareButton}
         </div>
-        {active.path === "" && (
-          <section aria-label="Development shares">
-            {overview.isPending && <ContentSkeleton shares />}
-            {data && (
-              <>
-                {[
-                  ["Hosts", data.hosts],
-                  ["Zones", data.zones],
-                  ["Identity providers", data.identityProviders],
-                ].map(([name, section]) =>
-                  typeof section !== "string" && section?.error ? (
-                    <Notice error key={String(name)}>
-                      {String(name)} could not be loaded. {section.error}
-                    </Notice>
-                  ) : null,
-                )}
-                {newOpen && (
-                  <CreateForm
-                    key={pendingCreate?.id ?? "new"}
-                    overview={data}
-                    pending={pendingCreate}
-                    busy={busy}
-                    onSubmit={create}
-                    onClose={() => setNewOpen(false)}
-                  />
-                )}
-                {!data.shares.some((share) => share.state !== "removed") && !newOpen && (
-                  <div className="cf-empty">
-                    <h3>No development shares yet</h3>
-                    <p>
-                      {data.setup.configured
-                        ? "Choose a host and hostname to share your first local app."
-                        : "Connect your account above to create a protected share."}
-                    </p>
-                  </div>
-                )}
-                <div className="cf-stack">
-                  {data.shares
-                    .filter((share) => share.state !== "removed")
-                    .map((share) => (
-                      <ShareCard
-                        key={share.id}
-                        share={share}
-                        overview={data}
-                        busy={busy || !data.setup.configured}
-                        onAction={(action, target) => {
-                          void mutate(async () => {
-                            const result = await client[action]({
-                              id: target.id,
-                              expectedRevision: target.revision,
-                            });
-                            if (
-                              action === "remove" &&
-                              result.ok &&
-                              pendingCreate?.id === target.id
-                            ) {
-                              setPendingCreate(null);
-                              setNewOpen(false);
-                            }
-                            return result;
-                          });
-                        }}
-                        onUpdate={(target, spec) =>
-                          mutate(() =>
-                            client.update({
-                              id: target.id,
-                              expectedRevision: target.revision,
-                              spec,
-                            }),
-                          )
-                        }
-                        onResume={(target) => {
-                          setNewOpen(true);
-                          void create({
-                            id: target.id,
-                            hostId: target.hostId,
-                            zoneId: target.zoneId,
-                            hostname: target.hostname,
-                            spec: target.desiredSpec,
-                          });
-                        }}
-                      />
-                    ))}
-                </div>
-              </>
-            )}
-            <p className="cf-footnote">
-              Access login is not verified. Open a running share and complete sign-in to check
-              access.
-            </p>
-          </section>
-        )}
-        {active.path !== "" && (
+        {active.path === "" ? (
+          <SharesSection
+            data={data}
+            loading={overview.isPending}
+            shares={shares}
+            newShareButton={newShareButton}
+          />
+        ) : (
           <Inventory overview={data} path={active.path} loading={overview.isPending} />
         )}
       </div>
@@ -983,7 +476,7 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
 
 function CloudflareApp({ subPath }: { subPath: string }) {
   return (
-    <PluginQueryBoundary>
+    <PluginQueryBoundary client={queryClient}>
       <CloudflarePanel subPath={subPath} />
     </PluginQueryBoundary>
   );

@@ -32,7 +32,7 @@ Install `cloudflared` on each host that will serve a share. The executable defau
 
 ## DNS and tunnel links
 
-The **DNS** tab lists records across the connected account's zones. Filter by zone or search record names, types, and values. Records that point directly to an account tunnel show that tunnel's name. A failed zone lookup leaves records from other zones visible with an error.
+The **DNS** tab lists records across the connected account's zones. Filter by zone or record type, or search record names, types, and values. Expand a row to see IDs and TTL. Records that point directly to an account tunnel show that tunnel's name. A failed zone lookup leaves records from other zones visible with an error.
 
 The **Tunnels** tab shows public hostnames found in DNS records and remotely managed ingress configuration. Open or copy an available HTTPS link. Hostnames found only in ingress are labeled separately because their DNS may still need configuration. Wildcards and non-HTTP routes are shown as text. Configured links do not establish application reachability or successful Access login.
 
