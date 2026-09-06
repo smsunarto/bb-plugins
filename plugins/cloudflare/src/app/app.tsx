@@ -3,14 +3,31 @@ import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { createSchema, specSchema } from "../shared/schema.ts";
-import type { CreateShare, Overview, Share, ShareResult, Spec } from "../shared/schema.ts";
+import type { CreateShare, Overview, Share, Spec } from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
 import "./cloudflare.css";
 
 const TABS = [
-  { path: "", label: "Shares" },
-  { path: "tunnels", label: "Tunnels" },
-  { path: "access", label: "Access" },
+  {
+    path: "",
+    label: "Shares",
+    title: "Development shares",
+    description: "Each share pairs a host app with an email allowlist.",
+  },
+  {
+    path: "tunnels",
+    label: "Tunnels",
+    title: "Account tunnels",
+    description:
+      "Read-only inventory. Share controls manage only resources created by this plugin.",
+  },
+  {
+    path: "access",
+    label: "Access",
+    title: "Access applications",
+    description:
+      "Read-only account inventory. Application configuration does not verify that login succeeds.",
+  },
 ] as const;
 
 function Notice({ children, error = false }: { children: ReactNode; error?: boolean }) {
@@ -33,8 +50,76 @@ function SettingsLink() {
   );
 }
 
-function SetupCard({ overview }: { overview: Overview }) {
+function connectionLabel(oauth: Overview["setup"]["oauth"], hasErrors: boolean) {
+  if (!oauth.configured) return "Setup required";
+  if (!oauth.connected) return "Not connected";
+  return hasErrors ? "Partial access" : "Connected with OAuth";
+}
+
+function ConnectionSkeleton() {
+  return (
+    <section className="cf-card cf-connection" aria-hidden="true">
+      <div className="cf-row">
+        <div>
+          <h2>
+            <span className="cf-skeleton-text">Account connected</span>
+          </h2>
+          <p>
+            <span className="cf-mono cf-skeleton-text">{"0".repeat(32)}</span>
+          </p>
+        </div>
+        <span className="cf-badge cf-good cf-skeleton-text">Connected with OAuth</span>
+      </div>
+      <div className="cf-row cf-wrap">
+        <p>
+          <span className="cf-skeleton-text">Disconnecting leaves existing shares running.</span>
+        </p>
+        <div className="cf-actions">
+          <button type="button" className="cf-skeleton-text" disabled>
+            Disconnect
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ContentSkeleton({ shares }: { shares: boolean }) {
+  return (
+    <div className="cf-empty" aria-hidden="true">
+      {shares ? (
+        <>
+          <h3>
+            <span className="cf-skeleton-text">No development shares yet</span>
+          </h3>
+          <p>
+            <span className="cf-skeleton-text">
+              Choose a host and hostname to share your first local app.
+            </span>
+          </p>
+        </>
+      ) : (
+        <span className="cf-skeleton-text">Loading account inventory</span>
+      )}
+    </div>
+  );
+}
+
+function SetupCard({
+  overview,
+  busy,
+  connecting,
+  onConnect,
+  onDisconnect,
+}: {
+  overview: Overview;
+  busy: boolean;
+  connecting: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
   const setup = overview.setup;
+  const oauth = setup.oauth;
   const hasErrors = [
     overview.zones,
     overview.identityProviders,
@@ -47,44 +132,53 @@ function SetupCard({ overview }: { overview: Overview }) {
       <div className="cf-row">
         <div>
           <h2>
-            {!setup.configured
+            {!oauth.connected
               ? "Connect your Cloudflare account"
               : hasErrors
                 ? "Account needs attention"
                 : "Account connected"}
           </h2>
           <p>
-            {!setup.configured ? (
-              "Add your account ID and API token in BB’s secure plugin settings."
+            {!oauth.configured ? (
+              "Add your account and OAuth client in plugin settings to get started."
+            ) : !oauth.connected ? (
+              "Sign in with Cloudflare to manage your tunnels and protected shares."
             ) : (
               <span className="cf-mono">{setup.accountId}</span>
             )}
           </p>
         </div>
-        <Badge good={setup.configured && !hasErrors}>
-          {!setup.configured ? "Setup required" : hasErrors ? "Partial access" : "Connected"}
-        </Badge>
+        <Badge good={setup.configured && !hasErrors}>{connectionLabel(oauth, hasErrors)}</Badge>
       </div>
-      {!setup.configured && (
-        <p>Missing {setup.missing.join(", ")}. The token stays in native secret storage.</p>
+      {!oauth.configured && oauth.missing.length > 0 && (
+        <p>Complete setup: {oauth.missing.join(", ")}.</p>
       )}
+      {oauth.error && <Notice error>{oauth.error}</Notice>}
       {hasErrors && (
         <p>
-          Some account sections could not be read. Review the errors below and check token
-          permissions.
+          Some account sections could not be read. Review the errors below and check the access
+          granted to this connection.
         </p>
       )}
       <div className="cf-row cf-wrap">
-        <details>
-          <summary>Required token permissions</summary>
-          <ul>
-            {setup.permissions.map((permission) => (
-              <li key={permission}>{permission}</li>
-            ))}
-          </ul>
-          <p>Scope the token to this account and the zones you want to share from.</p>
-        </details>
-        <SettingsLink />
+        <p>
+          {oauth.connected
+            ? "Disconnecting leaves existing shares running."
+            : "Cloudflare will ask you to approve access to Tunnel, Access and DNS."}
+        </p>
+        <div className="cf-actions">
+          {!oauth.configured && <SettingsLink />}
+          {oauth.configured && !oauth.connected && (
+            <button className="cf-primary" type="button" disabled={busy} onClick={onConnect}>
+              {connecting ? "Connecting…" : "Connect with Cloudflare"}
+            </button>
+          )}
+          {oauth.connected && (
+            <button type="button" disabled={busy} onClick={onDisconnect}>
+              Disconnect
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -513,10 +607,6 @@ function ShareCard({
 function Tunnels({ overview }: { overview: Overview }) {
   return (
     <section aria-label="Tunnel inventory">
-      <div className="cf-section-heading">
-        <h2>Account tunnels</h2>
-        <p>Read-only inventory. Share controls manage only resources created by this plugin.</p>
-      </div>
       {overview.tunnels.error && <Notice error>{overview.tunnels.error}</Notice>}
       {overview.tunnels.items.length === 0 && !overview.tunnels.error && (
         <div className="cf-empty">No tunnels found in this account.</div>
@@ -552,13 +642,6 @@ function Tunnels({ overview }: { overview: Overview }) {
 function Access({ overview }: { overview: Overview }) {
   return (
     <section aria-label="Access inventory">
-      <div className="cf-section-heading">
-        <h2>Access applications</h2>
-        <p>
-          Read-only account inventory. Application configuration does not verify that login
-          succeeds.
-        </p>
-      </div>
       {overview.apps.error && <Notice error>{overview.apps.error}</Notice>}
       {!overview.apps.items.length && !overview.apps.error && (
         <div className="cf-empty">No Access applications found.</div>
@@ -615,9 +698,41 @@ function Access({ overview }: { overview: Overview }) {
   );
 }
 
-function Inventory({ overview, path }: { overview: Overview; path: string }) {
+function Inventory({
+  overview,
+  path,
+  loading,
+}: {
+  overview?: Overview;
+  path: string;
+  loading: boolean;
+}) {
+  if (!overview) return loading ? <ContentSkeleton shares={false} /> : null;
   if (!overview.setup.configured) return <Notice>Connect your account to load inventory.</Notice>;
   return path === "tunnels" ? <Tunnels overview={overview} /> : <Access overview={overview} />;
+}
+
+function CloudflareHeader({
+  fetching,
+  busy,
+  onRefresh,
+}: {
+  fetching: boolean;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <header className="cf-row cf-header">
+      <div>
+        <div className="cf-eyebrow">CLOUDFLARE</div>
+        <h1>Development access</h1>
+        <p>Your local apps, shared through your own account.</p>
+      </div>
+      <button className="cf-refresh" type="button" disabled={fetching || busy} onClick={onRefresh}>
+        {fetching ? "Refreshing…" : "Refresh"}
+      </button>
+    </header>
+  );
 }
 
 function CloudflarePanel({ subPath }: { subPath: string }) {
@@ -627,10 +742,13 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
   const [newOpen, setNewOpen] = useState(false);
   const [pendingCreate, setPendingCreate] = useState<CreateShare | null>(null);
   const [busy, setBusy] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const mutationLock = useRef(false);
   const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
   const active = TABS.find((tab) => tab.path === subPath.split("/")[0]) ?? TABS[0];
-  async function mutate(operation: () => Promise<ShareResult>): Promise<boolean> {
+  async function mutate(
+    operation: () => Promise<{ ok: boolean; message: string }>,
+  ): Promise<boolean> {
     if (mutationLock.current) return false;
     mutationLock.current = true;
     setBusy(true);
@@ -655,6 +773,26 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
       setBusy(false);
     }
   }
+  async function connect() {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
+    setBusy(true);
+    setConnecting(true);
+    setNotice(null);
+    try {
+      const result = await client.oauthConnect();
+      window.location.assign(result.authorizationUrl);
+    } catch (error) {
+      setNotice({
+        message: error instanceof Error ? error.message : "Cloudflare sign-in could not start.",
+        error: true,
+      });
+    } finally {
+      mutationLock.current = false;
+      setBusy(false);
+      setConnecting(false);
+    }
+  }
   async function create(input: CreateShare) {
     setPendingCreate(input);
     await mutate(async () => {
@@ -666,67 +804,72 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
   }
   const data = overview.data;
   return (
-    <main className="cf-panel">
+    <main className="cf-panel" aria-busy={overview.isPending}>
       <div className="cf-content">
-        <header className="cf-row cf-header">
-          <div>
-            <div className="cf-eyebrow">CLOUDFLARE</div>
-            <h1>Development access</h1>
-            <p>Your local apps, shared through your own account.</p>
-          </div>
-          <button
-            type="button"
-            disabled={overview.isFetching || busy}
-            onClick={() => void overview.refetch()}
-          >
-            {overview.isFetching ? "Refreshing…" : "Refresh"}
-          </button>
-        </header>
-        {overview.isPending && <output className="cf-empty">Loading Cloudflare account…</output>}
+        <CloudflareHeader
+          fetching={overview.isFetching}
+          busy={busy}
+          onRefresh={() => void overview.refetch()}
+        />
+        {overview.isPending && <output className="cf-sr-only">Loading Cloudflare account…</output>}
         {overview.error && (
           <Notice error>
             Unable to load Cloudflare. {overview.error.message} <SettingsLink />
           </Notice>
         )}
+        {overview.isPending && <ConnectionSkeleton />}
         {data && (
-          <>
-            <SetupCard overview={data} />
-            <nav className="cf-tabs" aria-label="Cloudflare sections">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.path}
-                  type="button"
-                  aria-current={active.path === tab.path ? "page" : undefined}
-                  onClick={() => navigate.toPluginPanel("cloudflare", { subPath: tab.path })}
-                >
-                  {tab.label}
-                  <span>
-                    {tab.path === ""
-                      ? data.shares.filter((share) => share.state !== "removed").length
-                      : tab.path === "tunnels"
-                        ? data.tunnels.items.length
-                        : data.apps.items.length}
-                  </span>
-                </button>
-              ))}
-            </nav>
-            {notice && <Notice error={notice.error}>{notice.message}</Notice>}
-            {active.path === "" && (
-              <section aria-label="Development shares">
-                <div className="cf-row cf-section-heading">
-                  <div>
-                    <h2>Development shares</h2>
-                    <p>Each share pairs a host app with an email allowlist.</p>
-                  </div>
-                  <button
-                    className="cf-primary"
-                    type="button"
-                    disabled={!data.setup.configured || busy}
-                    onClick={() => setNewOpen(!newOpen)}
-                  >
-                    {newShareLabel(newOpen, pendingCreate)}
-                  </button>
-                </div>
+          <SetupCard
+            overview={data}
+            busy={busy}
+            connecting={connecting}
+            onConnect={() => void connect()}
+            onDisconnect={() => void mutate(() => client.oauthDisconnect())}
+          />
+        )}
+        <nav className="cf-tabs" aria-label="Cloudflare sections">
+          {TABS.map((tab) => (
+            <button
+              key={tab.path}
+              type="button"
+              aria-current={active.path === tab.path ? "page" : undefined}
+              onClick={() => navigate.toPluginPanel("cloudflare", { subPath: tab.path })}
+            >
+              {tab.label}
+              <span className={data ? undefined : "cf-count-loading"} aria-hidden={!data}>
+                {data
+                  ? tab.path === ""
+                    ? data.shares.filter((share) => share.state !== "removed").length
+                    : tab.path === "tunnels"
+                      ? data.tunnels.items.length
+                      : data.apps.items.length
+                  : "0"}
+              </span>
+            </button>
+          ))}
+        </nav>
+        {notice && <Notice error={notice.error}>{notice.message}</Notice>}
+        <div className="cf-row cf-section-heading">
+          <div>
+            <h2>{active.title}</h2>
+            <p>{active.description}</p>
+          </div>
+          {active.path === "" && (
+            <button
+              className="cf-primary"
+              type="button"
+              disabled={!data?.setup.configured || busy}
+              onClick={() => setNewOpen(!newOpen)}
+            >
+              {newShareLabel(newOpen, pendingCreate)}
+            </button>
+          )}
+        </div>
+        {active.path === "" && (
+          <section aria-label="Development shares">
+            {overview.isPending && <ContentSkeleton shares />}
+            {data && (
+              <>
                 {[
                   ["Hosts", data.hosts],
                   ["Zones", data.zones],
@@ -766,7 +909,7 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
                         key={share.id}
                         share={share}
                         overview={data}
-                        busy={busy}
+                        busy={busy || !data.setup.configured}
                         onAction={(action, target) => {
                           void mutate(async () => {
                             const result = await client[action]({
@@ -806,14 +949,16 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
                       />
                     ))}
                 </div>
-                <p className="cf-footnote">
-                  Access login is not verified. Open a running share and complete sign-in to check
-                  access.
-                </p>
-              </section>
+              </>
             )}
-            {active.path !== "" && <Inventory overview={data} path={active.path} />}
-          </>
+            <p className="cf-footnote">
+              Access login is not verified. Open a running share and complete sign-in to check
+              access.
+            </p>
+          </section>
+        )}
+        {active.path !== "" && (
+          <Inventory overview={data} path={active.path} loading={overview.isPending} />
         )}
       </div>
     </main>

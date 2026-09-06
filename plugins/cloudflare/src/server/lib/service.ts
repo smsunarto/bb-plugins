@@ -1,4 +1,5 @@
 import type { BbPluginApi, PluginKvStorage } from "@get-bb/plugin-sdk";
+import { CloudflareOAuth, oauthCallbackResponse } from "./oauth.ts";
 import { z } from "zod";
 import { cloudflareHostContract } from "../../shared/host-contract.ts";
 import {
@@ -35,11 +36,12 @@ const recordSchema = shareSchema.extend({
   appCreateIntent: z.record(z.string(), z.unknown()).optional(),
 });
 type RecordShare = z.infer<typeof recordSchema>;
-type Settings = { apiToken?: string; accountId?: string; cloudflaredPath: string };
+type Settings = { accountId?: string; cloudflaredPath: string };
 type HostStatus = { running: boolean; connectorId?: string };
 export interface Dependencies {
   storage: PluginKvStorage;
   settings: () => Promise<Settings>;
+  oauth: Pick<CloudflareOAuth, "status" | "credentials">;
   api: (token: string) => CloudflareAPI;
   hosts: () => Promise<{ id: string; name: string; online: boolean }[]>;
   probe: (
@@ -123,30 +125,30 @@ export class CloudflareService {
   }
   private async credentials(s?: Share) {
     const settings = await this.deps.settings();
-    if (!settings.apiToken || !settings.accountId)
-      fail("Set the API token and account ID in Cloudflare plugin settings.");
-    if (s && s.accountId !== settings.accountId)
+    const credentials = await this.deps.oauth.credentials();
+    if (s && s.accountId !== credentials.accountId)
       fail(
-        "This share belongs to a different account. Restore its original account ID and token before managing it.",
+        "This share belongs to a different account. Restore its original account ID and reconnect before managing it.",
       );
     return {
-      api: this.deps.api(settings.apiToken!),
-      account: settings.accountId!,
+      api: this.deps.api(credentials.token),
+      account: credentials.accountId,
       path: settings.cloudflaredPath,
     };
   }
   async overview(): Promise<Overview> {
-    const settings = await this.deps.settings();
+    const oauth = await this.deps.oauth.status();
     const records = await this.records();
     const result: Overview = {
       setup: {
-        configured: Boolean(settings.apiToken && settings.accountId),
-        accountId: settings.accountId ?? "",
+        configured: oauth.configured && oauth.connected,
+        accountId: oauth.accountId,
         missing: [
-          ...(!settings.apiToken ? ["API token"] : []),
-          ...(!settings.accountId ? ["Account ID"] : []),
+          ...oauth.missing,
+          ...(!oauth.connected ? ["Cloudflare OAuth authorization"] : []),
         ],
         permissions,
+        oauth,
       },
       shares: records.map((s) => shareSchema.strip().parse(s)),
       hosts: { items: [] },
@@ -168,12 +170,22 @@ export class CloudflareService {
       await hostRead;
       return result;
     }
-    const api = this.deps.api(settings.apiToken!);
-    const base = `/accounts/${settings.accountId}`;
+    let credentials: { token: string; accountId: string };
+    try {
+      credentials = await this.deps.oauth.credentials();
+    } catch (error) {
+      result.setup.oauth = { ...(await this.deps.oauth.status()), error: safeMessage(error) };
+      result.setup.configured = false;
+      result.setup.missing = ["Cloudflare OAuth authorization"];
+      await hostRead;
+      return result;
+    }
+    const api = this.deps.api(credentials.token);
+    const base = `/accounts/${credentials.accountId}`;
     await Promise.all([
       hostRead,
       capture(result.zones, async () =>
-        (await api.list(`/zones?account.id=${settings.accountId}`, zoneSchema)).map(
+        (await api.list(`/zones?account.id=${credentials.accountId}`, zoneSchema)).map(
           ({ id, name }) => ({ id, name }),
         ),
       ),
@@ -811,13 +823,27 @@ export class CloudflareService {
 }
 
 const services = new WeakMap<BbPluginApi, CloudflareService>();
+const oauthServices = new WeakMap<BbPluginApi, CloudflareOAuth>();
 export function setupService(bb: BbPluginApi) {
   const settings = bb.settings.define({
-    apiToken: {
+    oauthClientId: { type: "string", label: "Cloudflare OAuth client ID" },
+    oauthRedirectUri: {
       type: "string",
-      label: "Cloudflare API token",
+      label: "OAuth callback URL",
+      description:
+        "Exact HTTPS callback registered with the Cloudflare OAuth client. Ends with /api/v1/plugins/cloudflare/http/oauth/callback.",
+    },
+    oauthScopes: {
+      type: "string",
+      label: "OAuth permissions",
+      description:
+        "Space-separated scope IDs copied from the registered OAuth client. offline_access is added automatically.",
+    },
+    oauthCredentials: {
+      type: "string",
+      label: "OAuth authorization (managed automatically)",
       secret: true,
-      description: "Account Tunnel and Access permissions. Zone DNS Edit for protected sharing.",
+      description: "Saved by Connect Cloudflare. Contains the access and refresh tokens.",
     },
     accountId: { type: "string", label: "Cloudflare account ID" },
     cloudflaredPath: {
@@ -827,9 +853,33 @@ export function setupService(bb: BbPluginApi) {
       description: "Executable available on each selected BB host.",
     },
   });
+  const oauth = new CloudflareOAuth({
+    settings: () => settings.get(),
+    save: async (credentials) => {
+      await bb.sdk.plugins.updateSettings({
+        pluginId: bb.pluginId,
+        values: { oauthCredentials: credentials },
+      });
+    },
+  });
+  oauthServices.set(bb, oauth);
+  bb.http.route(
+    "GET",
+    "/oauth/callback",
+    async (context) => {
+      try {
+        await oauth.callback(new URL(context.req.url).searchParams);
+        return oauthCallbackResponse(true);
+      } catch {
+        return oauthCallbackResponse(false);
+      }
+    },
+    { auth: "local" },
+  );
   const host = bb.hosts.experimental_client({ contract: cloudflareHostContract });
   const service = new CloudflareService({
     storage: bb.storage.kv,
+    oauth,
     settings: () => settings.get(),
     api: (token) => new CloudflareAPI(token),
     hosts: async () =>
@@ -845,11 +895,19 @@ export function setupService(bb: BbPluginApi) {
     stop: (hostId, id) => host.call("stop", { id }, { hostId }),
   });
   services.set(bb, service);
-  bb.onDispose(() => service.dispose());
+  bb.onDispose(async () => {
+    await Promise.all([service.dispose(), oauth.dispose()]);
+  });
   return service;
 }
 export function getService(bb: BbPluginApi) {
   const service = services.get(bb);
   if (!service) throw new Error("Cloudflare service is not initialized.");
   return service;
+}
+
+export function getOAuth(bb: BbPluginApi) {
+  const oauth = oauthServices.get(bb);
+  if (!oauth) throw new Error("Cloudflare OAuth is not initialized.");
+  return oauth;
 }

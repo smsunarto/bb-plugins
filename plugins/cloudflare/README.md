@@ -4,9 +4,29 @@ Inspect Cloudflare Tunnel and Access resources, and share a development HTTP por
 
 ## Setup
 
-Open **Cloudflare → Open settings** in BB. Set the account ID and API token. BB stores the token as a native secret, and the plugin never returns it through UI, RPC, CLI, or agent tools.
+The plugin connects through Cloudflare OAuth with Authorization Code and PKCE. Once the OAuth client is configured, open **Cloudflare** in BB and select **Connect with Cloudflare**. Approve the requested account and zone access. Cloudflare returns you to BB when sign-in completes.
 
-For inventory, grant account Tunnel Read and Access Apps and Policies Read. Sharing also needs Tunnel Edit, Access Apps and Policies Edit, Access Identity Providers Read, Access Organizations Read, and zone-scoped Zone Read plus DNS Edit. Choose an existing Zero Trust identity provider. The plugin does not create identity providers or change account-wide authentication.
+BB keeps the OAuth access and refresh tokens in its native, file-based secret storage on the server, with file permissions restricted to the owner (`0600`). The plugin refreshes access automatically and never returns tokens through UI, RPC, CLI, or agent tools. Select **Disconnect** to remove this connection. Existing shares keep running, and reconnecting restores their management controls.
+
+### Register the OAuth client
+
+Create a [private Cloudflare OAuth client](https://developers.cloudflare.com/fundamentals/oauth/create-an-oauth-client/) in the account you want to connect. Select the `code` response type, both **Authorization Code** and **Refresh Token** grant types, and `none` for token endpoint authentication. The plugin uses PKCE with S256, so no client secret is needed.
+
+Register this exact callback URI, replacing the origin with the HTTPS address of your BB server:
+
+```text
+https://your-bb.example/api/v1/plugins/cloudflare/http/oauth/callback
+```
+
+Press Enter after pasting the callback into Cloudflare's redirect URI field so it is added to the list.
+
+Register permissions for Cloudflare One Connectors Read/Edit, Access Apps and Policies Read/Edit/Revoke, Access Identity Providers Read, Access Organizations Read, Zone Read, and DNS Read/Edit.
+
+Open **Cloudflare → Open settings** in BB and save the account ID, OAuth client ID (`oauthClientId`), and the same callback URI (`oauthRedirectUri`). Copy the exact OAuth scope IDs from your registered client into **OAuth permissions** (`oauthScopes`), separated by spaces. Use OAuth scope IDs rather than permission display names or API token permission UUIDs. Find the IDs in your registration or Cloudflare's [authenticated OAuth scope catalogue](https://developers.cloudflare.com/api/resources/iam/subresources/oauth_scopes/). The plugin automatically adds `offline_access` so BB can renew the connection.
+
+All four settings are required before connecting. A private client can connect members of its owning Cloudflare account.
+
+Choose an existing Zero Trust identity provider when creating a share. The plugin does not create identity providers or change account-wide authentication.
 
 Install `cloudflared` on each host that will serve a share. The executable defaults to `cloudflared` on that host’s PATH. Set `cloudflaredPath` when another path is needed. Run the development HTTP server on the selected host before creating its share.
 
@@ -48,4 +68,4 @@ bun run check
 bun run build
 ```
 
-Tests use injected Cloudflare and host dependencies. The production plugin has no fixture mode or configurable API endpoint. Live Cloudflare mutation and Access login verification require a real account token and an enrolled host with a running origin.
+Tests use injected Cloudflare and host dependencies. The production plugin has no fixture mode or configurable API endpoint. Live Cloudflare mutation and Access login verification require a connected Cloudflare account and an enrolled host with a running origin.

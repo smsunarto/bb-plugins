@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { PluginKvStorage } from "@get-bb/plugin-sdk";
-import { CloudflareAPI } from "./api.ts";
+import { CloudflareError, CloudflareAPI } from "./api.ts";
 import { CloudflareService, type Dependencies } from "./service.ts";
 import type { CreateShare, ShareResult } from "../../shared/schema.ts";
 
@@ -127,7 +127,21 @@ function fixture() {
   }) as typeof fetch;
   const deps: Dependencies = {
     storage,
-    settings: async () => ({ apiToken: token, accountId: account, cloudflaredPath: "cloudflared" }),
+    settings: async () => ({ accountId: account, cloudflaredPath: "cloudflared" }),
+    oauth: {
+      status: async () => ({
+        configured: true,
+        connected: Boolean(token),
+        accountId: account,
+        clientId: "client",
+        redirectUri: "https://bb.example.com/api/v1/plugins/cloudflare/http/oauth/callback",
+        missing: [],
+      }),
+      credentials: async () => {
+        if (!token) throw new CloudflareError("Connect Cloudflare again.");
+        return { token, accountId: account };
+      },
+    },
     api: (secret) => new CloudflareAPI(secret, fetcher),
     hosts: async () => [{ id: "host", name: "Mac", online }],
     probe: async () => ({ available: true, originReachable: true, message: "ready" }),
@@ -203,7 +217,7 @@ test("setup and denied inventory are distinct and never expose credentials", asy
   f.set({ token: null });
   const empty = await f.service.overview();
   expect(empty.setup.configured).toBe(false);
-  expect(empty.setup.missing).toEqual(["API token"]);
+  expect(empty.setup.missing).toEqual(["Cloudflare OAuth authorization"]);
   f.set({ token: "API-SECRET", deny: true });
   const denied = await f.service.overview();
   expect(denied.setup.configured).toBe(true);

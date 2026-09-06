@@ -60,6 +60,28 @@
 .cf-header {
   margin-bottom: 24px;
 }
+.cf-refresh {
+  min-width: 104px;
+}
+.cf-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.cf-panel .cf-skeleton-text {
+  color: transparent;
+  background: var(--muted);
+  border-color: transparent;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  user-select: none;
+}
 .cf-card {
   border: 1px solid var(--border);
   background: var(--card, var(--background));
@@ -131,6 +153,7 @@
   border-color: var(--primary);
 }
 .cf-panel button.cf-primary:hover:not(:disabled) {
+  background: var(--primary);
   opacity: 0.88;
 }
 .cf-panel button.cf-danger {
@@ -168,6 +191,12 @@
   background: var(--muted);
   padding: 1px 5px;
   font-size: 10px;
+  min-width: 1ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.cf-tabs .cf-count-loading {
+  color: transparent;
 }
 .cf-section-heading {
   margin: 22px 0 15px;

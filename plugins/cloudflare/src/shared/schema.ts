@@ -76,6 +76,22 @@ export const shareSchema = z
   .strict();
 export const section = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), error: z.string().optional() }).strict();
+export const oauthStatusSchema = z
+  .object({
+    configured: z.boolean(),
+    connected: z.boolean(),
+    accountId: z.string(),
+    clientId: z.string(),
+    redirectUri: z.string(),
+    missing: z.array(z.string()),
+    expiresAt: z.string().optional(),
+    error: z.string().optional(),
+  })
+  .strict();
+export const oauthConnectSchema = z.object({ authorizationUrl: z.url() }).strict();
+export const oauthDisconnectSchema = z
+  .object({ ok: z.literal(true), message: z.string() })
+  .strict();
 export const overviewSchema = z
   .object({
     setup: z
@@ -84,6 +100,7 @@ export const overviewSchema = z
         accountId: z.string(),
         missing: z.array(z.string()),
         permissions: z.array(z.string()),
+        oauth: oauthStatusSchema,
       })
       .strict(),
     shares: z.array(shareSchema),
@@ -135,3 +152,4 @@ export type Spec = z.infer<typeof specSchema>;
 export type CreateShare = z.infer<typeof createSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type ShareResult = z.infer<typeof resultSchema>;
+export type OAuthStatus = z.infer<typeof oauthStatusSchema>;
