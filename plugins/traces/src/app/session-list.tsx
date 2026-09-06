@@ -14,6 +14,7 @@ export function SessionList({
   onSelect,
   listRef,
   onOpen,
+  stacked,
   revision,
 }: {
   hostId: string;
@@ -24,6 +25,7 @@ export function SessionList({
   onSelect: (session: TraceSession) => void;
   listRef: RefObject<HTMLElement | null>;
   onOpen: () => void;
+  stacked: boolean;
   revision: number;
 }) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
@@ -42,8 +44,8 @@ export function SessionList({
   }, [revision, refetch]);
   const items = result.data?.items ?? EMPTY_SESSIONS;
   useEffect(() => {
-    if (!selected && items[0]) onSelect(items[0]);
-  }, [items, selected, onSelect]);
+    if (!stacked && !selected && items[0]) onSelect(items[0]);
+  }, [stacked, items, selected, onSelect]);
   const selectedIndex = items.findIndex((session) => session.id === selected?.id);
   const selectIndex = (index: number) => {
     const session = items[index];
@@ -101,6 +103,7 @@ export function SessionList({
               }}
               onClick={() => {
                 onSelect(session);
+                if (stacked) onOpen();
               }}
             >
               <span className="tr-session-title">{session.title}</span>

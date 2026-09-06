@@ -28,6 +28,7 @@ export function Timeline({
   listRef,
   revision,
   onInspect,
+  stacked,
 }: {
   hostId: string;
   session: TraceSession;
@@ -39,6 +40,7 @@ export function Timeline({
   listRef: RefObject<HTMLElement | null>;
   revision: number;
   onInspect: () => void;
+  stacked: boolean;
 }) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length - 1;
@@ -64,8 +66,8 @@ export function Timeline({
   }, [revision, refetch]);
   const items = result.data?.items ?? EMPTY_EVENTS;
   useEffect(() => {
-    if (!selected && items[0]) onSelect(items[0]);
-  }, [items, selected, onSelect]);
+    if (!stacked && !selected && items[0]) onSelect(items[0]);
+  }, [stacked, items, selected, onSelect]);
   const selectedIndex = items.findIndex((event) => event.id === selected?.id);
   function selectIndex(index: number) {
     const event = items[index];
@@ -116,6 +118,7 @@ export function Timeline({
               }}
               onClick={() => {
                 onSelect(event);
+                if (stacked) onInspect();
               }}
             >
               <span

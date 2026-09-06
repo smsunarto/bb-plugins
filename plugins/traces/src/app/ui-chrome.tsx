@@ -55,7 +55,7 @@ export function TraceHeader({
         <button onClick={onRefresh} disabled={scanning}>
           {scanning ? "Indexing…" : "Refresh"}
         </button>
-        <button onClick={onHelp} aria-label="Keyboard shortcuts">
+        <button className="tr-help-button" onClick={onHelp} aria-label="Keyboard shortcuts">
           ?
         </button>
       </div>
@@ -73,6 +73,7 @@ export function TraceFilters({
   setKind,
   providers,
   searchRef,
+  sessionSearchRef,
   clearSession,
 }: {
   sessionSearch: string;
@@ -85,12 +86,14 @@ export function TraceFilters({
   setKind: (value: EventQuery["kind"]) => void;
   providers?: TraceStatus["providers"];
   searchRef: RefObject<HTMLInputElement | null>;
+  sessionSearchRef: RefObject<HTMLInputElement | null>;
   clearSession: () => void;
 }) {
   return (
     <div className="tr-toolbar">
       <div className="tr-session-search">
         <input
+          ref={sessionSearchRef}
           aria-label="Search sessions"
           placeholder="Search sessions…"
           value={sessionSearch}
@@ -180,9 +183,20 @@ export function TraceTopics({
     </div>
   );
 }
-export function SessionHeading({ session }: { session: TraceSession | null }) {
+export function SessionHeading({
+  session,
+  onBack,
+}: {
+  session: TraceSession | null;
+  onBack?: () => void;
+}) {
   return (
     <div className="tr-session-heading">
+      {onBack && (
+        <button className="tr-back-button" aria-label="Back to sessions" onClick={onBack}>
+          ‹
+        </button>
+      )}
       <div>
         <h2>{session?.title ?? "Select a session"}</h2>
         <span>
@@ -207,7 +221,7 @@ export function TraceFooter({ scanning, onVerify }: { scanning: boolean; onVerif
         <span className={`tr-status-dot${scanning ? " tr-working" : ""}`} />
         {scanning ? "Indexing source files" : "Local session files"}
       </span>
-      <span>j k Navigate · Enter Inspect · r Raw</span>
+      <span className="tr-footer-hint">j k Navigate · Enter Inspect · r Raw</span>
       <button className="tr-text-button" onClick={onVerify} disabled={scanning}>
         Verify sources
       </button>

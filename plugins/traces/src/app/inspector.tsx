@@ -76,6 +76,7 @@ export function Inspector({
   onRaw,
   onSelect,
   inspectorRef,
+  onBack,
   renderers = defaultTraceRenderers,
 }: {
   hostId: string;
@@ -84,6 +85,7 @@ export function Inspector({
   onRaw: (value: boolean) => void;
   onSelect: (event: TraceEvent) => void;
   inspectorRef: RefObject<HTMLElement | null>;
+  onBack?: () => void;
   renderers?: TraceRendererRegistry;
 }) {
   const result = rpc.event.useQuery(
@@ -96,6 +98,11 @@ export function Inspector({
   return (
     <section className="tr-inspector" ref={inspectorRef} tabIndex={-1} aria-label="Event inspector">
       <div className="tr-column-heading">
+        {onBack && (
+          <button className="tr-back-button" aria-label="Back to timeline" onClick={onBack}>
+            ‹
+          </button>
+        )}
         <span>Inspector</span>
         <div className="tr-segment">
           <button aria-pressed={!raw} onClick={() => onRaw(false)}>

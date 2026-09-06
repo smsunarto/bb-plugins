@@ -1,10 +1,18 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
 import { rpc, definedFields } from "./rpc.ts";
-import { Empty, QueryError, useDebounced, useDisclosure, focusList } from "./controls.tsx";
+import {
+  Empty,
+  QueryError,
+  useDebounced,
+  useDisclosure,
+  useStackedLayout,
+  focusList,
+} from "./controls.tsx";
 import { SessionList } from "./session-list.tsx";
 import { Timeline } from "./timeline.tsx";
 import { Inspector } from "./inspector.tsx";
@@ -60,6 +68,55 @@ function KeyHelp({ onClose }: { onClose: () => void }) {
   );
 }
 
+type Pane = "sessions" | "timeline" | "inspector";
+
+function shownPane(pane: Pane, hasSession: boolean, hasSelected: boolean): Pane {
+  const withSelection = pane === "inspector" && !hasSelected ? "timeline" : pane;
+  return withSelection === "timeline" && !hasSession ? "sessions" : withSelection;
+}
+
+function usePaneRouter({
+  stacked,
+  hasSession,
+  hasSelected,
+  sessionsRef,
+  timelineRef,
+  inspectorRef,
+}: {
+  stacked: boolean;
+  hasSession: boolean;
+  hasSelected: boolean;
+  sessionsRef: RefObject<HTMLElement | null>;
+  timelineRef: RefObject<HTMLElement | null>;
+  inspectorRef: RefObject<HTMLElement | null>;
+}) {
+  const [pane, setPane] = useState<Pane>("sessions");
+  const visible = stacked ? shownPane(pane, hasSession, hasSelected) : null;
+  const entered = useRef(visible);
+  useEffect(() => {
+    const previous = entered.current;
+    entered.current = visible;
+    if (!previous || !visible || previous === visible) return;
+    if (visible === "sessions") focusList(sessionsRef.current);
+    else if (visible === "timeline") focusList(timelineRef.current);
+    else inspectorRef.current?.focus();
+  }, [visible, sessionsRef, timelineRef, inspectorRef]);
+  const open = useCallback(() => {
+    if (stacked) setPane("timeline");
+    else focusList(timelineRef.current);
+  }, [stacked, timelineRef]);
+  const inspect = useCallback(() => {
+    if (stacked) setPane("inspector");
+    else inspectorRef.current?.focus();
+  }, [stacked, inspectorRef]);
+  const back = useCallback(
+    () => setPane(visible === "inspector" ? "timeline" : "sessions"),
+    [visible],
+  );
+  const reset = useCallback(() => setPane("sessions"), []);
+  return { visible, open, inspect, back, reset };
+}
+
 export function TraceWorkbench({
   hostId,
   nativeId,
@@ -92,7 +149,20 @@ export function TraceWorkbench({
   const timelineRef = useRef<HTMLElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const sessionSearchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLElement>(null);
+  const stacked = useStackedLayout(rootRef);
+  const pane = usePaneRouter({
+    stacked,
+    hasSession: Boolean(session),
+    hasSelected: Boolean(selected),
+    sessionsRef,
+    timelineRef,
+    inspectorRef,
+  });
+  const { visible: visiblePane, back } = pane;
+  const layout = stacked ? { "data-layout": "stack", "data-pane": visiblePane } : undefined;
+  const onBack = stacked ? back : undefined;
   const settledSessions = useDebounced(sessionSearch);
   const settledEvents = useDebounced(eventSearch);
   const revision = status.data?.revision ?? 0;
@@ -135,7 +205,8 @@ export function TraceWorkbench({
         return;
       if (event.key === "/") {
         event.preventDefault();
-        searchRef.current?.focus();
+        const field = visiblePane && visiblePane !== "timeline" ? sessionSearchRef : searchRef;
+        field.current?.focus();
       }
       if (event.key === "r" && selected) {
         event.preventDefault();
@@ -147,15 +218,16 @@ export function TraceWorkbench({
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        if (inspectorRef.current?.contains(target)) focusList(timelineRef.current);
+        if (stacked) back();
+        else if (inspectorRef.current?.contains(target)) focusList(timelineRef.current);
         else focusList(sessionsRef.current);
       }
     }
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
-  }, [selected, raw, showHelp]);
+  }, [selected, raw, showHelp, stacked, back, visiblePane]);
   return (
-    <main className="tr-app" ref={rootRef}>
+    <main className="tr-app" ref={rootRef} {...layout}>
       <TraceHeader
         hostPicker={hostPicker}
         onSources={showSources}
@@ -175,9 +247,11 @@ export function TraceWorkbench({
         setKind={setKind}
         providers={status.data?.providers}
         searchRef={searchRef}
+        sessionSearchRef={sessionSearchRef}
         clearSession={() => {
           setSession(null);
           setSelected(null);
+          pane.reset();
         }}
       />
       <TraceTopics topic={topic} setTopic={setTopic} status={status.data} />
@@ -188,6 +262,7 @@ export function TraceWorkbench({
           setCurrentOnly(value);
           setSession(null);
           setSelected(null);
+          pane.reset();
         }}
       />
       <TraceNotice
@@ -205,11 +280,12 @@ export function TraceWorkbench({
           selected={session}
           onSelect={selectSession}
           listRef={sessionsRef}
-          onOpen={() => focusList(timelineRef.current)}
+          onOpen={pane.open}
+          stacked={stacked}
           revision={revision}
         />
         <div className="tr-session-workspace">
-          <SessionHeading session={session} />
+          <SessionHeading session={session} onBack={onBack} />
           <div className="tr-event-workspace">
             {session ? (
               <Timeline
@@ -223,7 +299,8 @@ export function TraceWorkbench({
                 onSelect={setSelected}
                 listRef={timelineRef}
                 revision={revision}
-                onInspect={() => inspectorRef.current?.focus()}
+                onInspect={pane.inspect}
+                stacked={stacked}
               />
             ) : (
               <Empty title="Your session timeline">Select a session to inspect its events.</Empty>
@@ -237,6 +314,7 @@ export function TraceWorkbench({
                 onRaw={setRaw}
                 onSelect={setSelected}
                 inspectorRef={inspectorRef}
+                onBack={onBack}
                 renderers={renderers}
               />
             ) : (

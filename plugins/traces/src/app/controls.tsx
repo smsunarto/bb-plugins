@@ -1,10 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 import type { TraceEvidence } from "../shared/model.ts";
 
 export function focusList(element: HTMLElement | null) {
   const selected = element?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
   (selected ?? element?.querySelector<HTMLButtonElement>("button"))?.focus();
+}
+export function useStackedLayout(ref: RefObject<HTMLElement | null>, below = 700) {
+  const [stacked, setStacked] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => setStacked(element.clientWidth < below);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, below]);
+  return stacked;
 }
 export function useDisclosure() {
   const [open, setOpen] = useState(false);
