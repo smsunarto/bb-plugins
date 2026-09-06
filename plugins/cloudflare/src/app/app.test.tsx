@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import type { Overview, TunnelDetails } from "../shared/schema.ts";
 
@@ -75,7 +75,11 @@ const overview: Overview = {
   apps: { items: [] },
   policies: { items: [] },
 };
-const rpc = { overview: async () => overview };
+const quickHosts = { items: [{ id: "host_1", name: "Dev Mac", online: true }] };
+const rpc = {
+  overview: async () => overview,
+  quickList: async () => ({ hosts: quickHosts, shares: [] }),
+};
 
 async function loaded(slot: {
   findByRole: (role: string, options: { name: string }) => Promise<unknown>;
@@ -83,8 +87,15 @@ async function loaded(slot: {
   await slot.findByRole("button", { name: "Tunnels 1" });
 }
 
+// The panel keeps one module-level query cache so tab switches stay instant;
+// each test starts from an empty cache. The module is only importable once
+// loadPluginApp has installed the SDK runtime, so the handle is captured lazily.
+let appModule: { queryClient: { clear(): void } } | undefined;
+beforeEach(() => appModule?.queryClient.clear());
+
 async function panel() {
   const app = await loadPluginApp(() => import("./app.tsx"));
+  appModule ??= await import("./app.tsx");
   const registration = app.navPanels[0];
   if (!registration) throw new Error("app.tsx registers one nav panel");
   return registration;
@@ -110,10 +121,52 @@ test("switching tabs reuses the cached overview instead of reloading it", async 
   second.unmount();
 });
 
-test("identity providers without a name are listed by type", async () => {
+test("a running quick share shows its public URL with open and copy controls", async () => {
+  const client = {
+    ...rpc,
+    quickList: async () => ({
+      hosts: quickHosts,
+      shares: [
+        {
+          id: "7c2a8e1e-0d0f-4c8e-9a6b-6a4a0b6f2b11",
+          hostId: "host_1",
+          port: 3000,
+          label: "Storybook",
+          state: "running" as const,
+          url: "https://brave-otter-quick.trycloudflare.com",
+          createdAt: "2026-09-06T12:00:00Z",
+          updatedAt: "2026-09-06T12:00:00Z",
+        },
+      ],
+    }),
+  };
+  const slot = renderSlot(await panel(), { subPath: "" }, { rpc: client });
+  await slot.findByRole("button", { name: "Shares 1" });
+  expect(slot.getByText("Running").className).toContain("cf-tone-good");
+  expect(slot.getByRole("link", { name: "Open Storybook" }).getAttribute("href")).toBe(
+    "https://brave-otter-quick.trycloudflare.com",
+  );
+  expect(
+    slot.getByRole("button", { name: "Copy URL: https://brave-otter-quick.trycloudflare.com" }),
+  ).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(slot.queryByText("No development shares yet")).toBeNull();
+  slot.unmount();
+});
+
+test("New share opens the quick share form with the only online host preselected", async () => {
   const slot = renderSlot(await panel(), { subPath: "" }, { rpc });
   await loaded(slot);
   fireEvent.click(slot.getAllByRole("button", { name: "New share" })[0]!);
+  expect((slot.getByLabelText("BB host") as HTMLSelectElement).value).toBe("host_1");
+  expect(slot.getByRole("button", { name: "Start quick share" })).toBeTruthy();
+  slot.unmount();
+});
+
+test("identity providers without a name are listed by type", async () => {
+  const slot = renderSlot(await panel(), { subPath: "" }, { rpc });
+  await loaded(slot);
+  fireEvent.click(slot.getAllByRole("button", { name: "Protected share…" })[0]!);
   expect(slot.getByRole("option", { name: "One-time PIN" })).toBeTruthy();
   expect(slot.getByRole("option", { name: "Work SSO · SAML" })).toBeTruthy();
   slot.unmount();

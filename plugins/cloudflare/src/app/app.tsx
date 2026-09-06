@@ -3,11 +3,19 @@ import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { QueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { CreateShare, Overview, Share, Spec } from "../shared/schema.ts";
+import type {
+  CreateShare,
+  Overview,
+  QuickCreate,
+  QuickList,
+  QuickShare,
+  Share,
+  Spec,
+} from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
 import { tunnelDrafts } from "./tunnel-drafts.ts";
 import { Access, DnsInventory, Tunnels } from "./inventory.tsx";
-import { CreateForm, ShareCard, newShareLabel } from "./shares.tsx";
+import { CreateForm, QuickCreateForm, QuickShareCard, ShareCard } from "./shares.tsx";
 import {
   TABS,
   activeTab,
@@ -24,7 +32,8 @@ import "./cloudflare.css";
 // boundary would be discarded with it, so each tab switch would reload the
 // account and flash skeletons. Sharing one client keeps the overview cached
 // across tabs and lets the interval refetch update it in the background.
-const queryClient = new QueryClient();
+// Exported so tests can reset the cache between cases.
+export const queryClient = new QueryClient();
 
 function ConnectionSkeleton() {
   return (
@@ -213,11 +222,16 @@ function CloudflareHeader({
 }
 
 type ShareAction = "start" | "stop" | "remove";
+function protectedShareLabel(open: boolean, pending: CreateShare | null) {
+  if (open) return "Hide protected form";
+  return pending ? "Resume protected request" : "Protected share…";
+}
 type Client = ReturnType<typeof rpc.useClient>;
 type MutationResult = { ok: boolean; message: string };
 
 function useShareController(client: Client, refetch: () => Promise<unknown>) {
   const [newOpen, setNewOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [pendingCreate, setPendingCreate] = useState<CreateShare | null>(null);
   const [busy, setBusy] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -226,16 +240,16 @@ function useShareController(client: Client, refetch: () => Promise<unknown>) {
   function fail(error: unknown, fallback: string) {
     setNotice({ message: error instanceof Error ? error.message : fallback, error: true });
   }
-  async function mutate(operation: () => Promise<MutationResult>): Promise<boolean> {
-    if (mutationLock.current) return false;
+  // Resolves with the server result, or null when the call was skipped or threw.
+  async function mutate(operation: () => Promise<MutationResult>): Promise<MutationResult | null> {
+    if (mutationLock.current) return null;
     mutationLock.current = true;
     setBusy(true);
     setNotice(null);
-    let ok = false;
+    let result: MutationResult | null = null;
     try {
-      const result = await operation();
+      result = await operation();
       setNotice({ message: result.message, error: !result.ok });
-      ok = result.ok;
     } catch (error) {
       fail(error, "The request failed. Refresh the account and try again.");
     } finally {
@@ -243,7 +257,7 @@ function useShareController(client: Client, refetch: () => Promise<unknown>) {
       mutationLock.current = false;
       setBusy(false);
     }
-    return ok;
+    return result;
   }
   async function connect() {
     if (mutationLock.current) return;
@@ -264,21 +278,29 @@ function useShareController(client: Client, refetch: () => Promise<unknown>) {
   }
   async function create(input: CreateShare) {
     setPendingCreate(input);
-    await mutate(async () => {
-      const result = await client.create(input);
+    const result = await mutate(() => client.create(input));
+    if (!result) return;
+    setPendingCreate(null);
+    setNewOpen(false);
+  }
+  async function onAction(action: ShareAction, target: Share) {
+    const result = await mutate(() =>
+      client[action]({ id: target.id, expectedRevision: target.revision }),
+    );
+    if (action === "remove" && result?.ok && pendingCreate?.id === target.id) {
       setPendingCreate(null);
       setNewOpen(false);
-      return result;
-    });
+    }
   }
-  function onAction(action: ShareAction, target: Share) {
-    void mutate(async () => {
-      const result = await client[action]({ id: target.id, expectedRevision: target.revision });
-      if (action === "remove" && result.ok && pendingCreate?.id === target.id) {
-        setPendingCreate(null);
-        setNewOpen(false);
-      }
-      return result;
+  async function quickCreate(input: QuickCreate) {
+    const result = await mutate(() => client.quickCreate(input));
+    if (result?.ok) setQuickOpen(false);
+  }
+  function quickAction(action: ShareAction, share: QuickShare) {
+    void mutate(() => {
+      if (action === "start") return client.quickStart({ id: share.id });
+      if (action === "stop") return client.quickStop({ id: share.id });
+      return client.quickRemove({ id: share.id });
     });
   }
   function onResume(target: Share) {
@@ -294,6 +316,10 @@ function useShareController(client: Client, refetch: () => Promise<unknown>) {
   return {
     newOpen,
     setNewOpen,
+    quickOpen,
+    setQuickOpen,
+    quickCreate,
+    quickAction,
     pendingCreate,
     busy,
     connecting,
@@ -303,8 +329,12 @@ function useShareController(client: Client, refetch: () => Promise<unknown>) {
     create,
     onAction,
     onResume,
-    onUpdate: (target: Share, spec: Spec) =>
-      mutate(() => client.update({ id: target.id, expectedRevision: target.revision, spec })),
+    onUpdate: async (target: Share, spec: Spec) =>
+      (
+        await mutate(() =>
+          client.update({ id: target.id, expectedRevision: target.revision, spec }),
+        )
+      )?.ok ?? false,
   };
 }
 type ShareController = ReturnType<typeof useShareController>;
@@ -329,51 +359,100 @@ function ShareList({ data, shares }: { data: Overview; shares: ShareController }
   );
 }
 
-function SharesSection({
+function QuickShareList({ quick, shares }: { quick: QuickList; shares: ShareController }) {
+  return (
+    <div className="cf-stack">
+      {quick.shares.map((share) => (
+        <QuickShareCard
+          key={share.id}
+          share={share}
+          hosts={quick.hosts.items}
+          busy={shares.busy}
+          onAction={shares.quickAction}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ShareForms({
   data,
-  loading,
+  quick,
   shares,
-  newShareButton,
 }: {
   data?: Overview;
+  quick?: QuickList;
+  shares: ShareController;
+}) {
+  return (
+    <>
+      {shares.quickOpen && quick && (
+        <QuickCreateForm
+          hosts={quick.hosts.items}
+          busy={shares.busy}
+          onSubmit={shares.quickCreate}
+          onClose={() => shares.setQuickOpen(false)}
+        />
+      )}
+      {shares.newOpen && data && (
+        <CreateForm
+          key={shares.pendingCreate?.id ?? "new"}
+          overview={data}
+          pending={shares.pendingCreate}
+          busy={shares.busy}
+          onSubmit={shares.create}
+          onClose={() => shares.setNewOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function ProtectedShares({ data, shares }: { data: Overview; shares: ShareController }) {
+  return (
+    <>
+      <div className="cf-section-heading cf-section-gap">
+        <h3>Protected shares</h3>
+      </div>
+      <ShareList data={data} shares={shares} />
+    </>
+  );
+}
+
+function SharesSection({
+  data,
+  quick,
+  loading,
+  shares,
+  actions,
+}: {
+  data?: Overview;
+  quick?: QuickList;
   loading: boolean;
   shares: ShareController;
-  newShareButton: ReactNode;
+  actions: ReactNode;
 }) {
-  const configured = data?.setup.configured ?? false;
-  const hasShares = data?.shares.some((share) => share.state !== "removed") ?? false;
+  const hasQuick = Boolean(quick?.shares.length);
+  const hasProtected = data?.shares.some((share) => share.state !== "removed") ?? false;
+  const formOpen = shares.quickOpen || shares.newOpen;
+  const empty = Boolean(quick) && !hasQuick && !hasProtected && !formOpen;
   return (
     <section aria-label="Development shares">
-      {loading && <ContentSkeleton />}
-      {data && (
-        <>
-          <SectionErrors overview={data} />
-          {shares.newOpen && (
-            <CreateForm
-              key={shares.pendingCreate?.id ?? "new"}
-              overview={data}
-              pending={shares.pendingCreate}
-              busy={shares.busy}
-              onSubmit={shares.create}
-              onClose={() => shares.setNewOpen(false)}
-            />
-          )}
-          {!hasShares && !shares.newOpen && (
-            <EmptyState
-              title="No development shares yet"
-              action={configured ? newShareButton : undefined}
-            >
-              {configured
-                ? "Share a local port from an enrolled host behind an email allowlist."
-                : "Connect your account above to create a protected share."}
-            </EmptyState>
-          )}
-          {hasShares && <ShareList data={data} shares={shares} />}
-        </>
+      {loading && !quick && <ContentSkeleton />}
+      {quick?.hosts.error && <Notice error>Hosts could not be loaded. {quick.hosts.error}</Notice>}
+      {data && <SectionErrors overview={data} />}
+      <ShareForms data={data} quick={quick} shares={shares} />
+      {empty && (
+        <EmptyState title="No development shares yet" action={actions}>
+          Publish a local port from an enrolled host on a temporary trycloudflare.com URL. Protected
+          shares with an email allowlist need a connected account.
+        </EmptyState>
       )}
+      {quick && hasQuick && <QuickShareList quick={quick} shares={shares} />}
+      {data && hasProtected && <ProtectedShares data={data} shares={shares} />}
       <p className="cf-footnote">
-        Running means the tunnel is healthy and the connector is up. Open a share signed out and
-        complete login to confirm Access works.
+        Quick shares are public while they run. For protected shares, Running means the tunnel is
+        healthy and the connector is up; open one signed out to confirm Access works.
       </p>
     </section>
   );
@@ -382,10 +461,12 @@ function SharesSection({
 function Tabs({
   active,
   data,
+  count,
   onSelect,
 }: {
   active: TabPath;
   data?: Overview;
+  count: (path: TabPath) => number;
   onSelect: (path: TabPath) => void;
 }) {
   return (
@@ -399,7 +480,7 @@ function Tabs({
         >
           {tab.label}
           <span className={data ? undefined : "cf-count-loading"} aria-hidden={!data}>
-            {tabCount(data, tab.path)}
+            {count(tab.path)}
           </span>
         </button>
       ))}
@@ -415,7 +496,10 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
     retry: false,
     staleTime: 10_000,
   });
-  const shares = useShareController(client, () => overview.refetch());
+  const quick = rpc.quickList.useQuery({ refetchInterval: 10_000, retry: false, staleTime: 5_000 });
+  const shares = useShareController(client, () =>
+    Promise.all([overview.refetch(), quick.refetch()]),
+  );
   const active = activeTab(subPath);
   const data = overview.data;
   const accountId = data?.setup.accountId;
@@ -425,16 +509,29 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
     if (connected === undefined) return;
     tunnelDrafts.bind(connected && accountId && clientId ? { accountId, clientId } : null);
   }, [accountId, clientId, connected]);
-  const hasShares = data?.shares.some((share) => share.state !== "removed") ?? false;
-  const newShareButton = (
-    <button
-      className="cf-primary"
-      type="button"
-      disabled={!data?.setup.configured || shares.busy}
-      onClick={() => shares.setNewOpen(!shares.newOpen)}
-    >
-      {newShareLabel(shares.newOpen, shares.pendingCreate)}
-    </button>
+  const quickCount = quick.data?.shares.length ?? 0;
+  const hasShares =
+    quickCount > 0 || (data?.shares.some((share) => share.state !== "removed") ?? false);
+  const shareActions = (
+    <div className="cf-actions">
+      {data?.setup.configured && (
+        <button
+          type="button"
+          disabled={shares.busy}
+          onClick={() => shares.setNewOpen(!shares.newOpen)}
+        >
+          {protectedShareLabel(shares.newOpen, shares.pendingCreate)}
+        </button>
+      )}
+      <button
+        className="cf-primary"
+        type="button"
+        disabled={shares.busy || !quick.data}
+        onClick={() => shares.setQuickOpen(!shares.quickOpen)}
+      >
+        {shares.quickOpen ? "Hide form" : "New share"}
+      </button>
+    </div>
   );
   return (
     <main className="cf-panel" aria-busy={overview.isPending}>
@@ -463,22 +560,27 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
         <Tabs
           active={active.path}
           data={data}
+          count={(path) => tabCount(data, path) + (path === "" ? quickCount : 0)}
           onSelect={(path) => navigate.toPluginPanel("cloudflare", { subPath: path })}
         />
+        {quick.error && (
+          <Notice error>Quick shares could not be loaded. {quick.error.message}</Notice>
+        )}
         {shares.notice && <Notice error={shares.notice.error}>{shares.notice.message}</Notice>}
         <div className="cf-row cf-section-heading">
           <div>
             <h2 className="cf-sr-only">{active.title}</h2>
             <p>{active.description}</p>
           </div>
-          {active.path === "" && hasShares && newShareButton}
+          {active.path === "" && hasShares && shareActions}
         </div>
         {active.path === "" ? (
           <SharesSection
             data={data}
-            loading={overview.isPending}
+            quick={quick.data}
+            loading={overview.isPending || quick.isPending}
             shares={shares}
-            newShareButton={newShareButton}
+            actions={shareActions}
           />
         ) : (
           <Inventory

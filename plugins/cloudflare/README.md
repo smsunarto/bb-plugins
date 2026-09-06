@@ -38,7 +38,7 @@ The **Tunnels** tab shows public hostnames found in DNS records and remotely man
 
 Every named tunnel also shows its Cloudflare-generated `<tunnel-id>.cfargotunnel.com` DNS target for copying. This is a CNAME routing target, not a public website URL. [Cloudflare's routing documentation](https://developers.cloudflare.com/tunnel/routing/) explains the relationship.
 
-[Quick Tunnels](https://developers.cloudflare.com/tunnel/setup/#quick-tunnels-development) generate temporary `trycloudflare.com` links in the connector's terminal. They are independent of the connected account inventory. This plugin manages named tunnels and does not discover Quick Tunnel processes or generate substitute links for them.
+[Quick Tunnels](https://developers.cloudflare.com/tunnel/setup/#quick-tunnels-development) generate temporary `trycloudflare.com` links in the connector's terminal. They are independent of the connected account inventory. Quick shares started from this plugin appear in the **Shares** tab with their current URL. The account inventory does not list them, and Quick Tunnels started elsewhere are not discovered.
 
 ## Manage existing tunnels
 
@@ -56,9 +56,17 @@ The plugin sends one write and reads the result back. It does not retry or roll 
 
 Saving routes changes public ingress only. It does not create DNS records or change Access protection. Configure those separately before relying on a new hostname. Tunnel deletion, credential rotation, connector termination, and host process control are outside these controls.
 
-## Development shares
+## Quick shares
 
-Select an enrolled host, DNS zone, unused hostname, localhost port, existing identity provider, and one or more allowed email addresses. Each share owns a dedicated remotely managed tunnel, Access application, reusable allow policy, and proxied CNAME.
+A quick share publishes one local HTTP port from an enrolled BB host on a temporary `https://<random>.trycloudflare.com` URL using a [Cloudflare Quick Tunnel](https://try.cloudflare.com/). It needs `cloudflared` on the host and nothing else: no account connection, zone, DNS record, or Access policy. This is the share type agents create.
+
+Quick shares are public and unauthenticated. Anyone with the URL can reach the port while the share runs, and Cloudflare assigns a new hostname on every start. Stop a share to release its URL.
+
+Select **New share** in the **Shares** tab, choose an online host and port, and the URL appears once cloudflared registers the tunnel. Connector processes belong to the selected host worker and stop when that worker disconnects or the plugin reloads; start the share again for a fresh URL.
+
+## Protected shares
+
+Protected shares publish a hostname on your own zone behind Cloudflare Access. Create them from the **Shares** tab with **Protected share**. Select an enrolled host, DNS zone, unused hostname, localhost port, existing identity provider, and one or more allowed email addresses. Each share owns a dedicated remotely managed tunnel, Access application, reusable allow policy, and proxied CNAME.
 
 The plugin blocks ingress while configuring Access, verifies the allowlist, and requires Access JWT validation at the connector before publishing DNS. A final catch-all returns 404. Existing applications, policies, and DNS records remain read-only. Account tunnels have separate management controls described above. Overlapping Access applications and DNS collisions are rejected.
 
@@ -74,16 +82,19 @@ Connector processes belong to the selected host worker. They receive the tunnel 
 
 ## CLI and agents
 
-All surfaces call the same typed server procedures. The agent tool is `cloudflare_shares`, with `overview`, `create`, `update`, `start`, `stop`, and `remove` actions.
+All surfaces call the same typed server procedures. The agent tool is `cloudflare_shares`. Its `create` action starts a quick share and returns the public URL, `list` shows hosts and quick shares, and `start`, `stop`, and `remove` take a quick share id. Omit `hostId` to use the thread's own host, or the only online host. `overview` returns the connected account inventory. Protected shares are created from the panel or the `create` RPC below.
 
 ```sh
 bb cloudflare status
+bb cloudflare rpc quickCreate '{"port":3000}'
+bb cloudflare rpc quickList
+bb cloudflare rpc quickStop '{"id":"7c2a8e1e-0d0f-4c8e-9a6b-6a4a0b6f2b11"}'
 bb cloudflare rpc overview
 bb cloudflare rpc create '{"id":"e83fd2ef-b0ae-48e2-9a32-b8707c825d94","hostId":"HOST_ID","zoneId":"ZONE_ID","hostname":"demo.example.com","spec":{"port":3000,"allowedEmails":["you@example.com"],"identityProviderId":"IDP_ID"}}'
 bb cloudflare rpc stop '{"id":"e83fd2ef-b0ae-48e2-9a32-b8707c825d94","expectedRevision":1}'
 ```
 
-Generate a new UUID for each new share and reuse the exact creation input when retrying. Use the current `revision` from overview as `expectedRevision` for update, start, stop, and remove. A stale revision is rejected so a concurrent UI or agent edit cannot silently overwrite another change.
+For protected shares, generate a new UUID for each share and reuse the exact creation input when retrying. Use the current `revision` from overview as `expectedRevision` for update, start, stop, and remove. A stale revision is rejected so a concurrent UI or agent edit cannot silently overwrite another change.
 
 ## Development
 

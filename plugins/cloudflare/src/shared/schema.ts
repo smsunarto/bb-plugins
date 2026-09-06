@@ -324,4 +324,43 @@ export type TunnelDetails = z.infer<typeof tunnelDetailsSchema>;
 export type TunnelWriteResult = z.infer<typeof tunnelWriteResultSchema>;
 export type Connector = z.infer<typeof connectorSchema>;
 
+// Quick shares: a local port published on a temporary trycloudflare.com URL.
+// They need cloudflared on the host but no Cloudflare account connection.
+export const quickHostSchema = z
+  .object({ id: z.string(), name: z.string(), online: z.boolean() })
+  .strict();
+export const quickShareSchema = z
+  .object({
+    id: shareIdSchema,
+    hostId: idSchema,
+    port: z.number().int().min(1).max(65535),
+    label: z.string().max(80),
+    state: z.enum(["running", "stopped", "error"]),
+    url: z.url().optional(),
+    connectorId: z.string().optional(),
+    lastError: z.string().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .strict();
+export const quickCreateSchema = z
+  .object({
+    id: shareIdSchema.optional(),
+    hostId: idSchema.optional(),
+    port: z.number().int().min(1).max(65535),
+    label: z.string().trim().max(80).optional(),
+  })
+  .strict();
+export const quickIdSchema = z.object({ id: shareIdSchema }).strict();
+export const quickListSchema = z
+  .object({ hosts: section(quickHostSchema), shares: z.array(quickShareSchema) })
+  .strict();
+export const quickResultSchema = z
+  .object({ share: quickShareSchema, ok: z.boolean(), message: z.string() })
+  .strict();
+export type QuickShare = z.infer<typeof quickShareSchema>;
+export type QuickCreate = z.infer<typeof quickCreateSchema>;
+export type QuickList = z.infer<typeof quickListSchema>;
+export type QuickResult = z.infer<typeof quickResultSchema>;
+
 export type TunnelWriteState = z.infer<typeof tunnelWriteStateSchema>;

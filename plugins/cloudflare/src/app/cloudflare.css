@@ -888,3 +888,28 @@
 .cf-connector-connection .cf-kv {
   padding-top: 6px;
 }
+
+/* Quick shares */
+.cf-url-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--cf-hairline);
+  border-radius: 8px;
+  background: var(--cf-recessed);
+}
+.cf-url-row > .cf-hostname {
+  font-family: var(--cf-mono);
+  font-size: 12px;
+  min-width: 0;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.cf-url-row > .cf-hostname:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

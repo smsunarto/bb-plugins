@@ -50,6 +50,12 @@ process.on('SIGTERM', () => setTimeout(() => {
 fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({
   pid: process.pid, argv: process.argv.slice(2), token: process.env.TUNNEL_TOKEN,
 }));
+if (process.argv.includes('--url')) setTimeout(() => {
+  process.stderr.write('INF +--------------------------------------------------------------+\\n');
+  process.stderr.write('INF |  Your quick Tunnel has been created! Visit it at:            |\\n');
+  process.stderr.write('INF |  https://Brave-Otter-Quick.trycloudflare.com                 |\\n');
+  process.stderr.write('INF +--------------------------------------------------------------+\\n');
+}, 30);
 const timer = setInterval(() => {
   if (fs.existsSync(${JSON.stringify(emitConnector)})) {
     process.stderr.write('sensitive log ' + process.env.TUNNEL_TOKEN + '\\n');
@@ -106,6 +112,22 @@ test("launches with token only in the environment and exposes only sanitized loc
   expect(manager.status("share")).not.toHaveProperty("healthy");
 
   await manager.start("share", token, executable.executable, retain);
+  expect(retain).toHaveBeenCalledTimes(1);
+});
+
+test("quick tunnels pass the origin URL, carry no token and resolve with the assigned hostname", async () => {
+  const executable = fakeExecutable();
+  const { manager, retain } = managerWithLease();
+  const status = await manager.startQuick("quick", 3000, executable.executable, retain);
+  expect(status).toEqual({ running: true, url: "https://brave-otter-quick.trycloudflare.com" });
+  const child = await executable.started();
+  expect(child.argv).toEqual(["tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:3000"]);
+  expect(child.token).toBeUndefined();
+  expect(manager.status("quick").url).toBe("https://brave-otter-quick.trycloudflare.com");
+  writeFileSync(executable.emitConnector, "ready");
+  await eventually(() => manager.status("quick").connectorId === connectorId);
+  await manager.stop("quick");
+  expect(manager.status("quick")).toEqual({ running: false });
   expect(retain).toHaveBeenCalledTimes(1);
 });
 

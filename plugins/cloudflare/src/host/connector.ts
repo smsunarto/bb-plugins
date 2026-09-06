@@ -3,23 +3,36 @@ import { randomUUID } from "node:crypto";
 import type { ExperimentalHostWorkerLease } from "@get-bb/plugin-sdk/host";
 
 // The supervisor owns the child even if BB terminates the host worker without disposal.
+// argv[1] is the cloudflared executable; the remaining arguments are passed through.
 export const supervisorSource = String.raw`
 const {spawn}=require('node:child_process');
-const child=spawn(process.argv[1],['tunnel','--no-autoupdate','run'],{env:process.env,stdio:['ignore','ignore','pipe']});
+const child=spawn(process.argv[1],process.argv.slice(2),{env:process.env,stdio:['ignore','ignore','pipe']});
 let stopping=false,tail='',killTimer;
 function stop(){if(stopping)return;stopping=true;child.kill('SIGTERM');killTimer=setTimeout(()=>child.kill('SIGKILL'),3000);}
 process.on('disconnect',stop);process.on('SIGTERM',stop);process.on('SIGINT',stop);
 child.once('error',()=>{stopping=true;clearTimeout(killTimer);if(process.connected){process.send({event:'failed'});process.disconnect();}process.exitCode=1;});
 child.once('spawn',()=>{if(process.connected)process.send({event:'spawned'});else stop();});
-child.stderr.on('data',chunk=>{tail=(tail+chunk.toString()).slice(-8192);const match=tail.match(/Generated Connector ID[:= ]+([0-9a-f-]{36})/i);if(match&&process.connected){process.send({event:'connector',id:match[1]});tail='';}});
+child.stderr.on('data',chunk=>{tail=(tail+chunk.toString()).slice(-8192);const connector=tail.match(/Generated Connector ID[:= ]+([0-9a-f-]{36})/i);if(connector&&process.connected){process.send({event:'connector',id:connector[1]});tail=tail.slice(connector.index+connector[0].length);}const url=tail.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);if(url&&process.connected){process.send({event:'url',url:url[0].toLowerCase()});tail=tail.slice(url.index+url[0].length);}});
 child.once('exit',()=>{stopping=true;clearTimeout(killTimer);if(process.connected)process.disconnect();});
 `;
 type Entry = {
   process: ChildProcess;
   done: Promise<void>;
   connectorId?: string;
+  url?: string;
   generation: string;
 };
+type Status = { running: boolean; connectorId?: string; url?: string };
+type Launch = {
+  args: string[];
+  env: Record<string, string>;
+  // Resolves the start once the supervisor reports this event; a quick
+  // tunnel is only usable once cloudflared has printed its hostname.
+  readyEvent: "spawned" | "url";
+  timeoutMs: number;
+  timeoutMessage: string;
+};
+const QUICK_URL = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
 export class ConnectorManager {
   private entries = new Map<string, Entry>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -28,23 +41,54 @@ export class ConnectorManager {
     this.queue = next.catch(() => {});
     return next;
   }
-  status(id: string) {
+  status(id: string): Status {
     const entry = this.entries.get(id);
+    const running = Boolean(
+      entry && entry.process.exitCode === null && entry.process.signalCode === null,
+    );
     return {
-      running: Boolean(
-        entry && entry.process.exitCode === null && entry.process.signalCode === null,
-      ),
+      running,
       ...(entry?.connectorId ? { connectorId: entry.connectorId } : {}),
+      ...(running && entry?.url ? { url: entry.url } : {}),
     };
   }
   start(id: string, token: string, executable: string, retain: () => ExperimentalHostWorkerLease) {
+    return this.launch(id, executable, retain, {
+      args: ["tunnel", "--no-autoupdate", "run"],
+      env: { TUNNEL_TOKEN: token },
+      readyEvent: "spawned",
+      timeoutMs: 8000,
+      timeoutMessage: "cloudflared did not start in time.",
+    });
+  }
+  startQuick(
+    id: string,
+    port: number,
+    executable: string,
+    retain: () => ExperimentalHostWorkerLease,
+  ) {
+    return this.launch(id, executable, retain, {
+      args: ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${port}`],
+      env: {},
+      readyEvent: "url",
+      timeoutMs: 20000,
+      timeoutMessage:
+        "cloudflared did not report a trycloudflare.com URL in time. Check that the host can reach Cloudflare.",
+    });
+  }
+  private launch(
+    id: string,
+    executable: string,
+    retain: () => ExperimentalHostWorkerLease,
+    launch: Launch,
+  ) {
     return this.serialize(async () => {
       if (this.status(id).running) return this.status(id);
       const lease = retain();
       let child: ChildProcess;
       try {
-        child = spawn(process.execPath, ["-e", supervisorSource, executable], {
-          env: { ...process.env, TUNNEL_TOKEN: token },
+        child = spawn(process.execPath, ["-e", supervisorSource, executable, ...launch.args], {
+          env: { ...process.env, ...launch.env },
           stdio: ["ignore", "ignore", "ignore", "ipc"],
         });
       } catch {
@@ -68,8 +112,8 @@ export class ConnectorManager {
       try {
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(
-            () => reject(new Error("cloudflared did not start in time.")),
-            8000,
+            () => reject(new Error(launch.timeoutMessage)),
+            launch.timeoutMs,
           );
           const settle = (error?: Error) => {
             clearTimeout(timer);
@@ -85,7 +129,14 @@ export class ConnectorManager {
               /^[0-9a-f-]{36}$/i.test(message.id)
             )
               entry.connectorId = message.id;
-            if (message.event === "spawned") settle();
+            if (
+              message.event === "url" &&
+              "url" in message &&
+              typeof message.url === "string" &&
+              QUICK_URL.test(message.url)
+            )
+              entry.url = message.url;
+            if (message.event === launch.readyEvent) settle();
             if (message.event === "failed")
               settle(
                 new Error(

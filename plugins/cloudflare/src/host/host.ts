@@ -9,6 +9,8 @@ export default experimental_defineHostEntry({
     status: ({ id }) => connectors.status(id),
     start: ({ id, token, executable }, context) =>
       connectors.start(id, token, executable, () => context.experimental_retainWorker()),
+    startQuick: ({ id, port, executable }, context) =>
+      connectors.startQuick(id, port, executable, () => context.experimental_retainWorker()),
     stop: ({ id }) => connectors.stop(id),
   },
   dispose: () => connectors.dispose(),

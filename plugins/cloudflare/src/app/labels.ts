@@ -9,7 +9,8 @@ export const TABS = [
     path: "",
     label: "Shares",
     title: "Development shares",
-    description: "Each share publishes one local port behind an email allowlist.",
+    description:
+      "Quick shares publish a local port on a temporary trycloudflare.com URL. Protected shares add an Access email allowlist on your own domain.",
   },
   {
     path: "tunnels",
@@ -236,3 +237,9 @@ export const tunnelRouteActionLabel = (action: string, index: number) =>
 export const tunnelConnectorLabel = (index: number) => `Connector ${index + 1}`;
 export const tunnelConnectionLabel = (index: number) => `Connection ${index + 1}`;
 export const tunnelConfigVersionLabel = (version: number) => `Configuration version ${version}`;
+
+export function quickTone(state: "running" | "stopped" | "error"): Tone {
+  if (state === "running") return "good";
+  if (state === "error") return "bad";
+  return "neutral";
+}

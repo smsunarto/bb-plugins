@@ -1,9 +1,17 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { createSchema, specSchema } from "../shared/schema.ts";
-import type { CreateShare, Overview, Share, Spec } from "../shared/schema.ts";
-import { identityProviderLabel, shareTone, titleCase } from "./labels.ts";
-import { Badge, KeyValue, Mono, Notice } from "./ui.tsx";
+import { createSchema, quickCreateSchema, specSchema } from "../shared/schema.ts";
+import type {
+  CreateShare,
+  Overview,
+  QuickCreate,
+  QuickList,
+  QuickShare,
+  Share,
+  Spec,
+} from "../shared/schema.ts";
+import { identityProviderLabel, quickTone, shareTone, titleCase } from "./labels.ts";
+import { Badge, CopyButton, KeyValue, Mono, Notice } from "./ui.tsx";
 
 type SpecDraft = { port: string; emails: string; identityProviderId: string };
 
@@ -451,6 +459,227 @@ export function ShareCard({
       {confirmRemove && share.desiredState !== "removed" && (
         <div className="cf-remove-confirm">
           <p>Remove this share and its owned tunnel, DNS record and Access resources?</p>
+          <div className="cf-actions">
+            <button
+              type="button"
+              className="cf-danger"
+              disabled={busy}
+              onClick={() => onAction("remove", share)}
+            >
+              Confirm removal
+            </button>
+            <button type="button" disabled={busy} onClick={() => setConfirmRemove(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+type QuickHost = QuickList["hosts"]["items"][number];
+
+export function QuickCreateForm({
+  hosts,
+  busy,
+  onSubmit,
+  onClose,
+}: {
+  hosts: QuickHost[];
+  busy: boolean;
+  onSubmit: (input: QuickCreate) => Promise<void>;
+  onClose: () => void;
+}) {
+  const online = hosts.filter((host) => host.online);
+  const [hostId, setHostId] = useState(online.length === 1 ? (online[0]?.id ?? "") : "");
+  const [port, setPort] = useState("3000");
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState("");
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const result = quickCreateSchema.safeParse({
+      hostId: hostId || undefined,
+      port: Number(port),
+      label: label.trim() || undefined,
+    });
+    if (!result.success) {
+      setError(result.error.issues[0]?.message ?? "Check the share details.");
+      return;
+    }
+    setError("");
+    void onSubmit(result.data);
+  }
+  return (
+    <form className="cf-card cf-create" onSubmit={submit} aria-label="Create quick share">
+      <div className="cf-row">
+        <div>
+          <h3>New quick share</h3>
+          <p>
+            Publish one local port on a temporary trycloudflare.com URL. No account setup needed.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="cf-ghost"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Close quick share form"
+        >
+          Close
+        </button>
+      </div>
+      {online.length === 0 && <Notice error>Bring a BB host online to start a quick share.</Notice>}
+      {error && <Notice error>{error}</Notice>}
+      <fieldset className="cf-form-grid" disabled={busy}>
+        <label htmlFor="cf-quick-host">
+          BB host
+          <select
+            id="cf-quick-host"
+            name="hostId"
+            value={hostId}
+            onChange={(event) => setHostId(event.target.value)}
+            required
+          >
+            <option value="">Choose an online host</option>
+            {hosts.map((host) => (
+              <option key={host.id} value={host.id} disabled={!host.online}>
+                {host.name}
+                {host.online ? "" : " · Offline"}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label htmlFor="cf-quick-port">
+          Local port
+          <input
+            id="cf-quick-port"
+            name="port"
+            type="number"
+            min="1"
+            max="65535"
+            required
+            value={port}
+            onChange={(event) => setPort(event.target.value)}
+            placeholder="3000"
+          />
+        </label>
+        <label className="cf-span" htmlFor="cf-quick-label">
+          Label
+          <input
+            id="cf-quick-label"
+            name="label"
+            maxLength={80}
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="Storybook"
+          />
+          <span className="cf-help">Optional. Shown in the share list instead of the port.</span>
+        </label>
+      </fieldset>
+      <div className="cf-row cf-wrap cf-form-footer">
+        <p className="cf-help">
+          Anyone with the URL can reach the port while the share runs. cloudflared must be installed
+          on the host.
+        </p>
+        <button className="cf-primary" type="submit" disabled={busy || online.length === 0}>
+          {busy ? "Starting…" : "Start quick share"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function QuickShareCard({
+  share,
+  hosts,
+  busy,
+  onAction,
+}: {
+  share: QuickShare;
+  hosts: QuickHost[];
+  busy: boolean;
+  onAction: (action: "start" | "stop" | "remove", share: QuickShare) => void;
+}) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const host = hosts.find((item) => item.id === share.hostId);
+  const online = host?.online ?? false;
+  return (
+    <article
+      className="cf-card"
+      data-quick-share-id={share.id}
+      aria-label={`Quick share ${share.label}`}
+    >
+      <div className="cf-row">
+        <div>
+          <h3>{share.label}</h3>
+          <p className="cf-meta">
+            {host?.name ?? share.hostId} · localhost:{share.port}
+            {host && !online ? " · Host offline" : ""} · Quick Tunnel
+          </p>
+        </div>
+        <Badge tone={quickTone(share.state)} dot>
+          {titleCase(share.state)}
+        </Badge>
+      </div>
+      {share.url ? (
+        <div className="cf-url-row">
+          <a className="cf-hostname" href={share.url} target="_blank" rel="noreferrer">
+            {share.url}
+          </a>
+          <div className="cf-actions">
+            <a
+              className="cf-button cf-small"
+              href={share.url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open ${share.label}`}
+            >
+              Open ↗
+            </a>
+            <CopyButton value={share.url} label="Copy URL" />
+          </div>
+        </div>
+      ) : (
+        <p className="cf-meta">
+          {share.state === "error"
+            ? "The tunnel is not running."
+            : "Stopped. Starting again assigns a new URL."}
+        </p>
+      )}
+      {share.lastError && <Notice error>{share.lastError}</Notice>}
+      <div className="cf-row cf-wrap cf-card-footer">
+        <p className="cf-help">
+          Public and unauthenticated while running. The URL changes on every start.
+        </p>
+        <div className="cf-actions">
+          {share.state === "running" ? (
+            <button type="button" disabled={busy} onClick={() => onAction("stop", share)}>
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy || !online}
+              onClick={() => onAction("start", share)}
+              title={online ? undefined : "The host is offline."}
+            >
+              Start
+            </button>
+          )}
+          <button
+            className="cf-danger"
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirmRemove(!confirmRemove)}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+      {confirmRemove && (
+        <div className="cf-remove-confirm">
+          <p>Remove this quick share? Its tunnel stops and the URL stops resolving.</p>
           <div className="cf-actions">
             <button
               type="button"
