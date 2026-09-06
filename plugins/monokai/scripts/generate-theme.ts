@@ -66,6 +66,7 @@ const palette = {
 const roleValues = {
   "ground.chrome": palette.ground.chrome,
   "ground.chromeScrim": withAlpha(palette.ground.chrome, 0xeb),
+  "ground.contentScrim": withAlpha(palette.ground.content, 0xeb),
   "ground.content": palette.ground.content,
   "ground.recessed": palette.ground.recessed,
   "ground.raised": palette.ground.raised,
@@ -377,7 +378,7 @@ const darkExpected = declarationMap({
   "--surface-recessed-soft-solid": palette.ground.recessed,
   "--surface-raised": roleValues["text.ink08"],
   "--surface-raised-solid": palette.ground.raised,
-  "--surface-scrim": roleValues["ground.chromeScrim"],
+  "--surface-scrim": roleValues["ground.contentScrim"],
   "--agent-surface-background": palette.ground.recessed,
   "--agent-surface-border": roleValues["text.ink07"],
   "--state-hover": roleValues["text.ink08"],

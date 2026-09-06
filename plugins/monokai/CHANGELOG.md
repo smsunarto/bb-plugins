@@ -24,6 +24,11 @@
   token layer immediately after a plugin reload. Desktop clients retain a DOM
   token fallback when Electron cannot attach the Monaco provider.
 
+- Keep the page header on the editor ground. bb paints the header with its
+  scrim surface, which the theme had pinned to the darker chrome ground, so
+  on phones the header rendered one step darker than the status-bar strip
+  above it and the content below it.
+
 - Keep SF Pro composer placeholders at regular weight on mobile layouts.
 
 - Gate every theme hover fill behind `@media (hover: hover)`, matching bb's

@@ -100,7 +100,14 @@
                                            * and #1E1E1E; coarse on purpose */
   --surface-raised: #e3e3dd12; /* -> #262626 */
   --surface-raised-solid: #262626;
-  --surface-scrim: #141414eb; /* veil = darkest ground */
+  --surface-scrim: #181818eb; /* not a veil: bb paints the page
+                                           * header and floating control
+                                           * clusters with it, over the pane.
+                                           * On the content ground it flattens
+                                           * to #181818; on the chrome ground
+                                           * the header read one step darker
+                                           * than the safe-area strip above it
+                                           * on phones. */
 
   --agent-surface-background: #1e1e1e;
   --agent-surface-border: #e3e3dd11;

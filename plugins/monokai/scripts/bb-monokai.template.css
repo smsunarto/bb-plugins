@@ -98,7 +98,14 @@
                                            * and #1E1E1E; coarse on purpose */
   --surface-raised: {{text.ink08}}; /* -> #262626 */
   --surface-raised-solid: {{ground.raised}};
-  --surface-scrim: {{ground.chromeScrim}}; /* veil = darkest ground */
+  --surface-scrim: {{ground.contentScrim}}; /* not a veil: bb paints the page
+                                           * header and floating control
+                                           * clusters with it, over the pane.
+                                           * On the content ground it flattens
+                                           * to #181818; on the chrome ground
+                                           * the header read one step darker
+                                           * than the safe-area strip above it
+                                           * on phones. */
 
   --agent-surface-background: {{ground.recessed}};
   --agent-surface-border: {{text.ink07}};
