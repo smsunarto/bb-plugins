@@ -5,6 +5,11 @@
 - Start `bun run dev` before the first plugin edit. Leave it running.
 - Author every new plugin with the bb-kit framework (`@bb-kit/core`).
 
+## Linting and formatting
+
+- After making code changes, run `bunx oxlint --fix`, then run `bunx oxfmt`.
+- Before finishing, run `bunx oxlint --deny-warnings --format=agent`.
+
 ## Catalogs
 
 `marketplace.json` (repo root) is the public catalog `bb marketplace add` reads.
