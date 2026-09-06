@@ -261,3 +261,27 @@ test("renders through bb's themed diff component and opens its workspace file", 
   expect(openWorkspaceFile).toHaveBeenCalledWith("src/example.ts");
   slot.unmount();
 });
+
+test("keeps the diff viewport mounted while a deferred request resolves or fails", async () => {
+  for (const output of [readyDiff(patch), { status: "error" as const, message: "Unavailable" }]) {
+    embedCache.clear();
+    let resolve!: (value: typeof output) => void;
+    const response = new Promise<typeof output>((done) => {
+      resolve = done;
+    });
+    const slot = await renderDiffEmbed(() => response);
+    const loading = slot.getByText("Loading src/example.ts…");
+    const frame = loading.closest("figure")!;
+    const body = loading.closest(".smart-embed-body")!;
+    expect(frame.classList.contains("smart-embed-fixed")).toBe(true);
+    expect(frame.getAttribute("aria-busy")).toBe("true");
+    resolve(output);
+    if (output.status === "ready") await slot.findByTestId("bb-diff");
+    else await slot.findByText("Unavailable");
+    expect(slot.container.querySelector("figure")).toBe(frame);
+    expect(slot.container.querySelector(".smart-embed-body")).toBe(body);
+    expect(frame.classList.contains("smart-embed-fixed")).toBe(true);
+    slot.unmount();
+  }
+  embedCache.clear();
+});

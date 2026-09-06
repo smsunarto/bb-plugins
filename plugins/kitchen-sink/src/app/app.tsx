@@ -12,6 +12,7 @@ import {
   WORKSPACE_CHANGED_CHANNEL,
   workspaceChangedSignalSchema,
   type SmartEmbedsRpcContract,
+  type RenderEmbedOutput,
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import "./app.css";
@@ -75,6 +76,22 @@ function useCachedEmbed(request: EmbedRequest | null) {
   return entry;
 }
 
+function validateRequest(
+  kind: EmbedKind,
+  file: string,
+  path: string,
+  start: number | undefined | null,
+  end: number | undefined | null,
+): string | null {
+  return kind === "patch" && file.length === 0
+    ? "This Smart Embed needs a thread-storage-relative patch file."
+    : kind !== "patch" && path.length === 0
+      ? "This Smart Embed needs a worktree-relative path."
+      : start === null || end === null
+        ? "Smart Embed lines must be positive integers."
+        : null;
+}
+
 function SmartEmbed({
   kind,
   attributes,
@@ -86,14 +103,7 @@ function SmartEmbed({
   const start = positiveInteger(attributes.start);
   const end = positiveInteger(attributes.end);
 
-  const invalid =
-    kind === "patch" && file.length === 0
-      ? "This Smart Embed needs a thread-storage-relative patch file."
-      : kind !== "patch" && path.length === 0
-        ? "This Smart Embed needs a worktree-relative path."
-        : start === null || end === null
-          ? "Smart Embed lines must be positive integers."
-          : null;
+  const invalid = validateRequest(kind, file, path, start, end);
 
   useWorkspaceChangeSignals();
   const threadId = message.threadId;
@@ -115,8 +125,66 @@ function SmartEmbed({
   );
   const result = useCachedEmbed(request)?.value ?? null;
 
+  return (
+    <EmbedResult
+      kind={kind}
+      result={result}
+      invalid={invalid}
+      path={path}
+      file={file}
+      openWorkspaceFile={openWorkspaceFile}
+    />
+  );
+}
+
+function PendingNotice({
+  result,
+  subject,
+}: {
+  result: Exclude<RenderEmbedOutput, { status: "ready" }> | null;
+  subject: string;
+}) {
+  const tone = result?.status === "error" ? "error" : "muted";
+  return <Notice tone={tone}>{result === null ? `Loading ${subject}…` : result.message}</Notice>;
+}
+
+function EmbedResult({
+  kind,
+  result,
+  invalid,
+  path,
+  file,
+  openWorkspaceFile,
+}: {
+  kind: EmbedKind;
+  result: RenderEmbedOutput | null;
+  invalid: string | null;
+  path: string;
+  file: string;
+  openWorkspaceFile: PluginMessageDirectiveProps["openWorkspaceFile"];
+}) {
   if (invalid !== null) return <Notice tone="error">{invalid}</Notice>;
   const subject = kind === "patch" ? file : path;
+  // The frame must exist before either the RPC or BB's lazy renderer resolves.
+  // Size it by the requested kind so code/error fallbacks cannot collapse it.
+  const fixedViewport = kind !== "code";
+  if (fixedViewport && (result === null || result.status !== "ready")) {
+    return (
+      <figure className="smart-embed smart-embed-fixed" aria-busy={result === null}>
+        <figcaption className="smart-embed-header">
+          <span className="smart-embed-header-content">
+            <span className="smart-embed-kind">{KIND_LABEL[kind]}</span>
+            <span className="smart-embed-path" title={subject}>
+              {subject}
+            </span>
+          </span>
+        </figcaption>
+        <div className="smart-embed-body">
+          <PendingNotice result={result} subject={subject} />
+        </div>
+      </figure>
+    );
+  }
   if (result === null) return <Notice tone="muted">{`Loading ${subject}…`}</Notice>;
   if (result.status !== "ready") {
     return <Notice tone={result.status === "error" ? "error" : "muted"}>{result.message}</Notice>;
@@ -134,7 +202,10 @@ function SmartEmbed({
   );
 
   return (
-    <figure className="smart-embed" data-smart-embed-kind={result.kind}>
+    <figure
+      className={`smart-embed${fixedViewport ? " smart-embed-fixed" : ""}`}
+      data-smart-embed-kind={result.kind}
+    >
       <figcaption className="smart-embed-header">
         {openWorkspaceFile === null ? (
           <span className="smart-embed-header-content">{header}</span>
@@ -149,10 +220,10 @@ function SmartEmbed({
           </button>
         )}
       </figcaption>
-      {kind === "diff" && result.kind === "code" ? (
-        <Notice tone="muted">No Git history. Showing current code.</Notice>
-      ) : null}
       <div className="smart-embed-body">
+        {kind === "diff" && result.kind === "code" ? (
+          <Notice tone="muted">No Git history. Showing current code.</Notice>
+        ) : null}
         {result.kind === "code" ? (
           <pre className="smart-embed-code" aria-label={result.label}>
             <code>

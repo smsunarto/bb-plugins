@@ -100,6 +100,13 @@
   background: var(--background);
 }
 
+/* A stable viewport contains both lazy loading stages and later refreshes. */
+.smart-embed-fixed .smart-embed-body {
+  height: min(20rem, 55vh);
+  max-height: none;
+  scrollbar-gutter: stable;
+}
+
 .smart-embed-renderer {
   display: block;
   min-width: 100%;
