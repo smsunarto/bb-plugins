@@ -11,13 +11,15 @@ export interface ScrollGeometry {
   readonly scrollTop: number;
   readonly scrollHeight: number;
   readonly clientHeight: number;
+  /** Rendered row positions, including horizontal and internal layout changes. */
+  readonly layout: string;
 }
 
 export interface HoldState {
   /** bb has placed the view: scrollTop moved, a scroll event landed, or nothing scrolls. */
   readonly positioned: boolean;
-  /** Frames in a row whose geometry matched the frame before. */
-  readonly stableFrames: number;
+  /** Start of the current interval with unchanged rendered geometry. */
+  readonly stableSince: number;
   readonly previous: ScrollGeometry | null;
 }
 
@@ -28,14 +30,14 @@ export interface HoldStep {
 
 export const INITIAL_HOLD_STATE: HoldState = {
   positioned: false,
-  stableFrames: 0,
+  stableSince: 0,
   previous: null,
 };
 
-/** Matching frames needed once positioned. One means two identical samples. */
-export const STABLE_FRAMES_TO_REVEAL = 1;
-/** The longest hold. A thread still streaming, or restored to its very top, reveals here. */
-export const HOLD_CAP_MS = 350;
+/** A quiet interval, independent of the display's refresh rate. */
+export const SETTLE_QUIET_MS = 84;
+/** Bound the delay for streams and views intentionally restored to the top. */
+export const HOLD_CAP_MS = 800;
 /** Fractional scroll metrics leave a sub-pixel gap even when nothing can scroll. */
 const FITS_THRESHOLD_PX = 4;
 
@@ -47,7 +49,8 @@ function sameGeometry(a: ScrollGeometry, b: ScrollGeometry): boolean {
   return (
     a.scrollTop === b.scrollTop &&
     a.scrollHeight === b.scrollHeight &&
-    a.clientHeight === b.clientHeight
+    a.clientHeight === b.clientHeight &&
+    a.layout === b.layout
   );
 }
 
@@ -63,9 +66,11 @@ export function advanceHold(
 ): HoldStep {
   const positioned =
     state.positioned || scrolled || geometry.scrollTop > 0 || fitsViewport(geometry);
-  const stableFrames =
-    state.previous !== null && sameGeometry(state.previous, geometry) ? state.stableFrames + 1 : 0;
+  const stableSince =
+    state.previous !== null && sameGeometry(state.previous, geometry)
+      ? state.stableSince
+      : elapsedMs;
   const reveal =
-    (positioned && stableFrames >= STABLE_FRAMES_TO_REVEAL) || elapsedMs >= HOLD_CAP_MS;
-  return { state: { positioned, stableFrames, previous: geometry }, reveal };
+    (positioned && elapsedMs - stableSince >= SETTLE_QUIET_MS) || elapsedMs >= HOLD_CAP_MS;
+  return { state: { positioned, stableSince, previous: geometry }, reveal };
 }

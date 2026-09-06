@@ -1,37 +1,45 @@
 # Smooth Thread Switch
 
-Fades a switched-to conversation in once bb has scrolled it into place.
+Keeps the outgoing conversation visible while bb restores the next thread's
+scroll position and lays out its rows. Then it swaps directly to the settled
+view, without a fade or overlapping text.
 
-## What it does
+## Layout stability
 
-Opening a thread remounts bb's conversation timeline. The rows first paint
-scrolled to the very top, and only a few frames later does bb snap the view to
-the bottom, or back to the row you had scrolled to. The latest rows can merge
-in and shift things once more after that. On a fast machine that reads as a
-flash of the oldest messages followed by a jump.
+A new conversation stays invisible until its scroll position, viewport height,
+and rendered row rectangles have stopped changing for 84ms. Checking row
+rectangles catches width changes and internal reflows even when the total
+scroll height remains unchanged. Measuring elapsed time makes this interval
+independent of the display refresh rate.
 
-This plugin holds the freshly mounted row list invisible through that dance and
-then fades it in over 180ms. It reveals as soon as bb has positioned the view
-and the scroll geometry has held still for a frame, and never later than 350ms
-after the rows mount, so a thread that is still streaming or was left at its
-very top shows up on time.
+84ms is the selected quiet interval, down from 120ms. Browser measurements
+covered 390px mobile and 1728px desktop, including main-thread contention.
+Shorter 34ms and 67ms candidates passed trace replays but exposed later layout
+changes in live checks. The live workload included an active thread, so those
+changes can also include new output. Final verification separately checks
+non-streaming threads. This is a tested compromise, not a proven universal
+minimum or a guarantee against arbitrary asynchronous content.
 
-## How it works
+The hold lasts at most 800ms so a continuously streaming thread or a view
+restored to the very top remains usable. Content arriving after that deadline
+can still move. This plugin masks initial layout adjustments. It does not
+change bb's scroll restoration or reserve space for future asynchronous embeds.
 
-- One content script watches the app for a newly mounted top-level timeline row
-  list, the `data-timeline-row-list="top-level"` element bb renders.
-- The list gets a class that sets `opacity: 0` in the same mutation microtask
-  it mounts in, before its first paint. Opacity leaves layout, scroll metrics,
-  and bb's resize and intersection observers untouched, so bb's own
-  bottom-anchoring and scroll restore run exactly as they would unhidden.
-- Each animation frame samples the scroll area's `scrollTop`, `scrollHeight`,
-  and `clientHeight`. The view counts as positioned once `scrollTop` moved, a
-  scroll event fired, or the conversation fits without scrolling. One repeated
-  sample after that lifts the hold.
-- The reveal is a CSS animation. Under `prefers-reduced-motion` the hold
-  remains, since it is not motion, and the fade is dropped.
-- Rows streaming into an already visible list are ignored, a list that unmounts
-  mid-hold is released, and the disposer strips every class and cancels every
-  frame, so reloads leave no trace.
+## Lifecycle
 
-The plugin adds no settings, server behavior, or CLI commands.
+The content script tracks bb's `data-timeline-row-list="top-level"` elements.
+When bb detaches an outgoing scroll area, the script retains it as an inert,
+aria-hidden overlay at its previous position. It strips row, footer, and ID
+attributes so bb cannot mistake it for live content, and blanks iframes to
+avoid reloading their documents.
+
+The incoming list keeps its normal layout and scroll observers while hidden.
+Once stable, it becomes visible and the overlay is removed in the same frame.
+The behavior is the same with reduced motion enabled because it has no fade.
+
+An overlay without a replacement expires after 800ms. All overlays expire
+within 1.2 seconds. Navigating away from threads removes them immediately.
+Reloading or disabling the plugin removes all holds, overlays, and observers.
+Already visible streaming rows are left alone.
+
+The plugin has no settings or CLI commands.

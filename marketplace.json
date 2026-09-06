@@ -188,7 +188,7 @@
     {
       "id": "smooth-thread-switch",
       "displayName": "Smooth Thread Switch",
-      "description": "Fades a switched-to conversation in once bb has scrolled it into place, instead of flashing its top and jumping to the bottom.",
+      "description": "Keeps thread switches steady while bb restores the scroll position and settles the message layout.",
       "icon": {
         "url": "plugins/smooth-thread-switch/assets/icon.svg"
       },

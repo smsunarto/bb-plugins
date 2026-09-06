@@ -1,27 +1,15 @@
-/* A conversation bb has just mounted stays invisible while bb scrolls it into
-   place. Opacity keeps its layout, scroll metrics, and observers intact, so
-   bb's own bottom-anchoring runs exactly as it would unhidden. */
+/* Retain layout while bb restores the scroll position and finishes reflowing. */
 .smooth-thread-switch-hold {
   opacity: 0;
 }
 
-.smooth-thread-switch-reveal {
-  animation: smooth-thread-switch-reveal 180ms ease-out both;
-}
-
-@keyframes smooth-thread-switch-reveal {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-/* The hold itself is not motion, so it stays; only the fade goes. */
-@media (prefers-reduced-motion: reduce) {
-  .smooth-thread-switch-reveal {
-    animation: none;
-  }
+/* Keep the outgoing conversation in place until the incoming one is settled.
+   Swap in one paint, without blending two different text layouts. */
+.smooth-thread-switch-ghost {
+  position: absolute;
+  z-index: 31;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  background-color: var(--background, transparent);
 }
