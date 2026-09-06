@@ -1,0 +1,351 @@
+.cf-panel {
+  height: 100%;
+  overflow-y: auto;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: 13px;
+}
+.cf-content {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+  box-sizing: border-box;
+}
+.cf-panel h1,
+.cf-panel h2,
+.cf-panel h3,
+.cf-panel p {
+  margin: 0;
+}
+.cf-panel h1 {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.6px;
+  line-height: 1.35;
+}
+.cf-panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cf-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cf-panel p {
+  color: var(--muted-foreground);
+  line-height: 1.6;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.cf-eyebrow {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  margin-bottom: 8px;
+}
+.cf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cf-row > div:first-child {
+  min-width: 0;
+}
+.cf-wrap {
+  flex-wrap: wrap;
+}
+.cf-header {
+  margin-bottom: 24px;
+}
+.cf-card {
+  border: 1px solid var(--border);
+  background: var(--card, var(--background));
+  border-radius: 10px;
+  padding: 17px 18px;
+}
+.cf-connection {
+  margin-bottom: 24px;
+}
+.cf-connection > .cf-row:last-child {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.cf-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 9px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+.cf-good {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.cf-good::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 6px;
+}
+.cf-panel button,
+.cf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 6px 11px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+}
+.cf-panel button:hover:not(:disabled),
+.cf-button:hover {
+  background: var(--accent);
+}
+.cf-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cf-panel button.cf-primary {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.cf-panel button.cf-primary:hover:not(:disabled) {
+  opacity: 0.88;
+}
+.cf-panel button.cf-danger {
+  color: var(--destructive);
+}
+.cf-panel :is(button, input, select, textarea, a, summary):focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 3px;
+}
+.cf-tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 23px;
+}
+.cf-tabs button {
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  gap: 7px;
+}
+.cf-tabs button[aria-current] {
+  border-bottom-color: var(--foreground);
+  color: var(--foreground);
+}
+.cf-tabs button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--foreground);
+}
+.cf-tabs span {
+  border-radius: 5px;
+  background: var(--muted);
+  padding: 1px 5px;
+  font-size: 10px;
+}
+.cf-section-heading {
+  margin: 22px 0 15px;
+}
+.cf-stack {
+  display: grid;
+  gap: 12px;
+}
+.cf-notice {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 11px 13px;
+  margin: 12px 0;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.cf-notice .cf-button {
+  margin-left: 8px;
+}
+.cf-error {
+  color: var(--destructive);
+  border-color: var(--destructive);
+  background: var(--background);
+}
+.cf-empty {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  text-align: center;
+  padding: 42px 20px;
+  color: var(--muted-foreground);
+  line-height: 1.6;
+}
+.cf-empty h3 {
+  color: var(--foreground);
+}
+.cf-panel details {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cf-panel summary {
+  cursor: pointer;
+}
+.cf-panel details ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.cf-mono,
+.cf-resources dd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.cf-hostname,
+.cf-email-list {
+  overflow-wrap: anywhere;
+}
+.cf-hostname a {
+  color: var(--foreground);
+  text-decoration: none;
+}
+.cf-hostname a:hover {
+  text-decoration: underline;
+}
+.cf-email-list {
+  margin-bottom: 15px !important;
+}
+.cf-resources dl {
+  margin-top: 8px;
+}
+.cf-resources dt {
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.cf-resources dd {
+  margin: 0 0 6px;
+}
+.cf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.cf-create {
+  margin-bottom: 18px;
+}
+.cf-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  border: 0;
+  padding: 0;
+  margin: 20px 0;
+  min-width: 0;
+}
+.cf-span {
+  grid-column: 1 / -1;
+}
+.cf-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+}
+.cf-panel input,
+.cf-panel select,
+.cf-panel textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--input, var(--border));
+  background: var(--background);
+  color: var(--foreground);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+.cf-panel textarea {
+  resize: vertical;
+}
+.cf-panel input::placeholder,
+.cf-panel textarea::placeholder {
+  color: var(--muted-foreground);
+}
+.cf-panel fieldset:disabled {
+  opacity: 0.6;
+}
+.cf-help {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+.cf-edit {
+  border-block: 1px solid var(--border);
+  margin: 15px 0;
+  padding-bottom: 16px;
+}
+.cf-edit .cf-actions {
+  margin-top: 12px;
+}
+.cf-remove-confirm {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 10px;
+}
+.cf-remove-confirm .cf-actions {
+  margin-top: 10px;
+}
+.cf-footnote {
+  margin-top: 18px !important;
+  font-size: 11px;
+}
+@media (max-width: 580px) {
+  .cf-content {
+    padding: 20px 14px 36px;
+  }
+  .cf-panel h1 {
+    font-size: 21px;
+  }
+  .cf-card {
+    padding: 14px;
+  }
+  .cf-row {
+    gap: 10px;
+  }
+  .cf-connection > .cf-row:first-child {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .cf-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cf-tabs {
+    gap: 20px;
+  }
+}

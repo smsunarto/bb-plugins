@@ -16,6 +16,10 @@
       "source": "./plugins/amp"
     },
     {
+      "name": "cloudflare",
+      "source": "./plugins/cloudflare"
+    },
+    {
       "name": "dotfiles",
       "source": "./plugins/dotfiles"
     },

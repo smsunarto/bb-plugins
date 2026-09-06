@@ -242,6 +242,24 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/cloudflare": {
+      "name": "@smsunarto/bb-plugin-cloudflare",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.1.0",
+        "@tanstack/react-query": "^5.101.4",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.34",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/docs": {
       "name": "@smsunarto/bb-plugin-docs",
       "version": "0.2.3",
@@ -1120,6 +1138,8 @@
     "@smsunarto/bb-plugin-amp": ["@smsunarto/bb-plugin-amp@workspace:plugins/amp"],
 
     "@smsunarto/bb-plugin-canvas": ["@smsunarto/bb-plugin-canvas@workspace:plugins/canvas"],
+
+    "@smsunarto/bb-plugin-cloudflare": ["@smsunarto/bb-plugin-cloudflare@workspace:plugins/cloudflare"],
 
     "@smsunarto/bb-plugin-docs": ["@smsunarto/bb-plugin-docs@workspace:plugins/docs"],
 

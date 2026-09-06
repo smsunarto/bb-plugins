@@ -7,6 +7,7 @@ import {
   ArtboardIcon,
   BellIcon,
   ChatFeedbackIcon,
+  CloudServerIcon,
   ComputerScreenShareIcon,
   Doc01Icon,
   KeyboardIcon,
@@ -167,6 +168,10 @@ const customIcons = {
   amp: {
     name: "Amp (brand mark)",
     brand: { paths: AMP_LOGO_PATHS, viewBox: AMP_LOGO_VIEW_BOX },
+  },
+  cloudflare: {
+    name: "CloudServer",
+    nodes: CloudServerIcon,
   },
   docs: {
     name: "Doc",

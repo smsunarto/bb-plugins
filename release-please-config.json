@@ -33,6 +33,11 @@
       "component": "amp",
       "package-name": "@smsunarto/bb-plugin-amp"
     },
+    "plugins/cloudflare": {
+      "release-type": "node",
+      "component": "cloudflare",
+      "package-name": "@smsunarto/bb-plugin-cloudflare"
+    },
     "plugins/gh-stack": {
       "release-type": "node",
       "component": "gh-stack",

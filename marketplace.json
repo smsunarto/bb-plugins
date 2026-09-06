@@ -66,6 +66,26 @@
       }
     },
     {
+      "id": "cloudflare",
+      "displayName": "Cloudflare",
+      "description": "Share development servers through Cloudflare Tunnel with Zero Trust access controls.",
+      "icon": {
+        "url": "plugins/cloudflare/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/cloudflare",
+          "range": "*",
+          "tagPrefix": "cloudflare/"
+        }
+      }
+    },
+    {
       "id": "gh-stack",
       "displayName": "GitHub Stack",
       "description": "Visualize and drive stacked pull requests (gh stack) from BB threads.",
