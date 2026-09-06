@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { OriginView, TunnelTarget, TunnelWriteResult } from "../shared/schema.ts";
 import {
   TUNNEL_EDITOR as text,
@@ -248,9 +248,55 @@ function RoutesForm({ draft, client }: { draft: TunnelDraft; client: TunnelClien
   );
 }
 
+function RecoveryForm({
+  draft,
+  client,
+  revision,
+}: {
+  draft: TunnelDraft;
+  client: TunnelClient;
+  revision: string;
+}) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  return (
+    <details className="cf-subsection">
+      <summary>{text.recover}</summary>
+      <form
+        aria-label={text.recover}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!acknowledged) return;
+          setAcknowledged(false);
+          void tunnelDrafts.recover(draft.target, client, revision, true);
+        }}
+      >
+        <p>{text.recoveryHelp}</p>
+        <label className="cf-recovery-ack">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            disabled={Boolean(draft.activity)}
+            onChange={(event) => setAcknowledged(event.target.checked)}
+          />
+          {text.recoveryAcknowledgement}
+        </label>
+        <div className="cf-actions cf-tunnel-save">
+          <button type="submit" disabled={!acknowledged || Boolean(draft.activity)}>
+            {draft.activity === "recover" ? text.recovering : text.confirmRecovery}
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
 function TunnelEditorStatus({ draft, client }: { draft: TunnelDraft; client: TunnelClient }) {
   const { target, detail } = draft;
   const pendingWrite = detail?.writeState.kind === "unconfirmed";
+  const recovery =
+    detail?.owner.kind === "account" && detail.writeState.kind === "unconfirmed"
+      ? detail.writeState.recovery
+      : undefined;
   return (
     <>
       <div className="cf-row cf-wrap">
@@ -271,6 +317,19 @@ function TunnelEditorStatus({ draft, client }: { draft: TunnelDraft; client: Tun
         </Notice>
       ) : (
         draft.reloadRequired && <Notice error>{text.reloadRequired}</Notice>
+      )}
+      {recovery && (
+        <RecoveryForm
+          key={recovery.revision}
+          draft={draft}
+          client={client}
+          revision={recovery.revision}
+        />
+      )}
+      {draft.results.recover && (
+        <Notice error={draft.results.recover.kind !== "confirmed"}>
+          {draft.results.recover.message}
+        </Notice>
       )}
     </>
   );

@@ -172,9 +172,18 @@ export const TUNNEL_EDITOR = {
   savedRefreshFailed:
     "The change was confirmed, but fresh details could not be loaded. Discard and reload before another save.",
   reloadRequired:
-    "The server is ready. Review your retained draft, then discard and reload the current configuration before saving again.",
+    "Review your retained draft, then discard and reload the current configuration before saving again.",
   reload: "Reload details",
   refreshStatus: "Refresh status",
+  recover: "Recover editing",
+  recoveryHelp:
+    "Recovery only clears the editing lock. It keeps your draft and does not send a tunnel change to Cloudflare. Discard and reload is still required before saving.",
+  recoveryAcknowledgement:
+    "I understand the earlier request may still apply later. Recovery does not cancel, undo, or retry it.",
+  confirmRecovery: "Confirm recovery",
+  recovering: "Recovering editing…",
+  recoveryLostResponse:
+    "The recovery response was lost. Editing remains locked here. Refresh status before deciding whether to recover again.",
   discard: "Discard and reload",
   accountOwner: "Account tunnel",
   shareOwner: "Development share",

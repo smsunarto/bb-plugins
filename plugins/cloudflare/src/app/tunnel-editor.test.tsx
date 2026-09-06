@@ -250,3 +250,104 @@ test("unconfirmed saves offer status refresh and never discard a draft while the
   );
   expect(client.editTunnel).toHaveBeenCalledTimes(1);
 });
+
+test("recovery is unavailable without a server recovery snapshot", async () => {
+  const live = details();
+  live.writeState = { kind: "unconfirmed", message: "Pending without recovery" };
+  const { slot, client } = setup(live);
+  await slot.findByText("Pending without recovery");
+  expect(slot.queryByText(text.recover)).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: text.refreshStatus }));
+  await waitFor(() => expect(tunnelDrafts.get(target)!.activity).toBeNull());
+  expect(client.editTunnel).not.toHaveBeenCalled();
+});
+
+test("recovery acknowledgement resets on a new snapshot and on editor remount", async () => {
+  const live = details();
+  live.writeState = {
+    kind: "unconfirmed",
+    message: "Pending",
+    recovery: { revision: "c".repeat(64) },
+  };
+  const { slot, client } = setup(live);
+  fireEvent.click(await slot.findByText(text.recover));
+  const form = slot.getByRole("form", { name: text.recover });
+  fireEvent.submit(form);
+  expect(client.editTunnel).not.toHaveBeenCalled();
+  expect(
+    (slot.getByRole("button", { name: text.confirmRecovery }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(slot.getByRole("checkbox", { name: text.recoveryAcknowledgement }));
+  live.writeState.recovery = { revision: "d".repeat(64) };
+  fireEvent.click(slot.getByRole("button", { name: text.refreshStatus }));
+  await waitFor(() => expect(tunnelDrafts.get(target)!.activity).toBeNull());
+  fireEvent.click(slot.getByText(text.recover));
+  expect(
+    (slot.getByRole("checkbox", { name: text.recoveryAcknowledgement }) as HTMLInputElement)
+      .checked,
+  ).toBe(false);
+  fireEvent.click(slot.getByRole("checkbox", { name: text.recoveryAcknowledgement }));
+  slot.unmount();
+  const next = render(<TunnelEditor target={target} client={client} />);
+  await waitFor(() => expect(tunnelDrafts.get(target)!.activity).toBeNull());
+  fireEvent.click(next.getByText(text.recover));
+  expect(
+    (next.getByRole("checkbox", { name: text.recoveryAcknowledgement }) as HTMLInputElement)
+      .checked,
+  ).toBe(false);
+  expect(client.editTunnel).not.toHaveBeenCalled();
+});
+
+test("deliberate recovery sends one acknowledged token and preserves drafts until discard", async () => {
+  const live = details();
+  const { slot, client } = setup(live);
+  await slot.findByLabelText(text.name);
+  fireEvent.change(slot.getByLabelText(text.name), { target: { value: "Draft name" } });
+  fireEvent.change(slot.getByLabelText("Route 1 Hostname"), {
+    target: { value: "draft.example.com" },
+  });
+  live.writeState = {
+    kind: "unconfirmed",
+    message: "Pending",
+    recovery: { revision: "c".repeat(64) },
+  };
+  await act(() => tunnelDrafts.load(target, client));
+  fireEvent.click(slot.getByText(text.recover));
+  expect(slot.getByText(text.recoveryHelp)).toBeTruthy();
+  const pending = deferred<TunnelWriteResult>();
+  client.editTunnel.mockImplementation(() => pending.promise);
+  fireEvent.click(slot.getByRole("checkbox", { name: text.recoveryAcknowledgement }));
+  fireEvent.click(slot.getByRole("button", { name: text.confirmRecovery }));
+  fireEvent.submit(slot.getByRole("form", { name: text.recover }));
+  expect(client.editTunnel.mock.calls).toEqual([
+    [
+      {
+        ...target,
+        edit: { kind: "recover", expectedRecoveryRevision: "c".repeat(64), acknowledgeRisk: true },
+      },
+    ],
+  ]);
+  expect((slot.getByRole("button", { name: text.recovering }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  live.writeState = { kind: "ready" };
+  await act(async () => {
+    pending.resolve({ kind: "confirmed", changed: false, message: "Editing lock cleared" });
+  });
+  expect(slot.getByText("Editing lock cleared")).toBeTruthy();
+  expect((slot.getByLabelText(text.name) as HTMLInputElement).value).toBe("Draft name");
+  expect((slot.getByLabelText("Route 1 Hostname") as HTMLInputElement).value).toBe(
+    "draft.example.com",
+  );
+  expect((slot.getByRole("button", { name: text.saveName }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect((slot.getByRole("button", { name: text.saveRoutes }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent.click(slot.getByRole("button", { name: text.discard }));
+  await waitFor(() =>
+    expect((slot.getByLabelText(text.name) as HTMLInputElement).value).toBe("Preview"),
+  );
+  expect(client.editTunnel).toHaveBeenCalledTimes(1);
+});

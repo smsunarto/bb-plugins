@@ -205,6 +205,13 @@ export const routeDraftSchema = z.discriminatedUnion("kind", [
 export const tunnelEditSchema = z.discriminatedUnion("kind", [
   z
     .object({
+      kind: z.literal("recover"),
+      expectedRecoveryRevision: z.string().regex(/^[a-f0-9]{64}$/),
+      acknowledgeRisk: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("rename"),
       expectedName: z.string(),
       name: z
@@ -281,7 +288,16 @@ export const connectorSchema = z
   .strict();
 export const tunnelWriteStateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ready") }).strict(),
-  z.object({ kind: z.literal("unconfirmed"), message: z.string() }).strict(),
+  z
+    .object({
+      kind: z.literal("unconfirmed"),
+      message: z.string(),
+      recovery: z
+        .object({ revision: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .optional(),
+    })
+    .strict(),
 ]);
 export const tunnelDetailsSchema = z
   .object({

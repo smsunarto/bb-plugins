@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BbPluginApi, PluginKvStorage } from "@get-bb/plugin-sdk";
 import { CloudflareOAuth, oauthCallbackResponse } from "./oauth.ts";
 import { readNetworkInventory, tunnelDNSTarget } from "./inventory.ts";
@@ -66,6 +67,7 @@ function tunnelPreparationFailure(error: unknown): TunnelWriteResult {
 
 const tunnelWriteFenceSchema = z
   .object({
+    operationId: z.uuid().optional(),
     target: tunnelTargetSchema,
     intent: z.discriminatedUnion("kind", [
       z
@@ -83,7 +85,7 @@ const tunnelWriteKey = (target: TunnelTarget) =>
 const pendingTunnelWrite: Extract<TunnelWriteState, { kind: "unconfirmed" }> = {
   kind: "unconfirmed",
   message:
-    "An earlier tunnel write is still unconfirmed. Further writes are blocked until Cloudflare shows its intended result. Refresh status to check again.",
+    "An earlier tunnel write is still unconfirmed. Further writes remain blocked. Refresh status, or explicitly recover editing after reviewing the risk of a delayed write.",
 };
 const unavailableTunnelWrite: Extract<TunnelWriteState, { kind: "unconfirmed" }> = {
   kind: "unconfirmed",
@@ -308,6 +310,21 @@ export class CloudflareService {
         }
       })(),
     ]);
+    if (details.writeState.kind === "unconfirmed" && !owner) {
+      try {
+        const recovery = await this.tunnelRecoverySnapshot(
+          target,
+          await this.writableTunnel(target),
+        );
+        await this.writableTunnel(target);
+        details.name = recovery.tunnel.name;
+        details.status = recovery.tunnel.status ?? "unknown";
+        details.configSource = recovery.tunnel.config_src ?? "unknown";
+        if (recovery.configuration)
+          details.routes = inspectConfiguration(recovery.configuration, target);
+        details.writeState = { ...details.writeState, recovery: { revision: recovery.revision } };
+      } catch {}
+    }
     await this.tunnelCredentials(target);
     return details;
   }
@@ -315,6 +332,8 @@ export class CloudflareService {
     return this.serialize(async () => {
       try {
         const api = await this.writableTunnel(input);
+        if (input.edit.kind === "recover")
+          return this.recoverTunnel(input, input.edit.expectedRecoveryRevision, api);
         const writeState = await this.reconcileTunnelWrite(input, api);
         if (writeState.kind === "unconfirmed") return writeState;
         const path = `/accounts/${input.accountId}/cfd_tunnel/${input.tunnelId}`;
@@ -374,6 +393,72 @@ export class CloudflareService {
       }
     });
   }
+  private async tunnelRecoverySnapshot(target: TunnelTarget, api: CloudflareAPI) {
+    const raw = await this.deps.storage.get(tunnelWriteKey(target));
+    if (raw === undefined)
+      throw new TunnelBlocked(
+        "stale",
+        "The pending write changed. Refresh status before recovering editing.",
+      );
+    const fence = tunnelWriteFenceSchema.parse(raw);
+    if (fence.target.accountId !== target.accountId || fence.target.tunnelId !== target.tunnelId)
+      throw new TunnelBlocked("source", "The pending record does not match this tunnel.");
+    const path = `/accounts/${target.accountId}/cfd_tunnel/${target.tunnelId}`;
+    const tunnel = await api.request("GET", path, tunnelSchema);
+    if (tunnel.id !== target.tunnelId || tunnel.deleted_at)
+      throw new TunnelBlocked("source", "This tunnel is no longer available.");
+    const localRename = fence.intent.kind === "rename" && tunnel.config_src === "local";
+    const configuration = localRename
+      ? undefined
+      : await api.request("GET", `${path}/configurations`, configSchema);
+    if (
+      configuration &&
+      (!configuration.config || !configuration.source || configuration.source !== tunnel.config_src)
+    )
+      throw new TunnelBlocked(
+        "source",
+        "A complete current tunnel configuration is required for recovery.",
+      );
+    const revision = configurationFingerprint({
+      kind: "tunnel-write-recovery",
+      target: { accountId: target.accountId, clientId: target.clientId, tunnelId: target.tunnelId },
+      fence,
+      tunnel: { id: tunnel.id, name: tunnel.name, configSource: tunnel.config_src },
+      configuration,
+    });
+    return { fence, revision, tunnel, configuration };
+  }
+  private async recoverTunnel(
+    target: TunnelTarget,
+    expectedRevision: string,
+    api: CloudflareAPI,
+  ): Promise<TunnelWriteResult> {
+    try {
+      const snapshot = await this.tunnelRecoverySnapshot(target, api);
+      if (snapshot.revision !== expectedRevision)
+        throw new TunnelBlocked(
+          "stale",
+          "The pending write or tunnel configuration changed. Refresh status and review recovery again.",
+        );
+      await this.writableTunnel(target);
+      const current = await this.deps.storage.get(tunnelWriteKey(target));
+      if (!sameConfiguration(current, snapshot.fence))
+        throw new TunnelBlocked(
+          "stale",
+          "The pending write changed. Refresh status and review recovery again.",
+        );
+      await this.deps.storage.delete(tunnelWriteKey(target));
+      return {
+        kind: "confirmed",
+        changed: false,
+        message:
+          "Editing recovered. The earlier request was not cancelled, undone, or retried and may still apply later. Discard and reload before saving another change.",
+      };
+    } catch (error) {
+      if (error instanceof TunnelBlocked) return tunnelPreparationFailure(error);
+      return unavailableTunnelWrite;
+    }
+  }
   private async reconcileTunnelWrite(
     target: TunnelTarget,
     api: CloudflareAPI,
@@ -418,6 +503,7 @@ export class CloudflareService {
   ): Promise<TunnelWriteResult> {
     try {
       await this.deps.storage.set(tunnelWriteKey(target), {
+        operationId: randomUUID(),
         target: {
           accountId: target.accountId,
           clientId: target.clientId,

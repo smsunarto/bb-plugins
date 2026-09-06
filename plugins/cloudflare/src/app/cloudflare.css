@@ -913,3 +913,17 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+.cf-panel label.cf-recovery-ack {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cf-panel .cf-recovery-ack input[type="checkbox"] {
+  width: auto;
+  flex: none;
+  padding: 0;
+  margin: 2px 0 0;
+}

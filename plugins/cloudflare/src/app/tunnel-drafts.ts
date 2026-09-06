@@ -15,8 +15,8 @@ export type TunnelDraft = {
   detail?: TunnelDetails;
   name?: { baseline: string; value: string };
   routes?: { baseline: EditableRoutes; rows: RouteRow[] };
-  results: Partial<Record<"rename" | "routes", TunnelWriteResult>>;
-  activity: "loading" | "rename" | "routes" | null;
+  results: Partial<Record<"rename" | "routes" | "recover", TunnelWriteResult>>;
+  activity: "loading" | "rename" | "routes" | "recover" | null;
   reloadRequired: boolean;
   error?: string;
 };
@@ -166,6 +166,51 @@ export class TunnelDraftStore {
         this.put(target, { ...pending, activity: null, error: TUNNEL_EDITOR.loadFailed });
       }
     }
+  }
+  async recover(
+    target: TunnelTarget,
+    client: TunnelClient,
+    expectedRecoveryRevision: string,
+    acknowledgeRisk: boolean,
+  ) {
+    const draft = this.get(target);
+    const writeState = draft?.detail?.writeState;
+    if (
+      !acknowledgeRisk ||
+      !draft?.detail ||
+      draft.detail.owner.kind !== "account" ||
+      draft.activity ||
+      writeState?.kind !== "unconfirmed" ||
+      writeState.recovery?.revision !== expectedRecoveryRevision
+    )
+      return;
+    const pending: TunnelDraft = {
+      ...draft,
+      activity: "recover",
+      reloadRequired: true,
+      error: undefined,
+    };
+    this.put(target, pending);
+    let result: TunnelWriteResult;
+    try {
+      result = await client.editTunnel({
+        ...target,
+        edit: { kind: "recover", expectedRecoveryRevision, acknowledgeRisk: true },
+      });
+    } catch {
+      result = { kind: "unconfirmed", message: TUNNEL_EDITOR.recoveryLostResponse };
+    }
+    if (this.get(target) !== pending) return;
+    this.put(target, {
+      ...pending,
+      activity: null,
+      detail:
+        result.kind === "confirmed"
+          ? { ...draft.detail, writeState: { kind: "ready" } }
+          : draft.detail,
+      results: { ...pending.results, recover: result },
+    });
+    if (result.kind !== "confirmed") await this.load(target, client);
   }
   async save(target: TunnelTarget, client: TunnelClient, section: "rename" | "routes") {
     const draft = this.get(target);

@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { PluginKvStorage } from "@get-bb/plugin-sdk";
+import { editTunnelSchema } from "../../shared/schema.ts";
 import type { EditTunnel, RouteDraft, Share, TunnelTarget } from "../../shared/schema.ts";
 import { CloudflareAPI } from "./api.ts";
 import { CloudflareService, type Dependencies } from "./service.ts";
@@ -42,6 +43,7 @@ function fixture() {
     invalidWrite: false,
     failVerification: false,
     failConnectors: false,
+    failConfigRead: false,
     ownershipError: false,
     wrote: false,
     afterRead: undefined as (() => void) | undefined,
@@ -61,6 +63,8 @@ function fixture() {
     },
   };
   const serveRead = (current: string) => {
+    if (current.endsWith("/configurations") && state.failConfigRead)
+      return new Response("No remote config", { status: 404 });
     if (current.endsWith("/connections"))
       return state.failConnectors
         ? new Response("CONNECTOR-SECRET", { status: 403 })
@@ -532,4 +536,182 @@ test("malformed durable fence blocks writes instead of being overwritten", async
   expect(await f.service.editTunnel(rename)).toMatchObject({ kind: "unconfirmed" });
   expect(f.writes()).toHaveLength(0);
   expect(f.records.get("tunnel-write:account:tunnel")).toEqual({ unexpected: true });
+});
+
+async function pendingRecovery(
+  f: ReturnType<typeof fixture>,
+  command: EditTunnel = rename,
+): Promise<EditTunnel> {
+  f.state.dropWrite = true;
+  f.state.applyWrite = false;
+  expect(await f.service.editTunnel(command)).toMatchObject({ kind: "unconfirmed" });
+  const detail = await f.service.tunnelDetails(target);
+  if (detail.writeState.kind !== "unconfirmed" || !detail.writeState.recovery)
+    throw new Error("Expected recovery offer");
+  return {
+    ...target,
+    edit: {
+      kind: "recover",
+      expectedRecoveryRevision: detail.writeState.recovery.revision,
+      acknowledgeRisk: true,
+    },
+  };
+}
+test("manual recovery escapes a dropped write without issuing any Cloudflare mutation", async () => {
+  const f = fixture();
+  const command = await pendingRecovery(f, await f.routeEdit());
+  const before = f.fetcher.mock.calls.length;
+  const result = await f.service.editTunnel(command);
+  expect(result).toMatchObject({ kind: "confirmed", changed: false });
+  expect(result.message).toContain("not cancelled");
+  expect(f.records.size).toBe(0);
+  expect(f.fetcher.mock.calls.slice(before).every(([, options]) => options?.method === "GET")).toBe(
+    true,
+  );
+  expect(f.writes()).toHaveLength(1);
+  expect((await f.service.tunnelDetails(target)).writeState.kind).toBe("ready");
+});
+test("dashboard changes invalidate recovery and fresh details offer a new token without losing current config", async () => {
+  const f = fixture();
+  const command = await pendingRecovery(f, await f.routeEdit());
+  const snapshot = structuredClone(f.state.config.config);
+  f.state.config.config = { ...snapshot, dashboardEdit: true };
+  f.state.tunnel.name = "Dashboard name";
+  expect(await f.service.editTunnel(command)).toMatchObject({ kind: "blocked", reason: "stale" });
+  expect(f.records.size).toBe(1);
+  const detail = await f.service.tunnelDetails(target);
+  expect(detail.name).toBe("Dashboard name");
+  expectJSONValue(detail);
+  if (detail.writeState.kind !== "unconfirmed" || !detail.writeState.recovery)
+    throw new Error("Expected refreshed recovery offer");
+  expect(
+    await f.service.editTunnel({
+      ...target,
+      edit: {
+        kind: "recover",
+        expectedRecoveryRevision: detail.writeState.recovery.revision,
+        acknowledgeRisk: true,
+      },
+    }),
+  ).toMatchObject({ kind: "confirmed" });
+  expect(f.state.config.config).toEqual({ ...snapshot, dashboardEdit: true });
+  expect(f.state.tunnel.name).toBe("Dashboard name");
+  expect(f.writes()).toHaveLength(1);
+});
+test("a replacement pending operation invalidates an older recovery token even for identical intent", async () => {
+  const f = fixture();
+  const command = await pendingRecovery(f);
+  const key = "tunnel-write:account:tunnel";
+  const original = structuredClone(f.records.get(key)) as Record<string, unknown>;
+  const replacement = { ...original, operationId: randomUUID() };
+  f.records.set(key, replacement);
+  expect(await f.service.editTunnel(command)).toMatchObject({ kind: "blocked", reason: "stale" });
+  expect(f.records.get(key)).toEqual(replacement);
+  expect(f.writes()).toHaveLength(1);
+});
+test("recovery rechecks the exact pending record immediately before deletion", async () => {
+  const f = fixture();
+  const command = await pendingRecovery(f);
+  const key = "tunnel-write:account:tunnel";
+  const original = structuredClone(f.records.get(key)) as Record<string, unknown>;
+  const replacement = { ...original, operationId: randomUUID() };
+  f.state.afterRead = () => {
+    f.records.set(key, replacement);
+  };
+  expect(await f.service.editTunnel(command)).toMatchObject({ kind: "blocked", reason: "stale" });
+  expect(f.records.get(key)).toEqual(replacement);
+});
+test("recovery is account and client bound and blocked by share ownership", async () => {
+  for (const change of ["account", "client", "share", "late-share"] as const) {
+    const f = fixture();
+    const command = await pendingRecovery(f);
+    if (change === "account") f.state.credentials.accountId = "other";
+    if (change === "client") f.state.credentials.clientId = "other";
+    if (change === "share") f.own();
+    if (change === "late-share") f.state.afterRead = () => f.own();
+    expect(await f.service.editTunnel(command)).toMatchObject({
+      kind: "blocked",
+      reason: change.includes("share") ? "ownership" : "connection",
+    });
+    expect(f.records.has("tunnel-write:account:tunnel")).toBe(true);
+    expect(f.writes()).toHaveLength(1);
+  }
+});
+test("recovery fails closed on storage reads and deletion errors", async () => {
+  for (const operation of ["get", "delete"] as const) {
+    const f = fixture();
+    const command = await pendingRecovery(f);
+    f.deps.storage[operation] = mock(async () => {
+      throw new Error("STORAGE-SECRET");
+    });
+    const result = await f.service.editTunnel(command);
+    expect(result.kind).toBe("unconfirmed");
+    expect(JSON.stringify(result)).not.toContain("SECRET");
+    expect(f.records.has("tunnel-write:account:tunnel")).toBe(true);
+    expect(f.writes()).toHaveLength(1);
+  }
+});
+test("details omit recovery when ownership, pending record, or complete current config is unavailable", async () => {
+  for (const unavailable of ["share", "fence", "configuration"] as const) {
+    const f = fixture();
+    await pendingRecovery(f);
+    if (unavailable === "share") f.own();
+    if (unavailable === "fence") f.records.set("tunnel-write:account:tunnel", { invalid: true });
+    if (unavailable === "configuration")
+      f.state.config.config = null as unknown as Record<string, unknown>;
+    const detail = await f.service.tunnelDetails(target);
+    expect(detail.writeState.kind).toBe("unconfirmed");
+    expect(detail.writeState).not.toHaveProperty("recovery");
+    expectJSONValue(detail);
+  }
+});
+test("legacy persisted fences without operation ID remain explicitly recoverable", async () => {
+  const f = fixture();
+  await pendingRecovery(f);
+  const key = "tunnel-write:account:tunnel";
+  const fence = structuredClone(f.records.get(key)) as Record<string, unknown>;
+  delete fence.operationId;
+  f.records.set(key, fence);
+  const detail = await f.service.tunnelDetails(target);
+  if (detail.writeState.kind !== "unconfirmed" || !detail.writeState.recovery)
+    throw new Error("Expected legacy recovery offer");
+  expect(
+    await f.service.editTunnel({
+      ...target,
+      edit: {
+        kind: "recover",
+        expectedRecoveryRevision: detail.writeState.recovery.revision,
+        acknowledgeRisk: true,
+      },
+    }),
+  ).toMatchObject({ kind: "confirmed", changed: false });
+  expect(f.records.size).toBe(0);
+});
+test("the recovery RPC boundary requires explicit risk acknowledgement", () => {
+  const edit = { kind: "recover", expectedRecoveryRevision: "a".repeat(64) };
+  expect(editTunnelSchema.safeParse({ ...target, edit }).success).toBe(false);
+  expect(
+    editTunnelSchema.safeParse({ ...target, edit: { ...edit, acknowledgeRisk: false } }).success,
+  ).toBe(false);
+  expect(
+    editTunnelSchema.safeParse({ ...target, edit: { ...edit, acknowledgeRisk: true } }).success,
+  ).toBe(true);
+});
+
+test("a locally managed rename can recover from metadata when remote configuration is unavailable", async () => {
+  const f = fixture();
+  f.state.tunnel.config_src = "local";
+  f.state.failConfigRead = true;
+  const recovery = await pendingRecovery(f);
+  const before = f.fetcher.mock.calls.length;
+  expect(await f.service.editTunnel(recovery)).toMatchObject({ kind: "confirmed", changed: false });
+  expect(
+    f.fetcher.mock.calls
+      .slice(before)
+      .every(
+        ([url, options]) => options?.method === "GET" && !String(url).includes("/configurations"),
+      ),
+  ).toBe(true);
+  expect(f.records.size).toBe(0);
+  expect(f.writes()).toHaveLength(1);
 });

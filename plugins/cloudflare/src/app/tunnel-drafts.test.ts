@@ -248,3 +248,83 @@ test("a fresh editor cannot write through another tab's durable pending state", 
   expect(client.editTunnel).not.toHaveBeenCalled();
   expect(fresh.get(target)!.reloadRequired).toBe(true);
 });
+
+const recoveryRevision = "c".repeat(64);
+
+test("recovery requires explicit acknowledgement and the current server recovery revision", async () => {
+  const { store, client, live } = await setup();
+  await store.recover(target, client, recoveryRevision, true);
+  live.detail.writeState = {
+    kind: "unconfirmed",
+    message: "Pending",
+    recovery: { revision: recoveryRevision },
+  };
+  await store.load(target, client);
+  await store.recover(target, client, recoveryRevision, false);
+  await store.recover(target, client, "d".repeat(64), true);
+  expect(client.editTunnel).not.toHaveBeenCalled();
+});
+
+test("confirmed recovery retains both drafts and locks saves until an explicit reload", async () => {
+  const { store, client, live } = await setup();
+  store.editName(target, "Draft name");
+  changeRoutes(store);
+  live.detail.writeState = {
+    kind: "unconfirmed",
+    message: "Pending",
+    recovery: { revision: recoveryRevision },
+  };
+  await store.load(target, client);
+  const pending = deferred<TunnelWriteResult>();
+  client.editTunnel.mockImplementation(() => pending.promise);
+  const recovery = store.recover(target, client, recoveryRevision, true);
+  await store.recover(target, client, recoveryRevision, true);
+  expect(store.get(target)!.activity).toBe("recover");
+  expect(client.editTunnel.mock.calls).toEqual([
+    [
+      {
+        ...target,
+        edit: {
+          kind: "recover",
+          expectedRecoveryRevision: recoveryRevision,
+          acknowledgeRisk: true,
+        },
+      },
+    ],
+  ]);
+  pending.resolve({ kind: "confirmed", changed: false, message: "Editing lock cleared" });
+  await recovery;
+  expect(store.get(target)!.results.recover?.kind).toBe("confirmed");
+  expect(store.get(target)!.results.rename).toBeUndefined();
+  expect(store.get(target)!.name!.value).toBe("Draft name");
+  expect(routesDirty(store.get(target)!.routes!)).toBe(true);
+  live.detail.writeState = { kind: "ready" };
+  await store.load(target, client);
+  await store.save(target, client, "rename");
+  await store.save(target, client, "routes");
+  expect(client.editTunnel).toHaveBeenCalledTimes(1);
+  expect(store.get(target)!.reloadRequired).toBe(true);
+  await store.load(target, client, true);
+  expect(store.get(target)!.reloadRequired).toBe(false);
+  expect(store.get(target)!.name!.value).toBe("Preview");
+  expect(routesDirty(store.get(target)!.routes!)).toBe(false);
+});
+
+test("a stale recovery token refreshes status without retrying or replacing the draft", async () => {
+  const { store, client, live } = await setup();
+  store.editName(target, "Draft name");
+  live.detail.writeState = {
+    kind: "unconfirmed",
+    message: "Pending",
+    recovery: { revision: recoveryRevision },
+  };
+  await store.load(target, client);
+  live.result = { kind: "blocked", reason: "stale", message: "Recovery snapshot changed" };
+  live.detail.writeState.recovery = { revision: "d".repeat(64) };
+  await store.recover(target, client, recoveryRevision, true);
+  expect(client.editTunnel).toHaveBeenCalledTimes(1);
+  expect(store.get(target)!.name!.value).toBe("Draft name");
+  expect(store.get(target)!.detail!.writeState).toEqual(live.detail.writeState);
+  expect(store.get(target)!.reloadRequired).toBe(true);
+  expect(store.get(target)!.results.recover).toEqual(live.result);
+});
