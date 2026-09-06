@@ -40,6 +40,11 @@
 <td align="center"><a href="plugins/gh-stack/"><b>GitHub Stack</b></a></td>
 <td>Drives a <code>gh stack</code> from the thread panel — build, sync, submit, merge — and can hand the split to your agent.</td>
 </tr>
+<tr>
+<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/traces/assets/logo-dark.svg" /><img src="plugins/traces/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
+<td align="center"><a href="plugins/traces/"><b>Traces</b></a></td>
+<td>Explore Claude Code and Codex sessions, instructions, and tool activity with keyboard navigation and extensible event renderers.</td>
+</tr>
 </table>
 
 ### Utilities

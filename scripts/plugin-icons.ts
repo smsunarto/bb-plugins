@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  Activity01Icon,
   ArtboardIcon,
   BellIcon,
   ChatFeedbackIcon,
@@ -191,6 +192,10 @@ const customIcons = {
   novnc: {
     name: "ComputerScreenShare",
     nodes: ComputerScreenShareIcon,
+  },
+  traces: {
+    name: "Activity",
+    nodes: Activity01Icon,
   },
   vimium: {
     name: "Keyboard",

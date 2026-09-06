@@ -1,0 +1,79 @@
+{
+  "name": "@smsunarto/bb-plugin-traces",
+  "version": "0.1.0",
+  "description": "A keyboard-first Claude Code and Codex trace explorer with local indexing and extensible event renderers.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/traces",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/traces"
+  },
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bb": ">=0.40.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.34"
+  },
+  "bb": {
+    "name": "Traces",
+    "description": "Explore Claude Code and Codex sessions, tool calls, context, and agent activity.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "host": "./src/host/host.ts"
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.css",
+    "dist/*.json",
+    "assets/",
+    "src/",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0",
+    "zod": "^4.4.3",
+    "@tanstack/react-query": "^5.101.4"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.34",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0",
+    "@testing-library/react": "16.3.2",
+    "jsdom": "25.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/shared/providers/*.test.ts src/app/*.test.ts src/host/*.test.ts test/*.test.ts",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "clean": "rm -rf dist"
+  },
+  "exports": {
+    "./model": "./src/shared/model.ts",
+    "./adapters": "./src/shared/providers/index.ts",
+    "./renderers": "./src/app/renderers.tsx",
+    "./app": "./src/app/app.tsx",
+    "./host": "./src/host/host.ts"
+  }
+}

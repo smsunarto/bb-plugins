@@ -495,6 +495,28 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/traces": {
+      "name": "@smsunarto/bb-plugin-traces",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.1.0",
+        "@tanstack/react-query": "^5.101.4",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.34",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "jsdom": "25.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/vimium": {
       "name": "@smsunarto/bb-plugin-vimium",
       "version": "0.1.0",
@@ -1104,6 +1126,8 @@
     "@smsunarto/bb-plugin-nanocodex": ["@smsunarto/bb-plugin-nanocodex@workspace:plugins/nanocodex"],
 
     "@smsunarto/bb-plugin-novnc": ["@smsunarto/bb-plugin-novnc@workspace:plugins/novnc"],
+
+    "@smsunarto/bb-plugin-traces": ["@smsunarto/bb-plugin-traces@workspace:plugins/traces"],
 
     "@smsunarto/bb-plugin-vimium": ["@smsunarto/bb-plugin-vimium@workspace:plugins/vimium"],
 

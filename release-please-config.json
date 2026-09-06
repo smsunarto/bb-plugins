@@ -57,6 +57,11 @@
       "release-type": "node",
       "component": "nanocodex",
       "package-name": "@smsunarto/bb-plugin-nanocodex"
+    },
+    "plugins/traces": {
+      "release-type": "node",
+      "component": "traces",
+      "package-name": "@smsunarto/bb-plugin-traces"
     }
   }
 }

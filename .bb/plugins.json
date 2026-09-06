@@ -44,6 +44,10 @@
       "source": "./plugins/novnc"
     },
     {
+      "name": "traces",
+      "source": "./plugins/traces"
+    },
+    {
       "name": "vimium",
       "source": "./plugins/vimium"
     }

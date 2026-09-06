@@ -186,6 +186,26 @@
       }
     },
     {
+      "id": "traces",
+      "displayName": "Traces",
+      "description": "Explore Claude Code and Codex sessions, agent context, and tool activity with keyboard navigation.",
+      "icon": {
+        "url": "plugins/traces/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/traces",
+          "range": "*",
+          "tagPrefix": "traces/"
+        }
+      }
+    },
+    {
       "id": "vimium",
       "displayName": "Vimium",
       "description": "Vimium-style f-key link hints: press f, type the hint, click without the mouse.",
