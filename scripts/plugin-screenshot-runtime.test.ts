@@ -125,7 +125,7 @@ describe("bb screenshot preflight", () => {
       calls.push([...args]);
       if (args.join(" ") === "plugin list --json") {
         return listReads++ === 0
-          ? pluginList({ disabled: ["agentation", "notify"] })
+          ? pluginList({ disabled: ["agentation", "dotfiles"] })
           : pluginList();
       }
       if (args.join(" ") === "theme show --json") return theme();
@@ -136,7 +136,7 @@ describe("bb screenshot preflight", () => {
 
     expect(calls.filter((args) => args[1] === "enable")).toEqual([
       ["plugin", "enable", "agentation", "--json"],
-      ["plugin", "enable", "notify", "--json"],
+      ["plugin", "enable", "dotfiles", "--json"],
     ]);
   });
 

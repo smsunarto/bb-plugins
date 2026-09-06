@@ -57,11 +57,6 @@
       "release-type": "node",
       "component": "nanocodex",
       "package-name": "@smsunarto/bb-plugin-nanocodex"
-    },
-    "plugins/notify": {
-      "release-type": "node",
-      "component": "notify",
-      "package-name": "@smsunarto/bb-plugin-notify"
     }
   }
 }

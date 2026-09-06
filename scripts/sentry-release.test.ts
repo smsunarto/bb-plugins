@@ -12,7 +12,6 @@ import {
 import { PLUGIN_TELEMETRY as dotfilesTelemetry } from "../plugins/dotfiles/shared/telemetry.ts";
 import { PLUGIN_TELEMETRY as ampTelemetry } from "../plugins/amp/shared/telemetry.ts";
 import { PLUGIN_TELEMETRY as nanocodexTelemetry } from "../plugins/nanocodex/shared/telemetry.ts";
-import { PLUGIN_TELEMETRY as notifyTelemetry } from "../plugins/notify/src/shared/telemetry.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SENTRY_CLI = join(ROOT, "node_modules", ".bin", "sentry-cli");
@@ -190,7 +189,7 @@ test("the release workflow uploads plugin maps after build and before publish", 
   expect(workflow).toContain("SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}");
   expect(workflow).toContain("SENTRY_ORG: ${{ vars.SENTRY_ORG }}");
   expect(workflow).not.toContain("SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}");
-  for (const plugin of ["amp", "dotfiles", "nanocodex", "notify"]) {
+  for (const plugin of ["amp", "dotfiles", "nanocodex"]) {
     expect(workflow.slice(upload, publish)).toContain(`plugins/${plugin}`);
     expect(workflow.slice(upload, publish)).toContain(`SENTRY_PROJECT=bb-plugin-${plugin}`);
   }
@@ -202,7 +201,6 @@ test("telemetry identities match their plugin manifests", () => {
     ["amp", ampTelemetry],
     ["dotfiles", dotfilesTelemetry],
     ["nanocodex", nanocodexTelemetry],
-    ["notify", notifyTelemetry],
   ] as const;
   for (const [plugin, telemetry] of plugins) {
     const manifest = JSON.parse(

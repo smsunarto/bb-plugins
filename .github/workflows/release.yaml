@@ -78,7 +78,7 @@ jobs:
           bun run --filter "$package_name" build
 
       - name: Upload plugin source maps
-        if: ${{ contains(fromJSON('["plugins/amp", "plugins/dotfiles", "plugins/nanocodex", "plugins/notify"]'), matrix.path) }}
+        if: ${{ contains(fromJSON('["plugins/amp", "plugins/dotfiles", "plugins/nanocodex"]'), matrix.path) }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -87,7 +87,6 @@ jobs:
             plugins/amp) export SENTRY_PROJECT=bb-plugin-amp ;;
             plugins/dotfiles) export SENTRY_PROJECT=bb-plugin-dotfiles ;;
             plugins/nanocodex) export SENTRY_PROJECT=bb-plugin-nanocodex ;;
-            plugins/notify) export SENTRY_PROJECT=bb-plugin-notify ;;
           esac
           bun scripts/sentry-release.ts "${{ matrix.path }}"
 

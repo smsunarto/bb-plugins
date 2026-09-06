@@ -40,10 +40,6 @@
       "source": "./plugins/nanocodex"
     },
     {
-      "name": "notify",
-      "source": "./plugins/notify"
-    },
-    {
       "name": "novnc",
       "source": "./plugins/novnc"
     },

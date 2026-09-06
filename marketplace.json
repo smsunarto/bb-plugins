@@ -166,26 +166,6 @@
       }
     },
     {
-      "id": "notify",
-      "displayName": "Notify",
-      "description": "Native macOS notifications when a BB thread finishes or fails, plus a notify_user agent tool and a `bb notify` command.",
-      "icon": {
-        "url": "plugins/notify/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/notify",
-          "range": "*",
-          "tagPrefix": "notify/"
-        }
-      }
-    },
-    {
       "id": "novnc",
       "displayName": "NoVNC",
       "description": "Watch a thread's remote screen through NoVNC in a floating picture-in-picture panel.",

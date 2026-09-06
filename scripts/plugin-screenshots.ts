@@ -66,7 +66,7 @@ const SCREENSHOT_FONT_ASSETS = [
   },
 ] as const;
 
-export const SCREENSHOT_EXCLUDED_PLUGINS = ["dotfiles", "notify"] as const;
+export const SCREENSHOT_EXCLUDED_PLUGINS = ["dotfiles"] as const;
 
 interface ScreenshotRecipe {
   id: string;
