@@ -359,6 +359,57 @@ describe("timeline motion with real Lenis", () => {
     expect(element.scrollTop).toBeCloseTo(200, 0);
   });
 
+  describe("explicit bottom-button activation", () => {
+    test.each(["wheel", "touchstart", "pointerdown"])(
+      "the bottom button takes over from %s input without waiting for manual idle",
+      (type) => {
+        dispose = mountTimelineMotion(document);
+        const { root, element } = timeline(400);
+        element.getBoundingClientRect = mock(() => new view.DOMRect(0, 0, 300, 200));
+        const button = document.createElement("button");
+        button.setAttribute("aria-label", "Scroll to latest event");
+        button.innerHTML = "<span>Latest</span>";
+        root.append(button);
+        button.addEventListener("click", () => {
+          element.scrollTop = 1000;
+        });
+        element.dispatchEvent(new view.MouseEvent(type, { bubbles: true, clientX: 295 }));
+        button.firstElementChild!.dispatchEvent(new view.MouseEvent("click", { bubbles: true }));
+        expect(element.scrollTop).toBe(400);
+        tick();
+        expect(element.scrollTop).toBeGreaterThan(400);
+        expect(element.scrollTop).toBeLessThan(1000);
+        tick(100);
+        expect(element.scrollTop).toBeCloseTo(1000, 0);
+      },
+    );
+
+    test("bottom-button activation only releases manual input in its own thread", () => {
+      dispose = mountTimelineMotion(document);
+      const first = timeline(400);
+      const second = timeline(300);
+      const button = document.createElement("button");
+      button.setAttribute("aria-label", "Scroll to latest event");
+      first.root.append(button);
+      for (const { element } of [first, second]) {
+        element.dispatchEvent(new view.WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+      }
+      const unrelated = document.createElement("button");
+      first.root.append(unrelated);
+      unrelated.click();
+      first.element.scrollTop = 1000;
+      expect(frames.size).toBe(0);
+      button.addEventListener("click", () => {
+        first.element.scrollTop = 1000;
+        second.element.scrollTop = 1000;
+      });
+      button.click();
+      tick(100);
+      expect(first.element.scrollTop).toBeCloseTo(1000, 0);
+      expect(second.element.scrollTop).toBe(300);
+    });
+  });
+
   test("a stalled frame cannot consume most of the visible transition", () => {
     dispose = mountTimelineMotion(document);
     const { element } = timeline();

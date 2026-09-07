@@ -282,6 +282,24 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     }
   }
 
+  function onBottomClick(event: MouseEvent): void {
+    const target = event.target;
+    if (!(target instanceof view!.Element)) return;
+    const button = target.closest('button[aria-label="Scroll to latest event"]');
+    const threadWindow = button?.closest("[data-thread-window]");
+    if (!threadWindow) return;
+    // Let the host's click handler take over immediately, even during a gesture.
+    // Automatic restore retries still respect the manual-input grace period.
+    for (const session of sessions.values()) {
+      if (
+        session.motion.kind === "manual" &&
+        session.element.closest("[data-thread-window]") === threadWindow
+      ) {
+        session.motion.until = 0;
+      }
+    }
+  }
+
   function onReducedMotion(): void {
     if (!reducedMotion.matches) return;
     for (const session of sessions.values()) {
@@ -321,6 +339,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     for (const session of sessions.values()) detach(session);
     for (const type of inputEvents) document.removeEventListener(type, onInput, true);
     for (const type of releaseEvents) view!.removeEventListener(type, onRelease);
+    document.removeEventListener("click", onBottomClick, true);
     reducedMotion.removeEventListener("change", onReducedMotion);
     signal?.removeEventListener("abort", dispose);
     styles.remove();
@@ -331,6 +350,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
   }
 
   try {
+    document.addEventListener("click", onBottomClick, { capture: true, passive: true });
     Object.defineProperty(prototype, "scrollTop", { ...original, set: routedSet });
     document.head.append(styles);
     for (const type of inputEvents)

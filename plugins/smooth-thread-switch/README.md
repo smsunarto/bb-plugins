@@ -13,14 +13,17 @@ It follows a growing bottom without restarting for repeated requests. bb owns
 saved thread positions. The plugin keeps no separate thread-position cache.
 
 Wheel, touch, scrollbar dragging, and navigation keys interrupt automatic motion.
+The timeline's “Scroll to latest event” button immediately resumes smooth bottom
+scrolling, including during the manual-input grace period or a held gesture.
 Native wheel and touch input remain unchanged. Editable controls retain their
 navigation keys. Reduced motion disables the fade and settles scrolling
 immediately, including when the preference changes during an animation.
 
 ## Experimental limitations
 
-The scroll integration depends on bb's current timeline DOM structure and direct
-`scrollTop` assignments. It changes synchronous write-then-read behavior because
+The scroll integration depends on bb's current timeline DOM structure, its
+“Scroll to latest event” button label, and direct `scrollTop` assignments.
+It changes synchronous write-then-read behavior because
 the viewport takes time to reach the requested position. Reads always return the
 physical position. Host code that immediately checks a write can temporarily
 observe an intermediate position, including during clamped row reveals.
