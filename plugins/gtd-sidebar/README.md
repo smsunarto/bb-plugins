@@ -125,41 +125,48 @@ a child, a chip that names the parent and opens it.
 
 ### Thread names
 
-A root thread gets a regenerated name after every completed user turn. The title
-tracks the latest request, with a short task anchor for follow-ups and the latest
-handoff. Titles use `Emoji [Scope] Task`, for example
-`🔎 [GTD Sidebar] Waiting sort review`. Scopes identify product areas, never the
-repository. Questions and exploration have no emoji. `🚀` indicates confirmed
-readiness. `☑️` requires a successful explicit `ship it` request.
+A root thread gets a GTD-generated name on its first user prompt, replacing any
+initial title supplied by BB. First-request inference can only generate a new
+title, never keep BB's title. Later prompts keep the existing title unless you clearly start completely different work. Follow-ups,
+corrections, tests, debugging, screenshots, commits, and shipping for the same
+task keep its title. When the task change is uncertain, the title stays unchanged.
+Queued prompts are checked when dispatched. Agent replies and turn completion do
+not trigger naming. New titles are plain text with no activity emoji. Prefixes
+and other project formatting come only from your naming rules. Existing titles
+are preserved exactly when the decision is to keep them.
 
-The plugin sends a tool-free prompt to GPT-5.6-Luna with reasoning disabled. It
-requests structured activity, scope, and task fields, then formats the title
-locally. Context is capped at 2,400 characters, with a 48-character task target
-and a defensive 96-grapheme limit for the assembled title. A transient failure
-retries once with GPT-5.4-Mini. Each attempt has a five-second deadline. Logs
-record timing and available token usage without recording the prompt.
+The plugin sends a tool-free prompt to GPT-5.6-Luna with reasoning disabled and
+asks for a keep-or-rename decision with the complete title. The first request, an
+untitled thread, and explicit regeneration use a generation prompt that can only
+rename. Later requests use a review prompt that sees the current title and may
+keep it, and a keep decision does not write to the thread. Both prompts carry the
+latest request, the original request, up to three recent requests, and your
+project naming rules. A transient failure retries once with GPT-5.4-Mini, and each
+attempt has a five-second deadline. Logs record timing, never the prompt.
 
-Add `.agents/GTD_NAMING.md` at the project root for compact scope rules:
+Run the **configure-gtd-naming** skill to create or update
+`.agents/GTD_NAMING.md` in your project. The skill inspects the project, chooses
+compact naming rules, and writes the file. Scopes are configured there instead
+of inferred automatically for every title. You can also edit the file directly:
 
 ```md
-Use GTD Sidebar for sidebar work and Vimium for keyboard navigation.
-For substantive work in both, use GTD + Vimium. Omit uncertain scopes.
+Use [GTD] for sidebar work and [Vimium] for keyboard navigation.
+For work spanning both, use [GTD + Vimium]. Otherwise use a plain title.
+Keep prefixes out of the task text.
 ```
 
-The plugin reads the file from the active workspace on every rename. It loads
-at most 8,000 characters and injects up to 500 characters of whole lines. Keep
-rules short. The older `.agents/GTD_TITLE.md` is used only when the new file is
-missing. An empty or non-UTF-8 new file uses default instructions. Repository
-exploration to draft these rules is a separate, one-time setup task.
+The plugin reads the file from the active workspace on every naming request and
+injects up to 500 characters of whole lines. The setup skill keeps the entire file
+within that budget. An empty or non-UTF-8 file uses default instructions.
 
-Use **Generate thread name** in the thread header or card menu to replace a title.
-You can also run `bb gtd-sidebar rename [<threadId>]`. The command uses the current
-thread when you omit the id.
+To replace a title by hand, run `bb gtd-sidebar rename [<threadId>]`. The command
+uses the current thread when you omit the id. Explicit regeneration can replace a title even when
+the task has not changed.
 
 ### The rest
 
 - A project scope picker — the one control the plugin adds.
-- Right-click to generate a name, open in split, mark read/unread, pin, settle, or delete.
+- Right-click a row to settle, snooze, pin, or delete it.
 - On a phone, hold a row for half a second (iOS's own long-press timing) for the same
   menu, drawn as an iOS-style frosted sheet. Menu taps play a haptic on iOS.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
@@ -170,14 +177,14 @@ thread when you omit the id.
 Two settings, in **Settings → Plugins → GTD Sidebar**:
 
 - **Automatically name threads** — on. Turn it off to stop automatic title
-  regeneration. Manual naming from the header, card menu, and CLI still works.
+  generation and task-change checks. Manual naming from the CLI still works.
 
 - **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
   glyph and give the branch that space back. Every card follows it together, so the
   meta line keeps a straight right edge either way.
 
-The snooze presets assume a 09:00 morning, an 18:00 evening, and a week starting
-Monday, in your local timezone. None of these are settings.
+A snooze wakes the thread at 09:00 the next day in your local timezone. That is
+not a setting.
 
 ## Troubleshooting
 
@@ -188,10 +195,9 @@ Appearance → Sidebar. Installing alone changes nothing.
 it starts working or asks you a question.
 
 **Uninstalling left data behind.** Snoozes live in the plugin's own database,
-which bb removes with the plugin — but a copy of them is cached in the browser's
-`localStorage` under `gtd-sidebar:v1:*` (thread ids, snooze timestamps, and provider
-ids, names, and logo paths). bb's uninstall does not clear web storage. Clear site
-data if that matters to you.
+which bb removes with the plugin. Earlier versions also cached them in the
+browser's `localStorage` under `gtd-sidebar:v1:*`. This version removes those
+entries the first time it loads, so nothing stays behind.
 
 ## Credits
 

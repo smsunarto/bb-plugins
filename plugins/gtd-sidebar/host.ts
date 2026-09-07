@@ -4,12 +4,7 @@ import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { completeCodexInference } from "./host/inference/chatgpt-client.ts";
 import { toAiServiceFailure } from "./host/inference/failure.ts";
 import { parseGitButlerBranchSummary } from "./lib/gitbutler.ts";
-import {
-  GTD_SIDEBAR_AI_SERVICE_ID,
-  gtdSidebarHostContract,
-  type GtdSidebarAiInferenceCompleteOutput,
-  type GtdSidebarAiVoiceTranscribeOutput,
-} from "./lib/host-contract.ts";
+import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,24 +27,12 @@ export default experimental_defineHostEntry({
         return { label: null };
       }
     },
-    "ai.inference.complete": async (input): Promise<GtdSidebarAiInferenceCompleteOutput> => {
-      if (input.serviceId !== GTD_SIDEBAR_AI_SERVICE_ID) {
-        return {
-          ok: false,
-          code: "request_failed",
-          message: `This plugin serves no AI service "${input.serviceId}".`,
-        };
-      }
+    "ai.inference.complete": async (input) => {
       try {
         return await completeCodexInference(input);
       } catch (error) {
         return toAiServiceFailure(error);
       }
     },
-    "ai.voice.transcribe": async (): Promise<GtdSidebarAiVoiceTranscribeOutput> => ({
-      ok: false,
-      code: "request_failed",
-      message: "GTD Sidebar provides inference only.",
-    }),
   },
 });

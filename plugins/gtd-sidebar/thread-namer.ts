@@ -11,12 +11,29 @@ import {
 import type { ThreadTitleInference } from "./thread-title-inference.ts";
 
 const EVENT_PAGE_SIZE = 100;
-const PROJECT_TITLE_INSTRUCTIONS_PATHS = [".agents/GTD_NAMING.md", ".agents/GTD_TITLE.md"];
+const PROJECT_TITLE_INSTRUCTIONS_PATH = ".agents/GTD_NAMING.md";
 
 export type ThreadNamingResult = { ok: true; title: string } | { ok: false; error: string };
 
 export interface ThreadNamer {
   nameThread(threadId: string, intent: NamingIntent): Promise<ThreadNamingResult>;
+}
+
+export function subscribeToThreadNaming(bb: BbPluginApi, threadNamer: ThreadNamer): void {
+  bb.onDispose(
+    bb.sdk.subscribe({
+      event: "thread:changed",
+      callback: (event) => {
+        if (
+          event.id !== undefined &&
+          event.changes.includes("events-appended") &&
+          event.metadata?.eventTypes?.includes("client/turn/requested")
+        ) {
+          void threadNamer.nameThread(event.id, { kind: "automatic" });
+        }
+      },
+    }),
+  );
 }
 
 export function createThreadNamer(
@@ -27,6 +44,10 @@ export function createThreadNamer(
   },
 ): ThreadNamer {
   const inFlight = new Map<string, Promise<void>>();
+  const automaticRequests = new Map<string, number>();
+  bb.events.on("thread.deleted", ({ thread }) => {
+    automaticRequests.delete(thread.id);
+  });
 
   return {
     async nameThread(threadId, intent) {
@@ -36,7 +57,7 @@ export function createThreadNamer(
       }
 
       const operation = (previous ?? Promise.resolve()).then(() =>
-        performThreadNaming(bb, options, threadId, intent),
+        performThreadNaming(bb, options, threadId, intent, automaticRequests),
       );
       const tail = operation.then(
         () => undefined,
@@ -60,6 +81,7 @@ async function performThreadNaming(
   },
   threadId: string,
   intent: NamingIntent,
+  automaticRequests: Map<string, number>,
 ): Promise<ThreadNamingResult> {
   try {
     const automaticallyNameThreads =
@@ -72,12 +94,20 @@ async function performThreadNaming(
       automaticallyNameThreads,
       events,
       intent,
-      pluginId: bb.pluginId,
       thread,
     } as const;
     let plan = planThreadNaming(planInput);
     if (plan.kind === "skip") {
       return { ok: false, error: describeSkip(plan.reason) };
+    }
+
+    if (plan.writeGuard.kind !== "replace-title") {
+      const requestSeq = plan.writeGuard.expectedRequestSeq;
+      // Realtime can repeat a request in a coalesced events-appended notification.
+      if (automaticRequests.get(threadId) === requestSeq) {
+        return { ok: false, error: "This prompt has already triggered automatic naming." };
+      }
+      automaticRequests.set(threadId, requestSeq);
     }
 
     const projectInstructions = await loadProjectTitleInstructions(bb, thread.environmentId);
@@ -91,39 +121,29 @@ async function performThreadNaming(
     const output = await options.inference.complete({
       environmentId: thread.environmentId,
       prompt: plan.prompt,
+      allowKeep: plan.allowKeep,
     });
-    const title = sanitizeGeneratedTitle(output, plan.allowedShipped);
+    if (output === null) {
+      if (plan.allowKeep && thread.title?.trim()) {
+        return { ok: true, title: thread.title };
+      }
+      return { ok: false, error: "The naming agent kept the title when a new name was requested." };
+    }
+    const title = sanitizeGeneratedTitle(output);
     if (title === null) {
       return { ok: false, error: "The naming agent returned no usable task title." };
     }
 
+    // A hand rename during the inference window wins. Runs are serialized per
+    // thread, so a newer prompt simply gets its own review of this result next.
     if (plan.writeGuard.kind === "title-unchanged") {
-      const [current, currentEvents] = await Promise.all([
-        bb.sdk.threads.get({ threadId }),
-        loadNamingEvents(bb, threadId),
-      ]);
+      const current = await bb.sdk.threads.get({ threadId });
       if (current.title !== plan.writeGuard.expectedTitle) {
-        return {
-          ok: false,
-          error: "The thread title changed while naming was in progress.",
-        };
-      }
-      const currentPlan = planThreadNaming({
-        ...planInput,
-        thread: current,
-        events: currentEvents,
-        automaticallyNameThreads: await options.automaticallyNameThreads(),
-      });
-      if (
-        currentPlan.kind !== "run" ||
-        currentPlan.writeGuard.kind !== "title-unchanged" ||
-        currentPlan.writeGuard.expectedRequestSeq !== plan.writeGuard.expectedRequestSeq
-      ) {
-        return { ok: false, error: "The thread changed while naming was in progress." };
+        return { ok: false, error: "The thread title changed while naming was in progress." };
       }
     }
 
-    await bb.sdk.threads.update({ threadId, title });
+    if (title !== thread.title) await bb.sdk.threads.update({ threadId, title });
     return { ok: true, title };
   } catch (error) {
     const message = describeError(error);
@@ -142,23 +162,18 @@ async function loadProjectTitleInstructions(
     const environment = await bb.sdk.environments.get({ environmentId });
     if (environment.path === null) return "";
 
-    for (const path of PROJECT_TITLE_INSTRUCTIONS_PATHS) {
-      try {
-        const file = await bb.sdk.files.read({
-          hostId: environment.hostId,
-          path: join(environment.path, path),
-          rootPath: environment.path,
-        });
-        if (file.contentEncoding !== "utf8") {
-          bb.log.warn(`${path} is not UTF-8; using default title instructions`);
-          return "";
-        }
-        return normalizeProjectTitleInstructions(file.content);
-      } catch (error) {
-        if (!isMissingFileError(error)) throw error;
-      }
+    const file = await bb.sdk.files.read({
+      hostId: environment.hostId,
+      path: join(environment.path, PROJECT_TITLE_INSTRUCTIONS_PATH),
+      rootPath: environment.path,
+    });
+    if (file.contentEncoding !== "utf8") {
+      bb.log.warn(
+        `${PROJECT_TITLE_INSTRUCTIONS_PATH} is not UTF-8; using default title instructions`,
+      );
+      return "";
     }
-    return "";
+    return normalizeProjectTitleInstructions(file.content);
   } catch (error) {
     if (!isMissingFileError(error)) {
       bb.log.warn(
@@ -185,39 +200,15 @@ async function loadNamingEvents(bb: BbPluginApi, threadId: string): Promise<Thre
   while (true) {
     const page = await bb.sdk.threads.events.list({
       threadId,
-      types: ["client/turn/requested", "turn/completed"],
+      types: ["client/turn/requested"],
       order: "asc",
       limit: String(EVENT_PAGE_SIZE),
       ...(afterSeq === undefined ? {} : { afterSeq: String(afterSeq) }),
     });
 
     for (const event of page) {
-      if (event.type === "turn/completed") {
-        events.push({ seq: event.seq, type: event.type });
-        continue;
-      }
       if (event.type !== "client/turn/requested") continue;
-      events.push({
-        seq: event.seq,
-        type: event.type,
-        data: {
-          initiator: event.data.initiator,
-          ...(event.data.retryOfRequestId === undefined
-            ? {}
-            : { retryOfRequestId: event.data.retryOfRequestId }),
-          target: { kind: event.data.target.kind },
-          input: event.data.input.map((input) => {
-            const normalized: {
-              type: string;
-              text?: string;
-              visibility?: "agent-only";
-            } = { type: input.type };
-            if (input.type === "text") normalized.text = input.text;
-            if (input.visibility !== undefined) normalized.visibility = input.visibility;
-            return normalized;
-          }),
-        },
-      });
+      events.push(event);
     }
 
     if (page.length < EVENT_PAGE_SIZE) break;
@@ -241,14 +232,10 @@ function describeSkip(reason: ThreadNamingSkipReason): string {
       return "Deleted threads cannot be named.";
     case "hidden-thread":
       return "Hidden threads cannot be named.";
-    case "latest-turn-incomplete":
-      return "Automatic naming waits for the latest user turn to complete.";
     case "latest-turn-not-user":
-      return "Automatic naming only runs after a user turn.";
+      return "Automatic naming only runs for an original user prompt.";
     case "missing-user-prompt":
       return "This thread has no initial user prompt to name.";
-    case "plugin-worker":
-      return "Plugin worker threads cannot be named.";
   }
 }
 

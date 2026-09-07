@@ -58,36 +58,6 @@ Source: <https://github.com/hugeicons/hugeicons-react>
 
 ---
 
-## clsx
-
-MIT License, Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com).
-
-Compiled into `dist/app.js`.
-
-Source: <https://github.com/lukeed/clsx>
-
----
-
-## tailwind-merge
-
-MIT License, Copyright (c) 2021 Dany Castillo.
-
-Compiled into `dist/app.js`.
-
-Source: <https://github.com/dcastil/tailwind-merge>
-
----
-
-## Sonner
-
-MIT License, Copyright (c) 2023 Emil Kowalski.
-
-Compiled into `dist/app.js`.
-
-Source: <https://github.com/emilkowalski/sonner>
-
----
-
 ## zod
 
 MIT License, Copyright (c) 2025 Colin McDonnell.
@@ -123,8 +93,8 @@ Source: <https://github.com/uidotdev/usehooks>
 
 ## Not shipped here
 
-React, `@radix-ui/react-select`, `@radix-ui/react-context-menu`,
-`@radix-ui/react-dropdown-menu` and `@get-bb/plugin-sdk`
+React, `clsx`, `tailwind-merge`, `@radix-ui/react-select`,
+`@radix-ui/react-context-menu`, `@radix-ui/react-dropdown-menu` and `@get-bb/plugin-sdk`
 are **not** bundled in this package. The bb app provides them at run time, so their
 licences travel with bb, not with this plugin.
 

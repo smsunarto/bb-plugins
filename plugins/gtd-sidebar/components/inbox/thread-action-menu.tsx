@@ -1,11 +1,11 @@
 import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { attachHapticTrigger } from "@/lib/ios-haptics";
-import { type ThreadAction, type ThreadActionPlan } from "@/components/inbox/thread-actions";
+import type { ThreadActionPlan } from "@/components/inbox/thread-actions";
 
 /**
  * The compact row's action menu, drawn like an iOS context menu: the rest of
@@ -24,90 +24,6 @@ const SHARED_LAYER_CLASS = cn(
   "shadow-[0_12px_36px_rgba(0,0,0,0.3)] dark:shadow-[0_16px_40px_rgba(0,0,0,0.55)]",
 );
 
-export interface CompactActionItem {
-  id: string;
-  label: string;
-  icon: IconName;
-  execute: () => void;
-  destructive?: boolean;
-}
-
-export function getCompactActions(plan: ThreadActionPlan): CompactActionItem[] {
-  const allActions = [...plan.primary, ...plan.organization, ...plan.destructive];
-
-  const actionMap = new Map<string, ThreadAction>();
-  for (const action of allActions) {
-    actionMap.set(action.id, action);
-  }
-
-  const items: CompactActionItem[] = [];
-
-  // 1. Settle (remove "thread" from label)
-  const settle = actionMap.get("settle");
-  if (settle) {
-    items.push({
-      id: "settle",
-      label: "Settle",
-      icon: "Check",
-      execute: settle.execute,
-    });
-  }
-  const unsettle = actionMap.get("unsettle");
-  if (unsettle) {
-    items.push({
-      id: "unsettle",
-      label: "Un-settle",
-      icon: "ArrowTurnBackward",
-      execute: unsettle.execute,
-    });
-  }
-  const wakeNow = actionMap.get("wake-now");
-  if (wakeNow) {
-    items.push({
-      id: "wake-now",
-      label: "Wake now",
-      icon: "AlarmClock",
-      execute: wakeNow.execute,
-    });
-  }
-
-  // 2. Snooze (remove "until tomorrow" from label)
-  const snooze = actionMap.get("snooze-tomorrow");
-  if (snooze) {
-    items.push({
-      id: "snooze-tomorrow",
-      label: "Snooze",
-      icon: "Clock",
-      execute: snooze.execute,
-    });
-  }
-
-  // 3. Pin
-  const pin = actionMap.get("toggle-pin");
-  if (pin) {
-    items.push({
-      id: "toggle-pin",
-      label: pin.label,
-      icon: pin.label === "Unpin" ? "PinOff" : "Pin",
-      execute: pin.execute,
-    });
-  }
-
-  // 4. Delete
-  const del = actionMap.get("request-delete");
-  if (del) {
-    items.push({
-      id: "request-delete",
-      label: "Delete",
-      icon: "Delete",
-      execute: del.execute,
-      destructive: true,
-    });
-  }
-
-  return items;
-}
-
 export function CompactThreadActionMenu({
   plan,
   open,
@@ -121,7 +37,6 @@ export function CompactThreadActionMenu({
   anchorRef?: RefObject<HTMLElement | null>;
   highlightContent?: ReactNode;
 }) {
-  const actions = getCompactActions(plan);
   const [rect, setRect] = useState<DOMRect | null>(null);
 
   useLayoutEffect(() => {
@@ -173,7 +88,7 @@ export function CompactThreadActionMenu({
               "group-data-[state=closed]/sheet:animate-[gtd-sheet-fade-out_150ms_ease-in_both]",
             )}
           >
-            {actions.map((action) => (
+            {plan.map((action) => (
               <DropdownMenu.Item
                 key={action.id}
                 ref={attachHapticTrigger}

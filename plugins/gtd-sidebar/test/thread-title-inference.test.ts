@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { gtdSidebarHostContract } from "../lib/host-contract.ts";
 import {
   completeThreadTitleWithFallback,
   createThreadTitleInference,
   formatInferredTitle,
+  TITLE_OUTPUT_SCHEMA,
+  type TitleInferenceAttempt,
 } from "../thread-title-inference.ts";
 
 describe("thread title inference policy", () => {
@@ -23,7 +24,7 @@ describe("thread title inference policy", () => {
             return {
               ok: true,
               model: String(input.model),
-              value: { activity: "explore", scope: "", title: "Name threads" },
+              value: { action: "rename", title: "Name threads" },
             };
           },
         }),
@@ -38,28 +39,46 @@ describe("thread title inference policy", () => {
     const title = await createThreadTitleInference(bb).complete({
       environmentId: null,
       prompt: "Generate a title",
+      allowKeep: true,
     });
 
     assert.equal(title, "Name threads");
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.hostId, "host-primary");
     assert.equal(calls[0]?.input.model, "gpt-5.6-luna");
-    assert.equal(calls[0]?.input.reasoningEffort, "none");
+    assert.deepEqual(calls[0]?.input.outputSchema, TITLE_OUTPUT_SCHEMA);
+    assert.deepEqual(Object.keys(TITLE_OUTPUT_SCHEMA.properties), ["action", "title"]);
   });
 
-  test("keeps standard none requests and GTD low requests contract-valid", () => {
-    const input = {
-      serviceId: "gtd-sidebar",
-      model: "gpt-5.6-luna",
-      prompt: "Generate a title",
-      outputSchema: { type: "object" },
-      timeoutMs: 5_000,
-    };
-    const schema = gtdSidebarHostContract["ai.inference.complete"].input;
-
-    assert.equal(schema.parse({ ...input, reasoningEffort: "none" }).reasoningEffort, "none");
-    assert.equal(schema.parse({ ...input, reasoningEffort: "low" }).reasoningEffort, "low");
-    assert.throws(() => schema.parse({ ...input, reasoningEffort: "medium" }));
+  test("excludes keep from the first-turn inference schema", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const bb = {
+      hosts: {
+        experimental_client: () => ({
+          call: async (_method: string, input: Record<string, unknown>) => {
+            calls.push(input);
+            return {
+              ok: true,
+              model: String(input.model),
+              value: { action: "rename", title: "GTD title" },
+            };
+          },
+        }),
+      },
+      sdk: { system: { config: async () => ({ primaryHostId: "host-primary" }) } },
+    } as unknown as BbPluginApi;
+    assert.equal(
+      await createThreadTitleInference(bb).complete({
+        environmentId: null,
+        prompt: "Name the first request",
+        allowKeep: false,
+      }),
+      "GTD title",
+    );
+    assert.deepEqual(
+      (calls[0]!.outputSchema as typeof TITLE_OUTPUT_SCHEMA).properties.action.enum,
+      ["rename"],
+    );
   });
 });
 
@@ -74,7 +93,7 @@ describe("completeThreadTitleWithFallback", () => {
         return {
           ok: true,
           model,
-          value: { activity: "explore", scope: "", title: "Fix the login test" },
+          value: { action: "rename", title: "Fix the login test" },
         };
       },
     });
@@ -93,7 +112,7 @@ describe("completeThreadTitleWithFallback", () => {
         models.push(model);
         return model === "primary"
           ? { ok: false, code: "timeout", message: "timed out" }
-          : { ok: true, model, value: { activity: "explore", scope: "", title: "Fallback title" } };
+          : { ok: true, model, value: { action: "rename", title: "Fallback title" } };
       },
       sleep: async (durationMs) => {
         delays.push(durationMs);
@@ -133,8 +152,8 @@ describe("completeThreadTitleWithFallback", () => {
     );
   });
 
-  test("records failed and successful attempts without inventing missing usage", async () => {
-    const attempts: unknown[] = [];
+  test("records the model and outcome of every attempt", async () => {
+    const attempts: TitleInferenceAttempt[] = [];
     const title = await completeThreadTitleWithFallback({
       primary: "primary",
       fallback: "fallback",
@@ -143,20 +162,16 @@ describe("completeThreadTitleWithFallback", () => {
       complete: async (model) =>
         model === "primary"
           ? { ok: false, code: "timeout", message: "timed out" }
-          : {
-              ok: true,
-              model,
-              value: { activity: "explore", scope: "", title: "Named" },
-              usage: { inputTokens: 20, outputTokens: 5 },
-            },
+          : { ok: true, model, value: { action: "rename", title: "Named" } },
     });
     assert.equal(title, "Named");
-    assert.equal(attempts.length, 2);
-    assert.deepEqual((attempts[0] as { usage?: unknown }).usage, undefined);
-    assert.deepEqual((attempts[1] as { usage: unknown }).usage, {
-      inputTokens: 20,
-      outputTokens: 5,
-    });
+    assert.deepEqual(
+      attempts.map(({ model, attempt, outcome }) => [model, attempt, outcome]),
+      [
+        ["primary", 0, "timeout"],
+        ["fallback", 1, "success"],
+      ],
+    );
   });
 
   test("observer errors cannot fail a valid title", async () => {
@@ -170,7 +185,7 @@ describe("completeThreadTitleWithFallback", () => {
         complete: async (model) => ({
           ok: true,
           model,
-          value: { activity: "explore", scope: "", title: "Named" },
+          value: { action: "rename", title: "Named" },
         }),
       }),
       "Named",
@@ -178,82 +193,14 @@ describe("completeThreadTitleWithFallback", () => {
   });
 });
 
-test("formats activity and multiple scopes deterministically", () => {
-  assert.equal(
-    formatInferredTitle({
-      activity: "fix",
-      scope: "Invoices + Accounts",
-      title: "Sorting and selection fixes",
-    }),
-    "🐛 [Invoices + Accounts] Sorting and selection fixes",
-  );
-  assert.equal(
-    formatInferredTitle({
-      activity: "explore",
-      scope: "Editor",
-      title: "Can TextMate distinguish symbols?",
-    }),
-    "[Editor] Can TextMate distinguish symbols?",
-  );
-  assert.throws(() => formatInferredTitle({ activity: "🔥", scope: "", title: "Task" }));
+test("keeps a title without accepting rewritten fields", () => {
+  assert.equal(formatInferredTitle({ action: "keep", title: "Different" }), null);
+  assert.throws(() => formatInferredTitle({ action: "invalid", title: "Task" }));
 });
 
-test("front-loads task nouns without cutting identifiers or questions", () => {
-  assert.equal(
-    formatInferredTitle({
-      activity: "review",
-      scope: "Snapshots",
-      title: "Review snapshot writer races",
-    }),
-    "🔎 [Snapshots] Snapshot writer races",
-  );
-  assert.equal(
-    formatInferredTitle({
-      activity: "build",
-      scope: "",
-      title: "Continue CSV export implementation",
-    }),
-    "🛠️ CSV export implementation",
-  );
-  assert.equal(
-    formatInferredTitle({ activity: "install", scope: "", title: "BuildKit setup" }),
-    "📦 BuildKit setup",
-  );
-  assert.equal(
-    formatInferredTitle({ activity: "fix", scope: "", title: "Fixation tracking" }),
-    "🐛 Fixation tracking",
-  );
-  assert.equal(
-    formatInferredTitle({ activity: "explore", scope: "", title: "Review or rewrite?" }),
-    "Review or rewrite?",
-  );
-  assert.throws(() =>
-    formatInferredTitle({ activity: "review", scope: "Snapshots", title: "Review" }),
-  );
-});
-
-test("removes repeated scope from legacy prefix instructions without losing other labels", () => {
-  assert.equal(
-    formatInferredTitle({
-      activity: "explore",
-      scope: "Monaco editor plugin",
-      title: "[Monaco Editor] Use TextMate rules without TS LSP?",
-    }),
-    "[Monaco editor plugin] Use TextMate rules without TS LSP?",
-  );
-  assert.equal(
-    formatInferredTitle({
-      activity: "fix",
-      scope: "GTD + Vimium",
-      title: "[GTD] Waiting sort & focus fixes",
-    }),
-    "🐛 [GTD + Vimium] Waiting sort & focus fixes",
-  );
-  assert.equal(
-    formatInferredTitle({ activity: "plan", scope: "Transport", title: "[RFC] Retry design" }),
-    "📝 [Transport] [RFC] Retry design",
-  );
-  assert.throws(() =>
-    formatInferredTitle({ activity: "explore", scope: "Editor", title: "[Editor]" }),
-  );
+test("returns the complete title without adding or rewriting project formatting", () => {
+  for (const title of ["Fix sorting", "[Billing] Fix sorting", "[RFC] Retry design", "iOS setup"]) {
+    assert.equal(formatInferredTitle({ action: "rename", title }), title);
+  }
+  assert.throws(() => formatInferredTitle({ action: "rename", title: "  " }));
 });

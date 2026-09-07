@@ -1,7 +1,6 @@
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   AlarmClockIcon,
-  Archive02Icon,
   ArrowDown01Icon,
   ArrowLeft01Icon,
   ArrowTurnBackwardIcon,
@@ -14,12 +13,8 @@ import {
   Edit02Icon,
   HelpCircleIcon,
   Loading03Icon,
-  Mail01Icon,
-  MailOpen01Icon,
   PinIcon,
   PinOffIcon,
-  SidebarRight01Icon,
-  SparklesIcon,
   Target02Icon,
   Tick02Icon,
   UserAdd01Icon,
@@ -29,7 +24,6 @@ import { cn } from "@/lib/utils";
 
 const ICON_MAP = {
   AlarmClock: AlarmClockIcon,
-  Archive: Archive02Icon,
   ArrowTurnBackward: ArrowTurnBackwardIcon,
   Check: Tick02Icon,
   ChevronDown: ArrowDown01Icon,
@@ -42,12 +36,8 @@ const ICON_MAP = {
   Edit: Edit02Icon,
   ListTodo: CheckListIcon,
   Loading: Loading03Icon,
-  Mail: Mail01Icon,
-  MailOpen: MailOpen01Icon,
   Pin: PinIcon,
   PinOff: PinOffIcon,
-  SidebarRight: SidebarRight01Icon,
-  Sparkles: SparklesIcon,
   Target: Target02Icon,
   Terminal: ComputerTerminal01Icon,
   UserRoundPlus: UserAdd01Icon,

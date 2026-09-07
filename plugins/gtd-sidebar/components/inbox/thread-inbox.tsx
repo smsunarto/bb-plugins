@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  experimental_useProviders as useProviders,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
+  useBbNavigate,
   useRpc,
   useSettings,
   type PluginSidebarThread,
@@ -17,11 +19,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ThreadCard } from "@/components/inbox/thread-card";
-import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
+import type { DispatchRowCommand, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle } from "@/hooks/use-lifecycle";
 import { useSettledThreads } from "@/hooks/use-settled-threads";
+import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
@@ -34,8 +37,7 @@ import {
   sortByLatestAttentionDescending,
 } from "@/lib/inbox";
 import { mergeSettledThreads } from "@/lib/settled-threads";
-import { readWarmStartProviders, writeWarmStartProviders } from "@/lib/warm-start";
-import { resolveSidebarBranchLabel } from "@/lib/gitbutler";
+import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
 
 const ALL_PROJECTS = "__all__";
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
@@ -60,21 +62,14 @@ export function ThreadInbox({
 }: PluginThreadListProps) {
   const { status, threads: hostThreads, projects } = useSidebarThreads();
   const threadActions = useSidebarThreadActions();
+  const navigate = useBbNavigate();
   // The palette's settle row archives through this same host action, and a
   // mounted list is the only place the action exists.
   useEffect(() => {
     publishSidebarActions(threadActions);
     return () => forgetSidebarActions(threadActions);
   }, [threadActions]);
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  // One clock for every card in a render, quantized to the minute so the
-  // labels do not disagree and do not churn on unrelated re-renders.
-  const [nowMinute, setNowMinute] = useState(() => Math.floor(Date.now() / 60_000));
-  useEffect(() => {
-    const timer = setInterval(() => setNowMinute(Math.floor(Date.now() / 60_000)), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-  const now = nowMinute * 60_000;
+  const now = useMinuteClock();
   const lifecycle = useLifecycle();
   // bb's view never carries an archived thread, so the Settled shelf's rows
   // come from a second read and are merged in before anything partitions.
@@ -83,12 +78,11 @@ export function ThreadInbox({
     () => mergeSettledThreads(hostThreads, settledThreads.threads),
     [hostThreads, settledThreads.threads],
   );
-  // Seeded from the same cache the shelves use, and for the same reason: a
-  // remount would otherwise draw every glyph from a fallback and swap it a
-  // round trip later. Nothing gates on it — a fallback glyph is a different
-  // pixel, not a different layout.
-  const [providerInfoById, setProviderInfoById] = useState<ReadonlyMap<string, ProviderGlyphInfo>>(
-    () => new Map((readWarmStartProviders() ?? []).map((provider) => [provider.id, provider])),
+  // bb's own cached roster, so no glyph waits on a round trip of this plugin's.
+  const { providers } = useProviders();
+  const providerInfoById = useMemo(
+    () => new Map(providers.map((provider) => [provider.id, provider])),
+    [providers],
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   // Read once here rather than per card, and compared against `false` rather
@@ -98,79 +92,8 @@ export function ThreadInbox({
   const { values: settingValues } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon !== false;
 
-  const gitButlerEnvironmentIds = useMemo(
-    () =>
-      [
-        ...new Set(
-          threads.flatMap((thread) => {
-            const environment = thread.environment;
-            return environment?.workspaceDisplayKind === "other" && environment.id !== null
-              ? [environment.id]
-              : [];
-          }),
-        ),
-      ].sort(),
-    [threads],
-  );
-  const gitButlerEnvironmentKey = gitButlerEnvironmentIds.join("\u0000");
-  const [gitButlerLabels, setGitButlerLabels] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
+  const gitButlerLabels = useGitButlerLabels(threads);
 
-  useEffect(() => {
-    if (gitButlerEnvironmentKey.length === 0) {
-      setGitButlerLabels(new Map());
-      return;
-    }
-
-    const environmentIds = gitButlerEnvironmentKey.split("\u0000");
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const result = await rpc.call("listEnvironmentBranches", { environmentIds });
-        if (!cancelled) {
-          setGitButlerLabels(
-            new Map(
-              result.environments.map((environment) => [
-                environment.environmentId,
-                environment.label,
-              ]),
-            ),
-          );
-        }
-      } catch {
-        // Keep the last known virtual branch. The host may reconnect before
-        // the next bounded refresh, and bb's own label remains the fallback.
-      }
-    };
-
-    void refresh();
-    const timer = setInterval(() => void refresh(), GITBUTLER_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [gitButlerEnvironmentKey, rpc]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadProviderInfo = async () => {
-      try {
-        const result = await rpc.call("listProviders", {});
-        if (!cancelled) {
-          setProviderInfoById(new Map(result.providers.map((provider) => [provider.id, provider])));
-          writeWarmStartProviders(result.providers);
-        }
-      } catch {
-        // Provider metadata only improves the glyph. Keep the built-in and
-        // neutral fallbacks if the host cannot supply it.
-      }
-    };
-    void loadProviderInfo();
-    return () => {
-      cancelled = true;
-    };
-  }, [rpc]);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
 
@@ -207,6 +130,11 @@ export function ThreadInbox({
 
   const shelvedTotal =
     pinned.length + nextAction.length + waiting.length + snoozed.length + settled.length;
+  const activeShelves = [
+    ["pinned", "Pinned", pinned],
+    ["nextAction", "Next Action", nextAction],
+    ["waiting", "Waiting", waiting],
+  ] as const;
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
@@ -233,6 +161,31 @@ export function ThreadInbox({
     }
     threadActions.archive(threadId);
   };
+
+  const command = useCommittedEvent((command: RowCommand) => {
+    switch (command.kind) {
+      case "open":
+        if (command.shelf === "settled") navigate.toThread(command.threadId);
+        else threadActions.open(command.threadId, { split: command.split });
+        onNavigate();
+        return;
+      case "settle":
+        settleAndAdvance(command.threadId, { pinned, nextAction, waiting }[command.shelf]);
+        return;
+      case "snooze":
+        lifecycle.snooze(command.threadId, command.until);
+        return;
+      case "restore":
+        if (command.shelf === "snoozed") lifecycle.unsnooze(command.threadId);
+        else settledThreads.unsettle(command.threadId);
+        return;
+      case "pin":
+        void threadActions.setPinned(command.threadId, command.pinned);
+        return;
+      case "request-delete":
+        threadActions.requestDelete(command.threadId);
+    }
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -277,35 +230,20 @@ export function ThreadInbox({
         // surface, while the matching padding lets the final row scroll clear.
         style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
       >
-        {/* Five outcomes, and the order carries the argument. The unready one
-            renders nothing rather than "No threads yet" — bb's threads are
-            already here, so what is still missing is this plugin's own rows,
-            and a false empty state is worse than a blank moment. It comes
-            after the error branch so a failed thread query still says so, and
-            it is reached whenever nothing seeded the shelves: a first-ever
-            run, a cleared origin, or any browser with web storage switched
-            off or partitioned, where the seed misses on every page load.
-            `shelvesReady`'s own deadline is behind all of them. */}
-        {status === "loading" ? null : status === "error" ? (
-          // `output` is for calculation results; a polite live region for a
-          // status message is exactly what `role="status"` is for.
-          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-          <p role="status" className={EMPTY_STATE_CLASS}>
-            Could not load threads.
-          </p>
-        ) : !lifecycle.shelvesReady || !settledThreads.ready ? null : shelvedTotal === 0 ? (
-          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-          <p role="status" className={EMPTY_STATE_CLASS}>
-            {searchQuery.trim() ? "No threads found" : "No threads yet"}
-          </p>
-        ) : (
-          <>
-            {pinned.length > 0 ? (
-              <Shelf label="Pinned" isCompactViewport={isCompactViewport}>
-                {pinned.map((thread) => (
+        <InboxContent
+          status={status}
+          ready={lifecycle.shelvesReady && settledThreads.ready}
+          count={shelvedTotal}
+          searchQuery={searchQuery}
+        >
+          {activeShelves.map(([shelf, label, shelfThreads]) =>
+            shelfThreads.length > 0 ? (
+              <Shelf key={label} label={label} isCompactViewport={isCompactViewport}>
+                {shelfThreads.map((thread) => (
                   <ThreadCard
                     key={thread.id}
                     thread={thread}
+                    shelf={shelf}
                     provider={providerInfoById.get(thread.providerId)}
                     showProviderIcon={showProviderIcon}
                     projectName={projectNameById.get(thread.projectId) ?? null}
@@ -317,94 +255,144 @@ export function ThreadInbox({
                     isActive={thread.id === activeThreadId}
                     canPark={lifecycle.canPark(thread)}
                     isCompactViewport={isCompactViewport}
-                    onNavigate={onNavigate}
-                    onSettle={() => settleAndAdvance(thread.id, pinned)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
+                    command={command}
                     now={now}
                   />
                 ))}
               </Shelf>
-            ) : null}
-            {nextAction.length > 0 ? (
-              <Shelf label="Next Action" isCompactViewport={isCompactViewport}>
-                {nextAction.map((thread) => (
-                  <ThreadCard
-                    key={thread.id}
-                    thread={thread}
-                    provider={providerInfoById.get(thread.providerId)}
-                    showProviderIcon={showProviderIcon}
-                    projectName={projectNameById.get(thread.projectId) ?? null}
-                    branchName={resolveSidebarBranchLabel(
-                      thread.environment?.branchName ?? null,
-                      thread.environment?.id ?? null,
-                      gitButlerLabels,
-                    )}
-                    isActive={thread.id === activeThreadId}
-                    canPark={lifecycle.canPark(thread)}
-                    isCompactViewport={isCompactViewport}
-                    onNavigate={onNavigate}
-                    onSettle={() => settleAndAdvance(thread.id, nextAction)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
-                    now={now}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-            {waiting.length > 0 ? (
-              <Shelf label="Waiting" isCompactViewport={isCompactViewport}>
-                {waiting.map((thread) => (
-                  <ThreadCard
-                    key={thread.id}
-                    thread={thread}
-                    provider={providerInfoById.get(thread.providerId)}
-                    showProviderIcon={showProviderIcon}
-                    projectName={projectNameById.get(thread.projectId) ?? null}
-                    branchName={resolveSidebarBranchLabel(
-                      thread.environment?.branchName ?? null,
-                      thread.environment?.id ?? null,
-                      gitButlerLabels,
-                    )}
-                    isActive={thread.id === activeThreadId}
-                    canPark={lifecycle.canPark(thread)}
-                    isCompactViewport={isCompactViewport}
-                    onNavigate={onNavigate}
-                    onSettle={() => settleAndAdvance(thread.id, waiting)}
-                    onSnooze={(until) => lifecycle.snooze(thread.id, until)}
-                    now={now}
-                  />
-                ))}
-              </Shelf>
-            ) : null}
-            <ParkedShelf
-              label="Snoozed"
-              shelf="snoozed"
-              threads={snoozed}
-              expanded={showSnoozed}
-              onToggle={() => setShowSnoozed((open) => !open)}
-              activeThreadId={activeThreadId}
-              wakeAtFor={lifecycle.wakeAtFor}
-              onRestore={lifecycle.unsnooze}
-              isCompactViewport={isCompactViewport}
-              onNavigate={onNavigate}
-              now={now}
-            />
-            <ParkedShelf
-              label="Settled"
-              shelf="settled"
-              threads={settled}
-              expanded={showSettled}
-              onToggle={() => setShowSettled((open) => !open)}
-              activeThreadId={activeThreadId}
-              wakeAtFor={() => null}
-              onRestore={settledThreads.unsettle}
-              isCompactViewport={isCompactViewport}
-              onNavigate={onNavigate}
-              now={now}
-            />
-          </>
-        )}
+            ) : null,
+          )}
+          <ParkedShelf
+            label="Snoozed"
+            shelf="snoozed"
+            threads={snoozed}
+            expanded={showSnoozed}
+            onToggle={() => setShowSnoozed((open) => !open)}
+            activeThreadId={activeThreadId}
+            wakeAtFor={lifecycle.wakeAtFor}
+            isCompactViewport={isCompactViewport}
+            command={command}
+            now={now}
+          />
+          <ParkedShelf
+            label="Settled"
+            shelf="settled"
+            threads={settled}
+            expanded={showSettled}
+            onToggle={() => setShowSettled((open) => !open)}
+            activeThreadId={activeThreadId}
+            wakeAtFor={() => null}
+            isCompactViewport={isCompactViewport}
+            command={command}
+            now={now}
+          />
+        </InboxContent>
       </div>
     </div>
+  );
+}
+
+function useMinuteClock(): number {
+  // One clock for every card in a render, quantized to the minute so the
+  // labels do not disagree and do not churn on unrelated re-renders.
+  const [nowMinute, setNowMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useEffect(() => {
+    const timer = setInterval(() => setNowMinute(Math.floor(Date.now() / 60_000)), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return nowMinute * 60_000;
+}
+
+function useGitButlerLabels(threads: readonly PluginSidebarThread[]): ReadonlyMap<string, string> {
+  const rpc = useRpc<typeof gtdSidebarRpcContract>();
+  const gitButlerEnvironmentIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          threads.flatMap((thread) => {
+            const environment = thread.environment;
+            return environment?.workspaceDisplayKind === "other" && environment.id !== null
+              ? [environment.id]
+              : [];
+          }),
+        ),
+      ].sort(),
+    [threads],
+  );
+  const gitButlerEnvironmentKey = gitButlerEnvironmentIds.join("\u0000");
+  const [gitButlerLabels, setGitButlerLabels] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+
+  useEffect(() => {
+    if (gitButlerEnvironmentKey.length === 0) {
+      setGitButlerLabels((current) => (current.size === 0 ? current : new Map()));
+      return;
+    }
+
+    const environmentIds = gitButlerEnvironmentKey.split("\u0000");
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const result = await rpc.call("listEnvironmentBranches", { environmentIds });
+        if (!cancelled) {
+          const next = new Map(
+            result.environments.map((environment) => [
+              environment.environmentId,
+              environment.label,
+            ]),
+          );
+          setGitButlerLabels((current) => (gitButlerLabelsMatch(current, next) ? current : next));
+        }
+      } catch {
+        // Keep the last known virtual branch. The host may reconnect before
+        // the next bounded refresh, and bb's own label remains the fallback.
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(() => void refresh(), GITBUTLER_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [gitButlerEnvironmentKey, rpc]);
+
+  return gitButlerLabels;
+}
+
+/** Wait for plugin shelf reads before deciding whether the list is empty. */
+function InboxContent({
+  status,
+  ready,
+  count,
+  searchQuery,
+  children,
+}: {
+  status: ReturnType<typeof useSidebarThreads>["status"];
+  ready: boolean;
+  count: number;
+  searchQuery: string;
+  children: React.ReactNode;
+}) {
+  if (status === "loading") return null;
+  if (status === "error") {
+    return <InboxStatus>Could not load threads.</InboxStatus>;
+  }
+  if (!ready) return null;
+  if (count === 0) {
+    return <InboxStatus>{searchQuery.trim() ? "No threads found" : "No threads yet"}</InboxStatus>;
+  }
+  return children;
+}
+
+function InboxStatus({ children }: { children: React.ReactNode }) {
+  return (
+    // A status message is a polite live region, not a calculation result.
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+    <p role="status" className={EMPTY_STATE_CLASS}>
+      {children}
+    </p>
   );
 }
 
@@ -421,9 +409,8 @@ function ParkedShelf({
   onToggle,
   activeThreadId,
   wakeAtFor,
-  onRestore,
   isCompactViewport,
-  onNavigate,
+  command,
   now,
 }: {
   label: string;
@@ -433,9 +420,8 @@ function ParkedShelf({
   onToggle: () => void;
   activeThreadId: string | null;
   wakeAtFor: (thread: PluginSidebarThread) => number | null;
-  onRestore: (threadId: string) => void;
   isCompactViewport: boolean;
-  onNavigate: () => void;
+  command: DispatchRowCommand;
   /** Quantized clock, shared by every row — never a fresh read, which a
    * seeded first paint could now disagree with. */
   now: number;
@@ -488,8 +474,7 @@ function ParkedShelf({
               wakeAt={wakeAtFor(thread)}
               now={now}
               isCompactViewport={isCompactViewport}
-              onNavigate={onNavigate}
-              onRestore={() => onRestore(thread.id)}
+              command={command}
             />
           ))}
         </ul>
@@ -503,27 +488,23 @@ function Shelf({
   children,
   isCompactViewport,
 }: {
-  label: string | null;
+  label: string;
   children: React.ReactNode;
   isCompactViewport: boolean;
 }) {
   return (
-    // A named section is exposed as a landmark region; an unnamed one is not,
-    // which is exactly right for the single unlabelled inbox list.
-    <section {...(label ? { "aria-label": label } : {})}>
-      {label ? (
-        <h2 className={cn("flex items-center gap-2 px-2.5 pb-0.5 pt-2")}>
-          <span
-            className={cn(
-              "text-2xs font-medium",
-              isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
-            )}
-          >
-            {label}
-          </span>
-          <span className="h-px flex-1 bg-sidebar-border" />
-        </h2>
-      ) : null}
+    <section aria-label={label}>
+      <h2 className="flex items-center gap-2 px-2.5 pb-0.5 pt-2">
+        <span
+          className={cn(
+            "text-2xs font-medium",
+            isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+          )}
+        >
+          {label}
+        </span>
+        <span className="h-px flex-1 bg-sidebar-border" />
+      </h2>
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}

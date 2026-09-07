@@ -12,6 +12,14 @@
   the plugin's database keeps only snoozes, and rows without a snooze are removed on
   the next start. Snooze is unchanged.
 
+### Patch Changes
+
+- The browser-side warm-start cache is gone. The shelves wait for the plugin's own
+  rows the same way they already wait for the Settled shelf, and the entries earlier
+  versions left under `gtd-sidebar:v1:*` in `localStorage` are removed the first
+  time this version loads. Provider names and marks now come from bb's own cached
+  roster instead of a plugin round trip.
+
 ## 0.4.2
 
 ### Patch Changes

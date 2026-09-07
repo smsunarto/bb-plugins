@@ -5,8 +5,8 @@ import {
   nextWakeDelayMs,
   refreshRetryDelayMs,
   resolveShelf,
-  resolveSnoozePresets,
   rowsMatch,
+  snoozeUntilTomorrow,
   snoozeWakeLabel,
   MAX_TIMEOUT_MS,
   REFRESH_RETRY_DELAYS_MS,
@@ -17,7 +17,6 @@ import {
 const quiet: ThreadActivitySignals = {
   hasPendingInteraction: false,
   isWorking: false,
-  isUnread: false,
   latestAttentionAt: 0,
 };
 
@@ -143,38 +142,14 @@ describe("snoozeWakeLabel", () => {
   });
 });
 
-describe("resolveSnoozePresets", () => {
-  it("offers this evening while it is still well before evening", () => {
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 9, 0, 0));
-    assert.deepEqual(
-      presets.map((preset) => preset.id),
-      ["hour", "evening", "tomorrow", "next-week"],
-    );
-  });
-
-  it("drops this evening once evening is near", () => {
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 17, 30, 0));
-    assert.deepEqual(
-      presets.map((preset) => preset.id),
-      ["hour", "tomorrow", "next-week"],
-    );
-  });
-
+describe("snoozeUntilTomorrow", () => {
   // Calendar arithmetic, not +24h: a fixed offset lands on the wrong local
   // day across a daylight-saving change.
-  it("puts tomorrow at 9am on the next calendar day", () => {
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 23, 30, 0));
-    const tomorrow = new Date(presets.find((preset) => preset.id === "tomorrow")!.snoozedUntil);
+  it("lands at 9am on the next calendar day", () => {
+    const tomorrow = new Date(snoozeUntilTomorrow(new Date(2026, 0, 5, 23, 30, 0)));
     assert.equal(tomorrow.getDate(), 6);
     assert.equal(tomorrow.getHours(), 9);
-  });
-
-  it("puts next week on the coming Monday", () => {
-    // 2026-01-05 is a Monday, so "next week" is the following Monday.
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 10, 0, 0));
-    const nextWeek = new Date(presets.find((preset) => preset.id === "next-week")!.snoozedUntil);
-    assert.equal(nextWeek.getDay(), 1);
-    assert.equal(nextWeek.getDate(), 12);
+    assert.equal(tomorrow.getMinutes(), 0);
   });
 });
 

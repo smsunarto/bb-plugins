@@ -1,5 +1,14 @@
 # GTD title hillclimb result
 
+> **Superseded (2026-09-05).** The structured `Emoji [Scope] Task` output
+> described below was replaced by a keep-or-rename decision in which the model
+> returns the complete title, and naming now runs on each user prompt instead
+> of on turn completion. Only `.agents/GTD_NAMING.md` is read; the
+> `.agents/GTD_TITLE.md` fallback, never released, was dropped. The evaluation
+> harness and its synthetic fixtures were
+> removed once the pilot was complete; they are preserved in commit `6512fc16`
+> as `scripts/gtd-title-eval.ts` and `scripts/gtd-title-fixtures.json`.
+
 Implemented the compact structured candidate with Luna reasoning disabled. Stopped the initial pilot at the reduced 32-attempt budget, then ran two historical checks after explicit approval. This is a useful pilot, not proof of convergence or a navigation benchmark.
 
 ## What changed
@@ -65,25 +74,12 @@ One Luna/max exploration pass produced rule drafts for bb-plugins, dotfiles, bb,
 
 ## Reproduce a small synthetic run
 
-The harness uses the production transport and pure naming planner. It cannot update threads. Each output directory has a 32-physical-attempt ledger, including retries. Reusing a label/case result is refused. Do not reset that directory to bypass a run budget.
-
-Write a local config with these fields, using a fresh output directory only for a separately authorized run:
-
-```json
-{
-  "label": "pilot",
-  "planner": "plugins/gtd-sidebar/lib/thread-naming.ts",
-  "cases": "scripts/gtd-title-fixtures.json",
-  "output": "/tmp/gtd-title-pilot",
-  "ids": ["export", "review", "ship_failed"],
-  "effort": "none",
-  "structured": true
-}
-```
-
-Run `bun scripts/gtd-title-eval.ts /path/to/config.json`. This sends the selected synthetic prompts through the existing Codex authentication. Raw results, prompts, prompt hashes, timing, usage, and attempt records stay in the chosen local output directory. No further run is needed for this implementation.
-
-The original historical snapshots, frozen candidates, setup drafts, decision ledger, and measured results remain in this thread's private `gtd-hillclimb` artifact directory. They are excluded from the commit.
+The harness that produced these numbers has been removed. Check out commit
+`6512fc16` for `scripts/gtd-title-eval.ts`, the synthetic fixtures, and the
+planner they ran against. The original historical snapshots, frozen candidates,
+setup drafts, decision ledger, and measured results remain in the pilot
+thread's private `gtd-hillclimb` artifact directory. They are excluded from the
+commit.
 
 ## Verification
 

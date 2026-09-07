@@ -73,9 +73,8 @@ export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
  * question this section exists to answer. So Waiting reads `updatedAt`, whose
  * last write for a working thread is the status transition that set it going.
  *
- * A rename can still move a Waiting row. Nothing automatic does it: this
- * plugin names threads on `thread.idle`, which is the moment a thread LEAVES
- * this section, so reaching it takes a hand-typed rename of a thread mid-turn.
+ * Prompt-triggered naming can move a Waiting row when its title arrives.
+ * This keeps recently requested work near the top while its agent is working.
  */
 export function partitionActiveSections(threads: readonly PluginSidebarThread[]): {
   nextAction: PluginSidebarThread[];

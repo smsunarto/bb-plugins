@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 import {
-  normalizeInitialUserPrompt,
   normalizeProjectTitleInstructions,
   planThreadNaming,
   renderThreadNamingPrompt,
@@ -14,7 +13,6 @@ import {
 const thread: NamingThreadFacts = {
   archivedAt: null,
   deletedAt: null,
-  originPluginId: null,
   parentThreadId: null,
   title: null,
   visibility: "visible",
@@ -52,96 +50,57 @@ function plan(
       completed(2),
     ],
     intent,
-    pluginId: "gtd-sidebar",
     thread: { ...thread, ...overrides.thread },
   });
 }
 
-describe("normalizeInitialUserPrompt", () => {
-  test("uses the first visible user thread-start text", () => {
-    const events: ThreadNamingEvent[] = [
-      request(8, [{ type: "text", text: "later" }]),
-      request(2, [
-        { type: "text", text: "  Fix\n  the " },
-        { type: "image" },
-        { type: "text", text: " hidden ", visibility: "agent-only" },
-        { type: "text", text: " login\t test " },
-      ]),
-      request(1, [{ type: "text", text: "system" }], { initiator: "system" }),
-      request(3, [{ type: "text", text: "follow-up" }], { target: { kind: "new-turn" } }),
-    ];
-
-    assert.equal(normalizeInitialUserPrompt(events), "Fix the login test");
-  });
-
-  test("caps normalized input at 4,000 characters", () => {
-    const prompt = normalizeInitialUserPrompt([
-      request(1, [{ type: "text", text: "x".repeat(4_100) }]),
-    ]);
-
-    assert.equal(prompt.length, 4_000);
-  });
-});
-
 describe("renderThreadNamingPrompt", () => {
-  test("supports scoped activity titles and preserves question intent", () => {
-    const prompt = renderThreadNamingPrompt("Can Monaco use TextMate?");
-    assert.match(prompt, /specific task nouns first, <=48 chars, questions stay questions/u);
-    assert.match(
-      prompt,
-      /scope \(product area\(s\) joined ' \+ '; empty if unclear; never repo\)/u,
-    );
-    assert.match(prompt, /review=code review; verify=running tests/u);
-    assert.match(prompt, /questions\/exploration=explore; writing skills\/docs=build/u);
-    assert.match(prompt, /requested work, never suggested next steps/u);
+  test("generation prompt names the request without reviewing a previous title", () => {
+    const prompt = renderThreadNamingPrompt("Can Monaco use TextMate?", "", {
+      currentTitle: "BB internal title",
+      allowKeep: false,
+    });
+    assert.match(prompt, /^Generate a thread title for the current request/u);
+    assert.match(prompt, /Return action "rename" and title/u);
+    assert.match(prompt, /No activity emoji or status markers/u);
+    assert.match(prompt, /Use a plain title unless the project title rules specify/u);
     assert.match(prompt, /Current request:\nCan Monaco use TextMate\?/u);
-    assert.ok(renderThreadNamingPrompt("").length < 800);
+    assert.doesNotMatch(prompt, /keep|BB internal title|Current title:|Mode:/u);
   });
 
-  test("includes the handoff and project instructions", () => {
-    assert.match(
-      renderThreadNamingPrompt("Now fix signup", "  **Fixed:** login\n\nTests pass.  "),
-      /Latest handoff:\n\*\*Fixed:\*\* login\n\nTests pass\.$/u,
-    );
-    assert.match(
-      renderThreadNamingPrompt("Fix login", "", "  Keep ticket IDs.\r\nUse [Auth].  "),
-      /Project title rules:\nKeep ticket IDs\.\nUse \[Auth\]\./u,
-    );
+  test("review prompt preserves the task identity and includes project rules", () => {
+    const prompt = renderThreadNamingPrompt("Fix login", "  Keep ticket IDs.\r\nUse [Auth].  ", {
+      currentTitle: "Fix authentication",
+      allowKeep: true,
+    });
+    assert.match(prompt, /^Keep the current thread title/u);
+    assert.match(prompt, /When uncertain, keep it/u);
+    assert.match(prompt, /Current title:\nFix authentication/u);
+    assert.match(prompt, /Project title rules:\nKeep ticket IDs\.\nUse \[Auth\]\./u);
+    assert.doesNotMatch(prompt, /first user request|forced mode|Mode:/u);
   });
 
-  test("caps combined context even when every source is large", () => {
-    const prompt = renderThreadNamingPrompt(
-      "U".repeat(5_000),
-      "H".repeat(5_000),
-      `${"P".repeat(99)}\n`.repeat(90),
-      {
-        priorUserPrompt: "A".repeat(5_000),
-        currentTitle: "T".repeat(5_000),
-      },
-    );
-    const selected = prompt.match(/[UHPAT]{2,}/gu) ?? [];
+  test("caps context and preserves the title even with large requests", () => {
+    const prompt = renderThreadNamingPrompt("U".repeat(5_000), `${"P".repeat(99)}\n`.repeat(90), {
+      initialUserPrompt: "A".repeat(5_000),
+      currentTitle: "T".repeat(5_000),
+      allowKeep: true,
+      recentUserPrompts: Array.from({ length: 5 }, () => "R".repeat(5_000)),
+    });
+    const selected = prompt.match(/[UPATR]{2,}/gu) ?? [];
     assert.ok(selected.reduce((length, section) => length + section.length, 0) <= 2_400);
-    assert.match(prompt, /Current request:\nU/u);
-    assert.match(prompt, /Latest handoff:\nH/u);
-    assert.ok(prompt.length < 3_100);
+    assert.match(prompt, /Current title:\nT{96}\n/u);
+    assert.match(prompt, /Recent requests \(oldest first\):\nR/u);
   });
 
-  test("keeps complete scope rules while prioritizing the current request", () => {
+  test("keeps whole scope rules and omits duplicate original request", () => {
     const prompt = renderThreadNamingPrompt(
-      "Current task ".repeat(100),
-      "",
+      "Fix login",
       ["Use [Auth].", "X".repeat(600), "Use [Billing]."].join("\n"),
+      { initialUserPrompt: "Fix login" },
     );
     assert.match(prompt, /Project title rules:\nUse \[Auth\]\.\nUse \[Billing\]\./u);
-    assert.doesNotMatch(prompt, /XXX/u);
-    assert.ok(prompt.indexOf("Current request:") < prompt.indexOf("Project title rules:"));
-  });
-
-  test("omits a duplicate task anchor", () => {
-    assert.doesNotMatch(
-      renderThreadNamingPrompt("Fix login", "", "", { priorUserPrompt: "Fix login" }),
-      /Task anchor:/u,
-    );
+    assert.doesNotMatch(prompt, /XXX|Original request:/u);
   });
 });
 
@@ -153,28 +112,49 @@ describe("normalizeProjectTitleInstructions", () => {
 });
 
 describe("planThreadNaming", () => {
-  test("runs automatic naming after every completed user turn", () => {
-    const firstTurn = plan({ kind: "automatic", lastAssistantText: "First handoff" });
+  test("normalizes visible text without passing agent-only input to inference", () => {
+    const result = plan(
+      { kind: "automatic" },
+      {
+        events: [
+          request(1, [
+            { type: "text", text: "  Fix\n the " },
+            { type: "image" },
+            { type: "text", text: "private context", visibility: "agent-only" },
+            { type: "text", text: "login\t test " },
+          ]),
+        ],
+      },
+    );
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.match(result.prompt, /Current request:\nFix the login test/u);
+      assert.doesNotMatch(result.prompt, /private context/u);
+    }
+  });
+
+  test("runs automatic naming on initial and follow-up prompts before completion", () => {
+    const firstTurn = plan({ kind: "automatic" });
     assert.equal(firstTurn.kind, "run");
     if (firstTurn.kind === "run") {
-      assert.match(firstTurn.prompt, /Latest handoff:\nFirst handoff/u);
+      assert.doesNotMatch(firstTurn.prompt, /Latest handoff:/u);
     }
-    assert.deepEqual(plan({ kind: "automatic", lastAssistantText: null }, { events: [] }), {
+    assert.deepEqual(plan({ kind: "automatic" }, { events: [] }), {
       kind: "skip",
       reason: "missing-user-prompt",
     });
-    assert.deepEqual(
+    assert.equal(
       plan(
-        { kind: "automatic", lastAssistantText: null },
+        { kind: "automatic" },
         {
           events: [request(1, [{ type: "text", text: "Fix it" }])],
         },
-      ),
-      { kind: "skip", reason: "latest-turn-incomplete" },
+      ).kind,
+      "run",
     );
 
     const followUp = plan(
-      { kind: "automatic", lastAssistantText: "Login is fixed and tests pass." },
+      { kind: "automatic" },
       {
         events: [
           request(1, [{ type: "text", text: "Fix login" }]),
@@ -182,15 +162,14 @@ describe("planThreadNaming", () => {
           request(3, [{ type: "text", text: "Now fix signup" }], {
             target: { kind: "new-turn" },
           }),
-          completed(4),
         ],
         thread: { title: "Fix login" },
       },
     );
     assert.equal(followUp.kind, "run");
     if (followUp.kind === "run") {
-      assert.equal(followUp.userPrompt, "Now fix signup");
-      assert.match(followUp.prompt, /Latest handoff:\nLogin is fixed/u);
+      assert.match(followUp.prompt, /Current request:\nNow fix signup/u);
+      assert.doesNotMatch(followUp.prompt, /Latest handoff:/u);
       assert.deepEqual(followUp.writeGuard, {
         kind: "title-unchanged",
         expectedTitle: "Fix login",
@@ -199,32 +178,50 @@ describe("planThreadNaming", () => {
     }
   });
 
-  test("plans to replace an unchanged existing title", () => {
-    const result = plan(
-      { kind: "automatic", lastAssistantText: null },
-      { thread: { title: "Previous title" } },
-    );
+  test("ignores an existing BB title on the first request", () => {
+    const result = plan({ kind: "automatic" }, { thread: { title: "Previous title" } });
 
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.deepEqual(result.writeGuard, {
-        kind: "title-unchanged",
-        expectedTitle: "Previous title",
+        kind: "initial-title",
         expectedRequestSeq: 1,
       });
     }
   });
 
+  test("first user request replaces BB's title, later requests may keep it", () => {
+    const first = plan({ kind: "automatic" }, { thread: { title: "BB internal title" } });
+    assert.equal(first.kind, "run");
+    if (first.kind === "run") {
+      assert.equal(first.allowKeep, false);
+      assert.match(first.prompt, /^Generate a thread title/u);
+      assert.doesNotMatch(first.prompt, /BB internal title|Current title:/u);
+    }
+    const followup = plan(
+      { kind: "automatic" },
+      {
+        thread: { title: "GTD title" },
+        events: [
+          request(1, [{ type: "text", text: "Build CSV export" }]),
+          request(2, [{ type: "text", text: "add test" }]),
+        ],
+      },
+    );
+    assert.equal(followup.kind, "run");
+    if (followup.kind === "run") {
+      assert.equal(followup.allowKeep, true);
+      assert.match(followup.prompt, /^Keep the current thread title/u);
+      assert.match(followup.prompt, /Current title:\nGTD title/u);
+    }
+  });
+
   test("adds project instructions to automatic and forced naming", () => {
-    for (const intent of [
-      { kind: "automatic", lastAssistantText: null } as const,
-      { kind: "forced" } as const,
-    ]) {
+    for (const intent of [{ kind: "automatic" } as const, { kind: "forced" } as const]) {
       const result = planThreadNaming({
         automaticallyNameThreads: true,
         events: [request(1, [{ type: "text", text: "Fix it" }]), completed(2)],
         intent,
-        pluginId: "gtd-sidebar",
         projectInstructions: "Prefix titles with WEB:",
         thread,
       });
@@ -238,7 +235,7 @@ describe("planThreadNaming", () => {
 
   test("anchors continuation to the latest substantive request and current title", () => {
     const result = plan(
-      { kind: "automatic", lastAssistantText: "Signup validation is ready for review." },
+      { kind: "automatic" },
       {
         events: [
           request(1, [{ type: "text", text: "Fix login" }]),
@@ -254,9 +251,12 @@ describe("planThreadNaming", () => {
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(result.prompt, /Current request:\ndo it/u);
-      assert.match(result.prompt, /Task anchor:\nNow fix signup validation/u);
+      assert.match(
+        result.prompt,
+        /Recent requests \(oldest first\):\nNow fix signup validation\ncontinue/u,
+      );
       assert.match(result.prompt, /Current title:\n🐛 \[Auth\] Signup validation/u);
-      assert.doesNotMatch(result.prompt, /Fix login/u);
+      assert.match(result.prompt, /Original request:\nFix login/u);
     }
   });
 
@@ -264,7 +264,6 @@ describe("planThreadNaming", () => {
     const result = plan(
       {
         kind: "automatic",
-        lastAssistantText: "The roles coordinate planning, coding, and review.",
       },
       {
         events: [
@@ -277,13 +276,13 @@ describe("planThreadNaming", () => {
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(result.prompt, /Current request:\nGive me a short summary of each role/u);
-      assert.match(result.prompt, /Task anchor:\nExplain the agent roles in Ember/u);
+      assert.match(result.prompt, /Original request:\nExplain the agent roles in Ember/u);
     }
   });
 
   test("new explicit requests take priority over older context", () => {
     const result = plan(
-      { kind: "automatic", lastAssistantText: "The older login work is complete." },
+      { kind: "automatic" },
       {
         events: [
           request(1, [{ type: "text", text: "Fix login" }]),
@@ -296,10 +295,12 @@ describe("planThreadNaming", () => {
 
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
-      assert.equal(result.userPrompt, "Can Monaco use TextMate?");
-      assert.match(result.prompt, /Classify requested work/u);
-      assert.doesNotMatch(result.prompt, /Current title:/u);
-      assert.ok(result.prompt.indexOf("Current request:") < result.prompt.indexOf("Task anchor:"));
+      assert.match(result.prompt, /Current request:\nCan Monaco use TextMate\?/u);
+      assert.match(result.prompt, /clear change of task/u);
+      assert.match(result.prompt, /Current title:\n🐛 \[Auth\] Login/u);
+      assert.ok(
+        result.prompt.indexOf("Current request:") < result.prompt.indexOf("Original request:"),
+      );
     }
   });
 
@@ -318,65 +319,41 @@ describe("planThreadNaming", () => {
 
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
-      assert.equal(result.userPrompt, "Evaluate title accuracy vs cost");
+      assert.match(result.prompt, /Current request:\nEvaluate title accuracy vs cost/u);
       assert.doesNotMatch(result.prompt, /Latest handoff:|Retry this/u);
-      assert.equal(result.allowedShipped, false);
+      assert.match(result.prompt, /^Generate a thread title/u);
+      assert.doesNotMatch(result.prompt, /Current title:|Return action "keep"/u);
     }
   });
 
-  test("shipment eligibility requires a current standalone ship it request and success", () => {
-    const cases: readonly [string, string, boolean][] = [
-      ["ship it", "Shipped. Pushed to origin/main.", true],
-      ["Ship it!", "✅ Pushed to origin/main.", true],
-      ["ship it", "Merged into main.", true],
-      ["ship it", "Ready to ship.", false],
-      ["ship it", "Pushed to origin/main. Deployment failed.", false],
-      ["ship it", "I have not pushed to origin/main.", false],
-      ["ship it", "Would have shipped if the push succeeded.", false],
-      ["ship it", 'Example: "Shipped."', false],
-      ['Use ☑️ after a user says "ship it".', "Shipped. Pushed to origin/main.", false],
-      ['"ship it"', "Shipped. Pushed to origin/main.", false],
-      ["Now fix signup", "Shipped. Pushed to origin/main.", false],
-    ];
-    for (const [userPrompt, handoff, allowed] of cases) {
+  test("retains task context for natural continuations and long follow-ups", () => {
+    for (const text of [
+      "ok lets continue indexing",
+      "add test",
+      "ship it",
+      "More details ".repeat(20),
+    ]) {
       const result = plan(
-        { kind: "automatic", lastAssistantText: handoff },
+        { kind: "automatic" },
         {
           events: [
-            request(1, [{ type: "text", text: "Fix login" }]),
-            request(3, [{ type: "text", text: "ship it" }]),
-            request(5, [{ type: "text", text: userPrompt }]),
-            completed(6),
+            request(1, [{ type: "text", text: "Index Pokémon" }]),
+            request(2, [{ type: "text", text: "git init" }]),
+            request(3, [{ type: "text", text }]),
           ],
+          thread: { title: "Pokémon indexing" },
         },
       );
       assert.equal(result.kind, "run");
       if (result.kind === "run") {
-        assert.equal(result.allowedShipped, allowed, `${userPrompt}: ${handoff}`);
+        assert.match(result.prompt, /Current title:\nPokémon indexing/u);
+        assert.match(result.prompt, /Original request:\nIndex Pokémon/u);
+        assert.match(result.prompt, /Recent requests \(oldest first\):\ngit init/u);
       }
     }
   });
 
-  test("shipment eligibility survives continuation but resets after a new task", () => {
-    for (const newTask of [false, true]) {
-      const result = plan(
-        { kind: "automatic", lastAssistantText: "Pushed to origin/main." },
-        {
-          events: [
-            request(1, [{ type: "text", text: "Fix login" }]),
-            request(3, [{ type: "text", text: "ship it" }]),
-            ...(newTask ? [request(5, [{ type: "text", text: "Now fix signup" }])] : []),
-            request(7, [{ type: "text", text: "continue" }]),
-            completed(8),
-          ],
-        },
-      );
-      assert.equal(result.kind, "run");
-      if (result.kind === "run") assert.equal(result.allowedShipped, !newTask);
-    }
-  });
-
-  test("skips idle transitions not caused by an original user prompt", () => {
+  test("skips agent continuations and retries", () => {
     const cases: ThreadNamingEvent[][] = [
       [
         request(1, [{ type: "text", text: "Fix it" }]),
@@ -399,10 +376,10 @@ describe("planThreadNaming", () => {
     ];
 
     for (const events of cases) {
-      assert.deepEqual(
-        plan({ kind: "automatic", lastAssistantText: "Agent handoff" }, { events }),
-        { kind: "skip", reason: "latest-turn-not-user" },
-      );
+      assert.deepEqual(plan({ kind: "automatic" }, { events }), {
+        kind: "skip",
+        reason: "latest-turn-not-user",
+      });
     }
   });
 
@@ -419,24 +396,16 @@ describe("planThreadNaming", () => {
     if (result.kind === "run") assert.deepEqual(result.writeGuard, { kind: "replace-title" });
   });
 
-  test("refuses hidden, child, deleted, and plugin-worker threads", () => {
+  test("refuses hidden, child, and deleted threads", () => {
     const cases: readonly [Partial<NamingThreadFacts>, string][] = [
       [{ visibility: "hidden" }, "hidden-thread"],
       [{ parentThreadId: "parent" }, "child-thread"],
       [{ deletedAt: 1 }, "deleted-thread"],
-      [{ originPluginId: "gtd-sidebar" }, "plugin-worker"],
     ];
 
     for (const [facts, reason] of cases) {
       assert.deepEqual(plan({ kind: "forced" }, { thread: facts }), { kind: "skip", reason });
     }
-  });
-
-  test("allows threads created by another plugin", () => {
-    assert.equal(
-      plan({ kind: "forced" }, { thread: { originPluginId: "another-plugin" } }).kind,
-      "run",
-    );
   });
 });
 
@@ -444,7 +413,7 @@ describe("sanitizeGeneratedTitle", () => {
   test("preserves useful scope, detail, and question punctuation", () => {
     assert.equal(
       sanitizeGeneratedTitle("  🧪 [GTD Sidebar] Title accuracy   vs cost  "),
-      "🧪 [GTD Sidebar] Title accuracy vs cost",
+      "[GTD Sidebar] Title accuracy vs cost",
     );
     assert.equal(
       sanitizeGeneratedTitle("[Monaco] Can TextMate work?"),
@@ -463,10 +432,13 @@ describe("sanitizeGeneratedTitle", () => {
     assert.equal(sanitizeGeneratedTitle("x".repeat(100)), "x".repeat(96));
   });
 
-  test("removes unsupported shipped status without losing the task", () => {
-    const title = "☑️ [Auth] Signup validation";
-    assert.equal(sanitizeGeneratedTitle(title), "[Auth] Signup validation");
-    assert.equal(sanitizeGeneratedTitle(title, true), title);
+  test("removes generated activity prefixes without losing the task", () => {
+    for (const emoji of ["☑️", "🛠️", "🔎", "⚙️", "🐛", "🧪", "📦", "♻️", "🚀", "📝"]) {
+      assert.equal(
+        sanitizeGeneratedTitle(`${emoji} [Auth] Signup validation`),
+        "[Auth] Signup validation",
+      );
+    }
   });
 
   test("rejects empty or prefix-only output", () => {

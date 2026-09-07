@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRealtime, useRealtimeConnectionState, useRpc } from "@get-bb/plugin-sdk/app";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import type { gtdSidebarRpcContract } from "@/server";
 import {
@@ -12,14 +12,12 @@ import {
   type ThreadLifecycleRow,
   type ThreadShelf,
 } from "@/lib/lifecycle";
-import { readWarmStartRows, writeWarmStartRows } from "@/lib/warm-start";
-import { useRetryingRead } from "@/hooks/use-retrying-read";
+import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
 
 function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
   return {
     hasPendingInteraction: thread.hasPendingInteraction,
     isWorking: isThreadWorking(thread),
-    isUnread: thread.isUnread,
     latestAttentionAt: thread.latestAttentionAt,
   };
 }
@@ -27,14 +25,9 @@ function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
 export interface LifecycleApi {
   shelfFor(thread: PluginSidebarThread): ThreadShelf;
   /**
-   * Whether the shelves are worth painting yet. True from the first render
-   * when a cached snapshot seeds them, and true once the first read resolves
-   * or rejects — a FAILED read counts as ready on purpose, because a gate that
-   * waits forever on a backend that is down leaves the sidebar permanently
-   * blank, which is worse than any flicker.
-   *
-   * It does not mean the rows came from the server, and nothing may be written
-   * on the strength of it.
+   * Whether the shelves are worth painting yet: true once the first read
+   * resolves or rejects. It does not mean the rows came from the server, and
+   * nothing may be written on the strength of it.
    */
   shelvesReady: boolean;
   canPark(thread: PluginSidebarThread): boolean;
@@ -42,13 +35,6 @@ export interface LifecycleApi {
   snooze(threadId: string, snoozedUntil: number): void;
   unsnooze(threadId: string): void;
 }
-
-/**
- * How long the list may stay blank waiting for the first `listLifecycle`.
- * Long enough that a warm same-origin round trip wins it outright, short
- * enough that a wedged backend costs a flicker instead of an empty sidebar.
- */
-const SHELF_GATE_MS = 250;
 
 /**
  * Reads the plugin's own lifecycle store and classifies threads onto shelves.
@@ -59,99 +45,20 @@ const SHELF_GATE_MS = 250;
  */
 export function useLifecycle(): LifecycleApi {
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  // One read, at the only moment that can still beat the first paint.
-  // `useState` and not `useMemo`: React is free to throw a memo away and run
-  // it again, and a second read would see whatever the origin holds by then.
-  const [seededRows] = useState(() => readWarmStartRows());
-  const [rows, setRows] = useState<ReadonlyMap<string, ThreadLifecycleRow>>(
-    () => new Map((seededRows ?? []).map((row) => [row.threadId, row])),
-  );
+  const [rows, setRows] = useState<ReadonlyMap<string, ThreadLifecycleRow>>(() => new Map());
   const [now, setNow] = useState(() => Date.now());
-  // Two questions, and one flag cannot answer both. This one asks whether the
-  // shelves may be painted; a cache hit says yes immediately.
-  const [shelvesReady, setShelvesReady] = useState(seededRows !== null);
-  // A response belonging to a mount that is already gone must not reach the
-  // cache. Its `requestSeq` is its own, so nothing in the instance that
-  // replaced it can reject the older rows, and the next remount would seed
-  // from them.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  // Responses can land out of order (a mutation's refresh racing a realtime
-  // one), and an older list would silently restore state the user just
-  // changed. Only the newest request may write.
-  const requestSeq = useRef(0);
-  const readLifecycle = useCallback(async () => {
-    const seq = ++requestSeq.current;
-    try {
-      const result = await rpc.call("listLifecycle", {});
-      if (seq !== requestSeq.current) return;
-      // A seeded list usually agrees with the response that follows it, and
-      // with every publish any window makes afterwards. `rowsMatch` is what
+  const shelvesReady = useLifecycleChannelList(
+    useCallback(() => rpc.call("listLifecycle", {}), [rpc]),
+    useCallback((result) => {
+      // Most publishes re-read a list that has not changed. `rowsMatch` is what
       // stops each of those from re-partitioning the whole sidebar.
       setRows((current) =>
         rowsMatch(current, result.rows)
           ? current
           : new Map(result.rows.map((row) => [row.threadId, row])),
       );
-      // After the state, not before it: what is on screen must never depend on
-      // the cache write having gone through.
-      if (mountedRef.current) writeWarmStartRows(result.rows);
-    } catch (error) {
-      // A rejection belonging to a superseded read is not this one's to answer
-      // for; the newest request owns the retry as well as the write.
-      if (seq !== requestSeq.current) return;
-      throw error;
-    } finally {
-      // Runs before a rejection leaves this function, which is the point: the
-      // gate opens on the first answer of either kind and never waits on a
-      // retry. A gate held shut by a backend that is down would render an
-      // empty sidebar rather than a stale one.
-      setShelvesReady(true);
-    }
-  }, [rpc]);
-
-  // The shelves keep whatever they already had, and the read comes back for
-  // them. Without a retry a single failure would leave the browser's warm
-  // snapshot unchallenged for the life of the mount.
-  const refresh = useRetryingRead(readLifecycle);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useRealtime("lifecycle", () => {
-    refresh();
-  });
-
-  // `rpc.call` is a plain fetch with no timeout, so a backend that accepts the
-  // connection and never answers neither resolves nor rejects: no branch of the
-  // read above runs, not even its `finally`, and no retry is ever armed. This
-  // is the floor under the gate — after it, the sidebar paints what it has.
-  useEffect(() => {
-    if (shelvesReady) return;
-    const timer = setTimeout(() => setShelvesReady(true), SHELF_GATE_MS);
-    return () => clearTimeout(timer);
-  }, [shelvesReady]);
-
-  // A publish is ephemeral: one that lands while the socket is down is simply
-  // gone, and a seeded snapshot would then stand unchallenged for the rest of
-  // the session. Only a RE-connection re-reads — the first connect is the
-  // mount, whose own read is already in flight.
-  const connectionState = useRealtimeConnectionState();
-  const previousConnectionState = useRef(connectionState);
-  useEffect(() => {
-    const previous = previousConnectionState.current;
-    previousConnectionState.current = connectionState;
-    if (previous === "reconnecting" && connectionState === "connected") {
-      refresh();
-    }
-  }, [connectionState, refresh]);
+    }, []),
+  );
 
   // Arm one timer for the soonest wake instead of polling: the shelf empties
   // the moment a snooze expires, and nothing ticks while nothing is snoozed.

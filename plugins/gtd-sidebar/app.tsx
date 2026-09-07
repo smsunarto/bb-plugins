@@ -11,6 +11,16 @@ import { SubagentsChip } from "@/components/inbox/subagents-chip";
 import { archiveThread, hasSidebarActions } from "@/lib/sidebar-actions-bridge";
 
 export default definePluginApp((app) => {
+  // Versions up to 0.4.x cached the shelves and provider marks in web storage,
+  // which bb's uninstall never clears. Drop those entries on the way in.
+  try {
+    for (const key of ["gtd-sidebar:v1:lifecycle-rows", "gtd-sidebar:v1:providers"]) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // No web storage here, so nothing was ever left behind.
+  }
+
   app.slots.experimental_threadList({
     id: "inbox",
     title: "GTD Sidebar (inbox)",

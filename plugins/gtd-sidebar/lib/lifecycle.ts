@@ -3,8 +3,7 @@
  *
  * This state lives in the PLUGIN's own database, never on bb's thread. That
  * keeps a plugin concept out of bb's schema and out of the host-daemon
- * protocol, and uninstalling the plugin takes that database with it — see
- * `lib/warm-start.ts` for the browser-side copy it does not take.
+ * protocol, and uninstalling the plugin takes that database with it.
  */
 
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
@@ -36,7 +35,6 @@ export interface ThreadActivitySignals {
   hasPendingInteraction: boolean;
   /** Any live work: runtime, workflows, background agents, plan, goals. */
   isWorking: boolean;
-  isUnread: boolean;
   /** Newest attention timestamp bb reports for the thread. */
   latestAttentionAt: number;
 }
@@ -79,10 +77,10 @@ export function resolveShelf(
 /**
  * Whether a fresh list says exactly what the rows already on screen say.
  *
- * Once the shelves are seeded from a cache, most responses agree with what is
- * already rendered — the mount read, and every realtime publish any window
- * makes. Swapping the map in anyway would re-partition and re-sort every
- * thread, all to arrive back where the screen already was.
+ * Most responses do: every realtime publish any window makes re-reads the
+ * list, and most of those reads change nothing. Swapping the map in anyway
+ * would re-partition and re-sort every thread, all to arrive back where the
+ * screen already was.
  */
 export function rowsMatch(
   current: ReadonlyMap<string, ThreadLifecycleRow>,
@@ -117,58 +115,18 @@ export function snoozeWakeLabel(snoozedUntil: number, now: number): string {
   return `${Math.ceil(remaining / DAY_MS)}d`;
 }
 
-export type SnoozePresetId = "hour" | "evening" | "tomorrow" | "next-week";
-
-export interface SnoozePreset {
-  id: SnoozePresetId;
-  label: string;
-  snoozedUntil: number;
-}
-
-const EVENING_HOUR = 18;
 const MORNING_HOUR = 9;
 
 /**
- * Calendar-day arithmetic, not fixed millisecond offsets: adding 24 hours
- * lands on the wrong local day across a daylight-saving change, because a
- * spring-forward day is 23 hours long.
+ * 09:00 on the next calendar day. Calendar arithmetic, not a fixed 24-hour
+ * offset: a spring-forward day is 23 hours long, so the offset would land on
+ * the wrong local day across a daylight-saving change.
  */
-function atHour(base: Date, hour: number, addDays = 0): Date {
-  const next = new Date(base);
-  next.setDate(next.getDate() + addDays);
-  next.setHours(hour, 0, 0, 0);
-  return next;
-}
-
-/** "This evening" only appears while it is meaningfully before evening. */
-export function resolveSnoozePresets(now: Date): SnoozePreset[] {
-  const presets: SnoozePreset[] = [
-    { id: "hour", label: "In 1 hour", snoozedUntil: now.getTime() + HOUR_MS },
-  ];
-
-  const evening = atHour(now, EVENING_HOUR);
-  if (evening.getTime() - now.getTime() > HOUR_MS) {
-    presets.push({
-      id: "evening",
-      label: "This evening",
-      snoozedUntil: evening.getTime(),
-    });
-  }
-
-  presets.push({
-    id: "tomorrow",
-    label: "Tomorrow",
-    snoozedUntil: atHour(now, MORNING_HOUR, 1).getTime(),
-  });
-
-  const daysUntilMonday = (1 - now.getDay() + 7) % 7 || 7;
-  presets.push({
-    id: "next-week",
-    label: "Next week",
-    snoozedUntil: atHour(now, MORNING_HOUR, daysUntilMonday).getTime(),
-  });
-
-  return presets;
+export function snoozeUntilTomorrow(now: Date): number {
+  const next = new Date(now);
+  next.setDate(next.getDate() + 1);
+  next.setHours(MORNING_HOUR, 0, 0, 0);
+  return next.getTime();
 }
 
 /**

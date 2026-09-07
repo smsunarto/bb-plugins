@@ -1,3 +1,22 @@
+import type { IconName } from "@/components/ui/icon";
+
+export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting";
+
+export type RowCommand =
+  | {
+      kind: "open";
+      threadId: string;
+      shelf: ActiveThreadShelf | "snoozed" | "settled";
+      split: boolean;
+    }
+  | { kind: "settle"; threadId: string; shelf: ActiveThreadShelf }
+  | { kind: "snooze"; threadId: string; until: number }
+  | { kind: "restore"; threadId: string; shelf: "snoozed" | "settled" }
+  | { kind: "pin"; threadId: string; pinned: boolean }
+  | { kind: "request-delete"; threadId: string };
+
+export type DispatchRowCommand = (command: RowCommand) => void;
+
 export type RowLifecycleState =
   | {
       kind: "active";
@@ -9,117 +28,96 @@ export type RowLifecycleState =
   | { kind: "settled"; unsettle: () => void };
 
 export type ThreadActionId =
-  | "open-in-split"
-  | "snooze-tomorrow"
   | "settle"
+  | "snooze-tomorrow"
   | "wake-now"
   | "unsettle"
-  | "toggle-read"
   | "toggle-pin"
-  | "rename-thread"
   | "request-delete";
 
 export interface ThreadAction {
   id: ThreadActionId;
   label: string;
+  icon: IconName;
   execute: () => void;
+  destructive?: boolean;
 }
 
-export type ThreadActionGroupId = "primary" | "organization" | "destructive";
-
-export interface ThreadActionPlan {
-  primary: readonly ThreadAction[];
-  organization: readonly ThreadAction[];
-  destructive: readonly ThreadAction[];
-}
-
-export interface ThreadActionGroup {
-  id: ThreadActionGroupId;
-  actions: readonly ThreadAction[];
-}
+/**
+ * A row's menu in the order iOS would list it: the lifecycle move, then pin,
+ * then delete. The phone sheet and the desktop right-click menu both show it
+ * whole; the card's hover buttons pick single entries out of it.
+ */
+export type ThreadActionPlan = readonly ThreadAction[];
 
 export interface BuildThreadActionPlanOptions {
   lifecycle: RowLifecycleState;
-  split: { isAvailable: boolean; open: () => void };
-  isUnread: boolean;
   isPinned: boolean;
-  setRead: (read: boolean) => void;
   setPinned: (pinned: boolean) => void;
-  renameThread: () => void;
   requestDelete: () => void;
 }
 
-const GROUP_ORDER: readonly ThreadActionGroupId[] = ["primary", "organization", "destructive"];
-
-export function buildThreadActionPlan({
-  lifecycle,
-  split,
-  isUnread,
-  isPinned,
-  setRead,
-  setPinned,
-  renameThread,
-  requestDelete,
-}: BuildThreadActionPlanOptions): ThreadActionPlan {
-  const primary: ThreadAction[] = split.isAvailable
-    ? [{ id: "open-in-split", label: "Open in split", execute: split.open }]
-    : [];
-
+function lifecycleActions(lifecycle: RowLifecycleState): ThreadAction[] {
   switch (lifecycle.kind) {
-    case "active":
+    case "active": {
+      // Settle is bb's archive, which bb offers on every thread, so it is not
+      // gated on `canPark` the way a snooze is.
+      const actions: ThreadAction[] = [
+        { id: "settle", label: "Settle", icon: "Check", execute: lifecycle.settle },
+      ];
       if (lifecycle.canPark) {
-        primary.push({
+        actions.push({
           id: "snooze-tomorrow",
-          label: "Snooze until tomorrow",
+          label: "Snooze",
+          icon: "Clock",
           execute: lifecycle.snoozeUntilTomorrow,
         });
       }
-      // Settle is bb's archive, which bb offers on every thread, so it is not
-      // gated on `canPark` the way a snooze is.
-      primary.push({ id: "settle", label: "Settle thread", execute: lifecycle.settle });
-      break;
+      return actions;
+    }
     case "snoozed":
-      primary.push({ id: "wake-now", label: "Wake thread now", execute: lifecycle.wakeNow });
-      break;
+      return [
+        { id: "wake-now", label: "Wake now", icon: "AlarmClock", execute: lifecycle.wakeNow },
+      ];
     case "settled":
-      primary.push({ id: "unsettle", label: "Un-settle thread", execute: lifecycle.unsettle });
-      break;
+      return [
+        {
+          id: "unsettle",
+          label: "Un-settle",
+          icon: "ArrowTurnBackward",
+          execute: lifecycle.unsettle,
+        },
+      ];
   }
-
-  return {
-    primary,
-    organization: [
-      {
-        id: "rename-thread",
-        label: "Generate thread name",
-        execute: renameThread,
-      },
-      {
-        id: "toggle-read",
-        label: isUnread ? "Mark read" : "Mark unread",
-        execute: () => setRead(isUnread),
-      },
-      {
-        id: "toggle-pin",
-        label: isPinned ? "Unpin" : "Pin",
-        execute: () => setPinned(!isPinned),
-      },
-    ],
-    destructive: [{ id: "request-delete", label: "Delete", execute: requestDelete }],
-  };
 }
 
-export function getThreadActionGroups(plan: ThreadActionPlan): readonly ThreadActionGroup[] {
-  return GROUP_ORDER.flatMap((id) => (plan[id].length === 0 ? [] : [{ id, actions: plan[id] }]));
+export function buildThreadActionPlan({
+  lifecycle,
+  isPinned,
+  setPinned,
+  requestDelete,
+}: BuildThreadActionPlanOptions): ThreadActionPlan {
+  return [
+    ...lifecycleActions(lifecycle),
+    {
+      id: "toggle-pin",
+      label: isPinned ? "Unpin" : "Pin",
+      icon: isPinned ? "PinOff" : "Pin",
+      execute: () => setPinned(!isPinned),
+    },
+    {
+      id: "request-delete",
+      label: "Delete",
+      icon: "Delete",
+      execute: requestDelete,
+      destructive: true,
+    },
+  ];
 }
 
 export function findThreadAction(
   plan: ThreadActionPlan,
   actionId: ThreadActionId,
 ): ThreadAction | undefined {
-  for (const group of getThreadActionGroups(plan)) {
-    const action = group.actions.find(({ id }) => id === actionId);
-    if (action !== undefined) return action;
-  }
-  return undefined;
+  return plan.find(({ id }) => id === actionId);
 }

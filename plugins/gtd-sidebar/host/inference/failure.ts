@@ -1,29 +1,29 @@
-import type { GtdSidebarAiServiceErrorCode } from "../../lib/host-contract.ts";
+import type {
+  GtdSidebarAiInferenceCompleteOutput,
+  GtdSidebarAiServiceErrorCode,
+} from "../../lib/host-contract.ts";
 
 export class AiServiceFailure extends Error {
   readonly code: GtdSidebarAiServiceErrorCode;
-  readonly detailCode: string;
 
-  constructor(code: GtdSidebarAiServiceErrorCode, detailCode: string, message: string) {
+  constructor(code: GtdSidebarAiServiceErrorCode, message: string) {
     super(message);
     this.name = "AiServiceFailure";
     this.code = code;
-    this.detailCode = detailCode;
   }
 }
 
-export function toAiServiceFailure(error: unknown): {
-  ok: false;
-  code: GtdSidebarAiServiceErrorCode;
-  message: string;
-} {
+export function toAiServiceFailure(
+  error: unknown,
+): Extract<GtdSidebarAiInferenceCompleteOutput, { ok: false }> {
   if (error instanceof AiServiceFailure) {
-    console.error(`codex ai service: ${error.detailCode}: ${error.message}`);
+    console.error(`codex ai service: ${error.code}: ${error.message}`);
     return { ok: false, code: error.code, message: error.message };
   }
   const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof Error && error.name === "AbortError") {
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
     return { ok: false, code: "timeout", message };
   }
-  return { ok: false, code: "request_failed", message };
+  // A failed connection, not a failed request: the caller may try again.
+  return { ok: false, code: "service_unavailable", message };
 }

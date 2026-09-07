@@ -3,152 +3,27 @@ import type {
   GtdSidebarAiInferenceCompleteInput,
   GtdSidebarAiInferenceCompleteOutput,
   GtdSidebarAiServiceErrorCode,
-  GtdSidebarAiVoiceTranscribeInput,
-  GtdSidebarAiVoiceTranscribeOutput,
-  InferenceUsage,
 } from "../../lib/host-contract.ts";
-import { fetchChatGpt, isCloudflareChallenge } from "./chatgpt-fetch.ts";
 import {
   parseJsonValue,
   readCodexAuthCredentials,
   type CodexAuthCredentials,
-  type CodexChatGptAuthCredentials,
-  type CodexOpenAiApiKeyCredentials,
   type JsonObject,
 } from "./codex-auth.ts";
 import { AiServiceFailure } from "./failure.ts";
 
-type InferenceCompleteCommand = GtdSidebarAiInferenceCompleteInput;
-type VoiceTranscribeCommand = GtdSidebarAiVoiceTranscribeInput;
-
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
-const CHATGPT_TRANSCRIBE_URL = "https://chatgpt.com/backend-api/transcribe";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const OPENAI_TRANSCRIBE_URL = "https://api.openai.com/v1/audio/transcriptions";
-const CODEX_ERROR_TEXT_MAX_BYTES = 4 * 1024;
-const CODEX_SSE_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
-const CODEX_SSE_EVENT_MAX_CHARS = 1024 * 1024;
-const CODEX_TRANSCRIPTION_RESPONSE_MAX_BYTES = 1024 * 1024;
-
-type ReadOverflowBehavior = "throw" | "truncate";
-type CodexRequestOperation = "inference" | "transcription";
-
-interface TimeoutFetchArgs {
-  deadline: CodexRequestDeadline;
-  work: (signal: AbortSignal) => Promise<Response>;
-}
-
-interface CodexRequestDeadline {
-  expiresAt: number;
-  timeoutMs: number;
-}
-
-interface ReadChunkWithTimeoutArgs {
-  deadline: CodexRequestDeadline;
-  reader: ReadableStreamDefaultReader<Uint8Array>;
-}
-
-interface ReadLimitedResponseTextArgs {
-  deadline: CodexRequestDeadline;
-  maxBytes: number;
-  overflowBehavior: ReadOverflowBehavior;
-}
-
-interface ReadResponseTextFromSseArgs {
-  deadline: CodexRequestDeadline;
-  maxBytes: number;
-  maxEventChars: number;
-}
-
-interface ResponsesFetchArgs {
-  auth: CodexAuthCredentials;
-  command: InferenceCompleteCommand;
-  deadline: CodexRequestDeadline;
-  request: CodexResponsesRequest;
-}
-
-interface ChatGptResponsesFetchArgs {
-  auth: CodexChatGptAuthCredentials;
-  command: InferenceCompleteCommand;
-  deadline: CodexRequestDeadline;
-  request: CodexResponsesRequest;
-}
-
-interface OpenAiResponsesFetchArgs {
-  auth: CodexOpenAiApiKeyCredentials;
-  command: InferenceCompleteCommand;
-  deadline: CodexRequestDeadline;
-  request: CodexResponsesRequest;
-}
-
-interface TranscriptionFetchArgs {
-  auth: CodexAuthCredentials;
-  command: VoiceTranscribeCommand;
-  deadline: CodexRequestDeadline;
-}
-
-interface ChatGptTranscriptionFetchArgs {
-  auth: CodexChatGptAuthCredentials;
-  command: VoiceTranscribeCommand;
-  deadline: CodexRequestDeadline;
-}
-
-interface OpenAiTranscriptionFetchArgs {
-  auth: CodexOpenAiApiKeyCredentials;
-  command: VoiceTranscribeCommand;
-  deadline: CodexRequestDeadline;
-}
-
-interface CodexHttpErrorArgs {
-  deadline: CodexRequestDeadline;
-  operation: CodexRequestOperation;
-  response: Response;
-}
-
-interface CodexResponseFormat {
-  type: "json_schema";
-  name: string;
-  strict: boolean;
-  schema: JsonValue;
-}
-
-interface CodexResponsesRequest {
-  model: string;
-  instructions: string;
-  reasoning: {
-    effort: InferenceCompleteCommand["reasoningEffort"];
-  };
-  store: boolean;
-  stream: boolean;
-  input: CodexInputMessage[];
-  text: {
-    format: CodexResponseFormat;
-  };
-}
-
-interface CodexInputMessage {
-  role: "user";
-  content: CodexInputContent[];
-}
-
-interface CodexInputContent {
-  type: "input_text";
-  text: string;
-}
-
-interface ResponseTextResult {
-  failure: CodexStreamFailure | null;
-  text: string;
-  usage?: InferenceUsage;
-}
+/** A title is a few hundred bytes; anything past this is not a title. */
+const RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 
 interface CodexStreamFailure {
   code: string | null;
   message: string;
 }
 
-function jsonObject(value: JsonValue): JsonObject | null {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+function jsonObject(value: JsonValue | undefined): JsonObject | null {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
   return value;
@@ -158,497 +33,175 @@ function optionalString(value: JsonValue | undefined): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function optionalJsonArray(value: JsonValue | undefined): JsonValue[] | null {
-  return Array.isArray(value) ? value : null;
-}
-
-function createChatGptHeaders(auth: CodexChatGptAuthCredentials): Headers {
-  const headers = new Headers();
-  headers.set("Authorization", `Bearer ${auth.accessToken}`);
-  headers.set("chatgpt-account-id", auth.accountId);
-  headers.set("originator", "bb");
-  headers.set("User-Agent", "bb-host-daemon");
-  if (auth.isFedrampAccount) {
-    headers.set("X-OpenAI-Fedramp", "true");
+function createHeaders(auth: CodexAuthCredentials): Headers {
+  const headers = new Headers({
+    Authorization: `Bearer ${auth.type === "chatgpt" ? auth.accessToken : auth.apiKey}`,
+    "User-Agent": "bb-host-daemon",
+    Accept: "text/event-stream",
+    "Content-Type": "application/json",
+  });
+  if (auth.type === "chatgpt") {
+    headers.set("chatgpt-account-id", auth.accountId);
+    headers.set("originator", "bb");
+    headers.set("OpenAI-Beta", "responses=experimental");
+    if (auth.isFedrampAccount) {
+      headers.set("X-OpenAI-Fedramp", "true");
+    }
   }
   return headers;
 }
 
-function createOpenAiHeaders(auth: CodexOpenAiApiKeyCredentials): Headers {
-  const headers = new Headers();
-  headers.set("Authorization", `Bearer ${auth.apiKey}`);
-  headers.set("User-Agent", "bb-host-daemon");
-  return headers;
+function invalidResponse(message: string): AiServiceFailure {
+  return new AiServiceFailure("invalid_response", message);
 }
 
-function createOpenAiResponsesHeaders(auth: CodexOpenAiApiKeyCredentials): Headers {
-  const headers = createOpenAiHeaders(auth);
-  headers.set("Accept", "text/event-stream");
-  headers.set("Content-Type", "application/json");
-  return headers;
-}
-
-function createCodexRequestDeadline(timeoutMs: number): CodexRequestDeadline {
-  return {
-    expiresAt: performance.now() + timeoutMs,
-    timeoutMs,
-  };
-}
-
-function remainingCodexRequestTimeoutMs(deadline: CodexRequestDeadline): number {
-  const remainingMs = Math.ceil(deadline.expiresAt - performance.now());
-  if (remainingMs <= 0) {
-    throw codexRequestTimeoutError(deadline.timeoutMs);
-  }
-  return remainingMs;
-}
-
-async function runWithTimeout(args: TimeoutFetchArgs): Promise<Response> {
-  const abortController = new AbortController();
-  const timeoutMs = remainingCodexRequestTimeoutMs(args.deadline);
-  const timeout = setTimeout(() => {
-    abortController.abort();
-  }, timeoutMs);
-  timeout.unref();
-  try {
-    return await args.work(abortController.signal);
-  } catch (error) {
-    if (abortController.signal.aborted) {
-      throw codexRequestTimeoutError(args.deadline.timeoutMs);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function codexRequestTimeoutError(timeoutMs: number): AiServiceFailure {
-  return new AiServiceFailure(
-    "timeout",
-    "codex_request_timeout",
-    `Codex request timed out after ${timeoutMs}ms`,
-  );
-}
-
-function codexResponseTooLargeError(): AiServiceFailure {
-  return new AiServiceFailure(
-    "invalid_response",
-    "codex_response_too_large",
-    "Codex response exceeded the maximum supported size.",
-  );
-}
-
-async function readChunkWithTimeout({
-  deadline,
-  reader,
-}: ReadChunkWithTimeoutArgs): ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]> {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  const timeoutMs = remainingCodexRequestTimeoutMs(deadline);
-  try {
-    return await Promise.race([
-      reader.read(),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => {
-          reject(codexRequestTimeoutError(deadline.timeoutMs));
-        }, timeoutMs);
-        timeout.unref();
-      }),
-    ]);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-  }
-}
-
-async function cancelReaderBestEffort(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): Promise<void> {
-  try {
-    await reader.cancel();
-  } catch {}
-}
-
-async function readLimitedResponseText(
-  response: Response,
-  args: ReadLimitedResponseTextArgs,
-): Promise<string> {
-  if (!response.body) {
-    return "";
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const chunks: string[] = [];
-  let totalBytes = 0;
-  let truncated = false;
-
-  try {
-    while (true) {
-      const chunk = await readChunkWithTimeout({
-        deadline: args.deadline,
-        reader,
-      });
-      if (chunk.done) {
-        break;
-      }
-
-      const value = chunk.value;
-      totalBytes += value.byteLength;
-      if (totalBytes > args.maxBytes) {
-        if (args.overflowBehavior === "throw") {
-          await cancelReaderBestEffort(reader);
-          throw codexResponseTooLargeError();
-        }
-        const allowedBytes = value.byteLength - (totalBytes - args.maxBytes);
-        if (allowedBytes > 0) {
-          chunks.push(
-            decoder.decode(value.slice(0, allowedBytes), {
-              stream: true,
-            }),
-          );
-        }
-        truncated = true;
-        await cancelReaderBestEffort(reader);
-        break;
-      }
-
-      chunks.push(decoder.decode(value, { stream: true }));
-    }
-    chunks.push(decoder.decode());
-    return `${chunks.join("")}${truncated ? "..." : ""}`;
-  } catch (error) {
-    await cancelReaderBestEffort(reader);
-    throw error;
-  }
-}
-
-async function readErrorText(response: Response, deadline: CodexRequestDeadline): Promise<string> {
-  const text = await readLimitedResponseText(response, {
-    deadline,
-    maxBytes: CODEX_ERROR_TEXT_MAX_BYTES,
-    overflowBehavior: "truncate",
-  }).catch(() => "");
-  return text.length > 400 ? `${text.slice(0, 400)}...` : text;
-}
-
-type FailureCodes = [generic: GtdSidebarAiServiceErrorCode, detail: string];
-
-function codexRequestErrorCode(status: number): FailureCodes {
-  if (status === 401) {
-    return ["auth_required", "codex_auth_failed"];
-  }
-  if (status === 429) {
-    return ["rate_limited", "codex_rate_limited"];
-  }
-  if (status >= 500) {
-    return ["service_unavailable", "codex_service_unavailable"];
-  }
-  return ["request_failed", "codex_request_failed"];
+function codexRequestErrorCode(status: number): GtdSidebarAiServiceErrorCode {
+  if (status === 401) return "auth_required";
+  if (status === 429) return "rate_limited";
+  if (status >= 500) return "service_unavailable";
+  return "request_failed";
 }
 
 const CODEX_SERVICE_UNAVAILABLE_PATTERN =
   /\b(?:overloaded|temporarily unavailable|try again later)\b/iu;
 
-function codexStreamFailureErrorCode(failure: CodexStreamFailure): FailureCodes {
-  if (failure.code === "server_error") {
-    return ["service_unavailable", "codex_service_unavailable"];
-  }
-  if (failure.code === "rate_limit_exceeded") {
-    return ["rate_limited", "codex_rate_limited"];
-  }
+function codexStreamFailureErrorCode(failure: CodexStreamFailure): GtdSidebarAiServiceErrorCode {
+  if (failure.code === "server_error") return "service_unavailable";
+  if (failure.code === "rate_limit_exceeded") return "rate_limited";
   return CODEX_SERVICE_UNAVAILABLE_PATTERN.test(failure.message)
-    ? ["service_unavailable", "codex_service_unavailable"]
-    : ["request_failed", "codex_request_failed"];
+    ? "service_unavailable"
+    : "request_failed";
 }
 
-function extractJsonErrorMessage(value: JsonValue): string | null {
-  if (typeof value === "string") {
-    const normalized = value.replace(/\s+/g, " ").trim();
-    return normalized.length > 0 ? normalized : null;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const message = extractJsonErrorMessage(item);
-      if (message) {
-        return message;
-      }
-    }
-    return null;
-  }
-
-  const object = jsonObject(value);
-  if (!object) {
-    return null;
-  }
-
-  for (const key of ["message", "detail", "error"]) {
-    const child = object[key];
-    if (child === undefined) {
-      continue;
-    }
-    const message = extractJsonErrorMessage(child);
-    if (message) {
-      return message;
-    }
-  }
-  return null;
-}
-
-function extractProviderErrorMessage(rawText: string): string | null {
-  const normalized = rawText.replace(/\s+/g, " ").trim();
-  if (normalized.length === 0) {
-    return null;
-  }
-
+/** api.openai.com answers `{"error":{"message"}}`; the ChatGPT backend answers `{"detail"}`. */
+function providerErrorMessage(raw: string): string | null {
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (!text) return null;
   try {
-    return extractJsonErrorMessage(parseJsonValue(normalized)) ?? normalized;
+    const body = jsonObject(parseJsonValue(text));
+    const detail = body?.error ?? body?.detail;
+    return (
+      (typeof detail === "string" ? detail : optionalString(jsonObject(detail)?.message)) ?? text
+    );
   } catch {
-    return normalized;
+    return text;
   }
+}
+
+function isCloudflareChallenge(response: Response): boolean {
+  return (
+    response.status === 403 && response.headers.get("cf-mitigated")?.toLowerCase() === "challenge"
+  );
 }
 
 function isHtmlResponse(response: Response): boolean {
   return response.headers.get("content-type")?.toLowerCase().startsWith("text/html") ?? false;
 }
 
-const CODEX_API_KEY_ROUTE_HINT: Record<CodexRequestOperation, string> = {
-  inference: "BB_INFERENCE",
-  transcription: "BB_TRANSCRIPTION",
-};
-
-async function createCodexHttpError({
-  deadline,
-  operation,
-  response,
-}: CodexHttpErrorArgs): Promise<AiServiceFailure> {
-  const prefix = `Codex ${operation} request failed with HTTP ${response.status}`;
+async function createCodexHttpError(response: Response): Promise<AiServiceFailure> {
+  const prefix = `Codex inference request failed with HTTP ${response.status}`;
   if (isCloudflareChallenge(response)) {
     return new AiServiceFailure(
       "service_unavailable",
-      "codex_service_unavailable",
-      `${prefix}: chatgpt.com answered with a Cloudflare challenge that bb cannot solve. Retry, or set ${CODEX_API_KEY_ROUTE_HINT[operation]} to an openai/ model with OPENAI_API_KEY.`,
+      `${prefix}: chatgpt.com answered with a Cloudflare challenge that this plugin cannot solve. Retry, or log in to Codex with an OpenAI API key so requests go to api.openai.com instead.`,
     );
   }
-  const providerMessage = isHtmlResponse(response)
-    ? null
-    : extractProviderErrorMessage(await readErrorText(response, deadline));
-  const details = providerMessage ? `: ${providerMessage}` : "";
-  return new AiServiceFailure(...codexRequestErrorCode(response.status), `${prefix}${details}`);
-}
-
-function getCodexResponseText(response: JsonObject): string | null {
-  const output = optionalJsonArray(response.output);
-  if (!output) {
-    return null;
-  }
-  for (const outputItem of output) {
-    const item = jsonObject(outputItem);
-    const content = item ? optionalJsonArray(item.content) : null;
-    if (!content) {
-      continue;
-    }
-    for (const contentItem of content) {
-      const contentObject = jsonObject(contentItem);
-      if (!contentObject) {
-        continue;
-      }
-      const type = optionalString(contentObject.type);
-      const text = optionalString(contentObject.text) ?? optionalString(contentObject.output_text);
-      if ((type === "output_text" || type === "text") && text !== null) {
-        return text;
-      }
+  let body = "";
+  if (!isHtmlResponse(response)) {
+    try {
+      body = await response.text();
+    } catch {
+      // The status code already names the failure; the body is only a detail.
     }
   }
-  return null;
+  const message = providerErrorMessage(body);
+  const detail =
+    message === null ? "" : `: ${message.length > 400 ? `${message.slice(0, 400)}...` : message}`;
+  return new AiServiceFailure(codexRequestErrorCode(response.status), `${prefix}${detail}`);
 }
 
-function getCodexFailure(response: JsonObject): CodexStreamFailure | null {
-  const error = response.error ? jsonObject(response.error) : null;
-  if (!error) {
-    return null;
-  }
-  const code = optionalString(error.code);
-  return {
+function streamFailure(error: JsonObject | null, fallback: string | null): AiServiceFailure {
+  const code = optionalString(error?.code);
+  const failure = {
     code,
-    message: optionalString(error.message) ?? code ?? "Codex response failed",
+    message: optionalString(error?.message) ?? code ?? fallback ?? "Codex response failed",
   };
+  return new AiServiceFailure(codexStreamFailureErrorCode(failure), failure.message);
 }
 
-function getInferenceUsage(response: JsonObject | null): InferenceUsage | undefined {
-  const raw = response ? jsonObject(response.usage ?? null) : null;
-  if (!raw) return undefined;
-  const tokenCount = (value: JsonValue | undefined): value is number =>
-    typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-  if (!tokenCount(raw.input_tokens) || !tokenCount(raw.output_tokens)) return undefined;
-  const cached = jsonObject(raw.input_tokens_details ?? null)?.cached_tokens;
-  const reasoning = jsonObject(raw.output_tokens_details ?? null)?.reasoning_tokens;
-  return {
-    inputTokens: raw.input_tokens,
-    outputTokens: raw.output_tokens,
-    ...(tokenCount(cached) ? { cachedInputTokens: cached } : {}),
-    ...(tokenCount(reasoning) ? { reasoningTokens: reasoning } : {}),
-  };
-}
-
-function extractTextFromSseEvent(event: JsonObject): ResponseTextResult {
+/**
+ * The text an event contributes to the answer. The ChatGPT backend's terminal
+ * event carries no output text, so the deltas are the one source of it; the
+ * terminal events matter only for the failure they may report.
+ */
+function textFromSseEvent(event: JsonObject): string {
   const type = optionalString(event.type);
   if (type === "error") {
-    const code = optionalString(event.code);
-    return {
-      failure: {
-        code,
-        message: optionalString(event.message) ?? code ?? "Codex response failed",
-      },
-      text: "",
-    };
+    throw streamFailure(event, null);
   }
-
   if (type === "response.failed") {
-    const response = event.response ? jsonObject(event.response) : null;
-    return {
-      failure: response
-        ? (getCodexFailure(response) ?? {
-            code: null,
-            message: "Codex response failed",
-          })
-        : { code: null, message: "Codex response failed" },
-      text: "",
-    };
+    throw streamFailure(jsonObject(jsonObject(event.response)?.error), null);
   }
-
-  if (type === "response.output_text.delta") {
-    return {
-      failure: null,
-      text: optionalString(event.delta) ?? "",
-    };
-  }
-
   if (type === "response.completed" || type === "response.done") {
-    const response = event.response ? jsonObject(event.response) : null;
-    const text = response ? getCodexResponseText(response) : null;
-    const failure = response ? getCodexFailure(response) : null;
-    return {
-      failure,
-      text: text ?? "",
-      usage: getInferenceUsage(response),
-    };
+    const error = jsonObject(jsonObject(event.response)?.error);
+    if (error) throw streamFailure(error, null);
   }
-
-  return {
-    failure: null,
-    text: "",
-  };
+  return type === "response.output_text.delta" ? (optionalString(event.delta) ?? "") : "";
 }
 
-function parseSseEventValue(eventData: string): JsonValue {
+/** The JSON payload of one SSE block, or null for a comment or `[DONE]`. */
+function parseSseBlock(block: string): JsonObject | null {
+  const data = block
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n")
+    .trim();
+  if (!data || data === "[DONE]") return null;
   try {
-    return parseJsonValue(eventData);
+    return jsonObject(parseJsonValue(data));
   } catch {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex SSE event was not valid JSON.",
-    );
+    throw invalidResponse("Codex SSE event was not valid JSON.");
   }
 }
 
+/** The structured output text of a streamed Responses API call. */
 export async function readInferenceResponse(
   response: Response,
-  args: ReadResponseTextFromSseArgs,
-): Promise<{ text: string; usage?: InferenceUsage }> {
+  maxBytes: number = RESPONSE_MAX_BYTES,
+): Promise<string> {
   if (!response.body) {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex response did not include a response body.",
-    );
+    throw invalidResponse("Codex response did not include a response body.");
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let deltaText = "";
-  let finalText: string | null = null;
+  let text = "";
   let totalBytes = 0;
-  let usage: InferenceUsage | undefined;
 
   try {
-    while (true) {
-      const chunk = await readChunkWithTimeout({
-        deadline: args.deadline,
-        reader,
-      });
-      if (chunk.done) {
-        break;
-      }
-
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
       totalBytes += chunk.value.byteLength;
-      if (totalBytes > args.maxBytes) {
-        throw codexResponseTooLargeError();
+      if (totalBytes > maxBytes) {
+        throw invalidResponse("Codex response exceeded the maximum supported size.");
       }
-
       buffer += decoder.decode(chunk.value, { stream: true });
-      if (buffer.length > args.maxEventChars) {
-        throw codexResponseTooLargeError();
-      }
-
-      let index = buffer.indexOf("\n\n");
-      while (index !== -1) {
-        const block = buffer.slice(0, index);
-        if (block.length > args.maxEventChars) {
-          throw codexResponseTooLargeError();
-        }
+      for (let index = buffer.indexOf("\n\n"); index !== -1; index = buffer.indexOf("\n\n")) {
+        const event = parseSseBlock(buffer.slice(0, index));
         buffer = buffer.slice(index + 2);
-        const eventData = block
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("\n")
-          .trim();
-        if (eventData && eventData !== "[DONE]") {
-          const eventValue = parseSseEventValue(eventData);
-          const event = jsonObject(eventValue);
-          if (event) {
-            const result = extractTextFromSseEvent(event);
-            usage = result.usage ?? usage;
-            if (result.failure) {
-              throw new AiServiceFailure(
-                ...codexStreamFailureErrorCode(result.failure),
-                result.failure.message,
-              );
-            }
-            if (result.text) {
-              if (
-                optionalString(event.type) === "response.completed" ||
-                optionalString(event.type) === "response.done"
-              ) {
-                finalText = result.text;
-              } else {
-                deltaText += result.text;
-              }
-            }
-          }
-        }
-        index = buffer.indexOf("\n\n");
+        if (event) text += textFromSseEvent(event);
       }
     }
-    buffer += decoder.decode();
   } catch (error) {
-    await cancelReaderBestEffort(reader);
+    void reader.cancel().catch(() => {});
     throw error;
   }
 
-  const text = finalText ?? deltaText;
   if (!text) {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex response did not include structured output text.",
-    );
+    throw invalidResponse("Codex response did not include structured output text.");
   }
-  return { text, ...(usage === undefined ? {} : { usage }) };
+  return text;
 }
 
 function parseStructuredResult(rawText: string): JsonObject {
@@ -656,284 +209,50 @@ function parseStructuredResult(rawText: string): JsonObject {
   try {
     parsed = parseJsonValue(rawText);
   } catch {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex structured output was not valid JSON.",
-    );
+    throw invalidResponse("Codex structured output was not valid JSON.");
   }
   const object = jsonObject(parsed);
   if (!object) {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex structured output was not a JSON object.",
-    );
+    throw invalidResponse("Codex structured output was not a JSON object.");
   }
   return object;
 }
 
-function withStrictObjectSchemas(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) {
-    return value.map((item) => withStrictObjectSchemas(item));
-  }
-
-  const object = jsonObject(value);
-  if (!object) {
-    return value;
-  }
-
-  const normalized: JsonObject = {};
-  for (const [key, childValue] of Object.entries(object)) {
-    normalized[key] = withStrictObjectSchemas(childValue);
-  }
-  if (normalized.type === "object" && normalized.additionalProperties === undefined) {
-    normalized.additionalProperties = false;
-  }
-  if (normalized.type === "object") {
-    normalized.required = Object.keys(jsonObject(normalized.properties ?? null) ?? {});
-  }
-  return normalized;
-}
-
-function buildCodexResponsesRequest(command: InferenceCompleteCommand): CodexResponsesRequest {
-  return {
+function buildRequestBody(command: GtdSidebarAiInferenceCompleteInput): string {
+  return JSON.stringify({
     model: command.model,
     instructions:
       "Follow the user prompt and respond with structured JSON that matches the requested schema.",
-    reasoning: { effort: command.reasoningEffort },
+    reasoning: { effort: "none" },
     store: false,
     stream: true,
-    input: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: command.prompt,
-          },
-        ],
-      },
-    ],
+    input: [{ role: "user", content: [{ type: "input_text", text: command.prompt }] }],
     text: {
-      format: {
-        type: "json_schema",
-        name: "result",
-        strict: true,
-        schema: withStrictObjectSchemas(command.outputSchema),
-      },
+      format: { type: "json_schema", name: "result", strict: true, schema: command.outputSchema },
     },
-  };
-}
-
-function createChatGptResponsesHeaders(
-  auth: CodexChatGptAuthCredentials,
-  cloudflareHeaders: Headers,
-): Headers {
-  const headers = createChatGptHeaders(auth);
-  headers.set("OpenAI-Beta", "responses=experimental");
-  headers.set("Accept", "text/event-stream");
-  headers.set("Content-Type", "application/json");
-  for (const [key, value] of cloudflareHeaders) {
-    headers.set(key, value);
-  }
-  return headers;
-}
-
-function createChatGptTranscriptionHeaders(
-  auth: CodexChatGptAuthCredentials,
-  cloudflareHeaders: Headers,
-): Headers {
-  const headers = createChatGptHeaders(auth);
-  for (const [key, value] of cloudflareHeaders) {
-    headers.set(key, value);
-  }
-  return headers;
-}
-
-async function fetchChatGptResponses(args: ChatGptResponsesFetchArgs): Promise<Response> {
-  return runWithTimeout({
-    deadline: args.deadline,
-    work: (signal) =>
-      fetchChatGpt({
-        url: CODEX_RESPONSES_URL,
-        init: (headers) => ({
-          method: "POST",
-          headers: createChatGptResponsesHeaders(args.auth, headers),
-          body: JSON.stringify(args.request),
-          signal,
-        }),
-      }),
   });
-}
-
-async function fetchOpenAiResponses(args: OpenAiResponsesFetchArgs): Promise<Response> {
-  return runWithTimeout({
-    deadline: args.deadline,
-    work: (signal) =>
-      fetch(OPENAI_RESPONSES_URL, {
-        method: "POST",
-        headers: createOpenAiResponsesHeaders(args.auth),
-        body: JSON.stringify(args.request),
-        signal,
-      }),
-  });
-}
-
-async function fetchResponses(args: ResponsesFetchArgs): Promise<Response> {
-  return args.auth.type === "chatgpt"
-    ? fetchChatGptResponses({
-        auth: args.auth,
-        command: args.command,
-        deadline: args.deadline,
-        request: args.request,
-      })
-    : fetchOpenAiResponses({
-        auth: args.auth,
-        command: args.command,
-        deadline: args.deadline,
-        request: args.request,
-      });
 }
 
 export async function completeCodexInference(
-  command: InferenceCompleteCommand,
+  command: GtdSidebarAiInferenceCompleteInput,
 ): Promise<Extract<GtdSidebarAiInferenceCompleteOutput, { ok: true }>> {
-  const deadline = createCodexRequestDeadline(command.timeoutMs);
   const auth = await readCodexAuthCredentials();
-  const request = buildCodexResponsesRequest(command);
-  const response = await fetchResponses({ auth, command, deadline, request });
-
-  if (!response.ok) {
-    throw await createCodexHttpError({
-      deadline,
-      operation: "inference",
-      response,
-    });
-  }
-
-  const result = await readInferenceResponse(response, {
-    deadline,
-    maxBytes: CODEX_SSE_RESPONSE_MAX_BYTES,
-    maxEventChars: CODEX_SSE_EVENT_MAX_CHARS,
-  });
-  return {
-    ok: true,
-    model: command.model,
-    value: parseStructuredResult(result.text),
-    ...(result.usage === undefined ? {} : { usage: result.usage }),
-  };
-}
-
-function buildAudioBlob(command: VoiceTranscribeCommand): Blob {
-  const bytes = Buffer.from(command.audioBase64, "base64");
-  return new Blob([bytes], {
-    type: command.mimeType,
-  });
-}
-
-function buildTranscriptionFormData(command: VoiceTranscribeCommand): FormData {
-  const formData = new FormData();
-  formData.set("file", buildAudioBlob(command), command.filename);
-  formData.set("model", command.model);
-  if (command.prompt !== null) {
-    formData.set("prompt", command.prompt);
-  }
-  return formData;
-}
-
-function parseTranscriptionText(value: JsonValue): string {
-  const object = jsonObject(value);
-  const text = object ? optionalString(object.text) : null;
-  if (text === null) {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex transcription response did not include transcript text.",
-    );
-  }
-  return text;
-}
-
-function parseTranscriptionResponse(rawText: string): JsonValue {
+  // One signal covers the connection and the body: a stalled stream aborts too.
+  const signal = AbortSignal.timeout(command.timeoutMs);
   try {
-    return parseJsonValue(rawText);
-  } catch {
-    throw new AiServiceFailure(
-      "invalid_response",
-      "codex_response_invalid",
-      "Codex transcription response was not valid JSON.",
+    const response = await fetch(
+      auth.type === "chatgpt" ? CODEX_RESPONSES_URL : OPENAI_RESPONSES_URL,
+      { method: "POST", headers: createHeaders(auth), body: buildRequestBody(command), signal },
     );
+    if (!response.ok) {
+      throw await createCodexHttpError(response);
+    }
+    const text = await readInferenceResponse(response);
+    return { ok: true, model: command.model, value: parseStructuredResult(text) };
+  } catch (error) {
+    if (signal.aborted) {
+      throw new AiServiceFailure("timeout", `Codex request timed out after ${command.timeoutMs}ms`);
+    }
+    throw error;
   }
-}
-
-async function fetchChatGptTranscription(args: ChatGptTranscriptionFetchArgs): Promise<Response> {
-  return runWithTimeout({
-    deadline: args.deadline,
-    work: (signal) =>
-      fetchChatGpt({
-        url: CHATGPT_TRANSCRIBE_URL,
-        init: (headers) => ({
-          method: "POST",
-          headers: createChatGptTranscriptionHeaders(args.auth, headers),
-          body: buildTranscriptionFormData(args.command),
-          signal,
-        }),
-      }),
-  });
-}
-
-async function fetchOpenAiTranscription(args: OpenAiTranscriptionFetchArgs): Promise<Response> {
-  return runWithTimeout({
-    deadline: args.deadline,
-    work: (signal) =>
-      fetch(OPENAI_TRANSCRIBE_URL, {
-        method: "POST",
-        headers: createOpenAiHeaders(args.auth),
-        body: buildTranscriptionFormData(args.command),
-        signal,
-      }),
-  });
-}
-
-async function fetchTranscription(args: TranscriptionFetchArgs): Promise<Response> {
-  return args.auth.type === "chatgpt"
-    ? fetchChatGptTranscription({
-        auth: args.auth,
-        command: args.command,
-        deadline: args.deadline,
-      })
-    : fetchOpenAiTranscription({
-        auth: args.auth,
-        command: args.command,
-        deadline: args.deadline,
-      });
-}
-
-export async function transcribeCodexVoice(
-  command: VoiceTranscribeCommand,
-): Promise<Extract<GtdSidebarAiVoiceTranscribeOutput, { ok: true }>> {
-  const deadline = createCodexRequestDeadline(command.timeoutMs);
-  const auth = await readCodexAuthCredentials();
-  const response = await fetchTranscription({ auth, command, deadline });
-
-  if (!response.ok) {
-    throw await createCodexHttpError({
-      deadline,
-      operation: "transcription",
-      response,
-    });
-  }
-
-  const responseText = await readLimitedResponseText(response, {
-    deadline,
-    maxBytes: CODEX_TRANSCRIPTION_RESPONSE_MAX_BYTES,
-    overflowBehavior: "throw",
-  });
-
-  return {
-    ok: true,
-    model: command.model,
-    text: parseTranscriptionText(parseTranscriptionResponse(responseText)),
-  };
 }
