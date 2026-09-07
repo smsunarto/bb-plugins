@@ -480,6 +480,10 @@ const requiredRules: Array<{
     declarations: { "--sidebar": palette.ground.content },
   },
   {
+    selector: ".dark [data-secondary-panel-shelf]",
+    declarations: { "--sidebar": palette.ground.content },
+  },
+  {
     selector: '.dark [data-sidebar="panel"]',
     declarations: { "border-color": "var(--sidebar-border)" },
   },
