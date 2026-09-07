@@ -1,16 +1,18 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
 import { rpc, definedFields } from "./rpc.ts";
 import {
   Empty,
   QueryError,
+  Splitter,
+  useContainerWidth,
   useDebounced,
   useDisclosure,
-  useStackedLayout,
+  useStoredSize,
   focusList,
 } from "./controls.tsx";
 import { SessionList } from "./session-list.tsx";
@@ -18,14 +20,7 @@ import { Timeline } from "./timeline.tsx";
 import { Inspector } from "./inspector.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
 import { Sources } from "./sources.tsx";
-import {
-  TraceToolbar,
-  TraceTopics,
-  SessionHeading,
-  TraceFooter,
-  TraceNotice,
-  ThreadScope,
-} from "./ui-chrome.tsx";
+import { TraceToolbar, TraceFooter, TraceNotice, ThreadScope } from "./ui-chrome.tsx";
 import "./traces.css";
 
 function KeyHelp({ onClose }: { onClose: () => void }) {
@@ -116,6 +111,65 @@ function usePaneRouter({
   return { visible, open, inspect, back, reset };
 }
 
+const SESSIONS_MAX = 520;
+const TIMELINE_MIN = 20;
+const TIMELINE_MAX = 80;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.round(Math.min(max, Math.max(min, value)));
+}
+
+// Both panes remember a pinned size. Unpinned, they follow the container width.
+function usePaneSizes(width: number) {
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const eventsRef = useRef<HTMLDivElement>(null);
+  const [pinnedSessions, pinSessions] = useStoredSize("traces:sessions");
+  const [pinnedTimeline, pinTimeline] = useStoredSize("traces:timeline");
+  const sessions = pinnedSessions ?? (width > 0 && width < 1000 ? 190 : 260);
+  const timeline = pinnedTimeline ?? 46;
+  const showSessions = useCallback(() => pinSessions(null), [pinSessions]);
+  const hidden = sessions < 40;
+  return {
+    workspaceRef,
+    eventsRef,
+    dataSessions: hidden ? "hidden" : undefined,
+    showSessions: hidden ? showSessions : undefined,
+    style: {
+      "--tr-sessions": `${sessions}px`,
+      "--tr-timeline": `${timeline}%`,
+    } as CSSProperties,
+    sessionsSplitter: {
+      label: "Resize the session list",
+      value: sessions,
+      min: 0,
+      max: SESSIONS_MAX,
+      onMove: (clientX: number) => {
+        const rect = workspaceRef.current?.getBoundingClientRect();
+        if (rect) pinSessions(clamp(clientX - rect.left, 0, SESSIONS_MAX));
+      },
+      onStep: (direction: number, coarse: boolean) =>
+        pinSessions(clamp(sessions + direction * (coarse ? 64 : 16), 0, SESSIONS_MAX)),
+      onReset: () => pinSessions(null),
+    },
+    timelineSplitter: {
+      label: "Resize the timeline",
+      value: timeline,
+      min: TIMELINE_MIN,
+      max: TIMELINE_MAX,
+      onMove: (clientX: number) => {
+        const rect = eventsRef.current?.getBoundingClientRect();
+        if (rect && rect.width > 0)
+          pinTimeline(
+            clamp(((clientX - rect.left) / rect.width) * 100, TIMELINE_MIN, TIMELINE_MAX),
+          );
+      },
+      onStep: (direction: number, coarse: boolean) =>
+        pinTimeline(clamp(timeline + direction * (coarse ? 10 : 3), TIMELINE_MIN, TIMELINE_MAX)),
+      onReset: () => pinTimeline(null),
+    },
+  };
+}
+
 export function TraceWorkbench({
   hostId,
   nativeId,
@@ -150,7 +204,9 @@ export function TraceWorkbench({
   const searchRef = useRef<HTMLInputElement>(null);
   const sessionSearchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLElement>(null);
-  const stacked = useStackedLayout(rootRef);
+  const width = useContainerWidth(rootRef);
+  const stacked = width > 0 && width < 700;
+  const panes = usePaneSizes(width);
   const pane = usePaneRouter({
     stacked,
     hasSession: Boolean(session),
@@ -226,7 +282,13 @@ export function TraceWorkbench({
     return () => document.removeEventListener("keydown", keydown);
   }, [selected, raw, showHelp, stacked, back, visiblePane]);
   return (
-    <main className="tr-app" ref={rootRef} {...layout}>
+    <main
+      className="tr-app"
+      ref={rootRef}
+      data-sessions={panes.dataSessions}
+      style={panes.style}
+      {...layout}
+    >
       <TraceToolbar
         sessionSearch={sessionSearch}
         setSessionSearch={setSessionSearch}
@@ -244,6 +306,8 @@ export function TraceWorkbench({
           setSelected(null);
           pane.reset();
         }}
+        topic={topic}
+        setTopic={setTopic}
         hostPicker={hostPicker}
         onSources={showSources}
         onHelp={showHelp}
@@ -251,7 +315,6 @@ export function TraceWorkbench({
         ready={Boolean(status.data)}
         scanning={scanning}
       />
-      <TraceTopics topic={topic} setTopic={setTopic} status={status.data} />
       <ThreadScope
         visible={Boolean(nativeId)}
         enabled={currentOnly}
@@ -267,7 +330,7 @@ export function TraceWorkbench({
         retry={() => void status.refetch()}
       />
       {status.data?.lastError && <div className="tr-notice">{status.data.lastError}</div>}
-      <div className="tr-workspace">
+      <div className="tr-workspace" ref={panes.workspaceRef}>
         <SessionList
           key={`${hostId}:${provider}:${settledSessions}:${currentOnly}`}
           hostId={hostId}
@@ -281,48 +344,49 @@ export function TraceWorkbench({
           stacked={stacked}
           revision={revision}
         />
-        <div className="tr-session-workspace">
-          <SessionHeading session={session} onBack={onBack} />
-          <div className="tr-event-workspace">
-            {session ? (
-              <Timeline
-                key={`${session.id}:${kind}:${topic}:${settledEvents}`}
-                hostId={hostId}
-                session={session}
-                kind={kind}
-                topic={topic}
-                query={settledEvents}
-                selected={selected}
-                onSelect={setSelected}
-                listRef={timelineRef}
-                revision={revision}
-                onInspect={pane.inspect}
-                stacked={stacked}
-              />
-            ) : (
-              <Empty title="Your session timeline">Select a session to inspect its events.</Empty>
-            )}
-            {selected ? (
-              <Inspector
-                key={selected.id}
-                hostId={hostId}
-                selected={selected}
-                raw={raw}
-                onRaw={setRaw}
-                onSelect={setSelected}
-                inspectorRef={inspectorRef}
-                onBack={onBack}
-                renderers={renderers}
-              />
-            ) : (
-              <Empty title="Inspect an event">
-                Messages, tools, context, and original JSON appear here.
-              </Empty>
-            )}
-          </div>
+        <Splitter {...panes.sessionsSplitter} />
+        <div className="tr-event-workspace" ref={panes.eventsRef}>
+          {session ? (
+            <Timeline
+              key={`${session.id}:${kind}:${topic}:${settledEvents}`}
+              hostId={hostId}
+              session={session}
+              kind={kind}
+              topic={topic}
+              query={settledEvents}
+              selected={selected}
+              onSelect={setSelected}
+              listRef={timelineRef}
+              revision={revision}
+              onInspect={pane.inspect}
+              stacked={stacked}
+              onBack={onBack}
+              onShowSessions={panes.showSessions}
+            />
+          ) : (
+            <Empty title="Your session timeline">Select a session to inspect its events.</Empty>
+          )}
+          <Splitter {...panes.timelineSplitter} />
+          {selected ? (
+            <Inspector
+              key={selected.id}
+              hostId={hostId}
+              selected={selected}
+              raw={raw}
+              onRaw={setRaw}
+              onSelect={setSelected}
+              inspectorRef={inspectorRef}
+              onBack={onBack}
+              renderers={renderers}
+            />
+          ) : (
+            <Empty title="Inspect an event">
+              Messages, tools, context, and original JSON appear here.
+            </Empty>
+          )}
         </div>
       </div>
-      <TraceFooter scanning={scanning} onVerify={() => void refresh(true)} />
+      <TraceFooter scanning={scanning} onVerify={() => void refresh(true)} status={status.data} />
       {sources && status.data && (
         <Sources
           hostId={hostId}

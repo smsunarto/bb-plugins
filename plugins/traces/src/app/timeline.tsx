@@ -13,6 +13,7 @@ import {
   evidenceLabel,
   evidenceTag,
   moveSelection,
+  providerLabel,
 } from "./controls.tsx";
 
 const EMPTY_EVENTS: TraceEvent[] = [];
@@ -39,6 +40,8 @@ export function Timeline({
   revision,
   onInspect,
   stacked,
+  onBack,
+  onShowSessions,
 }: {
   hostId: string;
   session: TraceSession;
@@ -51,6 +54,8 @@ export function Timeline({
   revision: number;
   onInspect: () => void;
   stacked: boolean;
+  onBack?: () => void;
+  onShowSessions?: () => void;
 }) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length - 1;
@@ -92,9 +97,29 @@ export function Timeline({
   }
   return (
     <div className="tr-list-column tr-timeline-column">
-      <div className="tr-column-heading">
-        <span>Timeline</span>
-        <small>Source order</small>
+      <div className="tr-column-heading tr-timeline-heading">
+        {onBack && (
+          <button className="tr-back-button" aria-label="Back to sessions" onClick={onBack}>
+            ‹
+          </button>
+        )}
+        {onShowSessions && (
+          <button className="tr-text-button" onClick={onShowSessions}>
+            Sessions
+          </button>
+        )}
+        <h2 title={session.title}>
+          {session.title}
+          <small>
+            {" · "}
+            {providerLabel(session.provider)}
+            {session.model ? ` · ${session.model}` : ""}
+          </small>
+        </h2>
+        <small className="tr-session-counters">
+          {session.toolCount} tools
+          {session.errorCount > 0 ? ` · ${session.errorCount} errors` : ""}
+        </small>
       </div>
       {selected && selectedIndex < 0 && items.length > 0 && (
         <div className="tr-selection-notice">

@@ -6,19 +6,100 @@ export function focusList(element: HTMLElement | null) {
   const selected = element?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
   (selected ?? element?.querySelector<HTMLButtonElement>("button"))?.focus();
 }
-export function useStackedLayout(ref: RefObject<HTMLElement | null>, below = 700) {
-  const [stacked, setStacked] = useState(false);
+export function useContainerWidth(ref: RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const measure = () => setStacked(element.clientWidth < below);
+    const measure = () => setWidth(element.clientWidth);
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [ref, below]);
-  return stacked;
+  }, [ref]);
+  return width;
+}
+
+function storage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+// null means "follow the container width". A drag pins the pane; a double-click unpins it.
+export function parseStoredSize(raw: string | null | undefined) {
+  if (raw === null || raw === undefined || raw.trim() === "") return null;
+  const size = Number(raw);
+  return Number.isFinite(size) ? size : null;
+}
+export function useStoredSize(key: string) {
+  const [size, setSize] = useState<number | null>(() => parseStoredSize(storage()?.getItem(key)));
+  const store = useCallback(
+    (next: number | null) => {
+      setSize(next);
+      if (next === null) storage()?.removeItem(key);
+      else storage()?.setItem(key, String(next));
+    },
+    [key],
+  );
+  return [size, store] as const;
+}
+export function Splitter({
+  label,
+  value,
+  min,
+  max,
+  onMove,
+  onStep,
+  onReset,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onMove: (clientX: number) => void;
+  onStep: (direction: number, coarse: boolean) => void;
+  onReset: () => void;
+}) {
+  return (
+    // hr carries an implicit role="separator". The ARIA window splitter pattern
+    // makes that separator focusable and arrow-key driven, which oxlint's
+    // non-interactive rules do not model.
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex
+    <hr
+      className="tr-splitter"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+      tabIndex={0}
+      title={`${label}. Drag, or arrow keys. Double-click to reset.`}
+      onDoubleClick={onReset}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        const move = (moved: PointerEvent) => onMove(moved.clientX);
+        const stop = () => {
+          document.removeEventListener("pointermove", move);
+          document.removeEventListener("pointerup", stop);
+          document.body.classList.remove("tr-resizing");
+        };
+        document.body.classList.add("tr-resizing");
+        document.addEventListener("pointermove", move);
+        document.addEventListener("pointerup", stop);
+      }}
+      onKeyDown={(event) => {
+        const direction = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+        if (direction === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onStep(direction, event.shiftKey);
+      }}
+    />
+  );
 }
 export function useDisclosure() {
   const [open, setOpen] = useState(false);
@@ -80,7 +161,7 @@ export function elapsedTime(value: number | null, from: number | null) {
 export function evidenceLabel(item: TraceEvidence) {
   return `${item.topic} · ${item.action.replaceAll("_", " ")} · ${item.label}`;
 }
-// Rows are narrow, and the topic bar above already filters by topic. The chip
+// Rows are narrow, and the toolbar already filters by topic. The chip
 // spends its width on the action and the label that separate one fact from the next.
 export function evidenceTag(item: TraceEvidence) {
   return `${item.action.replaceAll("_", " ")} · ${item.label}`;

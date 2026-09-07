@@ -1,8 +1,6 @@
 import type { RefObject } from "react";
 import { eventKindSchema, topicSchema } from "../shared/model.ts";
-import type { TraceSession } from "../shared/model.ts";
 import type { EventQuery, TraceStatus } from "../shared/schema.ts";
-import { providerLabel } from "./controls.tsx";
 
 export function TraceNotice({ message, retry }: { message: string; retry: () => void }) {
   if (!message) return null;
@@ -36,6 +34,8 @@ export function TraceToolbar({
   searchRef,
   sessionSearchRef,
   clearSession,
+  topic,
+  setTopic,
   hostPicker,
   onSources,
   onHelp,
@@ -55,6 +55,8 @@ export function TraceToolbar({
   searchRef: RefObject<HTMLInputElement | null>;
   sessionSearchRef: RefObject<HTMLInputElement | null>;
   clearSession: () => void;
+  topic: EventQuery["topic"];
+  setTopic: (value: EventQuery["topic"]) => void;
   hostPicker: React.ReactNode;
   onSources: () => void;
   onHelp: () => void;
@@ -97,28 +99,44 @@ export function TraceToolbar({
         </select>
       </div>
       <div className="tr-event-search">
-        <input
-          ref={searchRef}
-          aria-label="Search events"
-          placeholder="Search this session…"
-          value={eventSearch}
-          onChange={(event) => setEventSearch(event.target.value)}
-        />
-        <kbd>/</kbd>
-        <select
-          aria-label="Filter event kind"
-          value={kind ?? ""}
-          onChange={(event) =>
-            setKind(event.target.value ? eventKindSchema.parse(event.target.value) : undefined)
-          }
-        >
-          <option value="">All events</option>
-          {eventKindSchema.options.map((item) => (
-            <option key={item} value={item}>
-              {item.replaceAll("_", " ")}
-            </option>
+        <div className="tr-event-search-row">
+          <input
+            ref={searchRef}
+            aria-label="Search events"
+            placeholder="Search this session…"
+            value={eventSearch}
+            onChange={(event) => setEventSearch(event.target.value)}
+          />
+          <kbd>/</kbd>
+          <select
+            aria-label="Filter event kind"
+            value={kind ?? ""}
+            onChange={(event) =>
+              setKind(event.target.value ? eventKindSchema.parse(event.target.value) : undefined)
+            }
+          >
+            <option value="">All events</option>
+            {eventKindSchema.options.map((item) => (
+              <option key={item} value={item}>
+                {item.replaceAll("_", " ")}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="tr-topic-buttons">
+          <button aria-pressed={!topic} onClick={() => setTopic(undefined)}>
+            Everything
+          </button>
+          {topicSchema.options.map((item) => (
+            <button
+              key={item}
+              aria-pressed={topic === item}
+              onClick={() => setTopic(topic === item ? undefined : item)}
+            >
+              {topicLabels[item]}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
       <div className="tr-toolbar-actions">
         {hostPicker}
@@ -135,76 +153,25 @@ export function TraceToolbar({
     </div>
   );
 }
-export function TraceTopics({
-  topic,
-  setTopic,
+export function TraceFooter({
+  scanning,
+  onVerify,
   status,
 }: {
-  topic: EventQuery["topic"];
-  setTopic: (value: EventQuery["topic"]) => void;
+  scanning: boolean;
+  onVerify: () => void;
   status?: TraceStatus;
 }) {
-  return (
-    <div className="tr-topic-bar">
-      <div className="tr-topic-buttons">
-        <button aria-pressed={!topic} onClick={() => setTopic(undefined)}>
-          Everything
-        </button>
-        {topicSchema.options.map((item) => (
-          <button
-            key={item}
-            aria-pressed={topic === item}
-            onClick={() => setTopic(topic === item ? undefined : item)}
-          >
-            {topicLabels[item]}
-          </button>
-        ))}
-      </div>
-      <span className="tr-index-count">
-        {status
-          ? `${status.sessions.toLocaleString()} sessions · ${status.events.toLocaleString()} events`
-          : "Connecting…"}
-      </span>
-    </div>
-  );
-}
-export function SessionHeading({
-  session,
-  onBack,
-}: {
-  session: TraceSession | null;
-  onBack?: () => void;
-}) {
-  return (
-    <div className="tr-session-heading">
-      {onBack && (
-        <button className="tr-back-button" aria-label="Back to sessions" onClick={onBack}>
-          ‹
-        </button>
-      )}
-      <div>
-        <h2>{session?.title ?? "Select a session"}</h2>
-        <span>
-          {session
-            ? `${providerLabel(session.provider)}${session.model ? ` · ${session.model}` : ""}`
-            : "Inspect conversations and tool activity"}
-        </span>
-      </div>
-      {session && (
-        <span className="tr-session-counters">
-          {session.toolCount} tools
-          {session.errorCount > 0 ? ` · ${session.errorCount} errors` : ""}
-        </span>
-      )}
-    </div>
-  );
-}
-export function TraceFooter({ scanning, onVerify }: { scanning: boolean; onVerify: () => void }) {
   return (
     <footer className="tr-footer">
       <span>
         <span className={`tr-status-dot${scanning ? " tr-working" : ""}`} />
         {scanning ? "Indexing source files" : "Local session files"}
+      </span>
+      <span className="tr-index-count">
+        {status
+          ? `${status.sessions.toLocaleString()} sessions · ${status.events.toLocaleString()} events`
+          : "Connecting…"}
       </span>
       <span className="tr-footer-hint">j k Navigate · Enter Inspect · r Raw</span>
       <button className="tr-text-button" onClick={onVerify} disabled={scanning}>

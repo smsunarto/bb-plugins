@@ -82,7 +82,7 @@
 }
 .tr-toolbar {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) auto;
+  grid-template-columns: calc(var(--tr-sessions) + 5px) minmax(0, 1fr) auto;
   border-bottom: 1px solid var(--tr-line);
 }
 .tr-toolbar-actions {
@@ -106,6 +106,7 @@
 .tr-session-search {
   border-right: 1px solid var(--tr-line);
   flex-wrap: wrap;
+  overflow: hidden;
 }
 .tr-session-search input {
   width: 100%;
@@ -113,6 +114,17 @@
 .tr-session-search select {
   width: 100%;
   font-size: 11px;
+}
+.tr-event-search {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.tr-event-search-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
 .tr-event-search input {
   flex: 1;
@@ -130,18 +142,18 @@
   border-radius: 3px;
   padding: 1px 4px;
 }
-.tr-topic-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--tr-line);
-  padding: 7px 12px;
-}
 .tr-topic-buttons {
   display: flex;
-  flex-wrap: wrap;
   gap: 3px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tr-topic-buttons::-webkit-scrollbar {
+  display: none;
+}
+.tr-topic-buttons button {
+  white-space: nowrap;
 }
 .tr-topic-buttons button {
   border-color: transparent;
@@ -161,16 +173,49 @@
 }
 .tr-workspace {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: var(--tr-sessions) 5px minmax(0, 1fr);
   min-height: 0;
   flex: 1;
+}
+.tr-event-workspace {
+  display: grid;
+  grid-template-columns: var(--tr-timeline) 5px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+/* A 1px seam like every other divider, with a 5px grab target around it. */
+.tr-splitter {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--tr-line);
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.tr-splitter:hover,
+.tr-splitter:focus-visible {
+  border-left-color: var(--tr-accent);
+  background: color-mix(in srgb, var(--tr-accent) 30%, transparent);
+  outline: none;
+}
+/* A drag that leaves the handle must not select the rows it passes over. */
+body.tr-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+/* Collapsed panes keep their grid slot. display:none would shift every later
+   item one track to the left. */
+.tr-app[data-sessions="hidden"] .tr-workspace > .tr-list-column,
+.tr-app[data-sessions="hidden"] .tr-session-search {
+  visibility: hidden;
 }
 .tr-list-column {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  border-right: 1px solid var(--tr-line);
+  overflow: hidden;
 }
 .tr-column-heading {
   display: flex;
@@ -243,42 +288,22 @@
   margin-top: 6px;
   font-size: 10px;
 }
-.tr-session-workspace {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.tr-timeline-heading h2 {
+  flex: 1;
   min-width: 0;
-}
-.tr-session-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--tr-line);
-  min-height: 67px;
-}
-.tr-session-heading > div {
-  min-width: 0;
-}
-.tr-session-heading h2 {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 550;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.tr-session-heading span {
+.tr-timeline-heading h2 small {
   color: var(--tr-muted);
-  font-size: 10px;
+  font-weight: 400;
 }
 .tr-session-counters {
   white-space: nowrap;
-}
-.tr-event-workspace {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.92fr) minmax(300px, 1.08fr);
-  flex: 1;
-  min-height: 0;
+  color: var(--tr-muted);
 }
 .tr-app .tr-event-row {
   display: flex;
@@ -816,17 +841,8 @@
   .tr-index-count {
     display: none;
   }
-  .tr-workspace {
-    grid-template-columns: 190px minmax(0, 1fr);
-  }
-  .tr-toolbar {
-    grid-template-columns: 190px minmax(0, 1fr) auto;
-  }
   .tr-toolbar-actions select {
     max-width: 110px;
-  }
-  .tr-event-workspace {
-    grid-template-columns: minmax(200px, 0.9fr) minmax(230px, 1.1fr);
   }
 }
 .tr-app[data-layout="stack"] {
@@ -838,7 +854,8 @@
 .tr-app[data-layout="stack"] .tr-footer-hint,
 .tr-app[data-layout="stack"] .tr-event-line,
 .tr-app[data-layout="stack"] kbd,
-.tr-app[data-layout="stack"] .tr-timeline-column > .tr-column-heading,
+.tr-app[data-layout="stack"] .tr-splitter,
+.tr-app[data-layout="stack"] .tr-session-counters,
 .tr-app[data-layout="stack"] .tr-event-workspace > .tr-empty {
   display: none;
 }
@@ -847,10 +864,8 @@
 .tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-context-banner,
 .tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-workspace > .tr-list-column,
 .tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-footer,
-.tr-app[data-layout="stack"][data-pane="sessions"] .tr-session-workspace,
+.tr-app[data-layout="stack"][data-pane="sessions"] .tr-event-workspace,
 .tr-app[data-layout="stack"]:not([data-pane="timeline"]) .tr-event-search,
-.tr-app[data-layout="stack"]:not([data-pane="timeline"]) .tr-topic-bar,
-.tr-app[data-layout="stack"]:not([data-pane="timeline"]) .tr-session-heading,
 .tr-app[data-layout="stack"]:not([data-pane="timeline"]) .tr-timeline-column,
 .tr-app[data-layout="stack"]:not([data-pane="inspector"]) .tr-inspector {
   display: none;
@@ -923,23 +938,18 @@
   flex-direction: column;
   min-height: 0;
 }
+.tr-app[data-layout="stack"] .tr-toolbar-actions {
+  grid-column: 1;
+}
 .tr-app[data-layout="stack"] .tr-workspace > .tr-list-column,
-.tr-app[data-layout="stack"] .tr-session-workspace,
 .tr-app[data-layout="stack"] .tr-timeline-column,
 .tr-app[data-layout="stack"] .tr-inspector {
   flex: 1;
   min-height: 0;
   border-right: 0;
 }
-.tr-app[data-layout="stack"] .tr-session-heading > div {
-  flex: 1;
-}
-.tr-app[data-layout="stack"] .tr-session-heading h2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  white-space: normal;
-  font-size: 15px;
+.tr-app[data-layout="stack"] .tr-timeline-heading h2 {
+  font-size: 14px;
 }
 .tr-app[data-layout="stack"] .tr-row-meta,
 .tr-app[data-layout="stack"] .tr-json {

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TraceEvidence } from "../shared/model.ts";
-import { distinctEvidence, elapsedTime, evidenceLabel, evidenceTag } from "./controls.tsx";
+import {
+  distinctEvidence,
+  elapsedTime,
+  evidenceLabel,
+  evidenceTag,
+  parseStoredSize,
+} from "./controls.tsx";
 
 function evidence(label: string, pointer: string): TraceEvidence {
   return { topic: "skills", action: "requested", label, basis: "recorded", pointer };
@@ -72,4 +78,16 @@ test("timeline chips drop the topic and keep the action and label", () => {
     }),
     "bypass requested · but status",
   );
+});
+
+test("a pinned pane width of zero survives a reload", () => {
+  assert.equal(parseStoredSize("0"), 0);
+  assert.equal(parseStoredSize("260"), 260);
+});
+
+test("a missing or unusable pane width falls back to the container", () => {
+  assert.equal(parseStoredSize(null), null);
+  assert.equal(parseStoredSize(undefined), null);
+  assert.equal(parseStoredSize(""), null);
+  assert.equal(parseStoredSize("wide"), null);
 });
