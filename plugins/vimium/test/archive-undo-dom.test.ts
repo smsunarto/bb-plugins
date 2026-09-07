@@ -1,6 +1,6 @@
 import "./helpers/dom.ts";
 import { afterEach, expect, mock, test } from "bun:test";
-import { mountLinkHints } from "../app/link-hints.ts";
+import { mountLinkHints } from "../src/app/link-hints.ts";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {

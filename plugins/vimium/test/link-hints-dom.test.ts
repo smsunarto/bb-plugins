@@ -1,7 +1,7 @@
 import "./helpers/dom.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
-import { mountLinkHints } from "../app/link-hints.ts";
+import { mountLinkHints } from "../src/app/link-hints.ts";
 
 function contextWith(signal: AbortSignal): PluginContentScriptContext {
   return { pluginId: "vimium", generation: 1, signal };
