@@ -33,11 +33,11 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
   // The generated bundle contains upstream implementation text, not plugin
   // imports. The relocation test executes the final single-file host instead.
   const authoredViolations = report.violations.filter(
-    (violation) => violation.file !== "host/generated/nanocodex-runtime.mjs",
+    (violation) => violation.file !== "src/host/generated/nanocodex-runtime.mjs",
   );
   assert.ok(report.files.length > 0, "the scan found no source files");
   assert.ok(
-    report.files.includes("host/generated/nanocodex-runtime.mjs"),
+    report.files.includes("src/host/generated/nanocodex-runtime.mjs"),
     "the scan did not see the embedded runtime",
   );
   assert.deepEqual(

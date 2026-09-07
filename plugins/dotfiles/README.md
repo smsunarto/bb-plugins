@@ -139,11 +139,11 @@ bun run build      # bb plugin build . — needs the bb CLI on PATH
 bun run verify     # lint + typecheck + tests + check + build + pack dry-run
 ```
 
-The plugin is written on `@bb-kit/core`. `server/server.ts` is the
-composition root: it declares the plugin id, the RPC, and the CLI. `server/`
-holds shared domain values and `git.ts`. `server/rpc/` and `server/command/` hold one unit
+The plugin is written on `@bb-kit/core`. `src/server/server.ts` is the
+composition root: it declares the plugin id, the RPC, and the CLI. `src/server/`
+holds shared domain values and `git.ts`. `src/server/rpc/` and `src/server/command/` hold one unit
 per file, with a test file beside each unit; the six RPC names are the
-procedures keys and are a stable public contract. `app/` holds the panel
+procedures keys and are a stable public contract. `src/app/` holds the panel
 app. The repository watcher builds and reloads the plugin after each source change.
 
 The build and verify scripts call the bb CLI directly (`bb plugin build .`), so a

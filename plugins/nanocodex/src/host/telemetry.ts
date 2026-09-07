@@ -30,7 +30,7 @@ export function createNanocodexErrorReporter(
 function resolveHostMetaUrl(): URL {
   const bundled = new URL("./host.meta.json", import.meta.url);
   if (existsSync(bundled)) return bundled;
-  const sourceFallback = new URL("../dist/host.meta.json", import.meta.url);
+  const sourceFallback = new URL("../../dist/host.meta.json", import.meta.url);
   if (existsSync(sourceFallback)) return sourceFallback;
   throw new Error("NanoCodex host metadata is missing beside the host bundle and in dist");
 }

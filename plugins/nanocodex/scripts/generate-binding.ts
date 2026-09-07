@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const generatedDirectory = resolve(import.meta.dir, "../host/generated");
+const generatedDirectory = resolve(import.meta.dir, "../src/host/generated");
 const wasmSource = resolve(
   import.meta.dir,
   "../../../node_modules/nanocodex/pkg-web/nanocodex_bg.wasm",

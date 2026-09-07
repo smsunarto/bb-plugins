@@ -30,8 +30,8 @@
         "terminal": "./assets/terminal.svg"
       }
     },
-    "server": "./server/server.ts",
-    "host": "./host/host.ts",
+    "server": "./src/server/server.ts",
+    "host": "./src/host/host.ts",
     "skills": []
   },
   "files": [
@@ -42,9 +42,9 @@
     "assets/",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "server/",
-    "host/",
-    "shared/"
+    "src/server/",
+    "src/host/",
+    "src/shared/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.1.0",
