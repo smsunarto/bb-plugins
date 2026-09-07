@@ -131,6 +131,7 @@ describe("initial timeline placement with real Lenis", () => {
     const { element, geometry } = timeline();
     element.scrollTop = 1000;
     expect(element.scrollTop).toBe(1000);
+    tick(20);
     geometry.max = 1200;
     element.scrollTop = 1200;
     expect(element.scrollTop).toBe(1000);
@@ -139,6 +140,76 @@ describe("initial timeline placement with real Lenis", () => {
     expect(element.scrollTop).toBeLessThan(1200);
     tick(100);
     expect(element.scrollTop).toBeCloseTo(1200, 0);
+  });
+
+  test("settles mobile mount layout corrections without replaying bottom scrolling", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline(0, 5329);
+    element.scrollTop = 5329;
+    tick();
+    geometry.max = 5401;
+    element.scrollTop = 5401;
+    expect(element.scrollTop).toBe(5401);
+    tick(5);
+    geometry.max = 5402;
+    element.scrollTop = 5402;
+    expect(element.scrollTop).toBe(5402);
+    expect(frames.size).toBe(0);
+    tick(10);
+    geometry.max = 5502;
+    element.scrollTop = 5502;
+    expect(element.scrollTop).toBe(5402);
+    tick();
+    expect(element.scrollTop).toBeGreaterThan(5402);
+    expect(element.scrollTop).toBeLessThan(5502);
+  });
+
+  test("empty layout writes do not consume the first scrollable bottom placement", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline(0, 0);
+    element.scrollTop = 0;
+    tick(100);
+    geometry.max = 5329;
+    element.scrollTop = 5329;
+    expect(element.scrollTop).toBe(5329);
+    tick();
+    geometry.max = 5401;
+    element.scrollTop = 5401;
+    expect(element.scrollTop).toBe(5401);
+    expect(frames.size).toBe(0);
+  });
+
+  test("an explicit offset ends bottom placement settling", () => {
+    dispose = mountTimelineMotion(document);
+    const { element } = timeline();
+    element.scrollTop = 1000;
+    element.scrollTop = 800;
+    tick(3);
+    const current = element.scrollTop;
+    element.scrollTop = 1000;
+    expect(element.scrollTop).toBe(current);
+    tick();
+    expect(element.scrollTop).toBeGreaterThan(current);
+    expect(element.scrollTop).toBeLessThan(1000);
+  });
+
+  test("touch input interrupts initial bottom settling", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    element.scrollTop = 1000;
+    element.dispatchEvent(new view.Event("touchstart", { bubbles: true }));
+    geometry.top = 700;
+    element.scrollTop = 1000;
+    tick(5);
+    expect(element.scrollTop).toBe(700);
+    expect(frames.size).toBe(0);
+    element.dispatchEvent(new view.Event("touchend", { bubbles: true }));
+    tick(20);
+    element.scrollTop = 1000;
+    expect(element.scrollTop).toBe(700);
+    tick();
+    expect(element.scrollTop).toBeGreaterThan(700);
+    expect(element.scrollTop).toBeLessThan(1000);
   });
 
   test("manual input before the first bottom write retains control", () => {
@@ -224,7 +295,7 @@ describe("timeline motion with real Lenis", () => {
     dispose = mountTimelineMotion(document);
     const { element, geometry } = timeline();
     element.scrollTop = 1000;
-    tick(3);
+    tick(20);
     let previous = element.scrollTop;
     for (let i = 0; i < 20; i++) {
       geometry.max += 10;

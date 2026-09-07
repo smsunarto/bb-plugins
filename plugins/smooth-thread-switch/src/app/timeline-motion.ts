@@ -19,6 +19,7 @@ type TimelineSession = {
   previousMax: number;
   lastFrame: number;
   hasRequested: boolean;
+  bottomPlacementUntil: number;
   originalClasses: string[];
 };
 
@@ -42,6 +43,26 @@ function isRestoreReplay(restoration: Restoration | null, target: Target, now: n
     target.kind === "offset" &&
     Math.abs(target.px - restoration.origin) <= RESTORE_ORIGIN_TOLERANCE
   );
+}
+
+function trackBottomPlacement(
+  session: TimelineSession,
+  target: Target,
+  max: number,
+  now: number,
+): boolean {
+  const initial =
+    session.motion.kind === "idle" &&
+    target.kind === "bottom" &&
+    (!session.hasRequested || now < session.bottomPlacementUntil);
+  // Mount-time footer and row measurements can revise the bottom over several frames.
+  // Keep that placement synchronous, without extending the window on each correction.
+  if (initial && !session.hasRequested && max > 0) {
+    session.bottomPlacementUntil = now + RESTORE_SETTLE_MS;
+  } else if (!initial) {
+    session.bottomPlacementUntil = 0;
+  }
+  return initial;
 }
 
 function maximum(element: HTMLElement): number {
@@ -120,6 +141,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
       previousMax: maximum(element),
       lastFrame: 0,
       hasRequested: false,
+      bottomPlacementUntil: 0,
       originalClasses,
     };
     sessions.set(element, session);
@@ -181,9 +203,8 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
       session.previousMax - current > 2 &&
       Math.abs(destination - current - growth) <= 1 &&
       target.kind === "offset";
-    const initialBottomPlacement =
-      !session.hasRequested && session.motion.kind === "idle" && target.kind === "bottom";
-    session.hasRequested = true;
+    const initialBottomPlacement = trackBottomPlacement(session, target, max, now);
+    session.hasRequested ||= max > 0;
     session.previousMax = max;
     if (!reducedMotion.matches && growth >= 0 && isRestoreReplay(restoration, target, now)) return;
     if (reducedMotion.matches || growth < 0 || prepend || initialBottomPlacement) {
@@ -220,6 +241,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
   }
 
   function interrupt(session: TimelineSession, held = false): void {
+    session.bottomPlacementUntil = 0;
     cancel(session);
     session.motion = {
       kind: "manual",

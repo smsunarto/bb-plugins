@@ -5,7 +5,9 @@ and mobile. Updates to an already mounted conversation do not restart the fade.
 
 Experimental Lenis scrolling animates bb's automatic bottom following and saved
 position restoration when switching threads. A newly mounted timeline's first
-bottom placement is immediate. Later bottom requests and content growth animate.
+bottom placement and its layout corrections during the next 250ms are immediate.
+Empty layout writes do not consume that initial placement. Later bottom requests
+and content growth animate. An offset request or manual scrolling ends settling.
 The plugin intercepts timeline `scrollTop` writes before layout effects finish.
 It follows a growing bottom without restarting for repeated requests. bb owns
 saved thread positions. The plugin keeps no separate thread-position cache.
