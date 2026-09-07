@@ -11,6 +11,9 @@
     "directory": "plugins/cloudflare"
   },
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "bb": ">=0.40.0 <1.0.0",
     "bbPluginSdk": ">=0.4.34"
@@ -30,7 +33,9 @@
     "host": "./src/host/host.ts"
   },
   "files": [
-    "dist/",
+    "dist/*.js",
+    "dist/*.css",
+    "dist/*.json",
     "assets/",
     "src/",
     "README.md",
