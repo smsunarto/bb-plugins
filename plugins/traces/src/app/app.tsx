@@ -20,7 +20,7 @@ import { Timeline } from "./timeline.tsx";
 import { Inspector } from "./inspector.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
 import { Sources } from "./sources.tsx";
-import { TraceToolbar, TraceFooter, TraceNotice, ThreadScope } from "./ui-chrome.tsx";
+import { TraceToolbar, TraceNotice, ThreadScope } from "./ui-chrome.tsx";
 import "./traces.css";
 
 function KeyHelp({ onClose }: { onClose: () => void }) {
@@ -386,13 +386,14 @@ export function TraceWorkbench({
           )}
         </div>
       </div>
-      <TraceFooter scanning={scanning} onVerify={() => void refresh(true)} status={status.data} />
       {sources && status.data && (
         <Sources
           hostId={hostId}
           status={status.data}
           onClose={hideSources}
           onSaved={() => void status.refetch()}
+          onVerify={() => void refresh(true)}
+          scanning={scanning}
         />
       )}
       {help && <KeyHelp onClose={hideHelp} />}

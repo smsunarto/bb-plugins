@@ -9,11 +9,15 @@ export function Sources({
   status,
   onClose,
   onSaved,
+  onVerify,
+  scanning,
 }: {
   hostId: string;
   status: TraceStatus;
   onClose: () => void;
   onSaved: () => void;
+  onVerify: () => void;
+  scanning: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
   const client = rpc.useClient();
@@ -137,6 +141,13 @@ export function Sources({
         </p>
       )}
       <div className="tr-dialog-actions">
+        <span className="tr-index-count">
+          {status.sessions.toLocaleString()} sessions · {status.events.toLocaleString()} events
+          indexed
+        </span>
+        <button className="tr-text-button" disabled={scanning} onClick={onVerify}>
+          {scanning ? "Verifying…" : "Verify sources"}
+        </button>
         <button onClick={onClose}>Cancel</button>
         <button className="tr-primary" disabled={busy} onClick={() => void save()}>
           {busy ? "Saving…" : "Save sources"}

@@ -167,6 +167,7 @@
   border-color: color-mix(in srgb, var(--tr-accent) 20%, transparent);
 }
 .tr-index-count {
+  margin-right: auto;
   font-size: 10px;
   color: var(--tr-muted);
   white-space: nowrap;
@@ -705,29 +706,6 @@ body.tr-resizing {
   align-items: center;
   gap: 8px;
 }
-.tr-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-height: 31px;
-  padding: 5px 12px;
-  border-top: 1px solid var(--tr-line);
-  color: var(--tr-muted);
-  font-size: 9px;
-}
-.tr-status-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--tr-accent);
-  margin-right: 6px;
-}
-.tr-working {
-  background: var(--tr-warning);
-}
 .tr-dialog {
   --tr-line: #34383b;
   --tr-bg: #191c1e;
@@ -851,7 +829,6 @@ body.tr-resizing {
 }
 .tr-app[data-layout="stack"] .tr-help-button,
 .tr-app[data-layout="stack"] .tr-index-count,
-.tr-app[data-layout="stack"] .tr-footer-hint,
 .tr-app[data-layout="stack"] .tr-event-line,
 .tr-app[data-layout="stack"] kbd,
 .tr-app[data-layout="stack"] .tr-splitter,
@@ -863,7 +840,6 @@ body.tr-resizing {
 .tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-session-search,
 .tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-context-banner,
 .tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-workspace > .tr-list-column,
-.tr-app[data-layout="stack"]:not([data-pane="sessions"]) .tr-footer,
 .tr-app[data-layout="stack"][data-pane="sessions"] .tr-event-workspace,
 .tr-app[data-layout="stack"]:not([data-pane="timeline"]) .tr-event-search,
 .tr-app[data-layout="stack"]:not([data-pane="timeline"]) .tr-timeline-column,
@@ -965,15 +941,11 @@ body.tr-resizing {
 .tr-app[data-layout="stack"] .tr-session-counters {
   display: none;
 }
-.tr-app[data-layout="stack"] .tr-footer,
 .tr-app[data-layout="stack"] .tr-pages {
   justify-content: flex-start;
   gap: 16px;
   /* bb floats its action button over the bottom-right corner on phones. */
   padding-right: 96px;
-}
-.tr-app[data-layout="stack"] .tr-footer {
-  font-size: 11px;
 }
 @media (max-width: 767px) {
   .tr-dialog {

@@ -153,34 +153,6 @@ export function TraceToolbar({
     </div>
   );
 }
-export function TraceFooter({
-  scanning,
-  onVerify,
-  status,
-}: {
-  scanning: boolean;
-  onVerify: () => void;
-  status?: TraceStatus;
-}) {
-  return (
-    <footer className="tr-footer">
-      <span>
-        <span className={`tr-status-dot${scanning ? " tr-working" : ""}`} />
-        {scanning ? "Indexing source files" : "Local session files"}
-      </span>
-      <span className="tr-index-count">
-        {status
-          ? `${status.sessions.toLocaleString()} sessions · ${status.events.toLocaleString()} events`
-          : "Connecting…"}
-      </span>
-      <span className="tr-footer-hint">j k Navigate · Enter Inspect · r Raw</span>
-      <button className="tr-text-button" onClick={onVerify} disabled={scanning}>
-        Verify sources
-      </button>
-    </footer>
-  );
-}
-
 export function ThreadScope({
   visible,
   enabled,
