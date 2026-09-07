@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-agent-trace",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Export every BB thread turn across all providers to Laminar and Langfuse over OTLP/HTTP JSON.",
   "license": "MIT",
   "author": "Scott Sunarto",
