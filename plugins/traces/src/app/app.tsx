@@ -19,8 +19,7 @@ import { Inspector } from "./inspector.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
 import { Sources } from "./sources.tsx";
 import {
-  TraceHeader,
-  TraceFilters,
+  TraceToolbar,
   TraceTopics,
   SessionHeading,
   TraceFooter,
@@ -228,15 +227,7 @@ export function TraceWorkbench({
   }, [selected, raw, showHelp, stacked, back, visiblePane]);
   return (
     <main className="tr-app" ref={rootRef} {...layout}>
-      <TraceHeader
-        hostPicker={hostPicker}
-        onSources={showSources}
-        onHelp={showHelp}
-        onRefresh={() => void refresh(false)}
-        ready={Boolean(status.data)}
-        scanning={scanning}
-      />
-      <TraceFilters
+      <TraceToolbar
         sessionSearch={sessionSearch}
         setSessionSearch={setSessionSearch}
         provider={provider}
@@ -253,6 +244,12 @@ export function TraceWorkbench({
           setSelected(null);
           pane.reset();
         }}
+        hostPicker={hostPicker}
+        onSources={showSources}
+        onHelp={showHelp}
+        onRefresh={() => void refresh(false)}
+        ready={Boolean(status.data)}
+        scanning={scanning}
       />
       <TraceTopics topic={topic} setTopic={setTopic} status={status.data} />
       <ThreadScope

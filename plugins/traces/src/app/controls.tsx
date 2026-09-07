@@ -67,21 +67,48 @@ export function shortDate(value: number | null) {
 export function eventTime(value: number | null) {
   return value === null ? "" : new Date(value).toLocaleTimeString(undefined, { hour12: false });
 }
+export function elapsedTime(value: number | null, from: number | null) {
+  if (value === null || from === null || value < from) return eventTime(value);
+  const total = Math.round((value - from) / 1000);
+  const minutes = Math.floor(total / 60) % 60;
+  const seconds = String(total % 60).padStart(2, "0");
+  const hours = Math.floor(total / 3600);
+  return hours > 0
+    ? `+${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
+    : `+${minutes}:${seconds}`;
+}
+export function evidenceLabel(item: TraceEvidence) {
+  return `${item.topic} · ${item.action.replaceAll("_", " ")} · ${item.label}`;
+}
+// Rows are narrow, and the topic bar above already filters by topic. The chip
+// spends its width on the action and the label that separate one fact from the next.
+export function evidenceTag(item: TraceEvidence) {
+  return `${item.action.replaceAll("_", " ")} · ${item.label}`;
+}
+export function distinctEvidence(evidence: readonly TraceEvidence[]) {
+  const seen = new Set<string>();
+  return evidence.filter((item) => {
+    const key = evidenceLabel(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 export function providerLabel(value: string) {
   return value === "claude-code" ? "Claude Code" : value === "codex" ? "Codex" : value;
 }
 export function Evidence({ evidence }: { evidence: readonly TraceEvidence[] }) {
   return (
     <div className="tr-evidence">
-      {evidence.map((item) => (
+      {distinctEvidence(evidence).map((item) => (
         <span
-          key={`${item.topic}-${item.action}-${item.label}-${item.pointer}`}
+          key={evidenceLabel(item)}
           className={`tr-evidence-chip tr-evidence-${item.action}`}
           title={`${item.basis === "recorded" ? "Recorded" : "Inferred from submitted content"} · ${item.pointer}`}
         >
           <span>{item.label}</span>
           <small>
-            {item.action.replaceAll("_", " ")}
+            {item.topic} · {item.action.replaceAll("_", " ")}
             {item.basis === "inferred" ? " · inferred" : ""}
           </small>
         </span>

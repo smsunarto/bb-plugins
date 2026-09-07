@@ -23,46 +23,7 @@ const topicLabels: Record<string, string> = {
   search: "Search",
 };
 
-export function TraceHeader({
-  hostPicker,
-  onSources,
-  onHelp,
-  onRefresh,
-  ready,
-  scanning,
-}: {
-  hostPicker: React.ReactNode;
-  onSources: () => void;
-  onHelp: () => void;
-  onRefresh: () => void;
-  ready: boolean;
-  scanning: boolean;
-}) {
-  return (
-    <header className="tr-header">
-      <div className="tr-brand">
-        <span className="tr-brand-symbol" aria-hidden="true">
-          ⌁
-        </span>
-        <h1>Traces</h1>
-        <span className="tr-header-caption">Follow the evidence.</span>
-      </div>
-      <div className="tr-header-actions">
-        {hostPicker}
-        <button onClick={onSources} disabled={!ready}>
-          Sources
-        </button>
-        <button onClick={onRefresh} disabled={scanning}>
-          {scanning ? "Indexing…" : "Refresh"}
-        </button>
-        <button className="tr-help-button" onClick={onHelp} aria-label="Keyboard shortcuts">
-          ?
-        </button>
-      </div>
-    </header>
-  );
-}
-export function TraceFilters({
+export function TraceToolbar({
   sessionSearch,
   setSessionSearch,
   provider,
@@ -75,6 +36,12 @@ export function TraceFilters({
   searchRef,
   sessionSearchRef,
   clearSession,
+  hostPicker,
+  onSources,
+  onHelp,
+  onRefresh,
+  ready,
+  scanning,
 }: {
   sessionSearch: string;
   setSessionSearch: (value: string) => void;
@@ -88,6 +55,12 @@ export function TraceFilters({
   searchRef: RefObject<HTMLInputElement | null>;
   sessionSearchRef: RefObject<HTMLInputElement | null>;
   clearSession: () => void;
+  hostPicker: React.ReactNode;
+  onSources: () => void;
+  onHelp: () => void;
+  onRefresh: () => void;
+  ready: boolean;
+  scanning: boolean;
 }) {
   return (
     <div className="tr-toolbar">
@@ -146,6 +119,18 @@ export function TraceFilters({
             </option>
           ))}
         </select>
+      </div>
+      <div className="tr-toolbar-actions">
+        {hostPicker}
+        <button onClick={onSources} disabled={!ready}>
+          Sources
+        </button>
+        <button onClick={onRefresh} disabled={scanning}>
+          {scanning ? "Indexing…" : "Refresh"}
+        </button>
+        <button className="tr-help-button" onClick={onHelp} aria-label="Keyboard shortcuts">
+          ?
+        </button>
       </div>
     </div>
   );

@@ -3,7 +3,17 @@ import type { RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
 import { rpc, definedFields } from "./rpc.ts";
-import { Empty, Pages, QueryError, eventTime, moveSelection } from "./controls.tsx";
+import {
+  Empty,
+  Pages,
+  QueryError,
+  distinctEvidence,
+  elapsedTime,
+  eventTime,
+  evidenceLabel,
+  evidenceTag,
+  moveSelection,
+} from "./controls.tsx";
 
 const EMPTY_EVENTS: TraceEvent[] = [];
 const symbols: Record<string, string> = {
@@ -65,10 +75,13 @@ export function Timeline({
     }
   }, [revision, refetch]);
   const items = result.data?.items ?? EMPTY_EVENTS;
-  useEffect(() => {
-    if (!stacked && !selected && items[0]) onSelect(items[0]);
-  }, [stacked, items, selected, onSelect]);
   const selectedIndex = items.findIndex((event) => event.id === selected?.id);
+  // A filter change remounts this list. Re-anchoring on the first row keeps the
+  // inspector from showing an event the visible timeline no longer contains.
+  useEffect(() => {
+    if (stacked || !items[0]) return;
+    if (!selected || (page === 0 && selectedIndex < 0)) onSelect(items[0]);
+  }, [stacked, items, selected, selectedIndex, page, onSelect]);
   function selectIndex(index: number) {
     const event = items[index];
     if (!event) return;
@@ -130,20 +143,25 @@ export function Timeline({
               <span className="tr-event-content">
                 <span className="tr-event-heading">
                   <strong>{event.title}</strong>
-                  <time>{eventTime(event.timestamp)}</time>
+                  <time title={eventTime(event.timestamp)}>
+                    {elapsedTime(event.timestamp, session.startedAt)}
+                  </time>
                 </span>
                 <span className="tr-event-preview">
                   {event.preview || event.kind.replaceAll("_", " ")}
                 </span>
                 <span className="tr-event-tags">
-                  {event.evidence.slice(0, 3).map((evidence) => (
-                    <span
-                      key={`${evidence.topic}-${evidence.action}-${evidence.label}-${evidence.pointer}`}
-                      className={`tr-tag tr-tag-${evidence.action}`}
-                    >
-                      {evidence.topic} · {evidence.action.replaceAll("_", " ")}
-                    </span>
-                  ))}
+                  {distinctEvidence(event.evidence)
+                    .slice(0, 3)
+                    .map((evidence) => (
+                      <span
+                        key={evidenceLabel(evidence)}
+                        className={`tr-tag tr-tag-${evidence.action}`}
+                        title={evidenceLabel(evidence)}
+                      >
+                        {evidenceTag(evidence)}
+                      </span>
+                    ))}
                 </span>
               </span>
               <small className="tr-event-line">L{event.provenance.line}</small>
