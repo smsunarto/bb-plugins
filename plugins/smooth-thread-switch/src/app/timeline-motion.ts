@@ -73,11 +73,11 @@ function contentFor(element: Element): HTMLElement | null {
   if (!element.isConnected || !element.matches(TIMELINE)) return null;
   const content = element.firstElementChild;
   const HTMLElement = element.ownerDocument.defaultView?.HTMLElement;
-  return HTMLElement &&
-    content instanceof HTMLElement &&
-    content.querySelector(":scope > .scroll-bottom-anchor")
-    ? content
-    : null;
+  if (!HTMLElement || !(content instanceof HTMLElement)) return null;
+  for (let child = content.lastElementChild; child; child = child.previousElementSibling) {
+    if (child.classList.contains("scroll-bottom-anchor")) return content;
+  }
+  return null;
 }
 
 function cancel(session: TimelineSession): void {
@@ -119,7 +119,8 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
 
   function attach(element: HTMLElement, content: HTMLElement): TimelineSession {
     const existing = sessions.get(element);
-    if (existing) return existing;
+    if (existing?.content === content) return existing;
+    if (existing) detach(existing);
     const originalClasses = [...element.classList].filter((name) => name.startsWith("lenis"));
     const lenis = new Lenis({
       wrapper: element,
@@ -208,7 +209,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     session.previousMax = max;
     if (!reducedMotion.matches && growth >= 0 && isRestoreReplay(restoration, target, now)) return;
     if (reducedMotion.matches || growth < 0 || prepend || initialBottomPlacement) {
-      cancel(session);
+      if (session.motion.kind === "animating") cancel(session);
       nativeSet.call(element, destination);
       session.motion = { kind: "idle" };
       return;
@@ -220,12 +221,13 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
       requestFrame();
       return;
     }
-    cancel(session);
     if (Math.abs(destination - current) <= 1) {
+      if (session.motion.kind === "animating") cancel(session);
       nativeSet.call(element, destination);
       session.motion = { kind: "idle" };
       return;
     }
+    cancel(session);
     session.motion = { kind: "animating", target, restoration };
     session.lastFrame = view!.performance.now();
     session.lenis.raf(session.lastFrame);
@@ -317,19 +319,58 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     frame = null;
   }
 
-  function discover(): void {
-    for (const session of sessions.values()) {
-      if (contentFor(session.element) !== session.content) detach(session);
-    }
-    for (const element of document.querySelectorAll<HTMLElement>(TIMELINE)) {
-      const content = contentFor(element);
-      if (content) attach(element, content);
+  function reconcile(element: HTMLElement): void {
+    const content = contentFor(element);
+    if (content) attach(element, content);
+    else {
+      const session = sessions.get(element);
+      if (session) detach(session);
     }
   }
 
-  const observer = new view.MutationObserver(discover);
+  function addCandidate(node: Node | null, candidates: Set<HTMLElement>): void {
+    if (node instanceof view!.HTMLElement && (sessions.has(node) || node.matches(TIMELINE))) {
+      candidates.add(node);
+    }
+  }
+
+  function onMutations(records: MutationRecord[]): void {
+    const addedRoots = new Set<Element>();
+    const candidates = new Set<HTMLElement>();
+    let hasRemoval = false;
+    for (const record of records) {
+      hasRemoval ||= record.removedNodes.length > 0;
+      addCandidate(record.target, candidates);
+      addCandidate(record.target.parentElement, candidates);
+      for (const node of record.addedNodes) {
+        if (node instanceof view!.Element) addedRoots.add(node);
+      }
+    }
+    if (hasRemoval) {
+      for (const session of sessions.values()) {
+        if (!session.element.isConnected || !session.element.matches(TIMELINE)) detach(session);
+      }
+    }
+    for (const root of addedRoots) {
+      if (!root.isConnected) continue;
+      let ancestor = root.parentElement;
+      while (ancestor && !addedRoots.has(ancestor)) ancestor = ancestor.parentElement;
+      if (ancestor) continue;
+      addCandidate(root, candidates);
+      for (const element of root.querySelectorAll<HTMLElement>(TIMELINE)) candidates.add(element);
+    }
+    for (const element of candidates) reconcile(element);
+  }
+
+  function discoverInitialTimelines(): void {
+    for (const element of document.querySelectorAll<HTMLElement>(TIMELINE)) {
+      reconcile(element);
+    }
+  }
+
+  const observer = new view.MutationObserver(onMutations);
   const inputEvents = ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"];
-  const releaseEvents = ["touchend", "touchcancel", "pointerup", "pointercancel"];
+  const releaseEvents = ["touchend", "touchcancel", "pointerup", "pointercancel", "blur"];
   function dispose(): void {
     if (disposed) return;
     disposed = true;
@@ -359,7 +400,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     reducedMotion.addEventListener("change", onReducedMotion);
     signal?.addEventListener("abort", dispose, { once: true });
     observer.observe(document.documentElement, { childList: true, subtree: true });
-    discover();
+    discoverInitialTimelines();
   } catch (error) {
     dispose();
     throw error;

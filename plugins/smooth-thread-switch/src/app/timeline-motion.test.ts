@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { JSDOM } from "jsdom";
 import { mountTimelineMotion } from "./timeline-motion.ts";
 
@@ -229,6 +229,54 @@ describe("initial timeline placement with real Lenis", () => {
   });
 });
 
+describe("settled timeline writes with real Lenis", () => {
+  for (const reduceMotion of [false, true]) {
+    test(`settled writes avoid class mutations${reduceMotion ? " with reduced motion" : ""}`, () => {
+      Object.assign(reduced, { matches: reduceMotion });
+      dispose = mountTimelineMotion(document);
+      const { element } = timeline();
+      element.scrollTop = 1000;
+      const observer = new view.MutationObserver(() => {});
+      observer.observe(element, { attributes: true, attributeFilter: ["class"] });
+      for (let i = 0; i < 300; i++) element.scrollTop = 1000;
+      const mutations = observer.takeRecords();
+      observer.disconnect();
+      expect(mutations).toHaveLength(0);
+      expect(element.scrollTop).toBe(1000);
+      expect(frames.size).toBe(0);
+    });
+  }
+
+  test("a new animation starts from physical native scroll before its event arrives", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    element.scrollTop = 1000;
+    geometry.top = 600;
+    element.scrollTop = 300;
+    expect(element.scrollTop).toBe(600);
+    tick();
+    expect(element.scrollTop).toBeGreaterThan(300);
+    expect(element.scrollTop).toBeLessThan(600);
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(300, 0);
+  });
+
+  test("requesting the current position cancels an active animation", () => {
+    dispose = mountTimelineMotion(document);
+    const { element } = timeline();
+    element.scrollTop = 800;
+    tick(4);
+    expect(element.classList.contains("lenis-smooth")).toBe(true);
+    const current = element.scrollTop;
+    element.scrollTop = current;
+    expect(element.classList.contains("lenis-smooth")).toBe(false);
+    expect(element.classList.contains("lenis-scrolling")).toBe(false);
+    tick(100);
+    expect(element.scrollTop).toBe(current);
+    expect(frames.size).toBe(0);
+  });
+});
+
 describe("timeline motion with real Lenis", () => {
   test("intercepts the first write before observers run and retains physical getter identity", () => {
     dispose = mountTimelineMotion(document);
@@ -440,6 +488,26 @@ describe("timeline motion with real Lenis", () => {
     expect(element.scrollTop).toBeCloseTo(1000, 0);
   });
 
+  test("window blur releases a held scrollbar gesture after the manual grace period", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    element.getBoundingClientRect = mock(() => new view.DOMRect(0, 0, 300, 200));
+    element.scrollTop = 800;
+    tick(2);
+    element.dispatchEvent(new view.MouseEvent("pointerdown", { bubbles: true, clientX: 295 }));
+    geometry.top = 100;
+    view.dispatchEvent(new view.Event("blur"));
+    time += 249;
+    element.scrollTop = 1000;
+    expect(element.scrollTop).toBe(100);
+    time += 2;
+    element.scrollTop = 1000;
+    expect(element.scrollTop).toBe(100);
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(1000, 0);
+    expect(frames.size).toBe(0);
+  });
+
   test("touch gestures stay native through a hold and release", () => {
     dispose = mountTimelineMotion(document);
     const { element, geometry } = timeline();
@@ -569,5 +637,191 @@ describe("timeline motion with real Lenis", () => {
     const { element } = timeline();
     element.scrollTop = 800;
     expect(element.scrollTop).toBe(800);
+  });
+});
+
+describe("timeline discovery with real Lenis", () => {
+  test("streaming mutations never rescan the document after mount", async () => {
+    const { element } = timeline();
+    const unrelated = document.createElement("aside");
+    unrelated.innerHTML = "<div><span>Unrelated content</span></div>".repeat(100);
+    document.body.append(unrelated);
+    const scan = spyOn(document, "querySelectorAll");
+    dispose = mountTimelineMotion(document);
+    expect(scan).toHaveBeenCalledTimes(1);
+    const row = element.firstElementChild!.firstElementChild!;
+    for (let i = 0; i < 5; i++) {
+      row.textContent = `Streaming update ${i}`;
+      await Promise.resolve();
+    }
+    unrelated.append(document.createElement("div"));
+    await Promise.resolve();
+    expect(scan).toHaveBeenCalledTimes(1);
+    expect(element.classList.contains("lenis")).toBe(true);
+  });
+
+  test("direct anchors remain valid before trailing children without selector queries", () => {
+    const { element } = timeline();
+    const content = element.firstElementChild!;
+    content.append(document.createElement("button"));
+    const query = spyOn(content, "querySelector");
+    dispose = mountTimelineMotion(document);
+    element.scrollTop = 800;
+    expect(element.scrollTop).toBe(0);
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(800, 0);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  test("mount captures the maximum before a first-write shrink", () => {
+    const { element, geometry } = timeline();
+    dispose = mountTimelineMotion(document);
+    geometry.max = 600;
+    element.scrollTop = 300;
+    expect(element.scrollTop).toBe(300);
+    expect(frames.size).toBe(0);
+  });
+
+  test("discovery captures the maximum before a first-write shrink", async () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(true);
+    geometry.max = 600;
+    element.scrollTop = 300;
+    expect(element.scrollTop).toBe(300);
+    expect(frames.size).toBe(0);
+  });
+
+  test("staged markup registers as soon as the direct anchor arrives", async () => {
+    dispose = mountTimelineMotion(document);
+    const { element } = timeline();
+    element.replaceChildren();
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(false);
+    const content = document.createElement("div");
+    element.append(content);
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(false);
+    const anchor = document.createElement("div");
+    anchor.className = "scroll-bottom-anchor";
+    content.append(anchor);
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(true);
+    element.scrollTop = 500;
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(500, 0);
+  });
+
+  for (const state of ["idle", "animating"]) {
+    test(`content replacement synchronously replaces an ${state} session once`, async () => {
+      dispose = mountTimelineMotion(document);
+      const { element } = timeline();
+      element.scrollTop = 800;
+      tick(state === "idle" ? 100 : 2);
+      const added = spyOn(element, "addEventListener");
+      const removed = spyOn(element, "removeEventListener");
+      element.replaceChildren(element.firstElementChild!.cloneNode(true));
+      element.scrollTop = 400;
+      expect(removed.mock.calls.filter(([type]) => type === "scroll")).toHaveLength(1);
+      expect(added.mock.calls.filter(([type]) => type === "scroll")).toHaveLength(1);
+      await Promise.resolve();
+      expect(removed.mock.calls.filter(([type]) => type === "scroll")).toHaveLength(1);
+      expect(added.mock.calls.filter(([type]) => type === "scroll")).toHaveLength(1);
+      tick(100);
+      expect(element.scrollTop).toBeCloseTo(400, 0);
+    });
+  }
+
+  test("invalidating an anchor immediately leaves writes native", () => {
+    const { element } = timeline();
+    dispose = mountTimelineMotion(document);
+    element.firstElementChild!.lastElementChild!.classList.remove("scroll-bottom-anchor");
+    element.scrollTop = 400;
+    expect(element.scrollTop).toBe(400);
+    expect(frames.size).toBe(0);
+  });
+
+  test("moving the anchor below a nested child detaches the active session", async () => {
+    const { element } = timeline();
+    dispose = mountTimelineMotion(document);
+    element.scrollTop = 800;
+    tick(2);
+    const content = element.firstElementChild!;
+    content.firstElementChild!.append(content.lastElementChild!);
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(false);
+    element.scrollTop = 400;
+    tick(100);
+    expect(element.scrollTop).toBe(400);
+    expect(frames.size).toBe(0);
+  });
+
+  test("removing the anchor detaches an idle session", async () => {
+    const { element } = timeline();
+    dispose = mountTimelineMotion(document);
+    element.firstElementChild!.lastElementChild!.remove();
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(false);
+    element.scrollTop = 400;
+    expect(element.scrollTop).toBe(400);
+  });
+
+  test("removing thread scope immediately leaves writes native", () => {
+    const { root, element } = timeline();
+    dispose = mountTimelineMotion(document);
+    root.removeAttribute("data-thread-window");
+    element.scrollTop = 400;
+    expect(element.scrollTop).toBe(400);
+    expect(frames.size).toBe(0);
+  });
+
+  test("moving outside a thread window detaches the session", async () => {
+    const { element } = timeline();
+    dispose = mountTimelineMotion(document);
+    document.body.append(element);
+    element.scrollTop = 400;
+    expect(element.scrollTop).toBe(400);
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(false);
+    expect(frames.size).toBe(0);
+  });
+
+  test("removing an idle timeline through its ancestor detaches the session", async () => {
+    const { root, element } = timeline();
+    dispose = mountTimelineMotion(document);
+    expect(element.classList.contains("lenis")).toBe(true);
+    root.remove();
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(false);
+    expect(frames.size).toBe(0);
+  });
+
+  test("removal and reinsertion in one batch preserves manual control", async () => {
+    const { root, element, geometry } = timeline();
+    dispose = mountTimelineMotion(document);
+    element.dispatchEvent(new view.WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+    geometry.top = 100;
+    root.remove();
+    document.body.append(root);
+    await Promise.resolve();
+    expect(element.classList.contains("lenis")).toBe(true);
+    element.scrollTop = 800;
+    expect(element.scrollTop).toBe(100);
+    expect(frames.size).toBe(0);
+  });
+
+  test("nested additions are scanned only through their outer added subtree", async () => {
+    dispose = mountTimelineMotion(document);
+    const { root, element } = timeline();
+    const outer = document.createElement("section");
+    document.body.append(outer);
+    outer.append(root);
+    const outerScan = spyOn(outer, "querySelectorAll");
+    const innerScan = spyOn(root, "querySelectorAll");
+    await Promise.resolve();
+    expect(outerScan).toHaveBeenCalledTimes(1);
+    expect(innerScan).not.toHaveBeenCalled();
+    expect(element.classList.contains("lenis")).toBe(true);
   });
 });
