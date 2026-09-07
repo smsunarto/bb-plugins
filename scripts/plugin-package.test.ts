@@ -3,6 +3,7 @@
 // plugins by a name bb never had — so this suite pins the shared rule and the
 // invariant the rest of the repo leans on: directory name == plugin id.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   derivePluginId,
@@ -62,4 +63,23 @@ describe("the workspace", () => {
       expect(plugin.name).toBe(`@smsunarto/bb-plugin-${plugin.directory}`);
     });
   }
+});
+
+describe("catalogs", () => {
+  test("the collection lists every marketplace plugin", () => {
+    const collection = JSON.parse(readFileSync(join(ROOT, ".bb/plugins.json"), "utf8")) as {
+      plugins: { name: string; source: string }[];
+    };
+    const marketplace = JSON.parse(readFileSync(join(ROOT, "marketplace.json"), "utf8")) as {
+      plugins: { id: string }[];
+    };
+    const byName = new Map(collection.plugins.map((entry) => [entry.name, entry]));
+
+    expect(marketplace.plugins.map((entry) => entry.id).filter((id) => !byName.has(id))).toEqual(
+      [],
+    );
+    for (const entry of marketplace.plugins) {
+      expect(byName.get(entry.id)?.source).toBe(`./plugins/${entry.id}`);
+    }
+  });
 });
