@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-smooth-thread-switch",
   "version": "0.1.0",
-  "description": "Fades switched-to conversations in immediately on desktop and mobile.",
+  "description": "Fades conversations in and experimentally smooths automatic timeline scrolling with Lenis.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/smooth-thread-switch",
@@ -28,7 +28,7 @@
   },
   "bb": {
     "name": "Smooth Thread Switch",
-    "description": "Fades switched-to conversations in immediately on desktop and mobile.",
+    "description": "Fades conversations in and experimentally smooths automatic timeline scrolling with Lenis.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -53,10 +53,12 @@
     "src/app/"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.1.0"
+    "@bb-kit/core": "0.1.0",
+    "lenis": "1.3.26"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.34",
+    "@types/jsdom": "21.1.7",
     "@types/node": "^22.0.0",
     "bun-types": "^1.4.0",
     "jsdom": "25.0.1",
