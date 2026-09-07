@@ -12,6 +12,12 @@ The plugin intercepts timeline `scrollTop` writes before layout effects finish.
 It follows a growing bottom without restarting for repeated requests. bb owns
 saved thread positions. The plugin keeps no separate thread-position cache.
 
+Switching to a thread that is working opens it at the live tail rather than the
+position it was left at. That saved offset sits behind rows the reader has not
+seen yet, and the thread keeps appending more. A settled thread still returns to
+its saved position, and only the first restore is redirected — once the reader
+is in the thread, their own scrolling stands.
+
 Wheel, touch, scrollbar dragging, and navigation keys interrupt automatic motion.
 The timeline's “Scroll to latest event” button immediately resumes smooth bottom
 scrolling, including during the manual-input grace period or a held gesture.
@@ -34,6 +40,13 @@ layout effects from replacing the saved destination with a transient top-row
 anchor. Other layout destinations and bottom requests still apply. A programmatic
 request near that starting position during this brief window can also be ignored.
 Manual input, reduced motion, and content shrink corrections end this protection.
+
+bb states no runtime status in the timeline's DOM, so the plugin registers a
+thread-header action that renders one hidden marker per visible pane carrying
+that pane's thread id and whether it is working, read from the same sidebar
+thread view bb's own sidebar uses. Its host wrapper is hidden with CSS and draws
+no control. A timeline with no marker above it, or with several (a container of
+panes rather than one pane), keeps bb's saved position.
 
 Native `scrollTo`, `scrollBy`, and `scrollIntoView` calls are not intercepted.
 Scroll requests outside the recognized thread timeline stay native. Enabling the

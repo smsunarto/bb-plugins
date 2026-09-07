@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { JSDOM } from "jsdom";
 import { mountTimelineMotion } from "./timeline-motion.ts";
+import { isThreadWorking, PROBE_ATTRIBUTE, PROBE_WORKING_ATTRIBUTE } from "./thread-activity.ts";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 
 let dom: JSDOM;
 let document: Document;
@@ -45,6 +47,29 @@ function timeline(start = 0, max = 1000, scoped = true) {
 }
 
 const physical = new WeakMap<Element, { top: number; max: number }>();
+
+/** The marker the plugin's thread-header slot renders inside a thread's pane. */
+function probe(container: Element, working: boolean, threadId = "thr_test"): HTMLElement {
+  const marker = document.createElement("span");
+  marker.setAttribute(PROBE_ATTRIBUTE, threadId);
+  marker.setAttribute(PROBE_WORKING_ATTRIBUTE, working ? "true" : "false");
+  container.append(marker);
+  return marker;
+}
+
+function sidebarThread(overrides: Partial<PluginSidebarThread>): PluginSidebarThread {
+  return {
+    activity: {
+      workflows: 0,
+      backgroundAgents: 0,
+      backgroundCommands: 0,
+      planMode: 0,
+      goals: 0,
+    },
+    indicator: "none",
+    ...overrides,
+  } as PluginSidebarThread;
+}
 
 beforeEach(() => {
   dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
@@ -823,5 +848,73 @@ describe("timeline discovery with real Lenis", () => {
     expect(outerScan).toHaveBeenCalledTimes(1);
     expect(innerScan).not.toHaveBeenCalled();
     expect(element.classList.contains("lenis")).toBe(true);
+  });
+});
+
+describe("switching to a working thread", () => {
+  test("opens a working thread at the bottom instead of its saved position", () => {
+    dispose = mountTimelineMotion(document);
+    const { root, element } = timeline(0, 3472);
+    probe(root, true);
+    element.scrollTop = 1440;
+    expect(element.scrollTop).toBe(3472);
+    tick(100);
+    expect(element.scrollTop).toBe(3472);
+  });
+
+  test("returns a settled thread to its saved position", () => {
+    dispose = mountTimelineMotion(document);
+    const { root, element } = timeline(0, 3472);
+    probe(root, false);
+    element.scrollTop = 1440;
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(1440, 0);
+  });
+
+  test("leaves the saved position alone when no pane owns the timeline", () => {
+    dispose = mountTimelineMotion(document);
+    const { root, element } = timeline(0, 3472);
+    probe(root.parentElement!, true, "thr_a");
+    probe(root.parentElement!, true, "thr_b");
+    element.scrollTop = 1440;
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(1440, 0);
+  });
+
+  test("only the first restore is redirected; later scrolling stands", () => {
+    dispose = mountTimelineMotion(document);
+    const { root, element } = timeline(0, 3472);
+    probe(root, true);
+    element.scrollTop = 1440;
+    expect(element.scrollTop).toBe(3472);
+    element.scrollTop = 600;
+    tick(100);
+    expect(element.scrollTop).toBeCloseTo(600, 0);
+  });
+});
+
+describe("thread activity", () => {
+  test("reads any live work as working", () => {
+    expect(isThreadWorking(sidebarThread({ indicator: "runtime" }))).toBe(true);
+    expect(isThreadWorking(sidebarThread({ indicator: "working-draft" }))).toBe(true);
+    expect(
+      isThreadWorking(
+        sidebarThread({
+          activity: {
+            workflows: 0,
+            backgroundAgents: 1,
+            backgroundCommands: 0,
+            planMode: 0,
+            goals: 0,
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test("reads a quiet thread as settled", () => {
+    expect(isThreadWorking(sidebarThread({ indicator: "none" }))).toBe(false);
+    expect(isThreadWorking(sidebarThread({ indicator: "draft" }))).toBe(false);
+    expect(isThreadWorking(sidebarThread({ indicator: "waiting-for-input" }))).toBe(false);
   });
 });

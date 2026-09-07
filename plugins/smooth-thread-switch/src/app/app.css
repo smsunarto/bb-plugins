@@ -17,3 +17,12 @@
     animation: none;
   }
 }
+
+/*
+ * The thread-activity probe draws nothing: it only carries the pane's thread
+ * id and working state for the scroll router. Take the host's group wrapper
+ * out of the header row's flow so it costs no gap.
+ */
+[role="group"][aria-label="Thread scroll activity"] {
+  display: none;
+}

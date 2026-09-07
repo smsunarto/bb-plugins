@@ -1,4 +1,5 @@
 import Lenis from "lenis";
+import { isTimelineThreadWorking } from "./thread-activity.ts";
 
 const TIMELINE = "[data-thread-window] .thread-scrollbar";
 const MANUAL_IDLE_MS = 250;
@@ -191,12 +192,22 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
   function routeWrite(element: HTMLElement, value: number, content: HTMLElement): void {
     const session = attach(element, content);
     const max = maximum(element);
-    const destination = Math.max(0, Math.min(value, max));
-    const target: Target =
+    let destination = Math.max(0, Math.min(value, max));
+    let target: Target =
       destination === max ? { kind: "bottom" } : { kind: "offset", px: destination };
     const current = element.scrollTop;
     const now = view!.performance.now();
-    const restoration = restorationFor(session, target, now);
+    let restoration = restorationFor(session, target, now);
+    // A saved position is only worth returning to on a thread that has stopped
+    // moving. A working thread has appended rows the reader has not seen, so
+    // that offset is behind the live tail before they arrive: open at the
+    // bottom instead. Only this first restore is redirected — once the reader
+    // is in the thread, their own scrolling stands.
+    if (restoration !== null && isTimelineThreadWorking(element)) {
+      destination = max;
+      target = { kind: "bottom" };
+      restoration = null;
+    }
     const growth = max - session.previousMax;
     const prepend =
       session.hasRequested &&
