@@ -188,7 +188,7 @@
     {
       "id": "smooth-thread-switch",
       "displayName": "Smooth Thread Switch",
-      "description": "Keeps thread switches steady while bb restores the scroll position and settles the message layout.",
+      "description": "Fades switched-to conversations in immediately on desktop and mobile.",
       "icon": {
         "url": "plugins/smooth-thread-switch/assets/icon.svg"
       },

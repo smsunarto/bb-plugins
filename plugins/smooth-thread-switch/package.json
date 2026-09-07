@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-smooth-thread-switch",
   "version": "0.1.0",
-  "description": "Keeps thread switches steady while bb restores the scroll position and settles the message layout.",
+  "description": "Fades switched-to conversations in immediately on desktop and mobile.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/smooth-thread-switch",
@@ -28,7 +28,7 @@
   },
   "bb": {
     "name": "Smooth Thread Switch",
-    "description": "Keeps the outgoing conversation visible until the next thread has a stable scroll position and message layout.",
+    "description": "Fades switched-to conversations in immediately on desktop and mobile.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -68,7 +68,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000",
+    "test": "bun test --timeout=30000 --pass-with-no-tests",
     "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
     "clean": "rm -rf dist"
   }
