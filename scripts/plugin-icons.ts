@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   Activity01Icon,
   ArtboardIcon,
-  BellIcon,
   ChatFeedbackIcon,
   CloudServerIcon,
   ComputerScreenShareIcon,
@@ -189,10 +188,6 @@ const customIcons = {
   "smooth-thread-switch": {
     name: "EaseOut",
     nodes: EaseOutIcon,
-  },
-  notify: {
-    name: "Bell",
-    nodes: BellIcon,
   },
   novnc: {
     name: "ComputerScreenShare",
