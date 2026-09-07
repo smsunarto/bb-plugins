@@ -88,6 +88,8 @@
     "jsdom": "25.0.1",
     "esbuild": "^0.28.0",
     "monaco-editor": "0.56.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
     "tsx": "4.23.12",
