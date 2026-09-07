@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import { readFile } from "node:fs/promises";
+import { parsePatchFiles } from "@pierre/diffs";
 
 installDom();
 if (typeof CSSStyleSheet.prototype.replaceSync !== "function") {
@@ -141,11 +142,9 @@ test("labels a non-Git diff preview as current code", async () => {
     startLine: 99,
     truncated: false,
   }));
-  await slot.findByText("const value = 1;");
-  expect(slot.getByText("return value;")).toBeDefined();
-  expect(slot.getByText("99")).toBeDefined();
-  expect(slot.getByText("100")).toBeDefined();
-  expect(slot.queryByTestId("bb-diff")).toBeNull();
+  const diff = await slot.findByTestId("bb-diff");
+  expect(diff.textContent).toBe("@@ -99,2 +99,2 @@\n const value = 1;\n return value;\n");
+  expect(diff.dataset.path).toBe("src/example.ts");
   expect(slot.getByText("Code")).toBeDefined();
   expect(slot.getByText("No Git history. Showing current code.")).toBeDefined();
   expect(slot.queryByText("Changes")).toBeNull();
@@ -283,5 +282,89 @@ test("keeps the diff viewport mounted while a deferred request resolves or fails
     expect(frame.classList.contains("smart-embed-fixed")).toBe(true);
     slot.unmount();
   }
+  embedCache.clear();
+});
+
+for (const { startLine, content } of [
+  { startLine: 1, content: "const first = 1;" },
+  { startLine: 42, content: "  const spaced = 1;  \n\t  \n" },
+  { startLine: 400, content: "const first = 1;\r\nconst next = 2;\r\n  " },
+]) {
+  test(`renders source excerpts as unchanged context at line ${startLine}`, async () => {
+    embedCache.clear();
+    const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+    const directive = captured.messageDirectives.find((item) => item.id === "smart-code");
+    const path = "src/space dir/example.ts";
+    const openWorkspaceFile = mock(() => true);
+    const slot = renderSlot(
+      directive!,
+      {
+        attributes: { path, start: String(startLine) },
+        source: "::smart-code",
+        message: { id: "source-m", threadId: "source-t", turnId: "t", projectId: "p" },
+        openWorkspaceFile,
+      },
+      {
+        rpc: {
+          renderEmbed: async () => ({
+            status: "ready",
+            kind: "code",
+            path,
+            label: path,
+            content,
+            startLine,
+            truncated: true,
+          }),
+        },
+      },
+    );
+    const diff = await slot.findByTestId("bb-diff");
+    expect(diff.dataset.path).toBe(path);
+    expect(diff.dataset.showLineNumbers).toBe("true");
+    const patchText = diff.textContent!;
+    expect(patchText.startsWith("@@ ")).toBe(true);
+    expect(
+      patchText
+        .split("\n")
+        .slice(1, -1)
+        .map((line) => line.slice(1))
+        .join("\n"),
+    ).toBe(content);
+    const file = parsePatchFiles(
+      `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${patchText}`,
+    )[0]!.files[0]!;
+    expect(file.name).toBe(path);
+    expect(file.hunks).toHaveLength(1);
+    expect(file.hunks[0]).toMatchObject({
+      additionStart: startLine,
+      deletionStart: startLine,
+      additionCount: content.split("\n").length,
+      deletionCount: content.split("\n").length,
+      additionLines: 0,
+      deletionLines: 0,
+    });
+    expect(slot.getByText("Truncated")).toBeDefined();
+    slot.getByRole("button", { name: `Open ${path} in the workspace` }).click();
+    expect(openWorkspaceFile).toHaveBeenCalledWith(path);
+    slot.unmount();
+    embedCache.clear();
+  });
+}
+
+test("keeps empty non-Git source readable without an empty diff", async () => {
+  embedCache.clear();
+  const slot = await renderDiffEmbed(async () => ({
+    status: "ready",
+    kind: "code",
+    path: "src/example.ts",
+    label: "src/example.ts",
+    content: "",
+    startLine: 1,
+    truncated: false,
+  }));
+  await slot.findByText("Empty source.");
+  expect(slot.getByText("No Git history. Showing current code.")).toBeDefined();
+  expect(slot.queryByTestId("bb-diff")).toBeNull();
+  slot.unmount();
   embedCache.clear();
 });

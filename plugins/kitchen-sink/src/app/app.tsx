@@ -25,6 +25,16 @@ import {
 
 type EmbedKind = "code" | "diff" | "patch";
 
+type SourceExcerpt = Pick<
+  Extract<RenderEmbedOutput, { status: "ready"; kind: "code" }>,
+  "content" | "startLine"
+>;
+
+function sourceExcerptPatch({ content, startLine }: SourceExcerpt): string {
+  const lines = content.split("\n");
+  return `@@ -${startLine},${lines.length} +${startLine},${lines.length} @@\n${lines.map((line) => ` ${line}`).join("\n")}\n`;
+}
+
 const KIND_LABEL: Record<EmbedKind, string> = { code: "Code", diff: "Changes", patch: "Proposed" };
 
 function positiveInteger(value: string | undefined): number | undefined | null {
@@ -196,6 +206,7 @@ function EmbedResult({
     return <Notice tone={result.status === "error" ? "error" : "muted"}>{result.message}</Notice>;
   }
 
+  const patch = result.kind === "code" ? sourceExcerptPatch(result) : result.patch;
   const header = (
     <>
       <span className="smart-embed-kind">{KIND_LABEL[result.kind]}</span>
@@ -230,26 +241,12 @@ function EmbedResult({
         {kind === "diff" && result.kind === "code" ? (
           <Notice tone="muted">No Git history. Showing current code.</Notice>
         ) : null}
-        {result.kind === "code" ? (
-          <pre className="smart-embed-code" aria-label={result.label}>
-            <code>
-              {result.content.split("\n").map((line, index) => {
-                const lineNumber = result.startLine + index;
-                return (
-                  <span className="smart-embed-code-line" key={lineNumber}>
-                    <span className="smart-embed-line-number" aria-hidden="true">
-                      {lineNumber}
-                    </span>
-                    <span>{line || "\n"}</span>
-                  </span>
-                );
-              })}
-            </code>
-          </pre>
+        {result.kind === "code" && result.content.length === 0 ? (
+          <Notice tone="muted">Empty source.</Notice>
         ) : (
           <Diff
-            key={result.patch}
-            patch={result.patch}
+            key={patch}
+            patch={patch}
             path={result.path}
             view="unified"
             overflow="scroll"
