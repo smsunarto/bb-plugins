@@ -377,6 +377,189 @@
   background-color: #1e1e1e;
 }
 
+/* Keep the new-thread composer at the conversation footer's position. The
+ * desktop column fills its scroll viewport, with homepage sections above the
+ * composer. Compact home already anchors it at the bottom. Both use the same
+ * 0.5rem bottom inset, explicitly overriding bb's pb-4 utility. */
+.dark #root-compose-main-panel .\@container\/page > div:has(> [data-promptbox-shell]) {
+  min-height: 100%;
+  padding-bottom: 0.5rem;
+}
+
+.dark
+  #root-compose-main-panel
+  .\@container\/page
+  > div
+  > [data-promptbox-shell] {
+  order: 1;
+  margin-top: auto;
+}
+
+.dark [data-testid="root-compose-compact-composer"] > .bg-background,
+.dark .chat-prompt-box {
+  padding-bottom: 0.5rem;
+}
+
+/* New-thread geometry is the reference: an 80px editor and a 32px metadata
+ * row. Follow-up defaults shrink both, moving the text and controls after
+ * submission. Keep context/queue banners above this fixed composer geometry. */
+.dark
+  [data-follow-up-composer]
+  [data-promptbox]:not([data-promptbox-compact])
+  [data-promptbox-editor-scroll] {
+  min-height: 80px !important;
+  max-height: calc(70dvh - 3rem) !important;
+}
+
+.dark [data-follow-up-composer-footer] {
+  min-height: 2rem;
+  max-height: 2rem;
+  padding-left: 0.875rem;
+}
+
+.dark [data-follow-up-composer-footer] [aria-label="Permission mode"] {
+  height: 2rem;
+}
+
+/* Keep metadata slots stable when editable pickers become read-only labels,
+ * and reserve the context meter's space before usage arrives. */
+.dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
+  --monokai-metadata-width: 8rem;
+  --monokai-project-width: calc(var(--monokai-metadata-width) * 0.9375);
+  --monokai-detail-width: calc(var(--monokai-metadata-width) * 1.03125);
+}
+
+.dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) > :last-child {
+  position: relative;
+  padding-right: 2rem;
+}
+
+.dark [data-follow-up-composer-footer] [aria-label^="Context window "] {
+  position: absolute;
+  right: 0;
+  margin: 0;
+}
+
+.dark [data-follow-up-composer-footer] > :first-child > div {
+  display: grid;
+  grid-template-columns: var(--monokai-project-width) repeat(2, var(--monokai-detail-width)) auto;
+  width: 100%;
+  gap: 0.25rem;
+  padding-right: 0;
+}
+
+.dark [data-follow-up-composer-footer] [data-option-display],
+.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+  font-weight: 500;
+  height: 2rem;
+}
+
+.dark [data-follow-up-composer-footer] [data-option-display] > span,
+.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]) {
+  gap: 0.25rem;
+}
+
+.dark [data-promptbox-shell] div > [data-promptbox-project-control],
+.dark [data-promptbox-shell] [data-promptbox-project-slot],
+.dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
+  width: var(--monokai-project-width);
+  max-width: var(--monokai-project-width);
+  flex: 0 0 var(--monokai-project-width);
+}
+
+.dark [data-promptbox-shell] [aria-label="Environment"],
+.dark [data-promptbox-shell] [aria-label="Machine"],
+.dark [data-promptbox-shell] [aria-label="Branch"],
+.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
+.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+  width: var(--monokai-detail-width);
+  max-width: var(--monokai-detail-width);
+  flex: 0 0 var(--monokai-detail-width);
+}
+
+.dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) {
+  position: relative;
+  padding-left: 0.5rem;
+  padding-right: 1.75rem;
+}
+
+.dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) > [data-icon="ChevronDown"] {
+  position: absolute;
+  right: 0.5rem;
+  width: 1rem;
+}
+
+.dark [data-promptbox-shell] [data-promptbox-project-slot] > [aria-label="Don't work in a project"] {
+  left: 0.375rem;
+}
+
+.dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]),
+.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
+.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+  padding-left: 0.5rem;
+  padding-right: 1.75rem;
+}
+
+.dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
+  grid-column: 1;
+}
+
+.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]) {
+  grid-column: 2;
+}
+
+.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+  grid-column: 3;
+  line-height: 1.25;
+}
+
+.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@container promptbox-shell (max-width: 40rem) {
+  .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
+    --monokai-metadata-width: 6.5rem;
+  }
+}
+
+@container promptbox-shell (max-width: 30rem) {
+  .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
+    --monokai-metadata-width: clamp(4.5rem, 28cqw, 6.5rem);
+    --monokai-project-width: var(--monokai-metadata-width);
+    --monokai-detail-width: var(--monokai-metadata-width);
+  }
+
+  .dark [data-promptbox-shell] [aria-label="Branch"],
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+    display: none;
+  }
+}
+
+/* Narrow-pane rules otherwise hide the metadata row even while expanded. */
+.dark [data-follow-up-composer-expanded] {
+  --follow-up-composer-container-compact: false;
+}
+
+/* Retain the native one-line mode when the user collapses a narrow pane. */
+@container follow-up-composer style(--follow-up-composer-container-compact: true) {
+  .dark
+    [data-follow-up-composer]:not([data-follow-up-composer-expanded])
+    [data-follow-up-composer-footer] {
+    min-height: 0;
+    max-height: 0;
+  }
+
+  .dark
+    [data-follow-up-composer]:not([data-follow-up-composer-expanded])
+    [data-promptbox]:not([data-promptbox-voice-active])
+    [data-promptbox-editor-scroll] {
+    min-height: 3rem !important;
+    max-height: 3rem !important;
+  }
+}
+
 /* bb gives empty composer placeholders font-light (300). SF Pro loses too much
  * stroke weight at phone scale, so mobile placeholders use the regular text
  * weight. Typed composer text already uses 400 and needs no override. */
