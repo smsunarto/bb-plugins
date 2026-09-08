@@ -587,6 +587,22 @@ const requiredRules: Array<{
     },
   },
   {
+    selector:
+      '.dark #thread-detail-secondary-panel:has([data-testid="git-diff-toolbar-layout"]) diffs-container',
+    declarations: {
+      "--diffs-dark-bg": palette.ground.recessed,
+      "--diffs-bg-context-override": palette.ground.recessed,
+    },
+  },
+  {
+    selector:
+      '.dark [data-secondary-panel-shelf]:has([data-testid="git-diff-toolbar-layout"]) diffs-container',
+    declarations: {
+      "--diffs-dark-bg": palette.ground.recessed,
+      "--diffs-bg-context-override": palette.ground.recessed,
+    },
+  },
+  {
     selector: ".dark .canvas-prose",
     declarations: {
       // Headings are display-size text, not code. The syntax entity green is

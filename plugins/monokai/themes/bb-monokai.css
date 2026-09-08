@@ -800,6 +800,14 @@ diffs-container {
   --diffs-dark: #e3e3dd;
 }
 
+/* The Git diff tab uses the recessed ground. Its toolbar distinguishes it
+ * from source previews and other tabs that share the right-side frame. */
+.dark #thread-detail-secondary-panel:has([data-testid="git-diff-toolbar-layout"]) diffs-container,
+.dark [data-secondary-panel-shelf]:has([data-testid="git-diff-toolbar-layout"]) diffs-container {
+  --diffs-dark-bg: #1e1e1e;
+  --diffs-bg-context-override: #1e1e1e;
+}
+
 /* The canvas plugin renders `.canvas-mdx` prose on the Cursor theme's rendered
  * Markdown contract. Its stylesheet exposes these hooks so a theme can supply
  * the accent hues; without them it falls back to bb's neutral tokens. */
