@@ -182,10 +182,10 @@ function EmbedResult({
 }) {
   if (invalid !== null) return <Notice tone="error">{invalid}</Notice>;
   const subject = kind === "patch" ? file : path;
-  // The frame must exist before either the RPC or BB's lazy renderer resolves.
-  // Size it by the requested kind so code/error fallbacks cannot collapse it.
-  const fixedViewport = kind !== "code";
-  if (fixedViewport && (result === null || result.status !== "ready")) {
+  // Diff and patch placeholders reserve space before the RPC or BB's lazy renderer resolves.
+  // Once ready, the frame shrinks to the rendered diff instead of keeping empty viewport space.
+  const reserveViewport = kind !== "code";
+  if (reserveViewport && (result === null || result.status !== "ready")) {
     return (
       <figure className="smart-embed smart-embed-fixed" aria-busy={result === null}>
         <figcaption className="smart-embed-header">
@@ -220,10 +220,7 @@ function EmbedResult({
   );
 
   return (
-    <figure
-      className={`smart-embed${fixedViewport ? " smart-embed-fixed" : ""}`}
-      data-smart-embed-kind={result.kind}
-    >
+    <figure className="smart-embed" data-smart-embed-kind={result.kind}>
       <figcaption className="smart-embed-header">
         {openWorkspaceFile === null ? (
           <span className="smart-embed-header-content">{header}</span>

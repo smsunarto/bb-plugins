@@ -425,7 +425,7 @@ test("renders through bb's themed diff component and opens its workspace file", 
   slot.unmount();
 });
 
-test("keeps the diff viewport mounted while a deferred request resolves or fails", async () => {
+test("keeps the diff frame mounted while a deferred request settles", async () => {
   for (const output of [readyDiff(patch), { status: "error" as const, message: "Unavailable" }]) {
     embedCache.clear();
     let resolve!: (value: typeof output) => void;
@@ -443,7 +443,7 @@ test("keeps the diff viewport mounted while a deferred request resolves or fails
     else await slot.findByText("Unavailable");
     expect(slot.container.querySelector("figure")).toBe(frame);
     expect(slot.container.querySelector(".smart-embed-body")).toBe(body);
-    expect(frame.classList.contains("smart-embed-fixed")).toBe(true);
+    expect(frame.classList.contains("smart-embed-fixed")).toBe(output.status === "error");
     slot.unmount();
   }
   embedCache.clear();
