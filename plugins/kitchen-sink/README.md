@@ -50,3 +50,12 @@ Create `skills/<name>/SKILL.md` with `name` and `description` frontmatter. The t
 ## Add a mention
 
 Append a `PluginMentionProviderRegistration` to `mentionProviders` in `src/server/mentions.ts`. Ids must be unique within the plugin and contain no `:`.
+
+## Turn completion sound
+
+Kitchen Sink plays Cursor's completion sound when a thread becomes idle, using
+macOS `afplay` on the Mac running BB. It also plays while the thread is focused.
+This uses the same sound asset as the retired Notify plugin and requires Cursor
+at `/Applications/Cursor.app`. Other operating systems skip playback. Missing
+assets or audio failures are logged without interrupting the agent. Plugin reload
+or shutdown stops any sound still playing.

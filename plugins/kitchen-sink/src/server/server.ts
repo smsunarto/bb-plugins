@@ -1,5 +1,6 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 
+import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { diffSnapshotMigrations } from "./lib/diff-snapshot.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
@@ -44,6 +45,7 @@ export default definePlugin({
       bb.ui.registerMentionProvider(provider);
     }
     registerWorkspaceSignals(bb);
+    registerCompletionSound(bb);
   },
   agents: {
     tools: {},
