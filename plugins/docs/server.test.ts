@@ -33,6 +33,13 @@ async function loadNotebook(
   );
   const host = createFakePluginHost({
     pluginId: "simple-notes",
+    experimental_callHostRpc: ({ method }) => {
+      if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
+      return {
+        paths: Object.keys(notes).map((name) => ({ kind: "file" as const, path: name })),
+        truncated: false,
+      };
+    },
     sdk: {
       files: {
         listPaths: async () => ({
@@ -71,6 +78,7 @@ async function loadNotebook(
         }),
       },
       hosts: { list: async () => [] },
+      system: { config: async () => ({ primaryHostId: "host_primary" }) },
     },
   });
   await simpleNotes(host.bb, watchVault);
@@ -112,37 +120,54 @@ async function loadVirtualSyncVault(initial: Record<string, VirtualFile>) {
       modifiedAtMs: Date.now(),
     });
   };
+  const listVirtualPaths = (args: {
+    path: string;
+    includeFiles: boolean;
+    includeDirectories: boolean;
+  }) => {
+    const prefix = args.path.endsWith("/") ? args.path : `${args.path}/`;
+    const paths = [
+      ...(args.includeDirectories
+        ? [...directories]
+            .filter((entry) => entry.startsWith(prefix))
+            .map((entry) => ({
+              kind: "directory" as const,
+              path: entry.slice(prefix.length),
+              name: path.posix.basename(entry),
+              score: 0,
+              positions: [],
+            }))
+        : []),
+      ...(args.includeFiles
+        ? [...files.keys()]
+            .filter((entry) => entry.startsWith(prefix))
+            .map((entry) => ({
+              kind: "file" as const,
+              path: entry.slice(prefix.length),
+              name: path.posix.basename(entry),
+              score: 0,
+              positions: [],
+            }))
+        : []),
+    ];
+    return { paths, truncated: false };
+  };
   const host = createFakePluginHost({
     pluginId: "simple-notes-sync",
+    experimental_callHostRpc: ({ method, input }) => {
+      if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
+      const result = listVirtualPaths(
+        input as { path: string; includeFiles: boolean; includeDirectories: boolean },
+      );
+      return {
+        paths: result.paths.map(({ kind, path: listedPath }) => ({ kind, path: listedPath })),
+        truncated: result.truncated,
+      };
+    },
     sdk: {
       files: {
         async listPaths(args) {
-          const prefix = args.path.endsWith("/") ? args.path : `${args.path}/`;
-          const paths = [
-            ...(args.includeDirectories
-              ? [...directories]
-                  .filter((entry) => entry.startsWith(prefix))
-                  .map((entry) => ({
-                    kind: "directory" as const,
-                    path: entry.slice(prefix.length),
-                    name: path.posix.basename(entry),
-                    score: 0,
-                    positions: [],
-                  }))
-              : []),
-            ...(args.includeFiles
-              ? [...files.keys()]
-                  .filter((entry) => entry.startsWith(prefix))
-                  .map((entry) => ({
-                    kind: "file" as const,
-                    path: entry.slice(prefix.length),
-                    name: path.posix.basename(entry),
-                    score: 0,
-                    positions: [],
-                  }))
-              : []),
-          ];
-          return { paths, truncated: false };
+          return listVirtualPaths(args);
         },
         async read(args) {
           const file = files.get(args.path);
@@ -217,6 +242,7 @@ async function loadVirtualSyncVault(initial: Record<string, VirtualFile>) {
         },
       },
       hosts: { list: async () => [] },
+      system: { config: async () => ({ primaryHostId: "host_primary" }) },
     },
   });
   await simpleNotes(host.bb);
@@ -560,6 +586,89 @@ describe("Docs vault operations", () => {
       name: "docs",
       summary: "Discover and safely sync Docs vaults",
     });
+  });
+
+  it("lists and reads Markdown documents beneath hidden folders", async () => {
+    const { harness, files } = await loadVirtualSyncVault({
+      "/vault/.dotfiles/.agents/instructions/shared.md": {
+        content: "# Shared agent instructions\n\nKeep the response concise.",
+        contentEncoding: "utf8",
+        modifiedAtMs: 1,
+      },
+    });
+
+    await expect(harness.callRpc("listNotes", { vaultId: "personal" })).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        { kind: "directory", path: ".dotfiles" },
+        { kind: "directory", path: ".dotfiles/.agents" },
+        { kind: "file", path: ".dotfiles/.agents/instructions/shared.md" },
+      ]),
+      notes: [
+        expect.objectContaining({
+          path: ".dotfiles/.agents/instructions/shared.md",
+          title: "Shared agent instructions",
+        }),
+      ],
+    });
+
+    await expect(
+      harness.callRpc("readNote", {
+        vaultId: "personal",
+        path: ".dotfiles/.agents/instructions/shared.md",
+      }),
+    ).resolves.toMatchObject({
+      content: "# Shared agent instructions\n\nKeep the response concise.",
+    });
+
+    await expect(
+      harness.runCli(["pull", ".dotfiles", "--folder", "--into", "sync", "--json"], {
+        cwd: "/work",
+      }),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    expect(files.has("/work/sync/.dotfiles/.agents/instructions/shared.md")).toBe(true);
+  });
+
+  it("rejects generated and dependency directories while accepting authored hidden trees", async () => {
+    const { harness } = await loadVirtualSyncVault({});
+
+    for (const acceptedPath of [
+      ".agents/instructions.md",
+      ".claude/CLAUDE.md",
+      ".codex/AGENTS.md",
+      ".cursor/rules/project.md",
+      ".dotfiles/config.md",
+    ]) {
+      await expect(
+        harness.callRpc("saveNote", {
+          vaultId: "personal",
+          path: acceptedPath,
+          content: "# Human-authored",
+        }),
+      ).resolves.toMatchObject({ outcome: "written" });
+    }
+
+    for (const rejectedPath of [
+      ".claude/worktrees/checkout/AGENTS.md",
+      ".git/README.md",
+      ".node_modules/package/README.md",
+      ".ruff_cache/README.md",
+      ".scratch/notes.md",
+      "dist/README.md",
+      "node_modules/package/README.md",
+    ]) {
+      await expect(
+        harness.callRpc("saveNote", {
+          vaultId: "personal",
+          path: rejectedPath,
+          content: "# Generated",
+        }),
+      ).rejects.toMatchObject({
+        code: "invalid_input",
+        issues: expect.arrayContaining([
+          expect.objectContaining({ message: `Invalid vault path: ${rejectedPath}` }),
+        ]),
+      });
+    }
   });
 
   it("round-trips a folder edit through pull and push without changing binary assets", async () => {

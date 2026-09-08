@@ -2,6 +2,8 @@ import { watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseMarkdownDocument } from "./markdown-document.js";
+import { DOCS_PATH_LIST_LIMIT, docsHostContract } from "./host-contract.js";
+import { isExcludedDocsPath } from "./path-policy.js";
 import {
   defineRpcContract,
   type BbPluginApi,
@@ -12,7 +14,8 @@ import { z } from "zod";
 
 const DEFAULT_DIR = "~/Notes";
 const PREVIEW_LENGTH = 100;
-const MAX_TREE_ENTRIES = 5_000;
+const MAX_TREE_ENTRIES = DOCS_PATH_LIST_LIMIT;
+const SUMMARY_READ_CONCURRENCY = 16;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const SYNC_STATE_FILE = ".bb-docs-state.json";
 const SYNC_STATE_VERSION = 1;
@@ -439,10 +442,8 @@ function requireVaultPath(value: unknown, options?: { extension?: string }): str
   }
   const segments = raw.split("/");
   if (
-    segments.some(
-      (segment) =>
-        segment.length === 0 || segment === "." || segment === ".." || segment.startsWith("."),
-    )
+    segments.some((segment) => segment.length === 0 || segment === "." || segment === "..") ||
+    isExcludedDocsPath(raw)
   ) {
     throw new Error(`Invalid vault path: ${raw}`);
   }
@@ -684,6 +685,7 @@ function waitForDelay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = watchNativeVault) {
+  const hostFiles = bb.hosts.experimental_client({ contract: docsHostContract });
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS vaults (
@@ -734,6 +736,26 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       .map((row) => requireString(requireRecord(row).child_path, "child_path"));
   }
 
+  async function listHostPaths(args: {
+    hostId?: string | null;
+    path: string;
+    includeFiles: boolean;
+    includeDirectories: boolean;
+  }) {
+    const hostId = args.hostId ?? (await bb.sdk.system.config()).primaryHostId;
+    if (!hostId) throw new Error("This bb installation has no primary host");
+    return hostFiles.call(
+      "listPaths",
+      {
+        path: args.path,
+        includeFiles: args.includeFiles,
+        includeDirectories: args.includeDirectories,
+        limit: MAX_TREE_ENTRIES,
+      },
+      { hostId },
+    );
+  }
+
   if (seededDefaultVault) {
     const vault = getVault("personal");
     try {
@@ -746,12 +768,11 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
   }
 
   async function listEntries(vault: Vault): Promise<{ entries: VaultEntry[]; truncated: boolean }> {
-    const result = await bb.sdk.files.listPaths({
-      ...hostArgs(vault),
+    const result = await listHostPaths({
+      hostId: vault.hostId,
       path: vault.rootPath,
       includeFiles: true,
       includeDirectories: true,
-      limit: MAX_TREE_ENTRIES,
     });
     return {
       entries: result.paths
@@ -773,22 +794,30 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     const markdownPaths = entries
       .filter((entry) => entry.kind === "file" && /\.md$/i.test(entry.path))
       .map((entry) => entry.path);
-    for (const notePath of markdownPaths) {
-      try {
-        const file = await bb.sdk.files.read({
-          ...hostArgs(vault),
-          path: absolutePath(vault, notePath),
-          rootPath: vault.rootPath,
-        });
-        const fallback = path.posix.basename(notePath).replace(/\.md$/i, "");
-        const summary = summarizeMarkdown(file.content, fallback);
-        notes.push({
-          path: notePath,
-          title: summary.title,
-          preview: summary.preview,
-          modifiedAtMs: file.modifiedAtMs ?? 0,
-        });
-      } catch {}
+    for (let offset = 0; offset < markdownPaths.length; offset += SUMMARY_READ_CONCURRENCY) {
+      const batch = markdownPaths.slice(offset, offset + SUMMARY_READ_CONCURRENCY);
+      const summaries = await Promise.all(
+        batch.map(async (notePath): Promise<NoteSummary | null> => {
+          try {
+            const file = await bb.sdk.files.read({
+              ...hostArgs(vault),
+              path: absolutePath(vault, notePath),
+              rootPath: vault.rootPath,
+            });
+            const fallback = path.posix.basename(notePath).replace(/\.md$/i, "");
+            const summary = summarizeMarkdown(file.content, fallback);
+            return {
+              path: notePath,
+              title: summary.title,
+              preview: summary.preview,
+              modifiedAtMs: file.modifiedAtMs ?? 0,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      notes.push(...summaries.filter((summary) => summary !== null));
     }
     return notes.sort((a, b) => b.modifiedAtMs - a.modifiedAtMs);
   }
@@ -1047,12 +1076,11 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         content: file.content,
       });
     } else {
-      const result = await bb.sdk.files.listPaths({
-        ...hostArgs(vault),
+      const result = await listHostPaths({
+        hostId: vault.hostId,
         path: vault.rootPath,
         includeFiles: true,
         includeDirectories: true,
-        limit: MAX_TREE_ENTRIES,
       });
       if (result.truncated) {
         throw new Error(`Sync scope exceeds ${MAX_TREE_ENTRIES} entries; narrow the folder scope`);
@@ -1192,12 +1220,11 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       ],
       "Sync request",
     );
-    const currentListing = await bb.sdk.files.listPaths({
-      ...hostArgs(vault),
+    const currentListing = await listHostPaths({
+      hostId: vault.hostId,
       path: vault.rootPath,
       includeFiles: true,
       includeDirectories: true,
-      limit: MAX_TREE_ENTRIES,
     });
     if (currentListing.truncated) {
       throw new Error(`Vault exceeds ${MAX_TREE_ENTRIES} entries; narrow the sync scope`);
@@ -2054,12 +2081,11 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       throw new Error(`Workspace belongs to vault ${existing.state.vault.id}, not ${args.vaultId}`);
     }
     const snapshot = await syncSnapshot(existing.state.vault.id, existing.state.scope);
-    const listing = await bb.sdk.files.listPaths({
-      ...workspaceFileArgs(hostId),
+    const listing = await listHostPaths({
+      hostId,
       path: rootPath,
       includeFiles: true,
       includeDirectories: true,
-      limit: MAX_TREE_ENTRIES,
     });
     if (listing.truncated) {
       throw new Error(`Local workspace exceeds ${MAX_TREE_ENTRIES} entries; narrow the pull scope`);

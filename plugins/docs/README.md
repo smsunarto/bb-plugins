@@ -25,7 +25,10 @@ moves. Host theme tokens keep it visually consistent with bb.
   primary host. Manage local and remote vaults from the Docs panel.
 - **Nested folders:** the resizable right sidebar recursively displays folders,
   Markdown documents, and HTML pages. It can be collapsed, and search stays
-  hidden until requested.
+  hidden until requested. Human-authored hidden folders such as `.dotfiles`,
+  `.agents`, `.claude`, `.codex`, and `.cursor` are included. Version-control
+  metadata, dependency trees, caches, build outputs, and temporary workspaces
+  stay excluded.
 - **Safe host-routed operations:** all list/read/write/mkdir/move/remove calls
   go through `bb.sdk.files` with an explicit vault root. Saves retain SHA-256
   compare-and-swap conflict handling. Local vaults use native filesystem
@@ -114,8 +117,9 @@ bb docs push ./docs-work --delete
   so every scope has the same layout.
 - **Collisions:** exact relative paths are the stable identity. Pull rejects
   case-folding collisions before writing, rather than choosing an unstable
-  filename on case-insensitive filesystems. Hidden vault path segments are not
-  part of the accessible Docs contract and are skipped.
+  filename on case-insensitive filesystems. Human-authored hidden paths are
+  supported. Version-control metadata, dependencies, caches, build outputs,
+  and temporary workspaces are excluded from the accessible Docs contract.
 - **Fidelity and assets:** every accessible file in a folder or vault scope is
   included, not only Markdown/HTML. UTF-8 stays UTF-8; other bytes use base64
   across the host RPC and are written back byte-for-byte. Empty accessible
