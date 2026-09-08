@@ -67,7 +67,13 @@ Disabling or removing the plugin returns bb to the default palette.
 
 Choose **Inter (Default)** or **SF Pro** under **Settings → bb Monokai → UI
 font**. The choice applies to the full interface at desktop and mobile widths.
-Code, diffs, file paths, and terminal text keep the Berkeley Mono stack.
+Code, diffs, and file paths keep the Berkeley Mono stack. The terminal uses
+BerkeleyMono Nerd Font Mono at size 13 with 1.4 line height and a #141414
+background, matching the Ghostty cursor-monokai setup. A plugin content script applies these settings to existing and new
+xterm terminals, including the WebGL renderer, without a BB core update. It
+restores the previous typography when Monokai is deselected or unloaded. The
+adapter uses guarded React-ref and xterm-addon discovery. If a future BB
+version changes those private attachments, it leaves the terminal untouched.
 
 The in-app notification center now uses the same Monokai surfaces and states as
 the rest of bb, including its selected row, controls, dividers, and desktop
@@ -159,8 +165,7 @@ mode the palette contributes fonts only.
 
 - **File-type icons.** Their 13 source swatches are declared on `:host`, so all
   48 language icons collapse to a single color.
-- **Terminal font size and cursor blink.** Both are xterm constructor
-  arguments, not tokens. Terminal selection alpha is clamped by the host.
+- **Terminal cursor blink and selection alpha** remain controlled by the host.
 - **Mermaid diagrams** keep a hardcoded Inter font. Colors follow the palette
   on the next render.
 - **The favicon tint** comes from a fixed list, with no CSS involved.

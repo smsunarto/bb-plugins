@@ -28,8 +28,7 @@
  *   1. The 13 `--trees-icon-*` file-icon swatches. They are declared on
  *      `:host`, so only the flat `--trees-file-icon-color` handle is reachable
  *      and all 48 language icons collapse to one colour.
- *   2. xterm construction options: font size 12, blinking cursor. Cursor colour
- *      is locked to `--foreground` and cursor accent to `--sidebar`; terminal
+ *   2. xterm cursor blinking. Cursor colour follows `--foreground`; terminal
  *      selection is silently clamped to 30% alpha, so a solid #404040 selection
  *      fill is not obtainable. Scrollbar and overview ruler derive from
  *      `--foreground` only.
@@ -58,18 +57,16 @@
   --diffs-font-family: "Berkeley Mono", ui-monospace, Menlo, monospace;
 }
 
-/* The terminal font is an xterm.js option hardcoded in the app, not a design
- * token. xterm uses its DOM renderer here, so an !important override works —
- * it must also cover the char-measure element so cell metrics stay in sync
- * with what is rendered. */
-.xterm .xterm-rows,
-.xterm .xterm-char-measure-element,
-.xterm .xterm-helper-textarea {
-  font-family: "BerkeleyMono Nerd Font Mono", "Berkeley Mono", monospace !important;
-}
-
 .dark {
   --bb-monokai-active: 1;
+
+  /* Match Ghostty cursor-monokai and its 13-point font with 40% extra cell
+   * height. The patched font supplies Nerd Font glyphs to xterm. Our content
+   * script applies these options to both its DOM and WebGL renderers. */
+  --terminal-background: #141414;
+  --terminal-font-family: "BerkeleyMono Nerd Font Mono", "Berkeley Mono", monospace;
+  --terminal-font-size: 13;
+  --terminal-line-height: 1.4;
   --bb-monokai-code-entity: #9ddd54;
 
   /* ---- Anchors --------------------------------------------------------
@@ -309,6 +306,13 @@
   --trees-file-icon-color: #e3e3dd8c;
   --trees-file-icon-vermilion: #e3e3dd8c;
   --trees-file-icon-cyan: #e3e3dd8c;
+}
+
+/* The current BB terminal canvas sits inside this padded sidebar surface.
+ * Match its padding to xterm's background even when the side panel scopes
+ * --sidebar to the editor ground. */
+.dark .bg-sidebar:has(> div > .xterm) {
+  background-color: var(--terminal-background);
 }
 
 /* Keep the project/navigation sidebar on the #141414 chrome ground. The
