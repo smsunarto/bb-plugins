@@ -39,6 +39,18 @@ test("registers the smart embeds and inline visualization directives", async () 
   ]);
 });
 
+test("uses the requested diff header background and unmodified theme counter colors", async () => {
+  const stylesheet = await readFile(new URL("../src/app/app.css", import.meta.url), "utf8");
+  const header = stylesheet.match(/\.smart-diff-header \{([^}]*)\}/u)?.[1];
+  expect(header).toContain("background: #1e1e1e");
+  const deletions = stylesheet.match(/\.smart-diff-deletions \{([^}]*)\}/u)?.[1];
+  const additions = stylesheet.match(/\.smart-diff-additions \{([^}]*)\}/u)?.[1];
+  expect(deletions).toContain("color: var(--diff-removed, var(--destructive))");
+  expect(additions).toContain("color: var(--diff-added, var(--success, var(--primary)))");
+  expect(deletions).not.toContain("color-mix");
+  expect(additions).not.toContain("color-mix");
+});
+
 const inlineVisMessage = {
   id: "message-inline-vis",
   threadId: "thread-inline-vis",
@@ -112,16 +124,20 @@ test("inline-vis uses the worktree route with an opaque-origin script sandbox", 
   expect(iframe.getAttribute("srcdoc")).toBeNull();
   expect(iframe.style.height).toBe("224px");
   const toggle = slot.getByRole("button", { name: "Collapse preview charts/demo file.html" });
-  const header = toggle.closest(".inline-vis-header")!;
+  const header = toggle.closest(".smart-diff-header")!;
   expect(header.classList.contains("smart-embed-header")).toBe(true);
   expect(header.closest(".smart-embed")).toBeTruthy();
-  expect(toggle.querySelector(".smart-embed-kind")?.textContent).toBe("Preview");
-  expect(toggle.querySelector(".smart-embed-powered")?.textContent).toBe("HTML");
+  expect(header.closest(".smart-embed-diff")).toBeTruthy();
+  expect(toggle.classList.contains("smart-diff-toggle")).toBe(true);
+  expect(header.querySelector(".smart-diff-file-icon")).toBeNull();
+  expect(header.querySelector(".smart-diff-stats")).toBeNull();
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(header.querySelector(".inline-vis-path")?.getAttribute("title")).toBe(
+  expect(header.querySelector(".smart-diff-path")?.getAttribute("title")).toBe(
     "charts/demo file.html",
   );
-  fireEvent.click(slot.getByRole("button", { name: "Open charts/demo file.html in sidebar" }));
+  fireEvent.click(
+    slot.getByRole("button", { name: "Open charts/demo file.html in the workspace" }),
+  );
   expect(openWorkspaceFile).toHaveBeenCalledWith("charts/demo file.html");
   expect(slot.rpcCalls).toEqual([
     {
@@ -153,7 +169,9 @@ test("inline-vis uses an optional bounded height and reserves it while loading",
   expect((loading as HTMLElement).style.height).toBe("480px");
   const loadingCard = loading.parentElement!;
   const loadingHeader = loadingCard.firstElementChild!;
-  expect(loadingHeader.querySelector(".inline-vis-action-placeholder")).toBeTruthy();
+  expect(loadingHeader.querySelector(".smart-diff-header")).toBeNull();
+  expect(loadingHeader.classList.contains("smart-diff-header")).toBe(true);
+  expect(loadingHeader.querySelector(".smart-diff-open")).toBeNull();
 
   resolvePreview({ file: "demo.html" });
   const iframe = await waitFor(() => {
@@ -556,9 +574,55 @@ test("renders through bb's themed diff component and opens its workspace file", 
   expect(diff.dataset.view).toBe("unified");
   expect(diff.dataset.overflow).toBe("scroll");
   expect(diff.dataset.showLineNumbers).toBe("true");
+  expect(slot.getByLabelText("1 removed, 1 added")).toBeDefined();
+  expect(slot.queryByText("Diffs")).toBeNull();
   open.click();
   expect(openWorkspaceFile).toHaveBeenCalledWith("src/example.ts");
   slot.unmount();
+});
+
+test("collapses a diff without hiding its counts or fetching it again", async () => {
+  embedCache.clear();
+  const slot = await renderDiffEmbed(async () => readyDiff(patch));
+  await slot.findByTestId("bb-diff");
+  const toggle = slot.getByRole("button", { name: "Collapse diff src/example.ts" });
+  expect(toggle.closest(".smart-diff-header")?.querySelector(":scope > svg")).toBeNull();
+  expect(toggle.querySelector("svg")).toBeTruthy();
+  const body = slot.container.querySelector(".smart-embed-body")!;
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(slot.queryByTestId("bb-diff")).toBeNull();
+  expect(body.hasAttribute("hidden")).toBe(true);
+  expect(slot.getByLabelText("1 removed, 1 added")).toBeDefined();
+  fireEvent.click(slot.getByRole("button", { name: "Expand diff src/example.ts" }));
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(slot.getByTestId("bb-diff")).toBeDefined();
+  expect(body.hasAttribute("hidden")).toBe(false);
+  expect(slot.rpcCalls).toHaveLength(1);
+  slot.unmount();
+  embedCache.clear();
+});
+
+test("keeps a diff collapsed while loading completes and updates its counts", async () => {
+  embedCache.clear();
+  let resolve!: (value: ReturnType<typeof readyDiff>) => void;
+  const slot = await renderDiffEmbed(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Collapse diff src/example.ts" }));
+  resolve(readyDiff(patch));
+  await slot.findByLabelText("1 removed, 1 added");
+  expect(slot.queryByTestId("bb-diff")).toBeNull();
+  expect(
+    slot.getByRole("button", { name: "Expand diff src/example.ts" }).getAttribute("aria-expanded"),
+  ).toBe("false");
+  fireEvent.click(slot.getByRole("button", { name: "Expand diff src/example.ts" }));
+  expect(slot.getByTestId("bb-diff")).toBeDefined();
+  slot.unmount();
+  embedCache.clear();
 });
 
 test("keeps the diff frame mounted while a deferred request settles", async () => {

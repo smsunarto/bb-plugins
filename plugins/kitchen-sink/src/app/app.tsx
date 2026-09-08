@@ -6,7 +6,7 @@ import {
   useRpc,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   WORKSPACE_CHANGED_CHANNEL,
@@ -15,6 +15,7 @@ import {
   type RenderEmbedOutput,
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
+import { DiffHeader } from "./diff-header.tsx";
 import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
@@ -35,8 +36,6 @@ function sourceExcerptPatch({ content, startLine }: SourceExcerpt): string {
   const lines = content.split("\n");
   return `@@ -${startLine},${lines.length} +${startLine},${lines.length} @@\n${lines.map((line) => ` ${line}`).join("\n")}\n`;
 }
-
-const KIND_LABEL: Record<EmbedKind, string> = { code: "Code", diff: "Changes", patch: "Proposed" };
 
 function positiveInteger(value: string | undefined): number | undefined | null {
   if (value === undefined) return undefined;
@@ -165,6 +164,66 @@ function PendingNotice({
   return <Notice tone={tone}>{result === null ? `Loading ${subject}…` : result.message}</Notice>;
 }
 
+type ReadyEmbed = Extract<RenderEmbedOutput, { status: "ready" }>;
+
+function CodeHeader({
+  result,
+  openWorkspaceFile,
+}: {
+  result: Extract<ReadyEmbed, { kind: "code" }>;
+  openWorkspaceFile: PluginMessageDirectiveProps["openWorkspaceFile"];
+}) {
+  const header = (
+    <>
+      <span className="smart-embed-kind">Code</span>
+      <span className="smart-embed-path" title={result.label}>
+        {result.label}
+      </span>
+      {result.truncated ? <span className="smart-embed-warning">Truncated</span> : null}
+    </>
+  );
+  return (
+    <figcaption className="smart-embed-header">
+      {openWorkspaceFile === null ? (
+        <span className="smart-embed-header-content">{header}</span>
+      ) : (
+        <button
+          type="button"
+          className="smart-embed-open"
+          aria-label={`Open ${result.path} in the workspace`}
+          onClick={() => openWorkspaceFile(result.path)}
+        >
+          {header}
+        </button>
+      )}
+    </figcaption>
+  );
+}
+
+function ReadyEmbedBody({ kind, result }: { kind: EmbedKind; result: ReadyEmbed }) {
+  const patch = result.kind === "code" ? sourceExcerptPatch(result) : result.patch;
+  return (
+    <>
+      {kind === "diff" && result.kind === "code" ? (
+        <Notice tone="muted">No Git history. Showing current code.</Notice>
+      ) : null}
+      {result.kind === "code" && result.content.length === 0 ? (
+        <Notice tone="muted">Empty source.</Notice>
+      ) : (
+        <Diff
+          key={patch}
+          patch={patch}
+          path={result.path}
+          view="unified"
+          overflow="scroll"
+          showLineNumbers
+          className="smart-embed-renderer"
+        />
+      )}
+    </>
+  );
+}
+
 function EmbedResult({
   kind,
   result,
@@ -180,6 +239,8 @@ function EmbedResult({
   file: string;
   openWorkspaceFile: PluginMessageDirectiveProps["openWorkspaceFile"];
 }) {
+  const [expanded, setExpanded] = useState(true);
+  const toggleExpanded = () => setExpanded((value) => !value);
   if (invalid !== null) return <Notice tone="error">{invalid}</Notice>;
   const subject = kind === "patch" ? file : path;
   // Diff and patch placeholders reserve space before the RPC or BB's lazy renderer resolves.
@@ -187,17 +248,22 @@ function EmbedResult({
   const reserveViewport = kind !== "code";
   if (reserveViewport && (result === null || result.status !== "ready")) {
     return (
-      <figure className="smart-embed smart-embed-fixed" aria-busy={result === null}>
-        <figcaption className="smart-embed-header">
-          <span className="smart-embed-header-content">
-            <span className="smart-embed-kind">{KIND_LABEL[kind]}</span>
-            <span className="smart-embed-path" title={subject}>
-              {subject}
-            </span>
-          </span>
-        </figcaption>
-        <div className="smart-embed-body">
-          <PendingNotice result={result} subject={subject} />
+      <figure
+        className="smart-embed smart-embed-diff smart-embed-fixed"
+        aria-busy={result === null}
+      >
+        <DiffHeader
+          path={path}
+          label={subject}
+          proposed={kind === "patch"}
+          truncated={false}
+          patch={null}
+          expanded={expanded}
+          onToggle={toggleExpanded}
+          openWorkspaceFile={null}
+        />
+        <div className="smart-embed-body" hidden={!expanded}>
+          {expanded ? <PendingNotice result={result} subject={subject} /> : null}
         </div>
       </figure>
     );
@@ -207,51 +273,29 @@ function EmbedResult({
     return <Notice tone={result.status === "error" ? "error" : "muted"}>{result.message}</Notice>;
   }
 
-  const patch = result.kind === "code" ? sourceExcerptPatch(result) : result.patch;
-  const header = (
-    <>
-      <span className="smart-embed-kind">{KIND_LABEL[result.kind]}</span>
-      <span className="smart-embed-path" title={result.label}>
-        {result.label}
-      </span>
-      {result.truncated ? <span className="smart-embed-warning">Truncated</span> : null}
-      {result.kind !== "code" ? <span className="smart-embed-powered">Diffs</span> : null}
-    </>
-  );
-
+  const isDiff = result.kind !== "code";
+  const showBody = !isDiff || expanded;
   return (
-    <figure className="smart-embed" data-smart-embed-kind={result.kind}>
-      <figcaption className="smart-embed-header">
-        {openWorkspaceFile === null ? (
-          <span className="smart-embed-header-content">{header}</span>
-        ) : (
-          <button
-            type="button"
-            className="smart-embed-open"
-            aria-label={`Open ${result.path} in the workspace`}
-            onClick={() => openWorkspaceFile(result.path)}
-          >
-            {header}
-          </button>
-        )}
-      </figcaption>
-      <div className="smart-embed-body">
-        {kind === "diff" && result.kind === "code" ? (
-          <Notice tone="muted">No Git history. Showing current code.</Notice>
-        ) : null}
-        {result.kind === "code" && result.content.length === 0 ? (
-          <Notice tone="muted">Empty source.</Notice>
-        ) : (
-          <Diff
-            key={patch}
-            patch={patch}
-            path={result.path}
-            view="unified"
-            overflow="scroll"
-            showLineNumbers
-            className="smart-embed-renderer"
-          />
-        )}
+    <figure
+      className={`smart-embed${isDiff ? " smart-embed-diff" : ""}`}
+      data-smart-embed-kind={result.kind}
+    >
+      {result.kind !== "code" ? (
+        <DiffHeader
+          path={result.path}
+          label={result.label}
+          proposed={result.kind === "patch"}
+          truncated={result.truncated}
+          patch={result.patch}
+          expanded={expanded}
+          onToggle={toggleExpanded}
+          openWorkspaceFile={openWorkspaceFile}
+        />
+      ) : (
+        <CodeHeader result={result} openWorkspaceFile={openWorkspaceFile} />
+      )}
+      <div className="smart-embed-body" hidden={!showBody}>
+        {showBody ? <ReadyEmbedBody kind={kind} result={result} /> : null}
       </div>
     </figure>
   );

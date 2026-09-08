@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { InlineVisRpcContract } from "../shared/contract.ts";
+import { EmbedHeader } from "./embed-header.tsx";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 
 type LoadState =
@@ -36,67 +37,6 @@ export function parsePreviewHeight(value: string | undefined): number | null {
   return Number.isSafeInteger(height) && height >= MIN_HEIGHT_PX && height <= MAX_HEIGHT_PX
     ? height
     : null;
-}
-
-function PreviewHeader({
-  file,
-  action,
-  expanded,
-  onToggle,
-}: {
-  file: string;
-  action: ReactNode;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div className="smart-embed-header inline-vis-header" data-expanded={expanded}>
-      <button
-        type="button"
-        className="smart-embed-open inline-vis-toggle"
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Collapse" : "Expand"} preview ${file}`}
-        title={expanded ? "Collapse and unload preview" : "Expand preview"}
-        onClick={onToggle}
-      >
-        <svg
-          aria-hidden="true"
-          className="inline-vis-chevron"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <path d="m6 4 4 4-4 4" />
-        </svg>
-        <span className="smart-embed-kind">Preview</span>
-        <span className="smart-embed-path inline-vis-path" title={file}>
-          <bdi>{file}</bdi>
-        </span>
-        <span className="smart-embed-powered">HTML</span>
-      </button>
-      {action}
-    </div>
-  );
-}
-
-function ExternalLinkIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="inline-vis-open-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M15 3h6v6" />
-      <path d="M10 14 21 3" />
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    </svg>
-  );
 }
 
 function Alert({
@@ -152,25 +92,27 @@ export function InlineVisDirective({
 
 function CollapsiblePreview(props: PluginMessageDirectiveProps) {
   const [expansion] = useState(createPreviewExpansion);
-  const card = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLElement>(null);
   const expanded = useSyncExternalStore(expansion.subscribe, expansion.getSnapshot, () => false);
   useLayoutEffect(
     () => expansion.register(props.message.threadId, card.current!),
     [expansion, props.message.threadId],
   );
   return (
-    <div ref={card} className="smart-embed inline-vis-card">
+    <figure ref={card} className="smart-embed smart-embed-diff inline-vis-card">
       {expanded ? (
         <ExpandedPreview {...props} onToggle={expansion.toggle} />
       ) : (
-        <PreviewHeader
-          file={props.attributes.file!.trim()}
+        <EmbedHeader
+          path={props.attributes.file!.trim()}
+          label={props.attributes.file!.trim()}
+          kind="preview"
           expanded={false}
           onToggle={expansion.toggle}
-          action={null}
+          openWorkspaceFile={null}
         />
       )}
-    </div>
+    </figure>
   );
 }
 
@@ -213,7 +155,14 @@ function ExpandedPreview({
   if (state.status === "error") {
     return (
       <>
-        <PreviewHeader file={file} action={null} expanded onToggle={onToggle} />
+        <EmbedHeader
+          path={file}
+          label={file}
+          kind="preview"
+          openWorkspaceFile={null}
+          expanded
+          onToggle={onToggle}
+        />
         <Alert source={source} error>
           Failed to load {file}: {state.message}
         </Alert>
@@ -221,25 +170,17 @@ function ExpandedPreview({
     );
   }
 
-  const action =
-    openWorkspaceFile === null ? null : state.status === "loading" ? (
-      <span aria-hidden className="inline-vis-action-placeholder" />
-    ) : (
-      <button
-        type="button"
-        aria-label={`Open ${state.file} in sidebar`}
-        title="Open in sidebar"
-        className="inline-vis-open"
-        onClick={() => openWorkspaceFile(state.file)}
-      >
-        <ExternalLinkIcon />
-      </button>
-    );
-
   if (state.status === "loading") {
     return (
       <>
-        <PreviewHeader file={file} action={action} expanded onToggle={onToggle} />
+        <EmbedHeader
+          path={file}
+          label={file}
+          kind="preview"
+          openWorkspaceFile={null}
+          expanded
+          onToggle={onToggle}
+        />
         <output
           aria-busy="true"
           aria-label={`Loading visualization ${file}`}
@@ -254,7 +195,14 @@ function ExpandedPreview({
 
   return (
     <>
-      <PreviewHeader file={state.file} action={action} expanded onToggle={onToggle} />
+      <EmbedHeader
+        path={state.file}
+        label={state.file}
+        kind="preview"
+        openWorkspaceFile={openWorkspaceFile}
+        expanded
+        onToggle={onToggle}
+      />
       <iframe
         title={`inline-vis: ${state.file}`}
         src={buildWorktreePreviewUrl(message.threadId, state.file)}

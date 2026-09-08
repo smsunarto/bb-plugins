@@ -42,7 +42,9 @@ In a workspace without Git, `::smart-diff` shows the requested current code with
 
 `::smart-diff` saves its first successful display in plugin storage, separately for each message, file, and line range. That snapshot survives shipping, later workspace changes, page reloads, and plugin reloads. Empty results and errors remain retryable. A diff that has never displayed has no snapshot. Its first display reads the thread's current workspace, so it cannot recover changes already shipped before that display. Deleting a thread removes its snapshots.
 
-`::smart-code` resolves from the message thread's current workspace. `::smart-patch` reads from the thread's storage directory, so it survives the worktree being deleted and never touches the repository. Clicking the header opens the file in bb's workspace viewer.
+`::smart-code` resolves from the message thread's current workspace. `::smart-patch` reads from the thread's storage directory, so it survives the worktree being deleted and never touches the repository. Clicking the filename opens the file in bb's workspace viewer.
+
+Diff and patch headers include a collapse chevron and removed/added line counts. Counts describe the displayed patch, including any requested line range, rather than the entire file. Collapsing unmounts the diff renderer but keeps the filename and counts visible. Reopening reuses the loaded patch. These diffs open expanded by default and keep manual collapse choices while mounted. Code citations and inline HTML previews do not show diff counts.
 
 The instructions the plugin injects into agents live in `SMART_EMBED_INSTRUCTIONS` in `src/server/server.ts`. They are measured, not guessed. `eval/METRIC.md` defines the metric and `eval/RESULTS.md` records the climb: leading with the ranged form took embed-score from 66.5% to 79.6% on Sonnet and from 68.1% to 84.7% on Opus. Change that text through the harness, not by hand. `eval/prompts/baseline.md` must stay byte-identical to the shipped constant, and a test enforces it.
 
