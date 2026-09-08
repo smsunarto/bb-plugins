@@ -1,33 +1,13 @@
-// The annotation toolbar, mounted over the whole bb app shell.
-//
-// `agentation` ships a React component that portals itself to document.body,
-// so the only thing it needs is a React root somewhere in the page. A content
-// script is the right host for that: slots come and go with the surface that
-// mounts them, but the toolbar has to survive every route in bb — the sidebar,
-// a thread, Settings, and any plugin's own panel — because the point is to
-// annotate all of them.
-//
-// A content script has no host React context, so everything that would
-// normally be a hook is done by hand here: rpc over fetch, change notification
-// over server-sent events, and route tracking by watching `location`.
-
-import { createElement, type FunctionComponent } from "react";
-import { createRoot, type Root } from "react-dom/client";
 // Imported by path, not by package name: the copy under vendor/ carries changes
 // upstream does not ship (see vendor/README.md), and a path import is the only
 // form both Bun and the npm install bb runs for a `git:` source resolve the same
 // way.
 import {
-  Agentation,
   loadAnnotations,
   saveAnnotations,
   type AgentationProps,
   type Annotation,
 } from "../vendor/agentation/dist/index.mjs";
-import type {
-  PluginContentScriptContext,
-  PluginContentScriptDisposer,
-} from "@get-bb/plugin-sdk/app";
 
 import type { BbContext, StoredAnnotation } from "./afs.ts";
 import { selectOrphans, withoutBundleSource } from "./annotation-hygiene.ts";
@@ -75,12 +55,15 @@ const SERVER_ONLY_FIELDS = [
   "updatedAt",
 ] as const;
 
-/**
- * `Agentation` is declared with an optional props parameter, which makes
- * `createElement` infer `Props | undefined` and reject a props object. The
- * component itself is an ordinary function component.
- */
-const Toolbar = Agentation as FunctionComponent<AgentationProps>;
+export type ToolbarView = Readonly<{
+  key: string;
+  props: Readonly<
+    Pick<
+      AgentationProps,
+      "onAnnotationAdd" | "onAnnotationUpdate" | "onAnnotationDelete" | "onAnnotationsClear"
+    > & { className: "bb-agentation-toolbar" }
+  >;
+}> | null;
 
 type PageMeta = {
   url: string;
@@ -122,11 +105,7 @@ function pageMeta(): PageMeta {
 
 /** Ignore clicks on the toolbar's own chrome when tracking the last target. */
 function isToolbarChrome(element: Element | null): boolean {
-  return Boolean(
-    element?.closest(
-      "[data-agentation-root], [data-agentation-toolbar], [data-bb-agentation-host]",
-    ),
-  );
+  return Boolean(element?.closest("[data-agentation-root], [data-agentation-toolbar]"));
 }
 
 /**
@@ -170,60 +149,15 @@ function saveSynced(route: string, ids: Iterable<string>): void {
   }
 }
 
-/**
- * bb tracks plugin content-script callbacks while they run so an imperative
- * script cannot move nodes React already owns. Agentation deliberately owns a
- * separate React root and portal, so start that root on the next animation
- * frame, after the content-script callback has returned to the host. React's
- * own DOM work then runs outside the foreign-mutation guard while every event,
- * timer, and disposer remains owned by this plugin instance.
- */
-export function mountAnnotationToolbar(
-  context: PluginContentScriptContext,
-): PluginContentScriptDisposer {
-  let disposed = false;
-  let frame: number | null = requestAnimationFrame(() => {
-    frame = null;
-    void mountAnnotationToolbarRoot(context)
-      .then((disposeRoot) => {
-        if (disposed) {
-          void disposeRoot();
-          return undefined;
-        }
-        rootDisposer = disposeRoot;
-        return undefined;
-      })
-      .catch((error: unknown) => {
-        console.warn("[agentation] Could not mount annotation toolbar:", error);
-      });
-  });
-  let rootDisposer: PluginContentScriptDisposer | null = null;
+export function startAnnotationToolbar(
+  pluginId: string,
+  publish: (view: ToolbarView) => void,
+): () => void {
+  const rpc = createRpcClient<typeof rpcContract>(pluginId);
+  const lifetime = new AbortController();
 
-  return () => {
-    disposed = true;
-    if (frame !== null) {
-      cancelAnimationFrame(frame);
-      frame = null;
-    }
-    const disposeRoot = rootDisposer;
-    rootDisposer = null;
-    return disposeRoot?.();
-  };
-}
-
-async function mountAnnotationToolbarRoot(
-  context: PluginContentScriptContext,
-): Promise<PluginContentScriptDisposer> {
-  const rpc = createRpcClient<typeof rpcContract>(context.pluginId);
-
-  // bb resolves system/custom themes before plugin content scripts mount.
   // Seed once; Agentation owns and persists every user change after this.
   seedAgentationThemeDefault(localStorage, document.documentElement.classList.contains("dark"));
-
-  const host = document.createElement("div");
-  host.setAttribute("data-bb-agentation-host", "");
-  document.body.appendChild(host);
-  const root: Root = createRoot(host);
 
   let disposed = false;
   let enabled = true;
@@ -270,6 +204,7 @@ async function mountAnnotationToolbarRoot(
   }
 
   function enqueueUpsert(annotation: Annotation): void {
+    if (disposed) return;
     // Agentation has already updated its React state when this callback runs,
     // but its localStorage effect runs later. Mirror the authoritative local
     // delta now so a fast server echo cannot reconcile against the old row.
@@ -290,6 +225,7 @@ async function mountAnnotationToolbarRoot(
   }
 
   function enqueueDelete(annotation: Annotation): void {
+    if (disposed) return;
     // Agentation keeps the row for its 150 ms exit animation. Its callback is
     // nevertheless the user's committed delete, so persistence must reflect
     // that intent before any RPC response can trigger reconciliation.
@@ -309,7 +245,7 @@ async function mountAnnotationToolbarRoot(
   }
 
   function scheduleFlush(delayMs = FLUSH_DEBOUNCE_MS): void {
-    if (flushTimer !== null) return;
+    if (disposed || flushTimer !== null) return;
     flushTimer = setTimeout(() => {
       flushTimer = null;
       void flush();
@@ -337,6 +273,7 @@ async function mountAnnotationToolbarRoot(
     await runMutation(async () => {
       for (const group of byRoute.values()) {
         const id = await sessionFor(group.page);
+        if (disposed) return;
         if (!id) {
           requeue(group);
           scheduleFlush(RETRY_DELAY_MS);
@@ -364,6 +301,7 @@ async function mountAnnotationToolbarRoot(
           // immediately recreate the annotation.
           saveSynced(group.page.route, synced);
         } catch (error) {
+          if (disposed) return;
           // Put the work back so the next flush retries it rather than
           // silently losing feedback the human already typed, and forget the
           // session: the most likely reason a push fails is that the server no
@@ -393,7 +331,7 @@ async function mountAnnotationToolbarRoot(
       pendingWrites -= 1;
       // Mutation cursors can include unrelated agent decisions. Pull a full
       // snapshot only after the final queued mutation reaches the server.
-      if (pendingWrites === 0) void pullQueue.request();
+      if (!disposed && pendingWrites === 0) void pullQueue.request();
     }
   }
 
@@ -447,6 +385,7 @@ async function mountAnnotationToolbarRoot(
       let openedCursor = 0;
       let openedToolbarEnabled = true;
       const id = await sessionsByRoute.getOrCreate(page.route, async () => {
+        lifetime.signal.throwIfAborted();
         const result = await rpc.call("openSession", {
           url: page.url,
           route: page.route,
@@ -459,6 +398,7 @@ async function mountAnnotationToolbarRoot(
         openedToolbarEnabled = result.config.toolbarEnabled;
         return result.session.id;
       });
+      if (disposed) return null;
 
       // Background writes may open a session, but only the activation that is
       // still current may change the toolbar. A route revision distinguishes
@@ -481,7 +421,7 @@ async function mountAnnotationToolbarRoot(
       }
       return id;
     } catch (error) {
-      report("Could not open an annotation session", error);
+      if (!disposed) report("Could not open an annotation session", error);
       return null;
     }
   }
@@ -581,47 +521,45 @@ async function mountAnnotationToolbarRoot(
     }
 
     saveAnnotations(route, next);
-    render();
+    publishView();
     return "applied";
   }
 
   function applyConfig(nextEnabled: boolean): void {
     if (nextEnabled === enabled) return;
     enabled = nextEnabled;
-    render();
+    publishView();
   }
 
   function report(message: string, error: unknown): void {
-    // Content scripts have no toaster of their own and a failed annotation
-    // write is not worth interrupting the user's thread for; the console is
-    // where a plugin developer will look.
     console.warn(`[agentation] ${message}:`, error);
   }
 
-  function render(): void {
+  function publishView(): void {
     if (disposed) return;
     if (!enabled) {
-      root.render(null);
+      publish(null);
       return;
     }
 
     mountKey += 1;
-    root.render(
-      createElement(Toolbar, {
-        key: `${meta.route}#${mountKey}`,
+    publish({
+      key: `${meta.route}#${mountKey}`,
+      props: {
         className: "bb-agentation-toolbar",
         onAnnotationAdd: enqueueUpsert,
         onAnnotationUpdate: enqueueUpsert,
         onAnnotationDelete: enqueueDelete,
         onAnnotationsClear: () => {
+          if (disposed) return;
           // Upstream delays storage cleanup for its staggered clear animation.
           // The callback is the committed local action, so publish the empty
           // projection immediately and let its internal animation continue.
           saveAnnotations(meta.route, []);
           void clearOnServer();
         },
-      }),
-    );
+      },
+    });
   }
 
   async function clearOnServer(): Promise<void> {
@@ -643,7 +581,7 @@ async function mountAnnotationToolbarRoot(
       // Resolve the session after older queued writes. A failed older push may
       // have invalidated the id that was current when Clear was clicked.
       const id = await sessionFor(page);
-      if (!id) return;
+      if (disposed || !id) return;
       try {
         await rpc.call("clearSessionAnnotations", {
           sessionId: id,
@@ -655,6 +593,7 @@ async function mountAnnotationToolbarRoot(
       }
     });
     if (
+      !disposed &&
       !clearSucceeded &&
       isCurrentRouteRequest(page.route, activationRevision, meta.route, routeRevision)
     ) {
@@ -685,6 +624,7 @@ async function mountAnnotationToolbarRoot(
         sessionId: activeSessionId,
         cursor: cursor.value(),
       });
+      if (disposed) return;
       applyConfig(result.config.toolbarEnabled);
       if (route !== meta.route || activeSessionId !== sessionId) return;
       if (!result.changed) {
@@ -720,23 +660,24 @@ async function mountAnnotationToolbarRoot(
   function connectStream(): void {
     if (disposed) return;
     try {
-      stream = new EventSource(
-        `/api/v1/plugins/${encodeURIComponent(context.pluginId)}/http/events`,
-      );
+      stream = new EventSource(`/api/v1/plugins/${encodeURIComponent(pluginId)}/http/events`);
     } catch (error) {
       report("Event stream unavailable, falling back to polling", error);
       return;
     }
 
     stream.addEventListener("hello", () => {
+      if (disposed) return;
       streamHealthy = true;
       void pullQueue.request();
     });
     stream.addEventListener("change", () => {
+      if (disposed) return;
       streamHealthy = true;
       void pullQueue.request();
     });
     stream.addEventListener("error", () => {
+      if (disposed) return;
       // EventSource reconnects on its own; the poll interval tightens until it
       // does, so a rejected or blocked stream degrades instead of going quiet.
       streamHealthy = false;
@@ -752,6 +693,7 @@ async function mountAnnotationToolbarRoot(
   }
 
   function watchRoute(): void {
+    if (disposed) return;
     routeTimer = setInterval(() => {
       if (disposed) return;
       if (window.location.pathname === meta.route) return;
@@ -771,12 +713,16 @@ async function mountAnnotationToolbarRoot(
     cursor.reset();
     reconcileDeferred = false;
     lastTarget = null;
-    render();
+    publishView();
     // Queued work carries the page it belongs to, so it does not have to be
     // drained before the switch — it will still reach the right session.
     void flush();
     const id = await sessionFor(page, revision);
-    if (!id || !isCurrentRouteRequest(page.route, revision, meta.route, routeRevision)) {
+    if (
+      disposed ||
+      !id ||
+      !isCurrentRouteRequest(page.route, revision, meta.route, routeRevision)
+    ) {
       return;
     }
     // A cached session has no fresh snapshot attached. Pull now instead of
@@ -784,37 +730,47 @@ async function mountAnnotationToolbarRoot(
     await pullQueue.request();
   }
 
-  document.addEventListener("pointerdown", onPointerDown, {
-    capture: true,
-    signal: context.signal,
-  });
-  document.addEventListener(
-    "visibilitychange",
-    () => {
-      if (!document.hidden) void pullQueue.request();
-    },
-    { signal: context.signal },
-  );
-
-  render();
-  await ensureSession();
-  connectStream();
-  schedulePoll();
-  watchRoute();
-
-  return () => {
+  function dispose(): void {
+    if (disposed) return;
     disposed = true;
+    lifetime.abort();
     if (flushTimer !== null) clearTimeout(flushTimer);
     if (pollTimer !== null) clearTimeout(pollTimer);
     if (routeTimer !== null) clearInterval(routeTimer);
     stream?.close();
     stream = null;
-    // React refuses to unmount synchronously from inside a render pass; the
-    // disposer never runs in one, but the microtask keeps that guarantee even
-    // if the host ever changes when it disposes.
-    queueMicrotask(() => {
-      root.unmount();
-      host.remove();
+  }
+
+  async function initialize(): Promise<void> {
+    await ensureSession();
+    if (disposed) return;
+    connectStream();
+    schedulePoll();
+    watchRoute();
+  }
+
+  try {
+    document.addEventListener("pointerdown", onPointerDown, {
+      capture: true,
+      signal: lifetime.signal,
     });
-  };
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (!document.hidden) void pullQueue.request();
+      },
+      { signal: lifetime.signal },
+    );
+
+    publishView();
+    void initialize().catch((error: unknown) => {
+      dispose();
+      report("Could not start annotation toolbar", error);
+    });
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+
+  return dispose;
 }

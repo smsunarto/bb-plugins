@@ -6,18 +6,6 @@
   z-index: 60;
 }
 
-/* The content script's React root is a mount point, not a box: it must never
-   occupy layout or intercept a click meant for bb underneath it. */
-[data-bb-agentation-host] {
-  height: 0;
-  pointer-events: none;
-  width: 0;
-}
-
-[data-bb-agentation-host] > * {
-  pointer-events: auto;
-}
-
 /* Agentation 3.0.2 injects `svg[fill="none"] { fill: none !important; }`
    globally for its design-mode overlay. Restore explicit `fill-current`
    icons outside that overlay, including bb's native stop-run square. */

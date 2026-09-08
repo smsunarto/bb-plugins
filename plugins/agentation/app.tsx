@@ -1,11 +1,3 @@
-// @smsunarto/bb-plugin-agentation — frontend entry.
-//
-// Three surfaces, one job:
-// - a content script that mounts the Agentation toolbar over the bb app shell,
-//   so every route and every plugin-drawn element can be annotated;
-// - a thread-composer banner that shows and assigns the shared staged batch;
-// - a nav panel that reads the collected annotations back, with the reply
-//   thread an agent may have opened on each one.
 import "./app.css";
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
@@ -15,12 +7,12 @@ import {
   AnnotationPanelHeader,
 } from "@/components/annotation-panel.tsx";
 import { AgentationStagingBanner } from "@/components/staging-banner.tsx";
-import { mountAnnotationToolbar } from "@/lib/toolbar.ts";
+import { AnnotationToolbarOverlay } from "@/components/annotation-toolbar.tsx";
 
 export default definePluginApp((app) => {
-  app.contentScripts.register({
+  app.slots.experimental_appOverlay({
     id: "annotation-toolbar",
-    mount: mountAnnotationToolbar,
+    component: AnnotationToolbarOverlay,
   });
 
   app.composer.customize({
