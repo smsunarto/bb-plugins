@@ -1,5 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { parsePatchFiles } from "@pierre/diffs";
 
@@ -24,13 +25,176 @@ test("reserves room for 100 monospace columns without exceeding the viewport", a
   expect(stylesheet).toContain("transform: translateX(-50%)");
 });
 
-test("registers the smart diff, code, and patch message directives", async () => {
+test("registers the smart embeds and inline visualization directives", async () => {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(captured.messageDirectives.map((directive) => directive.id)).toEqual([
     "smart-diff",
     "smart-code",
     "smart-patch",
+    "inline-vis",
   ]);
+});
+
+const inlineVisMessage = {
+  id: "message-inline-vis",
+  threadId: "thread-inline-vis",
+  turnId: "turn-inline-vis",
+  projectId: "project-inline-vis",
+};
+
+async function inlineVisDirective() {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const directive = captured.messageDirectives.find((item) => item.id === "inline-vis");
+  expect(directive).toBeDefined();
+  return directive!;
+}
+
+test("inline-vis requires a file attribute without calling RPC", async () => {
+  const directive = await inlineVisDirective();
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: {},
+      source: "::inline-vis{}",
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    { rpc: {} },
+  );
+
+  expect(slot.getByRole("alert").textContent).toMatch(/requires a file attribute/i);
+  expect(slot.rpcCalls).toEqual([]);
+  slot.unmount();
+});
+
+test("inline-vis uses the worktree route with an opaque-origin script sandbox", async () => {
+  const directive = await inlineVisDirective();
+  const openWorkspaceFile = mock(() => true);
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { file: "charts/demo file.html" },
+      source: '::inline-vis{file="charts/demo file.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile,
+    },
+    {
+      rpc: {
+        prepareHtmlPreview: (input) => {
+          expect(input).toEqual({
+            threadId: "thread-inline-vis",
+            file: "charts/demo file.html",
+          });
+          return { file: "charts/demo file.html" };
+        },
+      },
+    },
+  );
+
+  await slot.findByRole("status", {
+    name: "Loading visualization charts/demo file.html",
+  });
+  const iframe = await waitFor(() => {
+    const element = slot.container.querySelector("iframe");
+    expect(element).toBeTruthy();
+    return element as HTMLIFrameElement;
+  });
+
+  expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+  expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
+  expect(iframe.getAttribute("src")).toBe(
+    "/api/v1/threads/thread-inline-vis/worktree/files/charts/demo%20file.html",
+  );
+  expect(iframe.getAttribute("srcdoc")).toBeNull();
+  expect(iframe.style.height).toBe("224px");
+  fireEvent.click(slot.getByRole("button", { name: "Open charts/demo file.html in sidebar" }));
+  expect(openWorkspaceFile).toHaveBeenCalledWith("charts/demo file.html");
+  expect(slot.rpcCalls).toEqual([
+    {
+      method: "prepareHtmlPreview",
+      input: { threadId: "thread-inline-vis", file: "charts/demo file.html" },
+    },
+  ]);
+  slot.unmount();
+});
+
+test("inline-vis uses an optional bounded height and reserves it while loading", async () => {
+  const directive = await inlineVisDirective();
+  let resolvePreview = (_result: { file: string }) => {};
+  const pendingPreview = new Promise<{ file: string }>((resolve) => {
+    resolvePreview = resolve;
+  });
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { file: "demo.html", height: "480" },
+      source: '::inline-vis{file="demo.html" height="480"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: mock(() => true),
+    },
+    { rpc: { prepareHtmlPreview: () => pendingPreview } },
+  );
+
+  const loading = await slot.findByRole("status", { name: "Loading visualization demo.html" });
+  expect((loading as HTMLElement).style.height).toBe("480px");
+  const loadingCard = loading.parentElement!;
+  const loadingHeader = loadingCard.firstElementChild!;
+  expect(loadingHeader.querySelector(".inline-vis-action-placeholder")).toBeTruthy();
+
+  resolvePreview({ file: "demo.html" });
+  const iframe = await waitFor(() => {
+    const element = slot.container.querySelector("iframe");
+    expect(element).toBeTruthy();
+    return element as HTMLIFrameElement;
+  });
+  expect(iframe.style.height).toBe("480px");
+  expect(iframe.parentElement).toBe(loadingCard);
+  expect(iframe.parentElement?.firstElementChild?.className).toBe(loadingHeader.className);
+  slot.unmount();
+});
+
+test("inline-vis rejects invalid heights without calling RPC", async () => {
+  const directive = await inlineVisDirective();
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { file: "demo.html", height: "100vh" },
+      source: '::inline-vis{file="demo.html" height="100vh"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    { rpc: {} },
+  );
+
+  expect(slot.getByRole("alert").textContent).toMatch(/whole number from 120 to 1200 pixels/i);
+  expect(slot.container.querySelector("iframe")).toBeNull();
+  expect(slot.rpcCalls).toEqual([]);
+  slot.unmount();
+});
+
+test("inline-vis reports RPC failures without mounting an iframe", async () => {
+  const directive = await inlineVisDirective();
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { file: "missing.html" },
+      source: '::inline-vis{file="missing.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    {
+      rpc: {
+        prepareHtmlPreview: () => {
+          throw new Error("HTML file not found: missing.html");
+        },
+      },
+    },
+  );
+
+  const alert = await slot.findByRole("alert");
+  expect(alert.textContent).toMatch(/HTML file not found: missing\.html/);
+  expect(slot.container.querySelector("iframe")).toBeNull();
+  slot.unmount();
 });
 
 test("renders a proposed patch from thread storage with its own header label", async () => {

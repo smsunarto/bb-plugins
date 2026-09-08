@@ -7,7 +7,7 @@
 
 # Kitchen Sink
 
-**Scott's kitchen sink of personal bb surfaces: composer commands, mentions, and Smart Embeds.**
+**Scott's kitchen sink of personal bb surfaces: composer commands, mentions, Smart Embeds, and inline HTML visualizations.**
 
 ![bb 0.41+](https://img.shields.io/badge/bb-0.41%2B-88C0D0?style=flat-square)
 
@@ -47,6 +47,16 @@ In a workspace without Git, `::smart-diff` shows the requested current code with
 The instructions the plugin injects into agents live in `SMART_EMBED_INSTRUCTIONS` in `src/server/server.ts`. They are measured, not guessed. `eval/METRIC.md` defines the metric and `eval/RESULTS.md` records the climb: leading with the ranged form took embed-score from 66.5% to 79.6% on Sonnet and from 68.1% to 84.7% on Opus. Change that text through the harness, not by hand. `eval/prompts/baseline.md` must stay byte-identical to the shipped constant, and a test enforces it.
 
 Rendered embeds are cached in the browser for the page session, so remounts and thread revisits render at once. The server publishes a `workspace-changed` realtime signal when a thread goes idle, fails, is archived, or is deleted. Idle and failed refresh that thread's embeds in place, with saved diffs returning their original snapshot. Archived and deleted free the browser entries. A realtime reconnect refreshes everything, and the cache also drops least recently used entries past 128 entries or 4 MB of patches.
+
+## Inline visualizations
+
+`::inline-vis{file="demo.html"}` renders a workspace-relative HTML file directly in an assistant message. An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.
+
+Disable the standalone `inline-vis` plugin before enabling this renderer. bb leaves a directive literal when two plugins claim the same `inline-vis` message directive.
+
+The server accepts only `.html` and `.htm` files up to 5 MiB, verifies the file through bb's root-confined workspace API, and then loads it from the thread's worktree route. Scripts run in a sandboxed opaque-origin iframe with `allow-scripts`, without `allow-same-origin`. The header action opens the original file in bb's workspace viewer.
+
+This capability is forked from [`get-bb/bb/plugins/inline-vis`](https://github.com/get-bb/bb/tree/06aeaa994942ae7527dc49d2268c1f801e8542a0/plugins/inline-vis). Kitchen Sink replaces the upstream plugin's private `@bb/shared-ui` imports with package-owned markup and CSS so the external plugin remains SDK-only.
 
 ## Add a command
 

@@ -15,6 +15,7 @@ import {
   type RenderEmbedOutput,
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
+import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
 import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
@@ -284,4 +285,5 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "smart-diff", component: SmartDiffDirective });
   app.slots.messageDirective({ id: "smart-code", component: SmartCodeDirective });
   app.slots.messageDirective({ id: "smart-patch", component: SmartPatchDirective });
+  app.slots.messageDirective({ id: "inline-vis", component: InlineVisDirective });
 });

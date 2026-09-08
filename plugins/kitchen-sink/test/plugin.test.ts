@@ -15,10 +15,24 @@ test("the plugin loads against the fake host and registers every mention provide
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
-  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed"]);
+  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "prepareHtmlPreview"]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(
     mentionProviders.map((provider) => provider.id),
   );
+});
+
+test("the inline visualization RPC rejects extra input before reading the workspace", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  await plugin(bb);
+
+  await expect(
+    harness.callRpc("prepareHtmlPreview", {
+      threadId: "thread-1",
+      file: "demo.html",
+      extra: true,
+    }),
+  ).rejects.toMatchObject({ code: "invalid_input", issues: expect.any(Array) });
+  expect(harness.sdk.callsTo("threads.get")).toEqual([]);
 });
 
 test("mention provider ids are unique and free of the wire separator", () => {
@@ -35,7 +49,7 @@ test("the manifest declares the skills root that holds every composer command", 
 
 test("each skill directory carries a SKILL.md whose frontmatter name matches the directory", async () => {
   const directories = (await readdir(skillsRoot)).sort();
-  expect(directories).toEqual(["ship-it", "sync"]);
+  expect(directories).toEqual(["inline-vis", "ship-it", "sync"]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
     expect((await stat(path)).isFile()).toBe(true);

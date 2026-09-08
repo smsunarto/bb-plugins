@@ -4,6 +4,7 @@ import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { diffSnapshotMigrations } from "./lib/diff-snapshot.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
+import { prepareHtmlPreview } from "./rpc/prepare-html-preview.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
 
 /**
@@ -12,7 +13,7 @@ import { renderEmbed } from "./rpc/render-embed.ts";
  * live in `src/server/mentions.ts`. Smart Embeds are the `::smart-diff` and
  * `::smart-code` message directives backed by the `renderEmbed` RPC, plus
  * `::smart-patch` for a diff the agent wrote to thread storage but has not
- * applied.
+ * applied. Inline Vis adds the sandboxed `::inline-vis` HTML preview.
  */
 
 /**
@@ -34,7 +35,7 @@ Use worktree-relative paths. Do not put directives in inline code or fenced code
 
 export default definePlugin({
   pluginId: "kitchen-sink",
-  rpc: { renderEmbed },
+  rpc: { renderEmbed, prepareHtmlPreview },
   setup(bb) {
     const db = bb.storage.database();
     bb.storage.migrate(db, diffSnapshotMigrations);
