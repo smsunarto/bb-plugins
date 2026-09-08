@@ -3,6 +3,7 @@ import { installDom } from "@bb-kit/core/testing";
 import { fireEvent, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { parsePatchFiles } from "@pierre/diffs";
+import { StrictMode, useState } from "react";
 
 installDom();
 if (typeof CSSStyleSheet.prototype.replaceSync !== "function") {
@@ -18,11 +19,14 @@ const { WORKSPACE_CHANGED_CHANNEL } = await import("../src/shared/contract.ts");
 const patch =
   "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1 +1 @@\n-old\n+new\n";
 
-test("reserves room for 100 monospace columns without exceeding the viewport", async () => {
+test("reserves room for 100 monospace columns without exceeding the message width", async () => {
   const stylesheet = await readFile(new URL("../src/app/app.css", import.meta.url), "utf8");
   expect(stylesheet).toContain("--smart-embed-target-width: calc(100ch + 8rem + 4px)");
-  expect(stylesheet).toContain("calc(100vw - 2rem)");
-  expect(stylesheet).toContain("transform: translateX(-50%)");
+  expect(stylesheet).toContain("box-sizing: border-box");
+  expect(stylesheet).toContain("width: min(var(--smart-embed-target-width), 100%)");
+  expect(stylesheet).toContain("max-width: 100%");
+  expect(stylesheet).not.toContain("calc(100% + 16rem)");
+  expect(stylesheet).not.toContain("transform: translateX(-50%)");
 });
 
 test("registers the smart embeds and inline visualization directives", async () => {
@@ -107,6 +111,16 @@ test("inline-vis uses the worktree route with an opaque-origin script sandbox", 
   );
   expect(iframe.getAttribute("srcdoc")).toBeNull();
   expect(iframe.style.height).toBe("224px");
+  const toggle = slot.getByRole("button", { name: "Collapse preview charts/demo file.html" });
+  const header = toggle.closest(".inline-vis-header")!;
+  expect(header.classList.contains("smart-embed-header")).toBe(true);
+  expect(header.closest(".smart-embed")).toBeTruthy();
+  expect(toggle.querySelector(".smart-embed-kind")?.textContent).toBe("Preview");
+  expect(toggle.querySelector(".smart-embed-powered")?.textContent).toBe("HTML");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(header.querySelector(".inline-vis-path")?.getAttribute("title")).toBe(
+    "charts/demo file.html",
+  );
   fireEvent.click(slot.getByRole("button", { name: "Open charts/demo file.html in sidebar" }));
   expect(openWorkspaceFile).toHaveBeenCalledWith("charts/demo file.html");
   expect(slot.rpcCalls).toEqual([
@@ -193,6 +207,128 @@ test("inline-vis reports RPC failures without mounting an iframe", async () => {
 
   const alert = await slot.findByRole("alert");
   expect(alert.textContent).toMatch(/HTML file not found: missing\.html/);
+  expect(slot.container.querySelector("iframe")).toBeNull();
+  slot.unmount();
+});
+
+test("inline-vis opens only the final two occurrences and unloads manually collapsed frames", async () => {
+  const directive = await inlineVisDirective();
+  const Component = directive.component;
+  const slot = renderSlot(
+    {
+      ...directive,
+      component: (props) => (
+        <StrictMode>
+          {[0, 1, 2, 3].map((id) => (
+            <Component key={id} {...props} />
+          ))}
+        </StrictMode>
+      ),
+    },
+    {
+      attributes: { file: "same.html" },
+      source: '::inline-vis{file="same.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    { rpc: { prepareHtmlPreview: () => ({ file: "same.html" }) } },
+  );
+  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(2));
+  const cards = [...slot.container.querySelectorAll(".inline-vis-card")];
+  expect(cards.map((card) => !!card.querySelector("iframe"))).toEqual([false, false, true, true]);
+  // StrictMode runs the two open previews' effects twice. Closed previews never prepare.
+  expect(slot.rpcCalls).toHaveLength(4);
+  fireEvent.click(cards[0]!.querySelector("button")!);
+  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
+  const iframe = cards[0]!.querySelector("iframe");
+  fireEvent.click(cards[0]!.querySelector("button")!);
+  expect(cards[0]!.querySelector("iframe")).toBeNull();
+  expect(cards[0]!.querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(cards[0]!.querySelector("button")!);
+  await waitFor(() => expect(cards[0]!.querySelector("iframe")).toBeTruthy());
+  expect(cards[0]!.querySelector("iframe")).not.toBe(iframe);
+  slot.unmount();
+});
+
+test("inline-vis keeps thread-wide order and manual choices when new previews and older history arrive", async () => {
+  const directive = await inlineVisDirective();
+  const Component = directive.component;
+  const slot = renderSlot(
+    {
+      ...directive,
+      component: (props) => {
+        const [items, setItems] = useState([1, 2, 3]);
+        return (
+          <>
+            <button onClick={() => setItems([1, 2, 3, 4])}>Append preview</button>
+            <button onClick={() => setItems([0, 1, 2, 3, 4])}>Prepend history</button>
+            {items.map((id) => (
+              <Component
+                key={id}
+                {...props}
+                attributes={{ file: `${id}.html` }}
+                message={{ ...props.message, id: `message-${id}` }}
+              />
+            ))}
+            <Component
+              {...props}
+              attributes={{ file: "other.html" }}
+              message={{ ...props.message, threadId: "another-thread" }}
+            />
+          </>
+        );
+      },
+    },
+    { attributes: {}, source: "fixture", message: inlineVisMessage, openWorkspaceFile: null },
+    { rpc: { prepareHtmlPreview: (input) => ({ file: (input as { file: string }).file }) } },
+  );
+  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
+  expect(slot.rpcCalls.map((call) => (call.input as { file: string }).file).sort()).toEqual([
+    "2.html",
+    "3.html",
+    "other.html",
+  ]);
+  fireEvent.click(slot.getByRole("button", { name: "Expand preview 1.html" }));
+  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(4));
+  fireEvent.click(slot.getByRole("button", { name: "Collapse preview 3.html" }));
+  fireEvent.click(slot.getByRole("button", { name: "Append preview" }));
+  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
+  const files = () =>
+    [...slot.container.querySelectorAll("iframe")].map((frame) => frame.getAttribute("title"));
+  expect(files()).toEqual(["inline-vis: 1.html", "inline-vis: 4.html", "inline-vis: other.html"]);
+  fireEvent.click(slot.getByRole("button", { name: "Prepend history" }));
+  await waitFor(() =>
+    expect(slot.getByRole("button", { name: "Expand preview 0.html" })).toBeTruthy(),
+  );
+  expect(files()).toEqual(["inline-vis: 1.html", "inline-vis: 4.html", "inline-vis: other.html"]);
+  expect(slot.rpcCalls.some((call) => (call.input as { file: string }).file === "0.html")).toBe(
+    false,
+  );
+  slot.unmount();
+});
+
+test("inline-vis ignores a preparation result that arrives after collapse", async () => {
+  const directive = await inlineVisDirective();
+  let resolvePreview = (_result: { file: string }) => {};
+  const pending = new Promise<{ file: string }>((resolve) => {
+    resolvePreview = resolve;
+  });
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { file: "pending.html" },
+      source: "fixture",
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    { rpc: { prepareHtmlPreview: () => pending } },
+  );
+  await slot.findByRole("status", { name: "Loading visualization pending.html" });
+  fireEvent.click(slot.getByRole("button", { name: "Collapse preview pending.html" }));
+  resolvePreview({ file: "pending.html" });
+  await waitFor(() =>
+    expect(slot.getByRole("button", { name: "Expand preview pending.html" })).toBeTruthy(),
+  );
   expect(slot.container.querySelector("iframe")).toBeNull();
   slot.unmount();
 });

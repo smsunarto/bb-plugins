@@ -52,6 +52,10 @@ Rendered embeds are cached in the browser for the page session, so remounts and 
 
 `::inline-vis{file="demo.html"}` renders a workspace-relative HTML file directly in an assistant message. An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.
 
+Only the last two inline visualizations in a thread's rendered conversation open automatically. Older previews stay collapsed without preparing or loading their HTML. Expand or collapse any preview from its header. Manual choices last while that directive is mounted and override the automatic default, including when a new preview arrives. Collapsing unloads the iframe, so reopening resets its interactive state.
+
+Ordering uses the plugin's own card elements in document order, not registration timing or filenames. This keeps prepended history and repeated directives ordered correctly without depending on private bb DOM selectors. The SDK does not expose an ordinal for each directive, so the default applies to currently rendered directives, not unloaded timeline pages.
+
 Disable the standalone `inline-vis` plugin before enabling this renderer. bb leaves a directive literal when two plugins claim the same `inline-vis` message directive.
 
 The server accepts only `.html` and `.htm` files up to 5 MiB, verifies the file through bb's root-confined workspace API, and then loads it from the thread's worktree route. Scripts run in a sandboxed opaque-origin iframe with `allow-scripts`, without `allow-same-origin`. The header action opens the original file in bb's workspace viewer.

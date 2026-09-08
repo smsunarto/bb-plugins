@@ -1,14 +1,20 @@
 import { useRpc, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 import type { InlineVisRpcContract } from "../shared/contract.ts";
+import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 
 type LoadState =
-  | { status: "missing-file" }
-  | { status: "invalid-height"; message: string }
-  | { status: "loading"; file: string }
+  | { status: "loading" }
   | { status: "ready"; file: string }
-  | { status: "error"; file: string; message: string };
+  | { status: "error"; message: string };
 
 export const DEFAULT_HEIGHT_PX = 224;
 export const MIN_HEIGHT_PX = 120;
@@ -32,25 +38,44 @@ export function parsePreviewHeight(value: string | undefined): number | null {
     : null;
 }
 
-function PreviewCard({
+function PreviewHeader({
   file,
   action,
-  children,
+  expanded,
+  onToggle,
 }: {
   file: string;
   action: ReactNode;
-  children: ReactNode;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <div className="inline-vis-card">
-      <div className="inline-vis-header">
-        <div className="inline-vis-heading">
-          <span className="inline-vis-label">inline-vis</span>
-          <span className="inline-vis-path">{file}</span>
-        </div>
-        {action}
-      </div>
-      {children}
+    <div className="smart-embed-header inline-vis-header" data-expanded={expanded}>
+      <button
+        type="button"
+        className="smart-embed-open inline-vis-toggle"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Collapse" : "Expand"} preview ${file}`}
+        title={expanded ? "Collapse and unload preview" : "Expand preview"}
+        onClick={onToggle}
+      >
+        <svg
+          aria-hidden="true"
+          className="inline-vis-chevron"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <path d="m6 4 4 4-4 4" />
+        </svg>
+        <span className="smart-embed-kind">Preview</span>
+        <span className="smart-embed-path inline-vis-path" title={file}>
+          <bdi>{file}</bdi>
+        </span>
+        <span className="smart-embed-powered">HTML</span>
+      </button>
+      {action}
     </div>
   );
 }
@@ -100,33 +125,70 @@ export function InlineVisDirective({
   message,
   openWorkspaceFile,
 }: PluginMessageDirectiveProps) {
+  const file = attributes.file?.trim() ?? "";
+  const height = parsePreviewHeight(attributes.height);
+  if (!file)
+    return (
+      <Alert source={source}>
+        inline-vis requires a file attribute, e.g. <code>::inline-vis{'{file="demo.html"}'}</code>
+      </Alert>
+    );
+  if (height === null)
+    return (
+      <Alert source={source}>
+        inline-vis height must be a whole number from {MIN_HEIGHT_PX} to {MAX_HEIGHT_PX} pixels.
+      </Alert>
+    );
+  return (
+    <CollapsiblePreview
+      key={`${message.threadId}:${message.id}:${file}`}
+      attributes={attributes}
+      source={source}
+      message={message}
+      openWorkspaceFile={openWorkspaceFile}
+    />
+  );
+}
+
+function CollapsiblePreview(props: PluginMessageDirectiveProps) {
+  const [expansion] = useState(createPreviewExpansion);
+  const card = useRef<HTMLDivElement>(null);
+  const expanded = useSyncExternalStore(expansion.subscribe, expansion.getSnapshot, () => false);
+  useLayoutEffect(
+    () => expansion.register(props.message.threadId, card.current!),
+    [expansion, props.message.threadId],
+  );
+  return (
+    <div ref={card} className="smart-embed inline-vis-card">
+      {expanded ? (
+        <ExpandedPreview {...props} onToggle={expansion.toggle} />
+      ) : (
+        <PreviewHeader
+          file={props.attributes.file!.trim()}
+          expanded={false}
+          onToggle={expansion.toggle}
+          action={null}
+        />
+      )}
+    </div>
+  );
+}
+
+function ExpandedPreview({
+  attributes,
+  source,
+  message,
+  openWorkspaceFile,
+  onToggle,
+}: PluginMessageDirectiveProps & { onToggle: () => void }) {
   const rpc = useRpc<InlineVisRpcContract>();
   const file = attributes.file?.trim() ?? "";
   const previewHeight = parsePreviewHeight(attributes.height);
-  const heightError =
-    previewHeight === null
-      ? `inline-vis height must be a whole number from ${MIN_HEIGHT_PX} to ${MAX_HEIGHT_PX} pixels.`
-      : null;
-  const [state, setState] = useState<LoadState>(() =>
-    heightError
-      ? { status: "invalid-height", message: heightError }
-      : file
-        ? { status: "loading", file }
-        : { status: "missing-file" },
-  );
+  const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
-    if (heightError) {
-      setState({ status: "invalid-height", message: heightError });
-      return;
-    }
-    if (!file) {
-      setState({ status: "missing-file" });
-      return;
-    }
-
     let cancelled = false;
-    setState({ status: "loading", file });
+    setState({ status: "loading" });
     void (async () => {
       try {
         const result = await rpc.call("prepareHtmlPreview", {
@@ -138,7 +200,6 @@ export function InlineVisDirective({
         if (cancelled) return;
         setState({
           status: "error",
-          file,
           message: error instanceof Error ? error.message : String(error),
         });
       }
@@ -147,25 +208,16 @@ export function InlineVisDirective({
     return () => {
       cancelled = true;
     };
-  }, [file, heightError, message.threadId, rpc]);
-
-  if (state.status === "missing-file") {
-    return (
-      <Alert source={source}>
-        inline-vis requires a file attribute, e.g. <code>::inline-vis{'{file="demo.html"}'}</code>
-      </Alert>
-    );
-  }
-
-  if (state.status === "invalid-height") {
-    return <Alert source={source}>{state.message}</Alert>;
-  }
+  }, [file, message.threadId, rpc]);
 
   if (state.status === "error") {
     return (
-      <Alert source={source} error>
-        Failed to load {state.file}: {state.message}
-      </Alert>
+      <>
+        <PreviewHeader file={file} action={null} expanded onToggle={onToggle} />
+        <Alert source={source} error>
+          Failed to load {file}: {state.message}
+        </Alert>
+      </>
     );
   }
 
@@ -186,21 +238,23 @@ export function InlineVisDirective({
 
   if (state.status === "loading") {
     return (
-      <PreviewCard file={state.file} action={action}>
+      <>
+        <PreviewHeader file={file} action={action} expanded onToggle={onToggle} />
         <output
           aria-busy="true"
-          aria-label={`Loading visualization ${state.file}`}
+          aria-label={`Loading visualization ${file}`}
           style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
           className="inline-vis-loading"
         >
           <span className="inline-vis-skeleton" />
         </output>
-      </PreviewCard>
+      </>
     );
   }
 
   return (
-    <PreviewCard file={state.file} action={action}>
+    <>
+      <PreviewHeader file={state.file} action={action} expanded onToggle={onToggle} />
       <iframe
         title={`inline-vis: ${state.file}`}
         src={buildWorktreePreviewUrl(message.threadId, state.file)}
@@ -208,6 +262,6 @@ export function InlineVisDirective({
         style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
         className="inline-vis-frame"
       />
-    </PreviewCard>
+    </>
   );
 }

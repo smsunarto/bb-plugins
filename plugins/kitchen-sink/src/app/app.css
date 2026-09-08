@@ -1,8 +1,9 @@
 .smart-embed {
   --smart-embed-target-width: calc(100ch + 8rem + 4px);
-  width: min(var(--smart-embed-target-width), calc(100% + 16rem), calc(100vw - 2rem));
-  max-width: none;
-  margin: 0.75rem 0 0.75rem 50%;
+  box-sizing: border-box;
+  width: min(var(--smart-embed-target-width), 100%);
+  max-width: 100%;
+  margin: 0.75rem auto;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 0.75rem;
@@ -20,7 +21,6 @@
   );
   font-size: var(--diffs-font-size, 13px);
   box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
-  transform: translateX(-50%);
 }
 
 .smart-embed-header {
@@ -132,45 +132,26 @@
   color: var(--destructive);
 }
 
-.inline-vis-card {
-  margin: 0.5rem 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--background);
+.inline-vis-header[data-expanded="false"] {
+  border-bottom: 0;
 }
 
-.inline-vis-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted-foreground);
-  font-family: var(--font-sans, system-ui, sans-serif);
-  font-size: 0.75rem;
-  line-height: 1rem;
-}
-
-.inline-vis-heading {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.inline-vis-label {
+.inline-vis-chevron {
+  width: 0.875rem;
+  height: 0.875rem;
   flex: 0 0 auto;
-  font-weight: 600;
+  color: var(--muted-foreground);
+  transition:
+    transform 150ms,
+    color 150ms;
+}
+.inline-vis-toggle[aria-expanded="true"] .inline-vis-chevron {
+  transform: rotate(90deg);
 }
 
 .inline-vis-path {
-  min-width: 0;
-  overflow: hidden;
-  opacity: 0.7;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 
 .inline-vis-open,
@@ -178,6 +159,8 @@
   width: 1.25rem;
   height: 1.25rem;
   flex: 0 0 auto;
+  align-self: center;
+  margin-right: 0.75rem;
 }
 
 .inline-vis-open {
@@ -263,6 +246,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .inline-vis-chevron {
+    transition: none;
+  }
   .inline-vis-skeleton {
     animation: none;
   }
