@@ -100,6 +100,7 @@ export class TraceIndex {
   private readonly lifetime = new AbortController();
   private lastScanAt: number | null = null;
   private lastError: string | null = null;
+  private counts: { revision: number; sessions: number; events: number } | undefined;
   private closed = false;
 
   constructor(options: {
@@ -168,6 +169,30 @@ export class TraceIndex {
         PRIMARY KEY(event_id,generation,topic)
       );
       CREATE INDEX IF NOT EXISTS event_topics_filter ON event_topics(source_id,generation,topic,sequence,part,event_id);
+      -- A moved session leaves a cached source at its old path. Keep that cache
+      -- addressable by event ID, but list only its available continuation.
+      -- Native IDs alone are not enough: distinct traces can reuse them.
+      CREATE VIEW IF NOT EXISTS session_sources AS
+        SELECT original.* FROM sources original
+        WHERE original.state != 'missing' OR NOT EXISTS (
+          SELECT 1 FROM sources replacement
+          WHERE replacement.provider = original.provider
+            AND replacement.native_id = original.native_id
+            AND replacement.state = 'ready'
+            AND EXISTS (
+              SELECT 1 FROM spans old
+              WHERE old.source_id = original.id AND old.generation = original.visible_generation
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM spans old
+              LEFT JOIN spans current
+                ON current.source_id = replacement.id
+                AND current.generation = replacement.visible_generation
+                AND current.line = old.line
+              WHERE old.source_id = original.id AND old.generation = original.visible_generation
+                AND (current.hash IS NULL OR current.hash != old.hash OR current.length != old.length)
+            )
+        );
     `);
     const version = this.prepare("SELECT value FROM meta WHERE key = 'version'").get() as {
       value: number;
@@ -227,22 +252,23 @@ export class TraceIndex {
   }
 
   status(): TraceStatus {
-    const sessions = this.prepare("SELECT count(*) AS count FROM sources").get() as {
-      count: number;
-    };
-    const events = this.prepare(
-      "SELECT coalesce(sum(json_extract(summary, '$.eventCount')), 0) AS count FROM sources",
-    ).get() as { count: number };
+    const revision = this.revision;
+    if (this.counts?.revision !== revision) {
+      const counts = this.prepare(
+        "SELECT count(*) AS sessions, coalesce(sum(json_extract(summary, '$.eventCount')), 0) AS events FROM session_sources",
+      ).get() as { sessions: number; events: number };
+      this.counts = { revision, ...counts };
+    }
     return {
       schemaVersion: 1,
       providers: this.registry.list().map(({ id, label, version }) => ({ id, label, version })),
       roots: this.roots.map((root) => ({ ...root })),
-      sessions: sessions.count,
-      events: events.count,
+      sessions: this.counts.sessions,
+      events: this.counts.events,
       scanning: this.scanPromise !== null,
       lastScanAt: this.lastScanAt,
       lastError: this.lastError,
-      revision: this.revision,
+      revision,
     };
   }
 
@@ -792,7 +818,7 @@ export class TraceIndex {
       values.push(cursor.key[0], cursor.key[0], cursor.key[1]);
     }
     const rows = this.prepare(
-      `SELECT s.summary FROM sources s ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY s.updated_at DESC,s.id DESC LIMIT ?`,
+      `SELECT s.summary FROM session_sources s ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY s.updated_at DESC,s.id DESC LIMIT ?`,
     ).all(...values, args.limit + 1) as { summary: string }[];
     const items = rows.slice(0, args.limit).map((row) => JSON.parse(row.summary) as TraceSession);
     const last = items.at(-1);
