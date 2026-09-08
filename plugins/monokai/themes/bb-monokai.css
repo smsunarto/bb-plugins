@@ -519,6 +519,30 @@
   grid-column: 2;
 }
 
+/* Outside a project, the environment is the whole thread location summary.
+ * Remove the empty project and checkout columns instead of leaving the machine
+ * label stranded in the second fixed slot. */
+.dark
+  [data-follow-up-composer-footer]
+  > :first-child
+  > div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))
+  > div:has(> [data-option-display]) {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
+  flex: 1 1 auto;
+}
+
+.dark
+  [data-follow-up-composer-footer]
+  > :first-child
+  > div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))
+  > div
+  > [data-option-display] {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
 .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
   grid-column: 3;
   line-height: 1.25;

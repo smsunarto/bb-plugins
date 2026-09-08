@@ -30,6 +30,15 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("font-weight: 400");
   });
 
+  test("lets a lone non-project machine summary fill the footer", () => {
+    expect(theme).toContain(
+      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n  > div:has(> [data-option-display]) {\n  grid-column: 1 / -1;\n  width: 100%;\n  max-width: none;",
+    );
+    expect(theme).toContain(
+      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n  > div\n  > [data-option-display] {\n  flex: 1 1 auto;\n  max-width: none;",
+    );
+  });
+
   test("styles bb's notification center without replacing responsive placement", () => {
     expect(theme).toContain('.dark [data-testid="notification-center"]');
     expect(theme).toContain(
