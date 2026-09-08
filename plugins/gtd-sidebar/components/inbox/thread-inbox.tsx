@@ -22,20 +22,13 @@ import { ThreadCard } from "@/components/inbox/thread-card";
 import { SlimRow } from "@/components/inbox/slim-row";
 import type { DispatchRowCommand, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
-import { useLifecycle } from "@/hooks/use-lifecycle";
-import { useSettledThreads } from "@/hooks/use-settled-threads";
+import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
+import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
 import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
-import {
-  filterByProject,
-  hideChildrenOfVisibleParents,
-  nextThreadIdAfterSettle,
-  partitionActiveSections,
-  partitionPinned,
-  searchThreadsByTitle,
-  sortByLatestAttentionDescending,
-} from "@/lib/inbox";
+import { filterByProject, nextThreadIdAfterSettle } from "@/lib/inbox";
+import { buildInboxTree, visibleInboxRows } from "@/lib/inbox-tree";
 import { mergeSettledThreads } from "@/lib/settled-threads";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
 
@@ -61,14 +54,6 @@ export function ThreadInbox({
   searchQuery,
 }: PluginThreadListProps) {
   const { status, threads: hostThreads, projects } = useSidebarThreads();
-  const threadActions = useSidebarThreadActions();
-  const navigate = useBbNavigate();
-  // The palette's settle row archives through this same host action, and a
-  // mounted list is the only place the action exists.
-  useEffect(() => {
-    publishSidebarActions(threadActions);
-    return () => forgetSidebarActions(threadActions);
-  }, [threadActions]);
   const now = useMinuteClock();
   const lifecycle = useLifecycle();
   // bb's view never carries an archived thread, so the Settled shelf's rows
@@ -91,6 +76,7 @@ export function ThreadInbox({
   // the glyph. That way the common case never flashes it on and off.
   const { values: settingValues } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon !== false;
+  const compactThreads = settingValues?.compactThreads === true;
 
   const gitButlerLabels = useGitButlerLabels(threads);
 
@@ -102,89 +88,29 @@ export function ThreadInbox({
     [projects],
   );
 
-  const { pinned, nextAction, waiting, snoozed, settled } = useMemo(() => {
-    const scoped = filterByProject(threads, scope === ALL_PROJECTS ? null : scope);
-    // Children live in their parent's header chip instead of the flat list;
-    // an orphan whose parent is not on screen stays here.
-    const matched = searchThreadsByTitle(hideChildrenOfVisibleParents(scoped), searchQuery);
-    const active: typeof matched = [];
-    const onSnoozeShelf: typeof matched = [];
-    const onSettledShelf: typeof matched = [];
-    for (const thread of matched) {
-      // Archived outranks a snooze row the thread may still hold: the archive
-      // is bb's fact, and the row is only what the plugin last wrote.
-      if (thread.isArchived) onSettledShelf.push(thread);
-      else if (lifecycle.shelfFor(thread) === "snoozed") onSnoozeShelf.push(thread);
-      else active.push(thread);
-    }
-    const split = partitionPinned(active);
-    const activeSections = partitionActiveSections(split.inbox);
-    return {
-      pinned: sortByLatestAttentionDescending(split.pinned),
-      ...activeSections,
-      snoozed: sortByLatestAttentionDescending(onSnoozeShelf),
-      // Already newest-archive-first from the hook; the merge kept that order.
-      settled: onSettledShelf,
-    };
-  }, [lifecycle, scope, searchQuery, threads]);
-
-  const shelvedTotal =
-    pinned.length + nextAction.length + waiting.length + snoozed.length + settled.length;
+  const { shelves, toggleThread } = useInboxTree(threads, lifecycle, scope, searchQuery);
+  const { pinned, nextAction, waiting } = shelves;
+  const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
+  const searching = searchQuery.trim().length > 0;
   const activeShelves = [
     ["pinned", "Pinned", pinned],
     ["nextAction", "Next Action", nextAction],
     ["waiting", "Waiting", waiting],
   ] as const;
+  const visibleActiveThreads = useMemo(
+    () => [...pinned, ...nextAction, ...waiting].map((row) => row.node.thread),
+    [pinned, nextAction, waiting],
+  );
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
 
-  // bb's archive sends the viewer to the compose screen once the mutation
-  // resolves. Route changes commit inside a React transition, so against a
-  // local server that lands before the neighbour's route does and wins. The
-  // neighbour is therefore opened twice if need be: eagerly, and again from
-  // this effect once the view has left the settled thread for nothing.
-  const pendingAdvanceRef = useRef<{ settledThreadId: string; nextThreadId: string } | null>(null);
-  useEffect(() => {
-    const pending = pendingAdvanceRef.current;
-    if (pending === null || activeThreadId === pending.settledThreadId) return;
-    pendingAdvanceRef.current = null;
-    if (activeThreadId === null) threadActions.open(pending.nextThreadId);
-  }, [activeThreadId, threadActions]);
-
-  const settleAndAdvance = (threadId: string, sectionThreads: readonly PluginSidebarThread[]) => {
-    const nextThreadId = nextThreadIdAfterSettle(sectionThreads, threadId, activeThreadId);
-    if (nextThreadId !== null) {
-      pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId };
-      threadActions.open(nextThreadId);
-      onNavigate();
-    }
-    threadActions.archive(threadId);
-  };
-
-  const command = useCommittedEvent((command: RowCommand) => {
-    switch (command.kind) {
-      case "open":
-        if (command.shelf === "settled") navigate.toThread(command.threadId);
-        else threadActions.open(command.threadId, { split: command.split });
-        onNavigate();
-        return;
-      case "settle":
-        settleAndAdvance(command.threadId, { pinned, nextAction, waiting }[command.shelf]);
-        return;
-      case "snooze":
-        lifecycle.snooze(command.threadId, command.until);
-        return;
-      case "restore":
-        if (command.shelf === "snoozed") lifecycle.unsnooze(command.threadId);
-        else settledThreads.unsettle(command.threadId);
-        return;
-      case "pin":
-        void threadActions.setPinned(command.threadId, command.pinned);
-        return;
-      case "request-delete":
-        threadActions.requestDelete(command.threadId);
-    }
+  const command = useRowCommands({
+    activeThreadId,
+    onNavigate,
+    lifecycle,
+    settledThreads,
+    visibleActiveThreads,
   });
 
   return (
@@ -239,34 +165,52 @@ export function ThreadInbox({
           {activeShelves.map(([shelf, label, shelfThreads]) =>
             shelfThreads.length > 0 ? (
               <Shelf key={label} label={label} isCompactViewport={isCompactViewport}>
-                {shelfThreads.map((thread) => (
-                  <ThreadCard
-                    key={thread.id}
-                    thread={thread}
-                    shelf={shelf}
-                    provider={providerInfoById.get(thread.providerId)}
-                    showProviderIcon={showProviderIcon}
-                    projectName={projectNameById.get(thread.projectId) ?? null}
-                    branchName={resolveSidebarBranchLabel(
-                      thread.environment?.branchName ?? null,
-                      thread.environment?.id ?? null,
-                      gitButlerLabels,
-                    )}
-                    isActive={thread.id === activeThreadId}
-                    canPark={lifecycle.canPark(thread)}
-                    isCompactViewport={isCompactViewport}
-                    command={command}
-                    now={now}
-                  />
-                ))}
+                {shelfThreads.map((row) => {
+                  const thread = row.node.thread;
+                  return (
+                    <ThreadCard
+                      key={thread.id}
+                      thread={thread}
+                      shelf={shelf}
+                      provider={providerInfoById.get(thread.providerId)}
+                      showProviderIcon={showProviderIcon}
+                      compactThreads={compactThreads}
+                      depth={row.depth}
+                      parentId={row.parentId}
+                      parentProjectId={row.parentProjectId}
+                      parentTitle={row.parentTitle}
+                      childCount={row.node.children.length}
+                      expanded={row.expanded}
+                      guides={row.guides}
+                      lastChild={row.lastChild}
+                      statusThread={row.statusThread}
+                      toggleThread={toggleThread}
+                      projectName={projectNameById.get(thread.projectId) ?? null}
+                      branchName={resolveSidebarBranchLabel(
+                        thread.environment?.branchName ?? null,
+                        thread.environment?.id ?? null,
+                        gitButlerLabels,
+                      )}
+                      isActive={thread.id === activeThreadId}
+                      canPark={lifecycle.canPark(thread)}
+                      isCompactViewport={isCompactViewport}
+                      command={command}
+                      now={now}
+                    />
+                  );
+                })}
               </Shelf>
             ) : null,
           )}
           <ParkedShelf
+            compactThreads={compactThreads}
+            providerInfoById={providerInfoById}
+            projectNameById={projectNameById}
+            gitButlerLabels={gitButlerLabels}
             label="Snoozed"
             shelf="snoozed"
-            threads={snoozed}
-            expanded={showSnoozed}
+            threads={shelves.snoozed.map((row) => row.node.thread)}
+            expanded={showSnoozed || searching}
             onToggle={() => setShowSnoozed((open) => !open)}
             activeThreadId={activeThreadId}
             wakeAtFor={lifecycle.wakeAtFor}
@@ -275,10 +219,14 @@ export function ThreadInbox({
             now={now}
           />
           <ParkedShelf
+            compactThreads={compactThreads}
+            providerInfoById={providerInfoById}
+            projectNameById={projectNameById}
+            gitButlerLabels={gitButlerLabels}
             label="Settled"
             shelf="settled"
-            threads={settled}
-            expanded={showSettled}
+            threads={shelves.settled.map((row) => row.node.thread)}
+            expanded={showSettled || searching}
             onToggle={() => setShowSettled((open) => !open)}
             activeThreadId={activeThreadId}
             wakeAtFor={() => null}
@@ -290,6 +238,120 @@ export function ThreadInbox({
       </div>
     </div>
   );
+}
+
+function useRowCommands({
+  activeThreadId,
+  onNavigate,
+  lifecycle,
+  settledThreads,
+  visibleActiveThreads,
+}: {
+  activeThreadId: PluginThreadListProps["activeThreadId"];
+  onNavigate: PluginThreadListProps["onNavigate"];
+  lifecycle: LifecycleApi;
+  settledThreads: SettledThreadsApi;
+  visibleActiveThreads: readonly PluginSidebarThread[];
+}) {
+  const threadActions = useSidebarThreadActions();
+  const navigate = useBbNavigate();
+  // The palette's settle row archives through this same host action, and a
+  // mounted list is the only place the action exists.
+  useEffect(() => {
+    publishSidebarActions(threadActions);
+    return () => forgetSidebarActions(threadActions);
+  }, [threadActions]);
+  // bb's archive sends the viewer to the compose screen once the mutation
+  // resolves. Route changes commit inside a React transition, so against a
+  // local server that lands before the neighbour's route does and wins. The
+  // neighbour is therefore opened twice if need be: eagerly, and again from
+  // this effect once the view has left the settled thread for nothing.
+  const pendingAdvanceRef = useRef<{ settledThreadId: string; nextThreadId: string } | null>(null);
+  useEffect(() => {
+    const pending = pendingAdvanceRef.current;
+    if (pending === null || activeThreadId === pending.settledThreadId) return;
+    pendingAdvanceRef.current = null;
+    if (activeThreadId === null) threadActions.open(pending.nextThreadId);
+  }, [activeThreadId, threadActions]);
+
+  const settleAndAdvance = (threadId: string, sectionThreads: readonly PluginSidebarThread[]) => {
+    const nextThreadId = nextThreadIdAfterSettle(sectionThreads, threadId, activeThreadId);
+    if (nextThreadId !== null) {
+      pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId };
+      threadActions.open(nextThreadId);
+      onNavigate();
+    }
+    threadActions.archive(threadId);
+  };
+
+  const command = useCommittedEvent((command: RowCommand) => {
+    switch (command.kind) {
+      case "open":
+        if (command.shelf === "settled") navigate.toThread(command.threadId);
+        else threadActions.open(command.threadId, { split: command.split });
+        onNavigate();
+        return;
+      case "settle":
+        settleAndAdvance(command.threadId, visibleActiveThreads);
+        return;
+      case "snooze":
+        lifecycle.snooze(command.threadId, command.until);
+        return;
+      case "restore":
+        if (command.shelf === "snoozed") lifecycle.unsnooze(command.threadId);
+        else settledThreads.unsettle(command.threadId);
+        return;
+      case "pin":
+        void threadActions.setPinned(command.threadId, command.pinned);
+        return;
+      case "request-delete":
+        threadActions.requestDelete(command.threadId);
+    }
+  });
+
+  return command;
+}
+
+function useInboxTree(
+  threads: readonly PluginSidebarThread[],
+  lifecycle: LifecycleApi,
+  scope: string,
+  searchQuery: string,
+) {
+  const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleThread = useCommittedEvent((threadId: string) => {
+    setCollapsedThreads((current) => {
+      const next = new Set(current);
+      if (next.has(threadId)) next.delete(threadId);
+      else next.add(threadId);
+      return next;
+    });
+  });
+  const tree = useMemo(
+    () =>
+      buildInboxTree(
+        filterByProject(threads, scope === ALL_PROJECTS ? null : scope),
+        (thread) => (lifecycle.shelfFor(thread) === "snoozed" ? "snoozed" : "active"),
+        searchQuery,
+      ),
+    [lifecycle, scope, searchQuery, threads],
+  );
+  const shelves = useMemo(() => {
+    const rows = (shelf: (typeof tree)[number]["shelf"]) =>
+      visibleInboxRows(
+        tree.filter((node) => node.shelf === shelf),
+        collapsedThreads,
+        searchQuery,
+      );
+    return {
+      pinned: rows("pinned"),
+      nextAction: rows("nextAction"),
+      waiting: rows("waiting"),
+      snoozed: rows("snoozed"),
+      settled: rows("settled"),
+    };
+  }, [collapsedThreads, searchQuery, tree]);
+  return { shelves, toggleThread };
 }
 
 function useMinuteClock(): number {
@@ -402,6 +464,10 @@ function InboxStatus({ children }: { children: React.ReactNode }) {
  * vanishes entirely at zero.
  */
 function ParkedShelf({
+  compactThreads,
+  providerInfoById,
+  projectNameById,
+  gitButlerLabels,
   label,
   shelf,
   threads,
@@ -415,6 +481,10 @@ function ParkedShelf({
 }: {
   label: string;
   shelf: "snoozed" | "settled";
+  compactThreads: boolean;
+  providerInfoById: ReadonlyMap<string, { displayName: string; logoUrl: string | null }>;
+  projectNameById: ReadonlyMap<string, string>;
+  gitButlerLabels: ReadonlyMap<string, string>;
   threads: readonly PluginSidebarThread[];
   expanded: boolean;
   onToggle: () => void;
@@ -469,6 +539,14 @@ function ParkedShelf({
             <SlimRow
               key={thread.id}
               thread={thread}
+              compactThreads={compactThreads}
+              projectName={projectNameById.get(thread.projectId) ?? null}
+              provider={providerInfoById.get(thread.providerId)}
+              branchName={resolveSidebarBranchLabel(
+                thread.environment?.branchName ?? null,
+                thread.environment?.id ?? null,
+                gitButlerLabels,
+              )}
               isActive={thread.id === activeThreadId}
               shelf={shelf}
               wakeAt={wakeAtFor(thread)}
@@ -508,7 +586,7 @@ function Shelf({
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}
-      <ul className="flex flex-col gap-1">{children}</ul>
+      <ul className="flex flex-col gap-0.5">{children}</ul>
     </section>
   );
 }

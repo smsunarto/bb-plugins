@@ -37,6 +37,7 @@ export function StatusOrTime({
   if (hasStatusGlyph(thread.indicator)) {
     return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
+  if (thread.isUnread) return <StatusGlyph indicator="unread-success" label="Unread response" />;
   return (
     <span className="tabular-nums text-2xs text-muted-foreground/40">
       {relativeTimeLabel(thread.latestAttentionAt, now)}

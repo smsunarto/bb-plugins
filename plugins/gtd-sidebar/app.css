@@ -52,3 +52,119 @@
     opacity: 0;
   }
 }
+
+.gtd-thread-row {
+  height: 52px;
+  padding: 6px 10px 6px calc(24px + var(--gtd-depth, 0) * 24px);
+}
+.gtd-thread-row.gtd-compact-row,
+.gtd-thread-row.gtd-parked-row {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.gtd-thread-title {
+  display: flex;
+  font-size: 12px;
+}
+.gtd-fading-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+.gtd-fading-text[data-overflowing="true"] {
+  mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
+}
+.gtd-project-chip {
+  display: block;
+  flex: 0 0 72px;
+  width: 72px;
+  min-width: 0;
+  padding: 0 5px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  line-height: 17px;
+  text-align: center;
+  pointer-events: none;
+}
+.gtd-project-chip .gtd-fading-text[data-overflowing="true"] {
+  text-align: left;
+  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+}
+.gtd-disclosure {
+  position: absolute;
+  z-index: 2;
+  left: calc(var(--gtd-depth, 0) * 24px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.gtd-disclosure:focus {
+  outline: none;
+}
+.gtd-disclosure:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
+}
+.gtd-trailing-actions {
+  position: absolute;
+  z-index: 2;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+}
+.gtd-thread-row[data-action-count="2"]:is(:hover, :focus-within) .gtd-trailing-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.gtd-thread-row[data-action-count="2"]:is(:hover, :focus-within) .gtd-rest-signals {
+  visibility: hidden;
+}
+.gtd-thread-row[data-action-count="2"]:is(:hover, :focus-within) .gtd-summary > .gtd-rest-signals {
+  display: none;
+}
+.gtd-thread-row[data-action-count="2"]:is(:hover, :focus-within) .gtd-summary {
+  padding-right: 51px;
+}
+.gtd-tree-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.gtd-tree-line {
+  position: absolute;
+  top: -2px;
+  bottom: 0;
+  width: 1px;
+  background: var(--sidebar-border);
+}
+.gtd-tree-line-last {
+  bottom: 50%;
+}
+.gtd-tree-elbow {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  background: var(--sidebar-border);
+}
+.gtd-thread-tooltip {
+  overflow-wrap: anywhere;
+}

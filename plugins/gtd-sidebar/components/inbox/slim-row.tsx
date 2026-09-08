@@ -14,6 +14,8 @@ import {
   type ThreadAction,
 } from "@/components/inbox/thread-actions";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
+import { FadingText, ProjectChip, ThreadDetails } from "@/components/inbox/thread-details";
+import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
@@ -22,6 +24,10 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 interface SlimRowProps {
   thread: PluginSidebarThread;
   isActive: boolean;
+  compactThreads: boolean;
+  projectName: string | null;
+  branchName: string | null;
+  provider?: ProviderGlyphInfo;
   shelf: "snoozed" | "settled";
   wakeAt: number | null;
   now: number;
@@ -51,6 +57,10 @@ export const SlimRow = memo(function SlimRow(props: SlimRowProps) {
  */
 const SlimRowBody = memo(function SlimRowBody({
   thread,
+  compactThreads,
+  projectName,
+  branchName,
+  provider,
   isActive,
   shelf,
   wakeAt,
@@ -79,11 +89,14 @@ const SlimRowBody = memo(function SlimRowBody({
     enabled: isCompactViewport,
   });
 
-  const titleClassName = isActive
-    ? "text-foreground"
-    : isCompactViewport
-      ? "text-muted-foreground"
-      : "text-muted-foreground/70";
+  const compact = compactThreads && !isCompactViewport;
+  const { rowClassName, titleClassName } = slimRowPresentation({
+    isCompactViewport,
+    isActive,
+    compact,
+    isPressing,
+    isMenuOpen,
+  });
   const status = <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} now={now} />;
   const highlightContent = (
     <div className="flex h-full items-center gap-2 px-2.5 text-xs">
@@ -100,35 +113,39 @@ const SlimRowBody = memo(function SlimRowBody({
         <div
           ref={rowRef}
           {...handlers}
-          className={cn(
-            "group/slim relative flex items-center gap-2 rounded-xl px-2.5 text-xs transition-all duration-150",
-            isCompactViewport ? "h-11" : "h-7 rounded-md",
-            isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
-            isPressing && "bg-sidebar-accent",
-            isMenuOpen && "bg-sidebar-accent opacity-0",
-          )}
+          data-action-count={isCompactViewport ? 0 : 1}
+          className={rowClassName}
         >
-          {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
+          <ThreadDetails
+            thread={thread}
+            projectName={projectName}
+            branchName={branchName}
+            provider={provider}
+            enabled={compact}
+          >
+            {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
              anchor: the shortcut-target contract and modifier-click
              split-open both depend on it. A button breaks each. */}
-          <a
-            onPointerDown={onSplitPointerDown}
-            data-sidebar-thread-shortcut-target=""
-            data-sidebar-thread-id={thread.id}
-            href="#"
-            aria-label={title}
-            onClick={(event) => {
-              if (event.button !== 0) return;
-              event.preventDefault();
-              command({
-                kind: "open",
-                threadId: thread.id,
-                shelf,
-                split: event.metaKey || event.ctrlKey,
-              });
-            }}
-            className="absolute inset-0 cursor-pointer rounded-xl"
-          />
+            <a
+              onPointerDown={onSplitPointerDown}
+              data-sidebar-thread-shortcut-target=""
+              data-sidebar-thread-id={thread.id}
+              href="#"
+              aria-label={title}
+              onClick={(event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                command({
+                  kind: "open",
+                  threadId: thread.id,
+                  shelf,
+                  split: event.metaKey || event.ctrlKey,
+                });
+              }}
+              className="absolute inset-0 cursor-pointer rounded-xl"
+            />
+          </ThreadDetails>
+          {compact ? <ProjectChip name={projectName} /> : null}
           <span
             className={cn(
               "pointer-events-none relative min-w-0 flex-1 truncate",
@@ -136,7 +153,7 @@ const SlimRowBody = memo(function SlimRowBody({
               "group-hover/slim:text-foreground",
             )}
           >
-            {title}
+            {isCompactViewport ? title : <FadingText text={title} />}
           </span>
           <SlimRowStatus
             status={status}
@@ -158,6 +175,35 @@ const SlimRowBody = memo(function SlimRowBody({
     </RowContextMenu>
   );
 });
+
+function slimRowPresentation({
+  isCompactViewport,
+  isActive,
+  compact,
+  isPressing,
+  isMenuOpen,
+}: Pick<SlimRowProps, "isCompactViewport" | "isActive"> & {
+  compact: boolean;
+  isPressing: boolean;
+  isMenuOpen: boolean;
+}) {
+  return {
+    rowClassName: cn(
+      "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",
+      !isCompactViewport && "gtd-thread-row gtd-parked-row",
+      compact && "gtd-compact-row",
+      "transition-all duration-150",
+      isCompactViewport ? "h-11" : "h-8 rounded-md",
+      isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+      isPressing && "bg-sidebar-accent",
+      isMenuOpen && "bg-sidebar-accent opacity-0",
+    ),
+    titleClassName: cn(
+      isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+      isActive && "text-foreground",
+    ),
+  };
+}
 
 function SlimRowStatusLabel({
   thread,
@@ -246,7 +292,7 @@ function RestoreButton({
         "pointer-events-auto rounded text-muted-foreground hover:text-foreground",
         isCompactViewport
           ? "relative z-[1] flex size-10 shrink-0 items-center justify-center hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          : "absolute -right-0.5 top-1/2 -translate-y-1/2 p-0.5 opacity-0 focus-visible:opacity-100 group-hover/slim:opacity-100",
+          : "gtd-restore-button absolute -right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center opacity-0 focus-visible:opacity-100 group-hover/slim:opacity-100 group-focus-within/slim:opacity-100",
       )}
     >
       <Icon

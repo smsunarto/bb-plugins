@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import { buildInboxTree, visibleInboxRows } from "../lib/inbox-tree.ts";
 import {
   activeSectionFor,
   childrenOf,
   filterByProject,
-  hideChildrenOfVisibleParents,
   nextThreadIdAfterSettle,
   parentOf,
-  partitionActiveSections,
-  partitionPinned,
-  searchThreadsByTitle,
-  sortByLatestAttentionDescending,
-  sortByUpdatedAtDescending,
   threadDisplayTitle,
 } from "../lib/inbox.ts";
 
@@ -49,81 +44,6 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
     ...overrides,
   };
 }
-
-describe("sortByLatestAttentionDescending", () => {
-  it("puts the thread that last needed the user first", () => {
-    const ordered = sortByLatestAttentionDescending([
-      thread({ id: "a", latestAttentionAt: 1 }),
-      thread({ id: "b", latestAttentionAt: 3 }),
-      thread({ id: "c", latestAttentionAt: 2 }),
-    ]);
-    assert.deepEqual(
-      ordered.map((t) => t.id),
-      ["b", "c", "a"],
-    );
-  });
-
-  it("uses creation time, then id, for stable ties", () => {
-    const ordered = sortByLatestAttentionDescending([
-      thread({ id: "b", createdAt: 1, latestAttentionAt: 5 }),
-      thread({ id: "c", createdAt: 2, latestAttentionAt: 5 }),
-      thread({ id: "a", createdAt: 1, latestAttentionAt: 5 }),
-    ]);
-    assert.deepEqual(
-      ordered.map((t) => t.id),
-      ["c", "a", "b"],
-    );
-  });
-
-  it("ignores updatedAt, which a rename moves and attention does not", () => {
-    const ordered = sortByLatestAttentionDescending([
-      thread({ id: "renamed", latestAttentionAt: 1, updatedAt: 9 }),
-      thread({ id: "worked", latestAttentionAt: 5, updatedAt: 5 }),
-    ]);
-    assert.deepEqual(
-      ordered.map((t) => t.id),
-      ["worked", "renamed"],
-    );
-  });
-
-  it("does not mutate its input", () => {
-    const input = [
-      thread({ id: "a", latestAttentionAt: 1 }),
-      thread({ id: "b", latestAttentionAt: 2 }),
-    ];
-    sortByLatestAttentionDescending(input);
-    assert.deepEqual(
-      input.map((t) => t.id),
-      ["a", "b"],
-    );
-  });
-});
-
-describe("sortByUpdatedAtDescending", () => {
-  it("puts the most recently written row first, ignoring attention", () => {
-    const ordered = sortByUpdatedAtDescending([
-      thread({ id: "a", updatedAt: 1, latestAttentionAt: 9 }),
-      thread({ id: "b", updatedAt: 3, latestAttentionAt: 1 }),
-      thread({ id: "c", updatedAt: 2, latestAttentionAt: 5 }),
-    ]);
-    assert.deepEqual(
-      ordered.map((t) => t.id),
-      ["b", "c", "a"],
-    );
-  });
-
-  it("uses creation time, then id, for stable ties", () => {
-    const ordered = sortByUpdatedAtDescending([
-      thread({ id: "b", createdAt: 1, updatedAt: 5 }),
-      thread({ id: "c", createdAt: 2, updatedAt: 5 }),
-      thread({ id: "a", createdAt: 1, updatedAt: 5 }),
-    ]);
-    assert.deepEqual(
-      ordered.map((t) => t.id),
-      ["c", "a", "b"],
-    );
-  });
-});
 
 describe("active sections", () => {
   it("puts quiet work with the user and live work in waiting", () => {
@@ -162,36 +82,6 @@ describe("active sections", () => {
       "next-action",
     );
   });
-
-  it("sorts next action by attention and waiting by the last row write", () => {
-    // Every thread carries both clocks, disagreeing, so each section can only
-    // pass by reading the one it is supposed to read.
-    const threads = [
-      thread({ id: "quiet-old", latestAttentionAt: 10, updatedAt: 40 }),
-      thread({ id: "quiet-new", latestAttentionAt: 20, updatedAt: 30 }),
-      thread({
-        id: "started-first",
-        latestAttentionAt: 40,
-        updatedAt: 10,
-        indicator: "runtime",
-      }),
-      thread({
-        id: "started-last",
-        latestAttentionAt: 30,
-        updatedAt: 20,
-        indicator: "runtime",
-      }),
-    ];
-    const sections = partitionActiveSections(threads);
-    assert.deepEqual(
-      sections.nextAction.map((candidate) => candidate.id),
-      ["quiet-new", "quiet-old"],
-    );
-    assert.deepEqual(
-      sections.waiting.map((candidate) => candidate.id),
-      ["started-last", "started-first"],
-    );
-  });
 });
 
 describe("threadDisplayTitle", () => {
@@ -215,25 +105,6 @@ describe("threadDisplayTitle", () => {
   });
 });
 
-describe("searchThreadsByTitle", () => {
-  it("matches case-insensitively on the visible title", () => {
-    const threads = [
-      thread({ id: "a", title: "Sidebar work" }),
-      thread({ id: "b", title: "Something else" }),
-      thread({ id: "c", title: null, titleFallback: "sidebar fallback" }),
-    ];
-    assert.deepEqual(
-      searchThreadsByTitle(threads, "SIDEBAR").map((t) => t.id),
-      ["a", "c"],
-    );
-  });
-
-  it("returns everything for a blank query", () => {
-    const threads = [thread({ id: "a" }), thread({ id: "b" })];
-    assert.equal(searchThreadsByTitle(threads, "   ").length, 2);
-  });
-});
-
 describe("filtering", () => {
   it("scopes to one project, or to all", () => {
     const threads = [thread({ id: "a", projectId: "p1" }), thread({ id: "b", projectId: "p2" })];
@@ -242,22 +113,6 @@ describe("filtering", () => {
       ["a"],
     );
     assert.equal(filterByProject(threads, null).length, 2);
-  });
-
-  it("splits pinned from the rest, keeping order", () => {
-    const { pinned, inbox } = partitionPinned([
-      thread({ id: "a" }),
-      thread({ id: "b", isPinned: true }),
-      thread({ id: "c" }),
-    ]);
-    assert.deepEqual(
-      pinned.map((t) => t.id),
-      ["b"],
-    );
-    assert.deepEqual(
-      inbox.map((t) => t.id),
-      ["a", "c"],
-    );
   });
 });
 
@@ -282,29 +137,6 @@ describe("nextThreadIdAfterSettle", () => {
 });
 
 describe("child threads", () => {
-  it("hides a child whose parent is on screen", () => {
-    const visible = hideChildrenOfVisibleParents([
-      thread({ id: "parent" }),
-      thread({ id: "child", parentThreadId: "parent" }),
-    ]);
-    assert.deepEqual(
-      visible.map((t) => t.id),
-      ["parent"],
-    );
-  });
-
-  // An orphan must stay visible: hidden here AND absent from any header chip
-  // would make it unreachable everywhere.
-  it("keeps a child whose parent is not on screen", () => {
-    const visible = hideChildrenOfVisibleParents([
-      thread({ id: "child", parentThreadId: "archived-parent" }),
-    ]);
-    assert.deepEqual(
-      visible.map((t) => t.id),
-      ["child"],
-    );
-  });
-
   it("lists a thread's children oldest first", () => {
     const children = childrenOf(
       [
@@ -343,5 +175,172 @@ describe("parentOf", () => {
   it("returns null when the parent row is gone", () => {
     const threads = [thread({ id: "child", parentThreadId: "deleted" })];
     assert.equal(parentOf(threads, "child"), null);
+  });
+});
+
+describe("inbox families", () => {
+  const active = () => "active" as const;
+  const ids = (rows: ReturnType<typeof visibleInboxRows>) => rows.map((row) => row.node.thread.id);
+
+  it("renders nested preorder and only advances through expanded rows", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "root" }),
+        thread({ id: "child", parentThreadId: "root", createdAt: 101 }),
+        thread({ id: "grandchild", parentThreadId: "child" }),
+        thread({ id: "sibling", parentThreadId: "root", createdAt: 102 }),
+      ],
+      active,
+    );
+    const open = visibleInboxRows(tree, new Set());
+    assert.deepEqual(ids(open), ["root", "child", "grandchild", "sibling"]);
+    assert.deepEqual(
+      open.map((row) => row.depth),
+      [0, 1, 2, 1],
+    );
+    assert.deepEqual(
+      open.map((row) => [row.guides, row.lastChild]),
+      [
+        ["", false],
+        ["", false],
+        ["1", true],
+        ["", true],
+      ],
+    );
+    const collapsed = visibleInboxRows(tree, new Set(["child"]));
+    assert.deepEqual(ids(collapsed), ["root", "child", "sibling"]);
+    assert.equal(
+      nextThreadIdAfterSettle(
+        collapsed.map((row) => row.node.thread),
+        "child",
+        "child",
+      ),
+      "sibling",
+    );
+  });
+
+  it("detaches parked children and active children of parked parents", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "root" }),
+        thread({ id: "snoozed", parentThreadId: "root" }),
+        thread({ id: "settled", parentThreadId: "root", isArchived: true }),
+        thread({ id: "active-child", parentThreadId: "settled" }),
+      ],
+      (item) => (item.id === "snoozed" ? "snoozed" : "active"),
+    );
+    assert.equal(tree.length, 4);
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.lifecycle]),
+      [
+        ["active-child", "active"],
+        ["root", "active"],
+        ["snoozed", "snoozed"],
+        ["settled", "settled"],
+      ],
+    );
+  });
+
+  it("keeps forks and orphans reachable and breaks cycles", () => {
+    const input = [
+      thread({ id: "root" }),
+      thread({ id: "fork", originKind: "fork", parentThreadId: "root" }),
+      thread({ id: "orphan", parentThreadId: "missing" }),
+      thread({ id: "a", parentThreadId: "b" }),
+      thread({ id: "b", parentThreadId: "a" }),
+      thread({ id: "self", parentThreadId: "self" }),
+    ];
+    const tree = buildInboxTree(input, active);
+    const rows = visibleInboxRows(tree, new Set());
+    assert.equal(rows.length, input.length);
+    assert.equal(new Set(ids(rows)).size, input.length);
+    assert.equal(rows.find((row) => row.node.thread.id === "fork")?.depth, 0);
+    assert.equal(parentOf(input, "fork"), null);
+    assert.deepEqual(childrenOf(input, "root"), []);
+  });
+
+  it("promotes a working family for hidden descendant attention", () => {
+    const root = thread({ id: "root", indicator: "runtime" });
+    const child = thread({
+      id: "child",
+      parentThreadId: "root",
+      indicator: "runtime",
+      isUnread: true,
+    });
+    const tree = buildInboxTree([root, child], active);
+    assert.equal(tree[0]?.shelf, "nextAction");
+    assert.equal(visibleInboxRows(tree, new Set(["root"]))[0]?.statusThread, child);
+    assert.equal(visibleInboxRows(tree, new Set())[0]?.statusThread, root);
+    assert.equal(tree[0]?.lifecycle, "active");
+  });
+
+  it("keeps a family pinned when a descendant is pinned", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "other", latestAttentionAt: 900 }),
+        thread({ id: "root", indicator: "runtime" }),
+        thread({ id: "child", parentThreadId: "root", isPinned: true }),
+      ],
+      active,
+    );
+    assert.deepEqual(ids(visibleInboxRows(tree, new Set())), ["root", "child", "other"]);
+    assert.equal(tree[0]?.shelf, "pinned");
+    assert.equal(tree[0]?.thread.isPinned, false);
+  });
+
+  it("reveals matching descendants with ancestors and preserves a matching parent's family", () => {
+    const input = [
+      thread({ id: "root", title: "Project" }),
+      thread({ id: "child", title: null, titleFallback: "Needle", parentThreadId: "root" }),
+      thread({ id: "sibling", title: "Elsewhere", parentThreadId: "root" }),
+    ];
+    assert.deepEqual(
+      ids(
+        visibleInboxRows(buildInboxTree(input, active, " NEEDLE "), new Set(["root"]), " NEEDLE "),
+      ),
+      ["root", "child"],
+    );
+    assert.deepEqual(
+      ids(visibleInboxRows(buildInboxTree(input, active, "project"), new Set(["root"]), "project")),
+      ["root", "child", "sibling"],
+    );
+    assert.deepEqual(
+      ids(visibleInboxRows(buildInboxTree(input, active, "   "), new Set(), "   ")),
+      ["root", "child", "sibling"],
+    );
+  });
+
+  it("keeps stable creation and id ties without mutating the roster", () => {
+    for (const indicator of ["none", "runtime"] as const) {
+      const input = Object.freeze([
+        Object.freeze(thread({ id: "b", createdAt: 1, indicator })),
+        Object.freeze(thread({ id: "c", createdAt: 2, indicator })),
+        Object.freeze(thread({ id: "a", createdAt: 1, indicator })),
+      ]);
+      const tree = buildInboxTree(input, active);
+      assert.deepEqual(ids(visibleInboxRows(tree, new Set())), ["c", "a", "b"]);
+      assert.deepEqual(
+        input.map((item) => item.id),
+        ["b", "c", "a"],
+      );
+    }
+  });
+
+  it("uses each shelf's clock while preserving settled order", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "waiting-old", indicator: "runtime", updatedAt: 10, latestAttentionAt: 1000 }),
+        thread({ id: "renamed", latestAttentionAt: 10, updatedAt: 900 }),
+        thread({ id: "active", latestAttentionAt: 50, updatedAt: 10 }),
+        thread({ id: "waiting-new", indicator: "runtime", updatedAt: 20, latestAttentionAt: 1 }),
+        thread({ id: "settled-first", isArchived: true, latestAttentionAt: 1 }),
+        thread({ id: "settled-second", isArchived: true, latestAttentionAt: 500 }),
+      ],
+      active,
+    );
+    assert.deepEqual(
+      tree.map((node) => node.thread.id),
+      ["active", "renamed", "waiting-new", "waiting-old", "settled-first", "settled-second"],
+    );
   });
 });

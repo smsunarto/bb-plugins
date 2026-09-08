@@ -50,6 +50,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     });
   }
   dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
   const { act, cleanup, configure, fireEvent, screen, within } =
     await import("@testing-library/react");
   const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -209,7 +214,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     return createElement(HostContext.Provider, { value: host }, createElement(ThreadInbox, inbox));
   }
 
-  function mount(host: HostState, inbox: Partial<PluginThreadListProps> = {}) {
+  function mount(
+    host: HostState,
+    inbox: Partial<PluginThreadListProps> = {},
+    compactThreads = false,
+  ) {
     let current: InboxProps = {
       host,
       inbox: {
@@ -222,7 +231,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ...inbox,
       },
     };
-    const slot = renderSlot({ component: Inbox }, current);
+    const slot = renderSlot({ component: Inbox }, current, { settings: { compactThreads } });
     return {
       slot,
       update(next: Partial<InboxProps>) {
@@ -430,6 +439,118 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       rowBodyRender.mockClear();
       view.update({ host: { ...host, splitThreads: ["b"] } });
       assert.equal(rowBodyRender.mock.calls.length, 0);
+    });
+  });
+
+  describe("thread hierarchy", () => {
+    it.each([false, true])(
+      "navigates nested families with desktop compact=%s",
+      (compactThreads) => {
+        const host = hostState([
+          thread("root"),
+          thread("child", { parentThreadId: "root" }),
+          thread("grandchild", { parentThreadId: "child" }),
+          thread("sibling", { parentThreadId: "root" }),
+        ]);
+        const view = mount(host, {}, compactThreads);
+        assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild", "sibling"]);
+        act(() => row(view.slot, "root").focus());
+        fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowRight" });
+        assert.equal(document.activeElement, row(view.slot, "child"));
+        fireEvent.keyDown(row(view.slot, "child"), { key: "ArrowLeft" });
+        assert.deepEqual(rowIds(view.slot), ["root", "child", "sibling"]);
+        assert.equal(document.activeElement, row(view.slot, "child"));
+        fireEvent.keyDown(row(view.slot, "child"), { key: "ArrowLeft" });
+        assert.equal(document.activeElement, row(view.slot, "root"));
+        fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowLeft" });
+        assert.deepEqual(rowIds(view.slot), ["root"]);
+        fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowRight" });
+        assert.deepEqual(rowIds(view.slot), ["root", "child", "sibling"]);
+        fireEvent.click(rowButton(view.slot, "child", "Expand children of child"));
+        assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild", "sibling"]);
+        assert.equal(
+          (host.actions.open as ReturnType<typeof actions>["open"]).mock.calls.length,
+          0,
+        );
+      },
+    );
+
+    it.each([false, true])(
+      "shows child project changes with desktop compact=%s",
+      (compactThreads) => {
+        const host = hostState([
+          thread("root"),
+          thread("child", { parentThreadId: "root" }),
+          thread("cross-project", { parentThreadId: "root", projectId: "two" }),
+        ]);
+        const view = mount(host, {}, compactThreads);
+        const root = row(view.slot, "root").parentElement!;
+        const child = row(view.slot, "child").parentElement!;
+        const crossProject = row(view.slot, "cross-project").parentElement!;
+        assert.equal(root.classList.contains("gtd-compact-row"), compactThreads);
+        assert.ok(child.classList.contains("gtd-compact-row"));
+        assert.ok(crossProject.classList.contains("gtd-compact-row"));
+        assert.equal(child.querySelector(".gtd-project-chip"), null);
+        assert.equal(crossProject.querySelector(".gtd-project-chip")?.textContent, "Two");
+        fireEvent.click(row(view.slot, "cross-project"), { ctrlKey: true });
+        assert.deepEqual((host.actions.open as ReturnType<typeof actions>["open"]).mock.calls, [
+          ["cross-project", { split: true }],
+        ]);
+      },
+    );
+
+    it("opens compact thread details from the keyboard navigation anchor", async () => {
+      const view = mount(
+        hostState([thread("root"), thread("child", { parentThreadId: "root" })]),
+        {},
+        true,
+      );
+      fireEvent.focus(row(view.slot, "child"));
+      const tooltip = await screen.findByRole("tooltip");
+      assert.match(tooltip.textContent ?? "", /child/);
+      assert.match(tooltip.textContent ?? "", /One/);
+      assert.match(tooltip.textContent ?? "", /Child of root/);
+      assert.match(tooltip.textContent ?? "", /codex/);
+      fireEvent.blur(row(view.slot, "child"));
+    });
+
+    it("reveals a matching descendant through a collapsed family without changing collapse state", () => {
+      const view = mount(
+        hostState([
+          thread("root"),
+          thread("child", { parentThreadId: "root" }),
+          thread("needle", { parentThreadId: "child" }),
+          thread("unrelated"),
+        ]),
+      );
+      fireEvent.click(rowButton(view.slot, "root", "Collapse children of root"));
+      assert.deepEqual(rowIds(view.slot), ["root", "unrelated"]);
+      view.updateInbox({ searchQuery: "needle" });
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "needle"]);
+      view.updateInbox({ searchQuery: "" });
+      assert.deepEqual(rowIds(view.slot), ["root", "unrelated"]);
+    });
+
+    it("settles a waiting child on Next Action and advances only through visible rows", () => {
+      const currentActions = actions();
+      const host = {
+        ...hostState([
+          thread("root", { latestAttentionAt: 200 }),
+          thread("child", { parentThreadId: "root", indicator: "runtime" }),
+          thread("grandchild", { parentThreadId: "child" }),
+          thread("next"),
+        ]),
+        actions: currentActions,
+      };
+      const view = mount(host, { activeThreadId: "child" }, true);
+      fireEvent.click(rowButton(view.slot, "child", "Collapse children of child"));
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "next"]);
+      const section = row(view.slot, "child").closest("section");
+      assert.equal(section?.getAttribute("aria-label"), "Next Action");
+      assert.ok(rowButton(view.slot, "child", "Snooze"));
+      fireEvent.pointerDown(rowButton(view.slot, "child", "Settle"));
+      assert.deepEqual(currentActions.archive.mock.calls, [["child"]]);
+      assert.deepEqual(currentActions.open.mock.calls, [["next"]]);
     });
   });
 

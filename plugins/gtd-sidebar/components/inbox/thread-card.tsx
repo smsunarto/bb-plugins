@@ -1,4 +1,11 @@
-import { memo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import {
+  memo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
@@ -19,6 +26,7 @@ import {
 import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { StatusGlyph, hasStatusGlyph } from "@/components/inbox/status-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
+import { FadingText, ProjectChip, ThreadDetails } from "@/components/inbox/thread-details";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeUntilTomorrow } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
@@ -27,6 +35,17 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 interface ThreadCardProps {
   thread: PluginSidebarThread;
   shelf: ActiveThreadShelf;
+  compactThreads: boolean;
+  depth: number;
+  parentId: string | null;
+  parentProjectId: string | null;
+  parentTitle: string | null;
+  childCount: number;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  statusThread: PluginSidebarThread;
+  toggleThread: (threadId: string) => void;
   provider?: ProviderGlyphInfo;
   projectName: string | null;
   /** bb's branch, or GitButler's virtual-branch summary for its workspace. */
@@ -71,6 +90,17 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
 const ThreadCardBody = memo(function ThreadCardBody({
   thread,
   shelf,
+  compactThreads,
+  depth,
+  parentId,
+  parentProjectId,
+  parentTitle,
+  childCount,
+  expanded,
+  guides,
+  lastChild,
+  statusThread,
+  toggleThread,
   provider,
   projectName,
   branchName,
@@ -106,23 +136,226 @@ const ThreadCardBody = memo(function ThreadCardBody({
     enabled: isCompactViewport,
   });
 
-  // Resting titles sit on the sidebar's own text ladder. The active row earns
-  // the brighter accent foreground, while weight alone still carries unread.
+  const compact = !isCompactViewport && (compactThreads || depth > 0);
+  const showActions = shelf === "nextAction" || canPark;
+  const relation = parentTitle
+    ? `Child of ${parentTitle}`
+    : childCount > 0
+      ? `${childCount} subthreads`
+      : undefined;
+  const titleText = threadDisplayTitle(thread);
+
   const title = (
-    <span
-      className={cn(
-        "min-w-0 flex-1 truncate text-sm",
-        isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
-        thread.isUnread && "font-medium",
-      )}
-    >
-      {threadDisplayTitle(thread)}
-    </span>
+    <ThreadTitle
+      title={titleText}
+      isActive={isActive}
+      isUnread={thread.isUnread}
+      mobile={isCompactViewport}
+    />
+  );
+  const mobileRow = (interactive: boolean) => (
+    <MobileThreadSummary
+      title={title}
+      thread={thread}
+      pullRequest={pullRequest}
+      provider={provider}
+      showProviderIcon={showProviderIcon}
+      interactive={interactive}
+    />
   );
 
-  // The compact card is this one line. While the sheet is open it is drawn
-  // twice: in the row, and as the inert copy lifted above the scrim.
-  const compactRow = (interactive: boolean) => (
+  return (
+    <RowContextMenu plan={plan} disabled={isCompactViewport}>
+      <li className="list-none">
+        <div
+          ref={cardRef}
+          {...handlers}
+          data-action-count={!isCompactViewport && showActions ? 2 : 0}
+          {...threadCardPresentation({
+            depth,
+            childCount,
+            isCompactViewport,
+            compact,
+            isActive,
+            isOpenInSplit,
+            isPressing,
+            isMenuOpen,
+          })}
+        >
+          <ThreadHierarchy
+            threadId={thread.id}
+            title={titleText}
+            depth={depth}
+            childCount={childCount}
+            expanded={expanded}
+            guides={guides}
+            lastChild={lastChild}
+            mobile={isCompactViewport}
+            toggleThread={toggleThread}
+          />
+          <ThreadRowLink
+            thread={thread}
+            projectName={projectName}
+            branchName={branchName}
+            provider={provider}
+            relation={relation}
+            showDetails={compact}
+            threadId={thread.id}
+            title={titleText}
+            shelf={shelf}
+            isActive={isActive}
+            mobile={isCompactViewport}
+            parentId={parentId}
+            childCount={childCount}
+            expanded={expanded}
+            toggleThread={toggleThread}
+            onSplitPointerDown={onSplitPointerDown}
+            command={command}
+          />
+          {isCompactViewport ? (
+            <CompactThreadActionMenu
+              plan={plan}
+              open={isMenuOpen}
+              onOpenChange={setMenuOpen}
+              anchorRef={cardRef}
+              highlightContent={
+                <div className="pointer-events-none relative flex h-full items-center gap-1.5 px-2.5">
+                  {mobileRow(false)}
+                </div>
+              }
+            />
+          ) : null}
+          <div
+            className={cn(
+              "pointer-events-none relative flex items-center gap-1.5",
+              summaryHeight(isCompactViewport, compact),
+              !isCompactViewport && "gtd-summary",
+            )}
+          >
+            {isCompactViewport ? (
+              mobileRow(true)
+            ) : (
+              <DesktopThreadSummary
+                title={
+                  <DesktopTitle
+                    compact={compact}
+                    depth={depth}
+                    parentProjectId={parentProjectId}
+                    projectId={thread.projectId}
+                    projectName={projectName}
+                  >
+                    {title}
+                  </DesktopTitle>
+                }
+                thread={statusThread}
+                now={now}
+                plan={plan}
+                compact={compact}
+                showActions={showActions}
+                canPark={canPark}
+                activity={thread.activity}
+                pullRequest={pullRequest}
+              />
+            )}
+          </div>
+          {isCompactViewport || compact ? null : (
+            <ThreadMetadata
+              thread={thread}
+              provider={provider}
+              projectName={projectName}
+              branchName={branchName}
+              pullRequest={pullRequest}
+              showProviderIcon={showProviderIcon}
+            />
+          )}
+        </div>
+      </li>
+    </RowContextMenu>
+  );
+});
+
+function threadCardPresentation({
+  depth,
+  childCount,
+  isCompactViewport,
+  compact,
+  isActive,
+  isOpenInSplit,
+  isPressing,
+  isMenuOpen,
+}: Pick<ThreadCardProps, "depth" | "childCount" | "isCompactViewport" | "isActive"> & {
+  compact: boolean;
+  isOpenInSplit: boolean;
+  isPressing: boolean;
+  isMenuOpen: boolean;
+}) {
+  return {
+    style: {
+      "--gtd-depth": depth,
+      ...(isCompactViewport && (depth > 0 || childCount > 0)
+        ? { paddingLeft: 24 + depth * 24 }
+        : {}),
+    } as CSSProperties,
+    className: cn(
+      "group/card relative rounded-xl px-2.5",
+      !isCompactViewport && "gtd-thread-row",
+      compact && "gtd-compact-row",
+      "transition-all duration-150",
+      isCompactViewport ? "min-h-10 py-0" : "rounded-md",
+      isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+      !isActive && isOpenInSplit && "bg-sidebar-accent/30",
+      isPressing && "bg-sidebar-accent",
+      isMenuOpen && "bg-sidebar-accent opacity-0",
+    ),
+  };
+}
+
+function summaryHeight(mobile: boolean, compact: boolean) {
+  if (mobile) return "h-10";
+  return compact ? "h-8" : "h-5";
+}
+
+function ThreadTitle({
+  title,
+  isActive,
+  isUnread,
+  mobile,
+}: {
+  title: string;
+  isActive: boolean;
+  isUnread: boolean;
+  mobile: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "min-w-0 flex-1 text-sm",
+        mobile ? "truncate" : "gtd-thread-title",
+        isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
+        isUnread && "font-medium",
+      )}
+    >
+      {mobile ? title : <FadingText text={title} />}
+    </span>
+  );
+}
+
+function MobileThreadSummary({
+  title,
+  thread,
+  pullRequest,
+  provider,
+  showProviderIcon,
+  interactive,
+}: {
+  title: ReactNode;
+  thread: PluginSidebarThread;
+  pullRequest: PluginSidebarPullRequest | null;
+  provider?: ProviderGlyphInfo;
+  showProviderIcon: boolean;
+  interactive: boolean;
+}) {
+  return (
     <>
       {title}
       {hasStatusGlyph(thread.indicator) ? (
@@ -141,127 +374,247 @@ const ThreadCardBody = memo(function ThreadCardBody({
       ) : null}
     </>
   );
+}
 
+function ThreadHierarchy({
+  threadId,
+  title,
+  depth,
+  childCount,
+  expanded,
+  guides,
+  lastChild,
+  mobile,
+  toggleThread,
+}: {
+  threadId: string;
+  title: string;
+  depth: number;
+  childCount: number;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  mobile: boolean;
+  toggleThread: (threadId: string) => void;
+}) {
+  const guideOffsets: number[] = [];
+  for (let level = 0; level < guides.length; level++) {
+    if (guides[level] === "1") guideOffsets.push(12 + level * 24);
+  }
   return (
-    <RowContextMenu plan={plan} disabled={isCompactViewport}>
-      <li className="list-none">
-        <div
-          ref={cardRef}
-          {...handlers}
-          className={cn(
-            "group/card relative rounded-xl px-2.5 transition-all duration-150",
-            isCompactViewport ? "min-h-10 py-0" : "rounded-md py-1.5 transition-colors",
-            isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
-            // A thread open in another pane gets a weaker tint than the active
-            // row, so the two states stay distinguishable.
-            !isActive && isOpenInSplit && "bg-sidebar-accent/30",
-            isPressing && "bg-sidebar-accent",
-            isMenuOpen && "bg-sidebar-accent opacity-0",
-          )}
+    <>
+      {!mobile && depth > 0 ? (
+        <span aria-hidden className="gtd-tree-guides">
+          {guideOffsets.map((left) => (
+            <span key={left} className="gtd-tree-line" style={{ left }} />
+          ))}
+          <span
+            className={cn("gtd-tree-line", lastChild && "gtd-tree-line-last")}
+            style={{ left: 12 + (depth - 1) * 24 }}
+          />
+          <span
+            className="gtd-tree-elbow"
+            style={{ left: 12 + (depth - 1) * 24, width: childCount > 0 ? 18 : 30 }}
+          />
+        </span>
+      ) : null}
+      {childCount > 0 ? (
+        <button
+          type="button"
+          className="gtd-disclosure"
+          aria-label={`${expanded ? "Collapse" : "Expand"} children of ${title}`}
+          aria-expanded={expanded}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleThread(threadId);
+          }}
         >
-          {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
+          <Icon name="ChevronDown" className={cn("size-3", !expanded && "-rotate-90")} />
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+function ThreadRowLink({
+  thread,
+  projectName,
+  branchName,
+  provider,
+  relation,
+  showDetails,
+  threadId,
+  title,
+  shelf,
+  isActive,
+  mobile,
+  parentId,
+  childCount,
+  expanded,
+  toggleThread,
+  onSplitPointerDown,
+  command,
+}: {
+  thread: PluginSidebarThread;
+  projectName: string | null;
+  branchName: string | null;
+  provider?: ProviderGlyphInfo;
+  relation: string | undefined;
+  showDetails: boolean;
+  threadId: string;
+  title: string;
+  shelf: ActiveThreadShelf;
+  isActive: boolean;
+  mobile: boolean;
+  parentId: string | null;
+  childCount: number;
+  expanded: boolean;
+  toggleThread: (threadId: string) => void;
+  onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
+  command: DispatchRowCommand;
+}) {
+  return (
+    <ThreadDetails
+      thread={thread}
+      projectName={projectName}
+      branchName={branchName}
+      provider={provider}
+      relation={relation}
+      enabled={showDetails}
+    >
+      {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
              anchor: the shortcut-target contract below and modifier-click
              split-open both depend on it. A button breaks each. */}
-          <a
-            // Both attributes, or bb's nine thread shortcuts stop finding rows.
-            data-sidebar-thread-shortcut-target=""
-            data-sidebar-thread-id={thread.id}
-            href="#"
-            aria-label={threadDisplayTitle(thread)}
-            onPointerDown={onSplitPointerDown}
-            onClick={(event) => {
-              if (event.button !== 0) return;
-              event.preventDefault();
-              command({
-                kind: "open",
-                threadId: thread.id,
-                shelf,
-                split: event.metaKey || event.ctrlKey,
-              });
-            }}
-            className={cn(
-              "absolute inset-0 cursor-pointer",
-              isCompactViewport ? "rounded-xl" : "rounded-md",
-            )}
-          />
-          {isCompactViewport ? (
-            <CompactThreadActionMenu
-              plan={plan}
-              open={isMenuOpen}
-              onOpenChange={setMenuOpen}
-              anchorRef={cardRef}
-              highlightContent={
-                <div className="pointer-events-none relative flex h-full items-center gap-1.5 px-2.5">
-                  {compactRow(false)}
-                </div>
-              }
-            />
-          ) : null}
-          <div
-            className={cn(
-              "pointer-events-none relative flex items-center gap-1.5",
-              isCompactViewport ? "h-10" : "h-5",
-            )}
-          >
-            {isCompactViewport ? (
-              compactRow(true)
-            ) : (
-              <DesktopThreadSummary title={title} thread={thread} now={now} plan={plan} />
-            )}
-          </div>
-          {isCompactViewport ? null : (
-            <ThreadMetadata
-              thread={thread}
-              provider={provider}
-              projectName={projectName}
-              branchName={branchName}
-              pullRequest={pullRequest}
-              showProviderIcon={showProviderIcon}
-            />
-          )}
-        </div>
-      </li>
-    </RowContextMenu>
+      <a
+        // Both attributes, or bb's nine thread shortcuts stop finding rows.
+        data-sidebar-thread-shortcut-target=""
+        data-sidebar-thread-id={threadId}
+        href="#"
+        aria-label={title}
+        aria-current={isActive ? "page" : undefined}
+        onKeyDown={(event) => {
+          let focusId: string | null = null;
+          if (event.key === "ArrowRight" && childCount > 0) {
+            event.preventDefault();
+            if (!expanded) toggleThread(threadId);
+            else {
+              const rows = Array.from(
+                event.currentTarget
+                  .closest("ul")
+                  ?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
+              );
+              focusId =
+                rows[rows.indexOf(event.currentTarget) + 1]?.dataset.sidebarThreadId ?? null;
+            }
+          } else if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            if (expanded) toggleThread(threadId);
+            else focusId = parentId;
+          }
+          if (focusId)
+            Array.from(
+              event.currentTarget
+                .closest("ul")
+                ?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
+            )
+              .find((row) => row.dataset.sidebarThreadId === focusId)
+              ?.focus();
+        }}
+        onPointerDown={onSplitPointerDown}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          command({
+            kind: "open",
+            threadId: threadId,
+            shelf,
+            split: event.metaKey || event.ctrlKey,
+          });
+        }}
+        className={cn("absolute inset-0 cursor-pointer", mobile ? "rounded-xl" : "rounded-md")}
+      />
+    </ThreadDetails>
   );
-});
+}
+
+function DesktopTitle({
+  compact,
+  depth,
+  parentProjectId,
+  projectId,
+  projectName,
+  children,
+}: {
+  compact: boolean;
+  depth: number;
+  parentProjectId: string | null;
+  projectId: string;
+  projectName: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      {compact && (depth === 0 || parentProjectId !== projectId) ? (
+        <ProjectChip name={projectName} />
+      ) : null}
+      {children}
+    </>
+  );
+}
 
 function DesktopThreadSummary({
   title,
   thread,
   now,
   plan,
+  compact,
+  showActions,
+  canPark,
+  activity,
+  pullRequest,
 }: {
   title: ReactNode;
   thread: PluginSidebarThread;
   now: number;
   plan: ThreadActionPlan;
+  compact: boolean;
+  showActions: boolean;
+  canPark: boolean;
+  activity: PluginSidebarThread["activity"];
+  pullRequest: PluginSidebarPullRequest | null;
 }) {
   const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
   const settleAction = findThreadAction(plan, "settle");
   return (
     <>
       {title}
-      {/* Status at rest, park actions on hover. Only the status
-         yields, so the title never shifts. */}
-      <span className="pointer-events-auto hidden items-center gap-0.5 group-hover/card:flex">
-        {snoozeAction !== undefined ? (
-          <ParkButton
-            label={snoozeAction.label}
-            icon={snoozeAction.icon}
-            onActivate={snoozeAction.execute}
-          />
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+        {compact ? <ActivityCounts activity={activity} isCompactViewport={false} /> : null}
+        {compact && pullRequest ? (
+          <PullRequestNumber pullRequest={pullRequest} interactive />
         ) : null}
-        {settleAction !== undefined ? (
+        <span className={STATUS_SLOT_CLASS}>
+          <StatusOrTime thread={thread} now={now} />
+        </span>
+      </span>
+      {showActions ? (
+        <span className="gtd-trailing-actions">
           <ParkButton
-            label={settleAction.label}
-            icon={settleAction.icon}
-            onActivate={settleAction.execute}
+            label="Snooze"
+            icon="Clock"
+            disabled={!canPark}
+            onActivate={() => snoozeAction?.execute()}
           />
-        ) : null}
-      </span>
-      <span className={cn(STATUS_SLOT_CLASS, "group-hover/card:hidden")}>
-        <StatusOrTime thread={thread} now={now} />
-      </span>
+          {settleAction ? (
+            <ParkButton
+              label={settleAction.label}
+              icon={settleAction.icon}
+              onActivate={settleAction.execute}
+            />
+          ) : null}
+        </span>
+      ) : null}
     </>
   );
 }
@@ -286,7 +639,7 @@ function ThreadMetadata({
        alone does not carry the hierarchy, so the line also starts at the
        tint the provider glyph already uses. Segments that rank below the
        project dim further from here. */
-    <div className="pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
+    <div className="gtd-thread-metadata pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
       {/* The project holds its full name and the branch yields: which
          repository a thread belongs to outranks which branch it sits
          on, and the branch is the one that grows without bound. The
@@ -315,13 +668,15 @@ function ThreadMetadata({
           </span>
         ) : null}
       </span>
-      <ActivityCounts activity={thread.activity} isCompactViewport={false} />
-      {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
-      {/* Drawn for every card or for none, never per thread, so the line
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+        <ActivityCounts activity={thread.activity} isCompactViewport={false} />
+        {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
+        {/* Drawn for every card or for none, never per thread, so the line
          keeps a fixed right edge whichever way the setting is set. */}
-      {showProviderIcon ? (
-        <ProviderGlyph providerId={thread.providerId} provider={provider} />
-      ) : null}
+        {showProviderIcon ? (
+          <ProviderGlyph providerId={thread.providerId} provider={provider} />
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -330,21 +685,31 @@ function ParkButton({
   label,
   icon,
   onActivate,
+  disabled = false,
 }: {
   label: string;
   icon: IconName;
   onActivate: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
+      title={disabled ? "Snooze is available when this thread is idle" : label}
+      disabled={disabled}
       onPointerDown={(event) => {
+        if (disabled || event.button > 0) return;
         event.preventDefault();
         event.stopPropagation();
         onActivate();
       }}
-      className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.detail === 0) onActivate();
+      }}
+      className="flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <Icon name={icon} className="size-3.5" />
     </button>

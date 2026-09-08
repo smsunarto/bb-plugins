@@ -1,51 +1,6 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { isThreadWorking } from "./lifecycle.ts";
 
-/**
- * Most recent attention first: the default clock for every section but Waiting.
- *
- * `latestAttentionAt` and not `updatedAt`, which is bb's row-write clock: it
- * moves for a title write too, so sorting on it threw a renamed thread to the
- * top of its section for a change to its label. bb's own thread list sorts on
- * this field for the same reason, down to the createdAt tie-break.
- *
- * bb advances it when a root thread's turn completes or errors, and at nothing
- * else, so it says nothing about a thread that is working right now. See
- * {@link partitionActiveSections} for the one section that has to care.
- */
-export function sortByLatestAttentionDescending<
-  T extends {
-    readonly id: string;
-    readonly createdAt: number;
-    readonly latestAttentionAt: number;
-  },
->(threads: readonly T[]): T[] {
-  return [...threads].sort(
-    (left, right) =>
-      right.latestAttentionAt - left.latestAttentionAt ||
-      right.createdAt - left.createdAt ||
-      left.id.localeCompare(right.id),
-  );
-}
-
-/**
- * Most recently changed thread first.
- *
- * `updatedAt` is bb's row-write clock, so a rename moves a thread here. Only
- * the Waiting section pays that, and it is the section where it costs least —
- * see {@link partitionActiveSections}.
- */
-export function sortByUpdatedAtDescending<
-  T extends { readonly id: string; readonly createdAt: number; readonly updatedAt: number },
->(threads: readonly T[]): T[] {
-  return [...threads].sort(
-    (left, right) =>
-      right.updatedAt - left.updatedAt ||
-      right.createdAt - left.createdAt ||
-      left.id.localeCompare(right.id),
-  );
-}
-
 export type ActiveSection = "next-action" | "waiting";
 
 /**
@@ -59,53 +14,11 @@ export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
   return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
 }
 
-/**
- * Split active threads by owner, and sort each section by the clock that
- * section can answer for.
- *
- * Next Action holds quiet threads, so `latestAttentionAt` — the completion
- * that made them quiet — is the newest thing that happened to them, and a
- * rename leaves it alone.
- *
- * Waiting holds threads that are working, and bb does not advance
- * `latestAttentionAt` when a turn starts. Sorting them by it would rank the
- * work the user just sent by the turn BEFORE it, which is the one ordering
- * question this section exists to answer. So Waiting reads `updatedAt`, whose
- * last write for a working thread is the status transition that set it going.
- *
- * Prompt-triggered naming can move a Waiting row when its title arrives.
- * This keeps recently requested work near the top while its agent is working.
- */
-export function partitionActiveSections(threads: readonly PluginSidebarThread[]): {
-  nextAction: PluginSidebarThread[];
-  waiting: PluginSidebarThread[];
-} {
-  const nextAction: PluginSidebarThread[] = [];
-  const waiting: PluginSidebarThread[] = [];
-  for (const thread of threads) {
-    (activeSectionFor(thread) === "next-action" ? nextAction : waiting).push(thread);
-  }
-  return {
-    nextAction: sortByLatestAttentionDescending(nextAction),
-    waiting: sortByUpdatedAtDescending(waiting),
-  };
-}
-
 export function threadDisplayTitle(thread: PluginSidebarThread): string {
   const title = thread.title?.trim();
   if (title) return title;
   const fallback = thread.titleFallback?.trim();
   return fallback ? fallback : "Untitled thread";
-}
-
-/** Substring match on the visible title only, preserving the incoming order. */
-export function searchThreadsByTitle(
-  threads: readonly PluginSidebarThread[],
-  query: string,
-): PluginSidebarThread[] {
-  const normalized = query.trim().toLowerCase();
-  if (normalized.length === 0) return [...threads];
-  return threads.filter((thread) => threadDisplayTitle(thread).toLowerCase().includes(normalized));
 }
 
 export interface ProjectScope {
@@ -121,19 +34,6 @@ export function filterByProject(
 ): PluginSidebarThread[] {
   if (projectId === null) return [...threads];
   return threads.filter((thread) => thread.projectId === projectId);
-}
-
-/** Pinned first (they are the user's own ordering), then the static sort. */
-export function partitionPinned(threads: readonly PluginSidebarThread[]): {
-  pinned: PluginSidebarThread[];
-  inbox: PluginSidebarThread[];
-} {
-  const pinned: PluginSidebarThread[] = [];
-  const inbox: PluginSidebarThread[] = [];
-  for (const thread of threads) {
-    (thread.isPinned ? pinned : inbox).push(thread);
-  }
-  return { pinned, inbox };
 }
 
 /**
@@ -154,21 +54,8 @@ export function nextThreadIdAfterSettle<T extends { readonly id: string }>(
   return sectionThreads[settledIndex + 1]?.id ?? sectionThreads[settledIndex - 1]?.id ?? null;
 }
 
-/**
- * Child threads leave the flat list and live in their parent's header chip
- * instead — a flat inbox has nowhere to nest them.
- *
- * A child is only hidden when its parent is actually on screen. An orphan
- * (parent archived, deleted, or filtered out by the project scope) stays in
- * the list, because hiding it would make it unreachable everywhere.
- */
-export function hideChildrenOfVisibleParents(
-  threads: readonly PluginSidebarThread[],
-): PluginSidebarThread[] {
-  const visibleIds = new Set(threads.map((thread) => thread.id));
-  return threads.filter(
-    (thread) => thread.parentThreadId === null || !visibleIds.has(thread.parentThreadId),
-  );
+export function effectiveParentThreadId(thread: PluginSidebarThread): string | null {
+  return thread.originKind === "fork" ? null : thread.parentThreadId;
 }
 
 /**
@@ -182,7 +69,7 @@ export function parentOf(
   threadId: string,
 ): PluginSidebarThread | null {
   const thread = threads.find((candidate) => candidate.id === threadId);
-  const parentThreadId = thread?.parentThreadId;
+  const parentThreadId = thread ? effectiveParentThreadId(thread) : null;
   if (!parentThreadId) return null;
   return threads.find((candidate) => candidate.id === parentThreadId) ?? null;
 }
@@ -193,6 +80,6 @@ export function childrenOf(
   parentThreadId: string,
 ): PluginSidebarThread[] {
   return threads
-    .filter((thread) => thread.parentThreadId === parentThreadId)
+    .filter((thread) => effectiveParentThreadId(thread) === parentThreadId)
     .sort((left, right) => left.createdAt - right.createdAt);
 }

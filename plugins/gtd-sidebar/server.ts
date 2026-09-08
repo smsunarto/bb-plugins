@@ -123,11 +123,17 @@ export const LIFECYCLE_CHANNEL = "lifecycle";
 export default function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
   const settings = bb.settings.define({
+    compactThreads: {
+      type: "boolean",
+      label: "Compact thread rows",
+      description: "Show desktop threads on one line. Subthreads always use compact rows.",
+      default: false,
+    },
     showProviderIcon: {
       type: "boolean",
-      label: "Show the agent icon on each card",
+      label: "Show agent icons",
       description:
-        "The trailing glyph naming the agent a thread runs on. Turn it off to give the branch that space back.",
+        "Show icons on two-line cards and mobile rows. Compact desktop rows use tooltips.",
       default: true,
     },
     automaticallyNameThreads: {
