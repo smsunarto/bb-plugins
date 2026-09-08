@@ -258,7 +258,7 @@
   --diffs-bg-context-override: {{ground.content}};
   --diffs-bg-context-gutter-override: {{ground.content}};
   --diffs-bg-buffer-override: {{ground.content}};
-  --diffs-bg-separator-override: {{ground.content}};
+  --diffs-bg-separator-override: {{ground.raised}};
   --diffs-bg-addition-override: {{feedback.success13}};
   --diffs-bg-addition-emphasis-override: {{feedback.success27}};
   --diffs-bg-deletion-override: {{feedback.error13}};

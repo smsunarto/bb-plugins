@@ -441,7 +441,7 @@ const darkExpected = declarationMap({
   "--diffs-bg-context-override": palette.ground.content,
   "--diffs-bg-context-gutter-override": palette.ground.content,
   "--diffs-bg-buffer-override": palette.ground.content,
-  "--diffs-bg-separator-override": palette.ground.content,
+  "--diffs-bg-separator-override": palette.ground.raised,
   "--diffs-bg-addition-override": roleValues["feedback.success13"],
   "--diffs-bg-addition-emphasis-override": roleValues["feedback.success27"],
   "--diffs-bg-deletion-override": roleValues["feedback.error13"],

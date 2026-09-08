@@ -21,15 +21,10 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).not.toContain("--diffs-dark-bg: #1e1e1e");
     expect(theme).not.toContain("--diffs-bg-context-override: #1e1e1e");
-    for (const role of [
-      "context-gutter",
-      "buffer",
-      "separator",
-      "addition-number",
-      "deletion-number",
-    ]) {
+    for (const role of ["context-gutter", "buffer", "addition-number", "deletion-number"]) {
       expect(theme).toContain(`--diffs-bg-${role}-override: #181818`);
     }
+    expect(theme).toContain("--diffs-bg-separator-override: #262626");
     expect(theme).toContain(
       ".bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #1e1e1e;",
     );
