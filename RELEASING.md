@@ -26,9 +26,7 @@ initial changelogs. Release Please ignores this floor after it can find the
 new release history, so it does not replay those first commits later.
 
 The migration includes one `fix(amp)` commit after the floor. It preserves the
-pending bb 0.40 patch as Amp 0.4.2. NanoCodex already has a `feat(nanocodex)`
-commit after the floor, so its first Release Please pull request starts at
-0.1.0.
+pending bb 0.40 patch as Amp 0.4.2.
 
 ## Publication
 

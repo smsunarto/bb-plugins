@@ -36,14 +36,6 @@
       "source": "./plugins/monokai"
     },
     {
-      "name": "nanocodex",
-      "source": "./plugins/nanocodex"
-    },
-    {
-      "name": "novnc",
-      "source": "./plugins/novnc"
-    },
-    {
       "name": "smooth-thread-switch",
       "source": "./plugins/smooth-thread-switch"
     },

@@ -146,46 +146,6 @@
       }
     },
     {
-      "id": "nanocodex",
-      "displayName": "Nanocodex",
-      "description": "Runs native NanoCodex agents as persistent bb threads",
-      "icon": {
-        "url": "plugins/nanocodex/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/nanocodex",
-          "range": "*",
-          "tagPrefix": "nanocodex/"
-        }
-      }
-    },
-    {
-      "id": "novnc",
-      "displayName": "NoVNC",
-      "description": "Watch a thread's remote screen through NoVNC in a floating picture-in-picture panel.",
-      "icon": {
-        "url": "plugins/novnc/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/novnc",
-          "range": "*",
-          "tagPrefix": "novnc/"
-        }
-      }
-    },
-    {
       "id": "smooth-thread-switch",
       "displayName": "Smooth Thread Switch",
       "description": "Fades switched-to conversations in immediately on desktop and mobile.",

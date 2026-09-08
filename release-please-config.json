@@ -53,11 +53,6 @@
       "component": "monokai",
       "package-name": "@smsunarto/bb-plugin-monokai"
     },
-    "plugins/nanocodex": {
-      "release-type": "node",
-      "component": "nanocodex",
-      "package-name": "@smsunarto/bb-plugin-nanocodex"
-    },
     "plugins/traces": {
       "release-type": "node",
       "component": "traces",

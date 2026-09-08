@@ -7,7 +7,6 @@ import {
   ArtboardIcon,
   ChatFeedbackIcon,
   CloudServerIcon,
-  ComputerScreenShareIcon,
   Doc01Icon,
   EaseOutIcon,
   KeyboardIcon,
@@ -128,27 +127,6 @@ const paletteIcon: readonly IconNode[] = [
   ],
 ];
 
-const nanocodexIcon: readonly IconNode[] = [
-  [
-    "path",
-    {
-      d: "M5 5h14v14H5z",
-      stroke: "currentColor",
-      strokeWidth: "2",
-      key: "0",
-    },
-  ],
-  [
-    "path",
-    {
-      d: "m8 9 2 2-2 2m4 0h4",
-      stroke: "currentColor",
-      strokeWidth: "2",
-      key: "1",
-    },
-  ],
-];
-
 const customIcons = {
   "agent-proxy": {
     name: "Server",
@@ -189,10 +167,6 @@ const customIcons = {
     name: "EaseOut",
     nodes: EaseOutIcon,
   },
-  novnc: {
-    name: "ComputerScreenShare",
-    nodes: ComputerScreenShareIcon,
-  },
   traces: {
     name: "Activity",
     nodes: Activity01Icon,
@@ -211,10 +185,6 @@ const customIcons = {
   "gtd-sidebar": {
     name: "PanelLeft",
     nodes: PanelLeftIcon,
-  },
-  nanocodex: {
-    name: "Terminal",
-    nodes: nanocodexIcon,
   },
   monokai: {
     name: "Palette",

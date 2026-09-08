@@ -26,5 +26,4 @@ Every run must show the initial state, the user action, and its visible result. 
 - [GitHub Stack panel](github-stack-panel.md)
 - [GTD sidebar](gtd-sidebar.md)
 - [bb Monokai](bb-monokai.md)
-- [NoVNC remote screen](novnc-remote-screen.md)
 - [Vimium link hints](vimium-link-hints.md)

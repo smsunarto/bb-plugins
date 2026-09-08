@@ -37,7 +37,6 @@ jobs:
     runs-on: namespace-profile-linux-8vcpu-16gb-cached
     steps:
       - uses: namespacelabs/nscloud-checkout-action@v9
-      # NanoCodex's relocation test builds the plugin through the pinned CLI.
       - uses: ./.github/actions/setup
         with:
           bb-cli: "true"
