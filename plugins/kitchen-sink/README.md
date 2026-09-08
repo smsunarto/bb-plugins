@@ -24,6 +24,11 @@ bb's `/` menu lists skills, so each composer command ships as a skill under `ski
 
 Both commands detect GitButler with `but status` and route every write through the `gitbutler` skill when it succeeds. Plain Git repositories use `git` and `gh`.
 
+## Thread motion
+
+Kitchen Sink fades thread switches and smooths automatic timeline scrolling. See
+[thread switching and scrolling](src/app/timeline-motion/README.md) for behavior and limitations.
+
 ## Smart Embeds
 
 Three message directives render project evidence inside assistant messages with [Diffs](https://diffs.com):

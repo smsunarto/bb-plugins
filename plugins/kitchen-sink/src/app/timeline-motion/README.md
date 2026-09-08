@@ -1,4 +1,4 @@
-# Smooth Thread Switch
+# Thread switching and scrolling
 
 Fades newly mounted conversations in over 180ms with ease-out timing on desktop
 and mobile. Updates to an already mounted conversation do not restart the fade.
@@ -49,14 +49,13 @@ no control. A timeline with no marker above it, or with several (a container of
 panes rather than one pane), keeps bb's saved position.
 
 Native `scrollTo`, `scrollBy`, and `scrollIntoView` calls are not intercepted.
-Scroll requests outside the recognized thread timeline stay native. Enabling the
-plugin after a thread has restored its position cannot animate that past restore.
+Scroll requests outside the recognized thread timeline stay native. Enabling Kitchen Sink after a thread has restored its position cannot animate that past restore.
 Content growth that resembles prepended rows is compensated immediately when the
 viewport is away from the bottom. Content shrink corrections are also immediate.
 
-Disabling the plugin removes its scroll listeners, observers, animation loop,
+Disabling Kitchen Sink removes its scroll listeners, observers, animation loop,
 and anchoring styles. It restores the native `scrollTop` descriptor unless another
 plugin has replaced that descriptor afterward. In that case, the later patch
 stays installed and this plugin's router becomes a native passthrough.
 
-The plugin has no settings or CLI commands.
+Thread motion has no separate settings or CLI commands.

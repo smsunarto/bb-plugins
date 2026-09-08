@@ -11,8 +11,8 @@
 
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 
-export const PROBE_ATTRIBUTE = "data-smooth-thread-switch-thread";
-export const PROBE_WORKING_ATTRIBUTE = "data-smooth-thread-switch-working";
+export const PROBE_ATTRIBUTE = "data-kitchen-sink-thread";
+export const PROBE_WORKING_ATTRIBUTE = "data-kitchen-sink-working";
 export const PROBE_SELECTOR = `[${PROBE_ATTRIBUTE}]`;
 
 /**

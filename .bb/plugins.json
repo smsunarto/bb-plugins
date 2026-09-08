@@ -36,10 +36,6 @@
       "source": "./plugins/monokai"
     },
     {
-      "name": "smooth-thread-switch",
-      "source": "./plugins/smooth-thread-switch"
-    },
-    {
       "name": "traces",
       "source": "./plugins/traces"
     },

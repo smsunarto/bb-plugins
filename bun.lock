@@ -433,12 +433,14 @@
       "version": "0.1.0",
       "dependencies": {
         "@bb-kit/core": "0.1.0",
+        "lenis": "1.3.26",
         "zod": "^4.4.3",
       },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.4.34",
         "@pierre/diffs": "^1.2.9",
         "@testing-library/react": "16.3.2",
+        "@types/jsdom": "21.1.7",
         "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
         "bun-types": "^1.4.0",
@@ -470,25 +472,6 @@
         "typescript": "^7.0.0",
         "vite": "^8.2.1",
         "zod": "^4.3.6",
-      },
-    },
-    "plugins/smooth-thread-switch": {
-      "name": "@smsunarto/bb-plugin-smooth-thread-switch",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.1.0",
-        "lenis": "1.3.26",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.4.34",
-        "@types/jsdom": "21.1.7",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "react": "19.2.8",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
       },
     },
     "plugins/traces": {
@@ -1108,8 +1091,6 @@
     "@smsunarto/bb-plugin-kitchen-sink": ["@smsunarto/bb-plugin-kitchen-sink@workspace:plugins/kitchen-sink"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
-
-    "@smsunarto/bb-plugin-smooth-thread-switch": ["@smsunarto/bb-plugin-smooth-thread-switch@workspace:plugins/smooth-thread-switch"],
 
     "@smsunarto/bb-plugin-traces": ["@smsunarto/bb-plugin-traces@workspace:plugins/traces"],
 

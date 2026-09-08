@@ -112,7 +112,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
   const sessions = new Map<HTMLElement, TimelineSession>();
   const reducedMotion = view.matchMedia("(prefers-reduced-motion: reduce)");
   const styles = document.createElement("style");
-  styles.dataset.smoothThreadScroll = "";
+  styles.dataset.kitchenSinkThreadScroll = "";
   styles.textContent = `${TIMELINE}, ${TIMELINE} * { overflow-anchor: none !important; }
     ${TIMELINE} { scroll-behavior: auto !important; }`;
   let disposed = false;

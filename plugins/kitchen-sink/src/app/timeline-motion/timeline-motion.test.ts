@@ -134,6 +134,28 @@ afterEach(() => {
   }
 });
 
+test("Kitchen Sink mounts timeline motion and restores native scrolling on unload", async () => {
+  const { loadPluginApp, mountPluginContentScripts } =
+    await import("@get-bb/plugin-sdk/testing/app");
+  const app = await loadPluginApp(() => import("../app.tsx"));
+  const mounted = await mountPluginContentScripts(app, { pluginId: "kitchen-sink" });
+  try {
+    const { element, geometry } = timeline();
+    element.scrollTop = 1000;
+    expect(geometry.top).toBe(1000);
+    tick(20);
+    element.scrollTop = 300;
+    tick();
+    expect(geometry.top).toBeGreaterThan(300);
+    expect(geometry.top).toBeLessThan(1000);
+    expect(document.querySelector("[data-kitchen-sink-thread-scroll]")).not.toBeNull();
+  } finally {
+    await mounted.lifecycle.dispose();
+  }
+  expect(Object.getOwnPropertyDescriptor(view.Element.prototype, "scrollTop")).toEqual(original);
+  expect(document.querySelector("[data-kitchen-sink-thread-scroll]")).toBeNull();
+});
+
 describe("initial timeline placement with real Lenis", () => {
   test("places a remounted bottom timeline immediately and keeps repeated requests still", () => {
     dispose = mountTimelineMotion(document);
@@ -625,7 +647,7 @@ describe("timeline motion with real Lenis", () => {
     tick(100);
     expect(element.scrollTop).toBe(stopped);
     expect(Object.getOwnPropertyDescriptor(view.Element.prototype, "scrollTop")).toEqual(original);
-    expect(document.querySelector("[data-smooth-thread-scroll]")).toBeNull();
+    expect(document.querySelector("[data-kitchen-sink-thread-scroll]")).toBeNull();
     expect(element.classList.contains("lenis")).toBe(false);
     expect(frames.size).toBe(0);
     element.scrollTop = 600;

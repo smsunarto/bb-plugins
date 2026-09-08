@@ -8,7 +8,6 @@ import {
   ChatFeedbackIcon,
   CloudServerIcon,
   Doc01Icon,
-  EaseOutIcon,
   KeyboardIcon,
   KitchenUtensilsIcon,
   Layers01Icon,
@@ -162,10 +161,6 @@ const customIcons = {
   "gh-stack": {
     name: "Layers",
     nodes: Layers01Icon,
-  },
-  "smooth-thread-switch": {
-    name: "EaseOut",
-    nodes: EaseOutIcon,
   },
   traces: {
     name: "Activity",

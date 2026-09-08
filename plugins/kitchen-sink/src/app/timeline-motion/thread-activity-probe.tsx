@@ -4,7 +4,7 @@
  *
  * The thread-header slot is the one always-mounted React surface that names
  * its own thread, so it is where the plugin learns a fact the timeline's DOM
- * never states. It renders no control: `app.css` hides the host's group
+ * never states. It renders no control: `timeline-motion.css` hides the host's group
  * wrapper so the header row keeps its own spacing.
  */
 

@@ -16,6 +16,12 @@ import {
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import "./app.css";
+import "./timeline-motion/timeline-motion.css";
+import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
+import {
+  PROBE_GROUP_TITLE,
+  ThreadActivityProbe,
+} from "./timeline-motion/thread-activity-probe.tsx";
 
 type EmbedKind = "code" | "diff" | "patch";
 
@@ -269,6 +275,15 @@ function SmartPatchDirective(props: PluginMessageDirectiveProps) {
 }
 
 export default definePluginApp((app) => {
+  app.slots.experimental_threadHeaderAction({
+    id: "thread-activity-probe",
+    title: PROBE_GROUP_TITLE,
+    component: ThreadActivityProbe,
+  });
+  app.contentScripts.register({
+    id: "timeline-motion",
+    mount: ({ signal }) => mountTimelineMotion(document, signal),
+  });
   app.slots.messageDirective({ id: "smart-diff", component: SmartDiffDirective });
   app.slots.messageDirective({ id: "smart-code", component: SmartCodeDirective });
   app.slots.messageDirective({ id: "smart-patch", component: SmartPatchDirective });

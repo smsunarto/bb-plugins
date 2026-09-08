@@ -146,26 +146,6 @@
       }
     },
     {
-      "id": "smooth-thread-switch",
-      "displayName": "Smooth Thread Switch",
-      "description": "Fades switched-to conversations in immediately on desktop and mobile.",
-      "icon": {
-        "url": "plugins/smooth-thread-switch/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/smooth-thread-switch",
-          "range": "*",
-          "tagPrefix": "smooth-thread-switch/"
-        }
-      }
-    },
-    {
       "id": "traces",
       "displayName": "Traces",
       "description": "Explore Claude Code and Codex sessions, agent context, and tool activity with keyboard navigation.",

@@ -1,8 +1,8 @@
 [data-timeline-row-list="top-level"] {
-  animation: smooth-thread-switch-reveal 180ms ease-out;
+  animation: kitchen-sink-thread-reveal 180ms ease-out;
 }
 
-@keyframes smooth-thread-switch-reveal {
+@keyframes kitchen-sink-thread-reveal {
   from {
     opacity: 0;
   }
