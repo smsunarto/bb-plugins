@@ -398,6 +398,17 @@
   padding-bottom: 0.5rem;
 }
 
+/* bb opens the new-thread slash and mention menu below the composer, which was
+ * correct while that composer sat at the top of the column. Anchored at the
+ * footer it runs off the viewport, so open it upward like the follow-up
+ * composer's own menu. */
+.dark #root-compose-main-panel [data-promptbox-typeahead-menu] {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
 /* New-thread geometry is the reference: an 80px editor and a 32px metadata
  * row. Follow-up defaults shrink both, moving the text and controls after
  * submission. Keep context/queue banners above this fixed composer geometry. */
