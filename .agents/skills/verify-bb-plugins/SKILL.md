@@ -18,8 +18,8 @@ bun run dev
 
 Create one run ID. The helper starts a bb runtime for this run alone: it borrows
 the workspace instance's checkout, comes up on its own ports and its own data
-directory, installs the workspace plugins into it, and reserves one browser
-session. Runs do not share a bb, so several can be in flight at once.
+directory, installs the workspace plugins into it, and opens one browser
+session with bb Monokai, Dark mode, and the GTD sidebar explicitly selected. Runs do not share a bb, so several can be in flight at once.
 
 ```bash
 RUN_ID="verify-$(date +%Y%m%d-%H%M%S)"
@@ -33,7 +33,8 @@ A first-ever workspace instance clones and installs bb, which is minutes.
 
 The helper prints the app URL, the runtime name, the instance whose checkout it
 borrowed, the browser session, and the evidence directory. Use those values for
-the whole run.
+the whole run. Launch checks the selected appearance controls, loaded Monokai
+styles, and the rendered GTD project selector before reporting success.
 
 ## Doctor
 
@@ -58,7 +59,9 @@ agent-browser --session "$BROWSER_SESSION" open "$BB_APP_URL"
 agent-browser --session "$BROWSER_SESSION" wait --text "New thread"
 ```
 
-Set the viewport before the first `open`. A fresh session renders at device pixel ratio 1 on a 1280x577 window, which rasterises 16px icons onto 16 physical pixels and crops the app. The 2x setting persists for the session across `open` and `reload`.
+Launch already configures the browser appearance and viewport. If you create a
+replacement session, run `bash scripts/dev-browser-appearance "$BROWSER_SESSION" "$BB_APP_URL"`
+before testing. Set the viewport before the first `open`. A fresh session renders at device pixel ratio 1 on a 1280x577 window, which rasterises 16px icons onto 16 physical pixels and crops the app. The 2x setting persists for the session across `open` and `reload`.
 
 Drive the same controls a user drives. Prefer roles, labels, and visible text. Use CSS only for stable plugin contracts listed in the feature file.
 

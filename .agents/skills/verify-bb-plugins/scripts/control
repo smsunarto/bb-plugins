@@ -255,6 +255,8 @@ launch() {
     printf 'export ARTIFACT_DIR=%q\n' "${evidence_dir}"
   } >"${env_file}"
 
+  bash "${repo_root}/scripts/dev-browser-appearance" "${session}" "${url}"
+
   printf 'run: %s\nruntime: %s\ncheckout owner: %s\napp: %s\nsession: %s\nevidence: %s\n' \
     "${run_id}" "${name}" "${host_name}" "${url}" "${session}" "${evidence_dir}"
 }

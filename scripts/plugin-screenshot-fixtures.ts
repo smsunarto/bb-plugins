@@ -24,6 +24,8 @@ import {
   SCREENSHOT_PREFLIGHT_PLUGINS,
   SCREENSHOT_ROOT,
   SCREENSHOT_THEME_ID,
+  SIDEBAR_PROVIDER,
+  SIDEBAR_PROVIDER_KEY,
   type ScreenshotBatch,
   type ScreenshotClip,
   type ScreenshotOptions,
@@ -34,8 +36,6 @@ const ROOT = SCREENSHOT_ROOT;
 const DPR = 3;
 const APP_VIEWPORT = { width: 1512, height: 1000 } as const;
 const FIXED_TIME = new Date("2026-08-13T12:00:00.000Z");
-const SIDEBAR_PROVIDER_KEY = "bb.sidebar.threadListProvider";
-const SIDEBAR_PROVIDER = "gtd-sidebar/inbox";
 /**
  * The title gtd-sidebar registers for that provider. The Appearance capture
  * exists to show it, so the run fails rather than shipping an image of some
@@ -1104,15 +1104,12 @@ async function createContext(
     dpr: DPR,
   });
   await context.addInitScript(
-    ({ order, orderKey, provider, providerKey }) => {
-      localStorage.setItem(providerKey, JSON.stringify(provider));
+    ({ order, orderKey }) => {
       localStorage.setItem(orderKey, JSON.stringify(order));
     },
     {
       order: SIDEBAR_PLUGIN_ORDER.map(({ id }) => id),
       orderKey: SIDEBAR_PLUGIN_ORDER_KEY,
-      provider: SIDEBAR_PROVIDER,
-      providerKey: SIDEBAR_PROVIDER_KEY,
     },
   );
   await context.route("**/api/v1/system/execution-options?**", (route) =>

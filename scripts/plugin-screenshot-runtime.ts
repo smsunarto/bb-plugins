@@ -7,6 +7,8 @@ import { loadWorkspaceDefinition } from "../packages/bb-kit-core/src/bin/dev/wor
 export const SCREENSHOT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SCREENSHOT_WORKSPACE = loadWorkspaceDefinition(SCREENSHOT_ROOT);
 export const SCREENSHOT_THEME_ID = SCREENSHOT_WORKSPACE.profile.theme;
+export const SIDEBAR_PROVIDER_KEY = "bb.sidebar.threadListProvider";
+export const SIDEBAR_PROVIDER = "gtd-sidebar/inbox";
 export const SCREENSHOT_PREFLIGHT_PLUGINS = SCREENSHOT_WORKSPACE.plugins.map(
   ({ id, directory }) => ({ id, directory }),
 );
@@ -263,7 +265,7 @@ export async function createScreenshotContext(
   browser: Browser,
   options: { viewport: ScreenshotSize; dpr: number },
 ): Promise<BrowserContext> {
-  return browser.newContext({
+  const context = await browser.newContext({
     viewport: options.viewport,
     deviceScaleFactor: options.dpr,
     colorScheme: "dark",
@@ -272,6 +274,11 @@ export async function createScreenshotContext(
     timezoneId: "UTC",
     serviceWorkers: "block",
   });
+  await context.addInitScript(
+    ({ key, provider }) => localStorage.setItem(key, JSON.stringify(provider)),
+    { key: SIDEBAR_PROVIDER_KEY, provider: SIDEBAR_PROVIDER },
+  );
+  return context;
 }
 
 export async function createScreenshotPage(
