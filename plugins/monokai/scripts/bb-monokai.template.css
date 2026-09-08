@@ -53,6 +53,7 @@
   --font-sans: var(--bb-monokai-ui-font, "Inter Variable", Inter, sans-serif);
   --font-mono: "Berkeley Mono", ui-monospace, Menlo, monospace;
   --diffs-font-family: "Berkeley Mono", ui-monospace, Menlo, monospace;
+  --diffs-header-font-family: var(--font-sans);
 }
 
 .dark {
@@ -255,9 +256,9 @@
   --diffs-modified-color-override: {{feedback.warning}};
 
   --diffs-bg-context-override: {{ground.content}};
-  --diffs-bg-context-gutter-override: {{ground.chrome}};
-  --diffs-bg-buffer-override: {{ground.chrome}};
-  --diffs-bg-separator-override: {{ground.chrome}};
+  --diffs-bg-context-gutter-override: {{ground.content}};
+  --diffs-bg-buffer-override: {{ground.content}};
+  --diffs-bg-separator-override: {{ground.content}};
   --diffs-bg-addition-override: {{feedback.success13}};
   --diffs-bg-addition-emphasis-override: {{feedback.success27}};
   --diffs-bg-deletion-override: {{feedback.error13}};
@@ -265,16 +266,15 @@
   --diffs-bg-hover-override: {{text.ink08}};
   --diffs-bg-selection-override: {{ground.selection60}};
 
-  /* The number gutters stay on the chrome ground rather than taking the row
-   * wash: role-coloured numbers only clear AA that way (#E34671 reaches 4.72:1
-   * on #141414 but only 3.98:1 on the deletion wash). */
-  --diffs-bg-addition-number-override: {{ground.chrome}};
-  --diffs-bg-deletion-number-override: {{ground.chrome}};
+  /* Number gutters share the neutral code ground, not the change-row wash.
+   * Feedback numbers retain their contrast against the content surface. */
+  --diffs-bg-addition-number-override: {{ground.content}};
+  --diffs-bg-deletion-number-override: {{ground.content}};
   --diffs-bg-selection-number-override: {{ground.raised}};
-  --diffs-fg-number-override: {{text.ink55}}; /* 5.02:1 on the gutter */
-  --diffs-fg-number-addition-override: {{feedback.success}}; /* 5.76:1 */
-  --diffs-fg-number-deletion-override: {{feedback.error}}; /* 4.72:1 */
-  --diffs-fg-conflict-marker-override: {{feedback.warning}}; /* 9.69:1 */
+  --diffs-fg-number-override: {{text.ink55}};
+  --diffs-fg-number-addition-override: {{feedback.success}};
+  --diffs-fg-number-deletion-override: {{feedback.error}};
+  --diffs-fg-conflict-marker-override: {{feedback.warning}};
 
   /* ---- File tree (shadow DOM) -----------------------------------------
    * bb already sets background, foreground, border, hover, selection, focus
@@ -712,7 +712,13 @@
  * tie on specificity loses the moment a thread is opened. Repeating the class
  * outranks it without reaching for `!important`.
  * Measured on the recessed well #1E1E1E. */
+.dark .bg-surface-recessed:has(> .bb-code-highlight),
+.dark code.bg-muted\/70 {
+  background-color: {{ground.content}};
+}
+
 .dark .bb-code-highlight.bb-code-highlight {
+  background-color: {{ground.content}};
   --sh-space: inherit;
   --sh-identifier: {{text.ink}}; /* everything else — 12.79:1 */
   --sh-property: {{text.ink}}; /* properties are white by contract */
@@ -798,12 +804,28 @@ diffs-container {
   --diffs-dark: {{text.ink}};
 }
 
-/* The Git diff tab uses the recessed ground. Its toolbar distinguishes it
- * from source previews and other tabs that share the right-side frame. */
-.dark #thread-detail-secondary-panel:has([data-testid="git-diff-toolbar-layout"]) diffs-container,
-.dark [data-secondary-panel-shelf]:has([data-testid="git-diff-toolbar-layout"]) diffs-container {
-  --diffs-dark-bg: {{ground.recessed}};
-  --diffs-bg-context-override: {{ground.recessed}};
+/* BB owns the GitDiffCardHeader outside Pierre's shadow root. The wrapper
+ * has no dedicated data attribute in BB 0.42.1: match its direct collapse
+ * control structure, including collapsed cards, within the Git diff panel.
+ * Smart embeds expose their own header class. Bodies keep the content ground. */
+.dark .smart-embed-header,
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .bg-background:has(> .flex > span > button[aria-expanded]) {
+  background-color: {{ground.recessed}};
+}
+
+.dark .smart-embed-header,
+.dark .smart-embed-path,
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .bg-background:has(> .flex > span > button[aria-expanded])
+  .font-mono {
+  font-family: var(--font-sans);
 }
 
 /* The canvas plugin renders `.canvas-mdx` prose on the Cursor theme's rendered

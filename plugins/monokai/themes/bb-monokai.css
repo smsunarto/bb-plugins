@@ -55,6 +55,7 @@
   --font-sans: var(--bb-monokai-ui-font, "Inter Variable", Inter, sans-serif);
   --font-mono: "Berkeley Mono", ui-monospace, Menlo, monospace;
   --diffs-font-family: "Berkeley Mono", ui-monospace, Menlo, monospace;
+  --diffs-header-font-family: var(--font-sans);
 }
 
 .dark {
@@ -257,9 +258,9 @@
   --diffs-modified-color-override: #f1b467;
 
   --diffs-bg-context-override: #181818;
-  --diffs-bg-context-gutter-override: #141414;
-  --diffs-bg-buffer-override: #141414;
-  --diffs-bg-separator-override: #141414;
+  --diffs-bg-context-gutter-override: #181818;
+  --diffs-bg-buffer-override: #181818;
+  --diffs-bg-separator-override: #181818;
   --diffs-bg-addition-override: #3fa26622;
   --diffs-bg-addition-emphasis-override: #3fa26644;
   --diffs-bg-deletion-override: #e3467122;
@@ -267,16 +268,15 @@
   --diffs-bg-hover-override: #e3e3dd12;
   --diffs-bg-selection-override: #40404099;
 
-  /* The number gutters stay on the chrome ground rather than taking the row
-   * wash: role-coloured numbers only clear AA that way (#E34671 reaches 4.72:1
-   * on #141414 but only 3.98:1 on the deletion wash). */
-  --diffs-bg-addition-number-override: #141414;
-  --diffs-bg-deletion-number-override: #141414;
+  /* Number gutters share the neutral code ground, not the change-row wash.
+   * Feedback numbers retain their contrast against the content surface. */
+  --diffs-bg-addition-number-override: #181818;
+  --diffs-bg-deletion-number-override: #181818;
   --diffs-bg-selection-number-override: #262626;
-  --diffs-fg-number-override: #e3e3dd8c; /* 5.02:1 on the gutter */
-  --diffs-fg-number-addition-override: #3fa266; /* 5.76:1 */
-  --diffs-fg-number-deletion-override: #e34671; /* 4.72:1 */
-  --diffs-fg-conflict-marker-override: #f1b467; /* 9.69:1 */
+  --diffs-fg-number-override: #e3e3dd8c;
+  --diffs-fg-number-addition-override: #3fa266;
+  --diffs-fg-number-deletion-override: #e34671;
+  --diffs-fg-conflict-marker-override: #f1b467;
 
   /* ---- File tree (shadow DOM) -----------------------------------------
    * bb already sets background, foreground, border, hover, selection, focus
@@ -714,7 +714,13 @@
  * tie on specificity loses the moment a thread is opened. Repeating the class
  * outranks it without reaching for `!important`.
  * Measured on the recessed well #1E1E1E. */
+.dark .bg-surface-recessed:has(> .bb-code-highlight),
+.dark code.bg-muted\/70 {
+  background-color: #181818;
+}
+
 .dark .bb-code-highlight.bb-code-highlight {
+  background-color: #181818;
   --sh-space: inherit;
   --sh-identifier: #e3e3dd; /* everything else — 12.79:1 */
   --sh-property: #e3e3dd; /* properties are white by contract */
@@ -800,12 +806,28 @@ diffs-container {
   --diffs-dark: #e3e3dd;
 }
 
-/* The Git diff tab uses the recessed ground. Its toolbar distinguishes it
- * from source previews and other tabs that share the right-side frame. */
-.dark #thread-detail-secondary-panel:has([data-testid="git-diff-toolbar-layout"]) diffs-container,
-.dark [data-secondary-panel-shelf]:has([data-testid="git-diff-toolbar-layout"]) diffs-container {
-  --diffs-dark-bg: #1e1e1e;
-  --diffs-bg-context-override: #1e1e1e;
+/* BB owns the GitDiffCardHeader outside Pierre's shadow root. The wrapper
+ * has no dedicated data attribute in BB 0.42.1: match its direct collapse
+ * control structure, including collapsed cards, within the Git diff panel.
+ * Smart embeds expose their own header class. Bodies keep the content ground. */
+.dark .smart-embed-header,
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .bg-background:has(> .flex > span > button[aria-expanded]) {
+  background-color: #1e1e1e;
+}
+
+.dark .smart-embed-header,
+.dark .smart-embed-path,
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .bg-background:has(> .flex > span > button[aria-expanded])
+  .font-mono {
+  font-family: var(--font-sans);
 }
 
 /* The canvas plugin renders `.canvas-mdx` prose on the Cursor theme's rendered

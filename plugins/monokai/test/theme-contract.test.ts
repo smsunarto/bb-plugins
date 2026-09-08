@@ -13,6 +13,30 @@ const codeTheme = await readFile(codeThemePath, "utf8");
 const codeThemeRules = readCodeThemeRules().rules;
 
 describe("bb Monokai contract audit", () => {
+  test("unifies code grounds and keeps filenames in sans-serif recessed headers", () => {
+    expect(theme).toContain("--diffs-header-font-family: var(--font-sans)");
+    expect(theme).toContain("diffs-container {\n  --diffs-dark-bg: #181818;");
+    expect(theme).toContain(
+      ".dark .bb-code-highlight.bb-code-highlight {\n  background-color: #181818;",
+    );
+    expect(theme).not.toContain("--diffs-dark-bg: #1e1e1e");
+    expect(theme).not.toContain("--diffs-bg-context-override: #1e1e1e");
+    for (const role of [
+      "context-gutter",
+      "buffer",
+      "separator",
+      "addition-number",
+      "deletion-number",
+    ]) {
+      expect(theme).toContain(`--diffs-bg-${role}-override: #181818`);
+    }
+    expect(theme).toContain(
+      ".bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #1e1e1e;",
+    );
+    expect(theme).toContain(".font-mono {\n  font-family: var(--font-sans);");
+    expect(theme).toContain(".dark .smart-embed-path,");
+  });
+
   test("the shipped CSS is generated from the code-owned roles and template", () => {
     expect(theme).toBe(renderTheme(template));
   });

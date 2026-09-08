@@ -439,17 +439,17 @@ const darkExpected = declarationMap({
   "--diffs-deletion-color-override": palette.feedback.error,
   "--diffs-modified-color-override": palette.feedback.warning,
   "--diffs-bg-context-override": palette.ground.content,
-  "--diffs-bg-context-gutter-override": palette.ground.chrome,
-  "--diffs-bg-buffer-override": palette.ground.chrome,
-  "--diffs-bg-separator-override": palette.ground.chrome,
+  "--diffs-bg-context-gutter-override": palette.ground.content,
+  "--diffs-bg-buffer-override": palette.ground.content,
+  "--diffs-bg-separator-override": palette.ground.content,
   "--diffs-bg-addition-override": roleValues["feedback.success13"],
   "--diffs-bg-addition-emphasis-override": roleValues["feedback.success27"],
   "--diffs-bg-deletion-override": roleValues["feedback.error13"],
   "--diffs-bg-deletion-emphasis-override": roleValues["feedback.error27"],
   "--diffs-bg-hover-override": roleValues["text.ink08"],
   "--diffs-bg-selection-override": roleValues["ground.selection60"],
-  "--diffs-bg-addition-number-override": palette.ground.chrome,
-  "--diffs-bg-deletion-number-override": palette.ground.chrome,
+  "--diffs-bg-addition-number-override": palette.ground.content,
+  "--diffs-bg-deletion-number-override": palette.ground.content,
   "--diffs-bg-selection-number-override": palette.ground.raised,
   "--diffs-fg-number-override": roleValues["text.ink55"],
   "--diffs-fg-number-addition-override": palette.feedback.success,
@@ -568,6 +568,7 @@ const requiredRules: Array<{
     // from a chunk that loads after this sheet, so a tie loses.
     selector: ".dark .bb-code-highlight.bb-code-highlight",
     declarations: {
+      "background-color": palette.ground.content,
       "--sh-identifier": palette.text.ink,
       "--sh-property": palette.text.ink,
       "--sh-sign": palette.text.ink,
@@ -584,22 +585,6 @@ const requiredRules: Array<{
     declarations: {
       "--diffs-dark-bg": palette.ground.content,
       "--diffs-dark": palette.text.ink,
-    },
-  },
-  {
-    selector:
-      '.dark #thread-detail-secondary-panel:has([data-testid="git-diff-toolbar-layout"]) diffs-container',
-    declarations: {
-      "--diffs-dark-bg": palette.ground.recessed,
-      "--diffs-bg-context-override": palette.ground.recessed,
-    },
-  },
-  {
-    selector:
-      '.dark [data-secondary-panel-shelf]:has([data-testid="git-diff-toolbar-layout"]) diffs-container',
-    declarations: {
-      "--diffs-dark-bg": palette.ground.recessed,
-      "--diffs-bg-context-override": palette.ground.recessed,
     },
   },
   {
