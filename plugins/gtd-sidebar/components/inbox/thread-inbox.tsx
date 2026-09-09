@@ -33,6 +33,7 @@ import { mergeSettledThreads } from "@/lib/settled-threads";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
 
 const ALL_PROJECTS = "__all__";
+
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
 const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
@@ -82,6 +83,9 @@ export function ThreadInbox({
 
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
+  // Waiting is the one active shelf worth folding away: its rows are work you
+  // cannot act on, and they can outnumber Next Action several times over.
+  const [showWaiting, setShowWaiting] = useState(true);
 
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -98,8 +102,11 @@ export function ThreadInbox({
     ["waiting", "Waiting", waiting],
   ] as const;
   const visibleActiveThreads = useMemo(
-    () => [...pinned, ...nextAction, ...waiting].map((row) => row.node.thread),
-    [pinned, nextAction, waiting],
+    () =>
+      [...pinned, ...nextAction, ...(showWaiting || searching ? waiting : [])].map(
+        (row) => row.node.thread,
+      ),
+    [pinned, nextAction, waiting, showWaiting, searching],
   );
 
   const scopeLabel =
@@ -164,7 +171,18 @@ export function ThreadInbox({
         >
           {activeShelves.map(([shelf, label, shelfThreads]) =>
             shelfThreads.length > 0 ? (
-              <Shelf key={label} label={label} isCompactViewport={isCompactViewport}>
+              <Shelf
+                key={label}
+                label={label}
+                count={shelfThreads.length}
+                isCompactViewport={isCompactViewport}
+                {...(shelf === "waiting"
+                  ? {
+                      expanded: showWaiting || searching,
+                      onToggle: () => setShowWaiting((open) => !open),
+                    }
+                  : {})}
+              >
                 {shelfThreads.map((row) => {
                   const thread = row.node.thread;
                   return (
@@ -500,39 +518,13 @@ function ParkedShelf({
   if (count === 0) return null;
   return (
     <section aria-label={label}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        // Padded like a card, so the chevron ends on the same right edge as
-        // every row's status and provider glyph. `cursor-pointer` is explicit
-        // because Tailwind v4's preflight gives a button `cursor: default`,
-        // and the whole header is the hit target for collapsing the shelf.
-        className={cn(
-          "mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
-          isCompactViewport ? "min-h-10" : "pb-0.5",
-        )}
-      >
-        <span
-          className={cn(
-            "text-2xs font-medium",
-            isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
-          )}
-        >
-          {expanded ? label : `${label} (${count})`}
-        </span>
-        <span className="h-px flex-1 bg-sidebar-border" />
-        <span className={TRAILING_GLYPH_BOX_CLASS}>
-          <Icon
-            name="ChevronDown"
-            className={cn(
-              "size-3 transition-transform",
-              isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
-              expanded && "rotate-180",
-            )}
-          />
-        </span>
-      </button>
+      <ShelfHeader
+        label={label}
+        count={count}
+        expanded={expanded}
+        onToggle={onToggle}
+        isCompactViewport={isCompactViewport}
+      />
       {expanded ? (
         <ul className="flex flex-col gap-0.5">
           {threads.map((thread) => (
@@ -561,32 +553,100 @@ function ParkedShelf({
   );
 }
 
+/**
+ * A shelf of full cards. Passing `expanded` and `onToggle` turns the header
+ * into a collapse toggle; without them the header is a plain label and the
+ * rows always show.
+ */
 function Shelf({
   label,
+  count,
+  expanded,
+  onToggle,
   children,
   isCompactViewport,
 }: {
   label: string;
+  count: number;
+  expanded?: boolean;
+  onToggle?: () => void;
   children: React.ReactNode;
   isCompactViewport: boolean;
 }) {
   return (
     <section aria-label={label}>
-      <h2 className="flex items-center gap-2 px-2.5 pb-0.5 pt-2">
-        <span
-          className={cn(
-            "text-2xs font-medium",
-            isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
-          )}
-        >
-          {label}
-        </span>
-        <span className="h-px flex-1 bg-sidebar-border" />
-      </h2>
+      <ShelfHeader
+        label={label}
+        count={count}
+        expanded={expanded}
+        onToggle={onToggle}
+        isCompactViewport={isCompactViewport}
+      />
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}
-      <ul className="flex flex-col gap-0.5">{children}</ul>
+      {expanded === false ? null : <ul className="flex flex-col gap-0.5">{children}</ul>}
     </section>
+  );
+}
+
+/**
+ * One header for every shelf, collapsible or not, so a folded Waiting reads
+ * exactly like a folded Snoozed. The count only shows while the shelf is
+ * closed, where it is the shelf's whole footprint.
+ */
+function ShelfHeader({
+  label,
+  count,
+  expanded,
+  onToggle,
+  isCompactViewport,
+}: {
+  label: string;
+  count: number;
+  expanded?: boolean;
+  onToggle?: () => void;
+  isCompactViewport: boolean;
+}) {
+  const mutedClass = isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70";
+  const title = (
+    <span className={cn("text-2xs font-medium", mutedClass)}>
+      {expanded === false ? `${label} (${count})` : label}
+    </span>
+  );
+  const rule = <span className="h-px flex-1 bg-sidebar-border" />;
+
+  if (expanded === undefined || onToggle === undefined) {
+    return (
+      <h2 className="flex items-center gap-2 px-2.5 pb-0.5 pt-2">
+        {title}
+        {rule}
+      </h2>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      // Padded like a card, so the chevron ends on the same right edge as
+      // every row's status and provider glyph. `cursor-pointer` is explicit
+      // because Tailwind v4's preflight gives a button `cursor: default`,
+      // and the whole header is the hit target for collapsing the shelf.
+      className={cn(
+        "mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
+        isCompactViewport ? "min-h-10" : "pb-0.5",
+      )}
+    >
+      {title}
+      {rule}
+      <span className={TRAILING_GLYPH_BOX_CLASS}>
+        <Icon
+          name="ChevronDown"
+          className={cn("size-3 transition-transform", mutedClass, expanded && "rotate-180")}
+        />
+      </span>
+    </button>
   );
 }
