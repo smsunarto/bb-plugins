@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 dist/
 # The vendored agentation build is source, not output: bb's install-time build
 # has to find it, and no build step in this repo regenerates it.
