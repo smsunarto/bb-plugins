@@ -549,6 +549,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   let composerFocusAllowed = false;
   let composerPointerOrTabFocusAllowed = false;
   let composerFocusWindow: number | null = null;
+  let composerFocusFrame: number | null = null;
   // While set in the future, editable elements that take focus on their own
   // are blurred. A thread opened from the keyboard remounts the thread's
   // panels, and an editor there (the docs panel's markdown editor autofocuses)
@@ -572,15 +573,19 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   // Pointer focus and the browser's Tab focus happen after their triggering
-  // event listener returns. Keep that one default action open until the next
-  // task, while programmatic focus from bb remains blocked.
+  // event listener returns. Tiptap can also defer focus to an animation frame.
+  // Expire after that frame's callbacks, so intentional focus is not blurred.
   function allowComposerFocusForDefaultAction(): void {
     composerPointerOrTabFocusAllowed = true;
     if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
-    composerFocusWindow = window.setTimeout(() => {
-      composerPointerOrTabFocusAllowed = false;
-      composerFocusWindow = null;
-    }, 0);
+    if (composerFocusFrame !== null) window.cancelAnimationFrame(composerFocusFrame);
+    composerFocusFrame = window.requestAnimationFrame(() => {
+      composerFocusFrame = null;
+      composerFocusWindow = window.setTimeout(() => {
+        composerPointerOrTabFocusAllowed = false;
+        composerFocusWindow = null;
+      }, 0);
+    });
   }
 
   function focusTextEntry(target: HTMLElement): void {
@@ -603,7 +608,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     if (performance.now() < editableFocusGuardUntil && isEditableTarget(target)) target.blur();
   }
 
-  function onPointerDown(event: PointerEvent): void {
+  function onPointerDown(event: MouseEvent): void {
     editableFocusGuardUntil = 0;
     const target = event.target;
     if (target instanceof Element && target.closest(COMPOSER_SELECTOR) !== null) {
@@ -977,6 +982,12 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     capture: true,
     signal: context.signal,
   });
+  // Mouse compatibility events can arrive after pointerdown's focus window.
+  // The composer also focuses its editor from its mousedown handler.
+  window.addEventListener("mousedown", onPointerDown, {
+    capture: true,
+    signal: context.signal,
+  });
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });
   window.addEventListener("keyup", onKeyup, { capture: true, signal: context.signal });
   window.addEventListener("scroll", onScroll, { capture: true, signal: context.signal });
@@ -996,6 +1007,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   return () => {
     archiveUndo.dispose();
     if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
+    if (composerFocusFrame !== null) window.cancelAnimationFrame(composerFocusFrame);
     exit();
   };
 }

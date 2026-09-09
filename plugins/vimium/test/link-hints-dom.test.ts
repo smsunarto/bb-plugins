@@ -276,6 +276,35 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("allows pointer focus deferred to an animation frame, then guards passive focus again", async () => {
+    document.body.innerHTML =
+      '<div data-app-composer><div id="editor" role="textbox" tabindex="0"></div></div>';
+    const editor = document.getElementById("editor") as HTMLElement;
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    editor.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        editor.focus();
+        resolve();
+      });
+    });
+    expect(document.activeElement).toBe(editor);
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    editor.blur();
+    editor.focus();
+    expect(document.activeElement).not.toBe(editor);
+
+    editor.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    void dispose();
+    controller.abort();
+  });
+
   test("keeps the composer focusable on coarse-pointer devices", () => {
     const originalMatchMedia = window.matchMedia;
     Object.defineProperty(window, "matchMedia", {
