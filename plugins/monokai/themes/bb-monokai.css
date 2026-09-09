@@ -315,15 +315,6 @@
   background-color: var(--terminal-background);
 }
 
-/* Keep the project/navigation sidebar on the #141414 chrome ground. The
- * thread-side panel belongs to the #181818 editor plane instead; scope the
- * token at its desktop and mobile roots so its content matches the mobile
- * safe-area background. Terminal and left-sidebar consumers do not move. */
-.dark #thread-detail-secondary-panel,
-.dark [data-secondary-panel-shelf] {
-  --sidebar: #181818;
-}
-
 /* Both outer sidebars spend the solid pane-divider role. The active right
  * resize handle owns that boundary, so suppress the panel border beneath it
  * instead of painting the divider twice. */
