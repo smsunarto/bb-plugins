@@ -56,7 +56,7 @@
     "@bb-kit/core": "0.1.0"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.34",
+    "@get-bb/plugin-sdk": "0.4.48",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",

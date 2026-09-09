@@ -71,7 +71,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.47",
+    "@get-bb/plugin-sdk": "0.4.48",
     "@radix-ui/react-dropdown-menu": "^2.1.20",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.0.0",
