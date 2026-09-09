@@ -1,26 +1,33 @@
 # bb-plugins
 
-## Setup
+## Dev Commands
 
-- Start `bun run dev` before the first plugin edit. Leave it running.
+- Start `bun run dev` if there isn't one running.
+- Lint: `bunx oxlint --fix --format=agent`
+- Formatting: `bunx oxfmt`.
+
+## Dev Preferences
+
 - Author every new plugin with the bb-kit framework (`@bb-kit/core`).
+- If something can be done through bb-plugin, do it through bb-plugin. If it's possible through bb-plugin, but it is hacky (no easy way to do it via the bb SDK, flag it to the user for approval first).
+- If an implementation is ONLY possible through modification of bb's core app, flag to the user for approval first. DO NOT start work on bb core app without explicit approval.
+- UI components: https://ui.shadcn.com
+- Code diffs, syntax highlighting: https://diffs.com
+- Prefer to use an existing color palette from `/plugins/monokai` theme. If a new color is needed, it should be added to the theme before being used. This is so that when we update the theme, the color change is applied to all plugins that use it.
+- Always check whether the SDK provides an API that can be used to achieve the desired functionality before handrolling our own solution.
 
-## Linting and formatting
+## Work -> Plugins Routing
 
-- After making code changes, run `bunx oxlint --fix`, then run `bunx oxfmt`.
-- Before finishing, run `bunx oxlint --format=agent`.
+- Prefer to group work into an existing relevant plugins. Obtain explicit approval before creating a new plugin.
+- Styling, themes, bb UI: `/plugins/monokai`
+- Left sidebar: `/plugins/gtd-sidebar`
+- Misc. Catch-all: `/plugins/kitchen-sink`
 
 ## Catalogs
 
-`marketplace.json` (repo root) is the public catalog `bb marketplace add` reads.
-`.bb/plugins.json` is the collection index `bb plugin install --plugin` reads.
-They are not interchangeable, and bb will not look for `marketplace.json` under
-`.bb/`.
+`marketplace.json` (repo root) is the public catalog `bb marketplace add` reads. `.bb/plugins.json` is the collection index `bb plugin install --plugin` reads. They are not interchangeable, and bb will not look for `marketplace.json` under `.bb/`.
 
-When you add, rename, or remove a catalog plugin, update both files in the same
-change: every `marketplace.json` `id` needs a matching `.bb/plugins.json`
-`{ "name", "source": "./plugins/<id>" }`. Leave unpublished personal plugins
-out of `marketplace.json`. `.bb/plugins.json` may list those extras.
+When you add, rename, or remove a catalog plugin, update both files in the same change: every `marketplace.json` `id` needs a matching `.bb/plugins.json{ "name", "source": "./plugins/<id>" }`. Leave unpublished personal plugins out of `marketplace.json`. `.bb/plugins.json` may list those extras.
 
 ## Environment
 
@@ -36,11 +43,6 @@ Read `.agents/skills/verify-bb-plugins`
 - Prepare plugin development with `bun run dev:instance`. Route one bb command with `bb-kit dev-instance exec --`.
 
 ### Handoff
-
-Do this before you end your turn and handoff to the user:
-
-- Remove any stray docs that is produced during your work.
-- Run `bun run lint:fix && bun run fmt && bun run typecheck && bun run test`. Rerun it until it reports nothing left to fix.
 
 If modifying an existing plugin (after a plugin change passed dev-instance verification):
 
