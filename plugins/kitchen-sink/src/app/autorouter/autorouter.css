@@ -1,0 +1,47 @@
+.autorouter-action {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+}
+.autorouter-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+}
+.autorouter-toggle:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.autorouter-toggle[aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--accent);
+}
+.autorouter-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.autorouter-toggle:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.autorouter-error {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 10;
+  width: 240px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--popover);
+  color: var(--destructive);
+  font-size: 12px;
+}

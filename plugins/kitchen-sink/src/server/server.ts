@@ -6,6 +6,10 @@ import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
 import { prepareHtmlPreview } from "./rpc/prepare-html-preview.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
+import { registerAutorouterSettings } from "./lib/autorouter/settings.ts";
+import { getAutorouterProjectIndex } from "./rpc/get-autorouter-project-index.ts";
+import { saveAutorouterProjectIndex } from "./rpc/save-autorouter-project-index.ts";
+import { updateAutorouterEnabled } from "./rpc/update-autorouter-enabled.ts";
 
 /**
  * Composer commands ship as skills under `skills/` (bb's `/` menu lists
@@ -35,8 +39,15 @@ Use worktree-relative paths. Do not put directives in inline code or fenced code
 
 export default definePlugin({
   pluginId: "kitchen-sink",
-  rpc: { renderEmbed, prepareHtmlPreview },
+  rpc: {
+    renderEmbed,
+    prepareHtmlPreview,
+    getAutorouterProjectIndex,
+    saveAutorouterProjectIndex,
+    updateAutorouterEnabled,
+  },
   setup(bb) {
+    registerAutorouterSettings(bb);
     const db = bb.storage.database();
     bb.storage.migrate(db, diffSnapshotMigrations);
     bb.events.on("thread.deleted", ({ thread }) => {

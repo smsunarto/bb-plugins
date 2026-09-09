@@ -21,6 +21,7 @@ import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
 import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
+import { AutorouterAction } from "./autorouter/action.tsx";
 import {
   PROBE_GROUP_TITLE,
   ThreadActivityProbe,
@@ -324,6 +325,11 @@ function SmartPatchDirective(props: PluginMessageDirectiveProps) {
 }
 
 export default definePluginApp((app) => {
+  app.composer.customize({
+    id: "autorouter",
+    scopes: ["new-thread", "thread"],
+    actions: [{ id: "toggle", component: AutorouterAction }],
+  });
   app.slots.experimental_threadHeaderAction({
     id: "thread-activity-probe",
     title: PROBE_GROUP_TITLE,
