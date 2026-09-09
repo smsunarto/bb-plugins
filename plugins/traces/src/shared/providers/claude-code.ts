@@ -12,6 +12,7 @@ import {
   overflowParts,
   pointer,
   rootPath,
+  instructionTitles,
   string,
   textEvent,
   timestamp,
@@ -110,18 +111,15 @@ function deferredTools(record: ObjectRecord, attachment: ObjectRecord): ParsedEv
       );
     });
   }
-  const states = {
-    pendingMcpServers: "pending",
-    needsAuthMcpServers: "authentication required",
-    failedMcpServers: "failed",
-  };
-  for (const [key, state] of Object.entries(states)) {
-    for (const item of namedEvidence(
-      attachment[key],
-      pointer("/attachment", key),
-      "mcp",
-      "result",
-    )) {
+  // The action carries whether the server came up, so the inspector can badge a
+  // server group as available, pending, or unavailable without parsing labels.
+  const states = [
+    ["pendingMcpServers", "pending", "requested"],
+    ["needsAuthMcpServers", "authentication required", "requested"],
+    ["failedMcpServers", "failed", "blocked"],
+  ] as const;
+  for (const [key, state, action] of states) {
+    for (const item of namedEvidence(attachment[key], pointer("/attachment", key), "mcp", action)) {
       item.label = `${item.label} (${state})`;
       facts.push(item);
     }
@@ -188,6 +186,42 @@ function fileAttachment(record: ObjectRecord, attachment: ObjectRecord): ParsedE
   ];
 }
 
+// Memory files arrive as a list of records, not as the assembled prose the model
+// reads. Rebuilding that prose gives the inspector one instruction event it can
+// split back into a section per file, and names the files as evidence.
+function memoryInstructions(record: ObjectRecord, attachment: ObjectRecord): ParsedEvent[] {
+  const files = Array.isArray(attachment.files) ? attachment.files.slice(0, MAX_PARTS) : [];
+  const facts: TraceEvidence[] = [];
+  const blocks: string[] = [];
+  files.forEach((value, index) => {
+    const file = object(value);
+    const path = string(file.path);
+    if (!path) return;
+    const at = pointer(pointer("/attachment/files", index), "path");
+    facts.push(fact("instructions", "loaded", path, at));
+    blocks.push(
+      `Contents of ${path} (${string(file.type) ?? "instructions"}):\n\n${string(file.content) ?? ""}`,
+    );
+  });
+  if (!blocks.length)
+    return [attachmentEvent(record, attachment, { title: instructionTitles.memory })];
+  return [
+    attachmentEvent(record, attachment, {
+      title: instructionTitles.memory,
+      template: "instructions",
+      preview: facts.map((item) => item.label).join(" · "),
+      evidence: facts,
+      body: {
+        type: "context",
+        name: instructionTitles.memory,
+        content: blocks.join("\n\n"),
+        format: "markdown",
+        captured: true,
+      },
+    }),
+  ];
+}
+
 function sandboxInstructions(record: ObjectRecord, attachment: ObjectRecord): ParsedEvent[] {
   const facts = [fact("sandbox", "available", "Recorded sandbox policy", "/attachment")];
   if (typeof attachment.content === "string")
@@ -212,6 +246,7 @@ const attachmentReaders: Readonly<
   file: fileAttachment,
   compact_file_reference: fileAttachment,
   sandbox_instructions: sandboxInstructions,
+  instructions: memoryInstructions,
   skill_listing: (record, attachment) => {
     const facts = namedEvidence(attachment.names, "/attachment/names", "skills", "available");
     if (!facts.length) facts.push(fact("skills", "available", "Skill catalog", "/attachment"));
@@ -498,10 +533,9 @@ function parse(value: unknown): ParsedRecord {
   const record = object(value);
   const session = baseSession(record);
   const events = recordReaders[String(record.type)]?.(record) ?? [];
-  if (!events.length)
-    events.push(
-      diagnostic(value, `Unrecognized Claude Code record: ${string(record.type) ?? "unknown"}`),
-    );
+  // The record type is the only useful name for a record no reader claims. Saying
+  // it is unrecognized only repeats the "diagnostic" kind already on the event.
+  if (!events.length) events.push(diagnostic(value, string(record.type) ?? "Recorded record"));
   const title =
     record.type === "custom-title"
       ? string(record.customTitle)
@@ -519,7 +553,7 @@ function parse(value: unknown): ParsedRecord {
 export const claudeCodeAdapter: TraceAdapter = {
   id: "claude-code",
   label: "Claude Code",
-  version: 3,
+  version: 4,
   roots: (home, env) => [
     rootPath(home, env.CLAUDE_CONFIG_DIR?.trim() || `${home}/.claude`, "projects"),
   ],

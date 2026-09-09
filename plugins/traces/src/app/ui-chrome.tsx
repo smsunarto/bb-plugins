@@ -30,6 +30,8 @@ export function TraceToolbar({
   setEventSearch,
   kind,
   setKind,
+  includeUsage,
+  setIncludeUsage,
   providers,
   searchRef,
   sessionSearchRef,
@@ -51,6 +53,8 @@ export function TraceToolbar({
   setEventSearch: (value: string) => void;
   kind: EventQuery["kind"];
   setKind: (value: EventQuery["kind"]) => void;
+  includeUsage: boolean;
+  setIncludeUsage: (value: boolean) => void;
   providers?: TraceStatus["providers"];
   searchRef: RefObject<HTMLInputElement | null>;
   sessionSearchRef: RefObject<HTMLInputElement | null>;
@@ -122,6 +126,14 @@ export function TraceToolbar({
               </option>
             ))}
           </select>
+          <button
+            className="tr-usage-toggle"
+            aria-pressed={includeUsage}
+            title="Response usage records are hidden until this is on"
+            onClick={() => setIncludeUsage(!includeUsage)}
+          >
+            Usage
+          </button>
         </div>
         <div className="tr-topic-buttons">
           <button aria-pressed={!topic} onClick={() => setTopic(undefined)}>

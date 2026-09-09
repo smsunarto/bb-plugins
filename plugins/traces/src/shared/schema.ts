@@ -37,6 +37,9 @@ export const eventQuerySchema = z
     kind: eventKindSchema.optional(),
     topic: topicSchema.optional(),
     query: z.string().max(500).optional(),
+    // Response usage records outnumber the work they measure, so the timeline
+    // leaves them out until a reader asks for them.
+    includeUsage: z.boolean().default(false),
     cursor: z.string().max(4096).optional(),
     limit: z.number().int().min(1).max(200).default(100),
   })

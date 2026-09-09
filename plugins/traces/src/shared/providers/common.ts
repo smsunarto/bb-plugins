@@ -209,15 +209,21 @@ export function textEvent(
   role: ParsedEvent["role"],
   at: string,
 ): ParsedEvent {
-  const facts = contextEvidence(text, at, role);
-  const instructions = facts.some(
-    (item) => item.topic === "instructions" && item.action === "loaded",
-  );
+  const scan = scanInstructions(text);
+  const facts = evidence([...contextEvidence(text, at, role), ...instructionFacts(scan, at)]);
+  const instructions =
+    scan.kind !== null ||
+    facts.some((item) => item.topic === "instructions" && item.action === "loaded");
   const context = instructions || facts.some((item) => item.action === "available");
+  const label = scan.kind
+    ? instructionTitles[scan.kind]
+    : instructions
+      ? "Instructions"
+      : "Recorded context";
   return event(record, {
     kind: context ? "context" : "message",
     role,
-    title: instructions ? "Instructions" : context ? "Recorded context" : (role ?? "Message"),
+    title: context ? label : (role ?? "Message"),
     preview: text,
     pointer: at,
     template: instructions ? "instructions" : context ? "context" : "message",
@@ -225,11 +231,60 @@ export function textEvent(
     body: context
       ? {
           type: "context",
-          name: instructions ? "Recorded instructions" : "Recorded context",
+          name: label,
           content: text,
           format: "markdown",
           captured: true,
         }
       : { type: "text", text, format: "markdown" },
   });
+}
+
+// BB injects plugin instructions and memory-file contents as plain prose inside a
+// prompt. Both arrive under stable headers, so the trace can name the kind of
+// instruction and split it back into the parts it was assembled from.
+const bbPluginHeader =
+  /^The following (?:dynamic )?instructions come from the BB plugin "([^"\n]+)"[^\n]*$/gm;
+const memoryHeader = /^Contents of ([^\n(]+?) \([^)\n]*\):[ \t]*$/gm;
+
+export type InstructionSection = { label: string; content: string };
+export type InstructionScan = {
+  kind: "bb" | "memory" | null;
+  preamble: string;
+  sections: InstructionSection[];
+};
+
+function sectionsFor(
+  text: string,
+  pattern: RegExp,
+): { preamble: string; sections: InstructionSection[] } {
+  const matches = [...text.matchAll(pattern)].slice(0, 64);
+  return {
+    preamble: matches.length ? text.slice(0, matches[0]!.index).trim() : "",
+    sections: matches.map((match, index) => ({
+      label: match[1]!.trim(),
+      content: text.slice(match.index + match[0].length, matches[index + 1]?.index).trim(),
+    })),
+  };
+}
+
+export function scanInstructions(text: string): InstructionScan {
+  for (const [kind, pattern] of [
+    ["bb", bbPluginHeader],
+    ["memory", memoryHeader],
+  ] as const) {
+    const found = sectionsFor(text, pattern);
+    if (found.sections.length) return { kind, ...found };
+  }
+  return { kind: null, preamble: "", sections: [] };
+}
+
+export const instructionTitles = { bb: "BB Instruction", memory: "Memory Instruction" } as const;
+
+export function instructionFacts(scan: InstructionScan, at: string): TraceEvidence[] {
+  if (scan.kind === "bb")
+    return scan.sections.map((section) => fact("plugins", "loaded", section.label, at));
+  if (scan.kind === "memory")
+    return scan.sections.map((section) => fact("instructions", "loaded", section.label, at));
+  return [];
 }

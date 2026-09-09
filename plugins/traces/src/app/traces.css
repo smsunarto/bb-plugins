@@ -470,14 +470,75 @@ body.tr-resizing {
   margin-top: 5px;
   overflow-wrap: anywhere;
 }
+.tr-inspector-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tr-title-chip {
+  font:
+    10px/1.5 ui-monospace,
+    monospace;
+  color: var(--tr-muted);
+  border: 1px solid var(--tr-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
 .tr-evidence {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 10px;
   margin-bottom: 16px;
 }
 .tr-evidence:empty {
   display: none;
+}
+.tr-evidence-group {
+  border: 1px solid var(--tr-line);
+  border-radius: 6px;
+  padding: 7px 8px;
+}
+.tr-evidence-group[data-state="unavailable"] {
+  border-color: color-mix(in srgb, var(--tr-warning) 45%, transparent);
+}
+.tr-evidence-group-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 10px;
+  margin-bottom: 7px;
+  overflow-wrap: anywhere;
+}
+.tr-evidence-scope {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  color: var(--tr-muted);
+}
+.tr-evidence-state {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.tr-evidence-state-available {
+  color: var(--tr-accent);
+}
+.tr-evidence-state-pending {
+  color: var(--tr-muted);
+}
+.tr-evidence-state-unavailable {
+  color: var(--tr-warning);
+}
+.tr-evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .tr-evidence-chip {
   display: flex;
@@ -955,4 +1016,34 @@ body.tr-resizing {
     border-radius: 0;
     padding: 16px;
   }
+}
+
+.tr-event-status {
+  /* The heading is space-between, so this keeps the badge beside the title
+     rather than centred between the title and the elapsed time. */
+  margin-right: auto;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--tr-muted);
+  border: 1px solid var(--tr-line);
+  border-radius: 999px;
+  padding: 0 5px;
+  flex: none;
+}
+.tr-event-status-error {
+  color: var(--tr-warning);
+  border-color: color-mix(in srgb, var(--tr-warning) 45%, transparent);
+}
+.tr-app .tr-usage-toggle[aria-pressed="true"] {
+  background: var(--tr-selected);
+  color: var(--tr-accent);
+}
+.tr-instruction > summary {
+  color: var(--tr-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-size: 9px;
+  margin-bottom: 8px;
+  cursor: pointer;
 }

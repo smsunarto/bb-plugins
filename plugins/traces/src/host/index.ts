@@ -843,6 +843,7 @@ export class TraceIndex {
         args.kind,
         args.topic,
         args.query,
+        args.includeUsage,
         source?.visible_generation,
       ]),
     );
@@ -852,6 +853,8 @@ export class TraceIndex {
     if (args.kind) {
       where.push("e.kind=?");
       values.push(args.kind);
+    } else if (!args.includeUsage) {
+      where.push("e.kind!='usage'");
     }
     if (args.topic) {
       where.push(

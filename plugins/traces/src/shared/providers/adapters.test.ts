@@ -835,4 +835,91 @@ describe("additional recorded provider variants", () => {
       !event?.evidence.some((fact) => fact.topic === "search" || fact.action === "invoked"),
     );
   });
+
+  it("names BB plugin instructions and lists the plugin each part came from", () => {
+    const content = [
+      "<system-reminder>",
+      'The following instructions come from the BB plugin "agentation":',
+      "",
+      "Read pending feedback before searching the code.",
+      "",
+      'The following dynamic instructions come from the BB plugin "workflows":',
+      "",
+      "Copy the preview directive into your response.",
+      "</system-reminder>",
+    ].join("\n");
+    const [event] = parse(claude, { type: "user", message: { role: "user", content } });
+    assert.equal(event?.title, "BB Instruction");
+    assert.equal(event?.template, "instructions");
+    assert.deepEqual(
+      event?.evidence
+        .filter((fact) => fact.topic === "plugins" && fact.action === "loaded")
+        .map((fact) => fact.label),
+      ["agentation", "workflows"],
+    );
+  });
+
+  it("rebuilds a recorded memory-file list into one named instruction event", () => {
+    const [event] = parse(claude, {
+      type: "attachment",
+      attachment: {
+        type: "instructions",
+        files: [
+          {
+            path: "/home/test/.claude/CLAUDE.md",
+            type: "User",
+            content: "Prefer literal language.",
+          },
+          { path: "/repo/CLAUDE.md", type: "Project", content: "Run the linter before finishing." },
+        ],
+      },
+    });
+    assert.equal(event?.title, "Memory Instruction");
+    assert.equal(event?.template, "instructions");
+    assert.deepEqual(
+      event?.evidence.map((fact) => [fact.topic, fact.action, fact.label]),
+      [
+        ["instructions", "loaded", "/home/test/.claude/CLAUDE.md"],
+        ["instructions", "loaded", "/repo/CLAUDE.md"],
+      ],
+    );
+    const body = event?.body;
+    assert.equal(body?.type, "context");
+    assert.match(
+      body?.type === "context" ? body.content : "",
+      /^Contents of \/home\/test\/\.claude\/CLAUDE\.md \(User\):/,
+    );
+    assert.match(
+      body?.type === "context" ? body.content : "",
+      /Contents of \/repo\/CLAUDE\.md \(Project\):\n\nRun the linter before finishing\.$/,
+    );
+  });
+
+  it("names memory-file contents and lists each recorded file", () => {
+    const content = [
+      "<system-reminder>",
+      "Contents of /home/test/.claude/CLAUDE.md (user's private global instructions):",
+      "",
+      "Prefer literal language.",
+      "",
+      "Contents of /repo/CLAUDE.md (project instructions, checked into the codebase):",
+      "",
+      "Run the linter before finishing.",
+      "</system-reminder>",
+    ].join("\n");
+    const [event] = parse(claude, { type: "user", message: { role: "user", content } });
+    assert.equal(event?.title, "Memory Instruction");
+    assert.deepEqual(
+      event?.evidence
+        .filter((fact) => fact.topic === "instructions" && fact.action === "loaded")
+        .map((fact) => fact.label),
+      ["Recorded instructions", "/home/test/.claude/CLAUDE.md", "/repo/CLAUDE.md"],
+    );
+  });
+
+  it("names an unclaimed record by its recorded type", () => {
+    const [event] = parse(claude, { type: "atis-latch", data: 1 });
+    assert.equal(event?.title, "atis-latch");
+    assert.equal(event?.kind, "diagnostic");
+  });
 });

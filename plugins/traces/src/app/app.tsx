@@ -192,6 +192,7 @@ export function TraceWorkbench({
   const [eventSearch, setEventSearch] = useState("");
   const [kind, setKind] = useState<EventQuery["kind"]>();
   const [topic, setTopic] = useState<EventQuery["topic"]>();
+  const [includeUsage, setIncludeUsage] = useState(false);
   const [raw, setRaw] = useState(false);
   const [sources, showSources, hideSources] = useDisclosure();
   const [help, showHelp, hideHelp] = useDisclosure();
@@ -298,6 +299,8 @@ export function TraceWorkbench({
         setEventSearch={setEventSearch}
         kind={kind}
         setKind={setKind}
+        includeUsage={includeUsage}
+        setIncludeUsage={setIncludeUsage}
         providers={status.data?.providers}
         searchRef={searchRef}
         sessionSearchRef={sessionSearchRef}
@@ -348,11 +351,12 @@ export function TraceWorkbench({
         <div className="tr-event-workspace" ref={panes.eventsRef}>
           {session ? (
             <Timeline
-              key={`${session.id}:${kind}:${topic}:${settledEvents}`}
+              key={`${session.id}:${kind}:${topic}:${includeUsage}:${settledEvents}`}
               hostId={hostId}
               session={session}
               kind={kind}
               topic={topic}
+              includeUsage={includeUsage}
               query={settledEvents}
               selected={selected}
               onSelect={setSelected}

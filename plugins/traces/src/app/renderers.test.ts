@@ -66,3 +66,77 @@ test("a recorded tool result remains visible", () => {
   assert.match(html, /<h3>Result<\/h3>/);
   assert.match(html, /sample output/);
 });
+
+test("an instruction body renders one section per plugin it was assembled from", () => {
+  const content = [
+    "Base instructions for the agent.",
+    "",
+    'The following instructions come from the BB plugin "agentation":',
+    "",
+    "Read pending feedback before searching the code.",
+    "",
+    'The following dynamic instructions come from the BB plugin "workflows":',
+    "",
+    "Copy the preview directive into your response.",
+  ].join("\n");
+  const html = renderToStaticMarkup(
+    createElement(defaultTraceRenderers.resolve("instructions"), {
+      event: { template: "instructions" } as unknown as TraceEvent,
+      body: {
+        type: "context",
+        name: "BB Instruction",
+        content,
+        format: "plain",
+        captured: true,
+      },
+      related: [],
+    }),
+  );
+  assert.match(html, /<summary>agentation<\/summary>/);
+  assert.match(html, /<summary>workflows<\/summary>/);
+  assert.match(html, /Base instructions for the agent\./);
+  assert.doesNotMatch(html, /come from the BB plugin/);
+});
+
+test("a tool call shows the outcome of the result the timeline folded into it", () => {
+  const call = toolCall(
+    {},
+    {
+      name: "exec_command",
+      value: { cmd: "echo sample" },
+      callId: "call",
+      at: "/payload",
+      inputAt: "/payload/arguments",
+      nameAt: "/payload/name",
+    },
+  );
+  const result = {
+    ...toolResult(
+      {},
+      { value: "sample output", callId: "call", at: "/payload", outputAt: "/payload/output" },
+    ),
+    id: "result",
+    sessionId: "session",
+    provider: "codex",
+    sequence: 1,
+    part: 0,
+    provenance: {
+      path: "/fixture.jsonl",
+      line: 2,
+      pointer: "/payload",
+      byteOffset: 0,
+      byteLength: 10,
+      recordHash: "fixture",
+      adapterVersion: 2,
+    },
+  } as TraceEvent;
+  const html = renderToStaticMarkup(
+    createElement(defaultTraceRenderers.resolve(call.template), {
+      event: { ...call, template: call.template } as unknown as TraceEvent,
+      body: call.body,
+      related: [result],
+    }),
+  );
+  assert.match(html, /Result · unknown/);
+  assert.match(html, /sample output/);
+});

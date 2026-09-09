@@ -178,21 +178,112 @@ export function distinctEvidence(evidence: readonly TraceEvidence[]) {
 export function providerLabel(value: string) {
   return value === "claude-code" ? "Claude Code" : value === "codex" ? "Codex" : value;
 }
+const topicNames: Readonly<Record<TraceEvidence["topic"], string>> = {
+  instructions: "Instructions",
+  skills: "Skills",
+  plugins: "Plugins",
+  sandbox: "Sandbox",
+  subagents: "Subagents",
+  mcp: "MCP",
+  search: "Search",
+};
+export type EvidenceState = "available" | "pending" | "unavailable";
+export type EvidenceGroup = {
+  key: string;
+  topic: TraceEvidence["topic"];
+  name: string;
+  state: EvidenceState | null;
+  items: TraceEvidence[];
+};
+// MCP tool names carry their server: mcp__<server>__<tool>, or mcp__<server>.<tool>.
+// A server-level fact is the bare name, optionally with the recorded state in
+// parentheses, so both forms have to collapse onto the same server group.
+function mcpName(label: string) {
+  return label.startsWith("mcp__") ? label.slice(5) : label;
+}
+export function mcpServer(label: string) {
+  const name = mcpName(label).replace(/\s*\([^()]*\)$/, "");
+  return name.split(/__|\./)[0] || label;
+}
+export function mcpEntry(label: string) {
+  const name = mcpName(label);
+  const tool = name.split(/__|\./).slice(1).join("__");
+  if (tool) return tool;
+  return (
+    name
+      .slice(mcpServer(label).length)
+      .trim()
+      .replace(/^\(|\)$/g, "") || "Server"
+  );
+}
+// One denied fact outweighs any number of successful ones: a server that failed to
+// start is unavailable even when the trace also recorded the tools it advertised.
+function evidenceState(items: readonly TraceEvidence[]): EvidenceState {
+  if (items.some((item) => item.action === "blocked")) return "unavailable";
+  if (items.every((item) => item.action === "requested")) return "pending";
+  return "available";
+}
+export function groupEvidence(evidence: readonly TraceEvidence[]): EvidenceGroup[] {
+  const groups = new Map<string, EvidenceGroup>();
+  for (const item of distinctEvidence(evidence)) {
+    const server = item.topic === "mcp" ? mcpServer(item.label) : null;
+    const key = server ? `mcp:${server}` : item.topic;
+    const group = groups.get(key) ?? {
+      key,
+      topic: item.topic,
+      name: server ?? topicNames[item.topic],
+      state: null,
+      items: [],
+    };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  const ordered = [...groups.values()];
+  for (const group of ordered)
+    group.state = group.topic === "mcp" ? evidenceState(group.items) : null;
+  return ordered;
+}
+const stateNames: Readonly<Record<EvidenceState, string>> = {
+  available: "Available",
+  pending: "Pending",
+  unavailable: "Unavailable",
+};
 export function Evidence({ evidence }: { evidence: readonly TraceEvidence[] }) {
+  const groups = groupEvidence(evidence);
+  if (groups.length === 0) return null;
   return (
     <div className="tr-evidence">
-      {distinctEvidence(evidence).map((item) => (
-        <span
-          key={evidenceLabel(item)}
-          className={`tr-evidence-chip tr-evidence-${item.action}`}
-          title={`${item.basis === "recorded" ? "Recorded" : "Inferred from submitted content"} · ${item.pointer}`}
+      {groups.map((group) => (
+        <section
+          className="tr-evidence-group"
+          key={group.key}
+          data-state={group.state ?? undefined}
         >
-          <span>{item.label}</span>
-          <small>
-            {item.topic} · {item.action.replaceAll("_", " ")}
-            {item.basis === "inferred" ? " · inferred" : ""}
-          </small>
-        </span>
+          <h4 className="tr-evidence-group-name">
+            {group.topic === "mcp" && <span className="tr-evidence-scope">MCP</span>}
+            <span>{group.name}</span>
+            {group.state && (
+              <span className={`tr-evidence-state tr-evidence-state-${group.state}`}>
+                {stateNames[group.state]}
+              </span>
+            )}
+          </h4>
+          <div className="tr-evidence-chips">
+            {group.items.map((item) => (
+              <span
+                key={evidenceLabel(item)}
+                className={`tr-evidence-chip tr-evidence-${item.action}`}
+                title={`${item.basis === "recorded" ? "Recorded" : "Inferred from submitted content"} · ${item.pointer}`}
+              >
+                <span>{group.topic === "mcp" ? mcpEntry(item.label) : item.label}</span>
+                <small>
+                  {item.action.replaceAll("_", " ")}
+                  {item.basis === "inferred" ? " · inferred" : ""}
+                </small>
+              </span>
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   );

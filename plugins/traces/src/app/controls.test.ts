@@ -6,6 +6,9 @@ import {
   elapsedTime,
   evidenceLabel,
   evidenceTag,
+  groupEvidence,
+  mcpEntry,
+  mcpServer,
   parseStoredSize,
 } from "./controls.tsx";
 
@@ -90,4 +93,54 @@ test("a missing or unusable pane width falls back to the container", () => {
   assert.equal(parseStoredSize(undefined), null);
   assert.equal(parseStoredSize(""), null);
   assert.equal(parseStoredSize("wide"), null);
+});
+
+test("MCP evidence collapses tool names and server states onto one server group", () => {
+  const groups = groupEvidence([
+    {
+      topic: "mcp",
+      action: "available",
+      label: "mcp__cubic__get_issue",
+      basis: "recorded",
+      pointer: "/a",
+    },
+    {
+      topic: "mcp",
+      action: "available",
+      label: "mcp__cubic__list_scans",
+      basis: "recorded",
+      pointer: "/b",
+    },
+    { topic: "mcp", action: "blocked", label: "cubic (failed)", basis: "recorded", pointer: "/c" },
+    {
+      topic: "mcp",
+      action: "requested",
+      label: "cloudflare (pending)",
+      basis: "recorded",
+      pointer: "/d",
+    },
+    {
+      topic: "skills",
+      action: "invoked",
+      label: "agent-browser",
+      basis: "recorded",
+      pointer: "/e",
+    },
+  ]);
+  assert.deepEqual(
+    groups.map((group) => [group.name, group.state, group.items.length]),
+    [
+      ["cubic", "unavailable", 3],
+      ["cloudflare", "pending", 1],
+      ["Skills", null, 1],
+    ],
+  );
+});
+
+test("an MCP chip drops the server prefix it is already grouped under", () => {
+  assert.equal(mcpServer("mcp__bb-bridge__agentation_resolve"), "bb-bridge");
+  assert.equal(mcpEntry("mcp__bb-bridge__agentation_resolve"), "agentation_resolve");
+  assert.equal(mcpServer("cubic (failed)"), "cubic");
+  assert.equal(mcpEntry("cubic (failed)"), "failed");
+  assert.equal(mcpEntry("cubic"), "Server");
 });

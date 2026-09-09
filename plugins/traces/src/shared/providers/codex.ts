@@ -597,10 +597,7 @@ function parse(value: unknown): ParsedRecord {
   if (record.type === "session_meta") return sessionEvents(record, payload);
   const session = sessionPatch(payload);
   const events = recordReaders[String(record.type)]?.(record, payload) ?? [];
-  if (!events.length)
-    events.push(
-      diagnostic(value, `Unrecognized Codex record: ${string(record.type) ?? "unknown"}`),
-    );
+  if (!events.length) events.push(diagnostic(value, string(record.type) ?? "Recorded record"));
   const userContent =
     record.type === "response_item" && payload.type === "message" && payload.role === "user"
       ? payload.content
@@ -615,7 +612,7 @@ function parse(value: unknown): ParsedRecord {
 export const codexAdapter: TraceAdapter = {
   id: "codex",
   label: "Codex",
-  version: 3,
+  version: 4,
   roots: (home, env) => [
     rootPath(home, env.CODEX_HOME?.trim() || `${home}/.codex`, "sessions"),
     rootPath(home, env.CODEX_HOME?.trim() || `${home}/.codex`, "archived_sessions"),

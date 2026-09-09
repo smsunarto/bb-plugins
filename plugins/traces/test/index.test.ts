@@ -52,7 +52,7 @@ function allEvents(index: TraceIndex, sessionId: string): TraceEvent[] {
   const items: TraceEvent[] = [];
   let cursor: string | undefined;
   do {
-    const page = index.events({ sessionId, cursor, limit: 7 });
+    const page = index.events({ sessionId, cursor, limit: 7, includeUsage: true });
     eventPageSchema.parse(page);
     items.push(...page.items);
     cursor = page.nextCursor ?? undefined;
@@ -375,6 +375,19 @@ test("a detected rewrite during append rolls back newly visible events and check
   assert.equal(reopened.events({ sessionId, query: "Appended" }).items.length, 0);
   await reopened.scan({ verify: true });
   assert.equal(reopened.sessions({}).items[0]!.eventCount, originalIds.length + 700);
+});
+
+test("the timeline hides response usage records until a reader asks for them", async () => {
+  const { index } = await setup("claude-code");
+  const sessionId = index.sessions({}).items[0]!.id;
+  const hidden = index.events({ sessionId, limit: 200 }).items;
+  const shown = index.events({ sessionId, limit: 200, includeUsage: true }).items;
+  assert.ok(shown.some((event) => event.kind === "usage"));
+  assert.ok(!hidden.some((event) => event.kind === "usage"));
+  assert.equal(
+    index.events({ sessionId, kind: "usage", limit: 200 }).items.length,
+    shown.filter((event) => event.kind === "usage").length,
+  );
 });
 
 test("adapter upgrades replace cached catalog titles with the actual user prompt", async () => {

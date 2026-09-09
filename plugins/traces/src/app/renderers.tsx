@@ -1,12 +1,14 @@
 import type { ComponentType } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import type { TraceBody, TraceEvent } from "../shared/model.ts";
+import { scanInstructions } from "../shared/providers/common.ts";
 import { JsonView } from "./json-view.tsx";
 
 export interface TraceRendererProps {
   event: TraceEvent;
   body: TraceBody;
   related: readonly TraceEvent[];
+  onRaw?: () => void;
 }
 export type TraceRenderer = ComponentType<TraceRendererProps>;
 export interface TraceRendererRegistration {
@@ -14,6 +16,7 @@ export interface TraceRendererRegistration {
   component: TraceRenderer;
 }
 
+const EMPTY_RELATED: readonly TraceEvent[] = [];
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -33,8 +36,22 @@ function Text({ text, markdown = false }: { text: string; markdown?: boolean }) 
     <pre className="tr-code">{text}</pre>
   );
 }
-function ToolOutput({ body }: { body: TraceBody }) {
-  if (body.type !== "tool" || body.output === null) return null;
+// The timeline folds a tool result into the call that produced it, so the call has
+// to show that result here. Only the summary is indexed, so a long result is
+// shortened and the full record stays one click away under Related events.
+function PairedOutput({ related }: { related: readonly TraceEvent[] }) {
+  const result = related.find((item) => item.kind === "tool_result");
+  if (!result) return null;
+  return (
+    <div className="tr-detail-section">
+      <h3>Result{result.tool ? ` · ${result.tool.status}` : ""}</h3>
+      <Text text={result.preview} />
+    </div>
+  );
+}
+function ToolOutput({ body, related }: { body: TraceBody; related?: readonly TraceEvent[] }) {
+  if (body.type !== "tool") return null;
+  if (body.output === null) return <PairedOutput related={related ?? EMPTY_RELATED} />;
   return (
     <div className="tr-detail-section">
       <h3>Result</h3>
@@ -46,16 +63,17 @@ function ToolOutput({ body }: { body: TraceBody }) {
     </div>
   );
 }
-function MessageRenderer({ body }: TraceRendererProps) {
+function MessageRenderer({ body, related, onRaw }: TraceRendererProps) {
   if (body.type === "text") return <Text text={body.text} markdown={body.format === "markdown"} />;
-  return <GenericRenderer body={body} />;
+  return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
 }
-function GenericRenderer({ body }: { body: TraceBody }) {
+type BodyProps = { body: TraceBody; related?: readonly TraceEvent[]; onRaw?: () => void };
+function GenericRenderer({ body, related, onRaw }: BodyProps) {
   switch (body.type) {
     case "text":
       return <Text text={body.text} markdown={body.format === "markdown"} />;
     case "context":
-      return <ContextRenderer body={body} />;
+      return <ContextRenderer body={body} related={related} onRaw={onRaw} />;
     case "tool":
       return (
         <>
@@ -63,27 +81,55 @@ function GenericRenderer({ body }: { body: TraceBody }) {
             <h3>Arguments</h3>
             <JsonView value={body.input} />
           </div>
-          <ToolOutput body={body} />
+          <ToolOutput body={body} related={related} />
         </>
       );
     case "data":
       return <JsonView value={body.value} />;
   }
 }
-function ContextRenderer({ body }: { body: TraceBody }) {
-  if (body.type !== "context") return <GenericRenderer body={body} />;
+function ContextHeading({ body }: { body: TraceBody & { type: "context" } }) {
   return (
     <>
       <div className="tr-context-origin">
         {body.captured ? "Captured in this trace" : "Referenced in this trace"}
       </div>
       <h3 className="tr-context-title">{body.name}</h3>
+    </>
+  );
+}
+function ContextRenderer({ body, related, onRaw }: BodyProps) {
+  if (body.type !== "context")
+    return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
+  return (
+    <>
+      <ContextHeading body={body} />
       <Text text={body.content} markdown={body.format === "markdown"} />
     </>
   );
 }
-function CommandRenderer({ body }: TraceRendererProps) {
-  if (body.type !== "tool") return <GenericRenderer body={body} />;
+// BB assembles one instruction message from many sources. Splitting it back into
+// the plugin or memory file each part came from is what makes it readable.
+function InstructionsRenderer({ body, related, onRaw }: TraceRendererProps) {
+  const scan = body.type === "context" ? scanInstructions(body.content) : null;
+  if (body.type !== "context" || !scan?.kind)
+    return <ContextRenderer body={body} related={related} onRaw={onRaw} />;
+  const markdown = body.format === "markdown";
+  return (
+    <>
+      <ContextHeading body={body} />
+      {scan.preamble && <Text text={scan.preamble} markdown={markdown} />}
+      {scan.sections.map((section) => (
+        <details className="tr-detail-section tr-instruction" key={section.label} open>
+          <summary>{section.label}</summary>
+          <Text text={section.content} markdown={markdown} />
+        </details>
+      ))}
+    </>
+  );
+}
+function CommandRenderer({ body, related, onRaw }: TraceRendererProps) {
+  if (body.type !== "tool") return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
   const command = field(body.input, "cmd", "command", "code", "input");
   return (
     <>
@@ -95,12 +141,12 @@ function CommandRenderer({ body }: TraceRendererProps) {
       ) : (
         <JsonView value={body.input} />
       )}
-      <ToolOutput body={body} />
+      <ToolOutput body={body} related={related} />
     </>
   );
 }
-function FileRenderer({ body, event }: TraceRendererProps) {
-  if (body.type !== "tool") return <GenericRenderer body={body} />;
+function FileRenderer({ body, event, related, onRaw }: TraceRendererProps) {
+  if (body.type !== "tool") return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
   const path = field(body.input, "file_path", "path", "filename");
   const content = field(body.input, "content", "new_string", "new_str", "patch");
   const previous = field(body.input, "old_string", "old_str");
@@ -120,18 +166,18 @@ function FileRenderer({ body, event }: TraceRendererProps) {
         </div>
       )}
       {content === null && event.kind === "tool_call" && <JsonView value={body.input} />}
-      <ToolOutput body={body} />
+      <ToolOutput body={body} related={related} />
     </>
   );
 }
-function PatchRenderer({ body }: TraceRendererProps) {
+function PatchRenderer({ body, related, onRaw }: TraceRendererProps) {
   const patch =
     body.type === "tool"
       ? field(body.input, "patch", "input", "content")
       : body.type === "text"
         ? body.text
         : null;
-  if (patch === null) return <GenericRenderer body={body} />;
+  if (patch === null) return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
   const lines = [];
   for (const match of patch.matchAll(/[^\n]*(?:\n|$)/g)) {
     if (lines.length >= 2000) break;
@@ -156,23 +202,23 @@ function PatchRenderer({ body }: TraceRendererProps) {
           Preview limited to 2,000 lines. Open raw for the complete record.
         </p>
       )}
-      <ToolOutput body={body} />
+      <ToolOutput body={body} related={related} />
     </>
   );
 }
-function SearchRenderer({ body }: TraceRendererProps) {
-  if (body.type !== "tool") return <GenericRenderer body={body} />;
+function SearchRenderer({ body, related, onRaw }: TraceRendererProps) {
+  if (body.type !== "tool") return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
   const query = field(body.input, "query", "q", "objective");
   return (
     <>
       {query && <div className="tr-search-query">{query}</div>}
       <JsonView value={body.input} />
-      <ToolOutput body={body} />
+      <ToolOutput body={body} related={related} />
     </>
   );
 }
-function SubagentRenderer({ body }: TraceRendererProps) {
-  if (body.type !== "tool") return <GenericRenderer body={body} />;
+function SubagentRenderer({ body, related, onRaw }: TraceRendererProps) {
+  if (body.type !== "tool") return <GenericRenderer body={body} related={related} onRaw={onRaw} />;
   const prompt = field(body.input, "prompt", "message");
   const label = field(body.input, "task_name", "description", "subagent_type", "agent_type");
   return (
@@ -185,11 +231,11 @@ function SubagentRenderer({ body }: TraceRendererProps) {
         </div>
       )}
       <JsonView value={body.input} />
-      <ToolOutput body={body} />
+      <ToolOutput body={body} related={related} />
     </>
   );
 }
-function UsageRenderer({ event, body }: TraceRendererProps) {
+function UsageRenderer({ event, body, related, onRaw }: TraceRendererProps) {
   return (
     <>
       {event.usage && (
@@ -212,7 +258,7 @@ function UsageRenderer({ event, body }: TraceRendererProps) {
           </div>
         </dl>
       )}
-      <GenericRenderer body={body} />
+      <GenericRenderer body={body} related={related} onRaw={onRaw} />
     </>
   );
 }
@@ -229,7 +275,7 @@ const builtinRenderers: Readonly<Record<string, TraceRenderer>> = {
   subagent: SubagentRenderer,
   skill: GenericRenderer,
   context: ContextRenderer,
-  instructions: ContextRenderer,
+  instructions: InstructionsRenderer,
   usage: UsageRenderer,
   turn: GenericRenderer,
   data: GenericRenderer,
@@ -245,6 +291,14 @@ export function createTraceRendererRegistry(extensions: readonly TraceRendererRe
     templates.set(extension.template, extension.component);
   }
   return Object.freeze({
+    hasFormattedView(event: TraceEvent, body: TraceBody | null | undefined): boolean {
+      if (!body) return false;
+      return (
+        body.type !== "data" ||
+        custom.has(event.template) ||
+        (event.template === "usage" && event.usage !== null)
+      );
+    },
     resolve(template: string): TraceRenderer {
       return templates.get(template) ?? GenericRenderer;
     },

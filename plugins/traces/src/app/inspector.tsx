@@ -42,13 +42,8 @@ function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
           ? ` · overlapping chunk from byte ${data.offset.toLocaleString()}`
           : ""}
       </p>
-      <pre className="tr-code">{text}</pre>
-      {value !== undefined && (
-        <details className="tr-detail-section">
-          <summary>Explore JSON structure</summary>
-          <JsonView value={value} />
-        </details>
-      )}
+      {/* A chunked or unparseable record has no tree to walk, so it keeps the text. */}
+      {value === undefined ? <pre className="tr-code">{text}</pre> : <JsonView value={value} />}
       {(offset > 0 || data.nextOffset !== null) && (
         <div className="tr-pages">
           <button disabled={offset === 0} onClick={() => setOffsets(offsets.slice(0, -1))}>
@@ -65,6 +60,28 @@ function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function ViewSwitcher({
+  available,
+  raw,
+  onRaw,
+}: {
+  available: boolean;
+  raw: boolean;
+  onRaw: (value: boolean) => void;
+}) {
+  if (!available) return null;
+  return (
+    <div className="tr-segment">
+      <button aria-pressed={!raw} onClick={() => onRaw(false)}>
+        Formatted
+      </button>
+      <button aria-pressed={raw} onClick={() => onRaw(true)}>
+        Raw <kbd>r</kbd>
+      </button>
     </div>
   );
 }
@@ -90,11 +107,13 @@ export function Inspector({
 }) {
   const result = rpc.event.useQuery(
     { hostId, eventId: selected.id },
-    { gcTime: 0, staleTime: 1000, retry: false, enabled: !raw },
+    { gcTime: 0, staleTime: 1000, retry: false },
   );
   const data = result.data;
   const event = data?.event ?? selected;
   const Renderer = renderers.resolve(event.template);
+  const hasFormattedView = renderers.hasFormattedView(event, data?.body);
+  const showRaw = raw || Boolean(data?.body && !hasFormattedView);
   return (
     <section className="tr-inspector" ref={inspectorRef} tabIndex={-1} aria-label="Event inspector">
       <div className="tr-column-heading">
@@ -104,26 +123,19 @@ export function Inspector({
           </button>
         )}
         <span>Inspector</span>
-        <div className="tr-segment">
-          <button aria-pressed={!raw} onClick={() => onRaw(false)}>
-            Formatted
-          </button>
-          <button aria-pressed={raw} onClick={() => onRaw(true)}>
-            Raw <kbd>r</kbd>
-          </button>
-        </div>
+        <ViewSwitcher available={hasFormattedView} raw={raw} onRaw={onRaw} />
       </div>
       <div className="tr-inspector-scroll">
         <div className="tr-inspector-title">
           <span className="tr-eyebrow">{event.role ?? event.kind.replaceAll("_", " ")}</span>
-          <h2>{event.title}</h2>
-          <div className="tr-inspector-meta">
-            {event.tool?.name ?? event.template}
-            {event.tool ? ` · ${event.tool.status}` : ""}
+          <div className="tr-inspector-headline">
+            <h2>{event.title}</h2>
+            {event.tool && <span className="tr-title-chip">{event.tool.name}</span>}
           </div>
+          <div className="tr-inspector-meta">{event.tool ? event.tool.status : event.template}</div>
         </div>
         <Evidence evidence={event.evidence} />
-        {raw ? (
+        {showRaw ? (
           <RawRecord key={event.id} hostId={hostId} eventId={event.id} />
         ) : result.isPending ? (
           <Empty title="Loading event…" />
@@ -141,7 +153,14 @@ export function Inspector({
                 Preview shortened. Open raw to inspect the complete source record.
               </div>
             )}
-            {data.body && <Renderer event={event} body={data.body} related={data.related} />}
+            {data.body && (
+              <Renderer
+                event={event}
+                body={data.body}
+                related={data.related}
+                onRaw={() => onRaw(true)}
+              />
+            )}
             {data.related.length > 0 && (
               <div className="tr-detail-section">
                 <h3>Related events</h3>
