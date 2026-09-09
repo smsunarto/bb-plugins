@@ -732,3 +732,69 @@ test("keeps empty non-Git source readable without an empty diff", async () => {
   slot.unmount();
   embedCache.clear();
 });
+
+test("Unity smart-diff renders object properties, supports YAML review and preserves collapse controls", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-diff")!;
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { path: "Assets/Player.prefab" },
+      source: '::smart-diff{path="Assets/Player.prefab"}',
+      message: { ...inlineVisMessage, id: "message-unity-ui" },
+      openWorkspaceFile: null,
+    },
+    {
+      rpc: {
+        renderEmbed: () => ({
+          status: "ready",
+          kind: "diff",
+          path: "Assets/Player.prefab",
+          label: "Assets/Player.prefab",
+          patch,
+          truncated: false,
+          unity: {
+            propertyCount: 1,
+            groups: [
+              {
+                id: "1",
+                name: "Player",
+                hierarchy: "Actors",
+                status: "modified",
+                components: [
+                  {
+                    id: "2",
+                    type: "Transform",
+                    status: "modified",
+                    properties: [
+                      {
+                        path: "m_LocalPosition",
+                        before: "{x: 0, y: 1, z: 0}",
+                        after: "{x: 0, y: 2, z: 0}",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    },
+  );
+  await slot.findByRole("region", { name: "Unity changes in Assets/Player.prefab" });
+  expect(slot.getByRole("columnheader", { name: "Before" })).toBeTruthy();
+  expect(slot.getByRole("cell", { name: "{x: 0, y: 2, z: 0}" })).toBeTruthy();
+  expect(slot.getByText("Player")).toBeTruthy();
+  fireEvent.click(slot.getByRole("button", { name: "Raw YAML" }));
+  expect(slot.queryByRole("table")).toBeNull();
+  expect(slot.getByRole("button", { name: "Object view" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Object view" }));
+  expect(slot.getByRole("rowheader", { name: "Position" }).getAttribute("title")).toBe(
+    "m_LocalPosition",
+  );
+  expect(slot.container.querySelectorAll("details[open]")).toHaveLength(2);
+  slot.unmount();
+});

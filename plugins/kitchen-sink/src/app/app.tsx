@@ -15,6 +15,7 @@ import {
   type RenderEmbedOutput,
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
+import { UnityDiffView } from "./unity-diff.tsx";
 import { DiffHeader } from "./diff-header.tsx";
 import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
@@ -202,23 +203,32 @@ function CodeHeader({
 
 function ReadyEmbedBody({ kind, result }: { kind: EmbedKind; result: ReadyEmbed }) {
   const patch = result.kind === "code" ? sourceExcerptPatch(result) : result.patch;
+  const raw = (
+    <Diff
+      key={patch}
+      patch={patch}
+      path={result.path}
+      view="unified"
+      overflow="scroll"
+      showLineNumbers
+      className="smart-embed-renderer"
+    />
+  );
+  if (result.kind !== "code" && result.unity) {
+    return <UnityDiffView diff={result.unity} path={result.path} raw={raw} />;
+  }
   return (
     <>
+      {result.kind !== "code" && result.unityNotice ? (
+        <Notice tone="muted">{result.unityNotice}</Notice>
+      ) : null}
       {kind === "diff" && result.kind === "code" ? (
         <Notice tone="muted">No Git history. Showing current code.</Notice>
       ) : null}
       {result.kind === "code" && result.content.length === 0 ? (
         <Notice tone="muted">Empty source.</Notice>
       ) : (
-        <Diff
-          key={patch}
-          patch={patch}
-          path={result.path}
-          view="unified"
-          overflow="scroll"
-          showLineNumbers
-          className="smart-embed-renderer"
-        />
+        raw
       )}
     </>
   );

@@ -1,0 +1,206 @@
+.unity-diff {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 0.8125rem;
+}
+.unity-diff-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border-block: 1px solid var(--border);
+  background: var(--card);
+}
+.unity-diff-title {
+  display: grid;
+  gap: 0.25rem;
+}
+.unity-diff-title > span,
+.unity-diff-hierarchy,
+.unity-diff-id,
+.unity-diff-empty {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+}
+.unity-diff-toolbar button {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.unity-diff-toolbar button:hover {
+  background: var(--accent);
+}
+.unity-diff-groups {
+  display: grid;
+  gap: 0.875rem;
+  padding: 1rem;
+}
+.unity-diff-object {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--card);
+}
+.unity-diff summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+.unity-diff summary::-webkit-details-marker {
+  display: none;
+}
+.unity-diff summary::before {
+  content: "›";
+  flex-shrink: 0;
+  width: 0.625rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--muted-foreground);
+}
+.unity-diff details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.unity-diff-object > summary {
+  padding: 0.75rem;
+}
+.unity-diff-object > summary > svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.unity-diff-object-label {
+  min-width: 0;
+  display: grid;
+  gap: 0.125rem;
+  overflow-wrap: anywhere;
+}
+.unity-diff-badge {
+  margin-left: auto;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  font-size: 0.625rem;
+  line-height: 1rem;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+.unity-diff-added,
+.unity-diff-after {
+  color: var(--diff-added, var(--success, var(--primary)));
+}
+.unity-diff-removed,
+.unity-diff-before {
+  color: var(--diff-removed, var(--destructive));
+}
+.unity-diff-modified {
+  color: var(--muted-foreground);
+}
+.unity-diff-components {
+  border-top: 1px solid var(--border);
+  padding: 0 0.75rem 0.75rem;
+}
+.unity-diff-component {
+  margin-top: 0.75rem;
+}
+.unity-diff-component > summary {
+  padding: 0.375rem 0 0.625rem;
+}
+.unity-diff-component-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.unity-diff-id {
+  font-family: var(--font-mono, monospace);
+  overflow-wrap: anywhere;
+}
+.unity-diff-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+}
+.unity-diff-properties {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.75rem;
+}
+.unity-diff-properties th,
+.unity-diff-properties td {
+  padding: 0.5rem 0.625rem;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.unity-diff-properties thead {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.unity-diff-properties thead th:first-child {
+  width: 29%;
+}
+.unity-diff-properties tbody th {
+  font-weight: 500;
+}
+.unity-diff-properties tbody tr + tr {
+  border-top: 1px solid var(--border);
+}
+.unity-diff-properties td {
+  border-left: 1px solid var(--border);
+}
+.unity-diff-properties code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+}
+.unity-diff-before {
+  background: color-mix(in oklch, var(--diff-removed, var(--destructive)) 5%, transparent);
+}
+.unity-diff-after {
+  background: color-mix(in oklch, var(--diff-added, var(--primary)) 5%, transparent);
+}
+.unity-diff summary:focus-visible,
+.unity-diff button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+@media (max-width: 480px) {
+  .unity-diff-groups {
+    padding: 0.5rem;
+  }
+  .unity-diff-id {
+    display: none;
+  }
+  .unity-diff-toolbar {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+  .unity-diff-properties th,
+  .unity-diff-properties td {
+    padding: 0.375rem;
+  }
+}
+
+.unity-diff-property-target {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.625rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}

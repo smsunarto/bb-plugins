@@ -10,6 +10,8 @@ import {
 import { codeCitation } from "../lib/code-citation.ts";
 import { rangePatch } from "../lib/diff-range.ts";
 import { readDiffSnapshot, saveDiffSnapshot, type DiffSnapshotKey } from "../lib/diff-snapshot.ts";
+import { isUnityAsset } from "../../shared/unity-diff.ts";
+import { loadUnityDiff } from "../lib/load-unity-diff.ts";
 import { splitPatchFiles } from "../lib/patch-file.ts";
 
 const MAX_PATH_LENGTH = 1_024;
@@ -101,6 +103,9 @@ export const renderEmbed = defineQuery({
               : rangePatch(path, file.patch, input.start, input.end);
           if ("error" in range) return { status: "error", message: range.error };
           if ("empty" in range) return { status: "empty", message: range.empty };
+          const unityResult = isUnityAsset(path)
+            ? await loadUnityDiff(ctx.bb, environment.id, mergeBase, path, file, range.patch)
+            : {};
           const output = {
             status: "ready" as const,
             kind: "diff" as const,
@@ -108,6 +113,7 @@ export const renderEmbed = defineQuery({
             label: range.label,
             patch: range.patch,
             truncated: file.truncated,
+            ...unityResult,
           };
           if (snapshotKey === null) return output;
           try {

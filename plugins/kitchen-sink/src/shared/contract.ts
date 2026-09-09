@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { unityDiffSchema } from "./unity-diff.ts";
 
 export const renderEmbedInputSchema = z
   .object({
@@ -33,6 +34,8 @@ export const renderEmbedOutputSchema = z.union([
       path: z.string(),
       label: z.string(),
       patch: z.string(),
+      unity: unityDiffSchema.optional(),
+      unityNotice: z.string().optional(),
       truncated: z.boolean(),
     })
     .strict(),
