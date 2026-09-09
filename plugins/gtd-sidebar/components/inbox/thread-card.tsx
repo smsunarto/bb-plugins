@@ -15,6 +15,7 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { LIST_HOVER_TRANSITION } from "@/components/inbox/row-motion";
 import { CompactThreadActionMenu } from "@/components/inbox/thread-action-menu";
 import {
   buildThreadActionPlan,
@@ -300,7 +301,7 @@ function threadCardPresentation({
       "group/card relative rounded-xl px-2.5",
       !isCompactViewport && "gtd-thread-row",
       compact && "gtd-compact-row",
-      "transition-all duration-150",
+      LIST_HOVER_TRANSITION,
       isCompactViewport ? "min-h-10 py-0" : "rounded-md",
       isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
       !isActive && isOpenInSplit && "bg-sidebar-accent/30",

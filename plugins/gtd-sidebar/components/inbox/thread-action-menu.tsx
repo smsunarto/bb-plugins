@@ -74,7 +74,11 @@ export function CompactThreadActionMenu({
           className={cn(
             "group/sheet relative isolate z-50 overflow-hidden text-popover-foreground",
             SHARED_LAYER_CLASS,
-            "backdrop-blur-xl backdrop-saturate-[1.8] bg-white/75 dark:bg-[#1c1c1e]/80",
+            // 16px, not 24px: this layer carries a backdrop-filter *and* runs
+            // the scale below, so the blur is re-sampled every frame of the
+            // 280ms rise. Blur over ~20px gets expensive under transition,
+            // worst on mobile Safari, which is the only place this sheet opens.
+            "backdrop-blur-lg backdrop-saturate-[1.8] bg-white/75 dark:bg-[#1c1c1e]/80",
             "origin-[var(--radix-dropdown-menu-content-transform-origin)] will-change-transform",
             // UIKit's context-menu spring: a fast rise with a small overshoot.
             "data-[state=open]:animate-[gtd-sheet-in_280ms_cubic-bezier(0.32,1.25,0.4,1)_both]",

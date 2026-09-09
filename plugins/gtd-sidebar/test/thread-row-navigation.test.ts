@@ -554,6 +554,22 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     });
   });
 
+  describe("waiting shelf", () => {
+    it("folds its rows away and keeps the rest of the list in place", () => {
+      const host = hostState([
+        thread("a"),
+        thread("waiting", { indicator: "runtime" }),
+        thread("also-waiting", { indicator: "runtime" }),
+      ]);
+      const view = mount(host);
+      assert.deepEqual(rowIds(view.slot), ["a", "also-waiting", "waiting"]);
+      fireEvent.click(view.slot.getByRole("button", { name: "Waiting" }));
+      assert.deepEqual(rowIds(view.slot), ["a"]);
+      fireEvent.click(view.slot.getByRole("button", { name: "Waiting (2)" }));
+      assert.deepEqual(rowIds(view.slot), ["a", "also-waiting", "waiting"]);
+    });
+  });
+
   describe("committed row commands", () => {
     it("opens and drags with current host callbacks without redrawing an unchanged row", () => {
       const previousActions = actions();

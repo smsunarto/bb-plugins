@@ -6,6 +6,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { LIST_HOVER_TRANSITION } from "@/components/inbox/row-motion";
 import { CompactThreadActionMenu } from "@/components/inbox/thread-action-menu";
 import {
   buildThreadActionPlan,
@@ -192,7 +193,7 @@ function slimRowPresentation({
       "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",
       !isCompactViewport && "gtd-thread-row gtd-parked-row",
       compact && "gtd-compact-row",
-      "transition-all duration-150",
+      LIST_HOVER_TRANSITION,
       isCompactViewport ? "h-11" : "h-8 rounded-md",
       isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
       isPressing && "bg-sidebar-accent",
