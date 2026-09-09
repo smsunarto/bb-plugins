@@ -71,16 +71,19 @@ test("each skill directory carries a SKILL.md whose frontmatter name matches the
         .map(([key, value]) => [key, value ?? ""]),
     );
     expect(fields.name).toBe(directory);
-    expect(fields.description?.length ?? 0).toBeGreaterThan(40);
+    if (directory === "ship-it") {
+      expect(fields.description).toBe("Ship it");
+      expect(fields["disable-model-invocation"]).toBe("true");
+    } else {
+      expect(fields.description?.length ?? 0).toBeGreaterThan(40);
+    }
   }
 });
 
-test("both commands route GitButler repositories through the gitbutler skill", async () => {
-  for (const directory of ["ship-it", "sync"]) {
-    const skill = await readFile(join(skillsRoot, directory, "SKILL.md"), "utf8");
-    expect(skill).toContain("`gitbutler` skill");
-    expect(skill).toContain("but status");
-  }
+test("sync routes GitButler repositories through the gitbutler skill", async () => {
+  const skill = await readFile(join(skillsRoot, "sync", "SKILL.md"), "utf8");
+  expect(skill).toContain("`gitbutler` skill");
+  expect(skill).toContain("but status");
 });
 
 test("project indexing is a user-only slash command with three examples per repository", async () => {

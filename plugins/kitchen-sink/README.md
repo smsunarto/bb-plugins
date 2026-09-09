@@ -17,12 +17,12 @@
 
 bb's `/` menu lists skills, so each composer command ships as a skill under `skills/`. Mention providers live in `src/server/mentions.ts` and register on load.
 
-| Command    | What the agent does                                                                                                                                                       |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/ship-it` | Finds the repository's CI gates, runs them locally, commits this session's changes, then lands on `origin/main` for a personal GitHub repository or opens a pull request. |
-| `/sync`    | Rebases the workspace onto the latest target branch and resolves every conflict by reading the intent of both sides.                                                      |
+| Command    | What the agent does                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| `/ship-it` | Sends “Ship it”.                                                                                                     |
+| `/sync`    | Rebases the workspace onto the latest target branch and resolves every conflict by reading the intent of both sides. |
 
-Both commands detect GitButler with `but status` and route every write through the `gitbutler` skill when it succeeds. Plain Git repositories use `git` and `gh`.
+`/sync` detects GitButler with `but status` and routes every write through the `gitbutler` skill when it succeeds. Plain Git repositories use `git` and `gh`.
 
 ## Autorouter
 
