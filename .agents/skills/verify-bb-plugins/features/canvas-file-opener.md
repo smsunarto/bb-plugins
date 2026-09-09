@@ -35,16 +35,24 @@ Capture the file picker, the side panel with the rendered Canvas, and the diff a
 Hover a block to reveal its comment button, open the composer, and submit. The thread card appears under the block and the CLI lists it.
 
 ```bash
-agent-browser --session "$BROWSER_SESSION" find text hover "Fourteen suites failed"
-agent-browser --session "$BROWSER_SESSION" find role button click --name "Comment on this block"
+agent-browser --session "$BROWSER_SESSION" wait --text "Flaky test triage for bb-plugins CI"
+# Inspect the rendered blocks and choose the paragraph's current offset.
+agent-browser --session "$BROWSER_SESSION" eval 'Array.from(document.querySelectorAll("[data-comment-offset]")).map(el => ({ offset: el.getAttribute("data-comment-offset"), text: el.textContent.slice(0,100) }))'
+BLOCK_OFFSET=39 # The opening paragraph in the unchanged example fixture.
+agent-browser --session "$BROWSER_SESSION" hover "[data-comment-offset='$BLOCK_OFFSET']"
+agent-browser --session "$BROWSER_SESSION" click "[data-comment-offset='$BLOCK_OFFSET'] button[aria-label='Comment on this block']"
 agent-browser --session "$BROWSER_SESSION" find role textbox fill --name "Add a comment" "Verify this number"
-agent-browser --session "$BROWSER_SESSION" find role button click --name "Comment"
+agent-browser --session "$BROWSER_SESSION" find role button click --name "Comment" --exact
 agent-browser --session "$BROWSER_SESSION" wait --text "Verify this number"
-bb-kit dev-instance exec -- bb canvas comments "$CANVAS_PATH"
-bb-kit dev-instance exec -- bb canvas comment "$CANVAS_PATH" "$THREAD_ID" --reply "Checked." --resolve
+"$BB_CLI" canvas comments "$CANVAS_PATH"
+"$BB_CLI" canvas comment "$CANVAS_PATH" "$COMMENT_THREAD_ID" --reply "Checked." --resolve
 ```
 
-`$CANVAS_PATH` is the absolute path of the opened canvas and `$THREAD_ID` comes from the `comments` output. After the resolve, the card hides and the toolbar shows **Show resolved (1)**. Capture the hover affordance, the open composer, the collapsed card, and the CLI output.
+`$CANVAS_PATH` is the absolute path of the opened canvas and `$COMMENT_THREAD_ID`
+is the `cmt_...` ID from the `comments` output. `BB_CLI` comes from this run's
+`run.env`. After the resolve, the card hides and the toolbar shows
+**Show resolved (1)**. Capture the hover affordance, the open composer, the
+collapsed card, and the CLI output.
 
 ## Gotchas
 
@@ -53,4 +61,5 @@ bb-kit dev-instance exec -- bb canvas comment "$CANVAS_PATH" "$THREAD_ID" --repl
 - Narrow the search to one result before selecting the option.
 - Restore changed controls before cleanup when their state can persist.
 - Use `plugins/canvas/examples/flaky-test-triage.canvas.mdx` for the repository fixture.
-- Every block has a `Comment on this block` button, so hover the target block first or pick by index. Commenting writes `<canvas>.comments.json` beside the fixture; delete it during cleanup.
+- Every block has a `Comment on this block` button. Scope to the target's observed `data-comment-offset`; hover alone does not make the role selector unique. Text split by inline code may not match `find text`.
+- Commenting writes `<canvas>.comments.json` beside the file. Use a copy under this run's scratch directory for comment tests. Open it with `"$BB_CLI" thread open <bb-thread-id> "$CANVAS_PATH"`. Remove only sidecars this run created.

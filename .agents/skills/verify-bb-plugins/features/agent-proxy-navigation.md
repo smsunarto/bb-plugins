@@ -10,7 +10,8 @@
 
 Open bb. Select **Agent Proxy** in the left sidebar. Visit Home, OAuth, Providers, Usage, Agents, and Advanced.
 
-Each page shows its own content. The URL ends with the selected page name.
+Each page shows its own content. Home uses `/plugins/agent-proxy/agent-proxy`.
+The other pages append their lowercase name, such as `/oauth` or `/advanced`.
 
 ## Driving it with agent-browser
 

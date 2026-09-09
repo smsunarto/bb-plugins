@@ -6,9 +6,9 @@
 # them from colliding and a run that failed before releasing it blocked every
 # later run. A run now starts a bb-kit runtime instead: it borrows the workspace
 # instance's checkout and starts only the dev stack, on its own ports and its
-# own data directory. Nothing is cloned, installed, or built, so it comes up in
-# seconds. There is no lock and no shared state, and two runs can drive their
-# own bb at the same time.
+# own data directory. The owner prepares the shared checkout and builds; each
+# runtime installs its own plugin configuration. Runs do not share app state,
+# and two runs can drive their own bb at the same time.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,16 +28,14 @@ fail() {
   exit 1
 }
 
-# bb-kit runs from source, from the repository root, and with the ambient bb
-# thread context cleared. Both matter for the host instance's identity: bb-kit
-# names an unnamed instance after BB_ENVIRONMENT_ID when a bb thread exports it,
-# and after the caller's Git workspace otherwise. Left alone, that is a fresh
-# 4.5 GB checkout per thread and per directory instead of the one every runtime
-# borrows.
+# Resolve the checkout owner from this repository, even after a previous run.env
+# was sourced. Explicit runtime names still select the run for doctor/cleanup.
 dev_instance() {
   local output status=0
   output="$(cd "${repo_root}" && env -u BB_SERVER_URL \
       -u BB_CLI \
+      -u BB_KIT_DEV_NAME \
+      -u BB_KIT_DEV_SOURCE \
       -u BB_THREAD_ID \
       -u BB_ENVIRONMENT_ID \
       -u BB_THREAD_STORAGE \
@@ -140,6 +138,9 @@ doctor() {
         failures.push(`${plugin.id}: wrong source ${installed.rootDir}`);
       }
     }
+    if (actual.get("inline-vis")?.enabled === true) {
+      failures.push("inline-vis: disable the duplicate renderer; kitchen-sink owns this directive");
+    }
     if (failures.length) throw new Error(failures.join("\n"));
   ' <<<"${plugins}"
 
@@ -147,6 +148,20 @@ doctor() {
   grep -q "${theme_id}" <<<"${theme}" || fail "selected theme is not ${theme_id}"
 
   printf 'doctor: %s at %s is ready\n' "${name}" "${url}"
+}
+
+# BB also ships inline-vis. Loading it beside Kitchen Sink makes both claims
+# ambiguous, so BB renders the directive as literal text.
+prepare_message_embeds() {
+  local name="$1" enabled
+  enabled="$(dev_instance exec "${name}" -- plugin list --json | bun -e '
+    const { plugins } = JSON.parse(await Bun.stdin.text());
+    console.log(plugins.some((plugin) => plugin.id === "inline-vis" && plugin.enabled));
+  ')"
+  if [[ "${enabled}" == "true" ]]; then
+    dev_instance exec "${name}" -- plugin disable inline-vis --json >/dev/null
+    printf 'disabled duplicate inline-vis renderer in %s\n' "${name}" >&2
+  fi
 }
 
 # An instance whose data directory already holds plugin secrets, other than the
@@ -239,6 +254,7 @@ launch() {
   seed_plugin_secrets "${name}" "$(json_field dataDir <<<"${runtime}")"
   url="$(dev_instance workspace --name "${name}" --revision "${revision}" --from "${host_name}" \
     --json --timeout "${run_timeout}" | json_field instance.appUrl)"
+  prepare_message_embeds "${name}"
   doctor "${run_id}"
 
   run_dir="${runs_root}/${run_id}"

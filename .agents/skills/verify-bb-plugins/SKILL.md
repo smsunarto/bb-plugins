@@ -1,6 +1,6 @@
 ---
 name: verify-bb-plugins
-description: Verify bb-plugins through the pinned bb web app. Use after plugin UI changes, when reproducing live behavior, or when static checks need user-path evidence.
+description: Verify bb-plugins in an isolated bb web app. Use after plugin UI changes, when reproducing plugin behavior, or when static checks need user-path evidence.
 ---
 
 # Verify bb plugins
@@ -13,8 +13,11 @@ Start the repository dev loop before the first plugin edit. The package alias
 calls `bb-kit dev-instance workspace --watch`. Leave it running.
 
 ```bash
-bun run dev
+env -u BB_KIT_DEV_NAME -u BB_KIT_DEV_SOURCE bun run dev
 ```
+
+Clearing the previous run's instance selector keeps the watcher on the workspace
+instance. Reuse an existing workspace watcher instead of starting a duplicate.
 
 Create one run ID. The helper starts a bb runtime for this run alone: it borrows
 the workspace instance's checkout, comes up on its own ports and its own data
@@ -36,6 +39,10 @@ borrowed, the browser session, and the evidence directory. Use those values for
 the whole run. Launch checks the selected appearance controls, loaded Monokai
 styles, and the rendered GTD project selector before reporting success.
 
+For CLI actions, use `"$BB_CLI"` from `run.env`. It is this run's routed bb
+executable. `bb-kit dev-instance exec "$BB_KIT_DEV_NAME" -- <bb arguments>`
+also selects this runtime. Do not put a second `bb` after `--`.
+
 ## Doctor
 
 Run the doctor before browser work and after unexpected behavior.
@@ -44,7 +51,10 @@ Run the doctor before browser work and after unexpected behavior.
 .agents/skills/verify-bb-plugins/scripts/control doctor
 ```
 
-The doctor checks this run's runtime, its isolated data directory, every workspace plugin, and the bb Monokai theme. Fix a failed check before driving the UI.
+The doctor checks this run's runtime, its isolated data directory, every workspace
+plugin, and the bb Monokai theme. Launch disables bb's built-in `inline-vis` in
+this runtime because Kitchen Sink owns the same directive. Doctor rejects that
+duplicate if it is enabled again. Fix a failed check before driving the UI.
 
 ## Drive
 
@@ -64,6 +74,10 @@ replacement session, run `bash scripts/dev-browser-appearance "$BROWSER_SESSION"
 before testing. Set the viewport before the first `open`. A fresh session renders at device pixel ratio 1 on a 1280x577 window, which rasterises 16px icons onto 16 physical pixels and crops the app. The 2x setting persists for the session across `open` and `reload`.
 
 Drive the same controls a user drives. Prefer roles, labels, and visible text. Use CSS only for stable plugin contracts listed in the feature file.
+
+Wait for the destination control after navigation. A successful click can return
+before the next page is ready. After a failed drive, run `doctor` again and reset
+the page to a known state before retrying.
 
 ## Evidence
 
@@ -89,6 +103,11 @@ Close only the session created for this run. Keep the evidence directory.
 test -d "$ARTIFACT_DIR"
 ```
 
+Confirm this run's app URL no longer answers and its named browser session is
+absent from `agent-browser session list`. A successful destroy message alone
+does not prove every process stopped. If a listener survives, record its process
+identity and match it to this run's data directory before cleaning up the residue.
+
 Do not stop the repository watcher. Do not reload the live desktop app.
 
 ## Helpers
@@ -96,13 +115,13 @@ Do not stop the repository watcher. Do not reload the live desktop app.
 - `scripts/control launch <run-id>` starts this run's bb runtime and prepares it.
 - `scripts/control doctor [run-id]` checks this run's runtime. It reads `RUN_ID` when you omit one.
 - `scripts/control cleanup <run-id>` closes the browser session and destroys the runtime. The evidence stays.
-- `features/README.md` maps the eight representative plugin paths.
+- `features/README.md` maps the representative plugin paths.
 
 ## Gotchas
 
 - Always use this run's URL from `run.env`. Every runtime has its own, and it is never the workspace instance's.
 - Run `cleanup` even when the run fails. A runtime left running holds three ports and a data directory.
-- The app port is not the Server port. Set browser and `BB_SERVER_URL` traffic to the App port.
+- Open `BB_APP_URL` in the browser. Let the routed `BB_CLI` select the CLI endpoint instead of setting `BB_SERVER_URL` manually.
 - Every runtime shares one checkout and one plugin `dist/`. Never load a test change into the desktop app without approval.
 - Keep screenshots and snapshots under `.scratch/verify-bb-plugins/runs/<run-id>/evidence/`.
 - Do not drive one browser session from concurrent commands. Commands can reset or race the active page.

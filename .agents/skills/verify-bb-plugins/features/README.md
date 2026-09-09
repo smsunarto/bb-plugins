@@ -4,7 +4,10 @@ Use one file for the changed user path. Each file defines the user entry, browse
 
 ## Baseline
 
-The control helper prepares one pinned bb app. It installs every workspace plugin from this checkout. It also resets plugin settings and selects bb Monokai.
+The control helper prepares one pinned bb app. It installs every workspace plugin
+from this checkout, resets non-secret plugin settings, and selects bb Monokai.
+It disables the built-in `inline-vis` in this runtime so Kitchen Sink's message
+directive can render.
 
 ## Browser conventions
 
@@ -24,5 +27,7 @@ Every run must show the initial state, the user action, and its visible result. 
 - [Canvas file opener](canvas-file-opener.md)
 - [GitHub Stack panel](github-stack-panel.md)
 - [GTD sidebar](gtd-sidebar.md)
+- [Kitchen Sink message embeds](kitchen-sink-embeds.md)
+- [Last Turn Diff](last-turn-diff.md)
 - [bb Monokai](bb-monokai.md)
 - [Vimium link hints](vimium-link-hints.md)
