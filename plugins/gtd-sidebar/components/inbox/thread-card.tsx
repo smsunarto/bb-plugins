@@ -28,6 +28,7 @@ import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provid
 import { StatusGlyph, hasStatusGlyph } from "@/components/inbox/status-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { FadingText, ProjectChip, ThreadDetails } from "@/components/inbox/thread-details";
+import { useRemoteMachine } from "@/components/inbox/machine-appearance";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeUntilTomorrow } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
@@ -248,6 +249,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
                     parentProjectId={parentProjectId}
                     projectId={thread.projectId}
                     projectName={projectName}
+                    host={thread.host}
                   >
                     {title}
                   </DesktopTitle>
@@ -549,6 +551,7 @@ function DesktopTitle({
   parentProjectId,
   projectId,
   projectName,
+  host,
   children,
 }: {
   compact: boolean;
@@ -556,12 +559,14 @@ function DesktopTitle({
   parentProjectId: string | null;
   projectId: string;
   projectName: string | null;
+  host: PluginSidebarThread["host"];
   children: ReactNode;
 }) {
+  const remote = useRemoteMachine(host);
   return (
     <>
-      {compact && (depth === 0 || parentProjectId !== projectId) ? (
-        <ProjectChip name={projectName} />
+      {compact && (remote || depth === 0 || parentProjectId !== projectId) ? (
+        <ProjectChip name={projectName} host={host} />
       ) : null}
       {children}
     </>

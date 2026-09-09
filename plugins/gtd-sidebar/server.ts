@@ -123,6 +123,12 @@ export const LIFECYCLE_CHANNEL = "lifecycle";
 export default function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
   const settings = bb.settings.define({
+    localMachineId: {
+      type: "string",
+      label: "Local machine",
+      description: "Machine ID whose repo chips use an uncolored computer icon.",
+      default: "",
+    },
     compactThreads: {
       type: "boolean",
       label: "Compact thread rows",

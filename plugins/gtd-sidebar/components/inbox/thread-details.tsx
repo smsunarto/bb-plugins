@@ -5,6 +5,9 @@ import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
+import { MachineGlobe } from "./machine-globe";
+import { useRemoteMachine } from "./machine-appearance";
+import { Icon } from "@/components/ui/icon";
 
 export function FadingText({ text, className }: { text: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -26,9 +29,21 @@ export function FadingText({ text, className }: { text: string; className?: stri
   );
 }
 
-export function ProjectChip({ name }: { name: string | null }) {
+export function ProjectChip({
+  name,
+  host,
+}: {
+  name: string | null;
+  host: PluginSidebarThread["host"];
+}) {
+  const remote = useRemoteMachine(host);
   return name ? (
-    <span className="gtd-project-chip">
+    <span className="gtd-project-chip" aria-label={host ? `${name} on ${host.name}` : name}>
+      {remote ? (
+        <MachineGlobe machine={host} />
+      ) : host ? (
+        <Icon name="Computer" className="shrink-0" aria-hidden="true" />
+      ) : null}
       <FadingText text={name} />
     </span>
   ) : null;

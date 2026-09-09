@@ -78,7 +78,10 @@
   mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
 }
 .gtd-project-chip {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   flex: 0 0 72px;
   width: 72px;
   min-width: 0;
@@ -87,10 +90,17 @@
   border-radius: 4px;
   background: color-mix(in srgb, var(--muted) 35%, transparent);
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 9px;
   line-height: 17px;
   text-align: center;
   pointer-events: none;
+}
+.gtd-project-chip .gtd-fading-text {
+  flex: 1;
+}
+.gtd-project-chip svg {
+  width: 10px;
+  height: 10px;
 }
 .gtd-project-chip .gtd-fading-text[data-overflowing="true"] {
   text-align: left;

@@ -228,6 +228,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     host: HostState,
     inbox: Partial<PluginThreadListProps> = {},
     compactThreads = false,
+    localMachineId = "",
   ) {
     let current: InboxProps = {
       host,
@@ -241,7 +242,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ...inbox,
       },
     };
-    const slot = renderSlot({ component: Inbox }, current, { settings: { compactThreads } });
+    const slot = renderSlot({ component: Inbox }, current, {
+      settings: { compactThreads, localMachineId },
+    });
     return {
       slot,
       update(next: Partial<InboxProps>) {
@@ -528,6 +531,53 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     );
 
+    it.each([false, true])(
+      "keeps remote child repo chips with compact roots=%s",
+      (compactThreads) => {
+        const localHost = { id: "local-host", name: "Local computer" };
+        const remoteHost = { id: "remote-host", name: "Remote computer" };
+        const view = mount(
+          hostState([
+            thread("root", { host: localHost }),
+            thread("local-child", { parentThreadId: "root", host: localHost }),
+            thread("remote-child", { parentThreadId: "root", host: remoteHost }),
+          ]),
+          {},
+          compactThreads,
+          localHost.id,
+        );
+        const root = row(view.slot, "root").parentElement!;
+        const localChild = row(view.slot, "local-child").parentElement!;
+        const remoteChild = row(view.slot, "remote-child").parentElement!;
+        assert.equal(root.querySelector('.gtd-project-chip [data-icon="Globe"]'), null);
+        if (compactThreads) {
+          assert.equal(root.querySelector(".gtd-project-chip")?.textContent, "One");
+          const computer = root.querySelector<SVGElement>(
+            '.gtd-project-chip [data-icon="Computer"]',
+          );
+          assert.ok(computer);
+          assert.equal(computer.style.color, "");
+          assert.equal(computer.getAttribute("color"), "currentColor");
+        }
+        assert.equal(localChild.querySelector(".gtd-project-chip"), null);
+        assert.equal(remoteChild.querySelector(".gtd-project-chip")?.textContent, "One");
+        assert.ok(
+          remoteChild.querySelector(
+            '.gtd-project-chip [data-machine-id="remote-host"] [data-icon="Globe"]',
+          ),
+        );
+        fireEvent.keyDown(
+          view.slot.getByRole("combobox", { name: "Machine scope: All machines" }),
+          { key: "ArrowDown" },
+        );
+        assert.ok(
+          screen
+            .getByRole("option", { name: "Local computer" })
+            .querySelector('[data-icon="Globe"]'),
+        );
+      },
+    );
+
     it("opens compact thread details from the keyboard navigation anchor", async () => {
       const view = mount(
         hostState([thread("root"), thread("child", { parentThreadId: "root" })]),
@@ -600,6 +650,39 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("committed row commands", () => {
+    it("matches machine selector and repo globe colors while composing scopes", () => {
+      const host = hostState([
+        thread("a", { host: { id: "host-a", name: "Studio" } }),
+        thread("b", { host: { id: "host-b", name: "Server" } }),
+        thread("c", { projectId: "two", host: { id: "host-a", name: "Studio" } }),
+      ]);
+      const view = mount(host, {}, true);
+      const chipGlobe = view.slot.container.querySelector<HTMLElement>(
+        '.gtd-project-chip [data-machine-id="host-a"]',
+      );
+      assert.ok(chipGlobe);
+      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Machine scope: All machines" }), {
+        key: "ArrowDown",
+      });
+      const option = screen.getByRole("option", { name: "Studio" });
+      assert.equal(
+        option.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
+        chipGlobe.style.color,
+      );
+      fireEvent.click(option);
+      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["a", "c"]));
+      const trigger = view.slot.getByRole("combobox", { name: "Machine scope: Studio" });
+      assert.equal(
+        trigger.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
+        chipGlobe.style.color,
+      );
+      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
+        key: "ArrowDown",
+      });
+      fireEvent.click(screen.getByRole("option", { name: "One" }));
+      assert.deepEqual(rowIds(view.slot), ["a"]);
+    });
+
     it("opens and drags with current host callbacks without redrawing an unchanged row", () => {
       const previousActions = actions();
       const previousNavigate = mock(() => {});
@@ -650,7 +733,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const navigate = mock(() => {});
       const view = mount(host, { activeThreadId: "c", onNavigate: oldNavigate });
       view.updateInbox({ activeThreadId: "a", onNavigate: navigate });
-      fireEvent.keyDown(view.slot.getByRole("combobox"), { key: "ArrowDown" });
+      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
+        key: "ArrowDown",
+      });
       fireEvent.click(screen.getByRole("option", { name: "One" }));
       assert.deepEqual(rowIds(view.slot), ["pinned", "a", "c", "waiting"]);
       fireEvent.pointerDown(rowButton(view.slot, "c", "Settle"));

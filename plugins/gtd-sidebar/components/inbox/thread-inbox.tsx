@@ -31,6 +31,9 @@ import { filterByProject, nextThreadIdAfterSettle } from "@/lib/inbox";
 import { buildInboxTree, visibleInboxRows } from "@/lib/inbox-tree";
 import { mergeSettledThreads } from "@/lib/settled-threads";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
+import { filterByMachine, sidebarMachines } from "@/lib/machines";
+import { MachineScopePicker } from "@/components/inbox/machine-scope-picker";
+import { MachineAppearanceProvider } from "@/components/inbox/machine-appearance";
 
 const ALL_PROJECTS = "__all__";
 
@@ -41,13 +44,6 @@ const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
   WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
 };
 
-/**
- * The sidebar's scrolling list: cards grouped by who can act next.
- *
- * The host owns the New-thread button and the search field above it, so this
- * ships neither. It filters by the `searchQuery` prop and keeps only the one
- * control the host has no equivalent for: the project scope picker.
- */
 export function ThreadInbox({
   activeThreadId,
   isCompactViewport,
@@ -71,6 +67,8 @@ export function ThreadInbox({
     [providers],
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
+  const [machineScope, setMachineScope] = useState<string | null>(null);
+  const machines = sidebarMachines(threads);
   // Read once here rather than per card, and compared against `false` rather
   // than coerced: `values` is undefined while the settings load, and the
   // setting is on by default, so anything that is not an explicit "off" draws
@@ -92,7 +90,13 @@ export function ThreadInbox({
     [projects],
   );
 
-  const { shelves, toggleThread } = useInboxTree(threads, lifecycle, scope, searchQuery);
+  const { shelves, toggleThread } = useInboxTree(
+    threads,
+    lifecycle,
+    scope,
+    machineScope,
+    searchQuery,
+  );
   const { pinned, nextAction, waiting } = shelves;
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
@@ -121,12 +125,11 @@ export function ThreadInbox({
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* The one control the host has no equivalent for. Everything else in
-          the chrome above — New thread, search — is bb's and stays bb's. */}
-      <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
-        <Select value={scope} onValueChange={setScope}>
-          {/* Ghost trigger: no border, no filled track — it reads as a label
+    <MachineAppearanceProvider localMachineId={settingValues?.localMachineId}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
+          <Select value={scope} onValueChange={setScope}>
+            {/* Ghost trigger: no border, no filled track — it reads as a label
               until you hover it.
 
               `border-transparent` alongside `border-0`, because width and
@@ -135,126 +138,136 @@ export function ThreadInbox({
               recessed background off that class rather than off a drawn
               border. Evicting the color class is what actually keeps the
               track clear. */}
-          <SelectTrigger
-            className={cn(
-              "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
-              isCompactViewport && "min-h-10",
-            )}
-            aria-label={`Project scope: ${scopeLabel}`}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_PROJECTS} className="text-xs">
-              All projects
-            </SelectItem>
-            {projects.map((project) => (
-              <SelectItem key={project.id} value={project.id} className="text-xs">
-                {project.name}
+            <SelectTrigger
+              className={cn(
+                "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
+                isCompactViewport && "min-h-10",
+              )}
+              aria-label={`Project scope: ${scopeLabel}`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_PROJECTS} className="text-xs">
+                All projects
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id} className="text-xs">
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <MachineScopePicker
+            machines={machines}
+            value={machineScope}
+            onValueChange={setMachineScope}
+            isCompactViewport={isCompactViewport}
+          />
+        </div>
 
-      <div
-        className={cn("min-h-0 flex-1 overflow-y-auto px-1.5", isCompactViewport ? "pb-8" : "pb-2")}
-        // bb's compact footer overlays the list edge. Fade content into that
-        // surface, while the matching padding lets the final row scroll clear.
-        style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
-      >
-        <InboxContent
-          status={status}
-          ready={lifecycle.shelvesReady && settledThreads.ready}
-          count={shelvedTotal}
-          searchQuery={searchQuery}
-        >
-          {activeShelves.map(([shelf, label, shelfThreads]) =>
-            shelfThreads.length > 0 ? (
-              <Shelf
-                key={label}
-                label={label}
-                count={shelfThreads.length}
-                isCompactViewport={isCompactViewport}
-                {...(shelf === "waiting"
-                  ? {
-                      expanded: showWaiting || searching,
-                      onToggle: () => setShowWaiting((open) => !open),
-                    }
-                  : {})}
-              >
-                {shelfThreads.map((row) => {
-                  const thread = row.node.thread;
-                  return (
-                    <ThreadCard
-                      key={thread.id}
-                      thread={thread}
-                      shelf={shelf}
-                      provider={providerInfoById.get(thread.providerId)}
-                      showProviderIcon={showProviderIcon}
-                      compactThreads={compactThreads}
-                      depth={row.depth}
-                      parentId={row.parentId}
-                      parentProjectId={row.parentProjectId}
-                      parentTitle={row.parentTitle}
-                      childCount={row.node.children.length}
-                      expanded={row.expanded}
-                      guides={row.guides}
-                      lastChild={row.lastChild}
-                      statusThread={row.statusThread}
-                      toggleThread={toggleThread}
-                      projectName={projectNameById.get(thread.projectId) ?? null}
-                      branchName={resolveSidebarBranchLabel(
-                        thread.environment?.branchName ?? null,
-                        thread.environment?.id ?? null,
-                        gitButlerLabels,
-                      )}
-                      isActive={thread.id === activeThreadId}
-                      canPark={lifecycle.canPark(thread)}
-                      isCompactViewport={isCompactViewport}
-                      command={command}
-                      now={now}
-                    />
-                  );
-                })}
-              </Shelf>
-            ) : null,
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto px-1.5",
+            isCompactViewport ? "pb-8" : "pb-2",
           )}
-          <ParkedShelf
-            compactThreads={compactThreads}
-            providerInfoById={providerInfoById}
-            projectNameById={projectNameById}
-            gitButlerLabels={gitButlerLabels}
-            label="Snoozed"
-            shelf="snoozed"
-            threads={shelves.snoozed.map((row) => row.node.thread)}
-            expanded={showSnoozed || searching}
-            onToggle={() => setShowSnoozed((open) => !open)}
-            activeThreadId={activeThreadId}
-            wakeAtFor={lifecycle.wakeAtFor}
-            isCompactViewport={isCompactViewport}
-            command={command}
-            now={now}
-          />
-          <ParkedShelf
-            compactThreads={compactThreads}
-            providerInfoById={providerInfoById}
-            projectNameById={projectNameById}
-            gitButlerLabels={gitButlerLabels}
-            label="Settled"
-            shelf="settled"
-            threads={shelves.settled.map((row) => row.node.thread)}
-            expanded={showSettled || searching}
-            onToggle={() => setShowSettled((open) => !open)}
-            activeThreadId={activeThreadId}
-            wakeAtFor={() => null}
-            isCompactViewport={isCompactViewport}
-            command={command}
-            now={now}
-          />
-        </InboxContent>
+          // bb's compact footer overlays the list edge. Fade content into that
+          // surface, while the matching padding lets the final row scroll clear.
+          style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
+        >
+          <InboxContent
+            status={status}
+            ready={lifecycle.shelvesReady && settledThreads.ready}
+            count={shelvedTotal}
+            searchQuery={searchQuery}
+          >
+            {activeShelves.map(([shelf, label, shelfThreads]) =>
+              shelfThreads.length > 0 ? (
+                <Shelf
+                  key={label}
+                  label={label}
+                  count={shelfThreads.length}
+                  isCompactViewport={isCompactViewport}
+                  {...(shelf === "waiting"
+                    ? {
+                        expanded: showWaiting || searching,
+                        onToggle: () => setShowWaiting((open) => !open),
+                      }
+                    : {})}
+                >
+                  {shelfThreads.map((row) => {
+                    const thread = row.node.thread;
+                    return (
+                      <ThreadCard
+                        key={thread.id}
+                        thread={thread}
+                        shelf={shelf}
+                        provider={providerInfoById.get(thread.providerId)}
+                        showProviderIcon={showProviderIcon}
+                        compactThreads={compactThreads}
+                        depth={row.depth}
+                        parentId={row.parentId}
+                        parentProjectId={row.parentProjectId}
+                        parentTitle={row.parentTitle}
+                        childCount={row.node.children.length}
+                        expanded={row.expanded}
+                        guides={row.guides}
+                        lastChild={row.lastChild}
+                        statusThread={row.statusThread}
+                        toggleThread={toggleThread}
+                        projectName={projectNameById.get(thread.projectId) ?? null}
+                        branchName={resolveSidebarBranchLabel(
+                          thread.environment?.branchName ?? null,
+                          thread.environment?.id ?? null,
+                          gitButlerLabels,
+                        )}
+                        isActive={thread.id === activeThreadId}
+                        canPark={lifecycle.canPark(thread)}
+                        isCompactViewport={isCompactViewport}
+                        command={command}
+                        now={now}
+                      />
+                    );
+                  })}
+                </Shelf>
+              ) : null,
+            )}
+            <ParkedShelf
+              compactThreads={compactThreads}
+              providerInfoById={providerInfoById}
+              projectNameById={projectNameById}
+              gitButlerLabels={gitButlerLabels}
+              label="Snoozed"
+              shelf="snoozed"
+              threads={shelves.snoozed.map((row) => row.node.thread)}
+              expanded={showSnoozed || searching}
+              onToggle={() => setShowSnoozed((open) => !open)}
+              activeThreadId={activeThreadId}
+              wakeAtFor={lifecycle.wakeAtFor}
+              isCompactViewport={isCompactViewport}
+              command={command}
+              now={now}
+            />
+            <ParkedShelf
+              compactThreads={compactThreads}
+              providerInfoById={providerInfoById}
+              projectNameById={projectNameById}
+              gitButlerLabels={gitButlerLabels}
+              label="Settled"
+              shelf="settled"
+              threads={shelves.settled.map((row) => row.node.thread)}
+              expanded={showSettled || searching}
+              onToggle={() => setShowSettled((open) => !open)}
+              activeThreadId={activeThreadId}
+              wakeAtFor={() => null}
+              isCompactViewport={isCompactViewport}
+              command={command}
+              now={now}
+            />
+          </InboxContent>
+        </div>
       </div>
-    </div>
+    </MachineAppearanceProvider>
   );
 }
 
@@ -334,6 +347,7 @@ function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
   scope: string,
+  machineScope: string | null,
   searchQuery: string,
 ) {
   const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(() => new Set());
@@ -348,11 +362,14 @@ function useInboxTree(
   const tree = useMemo(
     () =>
       buildInboxTree(
-        filterByProject(threads, scope === ALL_PROJECTS ? null : scope),
+        filterByProject(
+          filterByMachine(threads, machineScope),
+          scope === ALL_PROJECTS ? null : scope,
+        ),
         (thread) => (lifecycle.shelfFor(thread) === "snoozed" ? "snoozed" : "active"),
         searchQuery,
       ),
-    [lifecycle, scope, searchQuery, threads],
+    [lifecycle, scope, machineScope, searchQuery, threads],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>
