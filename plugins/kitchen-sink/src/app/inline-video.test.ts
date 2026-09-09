@@ -163,3 +163,37 @@ test("honors an explicit workspace base and leaves remote-base embeds alone", as
   expect(remote.srcDoc).toBeUndefined();
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+test("reports decoder failures inside the opaque frame and clears the alert after recovery", async () => {
+  transport();
+  const result = await prepareInlineVideos(
+    '<video src="clip.mp4"></video>',
+    "thread-1",
+    "player.html",
+    new AbortController().signal,
+  );
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM(result.srcDoc!, {
+    runScripts: "dangerously",
+    beforeParse(window) {
+      window.URL.createObjectURL = mock(() => "blob:null/video");
+      window.HTMLMediaElement.prototype.load = mock();
+    },
+  });
+  const win = dom.window;
+  win.dispatchEvent(
+    new win.MessageEvent("message", {
+      source: win as unknown as Window,
+      data: { type: "bb:inline-video-assets", token: result.token, assets: result.assets },
+    }),
+  );
+  const video = win.document.querySelector("video")!;
+  Object.defineProperty(video, "error", { value: { code: 3 } });
+  video.dispatchEvent(new win.Event("error"));
+  const alert = win.document.querySelector('[role="alert"]') as HTMLParagraphElement;
+  expect(alert.hidden).toBe(false);
+  expect(alert.textContent).toContain("compatible MP4 copy");
+  video.dispatchEvent(new win.Event("loadeddata"));
+  expect(alert.hidden).toBe(true);
+  dom.window.close();
+});

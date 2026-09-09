@@ -54,7 +54,24 @@ const VIDEO_BRIDGE = `(() => {
         if (player) players.add(player);
       }
     }
-    for (const player of players) player.load();
+    for (const player of players) {
+      // Media errors do not bubble. Report them next to the affected player,
+      // including failures that only occur on a device's hardware decoder.
+      const error = document.createElement("p");
+      error.setAttribute("role", "alert");
+      error.style.cssText = "position:fixed;inset:auto 0 0;margin:0;padding:12px;background:Canvas;color:CanvasText;z-index:2147483647;font:14px system-ui";
+      error.hidden = true;
+      player.after(error);
+      player.addEventListener("error", () => {
+        const code = player.error?.code;
+        error.textContent = code === 3 || code === 4
+          ? "This browser cannot play this video. Try a compatible MP4 copy."
+          : "Video playback failed. Reload the preview to try again.";
+        error.hidden = false;
+      });
+      player.addEventListener("loadeddata", () => { error.hidden = true; });
+      player.load();
+    }
   });
   addEventListener("DOMContentLoaded", () => parent.postMessage({ type: "bb:inline-video-ready", token }, "*"));
   addEventListener("pagehide", () => { for (const url of urls) URL.revokeObjectURL(url); });
