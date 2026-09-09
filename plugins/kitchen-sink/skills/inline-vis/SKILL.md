@@ -105,7 +105,21 @@ runtime rules below, not Codex's fragment or absolute-path output contract.
   media, fetches, and WebSockets are also allowed subject to normal browser
   CORS, mixed-content, and remote-server policies. Scripts execute in an
   opaque-origin iframe and cannot access the bb page, cookies, or storage.
-- Keep files small (under the sidebar preview's 5 MiB document limit).
+- The HTML document must be at most 5 MiB. Keep videos as separate workspace
+  files instead of converting them to base64 or compressing them to fit the HTML.
+- Static `video[src]` and nested `source[src]` paths resolve from the HTML
+  artifact's directory. See the example below.
+  Both files must remain in the owning thread's workspace. Nested paths and
+  `../` within the workspace work. Escape paths and symlinks outside it fail.
+- Relative videos also work through authenticated remote BB clients. Kitchen
+  Sink fetches them through the owning thread's workspace route and transfers
+  Blobs into the opaque iframe. The iframe receives no app credentials.
+- On BB 0.42.1, each external video is limited to 25 MiB by the host file API.
+  Playback waits for the full video download. Seeking then works from the
+  buffered Blob. HTTP range streaming and larger files require BB core support.
+- Existing data URI videos still work, with their encoded bytes counting toward
+  the HTML limit. Remote URLs retain normal browser policies. Dynamically
+  assigned media URLs and other authenticated relative assets are not rewritten.
 - Emit the directive only after the file exists on disk in the current thread
   workspace.
 - Do **not** put the directive inside backticks or a markdown code fence, or it
@@ -116,3 +130,38 @@ runtime rules below, not Codex's fragment or absolute-path output contract.
 The bb app replaces the directive with a sandboxed preview. If the plugin is
 disabled or the path is invalid, users see the original directive source or an
 inline error from the plugin.
+
+## Relative video example
+
+Save `.scratch/demo/clip.mp4` and `.scratch/demo/player.html` in a gitignored
+workspace directory. The HTML can be small:
+
+```html
+<!doctype html>
+<style>
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    background: #000;
+  }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+</style>
+<video controls autoplay muted loop playsinline>
+  <source src="./clip.mp4" type="video/mp4" />
+</video>
+```
+
+Then emit:
+
+```text
+::inline-vis{file=".scratch/demo/player.html" height="400"}
+```
+
+Keep both files in place. Use URL encoding for filename characters such as
+spaces (`%20`), `#` (`%23`), and `?` (`%3F`). The optional `height` is fixed;
+choose it for the video aspect ratio and the chat column width.

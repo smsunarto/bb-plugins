@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import { readFile } from "node:fs/promises";
 import { parsePatchFiles } from "@pierre/diffs";
@@ -136,7 +136,7 @@ test("inline-vis uses the worktree route with an opaque-origin script sandbox", 
             threadId: "thread-inline-vis",
             file: "charts/demo file.html",
           });
-          return { file: "charts/demo file.html" };
+          return { file: "charts/demo file.html", html: "<h1>Example</h1>" };
         },
       },
     },
@@ -183,10 +183,68 @@ test("inline-vis uses the worktree route with an opaque-origin script sandbox", 
   slot.unmount();
 });
 
+test("inline-vis sends assets once only to the prepared opaque frame and stops on collapse", async () => {
+  const fetchVideo = spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(new Blob(["video"], { type: "video/mp4" })),
+  );
+
+  const slot = renderSlot(
+    await inlineVisDirective(),
+    {
+      attributes: { file: "charts/player.html" },
+      source: '::inline-vis{file="charts/player.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    {
+      rpc: {
+        prepareHtmlPreview: () => ({
+          file: "charts/player.html",
+          html: '<video controls src="clip.mp4"></video>',
+        }),
+      },
+    },
+  );
+  try {
+    await waitFor(() =>
+      expect(slot.container.querySelector("iframe")?.getAttribute("srcdoc")).toContain(
+        "bb:inline-video-ready",
+      ),
+    );
+    expect(slot.container.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
+    const iframe = slot.container.querySelector("iframe")!;
+    const post = spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
+    const token = iframe.srcdoc.match(/const token = "([^"]+)"/)![1];
+    const ready = (source: Window | null, value: string) =>
+      window.dispatchEvent(
+        new window.MessageEvent("message", {
+          source,
+          data: { type: "bb:inline-video-ready", token: value },
+        }),
+      );
+    ready(window, token!);
+    ready(iframe.contentWindow, "wrong-token");
+    expect(post).not.toHaveBeenCalled();
+    ready(iframe.contentWindow, token!);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[0].assets[0].blob.type).toBe("video/mp4");
+    ready(iframe.contentWindow, token!);
+    expect(post).toHaveBeenCalledTimes(1);
+    fireEvent.click(slot.getByRole("button", { name: "Collapse preview charts/player.html" }));
+    expect(slot.container.querySelector("iframe")).toBeNull();
+    ready(iframe.contentWindow, token!);
+    expect(post).toHaveBeenCalledTimes(1);
+    post.mockRestore();
+  } finally {
+    slot.unmount();
+    fetchVideo.mockRestore();
+  }
+});
+
 test("inline-vis uses an optional bounded height and reserves it while loading", async () => {
   const directive = await inlineVisDirective();
-  let resolvePreview = (_result: { file: string }) => {};
-  const pendingPreview = new Promise<{ file: string }>((resolve) => {
+  let resolvePreview = (_result: { file: string; html: string }) => {};
+  const pendingPreview = new Promise<{ file: string; html: string }>((resolve) => {
     resolvePreview = resolve;
   });
   const slot = renderSlot(
@@ -208,7 +266,7 @@ test("inline-vis uses an optional bounded height and reserves it while loading",
   expect(loadingHeader.classList.contains("smart-diff-header")).toBe(true);
   expect(loadingHeader.querySelector(".smart-diff-open")).toBeNull();
 
-  resolvePreview({ file: "demo.html" });
+  resolvePreview({ file: "demo.html", html: "" });
   const iframe = await waitFor(() => {
     const element = slot.container.querySelector("iframe");
     expect(element).toBeTruthy();
@@ -284,7 +342,7 @@ test("inline-vis opens only the final two occurrences and unloads manually colla
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { rpc: { prepareHtmlPreview: () => ({ file: "same.html" }) } },
+    { rpc: { prepareHtmlPreview: () => ({ file: "same.html", html: "" }) } },
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(2));
   const cards = [...slot.container.querySelectorAll(".inline-vis-card")];
@@ -333,7 +391,14 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
       },
     },
     { attributes: {}, source: "fixture", message: inlineVisMessage, openWorkspaceFile: null },
-    { rpc: { prepareHtmlPreview: (input) => ({ file: (input as { file: string }).file }) } },
+    {
+      rpc: {
+        prepareHtmlPreview: (input) => ({
+          file: (input as { file: string }).file,
+          html: "",
+        }),
+      },
+    },
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   expect(slot.rpcCalls.map((call) => (call.input as { file: string }).file).sort()).toEqual([
@@ -362,8 +427,8 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
 
 test("inline-vis ignores a preparation result that arrives after collapse", async () => {
   const directive = await inlineVisDirective();
-  let resolvePreview = (_result: { file: string }) => {};
-  const pending = new Promise<{ file: string }>((resolve) => {
+  let resolvePreview = (_result: { file: string; html: string }) => {};
+  const pending = new Promise<{ file: string; html: string }>((resolve) => {
     resolvePreview = resolve;
   });
   const slot = renderSlot(
@@ -378,7 +443,7 @@ test("inline-vis ignores a preparation result that arrives after collapse", asyn
   );
   await slot.findByRole("status", { name: "Loading visualization pending.html" });
   fireEvent.click(slot.getByRole("button", { name: "Collapse preview pending.html" }));
-  resolvePreview({ file: "pending.html" });
+  resolvePreview({ file: "pending.html", html: "" });
   await waitFor(() =>
     expect(slot.getByRole("button", { name: "Expand preview pending.html" })).toBeTruthy(),
   );

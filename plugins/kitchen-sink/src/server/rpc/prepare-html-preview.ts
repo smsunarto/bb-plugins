@@ -53,6 +53,6 @@ export const prepareHtmlPreview = defineQuery({
       throw new Error(`HTML file is too large (${result.sizeBytes} bytes; max ${MAX_HTML_BYTES}).`);
     }
 
-    return { file };
+    return { file, html: result.content };
   },
 });

@@ -10,24 +10,22 @@ import {
 
 import type { InlineVisRpcContract } from "../shared/contract.ts";
 import { EmbedHeader } from "./embed-header.tsx";
+import {
+  buildWorktreePreviewUrl,
+  INLINE_VIDEO_MESSAGE,
+  prepareInlineVideos,
+  type InlineVideoAsset,
+} from "./inline-video.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; file: string }
+  | { status: "ready"; file: string; srcDoc?: string; assets: InlineVideoAsset[]; token?: string }
   | { status: "error"; message: string };
 
 export const DEFAULT_HEIGHT_PX = 224;
 export const MIN_HEIGHT_PX = 120;
 export const MAX_HEIGHT_PX = 1_200;
-
-function encodePathSegments(file: string): string {
-  return file.split("/").map(encodeURIComponent).join("/");
-}
-
-export function buildWorktreePreviewUrl(threadId: string, file: string): string {
-  return `/api/v1/threads/${encodeURIComponent(threadId)}/worktree/files/${encodePathSegments(file)}`;
-}
 
 export function parsePreviewHeight(value: string | undefined): number | null {
   const normalized = value?.trim() ?? "";
@@ -127,9 +125,29 @@ function ExpandedPreview({
   const file = attributes.file?.trim() ?? "";
   const previewHeight = parsePreviewHeight(attributes.height);
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const frame = useRef<HTMLIFrameElement>(null);
+  useLayoutEffect(() => {
+    if (state.status !== "ready" || !state.token) return;
+    const deliver = (event: MessageEvent) => {
+      if (
+        event.source !== frame.current?.contentWindow ||
+        event.data?.type !== "bb:inline-video-ready" ||
+        event.data.token !== state.token
+      )
+        return;
+      window.removeEventListener("message", deliver);
+      frame.current?.contentWindow?.postMessage(
+        { type: INLINE_VIDEO_MESSAGE, token: state.token, assets: state.assets },
+        "*",
+      );
+    };
+    window.addEventListener("message", deliver);
+    return () => window.removeEventListener("message", deliver);
+  }, [state]);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setState({ status: "loading" });
     void (async () => {
       try {
@@ -137,7 +155,13 @@ function ExpandedPreview({
           threadId: message.threadId,
           file,
         });
-        if (!cancelled) setState({ status: "ready", file: result.file });
+        const videos = await prepareInlineVideos(
+          result.html,
+          message.threadId,
+          result.file,
+          controller.signal,
+        );
+        if (!cancelled) setState({ status: "ready", file: result.file, ...videos });
       } catch (error) {
         if (cancelled) return;
         setState({
@@ -149,6 +173,7 @@ function ExpandedPreview({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [file, message.threadId, rpc]);
 
@@ -205,7 +230,9 @@ function ExpandedPreview({
       />
       <iframe
         title={`inline-vis: ${state.file}`}
-        src={buildWorktreePreviewUrl(message.threadId, state.file)}
+        src={state.srcDoc ? undefined : buildWorktreePreviewUrl(message.threadId, state.file)}
+        srcDoc={state.srcDoc}
+        ref={frame}
         sandbox="allow-scripts"
         style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
         className="inline-vis-frame"

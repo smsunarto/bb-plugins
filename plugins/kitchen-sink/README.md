@@ -86,7 +86,13 @@ Ordering uses the plugin's own card elements in document order, not registration
 
 Disable the standalone `inline-vis` plugin before enabling this renderer. bb leaves a directive literal when two plugins claim the same `inline-vis` message directive.
 
-The server accepts only `.html` and `.htm` files up to 5 MiB, verifies the file through bb's root-confined workspace API, and then loads it from the thread's worktree route. Scripts run in a sandboxed opaque-origin iframe with `allow-scripts`, without `allow-same-origin`. The header action opens the original file in bb's workspace viewer.
+The server accepts only `.html` and `.htm` documents up to 5 MiB and verifies the file through bb's root-confined workspace API. Static relative `video[src]` and `video source[src]` references resolve against the HTML directory. The app fetches those videos from the existing authenticated thread worktree route, which selects the owning environment and host and enforces symlink containment. It sends the resulting Blobs to the opaque iframe through a one-time, document-specific handshake. The iframe creates and releases its own Blob URLs. This supports remote clients without exposing app credentials or placing video bytes inside the HTML.
+
+For example, `.scratch/demo/player.html` can contain `<video controls src="./clip.mp4"></video>` beside `.scratch/demo/clip.mp4`. Emit `::inline-vis{file=".scratch/demo/player.html" height="400"}`. No base64 conversion is needed.
+
+**Current limits (BB 0.42.1):** HTML remains capped at 5 MiB. Each separate video can be at most 25 MiB, the host file API's non-image limit. The route buffers the complete file and returns HTTP 200 even for Range requests. Playback starts after download and seeking uses the buffered Blob. This plugin does not add HTTP range streaming or remove the host limit. Existing data URI embeds still work. Dynamically assigned sources and other authenticated relative assets are outside this video loader's scope.
+
+Documents without relative videos keep using the original worktree URL. Scripts run in a sandboxed opaque-origin iframe with `allow-scripts`, without `allow-same-origin`. The header action opens the original file in bb's workspace viewer.
 
 This capability is forked from [`get-bb/bb/plugins/inline-vis`](https://github.com/get-bb/bb/tree/06aeaa994942ae7527dc49d2268c1f801e8542a0/plugins/inline-vis). Kitchen Sink replaces the upstream plugin's private `@bb/shared-ui` imports with package-owned markup and CSS so the external plugin remains SDK-only.
 

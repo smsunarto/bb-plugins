@@ -72,7 +72,10 @@ export const prepareHtmlPreviewInputSchema = z.strictObject({
   file: z.string().trim().min(1).max(1_024),
 });
 
-export const prepareHtmlPreviewOutputSchema = z.strictObject({ file: z.string() });
+export const prepareHtmlPreviewOutputSchema = z.strictObject({
+  file: z.string(),
+  html: z.string(),
+});
 
 export type InlineVisRpcContract = {
   readonly prepareHtmlPreview: {

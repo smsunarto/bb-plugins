@@ -73,7 +73,7 @@ describe("prepareHtmlPreview", () => {
         threadId: "thread-1",
         file: "charts/demo.html",
       }),
-    ).toEqual({ file: "charts/demo.html" });
+    ).toEqual({ file: "charts/demo.html", html: "<html><body>ok</body></html>" });
     expect(getThread).toHaveBeenCalledWith({
       threadId: "thread-1",
       include: "environment",
