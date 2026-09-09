@@ -1,0 +1,128 @@
+[data-last-turn-diff-portal] {
+  width: 100%;
+  min-width: 0;
+}
+.last-turn-diff {
+  margin: 16px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  background: var(--background);
+}
+.last-turn-diff-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 12px;
+  line-height: 20px;
+  color: var(--muted-foreground);
+}
+.last-turn-diff-heading strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.last-turn-diff-toggle-all {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  line-height: 24px;
+  cursor: pointer;
+}
+.last-turn-diff-toggle-all:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.last-turn-diff-toggle-all:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.last-turn-diff-added {
+  color: var(--diff-added, var(--success));
+  font-variant-numeric: tabular-nums;
+}
+.last-turn-diff-removed {
+  color: var(--diff-removed, var(--destructive));
+  font-variant-numeric: tabular-nums;
+}
+.last-turn-diff-file {
+  border-top: 1px solid var(--border);
+}
+.last-turn-diff-file-header {
+  position: relative;
+  --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
+  --diffs-font-family: var(--font-mono, ui-monospace, monospace);
+  --diffs-gap-block: 4px;
+}
+.last-turn-diff-chevron {
+  display: inline-flex;
+  width: 20px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.last-turn-diff-file-header:hover {
+  --diffs-bg: var(--accent);
+}
+.last-turn-diff-file-header:hover .last-turn-diff-chevron {
+  color: var(--foreground);
+}
+.last-turn-diff-chevron::after {
+  /* Extend the native button's hit target across the entire Pierre header. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.last-turn-diff-chevron:focus-visible {
+  outline: none;
+}
+.last-turn-diff-chevron:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.last-turn-diff-chevron svg {
+  width: 10px;
+  height: 16px;
+  transform: rotate(-90deg);
+  transition: transform 150ms;
+}
+.last-turn-diff-chevron[aria-expanded="true"] svg {
+  transform: rotate(0deg);
+}
+.last-turn-diff-recorded-counts {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .last-turn-diff-chevron svg {
+    transition: none;
+  }
+}
+.last-turn-diff-body {
+  max-height: 480px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+.last-turn-diff-notice {
+  padding: 10px 12px;
+  color: var(--muted-foreground);
+}

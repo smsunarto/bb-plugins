@@ -1,0 +1,72 @@
+{
+  "name": "@smsunarto/bb-plugin-last-turn-diff",
+  "version": "0.1.0",
+  "description": "Show the latest completed turn diff automatically in the BB conversation.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/last-turn-diff",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/last-turn-diff"
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "diffs"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.42.1 <1.0.0",
+    "bbPluginSdk": ">=0.4.47"
+  },
+  "bb": {
+    "name": "Last Turn Diff",
+    "description": "Show the latest completed turn diff automatically in the BB conversation.",
+    "branding": {
+      "icon": "./assets/icon.svg"
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "skills": []
+  },
+  "files": [
+    "dist/",
+    "assets/",
+    "README.md",
+    "src/"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.48",
+    "@pierre/diffs": "^1.2.9",
+    "@testing-library/react": "16.3.2",
+    "@types/jsdom": "21.1.7",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "jsdom": "25.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@tanstack/react-query": "5.101.4",
+    "bun-types": "^1.4.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --preload ./test/sqlite-preload.js src test",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "clean": "rm -rf dist"
+  }
+}

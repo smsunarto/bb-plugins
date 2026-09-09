@@ -28,6 +28,10 @@
       "source": "./plugins/gtd-sidebar"
     },
     {
+      "name": "last-turn-diff",
+      "source": "./plugins/last-turn-diff"
+    },
+    {
       "name": "monokai",
       "source": "./plugins/monokai"
     },
