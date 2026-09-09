@@ -23,10 +23,10 @@ interface ReleasePleaseConfig {
 
 test("Release Please covers every publishable release target with the existing tag contract", () => {
   const config = JSON.parse(
-    readFileSync(`${ROOT}/release-please-config.json`, "utf8"),
+    readFileSync(`${ROOT}/.github/release-please-config.json`, "utf8"),
   ) as ReleasePleaseConfig;
   const manifest = JSON.parse(
-    readFileSync(`${ROOT}/.release-please-manifest.json`, "utf8"),
+    readFileSync(`${ROOT}/.github/.release-please-manifest.json`, "utf8"),
   ) as Record<string, unknown>;
   const targets = [
     ...publishableWorkspacePackages(ROOT).map((candidate) => ({

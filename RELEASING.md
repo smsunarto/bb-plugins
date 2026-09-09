@@ -20,7 +20,7 @@ release pull requests.
 
 ## Migration floor
 
-`release-please-config.json` sets `bootstrap-sha` to the migration cutover.
+`.github/release-please-config.json` sets `bootstrap-sha` to the migration cutover.
 This prevents commits already handled by Changesets from appearing in the
 initial changelogs. Release Please ignores this floor after it can find the
 new release history, so it does not replay those first commits later.
