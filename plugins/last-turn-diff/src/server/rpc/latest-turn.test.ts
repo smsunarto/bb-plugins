@@ -80,6 +80,7 @@ async function setup(
   events: Event[] = [started, updated, completed],
   rows: Row[] = [edit],
   timelinePages: Partial<Timeline>[] = [],
+  detailsError: Error | null = null,
 ) {
   const list = mock<Threads["events"]["list"]>(async (input) =>
     events
@@ -92,7 +93,10 @@ async function setup(
       .sort((a, b) => b.seq - a.seq)
       .slice(0, Number(input.limit ?? 100)),
   );
-  const details = mock<Threads["timelineTurnSummaryDetails"]>(async () => ({ rows }));
+  const details = mock<Threads["timelineTurnSummaryDetails"]>(async () => {
+    if (detailsError) throw detailsError;
+    return { rows };
+  });
   let page = 0;
   const timeline = mock<Threads["timeline"]>(async () => ({
     rows: [message],
@@ -266,6 +270,19 @@ test("falls back to recorded edits when the aggregate patch is empty", async () 
   ]);
   expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
     turn: { patch: null, changes: [{ id: "edit-2" }] },
+  });
+  await harness.lifecycle.dispose();
+});
+
+test("keeps the aggregate patch when turn summary details are unavailable", async () => {
+  const { harness } = await setup(
+    undefined,
+    undefined,
+    undefined,
+    new Error("Timeline turn summary details could not match range"),
+  );
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "turn-2", anchorId: "final-2", patch, changes: [] },
   });
   await harness.lifecycle.dispose();
 });

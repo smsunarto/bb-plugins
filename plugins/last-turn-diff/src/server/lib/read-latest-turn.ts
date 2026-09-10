@@ -53,12 +53,16 @@ async function readCandidate(
   });
   if (!started || started.scope.kind !== "turn" || started.scope.turnId !== turnId) return null;
   const [details, diffs] = await Promise.all([
-    threads.timelineTurnSummaryDetails({
-      threadId,
-      turnId,
-      sourceSeqStart: String(started.seq),
-      sourceSeqEnd: String(completed.seq),
-    }),
+    // Some historical timelines cannot reconstruct this summary window. The
+    // independently recorded aggregate patch is still valid and renderable.
+    threads
+      .timelineTurnSummaryDetails({
+        threadId,
+        turnId,
+        sourceSeqStart: String(started.seq),
+        sourceSeqEnd: String(completed.seq),
+      })
+      .catch(() => ({ rows: [] })),
     threads.events.list({
       threadId,
       types: ["turn/diff/updated"],
