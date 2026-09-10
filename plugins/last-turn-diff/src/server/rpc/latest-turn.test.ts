@@ -75,7 +75,12 @@ const edit: Row = {
   },
 };
 
-async function setup(events: Event[] = [started, updated, completed], rows: Row[] = [edit]) {
+type Timeline = Awaited<ReturnType<Threads["timeline"]>>;
+async function setup(
+  events: Event[] = [started, updated, completed],
+  rows: Row[] = [edit],
+  timelinePages: Partial<Timeline>[] = [],
+) {
   const list = mock<Threads["events"]["list"]>(async (input) =>
     events
       .filter(
@@ -88,36 +93,39 @@ async function setup(events: Event[] = [started, updated, completed], rows: Row[
       .slice(0, Number(input.limit ?? 100)),
   );
   const details = mock<Threads["timelineTurnSummaryDetails"]>(async () => ({ rows }));
+  let page = 0;
+  const timeline = mock<Threads["timeline"]>(async () => ({
+    rows: [message],
+    maxSeq: Math.max(0, ...events.map((event) => event.seq)),
+    contextBoundarySeq: null,
+    activePromptMode: null,
+    activeThinking: null,
+    activeWorkflows: [],
+    activeBackgroundCommands: [],
+    pendingTodos: null,
+    goal: null,
+    modelFallback: null,
+    timelinePage: {
+      kind: "latest",
+      segmentLimit: 2,
+      returnedSegmentCount: 1,
+      hasOlderRows: false,
+      olderCursor: null,
+    },
+    ...timelinePages[page++],
+  }));
   const host = createFakePluginHost({
     pluginId: "last-turn-diff",
     sdk: {
       threads: {
         events: { list },
         timelineTurnSummaryDetails: details,
-        timeline: async () => ({
-          rows: [message],
-          maxSeq: 20,
-          contextBoundarySeq: null,
-          activePromptMode: null,
-          activeThinking: null,
-          activeWorkflows: [],
-          activeBackgroundCommands: [],
-          pendingTodos: null,
-          goal: null,
-          modelFallback: null,
-          timelinePage: {
-            kind: "latest",
-            segmentLimit: 2,
-            returnedSegmentCount: 1,
-            hasOlderRows: false,
-            olderCursor: null,
-          },
-        }),
+        timeline,
       },
     },
   });
   await plugin(host.bb);
-  return { ...host, list, details };
+  return { ...host, list, details, timeline };
 }
 
 test("uses the latest completed turn's aggregate patch and never reads the workspace", async () => {
@@ -133,7 +141,7 @@ test("uses the latest completed turn's aggregate patch and never reads the works
   });
   expect(list.mock.calls[0]?.[0]).toMatchObject({
     types: ["turn/completed"],
-    limit: "1",
+    limit: "20",
     order: "desc",
   });
   expect(details.mock.calls[0]?.[0]).toEqual({
@@ -148,12 +156,86 @@ test("uses the latest completed turn's aggregate patch and never reads the works
   await harness.lifecycle.dispose();
 });
 
-test("does not fall back to a prior turn when the latest turn has no changes", async () => {
-  const oldEdit = { ...edit, turnId: "turn-1" };
-  const { harness } = await setup([started, completed], [oldEdit, message]);
+test("returns no preview when the thread has no recorded changes", async () => {
+  const { harness } = await setup([started, completed], [{ ...edit, turnId: "other" }, message]);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toEqual({ turn: null });
+  await harness.lifecycle.dispose();
+});
+
+function laterTurn(index: number): Event[] {
+  const scope = { kind: "turn", turnId: `later-${index}` } as const;
+  return [
+    { ...started, id: `start-${index}`, scope, seq: 30 + index * 10 },
+    { ...completed, id: `end-${index}`, scope, seq: 39 + index * 10 },
+  ];
+}
+
+test("retains the last recorded changes through no-edit and active turns", async () => {
+  const { harness } = await setup([started, updated, completed, ...laterTurn(0), laterTurn(1)[0]!]);
   expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
-    turn: { turnId: "turn-2", changes: [], patch: null },
+    turn: { turnId: "turn-2", anchorId: "final-2", patch },
   });
+  await harness.lifecycle.dispose();
+});
+
+test("paginates completed turns and locates the retained answer in older timeline pages", async () => {
+  const cursor = { anchorId: "later-final", anchorSeq: 230 };
+  const { harness, timeline, list } = await setup(
+    [started, updated, completed, ...Array.from({ length: 25 }, (_, i) => laterTurn(i)).flat()],
+    [edit],
+    [
+      {
+        rows: [],
+        timelinePage: {
+          kind: "latest",
+          segmentLimit: 2,
+          returnedSegmentCount: 2,
+          hasOlderRows: true,
+          olderCursor: cursor,
+        },
+      },
+      { rows: [message] },
+    ],
+  );
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "turn-2", anchorId: "final-2", patch },
+  });
+  expect(list.mock.calls.filter(([input]) => input.types?.includes("turn/completed"))).toHaveLength(
+    2,
+  );
+  expect(timeline.mock.calls[1]?.[0]).toMatchObject({
+    beforeAnchorId: cursor.anchorId,
+    beforeAnchorSeq: "230",
+  });
+  await harness.lifecycle.dispose();
+});
+
+test("a newer edit replaces retained changes", async () => {
+  const [start, end] = laterTurn(0);
+  const latest = {
+    ...updated,
+    scope: start!.scope,
+    seq: 35,
+    data: { ...updated.data, diff: patch.replaceAll("new", "newest") },
+  };
+  const { harness } = await setup(
+    [started, updated, completed, start!, latest, end!],
+    [edit],
+    [{ rows: [message, { ...message, id: "latest-final", turnId: "later-0" }] }],
+  );
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "later-0", anchorId: "latest-final", patch: latest.data.diff },
+  });
+  await harness.lifecycle.dispose();
+});
+
+test("does not revive changes from before the context boundary", async () => {
+  const { harness } = await setup(
+    [started, updated, completed, ...laterTurn(0)],
+    [edit],
+    [{ contextBoundarySeq: 25 }],
+  );
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toEqual({ turn: null });
   await harness.lifecycle.dispose();
 });
 
@@ -164,6 +246,7 @@ test("preserves separate edits and excludes failed edits and other turns", async
       edit,
       { ...edit, id: "edit-3" },
       { ...edit, status: "error" },
+      { ...edit, approvalStatus: "denied" },
       { ...edit, turnId: "other" },
       message,
     ],
@@ -175,14 +258,14 @@ test("preserves separate edits and excludes failed edits and other turns", async
   await harness.lifecycle.dispose();
 });
 
-test("keeps an explicitly empty aggregate patch empty", async () => {
+test("falls back to recorded edits when the aggregate patch is empty", async () => {
   const { harness } = await setup([
     started,
     { ...updated, data: { ...updated.data, diff: "" } },
     completed,
   ]);
   expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
-    turn: { patch: "", changes: [] },
+    turn: { patch: null, changes: [{ id: "edit-2" }] },
   });
   await harness.lifecycle.dispose();
 });

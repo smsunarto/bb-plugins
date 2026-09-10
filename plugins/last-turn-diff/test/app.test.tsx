@@ -22,7 +22,7 @@ const first: LatestTurn = {
   ],
 };
 
-test("inserts outside message prose, replaces the latest preview, clears empty turns, and cleans up", async () => {
+test("retains the preview on refresh, replaces newer changes, clears absent data, and cleans up", async () => {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(captured.messageDirectives).toEqual([]);
   expect(captured.messageActions).toEqual([]);
@@ -32,7 +32,7 @@ test("inserts outside message prose, replaces the latest preview, clears empty t
   host.innerHTML =
     '<div data-timeline-row-id="message-1"><div data-message-column><p>Original answer.</p></div></div><div data-timeline-row-id="message-2"><div data-message-column><p>Second answer.</p></div></div>';
   document.body.append(host);
-  let turn = first;
+  let turn: LatestTurn | null = first;
   const slot = renderSlot(
     registration,
     { threadId: "thread-1", projectId: "p", isCompactViewport: false },
@@ -49,6 +49,13 @@ test("inserts outside message prose, replaces the latest preview, clears empty t
         ?.closest("[data-timeline-row-id]")
         ?.getAttribute("data-timeline-row-id"),
     ).toBe("message-1");
+    fireEvent.click(within(host).getByRole("button", { name: "Expand all" }));
+    turn = { ...first };
+    await slot.behavior.emitRealtime(CHANGED_CHANNEL, { threadId: "thread-1" });
+    await waitFor(() =>
+      expect(within(host).getByRole("button", { name: "Collapse all" })).toBeTruthy(),
+    );
+    expect(host.querySelectorAll("[data-last-turn-id]")).toHaveLength(1);
     turn = { ...first, turnId: "turn-2", anchorId: "message-2" };
     await slot.behavior.emitRealtime(CHANGED_CHANNEL, { threadId: "thread-1" });
     await waitFor(() =>
@@ -59,7 +66,7 @@ test("inserts outside message prose, replaces the latest preview, clears empty t
     expect(
       host.querySelector('[data-timeline-row-id="message-1"] [data-last-turn-diff-portal]'),
     ).toBeNull();
-    turn = { ...turn, changes: [] };
+    turn = null;
     await slot.behavior.emitRealtime(CHANGED_CHANNEL, { threadId: "thread-1" });
     await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).toBeNull());
     expect(prose.textContent).toBe("Original answer.");

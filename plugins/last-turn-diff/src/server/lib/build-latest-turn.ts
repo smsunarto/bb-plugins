@@ -14,16 +14,11 @@ export function buildLatestTurn(
   timelineRows: Row[],
 ): LatestTurn {
   const rows = sourceRows.filter((row) => row.turnId === turnId);
-  const anchor = [...timelineRows]
-    .reverse()
-    .find(
-      (row) => row.turnId === turnId && row.kind === "conversation" && row.role === "assistant",
-    );
   const oversized = patch !== null && patch.length > MAX_PATCH_CHARS;
   const result: LatestTurn = {
     turnId,
-    anchorId: anchor?.id ?? null,
-    patch: oversized ? null : patch,
+    anchorId: findTurnAnchor(turnId, timelineRows),
+    patch: oversized || !patch?.trim() ? null : patch,
     changes: [],
     limited: oversized,
   };
@@ -31,7 +26,12 @@ export function buildLatestTurn(
   let remaining = MAX_PATCH_CHARS;
   // Keep successive edits distinct. Concatenating them would invent a net patch.
   for (const row of rows) {
-    if (row.kind !== "work" || row.workKind !== "file-change" || row.status !== "completed")
+    if (
+      row.kind !== "work" ||
+      row.workKind !== "file-change" ||
+      row.status !== "completed" ||
+      row.approvalStatus === "denied"
+    )
       continue;
     if (result.changes.length >= MAX_CHANGES) {
       result.limited = true;
@@ -51,4 +51,14 @@ export function buildLatestTurn(
     });
   }
   return result;
+}
+
+export function findTurnAnchor(turnId: string, rows: Row[]): string | null {
+  return (
+    [...rows]
+      .reverse()
+      .find(
+        (row) => row.turnId === turnId && row.kind === "conversation" && row.role === "assistant",
+      )?.id ?? null
+  );
 }
