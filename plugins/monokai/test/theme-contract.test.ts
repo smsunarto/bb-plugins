@@ -49,12 +49,30 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("font-weight: 400");
   });
 
+  test("keeps compact composer selectors on bb's native layout", () => {
+    const desktopBoundary = theme.indexOf(
+      "/* Compact composers keep bb's native Project, Machine, and Permission mode",
+    );
+    const compactBehavior = theme.indexOf(
+      "/* Narrow-pane rules otherwise hide the metadata row even while expanded. */",
+    );
+    const selector =
+      '.dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) {';
+
+    expect(theme.slice(desktopBoundary, theme.indexOf(selector))).toContain(
+      "@media (min-width: 768px)",
+    );
+    expect(theme.indexOf(selector)).toBeGreaterThan(desktopBoundary);
+    expect(theme.indexOf(selector)).toBeLessThan(compactBehavior);
+    expect(theme.split(selector)).toHaveLength(2);
+  });
+
   test("lets a lone non-project machine summary fill the footer", () => {
     expect(theme).toContain(
-      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n  > div:has(> [data-option-display]) {\n  grid-column: 1 / -1;\n  width: 100%;\n  max-width: none;",
+      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n    > div:has(> [data-option-display]) {\n    grid-column: 1 / -1;\n    width: 100%;\n    max-width: none;",
     );
     expect(theme).toContain(
-      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n  > div\n  > [data-option-display] {\n  flex: 1 1 auto;\n  max-width: none;",
+      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n    > div\n    > [data-option-display] {\n    flex: 1 1 auto;\n    max-width: none;",
     );
   });
 

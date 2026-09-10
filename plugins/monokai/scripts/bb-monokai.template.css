@@ -413,153 +413,157 @@
   max-height: calc(70dvh - 3rem) !important;
 }
 
-.dark [data-follow-up-composer-footer] {
-  min-height: 2rem;
-  max-height: 2rem;
-  padding-left: 0.875rem;
-}
-
-.dark [data-follow-up-composer-footer] [aria-label="Permission mode"] {
-  height: 2rem;
-}
-
-/* Keep metadata slots stable when editable pickers become read-only labels,
- * and reserve the context meter's space before usage arrives. */
-.dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
-  --monokai-metadata-width: 8rem;
-  --monokai-project-width: calc(var(--monokai-metadata-width) * 0.9375);
-  --monokai-detail-width: calc(var(--monokai-metadata-width) * 1.03125);
-}
-
-.dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) > :last-child {
-  position: relative;
-  padding-right: 2rem;
-}
-
-.dark [data-follow-up-composer-footer] [aria-label^="Context window "] {
-  position: absolute;
-  right: 0;
-  margin: 0;
-}
-
-.dark [data-follow-up-composer-footer] > :first-child > div {
-  display: grid;
-  grid-template-columns: var(--monokai-project-width) repeat(2, var(--monokai-detail-width)) auto;
-  width: 100%;
-  gap: 0.25rem;
-  padding-right: 0;
-}
-
-.dark [data-follow-up-composer-footer] [data-option-display],
-.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
-  font-weight: 500;
-  height: 2rem;
-}
-
-.dark [data-follow-up-composer-footer] [data-option-display] > span,
-.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]) {
-  gap: 0.25rem;
-}
-
-.dark [data-promptbox-shell] div > [data-promptbox-project-control],
-.dark [data-promptbox-shell] [data-promptbox-project-slot],
-.dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
-  width: var(--monokai-project-width);
-  max-width: var(--monokai-project-width);
-  flex: 0 0 var(--monokai-project-width);
-}
-
-.dark [data-promptbox-shell] [aria-label="Environment"],
-.dark [data-promptbox-shell] [aria-label="Machine"],
-.dark [data-promptbox-shell] [aria-label="Branch"],
-.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
-.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
-  width: var(--monokai-detail-width);
-  max-width: var(--monokai-detail-width);
-  flex: 0 0 var(--monokai-detail-width);
-}
-
-.dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) {
-  position: relative;
-  padding-left: 0.5rem;
-  padding-right: 1.75rem;
-}
-
-.dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) > [data-icon="ChevronDown"] {
-  position: absolute;
-  right: 0.5rem;
-  width: 1rem;
-}
-
-.dark [data-promptbox-shell] [data-promptbox-project-slot] > [aria-label="Don't work in a project"] {
-  left: 0.375rem;
-}
-
-.dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]),
-.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
-.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
-  padding-left: 0.5rem;
-  padding-right: 1.75rem;
-}
-
-.dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
-  grid-column: 1;
-}
-
-.dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]) {
-  grid-column: 2;
-}
-
-/* Outside a project, the environment is the whole thread location summary.
- * Remove the empty project and checkout columns instead of leaving the machine
- * label stranded in the second fixed slot. */
-.dark
-  [data-follow-up-composer-footer]
-  > :first-child
-  > div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))
-  > div:has(> [data-option-display]) {
-  grid-column: 1 / -1;
-  width: 100%;
-  max-width: none;
-  flex: 1 1 auto;
-}
-
-.dark
-  [data-follow-up-composer-footer]
-  > :first-child
-  > div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))
-  > div
-  > [data-option-display] {
-  flex: 1 1 auto;
-  max-width: none;
-}
-
-.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
-  grid-column: 3;
-  line-height: 1.25;
-}
-
-.dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-@container promptbox-shell (max-width: 40rem) {
-  .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
-    --monokai-metadata-width: 6.5rem;
-  }
-}
-
-@container promptbox-shell (max-width: 30rem) {
-  .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
-    --monokai-metadata-width: clamp(4.5rem, 28cqw, 6.5rem);
-    --monokai-project-width: var(--monokai-metadata-width);
-    --monokai-detail-width: var(--monokai-metadata-width);
+/* Compact composers keep bb's native Project, Machine, and Permission mode
+ * controls. Fixed metadata geometry is a desktop alignment treatment. */
+@media (min-width: 768px) {
+  .dark [data-follow-up-composer-footer] {
+    min-height: 2rem;
+    max-height: 2rem;
+    padding-left: 0.875rem;
   }
 
-  .dark [data-promptbox-shell] [aria-label="Branch"],
+  .dark [data-follow-up-composer-footer] [aria-label="Permission mode"] {
+    height: 2rem;
+  }
+
+  /* Keep metadata slots stable when editable pickers become read-only labels,
+   * and reserve the context meter's space before usage arrives. */
+  .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
+    --monokai-metadata-width: 8rem;
+    --monokai-project-width: calc(var(--monokai-metadata-width) * 0.9375);
+    --monokai-detail-width: calc(var(--monokai-metadata-width) * 1.03125);
+  }
+
+  .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) > :last-child {
+    position: relative;
+    padding-right: 2rem;
+  }
+
+  .dark [data-follow-up-composer-footer] [aria-label^="Context window "] {
+    position: absolute;
+    right: 0;
+    margin: 0;
+  }
+
+  .dark [data-follow-up-composer-footer] > :first-child > div {
+    display: grid;
+    grid-template-columns: var(--monokai-project-width) repeat(2, var(--monokai-detail-width)) auto;
+    width: 100%;
+    gap: 0.25rem;
+    padding-right: 0;
+  }
+
+  .dark [data-follow-up-composer-footer] [data-option-display],
   .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
-    display: none;
+    font-weight: 500;
+    height: 2rem;
+  }
+
+  .dark [data-follow-up-composer-footer] [data-option-display] > span,
+  .dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]) {
+    gap: 0.25rem;
+  }
+
+  .dark [data-promptbox-shell] div > [data-promptbox-project-control],
+  .dark [data-promptbox-shell] [data-promptbox-project-slot],
+  .dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
+    width: var(--monokai-project-width);
+    max-width: var(--monokai-project-width);
+    flex: 0 0 var(--monokai-project-width);
+  }
+
+  .dark [data-promptbox-shell] [aria-label="Environment"],
+  .dark [data-promptbox-shell] [aria-label="Machine"],
+  .dark [data-promptbox-shell] [aria-label="Branch"],
+  .dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+    width: var(--monokai-detail-width);
+    max-width: var(--monokai-detail-width);
+    flex: 0 0 var(--monokai-detail-width);
+  }
+
+  .dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) {
+    position: relative;
+    padding-left: 0.5rem;
+    padding-right: 1.75rem;
+  }
+
+  .dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) > [data-icon="ChevronDown"] {
+    position: absolute;
+    right: 0.5rem;
+    width: 1rem;
+  }
+
+  .dark [data-promptbox-shell] [data-promptbox-project-slot] > [aria-label="Don't work in a project"] {
+    left: 0.375rem;
+  }
+
+  .dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]),
+  .dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+    padding-left: 0.5rem;
+    padding-right: 1.75rem;
+  }
+
+  .dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
+    grid-column: 1;
+  }
+
+  .dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]) {
+    grid-column: 2;
+  }
+
+  /* Outside a project, the environment is the whole thread location summary.
+   * Remove the empty project and checkout columns instead of leaving the machine
+   * label stranded in the second fixed slot. */
+  .dark
+    [data-follow-up-composer-footer]
+    > :first-child
+    > div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))
+    > div:has(> [data-option-display]) {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .dark
+    [data-follow-up-composer-footer]
+    > :first-child
+    > div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))
+    > div
+    > [data-option-display] {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+    grid-column: 3;
+    line-height: 1.25;
+  }
+
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  @container promptbox-shell (max-width: 40rem) {
+    .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
+      --monokai-metadata-width: 6.5rem;
+    }
+  }
+
+  @container promptbox-shell (max-width: 30rem) {
+    .dark :is([data-follow-up-composer-footer], [data-promptbox-shell] div:has(> div > [data-promptbox-project-control]), [data-promptbox-shell] div:has(> div > [data-promptbox-project-slot])) {
+      --monokai-metadata-width: clamp(4.5rem, 28cqw, 6.5rem);
+      --monokai-project-width: var(--monokai-metadata-width);
+      --monokai-detail-width: var(--monokai-metadata-width);
+    }
+
+    .dark [data-promptbox-shell] [aria-label="Branch"],
+    .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+      display: none;
+    }
   }
 }
 
