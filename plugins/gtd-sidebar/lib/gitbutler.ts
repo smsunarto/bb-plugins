@@ -6,6 +6,7 @@ export const gitButlerHostContract = defineRpcContract({
     input: z.object({ cwd: z.string().trim().min(1) }),
     output: z.object({
       label: z.string().nullable(),
+      branchNames: z.array(z.string().trim().min(1)).max(16).default([]),
     }),
   },
 });
@@ -61,6 +62,32 @@ export function resolveSidebarBranchLabel(
 ): string | null {
   if (environmentId === null) return branchName;
   return gitButlerLabels.get(environmentId) ?? branchName;
+}
+
+const GITBUTLER_WORKSPACE_REF = "gitbutler/workspace";
+const GITBUTLER_COUNT_LABEL = /^\d+ GitButler branches$/u;
+
+/**
+ * Names that can match a GitHub head ref. The sidebar display label for a
+ * multi-branch GitButler workspace is a count, and bb's raw ref is
+ * `gitbutler/workspace` — both of those fail PR matching. The host's parsed
+ * virtual-branch names are the ones that can hit.
+ */
+export function gitButlerBranchNamesFor(
+  branchName: string | null,
+  environmentId: string | null,
+  gitButlerBranches: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  if (environmentId !== null) {
+    const fromHost = gitButlerBranches.get(environmentId);
+    if (fromHost !== undefined && fromHost.length > 0) {
+      return [...fromHost];
+    }
+  }
+  const raw = branchName?.trim() ?? "";
+  if (raw.length === 0) return [];
+  if (raw === GITBUTLER_WORKSPACE_REF || GITBUTLER_COUNT_LABEL.test(raw)) return [];
+  return [raw];
 }
 
 export function gitButlerLabelsMatch(

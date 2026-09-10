@@ -49,6 +49,7 @@ export const gtdSidebarRpcContract = defineRpcContract({
         z.object({
           environmentId: z.string(),
           label: z.string(),
+          branchNames: z.array(z.string().trim().min(1)).max(16).default([]),
         }),
       ),
     }),
@@ -219,6 +220,7 @@ export default function plugin(bb: BbPluginApi) {
             return {
               environmentId,
               label: summary.label,
+              branchNames: summary.branchNames ?? [],
             };
           } catch {
             // The card keeps bb's own branch label when the environment or its
