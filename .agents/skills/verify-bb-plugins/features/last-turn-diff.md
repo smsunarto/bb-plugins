@@ -15,11 +15,11 @@ The preview sits immediately after that turn's final assistant response.
    Toggle Raw YAML and Object view, then collapse and reopen the file.
    A workspace file that no longer matches the recorded patch must keep its raw diff.
    Exercise **Expand all** and **Collapse all** with a fixture containing several files.
-3. Complete a later turn without file edits. The previous preview must disappear.
+3. Complete a later turn without file edits. The previous preview must remain under its original response.
    A later turn with edits must replace it with that turn's changes.
 
 Take a snapshot before choosing file controls. Capture the collapsed card,
-expanded diff, and the later turn's replacement or removal. Save the thread URL.
+expanded diff, and the later turn's replacement or retention. Save the thread URL.
 
 ## Gotchas
 
