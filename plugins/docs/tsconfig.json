@@ -1,9 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2023",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
     "types": ["node"],
     "paths": {
@@ -20,6 +20,12 @@
     "vitest.config.ts",
     "components",
     "hooks",
-    "lib"
+    "lib",
+    "markdown-editor.tsx",
+    "mdx-esm.tsx",
+    "editor-styles.ts",
+    "styles.d.ts",
+    "canvas-editor.tsx",
+    "markdown-editor.test.tsx"
   ]
 }

@@ -1,7 +1,7 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { collectDiagnostics, type CanvasNode } from "../shared/document.ts";
+import { collectDiagnostics, type CanvasNode } from "./document.ts";
 import { documentStats, parseCanvas } from "./parse.ts";
 
 const sample = readFileSync(

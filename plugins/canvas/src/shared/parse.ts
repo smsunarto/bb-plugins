@@ -4,14 +4,8 @@ import remarkFrontmatter from "remark-frontmatter";
 import remarkMdx from "remark-mdx";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import type {
-  CanvasDocument,
-  CanvasNode,
-  Diagnostic,
-  JsonValue,
-  Span,
-} from "../shared/document.ts";
-import { collectStateIds } from "../shared/document.ts";
+import type { CanvasDocument, CanvasNode, Diagnostic, JsonValue, Span } from "./document.ts";
+import { collectStateIds } from "./document.ts";
 import {
   isComponentName,
   isStateful,
@@ -19,8 +13,8 @@ import {
   suggestComponentName,
   type ChildPolicy,
   type ComponentName,
-} from "../shared/registry.ts";
-import { defaultStyle, isStyleName, suggestStyleName, type StyleName } from "../shared/styles.ts";
+} from "./registry.ts";
+import { defaultStyle, isStyleName, suggestStyleName, type StyleName } from "./styles.ts";
 import { foldLiteral } from "./literal.ts";
 
 export type ParseResult =

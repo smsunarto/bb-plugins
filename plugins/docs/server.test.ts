@@ -521,6 +521,62 @@ describe("Docs mention provider", () => {
 });
 
 describe("Docs vault operations", () => {
+  it("lists Markdown, MDX, and Canvas documents and preserves MDX filenames", async () => {
+    const { harness } = await loadNotebook({
+      "guide.md": "# Guide",
+      "component.mdx": "# Component",
+      "report.canvas.mdx": '<Stat label="Runs" value={42} />',
+    });
+    const result = await harness.callRpc("listNotes", { vaultId: "personal" });
+    expect(result).toMatchObject({
+      entries: expect.arrayContaining([
+        { kind: "file", path: "guide.md" },
+        { kind: "file", path: "component.mdx" },
+        { kind: "file", path: "report.canvas.mdx" },
+      ]),
+      notes: expect.arrayContaining([
+        expect.objectContaining({ path: "component.mdx", title: "Component" }),
+        expect.objectContaining({ path: "report.canvas.mdx" }),
+      ]),
+    });
+    await expect(
+      harness.callRpc("renameToTitle", { vaultId: "personal", path: "report.canvas.mdx" }),
+    ).resolves.toEqual({ path: "report.canvas.mdx" });
+    expect(harness.sdk.callsTo("files.move")).toHaveLength(0);
+  });
+
+  it("forwards Canvas state and comments through the SDK to their owning plugin", async () => {
+    const host = createFakePluginHost({
+      pluginId: "docs",
+      sdk: {
+        files: { mkdir: async () => ({ ok: true as const }) },
+        plugins: {
+          callRpc: async ({ method, outputSchema }) =>
+            outputSchema.parse(
+              method === "comments"
+                ? {
+                    status: "loaded",
+                    sha256: "comments-sha",
+                    file: { version: 1, threads: [] },
+                    malformed: false,
+                  }
+                : { values: { enabled: true }, revision: 7 },
+            ),
+        },
+      },
+    });
+    await simpleNotes(host.bb);
+    const source = { kind: "host", hostId: "host_remote", path: "/notes/report.canvas.mdx" };
+    await expect(
+      host.harness.callRpc("setState", { source, key: "enabled", value: true }),
+    ).resolves.toMatchObject({ values: { enabled: true }, revision: 7 });
+    await host.harness.callRpc("comments", { source, knownSha256: null });
+    expect(host.harness.sdk.callsTo("plugins.callRpc").map(([args]) => args)).toMatchObject([
+      { pluginId: "canvas", method: "setState", input: { source, key: "enabled", value: true } },
+      { pluginId: "canvas", method: "comments", input: { source, knownSha256: null } },
+    ]);
+  });
+
   it("creates the initial Personal vault without exposing a folder setting", async () => {
     const host = createFakePluginHost({
       pluginId: "simple-notes",

@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { parseCanvas } from "../server/parse.ts";
+import { parseCanvas } from "./parse.ts";
 import {
   anchorAt,
   blockIdOf,

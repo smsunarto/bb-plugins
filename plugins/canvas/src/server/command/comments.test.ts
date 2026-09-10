@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { CommandError } from "@bb-kit/core/command";
 import { anchorAt, flattenBlocks } from "../../shared/anchor.ts";
 import type { CommentThread } from "../../shared/comments.ts";
-import { parseCanvas } from "../parse.ts";
+import { parseCanvas } from "../../shared/parse.ts";
 import { fakeBb, fileKeyOf } from "../fake-bb.ts";
 import { formatWhen } from "../format.ts";
 import { comments } from "./comments.ts";

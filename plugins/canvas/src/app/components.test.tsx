@@ -3,13 +3,18 @@ import assert from "node:assert/strict";
 import { installDom } from "@bb-kit/core/testing";
 import type { ReactElement } from "react";
 import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
-import { parseCanvas } from "../server/parse.ts";
-import type { CanvasDocument, RenderOutput } from "../shared/document.ts";
 
 installDom();
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { CanvasOpener } = await import("./canvas.tsx");
+const { CanvasWidgetsProvider, CanvasWidget } = await import("./editor.tsx");
+function WidgetFixture({ path }: PluginFileOpenerProps) {
+  return (
+    <CanvasWidgetsProvider source={{ kind: "thread-storage", threadId: "thread-1", path }}>
+      <CanvasWidget markdown={source} />
+    </CanvasWidgetsProvider>
+  );
+}
 
 const source = `# Tones
 
@@ -31,12 +36,6 @@ body
 </Row>
 `;
 
-function documentOf(text: string): CanvasDocument {
-  const parsed = parseCanvas(text);
-  if (!parsed.ok) throw new Error(parsed.diagnostic.message);
-  return parsed.document;
-}
-
 function Original(): ReactElement {
   return <pre>ORIGINAL SOURCE</pre>;
 }
@@ -49,13 +48,9 @@ function propsFor(path: string): PluginFileOpenerProps {
   };
 }
 
-function rendered(text: string): RenderOutput {
-  return { status: "rendered", sha256: "sha-1", modifiedAtMs: 1, document: documentOf(text) };
-}
-
 test("toned components expose data-tone and carry no Tailwind palette classes", async () => {
-  const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/tones.canvas.mdx"), {
-    rpc: { render: () => rendered(source), state: () => ({ values: {}, revision: 0 }) },
+  const slot = renderSlot({ component: WidgetFixture }, propsFor("canvases/tones.canvas.mdx"), {
+    rpc: { state: () => ({ values: {}, revision: 0 }) },
   });
   await slot.findByText("Heads up");
   const root = slot.container.querySelector(".canvas-prose");
@@ -69,8 +64,8 @@ test("toned components expose data-tone and carry no Tailwind palette classes", 
 });
 
 test("pills inside a Row keep the canvas-row hook that stops them stretching", async () => {
-  const slot = renderSlot({ component: CanvasOpener }, propsFor("canvases/tones.canvas.mdx"), {
-    rpc: { render: () => rendered(source), state: () => ({ values: {}, revision: 0 }) },
+  const slot = renderSlot({ component: WidgetFixture }, propsFor("canvases/tones.canvas.mdx"), {
+    rpc: { state: () => ({ values: {}, revision: 0 }) },
   });
   await slot.findByText("style: github");
   const pills = [...slot.container.querySelectorAll(".canvas-row .canvas-pill")];

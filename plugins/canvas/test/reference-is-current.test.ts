@@ -1,7 +1,7 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { parseCanvas } from "../src/server/parse.ts";
+import { parseCanvas } from "../src/shared/parse.ts";
 import { collectDiagnostics } from "../src/shared/document.ts";
 import { componentNames } from "../src/shared/registry.ts";
 import { examples, referencePath, renderReference } from "../scripts/reference.ts";

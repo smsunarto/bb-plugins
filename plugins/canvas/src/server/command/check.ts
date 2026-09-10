@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import { collectDiagnostics, type Diagnostic } from "../../shared/document.ts";
 import { defaultStyle } from "../../shared/styles.ts";
-import { documentStats, type DocumentStats } from "../parse.ts";
+import { documentStats, type DocumentStats } from "../../shared/parse.ts";
 import { render } from "../rpc/render.ts";
 
 interface CheckReport {

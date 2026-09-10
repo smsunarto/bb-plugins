@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { CanvasSource, UnreadableReason } from "../shared/document.ts";
 import { locateSource } from "./locate.ts";
-import { maxCanvasBytes } from "./parse.ts";
+import { maxCanvasBytes } from "../shared/parse.ts";
 
 export interface CanvasFile {
   readonly content: string;

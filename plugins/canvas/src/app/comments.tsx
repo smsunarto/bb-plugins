@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { useRealtime } from "@get-bb/plugin-sdk/app";
-import { anchorAt, placeThreads } from "../shared/anchor.ts";
+import { anchorAt, flattenBlocks, placeThreads } from "../shared/anchor.ts";
 import type { PlacedThread, Placement } from "../shared/anchor.ts";
 import type { Author, CommentOp, CommentsFile, CommentThread } from "../shared/comments.ts";
 import type { CanvasDocument } from "../shared/document.ts";
@@ -439,7 +439,7 @@ export function Block(props: {
   const comments = useContext(CommentsContext);
   const threads = useThreadsAt(props.offset);
   const host = useRef<HTMLDivElement>(null);
-  if (comments === null) return <>{props.children}</>;
+  if (comments === null) return <div className="canvas-comment-block">{props.children}</div>;
   const composing = comments.composing?.offset === props.offset ? comments.composing : null;
   const selection = comments.selection?.offset === props.offset ? comments.selection : null;
   const frame = host.current?.getBoundingClientRect() ?? { top: 0, left: 0 };
@@ -551,5 +551,51 @@ export function CommentsToolbar(): ReactElement {
         </button>
       ) : null}
     </>
+  );
+}
+
+export function DocumentCommentComposer({ document }: { document: CanvasDocument }): ReactElement {
+  const comments = useComments();
+  const blocks = flattenBlocks(document);
+  const [expanded, setExpanded] = useState(false);
+  const [offset, setOffset] = useState<number | null>(null);
+  const selected = blocks.find((block) => block.offset === offset) ?? blocks[0];
+  return (
+    <details
+      className="mb-3"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-sm">Add a comment</summary>
+      {selected && expanded && (
+        <>
+          <label className="my-2 block text-xs">
+            Comment on
+            <select
+              aria-label="Comment on"
+              className="ml-2 max-w-full rounded border border-border bg-background p-1"
+              value={selected.offset}
+              onChange={(event) => setOffset(Number(event.target.value))}
+            >
+              {blocks.map((block) => (
+                <option key={block.offset} value={block.offset}>
+                  {block.index + 1}. {block.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Composer
+            quote={null}
+            placeholder="Add a comment"
+            submitLabel="Comment"
+            onSubmit={(body) => {
+              comments.open(selected.offset, null, body);
+              setExpanded(false);
+            }}
+            onCancel={() => setExpanded(false)}
+          />
+        </>
+      )}
+    </details>
   );
 }

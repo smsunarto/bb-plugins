@@ -1,3 +1,4 @@
+import { narrowSource } from "@smsunarto/bb-plugin-canvas/editor";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   definePluginApp,
@@ -12,19 +13,7 @@ import {
   type ExperimentalLiveFileTarget,
 } from "@get-bb/plugin-sdk/app";
 import type { docsRpcContract } from "./server.js";
-import { parseMarkdownDocument } from "./markdown-document.js";
-import { Editor, Extension, InputRule, Node, mergeAttributes } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
-import Placeholder from "@tiptap/extension-placeholder";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
-import { Markdown } from "tiptap-markdown";
+import { MarkdownEditor } from "./markdown-editor.js";
 import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
 import { toast } from "sonner";
 import {
@@ -115,290 +104,6 @@ function dirname(value: string): string {
   return index < 0 ? "" : value.slice(0, index);
 }
 
-function normalizeRelative(base: string, relative: string): string {
-  if (!relative.startsWith(".")) return relative.replace(/^\//, "");
-  const stack = base ? base.split("/") : [];
-  for (const part of relative.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") stack.pop();
-    else stack.push(part);
-  }
-  return stack.join("/");
-}
-
-function relativeFrom(base: string, target: string): string {
-  const from = base ? base.split("/") : [];
-  const to = target.split("/");
-  while (from[0] && from[0] === to[0]) {
-    from.shift();
-    to.shift();
-  }
-  return (
-    `${from.map(() => "..").join("/")}${from.length && to.length ? "/" : ""}${to.join("/")}` || "."
-  );
-}
-
-function previewUrl(baseUrl: string, notePath: string, source: string): string {
-  if (/^(https?:|data:|blob:|#)/i.test(source)) return source;
-  return `${baseUrl}/${encodePath(normalizeRelative(dirname(notePath), source))}`;
-}
-
-function displayMarkdown(content: string, baseUrl: string, notePath: string): string {
-  const withImages = content.replace(
-    /(!\[[^\]]*\]\()([^\s)]+)([^)]*\))/g,
-    (_match, start: string, source: string, end: string) =>
-      `${start}${previewUrl(baseUrl, notePath, source)}${end}`,
-  );
-  return withImages.replace(
-    /^::html\{src="([^"]+)"(?: height="(\d+)")?\}\s*$/gm,
-    (_match, source: string, height: string | undefined) =>
-      `<div data-simple-html-embed="true" data-src="${encodeURIComponent(source)}" data-height="${height ?? "360"}"></div>`,
-  );
-}
-
-function storedMarkdown(content: string, baseUrl: string, notePath: string): string {
-  const prefix = `${baseUrl}/`;
-  return content.replace(
-    /(!\[[^\]]*\]\()([^\s)]+)([^)]*\))/g,
-    (_match, start: string, source: string, end: string) => {
-      if (!source.startsWith(prefix)) return `${start}${source}${end}`;
-      const target = source.slice(prefix.length).split("/").map(decodeURIComponent).join("/");
-      const relative = relativeFrom(dirname(notePath), target);
-      return `${start}${relative.startsWith(".") ? relative : `./${relative}`}${end}`;
-    },
-  );
-}
-
-interface HtmlEmbedOptions {
-  baseUrl: string;
-  notePath: string;
-}
-
-const HtmlEmbed = Node.create<HtmlEmbedOptions>({
-  name: "simpleHtmlEmbed",
-  group: "block",
-  atom: true,
-  isolating: true,
-  addOptions() {
-    return { baseUrl: "", notePath: "" };
-  },
-  addAttributes() {
-    return {
-      src: {
-        default: "",
-        parseHTML: (element) => decodeURIComponent(element.getAttribute("data-src") ?? ""),
-        renderHTML: (attributes) => ({
-          "data-src": encodeURIComponent(String(attributes.src)),
-        }),
-      },
-      height: {
-        default: 360,
-        parseHTML: (element) => Number(element.getAttribute("data-height") ?? 360),
-        renderHTML: (attributes) => ({
-          "data-height": String(attributes.height),
-        }),
-      },
-    };
-  },
-  parseHTML() {
-    return [{ tag: 'div[data-simple-html-embed="true"]' }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ["div", mergeAttributes(HTMLAttributes, { "data-simple-html-embed": "true" })];
-  },
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement("section");
-      dom.className = "simple-html-embed";
-      dom.contentEditable = "false";
-      const header = document.createElement("div");
-      header.className = "simple-html-embed-header";
-      header.textContent = `◇ ${String(node.attrs.src)} · sandboxed`;
-      const iframe = document.createElement("iframe");
-      iframe.title = `Embedded HTML: ${String(node.attrs.src)}`;
-      iframe.setAttribute("sandbox", "allow-scripts");
-      iframe.style.height = `${Math.min(1200, Math.max(120, Number(node.attrs.height) || 360))}px`;
-      iframe.src = previewUrl(this.options.baseUrl, this.options.notePath, String(node.attrs.src));
-      dom.append(header, iframe);
-      return { dom };
-    };
-  },
-  addStorage() {
-    return {
-      markdown: {
-        serialize(
-          state: {
-            write(value: string): void;
-            closeBlock(node: unknown): void;
-          },
-          node: { attrs: { src: string; height: number } },
-        ) {
-          state.write(`::html{src="${node.attrs.src}" height="${node.attrs.height}"}`);
-          state.closeBlock(node);
-        },
-      },
-    };
-  },
-});
-
-const MarkdownTaskInput = Extension.create({
-  name: "markdownTaskInput",
-  priority: 200,
-  addInputRules() {
-    return [
-      new InputRule({
-        find: /^\s*\[([ xX]?)\]\s$/,
-        handler: ({ range, match, chain }) => {
-          const commands = chain().deleteRange(range).toggleTaskList();
-          if (/[xX]/.test(match[1] ?? "")) commands.updateAttributes("taskItem", { checked: true });
-          commands.run();
-        },
-      }),
-    ];
-  },
-});
-
-const STYLE_MARKER = "data-bb-simple-notes-styles";
-const EDITOR_CSS = `
-/* Ported from smsunarto-theme/styles/cursor-markdown-preview.css. */
-.bb-simple-notes-editor {
-  container-type: inline-size;
-  background: #181818;
-}
-.bb-simple-notes-editor .tiptap {
-  outline: none;
-  width: 100%;
-  max-width: 700px;
-  box-sizing: border-box;
-  margin: 0 auto;
-  padding: 48px clamp(24px, 4vw, 56px) 96px;
-  color: #e3e3dd;
-  caret-color: #e3e3dd;
-  font-family: "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-  font-size: 17px;
-  font-kerning: normal;
-  font-weight: 400;
-  letter-spacing: normal;
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
-.bb-simple-notes-editor .tiptap > :first-child,
-.bb-simple-notes-editor .tiptap li > :first-child,
-.bb-simple-notes-editor .tiptap blockquote > :first-child { margin-top: 0; }
-.bb-simple-notes-editor .tiptap p { margin: 1.75rem 0; }
-.bb-simple-notes-editor .tiptap h1,
-.bb-simple-notes-editor .tiptap h2,
-.bb-simple-notes-editor .tiptap h3,
-.bb-simple-notes-editor .tiptap h4,
-.bb-simple-notes-editor .tiptap h5,
-.bb-simple-notes-editor .tiptap h6 {
-  border-bottom: 0;
-  color: #9ddd54;
-  font-family: inherit;
-  font-weight: 600;
-  padding-bottom: 0;
-}
-/* Heading scale: 1.5 / 1.25 / 1.1 / 1 em at weight 600, more room above than below. */
-.bb-simple-notes-editor .tiptap h1 { font-size: 1.5em; line-height: 1.2; letter-spacing: -0.02em; margin: 2.5rem 0 1rem; }
-.bb-simple-notes-editor .tiptap h2 { font-size: 1.25em; line-height: 1.25; letter-spacing: -0.015em; margin: 2.25rem 0 0.875rem; }
-.bb-simple-notes-editor .tiptap h3 { font-size: 1.1em; line-height: 1.3; letter-spacing: -0.01em; margin: 1.75rem 0 0.75rem; }
-.bb-simple-notes-editor .tiptap h4 { font-size: 1em; line-height: 1.3; letter-spacing: 0; margin: 1.75rem 0 0.5rem; }
-.bb-simple-notes-editor .tiptap h5 { font-size: 0.85em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
-.bb-simple-notes-editor .tiptap h6 { font-size: 0.8em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
-.bb-simple-notes-editor .tiptap ul,
-.bb-simple-notes-editor .tiptap ol { margin: 1.75rem 0; padding-inline-start: 0; }
-.bb-simple-notes-editor .tiptap ul { list-style: disc; }
-.bb-simple-notes-editor .tiptap ol { list-style: decimal; }
-.bb-simple-notes-editor .tiptap :is(ul, ol) > li { margin-inline-start: 30px; }
-.bb-simple-notes-editor .tiptap ol ol > li,
-.bb-simple-notes-editor .tiptap ul ul > li { margin-inline-start: 32px; }
-/* List spacing steps by depth: 0.5em between top-level items, 0.25em between
-   nested siblings, 0.25em from a parent item's text to its child list. */
-.bb-simple-notes-editor .tiptap li + li { margin-top: 0.5em; }
-.bb-simple-notes-editor .tiptap li li + li { margin-top: 0.25em; }
-.bb-simple-notes-editor .tiptap li > p { margin: 0; }
-.bb-simple-notes-editor .tiptap li > :is(ul, ol) { margin: 0.25em 0 0; }
-.bb-simple-notes-editor .tiptap li::marker { color: #7c7866; }
-.bb-simple-notes-editor .tiptap strong { color: #51dae9; font-weight: 600; }
-.bb-simple-notes-editor .tiptap em { color: #e3e3ddd6; }
-.bb-simple-notes-editor .tiptap a {
-  color: #51dae9;
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: currentColor;
-  text-decoration-thickness: from-font;
-  text-underline-offset: 0.12em;
-}
-.bb-simple-notes-editor .tiptap a:hover { color: #75f0ff; }
-.bb-simple-notes-editor .tiptap a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.125em; }
-.bb-simple-notes-editor .tiptap code:has(> a) { background: transparent; border: 0; border-radius: 0; font-family: inherit; font-size: inherit; padding: 0; }
-.bb-simple-notes-editor .tiptap blockquote { border-left: 1px solid #fe5d86; border-radius: 0; color: #e3e3ddbd; margin: 1rem 0; padding: 0 0 0 1.1em; }
-.bb-simple-notes-editor .tiptap :is(code, pre) { font-family: "Berkeley Mono", var(--font-mono, monospace); }
-.bb-simple-notes-editor .tiptap code { color: #e3e3dd; font-size: 0.875em; line-height: 1.5; }
-.bb-simple-notes-editor .tiptap :not(pre) > code { background: #262626; border: 1px solid #e3e3dd1a; border-radius: 4px; box-decoration-break: clone; padding: 0.15em 0.3em; -webkit-box-decoration-break: clone; }
-.bb-simple-notes-editor .tiptap pre {
-  background: #1e1e1e;
-  border: 0;
-  border-radius: 4px;
-  box-sizing: border-box;
-  font-size: 13px;
-  left: 50%;
-  line-height: 19.5px;
-  margin: 1rem 0;
-  max-width: none;
-  overflow-x: auto;
-  padding: 12.75px 17px;
-  position: relative;
-  transform: translateX(-50%);
-  white-space: pre;
-  width: min(calc(100ch + 34px), calc(100cqw - 64px));
-  word-break: normal;
-}
-.bb-simple-notes-editor .tiptap pre code { background: transparent; border: 0; display: inline-block; font-size: inherit; line-height: inherit; overflow-wrap: normal; padding: 0; white-space: pre; word-break: normal; }
-.bb-simple-notes-editor .tiptap img { display: block; max-width: 100%; max-height: 38rem; margin: 1.75rem auto; border-radius: 4px; border: 1px solid #e3e3dd1a; }
-.bb-simple-notes-editor .tiptap .tableWrapper { margin: 1.75rem 0; overflow-x: auto; }
-.bb-simple-notes-editor .tiptap table { width: 100%; border: 0; border-collapse: collapse; border-radius: 0; table-layout: fixed; font-size: 0.875em; line-height: 1.3; }
-.bb-simple-notes-editor .tiptap th,
-.bb-simple-notes-editor .tiptap td { position: relative; min-width: 6rem; border: 0; border-bottom: 1px solid #e3e3dd11; padding: 0.25em 0.625em 0.25em 0; text-align: left; vertical-align: top; }
-.bb-simple-notes-editor .tiptap th { font-weight: 600; }
-.bb-simple-notes-editor .tiptap :is(th, td) > p { margin-top: 0; }
-.bb-simple-notes-editor .tiptap :is(th, td) > p + p { margin-top: 0.65em; }
-.bb-simple-notes-editor .tiptap .selectedCell::after { position: absolute; inset: 0; z-index: 2; pointer-events: none; content: ""; background: color-mix(in oklab, var(--primary) 14%, transparent); }
-.bb-simple-notes-editor .tiptap .column-resize-handle { position: absolute; top: 0; right: -2px; bottom: -1px; width: 4px; z-index: 3; pointer-events: none; background: var(--primary); }
-.bb-simple-notes-editor .tiptap.resize-cursor { cursor: col-resize; }
-.bb-simple-notes-editor .tiptap hr { border: 0; border-top: 1px solid #e3e3dd11; margin: 1.75rem 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] { list-style: none; padding-inline-start: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] ul[data-type="taskList"] { margin-top: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-top: 0.5em; margin-inline-start: 0; padding-left: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > label { flex: 0 0 auto; display: inline-flex; align-items: center; height: 1.7em; user-select: none; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { line-height: 1.5; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p:first-child { margin-top: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] { display: block; width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; margin: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: #e3e3ddbd; text-decoration: line-through; }
-.bb-simple-notes-editor .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #e3e3ddbd; }
-.bb-simple-notes-editor .tiptap ::selection { background: #404040; }
-.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid #e3e3dd1a; border-radius:4px; background:#1e1e1e; }
-.simple-html-embed-header { border-bottom:1px solid #e3e3dd11; background:#262626; padding:.45rem .7rem; color:#e3e3ddbd; font:11px "Berkeley Mono",var(--font-mono,monospace); }
-.simple-html-embed iframe { display:block; width:100%; border:0; background:white; }
-.bb-docs-panel .tiptap { max-width: none; padding: 1rem 0 3rem; font-size: 14px; }
-@media (max-width: 47.999rem) { .bb-simple-notes-editor .tiptap { padding-inline: 1.25rem; font-size: 17px; } }
-`;
-
-function ensureEditorStyles(): void {
-  const existing = document.head.querySelector<HTMLStyleElement>(`[${STYLE_MARKER}]`);
-  if (existing) {
-    existing.textContent = EDITOR_CSS;
-    return;
-  }
-  const style = document.createElement("style");
-  style.setAttribute(STYLE_MARKER, "");
-  style.textContent = EDITOR_CSS;
-  document.head.append(style);
-}
-
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -409,108 +114,6 @@ function fileToBase64(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
-}
-
-function TiptapEditor({
-  initialValue,
-  previewBaseUrl,
-  notePath,
-  onUpload,
-  onFirstRender,
-  onMarkdownChange,
-}: {
-  initialValue: string;
-  previewBaseUrl: string;
-  notePath: string;
-  onUpload(file: File): Promise<{ markdownPath: string }>;
-  onFirstRender(markdown: string): void;
-  onMarkdownChange(markdown: string): void;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const uploadRef = useRef(onUpload);
-  uploadRef.current = onUpload;
-  const firstRef = useRef(onFirstRender);
-  firstRef.current = onFirstRender;
-  const changeRef = useRef(onMarkdownChange);
-  changeRef.current = onMarkdownChange;
-
-  useEffect(() => {
-    ensureEditorStyles();
-    if (!rootRef.current) return;
-    const markdownDocument = parseMarkdownDocument(initialValue);
-    const bodyLeadingBreaks = markdownDocument.frontmatter
-      ? (/^(?:\r?\n)*/.exec(markdownDocument.body)?.[0] ?? "")
-      : "";
-    let editor: Editor;
-    const upload = async (file: File) => {
-      if (!file.type.startsWith("image/")) return false;
-      const result = await uploadRef.current(file);
-      editor
-        .chain()
-        .focus()
-        .setImage({
-          src: previewUrl(previewBaseUrl, notePath, result.markdownPath),
-          alt: file.name,
-        })
-        .run();
-      return true;
-    };
-    editor = new Editor({
-      element: rootRef.current,
-      extensions: [
-        StarterKit,
-        Link.configure({ openOnClick: false, autolink: true }),
-        Image.configure({ allowBase64: false }),
-        TaskList,
-        TaskItem.configure({ nested: true }),
-        Table.configure({ resizable: true, lastColumnResizable: false }),
-        TableRow,
-        TableHeader,
-        TableCell,
-        MarkdownTaskInput,
-        HtmlEmbed.configure({ baseUrl: previewBaseUrl, notePath }),
-        Placeholder.configure({ placeholder: "Start writing…" }),
-        Markdown.configure({
-          html: true,
-          tightLists: true,
-          bulletListMarker: "-",
-          linkify: true,
-        }),
-      ],
-      content: displayMarkdown(markdownDocument.body, previewBaseUrl, notePath),
-      autofocus: "end",
-      editorProps: {
-        handlePaste(_view, event) {
-          const file = [...(event.clipboardData?.files ?? [])].find((candidate) =>
-            candidate.type.startsWith("image/"),
-          );
-          if (!file) return false;
-          void upload(file);
-          return true;
-        },
-        handleDrop(_view, event) {
-          const file = [...(event.dataTransfer?.files ?? [])].find((candidate) =>
-            candidate.type.startsWith("image/"),
-          );
-          if (!file) return false;
-          event.preventDefault();
-          void upload(file);
-          return true;
-        },
-      },
-    });
-    const getMarkdown = () =>
-      markdownDocument.frontmatter +
-      bodyLeadingBreaks +
-      storedMarkdown(editor.storage.markdown.getMarkdown(), previewBaseUrl, notePath);
-    firstRef.current(getMarkdown());
-    editor.on("update", () => changeRef.current(getMarkdown()));
-    return () => {
-      editor.destroy();
-    };
-  }, [initialValue, notePath, previewBaseUrl]);
-
-  return <div ref={rootRef} className="bb-simple-notes-editor min-h-0 flex-1 overflow-y-auto" />;
 }
 
 type DocsRpcClient = ReturnType<typeof useRpc<typeof docsRpcContract>>;
@@ -693,7 +296,7 @@ interface DocumentRef {
 }
 
 function documentTitle(path: string): string {
-  return (path.split("/").at(-1) ?? path).replace(/\.(md|html?)$/i, "");
+  return (path.split("/").at(-1) ?? path).replace(/\.(mdx?|markdown|html?)$/i, "");
 }
 
 function parseDocumentRef(value: unknown): DocumentRef | null {
@@ -714,7 +317,7 @@ function parseDocumentRef(value: unknown): DocumentRef | null {
     !path ||
     path.startsWith("/") ||
     path.split("/").some((part) => !part || part === "." || part === "..") ||
-    !/\.(md|html?)$/i.test(path)
+    !/\.(mdx?|markdown|html?)$/i.test(path)
   )
     return null;
   return { vaultId, path, title };
@@ -866,6 +469,7 @@ function NotePane({
   renameToTitle?: boolean;
 }) {
   const rpc = useRpc<typeof docsRpcContract>();
+  const { data: notebook } = useNotebook(vaultId);
   const [state, setState] = useState<
     { content: string; lease: PreviewLease } | { error: string } | null
   >(null);
@@ -982,10 +586,19 @@ function NotePane({
       {saveError ? (
         <div className="border-b border-border px-4 py-2 text-xs text-destructive">{saveError}</div>
       ) : null}
-      <TiptapEditor
+      <MarkdownEditor
         initialValue={state.content}
         previewBaseUrl={state.lease.baseUrl}
         notePath={notePath}
+        canvasSource={
+          notebook
+            ? {
+                kind: "host",
+                hostId: notebook.vault.hostId,
+                path: `${notebook.vault.rootPath.replace(/[\\/]$/, "")}/${notePath}`,
+              }
+            : undefined
+        }
         onUpload={async (file) => {
           const content = await fileToBase64(file);
           const value = await rpc.call("uploadAttachment", {
@@ -1009,7 +622,12 @@ function NotePane({
   );
 }
 
-function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
+function DocsFileOpener(props: PluginFileOpenerProps) {
+  return <DocsFileOpenerSession key={JSON.stringify([props.source, props.path])} {...props} />;
+}
+
+function DocsFileOpenerSession({ path: filePath, source }: PluginFileOpenerProps) {
+  const canvasSourceResult = narrowSource(source, filePath);
   const rpc = useRpc<typeof docsRpcContract>();
   const navigate = useBbNavigate();
   const liveFileTarget = useMemo<ExperimentalLiveFileTarget | null>(() => {
@@ -1091,6 +709,40 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
       active = false;
     };
   }, [filePath, openerSource, reloadNonce, rpc]);
+
+  useEffect(() => {
+    if (!state || "error" in state) return;
+    let active = true;
+    let pending = false;
+    const timer = setInterval(async () => {
+      if (pending || document.visibilityState === "hidden") return;
+      pending = true;
+      const knownSha = shaRef.current;
+      try {
+        const file = await rpc.call("readOpenedFile", { source: openerSource, path: filePath });
+        if (!active || shaRef.current !== knownSha || file.sha256 === knownSha) return;
+        if (savingRef.current || markdownRef.current !== savedRef.current) {
+          setConflict(true);
+          return;
+        }
+        markdownRef.current = file.content;
+        savedRef.current = file.content;
+        shaRef.current = file.sha256;
+        setState((previous) =>
+          previous && !("error" in previous) ? { ...previous, content: file.content } : previous,
+        );
+      } catch {
+        // Keep the editable document during a temporary host disconnect. The
+        // next read retries, and a write still reports conflicts or failures.
+      } finally {
+        pending = false;
+      }
+    }, 1500);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [filePath, openerSource, rpc, state]);
 
   const save = useCallback(
     async (force = false) => {
@@ -1180,10 +832,11 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
       {saveError ? (
         <div className="border-b border-border px-4 py-2 text-xs text-destructive">{saveError}</div>
       ) : null}
-      <TiptapEditor
+      <MarkdownEditor
         initialValue={state.content}
         previewBaseUrl={state.lease.baseUrl}
         notePath={state.previewPath}
+        canvasSource={canvasSourceResult.ok ? canvasSourceResult.value : undefined}
         onUpload={async () => {
           throw new Error("Add this file to a Docs vault before uploading images");
         }}
@@ -1590,7 +1243,7 @@ function parseRoute(subPath: string): {
 } {
   if (!subPath) return { vaultId: null, filePath: null };
   const parts = subPath.split("/").map(decodeURIComponent);
-  if (parts.length === 1 && /\.(md|html?)$/i.test(parts[0] ?? "")) {
+  if (parts.length === 1 && /\.(mdx?|markdown|html?)$/i.test(parts[0] ?? "")) {
     return { vaultId: null, filePath: parts[0] ?? null };
   }
   return {
@@ -1773,7 +1426,7 @@ function NotesWorkspace({
             }}
             onAddVault={() => setVaultDialogOpen(true)}
           />
-        ) : filePath && /\.md$/i.test(filePath) ? (
+        ) : filePath && /\.(mdx?|markdown)$/i.test(filePath) ? (
           <NotePane
             key={`${activeVaultId}:${filePath}`}
             vaultId={activeVaultId}
@@ -1938,7 +1591,7 @@ export default definePluginApp((app) => {
   });
   app.slots.fileOpener({
     id: "docs",
-    title: "Markdown",
+    title: "Docs",
     extensions: ["md", "mdx", "markdown"],
     component: DocsFileOpener,
   });

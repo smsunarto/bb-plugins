@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCanvas } from "../src/server/parse.ts";
+import { parseCanvas } from "../src/shared/parse.ts";
 import { collectDiagnostics } from "../src/shared/document.ts";
 
 const templatesDir = fileURLToPath(new URL("../skills/canvas/templates/", import.meta.url));

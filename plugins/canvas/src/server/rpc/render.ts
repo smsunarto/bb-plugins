@@ -1,6 +1,6 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { renderInputSchema, renderOutputSchema, type RenderOutput } from "../../shared/document.ts";
-import { parseCanvas } from "../parse.ts";
+import { parseCanvas } from "../../shared/parse.ts";
 import { readCanvasFile } from "../read.ts";
 
 export const render = defineQuery({

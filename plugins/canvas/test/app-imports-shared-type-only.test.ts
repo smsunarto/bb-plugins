@@ -27,7 +27,7 @@ async function sourceFiles(dir: string): Promise<readonly string[]> {
   return entries.filter((name) => /\.tsx?$/.test(name) && !name.includes(".test.")).sort();
 }
 
-test("src/app/ imports src/shared/document.ts and src/shared/registry.ts type-only", async () => {
+test("only the MDX widget adapter imports shared validation into the browser", async () => {
   for (const file of await sourceFiles(appDir)) {
     const text = await readFile(join(appDir, file), "utf8");
     for (const match of text.matchAll(importPattern)) {
@@ -35,6 +35,9 @@ test("src/app/ imports src/shared/document.ts and src/shared/registry.ts type-on
       if (!specifier?.startsWith("../shared/")) continue;
       const target = specifier.slice("../shared/".length);
       if (valueSafeShared.has(target)) continue;
+      // MDXEditor receives editable JSX. Its adapter validates it with the same
+      // parser and registry used by the CLI before rendering Canvas widgets.
+      if (file === "editor.tsx" && (target === "parse.ts" || target === "registry.ts")) continue;
       const typeOnly =
         typeKeyword !== undefined || /^\{\s*(type\s+[^,}]+,?\s*)+\}$/.test(clause?.trim() ?? "");
       assert.ok(typeOnly, `app/${file} imports ${specifier} as a value`);

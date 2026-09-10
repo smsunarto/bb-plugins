@@ -106,5 +106,10 @@
     "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
     "reference": "bun scripts/reference.ts",
     "clean": "rm -rf dist"
+  },
+  "exports": {
+    "./editor": "./src/app/editor.tsx",
+    "./editor-contract": "./src/shared/editor-contract.ts",
+    "./editor.css": "./src/app/app.css"
   }
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { CanvasSource } from "../../shared/document.ts";
 import { fakeBb, fileKeyOf } from "../fake-bb.ts";
-import { maxCanvasBytes } from "../parse.ts";
+import { maxCanvasBytes } from "../../shared/parse.ts";
 import { render } from "./render.ts";
 
 const sample = readFileSync(

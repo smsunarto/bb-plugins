@@ -36,8 +36,9 @@ export function CanvasProvider(props: {
   readonly source: CanvasSource;
   readonly path: string;
   readonly children: ReactNode;
+  readonly onShowSource?: () => void;
 }): ReactElement {
-  const { source, path } = props;
+  const { source, path, onShowSource } = props;
   const [view, setView] = useState<CanvasViewMode>("canvas");
   const value = useMemo<CanvasContextValue>(
     () => ({
@@ -46,9 +47,12 @@ export function CanvasProvider(props: {
       fileName: fileNameOf(path),
       target: targetOf(source, path),
       view,
-      setView,
+      setView(next) {
+        setView(next);
+        if (next === "source") onShowSource?.();
+      },
     }),
-    [source, path, view],
+    [source, path, view, onShowSource],
   );
   return <CanvasContext.Provider value={value}>{props.children}</CanvasContext.Provider>;
 }
@@ -84,12 +88,23 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function CanvasStateProvider(props: { readonly children: ReactNode }): ReactElement {
+export function CanvasStateProvider(props: {
+  readonly children: ReactNode;
+  readonly enabled?: boolean;
+}): ReactElement {
   const { source } = useCanvas();
   const queryClient = useQueryClient();
   const stateKey = stateKeyOf(source);
   const queryKey = rpc.state.queryKey({ source });
-  const query = rpc.state.useQuery({ source }, { staleTime: Number.POSITIVE_INFINITY });
+  const query = rpc.state.useQuery(
+    { source },
+    {
+      enabled: props.enabled ?? true,
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchInterval: 1500,
+      refetchIntervalInBackground: false,
+    },
+  );
   const [local, setLocal] = useState<Readonly<Record<string, JsonValue>>>({});
   const [failed, setFailed] = useState<{ key: string; value: JsonValue; message: string } | null>(
     null,

@@ -3,17 +3,30 @@ import assert from "node:assert/strict";
 import { installDom } from "@bb-kit/core/testing";
 import type { ReactElement } from "react";
 import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
-import { parseCanvas } from "../server/parse.ts";
+import { parseCanvas } from "../shared/parse.ts";
 import { anchorAt, flattenBlocks } from "../shared/anchor.ts";
 import type { CommentOp, CommentsFile, CommentThread } from "../shared/comments.ts";
-import type { CanvasDocument, RenderOutput } from "../shared/document.ts";
+import type { CanvasDocument } from "../shared/document.ts";
 import { applyOp } from "../shared/ops.ts";
 
 installDom();
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { CanvasOpener } = await import("./canvas.tsx");
+const { CanvasWidgetsProvider } = await import("./editor.tsx");
+const { CommentsProvider, CommentsToolbar, DetachedSection } = await import("./comments.tsx");
+const { Nodes } = await import("./render.tsx");
+function CommentFixture({ path }: PluginFileOpenerProps) {
+  return (
+    <CanvasWidgetsProvider source={{ kind: "thread-storage", threadId: "thread-1", path }}>
+      <CommentsProvider document={document} pollIntervalMs={1500}>
+        <CommentsToolbar />
+        <Nodes nodes={document.nodes} />
+        <DetachedSection />
+      </CommentsProvider>
+    </CanvasWidgetsProvider>
+  );
+}
 const { relativeTime } = await import("./comments.tsx");
 
 const source = '# Title\n\nFirst paragraph here.\n\n<Stat label="Runs" value={200} />\n';
@@ -54,10 +67,8 @@ function propsFor(path: string): PluginFileOpenerProps {
   };
 }
 
-const rendered: RenderOutput = { status: "rendered", sha256: "sha-1", modifiedAtMs: 1, document };
-
 // The query client is a module singleton, so each harness gets its own path
-// the same way canvas.test.tsx does.
+// so tests never share widget state.
 let harnesses = 0;
 
 function harness(threads: readonly CommentThread[]) {
@@ -67,11 +78,10 @@ function harness(threads: readonly CommentThread[]) {
   const ops: CommentOp[] = [];
   let loads = 0;
   const slot = renderSlot(
-    { component: CanvasOpener },
+    { component: CommentFixture },
     propsFor(`canvases/c${harnesses}.canvas.mdx`),
     {
       rpc: {
-        render: () => rendered,
         state: () => ({ values: {}, revision: 0 }),
         comments: (input) => {
           loads += 1;

@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
+import {
+  BLUR_COMMAND,
+  $getNearestNodeFromDOMNode,
+  $isElementNode,
+  $isTextNode,
+  getNearestEditorFromDOMNode,
+} from "lexical";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
@@ -14,7 +21,40 @@ const navigationRegistration = {
   component: navigationView.component,
 };
 
+async function editText(element: HTMLElement, text: string) {
+  const editor = getNearestEditorFromDOMNode(element);
+  if (!editor) throw new Error("Missing Lexical editor");
+  await act(async () => {
+    editor.update(
+      () => {
+        const node = $getNearestNodeFromDOMNode(element.firstChild ?? element);
+        const target = $isTextNode(node)
+          ? node
+          : $isElementNode(node)
+            ? node.getAllTextNodes()[0]
+            : null;
+        if (!target) throw new Error("Missing Lexical text node");
+        target.setTextContent(text);
+      },
+      { discrete: true },
+    );
+  });
+}
+
 beforeEach(() => {
+  // jsdom does not load image resources. Resolve MDXEditor's image preloader.
+  vi.stubGlobal(
+    "Image",
+    class {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      width = 0;
+      height = 0;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    },
+  );
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn((query: string) => ({
@@ -175,7 +215,7 @@ describe("Docs nav panel", () => {
     });
     expect(app.fileOpeners[0]).toMatchObject({
       id: "docs",
-      title: "Markdown",
+      title: "Docs",
       extensions: ["md", "mdx", "markdown"],
     });
   });
@@ -620,8 +660,7 @@ describe("Docs nav panel", () => {
       },
     );
     const body = await slot.findByText("Personal body");
-    body.textContent = "Edited personal body";
-    fireEvent.input(body);
+    await editText(body, "Edited personal body");
     await waitFor(
       () => expect(slot.rpcCalls.some((call) => call.method === "saveNote")).toBe(true),
       { timeout: 2_000 },
@@ -722,7 +761,7 @@ describe("Docs nav panel", () => {
     expect(slot.queryByText("Remote Mac")).toBeNull();
   });
 
-  it("keeps task checkboxes aligned with the first line of their text", async () => {
+  it("renders nested tasks as accessible checked and unchecked items", async () => {
     const existingStyles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     if (existingStyles) existingStyles.textContent = "stale editor styles";
     const slot = renderSlot(
@@ -754,15 +793,8 @@ describe("Docs nav panel", () => {
     expect(slot.container.querySelector('input[type="file"]')).toBeNull();
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     expect(styles?.textContent).not.toBe("stale editor styles");
-    expect(styles?.textContent).toContain("align-items: flex-start");
-    expect(styles?.textContent).toContain("height: 1.7em");
-    expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
-    expect(styles?.textContent).toContain(
-      'ul[data-type="taskList"] ul[data-type="taskList"] { margin-top: 0; }',
-    );
-    expect(styles?.textContent).toContain(
-      'ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-top: 0.5em;',
-    );
+    expect(slot.getByRole("checkbox", { name: "One task", checked: true })).toBeTruthy();
+    expect(slot.getByRole("checkbox", { name: "Nested task", checked: false })).toBeTruthy();
   });
 
   it("applies the smsunarto Markdown reading theme", async () => {
@@ -797,8 +829,8 @@ describe("Docs nav panel", () => {
     );
     expect(styles?.textContent).toContain("max-width: 700px");
     expect(styles?.textContent).toContain("color: #9ddd54");
-    expect(styles?.textContent).toContain(".tiptap strong { color: #51dae9");
-    expect(styles?.textContent).toContain(".tiptap a:hover { color: #75f0ff; }");
+    expect(styles?.textContent).toContain(".docs-prose strong { color: #51dae9");
+    expect(styles?.textContent).toContain(".docs-prose a:hover { color: #75f0ff; }");
   });
 
   it("renders and autosaves editable Markdown tables", async () => {
@@ -834,24 +866,28 @@ describe("Docs nav panel", () => {
     await slot.findByText("Ready");
     const table = slot.container.querySelector("table");
     expect(table).toBeTruthy();
-    expect(table?.querySelector("th")?.textContent).toBe("Project");
-    expect(table?.querySelector("td")?.textContent).toBe("Docs");
-    expect(table?.closest(".tableWrapper")).toBeTruthy();
+    expect(within(table!).getByText("Project")).toBeTruthy();
+    expect(within(table!).getByText("Docs")).toBeTruthy();
+    expect(table?.closest(".docs-prose")).toBeTruthy();
     expect(table?.closest('[contenteditable="true"]')).toBeTruthy();
 
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     expect(styles?.textContent).toContain("border-collapse: collapse");
-    expect(styles?.textContent).toContain("column-resize-handle");
 
-    const firstBodyCell = table?.querySelector("td p");
+    const firstBodyCell = within(table!).getByText("Docs");
     expect(firstBodyCell).toBeTruthy();
-    firstBodyCell!.textContent = "Plans";
-    fireEvent.input(firstBodyCell!);
+    await editText(firstBodyCell as HTMLElement, "Plans");
+    await act(async () => {
+      getNearestEditorFromDOMNode(firstBodyCell)!.dispatchCommand(
+        BLUR_COMMAND,
+        new FocusEvent("blur"),
+      );
+    });
     await waitFor(() => expect(saveNote).toHaveBeenCalled(), {
       timeout: 2_000,
     });
     expect(saveNote.mock.calls.at(-1)?.[0]).toMatchObject({
-      content: expect.stringContaining("| Plans | Ready |"),
+      content: expect.stringMatching(/\| Plans\s*\| Ready\s*\|/),
     });
   });
 
@@ -889,12 +925,11 @@ describe("Docs nav panel", () => {
     );
 
     const body = await slot.findByText("Original body.");
-    const editor = slot.container.querySelector(".tiptap");
+    const editor = slot.container.querySelector(".docs-prose");
     expect(editor?.textContent).not.toContain("type: knowledge");
     expect(editor?.querySelector("hr")).toBeNull();
 
-    body.textContent = "Edited body.";
-    fireEvent.input(body);
+    await editText(body, "Edited body.");
     await waitFor(() => expect(saveNote).toHaveBeenCalled(), {
       timeout: 2_000,
     });
@@ -930,7 +965,7 @@ describe("Docs nav panel", () => {
     );
 
     await waitFor(() => {
-      const editor = slot.container.querySelector(".tiptap");
+      const editor = slot.container.querySelector(".docs-prose");
       expect(editor?.textContent).toContain("Some intro text.");
       expect(editor?.textContent).toContain("More text.");
     });
@@ -970,6 +1005,9 @@ describe("Docs nav panel", () => {
     );
 
     await slot.findByText("Article");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
     await waitFor(() => {
       const image = slot.container.querySelector("img");
       expect(image?.getAttribute("src")).toBe(
@@ -1298,6 +1336,13 @@ describe("Docs nav panel", () => {
             preview,
             previewPath: "notes/plan.mdx",
           }),
+          state: () => ({ values: {}, revision: 0 }),
+          comments: () => ({
+            status: "loaded",
+            sha256: "none",
+            file: { version: 1, threads: [] },
+            malformed: false,
+          }),
           saveOpenedFile: () => ({
             outcome: "written",
             sha256: "updated-sha",
@@ -1321,8 +1366,7 @@ describe("Docs nav panel", () => {
       },
     });
 
-    body.textContent = "Updated remote plan";
-    fireEvent.input(body);
+    await editText(body, "Updated remote plan");
     await waitFor(
       () => {
         expect(slot.rpcCalls).toContainEqual({

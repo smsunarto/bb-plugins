@@ -1,3 +1,8 @@
+import {
+  canvasEditorContract,
+  stateChannel,
+  stateKeyOf,
+} from "@smsunarto/bb-plugin-canvas/editor-contract";
 import { watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -214,6 +219,7 @@ type SyncFile = z.infer<typeof syncSnapshotEntrySchema>;
 type OpenerSource = z.infer<typeof openerSourceSchema>;
 
 export const docsRpcContract = defineRpcContract({
+  ...canvasEditorContract,
   syncSnapshot: {
     input: z.object({ vaultId: vaultIdSchema, scope: syncScopeSchema }).strict(),
     output: z
@@ -396,6 +402,10 @@ export const docsRpcContract = defineRpcContract({
       })
       .strict(),
   },
+  readOpenedFile: {
+    input: z.object({ source: openerSourceSchema, path: z.string().min(1) }).strict(),
+    output: fileReadSchema,
+  },
   saveOpenedFile: {
     input: z
       .object({
@@ -557,7 +567,7 @@ function kebabCase(text: string): string {
 
 function sanitizeName(raw: string): string {
   return raw
-    .replace(/\.(md|html?)$/i, "")
+    .replace(/\.(mdx?|markdown|html?)$/i, "")
     .replace(/[/\\:*?"<>|]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
@@ -776,7 +786,9 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     });
     return {
       entries: result.paths
-        .filter((entry) => entry.kind === "directory" || /\.(md|html?)$/i.test(entry.path))
+        .filter(
+          (entry) => entry.kind === "directory" || /\.(mdx?|markdown|html?)$/i.test(entry.path),
+        )
         .map((entry) => ({
           kind: entry.kind,
           path: entry.path.replace(/\\/g, "/"),
@@ -792,7 +804,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     const entries = knownEntries ?? (await listEntries(vault)).entries;
     const notes: NoteSummary[] = [];
     const markdownPaths = entries
-      .filter((entry) => entry.kind === "file" && /\.md$/i.test(entry.path))
+      .filter((entry) => entry.kind === "file" && /\.(mdx?|markdown)$/i.test(entry.path))
       .map((entry) => entry.path);
     for (let offset = 0; offset < markdownPaths.length; offset += SUMMARY_READ_CONCURRENCY) {
       const batch = markdownPaths.slice(offset, offset + SUMMARY_READ_CONCURRENCY);
@@ -804,7 +816,9 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
               path: absolutePath(vault, notePath),
               rootPath: vault.rootPath,
             });
-            const fallback = path.posix.basename(notePath).replace(/\.md$/i, "");
+            const fallback = path.posix
+              .basename(notePath)
+              .replace(/\.(?:canvas\.)?(mdx?|markdown)$/i, "");
             const summary = summarizeMarkdown(file.content, fallback);
             return {
               path: notePath,
@@ -1433,6 +1447,56 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
   }
 
   const handlers: PluginRpcHandlers<typeof docsRpcContract> = {
+    async state(input) {
+      return bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "state",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.state.output,
+      });
+    },
+    async setState(input) {
+      const result = await bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "setState",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.setState.output,
+      });
+      bb.realtime.publish(stateChannel, {
+        stateKey: stateKeyOf(input.source),
+        revision: result.revision,
+      });
+      return result;
+    },
+    async resetState(input) {
+      const result = await bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "resetState",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.resetState.output,
+      });
+      bb.realtime.publish(stateChannel, {
+        stateKey: stateKeyOf(input.source),
+        revision: result.revision,
+      });
+      return result;
+    },
+    async comments(input) {
+      return bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "comments",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.comments.output,
+      });
+    },
+    async comment(input) {
+      return bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "comment",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.comment.output,
+      });
+    },
     async syncSnapshot(input) {
       return syncSnapshot(input.vaultId, input.scope);
     },
@@ -1481,7 +1545,8 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       if (
         paths.some(
           (filePath) =>
-            path.posix.dirname(filePath) !== (parent || ".") || !/\.(md|html?)$/i.test(filePath),
+            path.posix.dirname(filePath) !== (parent || ".") ||
+            !/\.(mdx?|markdown|html?)$/i.test(filePath),
         )
       ) {
         throw new Error('Every ordered path must be a file in "parent"');
@@ -1516,7 +1581,10 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     },
     async renameToTitle(input) {
       const vaultId = input.vaultId;
-      const currentPath = requireVaultPath(input.path, { extension: ".md" });
+      const currentPath = requireVaultPath(input.path);
+      if (!/\.(mdx?|markdown)$/i.test(currentPath))
+        throw new Error("Expected a Markdown or MDX document");
+      if (!/\.md$/i.test(currentPath)) return { path: currentPath };
       const file = await readFile(vaultId, currentPath);
       if (parseMarkdownDocument(file.content).title) {
         return { path: currentPath };
@@ -1564,7 +1632,9 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     },
     async uploadAttachment(input) {
       const vaultId = input.vaultId;
-      const notePath = requireVaultPath(input.notePath, { extension: ".md" });
+      const notePath = requireVaultPath(input.notePath);
+      if (!/\.(mdx?|markdown)$/i.test(notePath))
+        throw new Error("Expected a Markdown or MDX document");
       const content = requireString(input.content, "content");
       const bytes = Buffer.from(content, "base64");
       if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error("Attachment exceeds 20 MB");
@@ -1624,6 +1694,14 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         preview,
         previewPath: pathApi.relative(target.rootPath, target.path).replace(/\\/g, "/"),
       };
+    },
+    async readOpenedFile(input) {
+      const target = await resolveOpenerFile(input.source, input.path);
+      return bb.sdk.files.read({
+        ...(target.hostId ? { hostId: target.hostId } : {}),
+        path: target.path,
+        rootPath: target.rootPath,
+      });
     },
     async saveOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);

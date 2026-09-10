@@ -1,5 +1,5 @@
 import type { Expression, Node, Program, Property, SpreadElement } from "estree";
-import type { JsonValue } from "../shared/document.ts";
+import type { JsonValue } from "./document.ts";
 
 export type FoldResult =
   | { readonly ok: true; readonly value: JsonValue }
