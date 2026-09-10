@@ -126,7 +126,7 @@ export default function plugin(bb: BbPluginApi) {
     localMachineId: {
       type: "string",
       label: "Local machine",
-      description: "Machine ID whose repo chips use an uncolored computer icon.",
+      description: "Machine ID whose repo chips show no machine icon.",
       default: "",
     },
     compactThreads: {

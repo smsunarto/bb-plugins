@@ -7,7 +7,6 @@ import { usePortalScopeProps } from "@/lib/portal-scope";
 import { cn } from "@/lib/utils";
 import { MachineGlobe } from "./machine-globe";
 import { useRemoteMachine } from "./machine-appearance";
-import { Icon } from "@/components/ui/icon";
 
 export function FadingText({ text, className }: { text: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -39,11 +38,7 @@ export function ProjectChip({
   const remote = useRemoteMachine(host);
   return name ? (
     <span className="gtd-project-chip" aria-label={host ? `${name} on ${host.name}` : name}>
-      {remote ? (
-        <MachineGlobe machine={host} />
-      ) : host ? (
-        <Icon name="Computer" className="shrink-0" aria-hidden="true" />
-      ) : null}
+      {remote ? <MachineGlobe machine={host} /> : null}
       <FadingText text={name} />
     </span>
   ) : null;

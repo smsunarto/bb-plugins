@@ -552,12 +552,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         assert.equal(root.querySelector('.gtd-project-chip [data-icon="Globe"]'), null);
         if (compactThreads) {
           assert.equal(root.querySelector(".gtd-project-chip")?.textContent, "One");
-          const computer = root.querySelector<SVGElement>(
-            '.gtd-project-chip [data-icon="Computer"]',
-          );
-          assert.ok(computer);
-          assert.equal(computer.style.color, "");
-          assert.equal(computer.getAttribute("color"), "currentColor");
+          assert.equal(root.querySelector(".gtd-project-chip [data-icon]"), null);
         }
         assert.equal(localChild.querySelector(".gtd-project-chip"), null);
         assert.equal(remoteChild.querySelector(".gtd-project-chip")?.textContent, "One");
