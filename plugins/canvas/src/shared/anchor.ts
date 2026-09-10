@@ -118,7 +118,11 @@ export function flattenBlocks(document: CanvasDocument): readonly FlatBlock[] {
   return out;
 }
 
-export function anchorAt(document: CanvasDocument, offset: number, quote: string | null): Anchor {
+export function anchorAt(
+  document: CanvasDocument,
+  offset: number,
+  quote: string | null,
+): Anchor & { blockId: string; index: number; preview: string } {
   const block = flattenBlocks(document).find((candidate) => candidate.offset === offset);
   if (block === undefined) throw new Error(`no block starts at offset ${offset}`);
   const normalizedQuote = quote === null ? null : normalizeText(quote);
@@ -172,7 +176,7 @@ function resolve(
 ): { block: FlatBlock; editedSince: boolean } | null {
   const exact = nearest(
     blocks.filter((block) => block.blockId === anchor.blockId),
-    anchor.index,
+    anchor.index ?? 0,
   );
   if (exact !== undefined) {
     return { block: exact, editedSince: anchor.quote !== null && !contains(exact, anchor.quote) };
@@ -186,8 +190,10 @@ function resolve(
   }
   let best: { block: FlatBlock; score: number } | null = null;
   for (const block of blocks) {
-    const bonus = Math.abs(block.index - anchor.index) <= 2 ? nearIndexBonus : 0;
-    const score = diceSimilarity(anchor.preview, block.text.slice(0, previewLength)) + bonus;
+    const bonus = Math.abs(block.index - (anchor.index ?? 0)) <= 2 ? nearIndexBonus : 0;
+    const score = anchor.preview
+      ? diceSimilarity(anchor.preview, block.text.slice(0, previewLength)) + bonus
+      : 0;
     if (best === null || score > best.score) best = { block, score };
   }
   if (best !== null && best.score >= fuzzyThreshold)
@@ -206,7 +212,11 @@ export function placeThreads(
   for (const thread of threads) {
     const resolved = resolve(blocks, thread.anchor);
     if (resolved === null) {
-      detached.push({ thread, match: { kind: "detached" }, context: thread.anchor.preview });
+      detached.push({
+        thread,
+        match: { kind: "detached" },
+        context: thread.anchor.preview ?? thread.anchor.quote ?? "",
+      });
       continue;
     }
     const { block, editedSince } = resolved;

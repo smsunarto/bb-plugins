@@ -8,13 +8,16 @@ export type Author = "user" | "agent";
 
 export interface Anchor {
   /** 12 hex of fnv1a64(normalized blockText). Not unique. */
-  readonly blockId: string;
+  readonly blockId?: string;
   /** Ordinal in the flattened walk at write time. A drift hint only. */
-  readonly index: number;
+  readonly index?: number;
   /** Exact selected substring of the block, or null for the whole block. */
   readonly quote: string | null;
   /** blockText capped at 240 chars. Shown when the thread is detached. */
-  readonly preview: string;
+  readonly preview?: string;
+  /** Rendered-text context disambiguates equal quotes without Markdown syntax. */
+  readonly prefix?: string;
+  readonly suffix?: string;
 }
 
 export interface CommentMessage {
@@ -45,12 +48,23 @@ export const previewLength = 240;
 
 export const authorSchema = z.enum(["user", "agent"]);
 
-export const anchorSchema: z.ZodType<Anchor, Anchor> = z.object({
-  blockId: z.string().regex(/^[0-9a-f]{12}$/),
-  index: z.number().int().nonnegative(),
-  quote: z.string().min(1).nullable(),
-  preview: z.string().max(previewLength),
-});
+export const anchorSchema: z.ZodType<Anchor, Anchor> = z
+  .object({
+    blockId: z
+      .string()
+      .regex(/^[0-9a-f]{12}$/)
+      .optional(),
+    index: z.number().int().nonnegative().optional(),
+    quote: z.string().min(1).nullable(),
+    preview: z.string().max(previewLength).optional(),
+    prefix: z.string().optional(),
+    suffix: z.string().optional(),
+  })
+  .refine(
+    (anchor) =>
+      anchor.quote !== null || (anchor.blockId !== undefined && anchor.index !== undefined),
+    "Supply selected text or a block anchor",
+  );
 
 export const commentMessageSchema: z.ZodType<CommentMessage, CommentMessage> = z.object({
   id: z.string().min(1),

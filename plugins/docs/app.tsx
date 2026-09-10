@@ -613,6 +613,15 @@ function NotePane({
           markdownRef.current = markdown;
           savedRef.current = markdown;
         }}
+        onProposalApplied={({ content, sha256 }) => {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          markdownRef.current = content;
+          savedRef.current = content;
+          shaRef.current = sha256;
+          setState((previous) =>
+            previous && !("error" in previous) ? { ...previous, content } : previous,
+          );
+        }}
         onMarkdownChange={(markdown) => {
           markdownRef.current = markdown;
           scheduleSave();
@@ -843,6 +852,15 @@ function DocsFileOpenerSession({ path: filePath, source }: PluginFileOpenerProps
         onFirstRender={(markdown) => {
           markdownRef.current = markdown;
           savedRef.current = markdown;
+        }}
+        onProposalApplied={({ content, sha256 }) => {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          markdownRef.current = content;
+          savedRef.current = content;
+          shaRef.current = sha256;
+          setState((previous) =>
+            previous && !("error" in previous) ? { ...previous, content } : previous,
+          );
         }}
         onMarkdownChange={(markdown) => {
           markdownRef.current = markdown;

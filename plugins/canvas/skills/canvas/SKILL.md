@@ -132,7 +132,7 @@ Both can apply at once. One or two sentences total is enough. Skip the intro for
 
 ## Comments
 
-The user can select any block in the Canvas comments section below the Docs editor. When the user mentions comments, feedback, or asks you to address notes on a canvas, run `bb canvas comments <absolute path>` first. It lists every open thread with the block it sits on, the quoted text, and whether the block was edited since. Pass `--all` to include resolved threads and `--json` for a machine readable list.
+The user can select text in the Docs editor and comment in the review sidebar. Comments and suggested edits are file-backed. Read [review.md](review.md) for the direct-file contract, agent replies, new comment threads, and individually accepted edits. When the user mentions comments, feedback, or asks you to address notes on a canvas, run `bb canvas comments <absolute path>` first. It lists every open thread with the block it sits on, the quoted text, and whether the block was edited since. Pass `--all` to include resolved threads and `--json` for a machine readable list.
 
 Address each thread, then answer it with `bb canvas comment <absolute path> <threadId> --reply "<what you did>" --resolve`. Use `--reopen` when a resolved thread needs more work. Keep replies to one or two sentences. Your thread instructions may also carry an "Open canvas comments" line after the user comments on a thread-storage canvas.
 

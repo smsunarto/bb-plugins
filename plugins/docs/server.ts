@@ -1497,6 +1497,22 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         outputSchema: canvasEditorContract.comment.output,
       });
     },
+    async proposals(input) {
+      return bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "proposals",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.proposals.output,
+      });
+    },
+    async decide(input) {
+      return bb.sdk.plugins.callRpc({
+        pluginId: "canvas",
+        method: "decide",
+        input: z.json().parse(input),
+        outputSchema: canvasEditorContract.decide.output,
+      });
+    },
     async syncSnapshot(input) {
       return syncSnapshot(input.vaultId, input.scope);
     },

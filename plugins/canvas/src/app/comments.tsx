@@ -9,9 +9,9 @@ import {
 } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { useRealtime } from "@get-bb/plugin-sdk/app";
-import { anchorAt, flattenBlocks, placeThreads } from "../shared/anchor.ts";
+import { anchorAt, placeThreads } from "../shared/anchor.ts";
 import type { PlacedThread, Placement } from "../shared/anchor.ts";
-import type { Author, CommentOp, CommentsFile, CommentThread } from "../shared/comments.ts";
+import type { Anchor, Author, CommentOp, CommentsFile, CommentThread } from "../shared/comments.ts";
 import type { CanvasDocument } from "../shared/document.ts";
 import { newId } from "../shared/ids.ts";
 import { applyOp, reflects } from "../shared/ops.ts";
@@ -35,6 +35,9 @@ export interface SelectionHint {
 }
 
 export interface CommentsValue {
+  readonly sidebar: boolean;
+  readonly threads: readonly CommentThread[];
+  openSelection(anchor: Anchor, body: string): void;
   readonly placement: Placement;
   readonly openCount: number;
   readonly resolvedCount: number;
@@ -73,6 +76,7 @@ export function CommentsProvider(props: {
   readonly document: CanvasDocument;
   readonly pollIntervalMs: number;
   readonly children: ReactNode;
+  readonly sidebar?: boolean;
 }): ReactElement {
   const { source } = useCanvas();
   const known = useRef<string | null>(null);
@@ -98,6 +102,7 @@ export function CommentsProvider(props: {
   }, []);
 
   useEffect(() => {
+    if (props.sidebar) return;
     const read = (): void => {
       const current = window.getSelection();
       if (current === null || current.isCollapsed || current.rangeCount === 0) {
@@ -127,7 +132,7 @@ export function CommentsProvider(props: {
     };
     window.document.addEventListener("mouseup", read);
     return () => window.document.removeEventListener("mouseup", read);
-  }, []);
+  }, [props.sidebar]);
 
   // Each query result applies once. Re-running on other state changes would
   // put a stale poll over a fresher mutation result.
@@ -206,6 +211,20 @@ export function CommentsProvider(props: {
     },
     [submit],
   );
+  const openSelection = useCallback(
+    (anchor: Anchor, body: string) => {
+      submit({
+        op: "open",
+        thread: {
+          id: newId("cmt"),
+          anchor,
+          resolvedAtMs: null,
+          messages: [{ id: newId("msg"), author: "user", body, createdAtMs: Date.now() }],
+        },
+      });
+    },
+    [submit],
+  );
   const resolve = useCallback(
     (threadId: string, resolved: boolean) => submit({ op: "resolve", threadId, resolved }),
     [submit],
@@ -216,6 +235,9 @@ export function CommentsProvider(props: {
 
   const value = useMemo<CommentsValue>(
     () => ({
+      sidebar: props.sidebar ?? false,
+      threads: file.threads,
+      openSelection,
       placement,
       openCount: file.threads.filter((thread) => thread.resolvedAtMs === null).length,
       resolvedCount: file.threads.filter((thread) => thread.resolvedAtMs !== null).length,
@@ -234,6 +256,8 @@ export function CommentsProvider(props: {
       retry,
     }),
     [
+      props.sidebar,
+      openSelection,
       placement,
       file,
       showResolved,
@@ -303,7 +327,7 @@ function submitOnEnter(event: React.KeyboardEvent<HTMLTextAreaElement>, submit: 
   }
 }
 
-function Composer(props: {
+export function Composer(props: {
   readonly quote: string | null;
   readonly placeholder: string;
   readonly submitLabel: string;
@@ -348,9 +372,16 @@ function Composer(props: {
   );
 }
 
-export function ThreadCard(props: { readonly placed: PlacedThread }): ReactElement {
+export function ThreadCard(props: {
+  readonly placed: PlacedThread;
+  readonly active?: boolean;
+  readonly onActivate?: () => void;
+}): ReactElement {
   const comments = useComments();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(props.active || comments.sidebar);
+  useEffect(() => {
+    if (props.active) setExpanded(true);
+  }, [props.active]);
   const [replying, setReplying] = useState(false);
   const { thread, match } = props.placed;
   const first = thread.messages[0];
@@ -362,12 +393,20 @@ export function ThreadCard(props: { readonly placed: PlacedThread }): ReactEleme
     match.kind === "anchored" && match.editedSince ? "Edited since" : null,
   ].filter((flag): flag is string => flag !== null);
   return (
-    <div className="canvas-comment-card" data-resolved={resolved ? "" : undefined}>
+    <div
+      className="canvas-comment-card"
+      data-thread-id={thread.id}
+      data-active={props.active || undefined}
+      data-resolved={resolved ? "" : undefined}
+    >
       <button
         type="button"
         className="canvas-comment-head"
         aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          props.onActivate?.();
+          if (!comments.sidebar) setExpanded((value) => !value);
+        }}
       >
         <span className="font-medium text-foreground">{authorLabel[first.author]}</span>
         <span className="text-muted-foreground">{relativeTime(first.createdAtMs, now)}</span>
@@ -392,12 +431,16 @@ export function ThreadCard(props: { readonly placed: PlacedThread }): ReactEleme
           ) : thread.anchor.quote !== null ? (
             <blockquote className="canvas-comment-quote">{thread.anchor.quote}</blockquote>
           ) : null}
-          {thread.messages.map((message) => (
+          {thread.messages.map((message, index) => (
             <div key={message.id} className="canvas-comment-message">
-              <span className="font-medium text-foreground">{authorLabel[message.author]}</span>{" "}
-              <span className="text-muted-foreground">
-                {relativeTime(message.createdAtMs, now)}
-              </span>
+              {index > 0 && (
+                <>
+                  <span className="font-medium text-foreground">{authorLabel[message.author]}</span>{" "}
+                  <span className="text-muted-foreground">
+                    {relativeTime(message.createdAtMs, now)}
+                  </span>
+                </>
+              )}
               <p className="m-0 whitespace-pre-wrap">{message.body}</p>
             </div>
           ))}
@@ -439,7 +482,8 @@ export function Block(props: {
   const comments = useContext(CommentsContext);
   const threads = useThreadsAt(props.offset);
   const host = useRef<HTMLDivElement>(null);
-  if (comments === null) return <div className="canvas-comment-block">{props.children}</div>;
+  if (comments === null || comments.sidebar)
+    return <div className="canvas-comment-block">{props.children}</div>;
   const composing = comments.composing?.offset === props.offset ? comments.composing : null;
   const selection = comments.selection?.offset === props.offset ? comments.selection : null;
   const frame = host.current?.getBoundingClientRect() ?? { top: 0, left: 0 };
@@ -551,51 +595,5 @@ export function CommentsToolbar(): ReactElement {
         </button>
       ) : null}
     </>
-  );
-}
-
-export function DocumentCommentComposer({ document }: { document: CanvasDocument }): ReactElement {
-  const comments = useComments();
-  const blocks = flattenBlocks(document);
-  const [expanded, setExpanded] = useState(false);
-  const [offset, setOffset] = useState<number | null>(null);
-  const selected = blocks.find((block) => block.offset === offset) ?? blocks[0];
-  return (
-    <details
-      className="mb-3"
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-    >
-      <summary className="cursor-pointer text-sm">Add a comment</summary>
-      {selected && expanded && (
-        <>
-          <label className="my-2 block text-xs">
-            Comment on
-            <select
-              aria-label="Comment on"
-              className="ml-2 max-w-full rounded border border-border bg-background p-1"
-              value={selected.offset}
-              onChange={(event) => setOffset(Number(event.target.value))}
-            >
-              {blocks.map((block) => (
-                <option key={block.offset} value={block.offset}>
-                  {block.index + 1}. {block.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Composer
-            quote={null}
-            placeholder="Add a comment"
-            submitLabel="Comment"
-            onSubmit={(body) => {
-              comments.open(selected.offset, null, body);
-              setExpanded(false);
-            }}
-            onCancel={() => setExpanded(false)}
-          />
-        </>
-      )}
-    </details>
   );
 }

@@ -100,10 +100,14 @@ The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That direct
 
 A reader can leave Google Docs style comments on a rendered canvas, and the agent reads and answers them from the CLI.
 
-**In the pane.** The Canvas comments section sits below the MDXEditor document.
-Expand **Add a comment**, choose a block, and submit. Existing threads retain
-their anchors and quotes, including detached threads. Open a thread to reply or
-resolve it. Resolved threads remain available through **Show resolved**.
+**In the pane.** Select text and choose **Comment**, or press Cmd/Ctrl+Shift+M.
+The selected passage stays highlighted. Click a highlight to open its thread in
+the review sidebar, reply, resolve, or reopen it. The **Suggested edits** tab shows
+individual diffs with **Accept** and **Reject**. File changes refresh automatically.
+
+**Direct file access.** Agents can read and edit sibling `.comments.json` and
+`.suggestions.json` files. See the [review file contract](skills/canvas/review.md)
+for complete examples, matching rules, and acceptance recovery.
 
 **From the CLI.** The agent lists comments with where each one sits now, then replies or resolves as `agent`.
 
@@ -145,7 +149,7 @@ bb canvas comment  /abs/path/report.canvas.mdx cmt_7f3k2a9x1p --reopen
 }
 ```
 
-An anchor is a fingerprint of the block's text (`blockId`), its ordinal at write time (`index`), the exact selected text or `null` for a whole-block comment (`quote`), and a 240 character `preview` shown when the thread is detached. Anchors are never rewritten. On every render the plugin re-places each thread: an exact fingerprint match wins, then a block that still contains the quote, then a fuzzy text match, else the thread is detached. Both the pane and the CLI write through one compare-and-swap loop, and every op is idempotent by id, so a retried save or a rerun command cannot double post. A sidecar that does not validate reads as empty with a toolbar warning and refuses writes until it is fixed or deleted.
+New comments use an exact rendered-text `quote`, with optional `prefix` and `suffix` to distinguish repeated passages. Existing block anchors remain supported. A block anchor is a fingerprint of the block's text (`blockId`), its ordinal at write time (`index`), the exact selected text or `null` for a whole-block comment (`quote`), and a 240 character `preview` shown when the thread is detached. Anchors are never rewritten. On every render the plugin re-places each thread: an exact fingerprint match wins, then a block that still contains the quote, then a fuzzy text match, else the thread is detached. Both the pane and the CLI write through one compare-and-swap loop, and every op is idempotent by id, so a retried save or a rerun command cannot double post. A sidecar that does not validate reads as empty with a toolbar warning and refuses writes until it is fixed or deleted.
 
 ## `bb canvas check`
 

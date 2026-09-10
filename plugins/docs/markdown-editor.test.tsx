@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { installTestPluginRuntime, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import {
+  installTestPluginRuntime,
+  renderSlot,
+  type RenderSlotOptions,
+} from "@get-bb/plugin-sdk/testing/app";
 import { $getNearestNodeFromDOMNode, $isTextNode, getNearestEditorFromDOMNode } from "lexical";
 installTestPluginRuntime();
 const { MarkdownEditor, previewUrl } = await import("./markdown-editor");
@@ -31,9 +35,15 @@ async function replaceText(element: HTMLElement, text: string) {
   );
 }
 
-function open(content: string, path = "guide.mdx", canvas = false) {
+function open(
+  content: string,
+  path = "guide.mdx",
+  canvas = false,
+  handlers: NonNullable<RenderSlotOptions["rpc"]> = {},
+) {
   const changed = vi.fn();
   const initialized = vi.fn();
+  const applied = vi.fn();
   const slot = renderSlot(
     { component: MarkdownEditor },
     {
@@ -44,11 +54,102 @@ function open(content: string, path = "guide.mdx", canvas = false) {
       onUpload: async () => ({ markdownPath: "./_attachments/image.png" }),
       onFirstRender: initialized,
       onMarkdownChange: changed,
+      onProposalApplied: applied,
     },
-    { rpc: { state: () => ({ values: {}, revision: 0 }), comments: () => ({ threads: [] }) } },
+    {
+      rpc: {
+        state: () => ({ values: {}, revision: 0 }),
+        comments: () => ({
+          status: "loaded",
+          sha256: null,
+          file: { version: 1, threads: [] },
+          malformed: false,
+        }),
+        proposals: () => ({ file: { version: 1, proposals: [] } }),
+        ...handlers,
+      },
+    },
   );
-  return { slot, changed, initialized };
+  return { slot, changed, initialized, applied };
 }
+
+it.each(["text", "paragraph", "blocks"])(
+  "keeps Comment available for %s selection boundaries without editing the MDX",
+  async (boundary) => {
+    const comment = vi.fn((input) => ({
+      sha256: "saved",
+      file: { version: 1, threads: [input.op.thread] },
+    }));
+    const { slot, changed } = open("A **selected** passage.", "review.canvas.mdx", true, {
+      comment,
+    });
+    const bold = await slot.findByText("selected");
+    const paragraph = bold.closest("p")!;
+    const range = document.createRange();
+    range.setStart(paragraph.firstChild!.firstChild ?? paragraph.firstChild!, 0);
+    const last = paragraph.lastChild!;
+    range.setEnd(last.firstChild ?? last, (last.textContent ?? "").length);
+    if (boundary === "paragraph") range.selectNodeContents(paragraph);
+    if (boundary === "blocks") range.selectNode(paragraph);
+    range.getBoundingClientRect = () => ({
+      top: 0,
+      bottom: 20,
+      left: 0,
+      right: 80,
+      width: 80,
+      height: 20,
+      x: 0,
+      y: 0,
+      toJSON() {},
+    });
+    await act(async () => {
+      const selected = window.getSelection()!;
+      selected.removeAllRanges();
+      selected.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Comment" }));
+    fireEvent.change(await slot.findByPlaceholderText("Add a comment"), {
+      target: { value: "Please verify this." },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Comment" }));
+    await waitFor(() => expect(comment).toHaveBeenCalled());
+    expect(comment.mock.calls[0]?.[0].op.thread.anchor.quote).toBe("A selected passage.");
+    expect(changed).not.toHaveBeenCalled();
+  },
+);
+
+it("accepts one suggestion through Canvas and reports the saved source without autosaving it", async () => {
+  const proposal = {
+    id: "one",
+    title: "Clarify",
+    author: "agent",
+    createdAtMs: 1,
+    before: "Original.",
+    after: "Verified.",
+    status: "pending",
+  };
+  const decide = vi.fn(() => ({
+    content: "Verified.",
+    sha256: "written-sha",
+    file: { version: 1, proposals: [{ ...proposal, status: "accepted" }] },
+  }));
+  const { slot, applied, changed } = open("Original.", "review.canvas.mdx", true, {
+    proposals: () => ({ file: { version: 1, proposals: [proposal] } }),
+    decide,
+  });
+  fireEvent.click(await slot.findByRole("tab", { name: "Suggested edits (1)" }));
+  fireEvent.click(await slot.findByRole("button", { name: "Accept" }));
+  await waitFor(() =>
+    expect(applied).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "Verified.", sha256: "written-sha" }),
+    ),
+  );
+  expect(decide).toHaveBeenCalledWith(
+    expect.objectContaining({ proposal, decision: "accept", expectedContent: "Original." }),
+  );
+  expect(changed).not.toHaveBeenCalled();
+});
 
 it("does not save normalization when opening Markdown or MDX", async () => {
   const content = "# Heading\r\n\r\n*  Unusual whitespace\r\n";

@@ -5,19 +5,21 @@ import { parseCanvas } from "../shared/parse.ts";
 import { componentNames } from "../shared/registry.ts";
 import { collectDiagnostics } from "../shared/walk.ts";
 import { PaletteProvider } from "./charts.tsx";
-import {
-  CommentsProvider,
-  CommentsToolbar,
-  DocumentCommentComposer,
-  ThreadCard,
-  useComments,
-} from "./comments.tsx";
-import type { CanvasDocument } from "../shared/document.ts";
 import { CanvasBoundary } from "./query-client.ts";
 import { Nodes, ProblemBar } from "./render.tsx";
 import { CanvasProvider, CanvasStateProvider, useCanvasState } from "./state.tsx";
 
 export { componentNames as canvasComponentNames };
+import { CanvasReviewBody, type CanvasReviewProps } from "./review.tsx";
+
+export function CanvasReview(props: CanvasReviewProps) {
+  const parsed = useMemo(() => parseCanvas(props.markdown), [props.markdown]);
+  return parsed.ok ? (
+    <CanvasReviewBody {...props} document={parsed.document} />
+  ) : (
+    <>{props.children}</>
+  );
+}
 export { narrowSource } from "../shared/source.ts";
 export type { CanvasSource } from "../shared/source.ts";
 const WidgetStyle = createContext<StyleName>("default");
@@ -86,34 +88,5 @@ export function CanvasWidget({ markdown }: { markdown: string }) {
     <div className="canvas-prose canvas-document" data-canvas-style={style} contentEditable={false}>
       <Nodes nodes={parsed.document.nodes} />
     </div>
-  );
-}
-
-function CommentThreads({ document }: { document: CanvasDocument }) {
-  const comments = useComments();
-  const threads = [...comments.placement.byOffset.values()]
-    .flat()
-    .concat(comments.placement.detached)
-    .filter((entry) => comments.showResolved || entry.thread.resolvedAtMs === null);
-  return (
-    <section aria-label="Canvas comments" className="border-t border-border p-4">
-      <DocumentCommentComposer document={document} />
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        <CommentsToolbar />
-      </div>
-      {threads.map((placed) => (
-        <ThreadCard key={placed.thread.id} placed={placed} />
-      ))}
-    </section>
-  );
-}
-
-export function CanvasComments({ markdown }: { markdown: string }) {
-  const parsed = useMemo(() => parseCanvas(markdown), [markdown]);
-  if (!parsed.ok) return null;
-  return (
-    <CommentsProvider document={parsed.document} pollIntervalMs={1500}>
-      <CommentThreads document={parsed.document} />
-    </CommentsProvider>
   );
 }

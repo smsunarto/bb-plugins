@@ -1,4 +1,10 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
+import {
+  proposalsInputSchema,
+  proposalsOutputSchema,
+  decideProposalInputSchema,
+  decideProposalOutputSchema,
+} from "./proposals.ts";
 import { canvasStateSchema, setStateInputSchema, stateInputSchema } from "./document.ts";
 import {
   commentInputSchema,
@@ -16,4 +22,6 @@ export const canvasEditorContract = defineRpcContract({
   resetState: { input: stateInputSchema, output: canvasStateSchema },
   comments: { input: commentsInputSchema, output: commentsOutputSchema },
   comment: { input: commentInputSchema, output: commentOutputSchema },
+  proposals: { input: proposalsInputSchema, output: proposalsOutputSchema },
+  decide: { input: decideProposalInputSchema, output: decideProposalOutputSchema },
 });

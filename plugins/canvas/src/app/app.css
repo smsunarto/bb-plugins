@@ -415,6 +415,111 @@
 
 /* Comments. A commented block is tinted as a whole (the host Markdown DOM is
  * opaque, so no character highlights); the exact quote lives in the card. */
+.canvas-review {
+  min-width: 0;
+  container-type: inline-size;
+}
+.canvas-review-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.canvas-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.canvas-review-layout[data-open="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+}
+.canvas-review-document {
+  min-width: 0;
+}
+.canvas-review-sidebar {
+  position: sticky;
+  top: 0;
+  border-left: 1px solid var(--border);
+  background: var(--background);
+  padding: 12px;
+  min-width: 0;
+  max-height: 85vh;
+  overflow: auto;
+}
+.canvas-review-tabs {
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.canvas-review-tabs button {
+  padding: 6px 0 10px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  border-bottom: 2px solid transparent;
+}
+.canvas-review-tabs button[aria-selected="true"] {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+.canvas-review-button {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.canvas-review-button:hover {
+  background: var(--muted);
+}
+.canvas-review-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.canvas-review-selection {
+  position: fixed;
+  z-index: 50;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.canvas-review-empty {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px 0;
+}
+.canvas-review-sidebar .canvas-comment-card {
+  margin-bottom: 8px;
+}
+.canvas-review-sidebar .canvas-comment-card[data-active="true"] {
+  border-color: var(--primary);
+}
+.canvas-proposal {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 12px 0;
+  padding: 10px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+}
+@container (max-width: 680px) {
+  .canvas-review-layout[data-open="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .canvas-review-sidebar {
+    position: static;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: none;
+  }
+}
+
 .canvas-comment-block {
   position: relative;
 }

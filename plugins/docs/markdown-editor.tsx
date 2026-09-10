@@ -2,7 +2,7 @@ import { usePublisher } from "@mdxeditor/gurx";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   CanvasWidgetsProvider,
-  CanvasComments,
+  CanvasReview,
   usesCanvasWidgets,
   type CanvasSource,
 } from "@smsunarto/bb-plugin-canvas/editor";
@@ -64,6 +64,7 @@ export interface MarkdownEditorProps {
   onUpload(file: File): Promise<{ markdownPath: string }>;
   onFirstRender(markdown: string): void;
   onMarkdownChange(markdown: string): void;
+  onProposalApplied(result: { content: string; sha256: string }): void;
 }
 
 const SourceRequestContext = createContext(0);
@@ -88,7 +89,12 @@ function Toolbar() {
   );
 }
 
-function EditorSession(props: MarkdownEditorProps) {
+function EditorSession(
+  props: MarkdownEditorProps & {
+    reviewTab: "comments" | "edits";
+    onReviewTabChange(tab: "comments" | "edits"): void;
+  },
+) {
   const { initialValue, previewBaseUrl, notePath } = props;
   const hasCanvasSource = Boolean(props.canvasSource);
   const editorRef = useRef<MDXEditorMethods>(null);
@@ -96,6 +102,7 @@ function EditorSession(props: MarkdownEditorProps) {
   callbacks.current = props;
   const [sourceRequest, setSourceRequest] = useState(0);
   const [currentMarkdown, setCurrentMarkdown] = useState(initialValue);
+  const [applying, setApplying] = useState(false);
   const canvasActive = useMemo(
     () =>
       /\.mdx$/i.test(notePath) &&
@@ -197,6 +204,7 @@ function EditorSession(props: MarkdownEditorProps) {
     <SourceRequestContext.Provider value={sourceRequest}>
       <MDXEditor
         ref={editorRef}
+        readOnly={applying}
         markdown={document.body}
         contentEditableClassName="docs-prose"
         className="docs-mdx-editor"
@@ -220,8 +228,22 @@ function EditorSession(props: MarkdownEditorProps) {
       active={canvasActive}
       onShowSource={() => setSourceRequest((value) => value + 1)}
     >
-      {editor}
-      {canvasActive && <CanvasComments markdown={currentMarkdown} />}
+      {canvasActive ? (
+        <CanvasReview
+          tab={props.reviewTab}
+          onTabChange={props.onReviewTabChange}
+          markdown={currentMarkdown}
+          onApplying={setApplying}
+          onApplied={(result) => {
+            setCurrentMarkdown(result.content);
+            callbacks.current.onProposalApplied(result);
+          }}
+        >
+          {editor}
+        </CanvasReview>
+      ) : (
+        editor
+      )}
     </CanvasWidgetsProvider>
   ) : (
     editor
@@ -229,10 +251,13 @@ function EditorSession(props: MarkdownEditorProps) {
 }
 
 export function MarkdownEditor(props: MarkdownEditorProps) {
+  const [reviewTab, setReviewTab] = useState<"comments" | "edits">("comments");
   useEffect(ensureEditorStyles, []);
   return (
     <div className="bb-simple-notes-editor min-h-0 flex-1 overflow-y-auto">
       <EditorSession
+        reviewTab={reviewTab}
+        onReviewTabChange={setReviewTab}
         key={`${props.notePath}:${props.previewBaseUrl}:${props.initialValue}`}
         {...props}
       />

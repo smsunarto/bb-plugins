@@ -9,10 +9,12 @@ import { render } from "./rpc/render.ts";
 import { resetState } from "./rpc/reset-state.ts";
 import { setState } from "./rpc/set-state.ts";
 import { state } from "./rpc/state.ts";
+import { proposals } from "./rpc/proposals.ts";
+import { decideProposal as decide } from "./rpc/decide-proposal.ts";
 
 export default definePlugin({
   pluginId: "canvas",
-  rpc: { render, state, setState, resetState, comments, comment },
+  rpc: { render, state, setState, resetState, comments, comment, proposals, decide },
   command: { check, comments: commentsCommand, comment: commentCommand },
   agents: {
     tools: {},
