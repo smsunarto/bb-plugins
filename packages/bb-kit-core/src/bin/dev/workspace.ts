@@ -206,7 +206,7 @@ export async function runWorkspace(
       unchanged.push(plugin.id);
       continue;
     }
-    await bbJson(runtime, instance.name, ["plugin", "install", plugin.root, "--yes", "--json"]);
+    await bbOk(runtime, instance.name, ["plugin", "install", plugin.root, "--yes", "--json"]);
     installed.push(plugin.id);
     progress(`Installed ${plugin.id}`);
   }
@@ -445,6 +445,22 @@ async function bbJson<T = unknown>(
       `bb ${args.join(" ")} returned invalid JSON.`,
       "Inspect the managed bb version and command output.",
       { output: result.stdout.slice(0, 200) },
+    );
+  }
+}
+
+async function bbOk(
+  runtime: WorkspaceRuntime,
+  name: string,
+  args: readonly string[],
+): Promise<void> {
+  const result = await runtime.captureExec(name, args);
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim() || `exit status ${result.exitCode}`;
+    throw new DevError(
+      "workspace_bb_command_failed",
+      `bb ${args.join(" ")} failed: ${detail}`,
+      "Fix the bb command error, then rerun the workspace command.",
     );
   }
 }
