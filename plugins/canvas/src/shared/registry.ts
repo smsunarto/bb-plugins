@@ -182,7 +182,7 @@ export const registry = {
     }),
     children: { kind: "code", prop: "patch" },
     summary:
-      "Unified patch from a fenced diff block, rendered by the Pierre file diff in Pierre's own theme with a collapsible header.",
+      "Unified patch from a fenced diff block, rendered by BB's SDK diff viewer in the active code theme with a collapsible header.",
   },
   Source: {
     props: z.object({
