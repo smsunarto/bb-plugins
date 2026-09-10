@@ -30,6 +30,16 @@ The delivered extraction includes original files, directory structure, SHA-256 h
 
 Vendored `apps/review-desktop/code-oss` is kept in a separate group. It includes its own AGENTS files, launch skill, Copilot system/tool/Anthropic prompts, prompt registry, resolver infrastructure, tests, and types. Those editor prompts do not define Review's document layout and were not adopted into the Canvas template. Non-agent packaging templates and terminal shell prompt code are not authoring prompts.
 
+## Authoring workflow refresh
+
+The Canvas prompt adaptation was refreshed against commit `9fcea54c2eb7176f72090d511f4dbd121f2358e7`. The extraction table above remains the original pinned inventory.
+
+- [Authoring orchestration](https://github.com/devdotfast/review/blob/9fcea54c2eb7176f72090d511f4dbd121f2358e7/packages/progressive-review/skills/dev-review/SKILL.md): immediate small-change delivery, independent map work, answer-only questions, and feedback ownership.
+- [Document authoring](https://github.com/devdotfast/review/blob/9fcea54c2eb7176f72090d511f4dbd121f2358e7/packages/progressive-review/skills/dev-review/references/document-authoring.md): reader contract and evidence-led presentation.
+- [Trace quoting](https://github.com/devdotfast/review/blob/9fcea54c2eb7176f72090d511f4dbd121f2358e7/packages/progressive-review/skills/dev-review/references/trace-quoting.md): chronological intent pass, exact quotes, and handling reversals.
+
+Canvas uses BB Traces RPCs for discovery and exact event reads. The adaptation labels the absence of automatic quote validation, pinned-checkout enforcement, persistent maps, and a publication lifecycle. It preserves the repository's delegation and authorization rules.
+
 ## What was adapted
 
 The Canvas authoring guide retains the concise landing section, claim-level evidence, chronological intent pass, optional disclosure, change versus architecture mode, and honest verification scope. It replaces Review-specific components and publication commands with supported Canvas components and comment commands. The template is a real source-inspection example so it remains renderable without unresolved placeholders.

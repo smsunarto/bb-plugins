@@ -59,19 +59,14 @@ Two styles exist:
 
 Pick `github` when the artifact mirrors a GitHub surface: a pull request, an issue, a release note, or a README draft. Stay on `default` for analytical canvases.
 
-**Templates.** Three ready templates sit in `templates/` next to this file. They are read-only reference files. Never edit them in place.
+**Templates.** Eta generates Canvas files from JSON data. The bundled templates are `templates/review.eta`, `templates/pull-request.eta`, and `templates/issue.eta`. Never edit installed template files in place. For change or architecture reviews, follow [Review authoring](references/review-authoring.md) before generating. It defines the intent pass, evidence placement, small-change delivery, optional map worker, and answer-only feedback prompts. Read [Review evidence](references/review-evidence.md) when using coding traces or quoting requirements.
 
-- `templates/pull-request.canvas.mdx` applies when the user wants to preview a pull request before the agent opens it.
-- `templates/issue.canvas.mdx` applies when the user wants to preview an issue before the agent files it.
-- `templates/review.canvas.mdx` applies when the user wants a progressive code-change or architecture review. Read [Review authoring](references/review-authoring.md) first. It maps Review's evidence-first document view to Canvas components.
+1. Read [Templating](references/templating.md) and the matching JSON example in `examples/`.
+2. Write a JSON data file with real content. Omit sections with no evidence.
+3. Run `bb canvas generate review --data <absolute-data.json> --out <absolute-output.canvas.mdx>` (or `issue` / `pull-request`). The command validates the result before writing and refuses to overwrite an existing file.
+4. Open the generated file with its absolute Markdown link. Subsequent edits can use the normal Canvas editing workflow.
 
-To use one:
-
-1. Read the template.
-2. Write a new file to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx` with the same section order.
-3. Replace every sample value with real content.
-4. Drop a section that has no real content. Never leave sample text in place.
-5. Run `bb canvas check` on the new file.
+Template inputs can have multiple files. The generated Canvas remains one self-contained file with literal props and no executable expressions.
 
 **Check the file.** Run `bb canvas check <absolute path>` after every write. Fix every reported line and check again until the output starts with `ok`. Add `--json` to get the report as JSON.
 

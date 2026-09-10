@@ -86,7 +86,7 @@ Canvas widget styles are `default` and `github`. Docs controls the surrounding e
 
 ## Templates
 
-[`skills/canvas/templates/`](skills/canvas/templates/) holds two read-only starting points in the `github` style: `pull-request.canvas.mdx` and `issue.canvas.mdx`. The skill tells the agent to write a copy to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx` and replace every sample value.
+[`skills/canvas/templates/`](skills/canvas/templates/) holds three bundled Eta templates in the `github` style: `review.eta`, `pull-request.eta`, and `issue.eta`. `bb canvas generate` fills them from JSON and validates the result before writing. See [templating](skills/canvas/references/templating.md) and the [example inputs](skills/canvas/examples/).
 
 ## How a canvas opens
 
@@ -170,3 +170,11 @@ bun run reference
 ```
 
 `bun run reference` regenerates `skills/canvas/reference.md`. `test/reference-is-current.test.ts` fails when the committed file drifts from the registry.
+
+## Generate from Eta templates
+
+Use `bb canvas generate review --data /absolute/review.json --out /absolute/review.canvas.mdx`. Templates: `review`, `issue`, `pull-request`. JSON data supplies content to bundled Eta templates. The command validates Canvas syntax and components before creating the output and preserves existing files. See [templating](skills/canvas/references/templating.md) for fields, host routing, and examples.
+
+### Progressive review authoring
+
+The Canvas skill includes [Review-style authoring prompts](skills/canvas/references/review-authoring.md) for changes and architecture. They recover user intent from the coding conversation, attach source evidence to claims, expose optional detail progressively, and separate questions from requested edits. [Trace evidence](skills/canvas/references/review-evidence.md) documents BB Traces RPC pagination and exact quotation. These are agent instructions. Canvas validation does not enforce quote matching or source revision pins.
