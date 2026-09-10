@@ -1,5 +1,5 @@
 import "./helpers/dom.ts";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { mountLinkHints } from "../src/app/link-hints.ts";
 
@@ -946,6 +946,31 @@ describe("mountLinkHints", () => {
     expect(pressKey("e")).toBe(true);
     expect(settled).toEqual(["settle-2"]);
 
+    window.history.pushState({}, "", "/");
+    void dispose();
+    controller.abort();
+  });
+
+  test("e settles the focused child pane even when the URL belongs to its parent", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    document.body.innerHTML =
+      '<div data-sidebar-thread-focused="false"><a data-sidebar-thread-shortcut-target data-sidebar-thread-id="parent" href="#">Parent</a><button id="parent-settle" aria-label="Settle"></button></div>' +
+      '<div data-sidebar-thread-focused="true"><a data-sidebar-thread-shortcut-target data-sidebar-thread-id="child" href="#">Child</a><button id="child-settle" aria-label="Settle"></button></div>';
+    const settled = mock<(id: string) => void>(() => {});
+    for (const id of ["parent", "child"]) {
+      document
+        .getElementById(`${id}-settle`)!
+        .addEventListener("pointerdown", () => settled(id));
+    }
+    window.history.pushState({}, "", "/threads/parent");
+    expect(pressKey("e")).toBe(false);
+    expect(settled.mock.calls).toEqual([["child"]]);
+
+    // A collapsed child must never redirect a destructive shortcut to its parent.
+    document.querySelector('[data-sidebar-thread-focused="true"]')!.remove();
+    pressKey("e");
+    expect(settled.mock.calls).toEqual([["child"]]);
     window.history.pushState({}, "", "/");
     void dispose();
     controller.abort();

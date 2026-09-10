@@ -380,6 +380,23 @@ function collectThreadRows(): ThreadRow[] {
   return rows;
 }
 
+function threadRowToSettle(activeId: string): ThreadRow | undefined {
+  const rows = collectThreadRows();
+  // The route identifies the primary pane, which can be the focused
+  // child's parent. Sidebar rows publish focus from BB's split SDK.
+  // If that pane's row is collapsed, never fall back to the route.
+  const splitRows = rows.filter((candidate) =>
+    candidate.element.closest("[data-sidebar-thread-focused]"),
+  );
+  const row =
+    splitRows.length > 0
+      ? splitRows.find((candidate) =>
+          candidate.element.closest('[data-sidebar-thread-focused="true"]'),
+        )
+      : rows.find((candidate) => candidate.id === activeId);
+  return row;
+}
+
 function findControl(selector: string): HTMLElement | null {
   const activeComposer = findActivePrimaryComposer();
   for (const element of document.querySelectorAll<HTMLElement>(selector)) {
@@ -731,7 +748,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       case "settle-thread": {
         const activeId = threadIdFromPath(window.location.pathname);
         if (activeId === null) return false;
-        const row = collectThreadRows().find((candidate) => candidate.id === activeId);
+        const row = threadRowToSettle(activeId);
         const settle =
           row?.element.parentElement?.querySelector<HTMLElement>(SETTLE_BUTTON_SELECTOR);
         if (!settle) return false;

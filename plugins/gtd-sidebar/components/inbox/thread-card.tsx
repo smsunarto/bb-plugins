@@ -73,6 +73,7 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
       {...props}
       pullRequest={pullRequest}
       isOpenInSplit={layout !== null}
+      isFocusedInSplit={layout?.panes.some((pane) => pane.isMe && pane.isFocused)}
       onSplitPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
     />
   );
@@ -113,10 +114,12 @@ const ThreadCardBody = memo(function ThreadCardBody({
   now,
   pullRequest,
   isOpenInSplit,
+  isFocusedInSplit,
   onSplitPointerDown,
 }: ThreadCardProps & {
   pullRequest: PluginSidebarPullRequest | null;
   isOpenInSplit: boolean;
+  isFocusedInSplit: boolean | undefined;
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
   const plan = buildThreadActionPlan({
@@ -170,6 +173,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       <li className="list-none">
         <div
           ref={cardRef}
+          data-sidebar-thread-focused={isFocusedInSplit}
           {...handlers}
           data-action-count={!isCompactViewport && showActions ? 2 : 0}
           {...threadCardPresentation({

@@ -71,6 +71,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     settled: SettledThreadsApi;
     pullRequests: Readonly<Record<string, PluginSidebarPullRequest>>;
     splitThreads: readonly string[];
+    focusedSplitThread?: string;
     splitEnabled: boolean;
     onSplitPointerDown: (threadId: string, event: PointerEvent<HTMLElement>) => void;
   }
@@ -94,7 +95,16 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const host = useHost();
       return {
         isAvailable: host.splitEnabled,
-        layout: host.splitThreads.includes(threadId) ? { panes: [] } : null,
+        layout: host.splitThreads.includes(threadId)
+          ? {
+              panes: host.splitThreads.map((id) => ({
+                paneId: id,
+                rect: { x: 0, y: 0, width: 1, height: 1 },
+                isMe: id === threadId,
+                isFocused: id === host.focusedSplitThread,
+              })),
+            }
+          : null,
         splitProps: host.splitEnabled
           ? {
               onPointerDown: (event: PointerEvent<HTMLElement>) =>
@@ -443,6 +453,25 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("thread hierarchy", () => {
+    it("publishes focused split state independently of the parent route", () => {
+      const host = {
+        ...hostState([thread("root"), thread("child", { parentThreadId: "root" })]),
+        splitThreads: ["root", "child"],
+        focusedSplitThread: "child",
+      };
+      const view = mount(host, { activeThreadId: "root" }, true);
+      const focused = (id: string) =>
+        row(view.slot, id).parentElement!.getAttribute("data-sidebar-thread-focused");
+      assert.equal(focused("root"), "false");
+      assert.equal(focused("child"), "true");
+      view.update({ host: { ...host, focusedSplitThread: "root" } });
+      assert.equal(focused("root"), "true");
+      assert.equal(focused("child"), "false");
+      view.update({ host: { ...host, splitThreads: [] } });
+      assert.equal(focused("root"), null);
+      assert.equal(focused("child"), null);
+    });
+
     it.each([false, true])(
       "navigates nested families with desktop compact=%s",
       (compactThreads) => {
