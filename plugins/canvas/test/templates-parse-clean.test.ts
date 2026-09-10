@@ -7,9 +7,9 @@ import { parseCanvas } from "../src/shared/parse.ts";
 import { collectDiagnostics } from "../src/shared/document.ts";
 
 const templatesDir = fileURLToPath(new URL("../skills/canvas/templates/", import.meta.url));
-const expectedTemplates = ["issue.canvas.mdx", "pull-request.canvas.mdx"];
+const expectedTemplates = ["issue.canvas.mdx", "pull-request.canvas.mdx", "review.canvas.mdx"];
 
-test("skills/canvas/templates holds exactly the two documented templates", async () => {
+test("skills/canvas/templates holds exactly the documented templates", async () => {
   const names = (await readdir(templatesDir)).sort();
   assert.deepEqual(names, expectedTemplates, "a stray file in templates/ is not a template");
 });

@@ -1,0 +1,64 @@
+---
+style: github
+---
+
+# Review questions: preserve the reply boundary
+
+<Pill label="Architecture example · source inspection" tone="neutral" />
+
+**Summary**
+
+- Review prefixes each question with its thread ID and read-only context before appending the user's message.
+- The authoring skill directs the answering agent to read the canonical thread and return its answer without editing files.
+
+**Why**
+
+A question needs the correct discussion context. The document authoring workflow and the question-answering workflow have different responsibilities.
+
+Source: [devdotfast/review at cf455334](https://github.com/devdotfast/review/tree/cf455334cbe43036feb00f537777a96b06649233). Base and head are the same snapshot. This is a populated architecture example for reuse, not a change or runtime test report.
+
+## Contract and evidence
+
+> “Do not modify files. Do not publish, resolve, or reply through the CLI.”
+
+Source: [dev-review skill, In-app Ask replies](https://github.com/devdotfast/review/blob/cf455334cbe43036feb00f537777a96b06649233/packages/progressive-review/skills/dev-review/SKILL.md#in-app-ask-replies). This is an instruction from the repository, not a user-session quote or proof of runtime enforcement.
+
+<Source path="packages/progressive-review/src/review-comment-agent.ts" language="typescript">
+```typescript
+export function reviewCommentPrompt(comment: CreateReviewCommentInput): string {
+  return `${reviewCommentPromptPrefix(comment.threadId)}${comment.body}`;
+}
+
+export function reviewCommentPromptPrefix(threadId: string): string {
+  return `dev-review: this session is answering questions about a Review in a frozen, read-only clone of the repository at authoring time.
+dev-review-thread-id: ${threadId}
+Use \`review\` from PATH for Review commands.\n\n`;
+}
+```
+</Source>
+
+[Open the exact source, lines 3–11](https://github.com/devdotfast/review/blob/cf455334cbe43036feb00f537777a96b06649233/packages/progressive-review/src/review-comment-agent.ts#L3-L11).
+
+## Question flow
+
+| Step | Owner | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Prompt builder | Prefix + thread ID + question body | [review-comment-agent.ts](https://github.com/devdotfast/review/blob/cf455334cbe43036feb00f537777a96b06649233/packages/progressive-review/src/review-comment-agent.ts#L3-L11) |
+| 2 | Answering agent | Read canonical target and messages using `review threads get` | [Ask reply instructions](https://github.com/devdotfast/review/blob/cf455334cbe43036feb00f537777a96b06649233/packages/progressive-review/skills/dev-review/SKILL.md#in-app-ask-replies) |
+| 3 | Answering agent | Return answer text | [Ask reply instructions](https://github.com/devdotfast/review/blob/cf455334cbe43036feb00f537777a96b06649233/packages/progressive-review/skills/dev-review/SKILL.md#in-app-ask-replies) |
+
+<Section title="Inspect the separate feedback workflow" collapsible={true} defaultOpen={false}>
+
+Submitted review comments use a different prompt. It directs the author to inspect canonical thread state, make requested changes, resolve addressed threads, and re-list threads before publishing.
+
+[Submission prompt implementation](https://github.com/devdotfast/review/blob/cf455334cbe43036feb00f537777a96b06649233/packages/progressive-review/src/server/review-api.ts#L1325-L1351).
+
+This separation is visible in the source instructions. This document does not claim that prompt text alone enforces read-only behavior.
+
+</Section>
+
+## Verification scope
+
+The prompt builder and authoring instructions were inspected at the pinned commit. The Review application and its agents were not run for this example.
+
+For a change review, replace this section with observed scenario evidence. Include the trigger, expected behavior, actual result, and supporting artifact. Do not infer successful execution from a test file.

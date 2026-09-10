@@ -59,10 +59,11 @@ Two styles exist:
 
 Pick `github` when the artifact mirrors a GitHub surface: a pull request, an issue, a release note, or a README draft. Stay on `default` for analytical canvases.
 
-**Templates.** Two ready templates sit in `templates/` next to this file. They are read-only reference files. Never edit them in place.
+**Templates.** Three ready templates sit in `templates/` next to this file. They are read-only reference files. Never edit them in place.
 
 - `templates/pull-request.canvas.mdx` applies when the user wants to preview a pull request before the agent opens it.
 - `templates/issue.canvas.mdx` applies when the user wants to preview an issue before the agent files it.
+- `templates/review.canvas.mdx` applies when the user wants a progressive code-change or architecture review. Read [Review authoring](references/review-authoring.md) first. It maps Review's evidence-first document view to Canvas components.
 
 To use one:
 

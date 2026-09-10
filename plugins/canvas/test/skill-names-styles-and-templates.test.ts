@@ -16,9 +16,13 @@ test("SKILL.md quotes every style summary verbatim", async () => {
   }
 });
 
-test("SKILL.md names both templates", async () => {
+test("SKILL.md names all templates", async () => {
   const skill = await readFile(skillPath, "utf8");
-  for (const file of ["templates/pull-request.canvas.mdx", "templates/issue.canvas.mdx"]) {
+  for (const file of [
+    "templates/pull-request.canvas.mdx",
+    "templates/issue.canvas.mdx",
+    "templates/review.canvas.mdx",
+  ]) {
     assert.ok(skill.includes(file), `${file} is named in SKILL.md`);
   }
 });
