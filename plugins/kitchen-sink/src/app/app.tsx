@@ -22,6 +22,7 @@ import "./app.css";
 import "./timeline-motion/timeline-motion.css";
 import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
 import { AutorouterAction } from "./autorouter/action.tsx";
+import { AutorouterSettingsPanel } from "./autorouter/settings.tsx";
 import {
   PROBE_GROUP_TITLE,
   ThreadActivityProbe,
@@ -325,6 +326,13 @@ function SmartPatchDirective(props: PluginMessageDirectiveProps) {
 }
 
 export default definePluginApp((app) => {
+  app.slots.navPanel({
+    id: "autorouter-settings",
+    title: "Autorouter",
+    icon: "Settings",
+    path: "autorouter",
+    component: AutorouterSettingsPanel,
+  });
   app.composer.customize({
     id: "autorouter",
     scopes: ["new-thread", "thread"],

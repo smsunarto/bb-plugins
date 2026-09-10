@@ -174,7 +174,35 @@ export async function setAutorouterEnabled(bb: BbPluginApi, enabled: boolean): P
   await settingsHandle(bb).experimental_set({ autorouterEnabled: enabled });
 }
 
+export async function updateAutorouterSettings(
+  bb: BbPluginApi,
+  values: Record<string, string | boolean>,
+): Promise<void> {
+  for (const key of Object.keys(values)) {
+    if (!Object.hasOwn(descriptors, key)) throw new Error(`Unknown autorouter setting: ${key}`);
+  }
+  if (typeof values.autorouterProjectIndex === "string") {
+    await validateProjectEntries(
+      bb,
+      projectIndexSchema.parse(JSON.parse(values.autorouterProjectIndex)),
+    );
+  }
+  await settingsHandle(bb).experimental_set(values);
+}
+
+async function validateProjectEntries(bb: BbPluginApi, entries: ProjectEntry[]): Promise<void> {
+  const known = new Set((await bb.sdk.projects.list()).map((project) => project.id));
+  for (const entry of entries) {
+    if (entry.projectId !== null && !known.has(entry.projectId)) {
+      throw new Error(
+        `Unknown BB project for ${entry.repository}. Use a known project ID or null.`,
+      );
+    }
+  }
+}
+
 export async function saveProjectIndex(bb: BbPluginApi, entries: ProjectEntry[]): Promise<void> {
+  await validateProjectEntries(bb, entries);
   await settingsHandle(bb).experimental_set({
     autorouterProjectIndex: JSON.stringify(projectIndexSchema.parse(entries), null, 2),
   });

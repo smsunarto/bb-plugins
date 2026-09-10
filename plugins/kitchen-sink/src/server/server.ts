@@ -12,6 +12,7 @@ import { registerAutorouterSettings, autorouterAgentEnabled } from "./lib/autoro
 import { getAutorouterProjectIndex } from "./rpc/get-autorouter-project-index.ts";
 import { saveAutorouterProjectIndex } from "./rpc/save-autorouter-project-index.ts";
 import { updateAutorouterEnabled } from "./rpc/update-autorouter-enabled.ts";
+import { updateAutorouterSettings } from "./rpc/update-autorouter-settings.ts";
 import { routeAutorouterPrompt } from "./rpc/route-autorouter-prompt.ts";
 
 /**
@@ -48,6 +49,7 @@ export default definePlugin({
     getAutorouterProjectIndex,
     saveAutorouterProjectIndex,
     updateAutorouterEnabled,
+    updateAutorouterSettings,
     routeAutorouterPrompt,
   },
   async setup(bb) {

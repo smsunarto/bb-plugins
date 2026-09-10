@@ -1,0 +1,348 @@
+.autorouter-settings-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 32px 24px;
+}
+.autorouter-settings {
+  max-width: 760px;
+  margin: 0 auto;
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.autorouter-settings h2,
+.autorouter-settings h3,
+.autorouter-settings p {
+  margin: 0;
+}
+.autorouter-settings h2 {
+  font-size: 19px;
+  font-weight: 600;
+}
+.autorouter-settings h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.autorouter-settings p,
+.autorouter-settings-muted {
+  color: var(--muted-foreground);
+}
+.autorouter-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.autorouter-settings-row p {
+  margin-top: 4px;
+}
+.autorouter-settings-header {
+  padding-bottom: 12px;
+}
+.autorouter-settings-status {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.autorouter-settings-status > span:first-child {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+.autorouter-settings-status .autorouter-settings-on {
+  color: var(--success, var(--primary));
+}
+.autorouter-settings-save-status {
+  min-height: 24px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.autorouter-settings-section {
+  border-top: 1px solid var(--border);
+  padding: 22px 0;
+}
+.autorouter-settings-switch {
+  width: 32px;
+  height: 19px;
+  border: 1px solid var(--border);
+  padding: 2px;
+  border-radius: 20px;
+  background: var(--muted);
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.autorouter-settings-switch > span {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+.autorouter-settings-switch[aria-checked="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.autorouter-settings-switch[aria-checked="true"] > span {
+  transform: translateX(13px);
+  background: var(--primary-foreground);
+}
+.autorouter-settings :is(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.autorouter-settings button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.autorouter-settings-models {
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.autorouter-settings-model {
+  position: relative;
+}
+.autorouter-settings-model + .autorouter-settings-model {
+  border-top: 1px solid var(--border);
+}
+.autorouter-settings-model-summary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 13px 60px 13px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.autorouter-settings-model-summary::-webkit-details-marker {
+  display: none;
+}
+.autorouter-settings-model-summary::before {
+  content: "›";
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted-foreground);
+}
+.autorouter-settings-model > details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.autorouter-settings-model-summary:hover,
+.autorouter-settings-project > summary:hover {
+  background: var(--accent);
+}
+.autorouter-settings-model-name {
+  font-weight: 500;
+  min-width: 70px;
+}
+.autorouter-settings-count {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.autorouter-settings-model-toggle {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: flex;
+}
+.autorouter-settings-model-body {
+  border-top: 1px solid var(--border);
+  padding: 4px 14px 12px;
+  background: var(--card);
+}
+.autorouter-settings-model-body > p {
+  margin: 10px 0;
+  font-size: 12px;
+}
+.autorouter-settings-route {
+  display: grid;
+  grid-template-columns: 85px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 0;
+}
+.autorouter-settings-route + .autorouter-settings-route {
+  border-top: 1px solid var(--border);
+}
+.autorouter-settings-level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.autorouter-settings-level input {
+  accent-color: var(--primary);
+  width: 14px;
+  height: 14px;
+}
+.autorouter-settings-guidance {
+  min-width: 0;
+}
+.autorouter-settings-guidance > summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.autorouter-settings-rule-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.autorouter-settings-guidance[open] .autorouter-settings-rule-preview {
+  display: none;
+}
+.autorouter-settings-fallback {
+  display: grid;
+  grid-template-columns: 1fr minmax(180px, 240px);
+  align-items: center;
+  gap: 6px 16px;
+}
+.autorouter-settings-fallback > label {
+  font-weight: 500;
+}
+.autorouter-settings-fallback > p {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+.autorouter-settings select,
+.autorouter-settings textarea {
+  width: 100%;
+  border: 1px solid var(--input);
+  border-radius: 5px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  padding: 7px 9px;
+}
+.autorouter-settings select {
+  cursor: pointer;
+}
+.autorouter-settings textarea {
+  resize: vertical;
+  min-height: 100px;
+  display: block;
+  margin-top: 6px;
+}
+.autorouter-settings-advanced {
+  margin-top: 18px;
+}
+.autorouter-settings-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.autorouter-settings-advanced > p {
+  font-size: 12px;
+  margin-top: 10px;
+}
+.autorouter-settings-editor {
+  margin-top: 12px;
+}
+.autorouter-settings-editor > label {
+  font-size: 12px;
+  font-weight: 500;
+}
+.autorouter-settings-editor-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.autorouter-settings-editor-actions button {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  cursor: pointer;
+}
+.autorouter-settings-editor-actions .autorouter-settings-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+.autorouter-settings-editor-actions .autorouter-settings-quiet {
+  background: transparent;
+  border-color: transparent;
+}
+.autorouter-settings .autorouter-settings-error {
+  color: var(--destructive);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.autorouter-settings .autorouter-settings-warning {
+  color: var(--warning, var(--foreground));
+  margin-top: 8px;
+}
+.autorouter-settings-empty {
+  padding: 16px;
+  margin-top: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+.autorouter-settings-empty strong {
+  font-weight: 500;
+}
+.autorouter-settings-empty p {
+  margin-top: 5px;
+  font-size: 12px;
+}
+.autorouter-settings code {
+  color: var(--foreground);
+  font-size: 12px;
+}
+.autorouter-settings-projects {
+  margin-top: 16px;
+}
+.autorouter-settings-caption {
+  font-size: 12px;
+  margin-bottom: 8px !important;
+}
+.autorouter-settings-project {
+  border-bottom: 1px solid var(--border);
+}
+.autorouter-settings-project > summary {
+  cursor: pointer;
+  padding: 12px 0;
+}
+.autorouter-settings-project > summary span {
+  display: block;
+  margin: 4px 0 0 16px;
+  color: var(--muted-foreground);
+}
+.autorouter-settings-project-body {
+  padding: 0 0 14px 16px;
+}
+.autorouter-settings-path {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}
+.autorouter-settings-project-body ul {
+  padding-left: 18px;
+  margin: 8px 0 0;
+  color: var(--muted-foreground);
+}
+@media (max-width: 540px) {
+  .autorouter-settings-model-summary {
+    gap: 6px;
+  }
+  .autorouter-settings-model-summary > .autorouter-settings-muted {
+    display: none;
+  }
+  .autorouter-settings-route {
+    grid-template-columns: 65px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .autorouter-settings-fallback {
+    grid-template-columns: 1fr;
+  }
+}

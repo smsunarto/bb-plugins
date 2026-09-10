@@ -21,6 +21,7 @@ test("the plugin loads against the fake host and registers every mention provide
     "getAutorouterProjectIndex",
     "saveAutorouterProjectIndex",
     "updateAutorouterEnabled",
+    "updateAutorouterSettings",
     "routeAutorouterPrompt",
   ]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(

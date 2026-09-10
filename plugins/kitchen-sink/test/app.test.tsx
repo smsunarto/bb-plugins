@@ -1,11 +1,11 @@
 import { expect, mock, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import { fireEvent, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { parsePatchFiles } from "@pierre/diffs";
 import { StrictMode, useState } from "react";
 
 installDom();
+const { fireEvent, waitFor } = await import("@testing-library/react");
 if (typeof CSSStyleSheet.prototype.replaceSync !== "function") {
   Object.defineProperty(CSSStyleSheet.prototype, "replaceSync", {
     configurable: true,
