@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
-import { readAutorouterSettings, ruleSettingKey } from "../lib/autorouter/settings.ts";
+import { readAutorouterSettings } from "../lib/autorouter/settings.ts";
+
+import { ruleSettingKey } from "../../shared/autorouter/policy.ts";
 
 test("manually edited project index and model prompts are used without reloading", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });

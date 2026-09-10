@@ -1,4 +1,6 @@
 import { definePlugin } from "@bb-kit/core/plugin";
+import { autorouterPolicy } from "./tools/autorouter-policy.ts";
+import { AUTOROUTER_AGENT_INSTRUCTIONS } from "./lib/autorouter/agent-policy.ts";
 
 import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { diffSnapshotMigrations } from "./lib/diff-snapshot.ts";
@@ -6,7 +8,7 @@ import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
 import { prepareHtmlPreview } from "./rpc/prepare-html-preview.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
-import { registerAutorouterSettings } from "./lib/autorouter/settings.ts";
+import { registerAutorouterSettings, autorouterAgentEnabled } from "./lib/autorouter/settings.ts";
 import { getAutorouterProjectIndex } from "./rpc/get-autorouter-project-index.ts";
 import { saveAutorouterProjectIndex } from "./rpc/save-autorouter-project-index.ts";
 import { updateAutorouterEnabled } from "./rpc/update-autorouter-enabled.ts";
@@ -48,8 +50,8 @@ export default definePlugin({
     updateAutorouterEnabled,
     routeAutorouterPrompt,
   },
-  setup(bb) {
-    registerAutorouterSettings(bb);
+  async setup(bb) {
+    await registerAutorouterSettings(bb);
     const db = bb.storage.database();
     bb.storage.migrate(db, diffSnapshotMigrations);
     bb.events.on("thread.deleted", ({ thread }) => {
@@ -62,9 +64,12 @@ export default definePlugin({
     registerCompletionSound(bb);
   },
   agents: {
-    tools: {},
-    instructions() {
-      return SMART_EMBED_INSTRUCTIONS;
+    tools: { autorouter_policy: autorouterPolicy },
+    instructions({ bb }) {
+      return (
+        SMART_EMBED_INSTRUCTIONS +
+        (autorouterAgentEnabled(bb) ? `\n\n${AUTOROUTER_AGENT_INSTRUCTIONS}` : "")
+      );
     },
   },
 });

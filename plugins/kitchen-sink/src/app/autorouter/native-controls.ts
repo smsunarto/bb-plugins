@@ -1,4 +1,4 @@
-import type { AutorouterRoute } from "../../shared/autorouter/contract.ts";
+import type { AutorouterExecution } from "../../shared/autorouter/contract.ts";
 
 export const SUBMIT = 'button[data-promptbox-submit-action][type="submit"]';
 export const MODEL_PICKER = 'button[aria-label^="Provider, model and reasoning"]';
@@ -108,10 +108,33 @@ export function isAstraSelection(root: HTMLElement): boolean {
   return executionTitle(root).startsWith("Codex: 6-Astra · ");
 }
 
+export function isLunaMaxSelection(root: HTMLElement): boolean {
+  return executionTitle(root) === "Codex: 5.6-Luna · Max reasoning";
+}
+export function isFollowupSelection(root: HTMLElement): boolean {
+  return isAstraSelection(root) || isLunaMaxSelection(root);
+}
+export async function selectFollowupExecution(
+  root: HTMLElement,
+  route: AutorouterExecution,
+  signal: AbortSignal,
+) {
+  if (
+    executionTitle(root) ===
+    `${route.providerLabel}: ${route.modelLabel} · ${route.reasoningLabel} reasoning`
+  )
+    return;
+  if (route.providerId !== "codex" || route.model !== "gpt-6-astra" || !isFollowupSelection(root)) {
+    throw new Error("Follow-up autorouting can only select Astra. Your draft has been kept.");
+  }
+  if (isLunaMaxSelection(root)) await selectExecution(root, route, signal);
+  else await selectAstraReasoning(root, route, signal);
+}
+
 /** Follow-ups never click provider or model options, even for an invalid RPC result. */
 export async function selectAstraReasoning(
   root: HTMLElement,
-  route: AutorouterRoute,
+  route: AutorouterExecution,
   signal: AbortSignal,
 ) {
   const assertModel = () => {
@@ -152,7 +175,7 @@ export async function selectAstraReasoning(
 /** Drive BB's own pickers so native draft, permissions and attachment handling stay authoritative. */
 export async function selectExecution(
   root: HTMLElement,
-  route: AutorouterRoute,
+  route: AutorouterExecution,
   signal: AbortSignal,
 ) {
   const button = nativeButton(root, MODEL_PICKER);

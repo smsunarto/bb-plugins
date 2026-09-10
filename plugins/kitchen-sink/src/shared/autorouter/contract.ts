@@ -21,9 +21,7 @@ export const routeAutorouterPromptInputSchema = z.strictObject({
   ]),
 });
 
-const autorouterRouteSchema = z.strictObject({
-  projectId: z.string().nullable(),
-  projectName: z.string().nullable(),
+const executionSchema = z.strictObject({
   route: z.string(),
   providerId: z.string(),
   providerLabel: z.string(),
@@ -31,6 +29,12 @@ const autorouterRouteSchema = z.strictObject({
   modelLabel: z.string(),
   reasoningLevel: z.string(),
   reasoningLabel: z.string(),
+});
+export type AutorouterExecution = z.infer<typeof executionSchema>;
+const autorouterRouteSchema = z.strictObject({
+  projectId: z.string().nullable(),
+  projectName: z.string().nullable(),
+  execution: executionSchema.nullable(),
   usedFallback: z.boolean(),
   projectReason: z.string(),
   modelReason: z.string(),

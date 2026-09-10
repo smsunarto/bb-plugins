@@ -1,6 +1,8 @@
 import { expect, mock, test } from "bun:test";
 import {
   DEFAULT_MODEL_RULES,
+  DEFAULT_GENERAL_RULE,
+  DEFAULT_ENABLED_ROUTES,
   DEFAULT_ROUTE,
   ROUTES,
   projectIndexSchema,
@@ -11,6 +13,10 @@ import type { AutorouterSettings } from "../src/server/lib/autorouter/settings.t
 
 const settings: AutorouterSettings = {
   enabled: true,
+  modelRouting: true,
+  projectRouting: true,
+  generalRule: DEFAULT_GENERAL_RULE,
+  enabledRoutes: DEFAULT_ENABLED_ROUTES,
   fallback: DEFAULT_ROUTE,
   projects: [],
   rules: DEFAULT_MODEL_RULES,
@@ -43,8 +49,7 @@ test("one Luna medium completion routes both project and model, overriding curre
   });
   expect(result).toMatchObject({
     projectId: "plugins",
-    model: "gpt-6-astra",
-    reasoningLevel: "high",
+    execution: { model: "gpt-6-astra", reasoningLevel: "high" },
     usedFallback: false,
   });
 });
@@ -60,7 +65,10 @@ test.each([null, { ...decision, route: "luna/low" }, { ...decision, modelConfide
         availableRouteIds,
         fallback: "opus/medium",
       }),
-    ).toMatchObject({ model: "claude-opus-5[1m]", reasoningLevel: "medium", usedFallback: true });
+    ).toMatchObject({
+      execution: { model: "claude-opus-5[1m]", reasoningLevel: "medium" },
+      usedFallback: true,
+    });
   },
 );
 
@@ -73,7 +81,11 @@ test("low project confidence keeps the current project independently of a confid
       availableRouteIds,
       fallback: DEFAULT_ROUTE,
     }),
-  ).toMatchObject({ projectId: "current", route: "astra/high", usedFallback: false });
+  ).toMatchObject({
+    projectId: "current",
+    execution: { route: "astra/high" },
+    usedFallback: false,
+  });
 });
 
 test("stale projects and unavailable inferred models do not escape validation", () => {
@@ -85,7 +97,11 @@ test("stale projects and unavailable inferred models do not escape validation", 
       availableRouteIds: new Set([DEFAULT_ROUTE]),
       fallback: DEFAULT_ROUTE,
     }),
-  ).toMatchObject({ projectId: "current", route: DEFAULT_ROUTE, usedFallback: true });
+  ).toMatchObject({
+    projectId: "current",
+    execution: { route: DEFAULT_ROUTE },
+    usedFallback: true,
+  });
 });
 
 test("an unavailable fallback blocks routing with an actionable error", () => {
@@ -97,7 +113,7 @@ test("an unavailable fallback blocks routing with an actionable error", () => {
       availableRouteIds: new Set(),
       fallback: DEFAULT_ROUTE,
     }),
-  ).toThrow("fallback is unavailable");
+  ).toThrow("No enabled autorouter model");
 });
 
 test("transport failure uses the fallback without a retry", async () => {
@@ -113,7 +129,11 @@ test("transport failure uses the fallback without a retry", async () => {
       availableRouteIds,
       inference: { complete },
     }),
-  ).toMatchObject({ projectId: "current", route: DEFAULT_ROUTE, usedFallback: true });
+  ).toMatchObject({
+    projectId: "current",
+    execution: { route: DEFAULT_ROUTE },
+    usedFallback: true,
+  });
   expect(complete).toHaveBeenCalledTimes(1);
 });
 
@@ -149,4 +169,40 @@ test("the project index requires three distinct single-line tasks and unique hos
   ).toBe(false);
   expect(projectIndexSchema.safeParse([{ ...entry, summary: "Two\nlines" }]).success).toBe(false);
   expect(projectIndexSchema.safeParse([entry, entry]).success).toBe(false);
+});
+
+test("disabled project and model dimensions are enforced independently of inference", async () => {
+  const infer = mock(async () => decision);
+  const run = (override: Partial<AutorouterSettings>) =>
+    routePrompt({
+      prompt: "Task",
+      currentProjectId: "current",
+      projects,
+      settings: { ...settings, ...override },
+      availableRouteIds,
+      inference: { complete: infer },
+    });
+  expect(await run({ modelRouting: false })).toMatchObject({
+    projectId: "plugins",
+    execution: null,
+    usedFallback: false,
+  });
+  expect(await run({ projectRouting: false })).toMatchObject({
+    projectId: "current",
+    execution: { route: "astra/high" },
+  });
+});
+
+test("a disabled fallback uses an enabled route and current follow-up effort can be preserved", () => {
+  const input = {
+    decision: null,
+    currentProjectId: null,
+    projectIds: new Set<string>(),
+    availableRouteIds: new Set(["astra/high"]),
+    fallback: "sol/medium",
+  };
+  expect(resolveRoutingDecision(input).execution?.route).toBe("astra/high");
+  expect(resolveRoutingDecision({ ...input, preserveRoute: "luna/max" }).execution?.route).toBe(
+    "luna/max",
+  );
 });

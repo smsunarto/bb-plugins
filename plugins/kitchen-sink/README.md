@@ -26,22 +26,23 @@ Both commands detect GitButler with `but status` and route every write through t
 
 ## Autorouter
 
-The branching-arrow button beside voice input enables autorouting. Its state
-persists across sessions. On Send or plain desktop Enter, one Luna Medium call
-chooses the project, model, and reasoning before BB submits the draft. New threads
-can change projects and providers. Follow-ups keep their thread's project and
-provider, and route the model and reasoning within that provider.
+Enable Autorouter in Kitchen Sink settings, then use the branching-arrow button
+beside voice input to pause it for one composer. Blue means active, muted means
+paused. The control is hidden when disabled globally or ineligible, including
+Anthropic follow-ups. The model/reasoning selector shimmers yellow while routing.
 
-Kitchen Sink settings contain the Astra, Sol, Fable, and Opus routing guidance,
-the fallback model/effort pair, and the editable project index. Run
-`/index-projects` to build that index from `~/git`, with a one-line summary and
-three example prompts per repository. Only the user can invoke that skill.
+Project and model routing have separate switches. Each model and reasoning level
+has an enable switch and editable guidance, alongside a general rule and fallback.
+Defaults enable Astra low/medium/high/xhigh/ultra, Luna Max, Fable high/xhigh/ultra,
+and Opus high/xhigh. Opus is eligible only while BB reports Fable usage exhausted.
+Follow-ups can change Astra reasoning or escalate Luna Max to Astra. They cannot
+route to Luna or switch providers.
 
-Uncertain model decisions and inference failures use the configured fallback.
-Unavailable selections leave the draft unsent with an error. This release uses
-the approved temporary native-picker interception. See the
-[autorouter integration contract](src/server/lib/autorouter/README.md) for its
-scope and DOM dependencies.
+One Luna Medium inference runs before native Send or Enter. Agent guidance uses
+BB subthreads for command execution, specialized UI work, and independent review.
+Run `/index-projects` to build the editable repository index from `~/git`.
+See the [autorouter integration contract](src/server/lib/autorouter/README.md)
+for fallback behavior, session timing, and the approved native-picker integration.
 
 ## Thread motion
 

@@ -2,14 +2,14 @@ import type { AutorouterRoute, AutorouterScope } from "../../shared/autorouter/c
 import {
   isSubmitEnter,
   executionTitle,
-  isAstraSelection,
-  selectAstraReasoning,
+  isFollowupSelection,
+  MODEL_PICKER,
+  selectFollowupExecution,
   selectExecution,
   selectProject,
   SUBMIT,
   waitFor,
 } from "./native-controls.ts";
-import { notifyAutorouted } from "./notification.tsx";
 
 export interface ComposerBinding {
   root: HTMLElement;
@@ -89,11 +89,11 @@ export function interceptComposer(binding: ComposerBinding) {
 }
 
 function canRoute(binding: ComposerBinding) {
-  return binding.scope().kind === "new-thread" || isAstraSelection(binding.root);
+  return binding.scope().kind === "new-thread" || isFollowupSelection(binding.root);
 }
 function routeMessage(route: AutorouterRoute | null) {
-  return route
-    ? `${route.usedFallback ? "Fallback: " : ""}${route.modelLabel} · ${route.reasoningLabel}`
+  return route?.execution
+    ? `${route.usedFallback ? "Fallback: " : ""}${route.execution.modelLabel} · ${route.execution.reasoningLabel}`
     : "";
 }
 
@@ -107,6 +107,14 @@ async function routeAndSubmit(initial: ComposerBinding) {
   const originalScope = initial.scope();
   const originalSelection = executionTitle(initial.root);
   const doc = initial.root.ownerDocument;
+  const shimmering = new Set<HTMLElement>();
+  const shimmer = (binding: ComposerBinding) => {
+    const picker = binding.root.querySelector<HTMLElement>(MODEL_PICKER);
+    if (picker) {
+      picker.setAttribute("data-autorouter-working", "true");
+      shimmering.add(picker);
+    }
+  };
   const unchanged = (binding: ComposerBinding) => {
     if (!binding.root.isConnected || !binding.enabled() || binding.text() !== text) {
       throw new Error("The composer changed while routing. Review your draft and submit again.");
@@ -116,10 +124,13 @@ async function routeAndSubmit(initial: ComposerBinding) {
     report(key, {
       busy: true,
       message:
-        originalScope.kind === "thread" ? "Routing Astra reasoning…" : "Routing project and model…",
+        originalScope.kind === "thread"
+          ? "Routing model and reasoning…"
+          : "Routing project and model…",
       error: false,
     });
     initial.lock(true);
+    shimmer(initial);
     const route = await initial.infer(originalSelection);
     unchanged(initial);
     if (executionTitle(initial.root) !== originalSelection) {
@@ -148,16 +159,18 @@ async function routeAndSubmit(initial: ComposerBinding) {
         "BB did not switch to the routed project. Your draft has been kept.",
       );
       current.lock(true);
+      shimmer(current);
     }
     unchanged(current);
-    if (route) {
+    if (route?.execution) {
       report(key, {
         busy: true,
         message: routeMessage(route),
         error: false,
       });
-      if (originalScope.kind === "thread") await selectAstraReasoning(current.root, route, signal);
-      else await selectExecution(current.root, route, signal);
+      if (originalScope.kind === "thread")
+        await selectFollowupExecution(current.root, route.execution, signal);
+      else await selectExecution(current.root, route.execution, signal);
     }
     unchanged(current);
     current.lock(false);
@@ -165,11 +178,10 @@ async function routeAndSubmit(initial: ComposerBinding) {
       doc,
       () => {
         unchanged(current);
-        if (
-          route &&
-          executionTitle(current.root) !==
-            `${route.providerLabel}: ${route.modelLabel} · ${route.reasoningLabel} reasoning`
-        ) {
+        const expectedSelection = route?.execution
+          ? `${route.execution.providerLabel}: ${route.execution.modelLabel} · ${route.execution.reasoningLabel} reasoning`
+          : originalSelection;
+        if (executionTitle(current.root) !== expectedSelection) {
           throw new Error(
             "The execution selection changed before sending. Your draft has been kept.",
           );
@@ -191,7 +203,6 @@ async function routeAndSubmit(initial: ComposerBinding) {
       message: routeMessage(route),
       error: false,
     });
-    if (route) notifyAutorouted(route, originalScope.kind === "thread");
   } catch (error) {
     report(key, {
       busy: false,
@@ -200,6 +211,7 @@ async function routeAndSubmit(initial: ComposerBinding) {
       error: true,
     });
   } finally {
+    for (const picker of shimmering) picker.removeAttribute("data-autorouter-working");
     initial.lock(false);
     if (current !== initial) current.lock(false);
     jobs.delete(key);

@@ -11,6 +11,8 @@ function setup(
     enabled?: boolean;
     route?: string;
     providerId?: string;
+    settings?: Record<string, boolean | string>;
+    fableExhausted?: boolean;
   } = {},
 ) {
   const complete = mock(async () =>
@@ -31,10 +33,26 @@ function setup(
   );
   const host = createFakePluginHost({
     pluginId: "kitchen-sink",
-    settings: { autorouterEnabled: options.enabled ?? true },
+    settings: { autorouterEnabled: options.enabled ?? true, ...options.settings },
     experimental_callHostRpc: complete,
     sdk: {
-      system: { config: async () => ({ primaryHostId: "primary" }) },
+      system: {
+        config: async () => ({ primaryHostId: "primary" }),
+        usageLimits: async () => ({
+          "claude-code": {
+            status: "ok",
+            accountEmail: null,
+            planLabel: null,
+            windows: [
+              {
+                label: "Fable weekly",
+                usedPercent: options.fableExhausted ? 100 : 30,
+                resetsAt: null,
+              },
+            ],
+          },
+        }),
+      },
       projects: {
         list: async () => [
           { id: "source", name: "Source", sources: [{ hostId: "original", isDefault: true }] },
@@ -90,9 +108,7 @@ test("one host RPC runs Luna medium on the primary host and validates the destin
   });
   expect(result).toMatchObject({
     projectId: "target",
-    model: "gpt-6-astra",
-    reasoningLevel: "high",
-    modelLabel: "Astra",
+    execution: { model: "gpt-6-astra", reasoningLevel: "high", modelLabel: "Astra" },
     usedFallback: false,
   });
   expect(complete).toHaveBeenCalledTimes(1);
@@ -108,15 +124,21 @@ test("one host RPC runs Luna medium on the primary host and validates the destin
 });
 
 test("destination without the chosen model uses its configured fallback without a second inference", async () => {
-  const { bb, harness, complete } = setup({ destinationOnlySol: true });
+  const { bb, harness, complete } = setup({
+    destinationOnlySol: true,
+    settings: {
+      autorouterModel_sol: true,
+      autorouterRoute_sol_medium: true,
+      autorouterFallback: "sol/medium",
+    },
+  });
   const result = await routeComposerPrompt(bb, {
     prompt: "Work in Target",
     scope: { kind: "new-thread", projectId: "source" },
   });
   expect(result).toMatchObject({
     projectId: "target",
-    model: "gpt-5.6-sol",
-    reasoningLevel: "medium",
+    execution: { model: "gpt-5.6-sol", reasoningLevel: "medium" },
     usedFallback: true,
   });
   expect(complete).toHaveBeenCalledTimes(1);
@@ -129,7 +151,11 @@ test("transport failure keeps the current project and applies the fallback", asy
     prompt: "A task",
     scope: { kind: "new-thread", projectId: "source" },
   });
-  expect(result).toMatchObject({ projectId: "source", route: "sol/medium", usedFallback: true });
+  expect(result).toMatchObject({
+    projectId: "source",
+    execution: { route: "astra/medium" },
+    usedFallback: true,
+  });
   expect(complete).toHaveBeenCalledTimes(1);
   await harness.dispose();
 });
@@ -194,15 +220,92 @@ test.each([{ failure: true }, { route: "sol/low" }, { route: "fable/high" }])(
     });
     expect(result).toMatchObject({
       projectId: "source",
-      model: "gpt-6-astra",
-      route: "astra/medium",
+      execution: { model: "gpt-6-astra", route: "astra/medium" },
       usedFallback: true,
     });
     expect(complete).toHaveBeenCalledTimes(1);
     const request = harness.experimental_hostRpcCalls[0]!.input as { prompt: string };
-    expect(request.prompt).toContain("This is an Astra follow-up");
+    expect(request.prompt).toContain("This is a follow-up");
     expect(request.prompt).not.toContain('"route":"sol/');
     expect(request.prompt).not.toContain('"route":"fable/');
     await harness.dispose();
+  },
+);
+
+test("Luna Max can escalate to Astra but Astra cannot route to Luna", async () => {
+  const up = setup();
+  expect(
+    (
+      await routeComposerPrompt(up.bb, {
+        prompt: "Hard bug",
+        scope: {
+          kind: "thread",
+          threadId: "thread",
+          selectionTitle: "codex: 5.6 Luna · max reasoning",
+        },
+      })
+    )?.execution?.route,
+  ).toBe("astra/high");
+  const down = setup({ route: "luna/max" });
+  expect(
+    (
+      await routeComposerPrompt(down.bb, {
+        prompt: "Commit",
+        scope: {
+          kind: "thread",
+          threadId: "thread",
+          selectionTitle: "codex: Astra · Medium reasoning",
+        },
+      })
+    )?.execution?.route,
+  ).toBe("astra/medium");
+  await up.harness.dispose();
+  await down.harness.dispose();
+});
+
+test.each([
+  {
+    settings: { autorouterModelRouting: false },
+    expected: { projectId: "target", execution: null },
+  },
+  {
+    settings: { autorouterProjectRouting: false },
+    expected: { projectId: "source", execution: { route: "astra/high" } },
+  },
+  {
+    settings: { autorouterRoute_astra_high: false },
+    expected: { execution: { route: "astra/medium" } },
+  },
+  { settings: { autorouterModel_astra: false }, expected: { execution: { route: "luna/max" } } },
+])("server enforces routing switches: %j", async ({ settings, expected }) => {
+  const f = setup({
+    settings: Object.fromEntries(
+      Object.entries(settings).filter(
+        (entry): entry is [string, boolean] => entry[1] !== undefined,
+      ),
+    ),
+  });
+  expect(
+    await routeComposerPrompt(f.bb, {
+      prompt: "Task",
+      scope: { kind: "new-thread", projectId: "source" },
+    }),
+  ).toMatchObject(expected);
+  await f.harness.dispose();
+});
+
+test.each([false, true])(
+  "Opus only becomes eligible when Fable usage is exhausted: %s",
+  async (fableExhausted) => {
+    const f = setup({ route: "opus/high", fableExhausted });
+    expect(
+      (
+        await routeComposerPrompt(f.bb, {
+          prompt: "Design UI",
+          scope: { kind: "new-thread", projectId: "source" },
+        })
+      )?.execution?.route,
+    ).toBe(fableExhausted ? "opus/high" : "astra/medium");
+    await f.harness.dispose();
   },
 );

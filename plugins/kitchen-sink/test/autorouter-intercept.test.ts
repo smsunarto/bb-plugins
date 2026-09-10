@@ -1,8 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { createElement } from "react";
-import { AutorouterNotification } from "../src/app/autorouter/notification.tsx";
+import { cleanup, waitFor } from "@testing-library/react";
 import { interceptComposer, routingStatus } from "../src/app/autorouter/intercept.ts";
 import type { AutorouterRoute } from "../src/shared/autorouter/contract.ts";
 
@@ -20,13 +18,15 @@ afterEach(() => {
 const route: AutorouterRoute = {
   projectId: "project",
   projectName: "Project",
-  route: "sol/medium",
-  providerId: "codex",
-  providerLabel: "Codex",
-  model: "gpt-5.6-sol",
-  modelLabel: "5.6 Sol",
-  reasoningLevel: "medium",
-  reasoningLabel: "Medium",
+  execution: {
+    route: "sol/medium",
+    providerId: "codex",
+    providerLabel: "Codex",
+    model: "gpt-5.6-sol",
+    modelLabel: "5.6 Sol",
+    reasoningLevel: "medium",
+    reasoningLabel: "Medium",
+  },
   usedFallback: false,
   modelReason: "Routine work",
   projectReason: "Explicit target",
@@ -75,6 +75,14 @@ function fixture(
       title.getAttribute("title")!.replace(/· .* reasoning$/, "· Medium reasoning"),
     ),
   );
+  const astraModel = document.createElement("button");
+  astraModel.type = "button";
+  astraModel.textContent = "6-Astra";
+  astraModel.addEventListener("click", modelClicked);
+  astraModel.addEventListener("click", () =>
+    title.setAttribute("title", "Codex: 6-Astra · High reasoning"),
+  );
+  menu.append(astraModel);
   const sent = mock(() => {});
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -216,9 +224,12 @@ test("failed routing leaves the draft and displays the error", async () => {
 
 const astraRoute: AutorouterRoute = {
   ...route,
-  route: "astra/medium",
-  model: "gpt-6-astra",
-  modelLabel: "6-Astra",
+  execution: {
+    ...route.execution!,
+    route: "astra/medium",
+    model: "gpt-6-astra",
+    modelLabel: "6-Astra",
+  },
 };
 
 test.each([
@@ -235,17 +246,14 @@ test.each([
   expect(f.modelClicked).not.toHaveBeenCalled();
 });
 
-test("Astra follow-up changes only reasoning and announces the applied route", async () => {
-  render(createElement(AutorouterNotification));
+test("Astra follow-up changes only reasoning without notifications", async () => {
   const f = fixture({ followup: true, infer: async () => astraRoute });
   f.send.click();
   await waitFor(() => expect(f.sent).toHaveBeenCalledTimes(1));
   expect(f.title.getAttribute("title")).toBe("Codex: 6-Astra · Medium reasoning");
   expect(f.providerClicked).not.toHaveBeenCalled();
   expect(f.modelClicked).not.toHaveBeenCalled();
-  expect(document.querySelector(".autorouter-notification")?.textContent).toContain(
-    "Autorouted6-Astra · Medium reasoning",
-  );
+  expect(document.querySelector(".autorouter-notification")).toBeNull();
 });
 
 test("a model-changing follow-up result is rejected before clicking any execution option", async () => {
@@ -276,20 +284,66 @@ test("a manual execution edit during routing preserves the draft and the user's 
   expect(f.title.getAttribute("title")).toBe("Codex: 5.6-Sol · Low reasoning");
 });
 
-test("new-thread fallback notification survives composer unmount and can be dismissed", async () => {
-  render(createElement(AutorouterNotification));
-  const f = fixture({ infer: async () => ({ ...route, usedFallback: true }) });
+test("native model selector shimmers during routing and clears after success or failure", async () => {
+  let resolve!: (value: AutorouterRoute) => void;
+  const f = fixture({
+    infer: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  });
+  f.send.click();
+  expect(f.form.querySelector("[data-autorouter-working]")).not.toBeNull();
+  resolve(route);
+  await waitFor(() => expect(f.sent).toHaveBeenCalledTimes(1));
+  expect(f.form.querySelector("[data-autorouter-working]")).toBeNull();
+  const failed = fixture({
+    infer: async () => {
+      throw new Error("Offline");
+    },
+  });
+  failed.send.click();
+  await waitFor(() => expect(routingStatus(failed.key).error).toBe(true));
+  expect(failed.form.querySelector("[data-autorouter-working]")).toBeNull();
+});
+
+test("project-only routing preserves the native execution selection", async () => {
+  const f = fixture({ infer: async () => ({ ...route, execution: null }) });
   f.send.click();
   await waitFor(() => expect(f.sent).toHaveBeenCalledTimes(1));
-  for (const unbind of cleanups.splice(0)) unbind();
-  f.form.remove();
-  expect(document.querySelector(".autorouter-notification")?.textContent).toContain(
-    "Autorouted · fallback usedProject · 5.6 Sol · Medium reasoning",
-  );
-  act(() => {
-    document
-      .querySelector<HTMLButtonElement>('[aria-label="Dismiss autorouting notification"]')!
-      .click();
+  expect(f.title.getAttribute("title")).toBe("Codex: 6-Astra · High reasoning");
+  expect(f.modelClicked).not.toHaveBeenCalled();
+});
+
+test("Luna Max follow-up changes model to Astra through the native selector", async () => {
+  const f = fixture({
+    followup: true,
+    selection: "Codex: 5.6-Luna · Max reasoning",
+    infer: async () => astraRoute,
   });
-  await waitFor(() => expect(document.querySelector(".autorouter-notification")).toBeNull());
+  f.send.click();
+  await waitFor(() => expect(f.sent).toHaveBeenCalledTimes(1));
+  expect(f.title.getAttribute("title")).toBe("Codex: 6-Astra · Medium reasoning");
+  expect(f.modelClicked).toHaveBeenCalledTimes(1);
+});
+
+test("Astra follow-up rejects a Luna destination before native selection changes", async () => {
+  const f = fixture({
+    followup: true,
+    infer: async () => ({
+      ...route,
+      execution: {
+        ...route.execution!,
+        route: "luna/max",
+        model: "gpt-5.6-luna",
+        modelLabel: "5.6-Luna",
+        reasoningLevel: "max",
+        reasoningLabel: "Max",
+      },
+    }),
+  });
+  f.send.click();
+  await waitFor(() => expect(routingStatus(f.key).error).toBe(true));
+  expect(f.sent).not.toHaveBeenCalled();
+  expect(f.modelClicked).not.toHaveBeenCalled();
 });

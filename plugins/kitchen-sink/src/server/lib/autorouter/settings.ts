@@ -2,6 +2,13 @@ import type { BbPluginApi, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   DEFAULT_ROUTE,
+  DEFAULT_GENERAL_RULE,
+  MODELS,
+  DEFAULT_ENABLED_ROUTES,
+  ruleSettingKey,
+  routeEnabledKey,
+  modelEnabledKey,
+  enabledRouteIds,
   ROUTES,
   projectIndexSchema,
   type ModelRule,
@@ -27,23 +34,54 @@ const projectIndexTextSchema = z
     }
   });
 
-export function ruleSettingKey(route: string): string {
-  return `autorouterRule_${route.replaceAll("/", "_")}`;
-}
-
 const descriptors = {
   autorouterEnabled: {
     type: "boolean",
     label: "Autorouter",
     description:
-      "Automatically select project, model, and reasoning for new threads. Follow-ups only route Astra reasoning. Other models keep their selections.",
+      "Show the composer autorouter. New threads can route project and model. Follow-ups can change Astra reasoning or escalate Luna Max to Astra.",
     default: false,
   },
+
+  autorouterModelRouting: { type: "boolean", label: "Autorouter: model routing", default: true },
+  autorouterProjectRouting: {
+    type: "boolean",
+    label: "Autorouter: project routing",
+    description: "Choose a project for new threads.",
+    default: true,
+  },
+  autorouterGeneralRule: {
+    type: "string",
+    label: "Autorouter: general routing rule",
+    experimental_multiline: true,
+    experimental_schema: z.string().max(8_000),
+    default: DEFAULT_GENERAL_RULE,
+  },
+  ...Object.fromEntries(
+    MODELS.map((model) => [
+      modelEnabledKey(model.key),
+      {
+        type: "boolean" as const,
+        label: `Autorouter: enable ${model.label}`,
+        default: model.key !== "sol",
+      },
+    ]),
+  ),
+  ...Object.fromEntries(
+    ROUTES.map((route) => [
+      routeEnabledKey(route.id),
+      {
+        type: "boolean" as const,
+        label: `Autorouter: enable ${route.label}`,
+        default: DEFAULT_ENABLED_ROUTES.has(route.id),
+      },
+    ]),
+  ),
   autorouterFallback: {
     type: "select",
     label: "Autorouter fallback model and reasoning",
     description:
-      "Used for new threads when routing is uncertain or inference fails. Astra follow-ups keep their current reasoning on failure.",
+      "Used when routing is uncertain. Disabled or unavailable fallbacks use another enabled route. Follow-ups preserve their current selection on failure.",
     options: ROUTES.map((route) => route.id),
     default: DEFAULT_ROUTE,
   },
@@ -76,6 +114,10 @@ const descriptors = {
 
 export interface AutorouterSettings {
   enabled: boolean;
+  modelRouting: boolean;
+  projectRouting: boolean;
+  generalRule: string;
+  enabledRoutes: Set<string>;
   fallback: string;
   projects: ProjectEntry[];
   rules: ModelRule[];
@@ -83,16 +125,25 @@ export interface AutorouterSettings {
 
 type Handle = ReturnType<typeof defineSettings>;
 const handles = new WeakMap<BbPluginApi, Handle>();
+const snapshots = new WeakMap<BbPluginApi, Record<string, unknown>>();
+export function autorouterAgentEnabled(bb: BbPluginApi): boolean {
+  const values = snapshots.get(bb);
+  return values?.autorouterEnabled === true && values.autorouterModelRouting !== false;
+}
 
 function defineSettings(bb: BbPluginApi) {
   return bb.settings.define(descriptors);
 }
 
-export function registerAutorouterSettings(bb: BbPluginApi): void {
-  handles.set(bb, defineSettings(bb));
+export async function registerAutorouterSettings(bb: BbPluginApi): Promise<void> {
+  const handle = defineSettings(bb);
+  handles.set(bb, handle);
+  handle.onChange((values) => snapshots.set(bb, values));
   bb.onDispose(() => {
     handles.delete(bb);
+    snapshots.delete(bb);
   });
+  snapshots.set(bb, await handle.get());
 }
 
 function settingsHandle(bb: BbPluginApi): Handle {
@@ -106,6 +157,10 @@ export async function readAutorouterSettings(bb: BbPluginApi): Promise<Autoroute
   const ruleValues: Record<string, unknown> = values;
   return {
     enabled: values.autorouterEnabled,
+    modelRouting: values.autorouterModelRouting,
+    projectRouting: values.autorouterProjectRouting,
+    generalRule: values.autorouterGeneralRule,
+    enabledRoutes: enabledRouteIds(ruleValues),
     fallback: values.autorouterFallback,
     projects: projectIndexSchema.parse(JSON.parse(values.autorouterProjectIndex)),
     rules: ROUTES.map((route) => ({

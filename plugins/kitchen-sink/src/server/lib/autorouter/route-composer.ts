@@ -4,11 +4,57 @@ import {
   routeAutorouterPromptInputSchema,
 } from "../../../shared/autorouter/contract.ts";
 import type { z } from "zod";
-import { MODELS, ROUTES, resolveRoutingDecision } from "../../../shared/autorouter/policy.ts";
+import { ROUTES, resolveRoutingDecision } from "../../../shared/autorouter/policy.ts";
+import { loadRouteCatalog } from "./catalog.ts";
 import { readAutorouterSettings } from "./settings.ts";
 import { routePrompt, type RouterInference } from "./router.ts";
+import { availableRoutesForUsage } from "./usage.ts";
 
 export async function routeComposerPrompt(
+  bb: BbPluginApi,
+  input: z.infer<typeof routeAutorouterPromptInputSchema>,
+) {
+  const context = await loadRoutingContext(bb, input);
+  const { settings, projects, thread, currentProjectId, environment, hostId, inferenceHostId } =
+    context;
+  const projectRouting = settings.projectRouting && !thread;
+  if (!settings.modelRouting && !projectRouting) return null;
+  const catalog = await loadRouteCatalog(bb, hostId, environment?.id, thread?.providerId);
+  const eligible = settings.modelRouting
+    ? await availableRoutesForUsage(bb, hostId, settings.enabledRoutes)
+    : new Set<string>();
+  const constraints = constrainFollowup(input.scope, catalog, eligible);
+  if (!constraints) return null;
+  const { availableRouteIds, currentRoute } = constraints;
+  if (thread && availableRouteIds.size === 0) return null;
+  const routingSettings = { ...settings, projectRouting: settings.projectRouting && !thread };
+  const started = performance.now();
+  const result = await routePrompt({
+    prompt: input.prompt,
+    currentProjectId,
+    projects: routingProjects(projects, settings.projects, thread ? currentProjectId : undefined),
+    settings: routingSettings,
+    availableRouteIds,
+    followup: Boolean(thread),
+    preserveRoute: currentRoute?.id,
+    inference: createInference(bb, inferenceHostId),
+    onInferenceFailure: (error) => bb.log.warn(`autorouter inference: ${String(error)}`),
+  });
+  const resolved = await resolveDestination(
+    bb,
+    result,
+    context,
+    catalog,
+    eligible,
+    currentRoute?.id,
+  );
+  bb.log.info(
+    `autorouter ${JSON.stringify({ route: resolved.execution?.route, projectId: resolved.projectId, usedFallback: resolved.usedFallback, elapsedMs: Math.round(performance.now() - started) })}`,
+  );
+  return resolved;
+}
+
+async function loadRoutingContext(
   bb: BbPluginApi,
   input: z.infer<typeof routeAutorouterPromptInputSchema>,
 ) {
@@ -20,6 +66,7 @@ export async function routeComposerPrompt(
   ]);
   if (!settings.enabled)
     throw new Error("Autorouter is disabled. Submit again to use your selections.");
+
   const currentProjectId =
     input.scope.kind === "new-thread" ? input.scope.projectId : thread!.projectId;
   const environment = thread?.environmentId
@@ -29,44 +76,60 @@ export async function routeComposerPrompt(
     environment?.hostId ?? projectHostId(projects, currentProjectId, config.primaryHostId);
   const inferenceHostId = config.primaryHostId ?? hostId;
   if (!hostId || !inferenceHostId) throw new Error("No machine is available for autorouting.");
-  const catalog = await loadCatalog(bb, hostId, environment?.id, thread?.providerId);
-  const constraints = constrainFollowup(input.scope, catalog);
-  if (!constraints) return null;
-  const { availableRouteIds, currentRoute } = constraints;
-  const routingSettings = currentRoute ? { ...settings, fallback: currentRoute.id } : settings;
-  const started = performance.now();
-  let result = await routePrompt({
-    prompt: input.prompt,
+  return {
+    settings,
+    projects,
+    config,
+    thread,
     currentProjectId,
-    projects: routingProjects(projects, settings.projects, thread ? currentProjectId : undefined),
-    settings: routingSettings,
-    availableRouteIds,
-    reasoningOnly: Boolean(thread),
-    inference: createInference(bb, inferenceHostId),
-    onInferenceFailure: (error) => bb.log.warn(`autorouter inference: ${String(error)}`),
-  });
+    environment,
+    hostId,
+    inferenceHostId,
+  };
+}
+
+async function resolveDestination(
+  bb: BbPluginApi,
+  result: Awaited<ReturnType<typeof routePrompt>>,
+  context: Awaited<ReturnType<typeof loadRoutingContext>>,
+  catalog: Awaited<ReturnType<typeof loadRouteCatalog>>,
+  eligible: ReadonlySet<string>,
+  currentRoute?: string,
+) {
+  const { settings, projects, environment, hostId, config } = context;
   const destinationHost =
     environment?.hostId ?? projectHostId(projects, result.projectId, config.primaryHostId);
   if (!destinationHost) throw new Error("The selected project has no available machine.");
   const destinationCatalog =
-    destinationHost === hostId ? catalog : await loadCatalog(bb, destinationHost);
-  if (!destinationCatalog.has(result.route)) {
+    destinationHost === hostId ? catalog : await loadRouteCatalog(bb, destinationHost);
+  const destinationEligible =
+    destinationHost === hostId
+      ? eligible
+      : await availableRoutesForUsage(bb, destinationHost, settings.enabledRoutes);
+  if (
+    result.execution &&
+    (!destinationCatalog.has(result.execution.route) ||
+      (!currentRoute && !destinationEligible.has(result.execution.route)))
+  ) {
     result = resolveRoutingDecision({
       decision: null,
       currentProjectId: result.projectId,
       projectIds: new Set(projects.map((project) => project.id)),
-      availableRouteIds: new Set(destinationCatalog.keys()),
-      fallback: routingSettings.fallback,
+      availableRouteIds: new Set(
+        [...destinationCatalog.keys()].filter((id) => destinationEligible.has(id)),
+      ),
+      fallback: settings.fallback,
+      modelRouting: settings.modelRouting,
+      projectRouting: false,
+      preserveRoute: currentRoute,
     });
   }
-  const labels = destinationCatalog.get(result.route);
-  if (!labels) throw new Error("The autorouter fallback is unavailable on the selected machine.");
-  bb.log.info(
-    `autorouter ${JSON.stringify({ route: result.route, projectId: result.projectId, usedFallback: result.usedFallback, elapsedMs: Math.round(performance.now() - started) })}`,
-  );
+  const labels = result.execution ? destinationCatalog.get(result.execution.route) : null;
+  if (result.execution && !labels)
+    throw new Error("The autorouter selection is unavailable on the selected machine.");
   return {
     ...result,
-    ...labels,
+    execution: result.execution && labels ? { ...result.execution, ...labels } : null,
     projectName: projects.find((project) => project.id === result.projectId)?.name ?? null,
   };
 }
@@ -74,14 +137,20 @@ export async function routeComposerPrompt(
 /** Native draft selections include manual edits that are not yet saved on the thread. */
 function constrainFollowup(
   scope: z.infer<typeof routeAutorouterPromptInputSchema>["scope"],
-  catalog: Awaited<ReturnType<typeof loadCatalog>>,
+  catalog: Awaited<ReturnType<typeof loadRouteCatalog>>,
+  enabled: ReadonlySet<string>,
 ) {
   if (scope.kind === "new-thread")
-    return { availableRouteIds: new Set(catalog.keys()), currentRoute: null };
+    return {
+      availableRouteIds: new Set([...catalog.keys()].filter((id) => enabled.has(id))),
+      currentRoute: null,
+    };
   const astraRoutes = ROUTES.filter(
     (route) => route.model === "gpt-6-astra" && catalog.has(route.id),
   );
-  const currentRoute = astraRoutes.find((route) => {
+  const currentRoute = ROUTES.filter(
+    (route) => (route.key === "astra" || route.id === "luna/max") && catalog.has(route.id),
+  ).find((route) => {
     const labels = catalog.get(route.id)!;
     return (
       scope.selectionTitle ===
@@ -89,61 +158,12 @@ function constrainFollowup(
     );
   });
   if (!currentRoute) return null;
-  return { availableRouteIds: new Set(astraRoutes.map((route) => route.id)), currentRoute };
-}
-
-async function loadCatalog(
-  bb: BbPluginApi,
-  hostId: string,
-  environmentId?: string,
-  threadProviderId?: string,
-) {
-  const entries = await Promise.all(
-    [...new Set(MODELS.map((model) => model.providerId))]
-      .filter((providerId) => !threadProviderId || providerId === threadProviderId)
-      .map(async (providerId) => {
-        try {
-          const catalog = await bb.sdk.providers.models({
-            providerId,
-            ...(environmentId ? { environmentId } : { hostId }),
-          });
-          const provider = catalog.providers.find(
-            (provider) => provider.id === providerId && provider.available,
-          );
-          if (!provider) return [];
-          return ROUTES.filter((route) => route.providerId === providerId).flatMap((route) => {
-            const model = catalog.models.find(
-              (model) =>
-                model.model === route.model &&
-                model.supportedReasoningEfforts.some(
-                  (effort) => effort.reasoningEffort === route.reasoningLevel,
-                ),
-            );
-            if (!model) return [];
-            const prefix = provider.strings?.brandPrefix;
-            const modelLabel =
-              prefix && model.displayName.toLowerCase().startsWith(prefix.toLowerCase())
-                ? model.displayName.slice(prefix.length).trimStart()
-                : model.displayName;
-            return [
-              [
-                route.id,
-                {
-                  providerLabel: provider.displayName,
-                  modelLabel,
-                  reasoningLabel:
-                    provider.reasoningLevels?.find((effort) => effort.id === route.reasoningLevel)
-                      ?.label ?? route.reasoningLevel,
-                },
-              ] as const,
-            ];
-          });
-        } catch {
-          return [];
-        }
-      }),
-  );
-  return new Map(entries.flat());
+  return {
+    availableRouteIds: new Set(
+      astraRoutes.filter((route) => enabled.has(route.id)).map((route) => route.id),
+    ),
+    currentRoute,
+  };
 }
 
 function createInference(bb: BbPluginApi, hostId: string): RouterInference {

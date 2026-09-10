@@ -17,7 +17,6 @@
   cursor: pointer;
 }
 .autorouter-toggle:hover {
-  color: var(--foreground);
   background: var(--accent);
 }
 .autorouter-toggle[aria-pressed="true"] {
@@ -32,71 +31,36 @@
   opacity: 0.5;
   cursor: wait;
 }
-.autorouter-notice {
-  position: fixed;
-  z-index: 1000;
-  width: 240px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--popover);
-  color: var(--popover-foreground);
-  font-size: 12px;
+[data-autorouter-working="true"] {
+  background-image: linear-gradient(
+    105deg,
+    transparent 20%,
+    color-mix(in srgb, var(--warning) 55%, transparent) 48%,
+    transparent 75%
+  );
+  background-size: 250% 100%;
+  animation: autorouter-shimmer 1.25s linear infinite;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 50%, transparent);
 }
-.autorouter-error {
-  color: var(--destructive);
+.autorouter-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-.autorouter-notification {
-  position: fixed;
-  z-index: 1000;
-  top: max(16px, env(safe-area-inset-top));
-  right: 16px;
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  width: min(360px, calc(100vw - 32px));
-  box-sizing: border-box;
-  padding: 14px 16px;
-  border: 1px solid var(--primary);
-  border-radius: 8px;
-  background: var(--popover);
-  color: var(--popover-foreground);
-  font-size: 13px;
-  line-height: 1.5;
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--background) 70%, transparent);
-}
-.autorouter-notification > div {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.autorouter-notification strong {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--primary);
-}
-.autorouter-notification button {
-  padding: 0 4px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--muted-foreground);
-  background: transparent;
-  font-size: 18px;
-  cursor: pointer;
-}
-.autorouter-notification button:focus-visible {
-  outline: 2px solid var(--ring);
-}
-.autorouter-toggle[aria-busy="true"] svg {
-  animation: autorouter-pulse 1s ease-in-out infinite alternate;
-}
-@keyframes autorouter-pulse {
+@keyframes autorouter-shimmer {
+  from {
+    background-position: 150% 0;
+  }
   to {
-    opacity: 0.35;
+    background-position: -150% 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .autorouter-toggle[aria-busy="true"] svg {
+  [data-autorouter-working="true"] {
     animation: none;
+    background-position: 50% 0;
   }
 }

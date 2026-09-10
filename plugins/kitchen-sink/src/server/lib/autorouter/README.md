@@ -1,21 +1,41 @@
 # Autorouter
 
-The composer toggle persists through `bb.settings`. When enabled, a single
-Codex `gpt-5.6-luna` completion with `medium` reasoning selects a project and a
-whitelisted model/effort pair. Kitchen Sink calls its own BB host entry. The
-host uses the shared `@bb-plugins/codex-inference` transport also used by GTD
-thread naming. Credentials stay on the host. The request has no tools, a strict
-JSON response schema, and a 20-second deadline. It never retries inference.
+The master switch and independent project/model switches live in `bb.settings`.
+A per-composer pause button is blue when active and muted when paused. It is hidden
+when the master switch is off or no routing applies. One Codex `gpt-5.6-luna`
+completion with `medium` reasoning chooses the enabled dimensions. Kitchen Sink
+uses the shared `@bb-plugins/codex-inference` host transport. Credentials stay on
+the host. Inference has no tools, a strict JSON response schema, and a 20-second
+deadline without retries.
 
 Project routing compares explicit instructions first, then the editable index.
-Uncertain project selection keeps the current project. Follow-up messages keep
-the existing project, provider, and model. Only Astra follow-ups route reasoning.
-Other models submit their current selections without inference. Astra routing
-reads the native draft selection, restricts every decision to Astra, and keeps
-its current reasoning on uncertainty or failure. New threads use the configured
-fallback on uncertainty or failure. Current provider
-catalogs validate model IDs and effort levels. An unavailable fallback leaves
-the draft unsent with an error.
+Uncertain project selection keeps the current project. Follow-ups keep their
+project and provider. Astra can change its reasoning. Luna Max can escalate to
+Astra, but no follow-up can route to Luna. Other models bypass autorouting.
+The server checks the native draft title against the current provider catalog,
+including manual changes that have not been saved on the thread.
+
+Model and effort switches constrain both inference and fallback. Defaults enable
+Astra low/medium/high/xhigh/ultra, Luna Max only, Fable high/xhigh/ultra (native
+`ultracode`), and Opus high/xhigh. Sol remains an optional, disabled route for
+existing configurable installations. New threads prefer the configured fallback,
+then Astra Medium, then another enabled available route. Follow-up uncertainty
+preserves the current selection even if that current effort is disabled for
+future routing. Disabling model routing does not require an available fallback.
+
+`bb.sdk.system.usageLimits` authorizes Opus only when a Fable usage window is
+exhausted and has not reset. Unknown usage never authorizes this fallback.
+Fable is excluded while its usage is exhausted. The destination machine's model
+catalog and usage are checked again when project routing changes machines.
+
+The general rule and per-route rules also drive agent delegation. The
+`kitchen_sink_autorouter_policy` tool reads live settings and usage. Stable agent
+instructions tell the coordinator to use BB subthreads for Luna command work,
+Fable UI work from Codex, and independent reviews. Subthreads do their assigned
+work without recursively delegating it. These are agent instructions, not an
+automatic server-side thread launcher. BB installs newly contributed tools and
+instructions when a provider session is constructed. Existing sessions receive
+them on their next start/resume after restart, not in the middle of a live session.
 
 ## Approved temporary composer integration
 
@@ -46,11 +66,11 @@ other plugin-triggered submissions are outside this temporary integration.
 Repeated Send/Enter events share one routing operation. Event listeners and
 input locks are released when the SDK action unmounts.
 
-An SDK app overlay displays an eight-second, dismissible Autorouted notification
-after the native submission resumes. It shows the applied project, model, and
-reasoning, or just Astra reasoning for follow-ups. Fallbacks are labeled. The
-overlay stays mounted across new-thread navigation. Changes to execution
-selection during inference stop submission and keep the draft.
+The native model/reasoning selector shimmers with the theme's yellow warning
+color while inference and selection are pending. The attribute is removed on
+success and failure. Reduced-motion users get a static highlight. There are no
+routing notifications. The button tooltip and screen-reader status expose errors.
+Changes to execution selection during inference stop submission and keep the draft.
 
 ## Index and settings
 
@@ -59,6 +79,7 @@ example prompts for repositories under `~/git` through the validated index RPC.
 The index preserves unregistered repositories with `projectId: null` and
 separates hosts. Only registered project IDs are routing destinations.
 
-The native plugin settings UI, toggle, and indexing RPC all use `bb.settings` as
-the persistence owner. Users can edit the index, every model/effort rule, and the
-fallback in Kitchen Sink settings. New installs default to autorouting off.
+The native plugin settings UI and indexing RPC use `bb.settings` as the sole
+persistence owner. Users can edit the index, general rule, model/effort rules,
+enabled models/efforts, and fallback in Kitchen Sink settings. New installs
+default to the master switch off. Pausing one composer does not change that switch.

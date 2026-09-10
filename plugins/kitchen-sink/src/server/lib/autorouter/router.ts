@@ -26,7 +26,8 @@ export async function routePrompt(input: {
   settings: AutorouterSettings;
   availableRouteIds: ReadonlySet<string>;
   inference: RouterInference;
-  reasoningOnly?: boolean;
+  followup?: boolean;
+  preserveRoute?: string;
   onInferenceFailure?: (error: unknown) => void;
 }) {
   let decision: unknown = null;
@@ -41,7 +42,10 @@ export async function routePrompt(input: {
           projects: input.projects,
           rules: input.settings.rules.filter((rule) => input.availableRouteIds.has(rule.route)),
           fallback: input.settings.fallback,
-          reasoningOnly: input.reasoningOnly,
+          followup: input.followup,
+          modelRouting: input.settings.modelRouting,
+          projectRouting: input.settings.projectRouting,
+          generalRule: input.settings.generalRule,
         }),
         outputSchema: z.toJSONSchema(decisionSchema),
       });
@@ -55,5 +59,8 @@ export async function routePrompt(input: {
     projectIds: new Set(input.projects.map((project) => project.id)),
     availableRouteIds: input.availableRouteIds,
     fallback: input.settings.fallback,
+    modelRouting: input.settings.modelRouting,
+    projectRouting: input.settings.projectRouting,
+    preserveRoute: input.preserveRoute,
   });
 }

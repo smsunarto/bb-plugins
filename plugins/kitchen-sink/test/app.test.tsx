@@ -39,42 +39,40 @@ test("registers the smart embeds and inline visualization directives", async () 
   ]);
 });
 
-test("the autorouter action sends a persistent setting update and reports save failures", async () => {
-  const originalResizeObserver = globalThis.ResizeObserver;
-  globalThis.ResizeObserver = class {
-    observe = mock(() => {});
-    unobserve = mock(() => {});
-    disconnect = mock(() => {});
-  };
-  try {
-    const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
-    const customization = captured.composerCustomizations.find((item) => item.id === "autorouter");
-    expect(customization?.scopes).toEqual(["new-thread", "thread"]);
-    const action = customization!.actions![0]!;
-    const updateAutorouterEnabled = mock(async () => {
-      throw new Error("Could not persist settings.");
-    });
-    const slot = renderSlot(
-      action,
-      {},
-      { settings: { autorouterEnabled: false }, rpc: { updateAutorouterEnabled } },
-    );
-    fireEvent.click(slot.getByRole("button", { name: "Enable autorouter" }));
-    await waitFor(() => expect(updateAutorouterEnabled).toHaveBeenCalledTimes(1));
-    expect(slot.rpcCalls).toContainEqual({
-      method: "updateAutorouterEnabled",
-      input: { enabled: true },
-    });
-    await waitFor(() =>
-      expect(slot.getByRole("alert").textContent).toBe("Could not persist settings."),
-    );
-    expect(
-      slot.getByRole("button", { name: "Enable autorouter" }).getAttribute("aria-pressed"),
-    ).toBe("false");
-    slot.unmount();
-  } finally {
-    globalThis.ResizeObserver = originalResizeObserver;
-  }
+test("autorouter master visibility and per-composer pause are independent", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const action = captured.composerCustomizations.find((item) => item.id === "autorouter")!
+    .actions![0]!;
+  const hidden = renderSlot(
+    action,
+    {},
+    {
+      settings: { autorouterEnabled: false },
+      composer: { scope: { kind: "new-thread", projectId: null } },
+    },
+  );
+  expect(hidden.queryByRole("button")).toBeNull();
+  hidden.unmount();
+  const slot = renderSlot(
+    action,
+    {},
+    {
+      settings: { autorouterEnabled: true },
+      composer: { scope: { kind: "new-thread", projectId: null } },
+    },
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Disable autorouter" }));
+  expect(slot.getByRole("button", { name: "Enable autorouter" }).getAttribute("aria-pressed")).toBe(
+    "false",
+  );
+  expect(slot.rpcCalls).toHaveLength(0);
+  fireEvent.click(slot.getByRole("button", { name: "Enable autorouter" }));
+  expect(
+    slot.getByRole("button", { name: "Disable autorouter" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  await slot.setComposerScope({ kind: "thread", threadId: "anthropic" });
+  expect(slot.queryByRole("button")).toBeNull();
+  slot.unmount();
 });
 
 test("uses the requested diff header background and unmodified theme counter colors", async () => {
