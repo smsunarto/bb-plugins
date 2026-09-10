@@ -119,6 +119,54 @@ it.each(["text", "paragraph", "blocks"])(
   },
 );
 
+it("preserves an unfinished comment across closing and keyboard tab navigation", async () => {
+  const comment = vi.fn((input) => ({
+    sha256: "saved",
+    file: { version: 1, threads: [input.op.thread] },
+  }));
+  const { slot } = open("A selected passage.", "draft.canvas.mdx", true, { comment });
+  const passage = await slot.findByText("A selected passage.");
+  expect(slot.getByRole("button", { name: /Review ·/ }).getAttribute("aria-expanded")).toBe(
+    "false",
+  );
+  const range = document.createRange();
+  range.selectNodeContents(passage.closest("p")!);
+  range.getBoundingClientRect = () => new DOMRect(100, 200, 180, 20);
+  await act(async () => {
+    const selected = window.getSelection()!;
+    selected.removeAllRanges();
+    selected.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Comment" }));
+  const field = await slot.findByRole("textbox", { name: "Add a comment" });
+  fireEvent.change(field, { target: { value: "Keep this draft." } });
+  fireEvent.click(slot.getByRole("button", { name: "Close review" }));
+  expect(slot.queryByRole("textbox", { name: "Add a comment" })).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: /Review ·/ }));
+  expect((slot.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement).value).toBe(
+    "Keep this draft.",
+  );
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Comments (0)" }), { key: "ArrowRight" });
+  expect(slot.getByRole("tab", { name: "Suggested edits (0)" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  fireEvent.keyDown(slot.getByRole("tab", { name: "Suggested edits (0)" }), { key: "ArrowLeft" });
+  expect((slot.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement).value).toBe(
+    "Keep this draft.",
+  );
+  fireEvent.keyDown(field, { key: "Escape" });
+  expect(slot.getByRole("button", { name: /Review ·/ }).getAttribute("aria-expanded")).toBe(
+    "false",
+  );
+  fireEvent.click(slot.getByRole("button", { name: /Review ·/ }));
+  fireEvent.keyDown(field, { key: "Enter", metaKey: true, isComposing: true });
+  expect(comment).not.toHaveBeenCalled();
+  fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+  await waitFor(() => expect(comment).toHaveBeenCalledTimes(1));
+  expect(comment.mock.calls[0]?.[0].op.thread.messages[0].body).toBe("Keep this draft.");
+});
+
 it("accepts one suggestion through Canvas and reports the saved source without autosaving it", async () => {
   const proposal = {
     id: "one",

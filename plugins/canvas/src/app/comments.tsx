@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,7 +38,7 @@ export interface SelectionHint {
 export interface CommentsValue {
   readonly sidebar: boolean;
   readonly threads: readonly CommentThread[];
-  openSelection(anchor: Anchor, body: string): void;
+  openSelection(anchor: Anchor, body: string): string;
   readonly placement: Placement;
   readonly openCount: number;
   readonly resolvedCount: number;
@@ -213,15 +214,17 @@ export function CommentsProvider(props: {
   );
   const openSelection = useCallback(
     (anchor: Anchor, body: string) => {
+      const id = newId("cmt");
       submit({
         op: "open",
         thread: {
-          id: newId("cmt"),
+          id,
           anchor,
           resolvedAtMs: null,
           messages: [{ id: newId("msg"), author: "user", body, createdAtMs: Date.now() }],
         },
       });
+      return id;
     },
     [submit],
   );
@@ -312,7 +315,7 @@ export function relativeTime(ms: number, nowMs: number): string {
   return new Date(ms).toLocaleDateString();
 }
 
-function CommentIcon(): ReactElement {
+export function CommentIcon(): ReactElement {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="currentColor">
       <path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v7A1.5 1.5 0 0 0 2.5 12H4v2.25a.75.75 0 0 0 1.2.6L8.5 12h5a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 13.5 2h-11Z" />
@@ -321,7 +324,7 @@ function CommentIcon(): ReactElement {
 }
 
 function submitOnEnter(event: React.KeyboardEvent<HTMLTextAreaElement>, submit: () => void): void {
-  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
     event.preventDefault();
     submit();
   }
@@ -333,10 +336,19 @@ export function Composer(props: {
   readonly submitLabel: string;
   readonly onSubmit: (body: string) => void;
   readonly onCancel: () => void;
+  readonly onEscape?: () => void;
 }): ReactElement {
   const [body, setBody] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => field.current?.focus(), []);
+  useEffect(() => {
+    field.current?.focus({ preventScroll: true });
+    field.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  useLayoutEffect(() => {
+    if (!field.current) return;
+    field.current.style.height = "auto";
+    field.current.style.height = `${Math.min(field.current.scrollHeight, 200)}px`;
+  }, [body]);
   const trimmed = body.trim();
   const submit = (): void => {
     if (trimmed.length > 0) props.onSubmit(trimmed);
@@ -344,7 +356,9 @@ export function Composer(props: {
   return (
     <div className="canvas-comment-composer">
       {props.quote !== null ? (
-        <blockquote className="canvas-comment-quote">{props.quote}</blockquote>
+        <blockquote className="canvas-comment-quote" title={props.quote}>
+          {props.quote}
+        </blockquote>
       ) : null}
       <textarea
         ref={field}
@@ -353,22 +367,60 @@ export function Composer(props: {
         placeholder={props.placeholder}
         value={body}
         onChange={(event) => setBody(event.target.value)}
-        onKeyDown={(event) => submitOnEnter(event, submit)}
+        aria-label={props.placeholder}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.stopPropagation();
+            (props.onEscape ?? props.onCancel)();
+          } else submitOnEnter(event, submit);
+        }}
       />
-      <div className="flex gap-1">
+      <div className="canvas-comment-composer-actions">
+        <span className="canvas-comment-shortcut" aria-hidden="true">
+          ⌘↵ to send
+        </span>
+        <button type="button" className="canvas-review-text-button" onClick={props.onCancel}>
+          Cancel
+        </button>
         <button
           type="button"
-          className={buttonClass}
+          className="canvas-review-button canvas-comment-submit"
           disabled={trimmed.length === 0}
           onClick={submit}
         >
           {props.submitLabel}
         </button>
-        <button type="button" className={buttonClass} onClick={props.onCancel}>
-          Cancel
-        </button>
       </div>
     </div>
+  );
+}
+
+function ThreadQuote({ placed, onActivate }: { placed: PlacedThread; onActivate?: () => void }) {
+  const quote = placed.thread.anchor.quote;
+  if (placed.match.kind === "detached")
+    return (
+      <blockquote className="canvas-comment-quote" title={placed.context}>
+        Was: {placed.context}
+      </blockquote>
+    );
+  if (!quote) return null;
+  if (onActivate)
+    return (
+      <button
+        type="button"
+        className="canvas-comment-quote canvas-comment-quote-link"
+        title={quote}
+        onClick={onActivate}
+        aria-label="Show commented text"
+      >
+        {quote}
+      </button>
+    );
+  return (
+    <blockquote className="canvas-comment-quote" title={quote}>
+      {quote}
+    </blockquote>
   );
 }
 
@@ -408,8 +460,17 @@ export function ThreadCard(props: {
           if (!comments.sidebar) setExpanded((value) => !value);
         }}
       >
-        <span className="font-medium text-foreground">{authorLabel[first.author]}</span>
-        <span className="text-muted-foreground">{relativeTime(first.createdAtMs, now)}</span>
+        <span className="canvas-comment-avatar" data-author={first.author} aria-hidden="true">
+          {first.author === "agent" ? "A" : "Y"}
+        </span>
+        <span className="canvas-comment-author">{authorLabel[first.author]}</span>
+        <time
+          className="canvas-comment-time"
+          dateTime={new Date(first.createdAtMs).toISOString()}
+          title={new Date(first.createdAtMs).toLocaleString()}
+        >
+          {relativeTime(first.createdAtMs, now)}
+        </time>
         {flags.map((flag) => (
           <span key={flag} className="canvas-comment-flag">
             {flag}
@@ -426,11 +487,7 @@ export function ThreadCard(props: {
       </button>
       {expanded ? (
         <div className="canvas-comment-body">
-          {match.kind === "detached" ? (
-            <blockquote className="canvas-comment-quote">Was: {props.placed.context}</blockquote>
-          ) : thread.anchor.quote !== null ? (
-            <blockquote className="canvas-comment-quote">{thread.anchor.quote}</blockquote>
-          ) : null}
+          <ThreadQuote placed={props.placed} onActivate={props.onActivate} />
           {thread.messages.map((message, index) => (
             <div key={message.id} className="canvas-comment-message">
               {index > 0 && (
@@ -456,13 +513,18 @@ export function ThreadCard(props: {
               onCancel={() => setReplying(false)}
             />
           ) : (
-            <div className="flex gap-1">
-              <button type="button" className={buttonClass} onClick={() => setReplying(true)}>
-                Reply
+            <div className="canvas-comment-thread-actions">
+              <button
+                type="button"
+                className="canvas-review-text-button"
+                aria-label="Reply"
+                onClick={() => setReplying(true)}
+              >
+                Reply…
               </button>
               <button
                 type="button"
-                className={buttonClass}
+                className="canvas-review-text-button"
                 onClick={() => comments.resolve(thread.id, !resolved)}
               >
                 {resolved ? "Reopen" : "Resolve"}

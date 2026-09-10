@@ -7,12 +7,15 @@ import {
   CommentsProvider,
   CommentsToolbar,
   Composer,
+  CommentIcon,
   ThreadCard,
   useComments,
 } from "./comments.tsx";
 import { quoteOffset, textIndex } from "./text-selection.ts";
 import { rpc } from "./rpc.ts";
 import { useCanvas } from "./state.tsx";
+import { SelectionActions, type ReviewSelection } from "./selection-actions.tsx";
+import { ReviewTabs } from "./review-tabs.tsx";
 
 export interface CanvasReviewProps {
   tab: "comments" | "edits";
@@ -74,13 +77,12 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
   const comments = useComments();
   const { source } = useCanvas();
   const root = useRef<HTMLDivElement>(null);
-  const [selected, setSelected] = useState<{ anchor: Anchor; top: number; left: number } | null>(
-    null,
-  );
+  const [selected, setSelected] = useState<ReviewSelection | null>(null);
   const [composing, setComposing] = useState<Anchor | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const { tab, onTabChange: setTab } = props;
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const openedForContent = useRef(false);
   const [showDecided, setShowDecided] = useState(false);
   const [matched, setMatched] = useState<ReadonlySet<string>>(new Set());
   const highlightName = `canvas-comments-${useId().replace(/[^a-z0-9]/gi, "")}`;
@@ -104,13 +106,28 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
   };
   const beginComment = useCallback(
     (anchor: Anchor) => {
-      setComposing(anchor);
+      openedForContent.current = true;
+      // Resume an unfinished comment without silently moving it to a new quote.
+      if (!composing) setComposing(anchor);
       setSelected(null);
       setOpen(true);
       setTab("comments");
+      if (composing)
+        requestAnimationFrame(() =>
+          root.current
+            ?.querySelector<HTMLTextAreaElement>(".canvas-comment-composer textarea")
+            ?.focus(),
+        );
     },
-    [setTab],
+    [setTab, composing],
   );
+  const closeReview = () => {
+    openedForContent.current = true;
+    setOpen(false);
+    root.current
+      ?.querySelector<HTMLButtonElement>(".canvas-review-toolbar button")
+      ?.focus({ preventScroll: true });
+  };
   const selection = useCallback(() => {
     const editor = root.current?.querySelector<HTMLElement>(".docs-prose");
     const current = window.getSelection();
@@ -140,11 +157,12 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
       prefix: index.text.slice(Math.max(0, start - 48), start),
       suffix: index.text.slice(end, end + 48),
     };
-    const rect = range.getBoundingClientRect();
     setSelected({
       anchor,
-      top: rect.bottom + 6,
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - 150)),
+      range,
+      editor,
+      backward:
+        current.focusNode === range.startContainer && current.focusOffset === range.startOffset,
     });
     return anchor;
   }, []);
@@ -156,9 +174,8 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
           event.preventDefault();
           beginComment(anchor);
         }
-      } else if (event.key === "Escape") {
+      } else if (event.key === "Escape" && root.current?.contains(event.target as Node)) {
         setSelected(null);
-        setComposing(null);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -223,30 +240,49 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
         .get(id)
         ?.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
     else
-      requestAnimationFrame(() =>
-        root.current
-          ?.querySelector(`[data-thread-id="${CSS.escape(id)}"]`)
-          ?.scrollIntoView({ block: "nearest" }),
-      );
+      requestAnimationFrame(() => {
+        const card = root.current?.querySelector<HTMLElement>(
+          `[data-thread-id="${CSS.escape(id)}"]`,
+        );
+        card?.scrollIntoView?.({ block: "nearest" });
+        card
+          ?.querySelector<HTMLButtonElement>(".canvas-comment-head")
+          ?.focus({ preventScroll: true });
+      });
   }
   const allPlaced = [...comments.placement.byOffset.values()]
     .flat()
     .concat(comments.placement.detached);
   const edits = proposals.data?.file.proposals ?? [];
   const pendingEdits = edits.filter((p) => p.status === "pending" || p.status === "applying");
+  useEffect(() => {
+    if (!openedForContent.current && (comments.threads.length > 0 || edits.length > 0)) {
+      openedForContent.current = true;
+      setOpen(true);
+    }
+  }, [comments.threads.length, edits.length]);
   return (
     <div className="canvas-review" ref={root}>
       <style>{`::highlight(${highlightName}) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 28%, transparent); } ::highlight(${highlightName}-active) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 48%, transparent); text-decoration: underline; }`}</style>
       <div className="canvas-review-toolbar">
-        <span className="text-muted-foreground">Select text to comment · ⌘⇧M</span>
+        <span className="canvas-review-hint">
+          Select text to comment <kbd>⌘⇧M</kbd>
+        </span>
         <button
           type="button"
           className="canvas-review-button"
           aria-expanded={open}
-          onClick={() => setOpen(!open)}
+          aria-label={`Review · ${comments.openCount} comments · ${pendingEdits.length} edits`}
+          onClick={() => {
+            openedForContent.current = true;
+            setOpen(!open);
+          }}
         >
-          Review · {comments.openCount} {comments.openCount === 1 ? "comment" : "comments"} ·{" "}
-          {pendingEdits.length} {pendingEdits.length === 1 ? "edit" : "edits"}
+          <CommentIcon /> Review
+          {composing && <span className="canvas-review-count">Draft</span>}
+          {comments.openCount + pendingEdits.length > 0 && (
+            <span className="canvas-review-count">{comments.openCount + pendingEdits.length}</span>
+          )}
         </button>
       </div>
       <div className="canvas-review-layout" data-open={open}>
@@ -273,117 +309,133 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
         >
           {props.children}
         </div>
-        {open && (
-          <aside className="canvas-review-sidebar" aria-label="Canvas review">
-            <div className="canvas-review-tabs" role="tablist" aria-label="Review">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab === "comments"}
-                onClick={() => setTab("comments")}
+        <aside className="canvas-review-sidebar" aria-label="Canvas review" hidden={!open}>
+          <div className="canvas-review-sidebar-heading">
+            <span>Review</span>
+            <button
+              type="button"
+              className="canvas-review-icon-button"
+              aria-label="Close review"
+              title="Close review"
+              onClick={closeReview}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
               >
-                Comments ({comments.openCount})
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab === "edits"}
-                onClick={() => setTab("edits")}
-              >
-                Suggested edits ({pendingEdits.length})
-              </button>
+                <path d="m4 4 8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          </div>
+          <ReviewTabs
+            id={highlightName}
+            tab={tab}
+            onTabChange={setTab}
+            commentCount={comments.openCount}
+            editCount={pendingEdits.length}
+          />
+          <section
+            id={`${highlightName}-comments`}
+            role="tabpanel"
+            aria-labelledby={`${highlightName}-comments-tab`}
+            hidden={tab !== "comments"}
+          >
+            <div className="mb-3 flex flex-wrap gap-2 text-xs">
+              <CommentsToolbar />
             </div>
-            {tab === "comments" ? (
-              <section aria-label="Canvas comments">
-                <div className="mb-3 flex flex-wrap gap-2 text-xs">
-                  <CommentsToolbar />
-                </div>
-                {composing && (
-                  <Composer
-                    quote={composing.quote}
-                    placeholder="Add a comment"
-                    submitLabel="Comment"
-                    onSubmit={(body) => {
-                      comments.openSelection(composing, body);
-                      setComposing(null);
-                    }}
-                    onCancel={() => setComposing(null)}
-                  />
-                )}
-                {!comments.threads.length && !composing && (
-                  <p className="canvas-review-empty">
-                    Select a passage and choose Comment. Replies from you and your agent appear
-                    here.
-                  </p>
-                )}
-                {allPlaced
-                  .filter(({ thread }) => comments.showResolved || thread.resolvedAtMs === null)
-                  .map((placed) => (
-                    <ThreadCard
-                      key={placed.thread.id}
-                      placed={
-                        matched.has(placed.thread.id)
-                          ? {
-                              ...placed,
-                              match: { kind: "anchored", offset: 0, index: 0, editedSince: false },
-                            }
-                          : placed
-                      }
-                      active={activeId === placed.thread.id}
-                      onActivate={() => focusThread(placed.thread.id, true)}
-                    />
-                  ))}
-              </section>
-            ) : (
-              <section aria-label="Suggested edits">
-                {proposals.error && (
-                  <p role="alert" className="text-destructive">
-                    {proposals.error.message}
-                  </p>
-                )}
-                {decide.error && (
-                  <p role="alert" className="text-destructive">
-                    {decide.error.message}
-                  </p>
-                )}
-                {!edits.length && (
-                  <p className="canvas-review-empty">
-                    Your agent’s proposed changes appear here. Review and accept each edit
-                    individually.
-                  </p>
-                )}
-                {edits.some((p) => p.status === "accepted" || p.status === "rejected") && (
-                  <button
-                    type="button"
-                    className="canvas-review-button"
-                    onClick={() => setShowDecided(!showDecided)}
-                  >
-                    {showDecided ? "Hide reviewed" : "Show reviewed"}
-                  </button>
-                )}
-                {(showDecided ? edits : pendingEdits).map((proposal) => (
-                  <ProposalCard
-                    key={proposal.id}
-                    proposal={proposal}
-                    pending={decide.isPending}
-                    onDecide={handleDecision}
-                  />
-                ))}
-              </section>
+            {composing && (
+              <Composer
+                quote={composing.quote}
+                placeholder="Add a comment"
+                submitLabel="Comment"
+                onSubmit={(body) => {
+                  const id = comments.openSelection(composing, body);
+                  setComposing(null);
+                  focusThread(id, false);
+                }}
+                onCancel={() => setComposing(null)}
+                onEscape={closeReview}
+              />
             )}
-          </aside>
-        )}
+            {!comments.threads.length && !composing && (
+              <p className="canvas-review-empty">
+                <CommentIcon />
+                <strong>No comments yet</strong>
+                <span>Select a passage to start a conversation.</span>
+              </p>
+            )}
+            {allPlaced
+              .filter(({ thread }) => comments.showResolved || thread.resolvedAtMs === null)
+              .map((placed) => (
+                <ThreadCard
+                  key={placed.thread.id}
+                  placed={
+                    matched.has(placed.thread.id)
+                      ? {
+                          ...placed,
+                          match: { kind: "anchored", offset: 0, index: 0, editedSince: false },
+                        }
+                      : placed
+                  }
+                  active={activeId === placed.thread.id}
+                  onActivate={() => focusThread(placed.thread.id, true)}
+                />
+              ))}
+          </section>
+          <section
+            id={`${highlightName}-edits`}
+            role="tabpanel"
+            aria-labelledby={`${highlightName}-edits-tab`}
+            hidden={tab !== "edits"}
+          >
+            {proposals.error && (
+              <p role="alert" className="text-destructive">
+                {proposals.error.message}
+              </p>
+            )}
+            {decide.error && (
+              <p role="alert" className="text-destructive">
+                {decide.error.message}
+              </p>
+            )}
+            {!edits.length && (
+              <p className="canvas-review-empty">
+                <strong>No suggested edits</strong>
+                <span>Your agent’s changes will appear here for review.</span>
+              </p>
+            )}
+            {edits.some((p) => p.status === "accepted" || p.status === "rejected") && (
+              <button
+                type="button"
+                className="canvas-review-button"
+                onClick={() => setShowDecided(!showDecided)}
+              >
+                {showDecided ? "Hide reviewed" : "Show reviewed"}
+              </button>
+            )}
+            {(showDecided ? edits : pendingEdits).map((proposal) => (
+              <ProposalCard
+                key={proposal.id}
+                proposal={proposal}
+                pending={decide.isPending}
+                onDecide={handleDecision}
+              />
+            ))}
+          </section>
+        </aside>
       </div>
-      {selected && !composing && (
-        <button
-          type="button"
-          className="canvas-review-selection canvas-review-button"
-          style={{ top: selected.top, left: selected.left }}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => beginComment(selected.anchor)}
-        >
-          Comment
-        </button>
+      {selected && (
+        <SelectionActions
+          selection={selected}
+          resume={Boolean(composing)}
+          onComment={beginComment}
+          onDismiss={() => setSelected(null)}
+        />
       )}
     </div>
   );
