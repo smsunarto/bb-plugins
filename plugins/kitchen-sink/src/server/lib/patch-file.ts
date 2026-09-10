@@ -1,49 +1,30 @@
 import {
-  FILENAME_HEADER_REGEX,
-  FILENAME_HEADER_REGEX_GIT,
   GIT_DIFF_FILE_BREAK_REGEX,
   UNIFIED_DIFF_FILE_BREAK_REGEX,
+  getSingularPatch,
 } from "@pierre/diffs";
 
-export type PatchFile = { path: string; patch: string };
-
-function headerPath(line: string): string | null {
-  const git = FILENAME_HEADER_REGEX_GIT.exec(line);
-  if (git !== null) return git[2] ?? null;
-  const plain = FILENAME_HEADER_REGEX.exec(line);
-  if (plain === null) return null;
-  const path = plain[2] ?? "";
-  return path === "/dev/null" ? null : path;
+export function relativeEmbedPath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 1024 &&
+    !/[\\\0\r\n]/u.test(value) &&
+    value.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+  );
 }
 
-function filePath(chunk: string): string | null {
-  const lines = chunk.split("\n");
-  const added = lines.find((line) => line.startsWith("+++ "));
-  const removed = lines.find((line) => line.startsWith("--- "));
-  const fromHeaders = (added && headerPath(added)) || (removed && headerPath(removed)) || null;
-  if (fromHeaders !== null) return fromHeaders;
-  const git = /^diff --git a\/(.+?) b\/(.+)$/mu.exec(chunk);
-  return git?.[2] ?? null;
-}
-
-/**
- * Split a unified patch into one entry per file. Git patches split on their
- * `diff --git` headers; plain unified patches split on `--- ` file headers.
- * Leading commit metadata and chunks without a hunk are dropped.
- */
-export function splitPatchFiles(text: string): PatchFile[] {
+/** Keep original patch text. Pierre supplies identity, rename metadata and validation. */
+export function splitPatchFiles(text: string) {
   const source = text.replaceAll("\r\n", "\n");
-  const gitChunks = source.split(GIT_DIFF_FILE_BREAK_REGEX);
-  const chunks = gitChunks.some((chunk) => chunk.startsWith("diff --git"))
-    ? gitChunks.filter((chunk) => chunk.startsWith("diff --git"))
+  const git = source.split(GIT_DIFF_FILE_BREAK_REGEX);
+  const chunks = git.some((chunk) => chunk.startsWith("diff --git"))
+    ? git.filter((chunk) => chunk.startsWith("diff --git"))
     : source.split(UNIFIED_DIFF_FILE_BREAK_REGEX).filter((chunk) => chunk.startsWith("--- "));
-  const files: PatchFile[] = [];
-  for (const chunk of chunks) {
-    if (!/^@@ /mu.test(chunk)) continue;
-    const path = filePath(chunk);
-    if (path === null) continue;
-    const patch = chunk.endsWith("\n") ? chunk : `${chunk}\n`;
-    files.push({ path, patch });
-  }
-  return files;
+  if (!chunks.length && source.trim()) throw new Error("No unified file patches found.");
+  return chunks.map((patch) => {
+    const file = getSingularPatch(patch);
+    if (!relativeEmbedPath(file.name) || (file.prevName && !relativeEmbedPath(file.prevName)))
+      throw new Error("Patch paths must stay inside the workspace.");
+    return { path: file.name, previousPath: file.prevName, patch, hunks: file.hunks.length };
+  });
 }

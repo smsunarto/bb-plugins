@@ -23,8 +23,8 @@ function parseHunks(body: string[]): Hunk[] | null {
   for (const text of body) {
     const header = HUNK_HEADER.exec(text);
     if (header !== null) {
-      oldNext = Number(header[1]);
-      newNext = Number(header[3]);
+      oldNext = Number(header[1]) + Number(header[2] === "0");
+      newNext = Number(header[3]) + Number(header[4] === "0");
       hunk = { trailer: header[5] ?? "", lines: [] };
       hunks.push(hunk);
       continue;
@@ -59,6 +59,18 @@ function hunkHeader(lines: HunkLine[], trailer: string): string {
   return `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@${trailer}`;
 }
 
+function selectHunkLines(lines: HunkLine[], low: number, high: number): HunkLine[] {
+  const kept: HunkLine[] = [];
+  let previousKept = false;
+  for (const line of lines) {
+    const keep: boolean =
+      line.kind === "\\" ? previousKept : line.anchor >= low && line.anchor <= high;
+    if (keep) kept.push(line);
+    previousKept = keep;
+  }
+  return kept;
+}
+
 /**
  * Keep only the hunk lines that touch `start`..`end` on the new side of a
  * unified diff, plus two lines of context. Deleted lines count at the new-side
@@ -88,14 +100,14 @@ export function rangePatch(
   const output = source.slice(0, firstHunk);
   let changed = false;
   for (const hunk of hunks) {
-    const kept: HunkLine[] = [];
-    let previousKept = false;
-    for (const line of hunk.lines) {
-      const keep: boolean =
-        line.kind === "\\" ? previousKept : line.anchor >= low && line.anchor <= high;
-      if (keep) kept.push(line);
-      previousKept = keep;
-    }
+    if (
+      !hunk.lines.some(
+        (line) =>
+          (line.kind === "+" || line.kind === "-") && line.anchor >= start && line.anchor <= end,
+      )
+    )
+      continue;
+    const kept = selectHunkLines(hunk.lines, low, high);
     const content = kept.filter((line) => line.kind !== "\\");
     if (content.length === 0) continue;
     if (content.some((line) => line.kind !== " ")) changed = true;
