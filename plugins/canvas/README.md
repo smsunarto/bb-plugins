@@ -15,11 +15,11 @@
 
 ## What it does
 
-An agent writes one `.canvas.mdx` file. bb opens it beside the chat and renders markdown plus a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The server parses it, validates every component against a registry, and the app draws the result with the host theme.
+An agent writes one `.canvas.mdx` file. Docs opens it beside the chat in MDXEditor, with Canvas providing a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The shared parser validates components against a registry before the editor draws them with the host theme.
 
-- **Live.** The opener polls the file. A new write renders in about two seconds. A write that no longer parses keeps the last good render and shows a banner that names the line.
+- **Live.** Docs polls open files. Clean documents refresh after external writes; pending edits retain conflict protection. Invalid MDX remains available in source mode.
 - **Safe.** Every prop value is a literal. Identifiers, calls, and expressions are rejected with a positioned diagnostic. There is no fetch and no code execution.
-- **Forgiving.** An unknown component, a bad prop, or a disallowed child becomes a red problem card in place. The rest of the document still renders. The problem bar and each problem card switch to the raw source, and "Back to canvas" returns.
+- **Forgiving.** An unknown component, a bad prop, or a disallowed child becomes a red problem card in place. The rest of the document still renders. Problem cards switch to source mode. The rich-text toolbar control returns to the editor.
 - **Persisted controls.** `Toggle`, `Select`, `Tabs`, and `Checklist` keep their state per file and control id across reloads.
 - **Skill included.** The bundled `canvas` skill tells the agent when to use a canvas, where to write it, and how to check it.
 
@@ -82,7 +82,7 @@ style: github
 ---
 ```
 
-Two styles exist. `default` is the canvas prose look, and `github` renders the body the way GitHub renders a markdown file. Leave the frontmatter out for `default`.
+Canvas widget styles are `default` and `github`. Docs controls the surrounding editable prose theme. Leave frontmatter out for `default`.
 
 ## Templates
 
@@ -90,17 +90,20 @@ Two styles exist. `default` is the canvas prose look, and `github` renders the b
 
 ## How a canvas opens
 
-A canvas link in the chat opens a file tab in the thread's side panel, and for a `.canvas.mdx` file that tab renders the canvas. Any other `.mdx` file shows the default preview with an `Open as canvas` button.
+A canvas link opens a Docs file tab beside the chat. Docs owns `.md`, `.mdx`, and `.canvas.mdx`; Canvas supplies widgets and persistence through its exported editor integration and SDK RPCs.
 
 ## Where canvases live
 
-The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the thread, so the file survives the conversation without touching the repo. A canvas goes into the worktree only when the user wants it committed. The `.canvas.mdx` suffix is required. Any `.mdx` file still shows an "Open as canvas" button.
+The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the thread, so the file survives the conversation without touching the repo. A canvas goes into the worktree only when the user wants it committed. Use `.canvas.mdx` for Canvas artifacts. Docs also opens ordinary `.mdx` files directly.
 
 ## Comments
 
 A reader can leave Google Docs style comments on a rendered canvas, and the agent reads and answers them from the CLI.
 
-**In the pane.** Hover any block and a small comment button appears at its right edge. Select text inside a block and a floating "Comment" button appears next to the selection. Either one opens a composer directly under the block. A commented block gets a subtle tint and a count badge, and its threads sit under it as collapsed cards (author, relative time, first line, reply count). Click a card to read the replies, reply, or resolve. Resolved threads hide behind the toolbar's "Show resolved (n)" toggle. When an edit removes the block a thread pointed at, the thread moves to a "Detached comments" section at the end of the canvas with its saved quote.
+**In the pane.** The Canvas comments section sits below the MDXEditor document.
+Expand **Add a comment**, choose a block, and submit. Existing threads retain
+their anchors and quotes, including detached threads. Open a thread to reply or
+resolve it. Resolved threads remain available through **Show resolved**.
 
 **From the CLI.** The agent lists comments with where each one sits now, then replies or resolves as `agent`.
 

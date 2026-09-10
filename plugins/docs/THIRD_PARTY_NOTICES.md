@@ -27,3 +27,9 @@ Pierre Trees includes code derived from
 2023 Lukas Bach, under the MIT License. It also bundles
 [`preact`](https://preactjs.com), Copyright 2015-present Jason Miller, under the
 MIT License.
+
+## MDXEditor
+
+This plugin uses MDXEditor (`@mdxeditor/editor`), licensed under MIT.
+Copyright (c) Petyo Ivanov.
+See <https://github.com/mdx-editor/editor/blob/main/LICENSE>.

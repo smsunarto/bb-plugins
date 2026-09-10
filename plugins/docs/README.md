@@ -1,10 +1,8 @@
 # Docs
 
-This fork keeps the built-in Docs behavior and applies the reading theme from
-`smsunarto-theme/styles/cursor-markdown-preview.css` to its Tiptap editor. It
-tracks the built-in plugin from bb 0.41.0 at upstream commit
-`cf561a89997a764f62a7db5bf77436062b3a38ba`.
-
+Docs uses [MDXEditor](https://mdxeditor.dev/) for rich Markdown and MDX editing,
+with the smsunarto Monokai reading theme. It owns `.md`, `.mdx`, `.canvas.mdx`,
+and `.markdown` file rendering throughout bb.
 Docs is a filesystem-first document library for bb. Documents remain ordinary
 Markdown, HTML, and asset files while the plugin adds nested navigation,
 multi-host vaults, rich editing, images, sandboxed HTML, automation, chat
@@ -38,16 +36,24 @@ moves. Host theme tokens keep it visually consistent with bb.
   `.markdown` files, so it can be selected under Settings → File openers or
   chosen from a file link's Open with menu. Workspace, absolute host, and
   thread-storage files retain compare-and-swap saves even when they are outside
-  a Docs vault.
+  a Docs vault. Clean open files refresh after external writes; pending drafts keep conflict protection.
 - **YAML frontmatter:** an opening fenced block that parses as a YAML mapping
   supplies the document title when it has a string `title`, stays out of the
   rendered body and search preview, and is preserved byte-for-byte when the
   rich editor saves body changes. A document that opens with a thematic break
   instead keeps that content in the editor. Docs leaves the filename unchanged
-  on save when frontmatter sets the title; otherwise the H1 still drives it.
-- **Tables:** GitHub-flavored Markdown tables render as editable cells. Use Tab
-  and Shift+Tab to move between cells (Tab from the final cell adds a row), and
-  drag column boundaries to resize them. Saves remain portable Markdown.
+  on save when frontmatter sets the title. Otherwise the H1 drives `.md` names; MDX filenames remain stable.
+- **Rich text and source:** toolbar controls cover headings, lists, tasks, links,
+  tables, images, and code blocks. Switch to source mode to edit MDX props,
+  expressions, or imports. Unknown JSX remains editable, and imports and
+  expressions are preserved without executing them. Opening a document alone
+  never writes editor normalization back to disk.
+- **Canvas widgets:** `.canvas.mdx` and MDX with known Canvas components keep
+  tables, charts, diffs, and persisted controls through Canvas's existing SDK
+  services. Canvas comments appear below the editor, with block selection,
+  replies, and resolution. Canvas remains the owner of state and comment data.
+- **Tables:** GitHub-flavored Markdown tables have editable cells and controls
+  to insert and remove rows and columns. Saves remain portable Markdown.
 - **Images:** paste or drop PNG, JPEG, GIF, WebP, or SVG files into a document.
   Attachments are stored beside it under `_attachments/` and serialized as
   portable relative Markdown image links.
