@@ -1,4 +1,4 @@
-import { mock, test } from "bun:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { installDom } from "@bb-kit/core/testing";
@@ -8,20 +8,6 @@ import { parseCanvas } from "../server/parse.ts";
 import type { CanvasDocument, RenderOutput } from "../shared/document.ts";
 
 installDom();
-mock.module("@pierre/diffs/react", () => ({
-  FileDiff: (props: {
-    readonly options?: { readonly theme?: { readonly dark: string; readonly light: string } };
-    readonly renderHeaderPrefix?: () => ReactElement;
-  }) => (
-    <div
-      data-testid="pierre-file-diff"
-      data-theme-dark={props.options?.theme?.dark}
-      data-theme-light={props.options?.theme?.light}
-    >
-      {props.renderHeaderPrefix?.()}
-    </div>
-  ),
-}));
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
@@ -68,15 +54,17 @@ test("renders markdown and components from a rendered document", async () => {
   await slot.findByText("One root cause, three symptoms");
   assert.ok(slot.container.textContent?.includes("Flaky test triage for bb-plugins CI"));
   assert.equal(slot.container.querySelectorAll(".canvas-diff").length, 1);
-  const pierre = slot.getByTestId("pierre-file-diff");
-  assert.equal(pierre.getAttribute("data-theme-dark"), "pierre-dark");
-  assert.equal(pierre.getAttribute("data-theme-light"), "pierre-light");
   const toggle = slot.getByRole("button", { name: "Collapse scripts/bb-dev-cli" });
   fireEvent.click(toggle);
   assert.equal(
     slot.getByRole("button", { name: "Expand scripts/bb-dev-cli" }).getAttribute("aria-expanded"),
     "false",
   );
+  const bodyId = toggle.getAttribute("aria-controls");
+  assert.ok(bodyId);
+  assert.equal(document.getElementById(bodyId)?.hidden, true);
+  fireEvent.click(slot.getByRole("button", { name: "Expand scripts/bb-dev-cli" }));
+  assert.equal(document.getElementById(bodyId)?.hidden, false);
   assert.equal(
     slot.container.querySelector(".canvas-prose")?.getAttribute("data-canvas-style"),
     "default",

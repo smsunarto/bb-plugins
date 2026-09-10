@@ -1,4 +1,4 @@
-import { mock, test } from "bun:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { installDom } from "@bb-kit/core/testing";
 import type { ReactElement } from "react";
@@ -7,9 +7,6 @@ import { parseCanvas } from "../server/parse.ts";
 import type { CanvasDocument, RenderOutput } from "../shared/document.ts";
 
 installDom();
-mock.module("@pierre/diffs/react", () => ({
-  FileDiff: () => <div data-testid="pierre-file-diff" />,
-}));
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
 const { CanvasOpener } = await import("./canvas.tsx");

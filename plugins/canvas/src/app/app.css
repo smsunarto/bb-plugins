@@ -375,67 +375,34 @@
   min-width: 0;
 }
 
-/* DiffView frames Pierre the way the diffs.com landing page does: Berkeley
- * Mono at Pierre's 13px/20px, a 10px radius, and the host hairline border.
- * Pierre draws everything inside. */
+/* Canvas owns the disclosure. BB's SDK owns the code presentation and theme. */
 .canvas-diff {
-  --diffs-font-family:
-    "Berkeley Mono", "BerkeleyMono", "SF Mono", Monaco, Consolas, "Ubuntu Mono", "Liberation Mono",
-    "Courier New", monospace;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
 }
 
-/* Pierre reads its palette from custom properties on the diffs-container
- * host. A bb theme such as Monokai pins its own values there from the
- * document, and those beat the theme CSS Pierre injects into the shadow root.
- * Declaring the diffs.com values on the host itself wins over both, and
- * `initial` on the -override family lets Pierre fall back to the theme. */
-.canvas-diff > diffs-container {
-  --diffs-dark: #fafafa;
-  --diffs-dark-bg: #0a0a0a;
-  --diffs-dark-addition-color: #07c480;
-  --diffs-dark-deletion-color: #ff2e3f;
-  --diffs-dark-modified-color: #009fff;
-  --diffs-light: #0a0a0a;
-  --diffs-light-bg: #ffffff;
-  --diffs-light-addition-color: #18a46c;
-  --diffs-light-deletion-color: #d52c36;
-  --diffs-light-modified-color: #009fff;
-  --diffs-addition-color-override: initial;
-  --diffs-deletion-color-override: initial;
-  --diffs-modified-color-override: initial;
-  --diffs-bg-context-override: initial;
-  --diffs-bg-context-gutter-override: initial;
-  --diffs-bg-buffer-override: initial;
-  --diffs-bg-separator-override: initial;
-  --diffs-bg-addition-override: initial;
-  --diffs-bg-addition-emphasis-override: initial;
-  --diffs-bg-deletion-override: initial;
-  --diffs-bg-deletion-emphasis-override: initial;
-  --diffs-bg-hover-override: initial;
-  --diffs-bg-selection-override: initial;
-  --diffs-bg-addition-number-override: initial;
-  --diffs-bg-deletion-number-override: initial;
-  --diffs-bg-selection-number-override: initial;
-  --diffs-fg-number-override: initial;
-  --diffs-fg-number-addition-override: initial;
-  --diffs-fg-number-deletion-override: initial;
-  --diffs-fg-conflict-marker-override: initial;
-}
-
-/* The DiffView toggle sits in Pierre's header prefix slot. The chevron turns
- * to point down while the diff is open. */
 .canvas-diff-toggle {
   align-items: center;
-  background: transparent;
+  background: var(--muted);
   border: 0;
-  color: inherit;
+  color: var(--foreground);
   cursor: pointer;
-  display: inline-flex;
-  margin-right: 4px;
-  padding: 0;
+  display: flex;
+  font-family: var(--font-mono);
+  gap: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.canvas-diff-toggle span {
+  overflow-wrap: anywhere;
+}
+
+.canvas-diff-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
 .canvas-diff-toggle svg {

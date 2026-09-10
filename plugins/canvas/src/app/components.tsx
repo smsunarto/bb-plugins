@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { processFile } from "@pierre/diffs";
-import { FileDiff } from "@pierre/diffs/react";
 import {
   experimental_FileLink as FileLink,
   experimental_SourceCode as SourceCode,
+  experimental_Diff as Diff,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
 import type { CanvasNode, JsonValue } from "../shared/document.ts";
@@ -298,30 +297,6 @@ function Table(props: CanvasComponentProps): ReactElement {
   );
 }
 
-const gitHeaderPattern = /^(diff --git |--- )/;
-
-// Agents write hunks without the git header, so the patch gets one from the
-// path before Pierre parses it, the same completion the host viewer does.
-function completePatch(path: string, patch: string): string {
-  if (gitHeaderPattern.test(patch)) return patch;
-  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${patch}`;
-}
-
-// `@pierre/diffs` and `@pierre/diffs/react` resolve to the host's own Pierre
-// runtime at load time. The options mirror the diffs.com landing page: Pierre's
-// own dark and light themes, bar indicators, word-alt inline changes, and
-// line-info hunk separators. bb's worker pool highlights with the code theme
-// from settings and ignores `theme`, so the diff renders on the main thread,
-// where Pierre honors it. Pierre's header has no toggle of its own; the block
-// owns `collapsed` and projects a button into the header's prefix slot.
-const pierreLandingOptions = {
-  theme: { dark: "pierre-dark", light: "pierre-light" },
-  diffIndicators: "bars",
-  hunkSeparators: "line-info",
-  lineDiffType: "word-alt",
-  overflow: "scroll",
-} as const;
-
 function DiffView(props: CanvasComponentProps): ReactElement {
   const {
     path,
@@ -335,34 +310,25 @@ function DiffView(props: CanvasComponentProps): ReactElement {
     collapsed?: boolean;
   }>(props.props);
   const [collapsed, setCollapsed] = useState(initiallyCollapsed);
-  const fileDiff = processFile(completePatch(path, patch));
-  if (fileDiff === undefined) {
-    return (
-      <pre className="canvas-block overflow-x-auto rounded-md border border-border p-3 text-[0.8em]">
-        {patch}
-      </pre>
-    );
-  }
+  const bodyId = useId();
   return (
-    <div className="canvas-block canvas-diff" data-collapsed={collapsed ? "" : undefined}>
-      <FileDiff
-        fileDiff={fileDiff}
-        options={{ ...pierreLandingOptions, collapsed, diffStyle: view }}
-        disableWorkerPool
-        renderHeaderPrefix={() => (
-          <button
-            type="button"
-            className="canvas-diff-toggle"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? `Expand ${path}` : `Collapse ${path}`}
-            onClick={() => setCollapsed((value) => !value)}
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
-              <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
-            </svg>
-          </button>
-        )}
-      />
+    <div className="canvas-block canvas-diff">
+      <button
+        type="button"
+        className="canvas-diff-toggle"
+        aria-expanded={!collapsed}
+        aria-controls={bodyId}
+        aria-label={collapsed ? `Expand ${path}` : `Collapse ${path}`}
+        onClick={() => setCollapsed((value) => !value)}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
+          <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
+        </svg>
+        <span>{path}</span>
+      </button>
+      <div id={bodyId} hidden={collapsed}>
+        {!collapsed && <Diff patch={patch} path={path} view={view} overflow="scroll" />}
+      </div>
     </div>
   );
 }

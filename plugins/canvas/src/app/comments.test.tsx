@@ -1,4 +1,4 @@
-import { mock, test } from "bun:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { installDom } from "@bb-kit/core/testing";
 import type { ReactElement } from "react";
@@ -10,7 +10,6 @@ import type { CanvasDocument, RenderOutput } from "../shared/document.ts";
 import { applyOp } from "../shared/ops.ts";
 
 installDom();
-mock.module("@pierre/diffs/react", () => ({ FileDiff: () => <div /> }));
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();

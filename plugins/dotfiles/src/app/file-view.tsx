@@ -1,8 +1,11 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import { Button } from "@/components/ui/button";
-import { buildDiff, contentKey } from "./diff.ts";
-import { FileDiff } from "./diffs-lib.ts";
+import { buildDiff } from "./diff.ts";
+import {
+  experimental_Diff as Diff,
+  experimental_SourceCode as SourceCode,
+} from "@get-bb/plugin-sdk/app";
 import type { RepoPath } from "./route.ts";
 import { useTasks, type Tasks } from "./tasks.ts";
 import { useFileEditor, type ReadyFileEditor } from "./use-file-editor.ts";
@@ -142,16 +145,9 @@ function ReadyFileView({
         <section className={`min-h-0 flex-1 overflow-auto ${view === "diff" ? "" : "hidden"}`}>
           {view === "diff" &&
             (diff ? (
-              <FileDiff
-                key={`${path}:${contentKey(deferredContent)}`}
-                fileDiff={diff}
-                options={{ disableFileHeader: true, diffStyle: "split", overflow: "wrap" }}
-                disableWorkerPool
-              />
+              <Diff {...diff} path={path} view="split" overflow="wrap" />
             ) : (
-              <div className="p-4 text-sm text-muted-foreground">
-                The diff preview could not parse this file.
-              </div>
+              <SourceCode content={deferredContent} path={path} overflow="wrap" />
             ))}
         </section>
       </div>
