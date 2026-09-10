@@ -35,6 +35,7 @@
     "skills": []
   },
   "files": [
+    "LICENSE",
     "dist/",
     "assets/",
     "README.md",
