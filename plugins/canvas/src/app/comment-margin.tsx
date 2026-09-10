@@ -27,16 +27,41 @@ interface PointerOrigin {
   rect: DOMRect;
   width: number;
   height: number;
-  snapshot: HTMLElement;
+  snapshot: HTMLElement | null;
+}
+
+/** Where every conversation was when the pointer was released, so a toggle can start there. */
+interface PointerOrigins {
+  at: number;
+  byId: Map<string, PointerOrigin>;
+}
+
+const ORIGIN_TTL_MS = 500;
+const MOTION_MS = 200;
+
+/** Everything inside the moving surface except the card's own background, border and shadow. */
+const CONTENT_SELECTOR =
+  ":scope > .canvas-comment-float-close, .canvas-comment-card > *, :scope > .canvas-comment-composer > *";
+
+function reducedMotion(): boolean {
+  return matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function motionEase(rail: HTMLElement): string {
+  return getComputedStyle(rail).getPropertyValue("--canvas-comment-motion-ease").trim();
+}
+
+function marginItem(rail: HTMLElement, id: string): HTMLElement | undefined {
+  return Array.from(rail.children).find(
+    (child) => (child as HTMLElement).dataset.marginId === id,
+  ) as HTMLElement | undefined;
 }
 
 function animateToggle(rail: HTMLElement, items: MarginItem[], previous: PointerOrigin) {
   const item = items.find((candidate) => candidate.id === previous.id);
   if (!item || item.minimized === previous.minimized) return;
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const element = Array.from(rail.children).find(
-    (child) => (child as HTMLElement).dataset.marginId === previous.id,
-  );
+  if (reducedMotion()) return;
+  const element = marginItem(rail, previous.id);
   const surface = element?.querySelector<HTMLElement>(".canvas-comment-motion");
   if (!surface) return;
   const next = surface.getBoundingClientRect();
@@ -45,7 +70,7 @@ function animateToggle(rail: HTMLElement, items: MarginItem[], previous: Pointer
   const target = item.minimized ? previous.snapshot : surface;
   const width = item.minimized ? previous.width : next.width;
   const height = item.minimized ? previous.height : next.height;
-  if (!width || !height) return;
+  if (!target || !width || !height) return;
   target.style.transformOrigin = "0 0";
   if (item.minimized) {
     // Keep the outgoing card visible while it contracts into the restored avatar.
@@ -64,23 +89,141 @@ function animateToggle(rail: HTMLElement, items: MarginItem[], previous: Pointer
   }
   const transform = (left: number, top: number, w: number, h: number) =>
     `translate(${left}px, ${top}px) scale(${w / width}, ${h / height})`;
+  const easing = motionEase(rail);
+  const fill = item.minimized ? "forwards" : "none";
   // Animate the visual bounds, leaving anchor measurement and scrolling untouched.
   const animation = target.animate(
     [
       { transform: transform(x, y, previous.rect.width, previous.rect.height) },
       { transform: transform(0, 0, next.width, next.height) },
     ],
-    {
-      duration: 200,
-      fill: item.minimized ? "forwards" : "none",
-      easing: getComputedStyle(rail).getPropertyValue("--canvas-comment-motion-ease").trim(),
-    },
+    { duration: MOTION_MS, fill, easing },
   );
-  if (item.minimized) {
-    const remove = () => target.remove();
-    void animation.finished.then(remove, remove);
+  const companions: Animation[] = [];
+  // The avatar is a circle and the card is a rounded rectangle. A full ellipse on the
+  // unscaled card scales down to the avatar's circle, so the corners morph instead of popping.
+  const card = target.querySelector<HTMLElement>(".canvas-comment-card, .canvas-comment-composer");
+  if (card) {
+    const circle = `${card.offsetWidth / 2}px / ${card.offsetHeight / 2}px`;
+    companions.push(
+      card.animate(
+        item.minimized
+          ? [
+              { borderRadius: "8px" },
+              { borderRadius: "8px", offset: 0.6 },
+              { borderRadius: circle },
+            ]
+          : [
+              { borderRadius: circle, easing },
+              { borderRadius: "8px", offset: 0.3 },
+              { borderRadius: "8px" },
+            ],
+        { duration: MOTION_MS, fill, easing: "linear" },
+      ),
+    );
   }
+  // Text squashed into a 28px box is noise. Hide the contents while the surface is
+  // too small to read and let them fade in once the card is most of its final size.
+  for (const content of target.querySelectorAll<HTMLElement>(CONTENT_SELECTOR)) {
+    companions.push(
+      content.animate(
+        item.minimized
+          ? [{ opacity: 1, easing }, { opacity: 0, offset: 0.4 }, { opacity: 0 }]
+          : [{ opacity: 0 }, { opacity: 0, offset: 0.25, easing }, { opacity: 1 }],
+        { duration: MOTION_MS, fill, easing: "linear" },
+      ),
+    );
+  }
+  const settle = () => {
+    for (const companion of companions) companion.cancel();
+    if (item.minimized) target.remove();
+  };
+  void animation.finished.then(settle, settle);
   return animation;
+}
+
+/** A conversation that kept its state but was pushed aside slides instead of jumping. */
+function animateShift(rail: HTMLElement, previous: PointerOrigin) {
+  if (reducedMotion()) return;
+  const surface = marginItem(rail, previous.id)?.querySelector<HTMLElement>(
+    ".canvas-comment-motion",
+  );
+  if (!surface) return;
+  const next = surface.getBoundingClientRect();
+  const dx = previous.rect.left - next.left;
+  const dy = previous.rect.top - next.top;
+  if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+  return surface.animate(
+    [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0px, 0px)" }],
+    { duration: MOTION_MS, fill: "none", easing: motionEase(rail) },
+  );
+}
+
+function captureOrigins(rail: HTMLElement, motions: Map<string, Animation>): PointerOrigins {
+  const byId = new Map<string, PointerOrigin>();
+  for (const child of rail.children) {
+    const item = child as HTMLElement;
+    const id = item.dataset.marginId;
+    const surface = item.querySelector<HTMLElement>(".canvas-comment-motion");
+    if (!id || !surface) continue;
+    const running = motions.get(id);
+    const animated = (running?.effect as KeyframeEffect | null)?.target;
+    // A card mid-flight is measured where it visually is, not where React laid it out.
+    const visible =
+      running?.playState === "running" &&
+      animated instanceof HTMLElement &&
+      animated.parentElement === item
+        ? animated
+        : surface;
+    const minimized = item.dataset.minimized === "true";
+    let snapshot: HTMLElement | null = null;
+    if (!minimized) {
+      snapshot = visible.cloneNode(true) as HTMLElement;
+      // cloneNode copies a textarea's initial text, not what the user has typed since.
+      const fields = visible.querySelectorAll("textarea");
+      snapshot.querySelectorAll("textarea").forEach((field, index) => {
+        field.value = fields[index]?.value ?? "";
+      });
+    }
+    byId.set(id, {
+      id,
+      minimized,
+      rect: visible.getBoundingClientRect(),
+      width: visible.offsetWidth,
+      height: visible.offsetHeight,
+      snapshot,
+    });
+  }
+  return { at: performance.now(), byId };
+}
+
+/**
+ * After React committed a pointer-initiated change, start every conversation from where it was.
+ * Returns whether a toggle consumed the origins; unrelated renders (polls) must not eat them
+ * before the click that follows the pointer release arrives.
+ */
+function replayOrigins(
+  rail: HTMLElement,
+  items: MarginItem[],
+  origins: PointerOrigins | null,
+  motions: Map<string, Animation>,
+): boolean {
+  if (!origins || performance.now() - origins.at >= ORIGIN_TTL_MS) return true;
+  let toggled = false;
+  for (const origin of origins.byId.values()) {
+    const item = items.find((candidate) => candidate.id === origin.id);
+    if (!item) continue;
+    let animation: Animation | undefined;
+    if (item.minimized !== origin.minimized) {
+      toggled = true;
+      motions.get(origin.id)?.cancel();
+      animation = animateToggle(rail, items, origin);
+    } else if (motions.get(origin.id)?.playState !== "running") {
+      animation = animateShift(rail, origin);
+    }
+    if (animation) motions.set(origin.id, animation);
+  }
+  return toggled;
 }
 
 /** Comments share the document's scroll surface and follow their exact text anchors. */
@@ -96,13 +239,21 @@ export function CommentMargin({
   onDismiss(id: string): void;
 }) {
   const margin = useRef<HTMLDivElement>(null);
-  const pointerOrigin = useRef<PointerOrigin | null>(null);
-  const motion = useRef<Animation | null>(null);
-  useLayoutEffect(() => () => motion.current?.cancel(), []);
+  const pointerOrigins = useRef<PointerOrigins | null>(null);
+  const motions = useRef(new Map<string, Animation>());
+  const cancelMotions = () => {
+    for (const animation of motions.current.values()) animation.cancel();
+    motions.current.clear();
+  };
+  useLayoutEffect(() => cancelMotions, []);
   useLayoutEffect(() => {
     const rail = margin.current;
     const editor = documentRef.current?.querySelector<HTMLElement>(".docs-prose");
-    if (!rail || !editor || !visible) return;
+    if (!rail || !editor || !visible) {
+      pointerOrigins.current = null;
+      cancelMotions();
+      return;
+    }
     let frame = 0;
     const layout = () => {
       const index = textIndex(editor);
@@ -113,9 +264,7 @@ export function CommentMargin({
         getComputedStyle(rail).getPropertyValue("--canvas-comment-overlay").trim() === "1";
       const { top: viewportTop, bottom: viewportBottom } = visibleBounds(editor);
       const cards = items.map((item) => {
-        const element = Array.from(rail.children).find(
-          (child) => (child as HTMLElement).dataset.marginId === item.id,
-        ) as HTMLElement | undefined;
+        const element = marginItem(rail, item.id);
         const offset = quoteOffset(index.text, item.anchor);
         const range =
           offset !== null && item.anchor.quote
@@ -169,9 +318,17 @@ export function CommentMargin({
       frame = requestAnimationFrame(layout);
     };
     layout();
-    if (pointerOrigin.current)
-      motion.current = animateToggle(rail, items, pointerOrigin.current) ?? null;
-    pointerOrigin.current = null;
+    if (replayOrigins(rail, items, pointerOrigins.current, motions.current))
+      pointerOrigins.current = null;
+    // Pointer releases may become a toggle a moment later (a click, or the document's pointerup).
+    // Remember where everything is now; keyboard actions stay instant, so a key press forgets it.
+    const remember = () => {
+      pointerOrigins.current = captureOrigins(rail, motions.current);
+    };
+    const forget = () => {
+      pointerOrigins.current = null;
+      cancelMotions();
+    };
     const resize = new ResizeObserver(schedule);
     resize.observe(editor);
     resize.observe(rail);
@@ -180,51 +337,20 @@ export function CommentMargin({
     mutation.observe(editor, { subtree: true, childList: true, characterData: true });
     window.addEventListener("resize", schedule);
     document.addEventListener("scroll", schedule, true);
+    document.addEventListener("pointerup", remember, true);
+    document.addEventListener("keydown", forget, true);
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
       mutation.disconnect();
       window.removeEventListener("resize", schedule);
       document.removeEventListener("scroll", schedule, true);
+      document.removeEventListener("pointerup", remember, true);
+      document.removeEventListener("keydown", forget, true);
     };
   }, [items, documentRef, visible]);
   return (
-    <div
-      className="canvas-comment-margin"
-      ref={margin}
-      onKeyDownCapture={() => {
-        pointerOrigin.current = null;
-        motion.current?.cancel();
-      }}
-      onClickCapture={(event) => {
-        pointerOrigin.current = null;
-        if (!event.detail || !(event.target instanceof Element)) return;
-        const trigger = event.target.closest(".canvas-comment-marker, .canvas-comment-float-close");
-        const item = trigger?.closest<HTMLElement>(".canvas-comment-margin-item");
-        const surface = item?.querySelector<HTMLElement>(".canvas-comment-motion");
-        if (!item?.dataset.marginId || !surface) return;
-        const animated = (motion.current?.effect as KeyframeEffect | null)?.target;
-        const visibleSurface =
-          motion.current?.playState === "running" &&
-          animated instanceof HTMLElement &&
-          animated.parentElement === item
-            ? animated
-            : surface;
-        const rect = visibleSurface.getBoundingClientRect();
-        const snapshot = visibleSurface.cloneNode(true) as HTMLElement;
-        const width = visibleSurface.offsetWidth;
-        const height = visibleSurface.offsetHeight;
-        motion.current?.cancel();
-        pointerOrigin.current = {
-          id: item.dataset.marginId,
-          minimized: item.dataset.minimized === "true",
-          rect,
-          width,
-          height,
-          snapshot,
-        };
-      }}
-    >
+    <div className="canvas-comment-margin" ref={margin}>
       {items.map((item) => (
         <div
           className="canvas-comment-margin-item"

@@ -907,6 +907,29 @@
 .canvas-comment-motion {
   display: grid;
 }
+/* A new comment has no avatar to grow from, so it eases in from the passage it belongs to. */
+.canvas-comment-margin-item[data-margin-id="draft"] > .canvas-comment-motion {
+  transform-origin: 0 0;
+  transition:
+    opacity 160ms var(--canvas-comment-motion-ease),
+    transform 160ms var(--canvas-comment-motion-ease);
+}
+@starting-style {
+  .canvas-comment-margin-item[data-margin-id="draft"] > .canvas-comment-motion {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-comment-margin-item[data-margin-id="draft"] > .canvas-comment-motion {
+    transition: opacity 160ms var(--canvas-comment-motion-ease);
+  }
+  @starting-style {
+    .canvas-comment-margin-item[data-margin-id="draft"] > .canvas-comment-motion {
+      transform: none;
+    }
+  }
+}
 .canvas-comment-margin-item {
   position: absolute;
   top: 0;
@@ -1020,6 +1043,9 @@
     width: min(300px, calc(100% - 16px));
     pointer-events: auto;
   }
+  .canvas-comment-margin-item[data-margin-id="draft"] > .canvas-comment-motion {
+    transform-origin: 0 100%;
+  }
   .canvas-comment-margin .canvas-comment-card {
     background: var(--background);
     border-color: var(--border);
@@ -1123,18 +1149,8 @@
   z-index: 2;
 }
 
-.canvas-review-layout[data-open="true"][data-expanded="false"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-.canvas-review-layout[data-expanded="false"] .canvas-review-sidebar[data-tab="comments"] {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  padding: 0;
-  pointer-events: none;
-}
+/* Wide panes keep the comments column while review is open. Opening a card must not
+ * reflow the document under the passage the card is growing from. */
 .canvas-comment-margin-item {
   pointer-events: auto;
 }
