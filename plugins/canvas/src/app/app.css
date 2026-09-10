@@ -441,6 +441,7 @@
   opacity: 0.65;
 }
 .canvas-review-layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
@@ -879,4 +880,261 @@
   font-size: 1em;
   font-weight: 600;
   margin: 0 0 0.25rem;
+}
+
+/* Margin conversations follow the passage in the same scroll surface. */
+.canvas-comment-float-close {
+  display: none;
+}
+.canvas-review-sidebar[data-tab="comments"] {
+  position: relative;
+  top: auto;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  max-height: none;
+  padding: 0 12px;
+  align-self: stretch;
+}
+.canvas-review-sidebar[data-tab="comments"] .canvas-review-sidebar-heading {
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.canvas-comment-margin {
+  --canvas-comment-motion-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  position: relative;
+}
+.canvas-comment-motion {
+  display: grid;
+}
+.canvas-comment-margin-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+.canvas-comment-margin .canvas-comment-card {
+  position: relative;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 0;
+  cursor: pointer;
+}
+.canvas-comment-margin .canvas-comment-card[data-active="true"] {
+  background: var(--background);
+  border-color: var(--border);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.canvas-comment-margin .canvas-comment-head {
+  gap: 6px;
+  padding-right: 20px;
+}
+.canvas-comment-margin .canvas-comment-avatar {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  font-size: 9px;
+}
+.canvas-comment-margin .canvas-comment-body {
+  margin: 3px 0 0 26px;
+  gap: 7px;
+  font-size: 12px;
+}
+.canvas-comment-reply-count {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.canvas-comment-resolve {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  opacity: 0;
+}
+.canvas-comment-card:is(:hover, :focus-within, [data-active="true"]) .canvas-comment-resolve {
+  opacity: 1;
+}
+.canvas-comment-composer[data-compact="true"] {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px;
+  font-size: 12px;
+}
+.canvas-comment-composer[data-compact="true"] .canvas-comment-avatar {
+  margin-top: 3px;
+}
+.canvas-comment-composer[data-compact="true"] .canvas-comment-textarea {
+  min-height: 24px;
+  padding: 2px 0;
+  flex: 1;
+  font-size: 12px;
+}
+.canvas-comment-composer[data-compact="true"] .canvas-comment-composer-actions {
+  margin-top: 1px;
+}
+.canvas-comment-composer[data-compact="true"]
+  :is(.canvas-comment-shortcut, .canvas-review-text-button) {
+  display: none;
+}
+.canvas-comment-composer[data-compact="true"] .canvas-comment-submit {
+  border-radius: 50%;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+}
+.canvas-comment-inline-reply {
+  margin: 3px -3px -3px -26px;
+}
+.canvas-comment-inline-reply[hidden] {
+  display: none;
+}
+.canvas-comment-inline-reply .canvas-comment-composer {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 4px 0;
+}
+@container (max-width: 760px) {
+  .canvas-review-layout {
+    position: relative;
+  }
+  .canvas-review-sidebar[data-tab="comments"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .canvas-comment-margin {
+    --canvas-comment-overlay: 1;
+  }
+  .canvas-comment-margin-item {
+    width: min(300px, calc(100% - 16px));
+    pointer-events: auto;
+  }
+  .canvas-comment-margin .canvas-comment-card {
+    background: var(--background);
+    border-color: var(--border);
+    box-shadow: 0 4px 18px color-mix(in srgb, var(--foreground) 14%, transparent);
+    max-height: min(360px, calc(100dvh - 160px));
+    overflow-y: auto;
+  }
+  .canvas-comment-float-close {
+    display: flex;
+    position: relative;
+    margin: 0 0 4px auto;
+    width: 24px;
+    height: 24px;
+    z-index: 2;
+    background: var(--background);
+    border: 1px solid var(--border);
+    font-size: 18px;
+  }
+}
+.canvas-comment-margin .canvas-comment-card > :not(.canvas-comment-resolve) {
+  pointer-events: none;
+}
+.canvas-comment-margin
+  .canvas-comment-card
+  :is(.canvas-comment-resolve, .canvas-comment-inline-reply) {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+.canvas-comment-margin .canvas-comment-card .canvas-comment-resolve {
+  position: absolute;
+}
+.canvas-comment-margin .canvas-comment-inline-reply {
+  margin: 10px 0 0;
+}
+.canvas-margin-message + .canvas-margin-message {
+  margin-top: 12px;
+}
+.canvas-review-controls {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.canvas-review-controls[hidden] {
+  display: none;
+}
+.canvas-review-controls .canvas-review-sidebar-heading {
+  padding: 0;
+}
+.canvas-review-controls .canvas-review-tabs {
+  position: static;
+  border: 0;
+  margin: 0;
+  gap: 12px;
+  background: transparent;
+}
+.canvas-review-controls .canvas-review-tabs button {
+  padding: 4px 0;
+}
+.canvas-comment-margin .canvas-comment-card[data-active="true"] .canvas-margin-message {
+  pointer-events: auto;
+  position: relative;
+}
+@container (max-width: 500px) {
+  .canvas-review-toolbar:has(.canvas-review-controls:not([hidden])) .canvas-review-hint {
+    display: none;
+  }
+}
+
+/* Floating conversations keep an opaque surface while the pointer moves over them. */
+.canvas-comment-margin .canvas-comment-card:hover {
+  background: var(--background);
+}
+
+.canvas-comment-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 12%, transparent);
+  cursor: pointer;
+  opacity: 1;
+}
+.canvas-comment-marker:hover {
+  background: var(--background);
+  opacity: 1;
+}
+.canvas-comment-marker[hidden],
+.canvas-comment-card[hidden],
+.canvas-comment-margin-item[data-minimized="true"] .canvas-comment-float-close {
+  display: none;
+}
+.canvas-comment-margin-item[data-minimized="true"] {
+  width: 28px;
+  z-index: 2;
+}
+
+.canvas-review-layout[data-open="true"][data-expanded="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.canvas-review-layout[data-expanded="false"] .canvas-review-sidebar[data-tab="comments"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+.canvas-comment-margin-item {
+  pointer-events: auto;
 }

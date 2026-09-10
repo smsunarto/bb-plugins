@@ -8,7 +8,7 @@ import {
   CommentsToolbar,
   Composer,
   CommentIcon,
-  ThreadCard,
+  MarginThread,
   useComments,
 } from "./comments.tsx";
 import { quoteOffset, textIndex } from "./text-selection.ts";
@@ -16,6 +16,7 @@ import { rpc } from "./rpc.ts";
 import { useCanvas } from "./state.tsx";
 import { SelectionActions, type ReviewSelection } from "./selection-actions.tsx";
 import { ReviewTabs } from "./review-tabs.tsx";
+import { CommentMargin } from "./comment-margin.tsx";
 
 export interface CanvasReviewProps {
   tab: "comments" | "edits";
@@ -110,6 +111,8 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
       // Resume an unfinished comment without silently moving it to a new quote.
       if (!composing) setComposing(anchor);
       setSelected(null);
+      setActiveId(null);
+      window.getSelection()?.removeAllRanges();
       setOpen(true);
       setTab("comments");
       if (composing)
@@ -176,6 +179,8 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
         }
       } else if (event.key === "Escape" && root.current?.contains(event.target as Node)) {
         setSelected(null);
+        if (event.target instanceof Element && event.target.closest(".canvas-comment-margin-item"))
+          setActiveId(null);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -239,16 +244,6 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
       ranges.current
         .get(id)
         ?.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
-    else
-      requestAnimationFrame(() => {
-        const card = root.current?.querySelector<HTMLElement>(
-          `[data-thread-id="${CSS.escape(id)}"]`,
-        );
-        card?.scrollIntoView?.({ block: "nearest" });
-        card
-          ?.querySelector<HTMLButtonElement>(".canvas-comment-head")
-          ?.focus({ preventScroll: true });
-      });
   }
   const allPlaced = [...comments.placement.byOffset.values()]
     .flat()
@@ -263,55 +258,13 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
   }, [comments.threads.length, edits.length]);
   return (
     <div className="canvas-review" ref={root}>
-      <style>{`::highlight(${highlightName}) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 28%, transparent); } ::highlight(${highlightName}-active) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 48%, transparent); text-decoration: underline; }`}</style>
+      <style>{`::highlight(${highlightName}) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 28%, transparent); text-decoration: underline; text-decoration-color: var(--warning-text, var(--warning)); } ::highlight(${highlightName}-active) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 48%, transparent); text-decoration: underline; }`}</style>
       <div className="canvas-review-toolbar">
         <span className="canvas-review-hint">
           Select text to comment <kbd>⌘⇧M</kbd>
         </span>
-        <button
-          type="button"
-          className="canvas-review-button"
-          aria-expanded={open}
-          aria-label={`Review · ${comments.openCount} comments · ${pendingEdits.length} edits`}
-          onClick={() => {
-            openedForContent.current = true;
-            setOpen(!open);
-          }}
-        >
-          <CommentIcon /> Review
-          {composing && <span className="canvas-review-count">Draft</span>}
-          {comments.openCount + pendingEdits.length > 0 && (
-            <span className="canvas-review-count">{comments.openCount + pendingEdits.length}</span>
-          )}
-        </button>
-      </div>
-      <div className="canvas-review-layout" data-open={open}>
-        <div
-          className="canvas-review-document"
-          onPointerUp={(event) => {
-            selection();
-            if (!window.getSelection()?.isCollapsed) return;
-            for (const [id, range] of ranges.current) {
-              if (
-                [...range.getClientRects()].some(
-                  (rect) =>
-                    event.clientX >= rect.left &&
-                    event.clientX <= rect.right &&
-                    event.clientY >= rect.top &&
-                    event.clientY <= rect.bottom,
-                )
-              ) {
-                focusThread(id, false);
-                break;
-              }
-            }
-          }}
-        >
-          {props.children}
-        </div>
-        <aside className="canvas-review-sidebar" aria-label="Canvas review" hidden={!open}>
+        <div className="canvas-review-controls" hidden={!open}>
           <div className="canvas-review-sidebar-heading">
-            <span>Review</span>
             <button
               type="button"
               className="canvas-review-icon-button"
@@ -339,6 +292,60 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
             commentCount={comments.openCount}
             editCount={pendingEdits.length}
           />
+        </div>
+        <button
+          type="button"
+          className="canvas-review-button"
+          aria-expanded={open}
+          aria-label={`Review · ${comments.openCount} comments · ${pendingEdits.length} edits`}
+          onClick={() => {
+            openedForContent.current = true;
+            setOpen(!open);
+          }}
+        >
+          <CommentIcon /> Review
+          {composing && <span className="canvas-review-count">Draft</span>}
+          {comments.openCount + pendingEdits.length > 0 && (
+            <span className="canvas-review-count">{comments.openCount + pendingEdits.length}</span>
+          )}
+        </button>
+      </div>
+      <div
+        className="canvas-review-layout"
+        data-open={open}
+        data-tab={tab}
+        data-expanded={Boolean(composing || activeId || tab === "edits")}
+      >
+        <div
+          className="canvas-review-document"
+          onPointerUp={(event) => {
+            selection();
+            if (!window.getSelection()?.isCollapsed) return;
+            setActiveId(null);
+            for (const [id, range] of ranges.current) {
+              if (
+                [...range.getClientRects()].some(
+                  (rect) =>
+                    event.clientX >= rect.left &&
+                    event.clientX <= rect.right &&
+                    event.clientY >= rect.top &&
+                    event.clientY <= rect.bottom,
+                )
+              ) {
+                focusThread(id, false);
+                break;
+              }
+            }
+          }}
+        >
+          {props.children}
+        </div>
+        <aside
+          className="canvas-review-sidebar"
+          data-tab={tab}
+          aria-label="Canvas review"
+          hidden={!open}
+        >
           <section
             id={`${highlightName}-comments`}
             role="tabpanel"
@@ -348,20 +355,6 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
             <div className="mb-3 flex flex-wrap gap-2 text-xs">
               <CommentsToolbar />
             </div>
-            {composing && (
-              <Composer
-                quote={composing.quote}
-                placeholder="Add a comment"
-                submitLabel="Comment"
-                onSubmit={(body) => {
-                  const id = comments.openSelection(composing, body);
-                  setComposing(null);
-                  focusThread(id, false);
-                }}
-                onCancel={() => setComposing(null)}
-                onEscape={closeReview}
-              />
-            )}
             {!comments.threads.length && !composing && (
               <p className="canvas-review-empty">
                 <CommentIcon />
@@ -369,23 +362,64 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
                 <span>Select a passage to start a conversation.</span>
               </p>
             )}
-            {allPlaced
-              .filter(({ thread }) => comments.showResolved || thread.resolvedAtMs === null)
-              .map((placed) => (
-                <ThreadCard
-                  key={placed.thread.id}
-                  placed={
-                    matched.has(placed.thread.id)
-                      ? {
-                          ...placed,
-                          match: { kind: "anchored", offset: 0, index: 0, editedSince: false },
+            <CommentMargin
+              documentRef={root}
+              onDismiss={(id) => (id === "draft" ? closeReview() : setActiveId(null))}
+              visible={open && tab === "comments"}
+              items={[
+                ...(composing
+                  ? [
+                      {
+                        id: "draft",
+                        minimized: false,
+                        anchor: composing,
+                        content: (
+                          <Composer
+                            compact
+                            quote={null}
+                            placeholder="Add a comment"
+                            submitLabel="Comment"
+                            onSubmit={(body) => {
+                              const id = comments.openSelection(composing, body);
+                              setComposing(null);
+                              focusThread(id, false);
+                            }}
+                            onCancel={() => setComposing(null)}
+                            onEscape={closeReview}
+                          />
+                        ),
+                      },
+                    ]
+                  : []),
+                ...allPlaced
+                  .filter(({ thread }) => comments.showResolved || thread.resolvedAtMs === null)
+                  .map((placed) => ({
+                    id: placed.thread.id,
+                    minimized: activeId !== placed.thread.id,
+                    anchor: placed.thread.anchor,
+                    content: (
+                      <MarginThread
+                        placed={
+                          matched.has(placed.thread.id)
+                            ? {
+                                ...placed,
+                                match: {
+                                  kind: "anchored",
+                                  offset: 0,
+                                  index: 0,
+                                  editedSince: false,
+                                },
+                              }
+                            : placed
                         }
-                      : placed
-                  }
-                  active={activeId === placed.thread.id}
-                  onActivate={() => focusThread(placed.thread.id, true)}
-                />
-              ))}
+                        active={activeId === placed.thread.id}
+                        onActivate={() => setActiveId(placed.thread.id)}
+                        onMinimize={() => setActiveId(null)}
+                      />
+                    ),
+                  })),
+              ]}
+            />
           </section>
           <section
             id={`${highlightName}-edits`}

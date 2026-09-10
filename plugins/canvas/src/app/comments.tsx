@@ -337,13 +337,15 @@ export function Composer(props: {
   readonly onSubmit: (body: string) => void;
   readonly onCancel: () => void;
   readonly onEscape?: () => void;
+  readonly compact?: boolean;
+  readonly autoFocus?: boolean;
 }): ReactElement {
   const [body, setBody] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
+    if (props.autoFocus === false) return;
     field.current?.focus({ preventScroll: true });
-    field.current?.scrollIntoView?.({ block: "nearest" });
-  }, []);
+  }, [props.autoFocus]);
   useLayoutEffect(() => {
     if (!field.current) return;
     field.current.style.height = "auto";
@@ -351,10 +353,18 @@ export function Composer(props: {
   }, [body]);
   const trimmed = body.trim();
   const submit = (): void => {
-    if (trimmed.length > 0) props.onSubmit(trimmed);
+    if (trimmed.length > 0) {
+      props.onSubmit(trimmed);
+      if (props.compact) setBody("");
+    }
   };
   return (
-    <div className="canvas-comment-composer">
+    <div className="canvas-comment-composer" data-compact={props.compact || undefined}>
+      {props.compact && (
+        <span className="canvas-comment-avatar" aria-hidden="true">
+          Y
+        </span>
+      )}
       {props.quote !== null ? (
         <blockquote className="canvas-comment-quote" title={props.quote}>
           {props.quote}
@@ -362,7 +372,7 @@ export function Composer(props: {
       ) : null}
       <textarea
         ref={field}
-        rows={2}
+        rows={props.compact ? 1 : 2}
         className="canvas-comment-textarea"
         placeholder={props.placeholder}
         value={body}
@@ -373,12 +383,20 @@ export function Composer(props: {
             event.preventDefault();
             event.stopPropagation();
             (props.onEscape ?? props.onCancel)();
+          } else if (
+            props.compact &&
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            submit();
           } else submitOnEnter(event, submit);
         }}
       />
       <div className="canvas-comment-composer-actions">
         <span className="canvas-comment-shortcut" aria-hidden="true">
-          ⌘↵ to send
+          {props.compact ? "Enter to send · Shift+Enter for a new line" : "⌘↵ to send"}
         </span>
         <button type="button" className="canvas-review-text-button" onClick={props.onCancel}>
           Cancel
@@ -388,8 +406,24 @@ export function Composer(props: {
           className="canvas-review-button canvas-comment-submit"
           disabled={trimmed.length === 0}
           onClick={submit}
+          aria-label={props.submitLabel}
+          title={props.compact ? `${props.submitLabel} (Enter)` : undefined}
         >
-          {props.submitLabel}
+          {props.compact ? (
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              aria-hidden="true"
+            >
+              <path d="M8 12V4m-4 4 4-4 4 4" />
+            </svg>
+          ) : (
+            props.submitLabel
+          )}
         </button>
       </div>
     </div>
@@ -421,6 +455,101 @@ function ThreadQuote({ placed, onActivate }: { placed: PlacedThread; onActivate?
     <blockquote className="canvas-comment-quote" title={quote}>
       {quote}
     </blockquote>
+  );
+}
+
+export function MarginThread({
+  placed,
+  active,
+  onActivate,
+  onMinimize,
+}: {
+  placed: PlacedThread;
+  active: boolean;
+  onActivate(): void;
+  onMinimize(): void;
+}): ReactElement {
+  const comments = useComments();
+  const { thread } = placed;
+  const resolved = thread.resolvedAtMs !== null;
+  const first = thread.messages[0];
+  return (
+    <>
+      <button
+        type="button"
+        className="canvas-comment-marker"
+        hidden={active}
+        aria-label={`Open comment by ${authorLabel[first.author]}`}
+        title={`${authorLabel[first.author]}: ${first.body}`}
+        onClick={onActivate}
+      >
+        <span className="canvas-comment-avatar" data-author={first.author} aria-hidden="true">
+          {first.author === "agent" ? "A" : "Y"}
+        </span>
+      </button>
+      <article
+        className="canvas-comment-card"
+        hidden={!active}
+        data-thread-id={thread.id}
+        data-active={active || undefined}
+        data-resolved={resolved ? "" : undefined}
+      >
+        <button
+          type="button"
+          className="canvas-comment-resolve canvas-review-icon-button"
+          aria-label={resolved ? "Reopen" : "Resolve"}
+          title={resolved ? "Reopen" : "Resolve"}
+          onClick={() => comments.resolve(thread.id, !resolved)}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            aria-hidden="true"
+          >
+            <path d="m3 8 3 3 7-7" />
+          </svg>
+        </button>
+        {placed.match.kind === "detached" && <ThreadQuote placed={placed} />}
+        {thread.messages.map((message) => (
+          <div className="canvas-margin-message" key={message.id}>
+            <div className="canvas-comment-head">
+              <span
+                className="canvas-comment-avatar"
+                data-author={message.author}
+                aria-hidden="true"
+              >
+                {message.author === "agent" ? "A" : "Y"}
+              </span>
+              <span className="canvas-comment-author">{authorLabel[message.author]}</span>
+              <time
+                className="canvas-comment-time"
+                dateTime={new Date(message.createdAtMs).toISOString()}
+                title={new Date(message.createdAtMs).toLocaleString()}
+              >
+                {relativeTime(message.createdAtMs, Date.now())}
+              </time>
+            </div>
+            <p className="canvas-comment-body whitespace-pre-wrap">{message.body}</p>
+          </div>
+        ))}
+        <div hidden={!active} className="canvas-comment-inline-reply">
+          <Composer
+            compact
+            autoFocus={active}
+            quote={null}
+            placeholder="Reply"
+            submitLabel="Reply"
+            onSubmit={(body) => comments.reply(thread.id, body)}
+            onCancel={onMinimize}
+            onEscape={onMinimize}
+          />
+        </div>
+      </article>
+    </>
   );
 }
 

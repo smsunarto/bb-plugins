@@ -11,6 +11,14 @@ installTestPluginRuntime();
 const { MarkdownEditor, previewUrl } = await import("./markdown-editor");
 
 beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   window.matchMedia = vi.fn().mockImplementation((media: string) => ({
     matches: false,
     media,
@@ -18,7 +26,10 @@ beforeEach(() => {
     removeEventListener() {},
   }));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 async function replaceText(element: HTMLElement, text: string) {
   const editor = getNearestEditorFromDOMNode(element);
@@ -162,9 +173,15 @@ it("preserves an unfinished comment across closing and keyboard tab navigation",
   fireEvent.click(slot.getByRole("button", { name: /Review ·/ }));
   fireEvent.keyDown(field, { key: "Enter", metaKey: true, isComposing: true });
   expect(comment).not.toHaveBeenCalled();
-  fireEvent.keyDown(field, { key: "Enter", metaKey: true });
+  fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+  expect(comment).not.toHaveBeenCalled();
+  fireEvent.keyDown(field, { key: "Enter" });
   await waitFor(() => expect(comment).toHaveBeenCalledTimes(1));
   expect(comment.mock.calls[0]?.[0].op.thread.messages[0].body).toBe("Keep this draft.");
+  const card = slot.container.querySelector("[data-margin-id] .canvas-comment-card")!;
+  expect(card.getAttribute("data-active")).toBe("true");
+  expect(card.querySelector(".canvas-comment-quote")).toBeNull();
+  expect(await slot.findByRole("textbox", { name: "Reply" })).toBeTruthy();
 });
 
 it("accepts one suggestion through Canvas and reports the saved source without autosaving it", async () => {
