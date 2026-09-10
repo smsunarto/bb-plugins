@@ -106,19 +106,35 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
   for (let index = preorder.length - 1; index >= 0; index--) {
     const node = preorder[index]!;
     for (const child of node.children) {
-      if (child.shelf === "pinned") node.shelf = "pinned";
-      else if (
-        node.shelf === "waiting" &&
-        (child.shelf === "nextAction" || statusPriority(child.statusThread) >= 3)
-      )
-        node.shelf = "nextAction";
       node.attentionAt = Math.max(node.attentionAt, child.attentionAt);
       node.updatedAt = Math.max(node.updatedAt, child.updatedAt);
       node.matchesSearch ||= child.matchesSearch;
       if (statusPriority(child.statusThread) > statusPriority(node.statusThread))
         node.statusThread = child.statusThread;
     }
+    node.shelf = familyShelf(node);
   }
+}
+
+/**
+ * A family is one unit of work. Any live descendant keeps the whole family in
+ * waiting; only a raised hand somewhere in the family brings it back to the
+ * user, and a pinned descendant pins the family.
+ */
+function familyShelf(node: InboxThreadNode): InboxShelf {
+  if (node.shelf !== "nextAction" && node.shelf !== "waiting") {
+    return node.children.some((child) => child.shelf === "pinned") ? "pinned" : node.shelf;
+  }
+  if (node.children.some((child) => child.shelf === "pinned")) return "pinned";
+  const needsUser =
+    node.thread.hasPendingInteraction ||
+    node.children.some(
+      (child) => child.shelf === "nextAction" && statusPriority(child.statusThread) >= 5,
+    );
+  if (needsUser) return "nextAction";
+  const working =
+    node.shelf === "waiting" || node.children.some((child) => child.shelf === "waiting");
+  return working ? "waiting" : "nextAction";
 }
 
 function familyComparator() {

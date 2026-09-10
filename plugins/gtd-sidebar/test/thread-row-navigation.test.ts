@@ -691,7 +691,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(rowIds(view.slot), ["root", "unrelated"]);
     });
 
-    it("settles a waiting child on Next Action and advances only through visible rows", () => {
+    it("keeps a family with a working child in Waiting and settles through visible rows", () => {
       const currentActions = actions();
       const host = {
         ...hostState([
@@ -704,13 +704,17 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       };
       const view = mount(host, { activeThreadId: "child" }, true);
       fireEvent.click(rowButton(view.slot, "child", "Collapse children of child"));
-      assert.deepEqual(rowIds(view.slot), ["root", "child", "next"]);
+      assert.deepEqual(rowIds(view.slot), ["next", "root", "child"]);
       const section = row(view.slot, "child").closest("section");
-      assert.equal(section?.getAttribute("aria-label"), "Next Action");
-      assert.ok(rowButton(view.slot, "child", "Snooze"));
+      assert.equal(section?.getAttribute("aria-label"), "Waiting");
+      assert.equal(row(view.slot, "root").closest("section"), section);
+      assert.equal(
+        row(view.slot, "next").closest("section")?.getAttribute("aria-label"),
+        "Next Action",
+      );
       fireEvent.pointerDown(rowButton(view.slot, "child", "Settle"));
       assert.deepEqual(currentActions.archive.mock.calls, [["child"]]);
-      assert.deepEqual(currentActions.open.mock.calls, [["next"]]);
+      assert.deepEqual(currentActions.open.mock.calls, [["root"]]);
     });
   });
 

@@ -77,7 +77,7 @@ disable the plugin.
 
 - **Pinned** — the user's explicit priority, kept in its own shelf above active work.
 - **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet.
-- **Waiting** — foreground or background agent work is live.
+- **Waiting** — foreground or background agent work is live, in the thread or in any of its subthreads. A family moves back to Next Action only when one of its threads asks you something.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 
 Each section sorts the most recently updated threads first. The Snoozed order is

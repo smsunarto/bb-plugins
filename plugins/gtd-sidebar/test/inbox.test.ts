@@ -259,7 +259,7 @@ describe("inbox families", () => {
     assert.deepEqual(childrenOf(input, "root"), []);
   });
 
-  it("promotes a working family for hidden descendant attention", () => {
+  it("keeps a working family in waiting even with unread descendants", () => {
     const root = thread({ id: "root", indicator: "runtime" });
     const child = thread({
       id: "child",
@@ -268,10 +268,37 @@ describe("inbox families", () => {
       isUnread: true,
     });
     const tree = buildInboxTree([root, child], active);
-    assert.equal(tree[0]?.shelf, "nextAction");
+    assert.equal(tree[0]?.shelf, "waiting");
     assert.equal(visibleInboxRows(tree, new Set(["root"]))[0]?.statusThread, child);
     assert.equal(visibleInboxRows(tree, new Set())[0]?.statusThread, root);
     assert.equal(tree[0]?.lifecycle, "active");
+  });
+
+  it("moves a quiet family into waiting while any subthread is working", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "root" }),
+        thread({ id: "idle", parentThreadId: "root", isUnread: true }),
+        thread({ id: "mid", parentThreadId: "root" }),
+        thread({ id: "deep", parentThreadId: "mid", indicator: "runtime" }),
+      ],
+      active,
+    );
+    assert.equal(tree[0]?.shelf, "waiting");
+    assert.equal(tree[0]?.children.find((node) => node.thread.id === "mid")?.shelf, "waiting");
+    assert.equal(tree[0]?.children.find((node) => node.thread.id === "idle")?.shelf, "nextAction");
+  });
+
+  it("brings a working family back when any member raises a hand", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "root" }),
+        thread({ id: "busy", parentThreadId: "root", indicator: "runtime" }),
+        thread({ id: "asking", parentThreadId: "root", hasPendingInteraction: true }),
+      ],
+      active,
+    );
+    assert.equal(tree[0]?.shelf, "nextAction");
   });
 
   it("keeps a family pinned when a descendant is pinned", () => {
