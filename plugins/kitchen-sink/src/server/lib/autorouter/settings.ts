@@ -36,14 +36,14 @@ const descriptors = {
     type: "boolean",
     label: "Autorouter",
     description:
-      "Automatically select the project, model, and reasoning when you submit a prompt. The composer button changes this setting.",
+      "Automatically select project, model, and reasoning for new threads. Follow-ups only route Astra reasoning. Other models keep their selections.",
     default: false,
   },
   autorouterFallback: {
     type: "select",
     label: "Autorouter fallback model and reasoning",
     description:
-      "Used when routing is uncertain or inference fails. This replaces the model currently selected in the composer.",
+      "Used for new threads when routing is uncertain or inference fails. Astra follow-ups keep their current reasoning on failure.",
     options: ROUTES.map((route) => route.id),
     default: DEFAULT_ROUTE,
   },

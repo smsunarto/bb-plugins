@@ -22,6 +22,7 @@ import "./app.css";
 import "./timeline-motion/timeline-motion.css";
 import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
 import { AutorouterAction } from "./autorouter/action.tsx";
+import { AutorouterNotification } from "./autorouter/notification.tsx";
 import {
   PROBE_GROUP_TITLE,
   ThreadActivityProbe,
@@ -325,6 +326,7 @@ function SmartPatchDirective(props: PluginMessageDirectiveProps) {
 }
 
 export default definePluginApp((app) => {
+  app.slots.experimental_appOverlay({ id: "autorouter-notification", component: AutorouterNotification });
   app.composer.customize({
     id: "autorouter",
     scopes: ["new-thread", "thread"],

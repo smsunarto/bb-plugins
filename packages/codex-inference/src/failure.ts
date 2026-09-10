@@ -1,21 +1,16 @@
-import type {
-  GtdSidebarAiInferenceCompleteOutput,
-  GtdSidebarAiServiceErrorCode,
-} from "../../lib/host-contract.ts";
+import type { CodexInferenceOutput, CodexInferenceErrorCode } from "./contract.ts";
 
 export class AiServiceFailure extends Error {
-  readonly code: GtdSidebarAiServiceErrorCode;
+  readonly code: CodexInferenceErrorCode;
 
-  constructor(code: GtdSidebarAiServiceErrorCode, message: string) {
+  constructor(code: CodexInferenceErrorCode, message: string) {
     super(message);
     this.name = "AiServiceFailure";
     this.code = code;
   }
 }
 
-export function toAiServiceFailure(
-  error: unknown,
-): Extract<GtdSidebarAiInferenceCompleteOutput, { ok: false }> {
+export function toAiServiceFailure(error: unknown): Extract<CodexInferenceOutput, { ok: false }> {
   if (error instanceof AiServiceFailure) {
     console.error(`codex ai service: ${error.code}: ${error.message}`);
     return { ok: false, code: error.code, message: error.message };

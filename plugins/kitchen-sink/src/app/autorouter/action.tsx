@@ -1,15 +1,22 @@
 import { useRpc, useSettings } from "@get-bb/plugin-sdk/app";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AutorouterRpcContract } from "../../shared/autorouter/contract.ts";
+import { useRouting } from "./use-routing.ts";
+import { RoutingNotice } from "./notice.tsx";
 import "./autorouter.css";
 
 export function AutorouterAction() {
   const { values, isLoading } = useSettings();
   const rpc = useRpc<AutorouterRpcContract>();
+  const root = useRef<HTMLSpanElement>(null);
   const enabled = values?.autorouterEnabled === true;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = `${enabled ? "Disable" : "Enable"} autorouter`;
+  const status = useRouting(root, enabled);
+  const notice = error ?? status.message;
+  const hasError = Boolean(error) || status.error;
+  const showNotice = hasError || status.busy;
 
   async function toggle() {
     setPending(true);
@@ -24,14 +31,23 @@ export function AutorouterAction() {
   }
 
   return (
-    <span className="autorouter-action">
+    <span
+      ref={root}
+      className="autorouter-action"
+      data-autorouter-status={status.busy ? "routing" : status.error ? "error" : "ready"}
+    >
       <button
         type="button"
         className="autorouter-toggle"
         aria-label={label}
         aria-pressed={enabled}
-        title={error ?? `${label}: project, model, and reasoning`}
-        disabled={isLoading || pending}
+        aria-busy={status.busy}
+        title={
+          error ??
+          (status.message ||
+            `${label}: new-thread project/model routing and Astra follow-up reasoning`)
+        }
+        disabled={isLoading || pending || status.busy}
         onClick={() => void toggle()}
       >
         <svg
@@ -50,11 +66,7 @@ export function AutorouterAction() {
           <path d="m15 17 3 3 3-3" />
         </svg>
       </button>
-      {error ? (
-        <span className="autorouter-error" role="alert">
-          {error}
-        </span>
-      ) : null}
+      {showNotice ? <RoutingNotice anchor={root} message={notice} error={hasError} /> : null}
     </span>
   );
 }

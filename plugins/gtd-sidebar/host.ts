@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { completeCodexInference } from "./host/inference/chatgpt-client.ts";
-import { toAiServiceFailure } from "./host/inference/failure.ts";
+import { completeCodexInference } from "@bb-plugins/codex-inference/client";
+import { toAiServiceFailure } from "@bb-plugins/codex-inference/failure";
 import { parseGitButlerBranchSummary } from "./lib/gitbutler.ts";
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 

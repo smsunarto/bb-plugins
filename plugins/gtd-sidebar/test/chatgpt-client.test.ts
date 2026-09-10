@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readInferenceResponse } from "../host/inference/chatgpt-client.ts";
+import { readInferenceResponse } from "@bb-plugins/codex-inference/client";
 
 const sse = (events: unknown[]) =>
   new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));

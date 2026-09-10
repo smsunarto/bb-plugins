@@ -1,9 +1,9 @@
 import type { JsonValue } from "@get-bb/plugin-sdk";
 import type {
-  GtdSidebarAiInferenceCompleteInput,
-  GtdSidebarAiInferenceCompleteOutput,
-  GtdSidebarAiServiceErrorCode,
-} from "../../lib/host-contract.ts";
+  CodexInferenceInput,
+  CodexInferenceOutput,
+  CodexInferenceErrorCode,
+} from "./contract.ts";
 import {
   parseJsonValue,
   readCodexAuthCredentials,
@@ -55,7 +55,7 @@ function invalidResponse(message: string): AiServiceFailure {
   return new AiServiceFailure("invalid_response", message);
 }
 
-function codexRequestErrorCode(status: number): GtdSidebarAiServiceErrorCode {
+function codexRequestErrorCode(status: number): CodexInferenceErrorCode {
   if (status === 401) return "auth_required";
   if (status === 429) return "rate_limited";
   if (status >= 500) return "service_unavailable";
@@ -65,7 +65,7 @@ function codexRequestErrorCode(status: number): GtdSidebarAiServiceErrorCode {
 const CODEX_SERVICE_UNAVAILABLE_PATTERN =
   /\b(?:overloaded|temporarily unavailable|try again later)\b/iu;
 
-function codexStreamFailureErrorCode(failure: CodexStreamFailure): GtdSidebarAiServiceErrorCode {
+function codexStreamFailureErrorCode(failure: CodexStreamFailure): CodexInferenceErrorCode {
   if (failure.code === "server_error") return "service_unavailable";
   if (failure.code === "rate_limit_exceeded") return "rate_limited";
   return CODEX_SERVICE_UNAVAILABLE_PATTERN.test(failure.message)
@@ -218,12 +218,12 @@ function parseStructuredResult(rawText: string): JsonObject {
   return object;
 }
 
-function buildRequestBody(command: GtdSidebarAiInferenceCompleteInput): string {
+export function buildRequestBody(command: CodexInferenceInput): string {
   return JSON.stringify({
     model: command.model,
     instructions:
       "Follow the user prompt and respond with structured JSON that matches the requested schema.",
-    reasoning: { effort: "none" },
+    reasoning: { effort: command.reasoningEffort ?? "none" },
     store: false,
     stream: true,
     input: [{ role: "user", content: [{ type: "input_text", text: command.prompt }] }],
@@ -234,8 +234,8 @@ function buildRequestBody(command: GtdSidebarAiInferenceCompleteInput): string {
 }
 
 export async function completeCodexInference(
-  command: GtdSidebarAiInferenceCompleteInput,
-): Promise<Extract<GtdSidebarAiInferenceCompleteOutput, { ok: true }>> {
+  command: CodexInferenceInput,
+): Promise<Extract<CodexInferenceOutput, { ok: true }>> {
   const auth = await readCodexAuthCredentials();
   // One signal covers the connection and the body: a stalled stream aborts too.
   const signal = AbortSignal.timeout(command.timeoutMs);

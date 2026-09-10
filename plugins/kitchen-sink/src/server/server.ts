@@ -10,6 +10,7 @@ import { registerAutorouterSettings } from "./lib/autorouter/settings.ts";
 import { getAutorouterProjectIndex } from "./rpc/get-autorouter-project-index.ts";
 import { saveAutorouterProjectIndex } from "./rpc/save-autorouter-project-index.ts";
 import { updateAutorouterEnabled } from "./rpc/update-autorouter-enabled.ts";
+import { routeAutorouterPrompt } from "./rpc/route-autorouter-prompt.ts";
 
 /**
  * Composer commands ship as skills under `skills/` (bb's `/` menu lists
@@ -45,6 +46,7 @@ export default definePlugin({
     getAutorouterProjectIndex,
     saveAutorouterProjectIndex,
     updateAutorouterEnabled,
+    routeAutorouterPrompt,
   },
   setup(bb) {
     registerAutorouterSettings(bb);

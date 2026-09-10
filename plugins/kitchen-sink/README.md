@@ -24,6 +24,25 @@ bb's `/` menu lists skills, so each composer command ships as a skill under `ski
 
 Both commands detect GitButler with `but status` and route every write through the `gitbutler` skill when it succeeds. Plain Git repositories use `git` and `gh`.
 
+## Autorouter
+
+The branching-arrow button beside voice input enables autorouting. Its state
+persists across sessions. On Send or plain desktop Enter, one Luna Medium call
+chooses the project, model, and reasoning before BB submits the draft. New threads
+can change projects and providers. Follow-ups keep their thread's project and
+provider, and route the model and reasoning within that provider.
+
+Kitchen Sink settings contain the Astra, Sol, Fable, and Opus routing guidance,
+the fallback model/effort pair, and the editable project index. Run
+`/index-projects` to build that index from `~/git`, with a one-line summary and
+three example prompts per repository. Only the user can invoke that skill.
+
+Uncertain model decisions and inference failures use the configured fallback.
+Unavailable selections leave the draft unsent with an error. This release uses
+the approved temporary native-picker interception. See the
+[autorouter integration contract](src/server/lib/autorouter/README.md) for its
+scope and DOM dependencies.
+
 ## Thread motion
 
 Kitchen Sink fades thread switches and smooths automatic timeline scrolling. See
