@@ -146,7 +146,9 @@ const SlimRowBody = memo(function SlimRowBody({
               className="absolute inset-0 cursor-pointer rounded-xl"
             />
           </ThreadDetails>
-          {compact ? <ProjectChip name={projectName} host={thread.host} /> : null}
+          {compact || isCompactViewport ? (
+            <ProjectChip name={projectName} host={thread.host} />
+          ) : null}
           <span
             className={cn(
               "pointer-events-none relative min-w-0 flex-1 truncate",

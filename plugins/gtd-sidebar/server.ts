@@ -132,14 +132,15 @@ export default function plugin(bb: BbPluginApi) {
     compactThreads: {
       type: "boolean",
       label: "Compact thread rows",
-      description: "Show desktop threads on one line. Subthreads always use compact rows.",
+      description:
+        "Show desktop threads on one line. Subthreads and mobile rows always use compact rows.",
       default: false,
     },
     showProviderIcon: {
       type: "boolean",
       label: "Show agent icons",
       description:
-        "Show icons on two-line cards and mobile rows. Compact desktop rows use tooltips.",
+        "Show icons on two-line cards. Compact rows use tooltips; mobile rows use the long-press menu.",
       default: true,
     },
     automaticallyNameThreads: {

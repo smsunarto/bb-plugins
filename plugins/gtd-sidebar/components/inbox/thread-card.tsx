@@ -25,7 +25,6 @@ import {
   type ThreadActionPlan,
 } from "@/components/inbox/thread-actions";
 import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
-import { StatusGlyph, hasStatusGlyph } from "@/components/inbox/status-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import { FadingText, ProjectChip, ThreadDetails } from "@/components/inbox/thread-details";
 import { useRemoteMachine } from "@/components/inbox/machine-appearance";
@@ -158,13 +157,26 @@ const ThreadCardBody = memo(function ThreadCardBody({
       mobile={isCompactViewport}
     />
   );
+  // One-line rows lead with the project; two-line cards put it on line two.
+  const rowTitle = (
+    <RowProjectChip
+      enabled={isCompactViewport || compact}
+      depth={depth}
+      parentProjectId={parentProjectId}
+      projectId={thread.projectId}
+      projectName={projectName}
+      host={thread.host}
+    >
+      {title}
+    </RowProjectChip>
+  );
   const mobileRow = (interactive: boolean) => (
     <MobileThreadSummary
-      title={title}
-      thread={thread}
+      title={rowTitle}
+      thread={statusThread}
+      now={now}
+      activity={thread.activity}
       pullRequest={pullRequest}
-      provider={provider}
-      showProviderIcon={showProviderIcon}
       interactive={interactive}
     />
   );
@@ -242,18 +254,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
               mobileRow(true)
             ) : (
               <DesktopThreadSummary
-                title={
-                  <DesktopTitle
-                    compact={compact}
-                    depth={depth}
-                    parentProjectId={parentProjectId}
-                    projectId={thread.projectId}
-                    projectName={projectName}
-                    host={thread.host}
-                  >
-                    {title}
-                  </DesktopTitle>
-                }
+                title={rowTitle}
                 thread={statusThread}
                 now={now}
                 plan={plan}
@@ -336,49 +337,54 @@ function ThreadTitle({
   return (
     <span
       className={cn(
-        "min-w-0 flex-1 text-sm",
-        mobile ? "truncate" : "gtd-thread-title",
+        "gtd-thread-title min-w-0 flex-1",
+        mobile && "gtd-mobile-title",
         isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
         isUnread && "font-medium",
       )}
     >
-      {mobile ? title : <FadingText text={title} />}
+      <FadingText text={title} />
     </span>
   );
 }
 
+/**
+ * The compact viewport's row: the same line a compact desktop row draws,
+ * project chip, title, then activity, PR and status-or-age, minus the hover
+ * affordances a touch screen cannot reach. The long-press menu stands in for
+ * the tooltip and the trailing actions.
+ */
 function MobileThreadSummary({
   title,
   thread,
+  now,
+  activity,
   pullRequest,
-  provider,
-  showProviderIcon,
   interactive,
 }: {
   title: ReactNode;
   thread: PluginSidebarThread;
+  now: number;
+  activity: PluginSidebarThread["activity"];
   pullRequest: PluginSidebarPullRequest | null;
-  provider?: ProviderGlyphInfo;
-  showProviderIcon: boolean;
   interactive: boolean;
 }) {
   return (
     <>
       {title}
-      {hasStatusGlyph(thread.indicator) ? (
-        <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />
-      ) : null}
-      <ActivityCounts activity={thread.activity} isCompactViewport />
-      {pullRequest ? (
-        <PullRequestNumber
-          pullRequest={pullRequest}
-          interactive={interactive}
-          className={cn("z-[1]", interactive && "pointer-events-auto")}
-        />
-      ) : null}
-      {showProviderIcon ? (
-        <ProviderGlyph providerId={thread.providerId} provider={provider} />
-      ) : null}
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+        <ActivityCounts activity={activity} isCompactViewport />
+        {pullRequest ? (
+          <PullRequestNumber
+            pullRequest={pullRequest}
+            interactive={interactive}
+            className={cn("z-[1]", interactive && "pointer-events-auto")}
+          />
+        ) : null}
+        <span className={STATUS_SLOT_CLASS}>
+          <StatusOrTime thread={thread} now={now} />
+        </span>
+      </span>
     </>
   );
 }
@@ -545,8 +551,14 @@ function ThreadRowLink({
   );
 }
 
-function DesktopTitle({
-  compact,
+/**
+ * The compact row's leading project chip, drawn where the project is not
+ * already implied: on roots, on children of another project, and on remote
+ * machines. Two-line desktop cards carry the project on their metadata line
+ * instead, so they leave it off.
+ */
+function RowProjectChip({
+  enabled,
   depth,
   parentProjectId,
   projectId,
@@ -554,7 +566,7 @@ function DesktopTitle({
   host,
   children,
 }: {
-  compact: boolean;
+  enabled: boolean;
   depth: number;
   parentProjectId: string | null;
   projectId: string;
@@ -563,9 +575,10 @@ function DesktopTitle({
   children: ReactNode;
 }) {
   const remote = useRemoteMachine(host);
+  if (!enabled) return children;
   return (
     <>
-      {compact && (remote || depth === 0 || parentProjectId !== projectId) ? (
+      {remote || depth === 0 || parentProjectId !== projectId ? (
         <ProjectChip name={projectName} host={host} />
       ) : null}
       {children}

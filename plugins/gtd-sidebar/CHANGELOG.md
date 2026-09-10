@@ -14,6 +14,10 @@
 
 ### Patch Changes
 
+- Mobile rows now draw the compact desktop row: the project chip leads the title,
+  and the trailing slot shows status or age with activity counts and the PR number
+  beside it. The agent icon leaves the mobile row, as it already does on compact
+  desktop rows.
 - The browser-side warm-start cache is gone. The shelves wait for the plugin's own
   rows the same way they already wait for the Settled shelf, and the entries earlier
   versions left under `gtd-sidebar:v1:*` in `localStorage` are removed the first

@@ -67,6 +67,10 @@
   display: flex;
   font-size: 12px;
 }
+/* The compact viewport keeps compact desktop's line but at touch size. */
+.gtd-thread-title.gtd-mobile-title {
+  font-size: 14px;
+}
 .gtd-fading-text {
   display: block;
   min-width: 0;
