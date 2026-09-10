@@ -1,0 +1,51 @@
+{
+  "name": "@smsunarto/bb-plugin-my-stack",
+  "version": "0.1.0",
+  "description": "Scott's coding agent preferences, discovered through small, scoped routing skills.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.42.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.47"
+  },
+  "bb": {
+    "name": "My Stack",
+    "description": "Personal preferences for capable agents. General, harness, and model scopes, discovered through my-way skills.",
+    "branding": {
+      "icon": "./assets/icon.svg"
+    },
+    "server": "./src/server/server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "files": [
+    "assets/",
+    "dist/",
+    "src/",
+    "skills/",
+    "preferences/",
+    "CONSTITUTION.md",
+    "README.md",
+    "SOURCES.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.48",
+    "@types/node": "^22.0.0",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check"
+  }
+}

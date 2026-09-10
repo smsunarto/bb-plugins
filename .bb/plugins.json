@@ -32,6 +32,10 @@
       "source": "./plugins/monokai"
     },
     {
+      "name": "my-stack",
+      "source": "./plugins/my-stack"
+    },
+    {
       "name": "traces",
       "source": "./plugins/traces"
     },

@@ -474,6 +474,19 @@
         "zod": "^4.3.6",
       },
     },
+    "plugins/my-stack": {
+      "name": "@smsunarto/bb-plugin-my-stack",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.1.0",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.48",
+        "@types/node": "^22.0.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/traces": {
       "name": "@smsunarto/bb-plugin-traces",
       "version": "0.1.0",
@@ -1087,6 +1100,8 @@
     "@smsunarto/bb-plugin-kitchen-sink": ["@smsunarto/bb-plugin-kitchen-sink@workspace:plugins/kitchen-sink"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
+
+    "@smsunarto/bb-plugin-my-stack": ["@smsunarto/bb-plugin-my-stack@workspace:plugins/my-stack"],
 
     "@smsunarto/bb-plugin-traces": ["@smsunarto/bb-plugin-traces@workspace:plugins/traces"],
 
