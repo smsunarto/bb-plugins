@@ -13,6 +13,13 @@ Run `bb status --json` for the current project and environment IDs, then:
 bb thread spawn --parent-self --project <project-id> --environment <environment-id> --title "<task title>" --prompt "<self-contained task and context>" --json
 ```
 
+Honor an explicitly requested machine and execution settings. For a remote
+machine without a prepared checkout, replace `--environment` with
+`--machine <machine-id> --new-environment personal` and use the personal project's
+ID from `bb project list --include-personal --json` (`kind: personal`). Keep the
+source project in the task context. Pass requested `--provider`, `--model`, and
+`--reasoning-level` flags explicitly.
+
 Include constraints and expected verification in the prompt. Tell the child to
 do the work itself without delegating it again. Keep this thread for coordination.
 
