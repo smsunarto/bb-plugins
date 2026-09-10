@@ -31,7 +31,7 @@ async function replaceText(element: HTMLElement, text: string) {
   );
 }
 
-function open(content: string, path = "guide.mdx") {
+function open(content: string, path = "guide.mdx", canvas = false) {
   const changed = vi.fn();
   const initialized = vi.fn();
   const slot = renderSlot(
@@ -39,11 +39,13 @@ function open(content: string, path = "guide.mdx") {
     {
       initialValue: content,
       notePath: path,
+      canvasSource: canvas ? { kind: "thread-storage", threadId: "thread-1", path } : undefined,
       previewBaseUrl: "/preview",
       onUpload: async () => ({ markdownPath: "./_attachments/image.png" }),
       onFirstRender: initialized,
       onMarkdownChange: changed,
     },
+    { rpc: { state: () => ({ values: {}, revision: 0 }), comments: () => ({ threads: [] }) } },
   );
   return { slot, changed, initialized };
 }
@@ -56,6 +58,38 @@ it("does not save normalization when opening Markdown or MDX", async () => {
   expect(changed).not.toHaveBeenCalled();
   slot.unmount();
   expect(changed).not.toHaveBeenCalled();
+});
+
+it("renders directives and GFM inside Canvas widgets without falling back to source", async () => {
+  const content = `# Evidence
+
+<Card title="Trace">
+
+> /pstack:teach explain this
+
+| Claim | Result |
+| --- | --- |
+| ~~fixed~~ | still drifting |
+
+- [x] Checked
+
+</Card>
+
+Original paragraph.
+`;
+  const { slot, changed } = open(content, "evidence.canvas.mdx", true);
+  await slot.findByText("Trace");
+  expect(slot.container.querySelector(".canvas-document")?.textContent).toContain("still drifting");
+  expect(slot.container.querySelector(".canvas-document")?.textContent).toContain(
+    "/pstack:teach explain this",
+  );
+  expect(changed).not.toHaveBeenCalled();
+  await replaceText(await slot.findByText("Original paragraph."), "Updated paragraph.");
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  const saved = changed.mock.calls.at(-1)?.[0] as string;
+  expect(saved).toContain("pstack:teach");
+  expect(saved).toContain("~~fixed~~");
+  expect(saved).toContain("[x] Checked");
 });
 
 it("preserves MDX imports, exports, JSX attributes, expressions, and frontmatter through edits", async () => {

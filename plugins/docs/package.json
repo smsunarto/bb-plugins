@@ -115,6 +115,10 @@
     "lexical": "^0.48.0",
     "@smsunarto/bb-plugin-canvas": "workspace:*",
     "mdast-util-mdx": "^3.0.0",
+    "mdast-util-directive": "^3.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-task-list-item": "^2.0.0",
     "mdast-util-to-markdown": "^2.1.0",
     "@mdxeditor/gurx": "^1.2.4"
   }
