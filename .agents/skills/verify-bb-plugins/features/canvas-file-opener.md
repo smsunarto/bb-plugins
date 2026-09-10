@@ -1,18 +1,18 @@
-# Canvas file opener
+# Canvas files in Docs
 
 ## Sub-features
 
-- Canvas registration in the thread file opener.
+- Docs registration for `.md`, `.mdx`, and `.canvas.mdx` file tabs.
 - Rendering of `.canvas.mdx` files inside the side-panel tab.
-- The **Open as canvas** action for other MDX files.
+- Rich text and source modes for Markdown, MDX, and Canvas files.
 - Interactive controls and rendered document state.
-- Comments: a comment button on block hover, thread cards under the block, and `bb canvas comments` for the agent.
+- Comments: block selection below the editor, existing thread cards, and `bb canvas comments` for the agent.
 
 ## How to get to it (user POV)
 
 Open a repository-backed thread. Show the right panel and open a new tab. Search for a `.canvas.mdx` file and select it.
 
-The result is the rendered Canvas document inside the side-panel tab. A plain MDX file instead offers **Open as canvas**.
+The result is a Docs editor with rendered Canvas widgets. Plain MDX and Markdown files use the same toolbar and source-mode controls.
 
 ## Driving it with agent-browser
 
@@ -32,26 +32,15 @@ Capture the file picker, the side panel with the rendered Canvas, and the diff a
 
 ### Comments
 
-Hover a block to reveal its comment button, open the composer, and submit. The thread card appears under the block and the CLI lists it.
-
-```bash
-agent-browser --session "$BROWSER_SESSION" wait --text "Flaky test triage for bb-plugins CI"
-# Inspect the rendered blocks and choose the paragraph's current offset.
-agent-browser --session "$BROWSER_SESSION" eval 'Array.from(document.querySelectorAll("[data-comment-offset]")).map(el => ({ offset: el.getAttribute("data-comment-offset"), text: el.textContent.slice(0,100) }))'
-BLOCK_OFFSET=39 # The opening paragraph in the unchanged example fixture.
-agent-browser --session "$BROWSER_SESSION" hover "[data-comment-offset='$BLOCK_OFFSET']"
-agent-browser --session "$BROWSER_SESSION" click "[data-comment-offset='$BLOCK_OFFSET'] button[aria-label='Comment on this block']"
-agent-browser --session "$BROWSER_SESSION" find role textbox fill --name "Add a comment" "Verify this number"
-agent-browser --session "$BROWSER_SESSION" find role button click --name "Comment" --exact
-agent-browser --session "$BROWSER_SESSION" wait --text "Verify this number"
-"$BB_CLI" canvas comments "$CANVAS_PATH"
-"$BB_CLI" canvas comment "$CANVAS_PATH" "$COMMENT_THREAD_ID" --reply "Checked." --resolve
-```
+Scroll below the editor to Canvas comments. Expand **Add a comment**, choose a
+block from **Comment on**, fill the textbox, and submit **Comment**. Confirm the
+thread appears and `"$BB_CLI" canvas comments "$CANVAS_PATH"` lists it. Reply and
+resolve from either the UI or CLI, then confirm the resolved toggle updates.
 
 `$CANVAS_PATH` is the absolute path of the opened canvas and `$COMMENT_THREAD_ID`
 is the `cmt_...` ID from the `comments` output. `BB_CLI` comes from this run's
 `run.env`. After the resolve, the card hides and the toolbar shows
-**Show resolved (1)**. Capture the hover affordance, the open composer, the
+**Show resolved (1)**. Capture the block selector, the open composer, the
 collapsed card, and the CLI output.
 
 ## Gotchas
@@ -61,5 +50,5 @@ collapsed card, and the CLI output.
 - Narrow the search to one result before selecting the option.
 - Restore changed controls before cleanup when their state can persist.
 - Use `plugins/canvas/examples/flaky-test-triage.canvas.mdx` for the repository fixture.
-- Every block has a `Comment on this block` button. Scope to the target's observed `data-comment-offset`; hover alone does not make the role selector unique. Text split by inline code may not match `find text`.
+- Use the comment section below MDXEditor. Select the intended block by its visible label.
 - Commenting writes `<canvas>.comments.json` beside the file. Use a copy under this run's scratch directory for comment tests. Open it with `"$BB_CLI" thread open <bb-thread-id> "$CANVAS_PATH"`. Remove only sidecars this run created.
