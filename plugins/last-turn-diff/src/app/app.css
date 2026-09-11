@@ -60,12 +60,15 @@
   position: relative;
   --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
   --diffs-font-family: var(--font-mono, ui-monospace, monospace);
-  --diffs-gap-block: 4px;
+  --diffs-font-size: 11px;
+  --diffs-line-height: 18px;
+  --diffs-gap-block: 2px;
+  --diffs-gap-inline: 6px;
 }
 .last-turn-diff-chevron {
   display: inline-flex;
-  width: 20px;
-  height: 24px;
+  width: 18px;
+  height: 20px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -97,8 +100,8 @@
   outline-offset: -2px;
 }
 .last-turn-diff-chevron svg {
-  width: 10px;
-  height: 16px;
+  width: 8px;
+  height: 12px;
   transform: rotate(-90deg);
   transition: transform 150ms;
 }
@@ -108,9 +111,9 @@
 .last-turn-diff-recorded-counts {
   display: inline-flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: 6px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: 11px;
 }
 @media (prefers-reduced-motion: reduce) {
   .last-turn-diff-chevron svg {
