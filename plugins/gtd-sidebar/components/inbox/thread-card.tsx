@@ -293,8 +293,14 @@ function threadCardPresentation({
   return {
     style: {
       "--gtd-depth": depth,
-      ...(isCompactViewport && (depth > 0 || childCount > 0)
-        ? { paddingLeft: 28 + depth * 24 }
+      // A group slides its rows' leading edge right by --gtd-group-indent,
+      // disclosure included; the content pays it back or the chevron lands
+      // on the title. Ungrouped rows resolve the variable to 0 and keep the
+      // same offsets as before.
+      ...(isCompactViewport
+        ? {
+            paddingLeft: `calc(${depth > 0 || childCount > 0 ? 28 + depth * 24 : 10}px + var(--gtd-group-indent, 0px))`,
+          }
         : {}),
     } as CSSProperties,
     className: cn(

@@ -579,6 +579,23 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(within(waiting as HTMLElement).getByRole("button", { name: "Two project (1)" }));
     });
 
+    it("indents grouped mobile rows past the disclosure their group adds", () => {
+      const view = mount(
+        hostState([
+          thread("root"),
+          thread("child", { parentThreadId: "root" }),
+          thread("other", { projectId: "two", latestAttentionAt: 50 }),
+        ]),
+        { isCompactViewport: true },
+      );
+      // The disclosure slides right by --gtd-group-indent inside a group; a
+      // row that does not pay it back leaves the chevron on the title.
+      const paddingLeft = (id: string) => row(view.slot, id).parentElement!.style.paddingLeft;
+      assert.match(paddingLeft("root"), /var\(--gtd-group-indent/);
+      assert.match(paddingLeft("child"), /var\(--gtd-group-indent/);
+      assert.match(paddingLeft("other"), /var\(--gtd-group-indent/);
+    });
+
     it("keeps group order put when the open thread changes", () => {
       const view = mount(
         hostState([
