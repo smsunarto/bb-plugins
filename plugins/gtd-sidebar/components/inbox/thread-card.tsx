@@ -32,6 +32,9 @@ import { snoozeUntilTomorrow } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
 import { useCommittedEvent } from "@/hooks/use-committed-event";
 
+/** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
+const DEPTH_STEP = 16;
+
 interface ThreadCardProps {
   thread: PluginSidebarThread;
   shelf: ActiveThreadShelf;
@@ -300,7 +303,7 @@ function threadCardPresentation({
       // same offsets as before.
       ...(isCompactViewport
         ? {
-            paddingLeft: `calc(${depth > 0 || childCount > 0 ? 28 + depth * 24 : 10}px + var(--gtd-group-indent, 0px))`,
+            paddingLeft: `calc(${depth > 0 || childCount > 0 ? 28 + depth * DEPTH_STEP : 10}px + var(--gtd-group-indent, 0px))`,
           }
         : {}),
     } as CSSProperties,
@@ -423,7 +426,7 @@ function ThreadHierarchy({
 }) {
   const guideOffsets: number[] = [];
   for (let level = 0; level < guides.length; level++) {
-    if (guides[level] === "1") guideOffsets.push(12 + level * 24);
+    if (guides[level] === "1") guideOffsets.push(12 + level * DEPTH_STEP);
   }
   return (
     <>
@@ -434,11 +437,16 @@ function ThreadHierarchy({
           ))}
           <span
             className={cn("gtd-tree-line", lastChild && "gtd-tree-line-last")}
-            style={{ left: 12 + (depth - 1) * 24 }}
+            style={{ left: 12 + (depth - 1) * DEPTH_STEP }}
           />
           <span
             className="gtd-tree-elbow"
-            style={{ left: 12 + (depth - 1) * 24, width: childCount > 0 ? 18 : 30 }}
+            style={{
+              left: 12 + (depth - 1) * DEPTH_STEP,
+              // Stop short of the child's chevron glyph, or 10px short of a
+              // leaf's title, so the elbow never touches what it points at.
+              width: childCount > 0 ? DEPTH_STEP - 6 : DEPTH_STEP + 6,
+            }}
           />
         </span>
       ) : null}

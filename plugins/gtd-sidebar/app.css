@@ -56,8 +56,11 @@
 .gtd-thread-row {
   height: 52px;
   /* Content starts 28px in: 10px past the disclosure's 12px chevron glyph,
-     which sits centred in its 24px hit area. */
-  padding: 6px 10px 6px calc(28px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * 24px);
+     which sits centred in its 24px hit area. Each nesting level steps in by
+     --gtd-depth-step; thread-card.tsx mirrors the value for the tree guides. */
+  --gtd-depth-step: 16px;
+  padding: 6px 10px 6px
+    calc(28px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * var(--gtd-depth-step, 16px));
 }
 .gtd-thread-row.gtd-compact-row,
 .gtd-thread-row.gtd-parked-row {
@@ -219,7 +222,7 @@
 .gtd-disclosure {
   position: absolute;
   z-index: 2;
-  left: calc(var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * 24px);
+  left: calc(var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * var(--gtd-depth-step, 16px));
   top: 50%;
   transform: translateY(-50%);
   display: flex;
