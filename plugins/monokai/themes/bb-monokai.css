@@ -544,6 +544,16 @@
     line-height: 1.25;
   }
 
+  /* The "new thread in this environment" control lands in the grid's `auto`
+   * track, which the default justify-content stretches to the row's leftover
+   * width; the button's default justify-self then fills that track. Pin it to
+   * the start edge at natural icon-button size, beside the checkout chip. The
+   * -ml-1 utility is the stable hook — bb renamed the control's aria-label
+   * across releases while keeping the negative margin. */
+  .dark [data-follow-up-composer-footer] button.-ml-1 {
+    justify-self: start;
+  }
+
   .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > svg {
     width: 1rem;
     height: 1rem;
