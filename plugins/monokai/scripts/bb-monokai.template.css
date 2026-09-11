@@ -498,11 +498,14 @@
     left: 0.375rem;
   }
 
+  /* Unlike the pickers these chips carry no chevron, so the padding stays
+   * symmetric — a right-side reserve would offset the centered label group
+   * from the column's middle. */
   .dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]),
   .dark [data-follow-up-composer-footer] div:has(> [aria-label^="Environment type:"]),
   .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
     padding-left: 0.5rem;
-    padding-right: 1.75rem;
+    padding-right: 0.5rem;
   }
 
   .dark [data-follow-up-composer-footer] [data-option-display]:has([data-icon="Folder"]) {
@@ -550,6 +553,41 @@
    * across releases while keeping the negative margin. */
   .dark [data-follow-up-composer-footer] button.-ml-1 {
     justify-self: start;
+  }
+
+  /* Keep each location chip's icon pinned to the left edge and center only
+   * the label in the space to the icon's right. OptionDisplay wraps icon and
+   * labels in a content-sized inner span, and bb 0.43 renders the machine
+   * chip as a w-fit grid item, so those boxes must fill before the label has
+   * room to center. A truncated label's auto margins collapse, so its
+   * ellipsis stays start-aligned. */
+  .dark [data-follow-up-composer-footer] [data-option-display] > span,
+  .dark
+    [data-follow-up-composer-footer]
+    div:has(> [aria-label^="Environment type:"])
+    > [data-option-display] {
+    flex: 1 1 auto;
+  }
+
+  .dark [data-follow-up-composer-footer] > :first-child > div > span:has(> [data-icon]) {
+    width: 100%;
+  }
+
+  .dark
+    [data-follow-up-composer-footer]
+    [data-option-display]
+    :is([data-promptbox-full-label], [data-promptbox-compact-label]),
+  .dark
+    [data-follow-up-composer-footer]
+    > :first-child
+    > div
+    > span:has(> [data-icon])
+    > span:last-of-type,
+  .dark
+    [data-follow-up-composer-footer]
+    [data-promptbox-hide-branch-compact]
+    > span:last-of-type {
+    margin-inline: auto;
   }
 
   .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > svg {
