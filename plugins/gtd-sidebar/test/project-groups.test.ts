@@ -65,6 +65,38 @@ describe("project groups", () => {
     );
   });
 
+  it("puts projectless roots after every project group, however recent they are", () => {
+    const isProjectless = (projectId: string) => projectId === "proj_personal";
+    const groups = groupRowsByProject(
+      rows([
+        thread("loose", { projectId: "proj_personal", latestAttentionAt: 400 }),
+        thread("a", { latestAttentionAt: 300 }),
+        thread("b", { projectId: "two", latestAttentionAt: 250 }),
+        thread("loose-child", { parentThreadId: "loose", projectId: "one" }),
+        thread("c", { latestAttentionAt: 200 }),
+      ]),
+      isProjectless,
+    );
+    assert.deepEqual(
+      groups.map((group) => [group.projectId, ids(group)]),
+      [
+        ["one", ["a", "c"]],
+        ["two", ["b"]],
+        ["proj_personal", ["loose", "loose-child"]],
+      ],
+    );
+    // Without a projectless marker the shelf keeps its recency order.
+    assert.equal(
+      groupRowsByProject(
+        rows([
+          thread("loose", { projectId: "proj_personal", latestAttentionAt: 400 }),
+          thread("a", { latestAttentionAt: 300 }),
+        ]),
+      )[0]!.projectId,
+      "proj_personal",
+    );
+  });
+
   it("keeps a child under its root whatever project the child belongs to", () => {
     const groups = groupRowsByProject(
       rows([

@@ -101,6 +101,12 @@ export function ThreadInbox({
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects],
   );
+  // Threads without a project sit in bb's implicit personal project. Their
+  // group trails the real projects in every shelf.
+  const personalProjectIds = useMemo(
+    () => new Set(projects.filter((project) => project.isPersonal).map((project) => project.id)),
+    [projects],
+  );
 
   const { shelves, toggleThread } = useInboxTree(
     threads,
@@ -115,7 +121,8 @@ export function ThreadInbox({
   const grouped = shouldGroupByProject(shelves);
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   const groupedShelves = useMemo(() => {
-    const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] => groupRowsByProject(shelves[shelf]);
+    const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
+      groupRowsByProject(shelves[shelf], (projectId) => personalProjectIds.has(projectId));
     return {
       pinned: groupsFor("pinned"),
       nextAction: groupsFor("nextAction"),
@@ -123,7 +130,7 @@ export function ThreadInbox({
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
-  }, [shelves]);
+  }, [shelves, personalProjectIds]);
   const { pinned, nextAction, waiting } = groupedShelves;
   const activeShelves = [
     ["pinned", "Pinned", pinned],
