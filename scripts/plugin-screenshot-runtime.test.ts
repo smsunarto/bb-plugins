@@ -196,13 +196,13 @@ describe("bb screenshot preflight", () => {
   test("fails when a workspace plugin is enabled but not running", async () => {
     const runCommand = async (args: readonly string[]): Promise<string> => {
       if (args.join(" ") === "plugin list --json") {
-        return pluginList({ notRunning: ["agent-proxy"] });
+        return pluginList({ notRunning: ["agentation"] });
       }
       if (args.join(" ") === "theme show --json") return theme();
       return "{}";
     };
 
-    await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow("not running: agent-proxy");
+    await expect(prepareBbForScreenshots(runCommand)).rejects.toThrow("not running: agentation");
   });
 
   test("fails when final theme verification does not converge", async () => {

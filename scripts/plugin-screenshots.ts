@@ -84,10 +84,6 @@ function media(plugin: string, filename: string, className: string, alt: string)
   return `<img class="${className}" src="/media/${plugin}/${filename}" alt="${alt}" draggable="false" />`;
 }
 
-function caption(step: string, text: string): string {
-  return `<figcaption><span>${step}</span>${text}</figcaption>`;
-}
-
 function callout(className: string, step: string, text: string): string {
   return `<div class="scene-callout ${className}"><span>${step}</span>${text}</div>`;
 }
@@ -106,21 +102,6 @@ function root(): string {
         <div class="collection-row"><i>03</i><b>Utilities</b></div>
         <div class="collection-row"><i>04</i><b>Theme</b></div>
       </aside>
-    </div>`;
-}
-
-function agentProxy(): string {
-  return `
-    <div class="composition proxy-composition">
-      <figure class="capture proxy-home">
-        ${media("agent-proxy", "home.png", "capture-image", "Agent Proxy core status and local endpoints")}
-        ${caption("01", "One endpoint. Always available")}
-      </figure>
-      <div class="route-line" aria-hidden="true"><i></i><b>route</b><i></i></div>
-      <figure class="capture proxy-agents">
-        ${media("agent-proxy", "agents.png", "capture-image", "Agent Proxy client wiring controls")}
-        ${caption("02", "Wire every coding agent")}
-      </figure>
     </div>`;
 }
 
@@ -220,15 +201,6 @@ export const ROOT_SCREENSHOT: ScreenshotRecipe = {
 
 export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
   {
-    id: "agent-proxy",
-    name: "Agent Proxy",
-    descriptor: "POOL · ROUTE · FAIL OVER",
-    accent: "#21C991",
-    glow: "18% 16%",
-    assets: ["home.png", "agents.png"],
-    content: agentProxy,
-  },
-  {
     id: "agentation",
     name: "Agentation",
     descriptor: "POINT · EXPLAIN · SEND",
@@ -321,11 +293,6 @@ const STYLES = String.raw`
   .collection-row i { color: var(--accent); font: 700 8px/1 "Screenshot IBM Plex Mono", monospace; font-style: normal; }
   .collection-row b { color: rgba(227,227,221,.72); font-size: 11px; font-weight: 650; }
 
-  .proxy-home { left: 68px; top: 92px; width: 604px; height: 507px; }
-  .proxy-agents { right: 68px; top: 124px; width: 604px; height: 507px; }
-  .route-line { position: absolute; left: 658px; top: 332px; z-index: 4; display: flex; align-items: center; gap: 5px; color: var(--accent); transform: rotate(-4deg); }
-  .route-line i { width: 18px; height: 1px; background: currentColor; opacity: .6; }
-  .route-line b { padding: 5px 7px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; background: #0b100f; font: 700 7px/1 "Screenshot IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
 
   .annotation-capture { left: 108px; top: 79px; width: 724px; height: 390px; }
   .annotation-staging { right: 94px; bottom: 61px; z-index: 4; width: 710px; height: 270px; }

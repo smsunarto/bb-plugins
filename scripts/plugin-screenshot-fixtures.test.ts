@@ -4,15 +4,14 @@ import { PLUGIN_SCREENSHOT_FIXTURES } from "./plugin-screenshot-fixtures";
 describe("plugin screenshot foreground fixtures", () => {
   test("cover every captured README image at DPR 3", () => {
     expect([...new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.plugin))]).toEqual([
-      "agent-proxy",
       "agentation",
       "amp",
       "gh-stack",
       "gtd-sidebar",
       "monokai",
     ]);
-    expect(PLUGIN_SCREENSHOT_FIXTURES).toHaveLength(13);
-    expect(new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.id)).size).toBe(13);
+    expect(PLUGIN_SCREENSHOT_FIXTURES).toHaveLength(11);
+    expect(new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.id)).size).toBe(11);
     expect(PLUGIN_SCREENSHOT_FIXTURES.filter((fixture) => fixture.plugin === "monokai")).toEqual([
       { id: "monokai/app", plugin: "monokai", filename: "app.png", width: 1512, height: 1000 },
     ]);

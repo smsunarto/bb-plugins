@@ -18,11 +18,6 @@
       "component": "bb-kit-sentry",
       "package-name": "@bb-kit/sentry"
     },
-    "plugins/agent-proxy": {
-      "release-type": "node",
-      "component": "agent-proxy",
-      "package-name": "@smsunarto/bb-plugin-agent-proxy"
-    },
     "plugins/agentation": {
       "release-type": "node",
       "component": "agentation",

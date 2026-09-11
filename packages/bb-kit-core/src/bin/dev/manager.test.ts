@@ -1040,7 +1040,7 @@ test("a runtime shares the source checkout but owns its ports, data dir, and shi
   assert.notEqual(guest.dataDir, host.dataDir);
   assert.notEqual(guest.appUrl, host.appUrl);
   // Directly under ~/.bb-dev and ending in 12 hex characters: the shape bb's own
-  // dev data directories have, and the one agent-proxy refuses to load without.
+  // dev data directories have, which plugins read to identify the instance.
   assert.equal(dirname(guest.dataDir ?? ""), join(fixture.userHome, ".bb-dev"));
   assert.match(basename(guest.dataDir ?? ""), /^bb-kit-runtime-guest-[0-9a-f]{12}$/u);
 

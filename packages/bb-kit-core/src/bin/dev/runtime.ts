@@ -130,9 +130,8 @@ export function runtimePortOffset(name: string): number {
  *
  * The 12 hex characters on the end are not decoration. Every bb dev data
  * directory ends in a hash of its checkout path, and plugins read that suffix
- * to give each dev instance its own identity -- agent-proxy derives its port
- * and its launchd label from it, and refuses to load without one. A runtime is
- * a dev instance, so it carries the same shape. The hash is over the runtime
+ * to give each dev instance its own identity, such as a per-instance port or a
+ * launchd label. A runtime is a dev instance, so it carries the same shape. The hash is over the runtime
  * name, because the checkout path is shared and cannot tell runtimes apart.
  */
 export function runtimeInstanceId(name: string): string {

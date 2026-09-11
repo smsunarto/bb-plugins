@@ -16,7 +16,6 @@ describe("plugin screenshot recipes", () => {
 
     expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual(["dotfiles"]);
     expect(recipeIds).toEqual([
-      "agent-proxy",
       "agentation",
       "amp",
       "gh-stack",

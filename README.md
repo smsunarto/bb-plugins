@@ -16,11 +16,6 @@
 
 <table>
 <tr>
-<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/agent-proxy/assets/logo-dark.svg" /><img src="plugins/agent-proxy/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
-<td align="center"><a href="plugins/agent-proxy/"><b>Agent Proxy</b></a></td>
-<td>Pools several Claude Code and Codex subscriptions behind one local endpoint and load-balances across them, moving on when one hits its quota.</td>
-</tr>
-<tr>
 <td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/amp/assets/logo-dark.svg" /><img src="plugins/amp/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
 <td align="center"><a href="plugins/amp/"><b>Amp</b></a></td>
 <td>Runs <a href="https://ampcode.com">Amp</a> as a native bb provider, locally or in an Orb.</td>
@@ -73,14 +68,14 @@ Add this repository as a marketplace once, then install by name:
 
 ```sh
 bb marketplace add git:github.com/smsunarto/bb-plugins
-bb plugin install notify
+bb plugin install gtd-sidebar
 ```
 
 Adding a marketplace installs nothing — it caches the catalog, so these plugins
 become findable by name in `bb plugin search` and in bb's plugin browser. `<id>`
-is `agent-proxy`, `agentation`, `amp`, `gh-stack`, `gtd-sidebar`, `notify`, or
-`monokai`; if another marketplace you have added publishes the same name, spell
-it `notify@smsunarto`.
+is `agentation`, `amp`, `gh-stack`, `gtd-sidebar`, or `monokai`; if another
+marketplace you have added publishes the same name, spell it
+`gtd-sidebar@smsunarto`.
 
 Every plugin ships as a git tag, and the catalog entry carries its release line.
 bb resolves the newest `<id>/vX.Y.Z` tag, clones it, installs the plugin's
@@ -117,7 +112,7 @@ bun run dev
 ```
 
 The command routes the build, baseline, and watchers through one managed bb
-instance. It does not reload `agent-proxy` automatically.
+instance.
 
 To prepare the fixture without starting watchers, run:
 

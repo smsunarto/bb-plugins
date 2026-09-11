@@ -185,8 +185,8 @@ seed_plugin_secrets() {
   donor="$(secret_donor "${target}")"
   [[ -n "${donor}" ]] || return 0
   # Exactly plugins/<id>/secrets/<key>: a plugin setting the schema marks
-  # secret. Anything deeper is a plugin's own store, such as agent-proxy's
-  # generated keys, which each instance creates for itself.
+  # secret. Anything deeper is a plugin's own store of generated keys, which
+  # each instance creates for itself.
   while IFS= read -r -d '' source_file; do
     relative="${source_file#"${donor}/"}"
     if [[ ! -e "${target}/${relative}" ]]; then

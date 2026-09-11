@@ -12,7 +12,6 @@ import {
   KitchenUtensilsIcon,
   Layers01Icon,
   PanelLeftIcon,
-  ServerStack01Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { workspacePlugins } from "./plugin-package";
@@ -127,10 +126,6 @@ const paletteIcon: readonly IconNode[] = [
 ];
 
 const customIcons = {
-  "agent-proxy": {
-    name: "Server",
-    nodes: ServerStack01Icon,
-  },
   agentation: {
     name: "ChatFeedback",
     nodes: ChatFeedbackIcon,

@@ -47,7 +47,7 @@ Read `.agents/skills/verify-bb-plugins`
 If modifying an existing plugin (after a plugin change passed dev-instance verification):
 
 - Run `bb plugin source <id>` and make sure bb is loading the plugin from the correct local path instead of NPM installation, etc. If it's not, reinstall the plugin using local path source.
-- Then, use `bb plugin reload <id>` against the live bb and confirm it is running. Do not this for `agent-proxy`: reload it only when the user explicitly asks.
+- Then, use `bb plugin reload <id>` against the live bb and confirm it is running.
 
 If creating a new plugin:
 

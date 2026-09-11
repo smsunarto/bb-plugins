@@ -18,7 +18,7 @@ describe("managed dev routing", () => {
     );
     expect(packageJson.scripts["dev:setup"]).toBeUndefined();
     expect(packageJson.scripts["build:managed"]).toBeUndefined();
-    expect(packageJson.bbKit.devInstance.watchExclude).toContain("agent-proxy");
+    expect(packageJson.bbKit.devInstance.watchExclude).toEqual([]);
     for (const name of ["screenshots", "screenshots:fixtures"]) {
       expect(packageJson.scripts[name]).toContain("dev-instance run --");
     }

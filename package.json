@@ -28,9 +28,7 @@
       "beforeBuild": [
         "build:framework"
       ],
-      "watchExclude": [
-        "agent-proxy"
-      ],
+      "watchExclude": [],
       "experiments": {
         "changelogPreview": false,
         "editMessages": true,

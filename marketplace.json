@@ -6,26 +6,6 @@
   "description": "Plugins for bb: agents, GitHub stacks, notifications, themes.",
   "plugins": [
     {
-      "id": "agent-proxy",
-      "displayName": "Agent Proxy",
-      "description": "Run CLIProxyAPI as a persistent macOS or Linux service with OAuth accounts, providers, usage, and agent wiring.",
-      "icon": {
-        "url": "plugins/agent-proxy/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/agent-proxy",
-          "range": "*",
-          "tagPrefix": "agent-proxy/"
-        }
-      }
-    },
-    {
       "id": "agentation",
       "displayName": "Agentation",
       "description": "Point at any part of the bb UI \u2014 including plugin surfaces \u2014 and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",

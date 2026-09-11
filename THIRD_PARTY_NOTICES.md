@@ -84,15 +84,6 @@ Source: <https://github.com/benjitaylor/agentation>
 
 ---
 
-## CLIProxyAPI
-
-`plugins/agent-proxy` **downloads and runs** CLIProxyAPI
-(<https://github.com/router-for-me/CLIProxyAPI>) at install time. No CLIProxyAPI
-source or binary is vendored in this repository, so its licence applies to what
-lands on the user's machine, not to anything distributed here.
-
----
-
 ## Fonts
 
 The documentation screenshot renderer loads **Inter** and **IBM Plex Mono** from

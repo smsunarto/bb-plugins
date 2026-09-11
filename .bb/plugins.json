@@ -4,10 +4,6 @@
   "name": "bb-plugins",
   "plugins": [
     {
-      "name": "agent-proxy",
-      "source": "./plugins/agent-proxy"
-    },
-    {
       "name": "agentation",
       "source": "./plugins/agentation"
     },

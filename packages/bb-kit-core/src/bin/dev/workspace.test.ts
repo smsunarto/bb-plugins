@@ -77,7 +77,7 @@ test("workspace reconciliation is ordered, safe, and idempotent", async () => {
   assert.equal(runtime.bbWrites, writesBeforeRepeat);
 });
 
-test("workspace watch uses selected packages and excludes agent-proxy", async () => {
+test("workspace watch uses selected packages and honours watchExclude", async () => {
   const fixture = createWorkspace({ watchExclude: ["beta"] });
   const runtime = new FakeRuntime(fixture.root, fixture.pluginRoots);
   runtime.singletonResult = { kind: "reused" };
