@@ -9,7 +9,7 @@ export type RowCommand =
       shelf: ActiveThreadShelf | "snoozed" | "settled";
       split: boolean;
     }
-  | { kind: "settle"; threadId: string; shelf: ActiveThreadShelf }
+  | { kind: "settle"; threadId: string }
   | { kind: "snooze"; threadId: string; until: number }
   | { kind: "restore"; threadId: string; shelf: "snoozed" | "settled" }
   | { kind: "pin"; threadId: string; pinned: boolean }

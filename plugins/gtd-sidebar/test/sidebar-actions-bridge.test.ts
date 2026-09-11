@@ -6,6 +6,8 @@ import {
   forgetSidebarActions,
   hasSidebarActions,
   publishSidebarActions,
+  settleThread,
+  type PublishedSidebarActions,
 } from "../lib/sidebar-actions-bridge.ts";
 
 function fakeActions(archived: string[]): PluginSidebarThreadActions {
@@ -23,49 +25,63 @@ function fakeActions(archived: string[]): PluginSidebarThreadActions {
   };
 }
 
+function fakeEntry(settled: string[]): PublishedSidebarActions {
+  return {
+    actions: fakeActions([]),
+    settle: (threadId) => settled.push(threadId),
+  };
+}
+
 describe("sidebar actions bridge", () => {
-  let archived: string[];
-  let actions: PluginSidebarThreadActions;
+  let settled: string[];
+  let entry: PublishedSidebarActions;
 
   beforeEach(() => {
-    archived = [];
-    actions = fakeActions(archived);
-    forgetSidebarActions(actions);
+    settled = [];
+    entry = fakeEntry(settled);
+    forgetSidebarActions(entry);
   });
 
   it("has no actions until an inbox publishes them", () => {
     assert.equal(hasSidebarActions(), false);
-    archiveThread("thr_1");
-    assert.deepEqual(archived, []);
+    settleThread("thr_1");
+    assert.deepEqual(settled, []);
   });
 
-  it("archives through the published actions", () => {
-    publishSidebarActions(actions);
+  it("settles through the published dispatcher", () => {
+    publishSidebarActions(entry);
     assert.equal(hasSidebarActions(), true);
-    archiveThread("thr_1");
-    assert.deepEqual(archived, ["thr_1"]);
-    forgetSidebarActions(actions);
+    settleThread("thr_1");
+    assert.deepEqual(settled, ["thr_1"]);
+    forgetSidebarActions(entry);
   });
 
-  it("forgets only the actions it currently holds", () => {
-    const other = fakeActions([]);
-    publishSidebarActions(actions);
+  it("keeps the archiveThread entry settling until the palette can move over", () => {
+    publishSidebarActions(entry);
+    archiveThread("thr_1");
+    assert.deepEqual(settled, ["thr_1"]);
+    forgetSidebarActions(entry);
+  });
+
+  it("forgets only the entry it currently holds", () => {
+    const other = fakeEntry([]);
+    publishSidebarActions(entry);
     forgetSidebarActions(other);
     assert.equal(hasSidebarActions(), true);
-    forgetSidebarActions(actions);
+    forgetSidebarActions(entry);
     assert.equal(hasSidebarActions(), false);
   });
 
   // A remount publishes a fresh object before the old one's cleanup runs, and
   // that cleanup must not clear what the new mount just published.
   it("keeps a newer publish when an older mount forgets", () => {
-    const newer = fakeActions(archived);
-    publishSidebarActions(actions);
+    const newer = fakeEntry(settled);
+    publishSidebarActions(entry);
     publishSidebarActions(newer);
-    forgetSidebarActions(actions);
+    forgetSidebarActions(entry);
     assert.equal(hasSidebarActions(), true);
-    archiveThread("thr_2");
-    assert.deepEqual(archived, ["thr_2"]);
+    settleThread("thr_2");
+    assert.deepEqual(settled, ["thr_2"]);
     forgetSidebarActions(newer);
   });
 });

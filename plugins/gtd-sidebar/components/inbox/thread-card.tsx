@@ -125,7 +125,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       canPark,
       snoozeUntilTomorrow: () =>
         command({ kind: "snooze", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),
-      settle: () => command({ kind: "settle", threadId: thread.id, shelf }),
+      settle: () => command({ kind: "settle", threadId: thread.id }),
     },
     isPinned: thread.isPinned,
     setPinned: (pinned) => command({ kind: "pin", threadId: thread.id, pinned }),

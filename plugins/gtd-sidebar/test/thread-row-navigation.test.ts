@@ -128,6 +128,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   );
   const { ThreadInbox } = await import("../components/inbox/thread-inbox.tsx");
   const { useCommittedEvent } = await import("../hooks/use-committed-event.ts");
+  const { settleThread } = await import("../lib/sidebar-actions-bridge.ts");
 
   interface EventProbeProps {
     callback: () => void;
@@ -815,6 +816,74 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       view.updateInbox({ activeThreadId: null });
       assert.deepEqual(currentActions.open.mock.calls, [["c"], ["c"]]);
       assert.equal(navigate.mock.calls.length, 1);
+    });
+
+    it("advances inside the settled row's own shelf, never across into the next one", () => {
+      const currentActions = actions();
+      const host = {
+        ...hostState([
+          thread("pinned", { isPinned: true }),
+          thread("a", { latestAttentionAt: 30 }),
+          thread("c", { latestAttentionAt: 10 }),
+          thread("waiting", { indicator: "runtime" }),
+        ]),
+        actions: currentActions,
+      };
+      const view = mount(host, { activeThreadId: "c" });
+      // c ends Next Action. The flat list's next row is "waiting", but that
+      // is another shelf; the advance is the row above c.
+      fireEvent.pointerDown(rowButton(view.slot, "c", "Settle"));
+      assert.deepEqual(currentActions.open.mock.calls, [["a"]]);
+      assert.deepEqual(currentActions.archive.mock.calls, [["c"]]);
+    });
+
+    it("advances inside Pinned without spilling into Next Action", () => {
+      const currentActions = actions();
+      const host = {
+        ...hostState([
+          thread("first", { isPinned: true, latestAttentionAt: 30 }),
+          thread("last", { isPinned: true, latestAttentionAt: 20 }),
+          thread("next", { latestAttentionAt: 10 }),
+        ]),
+        actions: currentActions,
+      };
+      const view = mount(host, { activeThreadId: "last" });
+      fireEvent.pointerDown(rowButton(view.slot, "last", "Settle"));
+      assert.deepEqual(currentActions.open.mock.calls, [["first"]]);
+      assert.deepEqual(currentActions.archive.mock.calls, [["last"]]);
+    });
+
+    it("never advances onto a child the archive cascades away", () => {
+      const currentActions = actions();
+      const host = {
+        ...hostState([
+          thread("root", { latestAttentionAt: 200 }),
+          thread("child", { parentThreadId: "root" }),
+          thread("sibling", { latestAttentionAt: 50 }),
+        ]),
+        actions: currentActions,
+      };
+      const view = mount(host, { activeThreadId: "root" });
+      // bb's archive takes the children with the parent, so the row after the
+      // family is the next root, not the first child.
+      fireEvent.pointerDown(rowButton(view.slot, "root", "Settle"));
+      assert.deepEqual(currentActions.open.mock.calls, [["sibling"]]);
+      assert.deepEqual(currentActions.archive.mock.calls, [["root"]]);
+    });
+
+    it("settles through the palette the way a row's own Settle button does", () => {
+      const currentActions = actions();
+      const host = {
+        ...hostState([
+          thread("a", { latestAttentionAt: 30 }),
+          thread("b", { latestAttentionAt: 20 }),
+        ]),
+        actions: currentActions,
+      };
+      mount(host, { activeThreadId: "a" });
+      settleThread("a");
+      assert.deepEqual(currentActions.open.mock.calls, [["b"]]);
+      assert.deepEqual(currentActions.archive.mock.calls, [["a"]]);
     });
 
     it("settles against reordered rows while the selected row remains memoized", () => {

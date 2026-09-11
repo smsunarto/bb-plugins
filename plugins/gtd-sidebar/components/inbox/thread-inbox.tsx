@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { ThreadCard } from "@/components/inbox/thread-card";
 import { SlimRow } from "@/components/inbox/slim-row";
-import type { RowCommand } from "@/components/inbox/thread-actions";
+import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
 import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
@@ -137,9 +137,10 @@ export function ThreadInbox({
     ["nextAction", "Next Action", nextAction],
     ["waiting", "Waiting", waiting],
   ] as const;
-  // The rows the user can see, in the order they see them, so settling walks
-  // to the visible neighbour and never into a folded group.
-  const visibleActiveThreads = useMemo(
+  // The rows the user can see, in the order they see them and tagged with the
+  // shelf they sit under, so settling walks to the visible neighbour in its
+  // own section and never into a folded group or another shelf.
+  const visibleActiveRows = useMemo(
     () =>
       (
         [
@@ -151,7 +152,7 @@ export function ThreadInbox({
         groups.flatMap((group) =>
           grouped && !searching && isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
             ? []
-            : group.rows.map((row) => row.node.thread),
+            : group.rows.map((row) => ({ shelf, row })),
         ),
       ),
     [pinned, nextAction, waiting, showWaiting, searching, grouped, isGroupCollapsed],
@@ -202,7 +203,7 @@ export function ThreadInbox({
     onNavigate,
     lifecycle,
     settledThreads,
-    visibleActiveThreads,
+    visibleActiveRows,
   });
 
   return (
@@ -367,22 +368,19 @@ function useRowCommands({
   onNavigate,
   lifecycle,
   settledThreads,
-  visibleActiveThreads,
+  visibleActiveRows,
 }: {
   activeThreadId: PluginThreadListProps["activeThreadId"];
   onNavigate: PluginThreadListProps["onNavigate"];
   lifecycle: LifecycleApi;
   settledThreads: SettledThreadsApi;
-  visibleActiveThreads: readonly PluginSidebarThread[];
+  visibleActiveRows: readonly {
+    shelf: ActiveThreadShelf;
+    row: VisibleInboxRow;
+  }[];
 }) {
   const threadActions = useSidebarThreadActions();
   const navigate = useBbNavigate();
-  // The palette's settle row archives through this same host action, and a
-  // mounted list is the only place the action exists.
-  useEffect(() => {
-    publishSidebarActions(threadActions);
-    return () => forgetSidebarActions(threadActions);
-  }, [threadActions]);
   // bb's archive sends the viewer to the compose screen once the mutation
   // resolves. Route changes commit inside a React transition, so against a
   // local server that lands before the neighbour's route does and wins. The
@@ -396,15 +394,40 @@ function useRowCommands({
     if (activeThreadId === null) threadActions.open(pending.nextThreadId);
   }, [activeThreadId, threadActions]);
 
-  const settleAndAdvance = (threadId: string, sectionThreads: readonly PluginSidebarThread[]) => {
-    const nextThreadId = nextThreadIdAfterSettle(sectionThreads, threadId, activeThreadId);
-    if (nextThreadId !== null) {
-      pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId };
-      threadActions.open(nextThreadId);
-      onNavigate();
+  const settle = useCommittedEvent((threadId: string) => {
+    const settled = visibleActiveRows.find((entry) => entry.row.node.thread.id === threadId);
+    if (settled !== undefined) {
+      // The advance stays inside the settled row's own shelf, and skips its
+      // subtree: bb's archive takes the children with it, so a descendant is
+      // never a neighbour to land on.
+      const cascaded = new Set<string>();
+      const section: PluginSidebarThread[] = [];
+      for (const entry of visibleActiveRows) {
+        if (entry.shelf !== settled.shelf) continue;
+        const parentId = entry.row.parentId;
+        if (parentId !== null && (parentId === threadId || cascaded.has(parentId))) {
+          cascaded.add(entry.row.node.thread.id);
+        } else {
+          section.push(entry.row.node.thread);
+        }
+      }
+      const nextThreadId = nextThreadIdAfterSettle(section, threadId, activeThreadId);
+      if (nextThreadId !== null) {
+        pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId };
+        threadActions.open(nextThreadId);
+        onNavigate();
+      }
     }
     threadActions.archive(threadId);
-  };
+  });
+
+  // The palette's settle row runs this same dispatcher, and a mounted list
+  // is the only place it exists.
+  useEffect(() => {
+    const published = { actions: threadActions, settle };
+    publishSidebarActions(published);
+    return () => forgetSidebarActions(published);
+  }, [threadActions, settle]);
 
   const command = useCommittedEvent((command: RowCommand) => {
     switch (command.kind) {
@@ -414,7 +437,7 @@ function useRowCommands({
         onNavigate();
         return;
       case "settle":
-        settleAndAdvance(command.threadId, visibleActiveThreads);
+        settle(command.threadId);
         return;
       case "snooze":
         lifecycle.snooze(command.threadId, command.until);
