@@ -61,7 +61,7 @@
   --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
   --diffs-font-family: var(--font-mono, ui-monospace, monospace);
   --diffs-font-size: 11px;
-  --diffs-line-height: 18px;
+  --diffs-line-height: 22px;
   --diffs-gap-block: 2px;
   --diffs-gap-inline: 6px;
 }
