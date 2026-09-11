@@ -29,20 +29,17 @@ export function FadingText({ text, className }: { text: string; className?: stri
 }
 
 /**
- * The row's leading slot: the machine globe when the thread runs on another
- * machine, empty otherwise. Always drawn, so every title in a shelf starts on
- * the same column whether or not its neighbour is remote. The project itself
- * lives in the group header above the row, never on the title line.
+ * The row's leading globe, drawn only when the thread runs on another
+ * machine. A local title starts straight after the disclosure column; a
+ * remote title sits one globe further right. The project itself lives in the
+ * group header above the row, never on the title line.
  */
 export function HostLead({ host }: { host: PluginSidebarThread["host"] }) {
   const remote = useRemoteMachine(host);
+  if (!remote || !host) return null;
   return (
-    <span
-      className="gtd-host-lead"
-      aria-label={remote && host ? `On ${host.name}` : undefined}
-      aria-hidden={remote ? undefined : true}
-    >
-      {remote ? <MachineGlobe machine={host} /> : null}
+    <span className="gtd-host-lead" aria-label={`On ${host.name}`}>
+      <MachineGlobe machine={host} />
     </span>
   );
 }

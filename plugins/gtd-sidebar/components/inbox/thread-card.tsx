@@ -155,8 +155,8 @@ const ThreadCardBody = memo(function ThreadCardBody({
     />
   );
   // The project lives in the group header above the row. The row leads with
-  // the machine globe when the thread runs elsewhere, and an empty slot of the
-  // same width otherwise, so titles share a column.
+  // the machine globe only when the thread runs elsewhere; a local title
+  // starts straight after the disclosure column.
   const rowTitle = (
     <>
       <HostLead host={thread.host} />
@@ -294,7 +294,7 @@ function threadCardPresentation({
     style: {
       "--gtd-depth": depth,
       ...(isCompactViewport && (depth > 0 || childCount > 0)
-        ? { paddingLeft: 24 + depth * 24 }
+        ? { paddingLeft: 28 + depth * 24 }
         : {}),
     } as CSSProperties,
     className: cn(

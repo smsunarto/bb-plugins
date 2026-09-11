@@ -622,9 +622,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         const localChild = row(view.slot, "local-child").parentElement!;
         const remoteChild = row(view.slot, "remote-child").parentElement!;
         assert.equal(root.querySelector(".gtd-project-chip"), null);
-        assert.ok(root.querySelector(".gtd-host-lead"));
-        assert.equal(root.querySelector('.gtd-host-lead [data-icon="Globe"]'), null);
-        assert.equal(localChild.querySelector('.gtd-host-lead [data-icon="Globe"]'), null);
+        assert.equal(root.querySelector(".gtd-host-lead"), null);
+        assert.equal(localChild.querySelector(".gtd-host-lead"), null);
         assert.ok(
           remoteChild.querySelector(
             '.gtd-host-lead [data-machine-id="remote-host"] [data-icon="Globe"]',

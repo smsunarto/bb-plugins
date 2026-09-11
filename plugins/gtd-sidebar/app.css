@@ -55,7 +55,9 @@
 
 .gtd-thread-row {
   height: 52px;
-  padding: 6px 10px 6px calc(24px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * 24px);
+  /* Content starts 28px in: 10px past the disclosure's 12px chevron glyph,
+     which sits centred in its 24px hit area. */
+  padding: 6px 10px 6px calc(28px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * 24px);
 }
 .gtd-thread-row.gtd-compact-row,
 .gtd-thread-row.gtd-parked-row {
@@ -81,13 +83,15 @@
 .gtd-fading-text[data-overflowing="true"] {
   mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
 }
-/* The row's leading slot: a machine globe on remote threads, empty otherwise.
-   Fixed width either way, so every title in a shelf starts on one column. */
+/* The row's leading globe, drawn only on remote threads; local titles start
+   straight after the disclosure column. The title follows 4px later, not the
+   row's 6px flex gap: a 12px glyph reads detached at 6px. */
 .gtd-host-lead {
   display: inline-flex;
   flex: 0 0 12px;
   width: 12px;
   height: 12px;
+  margin-right: -2px;
   align-items: center;
   justify-content: center;
 }
@@ -95,9 +99,10 @@
   width: 12px;
   height: 12px;
 }
-/* A card's metadata line starts under the title, not under the lead slot. */
-.gtd-thread-metadata {
-  padding-left: 18px;
+/* A card's metadata line starts under the title. On a remote card that is
+   past the globe: its 12px plus the 4px that separates it from the title. */
+.gtd-thread-row:has(.gtd-host-lead) .gtd-thread-metadata {
+  padding-left: 16px;
 }
 /* Shelf and project headers stick while their rows scroll. The shelf header
    pins to the top of the list; the project header pins just below it. Both
