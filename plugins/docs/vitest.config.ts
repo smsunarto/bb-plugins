@@ -5,6 +5,7 @@ export default defineConfig({
     silent: "passed-only",
     name: "bb-plugin-docs",
     testTimeout: 15_000,
+    setupFiles: ["./vitest.setup-require.ts"],
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**"],
   },

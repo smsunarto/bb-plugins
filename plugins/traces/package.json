@@ -48,7 +48,7 @@
     "@tanstack/react-query": "^5.101.4"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.48",
+    "@get-bb/plugin-sdk": "0.4.84",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -65,7 +65,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/shared/providers/*.test.ts src/app/*.test.ts src/host/*.test.ts test/*.test.ts",
+    "test": "node --import ./test/preload-require.mjs --import tsx --test src/shared/providers/*.test.ts src/app/*.test.ts src/host/*.test.ts test/*.test.ts",
     "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
     "clean": "rm -rf dist"
   },
