@@ -151,6 +151,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       title={titleText}
       isActive={isActive}
       isUnread={thread.isUnread}
+      isChild={depth > 0}
       mobile={isCompactViewport}
     />
   );
@@ -326,19 +327,30 @@ function ThreadTitle({
   title,
   isActive,
   isUnread,
+  isChild,
   mobile,
 }: {
   title: string;
   isActive: boolean;
   isUnread: boolean;
+  isChild: boolean;
   mobile: boolean;
 }) {
+  // A read child sits at the slim-row tone so it reads as secondary to its
+  // parent; unread children keep full color and weight so attention pops.
+  const muted = isChild && !isActive && !isUnread;
   return (
     <span
       className={cn(
         "gtd-thread-title min-w-0 flex-1",
         mobile && "gtd-mobile-title",
-        isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground",
+        isActive
+          ? "text-sidebar-accent-foreground"
+          : muted
+            ? mobile
+              ? "text-muted-foreground"
+              : "text-muted-foreground/70"
+            : "text-sidebar-foreground",
         isUnread && "font-medium",
       )}
     >
