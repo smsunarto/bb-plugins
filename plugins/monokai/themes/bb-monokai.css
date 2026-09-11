@@ -659,6 +659,14 @@
   color: var(--foreground);
 }
 
+/* The model picker's sticky group headings ("Model", "Reasoning") paint
+ * bg-background to cover rows scrolling under them, but they sit on a
+ * bg-popover surface, so the header strip reads one ramp step lighter than
+ * the menu around it. Give them the popover ground instead. */
+.dark .bg-popover .sticky.bg-background {
+  background-color: var(--popover);
+}
+
 /* Composer stop button.
  *
  * bb 0.36 renders the run-interrupt control as `variant="secondary"`, so the
