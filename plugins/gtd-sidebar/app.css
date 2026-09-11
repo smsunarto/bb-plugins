@@ -55,7 +55,7 @@
 
 .gtd-thread-row {
   height: 52px;
-  padding: 6px 10px 6px calc(24px + var(--gtd-depth, 0) * 24px);
+  padding: 6px 10px 6px calc(24px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * 24px);
 }
 .gtd-thread-row.gtd-compact-row,
 .gtd-thread-row.gtd-parked-row {
@@ -81,39 +81,140 @@
 .gtd-fading-text[data-overflowing="true"] {
   mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
 }
-.gtd-project-chip {
-  display: flex;
+/* The row's leading slot: a machine globe on remote threads, empty otherwise.
+   Fixed width either way, so every title in a shelf starts on one column. */
+.gtd-host-lead {
+  display: inline-flex;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  flex: 0 0 72px;
-  width: 72px;
-  min-width: 0;
-  padding: 0 5px;
-  border: 1px solid var(--sidebar-border);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--muted) 35%, transparent);
-  color: var(--muted-foreground);
-  font-size: 9px;
-  line-height: 17px;
-  text-align: center;
-  pointer-events: none;
 }
-.gtd-project-chip .gtd-fading-text {
+.gtd-host-lead svg {
+  width: 12px;
+  height: 12px;
+}
+/* A card's metadata line starts under the title, not under the lead slot. */
+.gtd-thread-metadata {
+  padding-left: 18px;
+}
+/* Shelf and project headers stick while their rows scroll. The shelf header
+   pins to the top of the list; the project header pins just below it. Both
+   paint the sidebar ground so rows slide under them. */
+.gtd-shelf-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--sidebar);
+}
+.gtd-project-group-header {
+  position: sticky;
+  /* Sticky is a positioned box, so the new-thread button anchors to it. */
+  top: var(--gtd-shelf-head-h, 24px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+  border-radius: 6px;
+  background: var(--sidebar);
+}
+.gtd-project-group-header:hover {
+  background: var(--sidebar-accent);
+}
+.gtd-project-group-toggle {
+  position: relative;
+  display: flex;
   flex: 1;
-}
-.gtd-project-chip svg {
-  width: 10px;
-  height: 10px;
-}
-.gtd-project-chip .gtd-fading-text[data-overflowing="true"] {
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
   text-align: left;
-  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+  cursor: pointer;
+}
+.gtd-project-group-header-touch .gtd-project-group-toggle {
+  height: 40px;
+  font-size: 13px;
+}
+.gtd-project-group-toggle:focus {
+  outline: none;
+}
+.gtd-project-group-toggle:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+.gtd-project-group-chevron {
+  height: 26px;
+}
+.gtd-project-group-header-touch .gtd-project-group-chevron {
+  height: 40px;
+}
+.gtd-project-group-name {
+  flex: 1;
+  color: var(--sidebar-accent-foreground);
+}
+.gtd-project-group-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+.gtd-project-group-attn {
+  color: var(--ansi-3);
+}
+.gtd-project-group-new {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+}
+/* The count and the new-thread button share the header's right edge. Hover
+   (or reaching the button by keyboard) trades one for the other; a click on
+   the toggle keeps the count, so a fold shows its footprint straight away. */
+.gtd-project-group-header:hover .gtd-project-group-new,
+.gtd-project-group-new:focus-visible {
+  opacity: 1;
+}
+.gtd-project-group-header:hover .gtd-project-group-count,
+.gtd-project-group-header:has(.gtd-project-group-new:focus-visible) .gtd-project-group-count {
+  opacity: 0;
+}
+.gtd-project-group-new:hover {
+  color: var(--foreground);
+}
+.gtd-project-group-new:focus-visible {
+  outline: 1px solid var(--ring);
+}
+/* Rows under a project header step in a little, short of a full tree level:
+   enough to read as the header's children, cheap on a narrow sidebar. */
+.gtd-project-group-rows {
+  --gtd-group-indent: 12px;
 }
 .gtd-disclosure {
   position: absolute;
   z-index: 2;
-  left: calc(var(--gtd-depth, 0) * 24px);
+  left: calc(var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * 24px);
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -161,6 +262,7 @@
 .gtd-tree-guides {
   position: absolute;
   inset: 0;
+  left: var(--gtd-group-indent, 0px);
   pointer-events: none;
 }
 .gtd-tree-line {

@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { ThreadCard } from "@/components/inbox/thread-card";
 import { SlimRow } from "@/components/inbox/slim-row";
-import type { DispatchRowCommand, RowCommand } from "@/components/inbox/thread-actions";
+import type { RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
 import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
@@ -28,7 +28,19 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import { filterByProject, nextThreadIdAfterSettle } from "@/lib/inbox";
-import { buildInboxTree, visibleInboxRows } from "@/lib/inbox-tree";
+import {
+  buildInboxTree,
+  visibleInboxRows,
+  type InboxShelf,
+  type VisibleInboxRow,
+} from "@/lib/inbox-tree";
+import {
+  groupCollapseKey,
+  groupRowsByProject,
+  shouldGroupByProject,
+  type ProjectGroup as ProjectGroupRows,
+} from "@/lib/project-groups";
+import { ProjectGroup } from "@/components/inbox/project-group";
 import { mergeSettledThreads } from "@/lib/settled-threads";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
 import { filterByMachine, sidebarMachines } from "@/lib/machines";
@@ -97,21 +109,83 @@ export function ThreadInbox({
     machineScope,
     searchQuery,
   );
-  const { pinned, nextAction, waiting } = shelves;
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
+  // One project needs no headers: the shelf reads exactly as it did before.
+  const grouped = shouldGroupByProject(shelves);
+  const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
+  const groupedShelves = useMemo(() => {
+    const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] => groupRowsByProject(shelves[shelf]);
+    return {
+      pinned: groupsFor("pinned"),
+      nextAction: groupsFor("nextAction"),
+      waiting: groupsFor("waiting"),
+      snoozed: groupsFor("snoozed"),
+      settled: groupsFor("settled"),
+    };
+  }, [shelves]);
+  const { pinned, nextAction, waiting } = groupedShelves;
   const activeShelves = [
     ["pinned", "Pinned", pinned],
     ["nextAction", "Next Action", nextAction],
     ["waiting", "Waiting", waiting],
   ] as const;
+  // The rows the user can see, in the order they see them, so settling walks
+  // to the visible neighbour and never into a folded group.
   const visibleActiveThreads = useMemo(
     () =>
-      [...pinned, ...nextAction, ...(showWaiting || searching ? waiting : [])].map(
-        (row) => row.node.thread,
+      (
+        [
+          ["pinned", pinned],
+          ["nextAction", nextAction],
+          ["waiting", showWaiting || searching ? waiting : []],
+        ] as const
+      ).flatMap(([shelf, groups]) =>
+        groups.flatMap((group) =>
+          grouped && !searching && isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
+            ? []
+            : group.rows.map((row) => row.node.thread),
+        ),
       ),
-    [pinned, nextAction, waiting, showWaiting, searching],
+    [pinned, nextAction, waiting, showWaiting, searching, grouped, isGroupCollapsed],
   );
+  const navigate = useBbNavigate();
+  const onNewThread = useCommittedEvent((projectId: string) => {
+    navigate.toProject(projectId);
+    onNavigate();
+  });
+  const shelfStyle = {
+    "--gtd-shelf-head-h": isCompactViewport ? "40px" : "24px",
+  } as CSSProperties;
+  const renderGroups = (
+    shelf: InboxShelf,
+    groups: readonly ProjectGroupRows[],
+    renderRow: (row: VisibleInboxRow) => React.ReactNode,
+  ) =>
+    grouped ? (
+      groups.map((group) => {
+        const key = groupCollapseKey(shelf, group.projectId);
+        return (
+          <ProjectGroup
+            key={group.projectId}
+            projectId={group.projectId}
+            name={projectNameById.get(group.projectId) ?? "Unknown project"}
+            families={group.families}
+            attention={group.attention}
+            expanded={searching || !isGroupCollapsed(key)}
+            onToggle={() => toggleGroup(key)}
+            onNewThread={onNewThread}
+            isCompactViewport={isCompactViewport}
+          >
+            {group.rows.map(renderRow)}
+          </ProjectGroup>
+        );
+      })
+    ) : (
+      <ul className="flex flex-col gap-0.5">
+        {groups.flatMap((group) => group.rows).map(renderRow)}
+      </ul>
+    );
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
@@ -181,13 +255,14 @@ export function ThreadInbox({
             count={shelvedTotal}
             searchQuery={searchQuery}
           >
-            {activeShelves.map(([shelf, label, shelfThreads]) =>
-              shelfThreads.length > 0 ? (
+            {activeShelves.map(([shelf, label, groups]) =>
+              groups.length > 0 ? (
                 <Shelf
                   key={label}
                   label={label}
-                  count={shelfThreads.length}
+                  count={shelves[shelf].length}
                   isCompactViewport={isCompactViewport}
+                  style={shelfStyle}
                   {...(shelf === "waiting"
                     ? {
                         expanded: showWaiting || searching,
@@ -195,7 +270,7 @@ export function ThreadInbox({
                       }
                     : {})}
                 >
-                  {shelfThreads.map((row) => {
+                  {renderGroups(shelf, groups, (row) => {
                     const thread = row.node.thread;
                     return (
                       <ThreadCard
@@ -207,7 +282,6 @@ export function ThreadInbox({
                         compactThreads={compactThreads}
                         depth={row.depth}
                         parentId={row.parentId}
-                        parentProjectId={row.parentProjectId}
                         parentTitle={row.parentTitle}
                         childCount={row.node.children.length}
                         expanded={row.expanded}
@@ -232,38 +306,48 @@ export function ThreadInbox({
                 </Shelf>
               ) : null,
             )}
-            <ParkedShelf
-              compactThreads={compactThreads}
-              providerInfoById={providerInfoById}
-              projectNameById={projectNameById}
-              gitButlerLabels={gitButlerLabels}
-              label="Snoozed"
-              shelf="snoozed"
-              threads={shelves.snoozed.map((row) => row.node.thread)}
-              expanded={showSnoozed || searching}
-              onToggle={() => setShowSnoozed((open) => !open)}
-              activeThreadId={activeThreadId}
-              wakeAtFor={lifecycle.wakeAtFor}
-              isCompactViewport={isCompactViewport}
-              command={command}
-              now={now}
-            />
-            <ParkedShelf
-              compactThreads={compactThreads}
-              providerInfoById={providerInfoById}
-              projectNameById={projectNameById}
-              gitButlerLabels={gitButlerLabels}
-              label="Settled"
-              shelf="settled"
-              threads={shelves.settled.map((row) => row.node.thread)}
-              expanded={showSettled || searching}
-              onToggle={() => setShowSettled((open) => !open)}
-              activeThreadId={activeThreadId}
-              wakeAtFor={() => null}
-              isCompactViewport={isCompactViewport}
-              command={command}
-              now={now}
-            />
+            {(
+              [
+                ["snoozed", "Snoozed", showSnoozed, setShowSnoozed, lifecycle.wakeAtFor],
+                ["settled", "Settled", showSettled, setShowSettled, () => null],
+              ] as const
+            ).map(([shelf, label, show, setShow, wakeAtFor]) =>
+              groupedShelves[shelf].length > 0 ? (
+                <Shelf
+                  key={label}
+                  label={label}
+                  count={shelves[shelf].length}
+                  isCompactViewport={isCompactViewport}
+                  style={shelfStyle}
+                  expanded={show || searching}
+                  onToggle={() => setShow((open) => !open)}
+                >
+                  {renderGroups(shelf, groupedShelves[shelf], (row) => {
+                    const thread = row.node.thread;
+                    return (
+                      <SlimRow
+                        key={thread.id}
+                        thread={thread}
+                        compactThreads={compactThreads}
+                        projectName={projectNameById.get(thread.projectId) ?? null}
+                        provider={providerInfoById.get(thread.providerId)}
+                        branchName={resolveSidebarBranchLabel(
+                          thread.environment?.branchName ?? null,
+                          thread.environment?.id ?? null,
+                          gitButlerLabels,
+                        )}
+                        isActive={thread.id === activeThreadId}
+                        shelf={shelf}
+                        wakeAt={wakeAtFor(thread)}
+                        now={now}
+                        isCompactViewport={isCompactViewport}
+                        command={command}
+                      />
+                    );
+                  })}
+                </Shelf>
+              ) : null,
+            )}
           </InboxContent>
         </div>
       </div>
@@ -389,6 +473,25 @@ function useInboxTree(
   return { shelves, toggleThread };
 }
 
+/**
+ * Folded project groups, keyed by shelf and project: folding bb-plugins in
+ * Next Action leaves it open in Waiting. Session state on purpose — a fold is
+ * a way to tidy the current scan, not a preference to carry across restarts.
+ */
+function useCollapsedGroups() {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = useCommittedEvent((key: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  });
+  const isGroupCollapsed = useMemo(() => (key: string) => collapsed.has(key), [collapsed]);
+  return { isGroupCollapsed, toggleGroup };
+}
+
 function useMinuteClock(): number {
   // One clock for every card in a render, quantized to the minute so the
   // labels do not disagree and do not churn on unrelated re-renders.
@@ -494,83 +597,6 @@ function InboxStatus({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * A collapsed shelf of parked threads. The header stays while anything is
- * parked — the count is the whole footprint when collapsed — and the shelf
- * vanishes entirely at zero.
- */
-function ParkedShelf({
-  compactThreads,
-  providerInfoById,
-  projectNameById,
-  gitButlerLabels,
-  label,
-  shelf,
-  threads,
-  expanded,
-  onToggle,
-  activeThreadId,
-  wakeAtFor,
-  isCompactViewport,
-  command,
-  now,
-}: {
-  label: string;
-  shelf: "snoozed" | "settled";
-  compactThreads: boolean;
-  providerInfoById: ReadonlyMap<string, { displayName: string; logoUrl: string | null }>;
-  projectNameById: ReadonlyMap<string, string>;
-  gitButlerLabels: ReadonlyMap<string, string>;
-  threads: readonly PluginSidebarThread[];
-  expanded: boolean;
-  onToggle: () => void;
-  activeThreadId: string | null;
-  wakeAtFor: (thread: PluginSidebarThread) => number | null;
-  isCompactViewport: boolean;
-  command: DispatchRowCommand;
-  /** Quantized clock, shared by every row — never a fresh read, which a
-   * seeded first paint could now disagree with. */
-  now: number;
-}) {
-  const count = threads.length;
-  if (count === 0) return null;
-  return (
-    <section aria-label={label}>
-      <ShelfHeader
-        label={label}
-        count={count}
-        expanded={expanded}
-        onToggle={onToggle}
-        isCompactViewport={isCompactViewport}
-      />
-      {expanded ? (
-        <ul className="flex flex-col gap-0.5">
-          {threads.map((thread) => (
-            <SlimRow
-              key={thread.id}
-              thread={thread}
-              compactThreads={compactThreads}
-              projectName={projectNameById.get(thread.projectId) ?? null}
-              provider={providerInfoById.get(thread.providerId)}
-              branchName={resolveSidebarBranchLabel(
-                thread.environment?.branchName ?? null,
-                thread.environment?.id ?? null,
-                gitButlerLabels,
-              )}
-              isActive={thread.id === activeThreadId}
-              shelf={shelf}
-              wakeAt={wakeAtFor(thread)}
-              now={now}
-              isCompactViewport={isCompactViewport}
-              command={command}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
-
-/**
  * A shelf of full cards. Passing `expanded` and `onToggle` turns the header
  * into a collapse toggle; without them the header is a plain label and the
  * rows always show.
@@ -582,6 +608,7 @@ function Shelf({
   onToggle,
   children,
   isCompactViewport,
+  style,
 }: {
   label: string;
   count: number;
@@ -589,9 +616,10 @@ function Shelf({
   onToggle?: () => void;
   children: React.ReactNode;
   isCompactViewport: boolean;
+  style?: CSSProperties;
 }) {
   return (
-    <section aria-label={label}>
+    <section aria-label={label} style={style}>
       <ShelfHeader
         label={label}
         count={count}
@@ -602,7 +630,7 @@ function Shelf({
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}
-      {expanded === false ? null : <ul className="flex flex-col gap-0.5">{children}</ul>}
+      {expanded === false ? null : children}
     </section>
   );
 }
@@ -635,7 +663,7 @@ function ShelfHeader({
 
   if (expanded === undefined || onToggle === undefined) {
     return (
-      <h2 className="flex items-center gap-2 px-2.5 pb-0.5 pt-2">
+      <h2 className="gtd-shelf-header flex items-center gap-2 px-2.5 pb-0.5 pt-2">
         {title}
         {rule}
       </h2>
@@ -652,8 +680,8 @@ function ShelfHeader({
       // because Tailwind v4's preflight gives a button `cursor: default`,
       // and the whole header is the hit target for collapsing the shelf.
       className={cn(
-        "mt-2 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
-        isCompactViewport ? "min-h-10" : "pb-0.5",
+        "gtd-shelf-header flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
+        isCompactViewport ? "min-h-10" : "pb-0.5 pt-2",
       )}
     >
       {title}

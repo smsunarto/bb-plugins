@@ -86,6 +86,23 @@ visible when you expand that shelf.
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
 
+### Project groups
+
+Once threads from two or more projects are in view, every shelf splits into
+project groups: a header naming the project, then that project's threads. The
+header folds the group; a folded header shows `needs-you / total` while
+something inside asks for you, and the total alone otherwise. Hovering the
+header shows a **+** that opens the project's new-thread screen. Shelf and
+group headers stay pinned while their rows scroll.
+
+The shelf still comes first: the same project appears under Next Action and
+under Waiting when it has work in both, and folding it in one shelf leaves it
+open in the other. A subthread stays under its parent even when it belongs to another
+project. With a single project in view there are no headers at all.
+
+A thread's title never shares its line with a project name. Remote threads
+lead with a globe in their machine's colour instead.
+
 ### Cards
 
 Two lines: the title in bold when unread and a status slot, then the project, the

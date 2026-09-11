@@ -26,8 +26,7 @@ import {
 } from "@/components/inbox/thread-actions";
 import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
-import { FadingText, ProjectChip, ThreadDetails } from "@/components/inbox/thread-details";
-import { useRemoteMachine } from "@/components/inbox/machine-appearance";
+import { FadingText, HostLead, ThreadDetails } from "@/components/inbox/thread-details";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeUntilTomorrow } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
@@ -39,7 +38,6 @@ interface ThreadCardProps {
   compactThreads: boolean;
   depth: number;
   parentId: string | null;
-  parentProjectId: string | null;
   parentTitle: string | null;
   childCount: number;
   expanded: boolean;
@@ -95,7 +93,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   compactThreads,
   depth,
   parentId,
-  parentProjectId,
   parentTitle,
   childCount,
   expanded,
@@ -157,18 +154,14 @@ const ThreadCardBody = memo(function ThreadCardBody({
       mobile={isCompactViewport}
     />
   );
-  // One-line rows lead with the project; two-line cards put it on line two.
+  // The project lives in the group header above the row. The row leads with
+  // the machine globe when the thread runs elsewhere, and an empty slot of the
+  // same width otherwise, so titles share a column.
   const rowTitle = (
-    <RowProjectChip
-      enabled={isCompactViewport || compact}
-      depth={depth}
-      parentProjectId={parentProjectId}
-      projectId={thread.projectId}
-      projectName={projectName}
-      host={thread.host}
-    >
+    <>
+      <HostLead host={thread.host} />
       {title}
-    </RowProjectChip>
+    </>
   );
   const mobileRow = (interactive: boolean) => (
     <MobileThreadSummary
@@ -548,41 +541,6 @@ function ThreadRowLink({
         className={cn("absolute inset-0 cursor-pointer", mobile ? "rounded-xl" : "rounded-md")}
       />
     </ThreadDetails>
-  );
-}
-
-/**
- * The compact row's leading project chip, drawn where the project is not
- * already implied: on roots, on children of another project, and on remote
- * machines. Two-line desktop cards carry the project on their metadata line
- * instead, so they leave it off.
- */
-function RowProjectChip({
-  enabled,
-  depth,
-  parentProjectId,
-  projectId,
-  projectName,
-  host,
-  children,
-}: {
-  enabled: boolean;
-  depth: number;
-  parentProjectId: string | null;
-  projectId: string;
-  projectName: string | null;
-  host: PluginSidebarThread["host"];
-  children: ReactNode;
-}) {
-  const remote = useRemoteMachine(host);
-  if (!enabled) return children;
-  return (
-    <>
-      {remote || depth === 0 || parentProjectId !== projectId ? (
-        <ProjectChip name={projectName} host={host} />
-      ) : null}
-      {children}
-    </>
   );
 }
 

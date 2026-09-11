@@ -508,22 +508,35 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     );
 
     it.each([false, true])(
-      "shows child project changes with desktop compact=%s",
+      "groups roots by project and keeps a cross-project child under its parent with desktop compact=%s",
       (compactThreads) => {
         const host = hostState([
           thread("root"),
           thread("child", { parentThreadId: "root" }),
           thread("cross-project", { parentThreadId: "root", projectId: "two" }),
+          thread("other", { projectId: "two", latestAttentionAt: 50 }),
         ]);
         const view = mount(host, {}, compactThreads);
+        assert.deepEqual(rowIds(view.slot), ["root", "child", "cross-project", "other"]);
         const root = row(view.slot, "root").parentElement!;
         const child = row(view.slot, "child").parentElement!;
         const crossProject = row(view.slot, "cross-project").parentElement!;
         assert.equal(root.classList.contains("gtd-compact-row"), compactThreads);
         assert.ok(child.classList.contains("gtd-compact-row"));
         assert.ok(crossProject.classList.contains("gtd-compact-row"));
-        assert.equal(child.querySelector(".gtd-project-chip"), null);
-        assert.equal(crossProject.querySelector(".gtd-project-chip")?.textContent, "Two");
+        // The project lives in the group header, never on the title line.
+        assert.equal(view.slot.container.querySelector(".gtd-project-chip"), null);
+        const groups = Array.from(
+          view.slot.container.querySelectorAll<HTMLElement>(".gtd-project-group"),
+          (group) => group.dataset.projectId,
+        );
+        assert.deepEqual(groups, ["one", "two"]);
+        assert.equal(
+          crossProject.closest(".gtd-project-group")?.getAttribute("data-project-id"),
+          "one",
+        );
+        assert.ok(view.slot.getByRole("button", { name: "One project" }));
+        assert.ok(view.slot.getByRole("button", { name: "Two project" }));
         fireEvent.click(row(view.slot, "cross-project"), { ctrlKey: true });
         assert.deepEqual((host.actions.open as ReturnType<typeof actions>["open"]).mock.calls, [
           ["cross-project", { split: true }],
@@ -531,8 +544,67 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     );
 
+    it("draws no project headers while every root shares one project", () => {
+      const view = mount(
+        hostState([
+          thread("root"),
+          thread("cross-project", { parentThreadId: "root", projectId: "two" }),
+        ]),
+      );
+      assert.equal(view.slot.container.querySelector(".gtd-project-group"), null);
+      assert.deepEqual(rowIds(view.slot), ["root", "cross-project"]);
+    });
+
+    it("folds a project group per shelf and counts what needs the user", () => {
+      const view = mount(
+        hostState([
+          thread("a", { isUnread: true }),
+          thread("b", { latestAttentionAt: 90 }),
+          thread("c", { projectId: "two", latestAttentionAt: 80 }),
+          thread("d", { projectId: "two", indicator: "runtime" }),
+        ]),
+      );
+      assert.deepEqual(rowIds(view.slot), ["a", "b", "c", "d"]);
+      fireEvent.click(view.slot.getByRole("button", { name: "One project" }));
+      assert.deepEqual(rowIds(view.slot), ["c", "d"]);
+      assert.ok(view.slot.getByRole("button", { name: "One project (1 / 2)" }));
+      // Folding One under Next Action leaves Two open, and the Waiting shelf untouched.
+      const waiting = row(view.slot, "d").closest("section");
+      assert.equal(waiting?.getAttribute("aria-label"), "Waiting");
+      fireEvent.click(view.slot.getByRole("button", { name: "One project (1 / 2)" }));
+      assert.deepEqual(rowIds(view.slot), ["a", "b", "c", "d"]);
+      fireEvent.click(within(waiting as HTMLElement).getByRole("button", { name: "Two project" }));
+      assert.deepEqual(rowIds(view.slot), ["a", "b", "c"]);
+      assert.ok(within(waiting as HTMLElement).getByRole("button", { name: "Two project (1)" }));
+    });
+
+    it("keeps group order put when the open thread changes", () => {
+      const view = mount(
+        hostState([
+          thread("a", { latestAttentionAt: 300 }),
+          thread("b", { projectId: "two", latestAttentionAt: 100 }),
+        ]),
+        { activeThreadId: "b" },
+      );
+      assert.deepEqual(rowIds(view.slot), ["a", "b"]);
+      view.updateInbox({ activeThreadId: "a" });
+      assert.deepEqual(rowIds(view.slot), ["a", "b"]);
+    });
+
+    it("opens a project's compose screen from its group header", () => {
+      const toProject = mock<BbNavigate["toProject"]>(() => {});
+      const onNavigate = mock(() => {});
+      const view = mount(
+        { ...hostState([thread("a"), thread("b", { projectId: "two" })]), navigate: { toProject } },
+        { onNavigate },
+      );
+      fireEvent.click(view.slot.getByRole("button", { name: "New thread in Two" }));
+      assert.deepEqual(toProject.mock.calls, [["two"]]);
+      assert.equal(onNavigate.mock.calls.length, 1);
+    });
+
     it.each([false, true])(
-      "keeps remote child repo chips with compact roots=%s",
+      "leads remote rows with the machine globe and local rows with an empty slot, compact=%s",
       (compactThreads) => {
         const localHost = { id: "local-host", name: "Local computer" };
         const remoteHost = { id: "remote-host", name: "Remote computer" };
@@ -549,16 +621,13 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         const root = row(view.slot, "root").parentElement!;
         const localChild = row(view.slot, "local-child").parentElement!;
         const remoteChild = row(view.slot, "remote-child").parentElement!;
-        assert.equal(root.querySelector('.gtd-project-chip [data-icon="Globe"]'), null);
-        if (compactThreads) {
-          assert.equal(root.querySelector(".gtd-project-chip")?.textContent, "One");
-          assert.equal(root.querySelector(".gtd-project-chip [data-icon]"), null);
-        }
-        assert.equal(localChild.querySelector(".gtd-project-chip"), null);
-        assert.equal(remoteChild.querySelector(".gtd-project-chip")?.textContent, "One");
+        assert.equal(root.querySelector(".gtd-project-chip"), null);
+        assert.ok(root.querySelector(".gtd-host-lead"));
+        assert.equal(root.querySelector('.gtd-host-lead [data-icon="Globe"]'), null);
+        assert.equal(localChild.querySelector('.gtd-host-lead [data-icon="Globe"]'), null);
         assert.ok(
           remoteChild.querySelector(
-            '.gtd-project-chip [data-machine-id="remote-host"] [data-icon="Globe"]',
+            '.gtd-host-lead [data-machine-id="remote-host"] [data-icon="Globe"]',
           ),
         );
         fireEvent.keyDown(
@@ -653,7 +722,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ]);
       const view = mount(host, {}, true);
       const chipGlobe = view.slot.container.querySelector<HTMLElement>(
-        '.gtd-project-chip [data-machine-id="host-a"]',
+        '.gtd-host-lead [data-machine-id="host-a"]',
       );
       assert.ok(chipGlobe);
       fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Machine scope: All machines" }), {

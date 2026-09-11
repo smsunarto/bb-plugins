@@ -28,20 +28,23 @@ export function FadingText({ text, className }: { text: string; className?: stri
   );
 }
 
-export function ProjectChip({
-  name,
-  host,
-}: {
-  name: string | null;
-  host: PluginSidebarThread["host"];
-}) {
+/**
+ * The row's leading slot: the machine globe when the thread runs on another
+ * machine, empty otherwise. Always drawn, so every title in a shelf starts on
+ * the same column whether or not its neighbour is remote. The project itself
+ * lives in the group header above the row, never on the title line.
+ */
+export function HostLead({ host }: { host: PluginSidebarThread["host"] }) {
   const remote = useRemoteMachine(host);
-  return name ? (
-    <span className="gtd-project-chip" aria-label={host ? `${name} on ${host.name}` : name}>
+  return (
+    <span
+      className="gtd-host-lead"
+      aria-label={remote && host ? `On ${host.name}` : undefined}
+      aria-hidden={remote ? undefined : true}
+    >
       {remote ? <MachineGlobe machine={host} /> : null}
-      <FadingText text={name} />
     </span>
-  ) : null;
+  );
 }
 
 export function ThreadDetails({
