@@ -119,7 +119,7 @@ stays in bb's archive.
 ### Child threads
 
 A flat list has nowhere to nest a child, so a child is hidden while its parent is on
-screen. A chip in the thread header of a child names the parent and opens it.
+screen.
 
 ### Thread names
 

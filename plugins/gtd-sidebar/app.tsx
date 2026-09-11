@@ -6,7 +6,6 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
-import { ParentChip } from "@/components/inbox/parent-chip";
 import { archiveThread, hasSidebarActions } from "@/lib/sidebar-actions-bridge";
 
 export default definePluginApp((app) => {
@@ -25,14 +24,6 @@ export default definePluginApp((app) => {
     title: "GTD Sidebar (inbox)",
     description: "Next Action and Waiting, with recent threads first.",
     component: ThreadInbox,
-  });
-
-  // The way back out of a child thread. The flat list hides a child while its
-  // parent is on screen, so this chip names the parent and opens it.
-  app.slots.experimental_threadHeaderAction({
-    id: "parent",
-    title: "Parent thread",
-    component: ParentChip,
   });
 
   app.slots.commandPaletteAction({
