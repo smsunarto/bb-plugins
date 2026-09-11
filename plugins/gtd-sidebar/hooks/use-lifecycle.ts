@@ -67,10 +67,18 @@ export function useLifecycle(): LifecycleApi {
     // updated when a timer fires, so arming from it after a long idle period
     // would schedule a new snooze far too late.
     const armedAt = Date.now();
-    const delay = nextWakeDelayMs(
-      [...rows.values()].flatMap((row) => (row.snoozedUntil === null ? [] : [row.snoozedUntil])),
-      armedAt,
+    const snoozedUntilValues = [...rows.values()].flatMap((row) =>
+      row.snoozedUntil === null ? [] : [row.snoozedUntil],
     );
+    // A wake that is past on the wall clock but still ahead of the rendered
+    // clock arms nothing — `nextWakeDelayMs` drops it — and leaves the row
+    // parked for good. Catch the rendered clock up and let the next pass arm
+    // whatever wakes remain.
+    if (snoozedUntilValues.some((value) => value > now && value <= armedAt)) {
+      setNow(armedAt);
+      return;
+    }
+    const delay = nextWakeDelayMs(snoozedUntilValues, armedAt);
     if (delay === null) return;
     const timer = setTimeout(() => setNow(Date.now()), delay);
     return () => clearTimeout(timer);
