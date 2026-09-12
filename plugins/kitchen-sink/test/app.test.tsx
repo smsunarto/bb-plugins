@@ -16,8 +16,7 @@ const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/a
 const { embedCache } = await import("../src/app/embed-cache.ts");
 const { WORKSPACE_CHANGED_CHANNEL } = await import("../src/shared/contract.ts");
 
-const patch =
-  "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1 +1 @@\n-old\n+new\n";
+const patch = "const example = 1;";
 
 test("reserves room for 100 monospace columns without exceeding the message width", async () => {
   const stylesheet = await readFile(new URL("../src/app/app.css", import.meta.url), "utf8");
@@ -33,8 +32,8 @@ test("registers the smart embeds and inline visualization directives", async () 
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(captured.messageDirectives.map((directive) => directive.id)).toEqual([
     "smart-diff",
-    "smart-code",
     "smart-patch",
+    "smart-code",
     "inline-vis",
   ]);
 });
@@ -387,92 +386,29 @@ test("inline-vis ignores a preparation result that arrives after collapse", asyn
   slot.unmount();
 });
 
-test("renders a proposed patch from thread storage with its own header label", async () => {
-  embedCache.clear();
-  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const directive = captured.messageDirectives.find((item) => item.id === "smart-patch");
-  expect(directive).toBeDefined();
-  const slot = renderSlot(
-    directive!,
-    {
-      attributes: { file: "proposal.patch", path: "src/example.ts" },
-      source: '::smart-patch{file="proposal.patch" path="src/example.ts"}',
-      message: {
-        id: "message-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        projectId: "project-1",
-      },
-      openWorkspaceFile: null,
-    },
-    {
-      rpc: {
-        renderEmbed: async () => ({
-          status: "ready" as const,
-          kind: "patch" as const,
-          path: "src/example.ts",
-          label: "src/example.ts",
-          patch,
-          truncated: false,
-        }),
-      },
-    },
-  );
-  const diff = await slot.findByTestId("bb-diff");
-  expect(diff.dataset.path).toBe("src/example.ts");
-  expect(slot.getByText("Proposed")).toBeDefined();
-  expect(slot.rpcCalls[0]?.input).toEqual({
-    kind: "patch",
-    threadId: "thread-1",
-    path: "src/example.ts",
-    file: "proposal.patch",
-  });
-  slot.unmount();
-  embedCache.clear();
-});
-
-test("a smart patch without a file reports the missing attribute instead of calling the server", async () => {
-  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const directive = captured.messageDirectives.find((item) => item.id === "smart-patch");
-  const slot = renderSlot(
-    directive!,
-    {
-      attributes: {},
-      source: "::smart-patch",
-      message: { id: "m", threadId: "thread-1", turnId: "t", projectId: "p" },
-      openWorkspaceFile: null,
-    },
-    { rpc: { renderEmbed: async () => readyDiff(patch) } },
-  );
-  expect(
-    slot.getByText("This Smart Embed needs a thread-storage-relative patch file."),
-  ).toBeDefined();
-  expect(slot.rpcCalls).toEqual([]);
-  slot.unmount();
-});
-
-function readyDiff(patchText: string) {
+function readyCode(patchText: string) {
   return {
     status: "ready" as const,
-    kind: "diff" as const,
+    kind: "code" as const,
     path: "src/example.ts",
     label: "src/example.ts",
-    patch: patchText,
+    content: patchText,
+    startLine: 1,
     truncated: false,
   };
 }
 
-async function renderDiffEmbed(
+async function renderCodeEmbed(
   renderEmbed: () => Promise<import("../src/shared/contract.ts").RenderEmbedOutput>,
 ) {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const directive = captured.messageDirectives.find((item) => item.id === "smart-diff");
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-code");
   expect(directive).toBeDefined();
   return renderSlot(
     directive!,
     {
       attributes: { path: "src/example.ts" },
-      source: '::smart-diff{path="src/example.ts"}',
+      source: '::smart-code{path="src/example.ts"}',
       message: {
         id: "message-1",
         threadId: "thread-1",
@@ -485,9 +421,9 @@ async function renderDiffEmbed(
   );
 }
 
-test("labels a non-Git diff preview as current code", async () => {
+test("renders citations at their source line numbers", async () => {
   embedCache.clear();
-  const slot = await renderDiffEmbed(async () => ({
+  const slot = await renderCodeEmbed(async () => ({
     status: "ready",
     kind: "code",
     path: "src/example.ts",
@@ -500,7 +436,6 @@ test("labels a non-Git diff preview as current code", async () => {
   expect(diff.textContent).toBe("@@ -99,2 +99,2 @@\n const value = 1;\n return value;\n");
   expect(diff.dataset.path).toBe("src/example.ts");
   expect(slot.getByText("Code")).toBeDefined();
-  expect(slot.getByText("No Git history. Showing current code.")).toBeDefined();
   expect(slot.queryByText("Changes")).toBeNull();
   slot.unmount();
   embedCache.clear();
@@ -508,18 +443,17 @@ test("labels a non-Git diff preview as current code", async () => {
 
 test("serves a remount from the cache without a loading state or a second RPC call", async () => {
   embedCache.clear();
-  const first = await renderDiffEmbed(async () => readyDiff(patch));
+  const first = await renderCodeEmbed(async () => readyCode(patch));
   await first.findByTestId("bb-diff");
   expect(first.rpcCalls.map((call) => call.method)).toEqual(["renderEmbed"]);
   expect(first.rpcCalls[0]?.input).toEqual({
-    kind: "diff",
+    kind: "code",
     threadId: "thread-1",
-    messageId: "message-1",
     path: "src/example.ts",
   });
   first.unmount();
 
-  const second = await renderDiffEmbed(async () => readyDiff(patch));
+  const second = await renderCodeEmbed(async () => readyCode(patch));
   expect(second.queryByText("Loading src/example.ts…")).toBeNull();
   expect(second.getByTestId("bb-diff")).toBeDefined();
   expect(second.rpcCalls).toEqual([]);
@@ -530,9 +464,9 @@ test("serves a remount from the cache without a loading state or a second RPC ca
 test("refetches in place when the server reports the thread's workspace changed", async () => {
   embedCache.clear();
   let version = 0;
-  const slot = await renderDiffEmbed(async () => {
+  const slot = await renderCodeEmbed(async () => {
     version += 1;
-    return readyDiff(`${patch}# v${version}\n`);
+    return readyCode(`${patch}# v${version}\n`);
   });
   const before = await slot.findByTestId("bb-diff");
   expect(before.textContent).toContain("# v1");
@@ -552,7 +486,7 @@ test("refetches in place when the server reports the thread's workspace changed"
 
 test("frees the thread's entries when it is deleted and refetches after a reconnect", async () => {
   embedCache.clear();
-  const slot = await renderDiffEmbed(async () => readyDiff(patch));
+  const slot = await renderCodeEmbed(async () => readyCode(patch));
   await slot.findByTestId("bb-diff");
   expect(embedCache.size).toBe(1);
 
@@ -566,122 +500,6 @@ test("frees the thread's entries when it is deleted and refetches after a reconn
   await slot.findByTestId("bb-diff");
   expect(slot.rpcCalls).toHaveLength(3);
   slot.unmount();
-  embedCache.clear();
-});
-
-test("renders through bb's themed diff component and opens its workspace file", async () => {
-  embedCache.clear();
-  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const directive = captured.messageDirectives.find((item) => item.id === "smart-diff");
-  expect(directive).toBeDefined();
-  const openWorkspaceFile = mock(() => true);
-  const slot = renderSlot(
-    directive!,
-    {
-      attributes: { path: "src/example.ts" },
-      source: '::smart-diff{path="src/example.ts"}',
-      message: {
-        id: "message-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        projectId: "project-1",
-      },
-      openWorkspaceFile,
-    },
-    {
-      rpc: {
-        renderEmbed: async () => ({
-          status: "ready" as const,
-          kind: "diff" as const,
-          path: "src/example.ts",
-          label: "src/example.ts",
-          patch,
-          truncated: false,
-        }),
-      },
-    },
-  );
-
-  const open = await slot.findByRole("button", {
-    name: "Open src/example.ts in the workspace",
-  });
-  const diff = await slot.findByTestId("bb-diff");
-  expect(diff.dataset.path).toBe("src/example.ts");
-  expect(diff.dataset.view).toBe("unified");
-  expect(diff.dataset.overflow).toBe("scroll");
-  expect(diff.dataset.showLineNumbers).toBe("true");
-  expect(slot.getByLabelText("1 removed, 1 added")).toBeDefined();
-  expect(slot.queryByText("Diffs")).toBeNull();
-  open.click();
-  expect(openWorkspaceFile).toHaveBeenCalledWith("src/example.ts");
-  slot.unmount();
-});
-
-test("collapses a diff without hiding its counts or fetching it again", async () => {
-  embedCache.clear();
-  const slot = await renderDiffEmbed(async () => readyDiff(patch));
-  await slot.findByTestId("bb-diff");
-  const toggle = slot.getByRole("button", { name: "Collapse diff src/example.ts" });
-  expect(toggle.closest(".smart-diff-header")?.querySelector(":scope > svg")).toBeNull();
-  expect(toggle.querySelector("svg")).toBeTruthy();
-  const body = slot.container.querySelector(".smart-embed-body")!;
-  fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(slot.queryByTestId("bb-diff")).toBeNull();
-  expect(body.hasAttribute("hidden")).toBe(true);
-  expect(slot.getByLabelText("1 removed, 1 added")).toBeDefined();
-  fireEvent.click(slot.getByRole("button", { name: "Expand diff src/example.ts" }));
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(slot.getByTestId("bb-diff")).toBeDefined();
-  expect(body.hasAttribute("hidden")).toBe(false);
-  expect(slot.rpcCalls).toHaveLength(1);
-  slot.unmount();
-  embedCache.clear();
-});
-
-test("keeps a diff collapsed while loading completes and updates its counts", async () => {
-  embedCache.clear();
-  let resolve!: (value: ReturnType<typeof readyDiff>) => void;
-  const slot = await renderDiffEmbed(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
-  fireEvent.click(slot.getByRole("button", { name: "Collapse diff src/example.ts" }));
-  resolve(readyDiff(patch));
-  await slot.findByLabelText("1 removed, 1 added");
-  expect(slot.queryByTestId("bb-diff")).toBeNull();
-  expect(
-    slot.getByRole("button", { name: "Expand diff src/example.ts" }).getAttribute("aria-expanded"),
-  ).toBe("false");
-  fireEvent.click(slot.getByRole("button", { name: "Expand diff src/example.ts" }));
-  expect(slot.getByTestId("bb-diff")).toBeDefined();
-  slot.unmount();
-  embedCache.clear();
-});
-
-test("keeps the diff frame mounted while a deferred request settles", async () => {
-  for (const output of [readyDiff(patch), { status: "error" as const, message: "Unavailable" }]) {
-    embedCache.clear();
-    let resolve!: (value: typeof output) => void;
-    const response = new Promise<typeof output>((done) => {
-      resolve = done;
-    });
-    const slot = await renderDiffEmbed(() => response);
-    const loading = slot.getByText("Loading src/example.ts…");
-    const frame = loading.closest("figure")!;
-    const body = loading.closest(".smart-embed-body")!;
-    expect(frame.classList.contains("smart-embed-fixed")).toBe(true);
-    expect(frame.getAttribute("aria-busy")).toBe("true");
-    resolve(output);
-    if (output.status === "ready") await slot.findByTestId("bb-diff");
-    else await slot.findByText("Unavailable");
-    expect(slot.container.querySelector("figure")).toBe(frame);
-    expect(slot.container.querySelector(".smart-embed-body")).toBe(body);
-    expect(frame.classList.contains("smart-embed-fixed")).toBe(output.status === "error");
-    slot.unmount();
-  }
   embedCache.clear();
 });
 
@@ -753,7 +571,7 @@ for (const { startLine, content } of [
 
 test("keeps empty non-Git source readable without an empty diff", async () => {
   embedCache.clear();
-  const slot = await renderDiffEmbed(async () => ({
+  const slot = await renderCodeEmbed(async () => ({
     status: "ready",
     kind: "code",
     path: "src/example.ts",
@@ -763,31 +581,32 @@ test("keeps empty non-Git source readable without an empty diff", async () => {
     truncated: false,
   }));
   await slot.findByText("Empty source.");
-  expect(slot.getByText("No Git history. Showing current code.")).toBeDefined();
   expect(slot.queryByTestId("bb-diff")).toBeNull();
   slot.unmount();
   embedCache.clear();
 });
 
-test("Unity smart-diff renders object properties, supports YAML review and preserves collapse controls", async () => {
+test("Unity citations show a single current-value column and allow raw YAML review", async () => {
+  embedCache.clear();
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const directive = captured.messageDirectives.find((item) => item.id === "smart-diff")!;
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-code")!;
   const slot = renderSlot(
     directive,
     {
-      attributes: { path: "Assets/Player.prefab" },
-      source: '::smart-diff{path="Assets/Player.prefab"}',
-      message: { ...inlineVisMessage, id: "message-unity-ui" },
+      attributes: { path: "Hero.prefab" },
+      source: "::smart-code",
+      message: inlineVisMessage,
       openWorkspaceFile: null,
     },
     {
       rpc: {
-        renderEmbed: () => ({
+        renderEmbed: async () => ({
           status: "ready",
-          kind: "diff",
-          path: "Assets/Player.prefab",
-          label: "Assets/Player.prefab",
-          patch,
+          kind: "code",
+          path: "Hero.prefab",
+          label: "Hero.prefab",
+          content: "speed: 8",
+          startLine: 1,
           truncated: false,
           unity: {
             propertyCount: 1,
@@ -796,20 +615,8 @@ test("Unity smart-diff renders object properties, supports YAML review and prese
                 id: "1",
                 name: "Player",
                 hierarchy: "Actors",
-                status: "modified",
                 components: [
-                  {
-                    id: "2",
-                    type: "Transform",
-                    status: "modified",
-                    properties: [
-                      {
-                        path: "m_LocalPosition",
-                        before: "{x: 0, y: 1, z: 0}",
-                        after: "{x: 0, y: 2, z: 0}",
-                      },
-                    ],
-                  },
+                  { id: "2", type: "Movement", properties: [{ path: "speed", value: "8" }] },
                 ],
               },
             ],
@@ -818,19 +625,85 @@ test("Unity smart-diff renders object properties, supports YAML review and prese
       },
     },
   );
-  await slot.findByRole("region", { name: "Unity changes in Assets/Player.prefab" });
-  expect(slot.getByRole("columnheader", { name: "Before" })).toBeTruthy();
-  expect(slot.getByRole("cell", { name: "{x: 0, y: 2, z: 0}" })).toBeTruthy();
-  expect(slot.getByText("Player")).toBeTruthy();
+  await slot.findByText("Player");
+  expect(slot.getByRole("columnheader", { name: "Value" })).toBeTruthy();
+  expect(slot.queryByRole("columnheader", { name: "Before" })).toBeNull();
+  expect(slot.queryByRole("columnheader", { name: "After" })).toBeNull();
   fireEvent.click(slot.getByRole("button", { name: "Raw YAML" }));
-  expect(slot.queryByRole("table")).toBeNull();
-  expect(slot.getByRole("button", { name: "Object view" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(slot.getByTestId("bb-diff").textContent).toContain(" speed: 8");
   fireEvent.click(slot.getByRole("button", { name: "Object view" }));
-  expect(slot.getByRole("rowheader", { name: "Position" }).getAttribute("title")).toBe(
-    "m_LocalPosition",
-  );
-  expect(slot.container.querySelectorAll("details[open]")).toHaveLength(2);
+  expect(slot.getByText("Player")).toBeTruthy();
   slot.unmount();
+  embedCache.clear();
+});
+
+test("smart-diff passes exact message identity and renders through BB Diff", async () => {
+  embedCache.clear();
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-diff")!;
+  const result = {
+    status: "ready",
+    kind: "diff",
+    path: "a.ts",
+    label: "a.ts",
+    patch: "@@ -1 +1 @@\n-old\n+new\n",
+    source: "Recorded turn: turn-1",
+    truncated: false,
+  };
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { path: "a.ts" },
+      source: '::smart-diff{path="a.ts"}',
+      message: { id: "m", threadId: "t", turnId: "turn-1", projectId: null },
+      openWorkspaceFile: null,
+    },
+    { rpc: { renderEmbed: async () => result } },
+  );
+  expect((await slot.findByTestId("bb-diff")).textContent).toBe(result.patch);
+  expect(slot.rpcCalls[0]?.input).toEqual({
+    kind: "diff",
+    path: "a.ts",
+    messageId: "m",
+    threadId: "t",
+    turnId: "turn-1",
+  });
+  expect(slot.getByText(result.source)).toBeDefined();
+  slot.unmount();
+  embedCache.clear();
+});
+test("smart-patch renders each proposal file through BB Diff", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const directive = captured.messageDirectives.find((item) => item.id === "smart-patch")!;
+  const files = [
+    { path: "a.ts", patch: "@@ -1 +1 @@\n-a\n+b\n" },
+    { path: "b.ts", patch: "@@ -1 +1 @@\n-c\n+d\n" },
+  ];
+  const slot = renderSlot(
+    directive,
+    {
+      attributes: { file: "p.patch" },
+      source: '::smart-patch{file="p.patch"}',
+      message: { id: "m", threadId: "t", turnId: "turn-1", projectId: null },
+      openWorkspaceFile: null,
+    },
+    {
+      rpc: {
+        renderEmbed: async () => ({
+          status: "ready",
+          kind: "patch",
+          path: "p.patch",
+          label: "p.patch",
+          patch: "",
+          files,
+          source: "Proposal: p.patch",
+          truncated: false,
+        }),
+      },
+    },
+  );
+  await waitFor(() => expect(slot.getAllByTestId("bb-diff")).toHaveLength(2));
+  expect(slot.getAllByTestId("bb-diff").map((node) => node.dataset.path)).toEqual(["a.ts", "b.ts"]);
+  slot.unmount();
+  embedCache.clear();
 });

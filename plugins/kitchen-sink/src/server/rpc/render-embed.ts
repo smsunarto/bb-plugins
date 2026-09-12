@@ -1,22 +1,25 @@
+import { loadDiffEmbed } from "../lib/load-diff-embed.ts";
 import { defineQuery } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
-import type { z } from "zod";
+import { isUnityAsset } from "@bb-plugins/unity-inspector/model";
+import { buildUnityCitation } from "@bb-plugins/unity-inspector/parse";
 import {
   renderEmbedInputSchema,
   renderEmbedOutputSchema,
+  type RenderEmbedInput,
   type RenderEmbedOutput,
 } from "../../shared/contract.ts";
 import { codeCitation } from "../lib/code-citation.ts";
-import { rangePatch } from "../lib/diff-range.ts";
-import { readDiffSnapshot, saveDiffSnapshot, type DiffSnapshotKey } from "../lib/diff-snapshot.ts";
-import { isUnityAsset } from "../../shared/unity-diff.ts";
-import { loadUnityDiff } from "../lib/load-unity-diff.ts";
-import { splitPatchFiles } from "../lib/patch-file.ts";
-
-const MAX_PATH_LENGTH = 1_024;
+import {
+  candidateWorkspaceRoots,
+  resolveWorkspace,
+  threadWorkspaceRoot,
+  WorkspaceError,
+  type WorkspaceRoot,
+} from "../lib/workspace-root.ts";
+const MAX_PATH_LENGTH = 1024;
 const MAX_FILE_BYTES = 1_500_000;
-
 /** A relative path that stays inside its root: no leading slash, no `..`, no empty segments. */
 function relativePath(value: string | undefined): string | null {
   const path = value?.trim() ?? "";
@@ -41,199 +44,170 @@ function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+type FileResult = Awaited<ReturnType<BbPluginApi["sdk"]["files"]["read"]>>;
+
+/** The read produced a real miss, not an offline host or a policy refusal. */
+function isMissingFile(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && "status" in error)
+    return (error as { status: unknown }).status === 404;
+  return error instanceof Error && /does not exist|no such file|not found/i.test(error.message);
+}
+
+function readAt(bb: BbPluginApi, root: WorkspaceRoot, path: string): Promise<FileResult> {
+  return bb.sdk.files.read({
+    hostId: root.hostId,
+    path: join(root.path, path),
+    rootPath: root.path,
+  });
+}
+
+/** True when the resolved root is not the workspace the containing thread runs in. */
+async function isForeignWorkspace(
+  bb: BbPluginApi,
+  threadId: string,
+  root: WorkspaceRoot,
+): Promise<boolean> {
+  try {
+    const own = await threadWorkspaceRoot(bb, threadId);
+    return own.hostId !== root.hostId || own.path !== root.path;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Probe other project checkouts for the cited path. The containing thread's
+ * project wins outright; a single hit elsewhere resolves; several foreign hits
+ * fail closed with the workspace names so the reader can pin one.
+ */
+async function probeWorkspaceRoots(
+  bb: BbPluginApi,
+  threadId: string,
+  path: string,
+): Promise<WorkspaceRoot> {
+  const thread = await bb.sdk.threads.get({ threadId });
+  const own = await threadWorkspaceRoot(bb, threadId).catch(() => null);
+  const candidates = await candidateWorkspaceRoots(
+    bb,
+    thread.projectId ?? null,
+    own ?? { hostId: "", path: "", label: "" },
+  );
+  const byHost = new Map<string, WorkspaceRoot[]>();
+  for (const root of candidates) {
+    const list = byHost.get(root.hostId) ?? [];
+    list.push(root);
+    byHost.set(root.hostId, list);
+  }
+  const hits: WorkspaceRoot[] = [];
+  await Promise.all(
+    [...byHost].map(async ([hostId, roots]) => {
+      try {
+        const result = await bb.sdk.hosts.pathsExist({
+          hostId,
+          paths: roots.map((root) => join(root.path, path)),
+        });
+        for (const root of roots) {
+          if (result.existence[join(root.path, path)]) hits.push(root);
+        }
+      } catch {
+        // An unreachable host simply cannot hold the citation.
+      }
+    }),
+  );
+  const preferred = hits.find((hit) => hit.projectId === thread.projectId);
+  if (preferred) return preferred;
+  if (hits.length === 1) return hits[0]!;
+  if (hits.length > 1) {
+    const labels = [...new Set(hits.map((hit) => hit.label))].join(", ");
+    throw new WorkspaceError(
+      `${path} exists in several workspaces (${labels}). Add workspace="<name>" to choose.`,
+    );
+  }
+  throw new WorkspaceError(`Could not load ${path} from any known workspace.`);
+}
+
+type CitationFile = { file: FileResult; workspace?: string };
+async function citationFile(
+  bb: BbPluginApi,
+  input: Extract<RenderEmbedInput, { kind: "code" }>,
+  path: string,
+): Promise<CitationFile> {
+  if (input.workspace !== undefined) {
+    const root = await resolveWorkspace(bb, input.workspace);
+    const file = await readAt(bb, root, path);
+    return (await isForeignWorkspace(bb, input.threadId, root))
+      ? { file, workspace: root.label }
+      : { file };
+  }
+  const root = await threadWorkspaceRoot(bb, input.threadId);
+  try {
+    return { file: await readAt(bb, root, path) };
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+    const hit = await probeWorkspaceRoots(bb, input.threadId, path);
+    return { file: await readAt(bb, hit, path), workspace: hit.label };
+  }
+}
+
+function decorateUnityCitation(
+  bb: BbPluginApi,
+  output: Extract<RenderEmbedOutput, { status: "ready"; kind: "code" }>,
+  input: Extract<RenderEmbedInput, { kind: "code" }>,
+  fileContent: string,
+): void {
+  if (!isUnityAsset(output.path)) return;
+  try {
+    const ranged = input.start !== undefined || input.end !== undefined;
+    output.unity = buildUnityCitation(
+      fileContent,
+      ranged ? output.startLine : undefined,
+      ranged ? output.startLine + output.content.split("\n").length - 1 : undefined,
+    );
+    if (!output.unity.groups.length) throw new Error("No properties in selected range");
+    if (!ranged) {
+      output.label = output.path;
+      output.content = fileContent;
+      output.startLine = 1;
+    }
+  } catch (error) {
+    bb.log.debug(`Unity citation uses YAML for ${output.path}: ${String(error)}`);
+    output.unityNotice = "Object view unavailable for this citation. Showing YAML.";
+  }
+}
+
 export const renderEmbed = defineQuery({
   input: renderEmbedInputSchema,
   output: renderEmbedOutputSchema,
   async execute(ctx, input): Promise<RenderEmbedOutput> {
-    if (input.kind === "patch") return renderPatch(ctx, input);
-
+    if (input.kind !== "code") return loadDiffEmbed(ctx.bb, input);
     const path = relativePath(input.path);
-    if (path === null) {
+    if (path === null)
       return { status: "error", message: "Expected a worktree-relative file path." };
-    }
-
     try {
-      const snapshotKey: DiffSnapshotKey | null =
-        input.kind === "diff" && input.messageId !== undefined
-          ? { ...input, kind: "diff", messageId: input.messageId, path }
-          : null;
-      if (snapshotKey !== null) {
-        try {
-          const saved = readDiffSnapshot(ctx.bb.storage.database(), snapshotKey);
-          if (saved !== null) return saved;
-        } catch (error) {
-          ctx.bb.log.warn(`smart diff snapshot read failed: ${String(error)}`);
-          return { status: "error", message: `Could not read the saved diff for ${path}.` };
-        }
-      }
-      const thread = await ctx.bb.sdk.threads.get({ threadId: input.threadId });
-      if (thread.environmentId === null) {
-        return { status: "error", message: "This thread has no workspace environment." };
-      }
-      const environment = await ctx.bb.sdk.environments.get({
-        environmentId: thread.environmentId,
-      });
-
-      if (input.kind === "diff") {
-        const mergeBase =
-          environment.mergeBaseBranch ?? environment.baseBranch ?? environment.defaultBranch;
-        const target = mergeBase
-          ? ({ type: "all", mergeBaseBranch: mergeBase } as const)
-          : ({ type: "uncommitted" } as const);
-        const result = await ctx.bb.sdk.environments.diffPatch({
-          environmentId: environment.id,
-          paths: [path],
-          target,
-        });
-        if (result.outcome === "unavailable") {
-          return { status: "error", message: result.failure.message };
-        }
-        // Non-Git workspaces can show current source, but have no before/after history.
-        if (result.outcome === "available") {
-          const file = result.patches.find((candidate) => candidate.path === path);
-          if (file === undefined || file.patch.trim().length === 0) {
-            return {
-              status: "empty",
-              message: `No branch or working-tree changes found for ${path}.`,
-            };
-          }
-          const range =
-            input.start === undefined && input.end === undefined
-              ? { label: path, patch: file.patch }
-              : rangePatch(path, file.patch, input.start, input.end);
-          if ("error" in range) return { status: "error", message: range.error };
-          if ("empty" in range) return { status: "empty", message: range.empty };
-          const unityResult = isUnityAsset(path)
-            ? await loadUnityDiff(ctx.bb, environment.id, mergeBase, path, file, range.patch)
-            : {};
-          const output = {
-            status: "ready" as const,
-            kind: "diff" as const,
-            path,
-            label: range.label,
-            patch: range.patch,
-            truncated: file.truncated,
-            ...unityResult,
-          };
-          if (snapshotKey === null) return output;
-          try {
-            return saveDiffSnapshot(ctx.bb.storage.database(), snapshotKey, output);
-          } catch (error) {
-            ctx.bb.log.warn(`smart diff snapshot save failed: ${String(error)}`);
-            return { status: "error", message: `Could not save the diff for ${path}.` };
-          }
-        }
-      }
-
-      if (environment.path === null) {
-        return { status: "error", message: "This environment has no readable worktree." };
-      }
-      const file = await ctx.bb.sdk.files.read({
-        hostId: environment.hostId,
-        path: join(environment.path, ...path.split("/")),
-        rootPath: environment.path,
-      });
-      if (file.contentEncoding !== "utf8") {
+      const { file, workspace } = await citationFile(ctx.bb, input, path);
+      if (file.contentEncoding !== "utf8")
         return { status: "error", message: "Code citations require a UTF-8 text file." };
-      }
-      if (utf8Bytes(file.content) > MAX_FILE_BYTES) {
+      if (utf8Bytes(file.content) > MAX_FILE_BYTES)
         return { status: "error", message: "This file is too large for an inline citation." };
-      }
-      const citation = codeCitation(path, file.content, input.start, input.end);
-      if ("error" in citation) {
-        return { status: "error", message: citation.error };
-      }
-      return {
+      const excerpt = codeCitation(path, file.content, input.start, input.end);
+      if ("error" in excerpt) return { status: "error", message: excerpt.error };
+      const output: Extract<RenderEmbedOutput, { status: "ready"; kind: "code" }> = {
         status: "ready",
         kind: "code",
         path,
-        ...citation,
+        ...excerpt,
         truncated: false,
+        ...(workspace ? { workspace } : {}),
       };
+      decorateUnityCitation(ctx.bb, output, input, file.content);
+      return output;
     } catch (error) {
-      ctx.bb.log.warn(
-        `smart embed failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return { status: "error", message: `Could not load ${path} from this workspace.` };
+      ctx.bb.log.warn(`smart citation failed: ${String(error)}`);
+      const message =
+        error instanceof WorkspaceError
+          ? error.message
+          : `Could not load ${path} from this workspace.`;
+      return { status: "error", message };
     }
   },
 });
-
-type QueryContext = { bb: BbPluginApi };
-type PatchInput = z.output<typeof renderEmbedInputSchema>;
-
-/**
- * Render a patch the agent wrote to thread storage but has not applied. The
- * file is read under the thread's storage root; `path` picks one file out of a
- * multi-file patch and is inferred when the patch touches exactly one.
- */
-async function renderPatch(ctx: QueryContext, input: PatchInput): Promise<RenderEmbedOutput> {
-  const file = relativePath(input.file);
-  if (file === null) {
-    return { status: "error", message: "Expected a thread-storage-relative patch file." };
-  }
-  const requestedPath = input.path === undefined ? undefined : relativePath(input.path);
-  if (requestedPath === null) {
-    return { status: "error", message: "Expected a worktree-relative file path." };
-  }
-
-  try {
-    const location = await ctx.bb.sdk.threads.storageLocation({ threadId: input.threadId });
-    const read = await ctx.bb.sdk.files.read({
-      hostId: location.hostId,
-      path: join(location.storageRootPath, ...file.split("/")),
-      rootPath: location.storageRootPath,
-    });
-    if (read.contentEncoding !== "utf8") {
-      return { status: "error", message: "A patch embed needs a UTF-8 unified diff." };
-    }
-    if (utf8Bytes(read.content) > MAX_FILE_BYTES) {
-      return { status: "error", message: "This patch is too large for an inline embed." };
-    }
-    const files = splitPatchFiles(read.content);
-    if (files.length === 0) {
-      return { status: "empty", message: `No file changes found in ${file}.` };
-    }
-    const selected =
-      requestedPath === undefined
-        ? files.length === 1
-          ? files[0]
-          : undefined
-        : files.find((candidate) => candidate.path === requestedPath);
-    if (selected === undefined) {
-      return {
-        status: "error",
-        message:
-          requestedPath === undefined
-            ? `${file} touches ${files.length} files. Add path= to choose one.`
-            : `${file} has no changes for ${requestedPath}.`,
-      };
-    }
-    if (input.start === undefined && input.end === undefined) {
-      return {
-        status: "ready",
-        kind: "patch",
-        path: selected.path,
-        label: selected.path,
-        patch: selected.patch,
-        truncated: false,
-      };
-    }
-    const range = rangePatch(selected.path, selected.patch, input.start, input.end);
-    if ("error" in range) return { status: "error", message: range.error };
-    if ("empty" in range) return { status: "empty", message: range.empty };
-    return {
-      status: "ready",
-      kind: "patch",
-      path: selected.path,
-      label: range.label,
-      patch: range.patch,
-      truncated: false,
-    };
-  } catch (error) {
-    ctx.bb.log.warn(
-      `smart patch failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return { status: "error", message: `Could not load ${file} from this thread's storage.` };
-  }
-}

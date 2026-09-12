@@ -3,7 +3,6 @@ import { autorouterPolicy } from "./tools/autorouter-policy.ts";
 import { AUTOROUTER_AGENT_INSTRUCTIONS } from "./lib/autorouter/agent-policy.ts";
 
 import { registerCompletionSound } from "./lib/completion-sound.ts";
-import { diffSnapshotMigrations } from "./lib/diff-snapshot.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
 import { prepareHtmlPreview } from "./rpc/prepare-html-preview.ts";
@@ -15,31 +14,21 @@ import { updateAutorouterEnabled } from "./rpc/update-autorouter-enabled.ts";
 import { updateAutorouterSettings } from "./rpc/update-autorouter-settings.ts";
 import { routeAutorouterPrompt } from "./rpc/route-autorouter-prompt.ts";
 
-/**
- * Composer commands ship as skills under `skills/` (bb's `/` menu lists
- * skills, so there is no plugin slash-command surface). Mention providers
- * live in `src/server/mentions.ts`. Smart Embeds are the `::smart-diff` and
- * `::smart-code` message directives backed by the `renderEmbed` RPC, plus
- * `::smart-patch` for a diff the agent wrote to thread storage but has not
- * applied. Inline Vis adds the sandboxed `::inline-vis` HTML preview.
- */
+export const SMART_EMBED_INSTRUCTIONS = `Use Smart Code to cite current project files. Place this leaf directive on its own line: ::smart-code{path="relative/path.ts" start="12" end="28"}
 
-/**
- * Injected into every agent session. Measured, not guessed: `eval/METRIC.md`
- * defines the score and `eval/RESULTS.md` records the climb. Change it through
- * the harness; `eval/prompts/baseline.md` must stay byte-identical.
- */
-export const SMART_EMBED_INSTRUCTIONS = `Use Smart Embeds when a visual diff or an exact code citation makes your answer easier to verify.
+Unity .unity and .prefab citations render an object inspector with current property values. Omit the line range to show the asset's properties, or provide a range to select properties.
 
-For a file changed in the current task, place this leaf directive on its own line in the final response, and give it a line range covering the hunk you are describing, counted on the changed file: ::smart-diff{path="relative/path.ts" start="40" end="72"}
+Never embed a diff of the changes you made in this turn. Last Turn renders every recorded change below your final response, so a smart-diff of your own work duplicates it. Describe what you changed in prose.
 
-Leave start and end off only when the file is new, or the whole diff runs under about twenty lines: ::smart-diff{path="relative/path.ts"}
+Use ::smart-diff only when the user asked a question and the answer cites an existing change, such as explaining what a commit did or why history looks the way it does. Cite that commit as ::smart-diff{path="relative/path.ts" source="commit" sha="FULL_40_CHARACTER_SHA"} with the full 40-character SHA, never a short hash, branch name, or GitButler change ID. Do not use the bare form or source="workspace"; the bare form depends on a recorded turn patch that usually does not exist, and the workspace form mixes in other agents' changes.
 
-To cite existing project code, place this leaf directive on its own line: ::smart-code{path="relative/path.ts" start="12" end="28"}
+To show a change before you apply it, save the exact unified diff under thread storage and use ::smart-patch{file="changes.patch" path="relative/path.ts"}. Keep the patch available. Patch embeds display evidence without applying it. Omit path to show all files; select a path before ranging a multi-file patch. Both diff directives accept optional start/end new-side line ranges.
 
-To show a change before you apply it, write a unified diff to "$BB_THREAD_STORAGE/<name>.patch" and place this leaf directive on its own line: ::smart-patch{file="<name>.patch" path="relative/path.ts"}
+If a diff embed reports a missing source, replace it with a verified exact commit or saved patch, or drop it. Do not repeat the directive or broaden it to source="workspace".
 
-Use worktree-relative paths. Do not put directives in inline code or fenced code blocks. Add at most six embeds, and only for material files or claims.`;
+Citations and workspace diffs resolve in the containing thread's workspace. Add workspace="<project>" to target another workspace: a project name or id, an env_ id, or a thr_ id. It does not apply to turn diffs or patches.
+
+Use worktree-relative paths. Do not put directives in inline code or fenced code blocks. Add at most three citations, and only for material files or claims.`;
 
 export default definePlugin({
   pluginId: "kitchen-sink",
@@ -54,11 +43,6 @@ export default definePlugin({
   },
   async setup(bb) {
     await registerAutorouterSettings(bb);
-    const db = bb.storage.database();
-    bb.storage.migrate(db, diffSnapshotMigrations);
-    bb.events.on("thread.deleted", ({ thread }) => {
-      db.prepare("DELETE FROM diff_snapshots WHERE thread_id = ?").run(thread.id);
-    });
     for (const provider of mentionProviders) {
       bb.ui.registerMentionProvider(provider);
     }

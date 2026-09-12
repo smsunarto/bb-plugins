@@ -17,15 +17,7 @@ import type { RenderEmbedOutput } from "../shared/contract.ts";
  * - bb reloads the plugin or the page, which discards this module.
  */
 
-export type EmbedRequest = {
-  readonly kind: "code" | "diff" | "patch";
-  readonly threadId: string;
-  readonly messageId?: string;
-  readonly path?: string;
-  readonly file?: string;
-  readonly start?: number;
-  readonly end?: number;
-};
+export type EmbedRequest = import("../shared/contract.ts").RenderEmbedInput;
 
 export type EmbedEntry = {
   /** The last output, or null while the first load is in flight. */
@@ -52,31 +44,27 @@ export type EmbedCacheLimits = {
 const MISSING: EmbedEntry = { value: null, stale: true };
 
 export function embedCacheKey(request: EmbedRequest): string {
-  if (request.kind === "diff") {
-    return JSON.stringify([
-      request.kind,
-      request.threadId,
-      request.messageId ?? null,
-      request.path ?? null,
-      request.start ?? null,
-      request.end ?? null,
-    ]);
-  }
-  return [
+  return JSON.stringify([
     request.kind,
+    request.kind === "diff"
+      ? [request.messageId, request.turnId, request.source, request.sha]
+      : null,
+    request.kind === "patch" ? request.file : null,
+    "workspace" in request ? (request.workspace ?? null) : null,
     request.threadId,
-    request.path ?? "",
-    request.start ?? "",
-    request.end ?? "",
-    request.file ?? "",
-  ].join(" ");
+    request.path,
+    request.start ?? null,
+    request.end ?? null,
+  ]);
 }
 
 function outputBytes(value: RenderEmbedOutput): number {
   if (value.status !== "ready") return value.message.length;
-  return value.kind === "code"
-    ? value.content.length
-    : value.patch.length + (value.unity ? JSON.stringify(value.unity).length : 0);
+  if (value.kind !== "code")
+    return (
+      value.patch.length + (value.files?.reduce((sum, file) => sum + file.patch.length, 0) ?? 0)
+    );
+  return value.content.length + (value.unity ? JSON.stringify(value.unity).length : 0);
 }
 
 export class EmbedCache {

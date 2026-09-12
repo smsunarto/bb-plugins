@@ -271,3 +271,74 @@ test("workspace uses BB's detected default branch when no comparison is saved", 
     mergeBaseBranch: "trunk",
   });
 });
+
+test("workspace= diffs the environment anchored at another project's checkout", async () => {
+  const { bb, diff } = setup();
+  bb.sdk.projects = {
+    list: async () => [
+      {
+        id: "proj_bb",
+        name: "bb-plugins",
+        kind: "standard",
+        gitRemoteUrl: null,
+        createdAt: 0,
+        updatedAt: 0,
+        sources: [
+          {
+            id: "s",
+            projectId: "proj_bb",
+            hostId: "h",
+            path: "/bb-plugins",
+            type: "local_path",
+            isDefault: true,
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        ],
+      },
+    ],
+  } as never;
+  bb.sdk.threads.list = (async () => [{ environmentId: "env_bbp" }]) as never;
+  bb.sdk.environments.get = (async ({ environmentId }: { environmentId: string }) =>
+    environmentId === "env_bbp"
+      ? { id: "env_bbp", path: "/bb-plugins", status: "ready", mergeBaseBranch: "origin/main" }
+      : { id: environmentId, mergeBaseBranch: "origin/main", defaultBranch: "main" }) as never;
+  expect(
+    await loadDiffEmbed(bb, { ...input, source: "workspace", workspace: "bb-plugins" }),
+  ).toMatchObject({
+    status: "ready",
+    source: "Workspace bb-plugins: branch and uncommitted changes at first display",
+  });
+  expect(diff).toHaveBeenCalledWith({
+    environmentId: "env_bbp",
+    target: "all",
+    mergeBaseBranch: "origin/main",
+  });
+});
+
+test("workspace= resolves a thread selector through that thread's environment", async () => {
+  const { bb, diff } = setup();
+  bb.sdk.threads.get = (async ({ threadId }: { threadId: string }) =>
+    threadId === "thr_other" ? { environmentId: "env_other" } : { environmentId: "e" }) as never;
+  bb.sdk.environments.get = (async ({ environmentId }: { environmentId: string }) => ({
+    id: environmentId,
+    hostId: "h",
+    path: "/other",
+    mergeBaseBranch: "origin/main",
+    name: environmentId === "env_other" ? "Other checkout" : null,
+  })) as never;
+  const sha = "d".repeat(40);
+  expect(
+    await loadDiffEmbed(bb, { ...input, source: "commit", sha, workspace: "thr_other" }),
+  ).toMatchObject({ source: `Commit: ${sha} in Other checkout` });
+  expect(diff).toHaveBeenLastCalledWith({ environmentId: "env_other", target: "commit", sha });
+});
+
+test("workspace= is rejected on a recorded-turn diff", async () => {
+  const { bb, diff } = setup();
+  expect(await loadDiffEmbed(bb, { ...input, workspace: "bb-plugins" })).toMatchObject({
+    status: "error",
+    message: expect.stringContaining('workspace= only applies to source="workspace"'),
+  });
+  expect(diff).not.toHaveBeenCalled();
+});

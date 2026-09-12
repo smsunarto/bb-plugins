@@ -40,6 +40,7 @@ export function snapshotKey(input: import("../../shared/contract.ts").RenderEmbe
     input.source ?? null,
     input.sha ?? null,
     input.turnId ?? null,
+    input.workspace ?? null,
   ]);
 }
 

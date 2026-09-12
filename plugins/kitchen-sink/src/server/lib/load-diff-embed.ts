@@ -4,6 +4,7 @@ import type { RenderEmbedInput, RenderEmbedOutput } from "../../shared/contract.
 import { rangePatch } from "./diff-range.ts";
 import { relativeEmbedPath, splitPatchFiles } from "./patch-file.ts";
 import { readDiffSnapshot, saveDiffSnapshot, snapshotDatabase } from "./diff-snapshot.ts";
+import { resolveWorkspace, workspaceEnvironmentId } from "./workspace-root.ts";
 
 type Input = Exclude<RenderEmbedInput, { kind: "code" }>;
 const MAX_PATCH_BYTES = 1_500_000;
@@ -50,6 +51,8 @@ function validateInput(input: Input): void {
   if (input.sha && input.source !== "commit") throw new Error('Use source="commit" with sha.');
   if (input.source === "commit" && !input.sha)
     throw new Error("Commit evidence requires a full 40-character commit SHA.");
+  if (input.workspace !== undefined && (input.source ?? "turn") === "turn")
+    throw new Error('workspace= only applies to source="workspace" or source="commit" diffs.');
 }
 
 type Source = { patch: string; source: string };
@@ -57,9 +60,17 @@ async function gitSource(
   bb: BbPluginApi,
   input: Extract<Input, { kind: "diff" }>,
 ): Promise<Source> {
-  const thread = await bb.sdk.threads.get({ threadId: input.threadId });
-  if (!thread.environmentId) throw new Error("This thread has no workspace environment.");
-  const environmentId = thread.environmentId;
+  let environmentId: string;
+  let workspaceLabel: string | null = null;
+  if (input.workspace !== undefined) {
+    const root = await resolveWorkspace(bb, input.workspace);
+    environmentId = await workspaceEnvironmentId(bb, root);
+    workspaceLabel = root.label;
+  } else {
+    const thread = await bb.sdk.threads.get({ threadId: input.threadId });
+    if (!thread.environmentId) throw new Error("This thread has no workspace environment.");
+    environmentId = thread.environmentId;
+  }
   let target: Parameters<BbPluginApi["sdk"]["environments"]["diff"]>[0];
   if (input.source === "commit") target = { environmentId, target: "commit", sha: input.sha! };
   else {
@@ -86,8 +97,8 @@ async function gitSource(
     patch: result.diff.diff,
     source:
       input.source === "commit"
-        ? `Commit: ${input.sha}`
-        : "Workspace: branch and uncommitted changes at first display",
+        ? `Commit: ${input.sha}${workspaceLabel === null ? "" : ` in ${workspaceLabel}`}`
+        : `Workspace${workspaceLabel === null ? "" : ` ${workspaceLabel}`}: branch and uncommitted changes at first display`,
   };
 }
 async function loadSource(bb: BbPluginApi, input: Input): Promise<Source> {

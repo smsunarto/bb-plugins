@@ -87,6 +87,14 @@
   color: var(--destructive);
 }
 
+.smart-embed-workspace {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1rem;
+}
+
 .smart-embed-powered {
   margin-left: auto;
   color: var(--muted-foreground);

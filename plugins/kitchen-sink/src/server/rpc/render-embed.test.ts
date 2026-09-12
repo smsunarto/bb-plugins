@@ -1,62 +1,26 @@
 import { describe, expect, mock, test } from "bun:test";
 import { stubHostContext } from "@bb-kit/core/testing";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { getSingularPatch } from "@pierre/diffs";
-
 import { codeCitation } from "../lib/code-citation.ts";
-import { rangePatch } from "../lib/diff-range.ts";
-import { splitPatchFiles } from "../lib/patch-file.ts";
 import { renderEmbed } from "./render-embed.ts";
-
-function context(options: { content?: string; patch?: string; storage?: string } = {}) {
-  const calls: { read: unknown[]; diffPatch: unknown[] } = { read: [], diffPatch: [] };
+import { renderEmbedInputSchema } from "../../shared/contract.ts";
+function context(content = "one\ntwo\nthree\n") {
+  const read = mock(async () => ({ contentEncoding: "utf8", content }));
   const bb = {
     sdk: {
       threads: {
-        async get() {
-          return { environmentId: "environment-1" };
-        },
-        async storageLocation() {
-          return { hostId: "host-1", storageRootPath: "/home/user/.bb/thread-storage/thread-1" };
-        },
+        get: async () => ({ environmentId: "e", projectId: "proj_own" }),
+        list: async () => [],
       },
-      environments: {
-        async get() {
-          return {
-            id: "environment-1",
-            hostId: "host-1",
-            path: "/workspace/project",
-            mergeBaseBranch: "main",
-            baseBranch: "main",
-            defaultBranch: "main",
-          };
-        },
-        async diffPatch(input: unknown) {
-          calls.diffPatch.push(input);
-          return {
-            outcome: "available",
-            patches:
-              options.patch === undefined
-                ? []
-                : [{ path: "src/example.ts", patch: options.patch, truncated: false }],
-          };
-        },
-      },
-      files: {
-        async read(input: { path: string }) {
-          calls.read.push(input);
-          const content = input.path.includes("thread-storage")
-            ? (options.storage ?? "")
-            : (options.content ?? "one\ntwo\nthree\n");
-          return { contentEncoding: "utf8", content };
-        },
-      },
+      environments: { get: async () => ({ hostId: "h", path: "/workspace" }) },
+      files: { read },
+      projects: { list: async () => [] },
+      hosts: { pathsExist: async () => ({ existence: {} }) },
     },
-    log: { warn() {} },
+    log: { warn() {}, debug() {} },
   } as unknown as BbPluginApi;
-  return { ctx: stubHostContext({ bb }), calls };
+  return { ctx: stubHostContext({ bb }), read, bb };
 }
-
 describe("codeCitation", () => {
   test("keeps the source line numbers and adds bounded context", () => {
     const result = codeCitation("src/example.ts", "one\ntwo\nthree\nfour\nfive\n", 3, 4);
@@ -77,313 +41,232 @@ describe("codeCitation", () => {
   });
 });
 
-describe("renderEmbed", () => {
-  test("shows current source when a diff is not applicable to a non-Git workspace", async () => {
-    const { ctx, calls } = context({ content: "one\ntwo\nthree\n" });
-    ctx.bb.sdk.environments.diffPatch = mock(async () => ({
-      outcome: "not_applicable" as const,
-      reason: "non_git_environment" as const,
-      message: "Workspace diff is not available for non-git environments",
-    }));
-    const result = await renderEmbed.execute(ctx, {
-      kind: "diff",
-      threadId: "thread-1",
-      path: "src/example.ts",
-      start: 2,
-      end: 2,
-    });
-    expect(result).toEqual({
-      status: "ready",
-      kind: "code",
-      path: "src/example.ts",
-      label: "src/example.ts:L2",
-      content: "one\ntwo\nthree",
-      startLine: 1,
-      truncated: false,
-    });
-    expect(calls.read).toEqual([
-      {
-        hostId: "host-1",
-        path: "/workspace/project/src/example.ts",
-        rootPath: "/workspace/project",
-      },
-    ]);
+test("reads citations through their environment host and root fence", async () => {
+  const { ctx, read } = context();
+  expect(
+    await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "src/a.ts", start: 2 }),
+  ).toMatchObject({ status: "ready", content: "one\ntwo\nthree", startLine: 1 });
+  expect(read).toHaveBeenCalledWith({
+    hostId: "h",
+    path: "/workspace/src/a.ts",
+    rootPath: "/workspace",
   });
-
-  test("preserves workspace failures instead of substituting current code", async () => {
-    const { ctx, calls } = context();
-    ctx.bb.sdk.environments.diffPatch = mock(async () => ({
-      outcome: "unavailable" as const,
-      failure: {
-        code: "permission_denied" as const,
-        message: "Workspace permission denied",
-        workspacePath: "/workspace/project",
-      },
-    }));
-    expect(
-      await renderEmbed.execute(ctx, {
-        kind: "diff",
-        threadId: "thread-1",
-        path: "src/example.ts",
-      }),
-    ).toEqual({ status: "error", message: "Workspace permission denied" });
-    expect(calls.read).toEqual([]);
-  });
-
-  test("reads a citation through the environment host and root fence", async () => {
-    const { ctx, calls } = context({ content: "one\ntwo\nthree\n" });
-    const result = await renderEmbed.execute(ctx, {
-      kind: "code",
-      threadId: "thread-1",
-      path: "src/example.ts",
-      start: 2,
-      end: 2,
-    });
-
-    expect(result.status).toBe("ready");
-    expect(calls.read).toEqual([
-      {
-        hostId: "host-1",
-        path: "/workspace/project/src/example.ts",
-        rootPath: "/workspace/project",
-      },
-    ]);
-  });
-
-  test("loads branch and working-tree changes from the merge base", async () => {
-    const patch =
-      "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1 +1 @@\n-old\n+new\n";
-    const { ctx, calls } = context({ patch });
-    const result = await renderEmbed.execute(ctx, {
-      kind: "diff",
-      threadId: "thread-1",
-      path: "src/example.ts",
-    });
-
-    expect(result).toMatchObject({ status: "ready", kind: "diff", patch });
-    expect(calls.diffPatch).toEqual([
-      {
-        environmentId: "environment-1",
-        paths: ["src/example.ts"],
-        target: { type: "all", mergeBaseBranch: "main" },
-      },
-    ]);
-  });
-
-  test("rejects paths that can escape the worktree", async () => {
-    const { ctx, calls } = context();
-    const result = await renderEmbed.execute(ctx, {
-      kind: "code",
-      threadId: "thread-1",
-      path: "../secret.txt",
-    });
-
-    expect(result).toEqual({
+});
+test("rejects escaping paths and incomplete diff/patch requests", async () => {
+  for (const path of ["../secret", "/etc/passwd", "a/../secret", "a\\secret"]) {
+    const { ctx, read } = context();
+    expect(await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path })).toMatchObject({
       status: "error",
-      message: "Expected a worktree-relative file path.",
     });
-    expect(calls.read).toEqual([]);
-  });
+    expect(read).not.toHaveBeenCalled();
+  }
+  for (const kind of ["diff", "patch"])
+    expect(renderEmbedInputSchema.safeParse({ kind, threadId: "t", path: "a" }).success).toBe(
+      false,
+    );
 });
-
-describe("rangePatch", () => {
-  const patch = [
-    "diff --git a/src/example.ts b/src/example.ts",
-    "--- a/src/example.ts",
-    "+++ b/src/example.ts",
-    "@@ -1,3 +1,3 @@",
-    " one",
-    "-two",
-    "+TWO",
-    " three",
-    "@@ -10,6 +10,7 @@ function later() {",
-    " ten",
-    " eleven",
-    "-twelve",
-    "+twelve!",
-    "+twelve-and-a-half",
-    " thirteen",
-    " fourteen",
-    " fifteen",
-    "\\ No newline at end of file",
-    "",
-  ].join("\n");
-
-  test("keeps only the hunk lines near the requested new-side range", () => {
-    const result = rangePatch("src/example.ts", patch, 12, 13);
-    expect(result).toEqual({
-      label: "src/example.ts:L12-L13",
-      patch: [
-        "diff --git a/src/example.ts b/src/example.ts",
-        "--- a/src/example.ts",
-        "+++ b/src/example.ts",
-        "@@ -10,5 +10,6 @@ function later() {",
-        " ten",
-        " eleven",
-        "-twelve",
-        "+twelve!",
-        "+twelve-and-a-half",
-        " thirteen",
-        " fourteen",
-        "",
-      ].join("\n"),
-    });
-    if ("patch" in result) expect(() => getSingularPatch(result.patch)).not.toThrow();
-  });
-
-  test("recounts a trimmed hunk header and drops untouched hunks", () => {
-    const result = rangePatch("src/example.ts", patch, 1, 1);
-    expect(result).toEqual({
-      label: "src/example.ts:L1",
-      patch:
-        "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n",
-    });
-    expect(rangePatch("src/example.ts", patch, 10, 10)).toEqual({
-      label: "src/example.ts:L10",
-      patch:
-        "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -10,3 +10,3 @@ function later() {\n ten\n eleven\n-twelve\n+twelve!\n",
-    });
-  });
-
-  test("reports an empty range and a reversed range", () => {
-    expect(rangePatch("src/example.ts", patch, 16, 16)).toEqual({
-      empty: "No changes found in src/example.ts:L16.",
-    });
-    expect(rangePatch("src/example.ts", patch, 40, 50)).toEqual({
-      empty: "No changes found in src/example.ts:L40-L50.",
-    });
-    expect(rangePatch("src/example.ts", patch, 5, 2)).toEqual({
-      error: "The diff end line must not come before its start line.",
-    });
-  });
-});
-
-test("renderEmbed trims a diff to the requested range", async () => {
-  const patch =
-    "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,6 +1,6 @@\n one\n-two\n+TWO\n three\n four\n-five\n+FIVE\n six\n";
-  const { ctx } = context({ patch });
+test("Unity citations show current values and malformed YAML falls back to source", async () => {
+  const { ctx } = context("--- !u!1 &1\nGameObject:\n  m_Name: Player\n  m_IsActive: 1\n");
   const result = await renderEmbed.execute(ctx, {
-    kind: "diff",
-    threadId: "thread-1",
-    path: "src/example.ts",
-    start: 5,
-    end: 5,
+    kind: "code",
+    threadId: "t",
+    path: "Player.prefab",
   });
-  expect(result).toEqual({
+  expect(result).toMatchObject({
     status: "ready",
-    kind: "diff",
-    path: "src/example.ts",
-    label: "src/example.ts:L5",
-    patch:
-      "diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -3,4 +3,4 @@\n three\n four\n-five\n+FIVE\n six\n",
-    truncated: false,
+    kind: "code",
+    unity: {
+      propertyCount: 2,
+      groups: [
+        {
+          name: "Player",
+          components: [
+            {
+              properties: [
+                { path: "m_Name", value: '"Player"' },
+                { path: "m_IsActive", value: "1" },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   });
+  const malformed = context("--- !u!1 &1\nGameObject: [broken");
+  expect(
+    await renderEmbed.execute(malformed.ctx, { kind: "code", threadId: "t", path: "World.unity" }),
+  ).toMatchObject({ status: "ready", unityNotice: expect.any(String) });
 });
 
-const multiFilePatch = [
-  "diff --git a/src/a.ts b/src/a.ts",
-  "--- a/src/a.ts",
-  "+++ b/src/a.ts",
-  "@@ -1,3 +1,3 @@",
-  " one",
-  "-two",
-  "+TWO",
-  " three",
-  "diff --git a/src/b.ts b/src/b.ts",
-  "new file mode 100644",
-  "--- /dev/null",
-  "+++ b/src/b.ts",
-  "@@ -0,0 +1 @@",
-  "+hello",
-  "",
-].join("\n");
-
-describe("splitPatchFiles", () => {
-  test("splits a git patch per file and keeps each file's own header", () => {
-    const files = splitPatchFiles(multiFilePatch);
-    expect(files.map((file) => file.path)).toEqual(["src/a.ts", "src/b.ts"]);
-    expect(files[1]?.patch).toBe(
-      "diff --git a/src/b.ts b/src/b.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/b.ts\n@@ -0,0 +1 @@\n+hello\n",
-    );
-    for (const file of files) expect(() => getSingularPatch(file.patch)).not.toThrow();
+describe("cross-workspace citations", () => {
+  const source = (hostId: string, path: string) => ({
+    hostId,
+    path,
+    isDefault: true,
+    id: "s",
+    type: "local_path" as const,
+    projectId: "p",
+    createdAt: 0,
+    updatedAt: 0,
+  });
+  const project = (id: string, name: string, path: string, hostId = "h") => ({
+    id,
+    name,
+    kind: "standard" as const,
+    gitRemoteUrl: null,
+    sources: [source(hostId, path)],
+    createdAt: 0,
+    updatedAt: 0,
   });
 
-  test("splits a plain unified diff on its file headers and skips chunks without hunks", () => {
-    const files = splitPatchFiles(
-      "some notes\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-a\n+b\n--- y.ts\n+++ y.ts\n@@ -1 +1 @@\n-c\n+d\n--- z.ts\n+++ z.ts\n",
-    );
-    expect(files.map((file) => file.path)).toEqual(["x.ts", "y.ts"]);
-  });
-});
-
-describe("renderEmbed patch", () => {
-  test("reads the patch under the thread storage root fence and infers a single file", async () => {
-    const storage =
-      "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-    const { ctx, calls } = context({ storage });
+  test("workspace= reads the file from the named project checkout", async () => {
+    const { ctx, read, bb } = context();
+    bb.sdk.projects.list = async () => [project("proj_bb", "bb-plugins", "/bb-plugins")];
     const result = await renderEmbed.execute(ctx, {
-      kind: "patch",
-      threadId: "thread-1",
-      file: "proposal.patch",
-    });
-    expect(result).toEqual({
-      status: "ready",
-      kind: "patch",
+      kind: "code",
+      threadId: "t",
       path: "src/a.ts",
-      label: "src/a.ts",
-      patch: storage,
-      truncated: false,
+      workspace: "bb-plugins",
     });
-    expect(calls.read).toEqual([
-      {
-        hostId: "host-1",
-        path: "/home/user/.bb/thread-storage/thread-1/proposal.patch",
-        rootPath: "/home/user/.bb/thread-storage/thread-1",
-      },
-    ]);
+    expect(result).toMatchObject({
+      status: "ready",
+      workspace: "bb-plugins",
+      content: "one\ntwo\nthree",
+    });
+    expect(read).toHaveBeenCalledWith({
+      hostId: "h",
+      path: "/bb-plugins/src/a.ts",
+      rootPath: "/bb-plugins",
+    });
   });
 
-  test("selects one file from a multi-file patch and trims it to a range", async () => {
-    const { ctx } = context({ storage: multiFilePatch });
-    expect(
-      await renderEmbed.execute(ctx, { kind: "patch", threadId: "thread-1", file: "p.patch" }),
-    ).toEqual({ status: "error", message: "p.patch touches 2 files. Add path= to choose one." });
+  test("workspace= resolves an environment id directly", async () => {
+    const { ctx, read, bb } = context();
+    bb.sdk.environments.get = (async ({ environmentId }: { environmentId: string }) => ({
+      hostId: "h",
+      path: environmentId === "env_other" ? "/other" : "/workspace",
+    })) as never;
+    const result = await renderEmbed.execute(ctx, {
+      kind: "code",
+      threadId: "t",
+      path: "src/a.ts",
+      workspace: "env_other",
+    });
+    expect(result).toMatchObject({ status: "ready", workspace: "other" });
+    expect(read).toHaveBeenCalledWith({
+      hostId: "h",
+      path: "/other/src/a.ts",
+      rootPath: "/other",
+    });
+  });
+
+  test("an unknown workspace selector is an explicit error", async () => {
+    const { ctx, read } = context();
     expect(
       await renderEmbed.execute(ctx, {
-        kind: "patch",
-        threadId: "thread-1",
-        file: "p.patch",
-        path: "src/c.ts",
-      }),
-    ).toEqual({ status: "error", message: "p.patch has no changes for src/c.ts." });
-    expect(
-      await renderEmbed.execute(ctx, {
-        kind: "patch",
-        threadId: "thread-1",
-        file: "p.patch",
+        kind: "code",
+        threadId: "t",
         path: "src/a.ts",
-        start: 2,
-        end: 2,
+        workspace: "nope",
       }),
-    ).toEqual({
-      status: "ready",
-      kind: "patch",
+    ).toMatchObject({
+      status: "error",
+      message: expect.stringContaining('Unknown workspace "nope"'),
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test("a citation missing from the thread workspace falls back to a unique foreign hit", async () => {
+    const { ctx, read, bb } = context();
+    read.mockRejectedValueOnce(Object.assign(new Error("HTTP 404"), { status: 404 }));
+    bb.sdk.projects.list = async () => [
+      project("proj_own", "dotfiles", "/dotfiles"),
+      project("proj_bb", "bb-plugins", "/bb-plugins"),
+    ];
+    bb.sdk.hosts.pathsExist = (async ({ paths }: { paths: string[] }) => ({
+      existence: Object.fromEntries(
+        paths.map((path: string) => [path, path.startsWith("/bb-plugins")]),
+      ),
+    })) as never;
+    const result = await renderEmbed.execute(ctx, {
+      kind: "code",
+      threadId: "t",
       path: "src/a.ts",
-      label: "src/a.ts:L2",
-      patch:
-        "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n",
-      truncated: false,
+    });
+    expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins" });
+    expect(read).toHaveBeenLastCalledWith({
+      hostId: "h",
+      path: "/bb-plugins/src/a.ts",
+      rootPath: "/bb-plugins",
     });
   });
 
-  test("rejects patch files that can escape thread storage and reports an empty patch", async () => {
-    const { ctx, calls } = context({ storage: "not a diff\n" });
+  test("the containing thread's project wins over other matching workspaces", async () => {
+    const { ctx, read, bb } = context();
+    read.mockRejectedValueOnce(Object.assign(new Error("HTTP 404"), { status: 404 }));
+    bb.sdk.projects.list = async () => [
+      project("proj_own", "dotfiles", "/dotfiles-main"),
+      project("proj_bb", "bb-plugins", "/bb-plugins"),
+    ];
+    bb.sdk.hosts.pathsExist = (async ({ paths }: { paths: string[] }) => ({
+      existence: Object.fromEntries(paths.map((path: string) => [path, true])),
+    })) as never;
+    const result = await renderEmbed.execute(ctx, {
+      kind: "code",
+      threadId: "t",
+      path: "src/a.ts",
+    });
+    expect(result).toMatchObject({ status: "ready", workspace: "dotfiles" });
+    expect(read).toHaveBeenLastCalledWith({
+      hostId: "h",
+      path: "/dotfiles-main/src/a.ts",
+      rootPath: "/dotfiles-main",
+    });
+  });
+
+  test("several foreign hits fail closed with the candidate names", async () => {
+    const { ctx, read, bb } = context();
+    read.mockRejectedValueOnce(Object.assign(new Error("HTTP 404"), { status: 404 }));
+    bb.sdk.projects.list = async () => [
+      project("proj_bb", "bb-plugins", "/bb-plugins"),
+      project("proj_bb2", "bb", "/bb"),
+    ];
+    bb.sdk.hosts.pathsExist = (async ({ paths }: { paths: string[] }) => ({
+      existence: Object.fromEntries(paths.map((path: string) => [path, true])),
+    })) as never;
+    const result = await renderEmbed.execute(ctx, {
+      kind: "code",
+      threadId: "t",
+      path: "src/a.ts",
+    });
+    if (result.status !== "error") throw new Error("expected an error");
+    expect(result.message).toContain("bb-plugins");
+    expect(result.message).toContain("bb");
+    expect(result.message).toContain("workspace=");
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test("a citation missing everywhere keeps the original error", async () => {
+    const { ctx, read } = context();
+    read.mockRejectedValueOnce(Object.assign(new Error("HTTP 404"), { status: 404 }));
     expect(
-      await renderEmbed.execute(ctx, { kind: "patch", threadId: "thread-1", file: "../x.patch" }),
-    ).toEqual({ status: "error", message: "Expected a thread-storage-relative patch file." });
-    expect(calls.read).toEqual([]);
+      await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "src/a.ts" }),
+    ).toMatchObject({
+      status: "error",
+      message: "Could not load src/a.ts from any known workspace.",
+    });
+  });
+
+  test("non-miss read failures never probe other workspaces", async () => {
+    const { ctx, read, bb } = context();
+    read.mockRejectedValueOnce(new Error("permission denied"));
+    bb.sdk.hosts.pathsExist = mock(async () => ({ existence: {} })) as never;
     expect(
-      await renderEmbed.execute(ctx, { kind: "patch", threadId: "thread-1", file: "x.patch" }),
-    ).toEqual({ status: "empty", message: "No file changes found in x.patch." });
+      await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "src/a.ts" }),
+    ).toMatchObject({
+      status: "error",
+      message: "Could not load src/a.ts from this workspace.",
+    });
+    expect(bb.sdk.hosts.pathsExist).not.toHaveBeenCalled();
   });
 });
