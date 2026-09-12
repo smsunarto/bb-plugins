@@ -7,5 +7,5 @@
   "plugins/gh-stack": "0.2.3",
   "plugins/gtd-sidebar": "0.4.2",
   "plugins/monokai": "0.3.2",
-  "plugins/traces": "0.1.0"
+  "plugins/traces": "0.2.0"
 }

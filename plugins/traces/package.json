@@ -1,6 +1,6 @@
 {
   "name": "@smsunarto/bb-plugin-traces",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A keyboard-first Claude Code and Codex trace explorer with local indexing and extensible event renderers.",
   "license": "MIT",
   "author": "Scott Sunarto",
