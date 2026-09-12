@@ -1,6 +1,6 @@
 # Last Turn Diff
 
-Automatically displays the most recent completed turn's recorded file changes below its final assistant response. Each file expands into BB's diff viewer. A later turn with recorded changes replaces the previous preview. Replies without edits retain it under the response that made the changes. The previous completed turn remains available while the next turn runs.
+Automatically displays the most recent completed turn's recorded file changes below its final assistant response. Each file expands into BB's diff viewer. Unity `.unity` and `.prefab` files expand into the shared object inspector with before/after properties and a Raw YAML toggle. A later turn with recorded changes replaces the previous preview. Replies without edits retain it under the response that made the changes. The previous completed turn remains available while the next turn runs.
 
 This is presentation-only. The plugin registers a read-only RPC and lifecycle notifications. It has no agent tools, instructions, skills, message directives, message writes, composer changes, or workspace writes. The preview is never appended to the conversation or model input. BB's copy, quote, and fork actions continue to use the original message text.
 
@@ -15,3 +15,7 @@ The query searches completed turns backward within the current context boundary.
 ## Develop
 
 Use the repository's `bun run dev`. From this directory: `bun run test`, `bun run typecheck`, `bun run check`, and `bun run build`.
+
+## Unity context
+
+Changed values come exclusively from the recorded turn patch. For modified files, the plugin reads current workspace text through the SDK's host and root boundary, then applies the recorded patch in reverse with exact line matching to recover its prior values. Object names and unchanged context reflect the current workspace. Added and deleted assets can be reconstructed from the patch alone. Missing, binary, malformed, oversized, or mismatched sources retain the recorded YAML diff. No Git state is used, and no additional snapshots are stored. Smart Code citations share the parser and UI through `@bb-plugins/unity-inspector`, but display only current values.

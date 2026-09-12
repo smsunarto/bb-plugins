@@ -320,3 +320,169 @@ test("adds no model instructions, tools, or dispatch hooks", async () => {
   expect(JSON.stringify(config)).not.toContain("last-turn");
   await harness.lifecycle.dispose();
 });
+
+function stubWorkspaces(harness: Awaited<ReturnType<typeof setup>>["harness"]) {
+  harness.sdk.stub("threads.get", async () => ({
+    environmentId: "env-1",
+    projectId: "proj_dot",
+  }));
+  harness.sdk.stub("environments.get", async () => ({
+    id: "env-1",
+    hostId: "h",
+    path: "/ws/dotfiles",
+    name: null,
+  }));
+  harness.sdk.stub("projects.list", async () => [
+    {
+      id: "proj_dot",
+      name: "dotfiles",
+      kind: "standard",
+      gitRemoteUrl: null,
+      createdAt: 0,
+      updatedAt: 0,
+      sources: [
+        {
+          id: "s1",
+          projectId: "proj_dot",
+          hostId: "h",
+          path: "/ws/dotfiles",
+          type: "local_path",
+          isDefault: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ],
+    },
+    {
+      id: "proj_bb",
+      name: "bb-plugins",
+      kind: "standard",
+      gitRemoteUrl: null,
+      createdAt: 0,
+      updatedAt: 0,
+      sources: [
+        {
+          id: "s2",
+          projectId: "proj_bb",
+          hostId: "h",
+          path: "/ws/bb-plugins",
+          type: "local_path",
+          isDefault: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ],
+    },
+  ]);
+}
+
+type FileChangeRow = Extract<Row, { workKind: "file-change" }>;
+function absoluteEdit(path: string, id: string): FileChangeRow {
+  const fileChange = edit as FileChangeRow;
+  return { ...fileChange, id, change: { ...fileChange.change, path } };
+}
+type LatestTurnResult = {
+  turn: {
+    workspace?: string;
+    changes: { id: string; workspace?: string; relPath?: string }[];
+  } | null;
+};
+
+test("changes outside the thread workspace carry a project label and relative path", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [
+      absoluteEdit("/ws/dotfiles/src/b.ts", "local"),
+      absoluteEdit("/ws/bb-plugins/src/a.ts", "foreign"),
+      message,
+    ],
+  );
+  stubWorkspaces(harness);
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  expect(result).toMatchObject({
+    turn: {
+      workspace: "dotfiles",
+      changes: [
+        { id: "local", relPath: "src/b.ts" },
+        { id: "foreign", workspace: "bb-plugins", relPath: "src/a.ts" },
+      ],
+    },
+  });
+  expect(result.turn?.changes[0]).not.toHaveProperty("workspace");
+  await harness.lifecycle.dispose();
+});
+
+test("an aggregate patch still surfaces foreign row changes the patch cannot cover", async () => {
+  const { harness } = await setup(
+    [started, updated, completed],
+    [
+      absoluteEdit("/ws/dotfiles/src/b.ts", "local"),
+      absoluteEdit("/ws/bb-plugins/src/a.ts", "foreign"),
+      message,
+    ],
+  );
+  stubWorkspaces(harness);
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  // The env-local row is already covered by the aggregate patch; only the
+  // foreign row is appended with its workspace label.
+  expect(result).toMatchObject({
+    turn: {
+      patch,
+      workspace: "dotfiles",
+      changes: [{ id: "foreign", workspace: "bb-plugins", relPath: "src/a.ts" }],
+    },
+  });
+  await harness.lifecycle.dispose();
+});
+
+test("foreign changes outside every known project are labeled by parent directory", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [absoluteEdit("/tmp/scratch/x.ts", "stray"), message],
+  );
+  stubWorkspaces(harness);
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  expect(result).toMatchObject({
+    turn: { changes: [{ id: "stray", workspace: "scratch" }] },
+  });
+  expect(result.turn?.changes[0]).not.toHaveProperty("relPath");
+  await harness.lifecycle.dispose();
+});
+
+test("relative paths that escape the workspace still attribute to a project", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [absoluteEdit("../bb-plugins/src/a.ts", "escaped"), message],
+  );
+  stubWorkspaces(harness);
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  expect(result).toMatchObject({
+    turn: { changes: [{ id: "escaped", workspace: "bb-plugins", relPath: "src/a.ts" }] },
+  });
+  await harness.lifecycle.dispose();
+});
+
+test("unresolvable environments leave changes unattributed", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [absoluteEdit("/ws/dotfiles/src/b.ts", "local"), message],
+  );
+  harness.sdk.stub("threads.get", async () => {
+    throw new Error("thread unavailable");
+  });
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  expect(result).toMatchObject({ turn: { changes: [{ id: "local" }] } });
+  expect(result.turn).not.toHaveProperty("workspace");
+  expect(result.turn?.changes[0]).not.toHaveProperty("relPath");
+  await harness.lifecycle.dispose();
+});

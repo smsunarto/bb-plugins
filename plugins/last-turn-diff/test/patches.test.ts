@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { turnChanges } from "../src/app/patches.ts";
+import { positionPatch, turnChanges } from "../src/shared/patches.ts";
 import type { LatestTurn } from "../src/shared/contract.ts";
 const base: LatestTurn = { turnId: "t", anchorId: "m", changes: [], patch: null, limited: false };
 const patch =
@@ -34,4 +34,25 @@ test("sums changes across hunks without counting context or newline markers", ()
     added: 3,
     removed: 2,
   });
+});
+
+const hunkless =
+  "--- a/x/app.css\n+++ b/x/app.css\n-  --diffs-gap-block: 4px;\n+  --diffs-gap-block: 2px;\n+  --diffs-gap-inline: 6px;\n";
+
+test("synthesizes a hunk header for provider changes recorded without one", () => {
+  expect(positionPatch(hunkless)).toEqual({
+    patch: hunkless.replace("+++ b/x/app.css\n", "+++ b/x/app.css\n@@ -1,1 +1,2 @@\n"),
+    synthesized: true,
+  });
+  expect(positionPatch(patch)).toEqual({ patch, synthesized: false });
+  expect(positionPatch("--- /dev/null\n+++ b/a.txt\n+line a\n").patch).toContain("@@ -0,0 +1,1 @@");
+});
+
+test("recorded changes without hunk headers render positioned and hide line numbers", () => {
+  const change = { id: "c", path: "x/app.css", patch: hunkless, added: 2, removed: 1 };
+  const [positioned] = turnChanges({ ...base, changes: [change] });
+  expect(positioned).toMatchObject({ unpositioned: true, added: 2, removed: 1 });
+  expect(positioned?.patch).toContain("@@ -1,1 +1,2 @@");
+  const [kept] = turnChanges({ ...base, changes: [{ ...change, patch }] });
+  expect(kept).toEqual({ ...change, patch });
 });

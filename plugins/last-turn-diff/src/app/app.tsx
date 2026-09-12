@@ -1,3 +1,5 @@
+import { UnityDiffView } from "@bb-plugins/unity-inspector/app";
+import type { UnityDiff } from "@bb-plugins/unity-inspector/model";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import {
   definePluginApp,
@@ -8,16 +10,44 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CHANGED_CHANNEL, type LatestTurn } from "../shared/contract.ts";
+import { CHANGED_CHANNEL, type Change, type LatestTurn } from "../shared/contract.ts";
 import { mountDiffPortal } from "./portal.ts";
-import { turnChanges } from "./patches.ts";
+import { turnChanges } from "../shared/patches.ts";
 import { rpc } from "./rpc.ts";
 import { FileHeader } from "./file-header.tsx";
 import "./app.css";
 
+type WorkspaceGroup = { key: string; label: string; changes: Change[] };
+
+/**
+ * Group changes by owning workspace: the thread's own first, foreign
+ * workspaces after in the order their changes appeared.
+ */
+function groupByWorkspace(changes: Change[], ownLabel: string | undefined): WorkspaceGroup[] {
+  const own: WorkspaceGroup = { key: "", label: ownLabel ?? "This workspace", changes: [] };
+  const foreign = new Map<string, WorkspaceGroup>();
+  for (const change of changes) {
+    if (change.workspace === undefined) {
+      own.changes.push(change);
+      continue;
+    }
+    let group = foreign.get(change.workspace);
+    if (!group) {
+      group = { key: change.workspace, label: change.workspace, changes: [] };
+      foreign.set(change.workspace, group);
+    }
+    group.changes.push(change);
+  }
+  return [own, ...foreign.values()].filter((group) => group.changes.length > 0);
+}
+
 function TurnDiff({ turn }: { turn: LatestTurn }) {
   const bodyIdPrefix = useId();
   const changes = useMemo(() => turnChanges(turn), [turn]);
+  const groups = useMemo(
+    () => groupByWorkspace(changes, turn.workspace),
+    [changes, turn.workspace],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const hasExpanded = changes.some((change) => expanded.has(change.id));
   if (changes.length === 0 && !turn.limited) return null;
@@ -52,41 +82,73 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
       {turn.limited ? (
         <p className="last-turn-diff-notice">Some changes exceed the preview limit.</p>
       ) : null}
-      {changes.map((change) => (
-        <div className="last-turn-diff-file" key={change.id}>
-          <FileHeader
-            change={change}
-            open={expanded.has(change.id)}
-            bodyId={`${bodyIdPrefix}-${change.id}`}
-            onToggle={() => {
-              setExpanded((current) => {
-                const next = new Set(current);
-                if (next.has(change.id)) next.delete(change.id);
-                else next.add(change.id);
-                return next;
-              });
-            }}
-          />
-          <div id={`${bodyIdPrefix}-${change.id}`} hidden={!expanded.has(change.id)}>
-            <FileBody patch={change.patch} path={change.path} open={expanded.has(change.id)} />
-          </div>
-        </div>
+      {groups.map((group) => (
+        <section className="last-turn-diff-workspace" key={group.key || "own"}>
+          {groups.length > 1 ? (
+            <h3 className="last-turn-diff-workspace-label" title={group.label}>
+              {group.label}
+            </h3>
+          ) : null}
+          {group.changes.map((change) => (
+            <div className="last-turn-diff-file" key={change.id}>
+              <FileHeader
+                change={change}
+                open={expanded.has(change.id)}
+                bodyId={`${bodyIdPrefix}-${change.id}`}
+                onToggle={() => {
+                  setExpanded((current) => {
+                    const next = new Set(current);
+                    if (next.has(change.id)) next.delete(change.id);
+                    else next.add(change.id);
+                    return next;
+                  });
+                }}
+              />
+              <div id={`${bodyIdPrefix}-${change.id}`} hidden={!expanded.has(change.id)}>
+                <FileBody
+                  unity={turn.unity?.[change.id]}
+                  patch={change.patch}
+                  path={change.relPath ?? change.path}
+                  open={expanded.has(change.id)}
+                  showLineNumbers={!change.unpositioned}
+                />
+              </div>
+            </div>
+          ))}
+        </section>
       ))}
     </section>
   );
 }
 
-function FileBody({ patch, path, open }: { patch: string | null; path: string; open: boolean }) {
-  // Row and bulk toggles share one state. Mount heavy diff renderers only when open.
+function FileBody({
+  patch,
+  path,
+  open,
+  unity,
+  showLineNumbers,
+}: {
+  patch: string | null;
+  path: string;
+  open: boolean;
+  unity?: UnityDiff;
+  showLineNumbers: boolean;
+}) {
+  if (!open) return <div className="last-turn-diff-body" />;
+  const raw = patch ? (
+    <Diff
+      patch={patch}
+      path={path}
+      view="unified"
+      overflow="scroll"
+      showLineNumbers={showLineNumbers}
+    />
+  ) : (
+    <p className="last-turn-diff-notice">No text diff recorded for this change.</p>
+  );
   return (
     <div className="last-turn-diff-body">
-      {open ? (
-        patch ? (
-          <Diff patch={patch} path={path} view="unified" overflow="scroll" showLineNumbers />
-        ) : (
-          <p className="last-turn-diff-notice">No text diff recorded for this change.</p>
-        )
-      ) : null}
+      {unity ? <UnityDiffView diff={unity} path={path} raw={raw} /> : raw}
     </div>
   );
 }

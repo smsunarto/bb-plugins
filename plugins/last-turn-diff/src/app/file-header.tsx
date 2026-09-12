@@ -4,6 +4,15 @@ import { File, FileDiff } from "@pierre/diffs/react";
 import { useMemo } from "react";
 import type { Change } from "../shared/contract.ts";
 
+// Pierre draws its 16px change icon inside a shadow root, where app.css cannot
+// reach. `unsafeCSS` is its supported hook; 12px matches the 11px header text and
+// the 12px chevron beside it.
+const HEADER_ICON_CSS = "[data-change-icon]{width:12px;height:12px}";
+
+function stripPrefix(name: string | undefined): string | undefined {
+  return name?.replace(/^[ab]\//, "");
+}
+
 export function FileHeader({
   change,
   open,
@@ -16,29 +25,42 @@ export function FileHeader({
   onToggle: () => void;
 }) {
   const { name, mode } = useCodeTheme();
+  const displayPath = change.relPath ?? change.path;
   const fileDiff = useMemo(() => {
     // Headerless provider hunks remain the host's responsibility to normalize.
     if (!change.patch || change.patch.trimStart().startsWith("@@")) return null;
     try {
-      return { ...getSingularPatch(change.patch), lang: "text" as const };
+      const parsed = getSingularPatch(change.patch);
+      // Recorded patches without a `diff --git` header keep their `a/` and `b/`
+      // prefixes, which Pierre reads as a rename. Only a real rename keeps it.
+      const renamed = stripPrefix(parsed.prevName) !== stripPrefix(parsed.name);
+      if (renamed) return { ...parsed, name: displayPath, lang: "text" as const };
+      const { prevName: _prevName, ...rest } = parsed;
+      return { ...rest, type: "change" as const, name: displayPath, lang: "text" as const };
     } catch {
       return null;
     }
-  }, [change.patch]);
+  }, [change.patch, displayPath]);
   const file = useMemo(
-    () => ({ name: change.path, contents: "", lang: "text" as const }),
-    [change.path],
+    () => ({ name: displayPath, contents: "", lang: "text" as const }),
+    [displayPath],
   );
   // Headers need no syntax highlighting or worker jobs. Bodies go through BB's DiffHost.
   const options = useMemo(
-    () => ({ collapsed: true, stickyHeader: false, theme: name, themeType: mode }),
+    () => ({
+      collapsed: true,
+      stickyHeader: false,
+      theme: name,
+      themeType: mode,
+      unsafeCSS: HEADER_ICON_CSS,
+    }),
     [mode, name],
   );
   const renderToggle = () => (
     <button
       type="button"
       className="last-turn-diff-chevron"
-      aria-label={`${open ? "Collapse" : "Expand"} ${change.path}`}
+      aria-label={`${open ? "Collapse" : "Expand"} ${displayPath}`}
       aria-expanded={open}
       aria-controls={bodyId}
       onClick={onToggle}

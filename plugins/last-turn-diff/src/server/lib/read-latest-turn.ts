@@ -1,15 +1,21 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { buildLatestTurn, findTurnAnchor } from "./build-latest-turn.ts";
+import { buildLatestTurn, findTurnAnchor, type TurnRow } from "./build-latest-turn.ts";
 import type { LatestTurn } from "../../shared/contract.ts";
 
 type Threads = BbPluginApi["sdk"]["threads"];
 const PAGE_SIZE = 20;
 
+export interface LatestTurnRead {
+  turn: LatestTurn;
+  /** The completed turn's summary rows, kept for foreign-workspace attribution. */
+  rows: TurnRow[];
+}
+
 /** Select the newest completed turn with recorded changes, including after no-edit replies. */
 export async function readLatestTurn(
   threads: Threads,
   threadId: string,
-): Promise<LatestTurn | null> {
+): Promise<LatestTurnRead | null> {
   const timeline = await threads.timeline({ threadId, segmentLimit: "2" });
   const boundary = timeline.contextBoundarySeq;
   let beforeSeq = String(timeline.maxSeq + 1);
@@ -25,7 +31,8 @@ export async function readLatestTurn(
     for (const completed of completedTurns) {
       const candidate = await readCandidate(threads, threadId, completed, boundary, timeline);
       if (!candidate) continue;
-      return resolveAnchor(threads, threadId, candidate, timeline);
+      const turn = await resolveAnchor(threads, threadId, candidate, timeline);
+      return { turn, rows: candidate.rows };
     }
     if (completedTurns.length < PAGE_SIZE) return null;
     const oldest = completedTurns.at(-1)!;
@@ -40,7 +47,7 @@ async function readCandidate(
   completed: Awaited<ReturnType<Threads["events"]["list"]>>[number],
   boundary: number | null,
   timeline: Awaited<ReturnType<Threads["timeline"]>>,
-): Promise<{ turn: LatestTurn; startedSeq: number } | null> {
+): Promise<{ turn: LatestTurn; startedSeq: number; rows: TurnRow[] } | null> {
   if (completed.scope.kind !== "turn") return null;
   const turnId = completed.scope.turnId;
   const [started] = await threads.events.list({
@@ -80,7 +87,7 @@ async function readCandidate(
   const turn = buildLatestTurn(turnId, details.rows, patch, timeline.rows);
   if (turn.patch === null && turn.changes.length === 0 && !turn.limited) return null;
 
-  return { turn, startedSeq: started.seq };
+  return { turn, startedSeq: started.seq, rows: details.rows };
 }
 
 async function resolveAnchor(

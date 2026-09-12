@@ -1,17 +1,17 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LatestTurn } from "../../shared/contract.ts";
 
-type Row = Awaited<
+export type TurnRow = Awaited<
   ReturnType<BbPluginApi["sdk"]["threads"]["timelineTurnSummaryDetails"]>
 >["rows"][number];
-const MAX_PATCH_CHARS = 1_000_000;
+export const MAX_PATCH_CHARS = 1_000_000;
 const MAX_CHANGES = 200;
 
 export function buildLatestTurn(
   turnId: string,
-  sourceRows: Row[],
+  sourceRows: TurnRow[],
   patch: string | null,
-  timelineRows: Row[],
+  timelineRows: TurnRow[],
 ): LatestTurn {
   const rows = sourceRows.filter((row) => row.turnId === turnId);
   const oversized = patch !== null && patch.length > MAX_PATCH_CHARS;
@@ -53,7 +53,7 @@ export function buildLatestTurn(
   return result;
 }
 
-export function findTurnAnchor(turnId: string, rows: Row[]): string | null {
+export function findTurnAnchor(turnId: string, rows: TurnRow[]): string | null {
   return (
     [...rows]
       .reverse()
