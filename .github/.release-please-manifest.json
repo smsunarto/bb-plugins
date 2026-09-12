@@ -5,7 +5,7 @@
   "plugins/amp": "0.4.1",
   "plugins/cloudflare": "0.1.0",
   "plugins/gh-stack": "0.2.3",
-  "plugins/gtd-sidebar": "0.4.2",
+  "plugins/gtd-sidebar": "0.5.0",
   "plugins/monokai": "0.3.2",
   "plugins/traces": "0.1.0"
 }
