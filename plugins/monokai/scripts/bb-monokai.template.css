@@ -590,6 +590,19 @@
     margin-inline: auto;
   }
 
+  /* Fade the checkout label out at the chip's right edge instead of
+   * ellipsizing: clip the overflow, then mask the chip so the last ~1.5rem
+   * of label dissolves into the padding. The mask lives on the chip rather
+   * than the label so a centered short label never reaches the fade zone. */
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent calc(100% - 0.5rem));
+    mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent calc(100% - 0.5rem));
+  }
+
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > span:last-of-type {
+    text-overflow: clip;
+  }
+
   .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > svg {
     width: 1rem;
     height: 1rem;
