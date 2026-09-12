@@ -150,6 +150,17 @@ own `sidebar.collapsedThreads` preference, so a family folded here is folded in 
 built-in sidebar too, and the fold survives a reload. Folded project groups stay
 session state.
 
+Drag a row onto another row to nest it there, or onto a project group header
+to lift it back to the top level. The move is bb's own parent change, so bb's
+sidebar follows it. A row never drops onto itself, its current parent, anything
+inside its own family, or a thread in another project; a row that cannot take
+the drop shows no highlight. With the keyboard, Space picks the focused row up,
+the arrows move it between targets, Space drops, and Escape cancels.
+
+The same drag is still bb's drag-to-split gesture: a drag that stays in the
+sidebar nests, a drag out to the main area splits. Nothing needs a modifier.
+Desktop only.
+
 ### Thread names
 
 A root thread gets a GTD-generated name on its first user prompt, replacing any
@@ -197,6 +208,7 @@ the task has not changed.
 - On a phone, hold a row for half a second (iOS's own long-press timing) for the same
   menu, drawn as an iOS-style frosted sheet. Menu taps play a haptic on iOS.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
+- Drag a card onto another to nest it, or onto a project header to un-nest it.
 - bb's search, its thread shortcuts, and modifier-click split-open all keep working.
 
 ## Configuration

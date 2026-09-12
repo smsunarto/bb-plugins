@@ -1,7 +1,9 @@
 import {
   memo,
+  useCallback,
   useRef,
   useState,
+  type KeyboardEvent,
   type PointerEvent,
   type CSSProperties,
   type ReactNode,
@@ -31,6 +33,7 @@ import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeUntilTomorrow } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
 import { useCommittedEvent } from "@/hooks/use-committed-event";
+import { useNestRow, type NestDragApi } from "@/hooks/use-nest-drag";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 16;
@@ -61,6 +64,10 @@ interface ThreadCardProps {
   command: DispatchRowCommand;
   /** Quantized clock, so every card in one render agrees on "now". */
   now: number;
+  /** Drag-to-nest state; absent on compact viewports, where there is no drag. */
+  nest?: NestDragApi;
+  /** Whether the row being dragged may drop here, per the tree's cycle guard. */
+  dropAllowed: boolean;
 }
 
 export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
@@ -69,6 +76,26 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
   const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
     splitProps.onPointerDown?.(event);
   });
+  // Drag source and drop target both; see use-nest-drag for how this shares
+  // the anchor's pointerdown with bb's split gesture. Subscribed here, not in
+  // the body, so dnd-kit's context churn re-runs this wrapper only: the body
+  // sees committed handlers (dnd-kit rebuilds its listeners on every context
+  // render) and two booleans.
+  const nestRow = useNestRow(props.thread.id, props.dropAllowed, props.nest === undefined);
+  const { setDragRef, setDropRef } = nestRow;
+  const onNestPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
+    nestRow.listeners?.onPointerDown?.(event);
+  });
+  const onNestKeyDown = useCommittedEvent((event: KeyboardEvent<HTMLElement>) => {
+    nestRow.listeners?.onKeyDown?.(event);
+  });
+  const setNestRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setDragRef(node);
+      setDropRef(node);
+    },
+    [setDragRef, setDropRef],
+  );
   return (
     <ThreadCardBody
       {...props}
@@ -76,6 +103,11 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
       isOpenInSplit={layout !== null}
       isFocusedInSplit={layout?.panes.some((pane) => pane.isMe && pane.isFocused)}
       onSplitPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
+      onNestPointerDown={onNestPointerDown}
+      onNestKeyDown={onNestKeyDown}
+      nestIsDragging={nestRow.isDragging}
+      nestIsOver={nestRow.isOver}
+      setNestRef={setNestRef}
     />
   );
 });
@@ -112,15 +144,26 @@ const ThreadCardBody = memo(function ThreadCardBody({
   isCompactViewport,
   command,
   now,
+  nest,
   pullRequest,
   isOpenInSplit,
   isFocusedInSplit,
   onSplitPointerDown,
+  onNestPointerDown,
+  onNestKeyDown,
+  nestIsDragging,
+  nestIsOver,
+  setNestRef,
 }: ThreadCardProps & {
   pullRequest: PluginSidebarPullRequest | null;
   isOpenInSplit: boolean;
   isFocusedInSplit: boolean | undefined;
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
+  onNestPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onNestKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  nestIsDragging: boolean;
+  nestIsOver: boolean;
+  setNestRef: (node: HTMLDivElement | null) => void;
 }) {
   const plan = buildThreadActionPlan({
     lifecycle: {
@@ -139,6 +182,11 @@ const ThreadCardBody = memo(function ThreadCardBody({
   const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
     enabled: isCompactViewport,
   });
+
+  const setCardRef = (node: HTMLDivElement | null) => {
+    cardRef.current = node;
+    setNestRef(node);
+  };
 
   const compact = !isCompactViewport && (compactThreads || depth > 0);
   const showActions = shelf === "nextAction" || canPark;
@@ -182,10 +230,12 @@ const ThreadCardBody = memo(function ThreadCardBody({
     <RowContextMenu plan={plan} disabled={isCompactViewport}>
       <li className="list-none">
         <div
-          ref={cardRef}
+          ref={setCardRef}
           data-sidebar-thread-focused={isFocusedInSplit}
           {...handlers}
           data-action-count={!isCompactViewport && showActions ? 2 : 0}
+          data-dragging={nestIsDragging ? "true" : undefined}
+          data-drop-target={nestIsOver ? "true" : undefined}
           {...threadCardPresentation({
             depth,
             childCount,
@@ -225,6 +275,9 @@ const ThreadCardBody = memo(function ThreadCardBody({
             expanded={expanded}
             toggleThread={toggleThread}
             onSplitPointerDown={onSplitPointerDown}
+            onNestPointerDown={onNestPointerDown}
+            onNestKeyDown={onNestKeyDown}
+            nestActive={nest?.sourceId != null}
             command={command}
           />
           {isCompactViewport ? (
@@ -486,6 +539,9 @@ function ThreadRowLink({
   expanded,
   toggleThread,
   onSplitPointerDown,
+  onNestPointerDown,
+  onNestKeyDown,
+  nestActive,
   command,
 }: {
   thread: PluginSidebarThread;
@@ -504,6 +560,11 @@ function ThreadRowLink({
   expanded: boolean;
   toggleThread: (threadId: string) => void;
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
+  /** dnd-kit's activators for the nest drag; no-ops where drags are off. */
+  onNestPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onNestKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  /** A nest drag is live somewhere in the list. */
+  nestActive: boolean;
   command: DispatchRowCommand;
 }) {
   return (
@@ -526,6 +587,10 @@ function ThreadRowLink({
         aria-label={title}
         aria-current={isActive ? "page" : undefined}
         onKeyDown={(event) => {
+          // Space picks the row up (see use-nest-drag); while a drag is live
+          // the arrows move the pick, not the fold.
+          onNestKeyDown(event);
+          if (nestActive) return;
           let focusId: string | null = null;
           if (event.key === "ArrowRight" && childCount > 0) {
             event.preventDefault();
@@ -553,7 +618,11 @@ function ThreadRowLink({
               .find((row) => row.dataset.sidebarThreadId === focusId)
               ?.focus();
         }}
-        onPointerDown={onSplitPointerDown}
+        onPointerDown={(event) => {
+          // Both gestures start here; the destination decides which one lands.
+          onNestPointerDown(event);
+          onSplitPointerDown?.(event);
+        }}
         onClick={(event) => {
           if (event.button !== 0) return;
           event.preventDefault();

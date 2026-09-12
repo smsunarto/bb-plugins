@@ -37,6 +37,14 @@
   instead of session state, so a fold made here shows in bb's built-in sidebar,
   a fold made there shows here, and both survive a reload. Folded project
   groups stay session state: bb has no per-shelf project key.
+- Drag a row onto another row to nest it there, or onto a project group header
+  to lift it back to the top level. The drop is bb's own parent change
+  (`threads.update({ parentThreadId })`), so bb's sidebar follows it, and a
+  folded family opens to show what just landed in it. A row cannot drop onto
+  itself, its current parent, its own descendants, or a thread in another
+  project; the backend refuses the same cases. Space, the arrows, and Escape
+  drive the same move from the keyboard. bb's drag-to-split keeps every drag
+  that leaves the sidebar. Built on dnd-kit. Desktop only.
 
 ### Patch Changes
 

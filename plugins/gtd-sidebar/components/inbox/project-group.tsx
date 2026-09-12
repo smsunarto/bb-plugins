@@ -4,6 +4,8 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { FadingText } from "@/components/inbox/thread-details";
+import { useNestProjectHeader } from "@/hooks/use-nest-drag";
+import type { InboxShelf } from "@/lib/inbox-tree";
 
 /**
  * One project inside a shelf: a header naming the project, then its rows.
@@ -17,9 +19,14 @@ import { FadingText } from "@/components/inbox/thread-details";
  * Right-clicking the header offers "Move up" / "Move down", which reorder the
  * project in bb's own order — the same order every shelf groups by — so the
  * move lands identically under each shelf.
+ *
+ * The header is also the drop target that lifts a nested row back to the top
+ * level of its project (see use-nest-drag), lit while a row that may drop
+ * there is over it.
  */
 export function ProjectGroup({
   projectId,
+  shelf,
   name,
   families,
   attention,
@@ -29,9 +36,11 @@ export function ProjectGroup({
   onMoveUp,
   onMoveDown,
   isCompactViewport,
+  dropAllowed,
   children,
 }: {
   projectId: string;
+  shelf: InboxShelf;
   name: string;
   families: number;
   attention: number;
@@ -42,8 +51,11 @@ export function ProjectGroup({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   isCompactViewport: boolean;
+  /** Whether the row being dragged may lift to this project's top level. */
+  dropAllowed: boolean;
   children: ReactNode;
 }) {
+  const drop = useNestProjectHeader(shelf, projectId, dropAllowed);
   const count = attention > 0 ? `${attention} / ${families}` : `${families}`;
   const header = (
     <div
@@ -51,6 +63,8 @@ export function ProjectGroup({
         "gtd-project-group-header group/pg",
         isCompactViewport && "gtd-project-group-header-touch",
       )}
+      ref={drop.setDropRef}
+      data-drop-target={drop.isOver ? "true" : undefined}
     >
       <button
         type="button"

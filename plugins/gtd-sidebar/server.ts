@@ -12,6 +12,7 @@ import { z } from "zod";
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
+import { createThreadNester } from "./lib/nest-thread.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
@@ -163,6 +164,19 @@ export const gtdSidebarRpcContract = defineRpcContract({
     }),
     output: z.object({ ok: z.boolean() }),
   },
+  /**
+   * bb's own re-parent, made by dropping one row onto another (nest) or onto
+   * a project header (`parentThreadId: null`, back to the top level). The
+   * sidebar hears the move through bb's thread feed, so nothing is published
+   * here. `reason` names the check a refused drop failed.
+   */
+  nestThread: {
+    input: z.object({
+      threadId: z.string().trim().min(1),
+      parentThreadId: z.string().trim().min(1).nullable(),
+    }),
+    output: z.object({ ok: z.boolean(), reason: z.string().optional() }),
+  },
 });
 
 /** Channel the frontend re-reads on. */
@@ -252,6 +266,7 @@ export default function plugin(bb: BbPluginApi) {
   };
 
   const collapsedThreads = createCollapsedThreadsStore(bb.sdk.system.uiPreferences);
+  const threadNester = createThreadNester(bb.sdk.threads);
 
   bb.rpc.register(gtdSidebarRpcContract, {
     async listCollapsedThreads() {
@@ -372,6 +387,16 @@ export default function plugin(bb: BbPluginApi) {
     },
     unsnooze({ threadId }) {
       clear(threadId);
+      return { ok: true };
+    },
+    async nestThread({ threadId, parentThreadId }) {
+      const result = await threadNester.nest(threadId, parentThreadId);
+      if (!result.ok) {
+        bb.log.warn(
+          `nest thread ${threadId} under ${parentThreadId ?? "top level"} refused: ${result.reason}`,
+        );
+        return { ok: false, reason: result.reason };
+      }
       return { ok: true };
     },
     async reorderProject({ projectId, previousProjectId, nextProjectId }) {

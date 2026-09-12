@@ -359,3 +359,60 @@ export function visibleInboxRows(
   }
   return rows;
 }
+
+/** Every node in the forest with the id of the node above it, or null at a root. */
+function indexTree(
+  roots: readonly InboxThreadNode[],
+): Map<string, { node: InboxThreadNode; parentId: string | null }> {
+  const index = new Map<string, { node: InboxThreadNode; parentId: string | null }>();
+  const stack = roots.map((node) => ({ node, parentId: null as string | null }));
+  while (stack.length) {
+    const entry = stack.pop()!;
+    index.set(entry.node.thread.id, entry);
+    for (const child of entry.node.children)
+      stack.push({ node: child, parentId: entry.node.thread.id });
+  }
+  return index;
+}
+
+/**
+ * Whether dropping `sourceId` onto `targetId` may nest it there: both rows are
+ * in the forest and the same project, the target is not the source, not its
+ * current parent (a no-op), and not somewhere inside its family (a cycle).
+ */
+export function nestDropAllowed(
+  roots: readonly InboxThreadNode[],
+  sourceId: string,
+  targetId: string,
+): boolean {
+  if (sourceId === targetId) return false;
+  const index = indexTree(roots);
+  const source = index.get(sourceId);
+  const target = index.get(targetId);
+  if (source === undefined || target === undefined) return false;
+  if (source.node.thread.projectId !== target.node.thread.projectId) return false;
+  if (source.parentId === targetId) return false;
+  for (
+    let cursor = target.parentId;
+    cursor !== null;
+    cursor = index.get(cursor)?.parentId ?? null
+  ) {
+    if (cursor === sourceId) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether dropping `sourceId` onto the project header for `projectId` may
+ * lift it to the top level: it belongs to that project and has a parent.
+ */
+export function unnestDropAllowed(
+  roots: readonly InboxThreadNode[],
+  sourceId: string,
+  projectId: string,
+): boolean {
+  const source = indexTree(roots).get(sourceId);
+  return (
+    source !== undefined && source.parentId !== null && source.node.thread.projectId === projectId
+  );
+}

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import {
   experimental_useProviders as useProviders,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
@@ -23,18 +25,23 @@ import { SlimRow } from "@/components/inbox/slim-row";
 import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useCollapsedThreads } from "@/hooks/use-collapsed-threads";
+import { useNestDrag, type NestDragApi } from "@/hooks/use-nest-drag";
+import { usePortalScopeProps } from "@/lib/portal-scope";
 import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
 import { usePinnedOrder, type PinnedOrderApi } from "@/hooks/use-pinned-order";
 import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
 import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
-import { filterByProject, nextThreadIdAfterSettle } from "@/lib/inbox";
+import { filterByProject, nextThreadIdAfterSettle, threadDisplayTitle } from "@/lib/inbox";
 import {
   buildInboxTree,
   createShelfArrivals,
+  nestDropAllowed,
+  unnestDropAllowed,
   visibleInboxRows,
   type InboxShelf,
+  type InboxThreadNode,
   type VisibleInboxRow,
 } from "@/lib/inbox-tree";
 import {
@@ -122,7 +129,7 @@ export function ThreadInbox({
     [projects],
   );
 
-  const { shelves, toggleThread } = useInboxTree(
+  const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
     settledThreads,
@@ -181,6 +188,17 @@ export function ThreadInbox({
     onNavigate();
   });
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
+  // Drag a row onto another to nest it, or onto a project header to lift it
+  // back out. Desktop only: the compact viewport has no drag.
+  // Committed, not memoized on `threads`: a new roster must not hand every
+  // row a new `nest` prop and redraw it.
+  const titleFor = useCommittedEvent((threadId: string) => {
+    const thread = threads.find((candidate) => candidate.id === threadId);
+    return thread === undefined ? null : threadDisplayTitle(thread);
+  });
+  const nestDrag = useNestDrag(titleFor, revealFamily);
+  const nest = isCompactViewport ? undefined : nestDrag.nest;
+  const portalScope = usePortalScopeProps();
   const moveProject = useCommittedEvent(
     (projectId: string, direction: "up" | "down", shelfOrder: readonly string[]) => {
       const args = projectReorderArgs(projectId, direction, shelfOrder, projectOrder);
@@ -216,6 +234,8 @@ export function ThreadInbox({
               moveProject,
             )}
             isCompactViewport={isCompactViewport}
+            shelf={shelf}
+            dropAllowed={projectDropAllowed(nest, tree, group.projectId)}
           >
             {group.rows.map(renderRow)}
           </ProjectGroup>
@@ -241,10 +261,11 @@ export function ThreadInbox({
 
   return (
     <MachineAppearanceProvider localMachineId={settingValues?.localMachineId}>
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
-          <Select value={scope} onValueChange={setScope}>
-            {/* Ghost trigger: no border, no filled track — it reads as a label
+      <DndContext {...nestDrag.contextProps}>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
+            <Select value={scope} onValueChange={setScope}>
+              {/* Ghost trigger: no border, no filled track — it reads as a label
               until you hover it.
 
               `border-transparent` alongside `border-0`, because width and
@@ -253,144 +274,184 @@ export function ThreadInbox({
               recessed background off that class rather than off a drawn
               border. Evicting the color class is what actually keeps the
               track clear. */}
-            <SelectTrigger
-              className={cn(
-                "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
-                isCompactViewport && "min-h-10",
-              )}
-              aria-label={`Project scope: ${scopeLabel}`}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_PROJECTS} className="text-xs">
-                All projects
-              </SelectItem>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id} className="text-xs">
-                  {project.name}
+              <SelectTrigger
+                className={cn(
+                  "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
+                  isCompactViewport && "min-h-10",
+                )}
+                aria-label={`Project scope: ${scopeLabel}`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PROJECTS} className="text-xs">
+                  All projects
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <MachineScopePicker
-            machines={machines}
-            value={machineScope}
-            onValueChange={setMachineScope}
-            isCompactViewport={isCompactViewport}
-          />
-        </div>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id} className="text-xs">
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <MachineScopePicker
+              machines={machines}
+              value={machineScope}
+              onValueChange={setMachineScope}
+              isCompactViewport={isCompactViewport}
+            />
+          </div>
 
-        <div
-          className={cn(
-            "min-h-0 flex-1 overflow-y-auto px-1.5",
-            isCompactViewport ? "pb-8" : "pb-2",
-          )}
-          // bb's compact footer overlays the list edge. Fade content into that
-          // surface, while the matching padding lets the final row scroll clear.
-          style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
-        >
-          <InboxContent
-            status={status}
-            ready={lifecycle.shelvesReady && settledThreads.ready}
-            count={shelvedTotal}
-            searchQuery={searchQuery}
+          <div
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto px-1.5",
+              isCompactViewport ? "pb-8" : "pb-2",
+            )}
+            // bb's compact footer overlays the list edge. Fade content into that
+            // surface, while the matching padding lets the final row scroll clear.
+            style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
           >
-            {activeShelves.map(([shelf, label, groups]) =>
-              groups.length > 0 ? (
-                <Shelf
-                  key={label}
-                  label={label}
-                  count={shelves[shelf].length}
-                  isCompactViewport={isCompactViewport}
-                  {...(shelf === "waiting"
-                    ? {
-                        expanded: showWaiting || searching,
-                        onToggle: () => setShowWaiting((open) => !open),
-                      }
-                    : {})}
-                >
-                  {renderGroups(shelf, groups, (row) => {
-                    const thread = row.node.thread;
-                    return (
-                      <ThreadCard
-                        key={thread.id}
-                        thread={thread}
-                        shelf={shelf}
-                        provider={providerInfoById.get(thread.providerId)}
-                        showProviderIcon={showProviderIcon}
-                        compactThreads={compactThreads}
-                        depth={row.depth}
-                        parentId={row.parentId}
-                        parentTitle={row.parentTitle}
-                        childCount={row.node.children.length}
-                        expanded={row.expanded}
-                        guides={row.guides}
-                        lastChild={row.lastChild}
-                        statusThread={row.statusThread}
-                        toggleThread={toggleThread}
-                        projectName={projectNameById.get(thread.projectId) ?? null}
-                        branchName={resolveSidebarBranchLabel(
-                          thread.environment?.branchName ?? null,
-                          thread.environment?.id ?? null,
-                          gitButlerLabels,
-                        )}
-                        isActive={thread.id === activeThreadId}
-                        canPark={lifecycle.canPark(thread)}
-                        isCompactViewport={isCompactViewport}
-                        command={command}
-                        now={now}
-                      />
-                    );
-                  })}
-                </Shelf>
-              ) : null,
-            )}
-            {(
-              [
-                ["snoozed", "Snoozed", showSnoozed, setShowSnoozed, lifecycle.wakeAtFor],
-                ["settled", "Settled", showSettled, setShowSettled, () => null],
-              ] as const
-            ).map(([shelf, label, show, setShow, wakeAtFor]) =>
-              groupedShelves[shelf].length > 0 ? (
-                <Shelf
-                  key={label}
-                  label={label}
-                  count={shelves[shelf].length}
-                  isCompactViewport={isCompactViewport}
-                  expanded={show || searching}
-                  onToggle={() => setShow((open) => !open)}
-                >
-                  {renderGroups(shelf, groupedShelves[shelf], (row) => {
-                    const thread = row.node.thread;
-                    return (
-                      <SlimRow
-                        key={thread.id}
-                        thread={thread}
-                        compactThreads={compactThreads}
-                        projectName={projectNameById.get(thread.projectId) ?? null}
-                        provider={providerInfoById.get(thread.providerId)}
-                        branchName={resolveSidebarBranchLabel(
-                          thread.environment?.branchName ?? null,
-                          thread.environment?.id ?? null,
-                          gitButlerLabels,
-                        )}
-                        isActive={thread.id === activeThreadId}
-                        shelf={shelf}
-                        wakeAt={wakeAtFor(thread)}
-                        now={now}
-                        isCompactViewport={isCompactViewport}
-                        command={command}
-                      />
-                    );
-                  })}
-                </Shelf>
-              ) : null,
-            )}
-          </InboxContent>
+            <InboxContent
+              status={status}
+              ready={lifecycle.shelvesReady && settledThreads.ready}
+              count={shelvedTotal}
+              searchQuery={searchQuery}
+            >
+              {activeShelves.map(([shelf, label, groups]) =>
+                groups.length > 0 ? (
+                  <Shelf
+                    key={label}
+                    label={label}
+                    count={shelves[shelf].length}
+                    isCompactViewport={isCompactViewport}
+                    {...(shelf === "waiting"
+                      ? {
+                          expanded: showWaiting || searching,
+                          onToggle: () => setShowWaiting((open) => !open),
+                        }
+                      : {})}
+                  >
+                    {renderGroups(shelf, groups, (row) => {
+                      const thread = row.node.thread;
+                      return (
+                        <ThreadCard
+                          key={thread.id}
+                          thread={thread}
+                          shelf={shelf}
+                          provider={providerInfoById.get(thread.providerId)}
+                          showProviderIcon={showProviderIcon}
+                          compactThreads={compactThreads}
+                          depth={row.depth}
+                          parentId={row.parentId}
+                          parentTitle={row.parentTitle}
+                          childCount={row.node.children.length}
+                          expanded={row.expanded}
+                          guides={row.guides}
+                          lastChild={row.lastChild}
+                          statusThread={row.statusThread}
+                          toggleThread={toggleThread}
+                          projectName={projectNameById.get(thread.projectId) ?? null}
+                          branchName={resolveSidebarBranchLabel(
+                            thread.environment?.branchName ?? null,
+                            thread.environment?.id ?? null,
+                            gitButlerLabels,
+                          )}
+                          isActive={thread.id === activeThreadId}
+                          canPark={lifecycle.canPark(thread)}
+                          isCompactViewport={isCompactViewport}
+                          command={command}
+                          now={now}
+                          nest={nest}
+                          dropAllowed={threadDropAllowed(nest, tree, thread.id)}
+                        />
+                      );
+                    })}
+                  </Shelf>
+                ) : null,
+              )}
+              {(
+                [
+                  ["snoozed", "Snoozed", showSnoozed, setShowSnoozed, lifecycle.wakeAtFor],
+                  ["settled", "Settled", showSettled, setShowSettled, () => null],
+                ] as const
+              ).map(([shelf, label, show, setShow, wakeAtFor]) =>
+                groupedShelves[shelf].length > 0 ? (
+                  <Shelf
+                    key={label}
+                    label={label}
+                    count={shelves[shelf].length}
+                    isCompactViewport={isCompactViewport}
+                    expanded={show || searching}
+                    onToggle={() => setShow((open) => !open)}
+                  >
+                    {renderGroups(shelf, groupedShelves[shelf], (row) => {
+                      const thread = row.node.thread;
+                      return (
+                        <SlimRow
+                          key={thread.id}
+                          thread={thread}
+                          compactThreads={compactThreads}
+                          projectName={projectNameById.get(thread.projectId) ?? null}
+                          provider={providerInfoById.get(thread.providerId)}
+                          branchName={resolveSidebarBranchLabel(
+                            thread.environment?.branchName ?? null,
+                            thread.environment?.id ?? null,
+                            gitButlerLabels,
+                          )}
+                          isActive={thread.id === activeThreadId}
+                          shelf={shelf}
+                          wakeAt={wakeAtFor(thread)}
+                          now={now}
+                          isCompactViewport={isCompactViewport}
+                          command={command}
+                        />
+                      );
+                    })}
+                  </Shelf>
+                ) : null,
+              )}
+            </InboxContent>
+          </div>
         </div>
-      </div>
+        {/* The ghost rides the pointer from document.body, clear of the list's
+          scroll clip, so the rows themselves never shift under the drag. */}
+        {createPortal(
+          <div {...portalScope}>
+            <DragOverlay dropAnimation={null}>
+              {nest?.sourceTitle == null ? null : <NestDragGhost title={nest.sourceTitle} />}
+            </DragOverlay>
+          </div>,
+          document.body,
+        )}
+      </DndContext>
     </MachineAppearanceProvider>
+  );
+}
+
+/** The tree's verdict on dropping the dragged row onto `threadId`; false between drags. */
+function threadDropAllowed(
+  nest: NestDragApi | undefined,
+  tree: readonly InboxThreadNode[],
+  threadId: string,
+): boolean {
+  return nest?.sourceId != null && nestDropAllowed(tree, nest.sourceId, threadId);
+}
+
+/** Whether the dragged row may lift to `projectId`'s top level; false between drags. */
+function projectDropAllowed(
+  nest: NestDragApi | undefined,
+  tree: readonly InboxThreadNode[],
+  projectId: string,
+): boolean {
+  return nest?.sourceId != null && unnestDropAllowed(tree, nest.sourceId, projectId);
+}
+
+/** The dragged row's stand-in under the pointer: its title on the accent ground. */
+function NestDragGhost({ title }: { title: string }) {
+  return (
+    <div className="gtd-nest-ghost">
+      <span className="gtd-thread-title text-sidebar-accent-foreground">{title}</span>
+    </div>
   );
 }
 
@@ -561,7 +622,11 @@ function useInboxTree(
       settled: rows("settled"),
     };
   }, [collapsedThreads, searchQuery, tree]);
-  return { shelves, toggleThread };
+  // A row dropped into a folded family would vanish; the drop opens it.
+  const revealFamily = useCommittedEvent((threadId: string) => {
+    if (collapsedThreads.has(threadId)) toggleThread(threadId);
+  });
+  return { tree, shelves, toggleThread, revealFamily };
 }
 
 /**

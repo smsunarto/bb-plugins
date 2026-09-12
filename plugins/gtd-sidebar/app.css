@@ -288,3 +288,26 @@
 .gtd-thread-tooltip {
   overflow-wrap: anywhere;
 }
+/* Drag-to-nest (use-nest-drag): the dragged row fades in place while its
+   ghost rides the pointer, and the row or project header that may take the
+   drop shows the accent ground with the focus ring's outline. */
+.gtd-thread-row[data-dragging="true"] {
+  opacity: 0.5;
+}
+.gtd-thread-row[data-drop-target="true"],
+.gtd-project-group-header[data-drop-target="true"] {
+  background: var(--sidebar-accent);
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+.gtd-nest-ghost {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--sidebar-accent);
+  outline: 1px solid var(--ring);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+  cursor: grabbing;
+}
