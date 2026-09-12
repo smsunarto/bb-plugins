@@ -17,7 +17,7 @@ test("the plugin loads against the fake host and registers every mention provide
 
   expect(harness.registrations.rpcMethods).toEqual([
     "renderEmbed",
-    "prepareHtmlPreview",
+    "preparePreview",
     "getAutorouterProjectIndex",
     "saveAutorouterProjectIndex",
     "updateAutorouterEnabled",
@@ -34,7 +34,7 @@ test("the inline visualization RPC rejects extra input before reading the worksp
   await plugin(bb);
 
   await expect(
-    harness.callRpc("prepareHtmlPreview", {
+    harness.callRpc("preparePreview", {
       threadId: "thread-1",
       file: "demo.html",
       extra: true,

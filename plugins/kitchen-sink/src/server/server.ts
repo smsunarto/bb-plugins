@@ -5,7 +5,7 @@ import { AUTOROUTER_AGENT_INSTRUCTIONS } from "./lib/autorouter/agent-policy.ts"
 import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { mentionProviders } from "./mentions.ts";
-import { prepareHtmlPreview } from "./rpc/prepare-html-preview.ts";
+import { preparePreview } from "./rpc/prepare-preview.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
 import { registerAutorouterSettings, autorouterAgentEnabled } from "./lib/autorouter/settings.ts";
 import { getAutorouterProjectIndex } from "./rpc/get-autorouter-project-index.ts";
@@ -34,7 +34,7 @@ export default definePlugin({
   pluginId: "kitchen-sink",
   rpc: {
     renderEmbed,
-    prepareHtmlPreview,
+    preparePreview,
     getAutorouterProjectIndex,
     saveAutorouterProjectIndex,
     updateAutorouterEnabled,

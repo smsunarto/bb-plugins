@@ -1,18 +1,32 @@
 ---
 name: inline-vis
-description: "Create inline BB visuals for explanations, comparisons, simulations, and UI previews, or embed an existing HTML demo or recording."
+description: "Create inline BB visuals for explanations, comparisons, simulations, and UI previews, embed an existing HTML demo or recording, or show a Markdown plan, summary, or report from the workspace or thread storage."
 ---
 
-# Inline HTML visualizations
+# Inline previews
 
-When the user should see a small HTML demo, chart, or report **inline in the
-assistant message**, write (or update) a workspace-relative `.html` file, then
-emit this **message directive** as its own block (not inside a fenced code
-block):
+When the user should see a small HTML demo, chart, or report, or a Markdown
+document, **inline in the assistant message**, write (or update) a
+source-relative file, then emit this **message directive** as its own block (not
+inside a fenced code block):
 
 ```text
 ::inline-vis{file="demo.html"}
+::inline-vis{file="notes.md"}
 ```
+
+Omitting `source` defaults to the workspace. Explicit `source="workspace"` is
+equivalent. For a read-only thread-storage artifact, write the document to
+`$BB_THREAD_STORAGE/reports/result.html`, then emit its storage-relative path:
+
+```text
+::inline-vis{source="thread-storage" file="reports/result.html"}
+```
+
+Markdown links and images resolve relative to the document's directory in the
+selected source. For `::inline-vis{source="thread-storage" file="reports/report.md"}`,
+`[Notes](notes.md)` and `![Chart](chart.svg)` refer to files under `reports/`
+in that thread's storage. The same rule applies to workspace reports.
 
 ## Choose the format
 
@@ -96,38 +110,46 @@ runtime rules below, not Codex's fragment or absolute-path output contract.
 
 ## Rules
 
-- `file` is **workspace-relative** (e.g. `demo.html`, `charts/out.html`). Never
-  use absolute paths.
-- `height` is optional and sets the iframe viewport height in pixels. It must be
-  a whole number from 120 through 1200; omit it for the 224px default.
-- Only `.html` / `.htm` files are accepted.
-- Inline and external CSS/JavaScript are supported. Remote images, fonts,
-  media, fetches, and WebSockets are also allowed subject to normal browser
-  CORS, mixed-content, and remote-server policies. Scripts execute in an
+- `source` is optional and must be `workspace` or `thread-storage`.
+- `file` is relative to the selected source (e.g. `demo.html`,
+  `charts/out.html`, `notes.md`). Workspace paths are relative to the current
+  workspace; thread-storage paths are relative to `$BB_THREAD_STORAGE`. Never
+  put an absolute path in the directive.
+- `height` is optional and sets the preview height in pixels. It must be a
+  whole number from 120 through 1200; omit it for the 224px default.
+- `.html`, `.htm`, `.md`, and `.markdown` files are accepted.
+- Inline and external CSS/JavaScript are supported in HTML. Remote images,
+  fonts, media, fetches, and WebSockets are also allowed subject to normal
+  browser CORS, mixed-content, and remote-server policies. Scripts execute in an
   opaque-origin iframe and cannot access the bb page, cookies, or storage.
-- The HTML document must be at most 5 MiB. Keep videos as separate workspace
-  files instead of converting them to base64 or compressing them to fit the HTML.
+  Markdown uses BB's renderer with raw HTML disabled.
+- The document must be at most 5 MiB. Keep videos as separate files beside the
+  HTML instead of converting them to base64 or compressing them to fit the HTML.
 - Static `video[src]` and nested `source[src]` paths resolve from the HTML
   artifact's directory. See the example below.
-  Both files must remain in the owning thread's workspace. Nested paths and
-  `../` within the workspace work. Escape paths and symlinks outside it fail.
+  Both files must remain in the same source (the owning thread's workspace or
+  its thread storage). Nested paths and `../` within the source work. Escape
+  paths and symlinks outside it fail.
 - Relative videos also work through authenticated remote BB clients. Kitchen
-  Sink fetches them through the owning thread's workspace route and transfers
-  Blobs into the opaque iframe. The iframe receives no app credentials.
+  Sink fetches them through the owning thread's workspace or thread-storage
+  route and transfers Blobs into the opaque iframe. The iframe receives no app
+  credentials.
+- Prefer `thread-storage` for read-only generated reports and other artifacts
+  that should not modify the workspace. Thread-storage previews have no
+  "open in workspace" header action.
 - On BB 0.42.1, each external video is limited to 25 MiB by the host file API.
   Playback waits for the full video download. Seeking then works from the
   buffered Blob. HTTP range streaming and larger files require BB core support.
 - Existing data URI videos still work, with their encoded bytes counting toward
   the HTML limit. Remote URLs retain normal browser policies. Dynamically
   assigned media URLs and other authenticated relative assets are not rewritten.
-- Emit the directive only after the file exists on disk in the current thread
-  workspace.
+- Emit the directive only after the file exists on disk in the selected source.
 - Do **not** put the directive inside backticks or a markdown code fence, or it
   stays literal text.
 - Incomplete streaming syntax stays literal until the closing `}` arrives. Emit
   a complete directive in one piece when possible.
 
-The bb app replaces the directive with a sandboxed preview. If the plugin is
+The bb app replaces the directive with an inline preview. If the plugin is
 disabled or the path is invalid, users see the original directive source or an
 inline error from the plugin.
 

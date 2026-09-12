@@ -1,8 +1,15 @@
 import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 
-export const MAX_HTML_BYTES = 5 * 1024 * 1024;
+export const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 
-const HTML_EXTENSIONS = new Set([".html", ".htm"]);
+export type PreviewKind = "html" | "markdown";
+
+const PREVIEW_KIND_BY_EXTENSION: ReadonlyMap<string, PreviewKind> = new Map([
+  [".html", "html"],
+  [".htm", "html"],
+  [".md", "markdown"],
+  [".markdown", "markdown"],
+]);
 
 function requireNonEmptyString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -11,13 +18,23 @@ function requireNonEmptyString(value: unknown, field: string): string {
   return value.trim();
 }
 
-export function requireWorkspaceHtmlFile(value: unknown): string {
+export function previewKind(file: string): PreviewKind {
+  const kind = PREVIEW_KIND_BY_EXTENSION.get(posix.extname(file).toLowerCase());
+  if (kind === undefined) {
+    throw new Error(
+      `"file" must end with .html, .htm, .md, or .markdown, got ${JSON.stringify(file)}`,
+    );
+  }
+  return kind;
+}
+
+export function requireRelativePreviewFile(value: unknown): string {
   const file = requireNonEmptyString(value, "file");
   if (isAbsolute(file)) {
-    throw new Error(`"file" must be workspace-relative, not absolute: ${file}`);
+    throw new Error(`"file" must be source-relative, not absolute: ${file}`);
   }
   if (/^[a-zA-Z]:[\\/]/u.test(file) || file.startsWith("\\\\")) {
-    throw new Error(`"file" must be workspace-relative, not absolute: ${file}`);
+    throw new Error(`"file" must be source-relative, not absolute: ${file}`);
   }
   const slashNormalized = file.replace(/\\/gu, "/");
   if (slashNormalized.split("/").includes("..")) {
@@ -31,21 +48,18 @@ export function requireWorkspaceHtmlFile(value: unknown): string {
     normalized === "." ||
     normalized.startsWith("/")
   ) {
-    throw new Error(`"file" must not escape the workspace: ${file}`);
+    throw new Error(`"file" must not escape its source: ${file}`);
   }
-  const extension = posix.extname(normalized).toLowerCase();
-  if (!HTML_EXTENSIONS.has(extension)) {
-    throw new Error(`"file" must end with .html or .htm, got ${JSON.stringify(file)}`);
-  }
+  previewKind(normalized);
   return normalized;
 }
 
-export function resolveContainedHtmlPath(rootPath: string, relativeFile: string): string {
+export function resolveContainedPreviewPath(rootPath: string, relativeFile: string): string {
   const root = resolve(rootPath);
   const absolute = resolve(root, relativeFile);
   const relativePath = relative(root, absolute);
   if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
-    throw new Error(`"file" must not escape the workspace: ${relativeFile}`);
+    throw new Error(`"file" must not escape its source: ${relativeFile}`);
   }
   return absolute;
 }

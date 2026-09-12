@@ -67,20 +67,47 @@ export type SmartEmbedsRpcContract = {
   };
 };
 
-export const prepareHtmlPreviewInputSchema = z.strictObject({
+export const PREVIEW_SOURCES = ["workspace", "thread-storage"] as const;
+export type PreviewSource = (typeof PREVIEW_SOURCES)[number];
+
+export const preparePreviewInputSchema = z.strictObject({
   threadId: z.string().trim().min(1),
   file: z.string().trim().min(1).max(1_024),
+  source: z.string().trim().pipe(z.enum(PREVIEW_SOURCES)).default("workspace"),
+});
+export type PreparePreviewInput = z.output<typeof preparePreviewInputSchema>;
+
+const previewDocumentSchema = z.strictObject({
+  rootPath: z.string(),
+  threadId: z.string(),
+  target: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("workspace"), environmentId: z.string(), path: z.string() }),
+    z.strictObject({ kind: z.literal("thread-storage"), threadId: z.string(), path: z.string() }),
+  ]),
 });
 
-export const prepareHtmlPreviewOutputSchema = z.strictObject({
-  file: z.string(),
-  html: z.string(),
-});
+export const preparePreviewOutputSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("html"),
+    file: z.string(),
+    source: z.enum(PREVIEW_SOURCES),
+    html: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal("markdown"),
+    file: z.string(),
+    source: z.enum(PREVIEW_SOURCES),
+    content: z.string(),
+    /** Resolves relative links and images from the document's directory in its source. */
+    document: previewDocumentSchema,
+  }),
+]);
+export type PreparePreviewOutput = z.output<typeof preparePreviewOutputSchema>;
 
 export type InlineVisRpcContract = {
-  readonly prepareHtmlPreview: {
-    readonly input: typeof prepareHtmlPreviewInputSchema;
-    readonly output: typeof prepareHtmlPreviewOutputSchema;
+  readonly preparePreview: {
+    readonly input: typeof preparePreviewInputSchema;
+    readonly output: typeof preparePreviewOutputSchema;
   };
 };
 

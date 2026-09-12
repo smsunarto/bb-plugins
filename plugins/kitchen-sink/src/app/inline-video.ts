@@ -1,7 +1,14 @@
-/** Preserve the owning thread's authenticated, root-confined workspace route. */
-export function buildWorktreePreviewUrl(threadId: string, file: string): string {
+import type { PreviewSource } from "../shared/contract.ts";
+
+const PREVIEW_ROUTES: Record<PreviewSource, string> = {
+  workspace: "worktree/files",
+  "thread-storage": "thread-storage/files",
+};
+
+/** Preserve the owning thread's authenticated, root-confined workspace or thread-storage route. */
+export function buildPreviewUrl(threadId: string, file: string, source: PreviewSource): string {
   const encodedFile = file.split("/").map(encodeURIComponent).join("/");
-  return `/api/v1/threads/${encodeURIComponent(threadId)}/worktree/files/${encodedFile}`;
+  return `/api/v1/threads/${encodeURIComponent(threadId)}/${PREVIEW_ROUTES[source]}/${encodedFile}`;
 }
 
 export function resolveWorkspaceVideoUrl(src: string, documentUrl: URL, rootUrl: URL): URL | null {
@@ -82,9 +89,10 @@ export async function prepareInlineVideos(
   threadId: string,
   file: string,
   signal: AbortSignal,
+  source: PreviewSource = "workspace",
 ): Promise<{ srcDoc?: string; assets: InlineVideoAsset[]; token?: string }> {
-  const documentUrl = new URL(buildWorktreePreviewUrl(threadId, file), window.location.href);
-  const rootUrl = new URL(buildWorktreePreviewUrl(threadId, ""), documentUrl);
+  const documentUrl = new URL(buildPreviewUrl(threadId, file, source), window.location.href);
+  const rootUrl = new URL(buildPreviewUrl(threadId, "", source), documentUrl);
   const document = new DOMParser().parseFromString(html, "text/html");
   const declaredBase = document.querySelector("base[href]");
   const assetBase = new URL(declaredBase?.getAttribute("href") ?? documentUrl.href, documentUrl);

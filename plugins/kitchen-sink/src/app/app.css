@@ -279,6 +279,14 @@
   background: var(--background);
 }
 
+.inline-vis-markdown {
+  box-sizing: border-box;
+  width: 100%;
+  overflow: auto;
+  padding: 0.75rem;
+  background: var(--background);
+}
+
 .inline-vis-alert {
   overflow-wrap: anywhere;
   margin: 0.5rem 0;

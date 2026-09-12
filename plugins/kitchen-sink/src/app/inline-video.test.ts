@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import {
-  buildWorktreePreviewUrl,
-  prepareInlineVideos,
-  resolveWorkspaceVideoUrl,
-} from "./inline-video.ts";
+import { buildPreviewUrl, prepareInlineVideos, resolveWorkspaceVideoUrl } from "./inline-video.ts";
 
 installDom();
 afterEach(() => mock.restore());
@@ -13,8 +9,11 @@ const documentUrl = new URL(".scratch/demo/player.html", root);
 
 describe("relative workspace video URLs", () => {
   test("preserves the thread route, artifact directory, encoded filenames, and fragments", () => {
-    expect(buildWorktreePreviewUrl("thread/1", ".scratch/demo #1/player.html")).toBe(
+    expect(buildPreviewUrl("thread/1", ".scratch/demo #1/player.html", "workspace")).toBe(
       "/api/v1/threads/thread%2F1/worktree/files/.scratch/demo%20%231/player.html",
+    );
+    expect(buildPreviewUrl("thread/1", "reports/result.html", "thread-storage")).toBe(
+      "/api/v1/threads/thread%2F1/thread-storage/files/reports/result.html",
     );
     expect(
       resolveWorkspaceVideoUrl("../media/detail%20clip.mp4#t=4", documentUrl, root)?.href,
@@ -142,6 +141,22 @@ test("does not retain a blob when collapse aborts an in-flight read", async () =
     ),
   ).rejects.toThrow();
   expect(create).not.toHaveBeenCalled();
+});
+
+test("fetches thread-storage videos through the thread-storage route", async () => {
+  const { fetch } = transport();
+  const result = await prepareInlineVideos(
+    '<video src="clip.mp4"></video>',
+    "thread-1",
+    "reports/player.html",
+    new AbortController().signal,
+    "thread-storage",
+  );
+  expect(String(fetch.mock.calls[0]![0])).toEndWith(
+    "/threads/thread-1/thread-storage/files/reports/clip.mp4",
+  );
+  const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
+  expect(doc.querySelector("base")?.href).toEndWith("/thread-storage/files/reports/player.html");
 });
 
 test("honors an explicit workspace base and leaves remote-base embeds alone", async () => {
