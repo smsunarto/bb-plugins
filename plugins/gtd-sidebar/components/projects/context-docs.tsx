@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import {
   INITIATIVES_CHANNEL,
@@ -361,7 +361,11 @@ function DocEditor({
   }, [read]);
 
   const dirty = content !== null && draft !== content;
-  dirtyRef.current = dirty;
+  // Async reads must observe only committed editor state. Mutating the ref
+  // during render can leak a concurrent render that React later abandons.
+  useLayoutEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
 
   // Agent writes publish on the initiatives channel. A clean editor re-reads
   // and shows the new version; a dirty human draft is never clobbered — it
