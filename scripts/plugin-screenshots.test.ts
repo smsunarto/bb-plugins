@@ -15,13 +15,7 @@ describe("plugin screenshot recipes", () => {
     const recipeIds = PLUGIN_SCREENSHOTS.map((recipe) => recipe.id);
 
     expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual(["dotfiles"]);
-    expect(recipeIds).toEqual([
-      "agentation",
-      "amp",
-      "gh-stack",
-      "gtd-sidebar",
-      "monokai",
-    ]);
+    expect(recipeIds).toEqual(["agentation", "amp", "gh-stack", "gtd-sidebar", "monokai"]);
     expect(new Set(recipeIds).size).toBe(recipeIds.length);
   });
 
