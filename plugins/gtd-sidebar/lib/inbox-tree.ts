@@ -9,8 +9,8 @@ export interface InboxThreadNode {
   lifecycle: InboxLifecycle;
   children: InboxThreadNode[];
   shelf: InboxShelf;
-  attentionAt: number;
-  updatedAt: number;
+  /** When this thread last arrived on the shelf it sits on. Roots sort by it. */
+  shelfEnteredAt: number;
   statusThread: PluginSidebarThread;
   matchesSearch: boolean;
   matchesTitle: boolean;
@@ -42,20 +42,105 @@ function ownShelf(thread: PluginSidebarThread, lifecycle: InboxLifecycle): Inbox
   return activeSectionFor(thread) === "next-action" ? "nextAction" : "waiting";
 }
 
+/**
+ * When each thread last arrived on its current shelf, remembered for the
+ * session.
+ *
+ * bb's own clocks can't answer it: `updatedAt` ticks on renames, pins, and
+ * read-state writes, and `latestAttentionAt` on turn ends — neither means
+ * "came to rest here". So the first build seeds a thread's stamp from the bb
+ * timestamp that fired its arrival (a turn start bumps `updatedAt`; a
+ * finished turn or an attention request bumps `latestAttentionAt`), and a
+ * shelf move observed between builds restamps it at the caller's clock.
+ * While the shelf stays the same the frozen stamp wins, however bb's clocks
+ * move.
+ *
+ * Every node's own shelf is tracked, not every family's: a child promoted to
+ * root keeps the stamp it earned while parked under its parent, and a thread
+ * that parks and comes back re-enters at the top instead of reclaiming its
+ * old place.
+ */
+export interface ShelfArrivals {
+  enteredAt(threadId: string, shelf: InboxShelf, seedAt: number, now: number): number;
+}
+
+export function createShelfArrivals(): ShelfArrivals {
+  const arrivals = new Map<string, { shelf: InboxShelf; at: number }>();
+  return {
+    enteredAt(threadId, shelf, seedAt, now) {
+      const existing = arrivals.get(threadId);
+      if (existing !== undefined && existing.shelf === shelf) return existing.at;
+      const at = existing === undefined ? seedAt : now;
+      arrivals.set(threadId, { shelf, at });
+      return at;
+    },
+  };
+}
+
+export interface InboxSort {
+  /**
+   * Session memory of shelf arrivals. Pass a persistent one so stamps stay
+   * frozen across builds; omitted, every build seeds fresh from bb's clocks.
+   */
+  arrivals?: ShelfArrivals;
+  /** The lifecycle row's `snoozedAt` — the Snoozed shelf's exact arrival. */
+  snoozedAtFor?: (thread: PluginSidebarThread) => number | null;
+  /** bb's `archivedAt` — the Settled shelf's exact arrival. */
+  settledAtFor?: (thread: PluginSidebarThread) => number | null;
+  /** Clock for stamping shelf moves this build observes. */
+  now?: number;
+}
+
+interface ResolvedSort {
+  arrivals: ShelfArrivals;
+  snoozedAtFor(thread: PluginSidebarThread): number | null;
+  settledAtFor(thread: PluginSidebarThread): number | null;
+  now: number;
+}
+
+/**
+ * The thread's sortable age: when it arrived on the shelf it sits on.
+ *
+ * Snoozed and Settled already record their arrival — the snooze row's
+ * `snoozedAt` and bb's `archivedAt` — and the key reads them live rather than
+ * frozen, so a re-snooze or a second settle lands back on top. The active
+ * shelves have no such timestamp, so theirs come from arrival memory: a shelf
+ * change re-enters at the top, and anything short of it leaves the row put.
+ */
+function shelfEnteredAt(
+  thread: PluginSidebarThread,
+  shelf: InboxShelf,
+  sort: ResolvedSort,
+): number {
+  const exact =
+    shelf === "snoozed"
+      ? sort.snoozedAtFor(thread)
+      : shelf === "settled"
+        ? sort.settledAtFor(thread)
+        : null;
+  const seed =
+    exact ??
+    (shelf === "nextAction" || shelf === "pinned" ? thread.latestAttentionAt : thread.updatedAt);
+  // Track parked shelves too, so leaving one restamps the next arrival.
+  const tracked = sort.arrivals.enteredAt(thread.id, shelf, seed, sort.now);
+  return exact ?? tracked;
+}
+
 function createInboxNode(
   thread: PluginSidebarThread,
   lifecycleFor: (thread: PluginSidebarThread) => InboxLifecycle,
   normalizedQuery: string,
+  sort: ResolvedSort,
 ): InboxThreadNode {
   const lifecycle = thread.isArchived ? "settled" : lifecycleFor(thread);
+  const shelf = ownShelf(thread, lifecycle);
   const matchesTitle = threadDisplayTitle(thread).toLowerCase().includes(normalizedQuery);
   return {
     thread,
     lifecycle,
     children: [],
-    shelf: ownShelf(thread, lifecycle),
-    attentionAt: thread.latestAttentionAt,
-    updatedAt: thread.updatedAt,
+    shelf,
+    shelfEnteredAt: shelfEnteredAt(thread, shelf, sort),
     statusThread: thread,
     matchesSearch: matchesTitle,
     matchesTitle,
@@ -106,8 +191,6 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
   for (let index = preorder.length - 1; index >= 0; index--) {
     const node = preorder[index]!;
     for (const child of node.children) {
-      node.attentionAt = Math.max(node.attentionAt, child.attentionAt);
-      node.updatedAt = Math.max(node.updatedAt, child.updatedAt);
       node.matchesSearch ||= child.matchesSearch;
       if (statusPriority(child.statusThread) > statusPriority(node.statusThread))
         node.statusThread = child.statusThread;
@@ -145,26 +228,33 @@ function familyComparator() {
     snoozed: 3,
     settled: 4,
   };
-  return (a: InboxThreadNode, b: InboxThreadNode) => {
-    if (a.shelf !== b.shelf) return shelfOrder[a.shelf] - shelfOrder[b.shelf];
-    if (a.shelf === "settled" && b.shelf === "settled") return 0;
-    const clock = a.shelf === "waiting" && b.shelf === "waiting" ? "updatedAt" : "attentionAt";
-    return (
-      b[clock] - a[clock] ||
-      b.thread.createdAt - a.thread.createdAt ||
-      a.thread.id.localeCompare(b.thread.id)
-    );
-  };
+  // One comparator for every shelf: the family's shelf, then the root's
+  // arrival on it — most recent first — then creation time and id.
+  return (a: InboxThreadNode, b: InboxThreadNode) =>
+    shelfOrder[a.shelf] - shelfOrder[b.shelf] ||
+    b.shelfEnteredAt - a.shelfEnteredAt ||
+    b.thread.createdAt - a.thread.createdAt ||
+    a.thread.id.localeCompare(b.thread.id);
 }
 
 export function buildInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycleFor: (thread: PluginSidebarThread) => InboxLifecycle,
   query = "",
+  sort: InboxSort = {},
 ): InboxThreadNode[] {
   const normalizedQuery = query.trim().toLowerCase();
+  const resolved: ResolvedSort = {
+    arrivals: sort.arrivals ?? createShelfArrivals(),
+    snoozedAtFor: sort.snoozedAtFor ?? (() => null),
+    settledAtFor: sort.settledAtFor ?? (() => null),
+    now: sort.now ?? Date.now(),
+  };
   const nodes = new Map(
-    threads.map((thread) => [thread.id, createInboxNode(thread, lifecycleFor, normalizedQuery)]),
+    threads.map((thread) => [
+      thread.id,
+      createInboxNode(thread, lifecycleFor, normalizedQuery, resolved),
+    ]),
   );
   const parents = activeParentIds(nodes);
   const roots: InboxThreadNode[] = [];

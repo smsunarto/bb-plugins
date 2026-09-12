@@ -181,6 +181,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       shelfFor: (row: PluginSidebarThread) => (snoozedIds.includes(row.id) ? "snoozed" : "active"),
       canPark: () => true,
       wakeAtFor: () => wakeAt,
+      snoozedAtFor: (row: PluginSidebarThread) =>
+        snoozedIds.includes(row.id) ? wakeAt - 3_600_000 : null,
       snooze: mock<LifecycleApi["snooze"]>(() => {}),
       unsnooze: mock<LifecycleApi["unsnooze"]>(() => {}),
     } satisfies LifecycleApi;
@@ -208,7 +210,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       actions: actions(),
       navigate: {},
       lifecycle: lifecycle(),
-      settled: { threads: [], ready: true, unsettle: () => {} },
+      settled: { threads: [], ready: true, unsettle: () => {}, settledAtFor: () => null },
       pullRequests: {},
       splitThreads: [],
       splitEnabled: true,
@@ -364,6 +366,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           ready: true,
           threads: [thread("settled", { isArchived: true })],
           unsettle: () => {},
+          settledAtFor: () => 50,
         };
         const view = mount(host, { activeThreadId: "a", isCompactViewport });
         expandParked(view.slot);
@@ -915,14 +918,16 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const host = { ...hostState([a, b, c]), actions: currentActions };
       const view = mount(host, { activeThreadId: "a" });
       rowBodyRender.mockClear();
+      // A turn starting on b moves it to Waiting: the rows under the selected
+      // one change without its body re-rendering.
       view.update({
         host: {
           ...host,
-          sidebar: { ...host.sidebar, threads: [a, { ...b, latestAttentionAt: 40 }, c] },
+          sidebar: { ...host.sidebar, threads: [a, { ...b, indicator: "runtime" }, c] },
         },
       });
       assert.equal(rowBodyRender.mock.calls.length, 1);
-      assert.deepEqual(rowIds(view.slot), ["b", "a", "c"]);
+      assert.deepEqual(rowIds(view.slot), ["a", "c", "b"]);
       fireEvent.pointerDown(rowButton(view.slot, "a", "Settle"));
       assert.deepEqual(currentActions.open.mock.calls, [["c"]]);
     });
@@ -937,6 +942,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           ready: true,
           threads: [thread("settled", { isArchived: true })],
           unsettle: oldRestore,
+          settledAtFor: () => 50,
         },
       };
       const oldNavigate = mock(() => {});

@@ -30,6 +30,7 @@ import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import { filterByProject, nextThreadIdAfterSettle } from "@/lib/inbox";
 import {
   buildInboxTree,
+  createShelfArrivals,
   visibleInboxRows,
   type InboxShelf,
   type VisibleInboxRow,
@@ -107,10 +108,10 @@ export function ThreadInbox({
     () => new Set(projects.filter((project) => project.isPersonal).map((project) => project.id)),
     [projects],
   );
-
   const { shelves, toggleThread } = useInboxTree(
     threads,
     lifecycle,
+    settledThreads,
     scope,
     machineScope,
     searchQuery,
@@ -460,6 +461,7 @@ function useRowCommands({
 function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
+  settledThreads: SettledThreadsApi,
   scope: string,
   machineScope: string | null,
   searchQuery: string,
@@ -473,6 +475,9 @@ function useInboxTree(
       return next;
     });
   });
+  // The arrival memory lives for the mount: a row keeps the place it earned
+  // when it entered its shelf until the shelf itself changes.
+  const [arrivals] = useState(createShelfArrivals);
   const tree = useMemo(
     () =>
       buildInboxTree(
@@ -482,8 +487,13 @@ function useInboxTree(
         ),
         (thread) => (lifecycle.shelfFor(thread) === "snoozed" ? "snoozed" : "active"),
         searchQuery,
+        {
+          arrivals,
+          snoozedAtFor: lifecycle.snoozedAtFor,
+          settledAtFor: settledThreads.settledAtFor,
+        },
       ),
-    [lifecycle, scope, machineScope, searchQuery, threads],
+    [lifecycle, settledThreads, scope, machineScope, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>

@@ -32,6 +32,8 @@ export interface LifecycleApi {
   shelvesReady: boolean;
   canPark(thread: PluginSidebarThread): boolean;
   wakeAtFor(thread: PluginSidebarThread): number | null;
+  /** When the current snooze began; null while the thread is not snoozed. */
+  snoozedAtFor(thread: PluginSidebarThread): number | null;
   snooze(threadId: string, snoozedUntil: number): void;
   unsnooze(threadId: string): void;
 }
@@ -92,6 +94,7 @@ export function useLifecycle(): LifecycleApi {
       shelvesReady,
       canPark: (thread) => canPark(signalsFor(thread)),
       wakeAtFor: (thread) => rows.get(thread.id)?.snoozedUntil ?? null,
+      snoozedAtFor: (thread) => rows.get(thread.id)?.snoozedAt ?? null,
       unsnooze: (threadId) => {
         void rpc.call("unsnooze", { threadId });
       },

@@ -23,6 +23,8 @@ export interface SettledThreadsApi {
    */
   ready: boolean;
   unsettle(threadId: string): void;
+  /** bb's `archivedAt` for a thread on the shelf; null when it isn't there. */
+  settledAtFor(thread: PluginSidebarThread): number | null;
 }
 
 /**
@@ -49,13 +51,17 @@ export function useSettledThreads(now: number): SettledThreadsApi {
     }, []),
   );
 
-  const threads = useMemo(
+  const windowed = useMemo(
     () =>
       rows
         .filter((row) => isWithinSettledWindow(row.settledAt, now))
-        .sort((a, b) => b.settledAt - a.settledAt)
-        .map(toSidebarThread),
+        .sort((a, b) => b.settledAt - a.settledAt),
     [now, rows],
+  );
+  const threads = useMemo(() => windowed.map(toSidebarThread), [windowed]);
+  const settledAtById = useMemo(
+    () => new Map(windowed.map((row) => [row.id, row.settledAt])),
+    [windowed],
   );
 
   // No read after the mutation: the backend publishes on the lifecycle
@@ -67,5 +73,13 @@ export function useSettledThreads(now: number): SettledThreadsApi {
     [rpc],
   );
 
-  return useMemo(() => ({ threads, ready, unsettle }), [ready, threads, unsettle]);
+  return useMemo(
+    () => ({
+      threads,
+      ready,
+      unsettle,
+      settledAtFor: (thread: PluginSidebarThread) => settledAtById.get(thread.id) ?? null,
+    }),
+    [ready, threads, unsettle, settledAtById],
+  );
 }

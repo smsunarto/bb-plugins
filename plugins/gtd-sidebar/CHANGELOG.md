@@ -12,6 +12,11 @@
   card's second line), and a remote thread leads with its machine's globe
   instead. Pinned threads keep their own shelf above Next Action, grouped like the
   rest.
+- Shelves now order by arrival instead of last update. A thread enters Pinned,
+  Next Action, or Waiting at the top when it lands there and holds its place
+  while it stays: a turn starting, a read, a rename, or subthread activity no
+  longer reshuffles the list. Snoozed sorts by when you snoozed it and Settled
+  by when it settled, both newest first.
 - Settle is now bb's archive. The check button, the card menu, and a new
   **GTD Sidebar: settle thread** row in bb's quick palette archive the thread, and
   bb's Undo toast brings it back. The Settled shelf is now a view of bb's archive:

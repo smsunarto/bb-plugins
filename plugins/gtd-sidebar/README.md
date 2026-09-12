@@ -80,8 +80,11 @@ disable the plugin.
 - **Waiting** — foreground or background agent work is live, in the thread or in any of its subthreads. A family moves back to Next Action only when one of its threads asks you something.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 
-Each section sorts the most recently updated threads first. The Snoozed order is
-visible when you expand that shelf.
+Each section orders threads by when they arrived on it, newest first, and a
+thread keeps its spot while it stays put: a turn starting, a read, a rename, or
+child activity never reshuffles it. Only a shelf change moves it, to the top of
+the new shelf. Snoozed sorts by the moment you snoozed and Settled by the
+moment it settled; expand Snoozed to see that order.
 
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
