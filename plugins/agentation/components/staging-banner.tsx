@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Icon } from "@/components/ui/icon";
+import { Icon } from "@bb-plugins/icons";
 import type { StoredAnnotation } from "@/lib/afs.ts";
 import {
   annotationMentionItemId,

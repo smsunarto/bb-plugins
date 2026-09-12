@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { Icon } from "./icon.js";
+import { Icon } from "@bb-plugins/icons";
 import { cn } from "../../lib/utils.js";
 import { usePortalScopeProps } from "../../lib/portal-scope.js";
 

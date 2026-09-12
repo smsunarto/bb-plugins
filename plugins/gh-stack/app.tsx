@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Icon } from "@/components/ui/icon";
+import { Icon } from "@bb-plugins/icons";
 import { Input } from "@/components/ui/input";
 import { ChangedFileTree } from "@/components/stack/changed-file-tree";
 import { deriveBranchName } from "@/lib/branch-name";

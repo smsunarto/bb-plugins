@@ -22,7 +22,7 @@ import {
   getOverlayTriggerClassName,
   preventOverlayTriggerSelection,
 } from "./overlay-trigger.js";
-import { Icon } from "../../components/ui/icon.js";
+import { Icon } from "@bb-plugins/icons";
 
 // ---------------------------------------------------------------------------
 // Context — separate instance from DropdownMenu / Popover.
