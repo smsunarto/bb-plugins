@@ -14,10 +14,9 @@ import { FadingText } from "@/components/inbox/thread-details";
  * something in it asks for the user, the total alone otherwise. Hovering the
  * header trades the count for a new-thread button.
  *
- * The header is sticky under its shelf header, so a long group keeps its name
- * in view while its rows scroll. Right-clicking it offers "Move up" / "Move
- * down", which reorder the project in bb's own order — the same order every
- * shelf groups by — so the move lands identically under each shelf.
+ * Right-clicking the header offers "Move up" / "Move down", which reorder the
+ * project in bb's own order — the same order every shelf groups by — so the
+ * move lands identically under each shelf.
  */
 export function ProjectGroup({
   projectId,

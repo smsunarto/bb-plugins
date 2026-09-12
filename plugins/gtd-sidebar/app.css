@@ -107,9 +107,8 @@
 .gtd-thread-row:has(.gtd-host-lead) .gtd-thread-metadata {
   padding-left: 16px;
 }
-/* Shelf and project headers stick while their rows scroll. The shelf header
-   pins to the top of the list; the project header pins just below it. Both
-   paint the sidebar ground so rows slide under them. */
+/* The shelf header pins to the top of the list while its rows scroll, and
+   paints the sidebar ground so they slide under it. */
 .gtd-shelf-header {
   position: sticky;
   top: 0;
@@ -117,15 +116,12 @@
   background: var(--sidebar);
 }
 .gtd-project-group-header {
-  position: sticky;
-  /* Sticky is a positioned box, so the new-thread button anchors to it. */
-  top: var(--gtd-shelf-head-h, 24px);
-  z-index: 2;
+  /* Positioned so the absolute new-thread button anchors to it. */
+  position: relative;
   display: flex;
   align-items: center;
   margin-top: 6px;
   border-radius: 6px;
-  background: var(--sidebar);
 }
 .gtd-project-group-header:hover {
   background: var(--sidebar-accent);

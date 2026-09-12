@@ -188,9 +188,6 @@ export function ThreadInbox({
       if (args !== null) void rpc.call("reorderProject", { projectId, ...args });
     },
   );
-  const shelfStyle = {
-    "--gtd-shelf-head-h": isCompactViewport ? "40px" : "24px",
-  } as CSSProperties;
   const renderGroups = (
     shelf: InboxShelf,
     groups: readonly ProjectGroupRows[],
@@ -305,7 +302,6 @@ export function ThreadInbox({
                   label={label}
                   count={shelves[shelf].length}
                   isCompactViewport={isCompactViewport}
-                  style={shelfStyle}
                   {...(shelf === "waiting"
                     ? {
                         expanded: showWaiting || searching,
@@ -361,7 +357,6 @@ export function ThreadInbox({
                   label={label}
                   count={shelves[shelf].length}
                   isCompactViewport={isCompactViewport}
-                  style={shelfStyle}
                   expanded={show || searching}
                   onToggle={() => setShow((open) => !open)}
                 >
@@ -708,7 +703,6 @@ function Shelf({
   onToggle,
   children,
   isCompactViewport,
-  style,
 }: {
   label: string;
   count: number;
@@ -716,10 +710,9 @@ function Shelf({
   onToggle?: () => void;
   children: React.ReactNode;
   isCompactViewport: boolean;
-  style?: CSSProperties;
 }) {
   return (
-    <section aria-label={label} style={style}>
+    <section aria-label={label}>
       <ShelfHeader
         label={label}
         count={count}

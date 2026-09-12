@@ -7,7 +7,7 @@
 - Every shelf now groups its threads by project once more than one project is in
   view. A 26px header names the project, folds the group, and shows
   `needs-you / total` while folded; hovering it reveals a new-thread button for
-  that project. Shelf and group headers stick while their rows scroll. The repo
+  that project. Shelf headers stick while their rows scroll. The repo
   chip is gone from every row: the project lives in the group header (and on a
   card's second line), and a remote thread leads with its machine's globe
   instead. Pinned threads keep their own shelf above Next Action, grouped like the
