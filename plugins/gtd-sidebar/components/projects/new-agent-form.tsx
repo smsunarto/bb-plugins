@@ -1,0 +1,222 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  experimental_ProviderModelPicker as ProviderModelPicker,
+  experimental_useSidebarThreadActions as useSidebarThreadActions,
+  experimental_useSidebarThreads as useSidebarThreads,
+  experimental_useProviders as useProviders,
+  useRpc,
+  type ExperimentalProviderModelPickerValue,
+} from "@get-bb/plugin-sdk/app";
+import type { Initiative, InitiativeEnvironment } from "@/lib/initiative-types";
+import type { initiativeRpcContract } from "@/lib/initiative-rpc";
+import { cn } from "@/lib/utils";
+
+type ReasoningLevel = ExperimentalProviderModelPickerValue["reasoningLevel"];
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const DEFAULT_ENVIRONMENT = "__default__";
+const NO_WORKSPACE = "__none__";
+
+function environmentLabel(environment: InitiativeEnvironment): string {
+  if (environment.name !== null && environment.name !== "") return environment.name;
+  if (environment.branchName !== null) return environment.branchName;
+  return environment.id;
+}
+
+/**
+ * The spawn-an-agent form, shared by the rail's "New agent" row, the Agents
+ * tray, and the panel's Agents tab. Performs a real `spawnInitiativeAgent`
+ * call — the child appears under the coordinator via `parentThreadId` and the
+ * rail/tray pick it up from the sidebar thread feed, no second roster.
+ */
+export function NewAgentForm({
+  initiative,
+  onLaunched,
+}: {
+  initiative: Initiative;
+  /** Called with the new agent's threadId after a successful spawn. */
+  onLaunched?: (threadId: string) => void;
+}) {
+  const rpc = useRpc<typeof initiativeRpcContract>();
+  const threadActions = useSidebarThreadActions();
+  const { projects } = useSidebarThreads();
+  const { providers } = useProviders();
+
+  const projectNameById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
+  const personalProjectId = projects.find((project) => project.isPersonal)?.id ?? "";
+  const boundProjectIds = initiative.workspaceProjectIds;
+  // Bound repos, or the personal project for a "from scratch" initiative —
+  // the empty string stays out of Select values entirely (Radix rejects "").
+  const workspaceOptions =
+    boundProjectIds.length > 0
+      ? boundProjectIds
+      : personalProjectId !== ""
+        ? [personalProjectId]
+        : [];
+  const [projectId, setProjectId] = useState(() => workspaceOptions[0] ?? "");
+  const [environmentId, setEnvironmentId] = useState<string | null>(null);
+  const [environments, setEnvironments] = useState<readonly InitiativeEnvironment[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [model, setModel] = useState<ExperimentalProviderModelPickerValue>(() => ({
+    providerId: initiative.providerId ?? providers[0]?.id ?? "",
+    model: initiative.model ?? "",
+    reasoningLevel: (initiative.reasoningLevel as ReasoningLevel | null) ?? "high",
+  }));
+
+  const selectWorkspace = (nextProjectId: string) => {
+    setProjectId(nextProjectId);
+    // A new repo invalidates the picked environment and the model catalog's
+    // routing target — clear both before the refetch repopulates them.
+    setEnvironmentId(null);
+    setEnvironments([]);
+  };
+
+  useEffect(() => {
+    if (projectId === "") {
+      setEnvironments([]);
+      return;
+    }
+    let cancelled = false;
+    rpc
+      .call("listInitiativeEnvironments", { projectId })
+      .then((result) => {
+        if (!cancelled) setEnvironments(result.environments);
+      })
+      .catch(() => {
+        if (!cancelled) setEnvironments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, rpc]);
+
+  const canSubmit = prompt.trim() !== "" && projectId !== "" && !busy;
+
+  const submit = () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    rpc
+      .call("spawnInitiativeAgent", {
+        initiativeId: initiative.id,
+        prompt: prompt.trim(),
+        projectId,
+        environmentId,
+        providerId: model.providerId || null,
+        model: model.model || null,
+        reasoningLevel: model.reasoningLevel ?? null,
+      })
+      .then((result) => {
+        setPrompt("");
+        threadActions.open(result.threadId);
+        onLaunched?.(result.threadId);
+      })
+      .catch((spawnError: unknown) =>
+        setError(spawnError instanceof Error ? spawnError.message : "Could not start agent"),
+      )
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5" data-project-new-agent-form="">
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Task</span>
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="What should this agent do?"
+          rows={3}
+          className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/60 focus:border-ring"
+        />
+      </label>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Workspace</span>
+        <Select
+          value={projectId === "" ? NO_WORKSPACE : projectId}
+          onValueChange={(value) => {
+            if (value !== NO_WORKSPACE) selectWorkspace(value);
+          }}
+        >
+          <SelectTrigger className="h-8 w-full" aria-label="Workspace">
+            <SelectValue placeholder="Select workspace" />
+          </SelectTrigger>
+          <SelectContent>
+            {workspaceOptions.length === 0 ? (
+              <SelectItem value={NO_WORKSPACE} disabled>
+                No workspace found
+              </SelectItem>
+            ) : (
+              workspaceOptions.map((id) => (
+                <SelectItem key={id} value={id}>
+                  {projectNameById.get(id) ?? "Unknown project"}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Environment</span>
+        <Select
+          value={environmentId ?? DEFAULT_ENVIRONMENT}
+          onValueChange={(value) => setEnvironmentId(value === DEFAULT_ENVIRONMENT ? null : value)}
+        >
+          <SelectTrigger className="h-8 w-full" aria-label="Environment">
+            <SelectValue placeholder="Project default" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={DEFAULT_ENVIRONMENT}>Project default</SelectItem>
+            {environments.map((environment) => (
+              <SelectItem
+                key={environment.id}
+                value={environment.id}
+                disabled={environment.status !== "ready"}
+              >
+                {environmentLabel(environment)}
+                {environment.status === "ready" ? "" : ` (${environment.status})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Model</span>
+        <ProviderModelPicker
+          value={model}
+          onChange={setModel}
+          {...(environmentId !== null
+            ? { routing: { kind: "environment" as const, environmentId } }
+            : {})}
+        />
+      </div>
+      {error !== null ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex justify-end">
+        <Button size="sm" disabled={!canSubmit} onClick={submit}>
+          <Icon
+            name={busy ? "Loading" : "Send"}
+            className={cn("size-3.5", busy && "animate-spin")}
+            aria-hidden
+          />
+          {busy ? "Starting…" : "Start agent"}
+        </Button>
+      </div>
+    </div>
+  );
+}

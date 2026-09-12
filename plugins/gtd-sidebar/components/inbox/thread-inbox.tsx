@@ -34,6 +34,9 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import { filterByProject, nextThreadIdAfterSettle, threadDisplayTitle } from "@/lib/inbox";
+import { useInitiatives } from "@/hooks/use-initiatives";
+import { projectHiddenThreadIds } from "@/lib/initiative-ui";
+import { ProjectsRail } from "@/components/projects/rail";
 import {
   buildInboxTree,
   createShelfArrivals,
@@ -86,6 +89,14 @@ export function ThreadInbox({
     () => mergeSettledThreads(hostThreads, settledThreads.threads),
     [hostThreads, settledThreads.threads],
   );
+  // The Projects rail owns every coordinator thread and its descendants.
+  // They render there exactly once — the shelves must not draw them again,
+  // or a thread would get two shortcut anchors.
+  const initiatives = useInitiatives();
+  const inboxThreads = useMemo(() => {
+    const hidden = projectHiddenThreadIds(threads, new Set(initiatives.byCoordinator.keys()));
+    return hidden.size === 0 ? threads : threads.filter((thread) => !hidden.has(thread.id));
+  }, [threads, initiatives.byCoordinator]);
   // bb's own cached roster, so no glyph waits on a round trip of this plugin's.
   const { providers } = useProviders();
   const providerInfoById = useMemo(
@@ -94,7 +105,7 @@ export function ThreadInbox({
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const [machineScope, setMachineScope] = useState<string | null>(null);
-  const machines = sidebarMachines(threads);
+  const machines = sidebarMachines(inboxThreads);
   // Read once here rather than per card, and compared against `false` rather
   // than coerced: `values` is undefined while the settings load, and the
   // setting is on by default, so anything that is not an explicit "off" draws
@@ -103,7 +114,7 @@ export function ThreadInbox({
   const showProviderIcon = settingValues?.showProviderIcon !== false;
   const compactThreads = settingValues?.compactThreads === true;
 
-  const gitButlerLabels = useGitButlerLabels(threads);
+  const gitButlerLabels = useGitButlerLabels(inboxThreads);
 
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
@@ -128,9 +139,8 @@ export function ThreadInbox({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
-
   const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
-    threads,
+    inboxThreads,
     lifecycle,
     settledThreads,
     pinnedOrder,
@@ -311,6 +321,12 @@ export function ThreadInbox({
             // surface, while the matching padding lets the final row scroll clear.
             style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
           >
+            <ProjectsRail
+              activeThreadId={activeThreadId}
+              isCompactViewport={isCompactViewport}
+              threads={threads}
+              onNavigate={onNavigate}
+            />
             <InboxContent
               status={status}
               ready={lifecycle.shelvesReady && settledThreads.ready}

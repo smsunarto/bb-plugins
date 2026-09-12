@@ -5,14 +5,16 @@ import {
   aiInferenceCompleteOutputSchema,
 } from "@bb-plugins/codex-inference/contract";
 import { gitButlerHostContract } from "./gitbutler.ts";
+import { gitHubHostContract } from "./github-host.ts";
 
 /**
  * The plugin's own host entry. Thread naming runs on the host because that is
- * where the user's Codex login lives; the GitButler probe runs there because
- * that is where the checkout is.
+ * where the user's Codex login lives; the GitButler probe and GitHub polling
+ * run there because that is where the checkout and the user's gh auth are.
  */
 export const gtdSidebarHostContract = defineRpcContract({
   ...gitButlerHostContract,
+  ...gitHubHostContract,
   "ai.inference.complete": {
     input: aiInferenceCompleteInputSchema,
     output: aiInferenceCompleteOutputSchema,

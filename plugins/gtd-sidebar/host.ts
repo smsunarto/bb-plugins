@@ -4,6 +4,7 @@ import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { completeCodexInference } from "@bb-plugins/codex-inference/client";
 import { toAiServiceFailure } from "@bb-plugins/codex-inference/failure";
 import { parseGitButlerBranchSummary } from "./lib/gitbutler.ts";
+import { execGitHubCiRuns, execGitHubPrActivity } from "./lib/github-host.ts";
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 
 const execFileAsync = promisify(execFile);
@@ -26,6 +27,12 @@ export default experimental_defineHostEntry({
         // project all keep bb's own branch label. This probe is an enhancement.
         return { label: null };
       }
+    },
+    async githubCiRuns(input, context) {
+      return execGitHubCiRuns(input, context.signal);
+    },
+    async githubPrActivity(input, context) {
+      return execGitHubPrActivity(input, context.signal);
     },
     "ai.inference.complete": async (input) => {
       try {

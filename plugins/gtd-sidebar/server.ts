@@ -6,7 +6,11 @@
 // Putting them on the thread would mean a schema change, a wire change, and a
 // HOST_DAEMON_PROTOCOL_VERSION bump for something only this sidebar
 // understands. Here, uninstalling the plugin removes this database with it.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  defineRpcContract,
+  type BbPluginApi,
+  type ExperimentalHostCallOptions,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
@@ -16,6 +20,10 @@ import { createThreadNester } from "./lib/nest-thread.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
+import { INITIATIVE_MIGRATIONS } from "./lib/initiative-store.ts";
+import { createInitiativeRuntime } from "./lib/initiative-runtime.ts";
+import { registerInitiativeRpc } from "./lib/initiative-rpc.ts";
+import { INITIATIVE_SUBSCRIPTION_MIGRATIONS } from "./lib/initiative-subscriptions.ts";
 
 // Append-only: bb applies these by position, so the retired `settled_at` and
 // `archived_thread_ids` columns stay declared and simply go unread.
@@ -211,6 +219,14 @@ export default function plugin(bb: BbPluginApi) {
       description: "Name new threads and rename only when you start different work.",
       default: true,
     },
+    slackBotToken: {
+      type: "string",
+      label: "Slack bot token",
+      description:
+        "Bot token for read-only Slack channel polling in project subscriptions. Stored securely.",
+      secret: true,
+      default: "",
+    },
   });
   const threadNamer = createThreadNamer(bb, {
     automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
@@ -218,7 +234,26 @@ export default function plugin(bb: BbPluginApi) {
   });
 
   const db = bb.storage.database();
-  bb.storage.migrate(db, migrations);
+  bb.storage.migrate(db, [
+    ...migrations,
+    ...INITIATIVE_MIGRATIONS,
+    ...INITIATIVE_SUBSCRIPTION_MIGRATIONS,
+  ]);
+
+  const initiatives = createInitiativeRuntime(bb, {
+    host: {
+      call: (method, input, options) =>
+        (
+          host.call as unknown as (
+            method: string,
+            input: unknown,
+            options: ExperimentalHostCallOptions,
+          ) => Promise<unknown>
+        )(method, input, options),
+    },
+    getSlackToken: async () => (await settings.get()).slackBotToken || undefined,
+  });
+  registerInitiativeRpc(bb, initiatives);
 
   const readAll = (): StoredLifecycleRow[] =>
     (
