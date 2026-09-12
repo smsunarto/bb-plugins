@@ -555,13 +555,30 @@
     justify-self: start;
   }
 
-  /* Keep each location chip's icon pinned to the left edge and center only
-   * the label in the space to the icon's right. OptionDisplay wraps icon and
-   * labels in a content-sized inner span, and bb 0.43 renders the machine
+  /* Composer environment controls render on two surfaces and share one
+   * treatment — adjust them together, not per surface:
+   *   - [data-follow-up-composer-footer]: read-only chips on thread pages.
+   *     The footer itself nests inside [data-promptbox-shell], so the union
+   *     below is what keeps the two surfaces in one selector list.
+   *   - [data-promptbox-shell]: the new-thread composer's picker row
+   *     ([data-promptbox-project-control], Environment, Machine, Branch).
+   *
+   * The icon stays pinned to the left edge while the label centers in the
+   * space to its right. OptionDisplay and the pickers wrap icon and label in
+   * a content-sized inner span, and bb 0.43 renders the footer's machine
    * chip as a w-fit grid item, so those boxes must fill before the label has
-   * room to center. A truncated label's auto margins collapse, so its
-   * ellipsis stays start-aligned. */
-  .dark [data-follow-up-composer-footer] [data-option-display] > span,
+   * room to center. A truncated label's auto margins collapse, keeping the
+   * clip start-aligned. */
+  .dark
+    :is([data-follow-up-composer-footer], [data-promptbox-shell])
+    :is(
+      [data-option-display],
+      [data-promptbox-project-control],
+      [aria-label="Environment"],
+      [aria-label="Machine"],
+      [aria-label="Branch"]
+    )
+    :is(span, div):has(> :is([data-promptbox-full-label], [data-promptbox-compact-label], span.truncate)),
   .dark
     [data-follow-up-composer-footer]
     div:has(> [aria-label^="Environment type:"])
@@ -574,32 +591,50 @@
   }
 
   .dark
-    [data-follow-up-composer-footer]
-    [data-option-display]
-    :is([data-promptbox-full-label], [data-promptbox-compact-label]),
+    :is([data-follow-up-composer-footer], [data-promptbox-shell])
+    :is(
+      [data-option-display],
+      [data-promptbox-project-control],
+      [aria-label="Environment"],
+      [aria-label="Machine"],
+      [aria-label="Branch"],
+      [data-promptbox-hide-branch-compact]
+    )
+    :is([data-promptbox-full-label], [data-promptbox-compact-label], span.truncate),
   .dark
     [data-follow-up-composer-footer]
     > :first-child
     > div
     > span:has(> [data-icon])
-    > span:last-of-type,
-  .dark
-    [data-follow-up-composer-footer]
-    [data-promptbox-hide-branch-compact]
     > span:last-of-type {
     margin-inline: auto;
   }
 
-  /* Fade the checkout label out at the chip's right edge instead of
-   * ellipsizing: clip the overflow, then mask the chip so the last ~1.5rem
-   * of label dissolves into the padding. The mask lives on the chip rather
-   * than the label so a centered short label never reaches the fade zone. */
-  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] {
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent calc(100% - 0.5rem));
-    mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent calc(100% - 0.5rem));
+  /* The checkout label fades at the end of its lane instead of ellipsizing.
+   * The mask sits on the label element itself, so only the text dissolves —
+   * the icon, chevron, and chip background stay opaque. The label fills its
+   * lane and centers its text inside, which keeps the vru centering for
+   * short labels while anchoring the fade zone to the lane's right edge;
+   * `safe center` (and Chrome's start-aligned overflow for inline text)
+   * keeps the label's beginning visible when it clips. On the picker the
+   * lane ends at the chevron reserve, on the footer chip at the padding. */
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > span:last-of-type,
+  .dark [data-promptbox-shell] [aria-label="Branch"] > span.contents > span.truncate,
+  .dark [data-promptbox-shell] [aria-label="Branch"] > span.truncate {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+    justify-content: safe center;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent 100%);
   }
 
-  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] > span:last-of-type {
+  /* Clip must reach every truncating descendant, not only the outer label:
+   * the picker's parenthetical label nests a second .truncate for the branch
+   * name (BranchPicker's `Current (<name>)` shape), and that inner span is
+   * what actually ellipsizes. */
+  .dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] span.truncate,
+  .dark [data-promptbox-shell] [aria-label="Branch"] span.truncate {
     text-overflow: clip;
   }
 

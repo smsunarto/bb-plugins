@@ -40,3 +40,4 @@ Check `--bb-monokai-ui-font` on the document root. Restore Inter, submit the for
 - The UI font setting does not change the code font.
 - The settings form remounts after a font selection. Wait for its enabled submit button.
 - CSS cannot style every private editor surface. Read the theme contract before reporting a gap.
+- Composer environment controls live on two surfaces: the follow-up composer footer on a thread page (`[data-follow-up-composer-footer]`, read-only chips) and the new-thread composer at `/` (`[data-promptbox-shell]` picker row). When verifying chip styling (icon alignment, label centering, branch-label fade), check BOTH surfaces — the shared rules carry both in one selector list, and `theme-contract.test.ts` asserts that coverage.
