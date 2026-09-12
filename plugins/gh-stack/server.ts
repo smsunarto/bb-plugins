@@ -495,15 +495,6 @@ async function readStackView(cwd: string): Promise<ParsedStackView> {
 // untracked tree cannot blow up the command line.
 const MAX_UNTRACKED_COUNTS = 50;
 
-// The remote's default branch ("origin/main" → "main"), used as the rail's
-// base label when the branch is not in a stack yet.
-async function defaultBranchName(cwd: string): Promise<string | null> {
-  const result = await runGit(["rev-parse", "--abbrev-ref", "origin/HEAD"], cwd);
-  if (result.code !== 0) return null;
-  const name = result.stdout.trim().replace(/^origin\//, "");
-  return name || null;
-}
-
 // Branch namespace ("scott/") the workspace already uses: the one every
 // stack branch shares, else the current branch's own. Returns null when
 // branches are unprefixed.
@@ -1134,8 +1125,10 @@ export default async function plugin(bb: BbPluginApi) {
     });
   }
 
+  // defaultBranch is bb's view of the repository default branch, used as the
+  // rail's base label before a stack exists (a stack reports its own trunk).
   type Workspace =
-    | { cwd: string; key: string; error: null }
+    | { cwd: string; key: string; defaultBranch: string | null; error: null }
     | { cwd: null; key: null; error: { kind: StackErrorKind; message: string } };
 
   type ValidWorkspace = Extract<Workspace, { error: null }>;
@@ -1197,7 +1190,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
     }
     threadWorkspaceKeys.set(threadId, resolvedKey.key);
-    return { cwd, key: resolvedKey.key, error: null };
+    return { cwd, key: resolvedKey.key, defaultBranch: environment.defaultBranch, error: null };
   }
 
   function invalidateWorkspaceCaches(workspaceKey: string): void {
@@ -1490,20 +1483,19 @@ export default async function plugin(bb: BbPluginApi) {
       mutationVersion: workspaceMutationVersions.get(workspace.key) ?? 0,
     });
 
-    const [result, pending, defaultBranch, headPrefix, stashOwners, stashCounts] =
-      await Promise.all([
-        runGh(["stack", "view", "--json"], cwd, 30_000),
-        pendingChangeSet(cwd),
-        defaultBranchName(cwd),
-        currentBranchPrefix(cwd),
-        activeAutoStashOwners({
-          runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
-          blockedStashOids: blockedAutoStashOids,
-        }),
-        stashCountsByBranch({
-          runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
-        }),
-      ]);
+    const defaultBranch = workspace.defaultBranch;
+    const [result, pending, headPrefix, stashOwners, stashCounts] = await Promise.all([
+      runGh(["stack", "view", "--json"], cwd, 30_000),
+      pendingChangeSet(cwd),
+      currentBranchPrefix(cwd),
+      activeAutoStashOwners({
+        runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
+        blockedStashOids: blockedAutoStashOids,
+      }),
+      stashCountsByBranch({
+        runGit: (args, timeoutMs) => runGit(args, cwd, timeoutMs),
+      }),
+    ]);
     const inspected = parseStackViewResult(result);
     if (inspected.error) {
       return {
