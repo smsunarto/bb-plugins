@@ -1,5 +1,6 @@
-// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store and the
-// Settled shelf's read of bb's archive.
+// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store and the two
+// reads of bb's thread table the sidebar view can't reach: the Settled
+// shelf's archived rows, and the pinned order the host mapping drops.
 //
 // Snoozes live in the plugin's own SQLite database, never on bb's thread.
 // Putting them on the thread would mean a schema change, a wire change, and a
@@ -104,6 +105,24 @@ export const gtdSidebarRpcContract = defineRpcContract({
       ),
     }),
   },
+  /**
+   * bb's pinned order for the Pinned shelf. `pinSortKey` never reaches the
+   * frontend — the host's sidebar thread mapping drops it — so the shelf
+   * reads it through here keyed by thread id. bb republishes
+   * `pin-state-changed` on every pin, unpin, and reorder, and the backend
+   * relays that on `LIFECYCLE_CHANNEL`.
+   */
+  listPinnedOrder: {
+    input: z.object({}),
+    output: z.object({
+      pins: z.array(
+        z.object({
+          threadId: z.string(),
+          pinSortKey: z.string().nullable(),
+        }),
+      ),
+    }),
+  },
   snooze: {
     input: z.object({
       threadId: z.string().trim().min(1),
@@ -200,19 +219,19 @@ export default function plugin(bb: BbPluginApi) {
   };
 
   /** One page is already generous; the loop is for the account that isn't. */
-  const ARCHIVED_PAGE_SIZE = 200;
-  const ARCHIVED_PAGE_LIMIT = 50;
+  const THREAD_PAGE_SIZE = 200;
+  const THREAD_PAGE_LIMIT = 50;
 
-  const listArchivedThreads = async () => {
+  const listThreads = async (archived: boolean) => {
     const collected = [];
-    for (let page = 0; page < ARCHIVED_PAGE_LIMIT; page++) {
+    for (let page = 0; page < THREAD_PAGE_LIMIT; page++) {
       const rows = await bb.sdk.threads.list({
-        archived: true,
-        limit: ARCHIVED_PAGE_SIZE,
-        offset: page * ARCHIVED_PAGE_SIZE,
+        archived,
+        limit: THREAD_PAGE_SIZE,
+        offset: page * THREAD_PAGE_SIZE,
       });
       collected.push(...rows);
-      if (rows.length < ARCHIVED_PAGE_SIZE) break;
+      if (rows.length < THREAD_PAGE_SIZE) break;
     }
     return collected;
   };
@@ -253,6 +272,14 @@ export default function plugin(bb: BbPluginApi) {
     async listLifecycle() {
       return { rows: readAll() };
     },
+    async listPinnedOrder() {
+      const active = await listThreads(false);
+      return {
+        pins: active.flatMap((thread) =>
+          thread.pinnedAt === null ? [] : [{ threadId: thread.id, pinSortKey: thread.pinSortKey }],
+        ),
+      };
+    },
     /**
      * bb's archived threads from the last day, whoever archived them: the
      * shelf is a view of bb's archive, so a thread archived from bb's own
@@ -266,7 +293,7 @@ export default function plugin(bb: BbPluginApi) {
      */
     async listSettledThreads() {
       const now = Date.now();
-      const archived = await listArchivedThreads();
+      const archived = await listThreads(true);
       return {
         threads: archived.flatMap((thread) => {
           if (thread.archivedAt === null || !isWithinSettledWindow(thread.archivedAt, now)) {
@@ -343,6 +370,20 @@ export default function plugin(bb: BbPluginApi) {
   bb.events.on("thread.deleted", ({ thread }) => {
     clear(thread.id);
   });
+
+  // bb emits pin-state-changed for a pin, an unpin, and a reorderPinned, and
+  // none of them touch this database — the publish is so the Pinned shelf
+  // re-reads its order off bb's table.
+  bb.onDispose(
+    bb.sdk.subscribe({
+      event: "thread:changed",
+      callback: (event) => {
+        if (event.id !== undefined && event.changes.includes("pin-state-changed")) {
+          bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
+        }
+      },
+    }),
+  );
 
   // Settle is bb's archive, made through the host action on the frontend, so
   // the shelves hear about it from bb's change feed rather than an RPC here.

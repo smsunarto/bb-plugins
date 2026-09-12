@@ -23,6 +23,7 @@ import { SlimRow } from "@/components/inbox/slim-row";
 import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
+import { usePinnedOrder, type PinnedOrderApi } from "@/hooks/use-pinned-order";
 import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
 import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
@@ -70,6 +71,9 @@ export function ThreadInbox({
   // bb's view never carries an archived thread, so the Settled shelf's rows
   // come from a second read and are merged in before anything partitions.
   const settledThreads = useSettledThreads(now);
+  // bb's pinned order travels the same way: `pinSortKey` is dropped by the
+  // host's thread mapping, so the Pinned shelf re-reads it via the backend.
+  const pinnedOrder = usePinnedOrder();
   const threads = useMemo(
     () => mergeSettledThreads(hostThreads, settledThreads.threads),
     [hostThreads, settledThreads.threads],
@@ -121,6 +125,7 @@ export function ThreadInbox({
     threads,
     lifecycle,
     settledThreads,
+    pinnedOrder,
     scope,
     machineScope,
     searchQuery,
@@ -515,6 +520,7 @@ function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
   settledThreads: SettledThreadsApi,
+  pinnedOrder: PinnedOrderApi,
   scope: string,
   machineScope: string | null,
   searchQuery: string,
@@ -544,9 +550,10 @@ function useInboxTree(
           arrivals,
           snoozedAtFor: lifecycle.snoozedAtFor,
           settledAtFor: settledThreads.settledAtFor,
+          pinOrderKeyFor: pinnedOrder.pinOrderKeyFor,
         },
       ),
-    [lifecycle, settledThreads, scope, machineScope, searchQuery, threads, arrivals],
+    [lifecycle, settledThreads, pinnedOrder, scope, machineScope, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>

@@ -11,6 +11,12 @@ export interface InboxThreadNode {
   shelf: InboxShelf;
   /** When this thread last arrived on the shelf it sits on. Roots sort by it. */
   shelfEnteredAt: number;
+  /**
+   * The family's place in bb's pinned order: the pin `sortKey` of its
+   * shallowest pinned member, matching the root bb's own pinned sidebar
+   * would list. Null when no member is pinned or the keys have not loaded.
+   */
+  pinOrderKey: string | null;
   statusThread: PluginSidebarThread;
   matchesSearch: boolean;
   matchesTitle: boolean;
@@ -87,6 +93,11 @@ export interface InboxSort {
   snoozedAtFor?: (thread: PluginSidebarThread) => number | null;
   /** bb's `archivedAt` — the Settled shelf's exact arrival. */
   settledAtFor?: (thread: PluginSidebarThread) => number | null;
+  /**
+   * bb's `pinSortKey` for the thread — the Pinned shelf's order, shared with
+   * the built-in sidebar's drag order. Null while the keys are still loading.
+   */
+  pinOrderKeyFor?: (thread: PluginSidebarThread) => string | null;
   /** Clock for stamping shelf moves this build observes. */
   now?: number;
 }
@@ -95,6 +106,7 @@ interface ResolvedSort {
   arrivals: ShelfArrivals;
   snoozedAtFor(thread: PluginSidebarThread): number | null;
   settledAtFor(thread: PluginSidebarThread): number | null;
+  pinOrderKeyFor(thread: PluginSidebarThread): string | null;
   now: number;
 }
 
@@ -141,6 +153,7 @@ function createInboxNode(
     children: [],
     shelf,
     shelfEnteredAt: shelfEnteredAt(thread, shelf, sort),
+    pinOrderKey: thread.isPinned ? sort.pinOrderKeyFor(thread) : null,
     statusThread: thread,
     matchesSearch: matchesTitle,
     matchesTitle,
@@ -195,8 +208,22 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
       if (statusPriority(child.statusThread) > statusPriority(node.statusThread))
         node.statusThread = child.statusThread;
     }
+    // A pinned node's own key already decides the family — bb never lists a
+    // thread under a pinned ancestor — so descendants only contribute when
+    // the node itself is unpinned, and then their most prominent key wins.
+    node.pinOrderKey ??= node.children.reduce<string | null>(
+      (best, child) => minPinOrderKey(best, child.pinOrderKey),
+      null,
+    );
     node.shelf = familyShelf(node);
   }
+}
+
+/** The earlier of two pin sort keys; a null loses to any known key. */
+function minPinOrderKey(left: string | null, right: string | null): string | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return left < right ? left : right;
 }
 
 /**
@@ -228,13 +255,29 @@ function familyComparator() {
     snoozed: 3,
     settled: 4,
   };
-  // One comparator for every shelf: the family's shelf, then the root's
-  // arrival on it — most recent first — then creation time and id.
-  return (a: InboxThreadNode, b: InboxThreadNode) =>
-    shelfOrder[a.shelf] - shelfOrder[b.shelf] ||
-    b.shelfEnteredAt - a.shelfEnteredAt ||
-    b.thread.createdAt - a.thread.createdAt ||
-    a.thread.id.localeCompare(b.thread.id);
+  // One comparator for every shelf: the family's shelf, then its place on
+  // it — Pinned follows bb's own pin order, the rest take most recent
+  // arrival first — then creation time and id.
+  return (a: InboxThreadNode, b: InboxThreadNode) => {
+    const shelfDelta = shelfOrder[a.shelf] - shelfOrder[b.shelf];
+    if (shelfDelta !== 0) return shelfDelta;
+    if (a.shelf === "pinned") {
+      const pinDelta = comparePinOrderKeys(a.pinOrderKey, b.pinOrderKey);
+      if (pinDelta !== 0) return pinDelta;
+    }
+    return (
+      b.shelfEnteredAt - a.shelfEnteredAt ||
+      b.thread.createdAt - a.thread.createdAt ||
+      a.thread.id.localeCompare(b.thread.id)
+    );
+  };
+}
+
+/** Known keys first; an unloaded one keeps its arrival place below them. */
+function comparePinOrderKeys(a: string | null, b: string | null): number {
+  if (a === null) return b === null ? 0 : 1;
+  if (b === null) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 export function buildInboxTree(
@@ -248,6 +291,7 @@ export function buildInboxTree(
     arrivals: sort.arrivals ?? createShelfArrivals(),
     snoozedAtFor: sort.snoozedAtFor ?? (() => null),
     settledAtFor: sort.settledAtFor ?? (() => null),
+    pinOrderKeyFor: sort.pinOrderKeyFor ?? (() => null),
     now: sort.now ?? Date.now(),
   };
   const nodes = new Map(

@@ -21,6 +21,10 @@
   project last, so the same project sits in the same slot everywhere. A group
   header's right-click menu gains **Move up** and **Move down**, which reorder
   the project in bb itself rather than in the plugin.
+- The Pinned shelf now follows bb's own pinned order — the same order the
+  built-in sidebar drags by — instead of an arrival stamp. A pin moved in either
+  sidebar ranks identically in both, and the shelf re-reads it when bb reports a
+  pin change. Rows hold their arrival place only until bb's pin keys load.
 - Settle is now bb's archive. The check button, the card menu, and a new
   **GTD Sidebar: settle thread** row in bb's quick palette archive the thread, and
   bb's Undo toast brings it back. The Settled shelf is now a view of bb's archive:
