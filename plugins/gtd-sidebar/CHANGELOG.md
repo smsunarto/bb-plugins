@@ -33,6 +33,11 @@
   the plugin's database keeps only snoozes, and rows without a snooze are removed on
   the next start. Snooze is unchanged.
 
+- Folding a family now writes bb's own `sidebar.collapsedThreads` preference
+  instead of session state, so a fold made here shows in bb's built-in sidebar,
+  a fold made there shows here, and both survive a reload. Folded project
+  groups stay session state: bb has no per-shelf project key.
+
 ### Patch Changes
 
 - Mobile rows now draw the compact desktop row: the project chip leads the title,

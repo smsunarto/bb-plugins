@@ -11,6 +11,7 @@ import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
+import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
@@ -122,6 +123,20 @@ export const gtdSidebarRpcContract = defineRpcContract({
         }),
       ),
     }),
+  },
+  /**
+   * bb's `sidebar.collapsedThreads` preference: the families folded in the
+   * built-in sidebar, shared with it and kept across reloads. bb republishes
+   * `ui-preferences-changed` on every write, which the backend relays on
+   * `LIFECYCLE_CHANNEL`.
+   */
+  listCollapsedThreads: {
+    input: z.object({}),
+    output: z.object({ threadIds: z.array(z.string()) }),
+  },
+  toggleCollapsedThread: {
+    input: threadIdSchema,
+    output: z.object({ threadIds: z.array(z.string()) }),
   },
   snooze: {
     input: z.object({
@@ -236,7 +251,15 @@ export default function plugin(bb: BbPluginApi) {
     return collected;
   };
 
+  const collapsedThreads = createCollapsedThreadsStore(bb.sdk.system.uiPreferences);
+
   bb.rpc.register(gtdSidebarRpcContract, {
+    async listCollapsedThreads() {
+      return { threadIds: await collapsedThreads.list() };
+    },
+    async toggleCollapsedThread({ threadId }) {
+      return { threadIds: await collapsedThreads.toggle(threadId) };
+    },
     async listEnvironmentBranches({ environmentIds }) {
       const environments = await Promise.all(
         [...new Set(environmentIds)].map(async (environmentId) => {
@@ -395,6 +418,19 @@ export default function plugin(bb: BbPluginApi) {
       callback: (event) => {
         if (event.id !== undefined && event.changes.includes("archived-changed")) {
           bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
+        }
+      },
+    }),
+  );
+
+  // A fold made in bb's own sidebar lands here through the same preference;
+  // the publish is so every window re-reads it.
+  bb.onDispose(
+    bb.sdk.subscribe({
+      event: "system:changed",
+      callback: (event) => {
+        if (event.changes.includes("ui-preferences-changed")) {
+          bb.realtime.publish(LIFECYCLE_CHANNEL, { preference: "sidebar.collapsedThreads" });
         }
       },
     }),

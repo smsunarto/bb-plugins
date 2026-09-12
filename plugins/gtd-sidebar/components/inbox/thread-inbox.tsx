@@ -22,6 +22,7 @@ import { ThreadCard } from "@/components/inbox/thread-card";
 import { SlimRow } from "@/components/inbox/slim-row";
 import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
+import { useCollapsedThreads } from "@/hooks/use-collapsed-threads";
 import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
 import { usePinnedOrder, type PinnedOrderApi } from "@/hooks/use-pinned-order";
 import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
@@ -520,15 +521,10 @@ function useInboxTree(
   machineScope: string | null,
   searchQuery: string,
 ) {
-  const [collapsedThreads, setCollapsedThreads] = useState<ReadonlySet<string>>(() => new Set());
-  const toggleThread = useCommittedEvent((threadId: string) => {
-    setCollapsedThreads((current) => {
-      const next = new Set(current);
-      if (next.has(threadId)) next.delete(threadId);
-      else next.add(threadId);
-      return next;
-    });
-  });
+  // Folded families are bb's own preference, shared with the built-in
+  // sidebar and kept across reloads. Folded project groups stay session state
+  // below: bb has no per-shelf project key and its preference keys are closed.
+  const { collapsedThreads, toggleThread } = useCollapsedThreads();
   // The arrival memory lives for the mount: a row keeps the place it earned
   // when it entered its shelf until the shelf itself changes.
   const [arrivals] = useState(createShelfArrivals);
