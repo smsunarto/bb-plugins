@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   experimental_useProviders as useProviders,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
@@ -25,7 +26,11 @@ import { SlimRow } from "@/components/inbox/slim-row";
 import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useCollapsedThreads } from "@/hooks/use-collapsed-threads";
-import { useNestDrag, type NestDragApi } from "@/hooks/use-nest-drag";
+import {
+  useSidebarDrag,
+  type SidebarDragApi,
+  type SidebarProjectDrop,
+} from "@/hooks/use-nest-drag";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
 import { usePinnedOrder, type PinnedOrderApi } from "@/hooks/use-pinned-order";
@@ -48,13 +53,16 @@ import {
   type VisibleInboxRow,
 } from "@/lib/inbox-tree";
 import {
+  applyProjectMove,
   groupCollapseKey,
   groupRowsByProject,
+  projectDropReorderArgs,
   projectReorderArgs,
+  settleProjectOrderOverride,
   shouldGroupByProject,
   type ProjectGroup as ProjectGroupRows,
 } from "@/lib/project-groups";
-import { ProjectGroup } from "@/components/inbox/project-group";
+import { ProjectGroup, SortableProjectGroup } from "@/components/inbox/project-group";
 import { mergeSettledThreads } from "@/lib/settled-threads";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
 import { filterByMachine, sidebarMachines } from "@/lib/machines";
@@ -153,9 +161,15 @@ export function ThreadInbox({
   // One project needs no headers: the shelf reads exactly as it did before.
   const grouped = shouldGroupByProject(shelves);
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
+  // A dropped group draws in its new slot before bb's write lands: the order
+  // the drop predicts stands in for bb's until project-order-changed
+  // republishes `projects`, when the real order replaces it.
+  const [projectOrderOverride, setProjectOrderOverride] = useState<readonly string[] | null>(null);
+  useEffect(() => setProjectOrderOverride(null), [projectOrder]);
+  const orderedProjectIds = projectOrderOverride ?? projectOrder;
   const groupedShelves = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
-      groupRowsByProject(shelves[shelf], projectOrder, (projectId) =>
+      groupRowsByProject(shelves[shelf], orderedProjectIds, (projectId) =>
         personalProjectIds.has(projectId),
       );
     return {
@@ -165,7 +179,7 @@ export function ThreadInbox({
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
-  }, [shelves, projectOrder, personalProjectIds]);
+  }, [shelves, orderedProjectIds, personalProjectIds]);
   const { pinned, nextAction, waiting } = groupedShelves;
   const activeShelves = [
     ["pinned", "Pinned", pinned],
@@ -198,20 +212,52 @@ export function ThreadInbox({
     onNavigate();
   });
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  // Drag a row onto another to nest it, or onto a project header to lift it
-  // back out. Desktop only: the compact viewport has no drag.
+  // One drag context for both payloads (lib/sidebar-drag): a row onto a row
+  // nests, a row onto a project header lifts it back out, and a group header
+  // onto another group reorders its project. Desktop only: the compact
+  // viewport has no drag.
   // Committed, not memoized on `threads`: a new roster must not hand every
-  // row a new `nest` prop and redraw it.
+  // row a new `drag` prop and redraw it.
   const titleFor = useCommittedEvent((threadId: string) => {
     const thread = threads.find((candidate) => candidate.id === threadId);
     return thread === undefined ? null : threadDisplayTitle(thread);
   });
-  const nestDrag = useNestDrag(titleFor, revealFamily);
-  const nest = isCompactViewport ? undefined : nestDrag.nest;
+  // The pointerup that ends a drag still fires click where it lands; the
+  // guard below keeps that trailing click from folding a group or opening a
+  // row the drag was dropped on.
+  const lastDragEndAt = useRef(0);
+  const onProjectDrop = useCommittedEvent(
+    ({ projectId, overProjectId, edge }: SidebarProjectDrop) => {
+      const args = projectDropReorderArgs(projectId, overProjectId, edge, orderedProjectIds);
+      if (args === null) return;
+      const optimistic = applyProjectMove(orderedProjectIds, projectId, args);
+      setProjectOrderOverride(optimistic);
+      // Settle from the RPC's canonical order too: bb returns its current list
+      // for an unchanged reorder but emits no project-order-changed event.
+      const settle = (order: readonly string[] | null) => {
+        setProjectOrderOverride((current) =>
+          settleProjectOrderOverride(current, optimistic, order),
+        );
+      };
+      void rpc.call("reorderProject", { projectId, ...args }).then(
+        (result) => settle(result.ok ? result.projectIds : null),
+        () => settle(null),
+      );
+    },
+  );
+  const onAnyDragEnd = useCommittedEvent(() => {
+    lastDragEndAt.current = performance.now();
+  });
+  const sidebarDrag = useSidebarDrag({
+    onNestedUnder: revealFamily,
+    onProjectDrop,
+    onAnyDragEnd,
+  });
+  const drag = isCompactViewport ? undefined : sidebarDrag.drag;
   const portalScope = usePortalScopeProps();
   const moveProject = useCommittedEvent(
     (projectId: string, direction: "up" | "down", shelfOrder: readonly string[]) => {
-      const args = projectReorderArgs(projectId, direction, shelfOrder, projectOrder);
+      const args = projectReorderArgs(projectId, direction, shelfOrder, orderedProjectIds);
       // bb republishes project-order-changed, which refetches the sidebar's
       // project list; no plugin publish needed.
       if (args !== null) void rpc.call("reorderProject", { projectId, ...args });
@@ -223,34 +269,44 @@ export function ThreadInbox({
     renderRow: (row: VisibleInboxRow) => React.ReactNode,
   ) => {
     const groupIds = groups.map((group) => group.projectId);
+    // The shelf's sortable list is its groups that bb can reorder, in
+    // rendered order: the personal project and any stale id are out — never
+    // draggable, never a landing spot — while staying put where they render.
+    const sortableIds = isCompactViewport
+      ? []
+      : groupIds.filter((projectId) => orderedProjectIds.includes(projectId));
+    const renderGroup = (group: ProjectGroupRows) => {
+      const key = groupCollapseKey(shelf, group.projectId);
+      const Group = sortableIds.includes(group.projectId) ? SortableProjectGroup : ProjectGroup;
+      return (
+        <Group
+          key={group.projectId}
+          projectId={group.projectId}
+          name={projectNameById.get(group.projectId) ?? "Unknown project"}
+          families={group.families}
+          attention={group.attention}
+          expanded={searching || !isGroupCollapsed(key)}
+          onToggle={() => toggleGroup(key)}
+          onNewThread={onNewThread}
+          {...projectMoveProps(
+            group.projectId,
+            groupIds,
+            orderedProjectIds,
+            isCompactViewport,
+            moveProject,
+          )}
+          isCompactViewport={isCompactViewport}
+          shelf={shelf}
+          dropAllowed={projectDropAllowed(drag, tree, group.projectId)}
+        >
+          {group.rows.map(renderRow)}
+        </Group>
+      );
+    };
     return grouped ? (
-      groups.map((group) => {
-        const key = groupCollapseKey(shelf, group.projectId);
-        return (
-          <ProjectGroup
-            key={group.projectId}
-            projectId={group.projectId}
-            name={projectNameById.get(group.projectId) ?? "Unknown project"}
-            families={group.families}
-            attention={group.attention}
-            expanded={searching || !isGroupCollapsed(key)}
-            onToggle={() => toggleGroup(key)}
-            onNewThread={onNewThread}
-            {...projectMoveProps(
-              group.projectId,
-              groupIds,
-              projectOrder,
-              isCompactViewport,
-              moveProject,
-            )}
-            isCompactViewport={isCompactViewport}
-            shelf={shelf}
-            dropAllowed={projectDropAllowed(nest, tree, group.projectId)}
-          >
-            {group.rows.map(renderRow)}
-          </ProjectGroup>
-        );
-      })
+      <SortableContext id={shelf} items={sortableIds} strategy={verticalListSortingStrategy}>
+        {groups.map(renderGroup)}
+      </SortableContext>
     ) : (
       <ul className="flex flex-col gap-0.5">
         {groups.flatMap((group) => group.rows).map(renderRow)}
@@ -261,6 +317,10 @@ export function ThreadInbox({
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
 
+  // The ghost rides the pointer only for a dragged row; a dragged group
+  // moves itself through the sortable's transform instead.
+  const dragSource = sidebarDrag.drag.source;
+  const dragGhostTitle = dragSource?.kind === "thread" ? titleFor(dragSource.threadId) : null;
   const command = useRowCommands({
     activeThreadId,
     onNavigate,
@@ -271,8 +331,17 @@ export function ThreadInbox({
 
   return (
     <MachineAppearanceProvider localMachineId={settingValues?.localMachineId}>
-      <DndContext {...nestDrag.contextProps}>
-        <div className="flex min-h-0 flex-1 flex-col">
+      <DndContext {...sidebarDrag.contextProps}>
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          onClickCapture={(event) => {
+            // A drag's trailing click must not act on what it lands on.
+            if (performance.now() - lastDragEndAt.current < 200) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+        >
           <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
             <Select value={scope} onValueChange={setScope}>
               {/* Ghost trigger: no border, no filled track — it reads as a label
@@ -377,8 +446,8 @@ export function ThreadInbox({
                           isCompactViewport={isCompactViewport}
                           command={command}
                           now={now}
-                          nest={nest}
-                          dropAllowed={threadDropAllowed(nest, tree, thread.id)}
+                          drag={drag}
+                          dropAllowed={threadDropAllowed(drag, tree, thread.id)}
                         />
                       );
                     })}
@@ -434,7 +503,7 @@ export function ThreadInbox({
         {createPortal(
           <div {...portalScope}>
             <DragOverlay dropAnimation={null}>
-              {nest?.sourceTitle == null ? null : <NestDragGhost title={nest.sourceTitle} />}
+              {dragGhostTitle === null ? null : <NestDragGhost title={dragGhostTitle} />}
             </DragOverlay>
           </div>,
           document.body,
@@ -446,20 +515,22 @@ export function ThreadInbox({
 
 /** The tree's verdict on dropping the dragged row onto `threadId`; false between drags. */
 function threadDropAllowed(
-  nest: NestDragApi | undefined,
+  drag: SidebarDragApi | undefined,
   tree: readonly InboxThreadNode[],
   threadId: string,
 ): boolean {
-  return nest?.sourceId != null && nestDropAllowed(tree, nest.sourceId, threadId);
+  const source = drag?.source;
+  return source?.kind === "thread" && nestDropAllowed(tree, source.threadId, threadId);
 }
 
 /** Whether the dragged row may lift to `projectId`'s top level; false between drags. */
 function projectDropAllowed(
-  nest: NestDragApi | undefined,
+  drag: SidebarDragApi | undefined,
   tree: readonly InboxThreadNode[],
   projectId: string,
 ): boolean {
-  return nest?.sourceId != null && unnestDropAllowed(tree, nest.sourceId, projectId);
+  const source = drag?.source;
+  return source?.kind === "thread" && unnestDropAllowed(tree, source.threadId, projectId);
 }
 
 /** The dragged row's stand-in under the pointer: its title on the accent ground. */

@@ -1,11 +1,25 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { usePortalScopeProps } from "@/lib/portal-scope";
 import { FadingText } from "@/components/inbox/thread-details";
 import { useNestProjectHeader } from "@/hooks/use-nest-drag";
+import { DRAG_KIND } from "@/lib/sidebar-drag";
 import type { InboxShelf } from "@/lib/inbox-tree";
+
+/**
+ * A project group wired into its shelf's sortable list: the header is the
+ * drag handle and the whole group — folded or not — is the item that moves.
+ * `data.kind` marks the payload "project", so the shared drag context's drop
+ * resolver routes it to the reorder path and it can never read as a thread.
+ */
+export function SortableProjectGroup(props: ProjectGroupProps) {
+  const sortable = useSortable({ id: props.projectId, data: { kind: DRAG_KIND.project } });
+  return <ProjectGroup {...props} sortable={sortable} />;
+}
 
 /**
  * One project inside a shelf: a header naming the project, then its rows.
@@ -16,9 +30,11 @@ import type { InboxShelf } from "@/lib/inbox-tree";
  * something in it asks for the user, the total alone otherwise. Hovering the
  * header trades the count for a new-thread button.
  *
- * Right-clicking the header offers "Move up" / "Move down", which reorder the
- * project in bb's own order — the same order every shelf groups by — so the
- * move lands identically under each shelf.
+ * Right-clicking the header offers "Move up" / "Move down", and a sortable
+ * group drags by its header — both reorder the project in bb's own order,
+ * the same order every shelf groups by, so the move lands identically under
+ * each shelf. The menu stays as the keyboard path: the sortable handle is
+ * pointer-only.
  *
  * The header is also the drop target that lifts a nested row back to the top
  * level of its project (see use-nest-drag), lit while a row that may drop
@@ -37,34 +53,23 @@ export function ProjectGroup({
   onMoveDown,
   isCompactViewport,
   dropAllowed,
+  sortable,
   children,
-}: {
-  projectId: string;
-  shelf: InboxShelf;
-  name: string;
-  families: number;
-  attention: number;
-  expanded: boolean;
-  onToggle: () => void;
-  onNewThread: (projectId: string) => void;
-  /** Move handlers, absent where the move cannot run (edge groups, personal). */
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  isCompactViewport: boolean;
-  /** Whether the row being dragged may lift to this project's top level. */
-  dropAllowed: boolean;
-  children: ReactNode;
-}) {
+}: ProjectGroupProps) {
   const drop = useNestProjectHeader(shelf, projectId, dropAllowed);
   const count = attention > 0 ? `${attention} / ${families}` : `${families}`;
   const header = (
     <div
+      ref={drop.setDropRef}
       className={cn(
         "gtd-project-group-header group/pg",
         isCompactViewport && "gtd-project-group-header-touch",
       )}
-      ref={drop.setDropRef}
       data-drop-target={drop.isOver ? "true" : undefined}
+      // The pointer activator only: the sortable keeps keyboard reorder to the
+      // context menu's Move up/down, and a bubbled Space on the toggle must
+      // stay a toggle.
+      onPointerDown={(event) => sortable?.listeners?.onPointerDown?.(event)}
     >
       <button
         type="button"
@@ -102,7 +107,13 @@ export function ProjectGroup({
     </div>
   );
   return (
-    <div className="gtd-project-group" data-project-id={projectId}>
+    <div
+      ref={sortable?.setNodeRef}
+      className="gtd-project-group"
+      data-project-id={projectId}
+      data-dragging={sortable?.isDragging || undefined}
+      style={sortableStyle(sortable)}
+    >
       {onMoveUp === undefined && onMoveDown === undefined ? (
         header
       ) : (
@@ -141,4 +152,32 @@ export function ProjectGroup({
       ) : null}
     </div>
   );
+}
+
+export interface ProjectGroupProps {
+  projectId: string;
+  shelf: InboxShelf;
+  name: string;
+  families: number;
+  attention: number;
+  expanded: boolean;
+  onToggle: () => void;
+  onNewThread: (projectId: string) => void;
+  /** Move handlers, absent where the move cannot run (edge groups, personal). */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  isCompactViewport: boolean;
+  /** Whether the row being dragged may lift to this project's top level. */
+  dropAllowed: boolean;
+  /** The group's sortable wiring; absent on groups bb will not reorder. */
+  sortable?: ReturnType<typeof useSortable>;
+  children: ReactNode;
+}
+
+function sortableStyle(sortable: ProjectGroupProps["sortable"]): CSSProperties | undefined {
+  if (sortable === undefined) return undefined;
+  return {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition,
+  };
 }

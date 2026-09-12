@@ -101,9 +101,11 @@ header shows a **+** that opens the project's new-thread screen. Shelf and
 group headers stay pinned while their rows scroll.
 
 Groups follow bb's project order in every shelf, with your personal project
-last. Right-click a group header for **Move up** and **Move down**: they reorder
-the project in bb itself, so every shelf agrees and bb's own project lists
-follow along.
+last. Drag a group header onto another group to drop its project in that
+slot — or right-click it for **Move up** and **Move down**, the keyboard
+path. Both reorder the project in bb itself, so every shelf agrees and bb's
+own project lists follow along. The personal project's group never drags and
+nothing lands after it.
 
 The shelf still comes first: the same project appears under Next Action and
 under Waiting when it has work in both, and folding it in one shelf leaves it
@@ -209,6 +211,7 @@ the task has not changed.
   menu, drawn as an iOS-style frosted sheet. Menu taps play a haptic on iOS.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Drag a card onto another to nest it, or onto a project header to un-nest it.
+- Drag a project group header onto another group to reorder the project in bb.
 - bb's search, its thread shortcuts, and modifier-click split-open all keep working.
 
 ## Configuration

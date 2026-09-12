@@ -294,6 +294,17 @@
 .gtd-thread-row[data-dragging="true"] {
   opacity: 0.5;
 }
+/* A dragged group rides the pointer on the accent ground a drop target
+   wears, lifted over the siblings the sortable slides aside. */
+.gtd-project-group[data-dragging="true"] {
+  position: relative;
+  z-index: 1;
+}
+.gtd-project-group[data-dragging="true"] > .gtd-project-group-header {
+  background: var(--sidebar-accent);
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
 .gtd-thread-row[data-drop-target="true"],
 .gtd-project-group-header[data-drop-target="true"] {
   background: var(--sidebar-accent);

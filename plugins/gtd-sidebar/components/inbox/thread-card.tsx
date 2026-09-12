@@ -33,7 +33,7 @@ import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeUntilTomorrow } from "@/lib/lifecycle";
 import { useIosLongPress } from "@/hooks/use-ios-long-press";
 import { useCommittedEvent } from "@/hooks/use-committed-event";
-import { useNestRow, type NestDragApi } from "@/hooks/use-nest-drag";
+import { useNestRow, type SidebarDragApi } from "@/hooks/use-nest-drag";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 16;
@@ -64,8 +64,8 @@ interface ThreadCardProps {
   command: DispatchRowCommand;
   /** Quantized clock, so every card in one render agrees on "now". */
   now: number;
-  /** Drag-to-nest state; absent on compact viewports, where there is no drag. */
-  nest?: NestDragApi;
+  /** Sidebar drag state; absent on compact viewports, where there is no drag. */
+  drag?: SidebarDragApi;
   /** Whether the row being dragged may drop here, per the tree's cycle guard. */
   dropAllowed: boolean;
 }
@@ -81,7 +81,7 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
   // the body, so dnd-kit's context churn re-runs this wrapper only: the body
   // sees committed handlers (dnd-kit rebuilds its listeners on every context
   // render) and two booleans.
-  const nestRow = useNestRow(props.thread.id, props.dropAllowed, props.nest === undefined);
+  const nestRow = useNestRow(props.thread.id, props.dropAllowed, props.drag === undefined);
   const { setDragRef, setDropRef } = nestRow;
   const onNestPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
     nestRow.listeners?.onPointerDown?.(event);
@@ -144,7 +144,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   isCompactViewport,
   command,
   now,
-  nest,
+  drag,
   pullRequest,
   isOpenInSplit,
   isFocusedInSplit,
@@ -277,7 +277,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             onSplitPointerDown={onSplitPointerDown}
             onNestPointerDown={onNestPointerDown}
             onNestKeyDown={onNestKeyDown}
-            nestActive={nest?.sourceId != null}
+            nestActive={drag?.source?.kind === "thread"}
             command={command}
           />
           {isCompactViewport ? (

@@ -45,6 +45,15 @@
   project; the backend refuses the same cases. Space, the arrows, and Escape
   drive the same move from the keyboard. bb's drag-to-split keeps every drag
   that leaves the sidebar. Built on dnd-kit. Desktop only.
+- Drag a project group header onto another group in the same shelf to reorder
+  its project: the group lands where it was dropped, the shelves draw the move
+  at once, and bb's own `reorderProject` write makes it real — so every shelf
+  and `bb project list` agree on the new order, and a project with no rows in
+  view is jumped identically from every shelf. The personal project's group
+  never drags and nothing lands after it. The header's **Move up**/**Move
+  down** menu stays as the keyboard path. The drag shares the row-nesting
+  context, discriminated by payload kind, so a group can never read as a
+  thread and a thread can never reorder a project. Desktop only.
 
 ### Patch Changes
 

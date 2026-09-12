@@ -170,7 +170,10 @@ export const gtdSidebarRpcContract = defineRpcContract({
       previousProjectId: z.string().nullable(),
       nextProjectId: z.string().nullable(),
     }),
-    output: z.object({ ok: z.boolean() }),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), projectIds: z.array(z.string()) }),
+      z.object({ ok: z.literal(false) }),
+    ]),
   },
   /**
    * bb's own re-parent, made by dropping one row onto another (nest) or onto
@@ -436,15 +439,22 @@ export default function plugin(bb: BbPluginApi) {
     },
     async reorderProject({ projectId, previousProjectId, nextProjectId }) {
       try {
-        await bb.sdk.projects.reorder({ projectId, previousProjectId, nextProjectId });
+        const projects = await bb.sdk.projects.reorder({
+          projectId,
+          previousProjectId,
+          nextProjectId,
+        });
+        // The response is bb's canonical order even when the write resolves as
+        // unchanged (which emits no project-order-changed event). Returning it
+        // lets the sidebar settle its optimistic order on every success path.
+        return { ok: true as const, projectIds: projects.map((project) => project.id) };
       } catch (error) {
         // bb refuses to move the personal project; a group header never sends
         // it, so a failure here is the host being unreachable or the project
         // gone. The sidebar keeps bb's last order either way.
         bb.log.warn(`reorder project ${projectId} failed: ${String(error)}`);
-        return { ok: false };
+        return { ok: false as const };
       }
-      return { ok: true };
     },
   });
 
