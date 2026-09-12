@@ -18,7 +18,12 @@ Re-read immediately before writing and merge other writers' changes.
       "anchor": { "quote": "The experiment passed.", "prefix": "", "suffix": "" },
       "resolvedAtMs": null,
       "messages": [
-        { "id": "message-agent-1", "author": "agent", "body": "Which run supports this claim?", "createdAtMs": 1789000000000 }
+        {
+          "id": "message-agent-1",
+          "author": "agent",
+          "body": "Which run supports this claim?",
+          "createdAtMs": 1789000000000
+        }
       ]
     }
   ]

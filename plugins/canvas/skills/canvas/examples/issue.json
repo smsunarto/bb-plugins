@@ -1,0 +1,31 @@
+{
+  "title": "`style: GitHub` is rejected as an unknown style #147",
+  "context": "<Row gap=\"sm\">\n  <Pill label=\"Open\" tone=\"success\" />\n  <Pill label=\"bug\" tone=\"danger\" />\n  <Pill label=\"canvas\" />\n  <Pill label=\"good first issue\" />\n</Row>\n\nOpened by scott \u00b7 2 comments",
+  "summary": "The frontmatter style lookup is case sensitive. A canvas that declares `style: GitHub` gets an `unknown-style` diagnostic and renders with the default style. The message suggests `github`, so the parser already knows what the author meant. An editor that capitalizes the first word of a value triggers this on every save.",
+  "sections": [
+    {
+      "title": "Steps to reproduce",
+      "body": "1. Write a canvas whose first three lines are `---`, `style: GitHub`, and `---`.\n2. Run `bb canvas check` on the file.\n3. Open the file beside the chat."
+    },
+    {
+      "title": "Expected",
+      "body": "`bb canvas check` prints a success line that names `style github`, and the canvas renders with the GitHub look. Case should not matter for a value drawn from a fixed list of two names."
+    },
+    {
+      "title": "Actual",
+      "body": "`bb canvas check` prints `unknown style GitHub; did you mean github?` and exits 1. The canvas opens with the default style and a problem card at line 1."
+    },
+    {
+      "title": "Environment",
+      "body": "<Table\n  headers={[\"Key\", \"Value\"]}\n  rows={[\n    [\"bb\", \"0.41.2\"],\n    [\"canvas plugin\", \"0.1.0\"],\n    [\"OS\", \"macOS 26.0\"],\n  ]}\n/>"
+    },
+    {
+      "title": "Relevant code",
+      "body": "<Source path=\"server/parse.ts\">\n```ts\nseen.add(key);\nif (isStyleName(value)) {\n  style = value;\n  continue;\n}\nconst didYouMean = suggestStyleName(value);\nproblems.push({\n  kind: \"diagnostic\",\n  diagnostic: { code: \"unknown-style\", message: `unknown style ${value}`, span },\n});\n```\n</Source>"
+    },
+    {
+      "title": "Acceptance criteria",
+      "body": "<Todos\n  items={[\n    {\n      id: \"repro\",\n      label: \"Reproduce with a canvas that declares style: GitHub\",\n      status: \"completed\",\n    },\n    {\n      id: \"fold\",\n      label: \"Fold the style value to lowercase before the lookup\",\n      status: \"in_progress\",\n    },\n    { id: \"test\", label: \"Add a parse test for a mixed-case style name\", status: \"pending\" },\n  ]}\n/>\n\n<Ask\n  label=\"Start a fix\"\n  prompt=\"Fix smsunarto/bb-plugins#147 (style: GitHub is rejected as an unknown style). Reproduce it with bb canvas check first, then fold the style value to lowercase in server/parse.ts and add a parse test for a mixed-case name.\"\n/>"
+    }
+  ]
+}

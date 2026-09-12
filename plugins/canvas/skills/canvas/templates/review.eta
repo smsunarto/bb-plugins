@@ -1,0 +1,27 @@
+---
+style: github
+---
+
+# <%= it.title %>
+
+<% if (it.context) { %><%= it.context %>
+
+<% } %>**Summary**
+
+<%= it.summary %>
+
+<% if (it.why) { %>**Why**
+
+<%= it.why %>
+
+<% } %><% for (const section of it.sections) { %><% if (section.collapsible) { %><Section title={<%= JSON.stringify(section.title) %>} collapsible={true} defaultOpen={false}>
+
+<%= section.body %>
+
+</Section>
+
+<% } else { %>## <%= section.title %>
+
+<%= section.body %>
+
+<% } %><% } %>

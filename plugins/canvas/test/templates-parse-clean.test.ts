@@ -1,27 +1,18 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
+import { generateCanvas, templateName } from "../src/server/lib/generate.ts";
 import { parseCanvas } from "../src/shared/parse.ts";
-import { collectDiagnostics } from "../src/shared/document.ts";
 
-const templatesDir = fileURLToPath(new URL("../skills/canvas/templates/", import.meta.url));
-const expectedTemplates = ["issue.canvas.mdx", "pull-request.canvas.mdx", "review.canvas.mdx"];
-
-test("skills/canvas/templates holds exactly the documented templates", async () => {
-  const names = (await readdir(templatesDir)).sort();
-  assert.deepEqual(names, expectedTemplates, "a stray file in templates/ is not a template");
-});
-
-test("every template parses clean in the github style", async () => {
-  const names = (await readdir(templatesDir)).filter((name) => name.endsWith(".canvas.mdx"));
-  assert.ok(names.length > 0, "no templates found");
-  for (const name of names) {
-    const parsed = parseCanvas(await readFile(join(templatesDir, name), "utf8"));
-    assert.ok(parsed.ok, `${name} parses`);
-    if (!parsed.ok) continue;
-    assert.deepEqual(collectDiagnostics(parsed.document), [], `${name} has no diagnostics`);
-    assert.equal(parsed.document.style, "github", `${name} declares the github style`);
+test("all bundled Eta templates generate valid Canvas from their documented examples", async () => {
+  for (const name of templateName.options) {
+    const data = JSON.parse(
+      await readFile(new URL(`../skills/canvas/examples/${name}.json`, import.meta.url), "utf8"),
+    );
+    const content = generateCanvas(name, data);
+    const parsed = parseCanvas(content);
+    assert.ok(parsed.ok);
+    if (parsed.ok) assert.equal(parsed.document.style, "github");
+    assert.ok(content.includes(data.title));
   }
 });

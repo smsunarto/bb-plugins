@@ -1,0 +1,17 @@
+---
+style: github
+---
+
+# <%= it.title %>
+
+<% if (it.context) { %><%= it.context %>
+
+<% } %>## Summary
+
+<%= it.summary %>
+
+<% for (const section of it.sections) { %>## <%= section.title %>
+
+<%= section.body %>
+
+<% } %>

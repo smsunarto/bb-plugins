@@ -1,0 +1,29 @@
+---
+style: github
+---
+
+# <%= it.title %>
+
+<% if (it.context) { %><%= it.context %>
+
+<% } %>## Summary
+
+<%= it.summary %>
+
+<% if (it.steps?.length) { %>## Steps to reproduce
+
+<% it.steps.forEach((step, index) => { %><%= index + 1 %>. <%= step %>
+<% }) %>
+<% } %><% if (it.expected) { %>## Expected
+
+<%= it.expected %>
+
+<% } %><% if (it.actual) { %>## Actual
+
+<%= it.actual %>
+
+<% } %><% for (const section of it.sections) { %>## <%= section.title %>
+
+<%= section.body %>
+
+<% } %>
