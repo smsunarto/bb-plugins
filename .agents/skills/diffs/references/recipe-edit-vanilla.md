@@ -11,38 +11,34 @@ editor for each surface that can be edited at the same time.
 ## Edit a standalone diff
 
 ```ts
-import {
-  FileDiff,
-  type DiffLineAnnotation,
-  type FileContents,
-} from '@pierre/diffs';
-import { Editor } from '@pierre/diffs/edit';
+import { FileDiff, type DiffLineAnnotation, type FileContents } from "@pierre/diffs";
+import { Editor } from "@pierre/diffs/edit";
 
 interface ThreadMetadata {
   id: string;
 }
 
-const hostElement = document.querySelector<HTMLElement>('#diff');
-if (hostElement == null) throw new Error('Missing diff host');
+const hostElement = document.querySelector<HTMLElement>("#diff");
+if (hostElement == null) throw new Error("Missing diff host");
 const host: HTMLElement = hostElement;
 
 const oldFile: FileContents = {
-  name: 'src/value.ts',
-  contents: 'export const value = 1;',
+  name: "src/value.ts",
+  contents: "export const value = 1;",
 };
 let newFile: FileContents = {
-  name: 'src/value.ts',
-  contents: 'export const value = 2;',
+  name: "src/value.ts",
+  contents: "export const value = 2;",
 };
 let annotations: DiffLineAnnotation<ThreadMetadata>[] = [
   {
-    side: 'additions',
+    side: "additions",
     lineNumber: 1,
-    metadata: { id: 'value-review' },
+    metadata: { id: "value-review" },
   },
 ];
 const view = new FileDiff<ThreadMetadata>({
-  theme: { light: 'pierre-light', dark: 'pierre-dark' },
+  theme: { light: "pierre-light", dark: "pierre-dark" },
   onEditChange(event) {
     saveDraft(event.file);
   },
@@ -53,11 +49,11 @@ const view = new FileDiff<ThreadMetadata>({
     if (event.lineAnnotations != null) {
       annotations = event.lineAnnotations;
     }
-    return 'accept';
+    return "accept";
   },
   renderAnnotation(annotation) {
-    const element = document.createElement('p');
-    element.textContent = 'Thread ' + annotation.metadata.id;
+    const element = document.createElement("p");
+    element.textContent = "Thread " + annotation.metadata.id;
     return element;
   },
 });
@@ -73,11 +69,7 @@ function render() {
 
 render();
 
-const editor = new Editor<'file-diff', ThreadMetadata>(
-  'file-diff',
-  {},
-  'src/value.ts:draft'
-);
+const editor = new Editor<"file-diff", ThreadMetadata>("file-diff", {}, "src/value.ts:draft");
 let finishEditing: (() => void) | undefined = editor.edit(view);
 
 export function stopEditing() {
@@ -111,13 +103,13 @@ optional and the initial bundle must omit the editor.
 Pass a factory through `CodeViewOptions.createEditor`:
 
 ```ts
-import { CodeView } from '@pierre/diffs';
-import { Editor } from '@pierre/diffs/edit';
+import { CodeView } from "@pierre/diffs";
+import { Editor } from "@pierre/diffs/edit";
 
 export function mountEditableCodeView(root: HTMLElement) {
   const viewer = new CodeView({
     getEditStateKey(item) {
-      return 'draft:' + item.id;
+      return "draft:" + item.id;
     },
     createEditor(editorType, options, editStateKey) {
       return new Editor(editorType, options, editStateKey);
@@ -126,22 +118,22 @@ export function mountEditableCodeView(root: HTMLElement) {
       saveItemDraft(item.id, event.file, event.lineAnnotations);
     },
     onItemEditComplete(event, item, nextItem) {
-      if (item.type !== 'file' || !('file' in event)) return 'reject';
+      if (item.type !== "file" || !("file" in event)) return "reject";
 
       // Re-key only if this item participates in keyed render caching.
-      event.file.cacheKey = item.id + ':v' + nextItem.version;
-      return 'accept';
+      event.file.cacheKey = item.id + ":v" + nextItem.version;
+      return "accept";
     },
   });
 
   viewer.setup(root);
   viewer.setItems([
     {
-      id: 'file:src/value.ts',
-      type: 'file',
+      id: "file:src/value.ts",
+      type: "file",
       file: {
-        name: 'src/value.ts',
-        contents: 'export const value = 1;',
+        name: "src/value.ts",
+        contents: "export const value = 1;",
       },
       edit: true,
       version: 0,

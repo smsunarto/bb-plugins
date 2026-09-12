@@ -14,14 +14,14 @@
 Use `MultiFileDiff` when the app has old and new file contents:
 
 ```tsx
-import { MultiFileDiff } from '@pierre/diffs/react';
+import { MultiFileDiff } from "@pierre/diffs/react";
 
 <MultiFileDiff
-  oldFile={{ name: 'src/value.ts', contents: oldSource }}
-  newFile={{ name: 'src/value.ts', contents: newSource }}
+  oldFile={{ name: "src/value.ts", contents: oldSource }}
+  newFile={{ name: "src/value.ts", contents: newSource }}
   options={{
-    diffStyle: 'split',
-    theme: 'pierre-dark',
+    diffStyle: "split",
+    theme: "pierre-dark",
   }}
 />;
 ```

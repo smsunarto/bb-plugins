@@ -3,19 +3,19 @@
 Wrap React diff surfaces in one provider:
 
 ```tsx
-import { WorkerPoolContextProvider } from '@pierre/diffs/react';
+import { WorkerPoolContextProvider } from "@pierre/diffs/react";
 
 <WorkerPoolContextProvider
   poolOptions={{
     poolSize: 4,
     workerFactory: () =>
-      new Worker(new URL('@pierre/diffs/worker/worker.js', import.meta.url), {
-        type: 'module',
+      new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), {
+        type: "module",
       }),
   }}
   highlighterOptions={{
-    langs: ['typescript', 'tsx'],
-    theme: { light: 'pierre-light', dark: 'pierre-dark' },
+    langs: ["typescript", "tsx"],
+    theme: { light: "pierre-light", dark: "pierre-dark" },
   }}
 >
   {children}

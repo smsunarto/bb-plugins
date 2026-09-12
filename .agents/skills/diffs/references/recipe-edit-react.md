@@ -23,83 +23,73 @@ creation options through `editorOptions` and optional retention through
 `editStateKey`.
 
 ```tsx
-import type { FileContents, FileDiffOptions } from '@pierre/diffs';
+import type { FileContents, FileDiffOptions } from "@pierre/diffs";
 import {
   Editor,
   type EditorChangeEvent,
   type EditorFactory,
   type EditorOptions,
   type FileDiffEditCompleteEvent,
-} from '@pierre/diffs/edit';
-import { EditProvider, MultiFileDiff, Virtualizer } from '@pierre/diffs/react';
-import { useMemo, useRef, useState } from 'react';
+} from "@pierre/diffs/edit";
+import { EditProvider, MultiFileDiff, Virtualizer } from "@pierre/diffs/react";
+import { useMemo, useRef, useState } from "react";
 
 const oldFile: FileContents = {
-  name: 'src/value.ts',
-  contents: 'export const value = 1;',
+  name: "src/value.ts",
+  contents: "export const value = 1;",
 };
 const initialNewFile: FileContents = {
-  name: 'src/value.ts',
-  contents: 'export const value = 2;',
+  name: "src/value.ts",
+  contents: "export const value = 2;",
 };
 const diffOptions: FileDiffOptions<undefined, undefined> = {
-  theme: { light: 'pierre-light', dark: 'pierre-dark' },
-  diffStyle: 'split',
+  theme: { light: "pierre-light", dark: "pierre-dark" },
+  diffStyle: "split",
 };
 
 const createEditor: EditorFactory<undefined, undefined> = (
   editorType,
   options,
-  editStateKey?: string
+  editStateKey?: string,
 ) => new Editor(editorType, options, editStateKey);
 
 export function EditableDiff() {
   const [edit, setEdit] = useState(false);
   const [newFile, setNewFile] = useState(initialNewFile);
-  const editorRef = useRef<Editor<'file-diff'> | null>(null);
-  const editorOptions = useMemo<
-    EditorOptions<'file-diff', undefined, undefined>
-  >(
+  const editorRef = useRef<Editor<"file-diff"> | null>(null);
+  const editorOptions = useMemo<EditorOptions<"file-diff", undefined, undefined>>(
     () => ({
       onAttach(editor) {
         editorRef.current = editor;
       },
     }),
-    []
+    [],
   );
 
   function toggleEdit() {
     setEdit((value) => !value);
   }
 
-  function handleEditChange(
-    event: EditorChangeEvent<'file-diff', undefined, undefined>
-  ) {
+  function handleEditChange(event: EditorChangeEvent<"file-diff", undefined, undefined>) {
     saveDraft(event.file);
   }
 
-  function handleEditComplete(
-    event: FileDiffEditCompleteEvent<undefined, undefined>
-  ) {
+  function handleEditComplete(event: FileDiffEditCompleteEvent<undefined, undefined>) {
     if (event.newFile != null) {
       setNewFile(event.newFile);
     }
-    return 'accept' as const;
+    return "accept" as const;
   }
 
   return (
     <EditProvider createEditor={createEditor}>
       <button type="button" onClick={toggleEdit}>
-        {edit ? 'Finish edit' : 'Edit'}
+        {edit ? "Finish edit" : "Edit"}
       </button>
-      <button
-        type="button"
-        disabled={!edit}
-        onClick={() => editorRef.current?.undo()}
-      >
+      <button type="button" disabled={!edit} onClick={() => editorRef.current?.undo()}>
         Undo
       </button>
-      <Virtualizer style={{ maxHeight: 480, overflow: 'auto' }}>
+      <Virtualizer style={{ maxHeight: 480, overflow: "auto" }}>
         <MultiFileDiff
           oldFile={oldFile}
           newFile={newFile}

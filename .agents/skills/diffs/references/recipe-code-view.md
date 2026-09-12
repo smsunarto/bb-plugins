@@ -36,25 +36,21 @@ item that it must update.
 ## Use controlled React state
 
 ```tsx
-import {
-  parseDiffFromFile,
-  type CodeViewItem,
-  type CodeViewLineSelection,
-} from '@pierre/diffs';
-import { CodeView, type CodeViewHandle } from '@pierre/diffs/react';
-import { useRef, useState } from 'react';
+import { parseDiffFromFile, type CodeViewItem, type CodeViewLineSelection } from "@pierre/diffs";
+import { CodeView, type CodeViewHandle } from "@pierre/diffs/react";
+import { useRef, useState } from "react";
 
 const oldFile = {
-  name: 'src/value.ts',
-  contents: 'export const value = 1;',
+  name: "src/value.ts",
+  contents: "export const value = 1;",
 };
 const newFile = {
-  name: 'src/value.ts',
-  contents: 'export const value = 2;',
+  name: "src/value.ts",
+  contents: "export const value = 2;",
 };
-const codeViewStyle = { height: 600, overflow: 'auto' } as const;
+const codeViewStyle = { height: 600, overflow: "auto" } as const;
 const codeViewOptions = {
-  theme: { light: 'pierre-light', dark: 'pierre-dark' },
+  theme: { light: "pierre-light", dark: "pierre-dark" },
   stickyHeaders: true,
   enableLineSelection: true,
   layout: { paddingTop: 16, paddingBottom: 16, gap: 12 },
@@ -62,20 +58,18 @@ const codeViewOptions = {
 
 export function ReviewSurface() {
   const viewerRef = useRef<CodeViewHandle<undefined, undefined> | null>(null);
-  const [selection, setSelection] = useState<CodeViewLineSelection | null>(
-    null
-  );
+  const [selection, setSelection] = useState<CodeViewLineSelection | null>(null);
   const [items, setItems] = useState<CodeViewItem[]>(() => [
     {
-      id: 'diff:src/value.ts',
-      type: 'diff',
+      id: "diff:src/value.ts",
+      type: "diff",
       fileDiff: parseDiffFromFile(oldFile, newFile),
       version: 0,
     },
     {
-      id: 'file:README.md',
-      type: 'file',
-      file: { name: 'README.md', contents: '# Review notes' },
+      id: "file:README.md",
+      type: "file",
+      file: { name: "README.md", contents: "# Review notes" },
       version: 0,
     },
   ]);
@@ -83,14 +77,14 @@ export function ReviewSurface() {
   function toggleDiff() {
     setItems((current) =>
       current.map((item) =>
-        item.id === 'diff:src/value.ts'
+        item.id === "diff:src/value.ts"
           ? {
               ...item,
               collapsed: !item.collapsed,
               version: (item.version ?? 0) + 1,
             }
-          : item
-      )
+          : item,
+      ),
     );
   }
 
@@ -103,11 +97,11 @@ export function ReviewSurface() {
         type="button"
         onClick={() =>
           viewerRef.current?.scrollTo({
-            type: 'line',
-            id: 'diff:src/value.ts',
+            type: "line",
+            id: "diff:src/value.ts",
             lineNumber: 1,
-            side: 'additions',
-            align: 'center',
+            side: "additions",
+            align: "center",
           })
         }
       >
@@ -134,36 +128,36 @@ call `addItems`, `getItem`, `updateItem`, `updateItemId`, or `scrollTo`.
 In vanilla JavaScript, configure and populate the instance directly:
 
 ```ts
-import { CodeView, parseDiffFromFile } from '@pierre/diffs';
+import { CodeView, parseDiffFromFile } from "@pierre/diffs";
 
-const root = document.querySelector<HTMLElement>('#review');
-if (root == null) throw new Error('Missing review host');
+const root = document.querySelector<HTMLElement>("#review");
+if (root == null) throw new Error("Missing review host");
 
 const oldFile = {
-  name: 'src/value.ts',
-  contents: 'export const value = 1;',
+  name: "src/value.ts",
+  contents: "export const value = 1;",
 };
 const newFile = {
-  name: 'src/value.ts',
-  contents: 'export const value = 2;',
+  name: "src/value.ts",
+  contents: "export const value = 2;",
 };
 
 const viewer = new CodeView({
-  theme: { light: 'pierre-light', dark: 'pierre-dark' },
+  theme: { light: "pierre-light", dark: "pierre-dark" },
   stickyHeaders: true,
   enableLineSelection: true,
   onSelectedLinesChange(selection) {
-    console.log('selected lines', selection);
+    console.log("selected lines", selection);
   },
 });
 
-root.style.height = '600px';
-root.style.overflow = 'auto';
+root.style.height = "600px";
+root.style.overflow = "auto";
 viewer.setup(root);
 viewer.setItems([
   {
-    id: 'diff:src/value.ts',
-    type: 'diff',
+    id: "diff:src/value.ts",
+    type: "diff",
     fileDiff: parseDiffFromFile(oldFile, newFile),
     version: 0,
   },
@@ -171,19 +165,19 @@ viewer.setItems([
 
 viewer.addItems([
   {
-    id: 'file:README.md',
-    type: 'file',
-    file: { name: 'README.md', contents: '# Review notes' },
+    id: "file:README.md",
+    type: "file",
+    file: { name: "README.md", contents: "# Review notes" },
     version: 0,
   },
 ]);
 viewer.scrollTo({
-  type: 'item',
-  id: 'diff:src/value.ts',
-  align: 'start',
+  type: "item",
+  id: "diff:src/value.ts",
+  align: "start",
 });
 
-const item = viewer.getItem('diff:src/value.ts');
+const item = viewer.getItem("diff:src/value.ts");
 if (item != null) {
   viewer.updateItem({
     ...item,

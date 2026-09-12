@@ -14,19 +14,19 @@
 Parse the files, create the view, and render it into a host:
 
 ```ts
-import { FileDiff, parseDiffFromFile } from '@pierre/diffs';
+import { FileDiff, parseDiffFromFile } from "@pierre/diffs";
 
-const host = document.querySelector<HTMLElement>('#diff');
-if (host == null) throw new Error('Missing diff host');
+const host = document.querySelector<HTMLElement>("#diff");
+if (host == null) throw new Error("Missing diff host");
 
 const fileDiff = parseDiffFromFile(
-  { name: 'src/value.ts', contents: oldSource },
-  { name: 'src/value.ts', contents: newSource }
+  { name: "src/value.ts", contents: oldSource },
+  { name: "src/value.ts", contents: newSource },
 );
 
 const view = new FileDiff({
-  diffStyle: 'split',
-  theme: 'pierre-dark',
+  diffStyle: "split",
+  theme: "pierre-dark",
 });
 
 view.render({ fileContainer: host, fileDiff });
