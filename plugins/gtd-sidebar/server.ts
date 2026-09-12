@@ -312,8 +312,6 @@ export default function plugin(bb: BbPluginApi) {
         bb.log.warn(`unarchive failed for thread ${threadId}: ${String(error)}`);
         return { ok: false };
       }
-      // bb has no unarchive event, so the shelf learns the row is gone here.
-      bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
       return { ok: true };
     },
     // Synchronous SQLite writes: two windows racing on one thread still land
@@ -347,11 +345,19 @@ export default function plugin(bb: BbPluginApi) {
   });
 
   // Settle is bb's archive, made through the host action on the frontend, so
-  // the shelf hears about it from bb's event rather than from an RPC here.
-  // Cascade archives fire this once per child, and every publish is cheap.
-  bb.events.on("thread.archived", ({ thread }) => {
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: thread.id });
-  });
+  // the shelves hear about it from bb's change feed rather than an RPC here.
+  // `archived-changed` covers archive and unarchive both and fires per
+  // thread — a cascade archive republishes once per child.
+  bb.onDispose(
+    bb.sdk.subscribe({
+      event: "thread:changed",
+      callback: (event) => {
+        if (event.id !== undefined && event.changes.includes("archived-changed")) {
+          bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
+        }
+      },
+    }),
+  );
 
   subscribeToThreadNaming(bb, threadNamer);
 
