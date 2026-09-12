@@ -11,6 +11,9 @@ The preview sits immediately after that turn's final assistant response.
 1. Wait for **Last turn**. Verify its file count and added/removed counts against
    the recorded patch.
 2. Expand a file and check that its unified diff contains the expected change.
+   For Unity assets, verify named objects, components, and Before/After values.
+   Toggle Raw YAML and Object view, then collapse and reopen the file.
+   A workspace file that no longer matches the recorded patch must keep its raw diff.
    Exercise **Expand all** and **Collapse all** with a fixture containing several files.
 3. Complete a later turn without file edits. The previous preview must disappear.
    A later turn with edits must replace it with that turn's changes.

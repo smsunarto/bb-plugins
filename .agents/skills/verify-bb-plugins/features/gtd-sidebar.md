@@ -6,6 +6,7 @@
 - Pinned, Next Action, Waiting, Snoozed, and Settled shelves.
 - Project and machine scope selection.
 - Pinned, Next Action, and Snoozed families sort by latest attention. Waiting sorts by latest update, and Settled by settlement time. Active children can raise their family in the list.
+- Project groups inside every shelf once two projects are in view: a header button named `<project> project` folds the group (`<project> project (n)` or `(needs / total)` while folded), and a hover-only `New thread in <project>` button opens the project. Shelf and group headers are sticky. No headers with a single project.
 
 ## How to get to it (user POV)
 
@@ -34,3 +35,5 @@ Capture the selected setting. Then return to the main surface and capture the gr
 - `launch` resets plugin settings before the next run.
 - The generic fixture can expose only Next Action. Use a purpose-built fixture to prove every shelf.
 - Shelves render only when matching threads exist. Do not report a missing empty shelf as a product gap.
+- `bb thread spawn --project <id> --provider codex --title <t> --prompt hello --send-at 7d` creates an idle Next Action thread without running an agent. Two projects are needed before any group header renders.
+- The row's Snooze button sits under the row's full-bleed anchor. Trigger it with a `pointerdown` PointerEvent through `eval`, or use the row's context menu.
