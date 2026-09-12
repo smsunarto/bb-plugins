@@ -118,8 +118,10 @@ stays in bb's archive.
 
 ### Child threads
 
-A flat list has nowhere to nest a child, so a child is hidden while its parent is on
-screen.
+A child sits under its parent with a disclosure chevron. Folding a family uses bb's
+own `sidebar.collapsedThreads` preference, so a family folded here is folded in bb's
+built-in sidebar too, and the fold survives a reload. Folded project groups stay
+session state.
 
 ### Thread names
 
