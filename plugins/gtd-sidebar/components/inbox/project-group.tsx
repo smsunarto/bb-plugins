@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
+import { usePortalScopeProps } from "@/lib/portal-scope";
 import { FadingText } from "@/components/inbox/thread-details";
 
 /**
@@ -13,7 +15,9 @@ import { FadingText } from "@/components/inbox/thread-details";
  * header trades the count for a new-thread button.
  *
  * The header is sticky under its shelf header, so a long group keeps its name
- * in view while its rows scroll.
+ * in view while its rows scroll. Right-clicking it offers "Move up" / "Move
+ * down", which reorder the project in bb's own order — the same order every
+ * shelf groups by — so the move lands identically under each shelf.
  */
 export function ProjectGroup({
   projectId,
@@ -23,6 +27,8 @@ export function ProjectGroup({
   expanded,
   onToggle,
   onNewThread,
+  onMoveUp,
+  onMoveDown,
   isCompactViewport,
   children,
 }: {
@@ -33,52 +39,90 @@ export function ProjectGroup({
   expanded: boolean;
   onToggle: () => void;
   onNewThread: (projectId: string) => void;
+  /** Move handlers, absent where the move cannot run (edge groups, personal). */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   isCompactViewport: boolean;
   children: ReactNode;
 }) {
   const count = attention > 0 ? `${attention} / ${families}` : `${families}`;
-  return (
-    <div className="gtd-project-group" data-project-id={projectId}>
-      <div
-        className={cn(
-          "gtd-project-group-header group/pg",
-          isCompactViewport && "gtd-project-group-header-touch",
-        )}
+  const header = (
+    <div
+      className={cn(
+        "gtd-project-group-header group/pg",
+        isCompactViewport && "gtd-project-group-header-touch",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-label={`${name} project${expanded ? "" : ` (${count})`}`}
+        className="gtd-project-group-toggle"
       >
+        <span className="gtd-disclosure gtd-project-group-chevron">
+          <Icon
+            name="ChevronDown"
+            className={cn("size-3 transition-transform", !expanded && "-rotate-90")}
+          />
+        </span>
+        <FadingText text={name} className="gtd-project-group-name" />
+        {expanded ? null : (
+          <span
+            className={cn("gtd-project-group-count", attention > 0 && "gtd-project-group-attn")}
+          >
+            {count}
+          </span>
+        )}
+      </button>
+      {isCompactViewport ? null : (
         <button
           type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-label={`${name} project${expanded ? "" : ` (${count})`}`}
-          className="gtd-project-group-toggle"
+          aria-label={`New thread in ${name}`}
+          title={`New thread in ${name}`}
+          onClick={() => onNewThread(projectId)}
+          className="gtd-project-group-new"
         >
-          <span className="gtd-disclosure gtd-project-group-chevron">
-            <Icon
-              name="ChevronDown"
-              className={cn("size-3 transition-transform", !expanded && "-rotate-90")}
-            />
-          </span>
-          <FadingText text={name} className="gtd-project-group-name" />
-          {expanded ? null : (
-            <span
-              className={cn("gtd-project-group-count", attention > 0 && "gtd-project-group-attn")}
-            >
-              {count}
-            </span>
-          )}
+          <Icon name="Plus" className="size-3" />
         </button>
-        {isCompactViewport ? null : (
-          <button
-            type="button"
-            aria-label={`New thread in ${name}`}
-            title={`New thread in ${name}`}
-            onClick={() => onNewThread(projectId)}
-            className="gtd-project-group-new"
-          >
-            <Icon name="Plus" className="size-3" />
-          </button>
-        )}
-      </div>
+      )}
+    </div>
+  );
+  return (
+    <div className="gtd-project-group" data-project-id={projectId}>
+      {onMoveUp === undefined && onMoveDown === undefined ? (
+        header
+      ) : (
+        <ContextMenu.Root>
+          <ContextMenu.Trigger asChild>{header}</ContextMenu.Trigger>
+          <ContextMenu.Portal>
+            <ContextMenu.Content
+              {...usePortalScopeProps()}
+              aria-label={`${name} project actions`}
+              className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              {onMoveUp === undefined ? null : (
+                <ContextMenu.Item
+                  onSelect={onMoveUp}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+                >
+                  <Icon name="ChevronUp" className="size-4 shrink-0" />
+                  Move up
+                </ContextMenu.Item>
+              )}
+              {onMoveDown === undefined ? null : (
+                <ContextMenu.Item
+                  onSelect={onMoveDown}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+                >
+                  <Icon name="ChevronDown" className="size-4 shrink-0" />
+                  Move down
+                </ContextMenu.Item>
+              )}
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        </ContextMenu.Root>
+      )}
       {expanded ? (
         <ul className="gtd-project-group-rows flex flex-col gap-0.5">{children}</ul>
       ) : null}

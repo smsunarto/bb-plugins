@@ -38,6 +38,7 @@ import {
 import {
   groupCollapseKey,
   groupRowsByProject,
+  projectReorderArgs,
   shouldGroupByProject,
   type ProjectGroup as ProjectGroupRows,
 } from "@/lib/project-groups";
@@ -108,6 +109,14 @@ export function ThreadInbox({
     () => new Set(projects.filter((project) => project.isPersonal).map((project) => project.id)),
     [projects],
   );
+  // bb's project order — the same sortKey order `bb project list` reports —
+  // with the personal project left out: it trails every shelf and bb refuses
+  // to reorder it, so it is never a move anchor.
+  const projectOrder = useMemo(
+    () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
+    [projects],
+  );
+
   const { shelves, toggleThread } = useInboxTree(
     threads,
     lifecycle,
@@ -123,7 +132,9 @@ export function ThreadInbox({
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   const groupedShelves = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
-      groupRowsByProject(shelves[shelf], (projectId) => personalProjectIds.has(projectId));
+      groupRowsByProject(shelves[shelf], projectOrder, (projectId) =>
+        personalProjectIds.has(projectId),
+      );
     return {
       pinned: groupsFor("pinned"),
       nextAction: groupsFor("nextAction"),
@@ -131,7 +142,7 @@ export function ThreadInbox({
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
-  }, [shelves, personalProjectIds]);
+  }, [shelves, projectOrder, personalProjectIds]);
   const { pinned, nextAction, waiting } = groupedShelves;
   const activeShelves = [
     ["pinned", "Pinned", pinned],
@@ -163,6 +174,15 @@ export function ThreadInbox({
     navigate.toProject(projectId);
     onNavigate();
   });
+  const rpc = useRpc<typeof gtdSidebarRpcContract>();
+  const moveProject = useCommittedEvent(
+    (projectId: string, direction: "up" | "down", shelfOrder: readonly string[]) => {
+      const args = projectReorderArgs(projectId, direction, shelfOrder, projectOrder);
+      // bb republishes project-order-changed, which refetches the sidebar's
+      // project list; no plugin publish needed.
+      if (args !== null) void rpc.call("reorderProject", { projectId, ...args });
+    },
+  );
   const shelfStyle = {
     "--gtd-shelf-head-h": isCompactViewport ? "40px" : "24px",
   } as CSSProperties;
@@ -170,8 +190,9 @@ export function ThreadInbox({
     shelf: InboxShelf,
     groups: readonly ProjectGroupRows[],
     renderRow: (row: VisibleInboxRow) => React.ReactNode,
-  ) =>
-    grouped ? (
+  ) => {
+    const groupIds = groups.map((group) => group.projectId);
+    return grouped ? (
       groups.map((group) => {
         const key = groupCollapseKey(shelf, group.projectId);
         return (
@@ -184,6 +205,13 @@ export function ThreadInbox({
             expanded={searching || !isGroupCollapsed(key)}
             onToggle={() => toggleGroup(key)}
             onNewThread={onNewThread}
+            {...projectMoveProps(
+              group.projectId,
+              groupIds,
+              projectOrder,
+              isCompactViewport,
+              moveProject,
+            )}
             isCompactViewport={isCompactViewport}
           >
             {group.rows.map(renderRow)}
@@ -195,6 +223,7 @@ export function ThreadInbox({
         {groups.flatMap((group) => group.rows).map(renderRow)}
       </ul>
     );
+  };
 
   const scopeLabel =
     scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
@@ -362,6 +391,30 @@ export function ThreadInbox({
       </div>
     </MachineAppearanceProvider>
   );
+}
+
+/**
+ * The group header's Move up/down handlers, absent where the move cannot run:
+ * edge groups, the personal project, and compact viewports (no right click).
+ * Visibility is decided from this render's orders; the click itself recomputes
+ * against the latest so a stale anchor never writes.
+ */
+function projectMoveProps(
+  projectId: string,
+  shelfOrder: readonly string[],
+  projectOrder: readonly string[],
+  isCompactViewport: boolean,
+  moveProject: (projectId: string, direction: "up" | "down", shelfOrder: readonly string[]) => void,
+): { onMoveUp?: () => void; onMoveDown?: () => void } {
+  if (isCompactViewport) return {};
+  const props: { onMoveUp?: () => void; onMoveDown?: () => void } = {};
+  if (projectReorderArgs(projectId, "up", shelfOrder, projectOrder) !== null) {
+    props.onMoveUp = () => moveProject(projectId, "up", shelfOrder);
+  }
+  if (projectReorderArgs(projectId, "down", shelfOrder, projectOrder) !== null) {
+    props.onMoveDown = () => moveProject(projectId, "down", shelfOrder);
+  }
+  return props;
 }
 
 function useRowCommands({

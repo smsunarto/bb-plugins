@@ -98,6 +98,11 @@ something inside asks for you, and the total alone otherwise. Hovering the
 header shows a **+** that opens the project's new-thread screen. Shelf and
 group headers stay pinned while their rows scroll.
 
+Groups follow bb's project order in every shelf, with your personal project
+last. Right-click a group header for **Move up** and **Move down**: they reorder
+the project in bb itself, so every shelf agrees and bb's own project lists
+follow along.
+
 The shelf still comes first: the same project appears under Next Action and
 under Waiting when it has work in both, and folding it in one shelf leaves it
 open in the other. A subthread stays under its parent even when it belongs to another

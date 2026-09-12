@@ -17,6 +17,10 @@
   while it stays: a turn starting, a read, a rename, or subthread activity no
   longer reshuffles the list. Snoozed sorts by when you snoozed it and Settled
   by when it settled, both newest first.
+- Project groups follow bb's own project order in every shelf, with the personal
+  project last, so the same project sits in the same slot everywhere. A group
+  header's right-click menu gains **Move up** and **Move down**, which reorder
+  the project in bb itself rather than in the plugin.
 - Settle is now bb's archive. The check button, the card menu, and a new
   **GTD Sidebar: settle thread** row in bb's quick palette archive the thread, and
   bb's Undo toast brings it back. The Settled shelf is now a view of bb's archive:

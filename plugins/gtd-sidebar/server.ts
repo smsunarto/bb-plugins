@@ -115,6 +115,20 @@ export const gtdSidebarRpcContract = defineRpcContract({
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
   /** bb's unarchive. The thread comes back through the host's own view. */
   unsettle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
+  /**
+   * bb's own project reorder, made from a group header. `previousProjectId`
+   * and `nextProjectId` are the moved project's new neighbours in bb's order;
+   * bb republishes `project-order-changed`, which refetches the sidebar's
+   * project list for every window.
+   */
+  reorderProject: {
+    input: z.object({
+      projectId: z.string().trim().min(1),
+      previousProjectId: z.string().nullable(),
+      nextProjectId: z.string().nullable(),
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
 });
 
 /** Channel the frontend re-reads on. */
@@ -310,6 +324,18 @@ export default function plugin(bb: BbPluginApi) {
     },
     unsnooze({ threadId }) {
       clear(threadId);
+      return { ok: true };
+    },
+    async reorderProject({ projectId, previousProjectId, nextProjectId }) {
+      try {
+        await bb.sdk.projects.reorder({ projectId, previousProjectId, nextProjectId });
+      } catch (error) {
+        // bb refuses to move the personal project; a group header never sends
+        // it, so a failure here is the host being unreachable or the project
+        // gone. The sidebar keeps bb's last order either way.
+        bb.log.warn(`reorder project ${projectId} failed: ${String(error)}`);
+        return { ok: false };
+      }
       return { ok: true };
     },
   });
