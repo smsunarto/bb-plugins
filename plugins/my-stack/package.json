@@ -36,7 +36,7 @@
     "@bb-kit/core": "0.1.0"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.48",
+    "@get-bb/plugin-sdk": "0.4.84",
     "@types/node": "^22.0.0",
     "tsx": "4.23.12",
     "typescript": "^6.0.0"
