@@ -11,8 +11,8 @@ below when done. Plans are self-contained; none depends on this README.
 
 ## Execution order & status
 
-| Plan | Title                                                                             | Severity | Effort | Depends on | Status |
-| ---- | --------------------------------------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| Plan | Title                                                                             | Severity | Effort | Depends on | Status                    |
+| ---- | --------------------------------------------------------------------------------- | -------- | ------ | ---------- | ------------------------- |
 | 002  | Animate every pointer-initiated open, close and switch; slide displaced neighbors | HIGH     | M      | —          | DONE (applied 2026-09-10) |
 | 001  | Morph the avatar circle into the card and hide card content while it is squashed  | HIGH     | S      | —          | DONE (applied 2026-09-10) |
 | 003  | Give the draft composer a 160 ms entrance                                         | LOW      | S      | —          | DONE (applied 2026-09-10) |
