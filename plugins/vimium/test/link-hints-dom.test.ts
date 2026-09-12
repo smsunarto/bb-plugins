@@ -959,9 +959,7 @@ describe("mountLinkHints", () => {
       '<div data-sidebar-thread-focused="true"><a data-sidebar-thread-shortcut-target data-sidebar-thread-id="child" href="#">Child</a><button id="child-settle" aria-label="Settle"></button></div>';
     const settled = mock<(id: string) => void>(() => {});
     for (const id of ["parent", "child"]) {
-      document
-        .getElementById(`${id}-settle`)!
-        .addEventListener("pointerdown", () => settled(id));
+      document.getElementById(`${id}-settle`)!.addEventListener("pointerdown", () => settled(id));
     }
     window.history.pushState({}, "", "/threads/parent");
     expect(pressKey("e")).toBe(false);
