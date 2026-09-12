@@ -21,7 +21,6 @@
     "ship-it",
     "sync",
     "rich-embeds",
-    "diffs",
     "code-citations",
     "inline-visualizations"
   ],
@@ -68,12 +67,12 @@
   "dependencies": {
     "@bb-kit/core": "0.1.0",
     "lenis": "1.3.26",
-    "yaml": "^2.9.0",
     "zod": "^4.4.3",
+    "@bb-plugins/unity-inspector": "workspace:*",
     "@bb-plugins/codex-inference": "workspace:*"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.48",
+    "@get-bb/plugin-sdk": "0.4.84",
     "@pierre/diffs": "^1.2.9",
     "@testing-library/react": "16.3.2",
     "@types/jsdom": "21.1.7",

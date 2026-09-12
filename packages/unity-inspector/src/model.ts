@@ -30,3 +30,28 @@ export const unityDiffSchema = z.strictObject({
 
 export type UnityDiff = z.output<typeof unityDiffSchema>;
 export const isUnityAsset = (path: string) => /\.(prefab|unity)$/i.test(path);
+
+const citationPropertySchema = z.strictObject({
+  path: z.string(),
+  label: z.string().optional(),
+  target: z.string().optional(),
+  value: z.string(),
+});
+export const unityCitationSchema = z.strictObject({
+  groups: z.array(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      hierarchy: z.string(),
+      components: z.array(
+        z.strictObject({
+          id: z.string(),
+          type: z.string(),
+          properties: z.array(citationPropertySchema),
+        }),
+      ),
+    }),
+  ),
+  propertyCount: z.number().int().nonnegative(),
+});
+export type UnityCitation = z.output<typeof unityCitationSchema>;

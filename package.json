@@ -52,8 +52,8 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "typecheck": "tsc -p tsconfig.json && bun run build:framework && bun run --filter '@bb-kit/*' --parallel typecheck && bun run --filter '@smsunarto/bb-plugin-*' --parallel typecheck",
-    "test": "bun run build:framework && bun test scripts/*.test.ts && bun run --filter '@bb-kit/*' --parallel test && bun run --filter '@smsunarto/bb-plugin-*' --parallel test",
+    "typecheck": "tsc -p tsconfig.json && bun run build:framework && bun run --filter '@bb-kit/*' --parallel typecheck && bun run --filter '@smsunarto/bb-plugin-*' --parallel typecheck && bun run --filter '@bb-plugins/*' --parallel typecheck",
+    "test": "bun run build:framework && bun test scripts/*.test.ts && bun run --filter '@bb-kit/*' --parallel test && bun run --filter '@smsunarto/bb-plugin-*' --parallel test && bun run --filter '@bb-plugins/*' --parallel test",
     "package:check": "bun scripts/package-check.ts",
     "clean": "bun run --filter '@bb-kit/*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean",
     "doctor": "npx react-doctor@latest"

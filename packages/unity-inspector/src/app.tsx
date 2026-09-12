@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
-import type { UnityDiff } from "../shared/unity-diff.ts";
-import "./unity-diff.css";
+import type { UnityDiff, UnityCitation } from "./model.ts";
+import "./app.css";
 
 const labels: Record<string, string> = {
   m_LocalPosition: "Position",
@@ -30,8 +30,12 @@ function ChangeBadge({ status }: { status: "added" | "removed" | "modified" }) {
 }
 function ComponentCard({
   component,
+  citation,
 }: {
-  component: UnityDiff["groups"][number]["components"][number];
+  component:
+    | UnityDiff["groups"][number]["components"][number]
+    | UnityCitation["groups"][number]["components"][number];
+  citation: boolean;
 }) {
   return (
     <details className="unity-diff-component" open>
@@ -40,7 +44,7 @@ function ComponentCard({
         <span className="unity-diff-id" title="Unity file ID">
           #{component.id}
         </span>
-        <ChangeBadge status={component.status} />
+        {"status" in component ? <ChangeBadge status={component.status} /> : null}
       </summary>
       {component.properties.length ? (
         <div className="unity-diff-table-wrap">
@@ -48,8 +52,14 @@ function ComponentCard({
             <thead>
               <tr>
                 <th scope="col">Property</th>
-                <th scope="col">Before</th>
-                <th scope="col">After</th>
+                {citation ? (
+                  <th scope="col">Value</th>
+                ) : (
+                  <>
+                    <th scope="col">Before</th>
+                    <th scope="col">After</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -61,12 +71,20 @@ function ComponentCard({
                       <span className="unity-diff-property-target">#{property.target}</span>
                     ) : null}
                   </th>
-                  <td className="unity-diff-before">
-                    <code>{property.before ?? "Not present"}</code>
-                  </td>
-                  <td className="unity-diff-after">
-                    <code>{property.after ?? "Not present"}</code>
-                  </td>
+                  {"value" in property ? (
+                    <td>
+                      <code>{property.value}</code>
+                    </td>
+                  ) : (
+                    <>
+                      <td className="unity-diff-before">
+                        <code>{property.before ?? "Not present"}</code>
+                      </td>
+                      <td className="unity-diff-after">
+                        <code>{property.after ?? "Not present"}</code>
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -79,22 +97,27 @@ function ComponentCard({
   );
 }
 
-export function UnityDiffView({
+function UnityInspector({
   diff,
   path,
   raw,
+  citation = false,
 }: {
-  diff: UnityDiff;
+  diff: UnityDiff | UnityCitation;
+  citation?: boolean;
   path: string;
   raw: ReactNode;
 }) {
   const [yaml, setYaml] = useState(false);
   const componentCount = diff.groups.reduce((sum, group) => sum + group.components.length, 0);
   return (
-    <section className="unity-diff" aria-label={`Unity changes in ${path}`}>
+    <section
+      className="unity-diff"
+      aria-label={`Unity ${citation ? "properties" : "changes"} in ${path}`}
+    >
       <div className="unity-diff-toolbar">
         <div className="unity-diff-title">
-          <strong>{/\.unity$/i.test(path) ? "Scene changes" : "Prefab changes"}</strong>
+          <strong>{`${/\.unity$/i.test(path) ? "Scene" : "Prefab"} ${citation ? "properties" : "changes"}`}</strong>
           <span>
             {diff.groups.length} {diff.groups.length === 1 ? "object" : "objects"} ·{" "}
             {componentCount} {componentCount === 1 ? "component" : "components"} ·{" "}
@@ -127,11 +150,11 @@ export function UnityDiffView({
                   ) : null}
                   <strong>{group.name}</strong>
                 </span>
-                <ChangeBadge status={group.status} />
+                {"status" in group ? <ChangeBadge status={group.status} /> : null}
               </summary>
               <div className="unity-diff-components">
                 {group.components.map((component) => (
-                  <ComponentCard key={component.id} component={component} />
+                  <ComponentCard key={component.id} component={component} citation={citation} />
                 ))}
               </div>
             </details>
@@ -140,4 +163,18 @@ export function UnityDiffView({
       )}
     </section>
   );
+}
+
+export function UnityDiffView(props: { diff: UnityDiff; path: string; raw: ReactNode }) {
+  return <UnityInspector {...props} />;
+}
+export function UnityCitationView({
+  citation,
+  ...props
+}: {
+  citation: UnityCitation;
+  path: string;
+  raw: ReactNode;
+}) {
+  return <UnityInspector diff={citation} citation {...props} />;
 }

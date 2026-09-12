@@ -1,0 +1,30 @@
+{
+  "name": "@bb-plugins/unity-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./model": "./src/model.ts",
+    "./parse": "./src/parse.ts",
+    "./patch": "./src/patch.ts",
+    "./app": "./src/app.tsx"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "react": "19.2.8",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "test": "bun test src test",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint"
+  }
+}

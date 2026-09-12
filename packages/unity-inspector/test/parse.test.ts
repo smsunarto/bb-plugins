@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
-import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { buildUnityDiff, parseUnityObjects } from "../src/server/lib/unity-diff.ts";
-import { applyUnityPatch } from "../src/server/lib/unity-patch.ts";
-import plugin from "../src/server/server.ts";
+import { buildUnityDiff, buildUnityCitation, parseUnityObjects } from "../src/parse.ts";
+import { applyUnityPatch } from "../src/patch.ts";
 
 const before = `%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
@@ -165,67 +163,6 @@ test("exact patch application handles new/deleted files, insertion, deletion and
   expect(() => applyUnityPatch("a\n", "@@ -1,2 +1,2 @@\n-a\n+b\n")).toThrow();
 });
 
-test("Unity snapshots retain the semantic view after workspace changes and plugin reload", async () => {
-  const host = createFakePluginHost({ pluginId: "kitchen-sink" });
-  host.harness.sdk.stub("threads.get", () => makeThreadResponse({ environmentId: "env-1" }));
-  host.harness.sdk.stub("environments.get", () => ({ id: "env-1", mergeBaseBranch: "main" }));
-  host.harness.sdk.stub("environments.diffPatch", () => ({
-    outcome: "available",
-    patches: [{ path: "Player.prefab", patch, truncated: false }],
-  }));
-  host.harness.sdk.stub("environments.diffFiles", () => ({
-    outcome: "available",
-    mergeBaseRef: "aabbccdd",
-    files: [{ path: "Player.prefab", previousPath: null, binary: false }],
-  }));
-  host.harness.sdk.stub("environments.diffFile", () => ({
-    content: before,
-    contentEncoding: "utf8",
-    sizeBytes: before.length,
-  }));
-  await plugin(host.bb);
-  const request = {
-    kind: "diff",
-    threadId: "thread-1",
-    messageId: "message-unity",
-    path: "Player.prefab",
-  };
-  const result = await host.harness.callRpc("renderEmbed", request);
-  expect(result).toMatchObject({ status: "ready", unity: { propertyCount: 2 } });
-  expect(host.harness.sdk.callsTo("environments.diffFile")[0]![0]).toMatchObject({
-    mergeBaseRef: "aabbccdd",
-    side: "old",
-  });
-  const reloaded = await host.harness.lifecycle.reload(plugin);
-  expect(await reloaded.harness.callRpc("renderEmbed", request)).toEqual(result);
-  expect(reloaded.harness.sdk.callsTo("environments.diffFile")).toHaveLength(0);
-  await reloaded.harness.lifecycle.dispose();
-});
-
-test("missing or truncated Unity sources preserve the raw diff", async () => {
-  const host = createFakePluginHost({ pluginId: "kitchen-sink" });
-  host.harness.sdk.stub("threads.get", () => makeThreadResponse({ environmentId: "env-1" }));
-  host.harness.sdk.stub("environments.get", () => ({ id: "env-1", mergeBaseBranch: "main" }));
-  host.harness.sdk.stub("environments.diffPatch", () => ({
-    outcome: "available",
-    patches: [{ path: "Player.unity", patch, truncated: true }],
-  }));
-  await plugin(host.bb);
-  const result = await host.harness.callRpc("renderEmbed", {
-    kind: "diff",
-    threadId: "thread-1",
-    path: "Player.unity",
-  });
-  expect(result).toMatchObject({
-    status: "ready",
-    patch,
-    unityNotice: expect.stringContaining("Showing YAML"),
-  });
-  expect(result).not.toHaveProperty("unity");
-  expect(host.harness.sdk.callsTo("environments.diffFile")).toHaveLength(0);
-  await host.harness.lifecycle.dispose();
-});
-
 test("prefab overrides match by target and property rather than array position", () => {
   const header = "--- !u!1001 &1\nPrefabInstance:\n  m_Modification:\n    m_Modifications:\n";
   const item = (property: string, value: string) =>
@@ -265,40 +202,39 @@ test("array insertions include shifted indices even when their YAML lines are co
   ]);
 });
 
-test("a renamed Unity asset reads its prior path with the resolved merge-base SHA", async () => {
-  const host = createFakePluginHost({ pluginId: "kitchen-sink" });
-  host.harness.sdk.stub("threads.get", () => makeThreadResponse({ environmentId: "env-1" }));
-  host.harness.sdk.stub("environments.get", () => ({ id: "env-1", mergeBaseBranch: "main" }));
-  host.harness.sdk.stub("environments.diffPatch", () => ({
-    outcome: "available",
-    patches: [{ path: "Hero.prefab", patch, truncated: false }],
-  }));
-  host.harness.sdk.stub("environments.diffFiles", () => ({
-    outcome: "available",
-    mergeBaseRef: "aabbccdd",
-    files: [{ path: "Hero.prefab", previousPath: "Player.prefab", binary: false }],
-  }));
-  host.harness.sdk.stub("environments.diffFile", () => ({
-    content: before,
-    contentEncoding: "utf8",
-    sizeBytes: before.length,
-  }));
-  await plugin(host.bb);
-  expect(
-    await host.harness.callRpc("renderEmbed", {
-      kind: "diff",
-      threadId: "thread-rename",
-      path: "Hero.prefab",
-    }),
-  ).toMatchObject({ unity: { propertyCount: 2 } });
-  expect(host.harness.sdk.callsTo("environments.diffFile")[0]![0]).toMatchObject({
-    path: "Player.prefab",
-    mergeBaseRef: "aabbccdd",
-    target: "all",
-  });
-  await host.harness.lifecycle.dispose();
-});
-
 test("deleting an unterminated last line preserves the previous line terminator", () => {
   expect(applyUnityPatch("a\nb", "@@ -2 +1,0 @@\n-b\n\\ No newline at end of file\n")).toBe("a\n");
+});
+
+test("current citations contain only selected property values and resolve named references", () => {
+  const citation = buildUnityCitation(after, 16, 17);
+  expect(citation.groups[0]).toMatchObject({
+    name: "Player",
+    components: [
+      {
+        type: "PlayerMovement",
+        properties: [
+          { path: "speed", value: "8" },
+          { path: "target", value: "Player · Transform (#9007199254740994)" },
+        ],
+      },
+    ],
+  });
+  expect(citation.propertyCount).toBe(2);
+  expect(JSON.parse(JSON.stringify(citation))).toStrictEqual(citation);
+  expect(JSON.stringify(citation)).not.toContain('"before":');
+  expect(JSON.stringify(citation)).not.toContain('"status":');
+});
+test("reverse application verifies recorded after lines and preserves newline markers", () => {
+  expect(applyUnityPatch(after, patch, true)).toBe(before);
+  expect(() => applyUnityPatch(after.replace("speed: 8", "speed: 9"), patch, true)).toThrow(
+    "Patch base changed",
+  );
+  expect(
+    applyUnityPatch(
+      "new",
+      "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n",
+      true,
+    ),
+  ).toBe("old");
 });

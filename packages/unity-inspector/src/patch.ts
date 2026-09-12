@@ -30,7 +30,7 @@ function readHunk(lines: string[], index: number, match: RegExpExecArray): Hunk 
 }
 
 /** Apply only exact, complete unified hunks. Never guess when the base moved. */
-export function applyUnityPatch(base: string, patch: string): string {
+export function applyUnityPatch(base: string, patch: string, reverse = false): string {
   const old = base.replace(/\r\n/g, "\n").match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const output: string[] = [];
   const lines = patch.replace(/\r\n/g, "\n").split("\n");
@@ -39,7 +39,16 @@ export function applyUnityPatch(base: string, patch: string): string {
   for (let index = 0; index < lines.length; index++) {
     const match = HEADER.exec(lines[index]!);
     if (!match) continue;
-    const hunk = readHunk(lines, index, match);
+    const parsed = readHunk(lines, index, match);
+    const hunk = reverse
+      ? {
+          ...parsed,
+          oldStart: parsed.newStart,
+          newStart: parsed.oldStart,
+          before: parsed.after,
+          after: parsed.before,
+        }
+      : parsed;
     if (hunk.oldStart < cursor || hunk.oldStart > old.length)
       throw new Error("Invalid hunk position");
     output.push(...old.slice(cursor, hunk.oldStart));

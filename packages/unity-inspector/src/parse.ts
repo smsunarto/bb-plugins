@@ -1,6 +1,6 @@
 import { LineCounter, parseDocument } from "yaml";
-import type { UnityDiff } from "../../shared/unity-diff.ts";
-import { changedUnityLines } from "./unity-patch.ts";
+import type { UnityDiff, UnityCitation } from "./model.ts";
+import { changedUnityLines } from "./patch.ts";
 
 type RecordValue = Record<string, unknown>;
 type Field = { value: unknown; first: number; last: number; label?: string; target?: string };
@@ -306,6 +306,53 @@ export function buildUnityDiff(before: string, after: string, selectedPatch: str
       groups.set(owner.id, group);
     }
     group.components.push(component);
+  }
+  return { groups: [...groups.values()], propertyCount };
+}
+
+/** Read current values without constructing or exposing a before/after diff. */
+export function buildUnityCitation(
+  source: string,
+  start = 1,
+  end = Number.MAX_SAFE_INTEGER,
+): UnityCitation {
+  const objects = parseUnityObjects(source);
+  const groups = new Map<string, UnityCitation["groups"][number]>();
+  let propertyCount = 0;
+  for (const object of objects.values()) {
+    if (object.last < start || object.first > end) continue;
+    const properties = [...object.fields.entries()]
+      .filter(([, field]) => field.last >= start && field.first <= end)
+      .map(([path, field]) => {
+        const property: UnityCitation["groups"][number]["components"][number]["properties"][number] =
+          { path, value: display(field.value, objects) };
+        if (field.label) property.label = field.label;
+        if (field.target) property.target = field.target;
+        return property;
+      });
+    if (!properties.length) continue;
+    propertyCount += properties.length;
+    if (propertyCount > 5_000 || groups.size > 500) throw new Error("Unity citation is too large");
+    const owner = gameObject(object, objects) ?? object;
+    let group = groups.get(owner.id);
+    if (!group) {
+      group = {
+        id: owner.id,
+        name: objectName(owner),
+        hierarchy: hierarchy(owner, objects),
+        components: [],
+      };
+      groups.set(owner.id, group);
+    }
+    const script =
+      typeof object.data.m_EditorClassIdentifier === "string"
+        ? object.data.m_EditorClassIdentifier.split("::").at(-1)
+        : "";
+    group.components.push({
+      id: object.id,
+      type: script || (object.type === "PrefabInstance" ? "Prefab overrides" : object.type),
+      properties,
+    });
   }
   return { groups: [...groups.values()], propertyCount };
 }
