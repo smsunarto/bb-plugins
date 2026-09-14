@@ -87,7 +87,10 @@ export function ProjectGroup({
         <span className="gtd-disclosure gtd-project-group-chevron">
           <Icon
             name={hovered ? "ChevronDown" : "Folder"}
-            className={cn("size-3", hovered && !expanded && "-rotate-90")}
+            className={cn(
+              isCompactViewport ? "size-4" : "size-3",
+              hovered && !expanded && "-rotate-90",
+            )}
           />
         </span>
         <FadingText text={name} className="gtd-project-group-name" />

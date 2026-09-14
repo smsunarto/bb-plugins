@@ -207,7 +207,7 @@ function slimRowPresentation({
 }) {
   return {
     rowStyle: (isCompactViewport
-      ? { paddingLeft: "calc(10px + var(--gtd-leaf-group-indent, 0px))" }
+      ? { paddingLeft: "calc(22px + var(--gtd-leaf-group-indent, 0px))" }
       : undefined) as CSSProperties | undefined,
     rowClassName: cn(
       "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",

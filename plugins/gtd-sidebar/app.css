@@ -149,6 +149,7 @@
 }
 .gtd-project-group-header-touch .gtd-project-group-toggle {
   height: 40px;
+  padding-left: 40px;
   font-size: 13px;
 }
 .gtd-project-group-toggle:focus {
@@ -235,6 +236,14 @@
   border: 0;
   color: var(--muted-foreground);
   cursor: pointer;
+}
+/* Touch: the full 40px row height and a 32px column, a finger-sized target.
+   thread-card.tsx mirrors the width when it pads the row's content. */
+.gtd-disclosure.gtd-disclosure-touch {
+  /* 4px in, so the 16px glyph sits 12px from the row edge and 12px from the title. */
+  left: calc(var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * var(--gtd-depth-step, 8px) + 4px);
+  width: 32px;
+  height: 40px;
 }
 .gtd-disclosure:focus {
   outline: none;

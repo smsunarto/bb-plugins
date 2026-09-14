@@ -37,6 +37,8 @@ import { useNestRow, type SidebarDragApi } from "@/hooks/use-nest-drag";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 8;
+/** The touch disclosure column: app.css `.gtd-disclosure-touch` width. */
+const MOBILE_DISCLOSURE_WIDTH = 32;
 
 interface ThreadCardProps {
   thread: PluginSidebarThread;
@@ -362,8 +364,8 @@ function threadCardPresentation({
         ? {
             paddingLeft:
               depth > 0 || childCount > 0
-                ? `calc(${28 + depth * DEPTH_STEP}px + var(--gtd-group-indent, 0px))`
-                : "calc(10px + var(--gtd-leaf-group-indent, 0px))",
+                ? `calc(${MOBILE_DISCLOSURE_WIDTH + 8 + depth * DEPTH_STEP}px + var(--gtd-group-indent, 0px))`
+                : "calc(22px + var(--gtd-leaf-group-indent, 0px))",
           }
         : {}),
     } as CSSProperties,
@@ -517,7 +519,7 @@ function ThreadHierarchy({
       {childCount > 0 ? (
         <button
           type="button"
-          className="gtd-disclosure"
+          className={cn("gtd-disclosure", mobile && "gtd-disclosure-touch")}
           aria-label={`${expanded ? "Collapse" : "Expand"} children of ${title}`}
           aria-expanded={expanded}
           onPointerDown={(event) => event.stopPropagation()}
@@ -526,7 +528,10 @@ function ThreadHierarchy({
             toggleThread(threadId);
           }}
         >
-          <Icon name="ChevronDown" className={cn("size-3", !expanded && "-rotate-90")} />
+          <Icon
+            name="ChevronDown"
+            className={cn(mobile ? "size-4" : "size-3", !expanded && "-rotate-90")}
+          />
         </button>
       ) : null}
     </>
