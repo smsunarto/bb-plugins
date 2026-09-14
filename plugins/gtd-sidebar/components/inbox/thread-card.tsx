@@ -36,7 +36,7 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "@/hooks/use-nest-drag";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
-const DEPTH_STEP = 16;
+const DEPTH_STEP = 8;
 
 interface ThreadCardProps {
   thread: PluginSidebarThread;

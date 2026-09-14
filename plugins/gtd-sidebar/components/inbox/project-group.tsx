@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -57,6 +57,7 @@ export function ProjectGroup({
   children,
 }: ProjectGroupProps) {
   const drop = useNestProjectHeader(shelf, projectId, dropAllowed);
+  const [hovered, setHovered] = useState(false);
   const count = attention > 0 ? `${attention} / ${families}` : `${families}`;
   const header = (
     <div
@@ -66,6 +67,11 @@ export function ProjectGroup({
         isCompactViewport && "gtd-project-group-header-touch",
       )}
       data-drop-target={drop.isOver ? "true" : undefined}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") setHovered(true);
+      }}
+      onPointerLeave={() => setHovered(false)}
+      onPointerCancel={() => setHovered(false)}
       // The pointer activator only: the sortable keeps keyboard reorder to the
       // context menu's Move up/down, and a bubbled Space on the toggle must
       // stay a toggle.
@@ -80,8 +86,8 @@ export function ProjectGroup({
       >
         <span className="gtd-disclosure gtd-project-group-chevron">
           <Icon
-            name="ChevronDown"
-            className={cn("size-3 transition-transform", !expanded && "-rotate-90")}
+            name={hovered ? "ChevronDown" : "Folder"}
+            className={cn("size-3", hovered && !expanded && "-rotate-90")}
           />
         </span>
         <FadingText text={name} className="gtd-project-group-name" />
