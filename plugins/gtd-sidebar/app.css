@@ -278,7 +278,7 @@
   top: -2px;
   bottom: 0;
   width: 1px;
-  background: var(--sidebar-border);
+  background: var(--subtle-foreground);
 }
 .gtd-tree-line-last {
   bottom: 50%;
@@ -287,14 +287,10 @@
   position: absolute;
   top: 50%;
   height: 1px;
-  background: var(--sidebar-border);
+  background: var(--subtle-foreground);
 }
 .gtd-thread-row:is(:hover, :focus-within, [data-sidebar-thread-active="true"]) .gtd-disclosure {
   color: var(--sidebar-accent-foreground);
-}
-.gtd-thread-row:is(:hover, :focus-within, [data-sidebar-thread-active="true"])
-  :is(.gtd-tree-line, .gtd-tree-elbow) {
-  background: var(--muted-foreground);
 }
 .gtd-thread-tooltip {
   overflow-wrap: anywhere;
