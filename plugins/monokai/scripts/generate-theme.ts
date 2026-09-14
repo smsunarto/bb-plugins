@@ -18,8 +18,6 @@ const palette = {
     selection: "#404040",
   },
   control: {
-    primary: "#363635",
-    edge: "#3c3c3c",
     paneDivider: "#2b2b2b",
   },
   text: {
@@ -72,15 +70,17 @@ const roleValues = {
   "ground.conversationScrim": withAlpha(palette.ground.conversation, 0xeb),
   "ground.content": palette.ground.content,
   "ground.recessed": palette.ground.recessed,
-  "ground.recessedLayer": withAlpha(palette.text.ink, 0x0b),
   "ground.userSurface": palette.ground.userSurface,
   "ground.raised": palette.ground.raised,
-  "ground.raisedLayer": withAlpha(palette.text.ink, 0x15),
   "ground.selection": palette.ground.selection,
-  "ground.selectionLayer": withAlpha(palette.text.ink, 0x35),
   "ground.selection60": withAlpha(palette.ground.selection, 0x99),
-  "control.primary": palette.control.primary,
-  "control.edge": palette.control.edge,
+  // Cursor's foreground-relative neutral ladder. Byte-rounded CSS alpha.
+  "layer.subtle": withAlpha(palette.text.ink, 0x0a), // 4%: card / field
+  "layer.control": withAlpha(palette.text.ink, 0x0f), // 6%: secondary action
+  "layer.hover": withAlpha(palette.text.ink, 0x14), // 8%: hover / quiet edge
+  "layer.selected": withAlpha(palette.text.ink, 0x24), // 14%: action / selection
+  "layer.active": withAlpha(palette.text.ink, 0x33), // 20%: pressed / strong edge
+  "layer.edge": withAlpha(palette.text.ink, 0x1f), // 12%: control edge
   "control.paneDivider": palette.control.paneDivider,
   "text.ink": palette.text.ink,
   "text.ink03": withAlpha(palette.text.ink, 0x08),
@@ -375,28 +375,31 @@ const darkExpected = declarationMap({
   "--canvas": palette.ground.conversation,
   "--ink": palette.text.ink,
   "--background": palette.ground.conversation,
-  "--card": palette.ground.chrome,
-  "--popover": palette.ground.chrome,
-  "--secondary": palette.ground.raised,
-  "--accent": palette.ground.raised,
-  "--muted": palette.ground.selection,
-  "--input": palette.control.edge,
-  "--surface-recessed": roleValues["ground.recessedLayer"],
+  "--card": roleValues["layer.subtle"],
+  "--popover": palette.ground.raised,
+  "--secondary": roleValues["layer.control"],
+  "--accent": roleValues["layer.hover"],
+  "--muted": roleValues["layer.selected"],
+  "--input": roleValues["layer.edge"],
+  "--control-background": roleValues["layer.subtle"],
+  "--control-primary": roleValues["layer.selected"],
+  "--control-primary-hover": roleValues["layer.active"],
+  "--surface-recessed": roleValues["layer.subtle"],
   "--surface-recessed-solid": palette.ground.recessed,
   "--surface-recessed-soft-solid": palette.ground.recessed,
-  "--surface-raised": roleValues["ground.raisedLayer"],
+  "--surface-raised": roleValues["layer.control"],
   "--surface-raised-solid": palette.ground.raised,
   "--surface-scrim": roleValues["ground.conversationScrim"],
   "--agent-surface-background": palette.ground.userSurface,
   "--agent-surface-border": roleValues["text.ink07"],
-  "--state-hover": roleValues["ground.raisedLayer"],
-  "--state-active": roleValues["ground.selectionLayer"],
-  "--surface-selected": roleValues["text.ink12"],
+  "--state-hover": roleValues["layer.hover"],
+  "--state-active": roleValues["layer.active"],
+  "--surface-selected": roleValues["layer.selected"],
   "--surface-selected-border": roleValues["text.ink25"],
-  "--border-seam": roleValues["text.ink07"],
+  "--border-seam": roleValues["layer.subtle"],
   "--border-seam-vertical": "var(--border-seam)",
-  "--border": roleValues["text.ink12"],
-  "--border-hairline": roleValues["text.ink17"],
+  "--border": roleValues["layer.edge"],
+  "--border-hairline": roleValues["layer.hover"],
   "--foreground": palette.text.ink,
   "--muted-foreground": roleValues["text.ink74"],
   "--readback-foreground": roleValues["text.ink55"],
@@ -432,14 +435,14 @@ const darkExpected = declarationMap({
   "--terminal-line-height": "1.4",
   "--sidebar": palette.ground.content,
   "--sidebar-foreground": roleValues["text.ink74"],
-  "--sidebar-accent": palette.ground.raised,
+  "--sidebar-accent": roleValues["layer.hover"],
   "--sidebar-accent-foreground": palette.text.ink,
   "--sidebar-border": palette.control.paneDivider,
-  "--pill-surface": `linear-gradient(to bottom, ${palette.ground.raised}, ${palette.ground.raised})`,
+  "--pill-surface": `linear-gradient(to bottom, ${roleValues["layer.control"]}, ${roleValues["layer.control"]})`,
   "--pill-surface-border": roleValues["text.ink12"],
   "--pill-foreground": palette.text.ink,
   "--pill-icon": roleValues["text.ink74"],
-  "--pill-surface-selected": `linear-gradient(to bottom, ${palette.ground.selection}, ${palette.ground.selection})`,
+  "--pill-surface-selected": `linear-gradient(to bottom, ${roleValues["layer.selected"]}, ${roleValues["layer.selected"]})`,
   "--pill-surface-selected-border": roleValues["text.ink25"],
   ...indexed("--ansi-", ansi),
   ...indexed("--ansi-bg-fg-", ansiForegrounds),
@@ -469,7 +472,7 @@ const darkExpected = declarationMap({
   "--trees-status-modified-override": palette.feedback.warning,
   "--trees-status-deleted-override": palette.feedback.error,
   "--trees-status-ignored-override": roleValues["text.ink30"],
-  "--trees-input-bg-override": palette.ground.recessed,
+  "--trees-input-bg-override": roleValues["layer.subtle"],
   "--trees-accent-override": palette.accent,
   "--trees-indent-guide-bg-override": roleValues["text.ink17"],
   "--trees-fg-muted-override": roleValues["text.ink55"],
@@ -510,19 +513,19 @@ const requiredRules: Array<{
   },
   {
     selector: ".dark input.border-input",
-    declarations: { "background-color": palette.ground.recessed },
+    declarations: { "background-color": "var(--control-background)" },
   },
   {
     selector: ".dark textarea.border-input",
-    declarations: { "background-color": palette.ground.recessed },
+    declarations: { "background-color": "var(--control-background)" },
   },
   {
     selector: ".dark select.border-input",
-    declarations: { "background-color": palette.ground.recessed },
+    declarations: { "background-color": "var(--control-background)" },
   },
   {
     selector: '.dark [role="combobox"].border-input',
-    declarations: { "background-color": palette.ground.recessed },
+    declarations: { "background-color": "var(--control-background)" },
   },
   {
     selector: ".dark [data-promptbox]",
@@ -557,9 +560,9 @@ const requiredRules: Array<{
   },
   {
     selector:
-      '.dark body:has(a[aria-current="page"][href^="/settings"]) main main .bg-card:not(.bg-transparent)',
+      '.dark body:has(a[aria-current="page"][href^="/settings"]) main main .bg-card:not(button):not(input):not(textarea):not(select):not(.bg-transparent)',
     declarations: {
-      "background-color": palette.ground.userSurface,
+      "background-color": "var(--card)",
       "border-width": "0",
     },
   },
@@ -567,7 +570,7 @@ const requiredRules: Array<{
     selector:
       '.dark body:has(a[aria-current="page"][href^="/settings"]) main main li.rounded-md.border.border-border:not(.bg-transparent)',
     declarations: {
-      "background-color": palette.ground.userSurface,
+      "background-color": "var(--card)",
       "border-width": "0",
     },
   },
@@ -598,30 +601,30 @@ const requiredRules: Array<{
   },
   {
     selector: ".dark button.bg-primary",
-    declarations: { "background-color": palette.control.primary, color: "var(--foreground)" },
+    declarations: { "background-color": "var(--control-primary)", color: "var(--foreground)" },
   },
   {
     selector: ".dark button.bg-foreground",
-    declarations: { "background-color": palette.control.primary, color: "var(--foreground)" },
+    declarations: { "background-color": "var(--control-primary)", color: "var(--foreground)" },
   },
   {
     selector: ".dark button.bg-primary:hover",
-    declarations: { "background-color": palette.ground.selection },
+    declarations: { "background-color": "var(--control-primary-hover)" },
   },
   {
     selector: ".dark button.bg-foreground:hover",
-    declarations: { "background-color": palette.ground.selection },
+    declarations: { "background-color": "var(--control-primary-hover)" },
   },
   {
     selector: ".dark button.bg-secondary",
     declarations: {
-      "background-color": palette.ground.recessed,
+      "background-color": "var(--secondary)",
       border: "1px solid var(--input)",
     },
   },
   {
     selector: ".dark button.bg-secondary:hover",
-    declarations: { "background-color": palette.ground.raised },
+    declarations: { "background-color": "var(--state-hover)" },
   },
   {
     selector: '.dark [data-promptbox-submit-action][aria-label="stop run"]',
@@ -809,7 +812,7 @@ export function auditTheme(source: string): void {
   requireContrast(
     "primary button text",
     palette.text.ink,
-    palette.control.primary,
+    flatten(roleValues["layer.selected"], palette.ground.userSurface),
     4.5,
     violations,
   );

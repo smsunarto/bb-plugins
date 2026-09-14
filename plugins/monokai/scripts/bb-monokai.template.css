@@ -68,34 +68,26 @@
   --terminal-line-height: 1.4;
   --bb-monokai-code-entity: {{code.entity}};
 
-  /* ---- Anchors --------------------------------------------------------
-   * bb derives every surface, border and state fill as
-   * color-mix(in oklch, var(--ink) N%, var(--canvas)). Left alone those land
-   * between the ramp steps (#1C1C1C, #2E2E2D, #333333, #525251 …), so every
-   * ground below is pinned explicitly. The anchors still matter for anything
-   * bb adds later. */
-  --canvas: {{ground.conversation}}; /* agent conversation ground */
-  --ink: {{text.ink}}; /* the one white; ladder base */
+  /* Opaque anchors occlude content. In-flow layers composite over their
+   * actual parent. Cursor uses the same ink-relative 4/6/8/14/20% ladder.
+   * Only explicit *-solid fallbacks may flatten a layer to a fixed ground. */
+  --canvas: {{ground.conversation}};
+  --ink: {{text.ink}};
+  --background: {{ground.conversation}};
+  --card: {{layer.subtle}};
+  --popover: {{ground.raised}};
+  --secondary: {{layer.control}};
+  --accent: {{layer.hover}};
+  --muted: {{layer.selected}};
+  --input: {{layer.edge}};
+  --control-background: {{layer.subtle}};
+  --control-primary: {{layer.selected}};
+  --control-primary-hover: {{layer.active}};
 
-  /* ---- Grounds ramp ---------------------------------------------------
-   * #151515 conversation · #181818 chrome/content/sidebars ·
-   * #1E1E1E wells · #212121 user surfaces · #262626 raised/hover · #404040
-   * selection. Nothing else serves as a surface. Translucent tiers use
-   * an ink alpha chosen to flatten onto a ramp step over --background. */
-  --background: {{ground.conversation}}; /* main agent conversation */
-  --card: {{ground.chrome}}; /* panels share the sidebar/content ground */
-  --popover: {{ground.chrome}}; /* menus, dropdowns, command palette, tooltips */
-  --secondary: {{ground.raised}}; /* raised */
-  --accent: {{ground.raised}}; /* neutral hover/active fill, despite the name */
-  --muted: {{ground.selection}}; /* chips + xterm selection ground (see below) */
-  --input: {{control.edge}}; /* compact form-control edge; distinct from the #1E1E1E
-                      * well without becoming a bright line */
-
-  --surface-recessed: {{ground.recessedLayer}}; /* -> #1E1E1E over --background */
+  --surface-recessed: {{layer.subtle}};
   --surface-recessed-solid: {{ground.recessed}};
-  --surface-recessed-soft-solid: {{ground.recessed}}; /* ramp has no step between #151515
-                                           * and #1E1E1E; coarse on purpose */
-  --surface-raised: {{ground.raisedLayer}}; /* -> #262626 */
+  --surface-recessed-soft-solid: {{ground.recessed}};
+  --surface-raised: {{layer.control}};
   --surface-raised-solid: {{ground.raised}};
   --surface-scrim: {{ground.conversationScrim}}; /* not a veil: bb paints the page
                                            * header and floating control
@@ -109,20 +101,20 @@
   --agent-surface-background: {{ground.userSurface}};
   --agent-surface-border: {{text.ink07}};
 
-  --state-hover: {{ground.raisedLayer}}; /* -> #262626, the raised/hover step */
-  --state-active: {{ground.selectionLayer}}; /* -> #404040, the selection step */
+  --state-hover: {{layer.hover}};
+  --state-active: {{layer.active}};
 
   /* Selected rows are ladder, not accent: the contract keeps counters and
    * selection quiet. Both names default to a --primary mix, so both are pinned
    * or they would tint cyan. */
-  --surface-selected: {{text.ink12}};
+  --surface-selected: {{layer.selected}};
   --surface-selected-border: {{text.ink25}};
 
   /* ---- Borders --------------------------------------------------------- */
-  --border-seam: {{text.ink07}}; /* quietest divider; = editorGroup.border */
+  --border-seam: {{layer.subtle}};
   --border-seam-vertical: var(--border-seam);
-  --border: {{text.ink12}};
-  --border-hairline: {{text.ink17}}; /* = tree.indentGuidesStroke */
+  --border: {{layer.edge}};
+  --border-hairline: {{layer.hover}};
 
   /* ---- Text ladder -----------------------------------------------------
    * One white at four alphas, ≥20 alpha points apart.
@@ -186,18 +178,18 @@
    * on its separate --terminal-background token above. */
   --sidebar: {{ground.content}};
   --sidebar-foreground: {{text.ink74}}; /* 8.02:1 */
-  --sidebar-accent: {{ground.raised}};
+  --sidebar-accent: {{layer.hover}};
   --sidebar-accent-foreground: {{text.ink}}; /* selection keeps primary text */
   --sidebar-border: {{control.paneDivider}}; /* solid, low-contrast 1px pane divider */
 
   /* ---- Mention pills ---------------------------------------------------
    * The gradient syntax is required (the token is consumed as a
    * background-image); the stops are flat so the chip stays on the ramp. */
-  --pill-surface: linear-gradient(to bottom, {{ground.raised}}, {{ground.raised}});
+  --pill-surface: linear-gradient(to bottom, {{layer.control}}, {{layer.control}});
   --pill-surface-border: {{text.ink12}};
   --pill-foreground: {{text.ink}};
   --pill-icon: {{text.ink74}};
-  --pill-surface-selected: linear-gradient(to bottom, {{ground.selection}}, {{ground.selection}});
+  --pill-surface-selected: linear-gradient(to bottom, {{layer.selected}}, {{layer.selected}});
   --pill-surface-selected-border: {{text.ink25}};
 
   /* ---- Terminal ANSI ---------------------------------------------------
@@ -292,8 +284,7 @@
   --trees-status-deleted-override: {{feedback.error}};
   --trees-status-ignored-override: {{text.ink30}};
 
-  --trees-input-bg-override: {{ground.recessed}}; /* default is #070707, darker than every
-                                       * ground on the ramp */
+  --trees-input-bg-override: {{layer.subtle}};
   --trees-accent-override: {{accent.base}}; /* default is #009fff */
   --trees-indent-guide-bg-override: {{text.ink17}};
   --trees-fg-muted-override: {{text.ink55}};
@@ -352,15 +343,43 @@
   color: var(--readback-foreground);
 }
 
-/* bb shares --input between control edges and, in a few components, fills.
- * Give editable controls the recessed well while --input supplies their
- * visible #3C3C3C keyline. Keep the selector narrow so outline buttons retain
- * their own treatment below. */
+/* Shared host-component adapter. Field and outline-button fills depend only
+ * on role, never on which card, sidebar, dialog, or composer contains them.
+ * Clip the translucent fill inside its edge to avoid double compositing. */
 .dark input.border-input,
 .dark textarea.border-input,
 .dark select.border-input,
-.dark [role="combobox"].border-input {
-  background-color: {{ground.recessed}};
+.dark [role="combobox"].border-input,
+.dark button.border-input,
+.dark button.border.bg-card {
+  background-color: var(--control-background);
+  background-clip: padding-box;
+  border-color: var(--input);
+}
+
+/* Native option sheets must occlude the page, just like portalled menus. */
+.dark select.border-input option,
+.dark select.border-input optgroup {
+  background-color: var(--popover);
+  color: var(--foreground);
+}
+
+@media (hover: hover) {
+  .dark input.border-input:hover:not(:disabled),
+  .dark textarea.border-input:hover:not(:disabled),
+  .dark select.border-input:hover:not(:disabled),
+  .dark [role="combobox"].border-input:hover:not(:disabled),
+  .dark button.border-input:hover:not(:disabled),
+  .dark button.border.bg-card:hover:not(:disabled) {
+    background-color: var(--state-hover);
+  }
+}
+
+.dark button.border-input:active:not(:disabled),
+.dark button.border.bg-card:active:not(:disabled),
+.dark button.border-input[data-state="open"],
+.dark button.border.bg-card[data-state="open"] {
+  background-color: var(--surface-selected);
 }
 
 /* The composer shares the #212121 user surface. Its native border remains
@@ -410,7 +429,7 @@
   body:has(a[aria-current="page"][href^="/settings"])
   main
   main
-  .bg-card:not(.bg-transparent),
+  .bg-card:not(button):not(input):not(textarea):not(select):not(.bg-transparent),
 .dark
   body:has(a[aria-current="page"][href^="/settings"])
   main
@@ -426,7 +445,7 @@
   main
   main
   div.rounded-lg.border.border-border:not(.bg-transparent) {
-  background-color: {{ground.userSurface}};
+  background-color: var(--card);
   border-width: 0;
 }
 
@@ -807,16 +826,17 @@
   vertical-align: middle;
 }
 
-/* Keep button fills on the neutral ground ramp without changing --primary,
+/* Filled actions use shared ink layers without changing --primary,
  * which continues to own links and mention accents. */
 .dark button.bg-primary,
 .dark button.bg-foreground {
-  background-color: {{control.primary}};
+  background-color: var(--control-primary);
   color: var(--foreground);
 }
 
 .dark button.bg-secondary {
-  background-color: {{ground.recessed}};
+  background-color: var(--secondary);
+  background-clip: padding-box;
   border: 1px solid var(--input);
 }
 
@@ -828,11 +848,11 @@
 @media (hover: hover) {
   .dark button.bg-primary:hover,
   .dark button.bg-foreground:hover {
-    background-color: {{ground.selection}};
+    background-color: var(--control-primary-hover);
   }
 
   .dark button.bg-secondary:hover {
-    background-color: {{ground.raised}};
+    background-color: var(--state-hover);
   }
 }
 
@@ -840,7 +860,7 @@
  * they are neutral informational surfaces. Keep the accent for links and
  * mentions; render tooltip content as an elevated dark control instead. */
 .dark .bg-primary:has([role="tooltip"]) {
-  background-color: {{ground.recessed}};
+  background-color: var(--popover);
   box-shadow: inset 0 0 0 1px var(--border);
   color: var(--foreground);
 }
@@ -848,7 +868,6 @@
 /* Radix publishes these context-menu sizing variables on both root menus and
  * submenus. Scope geometry here so dropdown pickers retain their own layout. */
 .dark [role="menu"][style*="--radix-context-menu-content"] {
-  --state-hover: {{text.ink07}};
   min-width: 220px;
   max-width: calc(100vw - 16px);
   padding: 5px;

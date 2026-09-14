@@ -64,40 +64,32 @@
   /* Match Ghostty cursor-monokai and its 13-point font with 40% extra cell
    * height. The patched font supplies Nerd Font glyphs to xterm. Our content
    * script applies these options to both its DOM and WebGL renderers. */
-  --terminal-background: #141414;
+  --terminal-background: #181818;
   --terminal-font-family: "BerkeleyMono Nerd Font Mono", "Berkeley Mono", monospace;
   --terminal-font-size: 13;
   --terminal-line-height: 1.4;
   --bb-monokai-code-entity: #9ddd54;
 
-  /* ---- Anchors --------------------------------------------------------
-   * bb derives every surface, border and state fill as
-   * color-mix(in oklch, var(--ink) N%, var(--canvas)). Left alone those land
-   * between the ramp steps (#1C1C1C, #2E2E2D, #333333, #525251 …), so every
-   * ground below is pinned explicitly. The anchors still matter for anything
-   * bb adds later. */
-  --canvas: #151515; /* agent conversation ground */
-  --ink: #e3e3dd; /* the one white; ladder base */
+  /* Opaque anchors occlude content. In-flow layers composite over their
+   * actual parent. Cursor uses the same ink-relative 4/6/8/14/20% ladder.
+   * Only explicit *-solid fallbacks may flatten a layer to a fixed ground. */
+  --canvas: #151515;
+  --ink: #e3e3dd;
+  --background: #151515;
+  --card: #e3e3dd0a;
+  --popover: #262626;
+  --secondary: #e3e3dd0f;
+  --accent: #e3e3dd14;
+  --muted: #e3e3dd24;
+  --input: #e3e3dd1f;
+  --control-background: #e3e3dd0a;
+  --control-primary: #e3e3dd24;
+  --control-primary-hover: #e3e3dd33;
 
-  /* ---- Grounds ramp ---------------------------------------------------
-   * #151515 conversation · #181818 chrome/content/sidebars ·
-   * #1E1E1E wells · #212121 user surfaces · #262626 raised/hover · #404040
-   * selection. Nothing else serves as a surface. Translucent tiers use
-   * an ink alpha chosen to flatten onto a ramp step over --background. */
-  --background: #151515; /* main agent conversation */
-  --card: #181818; /* panels share the sidebar/content ground */
-  --popover: #181818; /* menus, dropdowns, command palette, tooltips */
-  --secondary: #262626; /* raised */
-  --accent: #262626; /* neutral hover/active fill, despite the name */
-  --muted: #404040; /* chips + xterm selection ground (see below) */
-  --input: #3c3c3c; /* compact form-control edge; distinct from the #1E1E1E
-                      * well without becoming a bright line */
-
-  --surface-recessed: #e3e3dd0b; /* -> #1E1E1E over --background */
+  --surface-recessed: #e3e3dd0a;
   --surface-recessed-solid: #1e1e1e;
-  --surface-recessed-soft-solid: #1e1e1e; /* ramp has no step between #151515
-                                           * and #1E1E1E; coarse on purpose */
-  --surface-raised: #e3e3dd15; /* -> #262626 */
+  --surface-recessed-soft-solid: #1e1e1e;
+  --surface-raised: #e3e3dd0f;
   --surface-raised-solid: #262626;
   --surface-scrim: #151515eb; /* not a veil: bb paints the page
                                            * header and floating control
@@ -111,20 +103,20 @@
   --agent-surface-background: #212121;
   --agent-surface-border: #e3e3dd11;
 
-  --state-hover: #e3e3dd15; /* -> #262626, the raised/hover step */
-  --state-active: #e3e3dd35; /* -> #404040, the selection step */
+  --state-hover: #e3e3dd14;
+  --state-active: #e3e3dd33;
 
   /* Selected rows are ladder, not accent: the contract keeps counters and
    * selection quiet. Both names default to a --primary mix, so both are pinned
    * or they would tint cyan. */
-  --surface-selected: #e3e3dd1e;
+  --surface-selected: #e3e3dd24;
   --surface-selected-border: #e3e3dd40;
 
   /* ---- Borders --------------------------------------------------------- */
-  --border-seam: #e3e3dd11; /* quietest divider; = editorGroup.border */
+  --border-seam: #e3e3dd0a;
   --border-seam-vertical: var(--border-seam);
-  --border: #e3e3dd1e;
-  --border-hairline: #e3e3dd2c; /* = tree.indentGuidesStroke */
+  --border: #e3e3dd1f;
+  --border-hairline: #e3e3dd14;
 
   /* ---- Text ladder -----------------------------------------------------
    * One white at four alphas, ≥20 alpha points apart.
@@ -188,18 +180,18 @@
    * on its separate --terminal-background token above. */
   --sidebar: #181818;
   --sidebar-foreground: #e3e3ddbd; /* 8.02:1 */
-  --sidebar-accent: #262626;
+  --sidebar-accent: #e3e3dd14;
   --sidebar-accent-foreground: #e3e3dd; /* selection keeps primary text */
   --sidebar-border: #2b2b2b; /* solid, low-contrast 1px pane divider */
 
   /* ---- Mention pills ---------------------------------------------------
    * The gradient syntax is required (the token is consumed as a
    * background-image); the stops are flat so the chip stays on the ramp. */
-  --pill-surface: linear-gradient(to bottom, #262626, #262626);
+  --pill-surface: linear-gradient(to bottom, #e3e3dd0f, #e3e3dd0f);
   --pill-surface-border: #e3e3dd1e;
   --pill-foreground: #e3e3dd;
   --pill-icon: #e3e3ddbd;
-  --pill-surface-selected: linear-gradient(to bottom, #404040, #404040);
+  --pill-surface-selected: linear-gradient(to bottom, #e3e3dd24, #e3e3dd24);
   --pill-surface-selected-border: #e3e3dd40;
 
   /* ---- Terminal ANSI ---------------------------------------------------
@@ -294,8 +286,7 @@
   --trees-status-deleted-override: #e34671;
   --trees-status-ignored-override: #e3e3dd4d;
 
-  --trees-input-bg-override: #1e1e1e; /* default is #070707, darker than every
-                                       * ground on the ramp */
+  --trees-input-bg-override: #e3e3dd0a;
   --trees-accent-override: #88c0d0; /* default is #009fff */
   --trees-indent-guide-bg-override: #e3e3dd2c;
   --trees-fg-muted-override: #e3e3dd8c;
@@ -354,15 +345,43 @@
   color: var(--readback-foreground);
 }
 
-/* bb shares --input between control edges and, in a few components, fills.
- * Give editable controls the recessed well while --input supplies their
- * visible #3C3C3C keyline. Keep the selector narrow so outline buttons retain
- * their own treatment below. */
+/* Shared host-component adapter. Field and outline-button fills depend only
+ * on role, never on which card, sidebar, dialog, or composer contains them.
+ * Clip the translucent fill inside its edge to avoid double compositing. */
 .dark input.border-input,
 .dark textarea.border-input,
 .dark select.border-input,
-.dark [role="combobox"].border-input {
-  background-color: #1e1e1e;
+.dark [role="combobox"].border-input,
+.dark button.border-input,
+.dark button.border.bg-card {
+  background-color: var(--control-background);
+  background-clip: padding-box;
+  border-color: var(--input);
+}
+
+/* Native option sheets must occlude the page, just like portalled menus. */
+.dark select.border-input option,
+.dark select.border-input optgroup {
+  background-color: var(--popover);
+  color: var(--foreground);
+}
+
+@media (hover: hover) {
+  .dark input.border-input:hover:not(:disabled),
+  .dark textarea.border-input:hover:not(:disabled),
+  .dark select.border-input:hover:not(:disabled),
+  .dark [role="combobox"].border-input:hover:not(:disabled),
+  .dark button.border-input:hover:not(:disabled),
+  .dark button.border.bg-card:hover:not(:disabled) {
+    background-color: var(--state-hover);
+  }
+}
+
+.dark button.border-input:active:not(:disabled),
+.dark button.border.bg-card:active:not(:disabled),
+.dark button.border-input[data-state="open"],
+.dark button.border.bg-card[data-state="open"] {
+  background-color: var(--surface-selected);
 }
 
 /* The composer shares the #212121 user surface. Its native border remains
@@ -412,7 +431,7 @@
   body:has(a[aria-current="page"][href^="/settings"])
   main
   main
-  .bg-card:not(.bg-transparent),
+  .bg-card:not(button):not(input):not(textarea):not(select):not(.bg-transparent),
 .dark
   body:has(a[aria-current="page"][href^="/settings"])
   main
@@ -428,7 +447,7 @@
   main
   main
   div.rounded-lg.border.border-border:not(.bg-transparent) {
-  background-color: #212121;
+  background-color: var(--card);
   border-width: 0;
 }
 
@@ -809,16 +828,17 @@
   vertical-align: middle;
 }
 
-/* Keep button fills on the neutral ground ramp without changing --primary,
+/* Filled actions use shared ink layers without changing --primary,
  * which continues to own links and mention accents. */
 .dark button.bg-primary,
 .dark button.bg-foreground {
-  background-color: #363635;
+  background-color: var(--control-primary);
   color: var(--foreground);
 }
 
 .dark button.bg-secondary {
-  background-color: #1e1e1e;
+  background-color: var(--secondary);
+  background-clip: padding-box;
   border: 1px solid var(--input);
 }
 
@@ -830,11 +850,11 @@
 @media (hover: hover) {
   .dark button.bg-primary:hover,
   .dark button.bg-foreground:hover {
-    background-color: #404040;
+    background-color: var(--control-primary-hover);
   }
 
   .dark button.bg-secondary:hover {
-    background-color: #262626;
+    background-color: var(--state-hover);
   }
 }
 
@@ -842,7 +862,7 @@
  * they are neutral informational surfaces. Keep the accent for links and
  * mentions; render tooltip content as an elevated dark control instead. */
 .dark .bg-primary:has([role="tooltip"]) {
-  background-color: #1e1e1e;
+  background-color: var(--popover);
   box-shadow: inset 0 0 0 1px var(--border);
   color: var(--foreground);
 }
@@ -850,7 +870,6 @@
 /* Radix publishes these context-menu sizing variables on both root menus and
  * submenus. Scope geometry here so dropdown pickers retain their own layout. */
 .dark [role="menu"][style*="--radix-context-menu-content"] {
-  --state-hover: #e3e3dd11;
   min-width: 220px;
   max-width: calc(100vw - 16px);
   padding: 5px;

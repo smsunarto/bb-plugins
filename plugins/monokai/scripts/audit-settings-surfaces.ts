@@ -48,7 +48,7 @@ for (const { name, path } of routes) {
   console.log(
     result.cards.length === 0
       ? `${name}: UNVERIFIED (no containers rendered)`
-      : `${name}: ${result.cards.length} containers; ${result.cards.filter((c: { background: string; border: string }) => c.background !== "rgb(33, 33, 33)" || c.border !== "0px").length} mismatches`,
+      : `${name}: ${result.cards.length} containers; ${result.cards.filter((c: { background: string; border: string }) => c.background !== "rgba(227, 227, 221, 0.04)" || c.border !== "0px").length} mismatches`,
   );
 }
 writeFileSync(reportPath, JSON.stringify(reports, null, 2) + "\n");
@@ -59,7 +59,7 @@ if (
       r.missingMarketplaceEntries ||
       r.cards.some(
         (c: { background: string; border: string }) =>
-          c.background !== "rgb(33, 33, 33)" || c.border !== "0px",
+          c.background !== "rgba(227, 227, 221, 0.04)" || c.border !== "0px",
       ),
   )
 )

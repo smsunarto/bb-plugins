@@ -103,24 +103,34 @@ bb theme.
 
 <picture><img src="docs/media/palette.svg" alt="bb Monokai swatches" width="100%" /></picture>
 
-| Role                | Value                 | Where it lands                                                                 |
-| ------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| Chrome ground       | `#181818`             | cards, popovers, terminal ground                                               |
-| Conversation ground | `#151515`             | the main agent conversation                                                    |
-| Content ground      | `#181818`             | sidebars, code, and diffs                                                      |
-| Sidebar divider     | `#2B2B2B`             | solid 1px boundary between navigation and content                              |
-| User message bubble | `#212121`             | right-aligned user requests                                                    |
-| Composer            | `#212121`             | prompt input and controls                                                      |
-| Well                | `#1E1E1E`             | recessed and code wells, text fields, selectors; controls use a `#3C3C3C` edge |
-| Raised              | `#262626`             | hover and active fills                                                         |
-| Filled buttons      | `#363635` / `#1E1E1E` | borderless primary / `#3C3C3C`-bordered secondary buttons                      |
-| Selection           | `#404040`             | text selection, chips                                                          |
-| Ink                 | `#E3E3DD`             | the one white; every text tier is an alpha of it                               |
-| Accent              | `#88C0D0`             | the only chroma in the chrome — always means interactive                       |
-| Success / added     | `#3FA266`             |                                                                                |
-| Warning / attention | `#F1B467`             |                                                                                |
-| Danger / removed    | `#E34671`             |                                                                                |
-| Merged              | `#B267E6`             |                                                                                |
+| Role                | Value            | Where it lands                        |
+| ------------------- | ---------------- | ------------------------------------- |
+| Chrome / content    | `#181818`        | sidebars, terminal, code, diffs       |
+| Conversation        | `#151515`        | main agent conversation               |
+| User surface        | `#212121`        | user messages, composer, code headers |
+| Elevated surface    | `#262626` opaque | popovers and tooltips                 |
+| Subtle layer        | ink at 4%        | cards, inputs, dropdown triggers      |
+| Control layer       | ink at 6%        | secondary actions and chips           |
+| Hover layer         | ink at 8%        | controls and rows                     |
+| Selected layer      | ink at 14%       | primary actions and selected rows     |
+| Active layer        | ink at 20%       | pressed controls and primary hover    |
+| Control edge        | ink at 12%       | field and button borders              |
+| Sidebar divider     | `#2B2B2B`        | solid 1px pane boundary               |
+| Ink                 | `#E3E3DD`        | text and neutral layer source         |
+| Accent              | `#88C0D0`        | links, mentions, search matches       |
+| Success / added     | `#3FA266`        | feedback                              |
+| Warning / attention | `#F1B467`        | feedback                              |
+| Danger / removed    | `#E34671`        | feedback                              |
+| Merged              | `#B267E6`        | feedback                              |
+
+In-flow components composite the same alpha layer over their actual parent.
+A field in a card therefore remains distinct without a card-specific color.
+Borders clip the fill to the padding box, so two alpha layers do not stack
+under the edge. Menus, code, terminals, and explicit solid fallbacks remain
+opaque where they must hide content beneath them.
+
+[Cursor measurements and token mapping](docs/alpha-surfaces.md) explain the
+reference and how to rerun the browser composition audit.
 
 **One meaning per hue.** A color never does two jobs. Text is one white at four
 alphas (100 / 74 / 55 / 30 %), each annotated inline with its measured contrast

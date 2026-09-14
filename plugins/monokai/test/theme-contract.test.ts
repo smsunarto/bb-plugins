@@ -16,7 +16,7 @@ describe("bb Monokai surface palette", () => {
   test("assigns conversation, sidebar, user, and chrome grounds", () => {
     expect(theme).toContain("--background: #151515");
     expect(theme).toContain("--sidebar: #181818");
-    expect(theme).toContain("--popover: #181818");
+    expect(theme).toContain("--popover: #262626");
     expect(theme).toContain("--agent-surface-background: #212121");
     expect(theme).toContain(".dark [data-promptbox] {\n  background-color: #212121");
     expect(theme).toContain("--terminal-background: #181818");
@@ -40,9 +40,11 @@ describe("bb Monokai surface palette", () => {
       ".dark [data-agentation-staging-banner] {\n  background-color: #212121;\n  border-color: var(--agent-surface-border)",
     );
     expect(theme).toContain(
-      "div.rounded-lg.border.border-border:not(.bg-transparent) {\n  background-color: #212121;\n  border-width: 0",
+      "div.rounded-lg.border.border-border:not(.bg-transparent) {\n  background-color: var(--card);\n  border-width: 0",
     );
-    expect(theme).toContain(".bg-card:not(.bg-transparent),");
+    expect(theme).toContain(
+      ".bg-card:not(button):not(input):not(textarea):not(select):not(.bg-transparent),",
+    );
     expect(theme).toContain("div.rounded-md.border.border-border:not(.bg-transparent),");
     expect(theme).toContain("li.rounded-md.border.border-border:not(.bg-transparent),");
     expect(theme).toContain('body:has(a[aria-current="page"][href^="/settings"])');
@@ -75,7 +77,9 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #212121;",
     );
-    expect(theme).toContain(".dark .smart-embed-header {\n  background-color: #212121;");
+    expect(theme).toContain(
+      ".dark .smart-embed-header,\n.dark .last-turn-diff-heading {\n  background-color: #212121;",
+    );
     expect(theme).toContain(".font-mono {\n  font-family: var(--font-sans);");
     expect(theme).toContain(".dark .smart-embed-path,");
   });

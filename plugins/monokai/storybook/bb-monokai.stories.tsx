@@ -295,3 +295,40 @@ export const ContentPalettes: Story = {
     </Page>
   ),
 };
+
+export const SurfaceComposition: Story = {
+  name: "Surface composition",
+  render: () => (
+    <Page
+      kicker="Alpha layers"
+      title="One control, every surface"
+      description="Hover and focus the same controls on different parents. Menus keep an opaque ground."
+    >
+      <div className="sb-grid">
+        {[
+          ["Canvas", "--background"],
+          ["Sidebar", "--sidebar"],
+          ["User surface", "--agent-surface-background"],
+          ["Popover", "--popover"],
+          ["Card", "--card"],
+        ].map(([label, token]) => (
+          <section key={token} className="sb-composition" style={{ background: `var(${token})` }}>
+            <h2>{label}</h2>
+            <button className="border border-input">Choose option</button>
+            <input
+              className="border-input"
+              aria-label={`${label} input`}
+              placeholder="Editable field"
+            />
+            <button className="bg-foreground">Create thread</button>
+            <button className="bg-secondary">Secondary</button>
+            <div style={{ background: "var(--card)", padding: 12, borderRadius: 8 }}>
+              <p>Nested card</p>
+              <button className="border border-input">Choose option</button>
+            </div>
+          </section>
+        ))}
+      </div>
+    </Page>
+  ),
+};
