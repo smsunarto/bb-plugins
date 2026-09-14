@@ -344,6 +344,30 @@
   color: var(--readback-foreground);
 }
 
+/* bb's collapsed timeline toggles ("Ran 2 commands", "Thought 3s",
+ * "Worked for 5m") wrap their label in an opacity-40 span under a subtle or
+ * muted button: 30% x 40% is ~12% alpha, which vanishes on this ground. Drop
+ * the multiplier and keep one fade per span: subtle lifts to readback, muted
+ * stays muted, so "Worked for" still sits under its duration. Hover and focus
+ * climb one step as upstream intends. */
+.dark .group\/timeline-row > button[aria-expanded] > span > .opacity-40 {
+  opacity: 1;
+}
+.dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground,
+.dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground {
+  color: var(--readback-foreground);
+}
+.dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:focus-visible,
+.dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:focus-visible .text-subtle-foreground {
+  color: var(--muted-foreground);
+}
+@media (hover: hover) {
+  .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover,
+  .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover .text-subtle-foreground {
+    color: var(--muted-foreground);
+  }
+}
+
 /* Shared host-component adapter. Field and outline-button fills depend only
  * on role, never on which card, sidebar, dialog, or composer contains them.
  * Clip the translucent fill inside its edge to avoid double compositing. */

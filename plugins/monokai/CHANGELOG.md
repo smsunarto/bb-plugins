@@ -57,6 +57,9 @@
   card borders and soften the Agentation edge and divider to the user-surface
   keyline.
 
+- Lift collapsed timeline toggles ("Ran 2 commands", "Thought 3s") from a
+  stacked 12% alpha to the readback step so they read against the ground.
+
 ## 0.3.2
 
 ### Patch Changes
