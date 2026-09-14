@@ -94,7 +94,7 @@ textarea {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-recessed-solid);
+  background: var(--surface-recessed);
 }
 
 .sb-text-ladder p {
@@ -124,7 +124,7 @@ textarea {
   padding: 14px 16px;
   border: 1px solid var(--sample-border);
   border-radius: 8px;
-  background: var(--surface-recessed-solid);
+  background: var(--surface-recessed);
 }
 
 .sb-app-shell {
@@ -289,7 +289,7 @@ textarea {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-recessed-solid);
+  background: var(--surface-recessed);
 }
 
 .sb-code {

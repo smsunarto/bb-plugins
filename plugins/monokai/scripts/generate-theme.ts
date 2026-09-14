@@ -12,13 +12,6 @@ const palette = {
     chrome: "#181818",
     conversation: "#151515",
     content: "#181818",
-    recessed: "#1e1e1e",
-    userSurface: "#212121",
-    raised: "#262626",
-    selection: "#404040",
-  },
-  control: {
-    paneDivider: "#2b2b2b",
   },
   text: {
     ink: "#e3e3dd",
@@ -59,6 +52,17 @@ const palette = {
   },
 } as const satisfies Record<string, unknown>;
 
+// One neutral ladder for the whole adapter. Solid fallbacks composite these
+// same layers only where a surface must occlude unrelated scrolling content.
+const layers = {
+  subtle: withAlpha(palette.text.ink, 0x0a), // 4%: card / field
+  control: withAlpha(palette.text.ink, 0x0f), // 6%: user surface / secondary
+  hover: withAlpha(palette.text.ink, 0x14), // 8%: hover / inline code / seam
+  selected: withAlpha(palette.text.ink, 0x24), // 14%: action / selection
+  active: withAlpha(palette.text.ink, 0x33), // 20%: pressed / strong edge
+  edge: withAlpha(palette.text.ink, 0x1f), // 12%: control / pane edge
+} as const;
+
 // Every rendered color is named by role here. The CSS template refers to these
 // names, never to palette hexes, so a palette change starts and ends in code.
 // Alpha variants derive from their base role; the byte is explicit because its
@@ -69,26 +73,17 @@ const roleValues = {
   "ground.conversation": palette.ground.conversation,
   "ground.conversationScrim": withAlpha(palette.ground.conversation, 0xeb),
   "ground.content": palette.ground.content,
-  "ground.recessed": palette.ground.recessed,
-  "ground.userSurface": palette.ground.userSurface,
-  "ground.raised": palette.ground.raised,
-  "ground.selection": palette.ground.selection,
-  "ground.selection60": withAlpha(palette.ground.selection, 0x99),
-  // Cursor's foreground-relative neutral ladder. Byte-rounded CSS alpha.
-  "layer.subtle": withAlpha(palette.text.ink, 0x0a), // 4%: card / field
-  "layer.control": withAlpha(palette.text.ink, 0x0f), // 6%: secondary action
-  "layer.hover": withAlpha(palette.text.ink, 0x14), // 8%: hover / quiet edge
-  "layer.selected": withAlpha(palette.text.ink, 0x24), // 14%: action / selection
-  "layer.active": withAlpha(palette.text.ink, 0x33), // 20%: pressed / strong edge
-  "layer.edge": withAlpha(palette.text.ink, 0x1f), // 12%: control edge
-  "control.paneDivider": palette.control.paneDivider,
+  "solid.recessed": flatten(layers.subtle, palette.ground.conversation),
+  "solid.raised": flatten(layers.control, palette.ground.content),
+  "layer.subtle": layers.subtle,
+  "layer.control": layers.control,
+  "layer.hover": layers.hover,
+  "layer.selected": layers.selected,
+  "layer.active": layers.active,
+  "layer.edge": layers.edge,
   "text.ink": palette.text.ink,
-  "text.ink03": withAlpha(palette.text.ink, 0x08),
   "text.ink07": withAlpha(palette.text.ink, 0x11),
-  "text.ink08": withAlpha(palette.text.ink, 0x12),
-  "text.ink12": withAlpha(palette.text.ink, 0x1e),
   "text.ink17": withAlpha(palette.text.ink, 0x2c),
-  "text.ink20": withAlpha(palette.text.ink, 0x32),
   "text.ink25": withAlpha(palette.text.ink, 0x40),
   "text.ink30": withAlpha(palette.text.ink, 0x4d),
   "text.ink55": withAlpha(palette.text.ink, 0x8c),
@@ -138,6 +133,65 @@ interface CssRule {
 const templatePath = fileURLToPath(new URL("./bb-monokai.template.css", import.meta.url));
 const themePath = fileURLToPath(new URL("../themes/bb-monokai.css", import.meta.url));
 const codeThemePath = fileURLToPath(new URL("../themes/bb-monokai-code.json", import.meta.url));
+const palettePreviewPath = fileURLToPath(new URL("../docs/media/palette.svg", import.meta.url));
+
+// Documentation is generated from the same registry as the shipped theme.
+// SVG paints the real alpha colors over the content ground.
+export function renderPalettePreview(): string {
+  const rows = [
+    [
+      "Opaque grounds",
+      [
+        ["Conversation", "ground.conversation"],
+        ["Chrome / code", "ground.content"],
+        ["Popover", "solid.recessed"],
+        ["Recessed solid", "solid.recessed"],
+        ["Raised solid", "solid.raised"],
+      ],
+    ],
+    [
+      "Relative layers",
+      [
+        ["Card / field 4%", "layer.subtle"],
+        ["User / control 6%", "layer.control"],
+        ["Hover / code 8%", "layer.hover"],
+        ["Selected 14%", "layer.selected"],
+        ["Active 20%", "layer.active"],
+      ],
+    ],
+    [
+      "Accent and feedback",
+      [
+        ["Accent", "accent.base"],
+        ["Success", "feedback.success"],
+        ["Warning", "feedback.warning"],
+        ["Danger", "feedback.error"],
+        ["Ink", "text.ink"],
+      ],
+    ],
+  ] as const;
+  const swatches = rows
+    .map(([title, entries], row) => {
+      const top = 30 + row * 124;
+      return (
+        `<text class="heading" x="24" y="${top}">${title}</text>\n` +
+        entries
+          .map(([label, role], index) => {
+            const x = 24 + index * 164;
+            return `<rect x="${x}" y="${top + 14}" width="148" height="48" rx="6" fill="${roleValues[role]}"/>
+<text class="label" x="${x}" y="${top + 83}">${label}</text>`;
+          })
+          .join("\n")
+      );
+    })
+    .join("\n");
+  return `<!-- GENERATED by scripts/generate-theme.ts. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="852" height="376" viewBox="0 0 852 376" role="img" aria-label="Monokai opaque grounds and relative alpha layers">
+<style>.heading{font:600 13px system-ui;fill:${palette.text.ink}}.label{font:12px system-ui;fill:${roleValues["text.ink74"]}}</style>
+<rect width="852" height="376" rx="10" fill="${palette.ground.content}"/>
+${swatches}
+</svg>\n`;
+}
 
 // bb registers the shipped file under its own name, so this one is only what a
 // reader sees in a stack trace. It stays distinct from the CSS theme's name so
@@ -376,7 +430,7 @@ const darkExpected = declarationMap({
   "--ink": palette.text.ink,
   "--background": palette.ground.conversation,
   "--card": roleValues["layer.subtle"],
-  "--popover": palette.ground.raised,
+  "--popover": roleValues["solid.recessed"],
   "--secondary": roleValues["layer.control"],
   "--accent": roleValues["layer.hover"],
   "--muted": roleValues["layer.selected"],
@@ -385,17 +439,17 @@ const darkExpected = declarationMap({
   "--control-primary": roleValues["layer.selected"],
   "--control-primary-hover": roleValues["layer.active"],
   "--surface-recessed": roleValues["layer.subtle"],
-  "--surface-recessed-solid": palette.ground.recessed,
-  "--surface-recessed-soft-solid": palette.ground.recessed,
+  "--surface-recessed-solid": roleValues["solid.recessed"],
+  "--surface-recessed-soft-solid": roleValues["solid.recessed"],
   "--surface-raised": roleValues["layer.control"],
-  "--surface-raised-solid": palette.ground.raised,
+  "--surface-raised-solid": roleValues["solid.raised"],
   "--surface-scrim": roleValues["ground.conversationScrim"],
-  "--agent-surface-background": palette.ground.userSurface,
-  "--agent-surface-border": roleValues["text.ink07"],
+  "--agent-surface-background": roleValues["layer.control"],
+  "--agent-surface-border": roleValues["layer.hover"],
   "--state-hover": roleValues["layer.hover"],
   "--state-active": roleValues["layer.active"],
   "--surface-selected": roleValues["layer.selected"],
-  "--surface-selected-border": roleValues["text.ink25"],
+  "--surface-selected-border": roleValues["layer.active"],
   "--border-seam": roleValues["layer.subtle"],
   "--border-seam-vertical": "var(--border-seam)",
   "--border": roleValues["layer.edge"],
@@ -414,7 +468,7 @@ const darkExpected = declarationMap({
   "--sidebar-ring": roleValues["text.ink25"],
   "--sidebar-search-match": roleValues["accent.match"],
   "--sidebar-search-match-border": roleValues["accent.matchBorder"],
-  "--resource-source-shelf-card-hover-border": roleValues["text.ink25"],
+  "--resource-source-shelf-card-hover-border": roleValues["layer.active"],
   "--destructive": palette.feedback.error,
   "--destructive-foreground": palette.ground.chrome,
   "--destructive-text": palette.feedback.error,
@@ -437,13 +491,13 @@ const darkExpected = declarationMap({
   "--sidebar-foreground": roleValues["text.ink74"],
   "--sidebar-accent": roleValues["layer.hover"],
   "--sidebar-accent-foreground": palette.text.ink,
-  "--sidebar-border": palette.control.paneDivider,
+  "--sidebar-border": roleValues["layer.edge"],
   "--pill-surface": `linear-gradient(to bottom, ${roleValues["layer.control"]}, ${roleValues["layer.control"]})`,
-  "--pill-surface-border": roleValues["text.ink12"],
+  "--pill-surface-border": roleValues["layer.edge"],
   "--pill-foreground": palette.text.ink,
   "--pill-icon": roleValues["text.ink74"],
   "--pill-surface-selected": `linear-gradient(to bottom, ${roleValues["layer.selected"]}, ${roleValues["layer.selected"]})`,
-  "--pill-surface-selected-border": roleValues["text.ink25"],
+  "--pill-surface-selected-border": roleValues["layer.active"],
   ...indexed("--ansi-", ansi),
   ...indexed("--ansi-bg-fg-", ansiForegrounds),
   "--diffs-addition-color-override": palette.feedback.success,
@@ -452,16 +506,16 @@ const darkExpected = declarationMap({
   "--diffs-bg-context-override": palette.ground.content,
   "--diffs-bg-context-gutter-override": palette.ground.content,
   "--diffs-bg-buffer-override": palette.ground.content,
-  "--diffs-bg-separator-override": palette.ground.userSurface,
+  "--diffs-bg-separator-override": roleValues["layer.control"],
   "--diffs-bg-addition-override": roleValues["feedback.success13"],
   "--diffs-bg-addition-emphasis-override": roleValues["feedback.success27"],
   "--diffs-bg-deletion-override": roleValues["feedback.error13"],
   "--diffs-bg-deletion-emphasis-override": roleValues["feedback.error27"],
-  "--diffs-bg-hover-override": roleValues["text.ink08"],
-  "--diffs-bg-selection-override": roleValues["ground.selection60"],
+  "--diffs-bg-hover-override": roleValues["layer.hover"],
+  "--diffs-bg-selection-override": roleValues["layer.selected"],
   "--diffs-bg-addition-number-override": palette.ground.content,
   "--diffs-bg-deletion-number-override": palette.ground.content,
-  "--diffs-bg-selection-number-override": palette.ground.raised,
+  "--diffs-bg-selection-number-override": roleValues["layer.selected"],
   "--diffs-fg-number-override": roleValues["text.ink55"],
   "--diffs-fg-number-addition-override": palette.feedback.success,
   "--diffs-fg-number-deletion-override": palette.feedback.error,
@@ -474,7 +528,7 @@ const darkExpected = declarationMap({
   "--trees-status-ignored-override": roleValues["text.ink30"],
   "--trees-input-bg-override": roleValues["layer.subtle"],
   "--trees-accent-override": palette.accent,
-  "--trees-indent-guide-bg-override": roleValues["text.ink17"],
+  "--trees-indent-guide-bg-override": roleValues["layer.edge"],
   "--trees-fg-muted-override": roleValues["text.ink55"],
   "--trees-focus-ring-color-override": roleValues["text.ink25"],
   "--trees-file-icon-color": roleValues["text.ink55"],
@@ -486,6 +540,30 @@ const requiredRules: Array<{
   selector: string;
   declarations: Record<string, string>;
 }> = [
+  {
+    selector: ".dark .bg-popover",
+    declarations: { "--state-active": "var(--state-hover)" },
+  },
+  {
+    selector: '.dark [role="menu"]',
+    declarations: { "--state-active": "var(--state-hover)" },
+  },
+  {
+    selector: ".dark .smart-embed",
+    declarations: { "background-clip": "padding-box", "box-shadow": "none" },
+  },
+  {
+    selector: '.dark .bg-popover > .border-b:has(input[aria-label="Search models"])',
+    declarations: { "background-color": "var(--control-background)", "border-bottom-width": "0" },
+  },
+  {
+    selector: '.dark .bg-popover > .border-b input[aria-label="Search models"]',
+    declarations: { "background-color": "transparent" },
+  },
+  {
+    selector: ".dark .last-turn-diff-chevron",
+    declarations: { display: "flex" },
+  },
   {
     selector: '.dark [data-sidebar="panel"]',
     declarations: { "border-color": "var(--sidebar-border)" },
@@ -529,28 +607,31 @@ const requiredRules: Array<{
   },
   {
     selector: ".dark [data-promptbox]",
-    declarations: { "background-color": palette.ground.userSurface },
+    declarations: {
+      "background-color": "var(--agent-surface-background)",
+      "background-clip": "padding-box",
+    },
   },
   {
     selector: ".dark [data-promptbox] [data-promptbox-editor-scroll]",
     declarations: {
-      "background-color": palette.ground.userSurface,
+      "background-color": "transparent",
       "border-radius": "11px 11px 0 0",
     },
   },
   {
     selector: '.dark [aria-label="Thread context before sending"]',
-    declarations: { "background-color": palette.ground.userSurface },
+    declarations: { "background-color": "var(--agent-surface-background)" },
   },
   {
     selector:
       '.dark [aria-label="Thread context before sending"] > .flex.items-center.gap-0\\.5.p-1',
-    declarations: { "background-color": palette.ground.userSurface },
+    declarations: { "background-color": "transparent" },
   },
   {
     selector: ".dark [data-agentation-staging-banner]",
     declarations: {
-      "background-color": palette.ground.userSurface,
+      "background-color": "var(--agent-surface-background)",
       "border-color": "var(--agent-surface-border)",
     },
   },
@@ -581,7 +662,12 @@ const requiredRules: Array<{
   {
     selector:
       ".dark #thread-detail-secondary-panel .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])",
-    declarations: { "background-color": palette.ground.userSurface },
+    declarations: { "background-color": "var(--agent-surface-background)" },
+  },
+  {
+    selector:
+      ".dark #thread-detail-secondary-panel .sticky.rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])",
+    declarations: { "background-color": "var(--surface-raised-solid)" },
   },
   {
     selector: ".dark [data-message-column] [data-markdown-preview] a.underline",
@@ -594,6 +680,10 @@ const requiredRules: Array<{
       "box-decoration-break": "clone",
       "-webkit-box-decoration-break": "clone",
     },
+  },
+  {
+    selector: ".dark code.bg-muted\\/70",
+    declarations: { "background-color": "var(--accent)" },
   },
   {
     selector: ".dark [data-message-column] [data-markdown-preview] a.underline:hover",
@@ -670,8 +760,8 @@ const requiredRules: Array<{
       "--canvas-prose-link-hover": palette.contentTint.cyan,
       "--canvas-prose-marker": palette.contentTint.comment,
       "--canvas-prose-quote-rule": palette.code.keyword,
-      "--canvas-prose-rule": roleValues["text.ink07"],
-      "--canvas-prose-code-well": palette.ground.raised,
+      "--canvas-prose-rule": "var(--border-hairline)",
+      "--canvas-prose-code-well": "var(--accent)",
     },
   },
 ];
@@ -812,14 +902,14 @@ export function auditTheme(source: string): void {
   requireContrast(
     "primary button text",
     palette.text.ink,
-    flatten(roleValues["layer.selected"], palette.ground.userSurface),
+    flatten(layers.selected, flatten(layers.control, roleValues["solid.raised"])),
     4.5,
     violations,
   );
   requireContrast(
     "secondary button text",
     palette.text.ink,
-    palette.ground.recessed,
+    roleValues["solid.recessed"],
     4.5,
     violations,
   );
@@ -835,7 +925,7 @@ export function auditTheme(source: string): void {
   requireContrast(
     "inline comment on recessed well",
     roleValues["text.comment60"],
-    palette.ground.recessed,
+    roleValues["solid.recessed"],
     3.8,
     violations,
   );
@@ -863,6 +953,7 @@ async function main(): Promise<void> {
   const css = renderTheme(await readFile(templatePath, "utf8"));
   auditTheme(css);
   await emit(themePath, css, check);
+  await emit(palettePreviewPath, renderPalettePreview(), check);
 
   const codeTheme = renderCodeTheme(readCodeThemeRules().rules);
   await emit(codeThemePath, `${JSON.stringify(codeTheme, null, 2)}\n`, check);

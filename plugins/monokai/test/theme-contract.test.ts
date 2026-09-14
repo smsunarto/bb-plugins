@@ -16,9 +16,12 @@ describe("bb Monokai surface palette", () => {
   test("assigns conversation, sidebar, user, and chrome grounds", () => {
     expect(theme).toContain("--background: #151515");
     expect(theme).toContain("--sidebar: #181818");
-    expect(theme).toContain("--popover: #262626");
-    expect(theme).toContain("--agent-surface-background: #212121");
-    expect(theme).toContain(".dark [data-promptbox] {\n  background-color: #212121");
+    expect(theme).toContain("--popover: #1d1d1d");
+    expect(theme).toContain("--agent-surface-background: #e3e3dd0f");
+    expect(theme).toContain(
+      ".dark [data-promptbox] {\n  background-color: var(--agent-surface-background)",
+    );
+    expect(theme).toContain(".dark code.bg-muted\\/70 {\n  background-color: var(--accent)");
     expect(theme).toContain("--terminal-background: #181818");
     expect(theme.toLowerCase()).not.toContain("#141414");
   });
@@ -28,16 +31,16 @@ describe("bb Monokai surface palette", () => {
       ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {\n  background-color: #151515",
     );
     expect(theme).toContain(
-      ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: #212121;\n  border-radius: 11px 11px 0 0",
+      ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: transparent;\n  border-radius: 11px 11px 0 0",
     );
     expect(theme).toContain(
-      '.dark [aria-label="Thread context before sending"] {\n  background-color: #212121',
+      '.dark [aria-label="Thread context before sending"] {\n  background-color: var(--agent-surface-background)',
     );
     expect(theme).toContain(
-      '[aria-label="Thread context before sending"]\n  > .flex.items-center.gap-0\\.5.p-1 {\n  background-color: #212121',
+      '[aria-label="Thread context before sending"]\n  > .flex.items-center.gap-0\\.5.p-1 {\n  background-color: transparent',
     );
     expect(theme).toContain(
-      ".dark [data-agentation-staging-banner] {\n  background-color: #212121;\n  border-color: var(--agent-surface-border)",
+      ".dark [data-agentation-staging-banner] {\n  background-color: var(--agent-surface-background);\n  background-clip: padding-box;\n  border-color: var(--agent-surface-border)",
     );
     expect(theme).toContain(
       "div.rounded-lg.border.border-border:not(.bg-transparent) {\n  background-color: var(--card);\n  border-width: 0",
@@ -73,12 +76,12 @@ describe("bb Monokai contract audit", () => {
     for (const role of ["context-gutter", "buffer", "addition-number", "deletion-number"]) {
       expect(theme).toContain(`--diffs-bg-${role}-override: #181818`);
     }
-    expect(theme).toContain("--diffs-bg-separator-override: #212121");
+    expect(theme).toContain("--diffs-bg-separator-override: #e3e3dd0f");
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #212121;",
+      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: var(--agent-surface-background);",
     );
     expect(theme).toContain(
-      ".dark .smart-embed-header,\n.dark .last-turn-diff-heading {\n  background-color: #212121;",
+      ".dark .smart-embed-header,\n.dark .last-turn-diff-heading {\n  background-color: var(--agent-surface-background);",
     );
     expect(theme).toContain(".font-mono {\n  font-family: var(--font-sans);");
     expect(theme).toContain(".dark .smart-embed-path,");
@@ -198,7 +201,7 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       '@media (min-width: 768px) {\n  .dark [data-testid="notification-center"] {\n    overflow: hidden;\n    border-color: var(--border);\n    border-radius: 16px;',
     );
-    expect(template).toContain("0 0 0 1px {{text.ink12}}");
+    expect(template).toContain("0 0 0 1px var(--border)");
   });
 
   test("leaves compact mobile toasts on bb's native layout", () => {
@@ -247,7 +250,40 @@ describe("bb Monokai contract audit", () => {
     expect(() => auditTheme(theme)).not.toThrow();
   });
 
-  test("paints each outer sidebar edge with one solid pane divider", () => {
+  test("rejects flattening an in-flow surface or repainting composer layout", () => {
+    expect(() =>
+      auditTheme(
+        theme.replace(
+          "--agent-surface-background: #e3e3dd0f",
+          "--agent-surface-background: #262626",
+        ),
+      ),
+    ).toThrow("--agent-surface-background: expected #e3e3dd0f");
+    expect(() =>
+      auditTheme(
+        theme.replace(
+          "[data-promptbox-editor-scroll] {\n  background-color: transparent",
+          "[data-promptbox-editor-scroll] {\n  background-color: var(--agent-surface-background)",
+        ),
+      ),
+    ).toThrow("background-color: expected transparent");
+  });
+
+  test("derives occluding fallbacks and keeps sticky headers opaque", () => {
+    // 4% ink over conversation; 6% ink over content, byte-rounded in sRGB.
+    expect(theme).toContain("--surface-recessed-solid: #1d1d1d");
+    expect(theme).toContain("--surface-raised-solid: #242424");
+    expect(() =>
+      auditTheme(
+        theme.replace(
+          "background-color: var(--surface-raised-solid)",
+          "background-color: var(--agent-surface-background)",
+        ),
+      ),
+    ).toThrow("background-color: expected var(--surface-raised-solid)");
+  });
+
+  test("paints each outer sidebar edge with one shared alpha edge", () => {
     expect(theme).toContain(
       '.dark [data-sidebar="panel"],\n.dark #thread-detail-secondary-panel > aside {\n  border-color: var(--sidebar-border);\n}',
     );

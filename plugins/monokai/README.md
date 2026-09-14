@@ -103,25 +103,23 @@ bb theme.
 
 <picture><img src="docs/media/palette.svg" alt="bb Monokai swatches" width="100%" /></picture>
 
-| Role                | Value            | Where it lands                        |
-| ------------------- | ---------------- | ------------------------------------- |
-| Chrome / content    | `#181818`        | sidebars, terminal, code, diffs       |
-| Conversation        | `#151515`        | main agent conversation               |
-| User surface        | `#212121`        | user messages, composer, code headers |
-| Elevated surface    | `#262626` opaque | popovers and tooltips                 |
-| Subtle layer        | ink at 4%        | cards, inputs, dropdown triggers      |
-| Control layer       | ink at 6%        | secondary actions and chips           |
-| Hover layer         | ink at 8%        | controls and rows                     |
-| Selected layer      | ink at 14%       | primary actions and selected rows     |
-| Active layer        | ink at 20%       | pressed controls and primary hover    |
-| Control edge        | ink at 12%       | field and button borders              |
-| Sidebar divider     | `#2B2B2B`        | solid 1px pane boundary               |
-| Ink                 | `#E3E3DD`        | text and neutral layer source         |
-| Accent              | `#88C0D0`        | links, mentions, search matches       |
-| Success / added     | `#3FA266`        | feedback                              |
-| Warning / attention | `#F1B467`        | feedback                              |
-| Danger / removed    | `#E34671`        | feedback                              |
-| Merged              | `#B267E6`        | feedback                              |
+| Role                | Value            | Where it lands                            |
+| ------------------- | ---------------- | ----------------------------------------- |
+| Chrome / content    | `#181818`        | sidebars, terminal, code, diffs           |
+| Conversation        | `#151515`        | main agent conversation                   |
+| Elevated surface    | `#1D1D1D` opaque | popovers and tooltips                     |
+| Subtle layer        | ink at 4%        | cards, inputs, dropdown triggers          |
+| Control layer       | ink at 6%        | user messages, composer, headers, actions |
+| Hover layer         | ink at 8%        | controls, rows, inline code               |
+| Selected layer      | ink at 14%       | primary actions and selected rows         |
+| Active layer        | ink at 20%       | pressed controls and primary hover        |
+| Control edge        | ink at 12%       | fields, buttons, pane boundaries          |
+| Ink                 | `#E3E3DD`        | text and neutral layer source             |
+| Accent              | `#88C0D0`        | links, mentions, search matches           |
+| Success / added     | `#3FA266`        | feedback                                  |
+| Warning / attention | `#F1B467`        | feedback                                  |
+| Danger / removed    | `#E34671`        | feedback                                  |
+| Merged              | `#B267E6`        | feedback                                  |
 
 In-flow components composite the same alpha layer over their actual parent.
 A field in a card therefore remains distinct without a card-specific color.

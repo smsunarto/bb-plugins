@@ -53,13 +53,23 @@ export const Foundations: Story = {
       description="The real bb Monokai stylesheet supplies every value. These fixtures only map its semantic tokens to visible roles."
     >
       <section className="sb-section">
-        <h2>Grounds ramp</h2>
+        <h2>Opaque grounds</h2>
         <div className="sb-grid">
-          <Swatch label="Chrome" token="--card" />
-          <Swatch label="Editor" token="--background" />
-          <Swatch label="Well" token="--surface-recessed-solid" />
-          <Swatch label="Raised" token="--surface-raised-solid" />
-          <Swatch label="Selection" token="--muted" />
+          <Swatch label="Chrome / content" token="--sidebar" />
+          <Swatch label="Conversation" token="--background" />
+          <Swatch label="Popover" token="--popover" />
+          <Swatch label="Occluding header" token="--surface-raised-solid" />
+        </div>
+      </section>
+
+      <section className="sb-section">
+        <h2>Relative layers</h2>
+        <div className="sb-grid">
+          <Swatch label="Card / field · 4%" token="--card" />
+          <Swatch label="User / control · 6%" token="--surface-raised" />
+          <Swatch label="Hover / inline code · 8%" token="--state-hover" />
+          <Swatch label="Selected · 14%" token="--surface-selected" />
+          <Swatch label="Active · 20%" token="--state-active" />
         </div>
       </section>
 
@@ -135,9 +145,7 @@ export const ChromeAndStates: Story = {
               <div className="sb-agent-card rounded-xl border border-border-seam bg-surface-recessed">
                 <span className="sb-label">Active agent surface</span>
                 <h2>Review the palette contract</h2>
-                <p className="sb-muted-foreground">
-                  A quiet editor-ground panel with a faint ladder edge.
-                </p>
+                <p className="sb-muted-foreground">A relative ink layer with a faint edge.</p>
               </div>
 
               <div className="sb-controls">
@@ -214,7 +222,10 @@ export const ContentPalettes: Story = {
       </section>
 
       <section className="sb-section">
-        <h2>Inline code</h2>
+        <h2>Code</h2>
+        <p>
+          Inline <code className="bg-muted/70">emphasis</code> adapts to the prose surface.
+        </p>
         <pre className="sb-code bb-code-highlight">
           <code>
             <span style={{ color: "var(--sh-keyword)" }}>const</span>{" "}
@@ -261,8 +272,7 @@ export const ContentPalettes: Story = {
           <div
             className="sb-diff-row"
             style={tokenStyle({
-              "--diff-bg":
-                "color-mix(in srgb, var(--diffs-modified-color-override) 14%, transparent)",
+              "--diff-bg": "var(--surface-attention)",
             })}
           >
             <span className="sb-diff-number">21</span>

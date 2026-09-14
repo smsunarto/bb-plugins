@@ -36,7 +36,7 @@ observations do not imply that every Cursor component uses one identical fill.
 Monokai copies the composition model and five-step neutral ladder, preserving
 its own ink, content grounds, feedback colors, and text ladder. BB fields and
 outline triggers deliberately use 4% at rest for a visible hit area. Popovers
-use Monokai's opaque raised ground. CSS hex alpha rounds each percentage to
+use the opaque 4% ink layer over the conversation ground. CSS hex alpha rounds each percentage to
 the nearest byte.
 
 ## Component contract
@@ -45,13 +45,25 @@ the nearest byte.
   No runtime color sampling or component-background detection is needed.
 - Use `--control-background` for fields and outline triggers, `--secondary`
   for secondary actions, and `--control-primary` for filled actions.
+- Menu navigation highlights use the 8% hover layer, including model and
+  reasoning selections. They do not use the 20% pressed-action layer.
+- Embedded frames clip their fill inside the edge and do not add a light
+  outer shadow. This keeps inline visualizations and code embeds crisp.
 - Use `--state-hover`, `--surface-selected`, and `--state-active` for interaction
   layers. Ghost controls remain transparent at rest.
 - Keep `--input` for edges. Clip translucent control fills to `padding-box`.
   The fill must not stack under the translucent border.
+- Use the same 6% layer for user bubbles, composer shells, context cards,
+  embed headers, and diff separators. Inline code uses 8%; diff selections
+  and their gutters use 14%. Pane dividers and controls share the 12% edge.
+- Composer editor-scroll and context-inlay children stay transparent. These
+  layout wrappers do not represent another container.
 - Keep menus, tooltips, native option sheets, terminal/code grounds, and
   explicit `*-solid` tokens opaque. Transparency is not appropriate when the
-  component must hide unrelated content beneath it.
+  component must hide unrelated content beneath it. The generator derives
+  recessed solid from 4% ink over conversation, and raised solid from 6% ink
+  over content. Sticky Git headers consume the raised solid, matching the
+  normal layer while covering scrolling code.
 - Settings container selectors must exclude controls. BB uses `bg-card` on
   both settings cards and compact picker buttons. Matching both previously
   erased the picker edge and overrode its hover state.
@@ -81,3 +93,16 @@ The matrix verifies the CSS composition contract, not arbitrary host component
 behavior. Real settings dropdown, input focus, mobile layout, and theme
 switching still need the isolated app checks. Text ratios are representative
 measurements, not a blanket accessibility verdict.
+
+For the wider neutral surface contract, run:
+
+```sh
+bun plugins/monokai/scripts/audit-theme-surfaces.ts \
+  "$BROWSER_SESSION" "$BB_APP_URL" "$ARTIFACT_DIR/surface-matrix.json"
+```
+
+This mounts user bubbles, composer/context wrappers, annotation banners, embed
+headers, Last turn headings, and inline code on four parent grounds. It asserts
+28 alpha combinations, transparent layout children, and the opaque sticky Git
+header. These fixtures exercise the shipped selectors. They do not replace
+checking real conversation and diff rendering after BB upgrades.

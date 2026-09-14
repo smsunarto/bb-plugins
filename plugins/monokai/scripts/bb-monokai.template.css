@@ -75,7 +75,7 @@
   --ink: {{text.ink}};
   --background: {{ground.conversation}};
   --card: {{layer.subtle}};
-  --popover: {{ground.raised}};
+  --popover: {{solid.recessed}};
   --secondary: {{layer.control}};
   --accent: {{layer.hover}};
   --muted: {{layer.selected}};
@@ -85,10 +85,10 @@
   --control-primary-hover: {{layer.active}};
 
   --surface-recessed: {{layer.subtle}};
-  --surface-recessed-solid: {{ground.recessed}};
-  --surface-recessed-soft-solid: {{ground.recessed}};
+  --surface-recessed-solid: {{solid.recessed}};
+  --surface-recessed-soft-solid: {{solid.recessed}};
   --surface-raised: {{layer.control}};
-  --surface-raised-solid: {{ground.raised}};
+  --surface-raised-solid: {{solid.raised}};
   --surface-scrim: {{ground.conversationScrim}}; /* not a veil: bb paints the page
                                            * header and floating control
                                            * clusters with it, over the pane.
@@ -98,8 +98,8 @@
                                            * than the safe-area strip above it
                                            * on phones. */
 
-  --agent-surface-background: {{ground.userSurface}};
-  --agent-surface-border: {{text.ink07}};
+  --agent-surface-background: {{layer.control}};
+  --agent-surface-border: {{layer.hover}};
 
   --state-hover: {{layer.hover}};
   --state-active: {{layer.active}};
@@ -108,7 +108,7 @@
    * selection quiet. Both names default to a --primary mix, so both are pinned
    * or they would tint cyan. */
   --surface-selected: {{layer.selected}};
-  --surface-selected-border: {{text.ink25}};
+  --surface-selected-border: {{layer.active}};
 
   /* ---- Borders --------------------------------------------------------- */
   --border-seam: {{layer.subtle}};
@@ -148,7 +148,7 @@
   --sidebar-search-match: {{accent.match}};
   --sidebar-search-match-border: {{accent.matchBorder}};
 
-  --resource-source-shelf-card-hover-border: {{text.ink25}};
+  --resource-source-shelf-card-hover-border: {{layer.active}};
 
   /* ---- Feedback — one hex per role ------------------------------------- */
   --destructive: {{feedback.error}};
@@ -180,17 +180,17 @@
   --sidebar-foreground: {{text.ink74}}; /* 8.02:1 */
   --sidebar-accent: {{layer.hover}};
   --sidebar-accent-foreground: {{text.ink}}; /* selection keeps primary text */
-  --sidebar-border: {{control.paneDivider}}; /* solid, low-contrast 1px pane divider */
+  --sidebar-border: {{layer.edge}}; /* shared alpha edge; one owner per boundary */
 
   /* ---- Mention pills ---------------------------------------------------
    * The gradient syntax is required (the token is consumed as a
    * background-image); the stops are flat so the chip stays on the ramp. */
   --pill-surface: linear-gradient(to bottom, {{layer.control}}, {{layer.control}});
-  --pill-surface-border: {{text.ink12}};
+  --pill-surface-border: {{layer.edge}};
   --pill-foreground: {{text.ink}};
   --pill-icon: {{text.ink74}};
   --pill-surface-selected: linear-gradient(to bottom, {{layer.selected}}, {{layer.selected}});
-  --pill-surface-selected-border: {{text.ink25}};
+  --pill-surface-selected-border: {{layer.active}};
 
   /* ---- Terminal ANSI ---------------------------------------------------
    * Content palette, not chrome: the program assigns the meaning. Normal tier
@@ -251,19 +251,19 @@
   --diffs-bg-context-override: {{ground.content}};
   --diffs-bg-context-gutter-override: {{ground.content}};
   --diffs-bg-buffer-override: {{ground.content}};
-  --diffs-bg-separator-override: {{ground.userSurface}};
+  --diffs-bg-separator-override: {{layer.control}};
   --diffs-bg-addition-override: {{feedback.success13}};
   --diffs-bg-addition-emphasis-override: {{feedback.success27}};
   --diffs-bg-deletion-override: {{feedback.error13}};
   --diffs-bg-deletion-emphasis-override: {{feedback.error27}};
-  --diffs-bg-hover-override: {{text.ink08}};
-  --diffs-bg-selection-override: {{ground.selection60}};
+  --diffs-bg-hover-override: {{layer.hover}};
+  --diffs-bg-selection-override: {{layer.selected}};
 
   /* Number gutters share the neutral code ground, not the change-row wash.
    * Feedback numbers retain their contrast against the content surface. */
   --diffs-bg-addition-number-override: {{ground.content}};
   --diffs-bg-deletion-number-override: {{ground.content}};
-  --diffs-bg-selection-number-override: {{ground.raised}};
+  --diffs-bg-selection-number-override: {{layer.selected}};
   --diffs-fg-number-override: {{text.ink55}};
   --diffs-fg-number-addition-override: {{feedback.success}};
   --diffs-fg-number-deletion-override: {{feedback.error}};
@@ -286,7 +286,7 @@
 
   --trees-input-bg-override: {{layer.subtle}};
   --trees-accent-override: {{accent.base}}; /* default is #009fff */
-  --trees-indent-guide-bg-override: {{text.ink17}};
+  --trees-indent-guide-bg-override: {{layer.edge}};
   --trees-fg-muted-override: {{text.ink55}};
   --trees-focus-ring-color-override: {{text.ink25}};
 
@@ -305,7 +305,7 @@
   background-color: var(--terminal-background);
 }
 
-/* Both outer sidebars spend the solid pane-divider role. The active right
+/* Both outer sidebars spend the shared alpha edge. The active right
  * resize handle owns that boundary, so suppress the panel border beneath it
  * instead of painting the divider twice. */
 .dark [data-sidebar="panel"],
@@ -324,11 +324,12 @@
   border-color: transparent;
 }
 
-/* User requests use their own #212121 surface with a faint edge while keeping
+/* User requests use the shared 6% ink surface with an 8% edge while keeping
  * bb's native bubble geometry. Agent replies stay flat on the #151515
  * conversation ground. */
 .dark .rounded-xl.border.border-border-seam.bg-surface-recessed {
   background-color: var(--agent-surface-background);
+  background-clip: padding-box;
   border-color: var(--agent-surface-border);
 }
 
@@ -382,39 +383,34 @@
   background-color: var(--surface-selected);
 }
 
-/* The composer shares the #212121 user surface. Its native border remains
- * responsible for the edge. */
+/* The composer owns one 6% layer. Its editor is layout, not another surface. */
 .dark [data-promptbox] {
-  background-color: {{ground.userSurface}};
+  background-color: var(--agent-surface-background);
+  background-clip: padding-box;
 }
 
-/* The editor scroll layer is transparent upstream. Paint it explicitly so
- * inset editor height and overflow never expose a different composer ground.
- * Match the native 12px shell inside its 1px border so this square child cannot
- * paint through the shell's rounded top corners. */
 .dark [data-promptbox] [data-promptbox-editor-scroll] {
-  background-color: {{ground.userSurface}};
+  background-color: transparent;
   border-radius: 11px 11px 0 0;
 }
 
-/* Prompt context is part of the user's pending request, not a generic card. */
+/* Context is a separate request surface; its compact git inlay is layout. */
 .dark [aria-label="Thread context before sending"] {
-  background-color: {{ground.userSurface}};
+  background-color: var(--agent-surface-background);
+  background-clip: padding-box;
 }
 
-/* The compact git summary paints its own inlay over the prompt-context card.
- * Keep that layer on the same user surface so it cannot expose a transparent
- * or upstream surface through the card. */
 .dark
   [aria-label="Thread context before sending"]
   > .flex.items-center.gap-0\.5.p-1 {
-  background-color: {{ground.userSurface}};
+  background-color: transparent;
 }
 
 /* Agentation owns this composer banner and exposes a stable theme hook. Match
  * it to user-authored surfaces, including its outer edge and list divider. */
 .dark [data-agentation-staging-banner] {
-  background-color: {{ground.userSurface}};
+  background-color: var(--agent-surface-background);
+  background-clip: padding-box;
   border-color: var(--agent-surface-border);
 }
 
@@ -865,6 +861,36 @@
   color: var(--foreground);
 }
 
+/* Menu navigation highlights are quiet selections, not pressed actions.
+ * Share the same mapping across model/reasoning popovers and all menus. */
+.dark .bg-popover,
+.dark [role="menu"] {
+  --state-active: var(--state-hover);
+}
+
+/* The model-search row is one field, including its inset around the input. */
+.dark .bg-popover > .border-b:has(input[aria-label="Search models"]) {
+  background-color: var(--control-background);
+  border-bottom-width: 0;
+}
+
+.dark .bg-popover > .border-b input[aria-label="Search models"] {
+  background-color: transparent;
+}
+
+/* Embedded frames need a crisp alpha edge. The plugin's light outer shadow
+ * reads as a glow, and painting the fill under the edge brightens it again. */
+.dark .smart-embed {
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+/* Pierre centers the prefix slot. A block flex button avoids the inline
+ * baseline space that otherwise shifts its visual center upward. */
+.dark .last-turn-diff-chevron {
+  display: flex;
+}
+
 /* Radix publishes these context-menu sizing variables on both root menus and
  * submenus. Scope geometry here so dropdown pickers retain their own layout. */
 .dark [role="menu"][style*="--radix-context-menu-content"] {
@@ -992,9 +1018,13 @@
  * tie on specificity loses the moment a thread is opened. Repeating the class
  * outranks it without reaching for `!important`.
  * Measured on the recessed well #1E1E1E. */
-.dark .bg-surface-recessed:has(> .bb-code-highlight),
-.dark code.bg-muted\/70 {
+.dark .bg-surface-recessed:has(> .bb-code-highlight) {
   background-color: {{ground.content}};
+}
+
+/* Backtick-delimited inline code is prose emphasis, not a fenced code body. */
+.dark code.bg-muted\/70 {
+  background-color: var(--accent);
 }
 
 .dark .bb-code-highlight.bb-code-highlight {
@@ -1090,7 +1120,7 @@ diffs-container {
  * Smart embeds expose their own header class. Bodies keep the content ground. */
 .dark .smart-embed-header,
 .dark .last-turn-diff-heading {
-  background-color: {{ground.userSurface}};
+  background-color: var(--agent-surface-background);
 }
 
 .dark
@@ -1099,7 +1129,18 @@ diffs-container {
 .dark
   [data-secondary-panel-shelf]
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
-  background-color: {{ground.userSurface}};
+  background-color: var(--agent-surface-background);
+}
+
+/* Sticky headers must hide scrolling code. Their solid fallback is generated
+ * from the same 6% layer over content, not a separately chosen header color. */
+.dark
+  #thread-detail-secondary-panel
+  .sticky.rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]),
+.dark
+  [data-secondary-panel-shelf]
+  .sticky.rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+  background-color: var(--surface-raised-solid);
 }
 
 .dark .smart-embed-header,
@@ -1123,8 +1164,8 @@ diffs-container {
   --canvas-prose-link-hover: {{content.cyan}};
   --canvas-prose-marker: {{content.comment}};
   --canvas-prose-quote-rule: {{code.keyword}};
-  --canvas-prose-rule: {{text.ink07}};
-  --canvas-prose-code-well: {{ground.raised}};
+  --canvas-prose-rule: var(--border-hairline);
+  --canvas-prose-code-well: var(--accent);
 }
 
 /* bb's notification history is a first-class themed surface, separate from
@@ -1170,7 +1211,7 @@ diffs-container {
     border-radius: 16px;
     background: var(--popover);
     box-shadow:
-      0 0 0 1px {{text.ink12}},
+      0 0 0 1px var(--border),
       0 4px 12px -4px {{ground.chromeScrim}};
   }
 }
@@ -1239,7 +1280,7 @@ diffs-container {
   border-color: var(--border);
   color: var(--popover-foreground);
   box-shadow:
-    0 0 0 1px {{text.ink12}},
+    0 0 0 1px var(--border),
     0 4px 12px -4px {{ground.chromeScrim}};
 }
 
@@ -1304,13 +1345,14 @@ diffs-container {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--secondary);
+  background-clip: padding-box;
   color: var(--secondary-foreground);
   text-decoration: none;
 }
 
 @media (hover: hover) {
   .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button:hover {
-    background: var(--state-active);
+    background: var(--state-hover);
   }
 }
 

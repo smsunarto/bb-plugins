@@ -126,7 +126,7 @@ browser(
 const menu = evaluate(
   `(() => {const s=getComputedStyle(document.querySelector('[role="menu"]')); return {background:s.backgroundColor,shadow:s.boxShadow,opacity:s.opacity};})()`,
 );
-if (menu.background !== "rgb(38, 38, 38)" || menu.shadow === "none")
+if (menu.background !== "rgb(29, 29, 29)" || menu.shadow === "none")
   throw new Error(`Menu must occlude content and have a shadow: ${JSON.stringify(menu)}`);
 writeFileSync(reportPath, JSON.stringify({ origin, cases: reports, menu }, null, 2) + "\n");
 console.log(
