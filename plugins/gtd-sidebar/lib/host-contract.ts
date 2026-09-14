@@ -4,7 +4,7 @@ import {
   aiInferenceCompleteInputSchema,
   aiInferenceCompleteOutputSchema,
 } from "@bb-plugins/codex-inference/contract";
-import { gitButlerHostContract } from "./gitbutler.ts";
+import { gitButlerHostContract } from "./gitbutler-contract.ts";
 import { gitHubHostContract } from "./github-host.ts";
 
 /**
