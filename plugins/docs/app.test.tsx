@@ -831,6 +831,13 @@ describe("Docs nav panel", () => {
     expect(styles?.textContent).toContain("color: #9ddd54");
     expect(styles?.textContent).toContain(".docs-prose strong { color: #51dae9");
     expect(styles?.textContent).toContain(".docs-prose a:hover { color: #75f0ff; }");
+    expect(styles?.textContent).toContain(":not(pre) > code { background: #252525");
+    expect(styles?.textContent).toContain(
+      ":not(pre) > code > span { background: transparent; color: inherit; font: inherit; padding: 0; }",
+    );
+    expect(styles?.textContent).toContain('button[title="Delete code block"]) > div:first-child');
+    expect(styles?.textContent).toContain(".cm-lineWrapping .cm-line { white-space: pre");
+    expect(styles?.textContent).toContain(".cm-activeLineGutter { background: #252525; }");
   });
 
   it("renders and autosaves editable Markdown tables", async () => {

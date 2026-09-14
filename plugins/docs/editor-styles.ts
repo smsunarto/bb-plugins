@@ -77,7 +77,8 @@ const EDITOR_CSS = `
 .bb-simple-notes-editor .docs-prose blockquote { border-left: 1px solid #fe5d86; border-radius: 0; color: #e3e3ddbd; margin: 1rem 0; padding: 0 0 0 1.1em; }
 .bb-simple-notes-editor .docs-prose :is(code, pre) { font-family: "Berkeley Mono", var(--font-mono, monospace); }
 .bb-simple-notes-editor .docs-prose code { color: #e3e3dd; font-size: 0.875em; line-height: 1.5; }
-.bb-simple-notes-editor .docs-prose :not(pre) > code { background: #262626; border: 1px solid #e3e3dd1a; border-radius: 4px; box-decoration-break: clone; padding: 0.15em 0.3em; -webkit-box-decoration-break: clone; }
+.bb-simple-notes-editor .docs-prose :not(pre) > code { background: #252525; border: 1px solid #e3e3dd1a; border-radius: 4px; box-decoration-break: clone; padding: 0.1em 0.3em; -webkit-box-decoration-break: clone; }
+.bb-simple-notes-editor .docs-prose :not(pre) > code > span { background: transparent; color: inherit; font: inherit; padding: 0; }
 .bb-simple-notes-editor .docs-prose pre {
   background: #1e1e1e;
   border: 0;
@@ -152,9 +153,43 @@ const EDITOR_CSS = `
 .docs-mdx-editor .docs-prose [role="checkbox"] { margin-inline-start: 0; }
 .docs-mdx-editor .docs-prose [data-lexical-decorator="true"] { white-space: normal; }
 .docs-mdx-editor .docs-prose .canvas-document { padding: 0; max-width: none; font-size: 14px; }
-.docs-mdx-editor .cm-editor { background: var(--background); color: var(--foreground); }
-.docs-mdx-editor .cm-gutters { background: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
-.docs-mdx-editor .cm-content { caret-color: var(--foreground); }
+/* MDXEditor gives CodeMirror a floating toolbar and its bundled light theme.
+   Use semantic editor attributes rather than MDXEditor's generated class names,
+   reserve a real header row, and restore the reading theme's code treatment. */
+.docs-mdx-editor .docs-prose [data-lexical-decorator="true"] > div:has(> div:first-child button[title="Delete code block"]) {
+  padding: 0;
+  background: #1e1e1e;
+}
+.docs-mdx-editor .docs-prose [data-lexical-decorator="true"] > div:has(> div:first-child button[title="Delete code block"]) > div:first-child {
+  position: static;
+  justify-content: flex-end;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid #e3e3dd1a;
+  border-bottom-left-radius: 0;
+  background: #212121;
+}
+.docs-mdx-editor .docs-prose [data-lexical-decorator="true"] > div:has(> div:first-child button[title="Delete code block"]) > div:nth-child(2) {
+  min-width: 0;
+  padding: 0.75rem 1rem;
+}
+.docs-mdx-editor .docs-prose button[aria-label="Language"] { background: transparent; }
+.docs-mdx-editor .cm-editor {
+  background: #1e1e1e;
+  color: var(--foreground);
+  font-family: "Berkeley Mono", var(--font-mono, monospace);
+  font-size: 13px;
+  line-height: 19.5px;
+}
+.docs-mdx-editor .cm-scroller { overflow-x: auto; }
+.docs-mdx-editor .cm-content { min-width: max-content; padding: 0; caret-color: var(--foreground); }
+.docs-mdx-editor .cm-lineWrapping .cm-line { white-space: pre; overflow-wrap: normal; word-break: normal; }
+.docs-mdx-editor .cm-gutters {
+  background: #1e1e1e;
+  color: #e3e3dd8c;
+  border-right: 1px solid #e3e3dd1a;
+}
+.docs-mdx-editor .cm-activeLine,
+.docs-mdx-editor .cm-activeLineGutter { background: #252525; }
 .docs-mdx-editor .cm-cursor { border-left-color: var(--foreground); }
 
 `;
