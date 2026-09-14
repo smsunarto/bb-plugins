@@ -44,6 +44,186 @@
  *      this palette automatically.
  */
 
+/* BB keeps the right-panel diff disclosure outside Pierre's shadow tree.
+ * Mirror the Diffs.com built-in-slots header shell and controls while retaining
+ * BB's collapse state, file actions, sticky positioning, and non-text fallbacks.
+ * Color stays on this theme's surface, ink, state, and feedback roles. */
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .overflow-clip.rounded-lg.border.border-border.bg-background:has(
+    > .h-0 + .rounded-lg.bg-background button[aria-expanded]
+  ) {
+  overflow: hidden;
+  border-color: var(--border);
+  border-radius: 10px;
+  background-color: #181818;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+  min-height: 44px;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-top: 0;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  > .flex {
+  height: 100%;
+  gap: 8px;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  > .flex
+  > span:first-child {
+  gap: 8px;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  button[aria-expanded] {
+  width: 24px;
+  height: 24px;
+  margin-left: -5px;
+  padding: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--muted-foreground);
+  transition:
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  button[aria-expanded]
+  svg {
+  width: 10px;
+  height: 16px;
+}
+
+@media (hover: hover) {
+  .dark
+    :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+      [data-testid="git-diff-toolbar-layout"]
+    )
+    .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+    button[aria-expanded]:hover {
+    background-color: var(--state-hover);
+    color: var(--foreground);
+  }
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  button[aria-expanded]
+  + span {
+  padding-left: 0;
+  gap: 8px;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  .font-mono {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  button[aria-expanded]
+  + span
+  > button:not(.font-mono) {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--muted-foreground);
+  transition:
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (hover: hover) {
+  .dark
+    :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+      [data-testid="git-diff-toolbar-layout"]
+    )
+    .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+    button[aria-expanded]
+    + span
+    > button:not(.font-mono):hover {
+    background-color: var(--state-hover);
+    color: var(--foreground);
+  }
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  > .flex
+  > span:last-child {
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dark
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  > .flex
+  > span:last-child
+  > .text-xs {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 :root,
 .light {
   /* Fonts are the only genuinely mode-independent values here. The frontend
