@@ -540,6 +540,30 @@ const requiredRules: Array<{
     declarations: { "background-color": palette.ground.userSurface },
   },
   {
+    selector:
+      '.dark [data-follow-up-composer] [aria-label="Thread context before sending"] > .flex.items-center.gap-0\\.5.p-1',
+    declarations: { "background-color": palette.ground.userSurface },
+  },
+  {
+    selector: ".dark [data-agentation-staging-banner]",
+    declarations: {
+      "background-color": palette.ground.userSurface,
+      "border-color": "var(--agent-surface-border)",
+    },
+  },
+  {
+    selector: ".dark [data-agentation-staging-banner] > ul",
+    declarations: { "border-color": "var(--agent-surface-border)" },
+  },
+  {
+    selector:
+      ".dark section.space-y-3 > .rounded-lg.border.border-border.bg-card:not(.bg-transparent):not(.border-0)",
+    declarations: {
+      "background-color": palette.ground.userSurface,
+      "border-width": "0",
+    },
+  },
+  {
     selector: ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col",
     declarations: { "background-color": palette.ground.conversation },
   },

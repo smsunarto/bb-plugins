@@ -222,7 +222,10 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
   return (
     <>
-      <div className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 pb-3 pt-2">
+      <div
+        data-agentation-staging-banner=""
+        className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 pb-3 pt-2"
+      >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">

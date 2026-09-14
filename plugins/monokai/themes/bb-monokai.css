@@ -385,6 +385,37 @@
   background-color: #212121;
 }
 
+/* The compact git summary paints its own inlay over the prompt-context card.
+ * Keep that layer on the same user surface so it cannot expose a transparent
+ * or upstream surface through the card. */
+.dark
+  [data-follow-up-composer]
+  [aria-label="Thread context before sending"]
+  > .flex.items-center.gap-0\.5.p-1 {
+  background-color: #212121;
+}
+
+/* Agentation owns this composer banner and exposes a stable theme hook. Match
+ * it to user-authored surfaces, including its outer edge and list divider. */
+.dark [data-agentation-staging-banner] {
+  background-color: #212121;
+  border-color: var(--agent-surface-border);
+}
+
+.dark [data-agentation-staging-banner] > ul {
+  border-color: var(--agent-surface-border);
+}
+
+/* Shared settings containers use one card signature across general, provider,
+ * appearance, usage, project, and machine settings. Preserve sections that
+ * explicitly opt out of card chrome to compose their own nested surfaces. */
+.dark
+  section.space-y-3
+  > .rounded-lg.border.border-border.bg-card:not(.bg-transparent):not(.border-0) {
+  background-color: #212121;
+  border-width: 0;
+}
+
 /* The bottom-anchored conversation body is transparent upstream. Pin its
  * concrete child as well as --background so split-pane wrappers cannot leak. */
 .dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {

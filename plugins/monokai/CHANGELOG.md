@@ -52,6 +52,11 @@
   border; markdown images also pick up the rounded corner radius and extra
   block margin against the surrounding prose.
 
+- Match every shared settings card, the compact git context strip, and the
+  staged Agentation banner to the `#212121` user-surface ground. Remove settings
+  card borders and soften the Agentation edge and divider to the user-surface
+  keyline.
+
 ## 0.3.2
 
 ### Patch Changes

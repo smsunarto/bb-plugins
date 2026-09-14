@@ -33,6 +33,16 @@ describe("bb Monokai surface palette", () => {
     expect(theme).toContain(
       '.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {\n  background-color: #212121',
     );
+    expect(theme).toContain(
+      '[aria-label="Thread context before sending"]\n  > .flex.items-center.gap-0\\.5.p-1 {\n  background-color: #212121',
+    );
+    expect(theme).toContain(
+      ".dark [data-agentation-staging-banner] {\n  background-color: #212121;\n  border-color: var(--agent-surface-border)",
+    );
+    expect(theme).toContain(
+      ".dark\n  section.space-y-3\n  > .rounded-lg.border.border-border.bg-card:not(.bg-transparent):not(.border-0) {\n  background-color: #212121;\n  border-width: 0",
+    );
+    expect(theme).not.toContain('href="/settings/usage"');
   });
 
   test("styles conversation links with an alpha-derived accent hover surface", () => {

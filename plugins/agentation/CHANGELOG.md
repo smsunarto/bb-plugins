@@ -1,5 +1,11 @@
 # @smsunarto/bb-plugin-agentation
 
+## Unreleased
+
+### Patch Changes
+
+- Expose the staged-annotation composer banner as a stable theme surface.
+
 ## 0.2.3
 
 ### Patch Changes
