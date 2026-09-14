@@ -1,9 +1,11 @@
 import { useMemo, useState, type PointerEvent } from "react";
 import {
+  experimental_useProviders as useProviders,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   useBbNavigate,
   useRpc,
+  useSettings,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import type { Initiative } from "@/lib/initiative-types";
@@ -14,7 +16,10 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
-import { FadingText } from "@/components/inbox/thread-details";
+import { FadingText, HostLead, ThreadDetails } from "@/components/inbox/thread-details";
+import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
+import { LIST_HOVER_TRANSITION } from "@/components/inbox/row-motion";
+import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -49,6 +54,13 @@ export function ProjectsRail({
 }) {
   const initiatives = useInitiatives();
   const navigate = useBbNavigate();
+  const { providers } = useProviders();
+  const { values: settings } = useSettings();
+  const providerById = useMemo(
+    () => new Map(providers.map((provider) => [provider.id, provider])),
+    [providers],
+  );
+  const now = Math.floor(Date.now() / 60_000) * 60_000;
   // Explicit user choices only. A project containing the active thread
   // auto-expands until the user toggles it — after that, their choice wins
   // (including "stay collapsed"), so the chevron always does what it says.
@@ -102,6 +114,9 @@ export function ProjectsRail({
             activeThreadId={activeThreadId}
             isCompactViewport={isCompactViewport}
             onNavigate={onNavigate}
+            now={now}
+            providerById={providerById}
+            showProviderIcon={settings?.showProviderIcon === true}
           />
         ))}
       </ul>
@@ -128,6 +143,9 @@ function ProjectRow({
   activeThreadId,
   isCompactViewport,
   onNavigate,
+  now,
+  providerById,
+  showProviderIcon,
 }: {
   initiative: Initiative;
   threads: readonly PluginSidebarThread[];
@@ -136,10 +154,13 @@ function ProjectRow({
   activeThreadId: string | null;
   isCompactViewport: boolean;
   onNavigate: () => void;
+  now: number;
+  providerById: ReadonlyMap<string, ProviderGlyphInfo>;
+  showProviderIcon: boolean;
 }) {
   const rpc = useRpc<typeof initiativeRpcContract>();
   const threadActions = useSidebarThreadActions();
-  const { splitProps } = useSidebarThreadSplit(initiative.coordinatorThreadId);
+  const { splitProps, layout } = useSidebarThreadSplit(initiative.coordinatorThreadId);
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -155,6 +176,7 @@ function ProjectRow({
     [threads],
   );
   const isActive = activeThreadId === initiative.coordinatorThreadId;
+  const coordinator = threadById.get(initiative.coordinatorThreadId) ?? null;
 
   const openCoordinator = (split: boolean) => {
     threadActions.open(initiative.coordinatorThreadId, { split });
@@ -186,9 +208,14 @@ function ProjectRow({
       <div
         className={cn(
           "group/project relative flex items-center gap-1 rounded-lg pr-1",
-          isActive && "bg-accent/70",
+          isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+          !isActive && layout !== null && "bg-sidebar-accent/30",
+          LIST_HOVER_TRANSITION,
         )}
         data-project-row={initiative.id}
+        data-sidebar-thread-focused={
+          layout === null ? undefined : layout.panes.some((pane) => pane.isMe && pane.isFocused)
+        }
       >
         <button
           type="button"
@@ -218,6 +245,7 @@ function ProjectRow({
           data-sidebar-thread-id={initiative.coordinatorThreadId}
           href="#"
           aria-label={initiative.name}
+          aria-current={isActive ? "page" : undefined}
           onClick={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
@@ -267,6 +295,11 @@ function ProjectRow({
             {descendantCount}
           </span>
         ) : null}
+        {coordinator === null ? null : (
+          <span className={cn(STATUS_SLOT_CLASS, "pointer-events-none relative")}>
+            <StatusOrTime thread={coordinator} now={now} />
+          </span>
+        )}
       </div>
       {expanded ? (
         <ul className="flex flex-col gap-px">
@@ -280,6 +313,18 @@ function ProjectRow({
                 depth={depth}
                 isActive={threadId === activeThreadId}
                 onNavigate={onNavigate}
+                isCompactViewport={isCompactViewport}
+                now={now}
+                parentTitle={
+                  thread.parentThreadId === null
+                    ? null
+                    : (threadById.get(thread.parentThreadId)?.title ??
+                      threadById.get(thread.parentThreadId)?.titleFallback ??
+                      null)
+                }
+                projectName={initiative.name}
+                provider={providerById.get(thread.providerId)}
+                showProviderIcon={showProviderIcon}
               />
             );
           })}
@@ -343,14 +388,26 @@ function AgentRow({
   depth,
   isActive,
   onNavigate,
+  isCompactViewport,
+  now,
+  parentTitle,
+  projectName,
+  provider,
+  showProviderIcon,
 }: {
   thread: PluginSidebarThread;
   depth: number;
   isActive: boolean;
   onNavigate: () => void;
+  isCompactViewport: boolean;
+  now: number;
+  parentTitle: string | null;
+  projectName: string;
+  provider?: ProviderGlyphInfo;
+  showProviderIcon: boolean;
 }) {
   const threadActions = useSidebarThreadActions();
-  const { splitProps } = useSidebarThreadSplit(thread.id);
+  const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   const title = thread.title ?? thread.titleFallback ?? "Untitled agent";
   const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -361,46 +418,70 @@ function AgentRow({
     <li className="list-none">
       <div
         className={cn(
-          "relative flex items-center gap-2 rounded-lg py-1 pr-2",
-          isActive && "bg-accent/70",
+          "group/project-agent relative flex items-center gap-1.5 px-2.5 text-xs",
+          LIST_HOVER_TRANSITION,
+          isCompactViewport ? "h-11 rounded-xl" : "gtd-thread-row gtd-compact-row rounded-md",
+          isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+          !isActive && layout !== null && "bg-sidebar-accent/30",
         )}
         style={{ paddingLeft: `${28 + (depth - 1) * 14}px` }}
         data-project-agent-row={thread.id}
+        data-sidebar-thread-focused={
+          layout === null ? undefined : layout.panes.some((pane) => pane.isMe && pane.isFocused)
+        }
       >
-        {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- same anchor
-            contract as every sidebar row. */}
-        <a
-          onPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
-          data-sidebar-thread-shortcut-target=""
-          data-sidebar-thread-id={thread.id}
-          href="#"
-          aria-label={title}
-          onClick={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            threadActions.open(thread.id, {
-              split: event.metaKey || event.ctrlKey,
-            });
-            onNavigate();
-          }}
-          className="absolute inset-0 cursor-pointer rounded-lg"
-        />
+        <ThreadDetails
+          thread={thread}
+          projectName={projectName}
+          branchName={thread.environment?.branchName ?? null}
+          provider={provider}
+          relation={parentTitle === null ? undefined : `Child of ${parentTitle}`}
+          enabled={!isCompactViewport}
+        >
+          {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- same anchor
+              contract as every sidebar row. */}
+          <a
+            onPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
+            data-sidebar-thread-shortcut-target=""
+            data-sidebar-thread-id={thread.id}
+            href="#"
+            aria-label={title}
+            aria-current={isActive ? "page" : undefined}
+            onClick={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              threadActions.open(thread.id, {
+                split: event.metaKey || event.ctrlKey,
+              });
+              onNavigate();
+            }}
+            className={cn(
+              "absolute inset-0 cursor-pointer",
+              isCompactViewport ? "rounded-xl" : "rounded-md",
+            )}
+          />
+        </ThreadDetails>
+        <HostLead host={thread.host} />
         <span
-          aria-hidden
           className={cn(
-            "pointer-events-none size-1.5 shrink-0 rounded-full",
-            thread.indicator === "none" ? "bg-muted-foreground/40" : "bg-primary",
+            "gtd-thread-title pointer-events-none relative min-w-0 flex-1",
+            isCompactViewport
+              ? "gtd-mobile-title text-muted-foreground"
+              : "text-muted-foreground/70",
+            isActive && "text-sidebar-accent-foreground",
+            thread.isUnread && "font-medium text-sidebar-foreground",
           )}
-        />
-        <span className="pointer-events-none min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        >
           <FadingText text={title} />
         </span>
-        {thread.isUnread ? (
-          <span
-            aria-label="Unread"
-            className="pointer-events-none size-1.5 rounded-full bg-primary"
-          />
-        ) : null}
+        <span className="gtd-rest-signals pointer-events-none relative flex shrink-0 items-center gap-1.5">
+          <span className={STATUS_SLOT_CLASS}>
+            <StatusOrTime thread={thread} now={now} />
+          </span>
+          {showProviderIcon ? (
+            <ProviderGlyph providerId={thread.providerId} provider={provider} />
+          ) : null}
+        </span>
       </div>
     </li>
   );
