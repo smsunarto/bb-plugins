@@ -1500,28 +1500,8 @@ diffs-container {
   color: var(--muted-foreground);
 }
 
-/* Keep actions beside the copy and the dismiss control inside the card.
- * These structural selectors also cover bb's plain description container. */
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-auto-columns: auto;
-  grid-auto-flow: column;
-  column-gap: 8px;
-  row-gap: 2px;
-  align-items: center;
-}
-
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:first-child {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-}
-
-/* A title without a description shares the actions' full height. */
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2):has(> div:nth-child(2) > div) > div:first-child {
-  grid-row: 1;
-}
-
+/* Keep bb's title and details rows in normal flow. Flattening the details
+ * into a grid can place wrapped actions on top of the description. */
 .dark [data-sonner-toast].bb-app-toast svg {
   margin: 0;
 }
@@ -1532,20 +1512,13 @@ diffs-container {
   font-weight: 500;
 }
 
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) {
-  display: contents;
-}
-
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
-  grid-column: 1;
-  grid-row: 2;
   font-size: 12px;
   line-height: 18px;
   color: var(--muted-foreground);
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button {
-  grid-row: 1 / span 2;
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
