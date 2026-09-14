@@ -259,7 +259,7 @@
   --diffs-bg-context-override: {{ground.content}};
   --diffs-bg-context-gutter-override: {{ground.content}};
   --diffs-bg-buffer-override: {{ground.content}};
-  --diffs-bg-separator-override: {{ground.raised}};
+  --diffs-bg-separator-override: {{ground.userSurface}};
   --diffs-bg-addition-override: {{feedback.success13}};
   --diffs-bg-addition-emphasis-override: {{feedback.success27}};
   --diffs-bg-deletion-override: {{feedback.error13}};
@@ -379,7 +379,7 @@
 }
 
 /* Prompt context is part of the user's pending request, not a generic card. */
-.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {
+.dark [aria-label="Thread context before sending"] {
   background-color: {{ground.userSurface}};
 }
 
@@ -387,7 +387,6 @@
  * Keep that layer on the same user surface so it cannot expose a transparent
  * or upstream surface through the card. */
 .dark
-  [data-follow-up-composer]
   [aria-label="Thread context before sending"]
   > .flex.items-center.gap-0\.5.p-1 {
   background-color: {{ground.userSurface}};
@@ -404,12 +403,29 @@
   border-color: var(--agent-surface-border);
 }
 
-/* Shared settings containers use one card signature across general, provider,
- * appearance, usage, project, and machine settings. Preserve sections that
- * explicitly opt out of card chrome to compose their own nested surfaces. */
+/* Settings pages use both section-owned cards and standalone list/detail cards.
+ * Scope to the routed settings content, not its navigation or portalled menus.
+ * Inputs keep their own well; explicit transparent containers stay transparent. */
 .dark
-  section.space-y-3
-  > .rounded-lg.border.border-border.bg-card:not(.bg-transparent):not(.border-0) {
+  body:has(a[aria-current="page"][href^="/settings"])
+  main
+  main
+  .bg-card:not(.bg-transparent),
+.dark
+  body:has(a[aria-current="page"][href^="/settings"])
+  main
+  main
+  div.rounded-md.border.border-border:not(.bg-transparent),
+.dark
+  body:has(a[aria-current="page"][href^="/settings"])
+  main
+  main
+  li.rounded-md.border.border-border:not(.bg-transparent),
+.dark
+  body:has(a[aria-current="page"][href^="/settings"])
+  main
+  main
+  div.rounded-lg.border.border-border:not(.bg-transparent) {
   background-color: {{ground.userSurface}};
   border-width: 0;
 }
@@ -1054,7 +1070,7 @@ diffs-container {
  * control structure, including collapsed cards, within the Git diff panel.
  * Smart embeds expose their own header class. Bodies keep the content ground. */
 .dark .smart-embed-header {
-  background-color: {{ground.recessed}};
+  background-color: {{ground.userSurface}};
 }
 
 .dark
@@ -1063,7 +1079,7 @@ diffs-container {
 .dark
   [data-secondary-panel-shelf]
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
-  background-color: {{ground.content}};
+  background-color: {{ground.userSurface}};
 }
 
 .dark .smart-embed-header,

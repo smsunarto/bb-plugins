@@ -449,7 +449,7 @@ const darkExpected = declarationMap({
   "--diffs-bg-context-override": palette.ground.content,
   "--diffs-bg-context-gutter-override": palette.ground.content,
   "--diffs-bg-buffer-override": palette.ground.content,
-  "--diffs-bg-separator-override": palette.ground.raised,
+  "--diffs-bg-separator-override": palette.ground.userSurface,
   "--diffs-bg-addition-override": roleValues["feedback.success13"],
   "--diffs-bg-addition-emphasis-override": roleValues["feedback.success27"],
   "--diffs-bg-deletion-override": roleValues["feedback.error13"],
@@ -536,12 +536,12 @@ const requiredRules: Array<{
     },
   },
   {
-    selector: '.dark [data-follow-up-composer] [aria-label="Thread context before sending"]',
+    selector: '.dark [aria-label="Thread context before sending"]',
     declarations: { "background-color": palette.ground.userSurface },
   },
   {
     selector:
-      '.dark [data-follow-up-composer] [aria-label="Thread context before sending"] > .flex.items-center.gap-0\\.5.p-1',
+      '.dark [aria-label="Thread context before sending"] > .flex.items-center.gap-0\\.5.p-1',
     declarations: { "background-color": palette.ground.userSurface },
   },
   {
@@ -557,7 +557,15 @@ const requiredRules: Array<{
   },
   {
     selector:
-      ".dark section.space-y-3 > .rounded-lg.border.border-border.bg-card:not(.bg-transparent):not(.border-0)",
+      '.dark body:has(a[aria-current="page"][href^="/settings"]) main main .bg-card:not(.bg-transparent)',
+    declarations: {
+      "background-color": palette.ground.userSurface,
+      "border-width": "0",
+    },
+  },
+  {
+    selector:
+      '.dark body:has(a[aria-current="page"][href^="/settings"]) main main li.rounded-md.border.border-border:not(.bg-transparent)',
     declarations: {
       "background-color": palette.ground.userSurface,
       "border-width": "0",
@@ -570,7 +578,7 @@ const requiredRules: Array<{
   {
     selector:
       ".dark #thread-detail-secondary-panel .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])",
-    declarations: { "background-color": palette.ground.content },
+    declarations: { "background-color": palette.ground.userSurface },
   },
   {
     selector: ".dark [data-message-column] [data-markdown-preview] a.underline",

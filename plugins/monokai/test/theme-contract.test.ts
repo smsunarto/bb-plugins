@@ -31,7 +31,7 @@ describe("bb Monokai surface palette", () => {
       ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: #212121;\n  border-radius: 11px 11px 0 0",
     );
     expect(theme).toContain(
-      '.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {\n  background-color: #212121',
+      '.dark [aria-label="Thread context before sending"] {\n  background-color: #212121',
     );
     expect(theme).toContain(
       '[aria-label="Thread context before sending"]\n  > .flex.items-center.gap-0\\.5.p-1 {\n  background-color: #212121',
@@ -40,8 +40,12 @@ describe("bb Monokai surface palette", () => {
       ".dark [data-agentation-staging-banner] {\n  background-color: #212121;\n  border-color: var(--agent-surface-border)",
     );
     expect(theme).toContain(
-      ".dark\n  section.space-y-3\n  > .rounded-lg.border.border-border.bg-card:not(.bg-transparent):not(.border-0) {\n  background-color: #212121;\n  border-width: 0",
+      "div.rounded-lg.border.border-border:not(.bg-transparent) {\n  background-color: #212121;\n  border-width: 0",
     );
+    expect(theme).toContain(".bg-card:not(.bg-transparent),");
+    expect(theme).toContain("div.rounded-md.border.border-border:not(.bg-transparent),");
+    expect(theme).toContain("li.rounded-md.border.border-border:not(.bg-transparent),");
+    expect(theme).toContain('body:has(a[aria-current="page"][href^="/settings"])');
     expect(theme).not.toContain('href="/settings/usage"');
   });
 
@@ -56,7 +60,7 @@ describe("bb Monokai surface palette", () => {
 });
 
 describe("bb Monokai contract audit", () => {
-  test("unifies code grounds and keeps filenames in sans-serif recessed headers", () => {
+  test("keeps code bodies dark and gives headers and separators the requested surface", () => {
     expect(theme).toContain("--diffs-header-font-family: var(--font-sans)");
     expect(theme).toContain("diffs-container {\n  --diffs-dark-bg: #181818;");
     expect(theme).toContain(
@@ -67,10 +71,11 @@ describe("bb Monokai contract audit", () => {
     for (const role of ["context-gutter", "buffer", "addition-number", "deletion-number"]) {
       expect(theme).toContain(`--diffs-bg-${role}-override: #181818`);
     }
-    expect(theme).toContain("--diffs-bg-separator-override: #262626");
+    expect(theme).toContain("--diffs-bg-separator-override: #212121");
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #181818;",
+      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #212121;",
     );
+    expect(theme).toContain(".dark .smart-embed-header {\n  background-color: #212121;");
     expect(theme).toContain(".font-mono {\n  font-family: var(--font-sans);");
     expect(theme).toContain(".dark .smart-embed-path,");
   });
