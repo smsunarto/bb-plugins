@@ -28,7 +28,6 @@
       "watchExclude": [],
       "experiments": {
         "changelogPreview": false,
-        "editMessages": true,
         "mobileApp": false,
         "timelineWindowing": false
       },

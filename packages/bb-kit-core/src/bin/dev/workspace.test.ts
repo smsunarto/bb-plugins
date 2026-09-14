@@ -51,6 +51,9 @@ test("workspace reconciliation is ordered, safe, and idempotent", async () => {
   assert.deepEqual(first.plugins.unchanged, ["alpha"]);
   assert.deepEqual(first.plugins.enabled, ["alpha"]);
   assert.deepEqual(first.baseline.experimentsSet, ["editMessages"]);
+  // bb does not report `graduated`, so the profile key is skipped rather than set.
+  assert.deepEqual(first.baseline.experimentsSkipped, ["graduated"]);
+  assert.equal(Object.hasOwn(runtime.experiments, "graduated"), false);
   assert.deepEqual(first.baseline.configKeysReset, [{ pluginId: "alpha", key: "tidy" }]);
   assert.equal(first.baseline.themeChanged, true);
   assert.deepEqual(runtime.events.slice(0, 4), [
@@ -72,6 +75,7 @@ test("workspace reconciliation is ordered, safe, and idempotent", async () => {
   assert.deepEqual(second.plugins.unchanged, ["alpha", "beta"]);
   assert.deepEqual(second.plugins.enabled, []);
   assert.deepEqual(second.baseline.experimentsSet, []);
+  assert.deepEqual(second.baseline.experimentsSkipped, ["graduated"]);
   assert.deepEqual(second.baseline.configKeysReset, []);
   assert.equal(second.baseline.themeChanged, false);
   assert.equal(runtime.bbWrites, writesBeforeRepeat);
@@ -195,7 +199,7 @@ function createWorkspace(overrides: WorkspaceOverrides = {}): {
         packageManager: "bun",
         beforeBuild: ["build:framework"],
         watchExclude: overrides.watchExclude ?? ["beta"],
-        experiments: { changelogPreview: false, editMessages: true },
+        experiments: { changelogPreview: false, editMessages: true, graduated: true },
         theme: "plugin:monokai:bb-monokai",
       },
     },

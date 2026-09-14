@@ -51,6 +51,8 @@ export type WorkspaceResult = {
   };
   baseline: {
     experimentsSet: readonly string[];
+    /** Profile experiments this bb release does not have, left alone. */
+    experimentsSkipped: readonly string[];
     configKeysReset: readonly { pluginId: string; key: string }[];
     themeChanged: boolean;
     converged: true;
@@ -234,7 +236,16 @@ export async function runWorkspace(
   );
   assertDataDirectory(settings.dataDir, instance.dataDir);
   const experimentsSet: string[] = [];
+  const experimentsSkipped: string[] = [];
   for (const [key, value] of Object.entries(definition.profile.experiments)) {
+    if (unknownExperiment(settings.experiments, key)) {
+      // The instance tracks bb releases, and a release graduates or drops
+      // experiments. Setting one bb no longer knows fails, so the profile key
+      // stays until someone removes it.
+      progress(`Skipping experiment ${key}: bb ${instance.revision ?? ""} does not have it`.trim());
+      experimentsSkipped.push(key);
+      continue;
+    }
     if (settings.experiments?.[key] === value) continue;
     await bbJson(runtime, instance.name, ["settings", "experiment", key, String(value), "--json"]);
     experimentsSet.push(key);
@@ -301,7 +312,13 @@ export async function runWorkspace(
       watched:
         options.watch && instance.source === "owned" ? watched.map((plugin) => plugin.id) : [],
     },
-    baseline: { experimentsSet, configKeysReset, themeChanged, converged: true },
+    baseline: {
+      experimentsSet,
+      experimentsSkipped,
+      configKeysReset,
+      themeChanged,
+      converged: true,
+    },
   };
 }
 
@@ -383,6 +400,7 @@ async function assertConverged(
     failures.push(error instanceof Error ? error.message : String(error));
   }
   for (const [key, value] of Object.entries(definition.profile.experiments)) {
+    if (unknownExperiment(settings.experiments, key)) continue;
     if (settings.experiments?.[key] !== value) failures.push(`experiment ${key} is not ${value}`);
   }
 
@@ -421,6 +439,11 @@ async function assertConverged(
     "Inspect the reported state, then rerun the workspace command.",
     { failures },
   );
+}
+
+/** bb reports every experiment it has; a key missing from that map is one it dropped. */
+function unknownExperiment(reported: Record<string, boolean> | undefined, key: string): boolean {
+  return reported !== undefined && !Object.hasOwn(reported, key);
 }
 
 async function bbJson<T = unknown>(
