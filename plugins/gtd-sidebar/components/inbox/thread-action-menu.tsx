@@ -1,3 +1,4 @@
+import { useSettings } from "@get-bb/plugin-sdk/app";
 import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -37,6 +38,7 @@ export function CompactThreadActionMenu({
   anchorRef?: RefObject<HTMLElement | null>;
   highlightContent?: ReactNode;
 }) {
+  const { values } = useSettings();
   const [rect, setRect] = useState<DOMRect | null>(null);
 
   useLayoutEffect(() => {
@@ -95,7 +97,10 @@ export function CompactThreadActionMenu({
             {plan.map((action) => (
               <DropdownMenu.Item
                 key={action.id}
-                ref={attachHapticTrigger}
+                ref={(element) => {
+                  if (values?.mobileHaptics === true) attachHapticTrigger(element);
+                  else element?.querySelector("[data-haptic-trigger]")?.remove();
+                }}
                 onSelect={action.execute}
                 className={cn(
                   "relative flex h-[44px] cursor-default select-none items-center gap-3.5 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none",

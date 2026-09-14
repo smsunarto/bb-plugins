@@ -1,3 +1,4 @@
+import { requireProjects, requireSubscriptions, type ProjectFeatures } from "./feature-policy.ts";
 // The agent surface of an initiative: native tools the coordinator and its
 // descendants actually call, the per-resolution tool selection, and the
 // dynamic instructions that tell each thread its role.
@@ -23,6 +24,7 @@ import {
 type Threads = Pick<BbPluginApi["sdk"]["threads"], "send">;
 
 export interface InitiativeAgentDeps {
+  features: ProjectFeatures;
   service: InitiativeService;
   store: InitiativeStore;
   /** The engine's upsert owns create-vs-update plus durable cursor init. */
@@ -92,7 +94,11 @@ const sharedWorkspaceInstructions = (
   };
 };
 
-const coordinatorInstructions = (initiative: Initiative, store: InitiativeStore): string => {
+const coordinatorInstructions = (
+  initiative: Initiative,
+  store: InitiativeStore,
+  subscriptionsEnabled: boolean,
+): string => {
   const workspaces =
     initiative.workspaceProjectIds.length === 0
       ? "the personal project (created from scratch)"
@@ -107,7 +113,9 @@ const coordinatorInstructions = (initiative: Initiative, store: InitiativeStore)
       `You are the coordinator of the project ${boundedJson(initiative.name)} (${initiative.id}).`,
       `Own the outcome — never write code yourself. Decompose work and delegate with ${INITIATIVE_TOOL_NAMES.spawnAgent}; each agent runs in its own native BB thread, and its completion reaches you as a child-thread notification. Track agents with ${INITIATIVE_TOOL_NAMES.listAgents} and steer them with ${INITIATIVE_TOOL_NAMES.messageAgent}.`,
       `Shared context documents are the project's memory: read them with ${INITIATIVE_TOOL_NAMES.contextRead}, list with ${INITIATIVE_TOOL_NAMES.contextList}, and write plans, decisions, and durable findings with ${INITIATIVE_TOOL_NAMES.contextWrite} — agents and the user see the same documents.`,
-      `Subscriptions (${INITIATIVE_TOOL_NAMES.subscriptionUpsert}/${INITIATIVE_TOOL_NAMES.subscriptionDelete}/${INITIATIVE_TOOL_NAMES.subscriptionList}) deliver scheduled prompts and GitHub/Slack events into this conversation — use them for recurring checks instead of asking the user to come back.`,
+      subscriptionsEnabled
+        ? `Subscriptions (${INITIATIVE_TOOL_NAMES.subscriptionUpsert}/${INITIATIVE_TOOL_NAMES.subscriptionDelete}/${INITIATIVE_TOOL_NAMES.subscriptionList}) deliver scheduled prompts and GitHub/Slack events into this conversation — use them for recurring checks instead of asking the user to come back.`
+        : "Project subscriptions are disabled. Do not create scheduled prompts or event feeds.",
       initiative.workspace.mode === "shared-directory"
         ? `Bound repositories: ${workspaces}. Spawn agents with a bound projectId to set their repository focus; the shared environment is reused automatically and environment overrides are rejected.`
         : `Bound repositories: ${workspaces}. Spawn agents into any bound repository with projectId; choose an existing environment with environmentId or provision via environmentProviderId.`,
@@ -141,6 +149,7 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
   const { service, store, engine, subscriptions, threads } = deps;
 
   const resolve = async (threadId: string) => {
+    requireProjects(deps.features);
     const resolved = await service.resolveThread(threadId);
     if (resolved === null) throw new Error("this thread is not part of an initiative");
     return resolved;
@@ -297,6 +306,7 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
     description: "List this project's subscriptions (scheduled wake-ups and event feeds).",
     parameters: z.object({}),
     async execute(_params, ctx) {
+      requireSubscriptions(deps.features);
       const { initiative } = await resolve(ctx.threadId);
       return json({ subscriptions: subscriptions.list(initiative.id) });
     },
@@ -333,6 +343,7 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
       pollIntervalMs: z.number().int().min(30_000).optional(),
     }),
     async execute(params, ctx) {
+      requireSubscriptions(deps.features);
       const { initiative } = await resolve(ctx.threadId);
       if (params.subscriptionId !== undefined) {
         // Ownership first: mutating another project's row must fail before
@@ -361,6 +372,7 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
     description: "Delete one of this project's subscriptions.",
     parameters: z.object({ subscriptionId: z.string().min(1) }),
     async execute(params, ctx) {
+      requireSubscriptions(deps.features);
       const { initiative } = await resolve(ctx.threadId);
       const subscription = subscriptions.get(params.subscriptionId);
       if (subscription === null || subscription.initiativeId !== initiative.id) {
@@ -371,6 +383,11 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
     },
   });
 
+  const SUBSCRIPTION_TOOLS = new Set<string>([
+    N.subscriptionList,
+    N.subscriptionUpsert,
+    N.subscriptionDelete,
+  ]);
   const COORDINATOR_TOOLS = [
     N.spawnAgent,
     N.listAgents,
@@ -393,6 +410,8 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
   ];
 
   bb.agents.configure((ctx) => {
+    if (!deps.features.projects()) return { tools: [], skills: [] };
+    const subscriptionsEnabled = deps.features.subscriptions();
     const role: InitiativeRole | null = service.membership.roleHint(
       ctx.thread.id,
       ctx.thread.parentThreadId,
@@ -400,9 +419,14 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
     if (role === "coordinator") {
       const initiative = store.getByCoordinator(ctx.thread.id);
       return {
-        tools: COORDINATOR_TOOLS,
+        tools: subscriptionsEnabled
+          ? COORDINATOR_TOOLS
+          : COORDINATOR_TOOLS.filter((name) => !SUBSCRIPTION_TOOLS.has(name)),
         skills: [],
-        instructions: initiative === null ? undefined : coordinatorInstructions(initiative, store),
+        instructions:
+          initiative === null
+            ? undefined
+            : coordinatorInstructions(initiative, store, subscriptionsEnabled),
       };
     }
     if (role === "agent") {
@@ -428,6 +452,7 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
     label: "Projects",
     triggers: ["@"],
     search({ query }) {
+      if (!deps.features.projects()) return [];
       const needle = query.trim().toLowerCase();
       return store
         .list()
@@ -449,6 +474,7 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
         }));
     },
     resolve(itemId) {
+      requireProjects(deps.features);
       const initiative = store.get(itemId);
       if (initiative === null) throw new Error(`project ${itemId} no longer exists`);
       const docs = store

@@ -51,6 +51,7 @@ interface SlackPage {
 }
 
 interface HarnessOptions {
+  enabled?: () => boolean;
   active?: () => boolean;
   coordinatorId?: string | null;
   thread?: { archivedAt: number | null; deletedAt: number | null };
@@ -94,6 +95,7 @@ function makeHarness(options: HarnessOptions = {}) {
   let slackPageIndex = 0;
 
   const deps: SubscriptionEngineDeps = {
+    isEnabled: () => options.enabled?.() ?? true,
     store,
     getCoordinatorThreadId: async () =>
       options.coordinatorId === undefined ? "thr_coord" : options.coordinatorId,
@@ -719,6 +721,7 @@ describe("lifecycle", () => {
     const db = makeDb();
     const store = createSubscriptionStore(db);
     const engine = createSubscriptionEngine({
+      isEnabled: () => true,
       store,
       getCoordinatorThreadId: async () => "thr_coord",
       isInitiativeActive: () => true,
@@ -1073,5 +1076,53 @@ describe("github host bridge", () => {
     assert.equal(out.snapshot.reviewComments[0]!.line, 5);
     assert.equal(out.snapshot.reviewComments[0]!.path, "src/a.ts");
     assert.equal(calls.length, 4); // pr view + 3 paginated lists
+  });
+});
+
+describe("global subscriptions opt-in", () => {
+  it("pauses sweeps and manual execution without consuming a saved schedule", async () => {
+    let enabled = false;
+    const h = makeHarness({ enabled: () => enabled });
+    const sub = h.engine.createSubscription({
+      id: "sub_optin",
+      initiativeId: "init_1",
+      kind: "schedule",
+      label: "One shot",
+      config: { schedule: "once", runAt: T0 - 1, prompt: "Check progress" },
+    });
+    await h.engine.sweep();
+    await h.engine.runNow(sub.id);
+    assert.equal(h.sent.length, 0);
+    assert.equal(h.store.get(sub.id)?.enabled, true);
+    enabled = true;
+    await h.engine.sweep();
+    assert.equal(h.sent.length, 1);
+    h.engine.dispose();
+    h.db.close();
+  });
+
+  it("does not deliver a poll that finishes after opt-out", async () => {
+    let enabled = true;
+    const h = makeHarness({
+      enabled: () => enabled,
+      slackToken: SLACK_TOKEN,
+      slack: () => {
+        enabled = false;
+        return { messages: [msg("1700000000.000001", "New event")] };
+      },
+    });
+    const sub = h.engine.createSubscription({
+      id: "sub_optin",
+      initiativeId: "init_1",
+      kind: "slack-channel",
+      label: "Events",
+      config: { channelId: "C123", catchUp: true },
+    });
+    await h.engine.runNow(sub.id);
+    assert.equal(h.slackRequests.length, 1);
+    assert.equal(h.sent.length, 0);
+    assert.equal(h.store.get(sub.id)?.enabled, true);
+    h.engine.dispose();
+    h.db.close();
   });
 });

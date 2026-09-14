@@ -9,7 +9,7 @@
 
 **A thread list organized by who can act next.**
 
-![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
+![bb 0.43.1+](https://img.shields.io/badge/bb-0.43.1%2B-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![experimental slot](https://img.shields.io/badge/uses-experimental%20SDK%20slot-F1B467?style=flat-square)
 
@@ -59,7 +59,7 @@ reinstall.
 
 ## Requirements
 
-- bb 0.40+
+- bb 0.43.1+
 - Sidebar organization needs nothing else.
 - Thread naming needs an existing Codex login on bb's primary host.
 
@@ -118,7 +118,7 @@ lead with a globe in their machine's colour instead.
 ### Cards
 
 Two lines: the title in bold when unread and a status slot, then the project, the
-branch, activity counts, PR number, and the agent (which you can turn off — see
+branch, activity counts, PR number, and optional agent icons (enable them in
 [Configuration](#configuration)). The status slot shows what the
 thread needs — failed, waiting on you, working, or finished while you were away —
 and its age (`now`, `7m`, `3d`) when it needs nothing. Hovering swaps that slot for
@@ -165,7 +165,7 @@ Desktop only.
 
 ### Thread names
 
-A root thread gets a GTD-generated name on its first user prompt, replacing any
+With **Automatically name threads** enabled, a root thread gets a GTD-generated name on its first user prompt, replacing any
 initial title supplied by BB. First-request inference can only generate a new
 title, never keep BB's title. Later prompts keep the existing title unless you clearly start completely different work. Follow-ups,
 corrections, tests, debugging, screenshots, commits, and shipping for the same
@@ -208,7 +208,7 @@ the task has not changed.
 - A project scope picker — the one control the plugin adds.
 - Right-click a row to settle, snooze, pin, or delete it.
 - On a phone, hold a row for half a second (iOS's own long-press timing) for the same
-  menu, drawn as an iOS-style frosted sheet. Menu taps play a haptic on iOS.
+  menu, drawn as an iOS-style frosted sheet. Menu taps can play a haptic on iOS when enabled in settings.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Drag a card onto another to nest it, or onto a project header to un-nest it.
 - Drag a project group header onto another group to reorder the project in bb.
@@ -216,17 +216,71 @@ the task has not changed.
 
 ## Configuration
 
-Two settings, in **Settings → Plugins → GTD Sidebar**:
+Choose enhancements in **Settings → Plugins → GTD Sidebar**. All optional
+booleans default **off**, including while settings are loading. The SDK stores
+these preferences on the server and updates open clients when they change.
 
-- **Automatically name threads** — on. Turn it off to stop automatic title
-  generation and task-change checks. Manual naming from the CLI still works.
+### Feature catalog
 
-- **Show the agent icon on each card** — on. Turn it off to drop the trailing agent
-  glyph and give the branch that space back. Every card follows it together, so the
-  meta line keeps a straight right edge either way.
+Core means available when you select GTD Sidebar in Appearance. Core actions run
+only when you use them, apart from reads and clocks needed to keep the inbox
+accurate. Normal inbox behavior does not invoke an AI model or poll external
+services. The explicit naming command below is a separate user-requested inference.
 
-A snooze wakes the thread at 09:00 the next day in your local timezone. That is
-not a setting.
+| Core sidebar feature       | What it does                                                                                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Action shelves             | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                                                               |
+| Repository groups          | Group shelves by BB repository, fold groups, create a thread from a group, and reorder groups by drag or context menu. This updates BB's project order.                                    |
+| Thread families            | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
+| Thread actions             | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
+| Navigation                 | Row click, search, repository and machine scope pickers, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                         |
+| Status and details         | Unread titles, activity indicators/counts, time, native branch and PR information, provider tooltips, machine globe/color and host identity. These make thread state and location visible. |
+| Mobile and compact layouts | Mobile/subthreads use one-line rows. Long-press opens the action sheet without requiring haptics. Desktop roots use two-line cards by default.                                             |
+| Explicit naming command    | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                                                                      |
+
+| Optional setting (key)                                  | Default | Effect when enabled                                                                                                                                                                                            |
+| ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compact thread rows (`compactThreads`)                  | Off     | One-line desktop root rows. Mobile/subthreads remain compact either way.                                                                                                                                       |
+| Show agent icons (`showProviderIcon`)                   | Off     | Provider glyph on two-line cards. Provider identity remains in tooltips/menus when off.                                                                                                                        |
+| Enable mobile haptics (`mobileHaptics`)                 | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                                         |
+| Show GitButler branches (`gitButlerBranches`)           | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                                       |
+| Automatically name threads (`automaticallyNameThreads`) | Off     | Infer titles on user requests through the existing Codex login. Sends request context and naming rules. Off skips automatic context reads/inference and prevents an in-flight result from renaming the thread. |
+| Enable Projects coordination (`projectsEnabled`)        | Off     | Projects rail, creation/forms, coordinator and delegated agents, shared context, workspace bindings, tools and mentions. This is separate from core repository grouping.                                       |
+| Enable Project subscriptions (`subscriptionsEnabled`)   | Off     | Requires Projects too. Enables scheduled prompts and GitHub/Slack polling/delivery, subscription forms, Listening toolbar and agent subscription tools. Deliveries can start agent work.                       |
+
+| Supporting preference             | Default       | Purpose                                                                                                                                |
+| --------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Local machine (`localMachineId`)  | Empty         | Choose which machine's threads omit the globe. This does not move threads or change their execution host.                              |
+| Slack bot token (`slackBotToken`) | Empty, secret | Credential for Slack subscriptions. Saving a token does not enable Projects or subscriptions. Never exposed through frontend settings. |
+
+### Opt-in and migration behavior
+
+- Existing **explicit saved values** keep their meaning, including saved `true`
+  for automatic naming, icons or compact rows. We retain the original keys and
+  use SDK effective values. We do not infer consent from a token or existing data.
+- Previously implicit defaults for automatic naming and icons become **off**.
+  Projects, GitButler branch lookups and haptics now require an explicit opt-in.
+  No migration writes `true` on an existing or new installation.
+- Disabling Projects preserves its registry, workspace bindings, shared documents
+  and subscriptions. Coordinator/child threads return to ordinary inbox shelves.
+  Native BB still owns thread and environment lifecycle. Disabling does not stop
+  agents already running, archive threads, or delete environments.
+- Disabling either Projects or subscriptions blocks new polls and delivery,
+  including delivery after a poll already in flight. Already-issued network or
+  agent requests cannot be recalled. Stored subscriptions retain their individual
+  enabled flags and cursors. Re-enabling resumes the engine: overdue one-shot
+  schedules and pending events may deliver. Review subscriptions before opting in.
+- Disabled Project RPCs and agent tools reject calls from stale tabs/sessions.
+  New agent configurations omit Project instructions/tools. Native archive/delete
+  bookkeeping continues so the saved registry stays consistent.
+- The SDK's navigation and panel-launcher entries are static. The **Projects**
+  entry remains discoverable while off, but opens an explanation instead of
+  loading project data or forms. Thread chips, composer toolbar and rail unmount.
+- Settings take effect without a plugin reload. The selected sidebar itself stays
+  BB's explicit Appearance preference.
+
+See [Projects details](PROJECTS.md) for the coordination, shared-directory and
+subscription workflows. Enable only the parts you want.
 
 ## Troubleshooting
 

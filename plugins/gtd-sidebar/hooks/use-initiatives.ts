@@ -1,3 +1,4 @@
+import { useProjectFeatures } from "@/hooks/use-project-features";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRpc, useRealtime } from "@get-bb/plugin-sdk/app";
 import { INITIATIVES_CHANNEL } from "@/lib/initiative-types";
@@ -29,19 +30,21 @@ export interface InitiativesApi {
  * the last list; only a failure with nothing shown turns into `error`.
  */
 export function useInitiatives(): InitiativesApi {
+  const { projects: enabled } = useProjectFeatures();
   const rpc = useRpc<typeof initiativeRpcContract>();
   const [initiatives, setInitiatives] = useState<readonly Initiative[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const hasData = useRef(false);
 
   const load = useCallback(async () => {
+    if (!enabled) return { initiatives: [] };
     try {
       return await rpc.call("listInitiatives", {});
     } catch (error) {
       if (!hasData.current) setStatus("error");
       throw error;
     }
-  }, [rpc]);
+  }, [rpc, enabled]);
   const apply = useCallback((result: { initiatives: Initiative[] }) => {
     hasData.current = true;
     setInitiatives(result.initiatives);
@@ -68,16 +71,16 @@ export function useInitiatives(): InitiativesApi {
   return useMemo<InitiativesApi>(() => {
     const active: Initiative[] = [];
     const archived: Initiative[] = [];
-    for (const initiative of initiatives) {
+    for (const initiative of enabled ? initiatives : []) {
       (initiative.archivedAt === null ? active : archived).push(initiative);
     }
     return {
-      status,
+      status: enabled ? status : "ready",
       active,
       archived,
-      byId: new Map(initiatives.map((initiative) => [initiative.id, initiative])),
-      byCoordinator: initiativesByCoordinator(initiatives),
+      byId: new Map((enabled ? initiatives : []).map((initiative) => [initiative.id, initiative])),
+      byCoordinator: initiativesByCoordinator(enabled ? initiatives : []),
       retry,
     };
-  }, [initiatives, status, retry]);
+  }, [initiatives, status, retry, enabled]);
 }

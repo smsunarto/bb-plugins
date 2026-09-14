@@ -1,3 +1,4 @@
+import { useProjectFeatures } from "@/hooks/use-project-features";
 import { useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
@@ -45,6 +46,7 @@ const TABS: readonly { id: PanelTab; label: string }[] = [
  * and hosts the four Cursor surfaces: Overview, Agents, Context, Subscriptions.
  */
 export function ProjectPanel({ threadId, params }: PluginThreadPanelProps) {
+  const { subscriptions: subscriptionsEnabled } = useProjectFeatures();
   const initiatives = useInitiatives();
   const { threads } = useSidebarThreads();
   const paramsTab = (params as { tab?: PanelTab } | undefined)?.tab;
@@ -57,6 +59,7 @@ export function ProjectPanel({ threadId, params }: PluginThreadPanelProps) {
     if (TABS.some((t) => t.id === paramsTab)) setTab(paramsTab as PanelTab);
   }, [paramsTab]);
 
+  const visibleTab = tab === "subscriptions" && !subscriptionsEnabled ? "overview" : tab;
   const initiative = initiativeForThread(threads, threadId, initiatives.byCoordinator);
   if (initiative === null) {
     return (
@@ -74,16 +77,16 @@ export function ProjectPanel({ threadId, params }: PluginThreadPanelProps) {
         aria-label="Project sections"
         className="flex gap-0.5 border-b border-border px-2 pt-1.5"
       >
-        {TABS.map((t) => (
+        {TABS.filter((t) => t.id !== "subscriptions" || subscriptionsEnabled).map((t) => (
           <button
             key={t.id}
             type="button"
             role="tab"
-            aria-selected={tab === t.id}
+            aria-selected={visibleTab === t.id}
             onClick={() => setTab(t.id)}
             className={cn(
               "rounded-t-md px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground",
-              tab === t.id && "bg-accent/60 font-medium text-foreground",
+              visibleTab === t.id && "bg-accent/60 font-medium text-foreground",
             )}
           >
             {t.label}
@@ -91,11 +94,11 @@ export function ProjectPanel({ threadId, params }: PluginThreadPanelProps) {
         ))}
       </div>
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
-        {tab === "overview" ? (
+        {visibleTab === "overview" ? (
           <OverviewTab initiative={initiative} threads={threads} />
-        ) : tab === "agents" ? (
+        ) : visibleTab === "agents" ? (
           <AgentsTab initiative={initiative} threads={threads} />
-        ) : tab === "context" ? (
+        ) : visibleTab === "context" ? (
           <ContextDocs initiative={initiative} />
         ) : (
           <SubscriptionList initiative={initiative} />
@@ -114,6 +117,7 @@ function OverviewTab({
 }) {
   const rpc = useRpc<typeof initiativeRpcContract>();
   const { projects } = useSidebarThreads();
+  const { subscriptions: subscriptionsEnabled } = useProjectFeatures();
   const subscriptions = useInitiativeSubscriptions(initiative.id);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,7 +186,9 @@ function OverviewTab({
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Listening</dt>
-          <dd className="tabular-nums">{subscriptions.enabledCount}</dd>
+          <dd className="tabular-nums">
+            {subscriptionsEnabled ? subscriptions.enabledCount : "Disabled in settings"}
+          </dd>
         </div>
       </dl>
       {initiative.workspace.mode === "shared-directory" ? (

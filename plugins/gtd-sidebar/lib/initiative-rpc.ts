@@ -1,3 +1,4 @@
+import { requireProjects, requireSubscriptions } from "./feature-policy.ts";
 // The initiative RPC boundary: the zod contract the frontend calls and the
 // handlers that bridge it onto the domain service, store, and subscription
 // engine. Registered as a second contract beside gtdSidebarRpcContract so
@@ -352,12 +353,15 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
   const { store, service, subscriptionStore, engine } = runtime;
   bb.rpc.register(initiativeRpcContract, {
     previewInitiativeWorkspace(input) {
+      requireProjects(runtime.features);
       return service.previewInitiativeWorkspace(input);
     },
     listInitiatives({ workspaceProjectId }) {
+      requireProjects(runtime.features);
       return { initiatives: store.list({ workspaceProjectId }) };
     },
     async getInitiative({ initiativeId }) {
+      requireProjects(runtime.features);
       const initiative = requireInitiative(store, initiativeId);
       const [{ agents, truncated }, snapshot] = await Promise.all([
         service.listAgents(initiative),
@@ -372,39 +376,49 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
       };
     },
     async initiativeForThread({ threadId }) {
+      requireProjects(runtime.features);
       return (await service.resolveThread(threadId)) ?? { initiative: null, role: null };
     },
     async createInitiative(input) {
+      requireProjects(runtime.features);
       return service.createInitiative(input);
     },
     updateInitiative({ initiativeId, ...patch }) {
+      requireProjects(runtime.features);
       return { initiative: service.updateInitiative(initiativeId, patch) };
     },
     async archiveInitiative({ initiativeId }) {
+      requireProjects(runtime.features);
       await service.setArchived(initiativeId, true);
       return { ok: true as const };
     },
     async unarchiveInitiative({ initiativeId }) {
+      requireProjects(runtime.features);
       return { initiative: await service.setArchived(initiativeId, false) };
     },
     deleteInitiative({ initiativeId }) {
+      requireProjects(runtime.features);
       requireInitiative(store, initiativeId);
       engine.removeForInitiative(initiativeId);
       service.deleteInitiative(initiativeId);
       return { ok: true as const };
     },
     async attachInitiativeThread({ initiativeId, threadId }) {
+      requireProjects(runtime.features);
       await service.attachThread(initiativeId, threadId);
       return { ok: true as const };
     },
     async detachInitiativeThread({ initiativeId, threadId }) {
+      requireProjects(runtime.features);
       await service.detachThread(initiativeId, threadId);
       return { ok: true as const };
     },
     async spawnInitiativeAgent(input) {
+      requireProjects(runtime.features);
       return service.spawnAgent(input);
     },
     async listInitiativeEnvironments({ projectId }) {
+      requireProjects(runtime.features);
       const environments = await bb.sdk.environments.list({ projectId });
       return {
         environments: environments.map((environment) => ({
@@ -421,6 +435,7 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
       };
     },
     async listEnvironmentProviders({ projectId }) {
+      requireProjects(runtime.features);
       const providers = await bb.sdk.environments.listProviders(
         projectId === undefined ? {} : { projectId },
       );
@@ -436,16 +451,19 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
       };
     },
     listContextDocs({ initiativeId }) {
+      requireProjects(runtime.features);
       requireInitiative(store, initiativeId);
       return { docs: buildContextTree(store.listDocs(initiativeId)) };
     },
     readContextDoc({ initiativeId, path }) {
+      requireProjects(runtime.features);
       requireInitiative(store, initiativeId);
       const doc = store.getDoc(initiativeId, path);
       if (doc === null) throw new Error(`context doc ${JSON.stringify(path)} not found`);
       return { path: doc.path, content: doc.content, revision: doc.revision };
     },
     writeContextDoc({ initiativeId, path, content, expectedRevision }) {
+      requireProjects(runtime.features);
       requireInitiative(store, initiativeId);
       return service.writeContextDoc({
         initiativeId,
@@ -456,14 +474,17 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
       });
     },
     deleteContextDoc({ initiativeId, path }) {
+      requireProjects(runtime.features);
       requireInitiative(store, initiativeId);
       return { ok: true as const, deletedCount: service.deleteContextDoc(initiativeId, path) };
     },
     listSubscriptions({ initiativeId }) {
+      requireSubscriptions(runtime.features);
       requireInitiative(store, initiativeId);
       return { subscriptions: subscriptionStore.list(initiativeId) };
     },
     upsertSubscription(input) {
+      requireSubscriptions(runtime.features);
       requireInitiative(store, input.initiativeId);
       if (input.subscriptionId !== undefined) {
         // Ownership before mutation — the engine's upsert itself is not
@@ -476,12 +497,14 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
       return { subscription: engine.upsertSubscription(input) };
     },
     deleteSubscription({ subscriptionId }) {
+      requireSubscriptions(runtime.features);
       // The engine's delete path publishes the realtime refresh; a bare
       // store.remove would leave every open subscription tray stale.
       engine.deleteSubscription(subscriptionId);
       return { ok: true as const };
     },
     async runSubscriptionNow({ subscriptionId }) {
+      requireSubscriptions(runtime.features);
       await engine.runNow(subscriptionId);
       return { ok: true as const };
     },

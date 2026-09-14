@@ -57,7 +57,7 @@ function completed(seq = 2) {
 
 function createHost(
   options: {
-    automatic?: boolean;
+    automatic?: boolean | (() => boolean);
     events?: readonly unknown[];
     rereadTitle?: string | null;
     title?: string | null;
@@ -133,7 +133,8 @@ function createHost(
     },
   });
   const namer = createThreadNamer(host.bb, {
-    automaticallyNameThreads: async () => options.automatic ?? true,
+    automaticallyNameThreads: async () =>
+      typeof options.automatic === "function" ? options.automatic() : (options.automatic ?? true),
     inference: {
       async complete(input) {
         inferenceCalls.push(input);
@@ -469,4 +470,19 @@ describe("automatic naming subscription", () => {
     await host.harness.lifecycle.dispose();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
+});
+
+test("automatic inference cannot write a title after opt-out", async () => {
+  let enabled = true;
+  const { namer, updates } = createHost({
+    automatic: () => enabled,
+    events: [requested()],
+    inferenceComplete: async () => {
+      enabled = false;
+      return "A generated title";
+    },
+  });
+  const result = await namer.nameThread(THREAD_ID, { kind: "automatic" });
+  assert.equal(result.ok, false);
+  assert.deepEqual(updates, []);
 });

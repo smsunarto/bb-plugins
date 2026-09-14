@@ -1,5 +1,10 @@
 # Projects
 
+Projects coordination and Project subscriptions are separate opt-ins in
+**Settings → Plugins → GTD Sidebar**, both off by default. See the
+[feature catalog and migration behavior](README.md#configuration) before enabling
+automation. Disabling preserves Projects data and native threads.
+
 Projects give a native BB conversation a persistent coordinator, delegated agent threads, shared
 context, and subscriptions. GTD Sidebar must be loaded for project tools and subscription work to
 run. Shared-directory Projects require BB 0.43.1 or newer.

@@ -86,6 +86,7 @@ async function performThreadNaming(
   try {
     const automaticallyNameThreads =
       intent.kind === "automatic" ? await options.automaticallyNameThreads() : true;
+    if (!automaticallyNameThreads) return { ok: false, error: "Automatic naming is disabled." };
     const [thread, events] = await Promise.all([
       bb.sdk.threads.get({ threadId }),
       loadNamingEvents(bb, threadId),
@@ -118,6 +119,7 @@ async function performThreadNaming(
       }
     }
 
+    await requireNamingEnabled(intent, options.automaticallyNameThreads);
     const output = await options.inference.complete({
       environmentId: thread.environmentId,
       prompt: plan.prompt,
@@ -143,6 +145,7 @@ async function performThreadNaming(
       }
     }
 
+    await requireNamingEnabled(intent, options.automaticallyNameThreads);
     if (title !== thread.title) await bb.sdk.threads.update({ threadId, title });
     return { ok: true, title };
   } catch (error) {
@@ -241,4 +244,10 @@ function describeSkip(reason: ThreadNamingSkipReason): string {
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function requireNamingEnabled(intent: NamingIntent, enabled: () => Promise<boolean>) {
+  if (intent.kind === "automatic" && !(await enabled())) {
+    throw new Error("Automatic naming was disabled while naming was in progress.");
+  }
 }

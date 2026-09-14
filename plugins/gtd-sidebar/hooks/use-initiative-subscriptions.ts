@@ -1,3 +1,4 @@
+import { useProjectFeatures } from "@/hooks/use-project-features";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc, useRealtime, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
 import { SUBSCRIPTIONS_CHANNEL } from "@/lib/initiative-types";
@@ -21,8 +22,10 @@ export interface InitiativeSubscriptionsApi {
  * the new project's list.
  */
 export function useInitiativeSubscriptions(
-  initiativeId: string | null,
+  requestedInitiativeId: string | null,
 ): InitiativeSubscriptionsApi {
+  const { subscriptions: enabled } = useProjectFeatures();
+  const initiativeId = enabled ? requestedInitiativeId : null;
   const rpc = useRpc<typeof initiativeRpcContract>();
   const [subscriptions, setSubscriptions] = useState<readonly InitiativeSubscription[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -76,8 +79,9 @@ export function useInitiativeSubscriptions(
 
   return {
     status,
-    subscriptions,
-    enabledCount: subscriptions.filter((subscription) => subscription.enabled).length,
+    subscriptions: enabled ? subscriptions : [],
+    enabledCount: (enabled ? subscriptions : []).filter((subscription) => subscription.enabled)
+      .length,
     retry,
   };
 }

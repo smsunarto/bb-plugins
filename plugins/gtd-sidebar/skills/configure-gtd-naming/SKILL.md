@@ -7,7 +7,10 @@ disable-model-invocation: true
 # Configure GTD naming
 
 Write `.agents/GTD_NAMING.md` in the active project workspace. Run this setup
-only on the user's request.
+only on the user's request. Automatic naming is off by default. Writing rules does
+not enable it. The user can opt in through Settings → Plugins → GTD Sidebar, or
+request one title with `bb gtd-sidebar rename [<threadId>]`. See the plugin
+[feature catalog](../../README.md#configuration) for all settings and defaults.
 
 1. Read the existing `.agents/GTD_NAMING.md`. Inspect the project README,
    manifests, and top-level source directories. Stop once each proposed naming

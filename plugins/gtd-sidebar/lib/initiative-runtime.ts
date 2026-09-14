@@ -1,3 +1,4 @@
+import type { ProjectFeatures } from "./feature-policy.ts";
 // Initiative runtime assembly: plugin storage, the domain service, the
 // subscription engine (automation's module), and the agent surface — wired
 // once from server.ts.
@@ -19,6 +20,7 @@ import type {
 } from "./shared-directory-host.ts";
 
 export interface InitiativeRuntime {
+  features: ProjectFeatures;
   store: InitiativeStore;
   service: InitiativeService;
   subscriptionStore: SubscriptionStore;
@@ -26,6 +28,7 @@ export interface InitiativeRuntime {
 }
 
 export interface InitiativeRuntimeDeps {
+  features: ProjectFeatures;
   /** The plugin's host client — automation's GitHub bridge methods ride it. */
   host: {
     call(method: string, input: unknown, options: ExperimentalHostCallOptions): Promise<unknown>;
@@ -79,6 +82,7 @@ export function createInitiativeRuntime(
     {
       getCoordinatorThreadId: (initiativeId) =>
         Promise.resolve(store.get(initiativeId)?.coordinatorThreadId ?? null),
+      isEnabled: deps.features.subscriptions,
       isInitiativeActive: (initiativeId) => {
         const initiative = store.get(initiativeId);
         return initiative !== null && initiative.archivedAt === null;
@@ -90,6 +94,7 @@ export function createInitiativeRuntime(
   );
 
   registerInitiativeAgents(bb, {
+    features: deps.features,
     service,
     store,
     engine,
@@ -103,7 +108,7 @@ export function createInitiativeRuntime(
   // hooks already resolve its role. This covers raw `bb thread spawn
   // --parent-self` calls from inside agents, not just our own tools.
   bb.events.on("thread.created", ({ thread }) => {
-    service.noteThreadCreated(thread);
+    if (deps.features.projects()) service.noteThreadCreated(thread);
   });
 
   // The admission checkpoint: first messages carrying an initiative init
@@ -111,12 +116,14 @@ export function createInitiativeRuntime(
   // children of members get indexed before their first session. See
   // service.dispatchGate for the proceed/wait/reject semantics.
   bb.experimental_hooks.on("message.dispatch", (ctx) =>
-    service.dispatchGate({
-      threadId: ctx.thread.id,
-      parentThreadId: ctx.thread.parentThreadId,
-      originPluginId: ctx.originPluginId,
-      inputBlocks: ctx.input.blocks,
-    }),
+    deps.features.projects()
+      ? service.dispatchGate({
+          threadId: ctx.thread.id,
+          parentThreadId: ctx.thread.parentThreadId,
+          originPluginId: ctx.originPluginId,
+          inputBlocks: ctx.input.blocks,
+        })
+      : { action: "proceed" },
   );
 
   // Archiving, restoring, or deleting a coordinator through ordinary thread
@@ -132,7 +139,7 @@ export function createInitiativeRuntime(
     service.noteNativeThreadState(thread.id, "deleted");
   });
 
-  return { store, service, subscriptionStore, engine };
+  return { features: deps.features, store, service, subscriptionStore, engine };
 }
 
 export { INITIATIVES_CHANNEL };

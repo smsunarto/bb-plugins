@@ -56,6 +56,7 @@
     "dist/app.css",
     "assets/",
     "README.md",
+    "PROJECTS.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "server.ts",
@@ -113,7 +114,7 @@
     "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000 test/*.test.ts",
+    "test": "bun test --timeout=30000 test/*.test.ts && node --experimental-strip-types --test test/feature-settings.node.ts",
     "clean": "rm -rf dist"
   }
 }

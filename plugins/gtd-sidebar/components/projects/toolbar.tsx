@@ -1,3 +1,4 @@
+import { useProjectFeatures } from "@/hooks/use-project-features";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
@@ -44,6 +45,7 @@ function ToolbarRow({
   initiative: Initiative;
   threads: readonly PluginSidebarThread[];
 }) {
+  const { subscriptions: subscriptionsEnabled } = useProjectFeatures();
   const navigate = useBbNavigate();
   const subscriptions = useInitiativeSubscriptions(initiative.id);
   const rows = useMemo(
@@ -69,17 +71,19 @@ function ToolbarRow({
         <AgentsTray initiative={initiative} agents={agents} />
       </TrayButton>
       <PrsTrayButton agents={agents} />
-      <TrayButton icon="Rss" label="Listening" count={subscriptions.enabledCount}>
-        <ListeningTray
-          initiative={initiative}
-          onManage={() =>
-            navigate.openThreadPanel({
-              actionId: "project",
-              params: { tab: "subscriptions" },
-            })
-          }
-        />
-      </TrayButton>
+      {subscriptionsEnabled ? (
+        <TrayButton icon="Rss" label="Listening" count={subscriptions.enabledCount}>
+          <ListeningTray
+            initiative={initiative}
+            onManage={() =>
+              navigate.openThreadPanel({
+                actionId: "project",
+                params: { tab: "subscriptions" },
+              })
+            }
+          />
+        </TrayButton>
+      ) : null}
     </div>
   );
 }

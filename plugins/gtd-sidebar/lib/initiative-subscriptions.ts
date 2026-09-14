@@ -931,6 +931,8 @@ async function callSlackApi(
 // ---------------------------------------------------------------------------
 
 export interface SubscriptionEngineDeps {
+  /** Global opt-in. Checked before polling and again before delivery. */
+  isEnabled(): boolean;
   store: SubscriptionStore;
   /** Resolve an initiative's coordinator thread; null = gone/not yet created. */
   getCoordinatorThreadId(initiativeId: string): Promise<string | null>;
@@ -1056,7 +1058,7 @@ export function createSubscriptionEngine(deps: SubscriptionEngineDeps) {
    * may be delivered once the owner turned it off or repointed the source.
    */
   async function stillDeliverable(subscription: InitiativeSubscription): Promise<boolean> {
-    if (disposed) return false;
+    if (disposed || !deps.isEnabled()) return false;
     const fresh = deps.store.get(subscription.id);
     if (!fresh || !fresh.enabled) return false;
     if (configKeyOf(fresh) !== configKeyOf(subscription)) return false;
@@ -1235,7 +1237,7 @@ export function createSubscriptionEngine(deps: SubscriptionEngineDeps) {
     if (thread.archivedAt !== null) {
       throw new Error("coordinator thread archived — unarchive to resume this subscription");
     }
-    if (disposed) throw new Error("subscription engine disposed");
+    if (disposed || !deps.isEnabled()) throw new Error("subscription engine disabled");
     await deps.threads.send({
       threadId: coordinatorId,
       input: [{ type: "text", text, mentions: [] }],
@@ -1472,7 +1474,7 @@ export function createSubscriptionEngine(deps: SubscriptionEngineDeps) {
   }
 
   async function execute(id: string): Promise<"ran" | "in-flight" | "not-found" | "disposed"> {
-    if (disposed) return "disposed";
+    if (disposed || !deps.isEnabled()) return "disposed";
     if (inFlight.has(id)) return "in-flight";
     const subscription = deps.store.get(id);
     if (!subscription) return "not-found";
@@ -1491,7 +1493,7 @@ export function createSubscriptionEngine(deps: SubscriptionEngineDeps) {
      * its own claim, so a manual runNow during the sweep cannot double-send.
      */
     async sweep(): Promise<void> {
-      if (disposed) return;
+      if (disposed || !deps.isEnabled()) return;
       for (const subscription of deps.store.listDue(deps.now())) {
         if (disposed) return;
         try {
@@ -1607,6 +1609,7 @@ export type SubscriptionEngine = ReturnType<typeof createSubscriptionEngine>;
 // ---------------------------------------------------------------------------
 
 export interface InitiativeSubscriptionRuntimeDeps {
+  isEnabled(): boolean;
   getCoordinatorThreadId(initiativeId: string): Promise<string | null>;
   isInitiativeActive(initiativeId: string): Promise<boolean> | boolean;
   getSlackToken(): Promise<string | undefined>;
@@ -1639,6 +1642,7 @@ export function registerInitiativeSubscriptions(
   const store = createSubscriptionStore(bb.storage.database());
   const engine = createSubscriptionEngine({
     store,
+    isEnabled: runtime.isEnabled,
     getCoordinatorThreadId: runtime.getCoordinatorThreadId,
     isInitiativeActive: runtime.isInitiativeActive,
     threads: bb.sdk.threads,

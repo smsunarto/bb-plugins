@@ -196,7 +196,7 @@ export const gtdSidebarRpcContract = defineRpcContract({
 /** Channel the frontend re-reads on. */
 export const LIFECYCLE_CHANNEL = "lifecycle";
 
-export default function plugin(bb: BbPluginApi) {
+export default async function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
   const settings = bb.settings.define({
     localMachineId: {
@@ -217,13 +217,41 @@ export default function plugin(bb: BbPluginApi) {
       label: "Show agent icons",
       description:
         "Show icons on two-line cards. Compact rows use tooltips; mobile rows use the long-press menu.",
-      default: true,
+      default: false,
     },
     automaticallyNameThreads: {
       type: "boolean",
       label: "Automatically name threads",
-      description: "Name new threads and rename only when you start different work.",
-      default: true,
+      description:
+        "Opt in to Codex inference on user prompts. Sends request context and naming rules to generate titles. Manual CLI rename remains available.",
+      default: false,
+    },
+    projectsEnabled: {
+      type: "boolean",
+      label: "Enable Projects coordination",
+      description:
+        "Opt in to coordinator threads, delegated agents, shared context and workspace bindings. Turning off preserves data and leaves native threads accessible.",
+      default: false,
+    },
+    subscriptionsEnabled: {
+      type: "boolean",
+      label: "Enable Project subscriptions",
+      description:
+        "Requires Projects. Opt in to scheduled prompts and GitHub/Slack polling that can start agent work. Turning off pauses delivery without deleting subscriptions.",
+      default: false,
+    },
+    mobileHaptics: {
+      type: "boolean",
+      label: "Enable mobile haptics",
+      description: "Opt in to tactile feedback on iOS menu taps. Long-press menus work without it.",
+      default: false,
+    },
+    gitButlerBranches: {
+      type: "boolean",
+      label: "Show GitButler branches",
+      description:
+        "Opt in to periodic host GitButler CLI reads for primary checkouts. Otherwise use BB's native branch labels.",
+      default: false,
     },
     slackBotToken: {
       type: "string",
@@ -233,6 +261,16 @@ export default function plugin(bb: BbPluginApi) {
       secret: true,
       default: "",
     },
+  });
+  let featureValues = await settings.get();
+  const features = {
+    projects: () => featureValues.projectsEnabled,
+    subscriptions: () => featureValues.projectsEnabled && featureValues.subscriptionsEnabled,
+  };
+  settings.onChange((next) => {
+    featureValues = next;
+    bb.realtime.publish("initiatives", { settingsChanged: true });
+    bb.experimental_hooks.recheck("message.dispatch");
   });
   const threadNamer = createThreadNamer(bb, {
     automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
@@ -258,6 +296,7 @@ export default function plugin(bb: BbPluginApi) {
           ) => Promise<unknown>
         )(method, input, options),
     },
+    features,
     getSlackToken: async () => (await settings.get()).slackBotToken || undefined,
   });
   registerInitiativeRpc(bb, initiatives);
@@ -318,6 +357,7 @@ export default function plugin(bb: BbPluginApi) {
       return { threadIds: await collapsedThreads.toggle(threadId) };
     },
     async listEnvironmentBranches({ environmentIds }) {
+      if (!(await settings.get()).gitButlerBranches) return { environments: [] };
       const environments = await Promise.all(
         [...new Set(environmentIds)].map(async (environmentId) => {
           try {

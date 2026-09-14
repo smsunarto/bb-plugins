@@ -174,6 +174,7 @@ function makeToolsHarness(
   const engineDeletes: string[] = [];
   const subscriptionRows = new Map<string, { id: string; initiativeId: string }>();
   registerInitiativeAgents(bb as unknown as BbPluginApi, {
+    features: { projects: () => true, subscriptions: () => true },
     service,
     store,
     engine: {

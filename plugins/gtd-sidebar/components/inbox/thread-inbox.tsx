@@ -114,15 +114,15 @@ export function ThreadInbox({
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const [machineScope, setMachineScope] = useState<string | null>(null);
   const machines = sidebarMachines(inboxThreads);
-  // Read once here rather than per card, and compared against `false` rather
-  // than coerced: `values` is undefined while the settings load, and the
-  // setting is on by default, so anything that is not an explicit "off" draws
-  // the glyph. That way the common case never flashes it on and off.
+  // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues } = useSettings();
-  const showProviderIcon = settingValues?.showProviderIcon !== false;
+  const showProviderIcon = settingValues?.showProviderIcon === true;
   const compactThreads = settingValues?.compactThreads === true;
 
-  const gitButlerLabels = useGitButlerLabels(inboxThreads);
+  const gitButlerLabels = useGitButlerLabels(
+    inboxThreads,
+    settingValues?.gitButlerBranches === true,
+  );
 
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
@@ -390,12 +390,14 @@ export function ThreadInbox({
             // surface, while the matching padding lets the final row scroll clear.
             style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
           >
-            <ProjectsRail
-              activeThreadId={activeThreadId}
-              isCompactViewport={isCompactViewport}
-              threads={threads}
-              onNavigate={onNavigate}
-            />
+            {settingValues?.projectsEnabled === true ? (
+              <ProjectsRail
+                activeThreadId={activeThreadId}
+                isCompactViewport={isCompactViewport}
+                threads={threads}
+                onNavigate={onNavigate}
+              />
+            ) : null}
             <InboxContent
               status={status}
               ready={lifecycle.shelvesReady && settledThreads.ready}
@@ -746,7 +748,10 @@ function useMinuteClock(): number {
   return nowMinute * 60_000;
 }
 
-function useGitButlerLabels(threads: readonly PluginSidebarThread[]): ReadonlyMap<string, string> {
+function useGitButlerLabels(
+  threads: readonly PluginSidebarThread[],
+  enabled: boolean,
+): ReadonlyMap<string, string> {
   const rpc = useRpc<typeof gtdSidebarRpcContract>();
   const gitButlerEnvironmentIds = useMemo(
     () =>
@@ -768,7 +773,7 @@ function useGitButlerLabels(threads: readonly PluginSidebarThread[]): ReadonlyMa
   );
 
   useEffect(() => {
-    if (gitButlerEnvironmentKey.length === 0) {
+    if (!enabled || gitButlerEnvironmentKey.length === 0) {
       setGitButlerLabels((current) => (current.size === 0 ? current : new Map()));
       return;
     }
@@ -799,9 +804,9 @@ function useGitButlerLabels(threads: readonly PluginSidebarThread[]): ReadonlyMa
       cancelled = true;
       clearInterval(timer);
     };
-  }, [gitButlerEnvironmentKey, rpc]);
+  }, [enabled, gitButlerEnvironmentKey, rpc]);
 
-  return gitButlerLabels;
+  return enabled ? gitButlerLabels : new Map();
 }
 
 /** Wait for plugin shelf reads before deciding whether the list is empty. */

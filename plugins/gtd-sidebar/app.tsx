@@ -3,6 +3,7 @@
 //
 // Active threads are grouped by who acts next. Every section orders by when
 // each thread arrived on it, most recent first.
+import { withProjects } from "@/components/projects/feature-gate";
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
@@ -38,13 +39,13 @@ export default definePluginApp((app) => {
     title: "Projects",
     icon: "Layers",
     path: "projects",
-    component: ProjectsPage,
+    component: withProjects(ProjectsPage, true),
   });
 
   app.slots.experimental_threadHeaderAction({
     id: "project",
     title: "Project",
-    component: ProjectHeaderAction,
+    component: withProjects(ProjectHeaderAction),
   });
 
   app.slots.threadPanelAction({
@@ -52,7 +53,7 @@ export default definePluginApp((app) => {
     title: "Project",
     icon: "Layers",
     layout: "flush",
-    component: ProjectPanel,
+    component: withProjects(ProjectPanel, true),
     run: ({ openPanel }) => {
       openPanel({ title: "Project" });
     },
@@ -65,7 +66,7 @@ export default definePluginApp((app) => {
       {
         id: "project-toolbar",
         chrome: "bare",
-        component: ProjectToolbar,
+        component: withProjects(ProjectToolbar),
       },
     ],
   });
