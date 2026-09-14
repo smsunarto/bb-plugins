@@ -3,7 +3,9 @@ import { describe, expect, test } from "bun:test";
 import {
   encodeSyntaxTokens,
   isMonokaiThemeActive,
+  type MonacoDomFallbackDependencies,
   type MonacoSyntaxDependencies,
+  mountMonacoDomFallback,
   mountMonacoSyntaxTokens,
   syntaxTokensForSource,
 } from "../app/monaco-syntax-tokens.ts";
@@ -133,6 +135,67 @@ actualCall();`;
 
     controller.abort();
     expect(fallbackDisposals).toBe(1);
+  });
+
+  test("mounts character-data observation only after a Monaco editor root exists", () => {
+    const body = {} as Node;
+    const editor = {} as Element;
+    const editorContainer = {} as Node;
+    const observers: Array<{
+      callback: MutationCallback;
+      disconnects: number;
+      observations: Array<{ target: Node; options: MutationObserverInit }>;
+    }> = [];
+    let editors: readonly Element[] = [];
+    let frameRequests = 0;
+    const dependencies: MonacoDomFallbackDependencies = {
+      body,
+      cancelFrame: () => {},
+      createObserver: (callback) => {
+        const state = { callback, disconnects: 0, observations: [] };
+        observers.push(state);
+        return {
+          disconnect: () => {
+            state.disconnects += 1;
+          },
+          observe: (target, options) => state.observations.push({ target, options }),
+        };
+      },
+      findDecoratedSpans: () => [],
+      findEditors: () => editors,
+      findLines: () => [],
+      mutationContainsEditor: (node) => node === editorContainer,
+      requestFrame: () => {
+        frameRequests += 1;
+        return frameRequests;
+      },
+    };
+
+    const dispose = mountMonacoDomFallback(dependencies);
+
+    expect(observers).toHaveLength(1);
+    expect(observers[0]?.observations).toEqual([
+      { target: body, options: { childList: true, subtree: true } },
+    ]);
+    expect(frameRequests).toBe(0);
+
+    editors = [editor];
+    observers[0]?.callback(
+      [{ addedNodes: [editorContainer], removedNodes: [] } as unknown as MutationRecord],
+      {} as MutationObserver,
+    );
+
+    expect(observers).toHaveLength(2);
+    expect(observers[1]?.observations).toEqual([
+      {
+        target: editor,
+        options: { childList: true, characterData: true, subtree: true },
+      },
+    ]);
+    expect(frameRequests).toBe(1);
+
+    dispose();
+    expect(observers.map((observer) => observer.disconnects)).toEqual([1, 1]);
   });
 
   test("encodes sorted Monaco semantic token deltas", () => {

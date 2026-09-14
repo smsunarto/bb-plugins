@@ -100,8 +100,15 @@ function findElementBinding(element: Element): TerminalBinding | null {
 export function applyTerminalAppearance(
   { terminal, fit }: TerminalBinding,
   appearance: TerminalAppearance,
-): () => void {
+): (() => void) | null {
   const options = terminal.options;
+  if (
+    options.fontFamily === appearance.fontFamily &&
+    options.fontSize === appearance.fontSize &&
+    options.lineHeight === appearance.lineHeight
+  ) {
+    return null;
+  }
   const previous = {
     fontFamily: options.fontFamily,
     fontSize: options.fontSize,
@@ -184,6 +191,7 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
   const registry = globalThis as typeof globalThis & { [ACTIVE_MOUNT]?: () => void };
   registry[ACTIVE_MOUNT]?.();
   const applied = new Map<Element, AppliedTerminal>();
+  const hostOwned = new WeakSet<Element>();
   let frame: number | null = null;
   let disposed = false;
   const restore = (entry: AppliedTerminal) => {
@@ -205,11 +213,16 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
     }
     if (!appearance) return;
     for (const element of document.querySelectorAll(".xterm")) {
-      if (applied.has(element)) continue;
+      if (applied.has(element) || hostOwned.has(element)) continue;
       const binding = findElementBinding(element);
       if (!binding) continue;
       try {
-        applied.set(element, { appearance, restore: applyTerminalAppearance(binding, appearance) });
+        const restoreAppearance = applyTerminalAppearance(binding, appearance);
+        if (restoreAppearance === null) {
+          hostOwned.add(element);
+          continue;
+        }
+        applied.set(element, { appearance, restore: restoreAppearance });
       } catch {
         /* Skip an unavailable or concurrently disposed terminal. */
       }

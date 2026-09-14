@@ -9,7 +9,7 @@
 
 **A dark Monokai palette for bb, terminal included.**
 
-![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
+![bb 0.42+](https://img.shields.io/badge/bb-0.42%2B-88C0D0?style=flat-square)
 ![platform: any](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![dark only](https://img.shields.io/badge/appearance-dark%20only-E3E3DD?style=flat-square)
 
@@ -89,7 +89,7 @@ bb theme.
 
 ## Requirements
 
-- bb 0.40+ (code themes arrived in bb 0.39)
+- bb 0.42+. The live UI-font setting uses the app overlay added in bb 0.42.
 - bb set to **dark** appearance. The palette only restyles `.dark`; light mode
   keeps bb's defaults.
 - Optional: **Berkeley Mono**. It is _not_ bundled. Install it yourself and the

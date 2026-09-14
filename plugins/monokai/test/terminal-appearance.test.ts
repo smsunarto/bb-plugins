@@ -90,7 +90,7 @@ describe("terminal appearance ownership", () => {
     });
     expect(fit.fit).toHaveBeenCalledTimes(1);
     expect(terminal.refresh).toHaveBeenCalledWith(0, 15);
-    restore();
+    restore?.();
     expect(terminal.options).toEqual(original);
     expect(fit.fit).toHaveBeenCalledTimes(2);
   });
@@ -100,7 +100,7 @@ describe("terminal appearance ownership", () => {
     const restore = applyTerminalAppearance({ terminal, fit: fit.fit }, appearance);
     terminal.options.fontFamily = "new-theme-font";
     terminal.options.theme = { background: "#ffffff", cursorAccent: "#eeeeee", red: "#990000" };
-    restore();
+    restore?.();
     expect(terminal.options.fontFamily).toBe("new-theme-font");
     expect(terminal.options.fontSize).toBe(12);
     expect(terminal.options.theme).toEqual({
@@ -117,6 +117,22 @@ describe("terminal appearance ownership", () => {
       throw new Error("disposed");
     });
     expect(() => applyTerminalAppearance({ terminal, fit }, appearance)).toThrow("disposed");
+    expect(terminal.options).toEqual(original);
+  });
+
+  test("stands down when the host already renders terminal typography tokens", () => {
+    const { terminal, fit } = fixture();
+    terminal.options.fontFamily = appearance.fontFamily;
+    terminal.options.fontSize = appearance.fontSize;
+    terminal.options.lineHeight = appearance.lineHeight;
+    const original = structuredClone(terminal.options);
+
+    const restore = applyTerminalAppearance({ terminal, fit: fit.fit }, appearance);
+
+    expect(restore).toBeNull();
+    expect(fit.fit).not.toHaveBeenCalled();
+    expect(terminal.refresh).not.toHaveBeenCalled();
+    restore?.();
     expect(terminal.options).toEqual(original);
   });
 });

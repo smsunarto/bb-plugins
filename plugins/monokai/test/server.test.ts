@@ -21,17 +21,4 @@ describe("bb Monokai UI font setting", () => {
 
     await harness.lifecycle.dispose();
   });
-
-  test("serves the current font to open clients", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "monokai" });
-    await plugin(bb);
-
-    const initial = await harness.behavior.callRpc("getUiFont", {});
-    expect(initial).toEqual({ uiFont: "Inter (Default)" });
-
-    await harness.behavior.setSettings({ uiFont: "SF Pro" });
-    expect(await harness.behavior.callRpc("getUiFont", {})).toEqual({ uiFont: "SF Pro" });
-
-    await harness.lifecycle.dispose();
-  });
 });

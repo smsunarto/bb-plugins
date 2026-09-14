@@ -1,24 +1,14 @@
 // @smsunarto/bb-plugin-monokai — backend entry.
 //
 // The palette itself is declarative: `bb.themes` in package.json points BB at
-// themes/bb-monokai.css. The runtime owns one setting and a bounded RPC so every
-// open client can apply its UI font without reloading the plugin.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
-import { z } from "zod";
+// themes/bb-monokai.css. The runtime owns one setting; every open client reads
+// it through the SDK's push-updated settings hook.
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
-import { DEFAULT_UI_FONT, UI_FONT_OPTIONS, normalizeUiFont } from "./shared/ui-font.ts";
+import { DEFAULT_UI_FONT, UI_FONT_OPTIONS } from "./shared/ui-font.ts";
 
-const uiFontSchema = z.enum(UI_FONT_OPTIONS);
-
-export const uiFontRpcContract = defineRpcContract({
-  getUiFont: {
-    input: z.object({}).strict(),
-    output: z.object({ uiFont: uiFontSchema }).strict(),
-  },
-});
-
-export default async function plugin(bb: BbPluginApi) {
-  const settings = bb.settings.define({
+export default function plugin(bb: BbPluginApi) {
+  bb.settings.define({
     uiFont: {
       type: "select",
       label: "UI font",
@@ -27,13 +17,6 @@ export default async function plugin(bb: BbPluginApi) {
       options: [...UI_FONT_OPTIONS],
       default: DEFAULT_UI_FONT,
     },
-  });
-  let uiFont = normalizeUiFont((await settings.get()).uiFont);
-  settings.onChange((next) => {
-    uiFont = normalizeUiFont(next.uiFont);
-  });
-  bb.rpc.register(uiFontRpcContract, {
-    getUiFont: () => ({ uiFont }),
   });
   bb.log.info("loaded — contributes the bb Monokai palette and UI font setting");
 }

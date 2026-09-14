@@ -95,6 +95,22 @@ export interface MonacoSyntaxDependencies {
   observe: (listener: () => void) => () => void;
 }
 
+interface DomObserver {
+  disconnect(): void;
+  observe(target: Node, options: MutationObserverInit): void;
+}
+
+export interface MonacoDomFallbackDependencies {
+  body: Node;
+  cancelFrame(handle: number): void;
+  createObserver(callback: MutationCallback): DomObserver;
+  findDecoratedSpans(): readonly HTMLElement[];
+  findEditors(): readonly Element[];
+  findLines(): readonly HTMLElement[];
+  mutationContainsEditor(node: Node): boolean;
+  requestFrame(callback: FrameRequestCallback): number;
+}
+
 type MountRegistry = typeof globalThis & {
   [ACTIVE_MOUNT]?: () => void;
 };
@@ -609,43 +625,92 @@ function decorateMonacoLine(line: HTMLElement): void {
   }
 }
 
-function mountMonacoDomFallback(): () => void {
+function browserDomFallbackDependencies(): MonacoDomFallbackDependencies {
+  return {
+    body: document.body,
+    cancelFrame: cancelAnimationFrame,
+    createObserver: (callback) => new MutationObserver(callback),
+    findDecoratedSpans: () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          `.${FUNCTION_CLASS}, .${FUNCTION_DECLARATION_CLASS}`,
+        ),
+      ),
+    findEditors: () => Array.from(document.querySelectorAll<Element>(".monaco-editor")),
+    findLines: () =>
+      Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .view-line")),
+    mutationContainsEditor: (node) =>
+      node instanceof Element &&
+      (node.matches(".monaco-editor") || node.querySelector(".monaco-editor") !== null),
+    requestFrame: requestAnimationFrame,
+  };
+}
+
+export function mountMonacoDomFallback(
+  dependencies: MonacoDomFallbackDependencies = browserDomFallbackDependencies(),
+): () => void {
   let frame: number | null = null;
   let disposed = false;
+  const editorObservers = new Map<Element, DomObserver>();
   const decorate = () => {
     frame = null;
     if (disposed) return;
-    for (const line of document.querySelectorAll<HTMLElement>(".monaco-editor .view-line")) {
-      decorateMonacoLine(line);
-    }
+    for (const line of dependencies.findLines()) decorateMonacoLine(line);
   };
   const schedule = () => {
     if (frame !== null || disposed) return;
-    frame = requestAnimationFrame(decorate);
+    frame = dependencies.requestFrame(decorate);
   };
-  const observer = new MutationObserver((records) => {
-    if (
-      records.some((record) =>
-        record.target instanceof Element
-          ? record.target.closest(".monaco-editor") !== null
-          : record.target.parentElement?.closest(".monaco-editor") !== null,
-      )
-    ) {
+  const syncEditors = () => {
+    if (disposed) return;
+    const current = new Set(dependencies.findEditors());
+    for (const [editor, observer] of editorObservers) {
+      if (current.has(editor)) continue;
+      observer.disconnect();
+      editorObservers.delete(editor);
+    }
+    for (const editor of current) {
+      if (editorObservers.has(editor)) continue;
+      const observer = dependencies.createObserver(schedule);
+      observer.observe(editor, { childList: true, characterData: true, subtree: true });
+      editorObservers.set(editor, observer);
       schedule();
     }
+  };
+  const rootObserver = dependencies.createObserver((records) => {
+    if (
+      records.some((record) =>
+        [...record.addedNodes, ...record.removedNodes].some(dependencies.mutationContainsEditor),
+      )
+    )
+      syncEditors();
   });
-  observer.observe(document.body, { childList: true, characterData: true, subtree: true });
-  schedule();
+  rootObserver.observe(dependencies.body, { childList: true, subtree: true });
+  syncEditors();
   return () => {
     disposed = true;
-    observer.disconnect();
-    if (frame !== null) cancelAnimationFrame(frame);
-    for (const span of document.querySelectorAll<HTMLElement>(
-      `.${FUNCTION_CLASS}, .${FUNCTION_DECLARATION_CLASS}`,
-    )) {
+    rootObserver.disconnect();
+    for (const observer of editorObservers.values()) observer.disconnect();
+    editorObservers.clear();
+    if (frame !== null) dependencies.cancelFrame(frame);
+    for (const span of dependencies.findDecoratedSpans()) {
       span.classList.remove(FUNCTION_CLASS, FUNCTION_DECLARATION_CLASS);
     }
   };
+}
+
+function relevantStylesheetNode(node: Node): boolean {
+  if (!(node instanceof Element)) return false;
+  return (
+    node.matches('link[rel="stylesheet"]') || node.querySelector('link[rel="stylesheet"]') !== null
+  );
+}
+
+function themeStyleTarget(node: Node): boolean {
+  return (
+    node instanceof HTMLStyleElement ||
+    (!(node instanceof Element) && node.parentElement instanceof HTMLStyleElement)
+  );
 }
 
 function browserDependencies(): MonacoSyntaxDependencies {
@@ -659,11 +724,19 @@ function browserDependencies(): MonacoSyntaxDependencies {
     isThemeActive: () => isMonokaiThemeActive(getComputedStyle(document.documentElement)),
     mountFallback: mountMonacoDomFallback,
     observe: (listener) => {
-      const observer = new MutationObserver(listener);
+      const observer = new MutationObserver((records) => {
+        if (
+          records.some(
+            (record) =>
+              record.target === document.documentElement ||
+              themeStyleTarget(record.target) ||
+              [...record.addedNodes].some(relevantStylesheetNode),
+          )
+        )
+          listener();
+      });
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
       observer.observe(document.head, {
-        attributes: true,
-        attributeFilter: ["href"],
         childList: true,
         characterData: true,
         subtree: true,
