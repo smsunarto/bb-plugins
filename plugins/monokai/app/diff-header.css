@@ -1,0 +1,122 @@
+[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  button:is(
+    [aria-label="Open in editor"],
+    [aria-label^="Open in editor ("],
+    [aria-label^="Open "][aria-label$=" in editor"]
+  ) {
+  display: none;
+}
+
+[data-monokai-diff-kind] {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: currentColor;
+  color: var(--muted-foreground);
+}
+[data-monokai-diff-kind="added"] {
+  color: var(--diff-added);
+}
+[data-monokai-diff-kind="deleted"] {
+  color: var(--diff-removed);
+}
+[data-monokai-diff-kind="modified"] {
+  color: var(--diffs-modified-color-override);
+}
+
+.dark[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+  min-height: 40px;
+  padding-block: 0;
+  padding-inline: 12px;
+}
+
+.dark[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
+    [data-testid="git-diff-toolbar-layout"]
+  )
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  button[aria-expanded] {
+  margin-left: 0;
+}
+
+/* Pierre's landing-page chevron uses a 10x16 viewBox. Resizing BB's 24x24
+ * stroke icon to 10x16 shrinks its artwork rather than matching that glyph. */
+.dark[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex
+  > span
+  > button[aria-expanded]
+  > svg {
+  display: none;
+}
+
+.dark[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex
+  > span
+  > button[aria-expanded]::before {
+  content: "";
+  width: 10px;
+  height: 16px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transform: rotate(-90deg);
+  transition: transform 150ms ease;
+}
+
+.dark[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex
+  > span
+  > button[aria-expanded="true"]::before {
+  transform: rotate(0deg);
+}
+
+[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex
+  > span
+  > button[aria-expanded]:not(:disabled) {
+  cursor: pointer;
+}
+
+[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex:has(> span > button[aria-expanded]) {
+  position: relative;
+  padding-right: 28px;
+}
+
+[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex:has(> span > button[aria-expanded])
+  button[aria-label^="Copy path for "] {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+[data-monokai-diff-headers]
+  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  .bg-background
+  > .flex:has(> span > button[aria-expanded])
+  .truncate {
+  text-overflow: clip;
+}
+
+[data-monokai-filename-overflow] {
+  mask-image: linear-gradient(to right, transparent, black 16px);
+}
