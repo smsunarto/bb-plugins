@@ -234,6 +234,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       <li className="list-none">
         <div
           ref={setCardRef}
+          data-sidebar-thread-active={isActive ? "true" : undefined}
           data-sidebar-thread-focused={isFocusedInSplit}
           {...handlers}
           data-action-count={!isCompactViewport && showActions ? 2 : 0}

@@ -53,6 +53,10 @@
   }
 }
 
+[data-gtd-sidebar-thread-list] {
+  background: var(--sidebar);
+}
+
 .gtd-thread-row {
   height: 52px;
   /* Content starts 28px in: 10px past the disclosure's 12px chevron glyph,
@@ -284,6 +288,13 @@
   top: 50%;
   height: 1px;
   background: var(--sidebar-border);
+}
+.gtd-thread-row:is(:hover, :focus-within, [data-sidebar-thread-active="true"]) .gtd-disclosure {
+  color: var(--sidebar-accent-foreground);
+}
+.gtd-thread-row:is(:hover, :focus-within, [data-sidebar-thread-active="true"])
+  :is(.gtd-tree-line, .gtd-tree-elbow) {
+  background: var(--muted-foreground);
 }
 .gtd-thread-tooltip {
   overflow-wrap: anywhere;

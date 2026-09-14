@@ -402,6 +402,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           settledAtFor: () => 50,
         };
         const view = mount(host, { activeThreadId: "a", isCompactViewport });
+        assert.ok(view.slot.container.querySelector("[data-gtd-sidebar-thread-list]"));
+        assert.equal(row(view.slot, "a").parentElement!.dataset.sidebarThreadActive, "true");
+        assert.equal(row(view.slot, "b").parentElement!.dataset.sidebarThreadActive, undefined);
         expandParked(view.slot);
         const order = rowIds(view.slot);
         assert.deepEqual(order, ["pinned", "a", "b", "c", "waiting", "snoozed", "settled"]);
@@ -413,6 +416,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         assert.equal(useActions.mock.calls.length, 1);
         view.updateInbox({ activeThreadId: "b", onNavigate: () => {} });
         assert.equal(rowBodyRender.mock.calls.length, 2);
+        assert.equal(row(view.slot, "a").parentElement!.dataset.sidebarThreadActive, undefined);
+        assert.equal(row(view.slot, "b").parentElement!.dataset.sidebarThreadActive, "true");
         assert.deepEqual(rowIds(view.slot), order);
         order.forEach((id, index) => assert.equal(row(view.slot, id), retained[index]));
         rowBodyRender.mockClear();

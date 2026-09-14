@@ -354,6 +354,7 @@ export function ThreadInbox({
     <MachineAppearanceProvider localMachineId={settingValues?.localMachineId}>
       <DndContext {...sidebarDrag.contextProps}>
         <div
+          data-gtd-sidebar-thread-list=""
           className="flex min-h-0 flex-1 flex-col"
           onClickCapture={(event) => {
             // A drag's trailing click must not act on what it lands on.
