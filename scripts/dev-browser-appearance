@@ -25,9 +25,9 @@ browser wait --fn 'document.querySelector("button[aria-label=Theme]")?.textConte
 # Radix keeps the page out of the accessibility tree during the exit animation.
 browser wait --fn '!document.querySelector("[role=menu]") && !document.querySelector(`button[aria-label="Sidebar thread list"]`)?.closest(`[aria-hidden="true"], [inert]`)'
 browser find role button click --name 'Sidebar thread list' --exact
-browser wait --text 'Next Action and Waiting, with recent threads first.'
+browser wait --text 'Next Action and Waiting, with the newest arrivals first.'
 wait_for_menu
-browser find role menuitem click --name 'GTD Sidebar (inbox) Next Action and Waiting, with recent threads first.' --exact
+browser find role menuitem click --name 'GTD Sidebar (inbox) Next Action and Waiting, with the newest arrivals first.' --exact
 browser wait --fn 'document.querySelector(`button[aria-label="Sidebar thread list"]`)?.textContent.trim() === "GTD Sidebar (inbox)"'
 browser wait --fn 'document.querySelector("button[aria-label=Palette]")?.textContent.trim() === "bb Monokai" && getComputedStyle(document.documentElement).getPropertyValue("--bb-monokai-ui-font").includes("Inter")'
 browser open "${url}"

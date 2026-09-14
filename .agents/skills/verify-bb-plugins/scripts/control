@@ -63,9 +63,19 @@ dev_instance() {
 json_field() {
   local field="$1"
   FIELD="${field}" bun -e '
-    const envelope = JSON.parse(await Bun.stdin.text());
+    const text = await Bun.stdin.text();
+    let envelope;
+    try {
+      envelope = JSON.parse(text);
+    } catch {
+      console.error(
+        `verify-bb-plugins: expected bb-kit JSON while reading ${process.env.FIELD}; received ${text.trim() ? "malformed output" : "no output"}`,
+      );
+      process.exit(1);
+    }
     if (envelope.ok !== true) {
-      throw new Error(envelope.error?.message ?? "bb-kit reported a failure");
+      console.error(`verify-bb-plugins: ${envelope.error?.message ?? "bb-kit reported a failure"}`);
+      process.exit(1);
     }
     const parts = process.env.FIELD.split(".");
     let value = envelope.result;
@@ -230,7 +240,7 @@ seed_plugin_secrets() {
 }
 
 launch() {
-  local run_id name host host_name revision runtime url run_dir evidence_dir session env_file
+  local run_id name host host_name revision runtime workspace url run_dir evidence_dir session env_file
   run_id="$(resolve_run_id "${1:-}")"
   name="$(runtime_name_for "${run_id}")"
 
@@ -252,8 +262,12 @@ launch() {
   runtime="$(dev_instance start --name "${name}" --revision "${revision}" --from "${host_name}" \
     --json --timeout "${run_timeout}")"
   seed_plugin_secrets "${name}" "$(json_field dataDir <<<"${runtime}")"
-  url="$(dev_instance workspace --name "${name}" --revision "${revision}" --from "${host_name}" \
-    --json --timeout "${run_timeout}" | json_field instance.appUrl)"
+  # Capture the command before parsing it. With a direct pipeline, a failed
+  # workspace command gives json_field empty stdin and Bun reports an unrelated
+  # `JSON Parse error: Unexpected EOF`, obscuring the actionable bb-kit error.
+  workspace="$(dev_instance workspace --name "${name}" --revision "${revision}" --from "${host_name}" \
+    --json --timeout "${run_timeout}")" || fail "workspace preparation failed for ${name}"
+  url="$(json_field instance.appUrl <<<"${workspace}")"
   prepare_message_embeds "${name}"
   doctor "${run_id}"
 
