@@ -59,17 +59,24 @@ bb-kit dev-instance start
 
 The command resolves the highest `desktop-v*` semver tag from `get-bb/bb`.
 It checks that the release commit is on `origin/main`. It records the full
-commit before it creates the checkout. A bare repeat uses that recorded commit
-without contacting the network.
+commit before it creates the checkout.
 
-Use an explicit `latest` selector when you want to check for a newer release:
+An owned instance started this way keeps tracking releases. Every later start
+asks `get-bb/bb` for the latest tag again: the same release costs one
+`ls-remote`, and a newer one stops the instance, moves its checkout to the new
+commit in place, and starts it again, so the launcher installs and builds the
+release. Two cases keep the current release and still start: a runtime that is
+running from the checkout (stop it first), and an unreachable repository.
+
+Use an explicit `latest` selector to put an instance pinned to a tag or commit
+onto release tracking:
 
 ```sh
 bb-kit dev-instance start --revision latest
 ```
 
-The command refuses to replace an instance when `latest` resolves to another
-commit. Pass another `--name`, or destroy the stopped instance first.
+Other explicit selectors still refuse to replace an instance that resolved to
+another commit. Pass another `--name`, or destroy the stopped instance first.
 
 Start a branch from a local bb repository:
 

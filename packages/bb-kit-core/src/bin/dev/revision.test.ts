@@ -72,6 +72,38 @@ test("latest desktop release uses semver order and peeled annotated tags", async
     true,
   );
 
+  // The release an instance already runs is answered from ls-remote alone.
+  calls.length = 0;
+  const unchanged = await resolveRevision(
+    { kind: "latest" },
+    {
+      run,
+      resolverPath: join(resolverRoot, "unused"),
+      ownerToken: "latest-owner",
+      currentCommit: latest.toUpperCase(),
+    },
+  );
+  assert.equal(unchanged.commit, latest);
+  assert.equal(unchanged.selector, "latest");
+  assert.deepEqual(
+    calls.map((args) => args[0]),
+    ["ls-remote"],
+  );
+  const changed = await resolveRevision(
+    { kind: "latest" },
+    {
+      run,
+      resolverPath: join(resolverRoot, "changed"),
+      ownerToken: "latest-owner",
+      currentCommit: peeled,
+    },
+  );
+  assert.equal(changed.commit, latest);
+  assert.equal(
+    calls.some((args) => args.includes("merge-base")),
+    true,
+  );
+
   await assert.rejects(
     resolveRevision(
       { kind: "latest" },

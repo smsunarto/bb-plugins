@@ -18,6 +18,13 @@ export type RevisionResolverOptions = {
   resolverPath?: string;
   ownerToken?: string;
   run?: typeof runCommand;
+  /**
+   * The commit an instance already runs. When the latest official release
+   * still points at it, resolution answers from `ls-remote` alone: the release
+   * was validated against `origin/main` when it was first resolved, so the
+   * resolver clone is not needed again.
+   */
+  currentCommit?: string;
 };
 
 type SemanticVersion = {
@@ -139,6 +146,9 @@ export async function resolveRevision(
         `The official release tag ${tag} did not resolve to a commit.`,
         "Retry after checking GitHub access.",
       );
+    }
+    if (options.currentCommit !== undefined && options.currentCommit.toLowerCase() === commit) {
+      return revision("latest", `tag:${tag}`, "official", OFFICIAL_REPOSITORY, tag, commit);
     }
     const resolverPath = options.resolverPath;
     const ownerToken = options.ownerToken;

@@ -104,6 +104,8 @@ export type ManagerOptions = {
   progress?: (message: string) => void;
   /** The seam tests drive a runtime through, beside healthProbe and portProbe. */
   runtimeSpawn?: typeof startRuntimeProcess;
+  /** The seam tests resolve revisions through, so no test contacts get-bb/bb. */
+  resolveRevision?: typeof resolveRevision;
 };
 
 export type StartOptions = {
@@ -145,6 +147,7 @@ export class DevManager {
   private readonly portProbe: (port: number) => Promise<boolean>;
   private readonly progress: (message: string) => void;
   private readonly runtimeSpawn: typeof startRuntimeProcess;
+  private readonly resolver: typeof resolveRevision;
 
   constructor(options: ManagerOptions = {}) {
     this.cwd = resolve(options.cwd ?? process.cwd());
@@ -155,6 +158,7 @@ export class DevManager {
     this.portProbe = options.portProbe ?? isPortListening;
     this.progress = options.progress ?? (() => {});
     this.runtimeSpawn = options.runtimeSpawn ?? startRuntimeProcess;
+    this.resolver = options.resolveRevision ?? resolveRevision;
   }
 
   resolveName(explicit?: string): string {
@@ -288,7 +292,12 @@ export class DevManager {
           );
         }
       }
-      if (plan !== null && explicitRequest !== undefined) {
+      // `--revision latest` on an owned instance is not a pin to check but a
+      // request to track releases, so it skips the mismatch check and joins the
+      // refresh below, which moves the checkout when a newer release exists.
+      const adoptLatest =
+        plan !== null && plan.source === "owned" && explicitRequest?.kind === "latest";
+      if (plan !== null && explicitRequest !== undefined && !adoptLatest) {
         // A runtime pins a revision too -- the one its source checkout is on --
         // so it is checked the same way. Only an attached checkout has none.
         if (plan.source === "attached") {
@@ -319,6 +328,16 @@ export class DevManager {
             "Choose another --name or destroy this stopped instance first.",
           );
         }
+      }
+
+      if (
+        plan !== null &&
+        plan.source === "owned" &&
+        (adoptLatest || plan.revision.selector === "latest")
+      ) {
+        const refreshed = await this.refreshLatest(store, state, plan, owner.ownerToken, deadline);
+        state = refreshed.state;
+        plan = refreshed.plan;
       }
 
       if (plan === null) {
@@ -1278,13 +1297,129 @@ export class DevManager {
     repository: string | undefined,
     instanceRoot: string,
     ownerToken: string,
+    currentCommit?: string,
   ): Promise<ResolvedRevision> {
-    return resolveRevision(request, {
+    return this.resolver(request, {
       repositoryOption: repository,
       environment: this.environment,
       resolverPath: join(instanceRoot, "resolver"),
       ownerToken,
+      currentCommit,
     });
+  }
+
+  /**
+   * Keep an owned instance that tracks `latest` on the latest official release.
+   *
+   * Resolution runs when an instance is created, so without this a `latest`
+   * instance would stay on whatever release was newest that day. Every start
+   * asks get-bb/bb again. The same release is answered by one `ls-remote`. A
+   * newer one moves the checkout in place, which keeps its installed
+   * dependencies, after stopping the sessions that run from it; the launcher
+   * installs and builds the new release on the start that follows. A runtime
+   * that is live on this checkout keeps the current release, as does an
+   * unreachable repository: neither fails the start.
+   */
+  private async refreshLatest(
+    store: InstanceStore,
+    state: InstanceState,
+    plan: OwnedInstancePlan,
+    ownerToken: string,
+    deadline: number | null,
+  ): Promise<{ state: InstanceState; plan: OwnedInstancePlan }> {
+    let resolved: ResolvedRevision;
+    try {
+      resolved = await this.resolveForState(
+        { kind: "latest" },
+        undefined,
+        store.paths.root,
+        ownerToken,
+        plan.revision.commit,
+      );
+    } catch (error) {
+      const failure = asDevError(error);
+      this.progress(
+        `Keeping ${state.name} at ${plan.revision.label}: could not check for a newer official release (${failure.message})`,
+      );
+      return { state, plan };
+    } finally {
+      this.removeResolver(store.paths.root, ownerToken);
+    }
+    if (resolved.repository !== plan.revision.repository) {
+      throw new DevError(
+        "source_mismatch",
+        `Instance ${state.name} owns a checkout of ${plan.revision.repository}, not the official repository.`,
+        "Choose another --name for the official release, or destroy this instance first.",
+      );
+    }
+    if (resolved.commit === plan.revision.commit) {
+      // Same release; a pinned instance adopting `latest` records the selector.
+      return { state, plan: { ...plan, revision: resolved } };
+    }
+    const borrowers = this.liveBorrowers(state.name);
+    if (borrowers.length > 0) {
+      this.progress(
+        `Keeping ${state.name} at ${plan.revision.label}: ${borrowers.join(", ")} ${borrowers.length === 1 ? "runs" : "run"} from its checkout. Stop ${borrowers.length === 1 ? "it" : "them"} to move to ${resolved.label}.`,
+      );
+      // Tracking is recorded now, so the move happens on a later start.
+      return { state, plan: { ...plan, revision: { ...plan.revision, selector: "latest" } } };
+    }
+    if (store.activeExecs(ownerToken).length > 0) {
+      // A routed command (plugin watchers, an exec) runs against the live
+      // stack, and stop refuses while it does. The tracking is recorded so the
+      // move happens on the first start after that command ends.
+      this.progress(
+        `Keeping ${state.name} at ${plan.revision.label}: an active routed command runs against it. Let it finish, then start again to move to ${resolved.label}.`,
+      );
+      return { state, plan: { ...plan, revision: { ...plan.revision, selector: "latest" } } };
+    }
+    this.progress(`Moving ${state.name} from ${plan.revision.label} to ${resolved.label}`);
+    if (completePlan(state) !== null) {
+      const live = this.liveTarget(store, plan);
+      if (live.devSession === "running" || live.desktopSession === "running") {
+        state = await this.stopLocked(
+          store,
+          state,
+          ownerToken,
+          deadline ?? Date.now() + DEFAULT_CONTROL_TIMEOUT_MS,
+        );
+      }
+    }
+    const moved: OwnedInstancePlan = { ...plan, revision: resolved };
+    state = checkpoint(state, { phase: "preparing", step: "checkout", plan: moved });
+    store.write(state);
+    prepareCheckout(moved, ownerToken);
+    assertLauncherSupported(launcherOptions(moved, this.environment));
+    return { state, plan: moved };
+  }
+
+  /** Runtimes whose recorded process is alive on this instance's checkout. */
+  private liveBorrowers(name: string): string[] {
+    const root = join(this.home, "instances");
+    if (!existsSync(root)) {
+      return [];
+    }
+    const live: string[] = [];
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === name) {
+        continue;
+      }
+      const paths = instancePaths(this.home, entry.name);
+      let state: InstanceState | null;
+      try {
+        state = new InstanceStore(paths).read();
+      } catch {
+        continue;
+      }
+      const plan = state === null ? null : statePlan(state);
+      if (plan === null || plan.source !== "runtime" || plan.sourceInstance !== name) {
+        continue;
+      }
+      if (runtimeIsRunning(readRuntimeRecord(paths.root))) {
+        live.push(entry.name);
+      }
+    }
+    return live.toSorted();
   }
 
   /**

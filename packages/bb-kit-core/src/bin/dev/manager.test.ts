@@ -26,6 +26,7 @@ import {
   type ProcessIdentity,
 } from "./model.ts";
 import { processIdentity, processMatches, runCommand, spawnAndWait } from "./process.ts";
+import { resolveRevision } from "./revision.ts";
 import { assertRuntimeEnvContract, RUNTIME_ENV_KEYS } from "./runtime.ts";
 import {
   claimDirectoryAtomically,
@@ -1151,6 +1152,146 @@ test("a runtime refuses a checkout whose dev environment contract has moved", ()
     () => assertRuntimeEnvContract(join(root, "absent")),
     (error) => error instanceof DevError && error.code === "unsupported_runtime_host",
   );
+});
+
+test("an owned latest instance follows newer official releases and keeps a live borrower's checkout", async () => {
+  const fixture = createFixture();
+  // Stand in for get-bb/bb: the fixture repository's HEAD is the latest
+  // release, and each commit gets its own desktop tag name.
+  const releases = new Map<string, string>();
+  const release = (commit: string): string => {
+    const tag = releases.get(commit) ?? `desktop-v0.${releases.size + 1}.0`;
+    releases.set(commit, tag);
+    return tag;
+  };
+  let offline = false;
+  const messages: string[] = [];
+  const manager = fixture.manager(
+    {},
+    {
+      progress: (message) => messages.push(message),
+      resolveRevision: async (request, options) => {
+        if (request.kind !== "latest") {
+          return resolveRevision(request, options);
+        }
+        if (offline) {
+          throw new DevError("revision_resolution_failed", "ls-remote failed", "Retry.");
+        }
+        const commit = git(fixture.repository, ["rev-parse", "HEAD"]);
+        const tag = release(commit);
+        return {
+          selector: "latest",
+          canonical: `tag:${tag}`,
+          source: "official",
+          repository: realpathSync(fixture.repository),
+          label: tag,
+          commit,
+        };
+      },
+    },
+  );
+  const first = git(fixture.repository, ["rev-parse", "HEAD"]);
+  const tracked = await manager.start({ name: "tracked", revision: "latest" });
+  assert.equal(tracked.commit, first);
+  assert.equal(tracked.revision, "tag:desktop-v0.1.0");
+  const starts = join(fixture.home, "instances", "tracked", "checkout.fake-starts");
+  assert.equal(readFileSync(starts, "utf8").trim(), "1");
+
+  // The same release: no move, no restart.
+  const same = await manager.start({ name: "tracked" });
+  assert.equal(same.commit, first);
+  assert.equal(readFileSync(starts, "utf8").trim(), "1");
+
+  // A newer release moves the checkout in place and restarts the sessions.
+  const second = commitFile(fixture.repository, "release.txt", "two", "second release");
+  const moved = await manager.start({ name: "tracked" });
+  assert.equal(moved.commit, second);
+  assert.equal(moved.revision, "tag:desktop-v0.2.0");
+  assert.equal(moved.running, true);
+  assert.equal(moved.checkoutPath, tracked.checkoutPath);
+  assert.equal(git(moved.checkoutPath ?? "", ["rev-parse", "HEAD"]), second);
+  assert.equal(readFileSync(starts, "utf8").trim(), "2");
+  assert.ok(
+    messages.some((message) =>
+      /Moving tracked from desktop-v0.1.0 to desktop-v0.2.0/.test(message),
+    ),
+  );
+
+  // An unreachable repository keeps the current release and still starts.
+  offline = true;
+  const kept = await manager.start({ name: "tracked" });
+  assert.equal(kept.commit, second);
+  assert.equal(kept.running, true);
+  assert.ok(
+    messages.some((message) => /could not check for a newer official release/.test(message)),
+  );
+  offline = false;
+
+  // A runtime live on the checkout blocks the move until it stops.
+  mkdirSync(join(moved.checkoutPath ?? "", "node_modules"), { recursive: true });
+  await manager.start({ name: "borrower", revision: "latest", from: "tracked", timeoutMs: 10_000 });
+  const third = commitFile(fixture.repository, "release.txt", "three", "third release");
+  const blocked = await manager.start({ name: "tracked" });
+  assert.equal(blocked.commit, second);
+  assert.equal(blocked.running, true);
+  assert.ok(
+    messages.some((message) => /Keeping tracked at desktop-v0.2.0: borrower runs/.test(message)),
+  );
+  await manager.stop("borrower");
+  await manager.destroy("borrower");
+
+  // So does a routed command running against the instance.
+  const trackedRoot = join(fixture.home, "instances", "tracked");
+  const trackedOwner = JSON.parse(readFileSync(join(trackedRoot, "owner.json"), "utf8")) as {
+    ownerToken: string;
+  };
+  mkdirSync(join(trackedRoot, "execs"), { recursive: true });
+  const execRecord = join(trackedRoot, "execs", "watchers.json");
+  writeFileSync(
+    execRecord,
+    `${JSON.stringify({ ownerToken: trackedOwner.ownerToken, identity: processIdentity(process.pid), createdAt: new Date().toISOString() })}\n`,
+  );
+  const busy = await manager.start({ name: "tracked" });
+  assert.equal(busy.commit, second);
+  assert.equal(busy.running, true);
+  assert.ok(messages.some((message) => /an active routed command runs against it/.test(message)));
+  rmSync(execRecord);
+
+  const unblocked = await manager.start({ name: "tracked" });
+  assert.equal(unblocked.commit, third);
+  await manager.stop("tracked");
+  await manager.destroy("tracked");
+
+  // A checkout of another repository cannot adopt the official release.
+  const foreign = join(fixture.root, "foreign-bb");
+  git(fixture.root, ["clone", "--quiet", fixture.repository, foreign]);
+  await manager.start({ name: "foreign", revision: "local:main", repository: foreign });
+  await assert.rejects(
+    manager.start({ name: "foreign", revision: "latest" }),
+    (error) => error instanceof DevError && error.code === "source_mismatch",
+  );
+  await manager.stop("foreign");
+  await manager.destroy("foreign");
+
+  // An instance pinned to a commit adopts latest when asked, instead of refusing.
+  // The fixture launcher leases one port triple, so this starts after tracked is gone.
+  const pinned = await manager.start({
+    name: "pinned",
+    revision: `commit:${first}`,
+    repository: fixture.repository,
+  });
+  assert.equal(pinned.commit, first);
+  assert.equal((await manager.start({ name: "pinned" })).commit, first);
+  const adopted = await manager.start({ name: "pinned", revision: "latest" });
+  assert.equal(adopted.commit, third);
+  const adoptedState = JSON.parse(
+    readFileSync(join(fixture.home, "instances", "pinned", "state.json"), "utf8"),
+  ) as { plan: { revision: { selector: string } } };
+  assert.equal(adoptedState.plan.revision.selector, "latest");
+  assert.equal((await manager.start({ name: "pinned" })).commit, third);
+
+  await manager.stop("pinned");
+  await manager.destroy("pinned");
 });
 
 test("an opener spawn failure cannot crash a successful start", async () => {
