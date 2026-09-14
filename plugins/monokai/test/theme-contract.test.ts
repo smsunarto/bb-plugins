@@ -16,6 +16,7 @@ describe("bb Monokai surface palette", () => {
   test("assigns conversation, sidebar, user, and chrome grounds", () => {
     expect(theme).toContain("--background: #151515");
     expect(theme).toContain("--sidebar: #181818");
+    expect(theme).toContain("--popover: #181818");
     expect(theme).toContain("--agent-surface-background: #212121");
     expect(theme).toContain(".dark [data-promptbox] {\n  background-color: #212121");
     expect(theme).toContain("--terminal-background: #181818");
