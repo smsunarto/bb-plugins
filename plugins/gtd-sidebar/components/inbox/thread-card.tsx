@@ -360,7 +360,10 @@ function threadCardPresentation({
       // same offsets as before.
       ...(isCompactViewport
         ? {
-            paddingLeft: `calc(${depth > 0 || childCount > 0 ? 28 + depth * DEPTH_STEP : 10}px + var(--gtd-group-indent, 0px))`,
+            paddingLeft:
+              depth > 0 || childCount > 0
+                ? `calc(${28 + depth * DEPTH_STEP}px + var(--gtd-group-indent, 0px))`
+                : "calc(10px + var(--gtd-leaf-group-indent, 0px))",
           }
         : {}),
     } as CSSProperties,

@@ -1,0 +1,16 @@
+/* Repository headers and root threads share one icon/title grid. Thread
+   disclosures draw a 12px glyph 6px into their 24px hit area, while compact
+   leaf rows recover the disclosure slot only when a repository owns it. */
+.gtd-project-group-toggle {
+  padding-left: 28px;
+}
+
+.gtd-disclosure.gtd-project-group-chevron {
+  left: 0;
+  width: 24px;
+}
+
+.gtd-project-group-rows {
+  --gtd-group-indent: 0px;
+  --gtd-leaf-group-indent: 18px;
+}

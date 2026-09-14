@@ -625,7 +625,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(within(waiting as HTMLElement).getByRole("button", { name: "Two project (1)" }));
     });
 
-    it("indents grouped mobile rows past the disclosure their group adds", () => {
+    it("aligns grouped mobile parent, child, and leaf rows to their repo columns", () => {
       const view = mount(
         hostState([
           thread("root"),
@@ -634,12 +634,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ]),
         { isCompactViewport: true },
       );
-      // The disclosure slides right by --gtd-group-indent inside a group; a
-      // row that does not pay it back leaves the chevron on the title.
+      // Parent and child rows carry a disclosure/tree slot. Compact leaves
+      // omit that slot unless their repository header establishes the column.
       const paddingLeft = (id: string) => row(view.slot, id).parentElement!.style.paddingLeft;
       assert.match(paddingLeft("root"), /var\(--gtd-group-indent/);
       assert.match(paddingLeft("child"), /var\(--gtd-group-indent/);
-      assert.match(paddingLeft("other"), /var\(--gtd-group-indent/);
+      assert.match(paddingLeft("other"), /var\(--gtd-leaf-group-indent/);
     });
 
     it("keeps group order put when the open thread changes", () => {

@@ -1,4 +1,11 @@
-import { memo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import {
+  memo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import {
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   type PluginSidebarThread,
@@ -93,7 +100,7 @@ const SlimRowBody = memo(function SlimRowBody({
   });
 
   const compact = compactThreads && !isCompactViewport;
-  const { rowClassName, titleClassName } = slimRowPresentation({
+  const { rowClassName, rowStyle, titleClassName } = slimRowPresentation({
     isCompactViewport,
     isActive,
     compact,
@@ -123,6 +130,7 @@ const SlimRowBody = memo(function SlimRowBody({
           {...handlers}
           data-action-count={isCompactViewport ? 0 : 1}
           className={rowClassName}
+          style={rowStyle}
         >
           <ThreadDetails
             thread={thread}
@@ -198,6 +206,9 @@ function slimRowPresentation({
   isMenuOpen: boolean;
 }) {
   return {
+    rowStyle: (isCompactViewport
+      ? { paddingLeft: "calc(10px + var(--gtd-leaf-group-indent, 0px))" }
+      : undefined) as CSSProperties | undefined,
     rowClassName: cn(
       "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",
       !isCompactViewport && "gtd-thread-row gtd-parked-row",
