@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, it, mock } from "bun:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import type { Initiative } from "../lib/initiative-types.ts";
+import type { RowCommand } from "../components/inbox/thread-actions.ts";
 
 if (process.env.GTD_PROJECTS_RAIL_TEST_CHILD !== "1") {
   it("Projects rail passes the isolated React suite", () => {
@@ -130,25 +131,37 @@ if (process.env.GTD_PROJECTS_RAIL_TEST_CHILD !== "1") {
       isUnread: true,
       createdAt: 300,
     }),
+    thread("agent-b", {
+      title: "Review agent",
+      parentThreadId: "coordinator",
+      createdAt: 400,
+    }),
   ];
 
-  function mount(isCompactViewport = false) {
-    return renderSlot(
+  function mount(isCompactViewport = false, collapsedThreads: ReadonlySet<string> = new Set()) {
+    const command = mock((_command: RowCommand) => {});
+    const toggleThread = mock((_threadId: string) => {});
+    const slot = renderSlot(
       { component: ProjectsRail },
       {
         activeThreadId: "agent-a",
         isCompactViewport,
         threads,
         onNavigate: mock(() => {}),
+        command,
+        canPark: () => true,
+        collapsedThreads,
+        toggleThread,
       },
       {
-        settings: { showProviderIcon: true },
+        settings: { showProviderIcon: true, compactThreads: false },
         providers: {
           status: "ready",
           providers: [{ id: "codex", displayName: "Codex", logoUrl: null }] as never,
         },
       },
     );
+    return { slot, command, toggleThread };
   }
 
   function shortcutIds(container: HTMLElement): string[] {
@@ -162,31 +175,40 @@ if (process.env.GTD_PROJECTS_RAIL_TEST_CHILD !== "1") {
   afterAll(() => dom.window.close());
 
   describe("ProjectsRail", () => {
-    it("reuses GTD status, details, provider, spacing, and navigation contracts", async () => {
-      const slot = mount();
-      assert.deepEqual(shortcutIds(slot.container), ["coordinator", "agent-a", "agent-child"]);
-      assert.equal(new Set(shortcutIds(slot.container)).size, 3);
+    it("renders Project agents through the actual nested ThreadCard presentation", async () => {
+      const { slot, command } = mount();
+      assert.deepEqual(shortcutIds(slot.container), [
+        "coordinator",
+        "agent-a",
+        "agent-child",
+        "agent-b",
+      ]);
+      assert.equal(new Set(shortcutIds(slot.container)).size, 4);
+      assert.equal(slot.getAllByRole("button", { name: "New project" }).length, 1);
+      assert.equal(slot.queryByText("New project"), null);
+      assert.equal(slot.container.querySelector("[data-project-agent-row]"), null);
 
       const coordinator = slot.container.querySelector<HTMLElement>(
         '[data-sidebar-thread-id="coordinator"]',
       );
-      const agent = slot.container.querySelector<HTMLElement>('[data-project-agent-row="agent-a"]');
-      const nested = slot.container.querySelector<HTMLElement>(
-        '[data-project-agent-row="agent-child"]',
-      );
+      const agentAnchor = slot.getByRole("link", { name: "Working agent" });
+      const nestedAnchor = slot.getByRole("link", { name: "Nested agent" });
+      const agent = agentAnchor.closest<HTMLElement>(".gtd-thread-row");
+      const nested = nestedAnchor.closest<HTMLElement>(".gtd-thread-row");
       assert.ok(coordinator);
       assert.ok(agent);
       assert.ok(nested);
       assert.ok(agent.classList.contains("gtd-thread-row"));
       assert.ok(agent.classList.contains("gtd-compact-row"));
-      assert.equal(agent.style.paddingLeft, "28px");
-      assert.equal(nested.style.paddingLeft, "42px");
+      assert.equal(agent.style.getPropertyValue("--gtd-depth"), "1");
+      assert.equal(nested.style.getPropertyValue("--gtd-depth"), "2");
+      assert.ok(agent.querySelector(".gtd-tree-elbow"));
+      assert.ok(nested.querySelector(".gtd-tree-elbow"));
+      assert.ok(nested.querySelector(".gtd-tree-line"));
       assert.ok(within(coordinator.parentElement!).getByLabelText("Coordinator needs input"));
       assert.ok(within(agent).getByLabelText("Agent working"));
       assert.ok(within(nested).getByLabelText("Unread response"));
-      assert.ok(within(agent).getByLabelText("Codex"));
 
-      const agentAnchor = within(agent).getByRole("link", { name: "Working agent" });
       fireEvent.focus(agentAnchor);
       const tooltip = await slot.findByRole("tooltip");
       assert.match(tooltip.textContent ?? "", /Project One/);
@@ -194,31 +216,83 @@ if (process.env.GTD_PROJECTS_RAIL_TEST_CHILD !== "1") {
       assert.match(tooltip.textContent ?? "", /Codex/);
 
       fireEvent.click(agentAnchor, { metaKey: true });
-      assert.deepEqual(slot.inspection.sidebarActionCalls.at(-1), {
-        method: "open",
+      assert.deepEqual(command.mock.calls.at(-1)?.[0], {
+        kind: "open",
         threadId: "agent-a",
-        options: { split: true },
+        shelf: "waiting",
+        split: true,
       });
       fireEvent.click(agentAnchor, { button: 2 });
-      assert.equal(slot.inspection.sidebarActionCalls.length, 1);
+      assert.equal(command.mock.calls.length, 1);
+
+      fireEvent.click(within(agent).getByRole("button", { name: "Settle" }));
+      assert.deepEqual(command.mock.calls.at(-1)?.[0], {
+        kind: "settle",
+        threadId: "agent-a",
+      });
     });
 
-    it("keeps recursive agents under the Project fold with one anchor each", () => {
-      const slot = mount();
+    it("keeps recursive agents under Project and shares subthread collapse state", () => {
+      const open = mount();
+      const { slot } = open;
       fireEvent.click(slot.getByRole("button", { name: "Collapse Project One" }));
       assert.deepEqual(shortcutIds(slot.container), ["coordinator"]);
       fireEvent.click(slot.getByRole("button", { name: "Expand Project One" }));
-      assert.deepEqual(shortcutIds(slot.container), ["coordinator", "agent-a", "agent-child"]);
+      assert.deepEqual(shortcutIds(slot.container), [
+        "coordinator",
+        "agent-a",
+        "agent-child",
+        "agent-b",
+      ]);
+      slot.lifecycle.unmount();
+
+      const folded = mount(false, new Set(["agent-a"]));
+      assert.deepEqual(shortcutIds(folded.slot.container), ["coordinator", "agent-a", "agent-b"]);
+      const foldedAgent = folded.slot
+        .getByRole("link", { name: "Working agent" })
+        .closest<HTMLElement>(".gtd-thread-row");
+      assert.ok(foldedAgent);
+      assert.ok(within(foldedAgent).getByLabelText("Unread response"));
+      fireEvent.click(
+        folded.slot.getByRole("button", { name: "Expand children of Working agent" }),
+      );
+      assert.deepEqual(folded.toggleThread.mock.calls.at(-1)?.[0], "agent-a");
     });
 
-    it("uses the shared compact-row sizing without desktop-only details", () => {
-      const slot = mount(true);
-      const agent = slot.container.querySelector<HTMLElement>('[data-project-agent-row="agent-a"]');
+    it("keeps native tree keyboard navigation scoped to one Project", () => {
+      const { slot } = mount();
+      const coordinator = slot.getByRole("link", { name: "Project One" });
+      const agent = slot.getByRole("link", { name: "Working agent" });
+      const nested = slot.getByRole("link", { name: "Nested agent" });
+      const directLeaf = slot.getByRole("link", { name: "Review agent" });
+
+      fireEvent.focus(agent);
+      fireEvent.keyDown(agent, { key: "ArrowRight" });
+      assert.equal(document.activeElement, nested);
+
+      fireEvent.keyDown(nested, { key: "ArrowLeft" });
+      assert.equal(document.activeElement, agent);
+
+      fireEvent.focus(directLeaf);
+      fireEvent.keyDown(directLeaf, { key: "ArrowLeft" });
+      assert.equal(document.activeElement, coordinator);
+    });
+
+    it("uses ThreadCard mobile signals without desktop-only chrome", () => {
+      const { slot } = mount(true);
+      const agent = slot.getByRole("link", { name: "Working agent" }).closest("li")
+        ?.firstElementChild as HTMLElement | null;
       assert.ok(agent);
-      assert.ok(agent.classList.contains("h-11"));
+      assert.ok(agent.classList.contains("min-h-10"));
       assert.ok(agent.querySelector(".gtd-mobile-title"));
       assert.equal(agent.classList.contains("gtd-thread-row"), false);
-      assert.deepEqual(shortcutIds(slot.container), ["coordinator", "agent-a", "agent-child"]);
+      assert.ok(within(agent).getByLabelText("Agent working"));
+      assert.deepEqual(shortcutIds(slot.container), [
+        "coordinator",
+        "agent-a",
+        "agent-child",
+        "agent-b",
+      ]);
     });
   });
 }

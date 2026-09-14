@@ -598,16 +598,17 @@ function ThreadRowLink({
           // the arrows move the pick, not the fold.
           onNestKeyDown(event);
           if (nestActive) return;
+          const tree =
+            event.currentTarget.closest("[data-sidebar-thread-tree]") ??
+            event.currentTarget.closest("ul");
+          const rows = Array.from(
+            tree?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
+          );
           let focusId: string | null = null;
           if (event.key === "ArrowRight" && childCount > 0) {
             event.preventDefault();
             if (!expanded) toggleThread(threadId);
             else {
-              const rows = Array.from(
-                event.currentTarget
-                  .closest("ul")
-                  ?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
-              );
               focusId =
                 rows[rows.indexOf(event.currentTarget) + 1]?.dataset.sidebarThreadId ?? null;
             }
@@ -616,14 +617,7 @@ function ThreadRowLink({
             if (expanded) toggleThread(threadId);
             else focusId = parentId;
           }
-          if (focusId)
-            Array.from(
-              event.currentTarget
-                .closest("ul")
-                ?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
-            )
-              .find((row) => row.dataset.sidebarThreadId === focusId)
-              ?.focus();
+          if (focusId) rows.find((row) => row.dataset.sidebarThreadId === focusId)?.focus();
         }}
         onPointerDown={(event) => {
           // Both gestures start here; the destination decides which one lands.

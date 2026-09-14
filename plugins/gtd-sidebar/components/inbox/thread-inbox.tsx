@@ -154,7 +154,7 @@ export function ThreadInbox({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
-  const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
+  const { tree, shelves, collapsedThreads, toggleThread, revealFamily } = useInboxTree(
     inboxThreads,
     lifecycle,
     settledThreads,
@@ -426,6 +426,10 @@ export function ThreadInbox({
                 isCompactViewport={isCompactViewport}
                 threads={threads}
                 onNavigate={onNavigate}
+                command={command}
+                canPark={lifecycle.canPark}
+                collapsedThreads={collapsedThreads}
+                toggleThread={toggleThread}
               />
             ) : null}
             <InboxContent
@@ -792,7 +796,7 @@ function useInboxTree(
   const revealFamily = useCommittedEvent((threadId: string) => {
     if (collapsedThreads.has(threadId)) toggleThread(threadId);
   });
-  return { tree, shelves, toggleThread, revealFamily };
+  return { tree, shelves, collapsedThreads, toggleThread, revealFamily };
 }
 
 /**

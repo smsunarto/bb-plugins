@@ -12,14 +12,16 @@ import type { Initiative } from "@/lib/initiative-types";
 import type { initiativeRpcContract } from "@/lib/initiative-rpc";
 import { railThreadRows } from "@/lib/initiative-ui";
 import { useInitiatives } from "@/hooks/use-initiatives";
-import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
-import { FadingText, HostLead, ThreadDetails } from "@/components/inbox/thread-details";
-import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
+import { FadingText } from "@/components/inbox/thread-details";
+import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { LIST_HOVER_TRANSITION } from "@/components/inbox/row-motion";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
+import { ThreadCard } from "@/components/inbox/thread-card";
+import type { DispatchRowCommand } from "@/components/inbox/thread-actions";
+import { activeSectionFor, threadDisplayTitle } from "@/lib/inbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -45,12 +47,20 @@ export function ProjectsRail({
   isCompactViewport,
   threads,
   onNavigate,
+  command,
+  canPark,
+  collapsedThreads,
+  toggleThread,
 }: {
   activeThreadId: string | null;
   isCompactViewport: boolean;
   /** The unfiltered sidebar feed — rail rows come straight from it. */
   threads: readonly PluginSidebarThread[];
   onNavigate: () => void;
+  command: DispatchRowCommand;
+  canPark: (thread: PluginSidebarThread) => boolean;
+  collapsedThreads: ReadonlySet<string>;
+  toggleThread: (threadId: string) => void;
 }) {
   const initiatives = useInitiatives();
   const navigate = useBbNavigate();
@@ -117,20 +127,14 @@ export function ProjectsRail({
             now={now}
             providerById={providerById}
             showProviderIcon={settings?.showProviderIcon === true}
+            compactThreads={settings?.compactThreads === true}
+            command={command}
+            canPark={canPark}
+            collapsedThreads={collapsedThreads}
+            toggleThread={toggleThread}
           />
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={() => {
-          navigate.toPluginPanel("projects", { subPath: "new" });
-          onNavigate();
-        }}
-        className="mt-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-      >
-        <Icon name="Plus" className="size-3.5" aria-hidden />
-        New project
-      </button>
     </section>
   );
 }
@@ -146,6 +150,11 @@ function ProjectRow({
   now,
   providerById,
   showProviderIcon,
+  compactThreads,
+  command,
+  canPark,
+  collapsedThreads,
+  toggleThread,
 }: {
   initiative: Initiative;
   threads: readonly PluginSidebarThread[];
@@ -157,6 +166,11 @@ function ProjectRow({
   now: number;
   providerById: ReadonlyMap<string, ProviderGlyphInfo>;
   showProviderIcon: boolean;
+  compactThreads: boolean;
+  command: DispatchRowCommand;
+  canPark: (thread: PluginSidebarThread) => boolean;
+  collapsedThreads: ReadonlySet<string>;
+  toggleThread: (threadId: string) => void;
 }) {
   const rpc = useRpc<typeof initiativeRpcContract>();
   const threadActions = useSidebarThreadActions();
@@ -174,6 +188,10 @@ function ProjectRow({
   const threadById = useMemo(
     () => new Map(threads.map((thread) => [thread.id, thread])),
     [threads],
+  );
+  const agentRows = useMemo(
+    () => projectAgentRows(threads, initiative.coordinatorThreadId, collapsedThreads),
+    [threads, initiative.coordinatorThreadId, collapsedThreads],
   );
   const isActive = activeThreadId === initiative.coordinatorThreadId;
   const coordinator = threadById.get(initiative.coordinatorThreadId) ?? null;
@@ -204,7 +222,7 @@ function ProjectRow({
   };
 
   const row = (
-    <li className="list-none">
+    <li className="list-none" data-sidebar-thread-tree="">
       <div
         className={cn(
           "group/project relative flex items-center gap-1 rounded-lg pr-1",
@@ -303,31 +321,33 @@ function ProjectRow({
       </div>
       {expanded ? (
         <ul className="flex flex-col gap-px">
-          {rows.slice(1).map(({ threadId, depth }) => {
-            const thread = threadById.get(threadId);
-            if (thread === undefined) return null;
-            return (
-              <AgentRow
-                key={threadId}
-                thread={thread}
-                depth={depth}
-                isActive={threadId === activeThreadId}
-                onNavigate={onNavigate}
-                isCompactViewport={isCompactViewport}
-                now={now}
-                parentTitle={
-                  thread.parentThreadId === null
-                    ? null
-                    : (threadById.get(thread.parentThreadId)?.title ??
-                      threadById.get(thread.parentThreadId)?.titleFallback ??
-                      null)
-                }
-                projectName={initiative.name}
-                provider={providerById.get(thread.providerId)}
-                showProviderIcon={showProviderIcon}
-              />
-            );
-          })}
+          {agentRows.map((agentRow) => (
+            <ThreadCard
+              key={agentRow.thread.id}
+              thread={agentRow.thread}
+              shelf={activeSectionFor(agentRow.thread) === "next-action" ? "nextAction" : "waiting"}
+              compactThreads={compactThreads}
+              depth={agentRow.depth}
+              parentId={agentRow.parentId}
+              parentTitle={agentRow.parentTitle}
+              childCount={agentRow.childCount}
+              expanded={agentRow.expanded}
+              guides={agentRow.guides}
+              lastChild={agentRow.lastChild}
+              statusThread={agentRow.statusThread}
+              toggleThread={toggleThread}
+              provider={providerById.get(agentRow.thread.providerId)}
+              projectName={initiative.name}
+              branchName={agentRow.thread.environment?.branchName ?? null}
+              isActive={agentRow.thread.id === activeThreadId}
+              canPark={canPark(agentRow.thread)}
+              showProviderIcon={showProviderIcon}
+              isCompactViewport={isCompactViewport}
+              command={command}
+              now={now}
+              dropAllowed={false}
+            />
+          ))}
           <li className="list-none">
             <Popover open={newAgentOpen} onOpenChange={setNewAgentOpen}>
               <PopoverTrigger asChild>
@@ -383,106 +403,86 @@ function ProjectRow({
   );
 }
 
-function AgentRow({
-  thread,
-  depth,
-  isActive,
-  onNavigate,
-  isCompactViewport,
-  now,
-  parentTitle,
-  projectName,
-  provider,
-  showProviderIcon,
-}: {
+interface ProjectAgentRow {
   thread: PluginSidebarThread;
   depth: number;
-  isActive: boolean;
-  onNavigate: () => void;
-  isCompactViewport: boolean;
-  now: number;
+  parentId: string;
   parentTitle: string | null;
-  projectName: string;
-  provider?: ProviderGlyphInfo;
-  showProviderIcon: boolean;
-}) {
-  const threadActions = useSidebarThreadActions();
-  const { splitProps, layout } = useSidebarThreadSplit(thread.id);
-  const title = thread.title ?? thread.titleFallback ?? "Untitled agent";
-  const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    splitProps.onPointerDown?.(event);
-  });
+  childCount: number;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  statusThread: PluginSidebarThread;
+}
 
-  return (
-    <li className="list-none">
-      <div
-        className={cn(
-          "group/project-agent relative flex items-center gap-1.5 px-2.5 text-xs",
-          LIST_HOVER_TRANSITION,
-          isCompactViewport ? "h-11 rounded-xl" : "gtd-thread-row gtd-compact-row rounded-md",
-          isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
-          !isActive && layout !== null && "bg-sidebar-accent/30",
-        )}
-        style={{ paddingLeft: `${28 + (depth - 1) * 14}px` }}
-        data-project-agent-row={thread.id}
-        data-sidebar-thread-focused={
-          layout === null ? undefined : layout.panes.some((pane) => pane.isMe && pane.isFocused)
-        }
-      >
-        <ThreadDetails
-          thread={thread}
-          projectName={projectName}
-          branchName={thread.environment?.branchName ?? null}
-          provider={provider}
-          relation={parentTitle === null ? undefined : `Child of ${parentTitle}`}
-          enabled={!isCompactViewport}
-        >
-          {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- same anchor
-              contract as every sidebar row. */}
-          <a
-            onPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
-            data-sidebar-thread-shortcut-target=""
-            data-sidebar-thread-id={thread.id}
-            href="#"
-            aria-label={title}
-            aria-current={isActive ? "page" : undefined}
-            onClick={(event) => {
-              if (event.button !== 0) return;
-              event.preventDefault();
-              threadActions.open(thread.id, {
-                split: event.metaKey || event.ctrlKey,
-              });
-              onNavigate();
-            }}
-            className={cn(
-              "absolute inset-0 cursor-pointer",
-              isCompactViewport ? "rounded-xl" : "rounded-md",
-            )}
-          />
-        </ThreadDetails>
-        <HostLead host={thread.host} />
-        <span
-          className={cn(
-            "gtd-thread-title pointer-events-none relative min-w-0 flex-1",
-            isCompactViewport
-              ? "gtd-mobile-title text-muted-foreground"
-              : "text-muted-foreground/70",
-            isActive && "text-sidebar-accent-foreground",
-            thread.isUnread && "font-medium text-sidebar-foreground",
-          )}
-        >
-          <FadingText text={title} />
-        </span>
-        <span className="gtd-rest-signals pointer-events-none relative flex shrink-0 items-center gap-1.5">
-          <span className={STATUS_SLOT_CLASS}>
-            <StatusOrTime thread={thread} now={now} />
-          </span>
-          {showProviderIcon ? (
-            <ProviderGlyph providerId={thread.providerId} provider={provider} />
-          ) : null}
-        </span>
-      </div>
-    </li>
-  );
+/**
+ * Shape raw Project ancestry into the same hierarchy props the inbox gives
+ * ThreadCard. Direct agents are depth 1 under the coordinator; each deeper
+ * generation carries the ancestor guide mask used by the ordinary inbox tree.
+ */
+function projectAgentRows(
+  threads: readonly PluginSidebarThread[],
+  coordinatorThreadId: string,
+  collapsedThreads: ReadonlySet<string>,
+): ProjectAgentRow[] {
+  const orderedRows = railThreadRows(threads, coordinatorThreadId);
+  const threadById = new Map(threads.map((thread) => [thread.id, thread]));
+  const childrenByParent = new Map<string, PluginSidebarThread[]>();
+  for (const { threadId } of orderedRows.slice(1)) {
+    const thread = threadById.get(threadId);
+    if (thread?.parentThreadId === null || thread?.parentThreadId === undefined) continue;
+    const children = childrenByParent.get(thread.parentThreadId);
+    if (children === undefined) childrenByParent.set(thread.parentThreadId, [thread]);
+    else children.push(thread);
+  }
+
+  const result: ProjectAgentRow[] = [];
+  const familyStatus = new Map<string, PluginSidebarThread>();
+  const statusThreadFor = (thread: PluginSidebarThread): PluginSidebarThread => {
+    const cached = familyStatus.get(thread.id);
+    if (cached !== undefined) return cached;
+    let statusThread = thread;
+    for (const child of childrenByParent.get(thread.id) ?? []) {
+      const childStatus = statusThreadFor(child);
+      if (projectStatusPriority(childStatus) > projectStatusPriority(statusThread)) {
+        statusThread = childStatus;
+      }
+    }
+    familyStatus.set(thread.id, statusThread);
+    return statusThread;
+  };
+  const visit = (parentId: string, depth: number, guides: string) => {
+    const children = childrenByParent.get(parentId) ?? [];
+    for (let index = 0; index < children.length; index++) {
+      const thread = children[index]!;
+      const lastChild = index === children.length - 1;
+      const childCount = childrenByParent.get(thread.id)?.length ?? 0;
+      const expanded = childCount > 0 && !collapsedThreads.has(thread.id);
+      result.push({
+        thread,
+        depth,
+        parentId,
+        parentTitle: threadById.has(parentId)
+          ? threadDisplayTitle(threadById.get(parentId)!)
+          : null,
+        childCount,
+        expanded,
+        guides,
+        lastChild,
+        statusThread: expanded ? thread : statusThreadFor(thread),
+      });
+      if (expanded) visit(thread.id, depth + 1, guides + (lastChild ? "0" : "1"));
+    }
+  };
+  visit(coordinatorThreadId, 1, "");
+  return result;
+}
+
+/** Keep folded Project families' most urgent signal in the visible parent row. */
+function projectStatusPriority(thread: PluginSidebarThread): number {
+  if (thread.hasPendingInteraction || thread.indicator === "waiting-for-input") return 5;
+  if (thread.indicator === "unread-error") return 4;
+  if (thread.isUnread || thread.indicator === "unread-success") return 3;
+  if (thread.indicator !== "none") return 2;
+  return 0;
 }
