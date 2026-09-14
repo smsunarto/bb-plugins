@@ -12,7 +12,7 @@ import { z } from "zod";
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
-import { isWithinSettledWindow } from "./lib/settled-threads.ts";
+import { isWithinSettledWindow, SETTLED_WINDOW_MS } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 
@@ -228,20 +228,25 @@ export default function plugin(bb: BbPluginApi) {
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: row.threadId });
   };
 
-  const clear = (threadId: string): void => {
-    db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(threadId);
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
+  const clear = (threadId: string): boolean => {
+    const result = db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(threadId);
+    // Most deleted threads have never been snoozed. Publishing for those rows
+    // makes every connected sidebar reload the archive for a mutation that did
+    // not change plugin state — catastrophic during bulk cleanup.
+    if (result.changes > 0) bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
+    return result.changes > 0;
   };
 
   /** One page is already generous; the loop is for the account that isn't. */
   const THREAD_PAGE_SIZE = 200;
   const THREAD_PAGE_LIMIT = 50;
 
-  const listThreads = async (archived: boolean) => {
+  const listThreads = async (archived: boolean, archivedAfter?: number) => {
     const collected = [];
     for (let page = 0; page < THREAD_PAGE_LIMIT; page++) {
       const rows = await bb.sdk.threads.list({
         archived,
+        ...(archivedAfter === undefined ? {} : { experimental_archivedAfter: archivedAfter }),
         limit: THREAD_PAGE_SIZE,
         offset: page * THREAD_PAGE_SIZE,
       });
@@ -249,6 +254,30 @@ export default function plugin(bb: BbPluginApi) {
       if (rows.length < THREAD_PAGE_SIZE) break;
     }
     return collected;
+  };
+
+  let archivedRevision = 0;
+  let archivedCache: { revision: number; threads: Awaited<ReturnType<typeof listThreads>> } | null =
+    null;
+  let archivedInFlight: {
+    revision: number;
+    promise: Promise<Awaited<ReturnType<typeof listThreads>>>;
+  } | null = null;
+
+  const listArchivedThreads = async () => {
+    if (archivedCache?.revision === archivedRevision) return archivedCache.threads;
+    if (archivedInFlight?.revision === archivedRevision) return archivedInFlight.promise;
+    const revision = archivedRevision;
+    const promise = listThreads(true, Date.now() - SETTLED_WINDOW_MS).then((threads) => {
+      if (archivedRevision === revision) archivedCache = { revision, threads };
+      return threads;
+    });
+    archivedInFlight = { revision, promise };
+    try {
+      return await promise;
+    } finally {
+      if (archivedInFlight?.promise === promise) archivedInFlight = null;
+    }
   };
 
   const collapsedThreads = createCollapsedThreadsStore(bb.sdk.system.uiPreferences);
@@ -316,7 +345,7 @@ export default function plugin(bb: BbPluginApi) {
      */
     async listSettledThreads() {
       const now = Date.now();
-      const archived = await listThreads(true);
+      const archived = await listArchivedThreads();
       return {
         threads: archived.flatMap((thread) => {
           if (thread.archivedAt === null || !isWithinSettledWindow(thread.archivedAt, now)) {
@@ -391,7 +420,18 @@ export default function plugin(bb: BbPluginApi) {
   // A deleted thread must not leave a row behind that would park a future
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
-    clear(thread.id);
+    const wasInSettledWindow =
+      thread.archivedAt !== null && isWithinSettledWindow(thread.archivedAt, Date.now());
+    if (wasInSettledWindow) {
+      archivedRevision += 1;
+      archivedCache = null;
+    }
+    // `clear` publishes only if GTD state changed. A recently archived row
+    // must also leave the Settled cache when it never had GTD-local state;
+    // unrelated and old deletions stay silent during bulk cleanup.
+    if (!clear(thread.id) && wasInSettledWindow) {
+      bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: thread.id });
+    }
   });
 
   // bb emits pin-state-changed for a pin, an unpin, and a reorderPinned, and
@@ -402,6 +442,8 @@ export default function plugin(bb: BbPluginApi) {
       event: "thread:changed",
       callback: (event) => {
         if (event.id !== undefined && event.changes.includes("pin-state-changed")) {
+          archivedRevision += 1;
+          archivedCache = null;
           bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
         }
       },
@@ -412,12 +454,22 @@ export default function plugin(bb: BbPluginApi) {
   // the shelves hear about it from bb's change feed rather than an RPC here.
   // `archived-changed` covers archive and unarchive both and fires per
   // thread — a cascade archive republishes once per child.
+  let archivePublishTimer: ReturnType<typeof setTimeout> | null = null;
+  bb.onDispose(() => {
+    if (archivePublishTimer !== null) clearTimeout(archivePublishTimer);
+  });
   bb.onDispose(
     bb.sdk.subscribe({
       event: "thread:changed",
       callback: (event) => {
         if (event.id !== undefined && event.changes.includes("archived-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
+          archivedRevision += 1;
+          archivedCache = null;
+          if (archivePublishTimer !== null) clearTimeout(archivePublishTimer);
+          archivePublishTimer = setTimeout(() => {
+            archivePublishTimer = null;
+            bb.realtime.publish(LIFECYCLE_CHANNEL, { archiveChanged: true });
+          }, 250);
         }
       },
     }),
