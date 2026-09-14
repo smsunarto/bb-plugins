@@ -120,11 +120,12 @@
   background: var(--sidebar);
 }
 .gtd-project-group-header {
-  /* Positioned so the absolute new-thread button anchors to it. */
+  /* Positioned so the absolute new-thread button anchors to it. Match the
+     2px gap between compact thread rows. */
   position: relative;
   display: flex;
   align-items: center;
-  margin-top: 6px;
+  margin-top: 2px;
   border-radius: 6px;
 }
 .gtd-project-group-header:hover {
@@ -137,7 +138,7 @@
   min-width: 0;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 32px;
   padding: 0 8px 0 24px;
   border: 0;
   background: transparent;
@@ -167,7 +168,7 @@
   border-radius: 6px;
 }
 .gtd-project-group-chevron {
-  height: 26px;
+  height: 32px;
 }
 .gtd-project-group-header-touch .gtd-project-group-chevron {
   height: 40px;
@@ -225,6 +226,7 @@
    enough to read as the header's children, cheap on a narrow sidebar. */
 .gtd-project-group-rows {
   --gtd-group-indent: 12px;
+  margin-top: 2px;
 }
 .gtd-disclosure {
   position: absolute;
