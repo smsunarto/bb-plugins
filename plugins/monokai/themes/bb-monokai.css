@@ -372,9 +372,12 @@
 }
 
 /* The editor scroll layer is transparent upstream. Paint it explicitly so
- * inset editor height and overflow never expose a different composer ground. */
+ * inset editor height and overflow never expose a different composer ground.
+ * Match the native 12px shell inside its 1px border so this square child cannot
+ * paint through the shell's rounded top corners. */
 .dark [data-promptbox] [data-promptbox-editor-scroll] {
   background-color: #212121;
+  border-radius: 11px 11px 0 0;
 }
 
 /* Prompt context is part of the user's pending request, not a generic card. */

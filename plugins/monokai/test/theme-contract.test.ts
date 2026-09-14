@@ -28,7 +28,7 @@ describe("bb Monokai surface palette", () => {
       ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {\n  background-color: #151515",
     );
     expect(theme).toContain(
-      ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: #212121",
+      ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: #212121;\n  border-radius: 11px 11px 0 0",
     );
     expect(theme).toContain(
       '.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {\n  background-color: #212121',

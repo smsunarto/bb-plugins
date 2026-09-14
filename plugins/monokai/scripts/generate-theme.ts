@@ -530,7 +530,10 @@ const requiredRules: Array<{
   },
   {
     selector: ".dark [data-promptbox] [data-promptbox-editor-scroll]",
-    declarations: { "background-color": palette.ground.userSurface },
+    declarations: {
+      "background-color": palette.ground.userSurface,
+      "border-radius": "11px 11px 0 0",
+    },
   },
   {
     selector: '.dark [data-follow-up-composer] [aria-label="Thread context before sending"]',
