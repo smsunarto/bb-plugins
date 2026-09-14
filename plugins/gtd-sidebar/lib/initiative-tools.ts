@@ -44,30 +44,98 @@ const contextDocIndex = (store: InitiativeStore, initiativeId: string): string =
     .join("\n");
 };
 
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`;
+
+const boundedJson = (value: string, maxLength = 160): string =>
+  JSON.stringify(value.length <= maxLength ? value : `${value.slice(0, maxLength)}…`);
+
+const boundedInstructions = (required: readonly string[], optional: readonly string[]): string => {
+  const limit = 4_000;
+  const essential = required.filter(Boolean).join("\n");
+  if (essential.length > limit) {
+    throw new Error("initiative's required agent instructions exceed the supported limit");
+  }
+  let result = essential;
+  for (const block of optional.filter(Boolean)) {
+    if (result.length + block.length + 1 > limit) continue;
+    result += `\n${block}`;
+  }
+  return result;
+};
+
+const sharedWorkspaceInstructions = (
+  initiative: Initiative,
+  store: InitiativeStore,
+  focusProjectId: string,
+): { required: string[]; optional: string[] } => {
+  if (initiative.workspace.mode !== "shared-directory") return { required: [], optional: [] };
+  const bindings = store.workspaceBindings(initiative.id);
+  const paths = bindings.flatMap((binding) => binding.path ?? []);
+  return {
+    required: [
+      `This project uses one shared-directory environment. Every project agent reuses it, and all agents share the same working files.`,
+      `Your repository focus is project ${boundedJson(focusProjectId)}. Call ${INITIATIVE_TOOL_NAMES.workspaceInfo} for its exact path and for the authoritative complete machine, root, and selected-checkout scope.`,
+      `Search and edit only the exact checkout paths returned by ${INITIATIVE_TOOL_NAMES.workspaceInfo}; for project-wide search use rg PATTERN -- PATH... with those paths, never the common parent by itself.`,
+      `Before editing a repository, directly read its root AGENTS.md when present and discover applicable nested files with rg --files --hidden --no-ignore --glob 'AGENTS.md' -- PATH. Obey every applicable instruction file.`,
+      `Run GitButler separately inside each repository with (cd PATH && but status). Do not switch branches, create linked worktrees, or import repositories into a subtree.`,
+    ],
+    optional: [
+      `Shared host/root snapshot: ${boundedJson(initiative.workspace.hostId)} at ${shellQuote(initiative.workspace.rootPath)}.`,
+      `Selected repository snapshots:\n${bindings
+        .map(
+          (binding) =>
+            `- ${JSON.stringify(binding.projectId)}: ${binding.path === null ? "(missing)" : shellQuote(binding.path)}`,
+        )
+        .join("\n")}`,
+      `Project-wide search example: rg PATTERN -- ${paths.map(shellQuote).join(" ")}`,
+    ],
+  };
+};
+
 const coordinatorInstructions = (initiative: Initiative, store: InitiativeStore): string => {
   const workspaces =
     initiative.workspaceProjectIds.length === 0
       ? "the personal project (created from scratch)"
       : initiative.workspaceProjectIds.join(", ");
-  return [
-    `You are the coordinator of the project "${initiative.name}" (${initiative.id}).`,
-    `Own the outcome — never write code yourself. Decompose work and delegate with ${INITIATIVE_TOOL_NAMES.spawnAgent}; each agent runs in its own BB thread and environment, and its completion reaches you as a native child-thread notification. Track agents with ${INITIATIVE_TOOL_NAMES.listAgents} and steer them with ${INITIATIVE_TOOL_NAMES.messageAgent}.`,
-    `Shared context documents are the project's memory: read them with ${INITIATIVE_TOOL_NAMES.contextRead}, list with ${INITIATIVE_TOOL_NAMES.contextList}, and write plans, decisions, and durable findings with ${INITIATIVE_TOOL_NAMES.contextWrite} — agents and the user see the same documents.`,
-    `Subscriptions (${INITIATIVE_TOOL_NAMES.subscriptionUpsert}/${INITIATIVE_TOOL_NAMES.subscriptionDelete}/${INITIATIVE_TOOL_NAMES.subscriptionList}) deliver scheduled prompts and GitHub/Slack events into this conversation — use them for recurring checks instead of asking the user to come back.`,
-    `Bound repositories: ${workspaces}. Spawn agents into any bound repository with projectId; choose an existing environment with environmentId or provision via environmentProviderId.`,
-    initiative.description.length > 0 ? `Project brief: ${initiative.description}` : "",
-    `Context documents:\n${contextDocIndex(store, initiative.id)}`,
-  ]
-    .filter((line) => line.length > 0)
-    .join("\n")
-    .slice(0, 4000);
+  const shared = sharedWorkspaceInstructions(
+    initiative,
+    store,
+    initiative.workspaceProjectIds[0] ?? "personal",
+  );
+  return boundedInstructions(
+    [
+      `You are the coordinator of the project ${boundedJson(initiative.name)} (${initiative.id}).`,
+      `Own the outcome — never write code yourself. Decompose work and delegate with ${INITIATIVE_TOOL_NAMES.spawnAgent}; each agent runs in its own native BB thread, and its completion reaches you as a child-thread notification. Track agents with ${INITIATIVE_TOOL_NAMES.listAgents} and steer them with ${INITIATIVE_TOOL_NAMES.messageAgent}.`,
+      `Shared context documents are the project's memory: read them with ${INITIATIVE_TOOL_NAMES.contextRead}, list with ${INITIATIVE_TOOL_NAMES.contextList}, and write plans, decisions, and durable findings with ${INITIATIVE_TOOL_NAMES.contextWrite} — agents and the user see the same documents.`,
+      `Subscriptions (${INITIATIVE_TOOL_NAMES.subscriptionUpsert}/${INITIATIVE_TOOL_NAMES.subscriptionDelete}/${INITIATIVE_TOOL_NAMES.subscriptionList}) deliver scheduled prompts and GitHub/Slack events into this conversation — use them for recurring checks instead of asking the user to come back.`,
+      initiative.workspace.mode === "shared-directory"
+        ? `Bound repositories: ${workspaces}. Spawn agents with a bound projectId to set their repository focus; the shared environment is reused automatically and environment overrides are rejected.`
+        : `Bound repositories: ${workspaces}. Spawn agents into any bound repository with projectId; choose an existing environment with environmentId or provision via environmentProviderId.`,
+      ...shared.required,
+    ],
+    [
+      initiative.description.length > 0 ? `Project brief: ${initiative.description}` : "",
+      `Context documents:\n${contextDocIndex(store, initiative.id)}`,
+      ...shared.optional,
+    ],
+  );
 };
 
-const agentInstructions = (initiative: Initiative): string =>
-  [
-    `You are an agent for the project "${initiative.name}". Do the task you were given, then stop — your parent thread (the project coordinator) is notified when you finish.`,
-    `Shared project documents live behind the ${INITIATIVE_TOOL_NAMES.contextList}/${INITIATIVE_TOOL_NAMES.contextRead}/${INITIATIVE_TOOL_NAMES.contextWrite} tools: read before assuming, and write durable findings back so the coordinator and sibling agents see them.`,
-  ].join("\n");
+const agentInstructions = (
+  initiative: Initiative,
+  store: InitiativeStore,
+  focusProjectId: string,
+): string => {
+  const shared = sharedWorkspaceInstructions(initiative, store, focusProjectId);
+  return boundedInstructions(
+    [
+      `You are an agent for the project ${boundedJson(initiative.name)}. Do the task you were given, then stop — your parent thread (the project coordinator) is notified when you finish.`,
+      `Shared project documents live behind the ${INITIATIVE_TOOL_NAMES.contextList}/${INITIATIVE_TOOL_NAMES.contextRead}/${INITIATIVE_TOOL_NAMES.contextWrite} tools: read before assuming, and write durable findings back so the coordinator and sibling agents see them.`,
+      ...shared.required,
+    ],
+    shared.optional,
+  );
+};
 
 export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentDeps): void {
   const { service, store, engine, subscriptions, threads } = deps;
@@ -79,6 +147,20 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
   };
 
   const N = INITIATIVE_TOOL_NAMES;
+
+  bb.agents.registerTool({
+    name: N.workspaceInfo,
+    description:
+      "Return this project's authoritative workspace mode, common root, and complete ordered repository checkout snapshots.",
+    parameters: z.object({}),
+    async execute(_params, ctx) {
+      const { initiative } = await resolve(ctx.threadId);
+      return json({
+        workspace: initiative.workspace,
+        repositories: store.workspaceBindings(initiative.id),
+      });
+    },
+  });
 
   bb.agents.registerTool({
     name: N.spawnAgent,
@@ -297,29 +379,48 @@ export function registerInitiativeAgents(bb: BbPluginApi, deps: InitiativeAgentD
     N.contextRead,
     N.contextWrite,
     N.contextDelete,
+    N.workspaceInfo,
     N.subscriptionList,
     N.subscriptionUpsert,
     N.subscriptionDelete,
   ];
-  const AGENT_TOOLS = [N.contextList, N.contextRead, N.contextWrite, N.contextDelete];
+  const AGENT_TOOLS = [
+    N.contextList,
+    N.contextRead,
+    N.contextWrite,
+    N.contextDelete,
+    N.workspaceInfo,
+  ];
 
   bb.agents.configure((ctx) => {
     const role: InitiativeRole | null = service.membership.roleHint(
       ctx.thread.id,
       ctx.thread.parentThreadId,
     );
-    if (role === "coordinator") return { tools: COORDINATOR_TOOLS, skills: [] };
-    if (role === "agent") return { tools: AGENT_TOOLS, skills: [] };
+    if (role === "coordinator") {
+      const initiative = store.getByCoordinator(ctx.thread.id);
+      return {
+        tools: COORDINATOR_TOOLS,
+        skills: [],
+        instructions: initiative === null ? undefined : coordinatorInstructions(initiative, store),
+      };
+    }
+    if (role === "agent") {
+      const initiativeId = service.membership.descendantInitiative(ctx.thread.id);
+      const initiative = initiativeId === null ? null : store.get(initiativeId);
+      if (initiative === null) return { tools: AGENT_TOOLS, skills: [] };
+      const metadataFocus = ctx.pluginMetadata.focusProjectId;
+      const focusProjectId =
+        typeof metadataFocus === "string" && initiative.workspaceProjectIds.includes(metadataFocus)
+          ? metadataFocus
+          : (initiative.workspaceProjectIds[0] ?? "personal");
+      return {
+        tools: AGENT_TOOLS,
+        skills: [],
+        instructions: agentInstructions(initiative, store, focusProjectId),
+      };
+    }
     return { tools: [], skills: [] };
-  });
-
-  bb.agents.contributeInstructions(({ threadId }) => {
-    const coordinated = store.getByCoordinator(threadId);
-    if (coordinated !== null) return coordinatorInstructions(coordinated, store);
-    const initiativeId = service.membership.descendantInitiative(threadId);
-    if (initiativeId === null) return null;
-    const initiative = store.get(initiativeId);
-    return initiative === null ? null : agentInstructions(initiative);
   });
 
   bb.ui.registerMentionProvider({

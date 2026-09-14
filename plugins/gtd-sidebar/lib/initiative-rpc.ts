@@ -14,6 +14,58 @@ import {
 import type { InitiativeContextDoc } from "./initiative-types.ts";
 import type { InitiativeRuntime } from "./initiative-runtime.ts";
 
+const initiativeWorkspaceSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("legacy") }),
+  z.object({
+    mode: z.literal("shared-directory"),
+    hostId: z.string().trim().min(1),
+    rootPath: z.string().trim().min(1),
+  }),
+]);
+
+const sharedDirectoryLocationSchema = z.object({
+  hostId: z.string(),
+  hostName: z.string(),
+  rootPath: z.string(),
+});
+
+const sharedDirectoryPreviewErrorSchema = z.object({
+  code: z.enum([
+    "not-enough-repositories",
+    "too-many-repositories",
+    "duplicate-project",
+    "project-not-found",
+    "source-missing",
+    "source-ambiguous",
+    "cross-host",
+    "duplicate-path",
+    "root-missing",
+    "root-not-directory",
+    "invalid-path",
+    "unsafe-root",
+    "outside-root",
+    "host-unavailable",
+  ]),
+  message: z.string(),
+  projectId: z.string().optional(),
+  path: z.string().optional(),
+});
+
+const sharedDirectoryWorkspacePreviewSchema = z.object({
+  eligible: z.boolean(),
+  suggested: sharedDirectoryLocationSchema.nullable(),
+  selection: sharedDirectoryLocationSchema.nullable(),
+  repositories: z.array(
+    z.object({
+      projectId: z.string(),
+      name: z.string(),
+      hostId: z.string().nullable(),
+      path: z.string().nullable(),
+    }),
+  ),
+  errors: z.array(sharedDirectoryPreviewErrorSchema),
+});
+
 const reasoningLevelSchema = z.enum([
   "high",
   "low",
@@ -32,6 +84,7 @@ const initiativeSchema = z.object({
   description: z.string(),
   coordinatorThreadId: z.string(),
   workspaceProjectIds: z.array(z.string()),
+  workspace: initiativeWorkspaceSchema,
   primaryEnvironmentId: z.string().nullable(),
   providerId: z.string().nullable(),
   model: z.string().nullable(),
@@ -136,6 +189,19 @@ const environmentSelectionSchema = {
 };
 
 export const initiativeRpcContract = defineRpcContract({
+  previewInitiativeWorkspace: {
+    input: z.object({
+      workspaceProjectIds: z.array(z.string().trim().min(1)),
+      candidate: z
+        .object({
+          hostId: z.string().trim().min(1).optional(),
+          rootPath: z.string().trim().min(1).optional(),
+        })
+        .nullable()
+        .optional(),
+    }),
+    output: sharedDirectoryWorkspacePreviewSchema,
+  },
   listInitiatives: {
     input: z.object({ workspaceProjectId: z.string().optional() }),
     output: z.object({ initiatives: z.array(initiativeSchema) }),
@@ -165,6 +231,7 @@ export const initiativeRpcContract = defineRpcContract({
       description: z.string().optional(),
       /** Bound bb repository projects; empty = from scratch (personal). */
       workspaceProjectIds: z.array(z.string().trim().min(1)).max(32),
+      workspace: initiativeWorkspaceSchema.optional(),
       ...environmentSelectionSchema,
       ...executionDefaultsSchema,
       initialPrompt: z.string().optional(),
@@ -284,6 +351,9 @@ const requireInitiative = (store: InitiativeStore, initiativeId: string) => {
 export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntime): void {
   const { store, service, subscriptionStore, engine } = runtime;
   bb.rpc.register(initiativeRpcContract, {
+    previewInitiativeWorkspace(input) {
+      return service.previewInitiativeWorkspace(input);
+    },
     listInitiatives({ workspaceProjectId }) {
       return { initiatives: store.list({ workspaceProjectId }) };
     },

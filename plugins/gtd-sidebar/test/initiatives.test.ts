@@ -16,6 +16,7 @@ import {
   buildContextTree,
   createInitiativeStore,
   INITIATIVE_MIGRATIONS,
+  INITIATIVE_SHARED_DIRECTORY_MIGRATIONS,
   normalizeContextPath,
 } from "../lib/initiative-store.ts";
 import {
@@ -29,7 +30,7 @@ import { SUBSCRIPTIONS_REALTIME_CHANNEL } from "../lib/initiative-subscriptions.
 // The store is typed against better-sqlite3, whose .get() returns undefined
 // for a missing row; bun:sqlite returns null. This adapter normalizes so the
 // tests exercise the production contract instead of bending it.
-function makeDb(path = ":memory:"): BetterSqliteDatabase {
+function makeDb(path = ":memory:", applyMigrations = true): BetterSqliteDatabase {
   const inner = new Database(path);
   const db = {
     exec: (sql: string) => inner.exec(sql),
@@ -44,18 +45,26 @@ function makeDb(path = ":memory:"): BetterSqliteDatabase {
     transaction: (fn: (...args: never[]) => unknown) => inner.transaction(fn),
     close: () => inner.close(),
   };
-  for (const statement of INITIATIVE_MIGRATIONS) db.exec(statement);
+  if (applyMigrations) {
+    for (const statement of INITIATIVE_MIGRATIONS) db.exec(statement);
+    for (const statement of INITIATIVE_SHARED_DIRECTORY_MIGRATIONS) db.exec(statement);
+  }
   return db as unknown as BetterSqliteDatabase;
 }
 
 function makeInput(overrides: Record<string, unknown> = {}) {
+  const projectIds = (overrides.workspaceProjectIds as string[] | undefined) ?? [
+    "proj_a",
+    "proj_b",
+  ];
   return {
     id: "init_1",
     name: "Alpha",
     icon: "A",
     description: "first",
     coordinatorThreadId: "thr_coord1",
-    workspaceProjectIds: ["proj_a", "proj_b"],
+    workspace: { mode: "legacy" as const },
+    workspaceBindings: projectIds.map((projectId) => ({ projectId, hostId: null, path: null })),
     primaryEnvironmentId: null,
     providerId: null,
     model: null,
@@ -65,6 +74,60 @@ function makeInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("initiative store", () => {
+  it("upgrades existing rows to legacy mode without changing their bindings", () => {
+    const db = makeDb(":memory:", false);
+    for (const statement of INITIATIVE_MIGRATIONS) db.exec(statement);
+    db.prepare(
+      `INSERT INTO initiative
+         (id, name, icon, description, coordinator_thread_id, primary_environment_id,
+          provider_id, model, reasoning_level, created_at, updated_at, archived_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    ).run("init_old", "Old", "", "", "thr_old", null, null, null, null, 1, 1);
+    db.prepare(
+      `INSERT INTO initiative_workspace (initiative_id, project_id, position) VALUES (?, ?, ?)`,
+    ).run("init_old", "proj_old", 0);
+    for (const statement of INITIATIVE_SHARED_DIRECTORY_MIGRATIONS) db.exec(statement);
+
+    const initiative = createInitiativeStore(db).get("init_old");
+    assert.deepEqual(initiative?.workspace, { mode: "legacy" });
+    assert.deepEqual(initiative?.workspaceProjectIds, ["proj_old"]);
+  });
+
+  it("enforces shared-directory bindings and resolves its pending environment once", () => {
+    const store = createInitiativeStore(makeDb());
+    assert.throws(
+      () =>
+        store.create({
+          ...makeInput(),
+          workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+          workspaceBindings: [
+            { projectId: "proj_a", hostId: "host_a", path: "/repos/a" },
+            { projectId: "proj_b", hostId: "host_a", path: null },
+          ],
+          primaryEnvironmentId: "env_a",
+        }),
+      /incomplete/,
+    );
+    const created = store.create({
+      ...makeInput(),
+      workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+      workspaceBindings: [
+        { projectId: "proj_a", hostId: "host_a", path: "/repos/a" },
+        { projectId: "proj_b", hostId: "host_a", path: "/repos/b" },
+      ],
+      primaryEnvironmentId: null,
+    });
+    assert.equal(created.workspace.mode, "shared-directory");
+    assert.equal(created.primaryEnvironmentId, null);
+    assert.equal(store.setPrimaryEnvironmentId(created.id, "env_a").primaryEnvironmentId, "env_a");
+    assert.equal(store.setPrimaryEnvironmentId(created.id, "env_a").primaryEnvironmentId, "env_a");
+    assert.throws(
+      () => store.setPrimaryEnvironmentId(created.id, "env_other"),
+      /already bound to environment env_a/,
+    );
+    assert.throws(() => store.update(created.id, { workspaceProjectIds: ["proj_a"] }), /immutable/);
+  });
+
   it("creates, reads, lists, updates, archives and removes", () => {
     const store = createInitiativeStore(makeDb());
     const created = store.create(makeInput());
@@ -292,7 +355,7 @@ describe("initiative store", () => {
       const first = createInitiativeStore(makeDb(file));
       first.create(makeInput());
       first.writeDoc({ initiativeId: "init_1", path: "note.md", content: "durable" });
-      const second = createInitiativeStore(makeDb(file));
+      const second = createInitiativeStore(makeDb(file, false));
       assert.equal(second.get("init_1")?.name, "Alpha");
       assert.equal(second.getDoc("init_1", "note.md")?.content, "durable");
       assert.deepEqual(second.coordinatorThreadIds(), ["thr_coord1"]);
@@ -334,6 +397,7 @@ interface FakeThread {
   deletedAt: number | null;
   status: string;
   createdAt: number;
+  environmentId: string | null;
 }
 
 interface SpawnArgs {
@@ -354,7 +418,19 @@ function makeHarness() {
   const deleteCalls: string[] = [];
   const failArchives = new Set<string>();
   const failUnarchives = new Set<string>();
-  const harness = { failNextSpawn: false, failNextStoreCreate: false };
+  const harness = {
+    failNextSpawn: false,
+    failNextStoreCreate: false,
+    omitNextEnvironmentId: false,
+    failEnvironmentProvisioning: false,
+    environmentResolutionDelayReads: 1,
+    environmentStatusOnAttach: "starting" as FakeThread["status"],
+    rewriteValidatedPathsTo: null as string | null,
+    rewriteValidatedRootTo: null as string | null,
+  };
+  const pendingHostEnvironments = new Map<string, string>();
+  const environmentResolutionReads = new Map<string, number>();
+  let environmentClock = 0;
   let seq = 0;
 
   const api = {
@@ -365,6 +441,15 @@ function makeHarness() {
         throw new Error("spawn blew up");
       }
       const id = `thr_${++seq}`;
+      const environment = args.environment as { type?: string; environmentId?: string } | undefined;
+      const environmentId =
+        environment?.type === "reuse" ? (environment.environmentId ?? null) : null;
+      if (environment?.type === "host" && !harness.omitNextEnvironmentId) {
+        // Core cannot create/attach this environment until the dispatch gate
+        // admits the thread and provisioning begins.
+        pendingHostEnvironments.set(id, `env_${seq}`);
+      }
+      harness.omitNextEnvironmentId = false;
       rows.set(id, {
         id,
         parentThreadId: args.parentThreadId ?? null,
@@ -374,6 +459,7 @@ function makeHarness() {
         deletedAt: null,
         status: "pending",
         createdAt: seq,
+        environmentId,
       });
       // The dispatch admission runs INSIDE spawn: a held message queues and
       // spawn returns the pending thread.
@@ -390,7 +476,7 @@ function makeHarness() {
         dispatched.add(id);
         admissionAnswers.set(id, service.membership.roleHint(id, args.parentThreadId ?? null));
       }
-      return { id };
+      return rows.get(id)!;
     },
     async send() {
       return { ok: true };
@@ -398,6 +484,16 @@ function makeHarness() {
     async get({ threadId }: { threadId: string }) {
       const row = rows.get(threadId);
       if (row === undefined) throw new Error(`thread ${threadId} not found`);
+      const pendingEnvironment = pendingHostEnvironments.get(threadId);
+      if (pendingEnvironment !== undefined && dispatched.has(threadId)) {
+        const reads = (environmentResolutionReads.get(threadId) ?? 0) + 1;
+        environmentResolutionReads.set(threadId, reads);
+        if (reads > harness.environmentResolutionDelayReads) {
+          row.environmentId = pendingEnvironment;
+          row.status = harness.environmentStatusOnAttach;
+          pendingHostEnvironments.delete(threadId);
+        }
+      }
       return row;
     },
     async list({
@@ -468,6 +564,13 @@ function makeHarness() {
     async list() {
       return [{ id: "proj_personal", kind: "personal" }];
     },
+    async get({ projectId }: { projectId: string }) {
+      return {
+        id: projectId,
+        name: projectId,
+        sources: [{ hostId: "host_a", path: `/repos/${projectId}`, isDefault: true }],
+      };
+    },
   };
   const published: { channel: string; payload: unknown }[] = [];
   let service: ReturnType<typeof createInitiativeService>;
@@ -485,6 +588,13 @@ function makeHarness() {
       if (decision.action === "proceed") {
         pendingDispatch.delete(threadId);
         dispatched.add(threadId);
+        if (row !== undefined) {
+          row.status = harness.failEnvironmentProvisioning ? "error" : "starting";
+          if (harness.failEnvironmentProvisioning) {
+            pendingHostEnvironments.delete(threadId);
+            harness.failEnvironmentProvisioning = false;
+          }
+        }
         admissionAnswers.set(
           threadId,
           service.membership.roleHint(threadId, row?.parentThreadId ?? null),
@@ -501,15 +611,51 @@ function makeHarness() {
     }
     return persistInitiative(input);
   };
-  service = createInitiativeService({
-    store,
-    threads: api as never,
-    projects: projects as never,
-    pluginId: "gtd-sidebar",
-    publish: (channel, payload) => published.push({ channel, payload }),
-    log: { info() {}, warn() {}, error() {} },
-    recheckDispatch: drain,
-  });
+  const makeService = () =>
+    createInitiativeService({
+      store,
+      threads: api as never,
+      projects: projects as never,
+      hosts: {
+        async get() {
+          return { id: "host_a", name: "Machine A", status: "connected" };
+        },
+      } as never,
+      inspectSharedDirectory: async (_hostId, input) => ({
+        homePath: "/home/test",
+        filesystemRootPath: "/",
+        suggestedRootPath: "/repos",
+        repositories: input.repositoryPaths.map((path) => ({
+          requestedPath: path,
+          canonicalPath: harness.rewriteValidatedPathsTo ?? path,
+          kind: "directory" as const,
+          message: null,
+        })),
+        root:
+          input.rootPath === undefined
+            ? null
+            : {
+                requestedPath: input.rootPath,
+                canonicalPath: harness.rewriteValidatedRootTo ?? input.rootPath,
+                kind: "directory" as const,
+                message: null,
+              },
+        rootContainsRepositories: input.repositoryPaths.map(() => true),
+      }),
+      pluginId: "gtd-sidebar",
+      publish: (channel, payload) => published.push({ channel, payload }),
+      log: { info() {}, warn() {}, error() {} },
+      recheckDispatch: drain,
+      environmentResolution: {
+        timeoutMs: 5,
+        pollIntervalMs: 1,
+        now: () => environmentClock,
+        wait: async (milliseconds) => {
+          environmentClock += milliseconds;
+        },
+      },
+    });
+  service = makeService();
   return {
     api,
     rows,
@@ -531,14 +677,37 @@ function makeHarness() {
     set failNextStoreCreate(value: boolean) {
       harness.failNextStoreCreate = value;
     },
+    set omitNextEnvironmentId(value: boolean) {
+      harness.omitNextEnvironmentId = value;
+    },
+    set failEnvironmentProvisioning(value: boolean) {
+      harness.failEnvironmentProvisioning = value;
+    },
+    set environmentResolutionDelayReads(value: number) {
+      harness.environmentResolutionDelayReads = value;
+    },
+    set environmentStatusOnAttach(value: FakeThread["status"]) {
+      harness.environmentStatusOnAttach = value;
+    },
+    set rewriteValidatedPathsTo(value: string | null) {
+      harness.rewriteValidatedPathsTo = value;
+    },
+    set rewriteValidatedRootTo(value: string | null) {
+      harness.rewriteValidatedRootTo = value;
+    },
     pendingDispatch,
     dispatched,
     rejectedDispatch,
     admissionAnswers,
+    environmentResolutionReads,
     published,
     store,
     service,
     drain,
+    reloadService() {
+      service = makeService();
+      return service;
+    },
     addThread(partial: Partial<FakeThread> & { id: string }) {
       rows.set(partial.id, {
         parentThreadId: null,
@@ -548,6 +717,7 @@ function makeHarness() {
         deletedAt: null,
         status: "idle",
         createdAt: ++seq,
+        environmentId: null,
         ...partial,
       });
     },
@@ -799,7 +969,18 @@ describe("initiative service — first-turn initialization", () => {
         async list() {
           return [];
         },
+        async get() {
+          throw new Error("not used");
+        },
       } as never,
+      hosts: {
+        async get() {
+          throw new Error("not used");
+        },
+      } as never,
+      inspectSharedDirectory: async () => {
+        throw new Error("not used");
+      },
       pluginId: "gtd-sidebar",
       publish: () => {},
       log: { info() {}, warn() {}, error() {} },
@@ -872,6 +1053,210 @@ describe("initiative service — first-turn initialization", () => {
   });
 });
 
+describe("initiative service — shared directory workspace", () => {
+  it("creates one host/unmanaged environment and reuses it for repository-focused children", async () => {
+    const h = makeHarness();
+    // This fake will not attach the environment until dispatch is admitted,
+    // then delays it for several public thread reads. Polling before recheck
+    // would deadlock and exhaust the fixture's five-millisecond deadline.
+    h.environmentResolutionDelayReads = 3;
+    const { initiative } = await h.service.createInitiative({
+      name: "Shared",
+      workspaceProjectIds: ["proj_a", "proj_b"],
+      workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+    });
+
+    assert.deepEqual(initiative.workspace, {
+      mode: "shared-directory",
+      hostId: "host_a",
+      rootPath: "/repos",
+    });
+    assert.equal(initiative.primaryEnvironmentId, "env_1");
+    assert.equal(h.environmentResolutionReads.get(initiative.coordinatorThreadId), 4);
+    assert.equal(h.admissionAnswers.get(initiative.coordinatorThreadId), "coordinator");
+    assert.equal(h.store.get(initiative.id)?.primaryEnvironmentId, "env_1");
+    assert.deepEqual(h.store.workspaceBindings(initiative.id), [
+      { projectId: "proj_a", hostId: "host_a", path: "/repos/proj_a" },
+      { projectId: "proj_b", hostId: "host_a", path: "/repos/proj_b" },
+    ]);
+    assert.deepEqual(h.spawnCalls[0]?.environment, {
+      type: "host",
+      hostId: "host_a",
+      workspace: { type: "unmanaged", path: "/repos" },
+    });
+    assert.deepEqual(h.spawnCalls[0]?.pluginMetadata, {
+      initiativeId: initiative.id,
+      focusProjectId: "proj_a",
+    });
+
+    await h.service.spawnAgent({
+      initiativeId: initiative.id,
+      projectId: "proj_b",
+      prompt: "work in beta",
+    });
+    assert.equal(h.spawnCalls[1]?.projectId, "proj_a");
+    assert.deepEqual(h.spawnCalls[1]?.environment, {
+      type: "reuse",
+      environmentId: "env_1",
+    });
+    assert.deepEqual(h.spawnCalls[1]?.pluginMetadata, {
+      initiativeId: initiative.id,
+      focusProjectId: "proj_b",
+    });
+  });
+
+  it("deletes the coordinator and persists nothing when no concrete environment resolves", async () => {
+    const h = makeHarness();
+    h.omitNextEnvironmentId = true;
+    await assert.rejects(
+      h.service.createInitiative({
+        name: "No environment",
+        workspaceProjectIds: ["proj_a", "proj_b"],
+        workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+      }),
+      /did not resolve within 5ms/,
+    );
+    assert.equal(h.store.list().length, 0);
+    assert.deepEqual(h.deleteCalls, ["thr_1"]);
+  });
+
+  it("cleans up a persisted row when native environment provisioning fails", async () => {
+    const h = makeHarness();
+    h.failEnvironmentProvisioning = true;
+    await assert.rejects(
+      h.service.createInitiative({
+        name: "Provisioning failure",
+        workspaceProjectIds: ["proj_a", "proj_b"],
+        workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+      }),
+      /environment provisioning failed/,
+    );
+    assert.equal(h.store.list().length, 0);
+    assert.deepEqual(h.deleteCalls, ["thr_1"]);
+  });
+
+  it("recovers a persisted pending environment after a service reload before child reuse", async () => {
+    const h = makeHarness();
+    const initiative = h.store.create({
+      ...makeInput({
+        id: "init_pending",
+        coordinatorThreadId: "thr_pending",
+      }),
+      workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+      workspaceBindings: [
+        { projectId: "proj_a", hostId: "host_a", path: "/repos/proj_a" },
+        { projectId: "proj_b", hostId: "host_a", path: "/repos/proj_b" },
+      ],
+      primaryEnvironmentId: null,
+    });
+    h.addThread({
+      id: initiative.coordinatorThreadId,
+      projectId: "proj_a",
+      status: "starting",
+      environmentId: "env_recovered",
+    });
+
+    const reloaded = h.reloadService();
+    const child = await reloaded.spawnAgent({
+      initiativeId: initiative.id,
+      projectId: "proj_b",
+      prompt: "continue after reload",
+    });
+
+    assert.equal(h.store.get(initiative.id)?.primaryEnvironmentId, "env_recovered");
+    assert.deepEqual(h.spawnCalls.at(-1)?.environment, {
+      type: "reuse",
+      environmentId: "env_recovered",
+    });
+    assert.equal(h.dispatched.has(child.threadId), true);
+  });
+
+  it("preserves a visible pending Project when reload recovery times out", async () => {
+    const h = makeHarness();
+    const initiative = h.store.create({
+      ...makeInput({
+        id: "init_pending",
+        coordinatorThreadId: "thr_pending",
+      }),
+      workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+      workspaceBindings: [
+        { projectId: "proj_a", hostId: "host_a", path: "/repos/proj_a" },
+        { projectId: "proj_b", hostId: "host_a", path: "/repos/proj_b" },
+      ],
+      primaryEnvironmentId: null,
+    });
+    h.addThread({
+      id: initiative.coordinatorThreadId,
+      projectId: "proj_a",
+      status: "starting",
+      environmentId: null,
+    });
+
+    const reloaded = h.reloadService();
+    await assert.rejects(
+      reloaded.spawnAgent({ initiativeId: initiative.id, prompt: "retry later" }),
+      /did not resolve within 5ms/,
+    );
+
+    assert.equal(h.store.get(initiative.id)?.primaryEnvironmentId, null);
+    assert.deepEqual(h.deleteCalls, []);
+    assert.equal(h.spawnCalls.length, 0);
+  });
+
+  it("persists an assigned environment even if the provider turn then enters error", async () => {
+    const h = makeHarness();
+    h.environmentStatusOnAttach = "error";
+    const { initiative } = await h.service.createInitiative({
+      name: "Provider failure after provisioning",
+      workspaceProjectIds: ["proj_a", "proj_b"],
+      workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+    });
+    assert.equal(initiative.primaryEnvironmentId, "env_1");
+    assert.equal(h.store.get(initiative.id)?.primaryEnvironmentId, "env_1");
+    assert.deepEqual(h.deleteCalls, []);
+  });
+
+  it("rejects environment overrides and moved saved checkouts", async () => {
+    const h = makeHarness();
+    await assert.rejects(
+      h.service.createInitiative({
+        name: "Override",
+        workspaceProjectIds: ["proj_a", "proj_b"],
+        workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+        environmentId: "env_other",
+      }),
+      /overrides are not allowed/,
+    );
+    assert.equal(h.spawnCalls.length, 0);
+
+    const { initiative } = await h.service.createInitiative({
+      name: "Moved",
+      workspaceProjectIds: ["proj_a", "proj_b"],
+      workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+    });
+    h.rewriteValidatedPathsTo = "/repos/replaced";
+    await assert.rejects(
+      h.service.spawnAgent({ initiativeId: initiative.id, prompt: "work" }),
+      /was moved or deleted/,
+    );
+    assert.equal(h.spawnCalls.length, 1);
+  });
+
+  it("requires creation to match the canonical root the user confirmed", async () => {
+    const h = makeHarness();
+    h.rewriteValidatedRootTo = "/canonical/repos";
+    await assert.rejects(
+      h.service.createInitiative({
+        name: "Changed root",
+        workspaceProjectIds: ["proj_a", "proj_b"],
+        workspace: { mode: "shared-directory", hostId: "host_a", rootPath: "/repos" },
+      }),
+      /changed since confirmation/,
+    );
+    assert.equal(h.spawnCalls.length, 0);
+  });
+});
+
 describe("initiative service — membership and lifecycle", () => {
   it("resolves descendants through parent ancestry including raw spawns", async () => {
     const h = makeHarness();
@@ -918,7 +1303,7 @@ describe("initiative service — membership and lifecycle", () => {
       workspaceProjectIds: [],
     });
     assert.deepEqual(await h.service.coordinatorSnapshot(initiative), {
-      status: "pending",
+      status: "starting",
       available: true,
     });
     h.rows.get(threadId)!.deletedAt = Date.now();
@@ -1052,7 +1437,18 @@ describe("initiative service — membership and lifecycle", () => {
         async list() {
           return [];
         },
+        async get() {
+          throw new Error("not used");
+        },
       } as never,
+      hosts: {
+        async get() {
+          throw new Error("not used");
+        },
+      } as never,
+      inspectSharedDirectory: async () => {
+        throw new Error("not used");
+      },
       pluginId: "gtd-sidebar",
       publish: () => {},
       log: { info() {}, warn() {}, error() {} },

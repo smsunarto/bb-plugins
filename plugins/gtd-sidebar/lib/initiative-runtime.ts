@@ -13,6 +13,10 @@ import {
   type SubscriptionStore,
 } from "./initiative-subscriptions.ts";
 import { INITIATIVES_CHANNEL } from "./initiative-types.ts";
+import type {
+  InspectSharedDirectoryInput,
+  InspectSharedDirectoryOutput,
+} from "./shared-directory-host.ts";
 
 export interface InitiativeRuntime {
   store: InitiativeStore;
@@ -43,6 +47,11 @@ export function createInitiativeRuntime(
     store,
     threads: bb.sdk.threads,
     projects: bb.sdk.projects,
+    hosts: bb.sdk.hosts,
+    inspectSharedDirectory: (hostId, input: InspectSharedDirectoryInput) =>
+      deps.host.call("inspectSharedDirectory", input, {
+        hostId,
+      }) as Promise<InspectSharedDirectoryOutput>,
     pluginId: bb.pluginId,
     publish,
     log: bb.log,

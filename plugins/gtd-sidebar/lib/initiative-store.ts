@@ -6,7 +6,12 @@
 // native parentThreadId ancestry and status is whatever core reports —
 // persisting either here would fork the truth.
 import type { Database } from "better-sqlite3";
-import type { Initiative, InitiativeContextDoc } from "./initiative-types.ts";
+import type {
+  Initiative,
+  InitiativeContextDoc,
+  InitiativeWorkspace,
+  InitiativeWorkspaceBinding,
+} from "./initiative-types.ts";
 
 // server.ts appends these after the plugin's existing migrations (migration
 // ids are positional, so arrays must concatenate, never interleave).
@@ -47,6 +52,15 @@ export const INITIATIVE_MIGRATIONS = [
    )`,
 ];
 
+/** Appended after subscription migrations so existing positional ids never shift. */
+export const INITIATIVE_SHARED_DIRECTORY_MIGRATIONS = [
+  `ALTER TABLE initiative ADD COLUMN workspace_mode TEXT NOT NULL DEFAULT 'legacy'`,
+  `ALTER TABLE initiative ADD COLUMN shared_host_id TEXT`,
+  `ALTER TABLE initiative ADD COLUMN shared_root_path TEXT`,
+  `ALTER TABLE initiative_workspace ADD COLUMN host_id TEXT`,
+  `ALTER TABLE initiative_workspace ADD COLUMN path TEXT`,
+];
+
 interface InitiativeRow {
   id: string;
   name: string;
@@ -60,12 +74,17 @@ interface InitiativeRow {
   created_at: number;
   updated_at: number;
   archived_at: number | null;
+  workspace_mode: string;
+  shared_host_id: string | null;
+  shared_root_path: string | null;
 }
 
 interface WorkspaceRow {
   initiative_id: string;
   project_id: string;
   position: number;
+  host_id: string | null;
+  path: string | null;
 }
 
 interface ContextDocRow {
@@ -101,7 +120,8 @@ export interface CreateInitiativeInput {
   icon: string;
   description: string;
   coordinatorThreadId: string;
-  workspaceProjectIds: string[];
+  workspace: InitiativeWorkspace;
+  workspaceBindings: InitiativeWorkspaceBinding[];
   primaryEnvironmentId: string | null;
   providerId: string | null;
   model: string | null;
@@ -123,6 +143,12 @@ export interface InitiativeStore {
   get(initiativeId: string): Initiative | null;
   getByCoordinator(threadId: string): Initiative | null;
   list(filter?: { workspaceProjectId?: string }): Initiative[];
+  workspaceBindings(initiativeId: string): InitiativeWorkspaceBinding[];
+  /**
+   * Resolves the one transient shared-directory state after native dispatch
+   * admission. Idempotent for the same id and rejects replacement.
+   */
+  setPrimaryEnvironmentId(initiativeId: string, environmentId: string): Initiative;
   /** Coordinator ids — the synchronous membership check configure() needs. */
   coordinatorThreadIds(): string[];
   update(initiativeId: string, patch: UpdateInitiativeInput): Initiative;
@@ -257,15 +283,40 @@ export function buildContextTree(metas: readonly ContextDocMeta[]): InitiativeCo
 }
 
 export function createInitiativeStore(db: Database): InitiativeStore {
+  const assertCreateWorkspace = (input: CreateInitiativeInput): void => {
+    const ids = input.workspaceBindings.map((binding) => binding.projectId);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error("initiative workspace contains duplicate project bindings");
+    }
+    if (input.workspace.mode === "legacy") {
+      if (
+        input.workspaceBindings.some((binding) => binding.hostId !== null || binding.path !== null)
+      ) {
+        throw new Error("legacy workspace bindings cannot store checkout snapshots");
+      }
+      return;
+    }
+    const sharedWorkspace = input.workspace;
+    if (
+      input.workspaceBindings.length < 2 ||
+      input.workspaceBindings.some(
+        (binding) => binding.hostId !== sharedWorkspace.hostId || binding.path === null,
+      )
+    ) {
+      throw new Error("shared-directory workspace state is incomplete");
+    }
+  };
+
   const insertInitiative = db.prepare(
     `INSERT INTO initiative
        (id, name, icon, description, coordinator_thread_id, primary_environment_id,
-        provider_id, model, reasoning_level, created_at, updated_at, archived_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        provider_id, model, reasoning_level, created_at, updated_at, archived_at,
+        workspace_mode, shared_host_id, shared_root_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
   );
   const insertWorkspace = db.prepare(
-    `INSERT INTO initiative_workspace (initiative_id, project_id, position)
-     VALUES (?, ?, ?)`,
+    `INSERT INTO initiative_workspace (initiative_id, project_id, position, host_id, path)
+     VALUES (?, ?, ?, ?, ?)`,
   );
   const deleteWorkspaces = db.prepare(`DELETE FROM initiative_workspace WHERE initiative_id = ?`);
   const selectById = db.prepare(`SELECT * FROM initiative WHERE id = ?`);
@@ -284,36 +335,70 @@ export function createInitiativeStore(db: Database): InitiativeStore {
     `SELECT * FROM initiative_workspace ORDER BY initiative_id, position`,
   );
 
-  const toInitiative = (row: InitiativeRow, workspaces: Map<string, string[]>): Initiative => ({
-    id: row.id,
-    name: row.name,
-    icon: row.icon,
-    description: row.description,
-    coordinatorThreadId: row.coordinator_thread_id,
-    workspaceProjectIds: workspaces.get(row.id) ?? [],
-    primaryEnvironmentId: row.primary_environment_id,
-    providerId: row.provider_id,
-    model: row.model,
-    reasoningLevel: row.reasoning_level,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    archivedAt: row.archived_at,
-  });
+  const toInitiative = (
+    row: InitiativeRow,
+    workspaces: Map<string, InitiativeWorkspaceBinding[]>,
+  ): Initiative => {
+    const bindings = workspaces.get(row.id) ?? [];
+    let workspace: InitiativeWorkspace;
+    if (row.workspace_mode === "legacy") {
+      if (row.shared_host_id !== null || row.shared_root_path !== null) {
+        throw new Error(`initiative ${row.id} has contradictory legacy workspace state`);
+      }
+      workspace = { mode: "legacy" };
+    } else if (row.workspace_mode === "shared-directory") {
+      if (
+        row.shared_host_id === null ||
+        row.shared_root_path === null ||
+        bindings.length < 2 ||
+        bindings.some((binding) => binding.hostId !== row.shared_host_id || binding.path === null)
+      ) {
+        throw new Error(`initiative ${row.id} has incomplete shared-directory workspace state`);
+      }
+      workspace = {
+        mode: "shared-directory",
+        hostId: row.shared_host_id,
+        rootPath: row.shared_root_path,
+      };
+    } else {
+      throw new Error(`initiative ${row.id} has unsupported workspace mode ${row.workspace_mode}`);
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      icon: row.icon,
+      description: row.description,
+      coordinatorThreadId: row.coordinator_thread_id,
+      workspaceProjectIds: bindings.map((binding) => binding.projectId),
+      workspace,
+      primaryEnvironmentId: row.primary_environment_id,
+      providerId: row.provider_id,
+      model: row.model,
+      reasoningLevel: row.reasoning_level,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      archivedAt: row.archived_at,
+    };
+  };
 
-  const workspaceMap = (): Map<string, string[]> => {
-    const map = new Map<string, string[]>();
+  const workspaceMap = (): Map<string, InitiativeWorkspaceBinding[]> => {
+    const map = new Map<string, InitiativeWorkspaceBinding[]>();
     for (const row of selectWorkspaces.all() as WorkspaceRow[]) {
-      const ids = map.get(row.initiative_id);
-      if (ids === undefined) map.set(row.initiative_id, [row.project_id]);
-      else ids.push(row.project_id);
+      const binding = { projectId: row.project_id, hostId: row.host_id, path: row.path };
+      const bindings = map.get(row.initiative_id);
+      if (bindings === undefined) map.set(row.initiative_id, [binding]);
+      else bindings.push(binding);
     }
     return map;
   };
 
-  const replaceWorkspaces = (initiativeId: string, projectIds: string[]): void => {
+  const replaceWorkspaces = (
+    initiativeId: string,
+    bindings: InitiativeWorkspaceBinding[],
+  ): void => {
     deleteWorkspaces.run(initiativeId);
-    projectIds.forEach((projectId, position) => {
-      insertWorkspace.run(initiativeId, projectId, position);
+    bindings.forEach((binding, position) => {
+      insertWorkspace.run(initiativeId, binding.projectId, position, binding.hostId, binding.path);
     });
   };
 
@@ -385,6 +470,7 @@ export function createInitiativeStore(db: Database): InitiativeStore {
 
   return {
     create(input) {
+      assertCreateWorkspace(input);
       const now = Date.now();
       db.transaction(() => {
         insertInitiative.run(
@@ -399,8 +485,11 @@ export function createInitiativeStore(db: Database): InitiativeStore {
           input.reasoningLevel,
           now,
           now,
+          input.workspace.mode,
+          input.workspace.mode === "shared-directory" ? input.workspace.hostId : null,
+          input.workspace.mode === "shared-directory" ? input.workspace.rootPath : null,
         );
-        replaceWorkspaces(input.id, input.workspaceProjectIds);
+        replaceWorkspaces(input.id, input.workspaceBindings);
       })();
       const created = this.get(input.id);
       if (created === null) throw new Error(`initiative ${input.id} failed to persist`);
@@ -432,6 +521,41 @@ export function createInitiativeStore(db: Database): InitiativeStore {
       );
     },
 
+    workspaceBindings(initiativeId) {
+      return workspaceMap().get(initiativeId) ?? [];
+    },
+
+    setPrimaryEnvironmentId(initiativeId, environmentId) {
+      if (environmentId.length === 0) {
+        throw new Error("primary environment id must not be empty");
+      }
+      const existing = this.get(initiativeId);
+      if (existing === null) throw new Error(`initiative ${initiativeId} not found`);
+      if (existing.workspace.mode !== "shared-directory") {
+        throw new Error("only shared-directory initiatives own a primary environment");
+      }
+      if (existing.primaryEnvironmentId !== null) {
+        if (existing.primaryEnvironmentId !== environmentId) {
+          throw new Error(
+            `initiative ${initiativeId} is already bound to environment ${existing.primaryEnvironmentId}`,
+          );
+        }
+        return existing;
+      }
+      db.prepare(
+        `UPDATE initiative SET primary_environment_id = ?, updated_at = ?
+          WHERE id = ? AND primary_environment_id IS NULL`,
+      ).run(environmentId, Date.now(), initiativeId);
+      const updated = this.get(initiativeId);
+      if (updated === null) throw new Error(`initiative ${initiativeId} failed to persist`);
+      if (updated.primaryEnvironmentId !== environmentId) {
+        throw new Error(
+          `initiative ${initiativeId} resolved a different primary environment concurrently`,
+        );
+      }
+      return updated;
+    },
+
     update(initiativeId, patch) {
       const existing = this.get(initiativeId);
       if (existing === null) throw new Error(`initiative ${initiativeId} not found`);
@@ -453,7 +577,25 @@ export function createInitiativeStore(db: Database): InitiativeStore {
           initiativeId,
         );
         if (patch.workspaceProjectIds !== undefined) {
-          replaceWorkspaces(initiativeId, patch.workspaceProjectIds);
+          if (existing.workspace.mode === "shared-directory") {
+            const unchanged =
+              patch.workspaceProjectIds.length === existing.workspaceProjectIds.length &&
+              patch.workspaceProjectIds.every(
+                (projectId, index) => projectId === existing.workspaceProjectIds[index],
+              );
+            if (!unchanged) {
+              throw new Error("shared-directory repository bindings are immutable");
+            }
+          } else {
+            replaceWorkspaces(
+              initiativeId,
+              patch.workspaceProjectIds.map((projectId) => ({
+                projectId,
+                hostId: null,
+                path: null,
+              })),
+            );
+          }
         }
       })();
       const updated = this.get(initiativeId);

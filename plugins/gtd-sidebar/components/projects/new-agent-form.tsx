@@ -56,6 +56,9 @@ export function NewAgentForm({
   );
   const personalProjectId = projects.find((project) => project.isPersonal)?.id ?? "";
   const boundProjectIds = initiative.workspaceProjectIds;
+  const sharedDirectory =
+    initiative.workspace.mode === "shared-directory" ? initiative.workspace : null;
+  const isSharedDirectory = sharedDirectory !== null;
   // Bound repos, or the personal project for a "from scratch" initiative —
   // the empty string stays out of Select values entirely (Radix rejects "").
   const workspaceOptions =
@@ -85,7 +88,7 @@ export function NewAgentForm({
   };
 
   useEffect(() => {
-    if (projectId === "") {
+    if (isSharedDirectory || projectId === "") {
       setEnvironments([]);
       return;
     }
@@ -94,6 +97,7 @@ export function NewAgentForm({
       .call("listInitiativeEnvironments", { projectId })
       .then((result) => {
         if (!cancelled) setEnvironments(result.environments);
+        return;
       })
       .catch(() => {
         if (!cancelled) setEnvironments([]);
@@ -101,7 +105,7 @@ export function NewAgentForm({
     return () => {
       cancelled = true;
     };
-  }, [projectId, rpc]);
+  }, [isSharedDirectory, projectId, rpc]);
 
   const canSubmit = prompt.trim() !== "" && projectId !== "" && !busy;
 
@@ -114,7 +118,7 @@ export function NewAgentForm({
         initiativeId: initiative.id,
         prompt: prompt.trim(),
         projectId,
-        environmentId,
+        ...(!isSharedDirectory ? { environmentId } : {}),
         providerId: model.providerId || null,
         model: model.model || null,
         reasoningLevel: model.reasoningLevel ?? null,
@@ -123,6 +127,7 @@ export function NewAgentForm({
         setPrompt("");
         threadActions.open(result.threadId);
         onLaunched?.(result.threadId);
+        return;
       })
       .catch((spawnError: unknown) =>
         setError(spawnError instanceof Error ? spawnError.message : "Could not start agent"),
@@ -142,66 +147,22 @@ export function NewAgentForm({
           className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/60 focus:border-ring"
         />
       </label>
-      <div className="flex flex-col gap-1 text-xs">
-        <span className="font-medium text-muted-foreground">Workspace</span>
-        <Select
-          value={projectId === "" ? NO_WORKSPACE : projectId}
-          onValueChange={(value) => {
-            if (value !== NO_WORKSPACE) selectWorkspace(value);
-          }}
-        >
-          <SelectTrigger className="h-8 w-full" aria-label="Workspace">
-            <SelectValue placeholder="Select workspace" />
-          </SelectTrigger>
-          <SelectContent>
-            {workspaceOptions.length === 0 ? (
-              <SelectItem value={NO_WORKSPACE} disabled>
-                No workspace found
-              </SelectItem>
-            ) : (
-              workspaceOptions.map((id) => (
-                <SelectItem key={id} value={id}>
-                  {projectNameById.get(id) ?? "Unknown project"}
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex flex-col gap-1 text-xs">
-        <span className="font-medium text-muted-foreground">Environment</span>
-        <Select
-          value={environmentId ?? DEFAULT_ENVIRONMENT}
-          onValueChange={(value) => setEnvironmentId(value === DEFAULT_ENVIRONMENT ? null : value)}
-        >
-          <SelectTrigger className="h-8 w-full" aria-label="Environment">
-            <SelectValue placeholder="Project default" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={DEFAULT_ENVIRONMENT}>Project default</SelectItem>
-            {environments.map((environment) => (
-              <SelectItem
-                key={environment.id}
-                value={environment.id}
-                disabled={environment.status !== "ready"}
-              >
-                {environmentLabel(environment)}
-                {environment.status === "ready" ? "" : ` (${environment.status})`}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex flex-col gap-1 text-xs">
-        <span className="font-medium text-muted-foreground">Model</span>
-        <ProviderModelPicker
-          value={model}
-          onChange={setModel}
-          {...(environmentId !== null
-            ? { routing: { kind: "environment" as const, environmentId } }
-            : {})}
-        />
-      </div>
+      <WorkspaceSelector
+        shared={isSharedDirectory}
+        projectId={projectId}
+        projectIds={workspaceOptions}
+        projectNameById={projectNameById}
+        onChange={selectWorkspace}
+      />
+      <AgentEnvironmentControls
+        sharedDirectory={sharedDirectory}
+        primaryEnvironmentId={initiative.primaryEnvironmentId}
+        environmentId={environmentId}
+        environments={environments}
+        onEnvironmentChange={setEnvironmentId}
+        model={model}
+        onModelChange={setModel}
+      />
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -218,5 +179,124 @@ export function NewAgentForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+function WorkspaceSelector({
+  shared,
+  projectId,
+  projectIds,
+  projectNameById,
+  onChange,
+}: {
+  shared: boolean;
+  projectId: string;
+  projectIds: readonly string[];
+  projectNameById: ReadonlyMap<string, string>;
+  onChange: (projectId: string) => void;
+}) {
+  const label = shared ? "Repository focus" : "Workspace";
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span className="font-medium text-muted-foreground">{label}</span>
+      <Select
+        value={projectId === "" ? NO_WORKSPACE : projectId}
+        onValueChange={(value) => {
+          if (value !== NO_WORKSPACE) onChange(value);
+        }}
+      >
+        <SelectTrigger className="h-8 w-full" aria-label={label}>
+          <SelectValue placeholder={shared ? "Select repository focus" : "Select workspace"} />
+        </SelectTrigger>
+        <SelectContent>
+          {projectIds.length === 0 ? (
+            <SelectItem value={NO_WORKSPACE} disabled>
+              No workspace found
+            </SelectItem>
+          ) : (
+            projectIds.map((id) => (
+              <SelectItem key={id} value={id}>
+                {projectNameById.get(id) ?? "Unknown project"}
+              </SelectItem>
+            ))
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function AgentEnvironmentControls({
+  sharedDirectory,
+  primaryEnvironmentId,
+  environmentId,
+  environments,
+  onEnvironmentChange,
+  model,
+  onModelChange,
+}: {
+  sharedDirectory: Extract<Initiative["workspace"], { mode: "shared-directory" }> | null;
+  primaryEnvironmentId: string | null;
+  environmentId: string | null;
+  environments: readonly InitiativeEnvironment[];
+  onEnvironmentChange: (environmentId: string | null) => void;
+  model: ExperimentalProviderModelPickerValue;
+  onModelChange: (model: ExperimentalProviderModelPickerValue) => void;
+}) {
+  const shared = sharedDirectory !== null;
+  const routing =
+    shared && primaryEnvironmentId !== null
+      ? { kind: "environment" as const, environmentId: primaryEnvironmentId }
+      : environmentId !== null
+        ? { kind: "environment" as const, environmentId }
+        : undefined;
+
+  return (
+    <>
+      {shared ? (
+        <p className="rounded-md border border-border bg-card p-2 text-2xs text-muted-foreground">
+          This agent reuses the project directory{" "}
+          <span className="break-all font-mono text-foreground">{sharedDirectory.rootPath}</span>.
+          The repository is its task focus, not a filesystem boundary. It can access everything
+          under the shared directory.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1 text-xs">
+          <span className="font-medium text-muted-foreground">Environment</span>
+          <Select
+            value={environmentId ?? DEFAULT_ENVIRONMENT}
+            onValueChange={(value) =>
+              onEnvironmentChange(value === DEFAULT_ENVIRONMENT ? null : value)
+            }
+          >
+            <SelectTrigger className="h-8 w-full" aria-label="Environment">
+              <SelectValue placeholder="Project default" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFAULT_ENVIRONMENT}>Project default</SelectItem>
+              {environments.map((environment) => (
+                <SelectItem
+                  key={environment.id}
+                  value={environment.id}
+                  disabled={environment.status !== "ready"}
+                >
+                  {environmentLabel(environment)}
+                  {environment.status === "ready" ? "" : ` (${environment.status})`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {shared && primaryEnvironmentId === null ? (
+        <output className="text-xs text-muted-foreground">
+          Workspace is still preparing. Start will wait for it to become ready.
+        </output>
+      ) : null}
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Model</span>
+        <ProviderModelPicker value={model} onChange={onModelChange} routing={routing} />
+      </div>
+    </>
   );
 }

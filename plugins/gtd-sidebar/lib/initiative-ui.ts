@@ -1,5 +1,5 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import type { Initiative } from "./initiative-types.ts";
+import type { Initiative, InitiativeWorkspace } from "./initiative-types.ts";
 import type {
   InitiativeSubscription,
   SubscriptionScheduleConfig,
@@ -165,6 +165,32 @@ export function workspaceSummary(
   return initiative.workspaceProjectIds
     .map((id) => projectNameById.get(id) ?? "Unknown project")
     .join(", ");
+}
+
+export type NewProjectWorkspaceMode = InitiativeWorkspace["mode"];
+
+/**
+ * Shared directory is the new multi-repository default. Scratch and
+ * single-repository projects keep the existing environment flow; an explicit
+ * multi-repository choice remains selected as repositories are added.
+ */
+export function resolveNewProjectWorkspaceMode(
+  preferredMode: NewProjectWorkspaceMode,
+  selectedRepositoryCount: number,
+): NewProjectWorkspaceMode {
+  return selectedRepositoryCount >= 2 ? preferredMode : "legacy";
+}
+
+/** Request generations let a user edit invalidate a pending preview response. */
+export function createLatestRequestGuard() {
+  let current = 0;
+  return {
+    begin: () => ++current,
+    invalidate: () => {
+      current += 1;
+    },
+    isCurrent: (request: number) => request === current,
+  };
 }
 
 /**

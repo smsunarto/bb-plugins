@@ -14,7 +14,9 @@ import {
   workspaceSummary,
   eventTargetsDoc,
   eventTargetsInitiative,
+  createLatestRequestGuard,
   resolveDocRead,
+  resolveNewProjectWorkspaceMode,
 } from "../lib/initiative-ui.ts";
 import type { Initiative } from "../lib/initiative-types.ts";
 import type { InitiativeSubscription } from "../lib/initiative-subscriptions.ts";
@@ -59,6 +61,7 @@ function initiative(
     description: "",
     coordinatorThreadId,
     workspaceProjectIds: [],
+    workspace: { mode: "legacy" },
     primaryEnvironmentId: null,
     providerId: null,
     model: null,
@@ -240,6 +243,34 @@ describe("labels", () => {
       workspaceSummary(initiative("i", "c", { workspaceProjectIds: ["p1", "p2"] }), names),
       "bb, dotfiles",
     );
+  });
+});
+
+describe("new project workspace mode", () => {
+  it("defaults a new multi-repository selection to a shared directory", () => {
+    assert.equal(resolveNewProjectWorkspaceMode("shared-directory", 0), "legacy");
+    assert.equal(resolveNewProjectWorkspaceMode("shared-directory", 1), "legacy");
+    assert.equal(resolveNewProjectWorkspaceMode("shared-directory", 2), "shared-directory");
+  });
+
+  it("preserves an explicit separate-environments choice for multiple repositories", () => {
+    assert.equal(resolveNewProjectWorkspaceMode("legacy", 2), "legacy");
+    assert.equal(resolveNewProjectWorkspaceMode("legacy", 4), "legacy");
+  });
+
+  it("invalidates pending directory previews when the user edits the machine or path", () => {
+    const requests = createLatestRequestGuard();
+    const pendingSuggestedDirectory = requests.begin();
+
+    requests.invalidate();
+    assert.equal(requests.isCurrent(pendingSuggestedDirectory), false);
+
+    const pendingMachineValidation = requests.begin();
+    requests.invalidate();
+    assert.equal(requests.isCurrent(pendingMachineValidation), false);
+
+    const currentValidation = requests.begin();
+    assert.equal(requests.isCurrent(currentValidation), true);
   });
 });
 

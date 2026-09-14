@@ -46,6 +46,68 @@ export const SUBSCRIPTIONS_CHANNEL = "initiative-subscriptions";
 
 export type InitiativeRole = "coordinator" | "agent";
 
+/** Where every thread belonging to an initiative runs. */
+export type InitiativeWorkspace =
+  | { mode: "legacy" }
+  | {
+      mode: "shared-directory";
+      /** One persistent BB machine containing every selected checkout. */
+      hostId: string;
+      /** Canonical existing directory that contains every selected checkout. */
+      rootPath: string;
+    };
+
+/** Canonical checkout snapshot stored on the existing ordered binding row. */
+export interface InitiativeWorkspaceBinding {
+  projectId: string;
+  hostId: string | null;
+  path: string | null;
+}
+
+export type SharedDirectoryPreviewErrorCode =
+  | "not-enough-repositories"
+  | "too-many-repositories"
+  | "duplicate-project"
+  | "project-not-found"
+  | "source-missing"
+  | "source-ambiguous"
+  | "cross-host"
+  | "duplicate-path"
+  | "root-missing"
+  | "root-not-directory"
+  | "invalid-path"
+  | "unsafe-root"
+  | "outside-root"
+  | "host-unavailable";
+
+export interface SharedDirectoryPreviewError {
+  code: SharedDirectoryPreviewErrorCode;
+  message: string;
+  projectId?: string;
+  path?: string;
+}
+
+export interface SharedDirectoryLocation {
+  hostId: string;
+  hostName: string;
+  rootPath: string;
+}
+
+export interface SharedDirectoryRepositoryPreview {
+  projectId: string;
+  name: string;
+  hostId: string | null;
+  path: string | null;
+}
+
+export interface SharedDirectoryWorkspacePreview {
+  eligible: boolean;
+  suggested: SharedDirectoryLocation | null;
+  selection: SharedDirectoryLocation | null;
+  repositories: SharedDirectoryRepositoryPreview[];
+  errors: SharedDirectoryPreviewError[];
+}
+
 export interface Initiative {
   id: string;
   name: string;
@@ -58,6 +120,8 @@ export interface Initiative {
    * coordinator runs under. Empty = "from scratch" (personal project).
    */
   workspaceProjectIds: string[];
+  /** Existing rows and omitted create inputs use legacy per-repository environments. */
+  workspace: InitiativeWorkspace;
   /** Environment the coordinator was created against; null = repo default. */
   primaryEnvironmentId: string | null;
   providerId: string | null;
@@ -185,6 +249,7 @@ export const INITIATIVE_TOOL_NAMES = {
   contextRead: "initiative_context_read",
   contextWrite: "initiative_context_write",
   contextDelete: "initiative_context_delete",
+  workspaceInfo: "initiative_workspace_info",
   subscriptionList: "initiative_subscription_list",
   subscriptionUpsert: "initiative_subscription_upsert",
   subscriptionDelete: "initiative_subscription_delete",

@@ -8,9 +8,14 @@ import {
   type ExperimentalProviderModelPickerValue,
   type PluginNavPanelProps,
 } from "@get-bb/plugin-sdk/app";
-import type { Initiative } from "@/lib/initiative-types";
+import type { Initiative, InitiativeWorkspace } from "@/lib/initiative-types";
 import type { initiativeRpcContract } from "@/lib/initiative-rpc";
-import { projectDescendantCount, workspaceSummary } from "@/lib/initiative-ui";
+import {
+  projectDescendantCount,
+  resolveNewProjectWorkspaceMode,
+  workspaceSummary,
+  type NewProjectWorkspaceMode,
+} from "@/lib/initiative-ui";
 import { useInitiatives } from "@/hooks/use-initiatives";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,6 +28,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { InitiativeIcon, InitiativeIconPicker } from "@/components/projects/icons";
+import {
+  SharedDirectoryPreview,
+  useSharedDirectoryPreview,
+  type SharedDirectoryPreviewController,
+} from "@/components/projects/shared-directory";
 
 const DEFAULT_ENVIRONMENT = "__default__";
 
@@ -178,6 +188,8 @@ function CreateProjectForm() {
   const [icon, setIcon] = useState("folder");
   const [description, setDescription] = useState("");
   const [workspaceIds, setWorkspaceIds] = useState<readonly string[]>([]);
+  const [preferredWorkspaceMode, setPreferredWorkspaceMode] =
+    useState<NewProjectWorkspaceMode>("shared-directory");
   const [environmentId, setEnvironmentId] = useState<string | null>(null);
   const [environments, setEnvironments] = useState<
     readonly { id: string; name: string | null; status: string }[]
@@ -190,10 +202,16 @@ function CreateProjectForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const workspaceMode = resolveNewProjectWorkspaceMode(preferredWorkspaceMode, workspaceIds.length);
+  const sharedDirectory = useSharedDirectoryPreview({
+    workspaceProjectIds: workspaceIds,
+    enabled: workspaceMode === "shared-directory",
+  });
+  const selectedWorkspaceIds = useMemo(() => new Set(workspaceIds), [workspaceIds]);
   const primaryWorkspaceId = workspaceIds[0] ?? null;
   // Coordinator environments come from the primary bound repo; scratch
   // initiatives run on the personal project's default environment.
-  const environmentsProjectId = primaryWorkspaceId;
+  const environmentsProjectId = workspaceMode === "legacy" ? primaryWorkspaceId : null;
   useEffect(() => {
     setEnvironmentId(null);
     setEnvironments([]);
@@ -203,6 +221,7 @@ function CreateProjectForm() {
       .call("listInitiativeEnvironments", { projectId: environmentsProjectId })
       .then((result) => {
         if (!cancelled) setEnvironments(result.environments);
+        return;
       })
       .catch(() => {
         if (!cancelled) setEnvironments([]);
@@ -218,9 +237,22 @@ function CreateProjectForm() {
     );
   };
 
-  const canSubmit = name.trim() !== "" && !busy;
+  const canSubmit =
+    name.trim() !== "" &&
+    !busy &&
+    (workspaceMode === "legacy" || sharedDirectory.confirmedDirectory !== null);
   const submit = () => {
     if (!canSubmit) return;
+    let workspace: InitiativeWorkspace = { mode: "legacy" };
+    if (workspaceMode === "shared-directory") {
+      const confirmedDirectory = sharedDirectory.confirmedDirectory;
+      if (confirmedDirectory === null) return;
+      workspace = {
+        mode: "shared-directory",
+        hostId: confirmedDirectory.hostId,
+        rootPath: confirmedDirectory.rootPath,
+      };
+    }
     setBusy(true);
     setError(null);
     rpc
@@ -229,7 +261,8 @@ function CreateProjectForm() {
         icon,
         ...(description.trim() !== "" ? { description: description.trim() } : {}),
         workspaceProjectIds: [...workspaceIds],
-        environmentId,
+        workspace,
+        ...(workspaceMode === "legacy" ? { environmentId } : {}),
         providerId: model.providerId || null,
         model: model.model || null,
         reasoningLevel: model.reasoningLevel ?? null,
@@ -276,8 +309,8 @@ function CreateProjectForm() {
           />
         </label>
         <fieldset className="flex flex-col gap-1.5 text-xs">
-          <legend className="mb-1 font-medium text-muted-foreground">Workspace</legend>
-          <ul className="flex flex-col gap-1" aria-label="Workspaces">
+          <legend className="mb-1 font-medium text-muted-foreground">Repositories</legend>
+          <ul className="flex flex-col gap-1" aria-label="Repositories">
             <li>
               <label
                 className={cn(
@@ -301,14 +334,14 @@ function CreateProjectForm() {
                   <label
                     className={cn(
                       "flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs",
-                      workspaceIds.includes(project.id)
+                      selectedWorkspaceIds.has(project.id)
                         ? "border-ring bg-accent/50"
                         : "border-border",
                     )}
                   >
                     <input
                       type="checkbox"
-                      checked={workspaceIds.includes(project.id)}
+                      checked={selectedWorkspaceIds.has(project.id)}
                       onChange={() => toggleWorkspace(project.id)}
                       className="accent-primary"
                     />
@@ -318,14 +351,106 @@ function CreateProjectForm() {
               ))}
           </ul>
         </fieldset>
+        <CreateEnvironmentControls
+          repositoryCount={workspaceIds.length}
+          workspaceMode={workspaceMode}
+          onWorkspaceModeChange={setPreferredWorkspaceMode}
+          sharedDirectory={sharedDirectory}
+          environmentId={environmentId}
+          environments={environments}
+          environmentDisabled={environmentsProjectId === null}
+          onEnvironmentChange={setEnvironmentId}
+          model={model}
+          onModelChange={setModel}
+        />
+        {error !== null ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex justify-end">
+          <Button size="sm" disabled={!canSubmit} onClick={submit}>
+            <Icon
+              name={busy ? "Loading" : "Check"}
+              className={cn("size-3.5", busy && "animate-spin")}
+              aria-hidden
+            />
+            {busy ? "Creating…" : "Create Project"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface CreateEnvironment {
+  id: string;
+  name: string | null;
+  status: string;
+}
+
+function CreateEnvironmentControls({
+  repositoryCount,
+  workspaceMode,
+  onWorkspaceModeChange,
+  sharedDirectory,
+  environmentId,
+  environments,
+  environmentDisabled,
+  onEnvironmentChange,
+  model,
+  onModelChange,
+}: {
+  repositoryCount: number;
+  workspaceMode: NewProjectWorkspaceMode;
+  onWorkspaceModeChange: (mode: NewProjectWorkspaceMode) => void;
+  sharedDirectory: SharedDirectoryPreviewController;
+  environmentId: string | null;
+  environments: readonly CreateEnvironment[];
+  environmentDisabled: boolean;
+  onEnvironmentChange: (environmentId: string | null) => void;
+  model: ExperimentalProviderModelPickerValue;
+  onModelChange: (model: ExperimentalProviderModelPickerValue) => void;
+}) {
+  const routing =
+    workspaceMode === "shared-directory" && sharedDirectory.confirmedDirectory !== null
+      ? { kind: "host" as const, hostId: sharedDirectory.confirmedDirectory.hostId }
+      : environmentId === null
+        ? undefined
+        : { kind: "environment" as const, environmentId };
+
+  return (
+    <>
+      {repositoryCount >= 2 ? (
+        <fieldset className="flex flex-col gap-1.5 text-xs">
+          <legend className="font-medium text-muted-foreground">Environment</legend>
+          <WorkspaceModeOption
+            mode="shared-directory"
+            selected={workspaceMode === "shared-directory"}
+            title="Shared directory"
+            description="Reuse one existing common directory for the coordinator and every agent."
+            onChange={onWorkspaceModeChange}
+          />
+          <WorkspaceModeOption
+            mode="legacy"
+            selected={workspaceMode === "legacy"}
+            title="Separate environments"
+            description="Keep the original flow where agents choose a repository environment."
+            onChange={onWorkspaceModeChange}
+          />
+        </fieldset>
+      ) : null}
+      {workspaceMode === "shared-directory" ? (
+        <SharedDirectoryPreview controller={sharedDirectory} editable />
+      ) : (
         <div className="flex flex-col gap-1.5 text-xs">
           <span className="font-medium text-muted-foreground">Environment</span>
           <Select
             value={environmentId ?? DEFAULT_ENVIRONMENT}
             onValueChange={(value) =>
-              setEnvironmentId(value === DEFAULT_ENVIRONMENT ? null : value)
+              onEnvironmentChange(value === DEFAULT_ENVIRONMENT ? null : value)
             }
-            disabled={environmentsProjectId === null}
+            disabled={environmentDisabled}
           >
             <SelectTrigger className="h-8 w-full" aria-label="Environment">
               <SelectValue placeholder="Project default" />
@@ -345,32 +470,48 @@ function CreateProjectForm() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1.5 text-xs">
-          <span className="font-medium text-muted-foreground">Model</span>
-          <ProviderModelPicker
-            value={model}
-            onChange={setModel}
-            {...(environmentId !== null
-              ? { routing: { kind: "environment" as const, environmentId } }
-              : {})}
-          />
-        </div>
-        {error !== null ? (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <div className="flex justify-end">
-          <Button size="sm" disabled={!canSubmit} onClick={submit}>
-            <Icon
-              name={busy ? "Loading" : "Check"}
-              className={cn("size-3.5", busy && "animate-spin")}
-              aria-hidden
-            />
-            {busy ? "Creating…" : "Create Project"}
-          </Button>
-        </div>
+      )}
+      <div className="flex flex-col gap-1.5 text-xs">
+        <span className="font-medium text-muted-foreground">Model</span>
+        <ProviderModelPicker value={model} onChange={onModelChange} routing={routing} />
       </div>
-    </div>
+    </>
+  );
+}
+
+function WorkspaceModeOption({
+  mode,
+  selected,
+  title,
+  description,
+  onChange,
+}: {
+  mode: NewProjectWorkspaceMode;
+  selected: boolean;
+  title: string;
+  description: string;
+  onChange: (mode: NewProjectWorkspaceMode) => void;
+}) {
+  return (
+    <label
+      aria-label={`Use ${title.toLowerCase()}`}
+      className={cn(
+        "flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2",
+        selected ? "border-ring bg-accent/50" : "border-border",
+      )}
+    >
+      <input
+        type="radio"
+        name="project-workspace-mode"
+        value={mode}
+        checked={selected}
+        onChange={() => onChange(mode)}
+        className="mt-0.5 accent-primary"
+      />
+      <span className="min-w-0">
+        <span className="block font-medium">{title}</span>
+        <span className="block text-2xs text-muted-foreground">{description}</span>
+      </span>
+    </label>
   );
 }

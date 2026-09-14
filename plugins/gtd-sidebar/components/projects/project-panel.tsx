@@ -24,6 +24,10 @@ import { FadingText } from "@/components/inbox/thread-details";
 import { InitiativeIcon, InitiativeIconPicker } from "@/components/projects/icons";
 import { ArchiveProjectDialog } from "@/components/projects/archive-project-dialog";
 import { NewAgentForm } from "@/components/projects/new-agent-form";
+import {
+  SharedDirectoryPreview,
+  useSharedDirectoryPreview,
+} from "@/components/projects/shared-directory";
 import { ContextDocs } from "@/components/projects/context-docs";
 import { SubscriptionList } from "@/components/projects/subscriptions";
 
@@ -161,8 +165,16 @@ function OverviewTab({
       />
       <dl className="flex flex-col gap-1.5 text-xs">
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">Workspace</dt>
+          <dt className="text-muted-foreground">Repositories</dt>
           <dd className="truncate text-right">{workspaceSummary(initiative, projectNameById)}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted-foreground">Environment</dt>
+          <dd className="text-right">
+            {initiative.workspace.mode === "shared-directory"
+              ? "Shared directory"
+              : "Separate environments"}
+          </dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Agents</dt>
@@ -173,6 +185,9 @@ function OverviewTab({
           <dd className="tabular-nums">{subscriptions.enabledCount}</dd>
         </div>
       </dl>
+      {initiative.workspace.mode === "shared-directory" ? (
+        <SharedDirectoryOverview initiative={initiative} />
+      ) : null}
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -196,6 +211,19 @@ function OverviewTab({
         onOpenChange={setArchiveOpen}
       />
     </div>
+  );
+}
+
+function SharedDirectoryOverview({ initiative }: { initiative: Initiative }) {
+  const workspace = initiative.workspace.mode === "shared-directory" ? initiative.workspace : null;
+  const preview = useSharedDirectoryPreview({
+    workspaceProjectIds: initiative.workspaceProjectIds,
+    enabled: workspace !== null,
+    initialDirectory: workspace,
+  });
+
+  return (
+    <SharedDirectoryPreview controller={preview} editable={false} fallbackDirectory={workspace} />
   );
 }
 

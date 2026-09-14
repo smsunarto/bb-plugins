@@ -2,19 +2,41 @@
 
 Projects give a native BB conversation a persistent coordinator, delegated agent threads, shared
 context, and subscriptions. GTD Sidebar must be loaded for project tools and subscription work to
-run.
+run. Shared-directory Projects require BB 0.43.1 or newer.
 
 ## Create a project
 
 1. Open **Projects** in the left sidebar and select **New project**.
 2. Enter a name. The icon and description are optional.
-3. Under **Workspace**, select one or more BB repository projects. Select **Start from scratch** to
-   use the personal project instead.
-4. Choose the coordinator's **Environment** and **Model**, then select **Create Project**.
+3. Under **Repositories**, select one or more BB repository projects. Select **Start from scratch**
+   to use the personal project instead.
+4. For a project with multiple repositories, keep **Shared directory** to let the coordinator and
+   every agent reuse one existing directory that contains all selected repository checkouts. Review
+   the machine, shared directory, and checkout paths. You can edit the directory and validate it
+   again before creating the project.
+5. Choose the coordinator's **Model**, then select **Create Project**.
 
-BB opens the project's coordinator as a normal conversation. The selected workspaces become the
-repositories available for delegated agents. The first selected workspace is the coordinator's
-primary workspace.
+BB opens the project's coordinator as a normal conversation. In shared-directory mode, BB creates
+one environment at the confirmed common directory. The coordinator and every delegated agent reuse
+that environment. Agents can access everything under the shared directory, including files outside
+the selected repositories. The selected repositories define the project's named work scope, and the
+first selected repository is the native BB project used for the coordinator and agents.
+
+The shared directory must already exist on one machine and contain the independent selected
+checkouts. GTD Sidebar does not create a subtree, linked worktrees, or branches. It rejects a root or
+home directory, repositories on different machines, duplicate canonical checkout roots, and a
+directory that does not contain every selected checkout. Legitimate nested repositories are
+allowed. If no valid common directory exists, the form reports the reason and does not silently
+choose another directory.
+
+The shared root and repository bindings are fixed after creation. If a saved checkout moves, restore
+it at the saved path or create a new Project for the new layout.
+
+**Separate environments** preserves the original project behavior. The coordinator uses the first
+selected repository's chosen or default environment, and each agent can use a selected repository's
+own environment. Existing projects keep this behavior unless they were created in shared-directory
+mode. A new multi-repository project defaults to **Shared directory**. Scratch and single-repository
+projects default to **Separate environments**.
 
 ## Delegate work
 
@@ -22,9 +44,16 @@ Ask the coordinator to split an outcome into bounded tasks. It creates child thr
 status, and can steer them as the work changes.
 
 To start a task yourself, open **Agents**, select **New agent**, and provide the **Task**,
-**Workspace**, **Environment**, and **Model**. Select **Start agent**. An agent can run only in a
-workspace bound to the project. Open an agent row to inspect its conversation, or use **Reference
-in chat** to add it to the coordinator's composer.
+**Repository focus**, and **Model**. Select **Start agent**. In a shared-directory project, the
+repository is a task focus, not a sandbox boundary. The agent reuses the project's shared directory
+and can access everything under it. In a separate-environments project, also choose the agent's
+**Environment**. An agent can select only a repository bound to the project. Open an agent row to
+inspect its conversation, or use **Reference in chat** to add it to the coordinator's composer.
+
+Run GitButler commands from the checkout they apply to. For example, use `but status` in each
+selected repository rather than treating the shared parent directory as one Git repository. BB's
+thread has one native project and environment; BB does not provide a combined multi-repository Git
+view. Use the terminal or each checkout's GitButler view to inspect and manage its changes.
 
 ## Share context
 

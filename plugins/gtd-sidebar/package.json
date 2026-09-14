@@ -26,8 +26,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.40.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.24"
+    "bb": ">=0.43.1 <1.0.0",
+    "bbPluginSdk": ">=0.4.87"
   },
   "bb": {
     "name": "GTD Sidebar",
@@ -82,7 +82,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.84",
+    "@get-bb/plugin-sdk": "0.4.87",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",
@@ -104,6 +104,7 @@
     "hono": "^4.11.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
     "typescript": "^7.0.0",
     "vaul": "^1.1.2"

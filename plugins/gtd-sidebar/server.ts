@@ -20,7 +20,10 @@ import { createThreadNester } from "./lib/nest-thread.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
-import { INITIATIVE_MIGRATIONS } from "./lib/initiative-store.ts";
+import {
+  INITIATIVE_MIGRATIONS,
+  INITIATIVE_SHARED_DIRECTORY_MIGRATIONS,
+} from "./lib/initiative-store.ts";
 import { createInitiativeRuntime } from "./lib/initiative-runtime.ts";
 import { registerInitiativeRpc } from "./lib/initiative-rpc.ts";
 import { INITIATIVE_SUBSCRIPTION_MIGRATIONS } from "./lib/initiative-subscriptions.ts";
@@ -241,6 +244,7 @@ export default function plugin(bb: BbPluginApi) {
     ...migrations,
     ...INITIATIVE_MIGRATIONS,
     ...INITIATIVE_SUBSCRIPTION_MIGRATIONS,
+    ...INITIATIVE_SHARED_DIRECTORY_MIGRATIONS,
   ]);
 
   const initiatives = createInitiativeRuntime(bb, {

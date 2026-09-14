@@ -6,7 +6,11 @@ import { describe, it } from "node:test";
 import { Database } from "bun:sqlite";
 import type { Database as BetterSqliteDatabase } from "better-sqlite3";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { createInitiativeStore, INITIATIVE_MIGRATIONS } from "../lib/initiative-store.ts";
+import {
+  createInitiativeStore,
+  INITIATIVE_MIGRATIONS,
+  INITIATIVE_SHARED_DIRECTORY_MIGRATIONS,
+} from "../lib/initiative-store.ts";
 import { createInitiativeService } from "../lib/initiative-service.ts";
 import { registerInitiativeAgents } from "../lib/initiative-tools.ts";
 import { INITIATIVE_TOOL_NAMES } from "../lib/initiative-types.ts";
@@ -30,21 +34,32 @@ function makeDb(): BetterSqliteDatabase {
     close: () => inner.close(),
   };
   for (const statement of INITIATIVE_MIGRATIONS) db.exec(statement);
+  for (const statement of INITIATIVE_SHARED_DIRECTORY_MIGRATIONS) db.exec(statement);
   return db as unknown as BetterSqliteDatabase;
 }
 
 const N = INITIATIVE_TOOL_NAMES;
 
-function makeToolsHarness() {
+function makeToolsHarness(
+  options: { sharedBindings?: { projectId: string; path: string }[] } = {},
+) {
   const store = createInitiativeStore(makeDb());
+  const sharedBindings = options.sharedBindings;
   const initiative = store.create({
     id: "init_t",
     name: "ToolsProject",
     icon: "T",
     description: "brief",
     coordinatorThreadId: "thr_coord",
-    workspaceProjectIds: ["proj_a"],
-    primaryEnvironmentId: null,
+    workspace:
+      sharedBindings === undefined
+        ? { mode: "legacy" }
+        : { mode: "shared-directory", hostId: "host_a", rootPath: "/shared" },
+    workspaceBindings:
+      sharedBindings === undefined
+        ? [{ projectId: "proj_a", hostId: null, path: null }]
+        : sharedBindings.map((binding) => ({ ...binding, hostId: "host_a" })),
+    primaryEnvironmentId: sharedBindings === undefined ? null : "env_shared",
     providerId: null,
     model: null,
     reasoningLevel: null,
@@ -109,7 +124,18 @@ function makeToolsHarness() {
       async list() {
         return [{ id: "proj_personal", kind: "personal" }];
       },
+      async get() {
+        throw new Error("not used");
+      },
     } as never,
+    hosts: {
+      async get() {
+        return { status: "connected" };
+      },
+    } as never,
+    inspectSharedDirectory: async () => {
+      throw new Error("not used");
+    },
     pluginId: "gtd-sidebar",
     publish: () => {},
     log: { info() {}, warn() {}, error() {} },
@@ -125,9 +151,9 @@ function makeToolsHarness() {
   >();
   const configureCallbacks: ((ctx: {
     thread: { id: string; parentThreadId: string | null };
+    pluginMetadata: Record<string, unknown>;
     origin: { pluginId: string | null };
-  }) => { tools: string[] })[] = [];
-  const instructionCallbacks: ((ctx: { threadId: string }) => string | null)[] = [];
+  }) => { tools: string[]; instructions?: string })[] = [];
 
   const bb = {
     agents: {
@@ -137,9 +163,7 @@ function makeToolsHarness() {
       configure(cb: never) {
         configureCallbacks.push(cb as never);
       },
-      contributeInstructions(cb: never) {
-        instructionCallbacks.push(cb as never);
-      },
+      contributeInstructions() {},
     },
     ui: {
       registerMentionProvider() {},
@@ -181,7 +205,6 @@ function makeToolsHarness() {
     tools,
     rows,
     configureCallbacks,
-    instructionCallbacks,
     engineCalls,
     engineDeletes,
     subscriptionRows,
@@ -189,14 +212,13 @@ function makeToolsHarness() {
       threadId: string,
       parentThreadId: string | null,
       originPluginId: string | null = "gtd-sidebar",
+      pluginMetadata: Record<string, unknown> = {},
     ) {
       return configureCallbacks[0]?.({
         thread: { id: threadId, parentThreadId },
+        pluginMetadata,
         origin: { pluginId: originPluginId },
       });
-    },
-    instructionsFor(threadId: string): string | null {
-      return instructionCallbacks[0]?.({ threadId }) ?? null;
     },
   };
 }
@@ -217,6 +239,7 @@ describe("initiative agent tools — availability and instructions", () => {
         N.contextRead,
         N.contextWrite,
         N.contextDelete,
+        N.workspaceInfo,
         N.subscriptionList,
         N.subscriptionUpsert,
         N.subscriptionDelete,
@@ -232,7 +255,7 @@ describe("initiative agent tools — availability and instructions", () => {
     const selection = h.configureFor("thr_child", initiative.coordinatorThreadId);
     assert.deepEqual(
       new Set(selection?.tools),
-      new Set([N.contextList, N.contextRead, N.contextWrite, N.contextDelete]),
+      new Set([N.contextList, N.contextRead, N.contextWrite, N.contextDelete, N.workspaceInfo]),
     );
   });
 
@@ -242,17 +265,17 @@ describe("initiative agent tools — availability and instructions", () => {
     assert.deepEqual(selection?.tools, []);
   });
 
-  it("contributes coordinator instructions naming the project and its tools", () => {
+  it("configures coordinator instructions naming the project and its tools", () => {
     const h = makeToolsHarness();
     const initiative = h.initiative;
-    const text = h.instructionsFor(initiative.coordinatorThreadId);
+    const text = h.configureFor(initiative.coordinatorThreadId, null)?.instructions ?? null;
     assert.ok(text !== null && text.includes("ToolsProject"));
     assert.ok(text.includes(N.spawnAgent));
     assert.ok(text.includes(N.contextWrite));
     assert.ok((text?.length ?? 0) <= 4096);
   });
 
-  it("contributes agent instructions to an indexed descendant", async () => {
+  it("configures agent instructions for an indexed descendant", async () => {
     const h = makeToolsHarness();
     const initiative = h.initiative;
     // The thread row exists before its first dispatch (core creates it
@@ -271,9 +294,49 @@ describe("initiative agent tools — availability and instructions", () => {
       inputBlocks: [{ type: "text", text: "task" }],
     });
     assert.equal(decision.action, "proceed");
-    const text = h.instructionsFor("thr_kid");
+    const text = h.configureFor("thr_kid", initiative.coordinatorThreadId)?.instructions ?? null;
     assert.ok(text !== null && text.includes("ToolsProject"));
     assert.ok(text.includes(N.contextRead));
+  });
+
+  it("keeps required shared scope rules intact for 32 long repository paths", () => {
+    const h = makeToolsHarness({
+      sharedBindings: Array.from({ length: 32 }, (_, index) => ({
+        projectId: `proj_${index}`,
+        path: `/shared/${"very-long-directory-name/".repeat(12)}repo-${index}`,
+      })),
+    });
+    const text = h.configureFor(h.initiative.coordinatorThreadId, null)?.instructions ?? "";
+    assert.ok(text.length <= 4_000);
+    assert.ok(text.includes(N.workspaceInfo));
+    assert.ok(text.includes("Search and edit only the exact checkout paths"));
+    assert.ok(text.includes("--no-ignore"));
+    assert.ok(text.includes("(cd PATH && but status)"));
+    assert.ok(!text.includes("Selected repository snapshots:"));
+  });
+
+  it("uses validated spawn metadata as the shared agent's repository focus", () => {
+    const h = makeToolsHarness({
+      sharedBindings: [
+        { projectId: "proj_a", path: "/shared/a" },
+        { projectId: "proj_b", path: "/shared/b" },
+      ],
+    });
+    h.service.noteThreadCreated({
+      id: "thr_shared_child",
+      parentThreadId: h.initiative.coordinatorThreadId,
+    });
+    const focused =
+      h.configureFor("thr_shared_child", h.initiative.coordinatorThreadId, "gtd-sidebar", {
+        focusProjectId: "proj_b",
+      })?.instructions ?? "";
+    assert.ok(focused.includes('repository focus is project "proj_b"'));
+
+    const untrusted =
+      h.configureFor("thr_shared_child", h.initiative.coordinatorThreadId, "gtd-sidebar", {
+        focusProjectId: "proj_unbound",
+      })?.instructions ?? "";
+    assert.ok(untrusted.includes('repository focus is project "proj_a"'));
   });
 
   it("context write tool requires expectedRevision and honors CAS", async () => {
@@ -316,7 +379,8 @@ describe("initiative agent tools — availability and instructions", () => {
       icon: "",
       description: "",
       coordinatorThreadId: "thr_other_coord",
-      workspaceProjectIds: [],
+      workspace: { mode: "legacy" },
+      workspaceBindings: [],
       primaryEnvironmentId: null,
       providerId: null,
       model: null,

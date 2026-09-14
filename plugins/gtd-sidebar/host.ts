@@ -6,6 +6,7 @@ import { toAiServiceFailure } from "@bb-plugins/codex-inference/failure";
 import { parseGitButlerBranchSummary } from "./lib/gitbutler.ts";
 import { execGitHubCiRuns, execGitHubPrActivity } from "./lib/github-host.ts";
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
+import { inspectSharedDirectory } from "./lib/shared-directory-host.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,6 +35,7 @@ export default experimental_defineHostEntry({
     async githubPrActivity(input, context) {
       return execGitHubPrActivity(input, context.signal);
     },
+    inspectSharedDirectory,
     "ai.inference.complete": async (input) => {
       try {
         return await completeCodexInference(input);
