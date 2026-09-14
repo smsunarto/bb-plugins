@@ -678,6 +678,10 @@ function useRowCommands({
         else threadActions.open(command.threadId, { split: command.split });
         onNavigate();
         return;
+      case "open-in-split":
+        threadActions.open(command.threadId, { split: true });
+        onNavigate();
+        return;
       case "settle":
         settle(command.threadId);
         return;
@@ -690,6 +694,9 @@ function useRowCommands({
         return;
       case "pin":
         void threadActions.setPinned(command.threadId, command.pinned);
+        return;
+      case "set-read":
+        void threadActions.setRead(command.threadId, command.read);
         return;
       case "request-delete":
         threadActions.requestDelete(command.threadId);

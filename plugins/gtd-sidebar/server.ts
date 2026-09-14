@@ -22,6 +22,7 @@ import {
 } from "./lib/initiative-store.ts";
 import { createInitiativeRuntime } from "./lib/initiative-runtime.ts";
 import { registerInitiativeRpc } from "./lib/initiative-rpc.ts";
+import { registerThreadMenuRpc } from "./lib/thread-menu-rpc.ts";
 import { INITIATIVE_SUBSCRIPTION_MIGRATIONS } from "./lib/initiative-subscriptions.ts";
 
 // Append-only: bb applies these by position, so the retired `settled_at` and
@@ -291,6 +292,7 @@ export default async function plugin(bb: BbPluginApi) {
     getSlackToken: async () => (await settings.get()).slackBotToken || undefined,
   });
   registerInitiativeRpc(bb, initiatives);
+  registerThreadMenuRpc(bb);
 
   const readAll = (): StoredLifecycleRow[] =>
     (

@@ -4,6 +4,9 @@
 
 ### Minor Changes
 
+- Restore bb's native thread actions in the desktop right-click menu. Settle and
+  Snooze stay first, and Archive stays excluded. Add Open in split, Copy thread
+  link, Mark read/unread, Move to section, and Rename alongside Pin and Delete.
 - Every shelf now groups its threads by project once more than one project is in
   view. A 26px header names the project, folds the group, and shows
   `needs-you / total` while folded; hovering it reveals a new-thread button for

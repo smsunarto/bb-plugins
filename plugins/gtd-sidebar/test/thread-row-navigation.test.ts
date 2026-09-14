@@ -29,7 +29,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     );
     assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
-  });
+  }, 30_000);
 } else {
   const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
     JSDOM: new (
@@ -56,7 +56,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     unobserve() {}
     disconnect() {}
   };
-  const { act, cleanup, configure, fireEvent, screen, within } =
+  const { act, cleanup, configure, fireEvent, screen, waitFor, within } =
     await import("@testing-library/react");
   const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
   installTestPluginRuntime();
@@ -202,6 +202,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       open: mock<PluginSidebarThreadActions["open"]>(() => {}),
       archive: mock<PluginSidebarThreadActions["archive"]>(() => {}),
       setPinned: mock<PluginSidebarThreadActions["setPinned"]>(async () => {}),
+      setRead: mock<PluginSidebarThreadActions["setRead"]>(async () => {}),
+      rename: mock<PluginSidebarThreadActions["rename"]>(async () => {}),
       requestDelete: mock<PluginSidebarThreadActions["requestDelete"]>(() => {}),
     };
   }
@@ -257,6 +259,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     };
     const slot = renderSlot({ component: Inbox }, current, {
       settings: { compactThreads, localMachineId },
+      rpc: { listThreadMenuSections: () => ({ sections: [] }) } as never,
     });
     return {
       slot,
@@ -1058,6 +1061,87 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(oldLifecycle.unsnooze.mock.calls.length, 0);
       assert.equal(oldRestore.mock.calls.length, 0);
       assert.equal(oldNavigate.mock.calls.length, 0);
+    });
+
+    it("keeps GTD actions first and restores native actions for the clicked row", async () => {
+      const currentActions = actions();
+      const host = { ...hostState([thread("a"), thread("b")]), actions: currentActions };
+      const view = mount(host, { activeThreadId: "b" });
+      fireEvent.contextMenu(row(view.slot, "a"));
+      await act(async () => {});
+      assert.deepEqual(
+        screen.getAllByRole("menuitem").map((item) => item.textContent),
+        [
+          "Settle",
+          "Snooze",
+          "Open in split",
+          "Copy thread link",
+          "Mark unread",
+          "Pin",
+          "Rename",
+          "Delete",
+        ],
+      );
+      assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
+      assert.deepEqual(currentActions.open.mock.calls, [["a", { split: true }]]);
+      fireEvent.contextMenu(row(view.slot, "a"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
+      assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
+
+      const writeText = mock(async (_text: string) => {});
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      fireEvent.contextMenu(row(view.slot, "a"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Copy thread link" }));
+      await act(async () => {});
+      assert.deepEqual(writeText.mock.calls, [["http://localhost/projects/one/threads/a"]]);
+
+      fireEvent.contextMenu(row(view.slot, "a"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const title = await screen.findByRole("textbox", { name: "Thread title" });
+      fireEvent.change(title, { target: { value: "  New title  " } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
+      assert.deepEqual(currentActions.rename.mock.calls, [["a", "New title"]]);
+    });
+
+    it("marks an unread row read without acting on the selected thread", async () => {
+      const currentActions = actions();
+      const view = mount(
+        { ...hostState([thread("a", { isUnread: true }), thread("b")]), actions: currentActions },
+        { activeThreadId: "b" },
+      );
+      fireEvent.contextMenu(row(view.slot, "a"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mark read" }));
+      assert.deepEqual(currentActions.setRead.mock.calls, [["a", true]]);
+      await act(async () => {});
+    });
+
+    it("opens settled threads in a split from the menu and cancels rename without saving", async () => {
+      const currentActions = actions();
+      const host = hostState([thread("selected")]);
+      host.actions = currentActions;
+      host.settled = {
+        threads: [thread("settled", { isArchived: true })],
+        ready: true,
+        unsettle: () => {},
+        settledAtFor: () => 1,
+      };
+      const view = mount(host, { activeThreadId: "selected" });
+      fireEvent.click(view.slot.getByRole("button", { name: "Settled (1)" }));
+      fireEvent.contextMenu(row(view.slot, "settled"));
+      assert.equal(screen.getAllByRole("menuitem")[0]?.textContent, "Un-settle");
+      assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
+      assert.deepEqual(currentActions.open.mock.calls, [["settled", { split: true }]]);
+      fireEvent.contextMenu(row(view.slot, "settled"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+      fireEvent.change(await screen.findByRole("textbox", { name: "Thread title" }), {
+        target: { value: "Unsaved title" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      assert.equal(screen.queryByRole("dialog"), null);
+      assert.equal(currentActions.rename.mock.calls.length, 0);
     });
 
     it("routes snooze, pin and delete through the current dispatcher", async () => {

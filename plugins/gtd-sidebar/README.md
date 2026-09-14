@@ -212,9 +212,12 @@ the task has not changed.
 ### The rest
 
 - A project scope picker — the one control the plugin adds.
-- Right-click a row to settle, snooze, pin, or delete it.
-- On a phone, hold a row for half a second (iOS's own long-press timing) for the same
-  menu, drawn as an iOS-style frosted sheet. Menu taps can play a haptic on iOS when enabled in settings.
+- Right-click a row for Settle and Snooze first, followed by bb's split, copy-link,
+  read/unread, pin, section-move, rename, and delete actions. Settle replaces Archive.
+  Moving to a section also unpins the thread, as in bb's normal sidebar.
+- On a phone, hold a row for half a second (iOS's own long-press timing) for a short
+  settle, snooze, pin, and delete menu, drawn as an iOS-style frosted sheet.
+  Menu taps can play a haptic on iOS when enabled in settings.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Drag a card onto another to nest it, or onto a project header to un-nest it.
 - Drag a project group header onto another group to reorder the project in bb.

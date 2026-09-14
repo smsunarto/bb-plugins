@@ -230,7 +230,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   );
 
   return (
-    <RowContextMenu plan={plan} disabled={isCompactViewport}>
+    <RowContextMenu thread={thread} command={command} plan={plan} disabled={isCompactViewport}>
       <li className="list-none">
         <div
           ref={setCardRef}
