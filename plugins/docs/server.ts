@@ -155,19 +155,18 @@ const previewSchema = z
     expiresAtMs: z.number().nonnegative(),
   })
   .strict();
-const hostSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    type: z.enum(["persistent", "ephemeral"]),
-    status: z.enum(["connected", "disconnected"]),
-    maxPermissionMode: z.enum(["full", "auto", "accept-edits"]),
-    lastSeenAt: z.number().nullable(),
-    lastRejectedProtocolVersion: z.number().int().positive().nullable(),
-    createdAt: z.number(),
-    updatedAt: z.number(),
-  })
-  .strict();
+// Hosts are SDK-owned records. Preserve new SDK fields without rejecting the vault response.
+const hostSchema = z.looseObject({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(["persistent", "ephemeral"]),
+  status: z.enum(["connected", "disconnected"]),
+  maxPermissionMode: z.enum(["full", "auto", "accept-edits"]),
+  lastSeenAt: z.number().nullable(),
+  lastRejectedProtocolVersion: z.number().int().positive().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
 const pathResultSchema = z.object({ path: z.string().min(1) }).strict();
 const okResultSchema = z.object({ ok: z.literal(true) }).strict();
 const syncScopeSchema = z.discriminatedUnion("kind", [

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import type { PluginRpcClient, PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
 import simpleNotes, { docsRpcContract } from "./server";
 
 const temporaryDirectories: string[] = [];
@@ -521,6 +521,27 @@ describe("Docs mention provider", () => {
 });
 
 describe("Docs vault operations", () => {
+  it.each([false, true])(
+    "accepts SDK machine metadata when vault loading fails: %s",
+    async (fails) => {
+      const { harness } = await loadNotebook({ "guide.md": "# Guide" });
+      const machine = makeHostResponse({ machineProviderId: "manual" });
+      harness.sdk.stub("hosts.list", async () => [machine]);
+      if (fails) {
+        harness.sdk.stub("system.config", async () => {
+          throw new Error("Host unavailable");
+        });
+      }
+
+      await expect(
+        harness.behavior.callRpc("listNotes", { vaultId: "personal" }),
+      ).resolves.toMatchObject({
+        hosts: [machine],
+        error: fails ? "Host unavailable" : null,
+      });
+    },
+  );
+
   it("lists Markdown, MDX, and Canvas documents and preserves MDX filenames", async () => {
     const { harness } = await loadNotebook({
       "guide.md": "# Guide",
