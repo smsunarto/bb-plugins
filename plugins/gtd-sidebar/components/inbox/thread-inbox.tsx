@@ -27,6 +27,7 @@ import { SlimRow } from "@/components/inbox/slim-row";
 import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useCollapsedThreads } from "@/hooks/use-collapsed-threads";
+import { useNamingThreads } from "@/hooks/use-naming-threads";
 import {
   useSidebarDrag,
   type SidebarDragApi,
@@ -88,6 +89,7 @@ export function ThreadInbox({
   const { status, threads: hostThreads, projects } = useSidebarThreads();
   const now = useMinuteClock();
   const lifecycle = useLifecycle();
+  const namingThreads = useNamingThreads();
   // bb's view never carries an archived thread, so the Settled shelf's rows
   // come from a second read and are merged in before anything partitions.
   const settledThreads = useSettledThreads(now);
@@ -435,6 +437,7 @@ export function ThreadInbox({
                       return (
                         <ThreadCard
                           key={thread.id}
+                          isNaming={namingThreads.has(thread.id)}
                           thread={thread}
                           shelf={shelf}
                           provider={providerInfoById.get(thread.providerId)}
@@ -488,6 +491,7 @@ export function ThreadInbox({
                       return (
                         <SlimRow
                           key={thread.id}
+                          isNaming={namingThreads.has(thread.id)}
                           thread={thread}
                           compactThreads={compactThreads}
                           projectName={projectNameById.get(thread.projectId) ?? null}

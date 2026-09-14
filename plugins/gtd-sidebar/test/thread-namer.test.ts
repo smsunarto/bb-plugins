@@ -154,6 +154,51 @@ function createHost(
   return { fileReads, host, inferenceCalls, namer, updates };
 }
 
+describe("thread naming progress", () => {
+  for (const outcome of ["rename", "keep", "failure"] as const) {
+    test(`reports naming only while inference is running and clears after ${outcome}`, async () => {
+      let start!: () => void;
+      const started = new Promise<void>((resolve) => {
+        start = resolve;
+      });
+      let finish!: (value: string | null) => void;
+      let fail!: (error: Error) => void;
+      const result = new Promise<string | null>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+      const { namer, host } = createHost({
+        title: "Fix login",
+        events: [requested(), requested(3, "Continue", "new-turn")],
+        inferenceComplete: () => {
+          start();
+          return result;
+        },
+      });
+      assert.deepEqual(namer.listNamingThreads(), []);
+      const operation = namer.nameThread(THREAD_ID, { kind: "automatic" });
+      await started;
+      assert.deepEqual(namer.listNamingThreads(), [THREAD_ID]);
+      if (outcome === "failure") fail(new Error("Inference failed"));
+      else finish(outcome === "keep" ? null : "New title");
+      const finished = await operation;
+      assert.equal(finished.ok, outcome !== "failure");
+      assert.deepEqual(namer.listNamingThreads(), []);
+      assert.deepEqual(
+        host.harness.inspection.realtimeSignals.map(({ channel, payload }) => ({
+          channel,
+          payload,
+        })),
+        [
+          { channel: "lifecycle", payload: { kind: "naming", threadId: THREAD_ID } },
+          { channel: "lifecycle", payload: { kind: "naming", threadId: THREAD_ID } },
+        ],
+      );
+      await host.harness.lifecycle.dispose();
+    });
+  }
+});
+
 describe("createThreadNamer", () => {
   test("names an untitled thread when its first prompt arrives", async () => {
     const { namer, updates } = createHost({ events: [requested()] });

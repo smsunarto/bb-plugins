@@ -25,6 +25,7 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 interface SlimRowProps {
   thread: PluginSidebarThread;
   isActive: boolean;
+  isNaming?: boolean;
   compactThreads: boolean;
   projectName: string | null;
   branchName: string | null;
@@ -63,6 +64,7 @@ const SlimRowBody = memo(function SlimRowBody({
   branchName,
   provider,
   isActive,
+  isNaming = false,
   shelf,
   wakeAt,
   now,
@@ -101,7 +103,12 @@ const SlimRowBody = memo(function SlimRowBody({
   const status = <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} now={now} />;
   const highlightContent = (
     <div className="flex h-full items-center gap-2 px-2.5 text-xs">
-      <span className={cn("min-w-0 flex-1 truncate", titleClassName)}>{title}</span>
+      <span
+        data-gtd-naming={isNaming || undefined}
+        className={cn("min-w-0 flex-1 truncate", titleClassName)}
+      >
+        {title}
+      </span>
       <span className={cn(STATUS_SLOT_CLASS, "tabular-nums text-2xs", "text-muted-foreground")}>
         {status}
       </span>
@@ -148,6 +155,8 @@ const SlimRowBody = memo(function SlimRowBody({
           </ThreadDetails>
           <HostLead host={thread.host} />
           <span
+            data-gtd-naming={isNaming || undefined}
+            aria-busy={isNaming || undefined}
             className={cn(
               "pointer-events-none relative min-w-0 flex-1 truncate",
               titleClassName,

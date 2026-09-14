@@ -6,6 +6,7 @@
 import { withProjects } from "@/components/projects/feature-gate";
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
+import "./naming.css";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ProjectsPage } from "@/components/projects/projects-page";
 import { ProjectHeaderAction } from "@/components/projects/header-action";

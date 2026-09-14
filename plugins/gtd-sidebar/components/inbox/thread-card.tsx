@@ -56,6 +56,7 @@ interface ThreadCardProps {
   /** bb's branch, or GitButler's virtual-branch summary for its workspace. */
   branchName: string | null;
   isActive: boolean;
+  isNaming?: boolean;
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
   /** The `showProviderIcon` setting, on by default. */
@@ -139,6 +140,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   projectName,
   branchName,
   isActive,
+  isNaming = false,
   canPark,
   showProviderIcon,
   isCompactViewport,
@@ -200,6 +202,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   const title = (
     <ThreadTitle
       title={titleText}
+      isNaming={isNaming}
       isActive={isActive}
       isUnread={thread.isUnread}
       isChild={depth > 0}
@@ -381,12 +384,14 @@ function summaryHeight(mobile: boolean, compact: boolean) {
 
 function ThreadTitle({
   title,
+  isNaming,
   isActive,
   isUnread,
   isChild,
   mobile,
 }: {
   title: string;
+  isNaming: boolean;
   isActive: boolean;
   isUnread: boolean;
   isChild: boolean;
@@ -397,6 +402,8 @@ function ThreadTitle({
   const muted = isChild && !isActive && !isUnread;
   return (
     <span
+      data-gtd-naming={isNaming || undefined}
+      aria-busy={isNaming || undefined}
       className={cn(
         "gtd-thread-title min-w-0 flex-1",
         mobile && "gtd-mobile-title",

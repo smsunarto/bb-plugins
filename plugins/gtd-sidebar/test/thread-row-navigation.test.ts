@@ -65,6 +65,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   const sdk = { ...(await import("@get-bb/plugin-sdk/app")) };
 
   interface HostState {
+    naming?: ReadonlySet<string>;
     sidebar: PluginSidebarThreadsState;
     actions: Partial<PluginSidebarThreadActions>;
     navigate: Partial<BbNavigate>;
@@ -126,6 +127,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   }));
   mock.module("../hooks/use-pinned-order.ts", () => ({
     usePinnedOrder: () => useHost().pinned,
+  }));
+  mock.module("../hooks/use-naming-threads.ts", () => ({
+    useNamingThreads: () => useHost().naming ?? new Set(),
   }));
   const rowBodyRender = spyOn(
     await import("../components/inbox/row-context-menu.tsx"),
@@ -356,6 +360,28 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("row render isolation", () => {
+    it.each([false, true])(
+      "marks only naming titles busy, including parked rows, with mobile=%s",
+      (isCompactViewport) => {
+        const host = hostState([thread("a"), thread("b"), thread("snoozed")]);
+        host.lifecycle = lifecycle(["snoozed"]);
+        host.naming = new Set(["a", "snoozed"]);
+        const view = mount(host, { isCompactViewport });
+        fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
+        for (const id of ["a", "snoozed"]) {
+          assert.equal(
+            row(view.slot, id)
+              .parentElement!.querySelector('[data-gtd-naming="true"]')
+              ?.getAttribute("aria-busy"),
+            "true",
+          );
+        }
+        assert.equal(row(view.slot, "b").parentElement!.querySelector("[data-gtd-naming]"), null);
+        view.update({ host: { ...host, naming: new Set() } });
+        assert.equal(view.slot.container.querySelector("[data-gtd-naming]"), null);
+      },
+    );
+
     it.each([false, true])(
       "only redraws selection changes with compact=%s",
       (isCompactViewport) => {

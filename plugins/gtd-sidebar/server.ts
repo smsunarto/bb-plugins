@@ -52,6 +52,10 @@ interface LifecycleDbRow {
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
 export const gtdSidebarRpcContract = defineRpcContract({
+  listNamingThreads: {
+    input: z.object({}),
+    output: z.array(z.string()),
+  },
   listEnvironmentBranches: {
     input: z.object({ environmentIds: z.array(z.string().trim().min(1)).max(100) }),
     output: z.object({
@@ -337,6 +341,7 @@ export default async function plugin(bb: BbPluginApi) {
   const threadNester = createThreadNester(bb.sdk.threads);
 
   bb.rpc.register(gtdSidebarRpcContract, {
+    listNamingThreads: threadNamer.listNamingThreads,
     async listCollapsedThreads() {
       return { threadIds: await collapsedThreads.list() };
     },

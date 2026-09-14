@@ -17,9 +17,13 @@ export type ThreadNamingResult = { ok: true; title: string } | { ok: false; erro
 
 export interface ThreadNamer {
   nameThread(threadId: string, intent: NamingIntent): Promise<ThreadNamingResult>;
+  listNamingThreads(): string[];
 }
 
-export function subscribeToThreadNaming(bb: BbPluginApi, threadNamer: ThreadNamer): void {
+export function subscribeToThreadNaming(
+  bb: BbPluginApi,
+  threadNamer: Pick<ThreadNamer, "nameThread">,
+): void {
   bb.onDispose(
     bb.sdk.subscribe({
       event: "thread:changed",
@@ -46,21 +50,40 @@ export function createThreadNamer(
   },
 ): ThreadNamer {
   const inFlight = new Map<string, Promise<void>>();
+  const naming = new Set<string>();
   const automaticRequests = new Map<string, number>();
+  bb.onDispose(() => {
+    naming.clear();
+    bb.realtime.publish("lifecycle", { kind: "naming" });
+  });
   bb.events.on("thread.deleted", ({ thread }) => {
     automaticRequests.delete(thread.id);
   });
 
   return {
+    listNamingThreads: () => [...naming],
     async nameThread(threadId, intent) {
       const previous = inFlight.get(threadId);
       if (previous !== undefined && intent.kind === "forced") {
         return { ok: false, error: "This thread is already being named." };
       }
 
-      const operation = (previous ?? Promise.resolve()).then(() =>
-        performThreadNaming(bb, options, threadId, intent, automaticRequests),
-      );
+      const operation = (previous ?? Promise.resolve()).then(async () => {
+        try {
+          return await performThreadNaming(
+            bb,
+            options,
+            threadId,
+            intent,
+            automaticRequests,
+            naming,
+          );
+        } finally {
+          if (naming.delete(threadId)) {
+            bb.realtime.publish("lifecycle", { kind: "naming", threadId });
+          }
+        }
+      });
       const tail = operation.then(
         () => undefined,
         () => undefined,
@@ -84,6 +107,7 @@ async function performThreadNaming(
   threadId: string,
   intent: NamingIntent,
   automaticRequests: Map<string, number>,
+  naming: Set<string>,
 ): Promise<ThreadNamingResult> {
   try {
     const automaticallyNameThreads =
@@ -129,6 +153,8 @@ async function performThreadNaming(
     if (plan.writeGuard.kind !== "replace-title") {
       automaticRequests.set(threadId, plan.writeGuard.expectedRequestSeq);
     }
+    naming.add(threadId);
+    bb.realtime.publish("lifecycle", { kind: "naming", threadId });
     const output = await options.inference.complete({
       environmentId: thread.environmentId,
       prompt: plan.prompt,
