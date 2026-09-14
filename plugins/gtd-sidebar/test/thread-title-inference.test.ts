@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { gtdSidebarHostContract } from "../lib/host-contract.ts";
 import {
   completeThreadTitleWithFallback,
   createThreadTitleInference,
@@ -36,7 +37,8 @@ describe("thread title inference policy", () => {
       },
     } as unknown as BbPluginApi;
 
-    const title = await createThreadTitleInference(bb).complete({
+    const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
+    const title = await createThreadTitleInference(bb, host).complete({
       environmentId: null,
       prompt: "Generate a title",
       allowKeep: true,
@@ -68,7 +70,10 @@ describe("thread title inference policy", () => {
       sdk: { system: { config: async () => ({ primaryHostId: "host-primary" }) } },
     } as unknown as BbPluginApi;
     assert.equal(
-      await createThreadTitleInference(bb).complete({
+      await createThreadTitleInference(
+        bb,
+        bb.hosts.experimental_client({ contract: gtdSidebarHostContract }),
+      ).complete({
         environmentId: null,
         prompt: "Name the first request",
         allowKeep: false,

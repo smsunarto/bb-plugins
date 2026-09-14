@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import { toast } from "sonner";
 import type { gtdSidebarRpcContract } from "@/server";
 import {
   canPark,
@@ -13,6 +14,8 @@ import {
   type ThreadShelf,
 } from "@/lib/lifecycle";
 import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
+
+const LIFECYCLE_REFRESHES = ["deleted", "lifecycle"] as const;
 
 function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
   return {
@@ -60,6 +63,7 @@ export function useLifecycle(): LifecycleApi {
           : new Map(result.rows.map((row) => [row.threadId, row])),
       );
     }, []),
+    LIFECYCLE_REFRESHES,
   );
 
   // Arm one timer for the soonest wake instead of polling: the shelf empties
@@ -96,10 +100,14 @@ export function useLifecycle(): LifecycleApi {
       wakeAtFor: (thread) => rows.get(thread.id)?.snoozedUntil ?? null,
       snoozedAtFor: (thread) => rows.get(thread.id)?.snoozedAt ?? null,
       unsnooze: (threadId) => {
-        void rpc.call("unsnooze", { threadId });
+        void rpc.call("unsnooze", { threadId }).catch((error: unknown) => {
+          toast.error(error instanceof Error ? error.message : "Couldn’t wake the thread.");
+        });
       },
       snooze: (threadId, snoozedUntil) => {
-        void rpc.call("snooze", { threadId, snoozedUntil });
+        void rpc.call("snooze", { threadId, snoozedUntil }).catch((error: unknown) => {
+          toast.error(error instanceof Error ? error.message : "Couldn’t snooze the thread.");
+        });
       },
     }),
     [now, rows, rpc, shelvesReady],

@@ -6,11 +6,7 @@
 // Putting them on the thread would mean a schema change, a wire change, and a
 // HOST_DAEMON_PROTOCOL_VERSION bump for something only this sidebar
 // understands. Here, uninstalling the plugin removes this database with it.
-import {
-  defineRpcContract,
-  type BbPluginApi,
-  type ExperimentalHostCallOptions,
-} from "@get-bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
@@ -274,7 +270,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   const threadNamer = createThreadNamer(bb, {
     automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
-    inference: createThreadTitleInference(bb),
+    inference: createThreadTitleInference(bb, host),
   });
 
   const db = bb.storage.database();
@@ -286,16 +282,7 @@ export default async function plugin(bb: BbPluginApi) {
   ]);
 
   const initiatives = createInitiativeRuntime(bb, {
-    host: {
-      call: (method, input, options) =>
-        (
-          host.call as unknown as (
-            method: string,
-            input: unknown,
-            options: ExperimentalHostCallOptions,
-          ) => Promise<unknown>
-        )(method, input, options),
-    },
+    host,
     features,
     getSlackToken: async () => (await settings.get()).slackBotToken || undefined,
   });
@@ -320,12 +307,12 @@ export default async function plugin(bb: BbPluginApi) {
          snoozed_until = excluded.snoozed_until,
          snoozed_at = excluded.snoozed_at`,
     ).run(row.threadId, row.snoozedUntil, row.snoozedAt);
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: row.threadId });
+    bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId: row.threadId });
   };
 
-  const clear = (threadId: string): void => {
+  const clear = (threadId: string, kind: "deleted" | "lifecycle" = "lifecycle"): void => {
     db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(threadId);
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
+    bb.realtime.publish(LIFECYCLE_CHANNEL, { kind, threadId });
   };
 
   /** One page is already generous; the loop is for the account that isn't. */
@@ -505,33 +492,22 @@ export default async function plugin(bb: BbPluginApi) {
   // A deleted thread must not leave a row behind that would park a future
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
-    clear(thread.id);
+    clear(thread.id, "deleted");
   });
 
-  // bb emits pin-state-changed for a pin, an unpin, and a reorderPinned, and
-  // none of them touch this database — the publish is so the Pinned shelf
-  // re-reads its order off bb's table.
+  // One native feed routes pin and archive changes to only the client list
+  // that owns them. A snooze, pin, archive, or fold no longer fans out across
+  // every lifecycle-backed RPC in every open window.
   bb.onDispose(
     bb.sdk.subscribe({
       event: "thread:changed",
       callback: (event) => {
-        if (event.id !== undefined && event.changes.includes("pin-state-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
+        if (event.id === undefined) return;
+        if (event.changes.includes("pin-state-changed")) {
+          bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "pin", threadId: event.id });
         }
-      },
-    }),
-  );
-
-  // Settle is bb's archive, made through the host action on the frontend, so
-  // the shelves hear about it from bb's change feed rather than an RPC here.
-  // `archived-changed` covers archive and unarchive both and fires per
-  // thread — a cascade archive republishes once per child.
-  bb.onDispose(
-    bb.sdk.subscribe({
-      event: "thread:changed",
-      callback: (event) => {
-        if (event.id !== undefined && event.changes.includes("archived-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId: event.id });
+        if (event.changes.includes("archived-changed")) {
+          bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "archive", threadId: event.id });
         }
       },
     }),
@@ -544,7 +520,10 @@ export default async function plugin(bb: BbPluginApi) {
       event: "system:changed",
       callback: (event) => {
         if (event.changes.includes("ui-preferences-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, { preference: "sidebar.collapsedThreads" });
+          bb.realtime.publish(LIFECYCLE_CHANNEL, {
+            kind: "collapsed",
+            preference: "sidebar.collapsedThreads",
+          });
         }
       },
     }),

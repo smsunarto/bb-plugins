@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import { toast } from "sonner";
 import type { gtdSidebarRpcContract } from "@/server";
 import {
   isWithinSettledWindow,
@@ -11,6 +12,7 @@ import {
 import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
 
 const EMPTY: readonly SettledThreadRow[] = [];
+const ARCHIVE_REFRESHES = ["archive", "deleted"] as const;
 
 export interface SettledThreadsApi {
   /** Archived threads, newest archive first, cut to the window against the caller's clock. */
@@ -49,6 +51,7 @@ export function useSettledThreads(now: number): SettledThreadsApi {
     useCallback((result) => {
       setRows((current) => (settledRowsMatch(current, result.threads) ? current : result.threads));
     }, []),
+    ARCHIVE_REFRESHES,
   );
 
   const windowed = useMemo(
@@ -68,7 +71,16 @@ export function useSettledThreads(now: number): SettledThreadsApi {
   // channel, and that subscription already refreshes every client.
   const unsettle = useCallback(
     (threadId: string) => {
-      void rpc.call("unsettle", { threadId });
+      void rpc.call("unsettle", { threadId }).then(
+        (result) => {
+          if (!result.ok) toast.error("Couldn’t restore the thread.");
+          return undefined;
+        },
+        (error: unknown) => {
+          toast.error(error instanceof Error ? error.message : "Couldn’t restore the thread.");
+          return undefined;
+        },
+      );
     },
     [rpc],
   );

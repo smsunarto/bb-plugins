@@ -19,6 +19,19 @@ type RefreshState =
   | { kind: "disposed" };
 
 type RefreshMode = "batch" | "immediate";
+export type LifecycleRefreshKind = "archive" | "collapsed" | "deleted" | "lifecycle" | "pin";
+
+function refreshKind(payload: unknown): LifecycleRefreshKind | null {
+  if (typeof payload !== "object" || payload === null || !("kind" in payload)) return null;
+  const kind = payload.kind;
+  return kind === "archive" ||
+    kind === "collapsed" ||
+    kind === "deleted" ||
+    kind === "lifecycle" ||
+    kind === "pin"
+    ? kind
+    : null;
+}
 
 /**
  * Keeps a list current across lifecycle publishes and socket reconnects.
@@ -28,6 +41,7 @@ type RefreshMode = "batch" | "immediate";
 export function useLifecycleChannelList<T>(
   load: () => Promise<T>,
   apply: (result: T) => void,
+  refreshKinds?: readonly LifecycleRefreshKind[],
 ): boolean {
   const [ready, setReady] = useState(false);
   const refresh = useRef<((mode: RefreshMode) => void) | null>(null);
@@ -101,7 +115,9 @@ export function useLifecycleChannelList<T>(
     };
   }, [apply, load]);
 
-  useRealtime("lifecycle", () => {
+  useRealtime("lifecycle", (payload) => {
+    const kind = refreshKind(payload);
+    if (refreshKinds !== undefined && (kind === null || !refreshKinds.includes(kind))) return;
     refresh.current?.("batch");
   });
 

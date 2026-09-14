@@ -47,9 +47,10 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
   interface ListProps {
     load: () => Promise<string>;
     apply: (value: string) => void;
+    refreshKinds?: readonly ("archive" | "collapsed" | "deleted" | "lifecycle" | "pin")[];
   }
 
-  function List({ load, apply }: ListProps) {
+  function List({ load, apply, refreshKinds }: ListProps) {
     const [value, setValue] = useState("visible rows");
     const ready = useLifecycleChannelList(
       load,
@@ -60,6 +61,7 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
         },
         [apply],
       ),
+      refreshKinds,
     );
     return createElement("output", { "data-ready": String(ready) }, value);
   }
@@ -153,6 +155,42 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
       });
       assert.deepEqual(first.apply.mock.calls, [["lifecycle rows"]]);
       assert.deepEqual(second.apply.mock.calls, [["settled rows"]]);
+    });
+
+    it("refreshes only lists that own the published lifecycle kind", async () => {
+      const lifecycle = pendingList();
+      const settled = pendingList();
+      const slot = renderSlot(
+        { component: ListPair },
+        {
+          first: { ...lifecycle, refreshKinds: ["lifecycle"] },
+          second: { ...settled, refreshKinds: ["archive"] },
+        },
+      );
+      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
+      await advance(50);
+      assert.equal(lifecycle.load.mock.calls.length, 2);
+      assert.equal(settled.load.mock.calls.length, 1);
+      await slot.behavior.emitRealtime("lifecycle", { kind: "archive" });
+      await advance(50);
+      assert.equal(lifecycle.load.mock.calls.length, 2);
+      assert.equal(settled.load.mock.calls.length, 2);
+    });
+
+    it("refreshes lifecycle and archive lists when a thread is deleted", async () => {
+      const lifecycle = pendingList();
+      const settled = pendingList();
+      const slot = renderSlot(
+        { component: ListPair },
+        {
+          first: { ...lifecycle, refreshKinds: ["deleted", "lifecycle"] },
+          second: { ...settled, refreshKinds: ["archive", "deleted"] },
+        },
+      );
+      await slot.behavior.emitRealtime("lifecycle", { kind: "deleted" });
+      await advance(50);
+      assert.equal(lifecycle.load.mock.calls.length, 2);
+      assert.equal(settled.load.mock.calls.length, 2);
     });
 
     it("keeps each batch deadline fixed during sustained events", async () => {

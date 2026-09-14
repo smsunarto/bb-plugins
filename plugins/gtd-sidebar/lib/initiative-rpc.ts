@@ -339,7 +339,7 @@ export const initiativeRpcContract = defineRpcContract({
   },
   runSubscriptionNow: {
     input: z.object({ subscriptionId: z.string().trim().min(1) }),
-    output: z.object({ ok: z.literal(true) }),
+    output: z.object({ ok: z.literal(true), outcome: z.literal("ran") }),
   },
 });
 
@@ -500,13 +500,18 @@ export function registerInitiativeRpc(bb: BbPluginApi, runtime: InitiativeRuntim
       requireSubscriptions(runtime.features);
       // The engine's delete path publishes the realtime refresh; a bare
       // store.remove would leave every open subscription tray stale.
-      engine.deleteSubscription(subscriptionId);
+      if (!engine.deleteSubscription(subscriptionId)) {
+        throw new Error(`subscription ${subscriptionId} not found`);
+      }
       return { ok: true as const };
     },
     async runSubscriptionNow({ subscriptionId }) {
       requireSubscriptions(runtime.features);
-      await engine.runNow(subscriptionId);
-      return { ok: true as const };
+      const outcome = await engine.runNow(subscriptionId);
+      if (outcome === "not-found") throw new Error(`subscription ${subscriptionId} not found`);
+      if (outcome === "disposed") throw new Error("subscription service is not running");
+      if (outcome === "in-flight") throw new Error("subscription is already running");
+      return { ok: true as const, outcome };
     },
   });
 }

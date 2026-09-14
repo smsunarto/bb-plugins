@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
-  gtdSidebarHostContract,
   type GtdSidebarAiInferenceCompleteOutput,
+  type GtdSidebarHostClient,
 } from "./lib/host-contract.ts";
 
 const TITLE_PRIMARY_MODEL = "gpt-5.6-luna";
@@ -91,9 +91,10 @@ export async function completeThreadTitleWithFallback({
   throw new Error("The inference service returned no title.");
 }
 
-export function createThreadTitleInference(bb: BbPluginApi): ThreadTitleInference {
-  const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
-
+export function createThreadTitleInference(
+  bb: BbPluginApi,
+  host: Pick<GtdSidebarHostClient, "call">,
+): ThreadTitleInference {
   return {
     async complete({ environmentId, prompt, allowKeep }) {
       const config = await bb.sdk.system.config();

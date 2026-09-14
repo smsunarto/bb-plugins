@@ -2,7 +2,7 @@ import type { ProjectFeatures } from "./feature-policy.ts";
 // Initiative runtime assembly: plugin storage, the domain service, the
 // subscription engine (automation's module), and the agent surface — wired
 // once from server.ts.
-import type { BbPluginApi, ExperimentalHostCallOptions } from "@get-bb/plugin-sdk";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createInitiativeService, type InitiativeService } from "./initiative-service.ts";
 import { createInitiativeStore, type InitiativeStore } from "./initiative-store.ts";
 import { registerInitiativeAgents } from "./initiative-tools.ts";
@@ -14,10 +14,9 @@ import {
   type SubscriptionStore,
 } from "./initiative-subscriptions.ts";
 import { INITIATIVES_CHANNEL } from "./initiative-types.ts";
-import type {
-  InspectSharedDirectoryInput,
-  InspectSharedDirectoryOutput,
-} from "./shared-directory-host.ts";
+import type { GtdSidebarHostClient } from "./host-contract.ts";
+import type { GitHubCiRunsInput, GitHubPrActivityInput } from "./github-host.ts";
+import type { InspectSharedDirectoryInput } from "./shared-directory-host.ts";
 
 export interface InitiativeRuntime {
   features: ProjectFeatures;
@@ -30,9 +29,7 @@ export interface InitiativeRuntime {
 export interface InitiativeRuntimeDeps {
   features: ProjectFeatures;
   /** The plugin's host client — automation's GitHub bridge methods ride it. */
-  host: {
-    call(method: string, input: unknown, options: ExperimentalHostCallOptions): Promise<unknown>;
-  };
+  host: GtdSidebarHostClient;
   /** Secret-backed Slack bot token for the slack-channel subscription kind. */
   getSlackToken(): Promise<string | undefined>;
 }
@@ -54,7 +51,7 @@ export function createInitiativeRuntime(
     inspectSharedDirectory: (hostId, input: InspectSharedDirectoryInput) =>
       deps.host.call("inspectSharedDirectory", input, {
         hostId,
-      }) as Promise<InspectSharedDirectoryOutput>,
+      }),
     pluginId: bb.pluginId,
     publish,
     log: bb.log,
@@ -89,7 +86,9 @@ export function createInitiativeRuntime(
       },
       getSlackToken: deps.getSlackToken,
       hostCall: (method, input, options) =>
-        deps.host.call(method, input, options as ExperimentalHostCallOptions),
+        method === "githubCiRuns"
+          ? deps.host.call(method, input as GitHubCiRunsInput, options)
+          : deps.host.call(method, input as GitHubPrActivityInput, options),
     },
   );
 

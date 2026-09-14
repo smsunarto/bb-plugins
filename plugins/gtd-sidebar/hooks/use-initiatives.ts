@@ -7,6 +7,8 @@ import type { initiativeRpcContract } from "@/lib/initiative-rpc";
 import { initiativesByCoordinator } from "@/lib/initiative-ui";
 import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
 
+const NO_LIFECYCLE_REFRESHES = [] as const;
+
 export interface InitiativesApi {
   /**
    * "loading" until the first answer, "ready" after one succeeds, "error"
@@ -25,8 +27,8 @@ export interface InitiativesApi {
 
 /**
  * The initiative registry, kept current by the same channel machinery as the
- * lifecycle shelves: reads `listInitiatives`, re-reads on `initiatives` and
- * `lifecycle` publishes, and refetches on reconnect. A failed read preserves
+ * lifecycle shelves: reads `listInitiatives`, re-reads on `initiatives`
+ * publishes, and refetches on reconnect. A failed read preserves
  * the last list; only a failure with nothing shown turns into `error`.
  */
 export function useInitiatives(): InitiativesApi {
@@ -50,7 +52,7 @@ export function useInitiatives(): InitiativesApi {
     setInitiatives(result.initiatives);
     setStatus("ready");
   }, []);
-  useLifecycleChannelList(load, apply);
+  useLifecycleChannelList(load, apply, NO_LIFECYCLE_REFRESHES);
 
   useRealtime(
     INITIATIVES_CHANNEL,

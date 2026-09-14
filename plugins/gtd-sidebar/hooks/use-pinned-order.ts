@@ -4,6 +4,8 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import type { gtdSidebarRpcContract } from "@/server";
 import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
 
+const PIN_REFRESHES = ["pin"] as const;
+
 export interface PinnedOrderApi {
   /** bb's `pinSortKey` for the thread; null while unpinned or not yet loaded. */
   pinOrderKeyFor(thread: PluginSidebarThread): string | null;
@@ -40,6 +42,7 @@ export function usePinnedOrder(): PinnedOrderApi {
           : new Map(result.pins.map((pin) => [pin.threadId, pin.pinSortKey])),
       );
     }, []),
+    PIN_REFRESHES,
   );
 
   return useMemo(() => ({ pinOrderKeyFor: (thread) => pins.get(thread.id) ?? null }), [pins]);

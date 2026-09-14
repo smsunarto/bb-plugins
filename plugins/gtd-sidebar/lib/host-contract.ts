@@ -1,4 +1,4 @@
-import { defineRpcContract } from "@get-bb/plugin-sdk";
+import { defineRpcContract, type ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import {
   aiInferenceCompleteInputSchema,
@@ -23,5 +23,6 @@ export const gtdSidebarHostContract = defineRpcContract({
   },
 });
 
+export type GtdSidebarHostClient = ExperimentalHostClient<typeof gtdSidebarHostContract>;
 export type GtdSidebarAiInferenceCompleteInput = z.infer<typeof aiInferenceCompleteInputSchema>;
 export type GtdSidebarAiInferenceCompleteOutput = z.infer<typeof aiInferenceCompleteOutputSchema>;

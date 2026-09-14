@@ -5,6 +5,8 @@ import { useCommittedEvent } from "@/hooks/use-committed-event";
 import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
 import { toggleThreadId } from "@/lib/collapsed-threads";
 
+const COLLAPSED_REFRESHES = ["collapsed"] as const;
+
 export interface CollapsedThreadsApi {
   /** Thread ids whose children are folded away. */
   collapsedThreads: ReadonlySet<string>;
@@ -39,6 +41,7 @@ export function useCollapsedThreads(): CollapsedThreadsApi {
   useLifecycleChannelList(
     useCallback(() => rpc.call("listCollapsedThreads", {}), [rpc]),
     useCallback((result) => applyList(result.threadIds), [applyList]),
+    COLLAPSED_REFRESHES,
   );
   const toggleThread = useCommittedEvent((threadId: string) => {
     setCollapsedThreads((current) => new Set(toggleThreadId([...current], threadId)));

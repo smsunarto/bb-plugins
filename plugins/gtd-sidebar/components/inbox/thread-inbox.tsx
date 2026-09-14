@@ -12,6 +12,7 @@ import {
   type PluginSidebarThread,
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
+import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -260,7 +261,18 @@ export function ThreadInbox({
       const args = projectReorderArgs(projectId, direction, shelfOrder, orderedProjectIds);
       // bb republishes project-order-changed, which refetches the sidebar's
       // project list; no plugin publish needed.
-      if (args !== null) void rpc.call("reorderProject", { projectId, ...args });
+      if (args !== null) {
+        void rpc.call("reorderProject", { projectId, ...args }).then(
+          (result) => {
+            if (!result.ok) toast.error("Couldn’t move the project.");
+            return undefined;
+          },
+          (error: unknown) => {
+            toast.error(error instanceof Error ? error.message : "Couldn’t move the project.");
+            return undefined;
+          },
+        );
+      }
     },
   );
   const renderGroups = (

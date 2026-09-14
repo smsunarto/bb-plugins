@@ -984,6 +984,10 @@ export function createInitiativeService(deps: InitiativeServiceDeps): Initiative
           message: `initiative initialization ${nonce} never completed; this thread cannot start an unconfigured session`,
         };
       }
+      // The dispatch hook is server-wide. With no initiative registry there
+      // is no possible owner, so do not serialize unrelated child dispatches
+      // behind ancestry reads under the global dispatch lock.
+      if (store.list().length === 0) return { action: "proceed" };
       // Every admission of a plausible member re-derives membership from
       // durable ancestry: the index can hold a stale claim after a native
       // reparent — to root, into another initiative, or under an uncached

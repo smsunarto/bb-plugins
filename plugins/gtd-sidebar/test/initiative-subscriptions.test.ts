@@ -12,6 +12,7 @@ import {
   initialCursorFor,
   parseSlackCursor,
   parseSubscriptionConfig,
+  registerInitiativeSubscriptions,
   serializeSlackCursor,
   type GitHubCiRun,
   type GitHubPrSnapshot,
@@ -1124,5 +1125,65 @@ describe("global subscriptions opt-in", () => {
     assert.equal(h.store.get(sub.id)?.enabled, true);
     h.engine.dispose();
     h.db.close();
+  });
+});
+
+describe("background service restarts", () => {
+  it("uses a fresh engine after the service signal aborts", async () => {
+    const db = makeDb();
+    let startService: (signal: AbortSignal) => void | Promise<void> = () => {
+      throw new Error("background service was not registered");
+    };
+    const disposeHooks: Array<() => void | Promise<void>> = [];
+    const engine = registerInitiativeSubscriptions(
+      {
+        storage: { database: () => db },
+        background: {
+          service(_name, registration) {
+            startService = (signal) => registration.start(signal);
+          },
+        },
+        sdk: {
+          threads: {
+            get: async () => ({ archivedAt: null, deletedAt: null }),
+            send: async () => ({}),
+          },
+          environments: { get: async () => ({ hostId: "host_1", path: "/repo" }) },
+        },
+        realtime: { publish() {} },
+        log: { info() {}, warn() {}, error() {} },
+        onDispose(hook) {
+          disposeHooks.push(hook);
+        },
+      },
+      {
+        isEnabled: () => true,
+        getCoordinatorThreadId: async () => "thr_coord",
+        isInitiativeActive: () => true,
+        getSlackToken: async () => undefined,
+        hostCall: async () => ({ ok: false, error: "unused" }),
+        sweepIntervalMs: 60_000,
+      },
+    );
+    engine.createSubscription({
+      id: "restart-once",
+      initiativeId: "init_1",
+      kind: "schedule",
+      label: "Restart proof",
+      config: { schedule: "once", runAt: T0 - 1, prompt: "resume" },
+    });
+    const firstSignal = new AbortController();
+    const firstRun = startService(firstSignal.signal);
+    firstSignal.abort();
+    await firstRun;
+
+    const secondSignal = new AbortController();
+    const secondRun = startService(secondSignal.signal);
+    assert.equal(await engine.runNow("restart-once"), "ran");
+    secondSignal.abort();
+    await secondRun;
+    assert.equal(disposeHooks.length, 1);
+    await disposeHooks[0]?.();
+    db.close();
   });
 });

@@ -1573,9 +1573,11 @@ export function createSubscriptionEngine(deps: SubscriptionEngineDeps) {
      * here so removal publishes a realtime refresh. store.remove() alone
      * leaves every open Listening tray stale.
      */
-    deleteSubscription(id: string): void {
+    deleteSubscription(id: string): boolean {
+      if (deps.store.get(id) === null) return false;
       deps.store.remove(id);
       notify(id);
+      return true;
     },
     /** Drop subscriptions whose initiative is gone (backend wires deletes). */
     removeForInitiative(initiativeId: string): void {
@@ -1640,46 +1642,68 @@ export function registerInitiativeSubscriptions(
   runtime: InitiativeSubscriptionRuntimeDeps,
 ): SubscriptionEngine {
   const store = createSubscriptionStore(bb.storage.database());
-  const engine = createSubscriptionEngine({
-    store,
-    isEnabled: runtime.isEnabled,
-    getCoordinatorThreadId: runtime.getCoordinatorThreadId,
-    isInitiativeActive: runtime.isInitiativeActive,
-    threads: bb.sdk.threads,
-    environments: bb.sdk.environments,
-    host: { call: runtime.hostCall },
-    getSlackToken: runtime.getSlackToken,
-    publish: (channel, payload) => bb.realtime.publish(channel, payload),
-    log: bb.log,
-    now: () => Date.now(),
-  });
+  const createEngine = (): SubscriptionEngine =>
+    createSubscriptionEngine({
+      store,
+      isEnabled: runtime.isEnabled,
+      getCoordinatorThreadId: runtime.getCoordinatorThreadId,
+      isInitiativeActive: runtime.isInitiativeActive,
+      threads: bb.sdk.threads,
+      environments: bb.sdk.environments,
+      host: { call: runtime.hostCall },
+      getSlackToken: runtime.getSlackToken,
+      publish: (channel, payload) => bb.realtime.publish(channel, payload),
+      log: bb.log,
+      now: () => Date.now(),
+    });
+  // CRUD only needs the durable store and publish callback, so keep it
+  // available before the first run and while bb backs off between restarts.
+  const mutationEngine = createEngine();
+  let currentEngine: SubscriptionEngine | null = null;
+  // RPC and agent-tool registrations keep this stable facade while each
+  // background-service run owns a fresh abortable engine instance.
+  const engine: SubscriptionEngine = {
+    sweep: () => currentEngine?.sweep() ?? Promise.resolve(),
+    runNow: (id) => currentEngine?.runNow(id) ?? Promise.resolve("disposed"),
+    createSubscription: (input) => mutationEngine.createSubscription(input),
+    upsertSubscription: (input) => mutationEngine.upsertSubscription(input),
+    deleteSubscription: (id) => mutationEngine.deleteSubscription(id),
+    removeForInitiative: (initiativeId) => mutationEngine.removeForInitiative(initiativeId),
+    dispose: () => {
+      currentEngine?.dispose();
+      currentEngine = null;
+      mutationEngine.dispose();
+    },
+    isRunning: (id) => currentEngine?.isRunning(id) ?? false,
+  };
 
   const sweepInterval = runtime.sweepIntervalMs ?? 15_000;
   bb.background.service("initiative-subscriptions", {
     start(signal) {
-      const onAbort = () => engine.dispose();
-      signal.addEventListener("abort", onAbort, { once: true });
-      bb.onDispose(() => {
-        signal.removeEventListener("abort", onAbort);
-        engine.dispose();
-      });
-      return new Promise<void>((resolve) => {
-        const timer = setInterval(() => {
-          void engine.sweep().catch((error) => {
-            bb.log.warn(`initiative subscription sweep failed: ${describeError(error)}`);
-          });
-        }, sweepInterval);
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearInterval(timer);
-            resolve();
-          },
-          { once: true },
-        );
+      const runEngine = createEngine();
+      currentEngine?.dispose();
+      currentEngine = runEngine;
+      if (signal.aborted) {
+        runEngine.dispose();
+        currentEngine = null;
+        return;
+      }
+      const timer = setInterval(() => {
+        void runEngine.sweep().catch((error) => {
+          bb.log.warn(`initiative subscription sweep failed: ${describeError(error)}`);
+        });
+      }, sweepInterval);
+      return new Promise<Event>((resolve) => {
+        signal.addEventListener("abort", resolve, { once: true });
+      }).then(() => {
+        clearInterval(timer);
+        runEngine.dispose();
+        if (currentEngine === runEngine) currentEngine = null;
+        return undefined;
       });
     },
   });
+  bb.onDispose(() => engine.dispose());
 
   return engine;
 }

@@ -226,6 +226,7 @@ function SharedDirectoryOverview({ initiative }: { initiative: Initiative }) {
     workspaceProjectIds: initiative.workspaceProjectIds,
     enabled: workspace !== null,
     initialDirectory: workspace,
+    refreshKey: `${initiative.id}:${initiative.updatedAt}`,
   });
 
   return (

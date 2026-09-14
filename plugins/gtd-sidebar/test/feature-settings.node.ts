@@ -65,6 +65,8 @@ describe("public feature opt-ins", () => {
       automaticallyNameThreads: true,
       showProviderIcon: true,
     });
+    const subscriptionService = harness.behavior.runService("initiative-subscriptions");
+    let subscriptionServiceStopped = false;
     try {
       assert.deepEqual(await harness.behavior.callRpc("listInitiatives", {}), { initiatives: [] });
       await assert.rejects(
@@ -72,15 +74,22 @@ describe("public feature opt-ins", () => {
         /Enable Project subscriptions/,
       );
       await harness.behavior.setSettings({ subscriptionsEnabled: true });
-      assert.deepEqual(
-        await harness.behavior.callRpc("runSubscriptionNow", { subscriptionId: "sub_missing" }),
-        { ok: true },
+      await assert.rejects(
+        harness.behavior.callRpc("runSubscriptionNow", { subscriptionId: "sub_missing" }),
+        /subscription sub_missing not found/,
+      );
+      await assert.rejects(
+        harness.behavior.callRpc("deleteSubscription", { subscriptionId: "sub_missing" }),
+        /subscription sub_missing not found/,
       );
       await harness.behavior.setSettings({ projectsEnabled: false });
       await assert.rejects(
         harness.behavior.callRpc("listInitiatives", {}),
         /Enable Projects coordination/,
       );
+      subscriptionService.controller.abort();
+      await subscriptionService.done;
+      subscriptionServiceStopped = true;
       ({ harness } = await harness.lifecycle.reload(plugin));
       await assert.rejects(
         harness.behavior.callRpc("listInitiatives", {}),
@@ -89,6 +98,10 @@ describe("public feature opt-ins", () => {
       await harness.behavior.setSettings({ projectsEnabled: true });
       assert.deepEqual(await harness.behavior.callRpc("listInitiatives", {}), { initiatives: [] });
     } finally {
+      if (!subscriptionServiceStopped) {
+        subscriptionService.controller.abort();
+        await subscriptionService.done;
+      }
       await harness.lifecycle.dispose();
     }
   });

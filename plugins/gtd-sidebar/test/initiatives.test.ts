@@ -416,6 +416,7 @@ function makeHarness() {
   const archiveCalls: string[] = [];
   const unarchiveCalls: string[] = [];
   const deleteCalls: string[] = [];
+  const getCalls: string[] = [];
   const failArchives = new Set<string>();
   const failUnarchives = new Set<string>();
   const harness = {
@@ -482,6 +483,7 @@ function makeHarness() {
       return { ok: true };
     },
     async get({ threadId }: { threadId: string }) {
+      getCalls.push(threadId);
       const row = rows.get(threadId);
       if (row === undefined) throw new Error(`thread ${threadId} not found`);
       const pendingEnvironment = pendingHostEnvironments.get(threadId);
@@ -663,6 +665,7 @@ function makeHarness() {
     archiveCalls,
     unarchiveCalls,
     deleteCalls,
+    getCalls,
     failArchives,
     failUnarchives,
     get failNextSpawn() {
@@ -839,6 +842,21 @@ describe("initiative service — first-turn initialization", () => {
       inputBlocks: [{ type: "text", text: "ordinary message" }],
     });
     assert.equal(decision.action, "proceed");
+  });
+
+  it("skips ancestry reads for child dispatches when no initiatives exist", async () => {
+    const h = makeHarness();
+    h.addThread({ id: "thr_parent" });
+    h.addThread({ id: "thr_child", parentThreadId: "thr_parent" });
+    const readsBefore = h.getCalls.length;
+    const decision = await h.service.dispatchGate({
+      threadId: "thr_child",
+      parentThreadId: "thr_parent",
+      originPluginId: null,
+      inputBlocks: [{ type: "text", text: "ordinary child message" }],
+    });
+    assert.equal(decision.action, "proceed");
+    assert.equal(h.getCalls.length, readsBefore);
   });
 
   it("assembles an exact separated marker envelope and parses its nonce back", async () => {

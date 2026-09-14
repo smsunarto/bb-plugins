@@ -45,14 +45,19 @@ export function useSharedDirectoryPreview({
   workspaceProjectIds,
   enabled,
   initialDirectory = null,
+  refreshKey = null,
 }: {
   workspaceProjectIds: readonly string[];
   enabled: boolean;
   initialDirectory?: SharedDirectorySelection | null;
+  /** Stable domain revision that should trigger a fresh read-only preview. */
+  refreshKey?: string | number | null;
 }): SharedDirectoryPreviewController {
   const rpc = useRpc<typeof initiativeRpcContract>();
   const [requestGuard] = useState(createLatestRequestGuard);
   const workspaceKey = workspaceProjectIds.join("\u0000");
+  const initialHostId = initialDirectory?.hostId ?? null;
+  const initialRootPath = initialDirectory?.rootPath ?? null;
   const [status, setStatus] = useState<SharedDirectoryPreviewController["status"]>("idle");
   const [preview, setPreview] = useState<SharedDirectoryWorkspacePreview | null>(null);
   const [resolvedWorkspaceKey, setResolvedWorkspaceKey] = useState<string | null>(null);
@@ -68,7 +73,7 @@ export function useSharedDirectoryPreview({
       setRequestError(null);
       void rpc
         .call("previewInitiativeWorkspace", {
-          workspaceProjectIds: [...workspaceProjectIds],
+          workspaceProjectIds: workspaceKey === "" ? [] : workspaceKey.split("\u0000"),
           candidate,
         })
         .then((result) => {
@@ -90,7 +95,7 @@ export function useSharedDirectoryPreview({
           );
         });
     },
-    [requestGuard, rpc, workspaceKey, workspaceProjectIds],
+    [requestGuard, rpc, workspaceKey],
   );
 
   useEffect(() => {
@@ -106,12 +111,12 @@ export function useSharedDirectoryPreview({
       return;
     }
     load(
-      initialDirectory === null
+      initialHostId === null || initialRootPath === null
         ? null
-        : { hostId: initialDirectory.hostId, rootPath: initialDirectory.rootPath },
+        : { hostId: initialHostId, rootPath: initialRootPath },
     );
     return () => requestGuard.invalidate();
-  }, [enabled, initialDirectory, load, requestGuard]);
+  }, [enabled, initialHostId, initialRootPath, load, refreshKey, requestGuard]);
 
   const editDraft = useCallback(() => {
     requestGuard.invalidate();

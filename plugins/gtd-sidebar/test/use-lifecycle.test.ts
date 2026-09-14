@@ -125,7 +125,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       // publish arrives at t+30s: past the wake in wall-clock terms, yet
       // still ahead of the rendered clock.
       rows = [{ threadId: "t", snoozedUntil: mountedAt + 20_000, snoozedAt: mountedAt + 5_000 }];
-      await slot.behavior.emitRealtime("lifecycle", {});
+      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
       await act(async () => {
         jest.advanceTimersByTime(50);
       });
@@ -140,7 +140,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       await act(async () => {});
 
       rows = [{ threadId: "t", snoozedUntil: mountedAt + 10_000, snoozedAt: mountedAt }];
-      await slot.behavior.emitRealtime("lifecycle", {});
+      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
       await act(async () => {
         jest.advanceTimersByTime(50);
       });

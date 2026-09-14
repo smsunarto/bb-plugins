@@ -185,6 +185,7 @@ function makeToolsHarness(
       deleteSubscription(id: string) {
         engineDeletes.push(id);
         subscriptionRows.delete(id);
+        return true;
       },
       async runNow() {
         return "ran" as const;
