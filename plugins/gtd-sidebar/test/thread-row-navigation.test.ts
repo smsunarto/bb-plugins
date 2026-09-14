@@ -297,6 +297,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
   beforeEach(() => {
     configure({ reactStrictMode: false });
+    localStorage.clear();
     rowBodyRender.mockClear();
     useActions.mockClear();
   });
@@ -796,11 +797,54 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         trigger.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
         chipGlobe.style.color,
       );
+      assert.equal(
+        view.slot.queryByRole("combobox", { name: "Project scope: All projects" }),
+        null,
+      );
+      const hideRepositoryGroups = view.slot.getByRole("button", {
+        name: "Hide repository groups",
+      });
+      assert.ok(hideRepositoryGroups.parentElement?.classList.contains("justify-end"));
+      fireEvent.click(hideRepositoryGroups);
       fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("option", { name: "One" }));
       assert.deepEqual(rowIds(view.slot), ["a"]);
+      fireEvent.click(view.slot.getByRole("button", { name: "Show repository groups" }));
+      assert.equal(view.slot.queryByRole("combobox", { name: /Project scope:/ }), null);
+      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["a", "c"]));
+    });
+
+    it("keeps repository context under a machine filter and lets the sidebar hide groups", () => {
+      const host = hostState([
+        thread("studio", { host: { id: "host-a", name: "Studio" } }),
+        thread("server", {
+          projectId: "two",
+          host: { id: "host-b", name: "Server" },
+        }),
+      ]);
+      const view = mount(host);
+      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Machine scope: All machines" }), {
+        key: "ArrowDown",
+      });
+      fireEvent.click(screen.getByRole("option", { name: "Studio" }));
+
+      assert.deepEqual(rowIds(view.slot), ["studio"]);
+      assert.ok(view.slot.getByRole("button", { name: "One project" }));
+      const hide = view.slot.getByRole("button", { name: "Hide repository groups" });
+      assert.equal(hide.getAttribute("aria-pressed"), "true");
+      assert.equal(view.slot.queryByRole("combobox", { name: /Project scope:/ }), null);
+
+      fireEvent.click(hide);
+      assert.equal(view.slot.container.querySelector(".gtd-project-group"), null);
+      assert.ok(view.slot.getByRole("combobox", { name: "Project scope: All projects" }));
+      assert.equal(localStorage.getItem("gtd-sidebar:v1:repository-groups"), "hidden");
+
+      fireEvent.click(view.slot.getByRole("button", { name: "Show repository groups" }));
+      assert.ok(view.slot.getByRole("button", { name: "One project" }));
+      assert.equal(view.slot.queryByRole("combobox", { name: /Project scope:/ }), null);
+      assert.equal(localStorage.getItem("gtd-sidebar:v1:repository-groups"), null);
     });
 
     it("opens and drags with current host callbacks without redrawing an unchanged row", () => {
@@ -853,6 +897,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const navigate = mock(() => {});
       const view = mount(host, { activeThreadId: "c", onNavigate: oldNavigate });
       view.updateInbox({ activeThreadId: "a", onNavigate: navigate });
+      fireEvent.click(view.slot.getByRole("button", { name: "Hide repository groups" }));
       fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
         key: "ArrowDown",
       });

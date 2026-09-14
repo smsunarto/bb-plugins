@@ -57,6 +57,11 @@
 
 ### Patch Changes
 
+- Machine-scoped inboxes now keep repository group headers visible even when
+  only one repository remains in view. A persistent folder toggle beside the
+  machine picker can disable or restore repository grouping for the sidebar.
+  The project selector appears only while grouping is disabled; restoring
+  groups clears the hidden project scope.
 - Mobile rows now draw the compact desktop row: the project chip leads the title,
   and the trailing slot shows status or age with activity counts and the PR number
   beside it. The agent icon leaves the mobile row, as it already does on compact

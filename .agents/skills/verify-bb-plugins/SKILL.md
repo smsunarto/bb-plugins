@@ -37,7 +37,7 @@ A first-ever workspace instance clones and installs bb, which is minutes.
 The helper prints the app URL, the runtime name, the instance whose checkout it
 borrowed, the browser session, and the evidence directory. Use those values for
 the whole run. Launch checks the selected appearance controls, loaded Monokai
-styles, and the rendered GTD project selector before reporting success.
+styles, and the enabled GTD repository-group toggle before reporting success.
 
 For CLI actions, use `"$BB_CLI"` from `run.env`. It is this run's routed bb
 executable. `bb-kit dev-instance exec "$BB_KIT_DEV_NAME" -- <bb arguments>`

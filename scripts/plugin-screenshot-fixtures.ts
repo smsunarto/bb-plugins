@@ -1104,7 +1104,9 @@ async function navigate(
     throw new Error(`sidebar provider is ${sidebarProvider}; expected ${SIDEBAR_PROVIDER}`);
   }
   await ready.waitFor({ state: "visible" });
-  await page.getByRole("combobox", { name: /^Project scope:/ }).waitFor({ state: "attached" });
+  await page.getByRole("button", { name: "Hide repository groups" }).waitFor({
+    state: "attached",
+  });
   await settle(page, options);
 }
 
@@ -1415,7 +1417,7 @@ async function captureGtdSidebar(browser: Browser, writeCapture: WriteCapture): 
     await mockAgentation(context, {});
     await mockGtdSidebar(context);
     const page = await createScreenshotPage(context, { fixedTime: FIXED_TIME });
-    await navigate(page, "/", page.getByRole("combobox", { name: /Project scope:/ }));
+    await navigate(page, "/", page.getByRole("button", { name: "Hide repository groups" }));
     await page.getByRole("button").filter({ hasText: "Snoozed" }).click();
     await page.getByRole("button").filter({ hasText: "Settled" }).click();
     await page.getByText("Update theme color palette", { exact: true }).waitFor();

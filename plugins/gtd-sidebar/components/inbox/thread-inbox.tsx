@@ -72,6 +72,7 @@ import { MachineScopePicker } from "@/components/inbox/machine-scope-picker";
 import { MachineAppearanceProvider } from "@/components/inbox/machine-appearance";
 
 const ALL_PROJECTS = "__all__";
+const REPOSITORY_GROUPS_STORAGE_KEY = "gtd-sidebar:v1:repository-groups";
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
@@ -116,6 +117,9 @@ export function ThreadInbox({
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const [machineScope, setMachineScope] = useState<string | null>(null);
+  const [repositoryGroupsEnabled, setRepositoryGroupsEnabled] = useState(
+    readRepositoryGroupsPreference,
+  );
   const machines = sidebarMachines(inboxThreads);
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues } = useSettings();
@@ -161,8 +165,11 @@ export function ThreadInbox({
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
-  // One project needs no headers: the shelf reads exactly as it did before.
-  const grouped = shouldGroupByProject(shelves);
+  // A machine scope keeps its repository header even when only one repository
+  // remains. The header is the only visible repository identity on compact
+  // rows, and is useful context when scanning one machine's work.
+  const grouped =
+    repositoryGroupsEnabled && (machineScope !== null || shouldGroupByProject(shelves));
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   // A dropped group draws in its new slot before bb's write lands: the order
   // the drop predicts stands in for bb's until project-order-changed
@@ -356,42 +363,59 @@ export function ThreadInbox({
             }
           }}
         >
-          <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
-            <Select value={scope} onValueChange={setScope}>
-              {/* Ghost trigger: no border, no filled track — it reads as a label
-              until you hover it.
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1 px-2 pb-0.5",
+              repositoryGroupsEnabled && "justify-end",
+            )}
+          >
+            {!repositoryGroupsEnabled ? (
+              <Select value={scope} onValueChange={setScope}>
+                {/* Ghost trigger: no border, no filled track — it reads as a label
+                until you hover it.
 
-              `border-transparent` alongside `border-0`, because width and
-              color are separate merge groups: `border-0` alone leaves
-              `border-input` on the element, and a theme is free to key a
-              recessed background off that class rather than off a drawn
-              border. Evicting the color class is what actually keeps the
-              track clear. */}
-              <SelectTrigger
-                className={cn(
-                  "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
-                  isCompactViewport && "min-h-10",
-                )}
-                aria-label={`Project scope: ${scopeLabel}`}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_PROJECTS} className="text-xs">
-                  All projects
-                </SelectItem>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id} className="text-xs">
-                    {project.name}
+                `border-transparent` alongside `border-0`, because width and
+                color are separate merge groups: `border-0` alone leaves
+                `border-input` on the element, and a theme is free to key a
+                recessed background off that class rather than off a drawn
+                border. Evicting the color class is what actually keeps the
+                track clear. */}
+                <SelectTrigger
+                  className={cn(
+                    "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
+                    isCompactViewport && "min-h-10",
+                  )}
+                  aria-label={`Project scope: ${scopeLabel}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_PROJECTS} className="text-xs">
+                    All projects
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id} className="text-xs">
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
             <MachineScopePicker
               machines={machines}
               value={machineScope}
               onValueChange={setMachineScope}
               isCompactViewport={isCompactViewport}
+            />
+            <RepositoryGroupsToggle
+              enabled={repositoryGroupsEnabled}
+              isCompactViewport={isCompactViewport}
+              onToggle={() => {
+                const next = !repositoryGroupsEnabled;
+                if (next) setScope(ALL_PROJECTS);
+                setRepositoryGroupsEnabled(next);
+                writeRepositoryGroupsPreference(next);
+              }}
             />
           </div>
 
@@ -676,6 +700,51 @@ function useRowCommands({
   });
 
   return command;
+}
+
+function RepositoryGroupsToggle({
+  enabled,
+  isCompactViewport,
+  onToggle,
+}: {
+  enabled: boolean;
+  isCompactViewport: boolean;
+  onToggle: () => void;
+}) {
+  const label = enabled ? "Hide repository groups" : "Show repository groups";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={enabled}
+      title={label}
+      onClick={onToggle}
+      className={cn(
+        "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        enabled && "bg-sidebar-accent text-foreground",
+        isCompactViewport && "size-10",
+      )}
+    >
+      <Icon name={enabled ? "FolderOpen" : "Folder"} className="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
+function readRepositoryGroupsPreference(): boolean {
+  try {
+    return localStorage.getItem(REPOSITORY_GROUPS_STORAGE_KEY) !== "hidden";
+  } catch {
+    return true;
+  }
+}
+
+function writeRepositoryGroupsPreference(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.removeItem(REPOSITORY_GROUPS_STORAGE_KEY);
+    else localStorage.setItem(REPOSITORY_GROUPS_STORAGE_KEY, "hidden");
+  } catch {
+    // A blocked storage write makes the control session-only.
+  }
 }
 
 function useInboxTree(

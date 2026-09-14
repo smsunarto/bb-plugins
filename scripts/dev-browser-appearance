@@ -31,5 +31,5 @@ browser find role menuitem click --name 'GTD Sidebar (inbox) Next Action and Wai
 browser wait --fn 'document.querySelector(`button[aria-label="Sidebar thread list"]`)?.textContent.trim() === "GTD Sidebar (inbox)"'
 browser wait --fn 'document.querySelector("button[aria-label=Palette]")?.textContent.trim() === "bb Monokai" && getComputedStyle(document.documentElement).getPropertyValue("--bb-monokai-ui-font").includes("Inter")'
 browser open "${url}"
-browser wait --fn 'document.querySelector(`[role=combobox][aria-label^="Project scope:"]`) !== null'
+browser wait --fn 'document.querySelector(`button[aria-label="Hide repository groups"]`) !== null'
 printf 'browser: bb Monokai, Dark, and GTD Sidebar are ready\n'

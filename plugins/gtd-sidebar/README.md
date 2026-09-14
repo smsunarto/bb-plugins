@@ -94,7 +94,12 @@ background work is also live, because the user can act now.
 ### Project groups
 
 Once threads from two or more projects are in view, every shelf splits into
-project groups: a header naming the project, then that project's threads. The
+project groups: a header naming the project, then that project's threads. A
+machine filter keeps these headers visible even when that machine has threads
+in only one project, so the repository context is not lost. Use the folder
+button beside the machine picker to hide or restore repository groups; the
+choice persists across reloads. The project selector appears only while
+repository grouping is off, and restoring groups clears that project scope. The
 header folds the group; a folded header shows `needs-you / total` while
 something inside asks for you, and the total alone otherwise. Hovering the
 header shows a **+** that opens the project's new-thread screen. Shelf and
@@ -231,7 +236,7 @@ services. The explicit naming command below is a separate user-requested inferen
 | Core sidebar feature       | What it does                                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Action shelves             | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                                                               |
-| Repository groups          | Group shelves by BB repository, fold groups, create a thread from a group, and reorder groups by drag or context menu. This updates BB's project order.                                    |
+| Repository groups          | Group shelves by BB repository, keep repository context under machine filters, toggle groups from the sidebar, fold groups, create a thread from a group, and reorder groups.              |
 | Thread families            | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
 | Thread actions             | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
 | Navigation                 | Row click, search, repository and machine scope pickers, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                         |
