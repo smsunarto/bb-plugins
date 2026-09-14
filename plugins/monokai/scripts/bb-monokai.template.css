@@ -795,6 +795,80 @@
   color: var(--foreground);
 }
 
+/* Radix publishes these context-menu sizing variables on both root menus and
+ * submenus. Scope geometry here so dropdown pickers retain their own layout. */
+.dark [role="menu"][style*="--radix-context-menu-content"] {
+  --state-hover: {{text.ink07}};
+  min-width: 220px;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background-color: var(--popover);
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"]
+  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
+  min-height: 30px;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"]
+  :is([role="menuitemcheckbox"], [role="menuitemradio"]) {
+  padding-right: 28px;
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"]
+  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"]
+  [role="menuitem"]:is(.text-destructive, .text-destructive-text) {
+  color: var(--destructive-text);
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"]
+  [role="menuitem"]:is(.text-destructive, .text-destructive-text) svg {
+  color: currentColor;
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"] [role="separator"] {
+  height: 1px;
+  margin: 6px 8px;
+  background-color: var(--border);
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"] [role="menuitem"] > span.ml-auto {
+  font-size: 12px;
+  letter-spacing: normal;
+}
+
+.dark [role="menu"][style*="--radix-context-menu-content"]
+  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):focus-visible,
+.dark [role="menu"][style*="--radix-context-menu-content"] [role="menuitem"][data-state="open"] {
+  background-color: var(--state-hover);
+}
+
+@media (hover: hover) {
+  .dark [role="menu"][style*="--radix-context-menu-content"]
+    :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"])[data-highlighted] {
+    background-color: var(--state-hover);
+  }
+}
+
 /* The model picker's sticky group headings ("Model", "Reasoning") paint
  * bg-background to cover rows scrolling under them, but they sit on a
  * bg-popover surface, so the header strip reads one ramp step lighter than
