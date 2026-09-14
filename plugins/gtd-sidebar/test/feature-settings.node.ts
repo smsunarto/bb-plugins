@@ -21,6 +21,7 @@ describe("public feature opt-ins", () => {
     const { harness } = await setup();
     try {
       const descriptors = harness.inspection.registrations.settingsDescriptors;
+      assert.equal(descriptors.groupThreadsByProject?.default, true);
       for (const key of [
         "compactThreads",
         "showProviderIcon",

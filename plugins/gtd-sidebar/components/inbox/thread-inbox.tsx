@@ -69,7 +69,6 @@ import { MachineScopePicker } from "@/components/inbox/machine-scope-picker";
 import { MachineAppearanceProvider } from "@/components/inbox/machine-appearance";
 
 const ALL_PROJECTS = "__all__";
-const REPOSITORY_GROUPS_STORAGE_KEY = "gtd-sidebar:v1:repository-groups";
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
@@ -106,14 +105,12 @@ export function ThreadInbox({
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const [machineScope, setMachineScope] = useState<string | null>(null);
-  const [repositoryGroupsEnabled, setRepositoryGroupsEnabled] = useState(
-    readRepositoryGroupsPreference,
-  );
   const machines = sidebarMachines(threads);
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon === true;
   const compactThreads = settingValues?.compactThreads === true;
+  const repositoryGroupsEnabled = settingValues?.groupThreadsByProject !== false;
 
   const gitButlerLabels = useGitButlerLabels(threads, settingValues?.gitButlerBranches === true);
 
@@ -386,15 +383,6 @@ export function ThreadInbox({
               value={machineScope}
               onValueChange={setMachineScope}
               isCompactViewport={isCompactViewport}
-            />
-            <RepositoryGroupsToggle
-              enabled={repositoryGroupsEnabled}
-              isCompactViewport={isCompactViewport}
-              onToggle={() => {
-                const next = !repositoryGroupsEnabled;
-                setRepositoryGroupsEnabled(next);
-                writeRepositoryGroupsPreference(next);
-              }}
             />
           </div>
 
@@ -678,51 +666,6 @@ function useRowCommands({
   });
 
   return command;
-}
-
-function RepositoryGroupsToggle({
-  enabled,
-  isCompactViewport,
-  onToggle,
-}: {
-  enabled: boolean;
-  isCompactViewport: boolean;
-  onToggle: () => void;
-}) {
-  const label = enabled ? "Hide repository groups" : "Show repository groups";
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={enabled}
-      title={label}
-      onClick={onToggle}
-      className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        enabled && "bg-sidebar-accent text-foreground",
-        isCompactViewport && "size-10",
-      )}
-    >
-      <Icon name={enabled ? "FolderOpen" : "Folder"} className="size-3.5" aria-hidden />
-    </button>
-  );
-}
-
-function readRepositoryGroupsPreference(): boolean {
-  try {
-    return localStorage.getItem(REPOSITORY_GROUPS_STORAGE_KEY) !== "hidden";
-  } catch {
-    return true;
-  }
-}
-
-function writeRepositoryGroupsPreference(enabled: boolean): void {
-  try {
-    if (enabled) localStorage.removeItem(REPOSITORY_GROUPS_STORAGE_KEY);
-    else localStorage.setItem(REPOSITORY_GROUPS_STORAGE_KEY, "hidden");
-  } catch {
-    // A blocked storage write makes the control session-only.
-  }
 }
 
 function useInboxTree(

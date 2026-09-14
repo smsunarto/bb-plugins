@@ -7,7 +7,7 @@
 - Project and machine scope selection.
 - Pinned, Next Action, and Snoozed families sort by latest attention. Waiting sorts by latest update, and Settled by settlement time. Active children can raise their family in the list.
 - Project groups inside every shelf once two projects are in view: a header button named `<project> project` folds the group (`<project> project (n)` or `(needs / total)` while folded), and a hover-only `New thread in <project>` button opens the project. Shelf and group headers are sticky. A selected machine keeps its repository header even with one project.
-- The default-on **Hide repository groups** button hides the project selector. Turning groups off changes it to **Show repository groups** and reveals the selector; restoring groups clears that scope and hides the selector again.
+- **Settings → Plugins → GTD Sidebar → Group threads by project** controls grouping and defaults on. The project selector stays available in either mode, and changing the setting preserves the selected scope.
 
 ## How to get to it (user POV)
 

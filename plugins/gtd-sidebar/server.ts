@@ -199,6 +199,12 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Machine ID whose threads show no machine globe.",
       default: "",
     },
+    groupThreadsByProject: {
+      type: "boolean",
+      label: "Group threads by project",
+      description: "Organize each sidebar shelf into project groups.",
+      default: true,
+    },
     compactThreads: {
       type: "boolean",
       label: "Compact thread rows",

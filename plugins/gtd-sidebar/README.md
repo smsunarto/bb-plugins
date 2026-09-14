@@ -96,9 +96,8 @@ background work is also live, because the user can act now.
 Once threads from two or more projects are in view, every shelf splits into
 project groups: a header naming the project, then that project's threads. A
 machine filter keeps these headers visible even when that machine has threads
-in only one project, so the repository context is not lost. Use the folder
-button beside the machine picker to hide or restore repository groups; the
-choice persists across reloads. The project selector stays available with
+in only one project, so the repository context is not lost. Use **Settings → Plugins → GTD Sidebar → Group threads by project**
+to hide or restore project groups. The choice persists across reloads. The project selector stays available with
 repository grouping on or off, and toggling groups preserves the selected project. The
 header folds the group; a folded header shows `needs-you / total` while
 something inside asks for you, and the total alone otherwise. Hovering the
@@ -225,8 +224,8 @@ the task has not changed.
 
 ## Configuration
 
-Choose enhancements in **Settings → Plugins → GTD Sidebar**. All optional
-booleans default **off**, including while settings are loading. The SDK stores
+Choose preferences in **Settings → Plugins → GTD Sidebar**. Project grouping
+defaults **on**. Optional enhancements default **off**, including while settings are loading. The SDK stores
 these preferences on the server and updates open clients when they change.
 
 ### Feature catalog
@@ -239,7 +238,7 @@ services. The explicit naming command below is a separate user-requested inferen
 | Core sidebar feature       | What it does                                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Action shelves             | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                                                               |
-| Repository groups          | Group shelves by BB repository, keep repository context under machine filters, toggle groups from the sidebar, fold groups, create a thread from a group, and reorder groups.              |
+| Repository groups          | Group shelves by BB repository, keep repository context under machine filters, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.          |
 | Thread families            | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
 | Thread actions             | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
 | Navigation                 | Row click, search, repository and machine scope pickers, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                         |
@@ -249,6 +248,7 @@ services. The explicit naming command below is a separate user-requested inferen
 
 | Optional setting (key)                                  | Default | Effect when enabled                                                                                                                                                                                            |
 | ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Group threads by project (`groupThreadsByProject`)      | On      | Organize each shelf into project groups. Turning it off keeps project and machine filters available.                                                                                                           |
 | Compact thread rows (`compactThreads`)                  | Off     | One-line desktop root rows. Mobile/subthreads remain compact either way.                                                                                                                                       |
 | Show agent icons (`showProviderIcon`)                   | Off     | Provider glyph on two-line cards. Provider identity remains in tooltips/menus when off.                                                                                                                        |
 | Enable mobile haptics (`mobileHaptics`)                 | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                                         |
