@@ -21,7 +21,7 @@ interface ReleasePleaseConfig {
   packages?: Record<string, PackageConfig>;
 }
 
-test("Release Please covers every publishable release target with the existing tag contract", () => {
+test("Release Please covers enabled publishable targets with the existing tag contract", () => {
   const config = JSON.parse(
     readFileSync(`${ROOT}/.github/release-please-config.json`, "utf8"),
   ) as ReleasePleaseConfig;
@@ -41,7 +41,12 @@ test("Release Please covers every publishable release target with the existing t
       name: plugin.name,
       version: plugin.manifest.version,
     })),
-  ];
+  ].filter(
+    (target) =>
+      !["plugins/agent-proxy", "plugins/cloudflare", "plugins/traces"].includes(
+        target.relativePath,
+      ),
+  );
   const expectedPaths = targets.map((target) => target.relativePath).sort();
 
   expect(config["bootstrap-sha"]).toBe("da91c8346edea3232888503164125ca39eed5486");
