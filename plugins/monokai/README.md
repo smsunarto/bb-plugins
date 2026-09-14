@@ -105,11 +105,12 @@ bb theme.
 
 | Role                | Value                 | Where it lands                                                                 |
 | ------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| Chrome ground       | `#141414`             | cards, popovers, sidebars, terminal ground                                     |
-| Editor ground       | `#181818`             | the main pane                                                                  |
+| Chrome ground       | `#141414`             | cards, popovers, terminal ground                                               |
+| Conversation ground | `#151515`             | the main agent conversation                                                    |
+| Content ground      | `#181818`             | sidebars, code, and diffs                                                      |
 | Sidebar divider     | `#2B2B2B`             | solid 1px boundary between navigation and content                              |
-| User message bubble | `#1E1E1E`             | right-aligned user requests                                                    |
-| Composer            | `#1E1E1E`             | prompt input and controls                                                      |
+| User message bubble | `#212121`             | right-aligned user requests                                                    |
+| Composer            | `#212121`             | prompt input and controls                                                      |
 | Well                | `#1E1E1E`             | recessed and code wells, text fields, selectors; controls use a `#3C3C3C` edge |
 | Raised              | `#262626`             | hover and active fills                                                         |
 | Filled buttons      | `#363635` / `#1E1E1E` | borderless primary / `#3C3C3C`-bordered secondary buttons                      |
@@ -130,6 +131,7 @@ ratio against the ground it sits on.
 | Surface              | Notes                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------- |
 | App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                    |
+| Conversation links   | accent text with an alpha-derived rounded hover surface                               |
 | Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background       |
 | Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers |
 | Syntax tokens        | the Cursor Monokai TextMate layer, in diffs and file previews                         |

@@ -76,14 +76,15 @@
    * between the ramp steps (#1C1C1C, #2E2E2D, #333333, #525251 …), so every
    * ground below is pinned explicitly. The anchors still matter for anything
    * bb adds later. */
-  --canvas: #181818; /* editor ground */
+  --canvas: #151515; /* agent conversation ground */
   --ink: #e3e3dd; /* the one white; ladder base */
 
   /* ---- Grounds ramp ---------------------------------------------------
-   * #141414 chrome · #181818 editor · #1E1E1E wells · #262626 raised/hover ·
-   * #404040 selection. Nothing else serves as a surface. Translucent tiers use
+   * #141414 chrome · #151515 conversation · #181818 content/sidebars ·
+   * #1E1E1E wells · #212121 user surfaces · #262626 raised/hover · #404040
+   * selection. Nothing else serves as a surface. Translucent tiers use
    * an ink alpha chosen to flatten onto a ramp step over --background. */
-  --background: #181818; /* main pane = editor ground */
+  --background: #151515; /* main agent conversation */
   --card: #141414; /* panels are chrome, one step under the pane */
   --popover: #141414; /* menus, dropdowns, command palette, tooltips */
   --secondary: #262626; /* raised */
@@ -92,26 +93,26 @@
   --input: #3c3c3c; /* compact form-control edge; distinct from the #1E1E1E
                       * well without becoming a bright line */
 
-  --surface-recessed: #e3e3dd08; /* -> #1E1E1E over --background */
+  --surface-recessed: #e3e3dd0b; /* -> #1E1E1E over --background */
   --surface-recessed-solid: #1e1e1e;
-  --surface-recessed-soft-solid: #1e1e1e; /* ramp has no step between #181818
+  --surface-recessed-soft-solid: #1e1e1e; /* ramp has no step between #151515
                                            * and #1E1E1E; coarse on purpose */
-  --surface-raised: #e3e3dd12; /* -> #262626 */
+  --surface-raised: #e3e3dd15; /* -> #262626 */
   --surface-raised-solid: #262626;
-  --surface-scrim: #181818eb; /* not a veil: bb paints the page
+  --surface-scrim: #151515eb; /* not a veil: bb paints the page
                                            * header and floating control
                                            * clusters with it, over the pane.
                                            * On the content ground it flattens
-                                           * to #181818; on the chrome ground
+                                           * to #151515; on the chrome ground
                                            * the header read one step darker
                                            * than the safe-area strip above it
                                            * on phones. */
 
-  --agent-surface-background: #1e1e1e;
+  --agent-surface-background: #212121;
   --agent-surface-border: #e3e3dd11;
 
-  --state-hover: #e3e3dd12; /* -> #262626, the raised/hover step */
-  --state-active: #e3e3dd32; /* -> #404040, the selection step */
+  --state-hover: #e3e3dd15; /* -> #262626, the raised/hover step */
+  --state-active: #e3e3dd35; /* -> #404040, the selection step */
 
   /* Selected rows are ladder, not accent: the contract keeps counters and
    * selection quiet. Both names default to a --primary mix, so both are pinned
@@ -129,7 +130,7 @@
    * One white at four alphas, ≥20 alpha points apart.
    * --foreground stays opaque: it is also the xterm foreground and cursor, and
    * ANSI bright-white is #E3E3DD. */
-  --foreground: #e3e3dd; /* 13.78:1 on --background */
+  --foreground: #e3e3dd; /* 14.17:1 on --background */
   --muted-foreground: #e3e3ddbd; /* secondary 74% — 8.02:1 */
   --readback-foreground: #e3e3dd8c; /* muted 55% — 4.96:1 */
   --subtle-foreground: #e3e3dd4d; /* faint 30% — the deliberately ghosted
@@ -167,7 +168,7 @@
                                       * #FFFFFF only 3.90:1, so dark wins the
                                       * token. Glyphs answer to the 3:1 non-text
                                       * floor instead — see the stop button. */
-  --destructive-text: #e34671; /* 4.55:1 on --background */
+  --destructive-text: #e34671; /* 4.68:1 on --background */
   --warning: #f1b467;
   --warning-text: #f1b467;
   --attention: #f1b467;
@@ -183,10 +184,10 @@
   --surface-attention: #f1b4671f;
 
   /* ---- Sidebar ---------------------------------------------------------
-   * --sidebar is also the xterm background and cursor accent, so pinning it to
-   * the chrome ground gives the navigation a clear step below the main pane. */
-  --sidebar: #141414;
-  --sidebar-foreground: #e3e3ddbd; /* 8.22:1 */
+   * Keep both navigation sidebars on the content ground. Terminal chrome stays
+   * on its separate --terminal-background token above. */
+  --sidebar: #181818;
+  --sidebar-foreground: #e3e3ddbd; /* 8.02:1 */
   --sidebar-accent: #262626;
   --sidebar-accent-foreground: #e3e3dd; /* selection keeps primary text */
   --sidebar-border: #2b2b2b; /* solid, low-contrast 1px pane divider */
@@ -334,9 +335,9 @@
   border-color: transparent;
 }
 
-/* Cursor Monokai leaves chat.request* unset. Its visible user request bubble is
- * #1E1E1E with a faint edge. Match those colors while preserving bb's native
- * bubble geometry. Agent replies stay flat on the #181818 panel ground. */
+/* User requests use their own #212121 surface with a faint edge while keeping
+ * bb's native bubble geometry. Agent replies stay flat on the #151515
+ * conversation ground. */
 .dark .rounded-xl.border.border-border-seam.bg-surface-recessed {
   background-color: var(--agent-surface-background);
   border-color: var(--agent-surface-border);
@@ -364,10 +365,30 @@
   background-color: #1e1e1e;
 }
 
-/* The composer shares the #1E1E1E recessed well. Its native border remains
+/* The composer shares the #212121 user surface. Its native border remains
  * responsible for the edge. */
 .dark [data-promptbox] {
-  background-color: #1e1e1e;
+  background-color: #212121;
+}
+
+/* Conversation links read as one quiet blue label, then reveal their inline
+ * hit area on hover. The fill is the accent at 15% alpha so the conversation
+ * ground remains part of the resulting color instead of introducing another
+ * opaque surface. Negative inline margins preserve surrounding prose spacing. */
+.dark [data-message-column] [data-markdown-preview] a.underline {
+  color: var(--primary);
+  text-decoration-line: none;
+  border-radius: 0.375rem;
+  padding: 0.0625rem 0.25rem;
+  margin-inline: -0.25rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+@media (hover: hover) {
+  .dark [data-message-column] [data-markdown-preview] a.underline:hover {
+    background-color: #88c0d026;
+  }
 }
 
 /* Keep the new-thread composer at the conversation footer's position. The
@@ -770,9 +791,9 @@
 /* Composer stop button.
  *
  * bb 0.36 renders the run-interrupt control as `variant="secondary"`, so the
- * chip lands on --secondary (#262626) over the composer's #1E1E1E ground —
+ * chip lands on --secondary (#262626) over the composer's #212121 ground —
  * 1.35:1, under the 3:1 floor for a UI component. The send chip it replaces is
- * `variant="default"` (--foreground on --background) at 13.78:1, so the control
+ * `variant="default"` (--foreground on --background) at 14.17:1, so the control
  * fades out at the one moment it is the only one that can be pressed.
  *
  * Stop is an interrupt, which is the destructive role — the same reading later

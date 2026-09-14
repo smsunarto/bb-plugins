@@ -12,6 +12,25 @@ const theme = await readFile(themePath, "utf8");
 const codeTheme = await readFile(codeThemePath, "utf8");
 const codeThemeRules = readCodeThemeRules().rules;
 
+describe("bb Monokai surface palette", () => {
+  test("assigns distinct conversation, sidebar, user, and terminal grounds", () => {
+    expect(theme).toContain("--background: #151515");
+    expect(theme).toContain("--sidebar: #181818");
+    expect(theme).toContain("--agent-surface-background: #212121");
+    expect(theme).toContain(".dark [data-promptbox] {\n  background-color: #212121");
+    expect(theme).toContain("--terminal-background: #141414");
+  });
+
+  test("styles conversation links with an alpha-derived accent hover surface", () => {
+    expect(theme).toContain(
+      ".dark [data-message-column] [data-markdown-preview] a.underline {\n  color: var(--primary);\n  text-decoration-line: none;",
+    );
+    expect(theme).toContain(
+      "@media (hover: hover) {\n  .dark [data-message-column] [data-markdown-preview] a.underline:hover {\n    background-color: #88c0d026;",
+    );
+  });
+});
+
 describe("bb Monokai contract audit", () => {
   test("unifies code grounds and keeps filenames in sans-serif recessed headers", () => {
     expect(theme).toContain("--diffs-header-font-family: var(--font-sans)");
@@ -208,7 +227,7 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("rejects an off-contract rendered color", () => {
-    const changed = theme.replace("--background: #181818", "--background: #123456");
+    const changed = theme.replace("--background: #151515", "--background: #123456");
     expect(() => auditTheme(changed)).toThrow("#123456 is off-contract");
   });
 
