@@ -11,8 +11,16 @@ mkdir -p "$HOME/.local/bin"
 ln -sfn "$node_package_bin/node" "$HOME/.local/bin/node"
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
-bb_version="$(node -p "require('./package.json').config.bbVersion")"
-if ! command -v bb >/dev/null || [[ "$(bb --version 2>/dev/null || true)" != "$bb_version" ]]; then
+# The bb CLI tracks the latest bb-app release. A registry lookup that fails
+# keeps an installed bb rather than failing setup offline.
+bb_version="$(curl -fsSL https://registry.npmjs.org/bb-app/latest 2>/dev/null \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))' \
+  || true)"
+if [[ -z "$bb_version" ]] && ! command -v bb >/dev/null; then
+  echo "Could not resolve the latest bb-app release and no bb is installed." >&2
+  exit 1
+fi
+if [[ -n "$bb_version" ]] && { ! command -v bb >/dev/null || [[ "$(bb --version 2>/dev/null || true)" != "$bb_version" ]]; }; then
   bun install -g "bb-app@$bb_version"
 fi
 ln -sfn "$HOME/.bun/bin/bb" "$HOME/.local/bin/bb"

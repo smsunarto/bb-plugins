@@ -1,14 +1,14 @@
 # Every CI job needs the same toolchain, and the order-sensitive parts are easy
-# to get subtly wrong (the cache mount must follow checkout; the bb CLI must
-# match config.bbVersion). Keeping them here means a job cannot drift from the
+# to get subtly wrong (the cache mount must follow checkout; every job must
+# install the same bb CLI). Keeping them here means a job cannot drift from the
 # others by forgetting a step.
 name: Setup
-description: Node, Bun, the Namespace cache volume, and optionally the pinned bb CLI.
+description: Node, Bun, the Namespace cache volume, and optionally the latest bb CLI.
 
 inputs:
   bb-cli:
     description: >-
-      Install the pinned bb CLI. Only jobs that build a plugin or check the
+      Install the latest bb CLI. Only jobs that build a plugin or check the
       vendored SDK types need it; it costs a native compile, so a job that just
       runs tests should pass "false".
     required: false
@@ -51,11 +51,11 @@ runs:
         npm install -g node-gyp
 
     # `bun run build` runs `bb plugin build .` for every plugin. Install the
-    # repository's pinned bb release so CI builds with one known CLI version.
-    - name: Install pinned bb CLI
+    # latest bb release so CI builds against what users install today.
+    - name: Install latest bb CLI
       if: inputs.bb-cli == 'true'
       shell: bash
-      run: bun install -g "bb-app@$(node -p "require('./package.json').config.bbVersion")"
+      run: bun install -g bb-app@latest
 
     - name: Install dependencies
       shell: bash

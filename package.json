@@ -17,9 +17,6 @@
     "esbuild",
     "lefthook"
   ],
-  "config": {
-    "bbVersion": "0.42.1"
-  },
   "bbKit": {
     "devInstance": {
       "schemaVersion": 1,

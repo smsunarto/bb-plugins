@@ -67,7 +67,7 @@ jobs:
         run: |
           npm install --global npm@12.0.2 node-gyp
           bun install --frozen-lockfile
-          bun install --global "bb-app@$(node -p "require('./package.json').config.bbVersion")"
+          bun install --global bb-app@latest
 
       - name: Build released package
         env:
