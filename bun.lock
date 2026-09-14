@@ -129,11 +129,11 @@
       "name": "@smsunarto/bb-plugin-agentation",
       "version": "0.2.3",
       "dependencies": {
-        "@bb-plugins/icons": "workspace:*",
         "@radix-ui/react-slot": "^1.3.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
+        "@bb-plugins/icons": "workspace:*",
         "@get-bb/plugin-sdk": "0.4.84",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
@@ -365,12 +365,12 @@
       "name": "@smsunarto/bb-plugin-gh-stack",
       "version": "0.2.3",
       "dependencies": {
-        "@bb-plugins/icons": "workspace:*",
         "@pierre/trees": "^1.0.0-beta.6",
         "@radix-ui/react-slot": "^1.3.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
+        "@bb-plugins/icons": "workspace:*",
         "@get-bb/plugin-sdk": "0.4.84",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",

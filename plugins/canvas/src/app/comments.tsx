@@ -338,14 +338,14 @@ export function Composer(props: {
   readonly onCancel: () => void;
   readonly onEscape?: () => void;
   readonly compact?: boolean;
-  readonly autoFocus?: boolean;
+  readonly focusOnActivate?: boolean;
 }): ReactElement {
   const [body, setBody] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (props.autoFocus === false) return;
+    if (props.focusOnActivate === false) return;
     field.current?.focus({ preventScroll: true });
-  }, [props.autoFocus]);
+  }, [props.focusOnActivate]);
   useLayoutEffect(() => {
     if (!field.current) return;
     field.current.style.height = "auto";
@@ -539,7 +539,7 @@ export function MarginThread({
         <div hidden={!active} className="canvas-comment-inline-reply">
           <Composer
             compact
-            autoFocus={active}
+            focusOnActivate={active}
             quote={null}
             placeholder="Reply"
             submitLabel="Reply"

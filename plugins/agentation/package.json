@@ -65,11 +65,11 @@
     "vendor/"
   ],
   "dependencies": {
-    "@bb-plugins/icons": "workspace:*",
     "@radix-ui/react-slot": "^1.3.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@bb-plugins/icons": "workspace:*",
     "@get-bb/plugin-sdk": "0.4.84",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
