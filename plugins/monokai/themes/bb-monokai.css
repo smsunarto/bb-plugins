@@ -1071,7 +1071,8 @@ diffs-container {
  * has no dedicated data attribute in BB 0.42.1: match its direct collapse
  * control structure, including collapsed cards, within the Git diff panel.
  * Smart embeds expose their own header class. Bodies keep the content ground. */
-.dark .smart-embed-header {
+.dark .smart-embed-header,
+.dark .last-turn-diff-heading {
   background-color: #212121;
 }
 
