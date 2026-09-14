@@ -17,6 +17,7 @@ import {
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import { UnityCitationView } from "@bb-plugins/unity-inspector/app";
+import { DevinIcon } from "./devin-branding.tsx";
 import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
@@ -285,6 +286,11 @@ function CodeHeader({
 }
 
 export default definePluginApp((app) => {
+  app.slots.experimental_providerIcon({
+    providerKind: "agent",
+    providerId: "acp-devin",
+    icon: DevinIcon,
+  });
   app.slots.navPanel({
     id: "autorouter-settings",
     title: "Autorouter",

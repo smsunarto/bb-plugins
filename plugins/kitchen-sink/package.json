@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-kitchen-sink",
   "version": "0.1.0",
-  "description": "Scott's kitchen sink of personal bb surfaces: composer commands, mention providers, Smart Embeds, and inline HTML and Markdown previews from the workspace or thread storage.",
+  "description": "Scott's kitchen sink of personal bb surfaces: composer commands, provider branding, Smart Embeds, and inline HTML and Markdown previews.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/kitchen-sink",
@@ -32,7 +32,7 @@
   },
   "bb": {
     "name": "Kitchen Sink",
-    "description": "Personal composer commands and message embeds: /ship-it and /sync automate repository workflows, Smart Embeds render code evidence, and ::inline-vis renders sandboxed HTML and Markdown from the workspace or thread storage.",
+    "description": "Personal bb surfaces: composer workflows, provider branding, Smart Embeds, and sandboxed HTML and Markdown previews.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

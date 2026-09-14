@@ -7,7 +7,7 @@
 
 # Kitchen Sink
 
-**Scott's kitchen sink of personal bb surfaces: composer commands, mentions, Smart Embeds, and inline HTML visualizations.**
+**Scott's kitchen sink of personal bb surfaces: composer commands, provider branding, Smart Embeds, and inline HTML visualizations.**
 
 ![bb 0.41+](https://img.shields.io/badge/bb-0.41%2B-88C0D0?style=flat-square)
 
@@ -16,6 +16,8 @@
 ## What it does
 
 bb's `/` menu lists skills, so each composer command ships as a skill under `skills/`. Mention providers live in `src/server/mentions.ts` and register on load.
+
+Kitchen Sink also supplies the official Devin icon for the `acp-devin` agent provider.
 
 | Command    | What the agent does                                                                                                  |
 | ---------- | -------------------------------------------------------------------------------------------------------------------- |

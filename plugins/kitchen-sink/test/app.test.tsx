@@ -38,6 +38,19 @@ test("registers the smart embeds and inline visualization directives", async () 
   ]);
 });
 
+test("registers Devin branding for the Devin ACP agent provider", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  expect(
+    captured.providerIcons.map(({ providerKind, providerId }) => ({ providerKind, providerId })),
+  ).toEqual([{ providerKind: "agent", providerId: "acp-devin" }]);
+  const icon = renderSlot({ component: captured.providerIcons[0]!.icon }, { className: "size-4" });
+  const svg = icon.container.querySelector("svg");
+  expect(svg?.getAttribute("class")).toBe("size-4");
+  expect(svg?.getAttribute("viewBox")).toBe("0 0 386 386");
+  expect(svg?.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
+  icon.unmount();
+});
+
 test("autorouter master visibility and per-composer pause are independent", async () => {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   const action = captured.composerCustomizations.find((item) => item.id === "autorouter")!
