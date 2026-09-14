@@ -63,6 +63,8 @@
 
 ### Patch Changes
 
+- Match the touch project header's corner radius to the 12px thread rows.
+
 - Machine-scoped inboxes now keep repository group headers visible even when
   only one repository remains in view. A persistent folder toggle beside the
   machine picker can disable or restore repository grouping for the sidebar.

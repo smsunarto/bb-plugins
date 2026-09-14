@@ -152,6 +152,12 @@
   padding-left: 40px;
   font-size: 13px;
 }
+/* Touch rows use rounded-xl (12px); the header must match or the hover fill
+   reads as a different control from the thread row under it. */
+.gtd-project-group-header-touch,
+.gtd-project-group-header-touch .gtd-project-group-toggle:focus-visible {
+  border-radius: 12px;
+}
 .gtd-project-group-toggle:focus {
   outline: none;
 }
