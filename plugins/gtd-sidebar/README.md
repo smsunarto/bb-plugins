@@ -254,13 +254,10 @@ services. The explicit naming command below is a separate user-requested inferen
 | Enable mobile haptics (`mobileHaptics`)                 | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                                         |
 | Show GitButler branches (`gitButlerBranches`)           | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                                       |
 | Automatically name threads (`automaticallyNameThreads`) | Off     | Infer titles on user requests through the existing Codex login. Sends request context and naming rules. Off skips automatic context reads/inference and prevents an in-flight result from renaming the thread. |
-| Enable Projects coordination (`projectsEnabled`)        | Off     | Projects rail, creation/forms, coordinator and delegated agents, shared context, workspace bindings, tools and mentions. This is separate from core repository grouping.                                       |
-| Enable Project subscriptions (`subscriptionsEnabled`)   | Off     | Requires Projects too. Enables scheduled prompts and GitHub/Slack polling/delivery, subscription forms, Listening toolbar and agent subscription tools. Deliveries can start agent work.                       |
 
-| Supporting preference             | Default       | Purpose                                                                                                                                |
-| --------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Local machine (`localMachineId`)  | Empty         | Choose which machine's threads omit the globe. This does not move threads or change their execution host.                              |
-| Slack bot token (`slackBotToken`) | Empty, secret | Credential for Slack subscriptions. Saving a token does not enable Projects or subscriptions. Never exposed through frontend settings. |
+| Supporting preference            | Default | Purpose                                                                                                   |
+| -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| Local machine (`localMachineId`) | Empty   | Choose which machine's threads omit the globe. This does not move threads or change their execution host. |
 
 ### Opt-in and migration behavior
 
@@ -268,28 +265,13 @@ services. The explicit naming command below is a separate user-requested inferen
   for automatic naming, icons or compact rows. We retain the original keys and
   use SDK effective values. We do not infer consent from a token or existing data.
 - Previously implicit defaults for automatic naming and icons become **off**.
-  Projects, GitButler branch lookups and haptics now require an explicit opt-in.
+  GitButler branch lookups and haptics now require an explicit opt-in.
   No migration writes `true` on an existing or new installation.
-- Disabling Projects preserves its registry, workspace bindings, shared documents
-  and subscriptions. Coordinator/child threads return to ordinary inbox shelves.
-  Native BB still owns thread and environment lifecycle. Disabling does not stop
-  agents already running, archive threads, or delete environments.
-- Disabling either Projects or subscriptions blocks new polls and delivery,
-  including delivery after a poll already in flight. Already-issued network or
-  agent requests cannot be recalled. Stored subscriptions retain their individual
-  enabled flags and cursors. Re-enabling resumes the engine: overdue one-shot
-  schedules and pending events may deliver. Review subscriptions before opting in.
-- Disabled Project RPCs and agent tools reject calls from stale tabs/sessions.
-  New agent configurations omit Project instructions/tools. Native archive/delete
-  bookkeeping continues so the saved registry stays consistent.
-- The SDK's navigation and panel-launcher entries are static. The **Projects**
-  entry remains discoverable while off, but opens an explanation instead of
-  loading project data or forms. Thread chips, composer toolbar and rail unmount.
+- Cursor Projects coordination has been removed. Existing native threads appear
+  in the ordinary inbox. Legacy project data is retained but unused, and project
+  subscription polling and delivery no longer run.
 - Settings take effect without a plugin reload. The selected sidebar itself stays
   BB's explicit Appearance preference.
-
-See [Projects details](PROJECTS.md) for the coordination, shared-directory and
-subscription workflows. Enable only the parts you want.
 
 ## Troubleshooting
 

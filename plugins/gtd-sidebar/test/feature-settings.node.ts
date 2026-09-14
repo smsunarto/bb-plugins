@@ -5,7 +5,6 @@ import {
   makePluginAgentConfigurationContext,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
-import { INITIATIVE_TOOL_NAMES } from "../lib/initiative-types.ts";
 
 async function setup(settings: Record<string, boolean> = {}) {
   const host = createFakePluginHost({
@@ -18,7 +17,7 @@ async function setup(settings: Record<string, boolean> = {}) {
 }
 
 describe("public feature opt-ins", () => {
-  test("new installs block Projects RPCs, agent tools and host branch reads", async () => {
+  test("new installs keep optional enhancements off and host branch reads disabled", async () => {
     const { harness } = await setup();
     try {
       const descriptors = harness.inspection.registrations.settingsDescriptors;
@@ -28,25 +27,12 @@ describe("public feature opt-ins", () => {
         "mobileHaptics",
         "gitButlerBranches",
         "automaticallyNameThreads",
-        "projectsEnabled",
-        "subscriptionsEnabled",
       ]) {
         assert.equal(descriptors[key]?.default, false, key);
       }
-      await assert.rejects(
-        harness.behavior.callRpc("createInitiative", {
-          name: "Optional",
-          workspaceProjectIds: [],
-        }),
-        /Enable Projects coordination/,
-      );
       assert.deepEqual(
         await harness.behavior.callRpc("listEnvironmentBranches", { environmentIds: ["env_1"] }),
         { environments: [] },
-      );
-      await assert.rejects(
-        harness.behavior.callAgentTool(INITIATIVE_TOOL_NAMES.contextList, {}),
-        /Enable Projects coordination/,
       );
       const config = await harness.behavior.resolveAgentConfiguration(
         makePluginAgentConfigurationContext(),
@@ -59,49 +45,29 @@ describe("public feature opt-ins", () => {
     }
   });
 
-  test("settings changes gate existing handlers immediately and survive reload", async () => {
-    let { harness } = await setup({
-      projectsEnabled: true,
-      automaticallyNameThreads: true,
-      showProviderIcon: true,
-    });
-    const subscriptionService = harness.behavior.runService("initiative-subscriptions");
-    let subscriptionServiceStopped = false;
+  test("saved Projects opt-ins cannot restore the removed feature after reload", async () => {
+    let { harness } = await setup({ projectsEnabled: true, subscriptionsEnabled: true });
     try {
-      assert.deepEqual(await harness.behavior.callRpc("listInitiatives", {}), { initiatives: [] });
-      await assert.rejects(
-        harness.behavior.callRpc("runSubscriptionNow", { subscriptionId: "sub_missing" }),
-        /Enable Project subscriptions/,
-      );
-      await harness.behavior.setSettings({ subscriptionsEnabled: true });
-      await assert.rejects(
-        harness.behavior.callRpc("runSubscriptionNow", { subscriptionId: "sub_missing" }),
-        /subscription sub_missing not found/,
-      );
-      await assert.rejects(
-        harness.behavior.callRpc("deleteSubscription", { subscriptionId: "sub_missing" }),
-        /subscription sub_missing not found/,
-      );
-      await harness.behavior.setSettings({ projectsEnabled: false });
-      await assert.rejects(
-        harness.behavior.callRpc("listInitiatives", {}),
-        /Enable Projects coordination/,
-      );
-      subscriptionService.controller.abort();
-      await subscriptionService.done;
-      subscriptionServiceStopped = true;
-      ({ harness } = await harness.lifecycle.reload(plugin));
-      await assert.rejects(
-        harness.behavior.callRpc("listInitiatives", {}),
-        /Enable Projects coordination/,
-      );
-      await harness.behavior.setSettings({ projectsEnabled: true });
-      assert.deepEqual(await harness.behavior.callRpc("listInitiatives", {}), { initiatives: [] });
-    } finally {
-      if (!subscriptionServiceStopped) {
-        subscriptionService.controller.abort();
-        await subscriptionService.done;
+      for (let reload = 0; reload < 2; reload++) {
+        const registrations = harness.inspection.registrations;
+        for (const key of ["projectsEnabled", "subscriptionsEnabled", "slackBotToken"]) {
+          assert.equal(registrations.settingsDescriptors[key], undefined);
+        }
+        assert.deepEqual(registrations.agentTools, []);
+        assert.equal(registrations.rpcMethods.includes("listInitiatives"), false);
+        assert.equal(registrations.rpcMethods.includes("createInitiative"), false);
+        assert.equal(registrations.rpcMethods.includes("runSubscriptionNow"), false);
+        assert.equal(
+          registrations.services.some((service) => service.name === "initiative-subscriptions"),
+          false,
+        );
+        const config = await harness.behavior.resolveAgentConfiguration(
+          makePluginAgentConfigurationContext(),
+        );
+        assert.deepEqual(config.tools, []);
+        if (reload === 0) ({ harness } = await harness.lifecycle.reload(plugin));
       }
+    } finally {
       await harness.lifecycle.dispose();
     }
   });

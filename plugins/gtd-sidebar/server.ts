@@ -16,14 +16,8 @@ import { createThreadNester } from "./lib/nest-thread.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
-import {
-  INITIATIVE_MIGRATIONS,
-  INITIATIVE_SHARED_DIRECTORY_MIGRATIONS,
-} from "./lib/initiative-store.ts";
-import { createInitiativeRuntime } from "./lib/initiative-runtime.ts";
-import { registerInitiativeRpc } from "./lib/initiative-rpc.ts";
+import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
 import { registerThreadMenuRpc } from "./lib/thread-menu-rpc.ts";
-import { INITIATIVE_SUBSCRIPTION_MIGRATIONS } from "./lib/initiative-subscriptions.ts";
 
 // Append-only: bb applies these by position, so the retired `settled_at` and
 // `archived_thread_ids` columns stay declared and simply go unread.
@@ -227,20 +221,6 @@ export default async function plugin(bb: BbPluginApi) {
         "Opt in to Codex inference on user prompts. Sends request context and naming rules to generate titles. Manual CLI rename remains available.",
       default: false,
     },
-    projectsEnabled: {
-      type: "boolean",
-      label: "Enable Projects coordination",
-      description:
-        "Opt in to coordinator threads, delegated agents, shared context and workspace bindings. Turning off preserves data and leaves native threads accessible.",
-      default: false,
-    },
-    subscriptionsEnabled: {
-      type: "boolean",
-      label: "Enable Project subscriptions",
-      description:
-        "Requires Projects. Opt in to scheduled prompts and GitHub/Slack polling that can start agent work. Turning off pauses delivery without deleting subscriptions.",
-      default: false,
-    },
     mobileHaptics: {
       type: "boolean",
       label: "Enable mobile haptics",
@@ -254,24 +234,6 @@ export default async function plugin(bb: BbPluginApi) {
         "Opt in to periodic host GitButler CLI reads for primary checkouts. Otherwise use BB's native branch labels.",
       default: false,
     },
-    slackBotToken: {
-      type: "string",
-      label: "Slack bot token",
-      description:
-        "Bot token for read-only Slack channel polling in project subscriptions. Stored securely.",
-      secret: true,
-      default: "",
-    },
-  });
-  let featureValues = await settings.get();
-  const features = {
-    projects: () => featureValues.projectsEnabled,
-    subscriptions: () => featureValues.projectsEnabled && featureValues.subscriptionsEnabled,
-  };
-  settings.onChange((next) => {
-    featureValues = next;
-    bb.realtime.publish("initiatives", { settingsChanged: true });
-    bb.experimental_hooks.recheck("message.dispatch");
   });
   const threadNamer = createThreadNamer(bb, {
     automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
@@ -279,19 +241,8 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   const db = bb.storage.database();
-  bb.storage.migrate(db, [
-    ...migrations,
-    ...INITIATIVE_MIGRATIONS,
-    ...INITIATIVE_SUBSCRIPTION_MIGRATIONS,
-    ...INITIATIVE_SHARED_DIRECTORY_MIGRATIONS,
-  ]);
+  bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS]);
 
-  const initiatives = createInitiativeRuntime(bb, {
-    host,
-    features,
-    getSlackToken: async () => (await settings.get()).slackBotToken || undefined,
-  });
-  registerInitiativeRpc(bb, initiatives);
   registerThreadMenuRpc(bb);
 
   const readAll = (): StoredLifecycleRow[] =>

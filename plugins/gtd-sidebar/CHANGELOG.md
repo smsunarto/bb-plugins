@@ -4,6 +4,9 @@
 
 ### Minor Changes
 
+- Remove Cursor Projects coordination, its sidebar rail and panels, shared-context
+  tools, and subscriptions. Native threads remain in the ordinary inbox.
+
 - Restore bb's native thread actions in the desktop right-click menu. Settle and
   Snooze stay first, and Archive stays excluded. Add Open in split, Copy thread
   link, Mark read/unread, Move to section, and Rename alongside Pin and Delete.
