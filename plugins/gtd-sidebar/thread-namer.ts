@@ -27,7 +27,9 @@ export function subscribeToThreadNaming(bb: BbPluginApi, threadNamer: ThreadName
         if (
           event.id !== undefined &&
           event.changes.includes("events-appended") &&
-          event.metadata?.eventTypes?.includes("client/turn/requested")
+          event.metadata?.eventTypes?.some(
+            (type) => type === "client/turn/requested" || type === "system/thread-provisioning",
+          )
         ) {
           void threadNamer.nameThread(event.id, { kind: "automatic" });
         }
@@ -108,18 +110,25 @@ async function performThreadNaming(
       if (automaticRequests.get(threadId) === requestSeq) {
         return { ok: false, error: "This prompt has already triggered automatic naming." };
       }
-      automaticRequests.set(threadId, requestSeq);
     }
 
-    const projectInstructions = await loadProjectTitleInstructions(bb, thread.environmentId);
-    if (projectInstructions !== "") {
-      plan = planThreadNaming({ ...planInput, projectInstructions });
-      if (plan.kind === "skip") {
-        return { ok: false, error: describeSkip(plan.reason) };
-      }
+    const projectInstructions = await loadProjectTitleInstructions(
+      bb,
+      thread.environmentId,
+      intent,
+    );
+    if (projectInstructions === null) {
+      return { ok: false, error: "Automatic naming is waiting for the workspace to be ready." };
+    }
+    plan = planThreadNaming({ ...planInput, projectInstructions });
+    if (plan.kind === "skip") {
+      return { ok: false, error: describeSkip(plan.reason) };
     }
 
     await requireNamingEnabled(intent, options.automaticallyNameThreads);
+    if (plan.writeGuard.kind !== "replace-title") {
+      automaticRequests.set(threadId, plan.writeGuard.expectedRequestSeq);
+    }
     const output = await options.inference.complete({
       environmentId: thread.environmentId,
       prompt: plan.prompt,
@@ -158,11 +167,14 @@ async function performThreadNaming(
 async function loadProjectTitleInstructions(
   bb: BbPluginApi,
   environmentId: string | null,
-): Promise<string> {
-  if (environmentId === null) return "";
+  intent: NamingIntent,
+): Promise<string | null> {
+  const unavailable = intent.kind === "automatic" ? null : "";
+  if (environmentId === null) return unavailable;
 
   try {
     const environment = await bb.sdk.environments.get({ environmentId });
+    if (environment.status !== "ready") return unavailable;
     if (environment.path === null) return "";
 
     const file = await bb.sdk.files.read({

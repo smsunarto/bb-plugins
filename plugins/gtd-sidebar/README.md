@@ -170,7 +170,8 @@ initial title supplied by BB. First-request inference can only generate a new
 title, never keep BB's title. Later prompts keep the existing title unless you clearly start completely different work. Follow-ups,
 corrections, tests, debugging, screenshots, commits, and shipping for the same
 task keep its title. When the task change is uncertain, the title stays unchanged.
-Queued prompts are checked when dispatched. Agent replies and turn completion do
+Queued prompts are checked when dispatched. New threads wait for their workspace
+to be ready so the first title includes project naming rules. Agent replies and turn completion do
 not trigger naming. New titles are plain text with no activity emoji. Prefixes
 and other project formatting come only from your naming rules. Existing titles
 are preserved exactly when the decision is to keep them.
@@ -181,7 +182,7 @@ untitled thread, and explicit regeneration use a generation prompt that can only
 rename. Later requests use a review prompt that sees the current title and may
 keep it, and a keep decision does not write to the thread. Both prompts carry the
 latest request, the original request, up to three recent requests, and your
-project naming rules. A transient failure retries once with GPT-5.4-Mini, and each
+project naming rules. A transient failure retries once with GPT-5.6-Luna, and each
 attempt has a five-second deadline. Logs record timing, never the prompt.
 
 Run the **configure-gtd-naming** skill to create or update
