@@ -259,7 +259,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     };
     const slot = renderSlot({ component: Inbox }, current, {
       settings: { compactThreads, localMachineId },
-      rpc: { listThreadMenuSections: () => ({ sections: [] }) } as never,
     });
     return {
       slot,

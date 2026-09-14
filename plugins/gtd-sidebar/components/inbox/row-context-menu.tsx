@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { useRpc, type PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,6 @@ import {
   type DispatchRowCommand,
   type ThreadActionPlan,
 } from "@/components/inbox/thread-actions";
-import type { threadMenuRpcContract } from "@/lib/thread-menu-rpc";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { RenameThreadDialog } from "./rename-thread-dialog";
 
@@ -107,9 +106,6 @@ export function RowContextMenu({
                 {pin.label}
               </MenuAction>
             )}
-            {!thread.isArchived && thread.parentThreadId === null && (
-              <SectionMoveMenu thread={thread} />
-            )}
             <MenuAction icon="Edit" onSelect={() => setRenaming(true)}>
               Rename
             </MenuAction>
@@ -163,70 +159,4 @@ function MenuAction({
 
 function MenuSeparator() {
   return <ContextMenu.Separator className="mx-2 my-1.5 h-px bg-border" />;
-}
-
-function SectionMoveMenu({ thread }: { thread: PluginSidebarThread }) {
-  const rpc = useRpc<typeof threadMenuRpcContract>();
-  const scope = usePortalScopeProps();
-  const [sections, setSections] = useState<{ id: string; name: string }[] | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    let active = true;
-    rpc.call("listThreadMenuSections", {}).then(
-      (result) => {
-        if (active) setSections(result.sections);
-        return undefined;
-      },
-      () => {
-        if (active) setError(true);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [rpc]);
-
-  if (error)
-    return (
-      <ContextMenu.Item disabled className={ITEM_CLASS}>
-        Unable to load sections
-      </ContextMenu.Item>
-    );
-  if (sections === null) return null;
-  const destinations = [{ id: null, name: "Threads" }, ...sections];
-  const isCurrent = (id: string | null) => !thread.isPinned && thread.sectionId === id;
-  if (destinations.every(({ id }) => isCurrent(id))) return null;
-
-  return (
-    <ContextMenu.Sub>
-      <ContextMenu.SubTrigger className={ITEM_CLASS}>
-        <Icon name="MoveTo" className="size-4 shrink-0" />
-        Move to section
-        <Icon name="ChevronRight" className="ml-auto size-4 shrink-0" />
-      </ContextMenu.SubTrigger>
-      <ContextMenu.Portal>
-        <ContextMenu.SubContent
-          {...scope}
-          className="z-50 max-h-[min(24rem,calc(100vh-2rem))] min-w-44 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
-        >
-          {destinations.map(({ id, name }) => (
-            <ContextMenu.Item
-              key={id ?? "threads"}
-              disabled={isCurrent(id)}
-              aria-current={isCurrent(id) ? "true" : undefined}
-              className={ITEM_CLASS}
-              onSelect={() => {
-                void rpc
-                  .call("moveThreadToSection", { threadId: thread.id, sectionId: id })
-                  .catch(() => toast.error("Failed to move thread to section"));
-              }}
-            >
-              {name}
-              {isCurrent(id) && <Icon name="Check" className="ml-auto size-4" />}
-            </ContextMenu.Item>
-          ))}
-        </ContextMenu.SubContent>
-      </ContextMenu.Portal>
-    </ContextMenu.Sub>
-  );
 }

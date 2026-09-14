@@ -17,7 +17,6 @@ import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
-import { registerThreadMenuRpc } from "./lib/thread-menu-rpc.ts";
 
 // Append-only: bb applies these by position, so the retired `settled_at` and
 // `archived_thread_ids` columns stay declared and simply go unread.
@@ -242,8 +241,6 @@ export default async function plugin(bb: BbPluginApi) {
 
   const db = bb.storage.database();
   bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS]);
-
-  registerThreadMenuRpc(bb);
 
   const readAll = (): StoredLifecycleRow[] =>
     (
