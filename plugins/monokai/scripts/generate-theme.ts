@@ -9,7 +9,7 @@ function withAlpha(color: string, alpha: number): string {
 
 const palette = {
   ground: {
-    chrome: "#141414",
+    chrome: "#181818",
     conversation: "#151515",
     content: "#181818",
     recessed: "#1e1e1e",
@@ -527,6 +527,23 @@ const requiredRules: Array<{
   {
     selector: ".dark [data-promptbox]",
     declarations: { "background-color": palette.ground.userSurface },
+  },
+  {
+    selector: ".dark [data-promptbox] [data-promptbox-editor-scroll]",
+    declarations: { "background-color": palette.ground.userSurface },
+  },
+  {
+    selector: '.dark [data-follow-up-composer] [aria-label="Thread context before sending"]',
+    declarations: { "background-color": palette.ground.userSurface },
+  },
+  {
+    selector: ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col",
+    declarations: { "background-color": palette.ground.conversation },
+  },
+  {
+    selector:
+      ".dark #thread-detail-secondary-panel .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])",
+    declarations: { "background-color": palette.ground.content },
   },
   {
     selector: ".dark [data-message-column] [data-markdown-preview] a.underline",

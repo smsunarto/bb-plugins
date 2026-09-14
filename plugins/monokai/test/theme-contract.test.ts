@@ -13,12 +13,25 @@ const codeTheme = await readFile(codeThemePath, "utf8");
 const codeThemeRules = readCodeThemeRules().rules;
 
 describe("bb Monokai surface palette", () => {
-  test("assigns distinct conversation, sidebar, user, and terminal grounds", () => {
+  test("assigns conversation, sidebar, user, and chrome grounds", () => {
     expect(theme).toContain("--background: #151515");
     expect(theme).toContain("--sidebar: #181818");
     expect(theme).toContain("--agent-surface-background: #212121");
     expect(theme).toContain(".dark [data-promptbox] {\n  background-color: #212121");
-    expect(theme).toContain("--terminal-background: #141414");
+    expect(theme).toContain("--terminal-background: #181818");
+    expect(theme.toLowerCase()).not.toContain("#141414");
+  });
+
+  test("pins annotated bb surfaces to their intended grounds", () => {
+    expect(theme).toContain(
+      ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {\n  background-color: #151515",
+    );
+    expect(theme).toContain(
+      ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: #212121",
+    );
+    expect(theme).toContain(
+      '.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {\n  background-color: #212121',
+    );
   });
 
   test("styles conversation links with an alpha-derived accent hover surface", () => {
@@ -45,7 +58,7 @@ describe("bb Monokai contract audit", () => {
     }
     expect(theme).toContain("--diffs-bg-separator-override: #262626");
     expect(theme).toContain(
-      ".bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #1e1e1e;",
+      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: #181818;",
     );
     expect(theme).toContain(".font-mono {\n  font-family: var(--font-sans);");
     expect(theme).toContain(".dark .smart-embed-path,");
@@ -249,7 +262,7 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("rejects an illegible registered foreground/background pair", () => {
-    const changed = theme.replace("--primary-foreground: #141414", "--primary-foreground: #e3e3dd");
+    const changed = theme.replace("--primary-foreground: #181818", "--primary-foreground: #e3e3dd");
     expect(() => auditTheme(changed)).toThrow("--primary-foreground on --primary:");
   });
 });

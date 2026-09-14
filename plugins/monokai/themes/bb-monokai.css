@@ -80,13 +80,13 @@
   --ink: #e3e3dd; /* the one white; ladder base */
 
   /* ---- Grounds ramp ---------------------------------------------------
-   * #141414 chrome · #151515 conversation · #181818 content/sidebars ·
+   * #151515 conversation · #181818 chrome/content/sidebars ·
    * #1E1E1E wells · #212121 user surfaces · #262626 raised/hover · #404040
    * selection. Nothing else serves as a surface. Translucent tiers use
    * an ink alpha chosen to flatten onto a ramp step over --background. */
   --background: #151515; /* main agent conversation */
-  --card: #141414; /* panels are chrome, one step under the pane */
-  --popover: #141414; /* menus, dropdowns, command palette, tooltips */
+  --card: #181818; /* panels share the sidebar/content ground */
+  --popover: #181818; /* menus, dropdowns, command palette, tooltips */
   --secondary: #262626; /* raised */
   --accent: #262626; /* neutral hover/active fill, despite the name */
   --muted: #404040; /* chips + xterm selection ground (see below) */
@@ -145,7 +145,7 @@
    * --timeline-accent must be pinned too — it is hardcoded blue upstream and is
    * the default source of --file-accent. */
   --primary: #88c0d0;
-  --primary-foreground: #141414; /* 9.21:1 on the accent */
+  --primary-foreground: #181818; /* 8.88:1 on the accent */
   --timeline-accent: #88c0d0;
   --file-accent: #88c0d0;
 
@@ -162,7 +162,7 @@
 
   /* ---- Feedback — one hex per role ------------------------------------- */
   --destructive: #e34671;
-  --destructive-foreground: #141414; /* 4.72:1. The whites both fall short as
+  --destructive-foreground: #181818; /* 4.55:1. The whites both fall short as
                                       * TEXT on this fill: the ladder #E3E3DD
                                       * reaches 3.03:1 and upstream's off-ladder
                                       * #FFFFFF only 3.90:1, so dark wins the
@@ -209,7 +209,7 @@
    * contract: normal 0-7 then bright 8-15, in the standard ANSI order. Keep
    * them byte-identical to whatever terminal theme you run beside bb, so one
    * program's output does not change colour when it moves between windows. */
-  --ansi-0: #141414;
+  --ansi-0: #181818;
   --ansi-1: #e34671;
   --ansi-2: #3fa266;
   --ansi-3: #f1b467;
@@ -227,25 +227,25 @@
   --ansi-15: #e3e3dd;
 
   /* Text bb draws ON an ANSI colour used as a background. Each slot takes
-   * whichever of #141414 / #E3E3DD scores higher; every slot but 0 is dark.
-   * Worst pair is slot 8 (#7C7865, the comment gray) at 4.15:1 — inherent to a
+   * whichever of #181818 / #E3E3DD scores higher; every slot but 0 is dark.
+   * Worst pair is slot 8 (#7C7865, the comment gray) at 4.00:1 — inherent to a
    * mid gray, and bright-black backgrounds are rare. */
-  --ansi-bg-fg-0: #e3e3dd; /* 14.30:1 */
-  --ansi-bg-fg-1: #141414; /* 4.72:1 */
-  --ansi-bg-fg-2: #141414; /* 5.76:1 */
-  --ansi-bg-fg-3: #141414; /* 10.06:1 */
-  --ansi-bg-fg-4: #141414; /* 6.21:1 */
-  --ansi-bg-fg-5: #141414; /* 7.36:1 */
-  --ansi-bg-fg-6: #141414; /* 11.01:1 */
-  --ansi-bg-fg-7: #141414; /* 8.18:1 */
-  --ansi-bg-fg-8: #141414; /* 4.15:1 — below AA, best available */
-  --ansi-bg-fg-9: #141414; /* 6.25:1 */
-  --ansi-bg-fg-10: #141414; /* 11.32:1 */
-  --ansi-bg-fg-11: #141414; /* 12.40:1 */
-  --ansi-bg-fg-12: #141414; /* 8.06:1 */
-  --ansi-bg-fg-13: #141414; /* 9.62:1 */
-  --ansi-bg-fg-14: #141414; /* 13.74:1 */
-  --ansi-bg-fg-15: #141414; /* 14.30:1 */
+  --ansi-bg-fg-0: #e3e3dd; /* 13.78:1 */
+  --ansi-bg-fg-1: #181818; /* 4.55:1 */
+  --ansi-bg-fg-2: #181818; /* 5.56:1 */
+  --ansi-bg-fg-3: #181818; /* 9.69:1 */
+  --ansi-bg-fg-4: #181818; /* 5.99:1 */
+  --ansi-bg-fg-5: #181818; /* 7.10:1 */
+  --ansi-bg-fg-6: #181818; /* 10.62:1 */
+  --ansi-bg-fg-7: #181818; /* 7.89:1 */
+  --ansi-bg-fg-8: #181818; /* 4.00:1 — below AA, best available */
+  --ansi-bg-fg-9: #181818; /* 6.02:1 */
+  --ansi-bg-fg-10: #181818; /* 10.91:1 */
+  --ansi-bg-fg-11: #181818; /* 11.95:1 */
+  --ansi-bg-fg-12: #181818; /* 7.77:1 */
+  --ansi-bg-fg-13: #181818; /* 9.27:1 */
+  --ansi-bg-fg-14: #181818; /* 13.24:1 */
+  --ansi-bg-fg-15: #181818; /* 13.78:1 */
 
   /* ---- Diff viewer (shadow DOM) ---------------------------------------
    * Only the `-override` family is reachable: it has top precedence and is
@@ -369,6 +369,23 @@
  * responsible for the edge. */
 .dark [data-promptbox] {
   background-color: #212121;
+}
+
+/* The editor scroll layer is transparent upstream. Paint it explicitly so
+ * inset editor height and overflow never expose a different composer ground. */
+.dark [data-promptbox] [data-promptbox-editor-scroll] {
+  background-color: #212121;
+}
+
+/* Prompt context is part of the user's pending request, not a generic card. */
+.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {
+  background-color: #212121;
+}
+
+/* The bottom-anchored conversation body is transparent upstream. Pin its
+ * concrete child as well as --background so split-pane wrappers cannot leak. */
+.dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {
+  background-color: #151515;
 }
 
 /* Conversation links read as one quiet blue label, then reveal their inline
@@ -816,7 +833,7 @@
                              * non-text) and under the 4.5:1 text floor, which a
                              * 14px filled square is not held to. Deliberately
                              * NOT --destructive-foreground: that token is the
-                             * dark #141414 every other destructive control
+                             * dark #181818 every other destructive control
                              * needs, and it is shared. The Square glyph is
                              * `fill-current`, so it tracks this. */
 }
@@ -930,13 +947,17 @@ diffs-container {
  * has no dedicated data attribute in BB 0.42.1: match its direct collapse
  * control structure, including collapsed cards, within the Git diff panel.
  * Smart embeds expose their own header class. Bodies keep the content ground. */
-.dark .smart-embed-header,
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
-  )
-  .bg-background:has(> .flex > span > button[aria-expanded]) {
+.dark .smart-embed-header {
   background-color: #1e1e1e;
+}
+
+.dark
+  #thread-detail-secondary-panel
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]),
+.dark
+  [data-secondary-panel-shelf]
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+  background-color: #181818;
 }
 
 .dark .smart-embed-header,
@@ -1008,7 +1029,7 @@ diffs-container {
     background: var(--popover);
     box-shadow:
       0 0 0 1px #e3e3dd1e,
-      0 4px 12px -4px #141414eb;
+      0 4px 12px -4px #181818eb;
   }
 }
 
@@ -1077,7 +1098,7 @@ diffs-container {
   color: var(--popover-foreground);
   box-shadow:
     0 0 0 1px #e3e3dd1e,
-    0 4px 12px -4px #141414eb;
+    0 4px 12px -4px #181818eb;
 }
 
 .dark [data-sonner-toast].bb-app-toast > div > div {

@@ -68,7 +68,7 @@ Disabling or removing the plugin returns bb to the default palette.
 Choose **Inter (Default)** or **SF Pro** under **Settings → bb Monokai → UI
 font**. The choice applies to the full interface at desktop and mobile widths.
 Code, diffs, and file paths keep the Berkeley Mono stack. The terminal uses
-BerkeleyMono Nerd Font Mono at size 13 with 1.4 line height and a #141414
+BerkeleyMono Nerd Font Mono at size 13 with 1.4 line height and a #181818
 background, matching the Ghostty cursor-monokai setup. A plugin content script applies these settings to existing and new
 xterm terminals, including the WebGL renderer, without a BB core update. It
 restores the previous typography when Monokai is deselected or unloaded. The
@@ -105,7 +105,7 @@ bb theme.
 
 | Role                | Value                 | Where it lands                                                                 |
 | ------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| Chrome ground       | `#141414`             | cards, popovers, terminal ground                                               |
+| Chrome ground       | `#181818`             | cards, popovers, terminal ground                                               |
 | Conversation ground | `#151515`             | the main agent conversation                                                    |
 | Content ground      | `#181818`             | sidebars, code, and diffs                                                      |
 | Sidebar divider     | `#2B2B2B`             | solid 1px boundary between navigation and content                              |

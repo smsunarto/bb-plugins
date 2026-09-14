@@ -78,12 +78,12 @@
   --ink: {{text.ink}}; /* the one white; ladder base */
 
   /* ---- Grounds ramp ---------------------------------------------------
-   * #141414 chrome · #151515 conversation · #181818 content/sidebars ·
+   * #151515 conversation · #181818 chrome/content/sidebars ·
    * #1E1E1E wells · #212121 user surfaces · #262626 raised/hover · #404040
    * selection. Nothing else serves as a surface. Translucent tiers use
    * an ink alpha chosen to flatten onto a ramp step over --background. */
   --background: {{ground.conversation}}; /* main agent conversation */
-  --card: {{ground.chrome}}; /* panels are chrome, one step under the pane */
+  --card: {{ground.chrome}}; /* panels share the sidebar/content ground */
   --popover: {{ground.chrome}}; /* menus, dropdowns, command palette, tooltips */
   --secondary: {{ground.raised}}; /* raised */
   --accent: {{ground.raised}}; /* neutral hover/active fill, despite the name */
@@ -143,7 +143,7 @@
    * --timeline-accent must be pinned too — it is hardcoded blue upstream and is
    * the default source of --file-accent. */
   --primary: {{accent.base}};
-  --primary-foreground: {{ground.chrome}}; /* 9.21:1 on the accent */
+  --primary-foreground: {{ground.chrome}}; /* 8.88:1 on the accent */
   --timeline-accent: {{accent.base}};
   --file-accent: {{accent.base}};
 
@@ -160,7 +160,7 @@
 
   /* ---- Feedback — one hex per role ------------------------------------- */
   --destructive: {{feedback.error}};
-  --destructive-foreground: {{ground.chrome}}; /* 4.72:1. The whites both fall short as
+  --destructive-foreground: {{ground.chrome}}; /* 4.55:1. The whites both fall short as
                                       * TEXT on this fill: the ladder #E3E3DD
                                       * reaches 3.03:1 and upstream's off-ladder
                                       * #FFFFFF only 3.90:1, so dark wins the
@@ -225,25 +225,25 @@
   --ansi-15: {{text.ink}};
 
   /* Text bb draws ON an ANSI colour used as a background. Each slot takes
-   * whichever of #141414 / #E3E3DD scores higher; every slot but 0 is dark.
-   * Worst pair is slot 8 (#7C7865, the comment gray) at 4.15:1 — inherent to a
+   * whichever of #181818 / #E3E3DD scores higher; every slot but 0 is dark.
+   * Worst pair is slot 8 (#7C7865, the comment gray) at 4.00:1 — inherent to a
    * mid gray, and bright-black backgrounds are rare. */
-  --ansi-bg-fg-0: {{text.ink}}; /* 14.30:1 */
-  --ansi-bg-fg-1: {{ground.chrome}}; /* 4.72:1 */
-  --ansi-bg-fg-2: {{ground.chrome}}; /* 5.76:1 */
-  --ansi-bg-fg-3: {{ground.chrome}}; /* 10.06:1 */
-  --ansi-bg-fg-4: {{ground.chrome}}; /* 6.21:1 */
-  --ansi-bg-fg-5: {{ground.chrome}}; /* 7.36:1 */
-  --ansi-bg-fg-6: {{ground.chrome}}; /* 11.01:1 */
-  --ansi-bg-fg-7: {{ground.chrome}}; /* 8.18:1 */
-  --ansi-bg-fg-8: {{ground.chrome}}; /* 4.15:1 — below AA, best available */
-  --ansi-bg-fg-9: {{ground.chrome}}; /* 6.25:1 */
-  --ansi-bg-fg-10: {{ground.chrome}}; /* 11.32:1 */
-  --ansi-bg-fg-11: {{ground.chrome}}; /* 12.40:1 */
-  --ansi-bg-fg-12: {{ground.chrome}}; /* 8.06:1 */
-  --ansi-bg-fg-13: {{ground.chrome}}; /* 9.62:1 */
-  --ansi-bg-fg-14: {{ground.chrome}}; /* 13.74:1 */
-  --ansi-bg-fg-15: {{ground.chrome}}; /* 14.30:1 */
+  --ansi-bg-fg-0: {{text.ink}}; /* 13.78:1 */
+  --ansi-bg-fg-1: {{ground.chrome}}; /* 4.55:1 */
+  --ansi-bg-fg-2: {{ground.chrome}}; /* 5.56:1 */
+  --ansi-bg-fg-3: {{ground.chrome}}; /* 9.69:1 */
+  --ansi-bg-fg-4: {{ground.chrome}}; /* 5.99:1 */
+  --ansi-bg-fg-5: {{ground.chrome}}; /* 7.10:1 */
+  --ansi-bg-fg-6: {{ground.chrome}}; /* 10.62:1 */
+  --ansi-bg-fg-7: {{ground.chrome}}; /* 7.89:1 */
+  --ansi-bg-fg-8: {{ground.chrome}}; /* 4.00:1 — below AA, best available */
+  --ansi-bg-fg-9: {{ground.chrome}}; /* 6.02:1 */
+  --ansi-bg-fg-10: {{ground.chrome}}; /* 10.91:1 */
+  --ansi-bg-fg-11: {{ground.chrome}}; /* 11.95:1 */
+  --ansi-bg-fg-12: {{ground.chrome}}; /* 7.77:1 */
+  --ansi-bg-fg-13: {{ground.chrome}}; /* 9.27:1 */
+  --ansi-bg-fg-14: {{ground.chrome}}; /* 13.24:1 */
+  --ansi-bg-fg-15: {{ground.chrome}}; /* 13.78:1 */
 
   /* ---- Diff viewer (shadow DOM) ---------------------------------------
    * Only the `-override` family is reachable: it has top precedence and is
@@ -367,6 +367,23 @@
  * responsible for the edge. */
 .dark [data-promptbox] {
   background-color: {{ground.userSurface}};
+}
+
+/* The editor scroll layer is transparent upstream. Paint it explicitly so
+ * inset editor height and overflow never expose a different composer ground. */
+.dark [data-promptbox] [data-promptbox-editor-scroll] {
+  background-color: {{ground.userSurface}};
+}
+
+/* Prompt context is part of the user's pending request, not a generic card. */
+.dark [data-follow-up-composer] [aria-label="Thread context before sending"] {
+  background-color: {{ground.userSurface}};
+}
+
+/* The bottom-anchored conversation body is transparent upstream. Pin its
+ * concrete child as well as --background so split-pane wrappers cannot leak. */
+.dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {
+  background-color: {{ground.conversation}};
 }
 
 /* Conversation links read as one quiet blue label, then reveal their inline
@@ -814,7 +831,7 @@
                              * non-text) and under the 4.5:1 text floor, which a
                              * 14px filled square is not held to. Deliberately
                              * NOT --destructive-foreground: that token is the
-                             * dark #141414 every other destructive control
+                             * dark #181818 every other destructive control
                              * needs, and it is shared. The Square glyph is
                              * `fill-current`, so it tracks this. */
 }
@@ -928,13 +945,17 @@ diffs-container {
  * has no dedicated data attribute in BB 0.42.1: match its direct collapse
  * control structure, including collapsed cards, within the Git diff panel.
  * Smart embeds expose their own header class. Bodies keep the content ground. */
-.dark .smart-embed-header,
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
-  )
-  .bg-background:has(> .flex > span > button[aria-expanded]) {
+.dark .smart-embed-header {
   background-color: {{ground.recessed}};
+}
+
+.dark
+  #thread-detail-secondary-panel
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]),
+.dark
+  [data-secondary-panel-shelf]
+  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+  background-color: {{ground.content}};
 }
 
 .dark .smart-embed-header,
