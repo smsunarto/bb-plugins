@@ -363,15 +363,9 @@ export function ThreadInbox({
             }
           }}
         >
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 px-2 pb-0.5",
-              repositoryGroupsEnabled && "justify-end",
-            )}
-          >
-            {!repositoryGroupsEnabled ? (
-              <Select value={scope} onValueChange={setScope}>
-                {/* Ghost trigger: no border, no filled track — it reads as a label
+          <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
+            <Select value={scope} onValueChange={setScope}>
+              {/* Ghost trigger: no border, no filled track — it reads as a label
                 until you hover it.
 
                 `border-transparent` alongside `border-0`, because width and
@@ -380,27 +374,26 @@ export function ThreadInbox({
                 recessed background off that class rather than off a drawn
                 border. Evicting the color class is what actually keeps the
                 track clear. */}
-                <SelectTrigger
-                  className={cn(
-                    "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
-                    isCompactViewport && "min-h-10",
-                  )}
-                  aria-label={`Project scope: ${scopeLabel}`}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_PROJECTS} className="text-xs">
-                    All projects
+              <SelectTrigger
+                className={cn(
+                  "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
+                  isCompactViewport && "min-h-10",
+                )}
+                aria-label={`Project scope: ${scopeLabel}`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PROJECTS} className="text-xs">
+                  All projects
+                </SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id} className="text-xs">
+                    {project.name}
                   </SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id} className="text-xs">
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
+                ))}
+              </SelectContent>
+            </Select>
             <MachineScopePicker
               machines={machines}
               value={machineScope}
@@ -412,7 +405,6 @@ export function ThreadInbox({
               isCompactViewport={isCompactViewport}
               onToggle={() => {
                 const next = !repositoryGroupsEnabled;
-                if (next) setScope(ALL_PROJECTS);
                 setRepositoryGroupsEnabled(next);
                 writeRepositoryGroupsPreference(next);
               }}

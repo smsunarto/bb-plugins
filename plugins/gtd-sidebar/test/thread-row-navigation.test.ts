@@ -797,14 +797,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         trigger.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
         chipGlobe.style.color,
       );
-      assert.equal(
-        view.slot.queryByRole("combobox", { name: "Project scope: All projects" }),
-        null,
-      );
+      assert.ok(view.slot.getByRole("combobox", { name: "Project scope: All projects" }));
       const hideRepositoryGroups = view.slot.getByRole("button", {
         name: "Hide repository groups",
       });
-      assert.ok(hideRepositoryGroups.parentElement?.classList.contains("justify-end"));
       fireEvent.click(hideRepositoryGroups);
       fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
         key: "ArrowDown",
@@ -812,8 +808,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.click(screen.getByRole("option", { name: "One" }));
       assert.deepEqual(rowIds(view.slot), ["a"]);
       fireEvent.click(view.slot.getByRole("button", { name: "Show repository groups" }));
-      assert.equal(view.slot.queryByRole("combobox", { name: /Project scope:/ }), null);
-      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["a", "c"]));
+      assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
+      assert.ok(view.slot.getByRole("combobox", { name: "Project scope: One" }));
+      assert.deepEqual(rowIds(view.slot), ["a"]);
     });
 
     it("keeps repository context under a machine filter and lets the sidebar hide groups", () => {
@@ -834,7 +831,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(view.slot.getByRole("button", { name: "One project" }));
       const hide = view.slot.getByRole("button", { name: "Hide repository groups" });
       assert.equal(hide.getAttribute("aria-pressed"), "true");
-      assert.equal(view.slot.queryByRole("combobox", { name: /Project scope:/ }), null);
+      assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
 
       fireEvent.click(hide);
       assert.equal(view.slot.container.querySelector(".gtd-project-group"), null);
@@ -843,7 +840,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
       fireEvent.click(view.slot.getByRole("button", { name: "Show repository groups" }));
       assert.ok(view.slot.getByRole("button", { name: "One project" }));
-      assert.equal(view.slot.queryByRole("combobox", { name: /Project scope:/ }), null);
+      assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
       assert.equal(localStorage.getItem("gtd-sidebar:v1:repository-groups"), null);
     });
 

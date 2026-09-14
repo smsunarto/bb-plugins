@@ -98,8 +98,8 @@ project groups: a header naming the project, then that project's threads. A
 machine filter keeps these headers visible even when that machine has threads
 in only one project, so the repository context is not lost. Use the folder
 button beside the machine picker to hide or restore repository groups; the
-choice persists across reloads. The project selector appears only while
-repository grouping is off, and restoring groups clears that project scope. The
+choice persists across reloads. The project selector stays available with
+repository grouping on or off, and toggling groups preserves the selected project. The
 header folds the group; a folded header shows `needs-you / total` while
 something inside asks for you, and the total alone otherwise. Hovering the
 header shows a **+** that opens the project's new-thread screen. Shelf and
