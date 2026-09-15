@@ -164,7 +164,7 @@
     },
     "plugins/amp": {
       "name": "@smsunarto/bb-plugin-amp",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "dependencies": {
         "@bb-kit/sentry": "0.2.0",
         "zod": "^4.3.6",
