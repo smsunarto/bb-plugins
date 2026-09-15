@@ -10,6 +10,9 @@
 
 ### Patch Changes
 
+- Give backtick-delimited inline code a dedicated `#252525` surface while
+  fenced code blocks remain on the content ground.
+
 - Style bb's in-app notification center with Monokai surfaces, selected and
   hover states, controls, dividers, and a rounded desktop card. Refine desktop
   transient toasts with a compact Codex-inspired layout. Compact layouts keep

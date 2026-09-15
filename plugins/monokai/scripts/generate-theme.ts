@@ -923,10 +923,10 @@ export function auditTheme(source: string): void {
     );
   }
   requireContrast(
-    "inline comment on recessed well",
+    "code comment on content ground",
     roleValues["text.comment60"],
-    roleValues["solid.recessed"],
-    3.8,
+    palette.ground.content,
+    3.95,
     violations,
   );
 

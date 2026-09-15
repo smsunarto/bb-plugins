@@ -1217,13 +1217,13 @@
   }
 }
 
-/* Lightweight code highlighter (sugar-high) used for inline code and code
- * blocks in the thread. This IS a code surface, so the code hues are legal.
+/* Lightweight code highlighter (sugar-high) used for code blocks in the
+ * thread. This IS a code surface, so the code hues are legal.
  * bb declares six of these on `.dark .bb-code-highlight` in its lazily-loaded
  * workspace-checkout-display chunk. That chunk arrives after this sheet, so a
  * tie on specificity loses the moment a thread is opened. Repeating the class
  * outranks it without reaching for `!important`.
- * Measured on the recessed well #1E1E1E. */
+ * Measured on the content ground #181818. */
 .dark .bg-surface-recessed:has(> .bb-code-highlight) {
   background-color: #181818;
 }
@@ -1239,7 +1239,7 @@
   --sh-identifier: #e3e3dd; /* everything else — 12.79:1 */
   --sh-property: #e3e3dd; /* properties are white by contract */
   --sh-sign: #e3e3dd; /* punctuation; sugar-high cannot split operators out */
-  --sh-comment: #beb89999; /* blends to #7E7B68 — 3.86:1, the contract's
+  --sh-comment: #beb89999; /* blends to #7C7865 — 4.00:1, the contract's
                             * deliberately sub-AA comment tier */
   --sh-keyword: #fe5d86; /* language machinery — 5.59:1 */
   --sh-string: #f7d05c; /* literal text — 11.09:1 */
