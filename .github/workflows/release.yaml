@@ -1,6 +1,20 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      package_path:
+        description: Already-versioned package to publish or retry
+        required: true
+        type: choice
+        options:
+          - packages/bb-kit-core
+          - packages/bb-kit-sentry
+          - plugins/agentation
+          - plugins/amp
+          - plugins/gh-stack
+          - plugins/gtd-sidebar
+          - plugins/monokai
   push:
     branches: [main]
 
@@ -19,6 +33,7 @@ concurrency:
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     name: Release Please
     runs-on: ubuntu-24.04
     outputs:
@@ -36,11 +51,11 @@ jobs:
   publish:
     name: Publish (${{ matrix.path }})
     needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.releases_created == 'true') }}
     strategy:
       fail-fast: false
       matrix:
-        path: ${{ fromJSON(needs.release-please.outputs.paths_released) }}
+        path: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.package_path)) || fromJSON(needs.release-please.outputs.paths_released) }}
     # npm trusted publishing accepts OIDC identities from GitHub-hosted runners,
     # not self-hosted Namespace runners.
     runs-on: ubuntu-24.04
