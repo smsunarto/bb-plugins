@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/smsunarto/bb-plugins/compare/bb-kit-sentry/v0.2.0...bb-kit-sentry/v0.2.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deps:** align Core consumers with the 0.2.0 release ([690533a](https://github.com/smsunarto/bb-plugins/commit/690533aeec6cfd6094d97770b4e6515e709b696f))
+
 ## [0.2.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-sentry/v0.1.0...bb-kit-sentry/v0.2.0) (2026-09-15)
 
 
