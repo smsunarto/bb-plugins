@@ -114,6 +114,7 @@
 /* The shelf header pins to the top of the list while its rows scroll, and
    paints the sidebar ground so they slide under it. */
 .gtd-shelf-header {
+  padding-left: 8px;
   position: sticky;
   top: 0;
   z-index: 3;
@@ -139,7 +140,7 @@
   align-items: center;
   gap: 6px;
   height: 32px;
-  padding: 0 8px 0 24px;
+  padding: 0 8px 0 30px;
   border: 0;
   background: transparent;
   color: var(--muted-foreground);
@@ -167,10 +168,18 @@
   outline-offset: -1px;
   border-radius: 6px;
 }
-.gtd-project-group-chevron {
+.gtd-disclosure.gtd-project-group-chevron {
+  /* Match the shelf label's 8px inset, not its unpadded container. */
+  left: 8px;
+  width: 12px;
   height: 32px;
 }
-.gtd-project-group-header-touch .gtd-project-group-chevron {
+/* Touch: a 16px glyph in a 24px column, so the folder reads as a target. */
+.gtd-project-group-header-touch .gtd-disclosure.gtd-project-group-chevron {
+  /* 8px in from thread-row-alignment.css's 0: the 16px folder sits 12px
+     from the row edge and 12px from the name, on the thread chevron's column. */
+  left: 8px;
+  width: 24px;
   height: 40px;
 }
 .gtd-project-group-name {
@@ -222,10 +231,11 @@
 .gtd-project-group-new:focus-visible {
   outline: 1px solid var(--ring);
 }
-/* Rows under a project header step in a little, short of a full tree level:
-   enough to read as the header's children, cheap on a narrow sidebar. */
+/* Move thread content, disclosures, and tree guides together inside groups. */
 .gtd-project-group-rows {
-  --gtd-group-indent: 12px;
+  /* The thread glyph starts 6px inside its hit area: 10 + 6 = 16px,
+     one 8px nesting step beyond the repo glyph's 8px inset. */
+  --gtd-group-indent: 10px;
   margin-top: 2px;
 }
 .gtd-disclosure {
