@@ -63,6 +63,52 @@
 - Lift collapsed timeline toggles ("Ran 2 commands", "Thought 3s") from a
   stacked 12% alpha to the readback step so they read against the ground.
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.3.2...monokai/v0.4.0) (2026-09-15)
+
+
+### Features
+
+* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
+* **canvas:** mirror theme prose typography ([b6e3255](https://github.com/smsunarto/bb-plugins/commit/b6e325587df093e1738366952ce01c50c4d35b93))
+* **monokai:** add UI font setting ([adfe18d](https://github.com/smsunarto/bb-plugins/commit/adfe18d8c2f9dc94228841613edceb111c290dd9))
+* **monokai:** apply alpha surfaces throughout the theme ([e7f771d](https://github.com/smsunarto/bb-plugins/commit/e7f771d7fbce2f5bec6c00215175485888ebdc29))
+* **monokai:** center all toast notifications above conversation ([21f3d15](https://github.com/smsunarto/bb-plugins/commit/21f3d1519f0e9bddb858d9031d9cadc332af2dac))
+* **monokai:** compose controls with shared alpha layers ([e9fc3a3](https://github.com/smsunarto/bb-plugins/commit/e9fc3a3725a75fb3ea0bd099a477db2b318f0b37))
+* **monokai:** supply canvas prose accent hues ([b6e3255](https://github.com/smsunarto/bb-plugins/commit/b6e325587df093e1738366952ce01c50c4d35b93))
+
+
+### Bug Fixes
+
+* **canvas,monokai:** stop Row links overlapping and quiet prose color ([b6e3255](https://github.com/smsunarto/bb-plugins/commit/b6e325587df093e1738366952ce01c50c4d35b93))
+* **monokai:** add diff status icons and hide editor buttons ([403ceab](https://github.com/smsunarto/bb-plugins/commit/403ceab339fa5b5de35081b4ebdf928d5f824803))
+* **monokai:** align Monaco with Cursor colors ([7425a32](https://github.com/smsunarto/bb-plugins/commit/7425a32284a422430687655b07d3bcf545ed6f44))
+* **monokai:** align new-thread composer with conversation footer ([12c7a15](https://github.com/smsunarto/bb-plugins/commit/12c7a1536f9a16b2e6ea79b4d6e3f92bc2fd2fd1))
+* **monokai:** apply footer chip rules to every composer surface ([04a596e](https://github.com/smsunarto/bb-plugins/commit/04a596e539ad0d7de8777f7e23d8fc64f1d1e0f5))
+* **monokai:** contain composer background within border ([2446be9](https://github.com/smsunarto/bb-plugins/commit/2446be9a417f59df6580d54eafe67900e49fe26f))
+* **monokai:** cover settings containers and annotated surfaces ([d1c43a8](https://github.com/smsunarto/bb-plugins/commit/d1c43a872a9c1f15683a4502b3cec75e69b3df63))
+* **monokai:** distinguish diff hunk separators ([0fc2a3b](https://github.com/smsunarto/bb-plugins/commit/0fc2a3b890d91ff1e9aebe0d0a1c84dbafc0806b))
+* **monokai:** expand no-project machine label ([3795867](https://github.com/smsunarto/bb-plugins/commit/3795867cbca9418e7d66f1e6416edf26d1c64e81))
+* **monokai:** frame inline images so they do not blend into the panel ([2f2e076](https://github.com/smsunarto/bb-plugins/commit/2f2e0769f6518b5b7641bb30d7abd73ac6dda9df))
+* **monokai:** gate hover fills and tune phone typography ([303c518](https://github.com/smsunarto/bb-plugins/commit/303c518175f524dec664bfe8b0833f6ae946c67b))
+* **monokai:** harden runtime adapters ([c490cb2](https://github.com/smsunarto/bb-plugins/commit/c490cb2dbe2d138df542f8750995ff32011811cc))
+* **monokai:** keep notification text and actions from overlapping ([c069a44](https://github.com/smsunarto/bb-plugins/commit/c069a44bbeecffd16acf25ddd09ce5f13521f4ae))
+* **monokai:** keep the page header on the pane ground ([f297d45](https://github.com/smsunarto/bb-plugins/commit/f297d45e9bec869e6daa51cbc6b95393e76c631e))
+* **monokai:** lift collapsed timeline toggles to the readback step ([814b95c](https://github.com/smsunarto/bb-plugins/commit/814b95c7d8a6a706580bd50fc7f0e294aa7d38cd))
+* **monokai:** match Ghostty terminal typography and background ([fa4065f](https://github.com/smsunarto/bb-plugins/commit/fa4065f3a7d4a4e07199ef006954fb698487b133))
+* **monokai:** match mobile sidebar and status bar backgrounds ([4665c02](https://github.com/smsunarto/bb-plugins/commit/4665c02d400a5eea4fd2f59e729cbd706dd82562))
+* **monokai:** open the new-thread slash menu above the composer ([c97165b](https://github.com/smsunarto/bb-plugins/commit/c97165b5075210f74b080e4bfdf94ef342e2a87c))
+* **monokai:** paint model picker group headings on the popover ground ([6c366eb](https://github.com/smsunarto/bb-plugins/commit/6c366eb7705332e62638e592a6647d1a69bc9c2d))
+* **monokai:** preserve native mobile selector layout ([fcfe0b1](https://github.com/smsunarto/bb-plugins/commit/fcfe0b1fb87eed5de541914ba78c14ed9a99ce2b))
+* **monokai:** shade the last turn heading ([06b6834](https://github.com/smsunarto/bb-plugins/commit/06b6834d59ca160772e5de38a71d2dd4d2aa5ab9))
+* **monokai:** style built-in notifications ([117d094](https://github.com/smsunarto/bb-plugins/commit/117d09445580a9d737603b430609ccd431ead75b))
+* **monokai:** tighten fenced code block leading so box-drawing rows connect ([c1e6789](https://github.com/smsunarto/bb-plugins/commit/c1e6789ab842c6976a9f57bdfc5ba44a0b73a47c))
+* **monokai:** unify code backgrounds and file headers ([418fa56](https://github.com/smsunarto/bb-plugins/commit/418fa561013b38e04ff8621aea213dd8f7c41a47))
+* **monokai:** unify sidebar dividers ([1521665](https://github.com/smsunarto/bb-plugins/commit/15216657f4e303040b4e5cbbdbbe29023b02b312))
+* **monokai:** use recessed background for sidebar diffs ([7df139a](https://github.com/smsunarto/bb-plugins/commit/7df139a10931ee503625643154aaf03449881a58))
+* **monokai:** use the shared sidebar background for secondary panels ([fa52116](https://github.com/smsunarto/bb-plugins/commit/fa52116a21bc78a903429fa66d389d4bd943df60))
+* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+* **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
+
 ## 0.3.2
 
 ### Patch Changes
