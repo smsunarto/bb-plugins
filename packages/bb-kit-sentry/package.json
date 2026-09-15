@@ -1,6 +1,6 @@
 {
   "name": "@bb-kit/sentry",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Privacy-first Sentry error reporting for bb-kit plugins.",
   "license": "MIT",
   "author": "Scott Sunarto",

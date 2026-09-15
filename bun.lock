@@ -76,7 +76,7 @@
     },
     "packages/bb-kit-sentry": {
       "name": "@bb-kit/sentry",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@sentry/browser": "10.72.0",
         "@sentry/node": "^10.72.0",
@@ -166,7 +166,7 @@
       "name": "@smsunarto/bb-plugin-amp",
       "version": "0.4.1",
       "dependencies": {
-        "@bb-kit/sentry": "0.1.0",
+        "@bb-kit/sentry": "0.2.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -320,7 +320,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@bb-kit/core": "0.1.0",
-        "@bb-kit/sentry": "0.1.0",
+        "@bb-kit/sentry": "0.2.0",
         "@bb-plugins/icons": "workspace:*",
         "@radix-ui/react-slot": "^1.3.0",
         "@tanstack/react-query": "^5.101.4",
@@ -400,7 +400,7 @@
     },
     "plugins/gtd-sidebar": {
       "name": "@smsunarto/bb-plugin-gtd-sidebar",
-      "version": "0.4.2",
+      "version": "0.5.0",
       "dependencies": {
         "@dnd-kit/core": "6.3.1",
         "@dnd-kit/sortable": "10.0.0",
@@ -492,7 +492,7 @@
     },
     "plugins/monokai": {
       "name": "@smsunarto/bb-plugin-monokai",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.4.84",
         "@storybook/react-vite": "10.5.7",
