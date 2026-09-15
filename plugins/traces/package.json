@@ -43,7 +43,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.1.0",
+    "@bb-kit/core": "0.2.0",
     "zod": "^4.4.3",
     "@tanstack/react-query": "^5.101.4"
   },

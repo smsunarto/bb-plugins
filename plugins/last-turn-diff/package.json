@@ -46,7 +46,7 @@
     "src/"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.1.0",
+    "@bb-kit/core": "0.2.0",
     "zod": "^4.4.3",
     "@bb-plugins/unity-inspector": "workspace:*"
   },
