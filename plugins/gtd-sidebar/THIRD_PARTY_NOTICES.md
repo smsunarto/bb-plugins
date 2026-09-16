@@ -91,6 +91,17 @@ Source: <https://github.com/uidotdev/usehooks>
 
 ---
 
+## @samasante/liquid-glass
+
+MIT License, Copyright (c) Sam Asante.
+
+`Glass` frosts and refracts the thread menus. The menu optics follow its
+`GlassContextMenu` example. Compiled into `dist/app.js`.
+
+Source: <https://github.com/samasante/liquid-glass>
+
+---
+
 ## Not shipped here
 
 React, `clsx`, `tailwind-merge`, `@radix-ui/react-select`,
