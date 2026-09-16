@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { JSDOM } from "jsdom";
-import { mountTimelineMotion } from "./timeline-motion.ts";
+import { mountTimelineMotion, setTimelineMotionEnabled } from "./timeline-motion.ts";
 import { isThreadWorking, PROBE_ATTRIBUTE, PROBE_WORKING_ATTRIBUTE } from "./thread-activity.ts";
+import { SMOOTH_SCROLL_SETTING } from "../../shared/timeline-motion.ts";
+
+// Loaded once up front: the harness registers bun lifecycle hooks on import,
+// and the SDK runtime must exist before any module imports `@get-bb/plugin-sdk/app`.
+const { installTestPluginRuntime, loadPluginApp, mountPluginContentScripts, renderSlot } =
+  await import("@get-bb/plugin-sdk/testing/app");
+installTestPluginRuntime();
+const { ThreadActivityProbe } = await import("./thread-activity-probe.tsx");
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 
 let dom: JSDOM;
@@ -127,6 +135,7 @@ beforeEach(() => {
 
 afterEach(() => {
   dispose();
+  setTimelineMotionEnabled(true);
   dom.window.close();
   for (const [key, descriptor] of globals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -135,8 +144,6 @@ afterEach(() => {
 });
 
 test("Kitchen Sink mounts timeline motion and restores native scrolling on unload", async () => {
-  const { loadPluginApp, mountPluginContentScripts } =
-    await import("@get-bb/plugin-sdk/testing/app");
   const app = await loadPluginApp(() => import("../app.tsx"));
   const mounted = await mountPluginContentScripts(app, { pluginId: "kitchen-sink" });
   try {
@@ -912,6 +919,78 @@ describe("switching to a working thread", () => {
     element.scrollTop = 600;
     tick(100);
     expect(element.scrollTop).toBeCloseTo(600, 0);
+  });
+});
+
+describe("smooth scroll setting", () => {
+  test("off settles the animation in flight and keeps later writes native", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    element.scrollTop = 1000;
+    tick(20);
+    element.scrollTop = 300;
+    tick();
+    expect(geometry.top).toBeGreaterThan(300);
+    setTimelineMotionEnabled(false);
+    expect(geometry.top).toBe(300);
+    expect(element.classList.contains("lenis")).toBe(false);
+    expect(document.querySelector("[data-kitchen-sink-thread-scroll]")).toBeNull();
+    element.scrollTop = 900;
+    expect(geometry.top).toBe(900);
+    tick(5);
+    expect(frames.size).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(view.Element.prototype, "scrollTop")?.set).not.toBe(
+      original.set,
+    );
+  });
+
+  test("timelines added while off stay native and animate again once on", () => {
+    setTimelineMotionEnabled(false);
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    element.scrollTop = 1000;
+    element.scrollTop = 300;
+    expect(geometry.top).toBe(300);
+    expect(element.classList.contains("lenis")).toBe(false);
+    setTimelineMotionEnabled(true);
+    expect(document.querySelector("[data-kitchen-sink-thread-scroll]")).not.toBeNull();
+    element.scrollTop = 1000;
+    tick(20);
+    element.scrollTop = 300;
+    tick();
+    expect(geometry.top).toBeGreaterThan(300);
+    expect(geometry.top).toBeLessThan(1000);
+  });
+
+  test("the thread-header marker applies the plugin setting", async () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = timeline();
+    const off = renderSlot(
+      { component: ThreadActivityProbe },
+      { threadId: "thr_test", projectId: "proj_test", isCompactViewport: false },
+      { settings: { [SMOOTH_SCROLL_SETTING]: false } },
+    );
+    try {
+      element.scrollTop = 1000;
+      element.scrollTop = 300;
+      expect(geometry.top).toBe(300);
+    } finally {
+      off.lifecycle.unmount();
+    }
+    const on = renderSlot(
+      { component: ThreadActivityProbe },
+      { threadId: "thr_test", projectId: "proj_test", isCompactViewport: false },
+      { settings: { [SMOOTH_SCROLL_SETTING]: true } },
+    );
+    try {
+      element.scrollTop = 1000;
+      tick(20);
+      element.scrollTop = 300;
+      tick();
+      expect(geometry.top).toBeGreaterThan(300);
+    } finally {
+      on.lifecycle.unmount();
+    }
   });
 });
 

@@ -58,4 +58,11 @@ and anchoring styles. It restores the native `scrollTop` descriptor unless anoth
 plugin has replaced that descriptor afterward. In that case, the later patch
 stays installed and this plugin's router becomes a native passthrough.
 
-Thread motion has no separate settings or CLI commands.
+The plugin's "Smooth thread scrolling" setting (Tools → Kitchen Sink, on by
+default) turns the animation off without unloading the plugin. Off settles any
+animation in flight at its destination, releases every timeline, and passes
+scroll writes straight through until turned on again. The thread-header marker
+carries the value from `useSettings()` to the router, so a pane learns the
+setting when its header renders. Thread switch fades are not affected.
+
+Thread motion has no CLI commands.

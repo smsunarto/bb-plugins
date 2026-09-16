@@ -4,6 +4,7 @@ import { AUTOROUTER_AGENT_INSTRUCTIONS } from "./lib/autorouter/agent-policy.ts"
 
 import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
+import { registerTimelineMotionSettings } from "./lib/timeline-motion.ts";
 import { mentionProviders } from "./mentions.ts";
 import { preparePreview } from "./rpc/prepare-preview.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
@@ -43,6 +44,7 @@ export default definePlugin({
   },
   async setup(bb) {
     await registerAutorouterSettings(bb);
+    registerTimelineMotionSettings(bb);
     for (const provider of mentionProviders) {
       bb.ui.registerMentionProvider(provider);
     }

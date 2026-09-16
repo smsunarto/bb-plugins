@@ -102,6 +102,21 @@ function isScrollKey(event: KeyboardEvent, target: Element): boolean {
 
 const noop = () => {};
 
+let enabled = true;
+const mounts = new Set<(enabled: boolean) => void>();
+
+/**
+ * Turn animated scrolling on or off for every mounted router. Off settles any
+ * animation in flight at its destination and leaves the timeline fully native
+ * until turned on again. The thread-header probe drives this from the plugin's
+ * "Smooth thread scrolling" setting.
+ */
+export function setTimelineMotionEnabled(next: boolean): void {
+  if (next === enabled) return;
+  enabled = next;
+  for (const apply of mounts) apply(next);
+}
+
 export function mountTimelineMotion(document: Document, signal?: AbortSignal): () => void {
   const view = document.defaultView;
   if (!view || signal?.aborted) return noop;
@@ -248,7 +263,9 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
 
   function routedSet(this: HTMLElement, value: unknown): void {
     const content =
-      !disposed && typeof value === "number" && Number.isFinite(value) ? contentFor(this) : null;
+      !disposed && enabled && typeof value === "number" && Number.isFinite(value)
+        ? contentFor(this)
+        : null;
     if (content) routeWrite(this, value as number, content);
     else nativeSet.call(this, value);
   }
@@ -264,7 +281,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
 
   function onInput(event: Event): void {
     const target = event.target;
-    if (!(target instanceof view!.Element)) return;
+    if (!enabled || !(target instanceof view!.Element)) return;
     if (event instanceof view!.KeyboardEvent) {
       if (!isScrollKey(event, target)) return;
       if (target === document.body || target === document.documentElement) {
@@ -313,8 +330,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     }
   }
 
-  function onReducedMotion(): void {
-    if (!reducedMotion.matches) return;
+  function settle(): void {
     for (const session of sessions.values()) {
       const motion = session.motion;
       cancel(session);
@@ -330,8 +346,24 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     frame = null;
   }
 
+  function onReducedMotion(): void {
+    if (reducedMotion.matches) settle();
+  }
+
+  function applyEnabled(next: boolean): void {
+    if (disposed) return;
+    if (next) {
+      document.head.append(styles);
+      discoverInitialTimelines();
+      return;
+    }
+    settle();
+    for (const session of sessions.values()) detach(session);
+    styles.remove();
+  }
+
   function reconcile(element: HTMLElement): void {
-    const content = contentFor(element);
+    const content = enabled ? contentFor(element) : null;
     if (content) attach(element, content);
     else {
       const session = sessions.get(element);
@@ -394,6 +426,7 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
     document.removeEventListener("click", onBottomClick, true);
     reducedMotion.removeEventListener("change", onReducedMotion);
     signal?.removeEventListener("abort", dispose);
+    mounts.delete(applyEnabled);
     styles.remove();
     const installed = Object.getOwnPropertyDescriptor(prototype, "scrollTop");
     if (installed?.set === routedSet && installed.get === original!.get) {
@@ -404,7 +437,8 @@ export function mountTimelineMotion(document: Document, signal?: AbortSignal): (
   try {
     document.addEventListener("click", onBottomClick, { capture: true, passive: true });
     Object.defineProperty(prototype, "scrollTop", { ...original, set: routedSet });
-    document.head.append(styles);
+    mounts.add(applyEnabled);
+    if (enabled) document.head.append(styles);
     for (const type of inputEvents)
       document.addEventListener(type, onInput, { capture: true, passive: true });
     for (const type of releaseEvents) view.addEventListener(type, onRelease);
