@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 
-import plugin, { SMART_EMBED_INSTRUCTIONS } from "../src/server/server.ts";
+import plugin, { INLINE_VIS_INSTRUCTIONS, SMART_EMBED_INSTRUCTIONS } from "../src/server/server.ts";
 import { mentionProviders } from "../src/server/mentions.ts";
 import { WORKSPACE_CHANGED_CHANNEL } from "../src/shared/contract.ts";
 
@@ -113,7 +113,8 @@ test("injects the Smart Embed instructions into every agent session", async () =
     threadId: "thread-1",
     projectId: "project-1",
   });
-  expect(instructions).toBe(SMART_EMBED_INSTRUCTIONS);
+  expect(instructions).toBe(`${SMART_EMBED_INSTRUCTIONS}\n\n${INLINE_VIS_INSTRUCTIONS}`);
+  expect(instructions).toContain("::inline-vis");
   expect(instructions).toContain("::smart-diff");
   expect(instructions).toContain("::smart-code");
   expect(instructions).toContain("::smart-patch");

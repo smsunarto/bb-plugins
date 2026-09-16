@@ -16,6 +16,7 @@ import { updateAutorouterSettings } from "./rpc/update-autorouter-settings.ts";
 import { routeAutorouterPrompt } from "./rpc/route-autorouter-prompt.ts";
 
 export const SMART_EMBED_INSTRUCTIONS = readInstructions("smart-embeds");
+export const INLINE_VIS_INSTRUCTIONS = readInstructions("inline-vis");
 const AUTOROUTER_AGENT_INSTRUCTIONS = readInstructions("autorouter");
 
 export default definePlugin({
@@ -42,7 +43,7 @@ export default definePlugin({
     tools: { autorouter_policy: autorouterPolicy },
     instructions({ bb }) {
       return (
-        SMART_EMBED_INSTRUCTIONS +
+        `${SMART_EMBED_INSTRUCTIONS}\n\n${INLINE_VIS_INSTRUCTIONS}` +
         (autorouterAgentEnabled(bb) ? `\n\n${AUTOROUTER_AGENT_INSTRUCTIONS}` : "")
       );
     },

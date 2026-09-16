@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import plugin, { SMART_EMBED_INSTRUCTIONS } from "../server.ts";
+import plugin, { INLINE_VIS_INSTRUCTIONS, SMART_EMBED_INSTRUCTIONS } from "../server.ts";
 import { readAutorouterSettings, autorouterAgentEnabled } from "../lib/autorouter/settings.ts";
 import {
   DEFAULT_ENABLED_ROUTES,
@@ -109,6 +109,6 @@ test("agent policy uses live settings, enabled routes, and confirmed usage", asy
   expect(usageLimits).toHaveBeenCalledTimes(1);
   expect(
     harness.registrations.instructionProvider?.({ threadId: "child", projectId: "project" }),
-  ).toBe(SMART_EMBED_INSTRUCTIONS);
+  ).toBe(`${SMART_EMBED_INSTRUCTIONS}\n\n${INLINE_VIS_INSTRUCTIONS}`);
   await harness.dispose();
 });
