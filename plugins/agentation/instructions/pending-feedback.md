@@ -1,0 +1,1 @@
+The human has {{pending}} unresolved Agentation annotation{{plural}} on the bb interface. Before acting on a request about the bb UI, call agentation_get_all_pending only when the request does not already contain an Agentation annotation batch. A supplied batch is self-contained; work only on its listed annotation IDs. Resolve each annotation you fix.

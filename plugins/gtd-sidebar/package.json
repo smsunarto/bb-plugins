@@ -70,7 +70,8 @@
     "lib/",
     "components/",
     "hooks/",
-    "skills/"
+    "skills/",
+    "instructions/"
   ],
   "dependencies": {
     "@dnd-kit/core": "6.3.1",

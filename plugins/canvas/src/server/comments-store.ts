@@ -1,3 +1,4 @@
+import { readInstructions } from "./lib/instructions.ts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   commentsFileSchema,
@@ -87,9 +88,10 @@ function recordOpenCount(source: CanvasSource, sidecarPath: string, file: Commen
 export function commentsInstructions(threadId: string): string | null {
   const lines = [...(openCounts.get(threadId) ?? [])]
     .filter(([, count]) => count > 0)
-    .map(
-      ([path, count]) =>
-        `Open canvas comments: ${path} (${count}). Read them with \`bb canvas comments ${path}\`.`,
+    .map(([path, count]) =>
+      readInstructions("open-comments").replace(/{{path}}|{{count}}/g, (key) =>
+        key === "{{path}}" ? path : String(count),
+      ),
     );
   return lines.length === 0 ? null : lines.join("\n");
 }

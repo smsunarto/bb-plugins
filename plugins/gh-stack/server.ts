@@ -1,3 +1,4 @@
+import { readInstructions } from "./lib/instructions.ts";
 // @smsunarto/bb-plugin-gh-stack — stacked-PR visibility and actions for BB threads.
 //
 // Runs `gh stack` commands in a thread's workspace (server host):
@@ -774,13 +775,9 @@ function humanizeBranch(branch: string): string {
 }
 
 function suggestNamePrompt(conventional: boolean): string {
-  return [
-    "Inspect the current work in this workspace: uncommitted changes (git status, git diff) and commits not yet on the default branch.",
-    conventional
-      ? "Then reply with ONLY one Conventional Commits title that describes the work as a whole — `type(scope): subject`, type one of feat, fix, docs, refactor, perf, test, build, ci, chore; scope is the part of the codebase the work touches (a package, module, or directory name, lower case) and is omitted when the work spans several or none fits; subject in imperative mood, lower case, no trailing period; at most 60 characters in total."
-      : "Then reply with ONLY one PR-style title that describes the work as a whole — imperative mood, at most 60 characters, no quotes, no trailing period.",
-    "Your entire final message must be just the title, nothing else.",
-  ].join("\n");
+  return readInstructions("suggest-name").replace("{{titleRule}}", () =>
+    readInstructions(conventional ? "suggest-conventional" : "suggest-title"),
+  );
 }
 
 function sanitizeTitle(text: string): string {
@@ -799,75 +796,39 @@ function conventionsLines(settings: Settings, detectedPrefix: string | null): st
   const lines: string[] = [];
   const prefix = settings.branchPrefix || detectedPrefix;
   if (prefix) {
-    lines.push(
-      `Name every branch \`${prefix}<slug>\`, matching the prefix this workspace already uses.`,
-    );
+    lines.push(readInstructions("branch-prefix").replace("{{prefix}}", () => prefix));
   }
   if (settings.conventionalCommits) {
-    lines.push(
-      "Write every commit message and PR title as a Conventional Commit — `type(scope): subject`, type one of feat, fix, docs, refactor, perf, test, build, ci, chore. The scope names the part of the codebase the layer touches (a package, module, or directory name, lower case); omit it when the layer spans several or none fits. Lead each branch slug with the type only, not the scope (`feat(api): add rate limiting` → `feat-add-rate-limiting`).",
-    );
+    lines.push(readInstructions("conventional-commits"));
   }
   return lines;
 }
 
-// How to run a split fast and prove it lossless. Restated on every Magic
-// Stack run — without it each agent rediscovers these rules the slow way
-// (anchored string edits that drift, partial failures that cannot re-run,
-// a top of stack nobody verified).
-function splitProtocolLines(): string[] {
-  return [
-    "Before restructuring: `git stash push` any workspace changes that are not part of this work; run the repository's lint and typecheck so you split a clean tree; copy every file you will move to a temporary snapshot directory, and when the stack is built byte-compare the top against that snapshot.",
-    "If the work already exists as per-concern commits, build each layer by cherry-picking them — never re-edit files a commit already captures.",
-    "When splitting a mixed tree, assign whole files to the single layer that owns them, and for a file two layers share write out its full intermediate state per layer — byte-exact copies, not patches or anchored string edits, which drift and cannot safely re-run. If the repository has a splitter tool (for example `bun scripts/split-layers.ts <manifest>`), drive it with a manifest instead of editing by hand.",
-    "Prove every layer stands alone, not just the top one: give the splitter a `verify` command that runs the repository's typecheck and tests, or run them yourself before each commit. A layer that only compiles once the layer above lands is not reviewable.",
-  ];
-}
-
 function magicCreatePrompt(settings: Settings, detectedPrefix: string | null): string {
-  return [
-    "Split the work in this workspace into a stack of reviewable branches with `gh stack`. If a `gh-stack` skill is available, follow it; otherwise the steps below are complete on their own.",
-    "1. Inspect the state: uncommitted changes plus commits not on the trunk branch.",
-    "2. Design the layers bottom-to-top — one dependent concern per layer, with foundational work (types, schema, shared helpers) at the bottom and the code that consumes it above. Each layer must read as one reviewable idea and stand alone; when in doubt prefer fewer, larger layers over many that only make sense together.",
-    "3. Create the stack with `gh stack init <branch>` and `gh stack add <branch>`, moving each concern into its owning layer.",
-    "4. Push and open draft PRs with `gh stack submit --auto`, then confirm with `gh stack view --json` and share the PR links.",
-    ...splitProtocolLines(),
-    ...conventionsLines(settings, detectedPrefix),
-    "If the work is a single indivisible concern, say so and create a one-layer stack instead of forcing a split.",
-  ].join("\n");
+  return readInstructions("magic-create").replace(/{{splitProtocol}}|{{conventions}}\n/g, (key) => {
+    if (key === "{{splitProtocol}}") return readInstructions("split-protocol");
+    const lines = conventionsLines(settings, detectedPrefix);
+    return lines.length ? `${lines.join("\n")}\n` : "";
+  });
 }
 
 // Same idea on a workspace that already has a stack: extend it rather than
 // init a new one.
 function magicExtendPrompt(settings: Settings, detectedPrefix: string | null): string {
-  return [
-    "This workspace already has a stack. Split the work that is not yet in it into more layers on top, with `gh stack`. If a `gh-stack` skill is available, follow it; otherwise the steps below are complete on their own.",
-    "1. Inspect the state: `gh stack view --json`, plus uncommitted changes and commits not yet in a layer.",
-    "2. Design the new layers bottom-to-top — one dependent concern per layer, foundational work below the code that consumes it. Each layer must read as one reviewable idea and stand alone.",
-    "3. Run `gh stack top`, then `gh stack add <branch>` per layer, moving each concern into its owning layer. Do not run `gh stack init` while the stack still has a branch to build on; it would start a second stack.",
-    "If `gh stack top` fails because the layer branches no longer exist (every layer merged, branches pruned locally and on the remote), there is nothing to extend: build the layers on the trunk instead, then adopt them with `gh stack init --base <trunk> <branch>...`, which reuses those branches rather than creating a competing stack.",
-    "4. Push and open draft PRs with `gh stack submit --auto`, then confirm with `gh stack view --json` and share the PR links.",
-    ...splitProtocolLines(),
-    ...conventionsLines(settings, detectedPrefix),
-    "If the remaining work belongs in an existing layer, say so and commit it there instead of forcing a new layer.",
-  ].join("\n");
+  return readInstructions("magic-extend").replace(/{{splitProtocol}}|{{conventions}}\n/g, (key) => {
+    if (key === "{{splitProtocol}}") return readInstructions("split-protocol");
+    const lines = conventionsLines(settings, detectedPrefix);
+    return lines.length ? `${lines.join("\n")}\n` : "";
+  });
 }
 
 // Handed to the thread when native `gh stack sync` stops in a state only an
 // agent can untangle. Self-contained on purpose: recovery is the most
 // destructive path here and must not depend on a skill being installed.
 function syncRecoveryPrompt(withSubmit: boolean): string {
-  return [
-    "Native `gh stack sync` already ran and reported a non-trivial recovery state; it may have partial effects. If a `gh-stack` skill is available, follow it; otherwise use the steps below. Inspect first — do not retry sync yet.",
-    "1. `git status`: is a rebase or merge in progress, which files conflict, and what is checked out?",
-    "2. If a rebase is in progress, `git rebase --show-current-patch` shows the stopped commit. Resolve and `git rebase --continue`, or `git rebase --abort` to return to the pre-sync state when the right resolution is not obvious.",
-    "3. `gh stack view --json`: which layers exist, and where does each branch point?",
-    "4. Recover the stack, then verify: clean `git status`, no rebase in progress, and `gh stack view --json` showing every layer on its intended parent.",
-    withSubmit
-      ? "5. Only after that verification succeeds, run `gh stack submit --auto`, then verify the submitted stack with `gh stack view --json`."
-      : "5. Do not run `gh stack submit` as part of this recovery.",
-    "Report the state you found, what you changed, and the final `gh stack view --json`. If you cannot recover safely, stop and say what is blocking you — never force-push or delete branches to clear the error.",
-  ].join("\n");
+  return readInstructions("sync-recovery").replace("{{submitRule}}", () =>
+    readInstructions(withSubmit ? "recovery-submit" : "recovery-no-submit"),
+  );
 }
 
 // Cached stacks stay served without hitting gh for this long; older entries

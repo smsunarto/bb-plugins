@@ -1060,7 +1060,9 @@ export default async function plugin(bb: BbPluginApi) {
     try {
       const pending = countByStatus(db).pending;
       if (pending === 0) return null;
-      return `The human has ${pending} unresolved Agentation annotation${pending === 1 ? "" : "s"} on the bb interface. Before acting on a request about the bb UI, call agentation_get_all_pending only when the request does not already contain an Agentation annotation batch. A supplied batch is self-contained; work only on its listed annotation IDs. Resolve each annotation you fix.`;
+      return readInstructions("pending-feedback").replace(/{{pending}}|{{plural}}/g, (key) =>
+        key === "{{pending}}" ? String(pending) : pending === 1 ? "" : "s",
+      );
     } catch {
       return null;
     }

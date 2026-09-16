@@ -55,7 +55,8 @@
     "src/server/",
     "src/app/",
     "src/shared/",
-    "skills/"
+    "skills/",
+    "instructions/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",
