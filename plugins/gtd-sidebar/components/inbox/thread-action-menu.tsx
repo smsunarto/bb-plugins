@@ -2,9 +2,11 @@ import { useSettings } from "@get-bb/plugin-sdk/app";
 import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Glass } from "@samasante/liquid-glass";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
+import { MENU_GLASS } from "../../lib/menu-glass";
 import { attachHapticTrigger } from "../../lib/ios-haptics";
 import type { ThreadActionPlan } from "./thread-actions";
 
@@ -40,10 +42,15 @@ export function CompactThreadActionMenu({
 }) {
   const { values } = useSettings();
   const [rect, setRect] = useState<DOMRect | null>(null);
+  // Glass sizes its lens from getBoundingClientRect, which the sheet's scale-in
+  // shrinks on the first frame, and a ResizeObserver never fires for a
+  // transform. Flipping a class once the rise ends makes Glass measure again.
+  const [risen, setRisen] = useState(false);
 
   useLayoutEffect(() => {
     if (open && anchorRef?.current) {
       setRect(anchorRef.current.getBoundingClientRect());
+      setRisen(false);
     }
   }, [open, anchorRef]);
 
@@ -76,22 +83,26 @@ export function CompactThreadActionMenu({
           className={cn(
             "group/sheet relative isolate z-50 overflow-hidden text-popover-foreground",
             SHARED_LAYER_CLASS,
-            // 16px, not 24px: this layer carries a backdrop-filter *and* runs
-            // the scale below, so the blur is re-sampled every frame of the
-            // 280ms rise. Blur over ~20px gets expensive under transition,
-            // worst on mobile Safari, which is the only place this sheet opens.
-            "backdrop-blur-lg backdrop-saturate-[1.8] bg-white/75 dark:bg-[#1c1c1e]/80",
             "origin-[var(--radix-dropdown-menu-content-transform-origin)] will-change-transform",
             // UIKit's context-menu spring: a fast rise with a small overshoot.
             "data-[state=open]:animate-[gtd-sheet-in_280ms_cubic-bezier(0.32,1.25,0.4,1)_both]",
             "data-[state=closed]:animate-[gtd-sheet-out_150ms_ease-in_both]",
           )}
+          onAnimationEnd={(event) => {
+            if (event.animationName === "gtd-sheet-in") setRisen(true);
+          }}
         >
-          <div
+          <Glass
+            optics={MENU_GLASS}
+            style={{ display: "block" }}
             className={cn(
-              "relative py-1",
+              "relative rounded-[11px] py-1",
+              // Translucent on purpose: the colour is the glass tint over the
+              // refracted (Chromium) or frosted (Safari) thread list.
+              "bg-white/75 dark:bg-[#1c1c1e]/80",
               "group-data-[state=open]/sheet:animate-[gtd-sheet-fade-in_180ms_ease-out_both]",
               "group-data-[state=closed]/sheet:animate-[gtd-sheet-fade-out_150ms_ease-in_both]",
+              risen && "gtd-risen",
             )}
           >
             {plan.map((action) => (
@@ -112,7 +123,7 @@ export function CompactThreadActionMenu({
                 <span className="truncate">{action.label}</span>
               </DropdownMenu.Item>
             ))}
-          </div>
+          </Glass>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
