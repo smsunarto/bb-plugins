@@ -78,6 +78,7 @@ import {
   threadSendMode,
   turnAssignmentPhase,
 } from "./lib/delivery.ts";
+import { readInstructions } from "./lib/instructions.ts";
 
 const openStatuses: AnnotationStatus[] = ["pending", "acknowledged"];
 
@@ -829,8 +830,7 @@ export default async function plugin(bb: BbPluginApi) {
     name: "agentation_get_all_pending",
     description:
       "Get every open annotation across all bb pages. Use this when the human refers to UI feedback but did not supply a self-contained Agentation annotation batch.",
-    instructions:
-      "When the human refers to feedback they left on the bb interface and their message does not already contain an Agentation annotation batch, read it with agentation_get_all_pending before searching the code. A supplied batch is self-contained; do not fetch other pending feedback. Each annotation names the bb route and, for plugin surfaces, the owning plugin id and public UI registration. Start at that registration in the plugin's app.tsx before narrowing with its selector and React path.",
+    instructions: readInstructions("get-all-pending"),
     presentation: {
       label: {
         pending: "Reading all pending annotations",

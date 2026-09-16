@@ -60,6 +60,7 @@
     "src/app/",
     "src/shared/",
     "skills/",
+    "instructions/",
     "dist/host.js",
     "dist/host.meta.json",
     "src/host/"

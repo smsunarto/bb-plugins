@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-agentation",
   "version": "0.3.0",
-  "description": "Point at any part of the bb UI — including plugin surfaces — and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
+  "description": "Point at any part of the bb UI \u2014 including plugin surfaces \u2014 and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
   "license": "MIT AND PolyForm-Shield-1.0.0",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/agentation#readme",
@@ -31,7 +31,7 @@
   },
   "bb": {
     "name": "Agentation",
-    "description": "Point at any part of the bb UI — including plugin surfaces — and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
+    "description": "Point at any part of the bb UI \u2014 including plugin surfaces \u2014 and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -53,6 +53,7 @@
     "dist/app.css",
     "assets/",
     "skills/",
+    "instructions/",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
