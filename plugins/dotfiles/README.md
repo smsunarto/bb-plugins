@@ -136,7 +136,7 @@ bun run typecheck
 bun run test       # node --test --import tsx
 bun run check      # @bb-kit/core static wiring check
 bun run build      # bb plugin build . — needs the bb CLI on PATH
-bun run verify     # lint + typecheck + tests + check + build + pack dry-run
+bun run verify     # lint + typecheck + tests + check + build
 ```
 
 The plugin is written on `@bb-kit/core`. `src/server/server.ts` is the
@@ -150,6 +150,5 @@ The build and verify scripts call the bb CLI directly (`bb plugin build .`), so 
 bb 0.40 checkout must be on PATH. Run the query and UI checklist against the dev
 instance after the plugin is installed and running.
 
-BB supplies the read-only Pierre diff runtime. The text editor is plugin-owned because
-BB does not expose Pierre's edit subpath from that same runtime; bundling a second copy
-would split Pierre's internal state and break packaged source fallback.
+BB supplies the read-only Pierre diff runtime. Markdown files reuse the Docs rich editor, including its source toggle. Other files use
+CodeMirror, the same source editor used by Docs. No separate editor worker assets are required.

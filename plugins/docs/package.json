@@ -122,5 +122,8 @@
     "mdast-util-gfm-task-list-item": "^2.0.0",
     "mdast-util-to-markdown": "^2.1.0",
     "@mdxeditor/gurx": "^1.2.4"
+  },
+  "exports": {
+    "./editor": "./markdown-editor.tsx"
   }
 }

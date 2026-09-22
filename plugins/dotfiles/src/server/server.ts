@@ -7,7 +7,6 @@ import { render } from "./command/render.ts";
 import { status } from "./command/status.ts";
 import { sync } from "./command/sync.ts";
 import { overview } from "./rpc/overview.ts";
-import { monacoAssets } from "./rpc/monaco-assets.ts";
 import { publish } from "./rpc/publish.ts";
 import { readFile } from "./rpc/read-file.ts";
 import { removeSkill } from "./rpc/remove-skill.ts";
@@ -25,7 +24,7 @@ export default definePlugin({
   pluginId: "dotfiles",
   errorReporter: telemetry.errorReporter,
   performanceReporter: telemetry.performanceReporter,
-  rpc: { monacoAssets, overview, publish, readFile, removeSkill, runTask, saveFile },
+  rpc: { overview, publish, readFile, removeSkill, runTask, saveFile },
   command: { cat, check, list, render, status, sync },
   async setup(bb) {
     const settings = bb.settings.define({

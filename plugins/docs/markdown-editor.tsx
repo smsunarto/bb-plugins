@@ -61,7 +61,7 @@ export interface MarkdownEditorProps {
   previewBaseUrl: string;
   notePath: string;
   canvasSource?: CanvasSource;
-  onUpload(file: File): Promise<{ markdownPath: string }>;
+  onUpload?(file: File): Promise<{ markdownPath: string }>;
   onFirstRender(markdown: string): void;
   onMarkdownChange(markdown: string): void;
   onProposalApplied(result: { content: string; sha256: string }): void;
@@ -97,6 +97,7 @@ function EditorSession(
 ) {
   const { initialValue, previewBaseUrl, notePath } = props;
   const hasCanvasSource = Boolean(props.canvasSource);
+  const hasUpload = Boolean(props.onUpload);
   const editorRef = useRef<MDXEditorMethods>(null);
   const callbacks = useRef(props);
   callbacks.current = props;
@@ -143,7 +144,12 @@ function EditorSession(
       tablePlugin(),
       imagePlugin({
         imagePreviewHandler: async (source) => previewUrl(previewBaseUrl, notePath, source),
-        imageUploadHandler: async (file) => (await callbacks.current.onUpload(file)).markdownPath,
+        ...(hasUpload
+          ? {
+              imageUploadHandler: async (file: File) =>
+                (await callbacks.current.onUpload!(file)).markdownPath,
+            }
+          : {}),
       }),
       codeBlockPlugin({ defaultCodeBlockLanguage: "text" }),
       codeMirrorPlugin({
@@ -192,7 +198,7 @@ function EditorSession(
       toolbarPlugin({ toolbarContents: Toolbar }),
       markdownShortcutPlugin(),
     ];
-  }, [notePath, previewBaseUrl, hasCanvasSource]);
+  }, [notePath, previewBaseUrl, hasCanvasSource, hasUpload]);
 
   useEffect(() => {
     // Initialization may normalize Markdown. Merely opening a file must never
