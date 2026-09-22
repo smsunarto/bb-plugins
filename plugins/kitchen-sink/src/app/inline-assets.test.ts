@@ -1,24 +1,18 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import { buildPreviewUrl, prepareInlineVideos, resolveWorkspaceVideoUrl } from "./inline-video.ts";
+import { prepareInlineAssets, resolvePreviewAssetUrl } from "./inline-assets.ts";
 
 installDom();
 afterEach(() => mock.restore());
-const root = new URL("https://scott.getbb.app/api/v1/threads/thread-1/worktree/files/");
-const documentUrl = new URL(".scratch/demo/player.html", root);
+const root = new URL("https://scott.getbb.app/api/v1/file-previews/lease/");
+const documentUrl = new URL("player.html", root);
 
-describe("relative workspace video URLs", () => {
+describe("relative preview asset URLs", () => {
   test("preserves the thread route, artifact directory, encoded filenames, and fragments", () => {
-    expect(buildPreviewUrl("thread/1", ".scratch/demo #1/player.html", "workspace")).toBe(
-      "/api/v1/threads/thread%2F1/worktree/files/.scratch/demo%20%231/player.html",
+    expect(resolvePreviewAssetUrl("media/detail%20clip.mp4#t=4", documentUrl, root)?.href).toBe(
+      `${root.href}media/detail%20clip.mp4#t=4`,
     );
-    expect(buildPreviewUrl("thread/1", "reports/result.html", "thread-storage")).toBe(
-      "/api/v1/threads/thread%2F1/thread-storage/files/reports/result.html",
-    );
-    expect(
-      resolveWorkspaceVideoUrl("../media/detail%20clip.mp4#t=4", documentUrl, root)?.href,
-    ).toBe(`${root.href}.scratch/media/detail%20clip.mp4#t=4`);
-    expect(resolveWorkspaceVideoUrl("clip%20%231.mp4", documentUrl, root)?.pathname).toEndWith(
+    expect(resolvePreviewAssetUrl("clip%20%231.mp4", documentUrl, root)?.pathname).toEndWith(
       "/clip%20%231.mp4",
     );
   });
@@ -31,7 +25,7 @@ describe("relative workspace video URLs", () => {
     "a%00b.mp4",
     "..\\outside.mp4",
   ])("rejects traversal and ambiguous path %s", (src) => {
-    expect(() => resolveWorkspaceVideoUrl(src, documentUrl, root)).toThrow();
+    expect(() => resolvePreviewAssetUrl(src, documentUrl, root)).toThrow();
   });
 
   test.each([
@@ -42,7 +36,7 @@ describe("relative workspace video URLs", () => {
     "/clip.mp4",
     "#fragment",
   ])("preserves existing non-relative URL %s", (src) => {
-    expect(resolveWorkspaceVideoUrl(src, documentUrl, root)).toBeNull();
+    expect(resolvePreviewAssetUrl(src, documentUrl, root)).toBeNull();
   });
 });
 
@@ -54,26 +48,23 @@ function transport() {
   return { fetch, create };
 }
 
-test("loads video and source src once through the authenticated workspace boundary and transfers blobs without serializing video into HTML", async () => {
+test("loads video and source src once through the authenticated preview boundary and transfers blobs without serializing video into HTML", async () => {
   const { fetch, create } = transport();
   const signal = new AbortController().signal;
-  const result = await prepareInlineVideos(
+  const result = await prepareInlineAssets(
     '<video src="./media/a.mp4#t=2"></video><video><source src="media/a.mp4"></video><video src="data:video/mp4;base64,AAAA"></video>',
-    "thread-1",
-    ".scratch/demo/player.html",
+    documentUrl.href,
     signal,
   );
   expect(fetch).toHaveBeenCalledTimes(1);
-  expect(String(fetch.mock.calls[0]![0])).toEndWith(
-    "/threads/thread-1/worktree/files/.scratch/demo/media/a.mp4",
-  );
+  expect(String(fetch.mock.calls[0]![0])).toEndWith("/file-previews/lease/media/a.mp4");
   expect(fetch.mock.calls[0]![1]).toEqual({
     credentials: "same-origin",
     redirect: "error",
     signal,
   });
   const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
-  expect(doc.querySelector("base")?.href).toEndWith("/.scratch/demo/player.html");
+  expect(doc.querySelector("base")?.href).toEndWith("/file-previews/lease/player.html");
   expect(doc.querySelector("video")?.hasAttribute("src")).toBe(false);
   expect(result.assets[0]?.hash).toBe("#t=2");
   expect(result.assets[0]?.blob).toBe(result.assets[1]?.blob);
@@ -86,10 +77,9 @@ test("loads video and source src once through the authenticated workspace bounda
 
 test("does not fetch or rewrite HTML containing only existing data or remote embeds", async () => {
   const { fetch } = transport();
-  const result = await prepareInlineVideos(
+  const result = await prepareInlineAssets(
     '<video src="data:video/mp4;base64,AAAA"></video>',
-    "thread-1",
-    "player.html",
+    documentUrl.href,
     new AbortController().signal,
   );
   expect(result.srcDoc).toBeUndefined();
@@ -101,10 +91,9 @@ test("surfaces root confinement errors without creating a parent-origin blob URL
   fetch.mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
   fetch.mockResolvedValueOnce(new Response("symlink escapes read root", { status: 400 }));
   await expect(
-    prepareInlineVideos(
+    prepareInlineAssets(
       '<video src="a.mp4"></video><video src="outside-symlink.mp4"></video>',
-      "thread-1",
-      "player.html",
+      documentUrl.href,
       new AbortController().signal,
     ),
   ).rejects.toThrow("HTTP 400");
@@ -115,10 +104,9 @@ test("rejects an authentication HTML response instead of treating it as a video"
   const { fetch, create } = transport();
   fetch.mockResolvedValueOnce(new Response("login", { headers: { "content-type": "text/html" } }));
   await expect(
-    prepareInlineVideos(
+    prepareInlineAssets(
       '<video src="a.mp4"></video>',
-      "thread-1",
-      "player.html",
+      documentUrl.href,
       new AbortController().signal,
     ),
   ).rejects.toThrow("unsupported MIME type");
@@ -133,46 +121,35 @@ test("does not retain a blob when collapse aborts an in-flight read", async () =
     return new Response(new Blob(["video"], { type: "video/mp4" }));
   });
   await expect(
-    prepareInlineVideos(
-      '<video src="a.mp4"></video>',
-      "thread-1",
-      "player.html",
-      controller.signal,
-    ),
+    prepareInlineAssets('<video src="a.mp4"></video>', documentUrl.href, controller.signal),
   ).rejects.toThrow();
   expect(create).not.toHaveBeenCalled();
 });
 
-test("fetches thread-storage videos through the thread-storage route", async () => {
+test("fetches videos through the SDK preview lease", async () => {
   const { fetch } = transport();
-  const result = await prepareInlineVideos(
+  const result = await prepareInlineAssets(
     '<video src="clip.mp4"></video>',
-    "thread-1",
-    "reports/player.html",
+    documentUrl.href,
     new AbortController().signal,
-    "thread-storage",
   );
-  expect(String(fetch.mock.calls[0]![0])).toEndWith(
-    "/threads/thread-1/thread-storage/files/reports/clip.mp4",
-  );
+  expect(String(fetch.mock.calls[0]![0])).toEndWith("/file-previews/lease/clip.mp4");
   const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
-  expect(doc.querySelector("base")?.href).toEndWith("/thread-storage/files/reports/player.html");
+  expect(doc.querySelector("base")?.href).toEndWith("/file-previews/lease/player.html");
 });
 
-test("honors an explicit workspace base and leaves remote-base embeds alone", async () => {
+test("honors an explicit local base and leaves remote-base embeds alone", async () => {
   const { fetch } = transport();
-  const local = await prepareInlineVideos(
-    '<base href="../media/"><video src="a.mp4"></video>',
-    "thread-1",
-    "charts/player.html",
+  const local = await prepareInlineAssets(
+    '<base href="media/"><video src="a.mp4"></video>',
+    documentUrl.href,
     new AbortController().signal,
   );
-  expect(String(fetch.mock.calls[0]![0])).toEndWith("/worktree/files/media/a.mp4");
+  expect(String(fetch.mock.calls[0]![0])).toEndWith("/file-previews/lease/media/a.mp4");
   expect(local.assets).toHaveLength(1);
-  const remote = await prepareInlineVideos(
+  const remote = await prepareInlineAssets(
     '<base href="https://example.com/"><video src="a.mp4"></video>',
-    "thread-1",
-    "charts/player.html",
+    documentUrl.href,
     new AbortController().signal,
   );
   expect(remote.srcDoc).toBeUndefined();
@@ -181,10 +158,9 @@ test("honors an explicit workspace base and leaves remote-base embeds alone", as
 
 test("reports decoder failures inside the opaque frame and clears the alert after recovery", async () => {
   transport();
-  const result = await prepareInlineVideos(
+  const result = await prepareInlineAssets(
     '<video src="clip.mp4"></video>',
-    "thread-1",
-    "player.html",
+    documentUrl.href,
     new AbortController().signal,
   );
   const { JSDOM } = await import("jsdom");
@@ -199,7 +175,7 @@ test("reports decoder failures inside the opaque frame and clears the alert afte
   win.dispatchEvent(
     new win.MessageEvent("message", {
       source: win as unknown as Window,
-      data: { type: "bb:inline-video-assets", token: result.token, assets: result.assets },
+      data: { type: "bb:inline-preview-assets", token: result.token, assets: result.assets },
     }),
   );
   const video = win.document.querySelector("video")!;
@@ -211,4 +187,17 @@ test("reports decoder failures inside the opaque frame and clears the alert afte
   video.dispatchEvent(new win.Event("loadeddata"));
   expect(alert.hidden).toBe(true);
   dom.window.close();
+});
+
+test("loads sibling images through the same opaque-frame bridge", async () => {
+  const { fetch } = transport();
+  fetch.mockResolvedValueOnce(new Response(new Blob(["image"], { type: "image/png" })));
+  const result = await prepareInlineAssets(
+    '<img src="before.png">',
+    documentUrl.href,
+    new AbortController().signal,
+  );
+  expect(String(fetch.mock.calls[0]![0])).toBe(`${root.href}before.png`);
+  expect(result.assets[0]?.blob.type).toBe("image/png");
+  expect(result.srcDoc).toContain('data-bb-inline-preview="0"');
 });

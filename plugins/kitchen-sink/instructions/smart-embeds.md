@@ -25,7 +25,7 @@ Prepare the images before emitting the directive:
 - For photos or renders, match camera position, perspective, and subject placement. Crop or pad both to a common canvas without stretching. If they cannot be aligned honestly, show them separately instead.
 - Inspect both images and verify dimensions before embedding. Use full images without baked-in side labels, borders, or different margins. The viewer preserves the full image with contain sizing and warns if dimensions differ.
 
-`before` and `after` accept workspace-relative paths or HTTP(S) image URLs. For local generated artifacts, keep both files in place. Add source="thread-storage" when both local paths are relative to the owning thread's storage directory. Do not use absolute filesystem paths. Paths with spaces are allowed inside quoted attributes. The directive must be outside code fences to render.
+`before` and `after` accept workspace-relative paths or HTTP(S) image URLs. For local generated artifacts, keep both files in place. Add source="thread-storage" when both local paths are relative to the owning thread's storage directory. For `smart-image-compare` only, do not use absolute filesystem paths. `inline-vis` uses absolute paths instead. Paths with spaces are allowed inside quoted attributes. The directive must be outside code fences to render.
 
 Side labels render as overlays in the image's upper corners. Keep them short so they do not cover the subject.
 

@@ -71,7 +71,11 @@
     "react-compare-slider": "4.0.0",
     "zod": "^4.4.3",
     "@bb-plugins/unity-inspector": "workspace:*",
-    "@bb-plugins/codex-inference": "workspace:*"
+    "@bb-plugins/codex-inference": "workspace:*",
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-to-markdown": "2.1.2",
+    "mdast-util-gfm": "3.1.0",
+    "micromark-extension-gfm": "3.0.0"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.84",

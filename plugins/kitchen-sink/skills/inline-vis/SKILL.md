@@ -7,26 +7,21 @@ description: "Create inline BB visuals for explanations, comparisons, simulation
 
 When the user should see a small HTML demo, chart, or report, or a Markdown
 document, **inline in the assistant message**, write (or update) a
-source-relative file, then emit this **message directive** as its own block (not
-inside a fenced code block):
+file, then emit its **absolute path** in a message directive on its own line:
 
 ```text
-::inline-vis{file="demo.html"}
-::inline-vis{file="notes.md"}
+::inline-vis{file="/absolute/path/demo.html"}
+::inline-vis{file="/absolute/path/notes.md"}
 ```
 
-Omitting `source` defaults to the workspace. Explicit `source="workspace"` is
-equivalent. For a read-only thread-storage artifact, write the document to
-`$BB_THREAD_STORAGE/reports/result.html`, then emit its storage-relative path:
+The file must exist on the thread's host. It can live in the workspace, thread
+storage, or another readable directory. Expand `$BB_THREAD_STORAGE` to its actual
+absolute value before emitting a directive. Relative `file` paths and the old
+`source` attribute are rejected.
 
-```text
-::inline-vis{source="thread-storage" file="reports/result.html"}
-```
-
-Markdown links and images resolve relative to the document's directory in the
-selected source. For `::inline-vis{source="thread-storage" file="reports/report.md"}`,
-`[Notes](notes.md)` and `![Chart](chart.svg)` refer to files under `reports/`
-in that thread's storage. The same rule applies to workspace reports.
+Markdown links and images resolve from the document's directory. Keep local
+assets in that directory or its children. Links outside that directory remain as written and do not abort the document.
+They are not served by its preview lease.
 
 ## Choose the format
 
@@ -105,16 +100,16 @@ fits the content after responsive reflow. BB does not auto-size this viewport.
 
 Write self-contained HTML and explicitly provide the styles and libraries it
 needs. Do not assume Codex's theme utilities, `Tweak`, Lucide global, or
-`window.openai` exist in BB. Use BB's workspace-relative directive and the
-runtime rules below, not Codex's fragment or absolute-path output contract.
+`window.openai` exist in BB. Use the absolute-path directive and runtime rules below.
 
 ## Rules
 
-- `source` is optional and must be `workspace` or `thread-storage`.
-- `file` is relative to the selected source (e.g. `demo.html`,
-  `charts/out.html`, `notes.md`). Workspace paths are relative to the current
-  workspace; thread-storage paths are relative to `$BB_THREAD_STORAGE`. Never
-  put an absolute path in the directive.
+- Keep each preview in a dedicated directory such as `.scratch/demo/`. The SDK
+  lease covers that directory and its children.
+- Markdown previews disable raw HTML. Use `![Label](image.png)` for images, or
+  an HTML preview when image sizing is needed.
+- On BB 0.43.3, separate raster images are limited to 10 MiB.
+- `file` must be an absolute path on the thread's host. Do not use `source`.
 - `height` is optional and sets the preview height in pixels. It must be a
   whole number from 120 through 1200; omit it for the 224px default.
 - `.html`, `.htm`, `.md`, and `.markdown` files are accepted.
@@ -125,25 +120,21 @@ runtime rules below, not Codex's fragment or absolute-path output contract.
   Markdown uses BB's renderer with raw HTML disabled.
 - The document must be at most 5 MiB. Keep videos as separate files beside the
   HTML instead of converting them to base64 or compressing them to fit the HTML.
-- Static `video[src]` and nested `source[src]` paths resolve from the HTML
-  artifact's directory. See the example below.
-  Both files must remain in the same source (the owning thread's workspace or
-  its thread storage). Nested paths and `../` within the source work. Escape
-  paths and symlinks outside it fail.
-- Relative videos also work through authenticated remote BB clients. Kitchen
-  Sink fetches them through the owning thread's workspace or thread-storage
-  route and transfers Blobs into the opaque iframe. The iframe receives no app
-  credentials.
-- Prefer `thread-storage` for read-only generated reports and other artifacts
-  that should not modify the workspace. Thread-storage previews have no
-  "open in workspace" header action.
+- Static `img[src]`, `video[src]`, and nested video `source[src]` paths resolve
+  from the HTML directory. Keep assets beside it or in child directories.
+  Paths and symlinks outside that directory fail.
+- Local images and videos also work through authenticated remote BB clients.
+  Kitchen Sink uses the SDK's directory preview lease and transfers Blobs into
+  the opaque iframe. The iframe receives no app credentials.
+- Open previews keep their interactive state when the one-hour lease expires.
+  Reopening a collapsed preview rereads the file and obtains a fresh lease. The header opens the absolute file on its host.
 - On BB 0.42.1, each external video is limited to 25 MiB by the host file API.
   Playback waits for the full video download. Seeking then works from the
   buffered Blob. HTTP range streaming and larger files require BB core support.
 - Existing data URI videos still work, with their encoded bytes counting toward
   the HTML limit. Remote URLs retain normal browser policies. Dynamically
   assigned media URLs and other authenticated relative assets are not rewritten.
-- Emit the directive only after the file exists on disk in the selected source.
+- Emit the directive only after the file exists on disk on the thread host.
 - Do **not** put the directive inside backticks or a markdown code fence, or it
   stays literal text.
 - Incomplete streaming syntax stays literal until the closing `}` arrives. Emit
@@ -153,7 +144,7 @@ The bb app replaces the directive with an inline preview. If the plugin is
 disabled or the path is invalid, users see the original directive source or an
 inline error from the plugin.
 
-## Relative video example
+## Video example
 
 Save `.scratch/demo/clip.mp4` and `.scratch/demo/player.html` in a gitignored
 workspace directory. The HTML can be small:
@@ -181,7 +172,7 @@ workspace directory. The HTML can be small:
 Then emit:
 
 ```text
-::inline-vis{file=".scratch/demo/player.html" height="400"}
+::inline-vis{file="/absolute/workspace/.scratch/demo/player.html" height="400"}
 ```
 
 Keep both files in place. Use URL encoding for filename characters such as

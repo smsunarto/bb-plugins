@@ -1,4 +1,4 @@
-import { isAbsolute, posix, relative, resolve, sep } from "node:path";
+import { posix, win32 } from "node:path";
 
 export const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 
@@ -28,40 +28,19 @@ export function previewKind(file: string): PreviewKind {
   return kind;
 }
 
-export function requireRelativePreviewFile(value: unknown): string {
-  const file = requireNonEmptyString(value, "file");
-  if (isAbsolute(file)) {
-    throw new Error(`"file" must be source-relative, not absolute: ${file}`);
-  }
-  if (/^[a-zA-Z]:[\\/]/u.test(file) || file.startsWith("\\\\")) {
-    throw new Error(`"file" must be source-relative, not absolute: ${file}`);
-  }
-  const slashNormalized = file.replace(/\\/gu, "/");
-  if (slashNormalized.split("/").includes("..")) {
-    throw new Error(`"file" must not contain traversal segments: ${file}`);
-  }
-  const normalized = posix.normalize(slashNormalized);
-  if (
-    normalized === ".." ||
-    normalized.startsWith("../") ||
-    normalized.includes("/../") ||
-    normalized === "." ||
-    normalized.startsWith("/")
-  ) {
-    throw new Error(`"file" must not escape its source: ${file}`);
-  }
-  previewKind(normalized);
-  return normalized;
+export function previewPathApi(file: string) {
+  return /^[a-z]:[\\/]|^\\\\/iu.test(file) ? win32 : posix;
 }
 
-export function resolveContainedPreviewPath(rootPath: string, relativeFile: string): string {
-  const root = resolve(rootPath);
-  const absolute = resolve(root, relativeFile);
-  const relativePath = relative(root, absolute);
-  if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
-    throw new Error(`"file" must not escape its source: ${relativeFile}`);
+export function requireAbsolutePreviewFile(value: unknown): string {
+  const file = requireNonEmptyString(value, "file");
+  const path = previewPathApi(file);
+  if (!path.isAbsolute(file) || file.includes("\0")) {
+    throw new Error('"file" must be an absolute path on the thread host.');
   }
-  return absolute;
+  const normalized = path.normalize(file);
+  previewKind(normalized);
+  return normalized;
 }
 
 export function httpStatus(error: unknown): number | null {

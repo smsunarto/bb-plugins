@@ -1,8 +1,12 @@
 import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import { useState } from "react";
 import { ReactCompareSlider, ReactCompareSliderImage } from "react-compare-slider";
-import { buildPreviewUrl } from "./inline-video.ts";
-import type { PreviewSource } from "../shared/contract.ts";
+
+type PreviewSource = "workspace" | "thread-storage";
+function buildPreviewUrl(threadId: string, file: string, source: PreviewSource): string {
+  const route = source === "workspace" ? "worktree/files" : "thread-storage/files";
+  return `/api/v1/threads/${encodeURIComponent(threadId)}/${route}/${file.split("/").map(encodeURIComponent).join("/")}`;
+}
 import { parseImageAnnotations, type ImageAnnotation } from "./image-annotations.ts";
 import "./smart-image-compare.css";
 

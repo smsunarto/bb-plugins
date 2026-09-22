@@ -40,7 +40,7 @@ export function EmbedHeader({
           type="button"
           className="smart-diff-path smart-diff-open"
           title={label}
-          aria-label={`Open ${path} in the workspace`}
+          aria-label={`Open ${path}${kind === "preview" ? "" : " in the workspace"}`}
           onClick={() => openWorkspaceFile(path)}
         >
           <bdi>{label}</bdi>

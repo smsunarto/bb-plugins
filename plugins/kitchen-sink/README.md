@@ -88,27 +88,23 @@ Add `annotations='[{"x":72,"y":38,"label":"Background removed","side":"after"}]'
 
 ## Inline visualizations
 
-`::inline-vis{file="demo.html"}` renders a workspace-relative HTML file directly in an assistant message, and `::inline-vis{file="notes.md"}` renders a Markdown document with bb's own Markdown renderer (raw HTML disabled). An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.
+`::inline-vis{file="/absolute/path/demo.html"}` renders HTML directly in an assistant message. `.md` and `.markdown` files use bb's Markdown renderer with raw HTML disabled. An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.
 
-The optional `source` attribute selects where `file` lives. Omitting it or passing `source="workspace"` reads the thread workspace. `::inline-vis{source="thread-storage" file="reports/result.html"}` reads a read-only artifact from the thread's storage directory (`$BB_THREAD_STORAGE`) without resolving the workspace. Thread-storage previews omit the "open in workspace" header action because bb's workspace viewer cannot open them.
+`file` is an absolute path on the thread's host. There is no `source` attribute or relative-path fallback. Files can live in the workspace, thread storage, or any other readable directory. Expand `$BB_THREAD_STORAGE` before emitting a directive. Existing relative directives must be updated.
 
-Markdown links and images resolve relative to the document's directory in its source. For `reports/report.md`, `[Notes](notes.md)` and `![Chart](chart.svg)` refer to files under `reports/` in the same source.
+The plugin reads through the SDK and leases the document's directory for asset access. Static sibling `img[src]`, `video[src]`, and video `source[src]` files are fetched by the authenticated app and transferred as Blobs into the opaque iframe. Nested directories work. Parent-directory escapes and symlinks outside the document's directory fail. Markdown destinations resolve from the same directory. Links outside it remain as written and do not prevent the report from rendering. Keep HTML styles and scripts self-contained or use remote URLs.
 
-Only the last two inline visualizations in a thread's rendered conversation open automatically. Older previews stay collapsed without preparing or loading their HTML. Expand or collapse any preview from its header. Manual choices last while that directive is mounted and override the automatic default, including when a new preview arrives. Collapsing unloads the iframe, so reopening resets its interactive state.
+HTML runs with `sandbox="allow-scripts"`, without app cookies or storage access. The document limit is 5 MiB. Separate media use the host file API's limits (25 MiB for video and 10 MiB for raster images on BB 0.43.3). Remote URLs retain normal browser policies. Dynamically assigned local assets are not rewritten.
 
-Ordering uses the plugin's own card elements in document order, not registration timing or filenames. This keeps prepended history and repeated directives ordered correctly without depending on private bb DOM selectors. The SDK does not expose an ordinal for each directive, so the default applies to currently rendered directives, not unloaded timeline pages.
+For example, `/tmp/demo/player.html` can contain `<video controls src="./clip.mp4"></video>` beside `/tmp/demo/clip.mp4`. Emit `::inline-vis{file="/tmp/demo/player.html" height="400"}`. Keep both files in place.
 
-Disable the standalone `inline-vis` plugin before enabling this renderer. bb leaves a directive literal when two plugins claim the same `inline-vis` message directive.
+Only the last two previews per thread open automatically. Collapsing unloads the preview. Reopening rereads the file. Open previews keep their state when the one-hour lease expires. Collapse and reopen to obtain a fresh lease for local links. The header opens the absolute file through the SDK host viewer.
 
-The server accepts `.html`, `.htm`, `.md`, and `.markdown` documents up to 5 MiB and verifies the file through bb's root-confined file API against the selected source root (workspace path or `threads.storageLocation`). Static relative `video[src]` and `video source[src]` references resolve against the HTML directory. The app fetches those videos from the existing authenticated thread worktree or thread-storage route, which selects the owning host and enforces symlink containment. It sends the resulting Blobs to the opaque iframe through a one-time, document-specific handshake. The iframe creates and releases its own Blob URLs. This supports remote clients without exposing app credentials or placing video bytes inside the HTML.
+Keep preview files in a dedicated directory such as `.scratch/demo/`; the SDK lease covers that directory and its children. Markdown previews disable raw HTML: use `![Label](image.png)` for images or an HTML preview for explicit sizing.
 
-For example, `.scratch/demo/player.html` can contain `<video controls src="./clip.mp4"></video>` beside `.scratch/demo/clip.mp4`. Emit `::inline-vis{file=".scratch/demo/player.html" height="400"}`. No base64 conversion is needed.
+Disable the standalone `inline-vis` plugin before enabling this renderer. bb leaves a directive literal when two plugins claim the same directive.
 
-**Current limits (BB 0.42.1):** HTML remains capped at 5 MiB. Each separate video can be at most 25 MiB, the host file API's non-image limit. The route buffers the complete file and returns HTTP 200 even for Range requests. Playback starts after download and seeking uses the buffered Blob. This plugin does not add HTTP range streaming or remove the host limit. Existing data URI embeds still work. Dynamically assigned sources and other authenticated relative assets are outside this video loader's scope.
-
-Documents without relative videos keep using the original worktree or thread-storage URL. Scripts run in a sandboxed opaque-origin iframe with `allow-scripts`, without `allow-same-origin`. For workspace files, the header action opens the original file in bb's workspace viewer.
-
-This capability is forked from [`get-bb/bb/plugins/inline-vis`](https://github.com/get-bb/bb/tree/b5dc3b8a96390a44045a72602bd164e06ab07686/plugins/inline-vis), last synced with upstream commit `b5dc3b8a96390a44045a72602bd164e06ab07686` on 2026-09-12. Kitchen Sink replaces the upstream plugin's private `@bb/shared-ui` imports with package-owned markup and CSS so the external plugin remains SDK-only, and adds the collapsible card, auto-open limit, and relative video loader described above.
+This capability is forked from [`get-bb/bb/plugins/inline-vis`](https://github.com/get-bb/bb/tree/b5dc3b8a96390a44045a72602bd164e06ab07686/plugins/inline-vis), last synced with upstream commit `b5dc3b8a96390a44045a72602bd164e06ab07686` on 2026-09-12. Kitchen Sink replaces the upstream plugin's private `@bb/shared-ui` imports with package-owned markup and CSS so the external plugin remains SDK-only, and adds the collapsible card, auto-open limit, and absolute-path preview loader described above.
 
 ## Add a command
 
