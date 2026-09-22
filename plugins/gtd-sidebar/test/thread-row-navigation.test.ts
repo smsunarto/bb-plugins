@@ -503,6 +503,35 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("thread hierarchy", () => {
+    it("shows snoozed descendants beneath their parent", () => {
+      const host = hostState([
+        thread("root"),
+        thread("child", { parentThreadId: "root" }),
+        thread("grandchild", { parentThreadId: "child" }),
+      ]);
+      host.lifecycle = lifecycle(["root", "child", "grandchild"]);
+      const view = mount(host);
+      fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (3)" }));
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild"]);
+      assert.ok(rowButton(view.slot, "root", "Collapse children of root"));
+      assert.ok(rowButton(view.slot, "child", "Collapse children of child"));
+    });
+
+    it("does not offer Snooze on a parent while a descendant is working", async () => {
+      const host = hostState([
+        thread("root"),
+        thread("child", { parentThreadId: "root", indicator: "runtime" }),
+      ]);
+      host.lifecycle = {
+        ...lifecycle(),
+        canPark: (item: PluginSidebarThread) => item.indicator !== "runtime",
+      };
+      const view = mount(host);
+      fireEvent.contextMenu(row(view.slot, "root"));
+      await act(async () => {});
+      assert.equal(screen.queryByRole("menuitem", { name: "Snooze" }), null);
+    });
+
     it("publishes focused split state independently of the parent route", () => {
       const host = {
         ...hostState([thread("root"), thread("child", { parentThreadId: "root" })]),

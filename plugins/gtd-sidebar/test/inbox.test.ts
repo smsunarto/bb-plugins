@@ -241,6 +241,25 @@ describe("inbox families", () => {
     );
   });
 
+  it("keeps snoozed descendants nested on the Snoozed shelf", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "root" }),
+        thread({ id: "child", parentThreadId: "root" }),
+        thread({ id: "grandchild", parentThreadId: "child" }),
+        thread({ id: "active", parentThreadId: "root" }),
+      ],
+      (item) => (item.id === "active" ? "active" : "snoozed"),
+    );
+    const snoozed = tree.filter((node) => node.shelf === "snoozed");
+    assert.deepEqual(ids(visibleInboxRows(snoozed, new Set())), ["root", "child", "grandchild"]);
+    assert.deepEqual(
+      visibleInboxRows(snoozed, new Set()).map((row) => row.parentId),
+      [null, "root", "child"],
+    );
+    assert.equal(tree.find((node) => node.thread.id === "active")?.lifecycle, "active");
+  });
+
   it("keeps forks and orphans reachable and breaks cycles", () => {
     const input = [
       thread({ id: "root" }),

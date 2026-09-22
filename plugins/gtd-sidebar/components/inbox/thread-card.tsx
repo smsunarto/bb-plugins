@@ -469,7 +469,7 @@ function MobileThreadSummary({
   );
 }
 
-function ThreadHierarchy({
+export function ThreadHierarchy({
   threadId,
   title,
   depth,

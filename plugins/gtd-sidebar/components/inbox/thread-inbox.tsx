@@ -442,7 +442,7 @@ export function ThreadInbox({
                             gitButlerLabels,
                           )}
                           isActive={thread.id === activeThreadId}
-                          canPark={lifecycle.canPark(thread)}
+                          canPark={canParkFamily(row.node, lifecycle)}
                           isCompactViewport={isCompactViewport}
                           command={command}
                           now={now}
@@ -487,6 +487,12 @@ export function ThreadInbox({
                           isActive={thread.id === activeThreadId}
                           shelf={shelf}
                           wakeAt={wakeAtFor(thread)}
+                          depth={row.depth}
+                          childCount={row.node.children.length}
+                          expanded={row.expanded}
+                          guides={row.guides}
+                          lastChild={row.lastChild}
+                          toggleThread={toggleThread}
                           now={now}
                           isCompactViewport={isCompactViewport}
                           command={command}
@@ -522,6 +528,17 @@ function threadDropAllowed(
 ): boolean {
   const source = drag?.source;
   return source?.kind === "thread" && nestDropAllowed(tree, source.threadId, threadId);
+}
+
+/** A family can park only when every member can park. */
+function canParkFamily(node: InboxThreadNode, lifecycle: LifecycleApi): boolean {
+  const pending = [node];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (!lifecycle.canPark(current.thread)) return false;
+    pending.push(...current.children);
+  }
+  return true;
 }
 
 /** Whether the dragged row may lift to `projectId`'s top level; false between drags. */

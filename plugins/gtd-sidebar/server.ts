@@ -13,6 +13,7 @@ import { z } from "zod";
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
 import { createThreadNester } from "./lib/nest-thread.ts";
+import { threadFamilyIds } from "./lib/thread-family.ts";
 import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
@@ -259,25 +260,37 @@ export default async function plugin(bb: BbPluginApi) {
       snoozedAt: row.snoozed_at,
     }));
 
-  const write = (row: StoredLifecycleRow): void => {
-    db.prepare(
-      `INSERT INTO thread_lifecycle (thread_id, snoozed_until, snoozed_at)
+  const writeSnooze = db.prepare(
+    `INSERT INTO thread_lifecycle (thread_id, snoozed_until, snoozed_at)
        VALUES (?, ?, ?)
        ON CONFLICT(thread_id) DO UPDATE SET
          snoozed_until = excluded.snoozed_until,
          snoozed_at = excluded.snoozed_at`,
-    ).run(row.threadId, row.snoozedUntil, row.snoozedAt);
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId: row.threadId });
-  };
+  );
+  const deleteSnooze = db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`);
 
   const clear = (threadId: string, kind: "deleted" | "lifecycle" = "lifecycle"): void => {
-    db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(threadId);
+    deleteSnooze.run(threadId);
     bb.realtime.publish(LIFECYCLE_CHANNEL, { kind, threadId });
   };
 
   /** One page is already generous; the loop is for the account that isn't. */
   const THREAD_PAGE_SIZE = 200;
   const THREAD_PAGE_LIMIT = 50;
+
+  const familyIds = (threadId: string) =>
+    threadFamilyIds(
+      threadId,
+      (parentThreadId, offset) =>
+        bb.sdk.threads.list({
+          archived: false,
+          includeHidden: true,
+          parentThreadId,
+          limit: THREAD_PAGE_SIZE,
+          offset,
+        }),
+      THREAD_PAGE_SIZE,
+    );
 
   const listThreads = async (archived: boolean) => {
     const collected = [];
@@ -409,14 +422,21 @@ export default async function plugin(bb: BbPluginApi) {
       }
       return { ok: true };
     },
-    // Synchronous SQLite writes: two windows racing on one thread still land
-    // in order, so nothing here needs serializing.
-    snooze({ threadId, snoozedUntil }) {
-      write({ threadId, snoozedUntil, snoozedAt: Date.now() });
+    async snooze({ threadId, snoozedUntil }) {
+      const ids = await familyIds(threadId);
+      const snoozedAt = Date.now();
+      db.transaction(() => {
+        for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
+      })();
+      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
       return { ok: true };
     },
-    unsnooze({ threadId }) {
-      clear(threadId);
+    async unsnooze({ threadId }) {
+      const ids = await familyIds(threadId);
+      db.transaction(() => {
+        for (const id of ids) deleteSnooze.run(id);
+      })();
+      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
       return { ok: true };
     },
     async nestThread({ threadId, parentThreadId }) {

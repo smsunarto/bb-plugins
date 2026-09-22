@@ -160,15 +160,15 @@ function createInboxNode(
   };
 }
 
-function activeParentIds(nodes: ReadonlyMap<string, InboxThreadNode>): Map<string, string> {
+function linkedParentIds(nodes: ReadonlyMap<string, InboxThreadNode>): Map<string, string> {
   const parents = new Map<string, string>();
   for (const node of nodes.values()) {
     const parentId = effectiveParentThreadId(node.thread);
     if (
       parentId &&
       parentId !== node.thread.id &&
-      node.lifecycle === "active" &&
-      nodes.get(parentId)?.lifecycle === "active"
+      node.lifecycle !== "settled" &&
+      nodes.get(parentId)?.lifecycle === node.lifecycle
     ) {
       parents.set(node.thread.id, parentId);
     }
@@ -300,7 +300,7 @@ export function buildInboxTree(
       createInboxNode(thread, lifecycleFor, normalizedQuery, resolved),
     ]),
   );
-  const parents = activeParentIds(nodes);
+  const parents = linkedParentIds(nodes);
   const roots: InboxThreadNode[] = [];
   for (const node of nodes.values()) {
     const parentId = parents.get(node.thread.id);

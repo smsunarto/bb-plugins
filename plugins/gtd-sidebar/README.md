@@ -136,7 +136,11 @@ never hidden.
 
 ### Snoozing
 
-The hover button snoozes until **09:00 tomorrow**.
+The hover button snoozes until **09:00 tomorrow**. Snoozing a parent also
+snoozes its children and deeper descendants until the same time. They stay
+nested under the parent on the Snoozed shelf. Waking the parent wakes the
+family together. A family with live work or a pending interaction cannot be
+snoozed.
 
 ### Settling
 

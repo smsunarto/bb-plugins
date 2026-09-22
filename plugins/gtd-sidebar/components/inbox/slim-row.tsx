@@ -28,6 +28,7 @@ import { threadDisplayTitle } from "../../lib/inbox";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
+import { ThreadHierarchy } from "./thread-card";
 
 interface SlimRowProps {
   thread: PluginSidebarThread;
@@ -42,6 +43,12 @@ interface SlimRowProps {
   now: number;
   isCompactViewport: boolean;
   command: DispatchRowCommand;
+  depth: number;
+  childCount: number;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  toggleThread: (threadId: string) => void;
 }
 
 export const SlimRow = memo(function SlimRow(props: SlimRowProps) {
@@ -77,6 +84,12 @@ const SlimRowBody = memo(function SlimRowBody({
   now,
   isCompactViewport,
   command,
+  depth,
+  childCount,
+  expanded,
+  guides,
+  lastChild,
+  toggleThread,
   onSplitPointerDown,
 }: SlimRowProps & {
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
@@ -106,6 +119,8 @@ const SlimRowBody = memo(function SlimRowBody({
     compact,
     isPressing,
     isMenuOpen,
+    depth,
+    childCount,
   });
   const status = <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} now={now} />;
   const highlightContent = (
@@ -132,6 +147,17 @@ const SlimRowBody = memo(function SlimRowBody({
           className={rowClassName}
           style={rowStyle}
         >
+          <ThreadHierarchy
+            threadId={thread.id}
+            title={title}
+            depth={depth}
+            childCount={childCount}
+            expanded={expanded}
+            guides={guides}
+            lastChild={lastChild}
+            mobile={isCompactViewport}
+            toggleThread={toggleThread}
+          />
           <ThreadDetails
             thread={thread}
             projectName={projectName}
@@ -200,15 +226,25 @@ function slimRowPresentation({
   compact,
   isPressing,
   isMenuOpen,
-}: Pick<SlimRowProps, "isCompactViewport" | "isActive"> & {
+  depth,
+  childCount,
+}: Pick<SlimRowProps, "isCompactViewport" | "isActive" | "depth" | "childCount"> & {
   compact: boolean;
   isPressing: boolean;
   isMenuOpen: boolean;
 }) {
   return {
-    rowStyle: (isCompactViewport
-      ? { paddingLeft: "calc(22px + var(--gtd-leaf-group-indent, 0px))" }
-      : undefined) as CSSProperties | undefined,
+    rowStyle: {
+      "--gtd-depth": depth,
+      ...(isCompactViewport
+        ? {
+            paddingLeft:
+              depth > 0 || childCount > 0
+                ? `calc(40px + var(--gtd-group-indent, 0px) + ${depth} * var(--gtd-depth-step, 8px))`
+                : "calc(22px + var(--gtd-leaf-group-indent, 0px))",
+          }
+        : {}),
+    } as CSSProperties,
     rowClassName: cn(
       "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",
       !isCompactViewport && "gtd-thread-row gtd-parked-row",
