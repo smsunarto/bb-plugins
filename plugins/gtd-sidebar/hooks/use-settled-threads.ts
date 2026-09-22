@@ -12,7 +12,7 @@ import {
 import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
 
 const EMPTY: readonly SettledThreadRow[] = [];
-const ARCHIVE_REFRESHES = ["archive", "deleted"] as const;
+const ARCHIVE_REFRESHES = ["archive"] as const;
 
 export interface SettledThreadsApi {
   /** Archived threads, newest archive first, cut to the window against the caller's clock. */

@@ -269,9 +269,10 @@ export default async function plugin(bb: BbPluginApi) {
   );
   const deleteSnooze = db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`);
 
-  const clear = (threadId: string, kind: "deleted" | "lifecycle" = "lifecycle"): void => {
-    deleteSnooze.run(threadId);
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { kind, threadId });
+  const clear = (threadId: string): void => {
+    if (deleteSnooze.run(threadId).changes > 0) {
+      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
+    }
   };
 
   /** One page is already generous; the loop is for the account that isn't. */
@@ -473,7 +474,12 @@ export default async function plugin(bb: BbPluginApi) {
   // A deleted thread must not leave a row behind that would park a future
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
-    clear(thread.id, "deleted");
+    clear(thread.id);
+    // Each shelf hears only about its own data changing. Bulk deletion of
+    // unrelated or old threads must not make every client scan the archive.
+    if (thread.archivedAt !== null && isWithinSettledWindow(thread.archivedAt, Date.now())) {
+      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "archive", threadId: thread.id });
+    }
   });
 
   // One native feed routes pin and archive changes to only the client list

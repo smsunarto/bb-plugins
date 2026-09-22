@@ -47,7 +47,7 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
   interface ListProps {
     load: () => Promise<string>;
     apply: (value: string) => void;
-    refreshKinds?: readonly ("archive" | "collapsed" | "deleted" | "lifecycle" | "pin")[];
+    refreshKinds?: readonly ("archive" | "collapsed" | "lifecycle" | "pin")[];
   }
 
   function List({ load, apply, refreshKinds }: ListProps) {
@@ -172,22 +172,6 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
       assert.equal(lifecycle.load.mock.calls.length, 2);
       assert.equal(settled.load.mock.calls.length, 1);
       await slot.behavior.emitRealtime("lifecycle", { kind: "archive" });
-      await advance(50);
-      assert.equal(lifecycle.load.mock.calls.length, 2);
-      assert.equal(settled.load.mock.calls.length, 2);
-    });
-
-    it("refreshes lifecycle and archive lists when a thread is deleted", async () => {
-      const lifecycle = pendingList();
-      const settled = pendingList();
-      const slot = renderSlot(
-        { component: ListPair },
-        {
-          first: { ...lifecycle, refreshKinds: ["deleted", "lifecycle"] },
-          second: { ...settled, refreshKinds: ["archive", "deleted"] },
-        },
-      );
-      await slot.behavior.emitRealtime("lifecycle", { kind: "deleted" });
       await advance(50);
       assert.equal(lifecycle.load.mock.calls.length, 2);
       assert.equal(settled.load.mock.calls.length, 2);

@@ -15,7 +15,7 @@ import {
 } from "../lib/lifecycle";
 import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
 
-const LIFECYCLE_REFRESHES = ["deleted", "lifecycle"] as const;
+const LIFECYCLE_REFRESHES = ["lifecycle"] as const;
 
 function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
   return {
