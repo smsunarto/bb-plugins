@@ -26,26 +26,6 @@ Kitchen Sink also supplies the official Devin icon for the `acp-devin` agent pro
 
 `/sync` detects GitButler with `but status` and routes every write through the `gitbutler` skill when it succeeds. Plain Git repositories use `git` and `gh`.
 
-## Autorouter
-
-Enable Autorouter in Kitchen Sink settings, then use the branching-arrow button
-beside voice input to pause it for one composer. Blue means active, muted means
-paused. The control is hidden when disabled globally or ineligible, including
-Anthropic follow-ups. The model/reasoning selector shimmers yellow while routing.
-
-Project and model routing have separate switches. Each model and reasoning level
-has an enable switch and editable guidance, alongside a general rule and fallback.
-Defaults enable Astra low/medium/high/xhigh/ultra, Luna Max, Fable high/xhigh/ultra,
-and Opus high/xhigh. Opus is eligible only while BB reports Fable usage exhausted.
-Follow-ups can change Astra reasoning or escalate Luna Max to Astra. They cannot
-route to Luna or switch providers.
-
-One Luna Medium inference runs before native Send or Enter. Agent guidance uses
-BB subthreads for command execution, specialized UI work, and independent review.
-Run `/index-projects` to build the editable repository index from `~/git`.
-See the [autorouter integration contract](src/server/lib/autorouter/README.md)
-for fallback behavior, session timing, and the approved native-picker integration.
-
 ## Thread motion
 
 Kitchen Sink fades thread switches and smooths automatic timeline scrolling. See

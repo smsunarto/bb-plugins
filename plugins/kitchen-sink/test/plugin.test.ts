@@ -15,15 +15,7 @@ test("the plugin loads against the fake host and registers every mention provide
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
-  expect(harness.registrations.rpcMethods).toEqual([
-    "renderEmbed",
-    "preparePreview",
-    "getAutorouterProjectIndex",
-    "saveAutorouterProjectIndex",
-    "updateAutorouterEnabled",
-    "updateAutorouterSettings",
-    "routeAutorouterPrompt",
-  ]);
+  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "preparePreview"]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(
     mentionProviders.map((provider) => provider.id),
   );
@@ -57,14 +49,7 @@ test("the manifest declares the skills root that holds every composer command", 
 
 test("each skill directory carries a SKILL.md whose frontmatter name matches the directory", async () => {
   const directories = (await readdir(skillsRoot)).sort();
-  expect(directories).toEqual([
-    "index-projects",
-    "inline-vis",
-    "ship-it",
-    "subthread",
-    "sync",
-    "test-remotely",
-  ]);
+  expect(directories).toEqual(["inline-vis", "ship-it", "subthread", "sync", "test-remotely"]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
     expect((await stat(path)).isFile()).toBe(true);
@@ -91,13 +76,6 @@ test("sync routes GitButler repositories through the gitbutler skill", async () 
   const skill = await readFile(join(skillsRoot, "sync", "SKILL.md"), "utf8");
   expect(skill).toContain("`gitbutler` skill");
   expect(skill).toContain("but status");
-});
-
-test("project indexing is a user-only slash command with three examples per repository", async () => {
-  const skill = await readFile(join(skillsRoot, "index-projects", "SKILL.md"), "utf8");
-  expect(skill).toContain("disable-model-invocation: true");
-  expect(skill).toContain("exactly three");
-  expect(skill).toContain("saveAutorouterProjectIndex");
 });
 
 test("the measured baseline prompt is the shipped Smart Embed text", async () => {

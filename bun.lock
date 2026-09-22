@@ -445,7 +445,6 @@
       "version": "0.1.0",
       "dependencies": {
         "@bb-kit/core": "0.2.0",
-        "@bb-plugins/codex-inference": "workspace:*",
         "@bb-plugins/unity-inspector": "workspace:*",
         "lenis": "1.3.26",
         "mdast-util-from-markdown": "2.0.3",

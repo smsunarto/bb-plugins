@@ -23,8 +23,6 @@ import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
 import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
-import { AutorouterAction } from "./autorouter/action.tsx";
-import { AutorouterSettingsPanel } from "./autorouter/settings.tsx";
 import {
   PROBE_GROUP_TITLE,
   ThreadActivityProbe,
@@ -291,18 +289,6 @@ export default definePluginApp((app) => {
     providerKind: "agent",
     providerId: "acp-devin",
     icon: DevinIcon,
-  });
-  app.slots.navPanel({
-    id: "autorouter-settings",
-    title: "Autorouter",
-    icon: "Settings",
-    path: "autorouter",
-    component: AutorouterSettingsPanel,
-  });
-  app.composer.customize({
-    id: "autorouter",
-    scopes: ["new-thread", "thread"],
-    actions: [{ id: "toggle", component: AutorouterAction }],
   });
   app.slots.experimental_threadHeaderAction({
     id: "thread-activity-probe",
