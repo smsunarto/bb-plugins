@@ -94,6 +94,10 @@ jobs:
           fi
           bun run --filter "$package_name" build
 
+      - name: Verify packed GTD Sidebar before publishing
+        if: ${{ matrix.path == 'plugins/gtd-sidebar' }}
+        run: bun scripts/plugin-frontend-check.ts plugins/gtd-sidebar
+
       - name: Upload plugin source maps
         if: ${{ contains(fromJSON('["plugins/amp", "plugins/dotfiles"]'), matrix.path) }}
         env:

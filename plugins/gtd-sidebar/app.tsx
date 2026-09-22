@@ -7,8 +7,8 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import "./thread-row-alignment.css";
 import "./naming.css";
-import { ThreadInbox } from "@/components/inbox/thread-inbox";
-import { archiveThread, hasSidebarActions } from "@/lib/sidebar-actions-bridge";
+import { ThreadInbox } from "./components/inbox/thread-inbox";
+import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,

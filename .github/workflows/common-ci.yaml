@@ -64,3 +64,6 @@ jobs:
       # ships a package that installs nowhere.
       - name: Check npm packages
         run: bun run package:check
+
+      - name: Rebuild packed GTD Sidebar with production dependencies
+        run: bun scripts/plugin-frontend-check.ts plugins/gtd-sidebar

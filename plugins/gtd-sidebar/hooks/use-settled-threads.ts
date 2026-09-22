@@ -2,14 +2,14 @@ import { useCallback, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { toast } from "sonner";
-import type { gtdSidebarRpcContract } from "@/server";
+import type { gtdSidebarRpcContract } from "../server";
 import {
   isWithinSettledWindow,
   settledRowsMatch,
   toSidebarThread,
   type SettledThreadRow,
-} from "@/lib/settled-threads";
-import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
+} from "../lib/settled-threads";
+import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
 
 const EMPTY: readonly SettledThreadRow[] = [];
 const ARCHIVE_REFRESHES = ["archive", "deleted"] as const;

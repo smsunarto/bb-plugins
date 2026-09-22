@@ -1,6 +1,6 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { StatusGlyph, hasStatusGlyph } from "@/components/inbox/status-glyph";
-import { relativeTimeLabel } from "@/lib/relative-time";
+import { StatusGlyph, hasStatusGlyph } from "./status-glyph";
+import { relativeTimeLabel } from "../../lib/relative-time";
 
 /**
  * The row's trailing slot: one fixed width, right-aligned, on every row.

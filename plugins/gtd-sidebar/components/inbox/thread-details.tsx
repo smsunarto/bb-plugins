@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef, type ReactElement } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
-import { threadDisplayTitle } from "@/lib/inbox";
-import { usePortalScopeProps } from "@/lib/portal-scope";
-import { cn } from "@/lib/utils";
+import { threadDisplayTitle } from "../../lib/inbox";
+import { usePortalScopeProps } from "../../lib/portal-scope";
+import { cn } from "../../lib/utils";
 import { MachineGlobe } from "./machine-globe";
 import { useRemoteMachine } from "./machine-appearance";
 

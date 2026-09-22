@@ -2,15 +2,15 @@ import { useState, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { Icon, type IconName } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { usePortalScopeProps } from "@/lib/portal-scope";
+import { Icon, type IconName } from "../ui/icon";
+import { cn } from "../../lib/utils";
+import { usePortalScopeProps } from "../../lib/portal-scope";
 import {
   findThreadAction,
   type DispatchRowCommand,
   type ThreadActionPlan,
-} from "@/components/inbox/thread-actions";
-import { threadDisplayTitle } from "@/lib/inbox";
+} from "./thread-actions";
+import { threadDisplayTitle } from "../../lib/inbox";
 import { RenameThreadDialog } from "./rename-thread-dialog";
 
 /**

@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import type { gtdSidebarRpcContract } from "@/server";
-import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
+import type { gtdSidebarRpcContract } from "../server";
+import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
 
 const PIN_REFRESHES = ["pin"] as const;
 

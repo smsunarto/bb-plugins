@@ -10,24 +10,24 @@ import {
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { RowContextMenu } from "@/components/inbox/row-context-menu";
-import { LIST_HOVER_TRANSITION } from "@/components/inbox/row-motion";
-import { CompactThreadActionMenu } from "@/components/inbox/thread-action-menu";
+import { Icon } from "../ui/icon";
+import { cn } from "../../lib/utils";
+import { RowContextMenu } from "./row-context-menu";
+import { LIST_HOVER_TRANSITION } from "./row-motion";
+import { CompactThreadActionMenu } from "./thread-action-menu";
 import {
   buildThreadActionPlan,
   findThreadAction,
   type DispatchRowCommand,
   type ThreadAction,
-} from "@/components/inbox/thread-actions";
-import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
-import { FadingText, HostLead, ThreadDetails } from "@/components/inbox/thread-details";
-import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
-import { threadDisplayTitle } from "@/lib/inbox";
-import { snoozeWakeLabel } from "@/lib/lifecycle";
-import { useIosLongPress } from "@/hooks/use-ios-long-press";
-import { useCommittedEvent } from "@/hooks/use-committed-event";
+} from "./thread-actions";
+import { STATUS_SLOT_CLASS, StatusOrTime } from "./status-slot";
+import { FadingText, HostLead, ThreadDetails } from "./thread-details";
+import type { ProviderGlyphInfo } from "./provider-glyph";
+import { threadDisplayTitle } from "../../lib/inbox";
+import { snoozeWakeLabel } from "../../lib/lifecycle";
+import { useIosLongPress } from "../../hooks/use-ios-long-press";
+import { useCommittedEvent } from "../../hooks/use-committed-event";
 
 interface SlimRowProps {
   thread: PluginSidebarThread;

@@ -5,9 +5,6 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
     "types": ["node", "bun-types/test", "bun-types/sqlite"],
-    "paths": {
-      "@/*": ["./*"]
-    },
     "skipLibCheck": false
   },
   "include": ["server.ts", "host.ts", "app.tsx", "types", "components", "hooks", "lib", "test"]

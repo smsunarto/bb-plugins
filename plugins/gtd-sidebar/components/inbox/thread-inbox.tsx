@@ -13,34 +13,34 @@ import {
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { Icon } from "../ui/icon";
+import { cn } from "../../lib/utils";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { ThreadCard } from "@/components/inbox/thread-card";
-import { SlimRow } from "@/components/inbox/slim-row";
-import type { ActiveThreadShelf, RowCommand } from "@/components/inbox/thread-actions";
-import type { gtdSidebarRpcContract } from "@/server";
-import { useCollapsedThreads } from "@/hooks/use-collapsed-threads";
-import { useNamingThreads } from "@/hooks/use-naming-threads";
+} from "../ui/select";
+import { ThreadCard } from "./thread-card";
+import { SlimRow } from "./slim-row";
+import type { ActiveThreadShelf, RowCommand } from "./thread-actions";
+import type { gtdSidebarRpcContract } from "../../server";
+import { useCollapsedThreads } from "../../hooks/use-collapsed-threads";
+import { useNamingThreads } from "../../hooks/use-naming-threads";
 import {
   useSidebarDrag,
   type SidebarDragApi,
   type SidebarProjectDrop,
-} from "@/hooks/use-nest-drag";
-import { usePortalScopeProps } from "@/lib/portal-scope";
-import { useLifecycle, type LifecycleApi } from "@/hooks/use-lifecycle";
-import { usePinnedOrder, type PinnedOrderApi } from "@/hooks/use-pinned-order";
-import { useSettledThreads, type SettledThreadsApi } from "@/hooks/use-settled-threads";
-import { useCommittedEvent } from "@/hooks/use-committed-event";
-import { forgetSidebarActions, publishSidebarActions } from "@/lib/sidebar-actions-bridge";
-import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
-import { filterByProject, nextThreadIdAfterSettle, threadDisplayTitle } from "@/lib/inbox";
+} from "../../hooks/use-nest-drag";
+import { usePortalScopeProps } from "../../lib/portal-scope";
+import { useLifecycle, type LifecycleApi } from "../../hooks/use-lifecycle";
+import { usePinnedOrder, type PinnedOrderApi } from "../../hooks/use-pinned-order";
+import { useSettledThreads, type SettledThreadsApi } from "../../hooks/use-settled-threads";
+import { useCommittedEvent } from "../../hooks/use-committed-event";
+import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
+import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
+import { filterByProject, nextThreadIdAfterSettle, threadDisplayTitle } from "../../lib/inbox";
 import {
   buildInboxTree,
   createShelfArrivals,
@@ -50,7 +50,7 @@ import {
   type InboxShelf,
   type InboxThreadNode,
   type VisibleInboxRow,
-} from "@/lib/inbox-tree";
+} from "../../lib/inbox-tree";
 import {
   applyProjectMove,
   groupCollapseKey,
@@ -60,13 +60,13 @@ import {
   settleProjectOrderOverride,
   shouldGroupByProject,
   type ProjectGroup as ProjectGroupRows,
-} from "@/lib/project-groups";
-import { ProjectGroup, SortableProjectGroup } from "@/components/inbox/project-group";
-import { mergeSettledThreads } from "@/lib/settled-threads";
-import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "@/lib/gitbutler";
-import { filterByMachine, sidebarMachines } from "@/lib/machines";
-import { MachineScopePicker } from "@/components/inbox/machine-scope-picker";
-import { MachineAppearanceProvider } from "@/components/inbox/machine-appearance";
+} from "../../lib/project-groups";
+import { ProjectGroup, SortableProjectGroup } from "./project-group";
+import { mergeSettledThreads } from "../../lib/settled-threads";
+import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "../../lib/gitbutler";
+import { filterByMachine, sidebarMachines } from "../../lib/machines";
+import { MachineScopePicker } from "./machine-scope-picker";
+import { MachineAppearanceProvider } from "./machine-appearance";
 
 const ALL_PROJECTS = "__all__";
 

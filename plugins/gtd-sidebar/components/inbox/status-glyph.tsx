@@ -1,6 +1,6 @@
 import type { PluginSidebarThreadIndicator } from "@get-bb/plugin-sdk";
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { Icon } from "../ui/icon";
+import { cn } from "../../lib/utils";
 
 /**
  * This plugin's status glyphs, matching bb's own sidebar shape for shape: the

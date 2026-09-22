@@ -2,11 +2,11 @@ import { useSettings } from "@get-bb/plugin-sdk/app";
 import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { usePortalScopeProps } from "@/lib/portal-scope";
-import { attachHapticTrigger } from "@/lib/ios-haptics";
-import type { ThreadActionPlan } from "@/components/inbox/thread-actions";
+import { Icon } from "../ui/icon";
+import { cn } from "../../lib/utils";
+import { usePortalScopeProps } from "../../lib/portal-scope";
+import { attachHapticTrigger } from "../../lib/ios-haptics";
+import type { ThreadActionPlan } from "./thread-actions";
 
 /**
  * The compact row's action menu, drawn like an iOS context menu: the rest of

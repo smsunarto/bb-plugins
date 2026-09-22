@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "@/server";
+import type { gtdSidebarRpcContract } from "../server";
 import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
 
 const NAMING_REFRESHES = ["naming"] as const;

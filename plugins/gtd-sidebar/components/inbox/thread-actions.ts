@@ -1,4 +1,4 @@
-import type { IconName } from "@/components/ui/icon";
+import type { IconName } from "../ui/icon";
 
 export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting";
 

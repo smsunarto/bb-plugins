@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRealtime, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
-import { refreshRetryDelayMs } from "@/lib/lifecycle";
+import { refreshRetryDelayMs } from "../lib/lifecycle";
 
 const SHELF_GATE_MS = 250;
 const LIFECYCLE_BATCH_MS = 50;

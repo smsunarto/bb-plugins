@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { experimental_useSidebarThreadActions as useSidebarThreadActions } from "@get-bb/plugin-sdk/app";
-import { Button } from "@/components/ui/button";
-import { usePortalScopeProps } from "@/lib/portal-scope";
+import { Button } from "../ui/button";
+import { usePortalScopeProps } from "../../lib/portal-scope";
 
 export function RenameThreadDialog({
   threadId,

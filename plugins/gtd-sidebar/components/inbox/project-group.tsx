@@ -2,13 +2,13 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { usePortalScopeProps } from "@/lib/portal-scope";
-import { FadingText } from "@/components/inbox/thread-details";
-import { useNestProjectHeader } from "@/hooks/use-nest-drag";
-import { DRAG_KIND } from "@/lib/sidebar-drag";
-import type { InboxShelf } from "@/lib/inbox-tree";
+import { Icon } from "../ui/icon";
+import { cn } from "../../lib/utils";
+import { usePortalScopeProps } from "../../lib/portal-scope";
+import { FadingText } from "./thread-details";
+import { useNestProjectHeader } from "../../hooks/use-nest-drag";
+import { DRAG_KIND } from "../../lib/sidebar-drag";
+import type { InboxShelf } from "../../lib/inbox-tree";
 
 /**
  * A project group wired into its shelf's sortable list: the header is the

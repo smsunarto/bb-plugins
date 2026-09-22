@@ -1,7 +1,7 @@
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "../ui/select";
 import { MachineGlobe } from "./machine-globe";
-import type { SidebarMachine } from "@/lib/machines";
-import { cn } from "@/lib/utils";
+import type { SidebarMachine } from "../../lib/machines";
+import { cn } from "../../lib/utils";
 
 const ALL_MACHINES = "__all__";
 

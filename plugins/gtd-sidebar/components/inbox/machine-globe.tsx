@@ -1,6 +1,6 @@
-import { Icon } from "@/components/ui/icon";
-import { machineColor, type SidebarMachine } from "@/lib/machines";
-import { cn } from "@/lib/utils";
+import { Icon } from "../ui/icon";
+import { machineColor, type SidebarMachine } from "../../lib/machines";
+import { cn } from "../../lib/utils";
 
 export function MachineGlobe({
   machine,

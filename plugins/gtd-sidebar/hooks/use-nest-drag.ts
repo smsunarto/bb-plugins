@@ -16,11 +16,11 @@ import {
 } from "@dnd-kit/core";
 import { hasSortableData, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "@/server";
-import { useCommittedEvent } from "@/hooks/use-committed-event";
-import type { InboxShelf } from "@/lib/inbox-tree";
-import { projectDropEdge, type ProjectDropEdge } from "@/lib/project-groups";
-import { DRAG_KIND, sidebarDragPayload, type SidebarDragPayload } from "@/lib/sidebar-drag";
+import type { gtdSidebarRpcContract } from "../server";
+import { useCommittedEvent } from "./use-committed-event";
+import type { InboxShelf } from "../lib/inbox-tree";
+import { projectDropEdge, type ProjectDropEdge } from "../lib/project-groups";
+import { DRAG_KIND, sidebarDragPayload, type SidebarDragPayload } from "../lib/sidebar-drag";
 
 /** How far the pointer travels before a press becomes a drag; a click stays a click. */
 const DRAG_DISTANCE_PX = 6;

@@ -2,9 +2,9 @@
 // these are inline `<svg>` paths, a CSS mask and a CSS-drawn dot; `role="img"`
 // with an `aria-label` is the correct pattern and `<img>` cannot express them.
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
-import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
-import { providerMark } from "@/lib/provider-marks";
+import { cn } from "../../lib/utils";
+import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
+import { providerMark } from "../../lib/provider-marks";
 
 export interface ProviderGlyphInfo {
   displayName: string;

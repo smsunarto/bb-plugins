@@ -80,7 +80,7 @@ import {
   WrenchIcon,
   ZapIcon,
 } from "@hugeicons/core-free-icons";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 const ICON_MAP = {
   AlarmClock: AlarmClockIcon,

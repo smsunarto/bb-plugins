@@ -1,8 +1,8 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { usePortalScopeProps } from "@/lib/portal-scope";
+import { Icon } from "./icon";
+import { cn } from "../../lib/utils";
+import { usePortalScopeProps } from "../../lib/portal-scope";
 
 const Select = SelectPrimitive.Root;
 const SelectValue = SelectPrimitive.Value;

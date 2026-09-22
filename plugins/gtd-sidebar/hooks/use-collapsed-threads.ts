@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "@/server";
-import { useCommittedEvent } from "@/hooks/use-committed-event";
-import { useLifecycleChannelList } from "@/hooks/use-lifecycle-channel-list";
-import { toggleThreadId } from "@/lib/collapsed-threads";
+import type { gtdSidebarRpcContract } from "../server";
+import { useCommittedEvent } from "./use-committed-event";
+import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
+import { toggleThreadId } from "../lib/collapsed-threads";
 
 const COLLAPSED_REFRESHES = ["collapsed"] as const;
 

@@ -14,26 +14,26 @@ import {
   type PluginSidebarPullRequest,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import { Icon, type IconName } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-import { RowContextMenu } from "@/components/inbox/row-context-menu";
-import { LIST_HOVER_TRANSITION } from "@/components/inbox/row-motion";
-import { CompactThreadActionMenu } from "@/components/inbox/thread-action-menu";
+import { Icon, type IconName } from "../ui/icon";
+import { cn } from "../../lib/utils";
+import { RowContextMenu } from "./row-context-menu";
+import { LIST_HOVER_TRANSITION } from "./row-motion";
+import { CompactThreadActionMenu } from "./thread-action-menu";
 import {
   buildThreadActionPlan,
   findThreadAction,
   type ActiveThreadShelf,
   type DispatchRowCommand,
   type ThreadActionPlan,
-} from "@/components/inbox/thread-actions";
-import { ProviderGlyph, type ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
-import { STATUS_SLOT_CLASS, StatusOrTime } from "@/components/inbox/status-slot";
-import { FadingText, HostLead, ThreadDetails } from "@/components/inbox/thread-details";
-import { threadDisplayTitle } from "@/lib/inbox";
-import { snoozeUntilTomorrow } from "@/lib/lifecycle";
-import { useIosLongPress } from "@/hooks/use-ios-long-press";
-import { useCommittedEvent } from "@/hooks/use-committed-event";
-import { useNestRow, type SidebarDragApi } from "@/hooks/use-nest-drag";
+} from "./thread-actions";
+import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
+import { STATUS_SLOT_CLASS, StatusOrTime } from "./status-slot";
+import { FadingText, HostLead, ThreadDetails } from "./thread-details";
+import { threadDisplayTitle } from "../../lib/inbox";
+import { snoozeUntilTomorrow } from "../../lib/lifecycle";
+import { useIosLongPress } from "../../hooks/use-ios-long-press";
+import { useCommittedEvent } from "../../hooks/use-committed-event";
+import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 8;
