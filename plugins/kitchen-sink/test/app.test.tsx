@@ -35,6 +35,7 @@ test("registers the smart embeds and inline visualization directives", async () 
     "smart-patch",
     "smart-code",
     "inline-vis",
+    "smart-image-compare",
   ]);
 });
 

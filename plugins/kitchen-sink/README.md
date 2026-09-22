@@ -78,6 +78,14 @@ Missing recorded turn patches, missing commits, truncated input, ambiguous repea
 
 Recorded changes still appear automatically in Last Turn, including the Unity before/after inspector. Smart Code continues to show current Unity values. Clicking a citation filename opens the workspace file.
 
+### Before/after images
+
+`::smart-image-compare{before=".scratch/before.png" after=".scratch/after.png" beforeLabel="Original" afterLabel="Updated"}` renders an image comparison using [React Compare Slider](https://react-compare-slider.js.org/?path=/story/demos--images). Drag the divider, or focus it and use arrow keys. Labels overlay the image corners and default to Before and After.
+
+Images accept workspace-relative paths or HTTP(S) URLs. Add `source="thread-storage"` for paths relative to the owning thread's storage. Match both images' pixel dimensions, crop, scale, and subject alignment before embedding. UI captures should use the same viewport, device pixel ratio, zoom, and scroll position. The viewer preserves whole images and warns about unequal dimensions, but cannot align subjects automatically. Keep labels in the directive, not baked into the images.
+
+Add `annotations='[{"x":72,"y":38,"label":"Background removed","side":"after"}]'` for numbered callout pins. Coordinates are percentages from the image's top-left, and `side` is `before`, `after`, or `both` (default). Click or keyboard-activate a pin to read its text. Pins move with their image and are clipped by the divider. Opened callout text remains readable in a bottom overlay. Up to 50 unique callouts are supported.
+
 ## Inline visualizations
 
 `::inline-vis{file="demo.html"}` renders a workspace-relative HTML file directly in an assistant message, and `::inline-vis{file="notes.md"}` renders a Markdown document with bb's own Markdown renderer (raw HTML disabled). An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.

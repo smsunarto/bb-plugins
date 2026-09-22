@@ -1,0 +1,102 @@
+.smart-embed.smart-image-compare {
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+.smart-image-compare-stage {
+  position: relative;
+}
+.smart-image-compare-labels {
+  position: absolute;
+  inset: 0.75rem 0.75rem auto;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  pointer-events: none;
+  font-weight: 600;
+}
+.smart-image-compare-labels > span {
+  max-width: calc(50% - 0.5rem);
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  overflow-wrap: anywhere;
+}
+.smart-image-compare-labels > :last-child {
+  text-align: right;
+}
+.smart-image-compare-slider {
+  width: 100%;
+  background: var(--muted);
+}
+.smart-image-compare-slider [data-rcs="handle-root"]:focus-visible {
+  filter: drop-shadow(0 0 3px var(--ring));
+}
+.smart-image-compare-side {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.smart-image-annotations {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.smart-image-annotation {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  border: 2px solid var(--primary-foreground);
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 4px var(--background);
+}
+.smart-image-annotation:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.smart-image-annotation-callout {
+  position: absolute;
+  inset: auto 0.75rem 0.75rem;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-height: 40%;
+  overflow: auto;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.smart-image-annotation-callout > span {
+  flex: 1;
+  min-width: 0;
+}
+.smart-image-annotation-callout > button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  font-size: 1.25rem;
+  line-height: 1.25rem;
+}
+.smart-image-annotation-callout > button:focus-visible {
+  outline: 2px solid var(--ring);
+}

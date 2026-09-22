@@ -18,6 +18,7 @@ import {
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import { UnityCitationView } from "@bb-plugins/unity-inspector/app";
 import { DevinIcon } from "./devin-branding.tsx";
+import { SmartImageCompareDirective } from "./smart-image-compare.tsx";
 import { InlineVisDirective } from "./inline-vis.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
@@ -316,4 +317,5 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "smart-patch", component: SmartPatchDirective });
   app.slots.messageDirective({ id: "smart-code", component: SmartCodeDirective });
   app.slots.messageDirective({ id: "inline-vis", component: InlineVisDirective });
+  app.slots.messageDirective({ id: "smart-image-compare", component: SmartImageCompareDirective });
 });
