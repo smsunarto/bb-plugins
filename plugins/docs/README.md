@@ -47,7 +47,10 @@ moves. Host theme tokens keep it visually consistent with bb.
   tables, images, and code blocks. Switch to source mode to edit MDX props,
   expressions, or imports. Unknown JSX remains editable, and imports and
   expressions are preserved without executing them. Opening a document alone
-  never writes editor normalization back to disk.
+  never writes editor normalization back to disk. Markdown angle-bracket text
+  and bare colon words stay literal. Parse failures automatically open editable
+  source, and source edits still save when rich text cannot parse them. Correct
+  the syntax and switch back to rich text without reopening the document.
 - **Canvas widgets:** `.canvas.mdx` and MDX with known Canvas components keep
   tables, charts, diffs, and persisted controls through Canvas's existing SDK
   services. Canvas comments appear below the editor, with block selection,

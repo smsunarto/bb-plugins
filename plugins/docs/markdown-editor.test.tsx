@@ -6,8 +6,12 @@ import {
   renderSlot,
   type RenderSlotOptions,
 } from "@get-bb/plugin-sdk/testing/app";
+import { EditorView } from "@codemirror/view";
 import { $getNearestNodeFromDOMNode, $isTextNode, getNearestEditorFromDOMNode } from "lexical";
 installTestPluginRuntime();
+// jsdom has no layout API; CodeMirror measures text ranges when source opens.
+Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+Range.prototype.getBoundingClientRect = () => new DOMRect();
 const { MarkdownEditor, previewUrl } = await import("./markdown-editor");
 
 beforeEach(() => {
@@ -313,11 +317,162 @@ it("leaves ordinary Markdown braces as text", async () => {
   expect(changed.mock.calls.at(-1)?.[0]).toContain("Literal {not JavaScript}.");
 });
 
-it("keeps malformed MDX available for source editing without saving a partial parse", async () => {
-  const { slot, changed } = open("# Before\n\n<Unclosed\n");
-  await slot.findByText(/You can fix the errors in source mode/);
+it("opens literal angle-bracket placeholders in Markdown and preserves them after editing", async () => {
+  const content = "# Commands\n\nRun command <group> <name>.\n\nOriginal paragraph.";
+  const { slot, changed } = open(content, "guide.md");
+  await slot.findByText("Run command <group> <name>.");
+  expect(changed).not.toHaveBeenCalled();
+  await replaceText(await slot.findByText("Original paragraph."), "Updated paragraph.");
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  const saved = changed.mock.calls.at(-1)?.[0] as string;
+  slot.unmount();
+  const reopened = open(saved, "guide.md");
+  await reopened.slot.findByText("Run command <group> <name>.");
+  await reopened.slot.findByText("Updated paragraph.");
+  expect(reopened.changed).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["inline placeholders", "Run <group> <name> and </orphan>.", "Run <group> <name> and </orphan>."],
+  ["block placeholders", "<group>\n<name>", "<group> <name>"],
+  ["HTML comments", "<!-- unfinished comment", "<!-- unfinished comment"],
+  [
+    "HTML attributes",
+    '<input disabled> and <img src="photo.png">',
+    '<input disabled> and <img src="photo.png">',
+  ],
+  [
+    "JSX expressions",
+    "Use {value}, {{template}}, and ${ENV}.",
+    "Use {value}, {{template}}, and ${ENV}.",
+  ],
+  [
+    "generic types",
+    "Map<string, List<T>> and x < 3 && y > 2",
+    "Map<string, List<T>> and x < 3 && y > 2",
+  ],
+  ["declarations", "import {not javascript}\n\nexport this prose", "import {not javascript}"],
+  ["inline code", "Use `<group>` and `{value}`.", "<group>"],
+  [
+    "shell text",
+    "Run /pstack:teach and C:\\Users\\name.",
+    "Run /pstack:teach and C:\\Users\\name.",
+  ],
+])("round-trips Markdown %s", async (_name, input, visible) => {
+  const { slot, changed } = open(input + "\n\nOriginal paragraph.", "guide.markdown");
+  await slot.findByText(visible, { exact: false });
+  expect(changed).not.toHaveBeenCalled();
+  await replaceText(await slot.findByText("Original paragraph."), "Updated paragraph.");
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  const saved = changed.mock.calls.at(-1)?.[0] as string;
+  slot.unmount();
+  const reopened = open(saved, "GUIDE.MD");
+  await reopened.slot.findByText(visible, { exact: false });
+  await reopened.slot.findByText("Updated paragraph.");
+  expect(reopened.changed).not.toHaveBeenCalled();
+});
+
+it("keeps Markdown autolinks, formatting, and code fences intact", async () => {
+  const content =
+    "<https://example.com> and <reader@example.com>\n\n**Bold** and *italic* and ~~deleted~~\n\n```unknown-language\n<group> {broken expression}\n```\n\nOriginal paragraph.";
+  const { slot, changed } = open(content, "guide.md");
+  expect(
+    (await slot.findByRole("link", { name: "https://example.com" })).getAttribute("href"),
+  ).toBe("https://example.com");
+  expect(slot.getByRole("link", { name: "reader@example.com" }).getAttribute("href")).toBe(
+    "mailto:reader@example.com",
+  );
+  await replaceText(await slot.findByText("Original paragraph."), "Updated paragraph.");
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  const saved = changed.mock.calls.at(-1)?.[0] as string;
+  expect(saved).toContain("**Bold**");
+  expect(saved).toContain("*italic*");
+  expect(saved).toContain("~~deleted~~");
+  expect(saved).toContain("```unknown-language\n<group> {broken expression}\n```");
+});
+
+it.each([
+  ["unclosed tag", "<group>"],
+  ["mismatched tags", "<One>text</Two>"],
+  ["invalid expression", "Value: {not valid JavaScript}"],
+  ["unfinished import", "import { Broken"],
+])("automatically opens source for MDX %s and recovers after correction", async (_name, syntax) => {
+  const content = "---\ntitle: Keep this\n---\n\n# Before\n\n" + syntax;
+  const { slot, changed } = open(content);
+  await waitFor(() =>
+    expect(slot.container.querySelector(".cm-sourceView .cm-content")).not.toBeNull(),
+  );
+  const source = EditorView.findFromDOM(
+    slot.container.querySelector(".cm-sourceView .cm-content")!,
+  )!;
+  expect(source.state.doc.toString()).toContain(syntax);
+  expect(changed).not.toHaveBeenCalled();
+  await act(async () =>
+    source.dispatch({
+      changes: {
+        from: 0,
+        to: source.state.doc.length,
+        insert: "# Corrected\n\nRecovered paragraph.",
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(changed).toHaveBeenLastCalledWith(
+      "---\ntitle: Keep this\n---\n\n# Corrected\n\nRecovered paragraph.",
+    ),
+  );
+  fireEvent.click(slot.getByRole("radio", { name: "Rich text" }));
+  await slot.findByText("Recovered paragraph.");
+  expect(
+    slot.container.querySelector(".mdxeditor-rich-text-editor")?.getAttribute("style"),
+  ).toContain("display: block");
+});
+
+it("does not save when switching modes or focusing unchanged source", async () => {
+  const content = "# Heading\r\n\r\n*  Unusual whitespace\r\n";
+  const { slot, changed } = open(content, "guide.md");
+  await slot.findByText("Heading");
+  fireEvent.click(slot.getByRole("radio", { name: "Source mode" }));
+  const source = EditorView.findFromDOM(
+    slot.container.querySelector(".cm-sourceView .cm-content")!,
+  )!;
+  await act(async () => source.dispatch({ selection: { anchor: 1 } }));
+  expect(changed).not.toHaveBeenCalled();
+  fireEvent.click(slot.getByRole("radio", { name: "Rich text" }));
+  await slot.findByText("Heading");
   expect(changed).not.toHaveBeenCalled();
 });
+
+it.each(["# Before\n\n<Unclosed", "# Before\n\nValid paragraph."])(
+  "keeps the latest source after an unsuccessful rich-text retry from %s",
+  async (initial) => {
+    const { slot, changed } = open(initial);
+    if (initial.includes("Valid paragraph.")) {
+      await slot.findByText("Valid paragraph.");
+      fireEvent.click(slot.getByRole("radio", { name: "Source mode" }));
+    }
+    await waitFor(() =>
+      expect(slot.container.querySelector(".cm-sourceView .cm-content")).not.toBeNull(),
+    );
+    const source = EditorView.findFromDOM(
+      slot.container.querySelector(".cm-sourceView .cm-content")!,
+    )!;
+    const edited = "# Unsaved elsewhere\n\n<StillBroken";
+    await act(async () =>
+      source.dispatch({ changes: { from: 0, to: source.state.doc.length, insert: edited } }),
+    );
+    expect(changed).toHaveBeenLastCalledWith(edited);
+    fireEvent.click(slot.getByRole("radio", { name: "Rich text" }));
+    await waitFor(() =>
+      expect(slot.container.querySelector(".cm-sourceView .cm-content")).not.toBeNull(),
+    );
+    const recovered = EditorView.findFromDOM(
+      slot.container.querySelector(".cm-sourceView .cm-content")!,
+    )!;
+    expect(recovered.state.doc.toString()).toBe("# Unsaved elsewhere\n\n<StillBroken");
+    expect(changed).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("resolves attachments from the document directory without changing stored paths", () => {
   expect(previewUrl("/preview", "notes/deep/file.mdx", "../image.png")).toBe(

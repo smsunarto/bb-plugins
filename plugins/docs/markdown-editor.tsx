@@ -1,5 +1,14 @@
-import { usePublisher } from "@mdxeditor/gurx";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCellValues, usePublisher } from "@mdxeditor/gurx";
+import { EditorView } from "@codemirror/view";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   CanvasWidgetsProvider,
   CanvasReview,
@@ -9,6 +18,9 @@ import {
 import "@smsunarto/bb-plugin-canvas/editor.css";
 import {
   MDXEditor,
+  addSyntaxExtension$,
+  realmPlugin,
+  markdownProcessingError$,
   viewMode$,
   BoldItalicUnderlineToggles,
   BlockTypeSelect,
@@ -67,11 +79,25 @@ export interface MarkdownEditorProps {
   onProposalApplied(result: { content: string; sha256: string }): void;
 }
 
+// Plain Markdown permits unpaired angle-bracket placeholders. Disable both
+// JSX-style HTML processing and CommonMark HTML tokenization so they stay text.
+const literalHtmlPlugin = realmPlugin({
+  init(realm) {
+    realm.pub(addSyntaxExtension$, { disable: { null: ["htmlFlow", "htmlText"] } });
+  },
+});
+
 const SourceRequestContext = createContext(0);
 
 function Toolbar() {
   const request = useContext(SourceRequestContext);
   const setView = usePublisher(viewMode$);
+  const [parseError, viewMode] = useCellValues(markdownProcessingError$, viewMode$);
+  useEffect(() => {
+    // A failed rich-text import must leave the complete source editable.
+    // Re-check on each mode change so an unsuccessful retry returns to source.
+    if (parseError && viewMode === "rich-text") setView("source");
+  }, [parseError, viewMode, setView]);
   useEffect(() => {
     if (request > 0) setView("source");
   }, [request, setView]);
@@ -112,6 +138,17 @@ function EditorSession(
   );
   const document = useMemo(() => parseMarkdownDocument(initialValue), [initialValue]);
   const leadingBreaks = document.frontmatter ? (/^(?:\r?\n)*/.exec(document.body)?.[0] ?? "") : "";
+  const lastPublished = useRef(initialValue);
+  const publishBody = useCallback(
+    (body: string) => {
+      const markdown = document.frontmatter + leadingBreaks + body;
+      if (markdown === lastPublished.current) return;
+      lastPublished.current = markdown;
+      setCurrentMarkdown(markdown);
+      callbacks.current.onMarkdownChange(markdown);
+    },
+    [document.frontmatter, leadingBreaks],
+  );
   const plugins = useMemo(() => {
     const html: DirectiveDescriptor = {
       name: "html",
@@ -181,24 +218,38 @@ function EditorSession(
             }),
             preserveEsmPlugin(),
           ]
-        : []),
+        : [literalHtmlPlugin()]),
       directivesPlugin({
+        escapeUnknownTextDirectives: true,
         directiveDescriptors: [
           html,
           {
             name: "directive",
-            testNode: () => true,
+            // Bare :words occur in CLI commands, paths, and prose. Only
+            // structured inline directives need the generic widget editor.
+            testNode: (node) =>
+              node.type !== "textDirective" ||
+              node.children.length > 0 ||
+              Object.keys(node.attributes ?? {}).length > 0,
             attributes: [],
             hasChildren: true,
             Editor: GenericDirectiveEditor,
           },
         ],
       }),
-      diffSourcePlugin(),
+      diffSourcePlugin({
+        codeMirrorExtensions: [
+          EditorView.updateListener.of((update) => {
+            // Failed initial imports leave MDXEditor's normalization flag set.
+            // Actual source edits must still save, but focus/selection must not.
+            if (update.docChanged) publishBody(update.state.doc.toString());
+          }),
+        ],
+      }),
       toolbarPlugin({ toolbarContents: Toolbar }),
       markdownShortcutPlugin(),
     ];
-  }, [notePath, previewBaseUrl, hasCanvasSource, hasUpload]);
+  }, [notePath, previewBaseUrl, hasCanvasSource, hasUpload, publishBody]);
 
   useEffect(() => {
     // Initialization may normalize Markdown. Merely opening a file must never
@@ -212,17 +263,14 @@ function EditorSession(
         ref={editorRef}
         readOnly={applying}
         markdown={document.body}
+        suppressHtmlProcessing={!/\.mdx$/i.test(notePath)}
         contentEditableClassName="docs-prose"
         className="docs-mdx-editor"
         plugins={plugins}
         placeholder="Start writing…"
         toMarkdownOptions={{ bullet: "-", fences: true, listItemIndent: "one" }}
         onChange={(body, initialNormalize) => {
-          if (!initialNormalize) {
-            const markdown = document.frontmatter + leadingBreaks + body;
-            setCurrentMarkdown(markdown);
-            callbacks.current.onMarkdownChange(markdown);
-          }
+          if (!initialNormalize) publishBody(body);
         }}
       />
     </SourceRequestContext.Provider>
