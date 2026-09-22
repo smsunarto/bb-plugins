@@ -31,6 +31,6 @@ export default definePlugin({
   },
   agents: {
     tools: {},
-    instructions: () => `${SMART_EMBED_INSTRUCTIONS}\n\n${INLINE_VIS_INSTRUCTIONS}`,
+    instructions: () => `${INLINE_VIS_INSTRUCTIONS}\n\n${SMART_EMBED_INSTRUCTIONS}`,
   },
 });

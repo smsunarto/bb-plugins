@@ -67,7 +67,14 @@ test("the manifest declares the skills root that holds every composer command", 
 
 test("each skill directory carries a SKILL.md whose frontmatter name matches the directory", async () => {
   const directories = (await readdir(skillsRoot)).sort();
-  expect(directories).toEqual(["inline-vis", "ship-it", "subthread", "sync", "test-remotely"]);
+  expect(directories).toEqual([
+    "inline-vis",
+    "ship-it",
+    "smart-embeds",
+    "subthread",
+    "sync",
+    "test-remotely",
+  ]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
     expect((await stat(path)).isFile()).toBe(true);
@@ -101,7 +108,7 @@ test("the measured baseline prompt is the shipped Smart Embed text", async () =>
   expect(baseline).toBe(`${SMART_EMBED_INSTRUCTIONS}\n`);
 });
 
-test("injects the Smart Embed instructions into every agent session", async () => {
+test("injects preview skill routing within the host's per-plugin character limit", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
@@ -109,11 +116,16 @@ test("injects the Smart Embed instructions into every agent session", async () =
     threadId: "thread-1",
     projectId: "project-1",
   });
-  expect(instructions).toBe(`${SMART_EMBED_INSTRUCTIONS}\n\n${INLINE_VIS_INSTRUCTIONS}`);
-  expect(instructions).toContain("::inline-vis");
-  expect(instructions).toContain("::smart-diff");
-  expect(instructions).toContain("::smart-code");
-  expect(instructions).toContain("::smart-patch");
+  expect(instructions).toBe(`${INLINE_VIS_INSTRUCTIONS}\n\n${SMART_EMBED_INSTRUCTIONS}`);
+  // BB truncates contributeInstructions output after 4096 characters.
+  expect(instructions?.length).toBeLessThanOrEqual(4096);
+  const routedSkills = [...(instructions?.matchAll(/read the `([^`]+)` skill/g) ?? [])].map(
+    (match) => match[1],
+  );
+  expect(routedSkills).toEqual(["inline-vis", "smart-embeds"]);
+  for (const name of routedSkills) {
+    expect((await stat(join(skillsRoot, name!, "SKILL.md"))).isFile()).toBe(true);
+  }
 });
 
 test("publishes a workspace-changed signal when a thread settles, fails, or goes away", async () => {

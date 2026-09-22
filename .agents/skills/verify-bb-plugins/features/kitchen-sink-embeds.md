@@ -16,10 +16,11 @@ directive text does not exercise the assistant-message renderer.
 ```text
 ::smart-code{path="plugins/last-turn-diff/README.md" start="1" end="7"}
 ::smart-code{path="<workspace-unity-file>"}
-::inline-vis{file="<workspace-relative-html-file>" height="240"}
+::inline-vis{file="/absolute/thread-host/path/demo.html" height="240"}
 ```
 
-Replace the example paths with the fixture paths. The source excerpt must show
+Replace the example paths with the fixture paths. Resolve the HTML file to an
+existing absolute path on the thread host before emitting `inline-vis`. The source excerpt must show
 the requested lines and the Unity citation must show current values. Expand the
 HTML preview if collapsed, then exercise one control inside it.
 
@@ -41,7 +42,9 @@ when no suitable Unity asset is available.
 - Launch disables the built-in `inline-vis` in the test runtime. If both it and
   Kitchen Sink are enabled, BB renders the duplicate directive as literal text.
 - Smart Code resolves current workspace content. Smart Diff defaults to the exact recorded turn, or an explicit commit/workspace source. Smart Patch reads proposals from thread storage. Verify recorded Unity changes in Last Turn.
-- HTML paths must stay inside the thread workspace. The file limit is 5 MiB.
+- HTML paths must be absolute on the thread host. Workspace, thread storage, or
+  another readable directory are allowed. Keep local assets beside the HTML or
+  in child directories. The document limit is 5 MiB.
 - Unsupported, oversized, or unparseable Unity data falls back to YAML with a notice.
 - Keep fixture files until the evidence is captured. An expanded HTML preview
   needs its source file when the page loads again.
