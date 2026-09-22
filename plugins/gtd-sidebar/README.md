@@ -180,13 +180,13 @@ not trigger naming. New titles are plain text with no activity emoji. Prefixes
 and other project formatting come only from your naming rules. Existing titles
 are preserved exactly when the decision is to keep them.
 
-The plugin sends a tool-free prompt to GPT-5.6-Luna with reasoning disabled and
+The plugin sends a tool-free prompt to GPT-6-Luna with reasoning disabled and
 asks for a keep-or-rename decision with the complete title. The first request, an
 untitled thread, and explicit regeneration use a generation prompt that can only
 rename. Later requests use a review prompt that sees the current title and may
 keep it, and a keep decision does not write to the thread. Both prompts carry the
 latest request, the original request, up to three recent requests, and your
-project naming rules. A transient failure retries once with GPT-5.6-Luna, and each
+project naming rules. A transient failure retries once with GPT-6-Luna, and each
 attempt has a five-second deadline. Logs record timing, never the prompt.
 
 Run the **configure-gtd-naming** skill to create or update

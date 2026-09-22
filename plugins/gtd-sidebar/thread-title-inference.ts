@@ -4,7 +4,7 @@ import {
   type GtdSidebarHostClient,
 } from "./lib/host-contract.ts";
 
-const TITLE_PRIMARY_MODEL = "gpt-5.6-luna";
+const TITLE_PRIMARY_MODEL = "gpt-6-luna";
 const INFERENCE_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 250;
 const TRANSIENT_FAILURES = new Set(["timeout", "rate_limited", "service_unavailable"]);

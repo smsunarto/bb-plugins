@@ -23,7 +23,7 @@ describe("thread title inference policy", () => {
         if (models.length === 1) {
           return { ok: false, code: "timeout", message: "timed out" };
         }
-        if (input.model !== "gpt-5.6-luna") {
+        if (input.model !== "gpt-6-luna") {
           return { ok: false, code: "request_failed", message: "Model not supported" };
         }
         return {
@@ -35,10 +35,10 @@ describe("thread title inference policy", () => {
     }).complete({ environmentId: null, prompt: "Fix thread naming", allowKeep: false });
 
     assert.equal(title, "Fix thread naming");
-    assert.deepEqual(models, ["gpt-5.6-luna", "gpt-5.6-luna"]);
+    assert.deepEqual(models, ["gpt-6-luna", "gpt-6-luna"]);
   });
 
-  test("calls GPT-5.6-Luna without reasoning on the primary host", async () => {
+  test("calls GPT-6-Luna without reasoning on the primary host", async () => {
     const calls: Array<{ input: Record<string, unknown>; hostId: string }> = [];
     const bb = {
       hosts: {
@@ -74,7 +74,7 @@ describe("thread title inference policy", () => {
     assert.equal(title, "Name threads");
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.hostId, "host-primary");
-    assert.equal(calls[0]?.input.model, "gpt-5.6-luna");
+    assert.equal(calls[0]?.input.model, "gpt-6-luna");
     assert.deepEqual(calls[0]?.input.outputSchema, TITLE_OUTPUT_SCHEMA);
     assert.deepEqual(Object.keys(TITLE_OUTPUT_SCHEMA.properties), ["action", "title"]);
   });
