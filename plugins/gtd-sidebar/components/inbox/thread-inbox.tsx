@@ -29,7 +29,6 @@ import {
 } from "../../hooks/use-nest-drag";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { useLifecycle, type LifecycleApi } from "../../hooks/use-lifecycle";
-import { usePinnedOrder, type PinnedOrderApi } from "../../hooks/use-pinned-order";
 import { useSettledArchivePaging, useUnsettle } from "../../hooks/use-settled-threads";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
@@ -93,9 +92,6 @@ export function ThreadInbox({
     [now, sidebar.threads],
   );
   const unsettle = useUnsettle();
-  // bb's pinned order travels the same way: `pinSortKey` is dropped by the
-  // host's thread mapping, so the Pinned shelf re-reads it via the backend.
-  const pinnedOrder = usePinnedOrder();
   // bb's own cached roster, so no glyph waits on a round trip of this plugin's.
   const { providers } = useProviders();
   const providerInfoById = useMemo(
@@ -139,7 +135,6 @@ export function ThreadInbox({
   const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
-    pinnedOrder,
     scope,
     machineScope,
     searchQuery,
@@ -686,7 +681,6 @@ function useRowCommands({
 function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
-  pinnedOrder: PinnedOrderApi,
   scope: string,
   machineScope: string | null,
   searchQuery: string,
@@ -710,10 +704,9 @@ function useInboxTree(
         {
           arrivals,
           snoozedAtFor: lifecycle.snoozedAtFor,
-          pinOrderKeyFor: pinnedOrder.pinOrderKeyFor,
         },
       ),
-    [lifecycle, pinnedOrder, scope, machineScope, searchQuery, threads, arrivals],
+    [lifecycle, scope, machineScope, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>

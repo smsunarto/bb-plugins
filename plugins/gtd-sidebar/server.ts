@@ -1,6 +1,4 @@
-// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store and the one
-// read of bb's thread table the sidebar view can't reach: the pinned order
-// the host mapping drops.
+// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store.
 //
 // Snoozes live in the plugin's own SQLite database, never on bb's thread.
 // Putting them on the thread would mean a schema change, a wire change, and a
@@ -69,24 +67,6 @@ export const gtdSidebarRpcContract = defineRpcContract({
           threadId: z.string(),
           snoozedUntil: z.number().nullable(),
           snoozedAt: z.number().nullable(),
-        }),
-      ),
-    }),
-  },
-  /**
-   * bb's pinned order for the Pinned shelf. `pinSortKey` never reaches the
-   * frontend — the host's sidebar thread mapping drops it — so the shelf
-   * reads it through here keyed by thread id. bb republishes
-   * `pin-state-changed` on every pin, unpin, and reorder, and the backend
-   * relays that on `LIFECYCLE_CHANNEL`.
-   */
-  listPinnedOrder: {
-    input: z.object({}),
-    output: z.object({
-      pins: z.array(
-        z.object({
-          threadId: z.string(),
-          pinSortKey: z.string().nullable(),
         }),
       ),
     }),
@@ -235,7 +215,6 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** One page is already generous; the loop is for the account that isn't. */
   const THREAD_PAGE_SIZE = 200;
-  const THREAD_PAGE_LIMIT = 50;
 
   const familyIds = (threadId: string) =>
     threadFamilyIds(
@@ -250,20 +229,6 @@ export default async function plugin(bb: BbPluginApi) {
         }),
       THREAD_PAGE_SIZE,
     );
-
-  const listThreads = async (archived: boolean) => {
-    const collected = [];
-    for (let page = 0; page < THREAD_PAGE_LIMIT; page++) {
-      const rows = await bb.sdk.threads.list({
-        archived,
-        limit: THREAD_PAGE_SIZE,
-        offset: page * THREAD_PAGE_SIZE,
-      });
-      collected.push(...rows);
-      if (rows.length < THREAD_PAGE_SIZE) break;
-    }
-    return collected;
-  };
 
   const collapsedThreads = createCollapsedThreadsStore(bb.sdk.system.uiPreferences);
   const threadNester = createThreadNester(bb.sdk.threads);
@@ -311,14 +276,6 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async listLifecycle() {
       return { rows: readAll() };
-    },
-    async listPinnedOrder() {
-      const active = await listThreads(false);
-      return {
-        pins: active.flatMap((thread) =>
-          thread.pinnedAt === null ? [] : [{ threadId: thread.id, pinSortKey: thread.pinSortKey }],
-        ),
-      };
     },
     async snooze({ threadId, snoozedUntil }) {
       const ids = await familyIds(threadId);
@@ -373,21 +330,6 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.deleted", ({ thread }) => {
     clear(thread.id);
   });
-
-  // One native feed routes pin changes to only the client list that owns
-  // them. A snooze, pin, or fold no longer fans out across every
-  // lifecycle-backed RPC in every open window.
-  bb.onDispose(
-    bb.sdk.subscribe({
-      event: "thread:changed",
-      callback: (event) => {
-        if (event.id === undefined) return;
-        if (event.changes.includes("pin-state-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "pin", threadId: event.id });
-        }
-      },
-    }),
-  );
 
   // A fold made in bb's own sidebar lands here through the same preference;
   // the publish is so every window re-reads it.

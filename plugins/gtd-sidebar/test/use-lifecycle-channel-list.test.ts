@@ -47,7 +47,7 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
   interface ListProps {
     load: () => Promise<string>;
     apply: (value: string) => void;
-    refreshKinds?: readonly ("collapsed" | "lifecycle" | "pin")[];
+    refreshKinds?: readonly ("collapsed" | "lifecycle" | "naming")[];
   }
 
   function List({ load, apply, refreshKinds }: ListProps) {
@@ -159,22 +159,22 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
 
     it("refreshes only lists that own the published lifecycle kind", async () => {
       const lifecycle = pendingList();
-      const pinned = pendingList();
+      const naming = pendingList();
       const slot = renderSlot(
         { component: ListPair },
         {
           first: { ...lifecycle, refreshKinds: ["lifecycle"] },
-          second: { ...pinned, refreshKinds: ["pin"] },
+          second: { ...naming, refreshKinds: ["naming"] },
         },
       );
       await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
       await advance(50);
       assert.equal(lifecycle.load.mock.calls.length, 2);
-      assert.equal(pinned.load.mock.calls.length, 1);
-      await slot.behavior.emitRealtime("lifecycle", { kind: "pin" });
+      assert.equal(naming.load.mock.calls.length, 1);
+      await slot.behavior.emitRealtime("lifecycle", { kind: "naming" });
       await advance(50);
       assert.equal(lifecycle.load.mock.calls.length, 2);
-      assert.equal(pinned.load.mock.calls.length, 2);
+      assert.equal(naming.load.mock.calls.length, 2);
     });
 
     it("keeps each batch deadline fixed during sustained events", async () => {

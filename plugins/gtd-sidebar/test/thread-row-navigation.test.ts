@@ -14,7 +14,6 @@ import type {
 import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
-import type { PinnedOrderApi } from "../hooks/use-pinned-order.ts";
 
 if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   it("thread row navigation passes the isolated React suite", () => {
@@ -70,7 +69,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     navigate: Partial<BbNavigate>;
     lifecycle: LifecycleApi;
     unarchive: (args: { threadId: string }) => Promise<{ ok: true }>;
-    pinned: PinnedOrderApi;
     pullRequests: Readonly<Record<string, PluginSidebarPullRequest>>;
     splitThreads: readonly string[];
     focusedSplitThread?: string;
@@ -122,9 +120,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     }),
   }));
   mock.module("../hooks/use-lifecycle.ts", () => ({ useLifecycle: () => useHost().lifecycle }));
-  mock.module("../hooks/use-pinned-order.ts", () => ({
-    usePinnedOrder: () => useHost().pinned,
-  }));
   mock.module("../hooks/use-naming-threads.ts", () => ({
     useNamingThreads: () => useHost().naming ?? new Set(),
   }));
@@ -237,7 +232,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       navigate: {},
       lifecycle: lifecycle(),
       unarchive: async () => ({ ok: true }),
-      pinned: { pinOrderKeyFor: () => null },
       pullRequests: {},
       splitThreads: [],
       splitEnabled: true,
