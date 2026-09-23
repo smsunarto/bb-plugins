@@ -176,6 +176,8 @@ function decorateUnityCitation(
 }
 
 export const renderEmbed = defineQuery({
+  description:
+    "Render a Smart Embed: a source citation, a recorded turn or commit diff, or a saved patch.",
   input: renderEmbedInputSchema,
   output: renderEmbedOutputSchema,
   async execute(ctx, input): Promise<RenderEmbedOutput> {

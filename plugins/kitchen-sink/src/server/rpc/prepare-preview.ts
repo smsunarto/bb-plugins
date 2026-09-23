@@ -9,6 +9,7 @@ import {
 } from "../lib/preview-file.ts";
 
 export const preparePreview = defineQuery({
+  description: "Read an absolute HTML or Markdown file for an inline visualization preview.",
   input: preparePreviewInputSchema,
   output: preparePreviewOutputSchema,
   async execute(ctx, input) {

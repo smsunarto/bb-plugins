@@ -16,6 +16,24 @@ test("the plugin loads against the fake host and registers every mention provide
   await plugin(bb);
 
   expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "preparePreview"]);
+  expect(
+    harness.registrations.experimental_publishedRpcMethods.map((entry) => [
+      entry.method,
+      entry.registrationDescription,
+      entry.methodDescription,
+    ]),
+  ).toEqual([
+    [
+      "renderEmbed",
+      "Smart Embed citations and inline visualization previews.",
+      "Render a Smart Embed: a source citation, a recorded turn or commit diff, or a saved patch.",
+    ],
+    [
+      "preparePreview",
+      "Smart Embed citations and inline visualization previews.",
+      "Read an absolute HTML or Markdown file for an inline visualization preview.",
+    ],
+  ]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(
     mentionProviders.map((provider) => provider.id),
   );

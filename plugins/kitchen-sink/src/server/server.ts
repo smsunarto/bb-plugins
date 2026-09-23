@@ -17,6 +17,10 @@ export default definePlugin({
     renderEmbed,
     preparePreview,
   },
+  rpcPublication: {
+    discoverable: true,
+    description: "Smart Embed citations and inline visualization previews.",
+  },
   setup(bb) {
     registerTimelineMotionSettings(bb);
     for (const provider of mentionProviders) {
