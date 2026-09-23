@@ -5,6 +5,10 @@
 ### Patch Changes
 
 - Expose the staged-annotation composer banner as a stable theme surface.
+- Declare the CLI with the SDK's `defineCli`; `--help` works on every command and user errors carry a hint. Requires plugin SDK 0.4.104.
+- Mark the RPC contract discoverable with per-method descriptions (`bb plugin rpc inspect agentation`).
+- Remove annotation mentions from the composer when their annotations are sent or discarded, and refresh the banner after the draft is submitted.
+- Map the app-overlay, browser-toolbar-action, and timeline-renderer plugin surfaces for annotations.
 
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-15)
 
