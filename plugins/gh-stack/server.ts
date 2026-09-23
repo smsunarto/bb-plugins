@@ -1035,14 +1035,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Waiters for hidden helper threads (Suggest): resolved by the idle/failed
   // lifecycle events below.
-  const idleWaiters = new Map<string, (text: string | null) => void>();
-  bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
+  bb.events.on("thread.idle", ({ thread }) => {
     clearRecoveryForThread(thread.id);
-    const waiter = idleWaiters.get(thread.id);
-    if (waiter) {
-      idleWaiters.delete(thread.id);
-      waiter(lastAssistantText);
-    }
     // The agent just finished a turn — the workspace likely changed. Refresh
     // watched threads so open panels update without a manual Refresh. Skip
     // when the cache is seconds old: back-to-back idle events would each pay
@@ -1065,26 +1059,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.failed", ({ thread }) => {
     clearRecoveryForThread(thread.id);
-    const waiter = idleWaiters.get(thread.id);
-    if (waiter) {
-      idleWaiters.delete(thread.id);
-      waiter(null);
-    }
   });
-
-  function waitForIdle(threadId: string, timeoutMs: number): Promise<string | null> {
-    let timer: ReturnType<typeof setTimeout>;
-    const idle = new Promise<string | null>((resolve) => {
-      idleWaiters.set(threadId, resolve);
-    });
-    const timeout = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), timeoutMs);
-    });
-    return Promise.race([idle, timeout]).finally(() => {
-      clearTimeout(timer);
-      idleWaiters.delete(threadId);
-    });
-  }
 
   // defaultBranch is bb's view of the repository default branch, used as the
   // rail's base label before a stack exists (a stack reports its own trunk).
@@ -2481,20 +2456,30 @@ export default async function plugin(bb: BbPluginApi) {
       if (!thread.environmentId) return { name: fallback };
 
       // Ask the thread's own harness: hidden helper thread in the same
-      // environment and provider, read-only naming task.
+      // environment and provider, read-only naming task. The requesting
+      // thread owns the helper's lifecycle, so bb archives or deletes it with
+      // the owner if this call never reaches the cleanup below.
       try {
         const helper = await bb.sdk.threads.spawn({
           projectId: thread.projectId,
           environment: { type: "reuse", environmentId: thread.environmentId },
           providerId: thread.providerId,
           visibility: "hidden",
+          lifecycleOwnerThreadId: threadId,
+          pluginMetadata: { role: "suggest-stack-name", requestedByThreadId: threadId },
           title: "gh-stack: suggest stack name",
           prompt: suggestNamePrompt(settings.conventionalCommits),
         });
-        const text = await waitForIdle(helper.id, 90_000);
-        void bb.sdk.threads
-          .delete({ threadId: helper.id, childThreadsConfirmed: true })
-          .catch(() => {});
+        let text: string | null;
+        try {
+          // Throws on timeout and when the helper errors before going idle.
+          await bb.sdk.threads.wait({ threadId: helper.id, status: "idle", timeoutMs: 90_000 });
+          text = (await bb.sdk.threads.output({ threadId: helper.id })).output;
+        } finally {
+          void bb.sdk.threads
+            .delete({ threadId: helper.id, childThreadsConfirmed: true })
+            .catch(() => {});
+        }
         const name = text ? sanitizeTitle(text) : "";
         if (!name) {
           bb.log.warn("suggestStackName: helper thread returned no title; using fallback");
