@@ -1,4 +1,4 @@
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { PluginSidebarThread, PluginSidebarThreadShortcut } from "@get-bb/plugin-sdk/app";
 import { StatusGlyph, hasStatusGlyph } from "./status-glyph";
 import { relativeTimeLabel } from "../../lib/relative-time";
 
@@ -29,11 +29,15 @@ export const TRAILING_GLYPH_BOX_CLASS = "flex size-3.5 shrink-0 items-center jus
 export function StatusOrTime({
   thread,
   now,
+  shortcut = null,
 }: {
   thread: PluginSidebarThread;
   /** Quantized clock, shared by every row in one render. */
   now: number;
+  /** bb's jump key for this row while the command modifier is held. */
+  shortcut?: PluginSidebarThreadShortcut | null;
 }) {
+  if (shortcut) return <ShortcutPill shortcut={shortcut} />;
   if (hasStatusGlyph(thread.indicator)) {
     return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
@@ -42,5 +46,22 @@ export function StatusOrTime({
     <span className="tabular-nums text-2xs text-muted-foreground/40">
       {relativeTimeLabel(thread.latestAttentionAt, now)}
     </span>
+  );
+}
+
+/**
+ * The jump key bb assigned to the row, drawn in the trailing slot while the
+ * command modifier is held. It takes the status slot rather than adding a
+ * column: the key is only there for the moment the user is about to press it,
+ * and bb's own row swaps its trailing cell the same way.
+ */
+export function ShortcutPill({ shortcut }: { shortcut: PluginSidebarThreadShortcut }) {
+  return (
+    <kbd
+      aria-hidden
+      className="pointer-events-none inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm bg-sidebar-accent px-1 py-0.5 font-sans text-2xs font-normal leading-none tabular-nums text-muted-foreground"
+    >
+      {shortcut.label}
+    </kbd>
   );
 }

@@ -11,8 +11,10 @@ import {
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
+  useSidebarThreadShortcut,
   type PluginSidebarPullRequest,
   type PluginSidebarThread,
+  type PluginSidebarThreadShortcut,
 } from "@get-bb/plugin-sdk/app";
 import { Icon, type IconName } from "../ui/icon";
 import { cn } from "../../lib/utils";
@@ -192,6 +194,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   };
 
   const compact = !isCompactViewport && (compactThreads || depth > 0);
+  const shortcut = useSidebarThreadShortcut(thread.id);
   const showActions = shelf === "nextAction" || canPark;
   const relation = parentTitle
     ? `Child of ${parentTitle}`
@@ -224,6 +227,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       title={rowTitle}
       thread={statusThread}
       now={now}
+      shortcut={shortcut}
       activity={thread.activity}
       pullRequest={pullRequest}
       interactive={interactive}
@@ -270,6 +274,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             provider={provider}
             relation={relation}
             showDetails={compact}
+            shortcut={shortcut}
             threadId={thread.id}
             title={titleText}
             shelf={shelf}
@@ -312,6 +317,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
                 title={rowTitle}
                 thread={statusThread}
                 now={now}
+                shortcut={shortcut}
                 plan={plan}
                 compact={compact}
                 showActions={showActions}
@@ -437,6 +443,7 @@ function MobileThreadSummary({
   title,
   thread,
   now,
+  shortcut,
   activity,
   pullRequest,
   interactive,
@@ -444,6 +451,7 @@ function MobileThreadSummary({
   title: ReactNode;
   thread: PluginSidebarThread;
   now: number;
+  shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
   pullRequest: PluginSidebarPullRequest | null;
   interactive: boolean;
@@ -461,7 +469,7 @@ function MobileThreadSummary({
           />
         ) : null}
         <span className={STATUS_SLOT_CLASS}>
-          <StatusOrTime thread={thread} now={now} />
+          <StatusOrTime thread={thread} now={now} shortcut={shortcut} />
         </span>
       </span>
     </>
@@ -544,6 +552,7 @@ function ThreadRowLink({
   provider,
   relation,
   showDetails,
+  shortcut,
   threadId,
   title,
   shelf,
@@ -565,6 +574,7 @@ function ThreadRowLink({
   provider?: ProviderGlyphInfo;
   relation: string | undefined;
   showDetails: boolean;
+  shortcut: PluginSidebarThreadShortcut | null;
   threadId: string;
   title: string;
   shelf: ActiveThreadShelf;
@@ -600,6 +610,7 @@ function ThreadRowLink({
         data-sidebar-thread-id={threadId}
         href="#"
         aria-label={title}
+        aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
         aria-current={isActive ? "page" : undefined}
         onKeyDown={(event) => {
           // Space picks the row up (see use-nest-drag); while a drag is live
@@ -652,6 +663,7 @@ function DesktopThreadSummary({
   title,
   thread,
   now,
+  shortcut,
   plan,
   compact,
   showActions,
@@ -662,6 +674,7 @@ function DesktopThreadSummary({
   title: ReactNode;
   thread: PluginSidebarThread;
   now: number;
+  shortcut: PluginSidebarThreadShortcut | null;
   plan: ThreadActionPlan;
   compact: boolean;
   showActions: boolean;
@@ -680,7 +693,7 @@ function DesktopThreadSummary({
           <PullRequestNumber pullRequest={pullRequest} interactive />
         ) : null}
         <span className={STATUS_SLOT_CLASS}>
-          <StatusOrTime thread={thread} now={now} />
+          <StatusOrTime thread={thread} now={now} shortcut={shortcut} />
         </span>
       </span>
       {showActions ? (

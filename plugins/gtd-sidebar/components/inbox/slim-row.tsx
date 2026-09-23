@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
+  useSidebarThreadShortcut,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "../ui/icon";
@@ -21,7 +22,7 @@ import {
   type DispatchRowCommand,
   type ThreadAction,
 } from "./thread-actions";
-import { STATUS_SLOT_CLASS, StatusOrTime } from "./status-slot";
+import { STATUS_SLOT_CLASS, ShortcutPill, StatusOrTime } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
 import type { ProviderGlyphInfo } from "./provider-glyph";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
@@ -112,6 +113,7 @@ const SlimRowBody = memo(function SlimRowBody({
   });
 
   const compact = compactThreads && !isCompactViewport;
+  const shortcut = useSidebarThreadShortcut(thread.id);
   const { rowClassName, rowStyle, titleClassName } = slimRowPresentation({
     isCompactViewport,
     isActive,
@@ -121,7 +123,11 @@ const SlimRowBody = memo(function SlimRowBody({
     depth,
     childCount,
   });
-  const status = <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} now={now} />;
+  const status = shortcut ? (
+    <ShortcutPill shortcut={shortcut} />
+  ) : (
+    <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} now={now} />
+  );
   const highlightContent = (
     <div className="flex h-full items-center gap-2 px-2.5 text-xs">
       <span
@@ -173,6 +179,7 @@ const SlimRowBody = memo(function SlimRowBody({
               data-sidebar-thread-id={thread.id}
               href="#"
               aria-label={title}
+              aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
               onClick={(event) => {
                 if (event.button !== 0) return;
                 event.preventDefault();

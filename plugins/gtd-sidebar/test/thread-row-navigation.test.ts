@@ -253,6 +253,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     inbox: Partial<PluginThreadListProps> = {},
     compactThreads = false,
     localMachineId = "",
+    options: NonNullable<Parameters<typeof renderSlot>[2]> = {},
   ) {
     let current: InboxProps = {
       host,
@@ -265,8 +266,13 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ...inbox,
       },
     };
-    const settings = { compactThreads, localMachineId, groupThreadsByProject: true };
-    const slot = renderSlot({ component: Inbox }, current, { settings });
+    const settings = {
+      compactThreads,
+      localMachineId,
+      groupThreadsByProject: true,
+      ...options.settings,
+    };
+    const slot = renderSlot({ component: Inbox }, current, { ...options, settings });
     return {
       slot,
       setGrouping(enabled: boolean) {
@@ -1043,6 +1049,68 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(rowIds(view.slot), ["a", "c", "b"]);
       fireEvent.pointerDown(rowButton(view.slot, "a", "Settle"));
       assert.deepEqual(currentActions.open.mock.calls, [["c"]]);
+    });
+
+    it("carries bb's jump key on the row and swaps its status slot for the pill", () => {
+      const host = hostState([
+        thread("a"),
+        thread("b"),
+        thread("snoozed"),
+        settledThread("settled"),
+      ]);
+      host.lifecycle = lifecycle(["snoozed"]);
+      const view = mount(host, {}, false, "", {
+        sidebarShortcuts: {
+          a: { label: "⌃1", ariaKeyshortcuts: "Control+1" },
+          snoozed: { label: "⌃3", ariaKeyshortcuts: "Control+3" },
+          settled: { label: "⌃4", ariaKeyshortcuts: "Control+4" },
+        },
+      });
+      expandParked(view.slot);
+      assert.equal(row(view.slot, "a").getAttribute("aria-keyshortcuts"), "Control+1");
+      assert.equal(row(view.slot, "b").getAttribute("aria-keyshortcuts"), null);
+      assert.equal(row(view.slot, "snoozed").getAttribute("aria-keyshortcuts"), "Control+3");
+      assert.equal(row(view.slot, "settled").getAttribute("aria-keyshortcuts"), "Control+4");
+      assert.deepEqual(
+        Array.from(view.slot.container.querySelectorAll("kbd"), (pill) => pill.textContent),
+        ["⌃1", "⌃3", "⌃4"],
+      );
+    });
+
+    it("asks GitButler about plain checkouts only and prefers its label on the card", async () => {
+      const environment = (id: string, isWorktree: boolean | null) => ({
+        id,
+        name: id,
+        branchName: `${id}-branch`,
+        path: `/repos/${id}`,
+        isWorktree,
+        providerId: null,
+        workspaceDisplayKind: null,
+      });
+      const host = hostState([
+        thread("plain", { environment: environment("env-plain", false) }),
+        thread("worktree", { environment: environment("env-worktree", true) }),
+        thread("unknown", { environment: environment("env-unknown", null) }),
+      ]);
+      const view = mount(host, {}, false, "", {
+        settings: { gitButlerBranches: true },
+        rpc: {
+          listEnvironmentBranches: async () => ({
+            environments: [{ environmentId: "env-plain", label: "scott/feature" }],
+          }),
+        },
+      });
+      await waitFor(() => assert.ok(view.slot.container.textContent!.includes("scott/feature")));
+      assert.deepEqual(
+        view.slot.rpcCalls
+          .filter((call) => call.method === "listEnvironmentBranches")
+          .map((call) => call.input),
+        [{ environmentIds: ["env-plain"] }],
+      );
+      const text = view.slot.container.textContent!;
+      assert.ok(!text.includes("env-plain-branch"));
+      assert.ok(text.includes("env-worktree-branch"));
+      assert.ok(text.includes("env-unknown-branch"));
     });
 
     it("uses current lifecycle actions and general navigation for settled mobile rows", () => {

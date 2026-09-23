@@ -772,7 +772,9 @@ function useGitButlerLabels(
         ...new Set(
           threads.flatMap((thread) => {
             const environment = thread.environment;
-            return environment?.workspaceDisplayKind === "other" && environment.id !== null
+            // A worktree is bb's own branch; only a plain checkout can hold
+            // GitButler's applied branches, and null means bb does not know yet.
+            return environment?.isWorktree === false && environment.id !== null
               ? [environment.id]
               : [];
           }),
