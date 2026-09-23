@@ -27,46 +27,9 @@ import {
 } from "@/lib/staging-display.ts";
 import type { rpcContract } from "@/server.ts";
 
-function MentionAnnotationButton({
-  annotation,
-  descriptionId,
-  disabled,
-  location,
-  threadId,
-}: {
-  annotation: StoredAnnotation;
-  descriptionId: string;
-  disabled: boolean;
-  location: string;
-  threadId: string;
-}) {
-  const composer = useComposer();
-
-  return (
-    <Button
-      type="button"
-      size="icon"
-      variant="ghost"
-      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-      disabled={disabled}
-      aria-label="Mention annotation in composer"
-      aria-describedby={descriptionId}
-      onClick={() => {
-        composer.insertMention({
-          provider: "annotation",
-          id: annotationMentionItemId(annotation.id, threadId),
-          label: annotationMentionLabel(annotation, location),
-        });
-        composer.focus();
-      }}
-    >
-      <Icon name="AtSign" aria-hidden="true" />
-    </Button>
-  );
-}
-
 function StagedAnnotations({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
+  const composer = useComposer();
   const [annotations, setAnnotations] = useState<StoredAnnotation[]>([]);
   const [threadTitles, setThreadTitles] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -111,6 +74,23 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
     }, [refresh]),
   );
 
+  // A submitted draft consumes its annotation pills; the server assigns those
+  // annotations while resolving the mentions, so re-read the banner at once.
+  const onSubmitted = composer.experimental_onSubmitted;
+  useEffect(() => onSubmitted(() => void refresh()), [onSubmitted, refresh]);
+
+  const mentionOf = (annotationId: string) => ({
+    provider: "annotation",
+    id: annotationMentionItemId(annotationId, threadId),
+  });
+
+  // An annotation that left staging must leave the draft too, or its pill
+  // would resolve against a record this thread already holds or dismissed.
+  const forgetMentions = (annotationIds: readonly string[]) => {
+    for (const annotationId of annotationIds)
+      composer.experimental_removeMention(mentionOf(annotationId));
+  };
+
   const connection = useRealtimeConnectionState();
   const previousConnection = useRef(connection);
   useEffect(() => {
@@ -136,6 +116,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
       if (result.outcome === "sent") toast.success(result.message);
       else toast.warning(result.message);
+      forgetMentions(result.sentIds);
       await refresh();
     } catch (cause) {
       toast.error(
@@ -165,6 +146,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
       });
       if (result.outcome === "discarded") toast.success(result.message);
       else toast.warning(result.message);
+      forgetMentions(result.discardedIds);
       await refresh();
     } catch (cause) {
       toast.error("Could not discard the staged annotation", {
@@ -191,6 +173,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
       });
       if (result.outcome === "discarded") toast.success(result.message);
       else toast.warning(result.message);
+      forgetMentions(result.discardedIds);
       await refresh();
       setDiscardIds(null);
     } catch (cause) {
@@ -306,13 +289,21 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                       {labelParts.comment}
                     </span>
                   </span>
-                  <MentionAnnotationButton
-                    annotation={annotation}
-                    descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
                     disabled={isMutating}
-                    location={location}
-                    threadId={threadId}
-                  />
+                    aria-label="Mention annotation in composer"
+                    aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
+                    onClick={() => {
+                      composer.insertMention({ ...mentionOf(annotation.id), label });
+                      composer.focus();
+                    }}
+                  >
+                    <Icon name="AtSign" aria-hidden="true" />
+                  </Button>
                   <Button
                     type="button"
                     size="icon"
