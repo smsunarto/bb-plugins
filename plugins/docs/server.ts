@@ -73,15 +73,18 @@ const vaultSchema = z
     rootPath: z.string().min(1),
   })
   .strict();
-const vaultPathSchema = z.string().transform((value, context) => {
+// A refinement rather than a transform: discoverable RPC publishes output
+// schemas as JSON Schema, which cannot represent transforms. requireVaultPath
+// rejects every input that normalization would rewrite, and every handler
+// re-validates its paths, so validating without rewriting is equivalent.
+const vaultPathSchema = z.string().superRefine((value, context) => {
   try {
-    return requireVaultPath(value);
+    requireVaultPath(value);
   } catch (error) {
     context.addIssue({
       code: "custom",
       message: error instanceof Error ? error.message : String(error),
     });
-    return z.NEVER;
   }
 });
 const vaultDirectorySchema = z.union([z.literal(""), vaultPathSchema]).optional();
@@ -215,8 +218,30 @@ function usageError(message: string): PluginCliError {
   return new PluginCliError(message, { code: "usage_error", exitCode: 2 });
 }
 
+function describe<Method extends { input: unknown; output: unknown }>(
+  method: Method,
+  experimental_description: string,
+): Method & { experimental_description: string } {
+  return { ...method, experimental_description };
+}
+
 export const docsRpcContract = defineRpcContract({
-  ...canvasEditorContract,
+  state: describe(
+    canvasEditorContract.state,
+    "Read the Canvas editor state (controls and layout) for a note.",
+  ),
+  setState: describe(canvasEditorContract.setState, "Replace the Canvas editor state for a note."),
+  resetState: describe(
+    canvasEditorContract.resetState,
+    "Reset the Canvas editor state for a note to its defaults.",
+  ),
+  comments: describe(canvasEditorContract.comments, "List Canvas comments attached to a note."),
+  comment: describe(canvasEditorContract.comment, "Add a Canvas comment to a note."),
+  proposals: describe(
+    canvasEditorContract.proposals,
+    "List pending Canvas edit proposals for a note.",
+  ),
+  decide: describe(canvasEditorContract.decide, "Accept or reject a Canvas edit proposal."),
   syncSnapshot: {
     experimental_description:
       "Snapshot a vault, folder, or file with content hashes for optimistic sync.",
@@ -231,6 +256,8 @@ export const docsRpcContract = defineRpcContract({
       .strict(),
   },
   syncApply: {
+    experimental_description:
+      "Apply writes, deletes, and folder changes to a vault with sha256 conflict checks.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -262,6 +289,7 @@ export const docsRpcContract = defineRpcContract({
       .strict(),
   },
   listNotes: {
+    experimental_description: "List vaults, hosts, and the notes and folders of one vault.",
     input: z.object({ vaultId: vaultIdSchema }).strict(),
     output: z
       .object({
@@ -293,10 +321,13 @@ export const docsRpcContract = defineRpcContract({
       .strict(),
   },
   readNote: {
+    experimental_description: "Read one file from a vault with its sha256.",
     input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
     output: fileReadSchema,
   },
   saveNote: {
+    experimental_description:
+      "Write one file to a vault, optionally guarded by an expected sha256.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -308,6 +339,7 @@ export const docsRpcContract = defineRpcContract({
     output: fileWriteSchema,
   },
   createNote: {
+    experimental_description: "Create a new Markdown note in a vault folder.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -319,6 +351,7 @@ export const docsRpcContract = defineRpcContract({
     output: pathResultSchema,
   },
   deletePath: {
+    experimental_description: "Delete a file or folder from a vault.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -329,10 +362,12 @@ export const docsRpcContract = defineRpcContract({
     output: okResultSchema,
   },
   createFolder: {
+    experimental_description: "Create a folder in a vault.",
     input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
     output: pathResultSchema,
   },
   reorderFiles: {
+    experimental_description: "Persist the display order of entries in a vault folder.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -343,6 +378,7 @@ export const docsRpcContract = defineRpcContract({
     output: z.object({ paths: z.array(vaultPathSchema) }).strict(),
   },
   movePath: {
+    experimental_description: "Move or rename a file or folder within a vault.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -353,10 +389,12 @@ export const docsRpcContract = defineRpcContract({
     output: pathResultSchema,
   },
   renameToTitle: {
+    experimental_description: "Rename a note file to match its Markdown title.",
     input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
     output: pathResultSchema,
   },
   createVault: {
+    experimental_description: "Register a vault rooted at a host directory.",
     input: z
       .object({
         name: z.string().min(1),
@@ -367,10 +405,13 @@ export const docsRpcContract = defineRpcContract({
     output: vaultSchema,
   },
   removeVault: {
+    experimental_description: "Unregister a vault configuration.",
     input: z.object({ vaultId: z.string().min(1) }).strict(),
     output: okResultSchema,
   },
   uploadAttachment: {
+    experimental_description:
+      "Store an attachment beside a note and return its Markdown link path.",
     input: z
       .object({
         vaultId: vaultIdSchema,
@@ -388,10 +429,12 @@ export const docsRpcContract = defineRpcContract({
       .strict(),
   },
   preparePreview: {
+    experimental_description: "Prepare a short-lived preview base URL for a vault file.",
     input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
     output: previewSchema,
   },
   openFile: {
+    experimental_description: "Open a workspace, host, or thread-storage file with a preview URL.",
     input: z.object({ source: openerSourceSchema, path: z.string().min(1) }).strict(),
     output: z
       .object({
@@ -402,10 +445,13 @@ export const docsRpcContract = defineRpcContract({
       .strict(),
   },
   readOpenedFile: {
+    experimental_description: "Read a workspace, host, or thread-storage file.",
     input: z.object({ source: openerSourceSchema, path: z.string().min(1) }).strict(),
     output: fileReadSchema,
   },
   saveOpenedFile: {
+    experimental_description:
+      "Save a workspace, host, or thread-storage file with an optional expected sha256.",
     input: z
       .object({
         source: openerSourceSchema,
@@ -1635,7 +1681,11 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     },
   };
 
-  bb.rpc.register(docsRpcContract, handlers);
+  bb.rpc.register(docsRpcContract, handlers, {
+    experimental_discoverable: true,
+    experimental_description:
+      "Read, write, and safely sync Markdown vaults, plus the Canvas editor state of their notes.",
+  });
 
   async function readHttpInput<Schema extends z.ZodType>(
     context: Parameters<Parameters<BbPluginApi["http"]["route"]>[2]>[0],

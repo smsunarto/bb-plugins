@@ -680,6 +680,18 @@ describe("Docs vault operations", () => {
     ]);
   });
 
+  it("publishes every RPC method as discoverable with a description", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const published = harness.registrations.experimental_publishedRpcMethods;
+    expect(published.map((entry) => entry.method).sort()).toEqual(
+      Object.keys(docsRpcContract).sort(),
+    );
+    for (const entry of published) {
+      expect(entry.registrationDescription).toContain("Markdown vaults");
+      expect(entry.methodDescription).toMatch(/\S/);
+    }
+  });
+
   it("lists and reads Markdown documents beneath hidden folders", async () => {
     const { harness, files } = await loadVirtualSyncVault({
       "/vault/.dotfiles/.agents/instructions/shared.md": {
