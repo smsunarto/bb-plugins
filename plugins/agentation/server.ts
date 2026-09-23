@@ -89,6 +89,8 @@ const configSchema = z.object({
 export const rpcContract = defineRpcContract({
   // --- toolbar content script -------------------------------------------
   openSession: {
+    experimental_description:
+      "Open or reuse the annotation session for one bb page and return its annotations, cursor, and toolbar config.",
     input: z
       .object({
         url: z.string(),
@@ -106,6 +108,8 @@ export const rpcContract = defineRpcContract({
     }),
   },
   pushAnnotations: {
+    experimental_description:
+      "Upsert and delete annotations captured by the toolbar on one session.",
     input: z
       .object({
         sessionId: z.string(),
@@ -119,6 +123,8 @@ export const rpcContract = defineRpcContract({
     }),
   },
   pullSession: {
+    experimental_description:
+      "Return a session's annotations and config when the cursor moved past the caller's.",
     input: z.object({ sessionId: z.string(), cursor: z.number().int() }).strict(),
     output: z.object({
       cursor: z.number().int(),
@@ -128,10 +134,13 @@ export const rpcContract = defineRpcContract({
     }),
   },
   clearSessionAnnotations: {
+    experimental_description: "Delete every annotation on one session.",
     input: z.object({ sessionId: z.string() }).strict(),
     output: z.object({ cursor: z.number().int(), removed: z.number().int() }),
   },
   listStagedAnnotations: {
+    experimental_description:
+      "List annotations waiting for a thread, with the titles of threads they came from.",
     input: z.null(),
     output: z.object({
       annotations: z.array(storedAnnotationSchema),
@@ -139,6 +148,7 @@ export const rpcContract = defineRpcContract({
     }),
   },
   discardStagedAnnotations: {
+    experimental_description: "Dismiss staged annotations so they leave the composer banner.",
     input: z.object({ annotationIds: z.array(z.string()).min(1) }).strict(),
     output: z.object({
       outcome: z.enum(["discarded", "stale"]),
@@ -148,6 +158,7 @@ export const rpcContract = defineRpcContract({
     }),
   },
   sendStagedAnnotations: {
+    experimental_description: "Assign staged annotations to a thread and send them as a message.",
     input: z
       .object({
         annotationIds: z.array(z.string()).min(1),
@@ -162,12 +173,14 @@ export const rpcContract = defineRpcContract({
     }),
   },
   restageAnnotation: {
+    experimental_description: "Return an assigned annotation to staging.",
     input: z.object({ annotationId: z.string() }).strict(),
     output: z.object({ routing: annotationRoutingSchema.nullable() }),
   },
 
   // --- review panel ------------------------------------------------------
   getConfig: {
+    experimental_description: "Read the toolbar config and annotation counts by status.",
     input: z.null(),
     output: z.object({
       config: configSchema,
@@ -181,14 +194,18 @@ export const rpcContract = defineRpcContract({
     }),
   },
   setToolbarEnabled: {
+    experimental_description: "Show or hide the annotation toolbar in every bb window.",
     input: z.object({ enabled: z.boolean() }).strict(),
     output: z.object({ toolbarEnabled: z.boolean() }),
   },
   listSessions: {
+    experimental_description: "List annotated pages, optionally only active ones.",
     input: z.object({ status: z.enum(["active"]).nullable() }).strict(),
     output: z.object({ sessions: z.array(sessionSummarySchema) }),
   },
   listAnnotations: {
+    experimental_description:
+      "List annotations filtered by session, status, or owning plugin, with their thread routing.",
     input: z
       .object({
         sessionId: z.string().nullable(),
@@ -202,6 +219,8 @@ export const rpcContract = defineRpcContract({
     }),
   },
   mutateAnnotation: {
+    experimental_description:
+      "Acknowledge, resolve, dismiss, reopen, or delete one annotation as the human.",
     input: z
       .object({
         annotationId: z.string(),
@@ -215,6 +234,8 @@ export const rpcContract = defineRpcContract({
     }),
   },
   replyToAnnotation: {
+    experimental_description:
+      "Post a human reply on an assigned annotation and forward it to its thread.",
     input: z.object({ annotationId: z.string(), message: z.string().min(1) }).strict(),
     output: z.object({ annotation: storedAnnotationSchema.nullable() }),
   },
@@ -534,215 +555,224 @@ export default async function plugin(bb: BbPluginApi) {
   // rpc
   // -------------------------------------------------------------------------
 
-  bb.rpc.register(rpcContract, {
-    async openSession(input) {
-      const session = openSession(db, {
-        url: input.url,
-        route: input.route,
-        title: input.title,
-        threadId: input.threadId ?? threadIdFromRoute(input.route),
-        projectId: input.projectId ?? projectIdFromRoute(input.route),
-      });
-      return sanitizeJson({
-        session,
-        annotations: listAnnotations(db, {
-          sessionId: session.id,
-          limit: null,
-        }),
-        cursor: sessionCursor(db, session.id),
-        config: await readConfig(),
-      });
-    },
-
-    pushAnnotations(input) {
-      // A long-lived bb window caches its session id. The nightly prune can
-      // remove an empty session out from under it, and there is no foreign key
-      // to stop the write — the annotations would land against a session that
-      // no longer exists and disappear from the review panel. Fail instead, so
-      // the client drops the stale id and opens a fresh session.
-      if (!getSession(db, input.sessionId)) {
-        throw new Error(`unknown session ${input.sessionId}`);
-      }
-      for (const item of input.upserts) {
-        upsertAnnotation(db, {
-          sessionId: input.sessionId,
-          annotation: item.annotation,
-          bb: item.bb,
+  bb.rpc.register(
+    rpcContract,
+    {
+      async openSession(input) {
+        const session = openSession(db, {
+          url: input.url,
+          route: input.route,
+          title: input.title,
+          threadId: input.threadId ?? threadIdFromRoute(input.route),
+          projectId: input.projectId ?? projectIdFromRoute(input.route),
         });
-      }
-      if (input.deletedIds.length > 0) {
-        deleteAnnotations(db, input.deletedIds);
-      }
-      if (input.upserts.length > 0 || input.deletedIds.length > 0) {
+        return sanitizeJson({
+          session,
+          annotations: listAnnotations(db, {
+            sessionId: session.id,
+            limit: null,
+          }),
+          cursor: sessionCursor(db, session.id),
+          config: await readConfig(),
+        });
+      },
+
+      pushAnnotations(input) {
+        // A long-lived bb window caches its session id. The nightly prune can
+        // remove an empty session out from under it, and there is no foreign key
+        // to stop the write — the annotations would land against a session that
+        // no longer exists and disappear from the review panel. Fail instead, so
+        // the client drops the stale id and opens a fresh session.
+        if (!getSession(db, input.sessionId)) {
+          throw new Error(`unknown session ${input.sessionId}`);
+        }
+        for (const item of input.upserts) {
+          upsertAnnotation(db, {
+            sessionId: input.sessionId,
+            annotation: item.annotation,
+            bb: item.bb,
+          });
+        }
+        if (input.deletedIds.length > 0) {
+          deleteAnnotations(db, input.deletedIds);
+        }
+        if (input.upserts.length > 0 || input.deletedIds.length > 0) {
+          broadcast({ type: "annotations", sessionId: input.sessionId });
+        }
+        return sanitizeJson({
+          cursor: sessionCursor(db, input.sessionId),
+          annotations: listAnnotations(db, {
+            sessionId: input.sessionId,
+            limit: null,
+          }),
+        });
+      },
+
+      async pullSession(input) {
+        const cursor = sessionCursor(db, input.sessionId);
+        return sanitizeJson({
+          cursor,
+          changed: cursor > input.cursor,
+          annotations: listAnnotations(db, {
+            sessionId: input.sessionId,
+            limit: null,
+          }),
+          config: await readConfig(),
+        });
+      },
+
+      clearSessionAnnotations(input) {
+        const removed = clearSession(db, input.sessionId);
         broadcast({ type: "annotations", sessionId: input.sessionId });
-      }
-      return sanitizeJson({
-        cursor: sessionCursor(db, input.sessionId),
-        annotations: listAnnotations(db, {
-          sessionId: input.sessionId,
-          limit: null,
-        }),
-      });
-    },
+        return { cursor: sessionCursor(db, input.sessionId), removed };
+      },
 
-    async pullSession(input) {
-      const cursor = sessionCursor(db, input.sessionId);
-      return sanitizeJson({
-        cursor,
-        changed: cursor > input.cursor,
-        annotations: listAnnotations(db, {
-          sessionId: input.sessionId,
-          limit: null,
-        }),
-        config: await readConfig(),
-      });
-    },
-
-    clearSessionAnnotations(input) {
-      const removed = clearSession(db, input.sessionId);
-      broadcast({ type: "annotations", sessionId: input.sessionId });
-      return { cursor: sessionCursor(db, input.sessionId), removed };
-    },
-
-    async listStagedAnnotations() {
-      const annotations = listStagedAnnotations(db);
-      return sanitizeJson({
-        annotations,
-        threadTitles: await resolveThreadTitles(annotations),
-      });
-    },
-
-    discardStagedAnnotations(input) {
-      const result = discardStagedAnnotations(db, input.annotationIds);
-      const remainingCount = listStagedAnnotations(db).length;
-      if (result.outcome === "stale") {
-        return {
-          outcome: "stale" as const,
-          discardedIds: [],
-          remainingCount,
-          message: "The staged annotations changed. Review the current batch and discard it again.",
-        };
-      }
-
-      broadcast({ type: "annotations", sessionId: null });
-
-      const discardedIds = result.annotations.map((annotation) => annotation.id);
-      return {
-        outcome: "discarded" as const,
-        discardedIds,
-        remainingCount,
-        message: `Discarded ${discardedIds.length} annotation${discardedIds.length === 1 ? "" : "s"}.`,
-      };
-    },
-
-    async sendStagedAnnotations(input) {
-      return sanitizeJson(await sendStagedToThread(input.annotationIds, input.threadId));
-    },
-
-    restageAnnotation(input) {
-      const routing = restageStoredAnnotation(db, input.annotationId);
-      if (routing) broadcast({ type: "routing", sessionId: null });
-      return sanitizeJson({ routing });
-    },
-
-    async getConfig() {
-      return { config: await readConfig(), counts: countByStatus(db) };
-    },
-
-    async setToolbarEnabled(input) {
-      await bb.storage.kv.set(TOOLBAR_KEY, input.enabled);
-      broadcast({ type: "config", sessionId: null });
-      return { toolbarEnabled: input.enabled };
-    },
-
-    listSessions(input) {
-      return sanitizeJson({
-        sessions: listSessions(db, {
-          status: (input.status as SessionStatus | null) ?? undefined,
-        }),
-      });
-    },
-
-    listAnnotations(input) {
-      const annotations = listAnnotations(db, {
-        sessionId: input.sessionId ?? undefined,
-        statuses: input.statuses ?? undefined,
-        pluginId: input.pluginId ?? undefined,
-      });
-
-      return sanitizeJson({
-        annotations,
-        routings: listAnnotationRoutings(
-          db,
-          annotations.map((annotation) => annotation.id),
-        ),
-      });
-    },
-
-    mutateAnnotation(input) {
-      if (input.action === "delete") {
-        const existing = getAnnotation(db, input.annotationId);
-        deleteAnnotations(db, [input.annotationId]);
-        broadcast({
-          type: "annotations",
-          sessionId: existing?.sessionId ?? null,
+      async listStagedAnnotations() {
+        const annotations = listStagedAnnotations(db);
+        return sanitizeJson({
+          annotations,
+          threadTitles: await resolveThreadTitles(annotations),
         });
-        return { annotation: null, deleted: existing !== null };
-      }
+      },
 
-      const status: AnnotationStatus =
-        input.action === "acknowledge"
-          ? "acknowledged"
-          : input.action === "resolve"
-            ? "resolved"
-            : input.action === "dismiss"
-              ? "dismissed"
-              : "pending";
+      discardStagedAnnotations(input) {
+        const result = discardStagedAnnotations(db, input.annotationIds);
+        const remainingCount = listStagedAnnotations(db).length;
+        if (result.outcome === "stale") {
+          return {
+            outcome: "stale" as const,
+            discardedIds: [],
+            remainingCount,
+            message:
+              "The staged annotations changed. Review the current batch and discard it again.",
+          };
+        }
 
-      const annotation = setAnnotationStatus(db, {
-        annotationId: input.annotationId,
-        status,
-        by: "human",
-        resolution: input.note,
-      });
-      if (annotation) {
-        broadcast({ type: "annotations", sessionId: annotation.sessionId });
-      }
-      return sanitizeJson({ annotation, deleted: false });
+        broadcast({ type: "annotations", sessionId: null });
+
+        const discardedIds = result.annotations.map((annotation) => annotation.id);
+        return {
+          outcome: "discarded" as const,
+          discardedIds,
+          remainingCount,
+          message: `Discarded ${discardedIds.length} annotation${discardedIds.length === 1 ? "" : "s"}.`,
+        };
+      },
+
+      async sendStagedAnnotations(input) {
+        return sanitizeJson(await sendStagedToThread(input.annotationIds, input.threadId));
+      },
+
+      restageAnnotation(input) {
+        const routing = restageStoredAnnotation(db, input.annotationId);
+        if (routing) broadcast({ type: "routing", sessionId: null });
+        return sanitizeJson({ routing });
+      },
+
+      async getConfig() {
+        return { config: await readConfig(), counts: countByStatus(db) };
+      },
+
+      async setToolbarEnabled(input) {
+        await bb.storage.kv.set(TOOLBAR_KEY, input.enabled);
+        broadcast({ type: "config", sessionId: null });
+        return { toolbarEnabled: input.enabled };
+      },
+
+      listSessions(input) {
+        return sanitizeJson({
+          sessions: listSessions(db, {
+            status: (input.status as SessionStatus | null) ?? undefined,
+          }),
+        });
+      },
+
+      listAnnotations(input) {
+        const annotations = listAnnotations(db, {
+          sessionId: input.sessionId ?? undefined,
+          statuses: input.statuses ?? undefined,
+          pluginId: input.pluginId ?? undefined,
+        });
+
+        return sanitizeJson({
+          annotations,
+          routings: listAnnotationRoutings(
+            db,
+            annotations.map((annotation) => annotation.id),
+          ),
+        });
+      },
+
+      mutateAnnotation(input) {
+        if (input.action === "delete") {
+          const existing = getAnnotation(db, input.annotationId);
+          deleteAnnotations(db, [input.annotationId]);
+          broadcast({
+            type: "annotations",
+            sessionId: existing?.sessionId ?? null,
+          });
+          return { annotation: null, deleted: existing !== null };
+        }
+
+        const status: AnnotationStatus =
+          input.action === "acknowledge"
+            ? "acknowledged"
+            : input.action === "resolve"
+              ? "resolved"
+              : input.action === "dismiss"
+                ? "dismissed"
+                : "pending";
+
+        const annotation = setAnnotationStatus(db, {
+          annotationId: input.annotationId,
+          status,
+          by: "human",
+          resolution: input.note,
+        });
+        if (annotation) {
+          broadcast({ type: "annotations", sessionId: annotation.sessionId });
+        }
+        return sanitizeJson({ annotation, deleted: false });
+      },
+
+      async replyToAnnotation(input) {
+        const existing = getAnnotation(db, input.annotationId);
+        if (!existing) return sanitizeJson({ annotation: null });
+
+        const routing = getAnnotationRouting(db, input.annotationId);
+        if (routing?.state !== "assigned" || !routing.assignedThreadId) {
+          throw new Error("Stage and send this annotation to a thread before you reply.");
+        }
+
+        const context = renderAnnotation(existing);
+        await bb.sdk.threads.send({
+          threadId: routing.assignedThreadId,
+          mode: "auto",
+          input: [
+            {
+              type: "text",
+              text: `# Agentation follow-up\n\n${context}\n\n## Human reply\n\n${input.message}`,
+              mentions: [],
+            },
+          ],
+        });
+
+        const annotation = appendThreadMessage(db, input.annotationId, {
+          role: "human",
+          content: input.message,
+        });
+        if (annotation) {
+          broadcast({ type: "annotations", sessionId: annotation.sessionId });
+        }
+        return sanitizeJson({ annotation });
+      },
     },
-
-    async replyToAnnotation(input) {
-      const existing = getAnnotation(db, input.annotationId);
-      if (!existing) return sanitizeJson({ annotation: null });
-
-      const routing = getAnnotationRouting(db, input.annotationId);
-      if (routing?.state !== "assigned" || !routing.assignedThreadId) {
-        throw new Error("Stage and send this annotation to a thread before you reply.");
-      }
-
-      const context = renderAnnotation(existing);
-      await bb.sdk.threads.send({
-        threadId: routing.assignedThreadId,
-        mode: "auto",
-        input: [
-          {
-            type: "text",
-            text: `# Agentation follow-up\n\n${context}\n\n## Human reply\n\n${input.message}`,
-            mentions: [],
-          },
-        ],
-      });
-
-      const annotation = appendThreadMessage(db, input.annotationId, {
-        role: "human",
-        content: input.message,
-      });
-      if (annotation) {
-        broadcast({ type: "annotations", sessionId: annotation.sessionId });
-      }
-      return sanitizeJson({ annotation });
+    {
+      experimental_discoverable: true,
+      experimental_description:
+        "Annotation store behind the Agentation toolbar, review panel, and composer banner.",
     },
-  });
+  );
 
   // -------------------------------------------------------------------------
   // Agent tools
