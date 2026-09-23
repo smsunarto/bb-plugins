@@ -8,6 +8,7 @@ import { FileDiff } from "@pierre/diffs/react";
 import type { ChangeKind, FilePatch, PatchSource } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Loading, Notice, errorText } from "./notice.tsx";
+import { COMMIT_QUERY } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
 
 const REFRESH_INTERVAL_MS = 10_000;
@@ -225,9 +226,12 @@ export function FileCards({
     () => new Set(initialPath ? [initialPath] : []),
   );
 
-  const patches = rpc.patches.useQuery(defined({ threadId, repositoryKey, source }), {
-    staleTime: REFRESH_INTERVAL_MS,
-  });
+  const patches = rpc.patches.useQuery(
+    defined({ threadId, repositoryKey, source }),
+    // A commit's diff is fixed by its id. The worktree's is not, so that one
+    // is refreshed on the panel's usual cadence.
+    source.kind === "commit" ? COMMIT_QUERY : { staleTime: REFRESH_INTERVAL_MS },
+  );
 
   const toggle = useCallback((path: string) => {
     setExpanded((current) => {

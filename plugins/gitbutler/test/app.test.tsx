@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import { fireEvent, waitFor } from "@testing-library/react";
+import { queryClient } from "../src/app/query-client.ts";
 import { parseWorkspace } from "../src/host/parse.ts";
 import { statusPayload } from "./fixtures.ts";
 
@@ -20,6 +21,9 @@ class InertResizeObserver {
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 const workspace = parseWorkspace(statusPayload, "bb-plugins");
+
+// The cache outlives the panel on purpose. Between tests it must not.
+beforeEach(() => queryClient.clear());
 
 async function panel(rpc: Record<string, (input: never) => unknown>) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
@@ -64,6 +68,69 @@ test("shows the stacks, their branches, the base, and the history below it", asy
   await waitFor(() => expect(slot.getByText("chore: older work")).toBeTruthy());
   // The workspace is 3 commits behind its target.
   expect(slot.getByText("3 behind")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("shows the workspace it already has when the panel is mounted again", async () => {
+  let calls = 0;
+  const rpc = {
+    ...baseRpc,
+    workspace: () => {
+      calls += 1;
+      return workspace;
+    },
+  };
+  const first = await panel(rpc);
+  await waitFor(() => expect(first.getByText("scott/top")).toBeTruthy());
+  first.lifecycle.unmount();
+
+  // No spinner on the way back: the stacks are on screen from the first
+  // frame, and the refetch behind them is the ordinary background one.
+  const second = await panel(rpc);
+  expect(second.queryByText("Loading workspace…")).toBeNull();
+  expect(second.getByText("scott/top")).toBeTruthy();
+  await waitFor(() => expect(calls).toBe(2));
+  second.lifecycle.unmount();
+});
+
+test("keeps the history on screen while a longer page loads", async () => {
+  let release: () => void = () => {};
+  const slot = await panel({
+    ...baseRpc,
+    baseHistory: (input: { limit: number }) =>
+      input.limit > 60
+        ? new Promise((resolve) => {
+            release = () =>
+              resolve({
+                commits: [
+                  {
+                    commitId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    message: "chore: older work",
+                    authorName: "Ada",
+                    createdAt: "2026-09-20T10:00:00+00:00",
+                  },
+                  {
+                    commitId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    message: "chore: even older work",
+                    authorName: "Ada",
+                    createdAt: "2026-09-19T10:00:00+00:00",
+                  },
+                ],
+                hasMore: false,
+                reason: null,
+              });
+          })
+        : { ...baseRpc.baseHistory(), hasMore: true },
+  });
+
+  await waitFor(() => expect(slot.getByText("chore: older work")).toBeTruthy());
+  fireEvent.click(slot.getByText("Load more commits"));
+
+  // The first page stays put until the second one lands.
+  expect(slot.queryByText("Loading history…")).toBeNull();
+  expect(slot.getByText("chore: older work")).toBeTruthy();
+  release();
+  await waitFor(() => expect(slot.getByText("chore: even older work")).toBeTruthy());
   slot.lifecycle.unmount();
 });
 

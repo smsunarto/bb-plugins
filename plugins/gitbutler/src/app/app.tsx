@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { ReactNode } from "react";
 import { definePluginApp, experimental_Icon as Icon, useBbContext } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { keepPreviousData } from "@tanstack/react-query";
 import type {
   BaseCommit,
   BranchStatus,
@@ -17,6 +18,7 @@ import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { FileCards } from "./file-cards.tsx";
+import { COMMIT_QUERY, queryClient } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
 import { BRANCH_STATUS_LABEL, changeSymbol, relativeTime, shortId, subject } from "./format.ts";
 import "./gitbutler.css";
@@ -400,7 +402,9 @@ function BaseHistory({
 
   const history = rpc.baseHistory.useQuery(
     defined({ threadId, repositoryKey, from, offset: 0, limit }),
-    { staleTime: REFRESH_INTERVAL_MS },
+    // A bigger page is a new key. Keep the list the reader was looking at
+    // until the longer one lands, instead of swapping it for a spinner.
+    { staleTime: REFRESH_INTERVAL_MS, placeholderData: keepPreviousData },
   );
 
   if (history.isPending) return <Loading label="Loading history…" />;
@@ -443,6 +447,7 @@ function BaseHistory({
           variant="outline"
           size="sm"
           className="ms-4 mt-2 h-6 px-2.5 text-xs font-normal text-muted-foreground"
+          disabled={history.isFetching}
           onClick={() =>
             setLimit((current) => Math.min(BASE_HISTORY_MAX, current + BASE_HISTORY_PAGE))
           }
@@ -497,7 +502,7 @@ function CommitDetail({
 }) {
   const details = rpc.commit.useQuery(
     defined({ threadId, repositoryKey, commitId: selection.commitId }),
-    { staleTime: Number.POSITIVE_INFINITY },
+    COMMIT_QUERY,
   );
   const source = useMemo<PatchSource>(
     () => ({ kind: "commit", commitId: selection.commitId }),
@@ -720,10 +725,6 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   const workspace = rpc.workspace.useQuery(defined({ threadId, repositoryKey }), {
     refetchInterval: REFRESH_INTERVAL_MS,
     refetchOnWindowFocus: true,
-    // The panel already retries every ten seconds. The query client's default
-    // ladder only added seven more of "Loading workspace…" before the reader
-    // was told anything had gone wrong.
-    retry: 1,
   });
 
   const chooseRepository = useCallback(
@@ -852,7 +853,7 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
     );
   }
   return (
-    <PluginQueryBoundary>
+    <PluginQueryBoundary client={queryClient}>
       <WorkspacePanel key={resolved} threadId={resolved} />
     </PluginQueryBoundary>
   );
