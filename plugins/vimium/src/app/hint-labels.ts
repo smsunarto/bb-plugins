@@ -24,7 +24,11 @@ export const RESERVED_CONTROLS = [
   { selector: '[data-app-composer] button[aria-label="Start voice input"]', char: "v" },
   { selector: "[data-app-composer] [data-promptbox-submit-action]", char: "j" },
   { selector: '[data-app-composer] button[aria-label="Permission mode"]', char: "k" },
-  { selector: '[data-app-composer] button[aria-label="Environment"]', char: "l" },
+  {
+    selector:
+      '[data-app-composer] button[aria-label="Machine"], [data-app-composer] button[aria-label="Environment"]',
+    char: "l",
+  },
   { selector: '[data-app-composer] button[aria-label="Branch"]', char: "b" },
   {
     selector: 'button[aria-label="New thread"], button[aria-label^="New thread ("]',
@@ -33,7 +37,8 @@ export const RESERVED_CONTROLS = [
   { selector: 'button[aria-label^="Search threads"]', char: "s" },
   { selector: 'button[aria-label="Go back"]', char: "[" },
   { selector: 'button[aria-label="Go forward"]', char: "]" },
-  { selector: 'a[href^="/settings"]', char: "," },
+  { selector: '[data-sidebar-navigation-item="__bb__/extensions"] button', char: "e" },
+  { selector: 'a[href="/settings"]', char: "," },
   { selector: 'button[aria-label^="Toggle sidebar"]', char: "q" },
   {
     selector: 'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
@@ -41,17 +46,10 @@ export const RESERVED_CONTROLS = [
   },
 ] as const;
 
-export const TEXT_CONTROLS = [
-  { selector: 'button[aria-roledescription="sortable"]', text: "Extensions", char: "e" },
-] as const;
-
 /** Thread rows count across the number row in list order, then fall back to letters. */
 export const THREAD_DIGITS = "1234567890";
 
-const RESERVED_CHARS = new Set<string>([
-  ...RESERVED_CONTROLS.map((control) => control.char),
-  ...TEXT_CONTROLS.map((control) => control.char),
-]);
+const RESERVED_CHARS = new Set<string>(RESERVED_CONTROLS.map((control) => control.char));
 
 /**
  * The alphabet for everything that is not a reserved control or a thread row.
@@ -70,7 +68,7 @@ export type ScopedKind = "generic" | "provider-model" | "project" | "permission"
 
 export type ScopedRole =
   | "provider"
-  | "search"
+  | "fast-mode"
   | "choice"
   | "project"
   | "new-project"
@@ -93,10 +91,11 @@ function fillScopedLabels(
   role: ScopedRole,
   chars: string,
 ): void {
+  const available = [...chars].filter((char) => !labels.includes(char));
   let next = 0;
   for (const [index, fact] of facts.entries()) {
-    if (labels[index] !== null || fact.role !== role || next >= chars.length) continue;
-    labels[index] = chars.charAt(next);
+    if (labels[index] !== null || fact.role !== role || next >= available.length) continue;
+    labels[index] = available[next] ?? null;
     next += 1;
   }
 }
@@ -106,6 +105,16 @@ function completeScopedLabels(labels: (string | null)[]): string[] {
   const suffixes = hintLabels(missing, HINT_ALPHABET);
   let next = 0;
   return labels.map((label) => label ?? FALLBACK_PREFIX + (suffixes[next++] ?? ""));
+}
+
+function pinScopedLabel(
+  labels: (string | null)[],
+  facts: readonly ScopedFact[],
+  role: ScopedRole,
+  char: string,
+): void {
+  const index = facts.findIndex((fact) => fact.role === role);
+  if (index >= 0) labels[index] = char;
 }
 
 /**
@@ -125,14 +134,11 @@ export function assignScopedLabels(kind: ScopedKind, facts: readonly ScopedFact[
         provider += 1;
       }
     }
-    const search = facts.findIndex((fact) => fact.role === "search");
-    if (search >= 0) labels[search] = "i";
+    pinScopedLabel(labels, facts, "fast-mode", "t");
     fillScopedLabels(labels, facts, "choice", MODEL_CHARS);
   } else if (kind === "project") {
-    const create = facts.findIndex((fact) => fact.role === "new-project");
-    const projectless = facts.findIndex((fact) => fact.role === "projectless");
-    if (create >= 0) labels[create] = "i";
-    if (projectless >= 0) labels[projectless] = "x";
+    pinScopedLabel(labels, facts, "new-project", "n");
+    pinScopedLabel(labels, facts, "projectless", "x");
     fillScopedLabels(labels, facts, "project", PROJECT_CHARS);
   } else {
     fillScopedLabels(labels, facts, "permission", PERMISSION_CHARS);

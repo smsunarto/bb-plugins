@@ -11,6 +11,7 @@ export type ScrollMotion = "down" | "up" | "bottom";
 export type DirectShortcut =
   | { readonly kind: "control"; readonly selector: string }
   | { readonly kind: "focus-composer" }
+  | { readonly kind: "thread-search" }
   | { readonly kind: "thread-step"; readonly step: -1 | 1 }
   | { readonly kind: "settle-thread" }
   | { readonly kind: "undo-archive" }
@@ -26,7 +27,7 @@ function pinnedControl(char: string): DirectShortcut {
  * The direct keys. The control keys reuse their hint-mode characters so one
  * mnemonic serves both paths. `[`, `]`, `e`, `j`, `k`, and `a` differ from
  * their hint labels on purpose: the hint keeps bb's back, forward,
- * Extensions, send, permission-mode, and prompt-actions controls, while the
+ * Plugins, send, permission-mode, and prompt-actions controls, while the
  * direct key steps threads, settles the current one, scrolls the
  * conversation, and opens permission mode (`a` as in allow, since `k` is
  * scroll up).
@@ -37,7 +38,7 @@ export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["p", pinnedControl("p")],
   ["l", pinnedControl("l")],
   ["b", pinnedControl("b")],
-  ["s", pinnedControl("s")],
+  ["s", { kind: "thread-search" }],
   ["a", pinnedControl("k")],
   [",", pinnedControl(",")],
   ["i", { kind: "focus-composer" }],

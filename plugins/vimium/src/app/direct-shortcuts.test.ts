@@ -24,13 +24,17 @@ function key(overrides: Partial<DirectKey> = {}): DirectKey {
 
 describe("directShortcutFor", () => {
   test("control keys reuse the reserved hint selectors", () => {
-    for (const char of ["n", "m", "p", "l", "b", "s", ","]) {
+    for (const char of ["n", "m", "p", "l", "b", ","]) {
       const reserved = RESERVED_CONTROLS.find((control) => control.char === char);
       expect(directShortcutFor(key({ key: char }))).toEqual({
         kind: "control",
         selector: reserved?.selector ?? "",
       });
     }
+  });
+
+  test("s opens thread search", () => {
+    expect(directShortcutFor(key({ key: "s" }))).toEqual({ kind: "thread-search" });
   });
 
   test("a opens permission mode, whose hint label k is the scroll-up key", () => {

@@ -3,7 +3,6 @@ import {
   GENERAL_ALPHABET,
   HINT_ALPHABET,
   RESERVED_CONTROLS,
-  TEXT_CONTROLS,
   assignScopedLabels,
   assignTopLevelLabels,
   hintLabels,
@@ -63,7 +62,7 @@ describe("hintLabels", () => {
 
 describe("GENERAL_ALPHABET", () => {
   test("excludes every reserved composer character", () => {
-    for (const control of [...RESERVED_CONTROLS, ...TEXT_CONTROLS]) {
+    for (const control of RESERVED_CONTROLS) {
       expect(GENERAL_ALPHABET).not.toContain(control.char);
     }
   });
@@ -79,22 +78,18 @@ describe("GENERAL_ALPHABET", () => {
       '[data-app-composer] button[aria-label="Start voice input"]': "v",
       "[data-app-composer] [data-promptbox-submit-action]": "j",
       '[data-app-composer] button[aria-label="Permission mode"]': "k",
-      '[data-app-composer] button[aria-label="Environment"]': "l",
+      '[data-app-composer] button[aria-label="Machine"], [data-app-composer] button[aria-label="Environment"]':
+        "l",
       '[data-app-composer] button[aria-label="Branch"]': "b",
       'button[aria-label="New thread"], button[aria-label^="New thread ("]': "n",
       'button[aria-label^="Search threads"]': "s",
       'button[aria-label="Go back"]': "[",
       'button[aria-label="Go forward"]': "]",
-      'a[href^="/settings"]': ",",
+      '[data-sidebar-navigation-item="__bb__/extensions"] button': "e",
+      'a[href="/settings"]': ",",
       'button[aria-label^="Toggle sidebar"]': "q",
       'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "\\",
     });
-  });
-
-  test("pins the text-only Extensions control to e", () => {
-    expect(TEXT_CONTROLS).toEqual([
-      { selector: 'button[aria-roledescription="sortable"]', text: "Extensions", char: "e" },
-    ]);
   });
 
   test("has no duplicates and enough range to keep a diff-heavy screen at two characters", () => {
@@ -156,13 +151,13 @@ describe("assignScopedLabels", () => {
   const facts = (roles: Parameters<typeof assignScopedLabels>[1][number]["role"][]) =>
     roles.map((role) => ({ role }));
 
-  test("numbers provider tabs and pins model search to i", () => {
+  test("pins provider tabs and Fast mode", () => {
     expect(
       assignScopedLabels(
         "provider-model",
-        facts(["provider", "provider", "search", "choice", "choice", "choice"]),
+        facts(["provider", "provider", "choice", "fast-mode", "choice", "choice"]),
       ),
-    ).toEqual(["1", "2", "i", "f", "j", "d"]);
+    ).toEqual(["1", "2", "f", "t", "j", "d"]);
   });
 
   test("keeps model and reasoning choices on unique ergonomic single keys", () => {
@@ -176,7 +171,25 @@ describe("assignScopedLabels", () => {
   test("pins project actions while projects use single keys", () => {
     expect(
       assignScopedLabels("project", facts(["project", "new-project", "project", "projectless"])),
-    ).toEqual(["f", "i", "j", "x"]);
+    ).toEqual(["f", "n", "j", "x"]);
+  });
+
+  test("keeps pinned actions distinct even with a long choice list", () => {
+    for (const kind of ["provider-model", "project"] as const) {
+      const roles =
+        kind === "provider-model"
+          ? (["fast-mode"] as const)
+          : (["new-project", "projectless"] as const);
+      const labels = assignScopedLabels(
+        kind,
+        facts(
+          [...roles, ...Array(23).fill("choice")].map((role) =>
+            kind === "project" && role === "choice" ? "project" : role,
+          ),
+        ),
+      );
+      expect(new Set(labels).size).toBe(labels.length);
+    }
   });
 
   test("puts permission modes on the left home row first", () => {
@@ -191,12 +204,7 @@ describe("assignScopedLabels", () => {
   test("uses q-prefixed fallbacks without breaking prefix freedom", () => {
     const labels = assignScopedLabels(
       "provider-model",
-      facts([
-        "provider",
-        "search",
-        ...Array.from({ length: 25 }, () => "choice" as const),
-        "other",
-      ]),
+      facts(["provider", ...Array.from({ length: 25 }, () => "choice" as const), "other"]),
     );
     expect(labels.at(-1)?.startsWith("q")).toBe(true);
     for (const a of labels) {

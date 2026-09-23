@@ -46,7 +46,6 @@ import { createScroller } from "./scroller.ts";
 import { mountArchiveUndo } from "./archive-undo.ts";
 import {
   RESERVED_CONTROLS,
-  TEXT_CONTROLS,
   assignScopedLabels,
   assignTopLevelLabels,
   type ScopedFact,
@@ -264,6 +263,14 @@ const OPEN_LAYER_SELECTOR =
 // Covers bb's own thread links and any sidebar honoring bb's thread-shortcut
 // contract (gtd-sidebar rows are `href="#"` anchors carrying the data attribute).
 const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut-target]';
+const WINDOWED_THREAD_SELECTOR = "[data-sidebar-windowed-nav]";
+
+let openWindowedThread: ((threadId: string) => void) | null = null;
+
+/** The app overlay supplies BB's own navigation for rows without a mounted link. */
+export function setWindowedThreadOpener(opener: ((threadId: string) => void) | null): void {
+  openWindowedThread = opener;
+}
 
 // gtd-sidebar parks a settle button beside each inbox row's anchor. It only
 // shows on hover, but a dispatched pointer press reaches it either way.
@@ -347,7 +354,7 @@ function candidateView(element: Element, activeComposer: HTMLElement | null): Ca
 
 interface ThreadRow {
   readonly id: string;
-  readonly element: HTMLElement;
+  readonly element: HTMLElement | null;
 }
 
 /**
@@ -369,11 +376,27 @@ function threadRowId(element: HTMLElement): string | null {
 function collectThreadRows(): ThreadRow[] {
   const rows: ThreadRow[] = [];
   const seen = new Set<string>();
-  for (const element of document.querySelectorAll<HTMLElement>(THREAD_ROW_SELECTOR)) {
-    const id = threadRowId(element);
-    if (id === null || seen.has(id)) continue;
+  for (const element of document.querySelectorAll<HTMLElement>(
+    `${THREAD_ROW_SELECTOR}, ${WINDOWED_THREAD_SELECTOR}`,
+  )) {
     if (element.closest('[aria-hidden="true"]') !== null) continue;
     if (typeof element.checkVisibility === "function" && !element.checkVisibility()) continue;
+    if (element.matches(WINDOWED_THREAD_SELECTOR)) {
+      // BB 0.43.4 keeps the list order in a placeholder while distant rows
+      // are unmounted. Each entry is a thread:project pair.
+      const encoded = element.getAttribute("data-sidebar-windowed-nav") ?? "";
+      for (const pair of encoded.split(" ")) {
+        const separator = pair.indexOf(":");
+        if (separator <= 0 || separator === pair.length - 1) continue;
+        const id = pair.slice(0, separator);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        rows.push({ id, element: null });
+      }
+      continue;
+    }
+    const id = threadRowId(element);
+    if (id === null || seen.has(id)) continue;
     seen.add(id);
     rows.push({ id, element });
   }
@@ -386,12 +409,12 @@ function threadRowToSettle(activeId: string): ThreadRow | undefined {
   // child's parent. Sidebar rows publish focus from BB's split SDK.
   // If that pane's row is collapsed, never fall back to the route.
   const splitRows = rows.filter((candidate) =>
-    candidate.element.closest("[data-sidebar-thread-focused]"),
+    candidate.element?.closest("[data-sidebar-thread-focused]"),
   );
   const row =
     splitRows.length > 0
       ? splitRows.find((candidate) =>
-          candidate.element.closest('[data-sidebar-thread-focused="true"]'),
+          candidate.element?.closest('[data-sidebar-thread-focused="true"]'),
         )
       : rows.find((candidate) => candidate.id === activeId);
   return row;
@@ -425,6 +448,7 @@ function collectTargets(scope: ParentNode): HTMLElement[] {
   const targets: HTMLElement[] = [];
   const activeComposer = findActivePrimaryComposer();
   for (const element of scope.querySelectorAll<HTMLElement>(CANDIDATE_SELECTOR)) {
+    if (element.matches('[role="radiogroup"]')) continue;
     if (isViableCandidate(candidateView(element, activeComposer))) targets.push(element);
   }
   return targets;
@@ -432,11 +456,8 @@ function collectTargets(scope: ParentNode): HTMLElement[] {
 
 function topLevelFact(element: HTMLElement): TopLevelFact {
   const reserved = RESERVED_CONTROLS.find((control) => element.matches(control.selector));
-  const textReserved = TEXT_CONTROLS.find(
-    (control) => element.matches(control.selector) && element.textContent?.trim() === control.text,
-  );
   return {
-    reservedChar: reserved?.char ?? textReserved?.char ?? null,
+    reservedChar: reserved?.char ?? null,
     isThreadRow: element.matches(THREAD_ROW_SELECTOR),
   };
 }
@@ -456,13 +477,20 @@ function dropdownScopeKind(trigger: HTMLElement): ScopedKind {
 
 function scopedFact(kind: ScopedKind, element: HTMLElement, root: HTMLElement): ScopedFact {
   if (kind === "provider-model") {
-    if (isTextEntry(element)) return { role: "search" };
-    if (element.getAttribute("role") === "switch") return { role: "other" };
+    if (element.getAttribute("role") === "switch") {
+      return { role: element.getAttribute("aria-label") === "Fast mode" ? "fast-mode" : "other" };
+    }
+    if (element.getAttribute("role") === "radio") return { role: "choice" };
     const choices = root.querySelector<HTMLElement>('[class~="overflow-y-auto"]');
-    return { role: choices?.contains(element) === false ? "provider" : "choice" };
+    const providerTabs = root.firstElementChild;
+    return {
+      role:
+        choices?.contains(element) === false && element.parentElement === providerTabs
+          ? "provider"
+          : "choice",
+    };
   }
   if (kind === "project") {
-    if (isTextEntry(element)) return { role: "other" };
     const text = (element.textContent ?? "").trim().toLowerCase();
     if (text.includes("new project")) return { role: "new-project" };
     if (text.includes("work in a project")) return { role: "projectless" };
@@ -663,7 +691,10 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     refocusComposer: boolean,
     scopeKind: ScopedKind,
   ): boolean {
-    const targets = collectTargets(root);
+    const targets = collectTargets(root).filter(
+      (target) =>
+        (scopeKind !== "provider-model" && scopeKind !== "project") || !isTextEntry(target),
+    );
     if (targets.length === 0) return false;
     const labels = assignScopedLabels(
       scopeKind,
@@ -720,6 +751,58 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // A direct key does what its hint would: press the control, and follow a
   // dropdown into a scoped prompt so the pick is one more key away. True when
   // the key did something, so the caller knows whether to swallow it.
+  function openThreadSearch(): boolean {
+    const selector = RESERVED_CONTROLS.find((control) => control.char === "s")?.selector;
+    const control = selector ? findControl(selector) : null;
+    if (control) {
+      activate(control, focusTextEntry);
+      return true;
+    }
+
+    // A custom sidebar can omit BB's search button. The SDK exposes no app
+    // command dispatcher, so use the user's Quick palette shortcut and select
+    // its host-owned Search threads action once the palette mounts.
+    const mac = /Mac|iPhone|iPad/u.test(navigator.platform);
+    const target = document.activeElement ?? document.body;
+    const opened = !target.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "k",
+        code: "KeyK",
+        metaKey: mac,
+        ctrlKey: !mac,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    if (!opened) return false;
+
+    let attempts = 0;
+    const selectSearch = (): void => {
+      if (context.signal.aborted) return;
+      const input = document.querySelector<HTMLInputElement>(
+        '[role="dialog"] input[aria-label="Search commands"]',
+      );
+      if (input) {
+        if (input.value !== "") return;
+        const option = [
+          ...(input
+            .closest('[role="dialog"]')
+            ?.querySelectorAll<HTMLElement>(
+              '[role="option"][data-palette-action-kind="drill-in"]',
+            ) ?? []),
+        ].find((candidate) => candidate.textContent?.trim().startsWith("Search threads"));
+        if (option) {
+          activate(option, focusTextEntry);
+          return;
+        }
+      }
+      attempts += 1;
+      if (attempts < 10) window.setTimeout(selectSearch, 60);
+    };
+    window.setTimeout(selectSearch, 0);
+    return true;
+  }
+
   function runDirectShortcut(shortcut: DirectShortcut): boolean {
     switch (shortcut.kind) {
       case "undo-archive":
@@ -730,6 +813,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         withComposerFocusAllowed(() => textbox.focus());
         return true;
       }
+      case "thread-search":
+        return openThreadSearch();
       case "control": {
         const control = findControl(shortcut.selector);
         if (control === null) return false;
@@ -746,7 +831,11 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         );
         const row = index === null ? undefined : rows[index];
         if (row === undefined) return false;
-        activate(row.element, focusTextEntry);
+        if (row.element) activate(row.element, focusTextEntry);
+        else {
+          if (openWindowedThread === null) return false;
+          openWindowedThread(row.id);
+        }
         guardEditableFocus();
         return true;
       }
@@ -755,7 +844,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         if (activeId === null) return false;
         const row = threadRowToSettle(activeId);
         const settle =
-          row?.element.parentElement?.querySelector<HTMLElement>(SETTLE_BUTTON_SELECTOR);
+          row?.element?.parentElement?.querySelector<HTMLElement>(SETTLE_BUTTON_SELECTOR);
         if (!settle) return false;
         activate(settle, focusTextEntry);
         return true;
@@ -867,6 +956,25 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       event.key,
     );
     if (action.kind === "ignore") return;
+    if (
+      event.key === "Escape" &&
+      (mode.scopeKind === "provider-model" || mode.scopeKind === "project")
+    ) {
+      exit();
+      return;
+    }
+    if (
+      action.kind === "exit" &&
+      event.key.length === 1 &&
+      (mode.scopeKind === "provider-model" || mode.scopeKind === "project") &&
+      document.activeElement instanceof HTMLElement &&
+      mode.scopeRoot?.contains(document.activeElement) &&
+      isTextEntry(document.activeElement)
+    ) {
+      // An unassigned letter should type into BB's already-focused search input.
+      exit();
+      return;
+    }
     event.preventDefault();
     event.stopImmediatePropagation();
     if (action.kind === "exit") {
