@@ -4,7 +4,8 @@ import { cn } from "../../lib/utils";
 
 /**
  * This plugin's status glyphs, matching bb's own sidebar shape for shape: the
- * red circle-x for a failure, the circle-question for a raised hand, the
+ * red circle-x for a failure (a turn or a queued send), the circle-question
+ * for a raised hand, the clock for a message waiting in the queue, the
  * spinner for live work, and a dot for a finished thread you have not read.
  *
  * The SDK ships `indicator` as data and no status component on purpose, so a
@@ -27,6 +28,8 @@ import { cn } from "../../lib/utils";
 export function hasStatusGlyph(indicator: PluginSidebarThreadIndicator): boolean {
   switch (indicator) {
     case "unread-error":
+    case "queued-failed":
+    case "queued-waiting":
     case "waiting-for-input":
     case "unread-success":
     case "runtime":
@@ -57,7 +60,12 @@ export function StatusGlyph({
 
   switch (indicator) {
     case "unread-error":
+    case "queued-failed":
       return <Icon name="CircleX" aria-label={aria} className={cn(shared, "text-destructive")} />;
+    case "queued-waiting":
+      return (
+        <Icon name="Clock" aria-label={aria} className={cn(shared, "text-muted-foreground/75")} />
+      );
     case "waiting-for-input":
       return (
         <Icon
