@@ -40,6 +40,7 @@ export type ProcedureWithInput<
   Out extends StandardSchemaV1,
 > = {
   readonly kind: K;
+  readonly description?: string;
   readonly input: In;
   readonly output: Out;
   execute(ctx: Context, args: SchemaOutput<In>): MaybePromise<SchemaInput<Out>>;
@@ -48,6 +49,7 @@ export type ProcedureWithInput<
 /** The shape for an RPC with no input: no `input` key at all. */
 export type ProcedureNoInput<K extends ProcedureKind, Context, Out extends StandardSchemaV1> = {
   readonly kind: K;
+  readonly description?: string;
   readonly output: Out;
   execute(ctx: Context): MaybePromise<SchemaInput<Out>>;
 };
@@ -82,6 +84,7 @@ export type RPCProcedures = Record<string, AnyProcedure>;
  */
 export type RuntimeProcedure = {
   kind: ProcedureKind;
+  description?: string;
   input?: StandardSchemaV1;
   output: StandardSchemaV1;
   execute: (ctx: unknown, input?: unknown) => unknown;
@@ -115,10 +118,13 @@ type ObjectSchema = StandardSchemaV1 & JSONObjectSchema;
 export function defineQuery<In extends ObjectSchema, Out extends ObjectSchema>(definition: {
   input: In;
   output: Out;
+  /** Published as the method description when the plugin opts into discoverable RPC. */
+  description?: string;
   execute: (ctx: HandlerContext, args: SchemaOutput<In>) => MaybePromise<SchemaInput<Out>>;
 }): ProcedureWithInput<"query", HandlerContext, In, Out>;
 export function defineQuery<Out extends ObjectSchema>(definition: {
   output: Out;
+  description?: string;
   execute: (ctx: HandlerContext) => MaybePromise<SchemaInput<Out>>;
 }): ProcedureNoInput<"query", HandlerContext, Out>;
 export function defineQuery(definition: object): any {
@@ -129,10 +135,13 @@ export function defineQuery(definition: object): any {
 export function defineMutation<In extends ObjectSchema, Out extends ObjectSchema>(definition: {
   input: In;
   output: Out;
+  /** Published as the method description when the plugin opts into discoverable RPC. */
+  description?: string;
   execute: (ctx: HandlerContext, args: SchemaOutput<In>) => MaybePromise<SchemaInput<Out>>;
 }): ProcedureWithInput<"mutation", HandlerContext, In, Out>;
 export function defineMutation<Out extends ObjectSchema>(definition: {
   output: Out;
+  description?: string;
   execute: (ctx: HandlerContext) => MaybePromise<SchemaInput<Out>>;
 }): ProcedureNoInput<"mutation", HandlerContext, Out>;
 export function defineMutation(definition: object): any {

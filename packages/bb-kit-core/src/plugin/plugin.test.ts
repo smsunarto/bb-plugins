@@ -1224,3 +1224,39 @@ function typeOnly() {
   void toDemo;
 }
 void typeOnly;
+
+test("rpcPublication.discoverable publishes the contract through the host", async () => {
+  const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+  const described = defineQuery({
+    description: "Echo a path",
+    input: z.object({ path: z.string() }),
+    output: z.object({ path: z.string() }),
+    execute(_ctx, { path }) {
+      return { path };
+    },
+  });
+  const silent = createFakePluginHost({ pluginId: "demo-ns" });
+  await definePlugin({ pluginId: "demo-ns", rpc: { described, ping } })(silent.bb);
+  assert.deepEqual(silent.harness.inspection.registrations.experimental_publishedRpcMethods, []);
+
+  const discoverable = createFakePluginHost({ pluginId: "demo-ns" });
+  await definePlugin({
+    pluginId: "demo-ns",
+    rpc: { described, ping },
+    rpcPublication: { discoverable: true, description: "Demo RPC" },
+  })(discoverable.bb);
+  const published = discoverable.harness.inspection.registrations.experimental_publishedRpcMethods;
+  assert.deepEqual(
+    published.map((entry) => [
+      entry.method,
+      entry.registrationDescription,
+      entry.methodDescription,
+    ]),
+    [
+      ["described", "Demo RPC", "Echo a path"],
+      ["ping", "Demo RPC", null],
+    ],
+  );
+  assert.deepEqual(published[1]?.inputSchema, { type: "null" });
+  assert.equal(published[0]?.inputSchema.type, "object");
+});

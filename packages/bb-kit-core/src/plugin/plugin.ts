@@ -120,6 +120,11 @@ export function definePlugin<
     errorReporter?: PluginErrorReporterFactory;
     performanceReporter?: PluginPerformanceReporterFactory;
     rpc: R;
+    /**
+     * Opt into publishing the RPC contract (method list plus JSON
+     * schemas) to agents through the host. Off by default.
+     */
+    rpcPublication?: { discoverable?: boolean; description?: string };
     command?: C;
     agents?: {
       tools: T;
@@ -194,6 +199,9 @@ export function definePlugin<
         contract[key] = {
           input: procedure.input ?? noInputSchema,
           output: procedure.output,
+          ...(procedure.description === undefined
+            ? {}
+            : { experimental_description: procedure.description }),
         };
         const traceOperation = rpcTraceOperation(key);
         handlers[key] = procedure.input
@@ -222,7 +230,13 @@ export function definePlugin<
               }
             };
       }
-      bb.rpc.register(contract, handlers);
+      const publication = definition.rpcPublication;
+      bb.rpc.register(contract, handlers, {
+        experimental_discoverable: publication?.discoverable ?? false,
+        ...(publication?.description === undefined
+          ? {}
+          : { experimental_description: publication.description }),
+      });
 
       // cli.register — always (§2): curated commands plus the always-on
       // rpc subtree behind ONE program, so root help lists everything.

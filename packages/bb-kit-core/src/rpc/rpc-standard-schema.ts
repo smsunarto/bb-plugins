@@ -13,6 +13,11 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly validate: (
       value: unknown,
     ) => StandardSchemaV1Result<Output> | Promise<StandardSchemaV1Result<Output>>;
+    /** Standard JSON Schema export; the host requires it for discoverable RPC. */
+    readonly jsonSchema?: {
+      readonly input: (options: { target: string }) => Record<string, unknown>;
+      readonly output: (options: { target: string }) => Record<string, unknown>;
+    };
     readonly types?: {
       readonly input: Input;
       readonly output: Output;
@@ -54,6 +59,10 @@ export const noInputSchema: StandardSchemaV1<null | undefined, null | undefined>
         return { value };
       }
       return { issues: [{ message: "this RPC takes no input" }] };
+    },
+    jsonSchema: {
+      input: () => ({ type: "null" }),
+      output: () => ({ type: "null" }),
     },
   },
 };
