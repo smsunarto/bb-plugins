@@ -622,7 +622,7 @@ export class DevManager {
         );
       }
       if (completePlan(state) === null) {
-        this.destroyPreRuntime(store, state, owner.ownerToken);
+        await this.destroyPreRuntime(store, state, owner.ownerToken);
         return emptyResult(name);
       }
       let plan: CompleteInstancePlan;
@@ -665,7 +665,7 @@ export class DevManager {
             "Inspect state.json before retrying destroy.",
           );
         }
-        safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, owner.ownerToken);
+        await this.removeOwnedCheckout(store, plan, owner.ownerToken);
         state = checkpoint(state, { phase: "destroying", plan, step: "external" });
         store.write(state);
         destroyStep = "external";
@@ -1043,32 +1043,9 @@ export class DevManager {
     if (plan.target !== null && plan.leaseKey !== null) {
       const live = readLauncherStatus(launcherOptions(plan, this.environment));
       assertSameStoredTarget(plan.target, live);
-      const complete = { ...plan, target: live, leaseKey: plan.leaseKey };
-      const leaseClaimed = claimLease(this.home, plan.leaseKey, ownerToken, state.name);
-      const portsBusy = await Promise.all([
-        this.portProbe(live.appPort),
-        this.portProbe(live.serverPort),
-        this.portProbe(live.hostDaemonPort),
-      ]);
-      const launcherOwnsRuntime =
-        live.devSession === "running" || live.desktopSession === "running";
-      if (leaseClaimed && (!portsBusy.some(Boolean) || launcherOwnsRuntime)) {
-        ensureOwnedDirectory(live.dataDir, ownerToken, "data");
-        ensureOwnedDirectory(dirname(live.launcherLog), ownerToken, "logs");
-        writeShim(complete, store.paths.bin);
-        const prepared = checkpoint(state, { phase: "prepared", plan: complete });
-        store.write(prepared);
-        return prepared;
-      }
-      if (launcherOwnsRuntime) {
-        throw new DevError(
-          "lease_mismatch",
-          `Running launcher target for ${state.name} has another lease owner.`,
-          "Do not stop or replace it. Inspect the lease and state.json.",
-        );
-      }
-      if (leaseClaimed) {
-        releaseLease(this.home, plan.leaseKey, ownerToken);
+      const adopted = await this.adoptTarget(store, state, plan, live, plan.leaseKey, ownerToken);
+      if (adopted !== null) {
+        return adopted;
       }
       safeRemoveOwned(
         plan.target.dataDir,
@@ -1076,7 +1053,7 @@ export class DevManager {
         plan.target.dataDir,
         ownerToken,
       );
-      safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
+      await this.removeOwnedCheckout(store, plan, ownerToken);
       plan = this.newOwnedPlan(
         store,
         state.name,
@@ -1115,30 +1092,117 @@ export class DevManager {
       state = checkpoint(state, { phase: "preparing", step: "external", plan: complete });
       store.write(state);
 
-      const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
-      const portsBusy = await Promise.all([
-        this.portProbe(target.appPort),
-        this.portProbe(target.serverPort),
-        this.portProbe(target.hostDaemonPort),
-      ]);
-      if (leaseClaimed && !portsBusy.some(Boolean)) {
-        ensureOwnedDirectory(target.dataDir, ownerToken, "data");
-        ensureOwnedDirectory(dirname(target.launcherLog), ownerToken, "logs");
-        writeShim(complete, store.paths.bin);
-        const prepared = checkpoint(state, { phase: "prepared", plan: complete });
-        store.write(prepared);
-        return prepared;
+      const adopted = await this.adoptTarget(store, state, plan, target, leaseKey, ownerToken);
+      if (adopted !== null) {
+        return adopted;
       }
-      if (leaseClaimed) {
-        releaseLease(this.home, leaseKey, ownerToken);
-      }
-      safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
+      await this.removeOwnedCheckout(store, plan, ownerToken);
     }
     throw new DevError(
       "ports_busy",
       `Could not find free launcher ports for instance ${state.name}.`,
       "Stop the conflicting bb instances, then retry start.",
     );
+  }
+
+  /**
+   * Take this launcher target for the instance, or report that it cannot.
+   *
+   * A dev session already running on the checkout is this instance's own, not
+   * a conflict: the lease is what arbitrates the port triple. Treating a busy
+   * port as someone else's is what used to send a live checkout to cleanup,
+   * stranding a `pnpm dev` tree that nothing could reach afterwards.
+   *
+   * Returns the prepared state on success, or null when the caller should move
+   * on to another checkout.
+   */
+  private async adoptTarget(
+    store: InstanceStore,
+    state: InstanceState,
+    plan: OwnedInstancePlan,
+    target: LauncherTarget,
+    leaseKey: string,
+    ownerToken: string,
+  ): Promise<InstanceState | null> {
+    const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
+    const portsBusy = await Promise.all([
+      this.portProbe(target.appPort),
+      this.portProbe(target.serverPort),
+      this.portProbe(target.hostDaemonPort),
+    ]);
+    const launcherOwnsRuntime =
+      target.devSession === "running" || target.desktopSession === "running";
+    if (leaseClaimed && (!portsBusy.some(Boolean) || launcherOwnsRuntime)) {
+      ensureOwnedDirectory(target.dataDir, ownerToken, "data");
+      ensureOwnedDirectory(dirname(target.launcherLog), ownerToken, "logs");
+      const complete = { ...plan, target, leaseKey };
+      writeShim(complete, store.paths.bin);
+      const prepared = checkpoint(state, { phase: "prepared", plan: complete });
+      store.write(prepared);
+      return prepared;
+    }
+    if (launcherOwnsRuntime) {
+      throw new DevError(
+        "lease_mismatch",
+        `Running launcher target for ${state.name} has another lease owner.`,
+        "Do not stop or replace it. Inspect the lease and state.json.",
+      );
+    }
+    if (leaseClaimed) {
+      releaseLease(this.home, leaseKey, ownerToken);
+    }
+    return null;
+  }
+
+  /**
+   * Remove an owned checkout once its launcher has stopped serving it.
+   *
+   * `scripts/bb-dev-app` starts its dev session detached and bb-kit never
+   * learns that pid, so the checkout's own launcher is the only thing that can
+   * stop it. Removing the directory first strands the whole `pnpm dev` tree
+   * with nothing left on disk to find it by, and it runs until the machine
+   * reboots. Stop is idempotent, so this asks for one whenever the launcher is
+   * still there to answer.
+   */
+  private async removeOwnedCheckout(
+    store: InstanceStore,
+    plan: OwnedInstancePlan,
+    ownerToken: string,
+  ): Promise<void> {
+    await this.stopLauncherSessions(plan);
+    safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
+  }
+
+  private async stopLauncherSessions(plan: OwnedInstancePlan): Promise<void> {
+    const launcher = launcherOptions(plan, this.environment);
+    let live: LauncherTarget;
+    try {
+      assertLauncherSupported(launcher);
+      live = readLauncherStatus(launcher);
+    } catch {
+      // A launcher that cannot answer never started a session through this
+      // checkout, so nothing it owns can outlive the directory.
+      return;
+    }
+    if (live.devSession === "stopped" && live.desktopSession === "stopped") {
+      return;
+    }
+    const exitCode = await runLauncherCommand(
+      launcher,
+      ["stop"],
+      live.launcherLog,
+      () => {},
+      DEFAULT_CONTROL_TIMEOUT_MS,
+    );
+    const after = readLauncherStatus(launcher);
+    if (exitCode !== 0 || after.devSession !== "stopped" || after.desktopSession !== "stopped") {
+      throw new DevError(
+        "launcher_stop_failed",
+        `Launcher sessions survived stop for ${plan.checkoutPath}.`,
+        "Stop them by hand before retrying, or the dev stack outlives its checkout.",
+        { logPath: live.launcherLog },
+      );
+    }
   }
 
   private async stopLocked(
@@ -1730,7 +1794,11 @@ export class DevManager {
     }
   }
 
-  private destroyPreRuntime(store: InstanceStore, state: InstanceState, ownerToken: string): void {
+  private async destroyPreRuntime(
+    store: InstanceStore,
+    state: InstanceState,
+    ownerToken: string,
+  ): Promise<void> {
     const plan = statePlan(state);
     if (plan !== null) {
       if (plan.target !== null || plan.leaseKey !== null) {
@@ -1741,7 +1809,7 @@ export class DevManager {
         );
       }
       if (plan.source === "owned") {
-        safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
+        await this.removeOwnedCheckout(store, plan, ownerToken);
       }
     }
     const resolverPath =

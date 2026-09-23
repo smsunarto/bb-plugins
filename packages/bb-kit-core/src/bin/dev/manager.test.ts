@@ -1353,6 +1353,79 @@ test("an opener spawn failure cannot crash a successful start", async () => {
   assert.equal((await deferred.status("defers")).running, true);
 });
 
+/**
+ * The shape that stranded five `pnpm dev` trees on a real machine: a failed
+ * preparation records `target: null`, which is bb-kit's way of saying nothing
+ * was ever started. The checkout's launcher disagrees, and it is the only
+ * thing that can stop what it started.
+ */
+async function halfPrepared(
+  fixture: ReturnType<typeof createFixture>,
+  name: string,
+  environment: NodeJS.ProcessEnv = {},
+): Promise<{ checkout: string; running: string }> {
+  const started = await fixture
+    .manager(environment)
+    .start({ name, revision: "local:main", repository: fixture.repository });
+  assert.equal(started.running, true);
+  const checkout = started.checkoutPath ?? "";
+  assert.notEqual(checkout, "");
+  const running = `${checkout}.fake-running`;
+  assert.equal(existsSync(running), true);
+
+  const statePath = join(fixture.home, "instances", name, "state.json");
+  const state = JSON.parse(readFileSync(statePath, "utf8")) as Record<string, unknown>;
+  const plan = state["plan"] as Record<string, unknown>;
+  writeFileSync(
+    statePath,
+    `${JSON.stringify(
+      {
+        ...state,
+        phase: "failed",
+        code: "health_timeout",
+        message: "fixture",
+        retryFrom: "start",
+        resolving: null,
+        plan: { ...plan, target: null, leaseKey: null },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return { checkout, running };
+}
+
+test("preparing an owned checkout adopts its own live session instead of deleting it", async () => {
+  const fixture = createFixture();
+  const { checkout } = await halfPrepared(fixture, "stranded");
+
+  // The ports answer because that session is the one serving them.
+  const restarted = await fixture
+    .manager({}, { portProbe: async () => true })
+    .start({ name: "stranded" });
+
+  assert.equal(restarted.running, true);
+  assert.equal(restarted.checkoutPath, checkout);
+  assert.equal(existsSync(checkout), true);
+  assert.equal(readFileSync(`${checkout}.fake-starts`, "utf8").trim(), "1");
+});
+
+test("destroying a half-prepared instance stops its session before removing the checkout", async () => {
+  const fixture = createFixture();
+  const events = join(fixture.root, "launcher-events.log");
+  const { checkout } = await halfPrepared(fixture, "stranded", { FAKE_EVENT_LOG: events });
+
+  const destroyed = await fixture.manager({ FAKE_EVENT_LOG: events }).destroy("stranded");
+
+  assert.equal(destroyed.phase, "absent");
+  assert.equal(existsSync(checkout), false);
+  assert.equal(
+    readFileSync(events, "utf8").trim().split("\n").at(-1),
+    "stop checkout=present",
+    "the launcher was never told to stop, so its dev session outlived the checkout",
+  );
+});
+
 function createFixture(): {
   root: string;
   home: string;
@@ -1448,6 +1521,12 @@ desktop="\${checkout}.fake-desktop"
 starts="\${checkout}.fake-starts"
 data="\${checkout}.data"
 logs="\${checkout}.logs"
+log_event() {
+  [[ -n "\${FAKE_EVENT_LOG:-}" ]] || return 0
+  local present=absent
+  [[ -d "\${checkout}" ]] && present=present
+  echo "$1 checkout=\${present}" >> "\${FAKE_EVENT_LOG}"
+}
 case "\${1:-}" in
   --help|help|-h)
     echo "current stop status env"
@@ -1481,6 +1560,7 @@ case "\${1:-}" in
     [[ -f "\${starts}" ]] && count="$(cat "\${starts}")"
     echo "$((count + 1))" > "\${starts}"
     touch "\${running}"
+    log_event current
     [[ " $* " == *" --desktop "* ]] && touch "\${desktop}"
     mkdir -p "\${logs}"
     echo started >> "\${logs}/dev.log"
@@ -1493,6 +1573,7 @@ case "\${1:-}" in
       [[ -n "\${FAKE_PID_FILE:-}" ]] && echo "$$ \${worker_pid}" > "\${FAKE_PID_FILE}"
       wait "\${worker_pid}"
     fi
+    log_event stop
     rm -f "\${running}" "\${desktop}"
     ;;
   env)
