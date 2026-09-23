@@ -14,13 +14,6 @@ export function activeSectionFor(thread: PluginSidebarThread): ActiveSection {
   return thread.hasPendingInteraction || !isThreadWorking(thread) ? "next-action" : "waiting";
 }
 
-export function threadDisplayTitle(thread: PluginSidebarThread): string {
-  const title = thread.title?.trim();
-  if (title) return title;
-  const fallback = thread.titleFallback?.trim();
-  return fallback ? fallback : "Untitled thread";
-}
-
 export interface ProjectScope {
   /** Project id, or null for "all projects". */
   id: string | null;

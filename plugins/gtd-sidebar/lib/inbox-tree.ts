@@ -1,5 +1,5 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import { activeSectionFor, effectiveParentThreadId, threadDisplayTitle } from "./inbox.ts";
+import { activeSectionFor, effectiveParentThreadId } from "./inbox.ts";
 
 export type InboxLifecycle = "active" | "snoozed" | "settled";
 export type InboxShelf = "pinned" | "nextAction" | "waiting" | "snoozed" | "settled";
@@ -137,7 +137,7 @@ function createInboxNode(
 ): InboxThreadNode {
   const lifecycle = thread.isArchived ? "settled" : lifecycleFor(thread);
   const shelf = ownShelf(thread, lifecycle);
-  const matchesTitle = threadDisplayTitle(thread).toLowerCase().includes(normalizedQuery);
+  const matchesTitle = thread.displayTitle.toLowerCase().includes(normalizedQuery);
   return {
     thread,
     lifecycle,
@@ -341,7 +341,7 @@ export function visibleInboxRows(
         depth: row.depth + 1,
         parentId: row.node.thread.id,
         parentProjectId: row.node.thread.projectId,
-        parentTitle: threadDisplayTitle(row.node.thread),
+        parentTitle: row.node.thread.displayTitle,
         guides: row.depth === 0 ? "" : row.guides + (row.lastChild ? "0" : "1"),
         lastChild: index === children.length - 1,
       });

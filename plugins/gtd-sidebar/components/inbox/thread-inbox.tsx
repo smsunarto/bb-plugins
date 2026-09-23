@@ -34,7 +34,7 @@ import { useSettledArchivePaging, useUnsettle } from "../../hooks/use-settled-th
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
-import { filterByProject, nextThreadIdAfterSettle, threadDisplayTitle } from "../../lib/inbox";
+import { filterByProject, nextThreadIdAfterSettle } from "../../lib/inbox";
 import {
   buildInboxTree,
   createShelfArrivals,
@@ -207,7 +207,7 @@ export function ThreadInbox({
   // row a new `drag` prop and redraw it.
   const titleFor = useCommittedEvent((threadId: string) => {
     const thread = threads.find((candidate) => candidate.id === threadId);
-    return thread === undefined ? null : threadDisplayTitle(thread);
+    return thread === undefined ? null : thread.displayTitle;
   });
   // The pointerup that ends a drag still fires click where it lands; the
   // guard below keeps that trailing click from folding a group or opening a

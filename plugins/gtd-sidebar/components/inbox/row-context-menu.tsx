@@ -7,12 +7,7 @@ import { Icon, type IconName } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { MENU_GLASS } from "../../lib/menu-glass";
-import {
-  findThreadAction,
-  type DispatchRowCommand,
-  type ThreadActionPlan,
-} from "./thread-actions";
-import { threadDisplayTitle } from "../../lib/inbox";
+import { findThreadAction, type DispatchRowCommand, type ThreadActionPlan } from "./thread-actions";
 import { RenameThreadDialog } from "./rename-thread-dialog";
 
 /**
@@ -140,7 +135,7 @@ export function RowContextMenu({
       {renaming && (
         <RenameThreadDialog
           threadId={thread.id}
-          initialTitle={threadDisplayTitle(thread)}
+          initialTitle={thread.displayTitle}
           onClose={() => setRenaming(false)}
         />
       )}

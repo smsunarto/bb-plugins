@@ -8,7 +8,6 @@ import {
   filterByProject,
   nextThreadIdAfterSettle,
   parentOf,
-  threadDisplayTitle,
 } from "../lib/inbox.ts";
 
 function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
@@ -37,7 +36,9 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
     isArchived: false,
     environment: null,
     host: null,
-    displayTitle: "",
+    // bb resolves this from the title the way its own row does; the fixture
+    // mirrors the common case so tree labels read the way the sidebar shows them.
+    displayTitle: overrides.title ?? overrides.titleFallback ?? "A thread",
     lifecycleOwnerThreadId: null,
     sourceThreadId: null,
     status: "idle",
@@ -91,27 +92,6 @@ describe("active sections", () => {
         }),
       ),
       "next-action",
-    );
-  });
-});
-
-describe("threadDisplayTitle", () => {
-  it("prefers the title, then the fallback, then a placeholder", () => {
-    assert.equal(threadDisplayTitle(thread({ title: "Real" })), "Real");
-    assert.equal(
-      threadDisplayTitle(thread({ title: null, titleFallback: "Fallback" })),
-      "Fallback",
-    );
-    assert.equal(
-      threadDisplayTitle(thread({ title: null, titleFallback: null })),
-      "Untitled thread",
-    );
-  });
-
-  it("treats a whitespace-only title as absent", () => {
-    assert.equal(
-      threadDisplayTitle(thread({ title: "   ", titleFallback: "Fallback" })),
-      "Fallback",
     );
   });
 });

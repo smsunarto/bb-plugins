@@ -167,7 +167,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       isArchived: false,
       environment: null,
       host: null,
-      displayTitle: "",
+      displayTitle: overrides.title ?? id,
       lifecycleOwnerThreadId: null,
       sourceThreadId: null,
       status: "idle",
@@ -445,7 +445,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       rowBodyRender.mockClear();
       host = {
         ...host,
-        sidebar: { ...host.sidebar, threads: [a, { ...b, title: "Renamed", isUnread: true }] },
+        sidebar: {
+          ...host.sidebar,
+          threads: [a, { ...b, title: "Renamed", displayTitle: "Renamed", isUnread: true }],
+        },
       };
       view.update({ host });
       assert.equal(rowBodyRender.mock.calls.length, 1);

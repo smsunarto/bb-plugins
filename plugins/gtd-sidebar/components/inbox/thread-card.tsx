@@ -29,7 +29,6 @@ import {
 import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
-import { threadDisplayTitle } from "../../lib/inbox";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
@@ -199,7 +198,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
     : childCount > 0
       ? `${childCount} subthreads`
       : undefined;
-  const titleText = threadDisplayTitle(thread);
+  const titleText = thread.displayTitle;
 
   const title = (
     <ThreadTitle

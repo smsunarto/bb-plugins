@@ -2,7 +2,6 @@ import { useLayoutEffect, useRef, type ReactElement } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
-import { threadDisplayTitle } from "../../lib/inbox";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { cn } from "../../lib/utils";
 import { MachineGlobe } from "./machine-globe";
@@ -74,7 +73,7 @@ export function ThreadDetails({
             sideOffset={8}
             className="gtd-thread-tooltip z-50 max-w-80 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
           >
-            <div className="font-medium">{threadDisplayTitle(thread)}</div>
+            <div className="font-medium">{thread.displayTitle}</div>
             <div className="mt-1 text-muted-foreground">
               {[projectName, branchName].filter(Boolean).join(" · ")}
             </div>

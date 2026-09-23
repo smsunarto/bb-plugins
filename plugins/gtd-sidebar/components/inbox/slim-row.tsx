@@ -24,7 +24,6 @@ import {
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
 import type { ProviderGlyphInfo } from "./provider-glyph";
-import { threadDisplayTitle } from "../../lib/inbox";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
@@ -94,7 +93,7 @@ const SlimRowBody = memo(function SlimRowBody({
 }: SlimRowProps & {
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
-  const title = threadDisplayTitle(thread);
+  const title = thread.displayTitle;
   const onRestore = () => command({ kind: "restore", threadId: thread.id, shelf });
   const plan = buildThreadActionPlan({
     lifecycle:
