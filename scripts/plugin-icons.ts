@@ -9,6 +9,7 @@ import {
   CloudServerIcon,
   Doc01Icon,
   KeyboardIcon,
+  GitBranchIcon,
   KitchenUtensilsIcon,
   Layers01Icon,
   PanelLeftIcon,
@@ -156,6 +157,10 @@ const customIcons = {
   "gh-stack": {
     name: "Layers",
     nodes: Layers01Icon,
+  },
+  gitbutler: {
+    name: "GitBranch",
+    nodes: GitBranchIcon,
   },
   traces: {
     name: "Activity",

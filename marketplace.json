@@ -86,6 +86,26 @@
       }
     },
     {
+      "id": "gitbutler",
+      "displayName": "GitButler",
+      "description": "Browse a GitButler workspace \u2014 stacks, branches, commits, uncommitted work, and diffs \u2014 from a bb thread panel.",
+      "icon": {
+        "url": "plugins/gitbutler/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/gitbutler",
+          "range": "*",
+          "tagPrefix": "gitbutler/"
+        }
+      }
+    },
+    {
       "id": "gtd-sidebar",
       "displayName": "GTD Sidebar",
       "description": "An action-oriented sidebar that groups threads by who can act next.",

@@ -413,9 +413,31 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/gitbutler": {
+      "name": "@smsunarto/bb-plugin-gitbutler",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.2.0",
+        "@tanstack/react-query": "^5.101.4",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.4.84",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "jsdom": "25.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/gtd-sidebar": {
       "name": "@smsunarto/bb-plugin-gtd-sidebar",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "dependencies": {
         "@dnd-kit/core": "6.3.1",
         "@dnd-kit/sortable": "10.0.0",
@@ -1330,6 +1352,8 @@
     "@smsunarto/bb-plugin-dotfiles": ["@smsunarto/bb-plugin-dotfiles@workspace:plugins/dotfiles"],
 
     "@smsunarto/bb-plugin-gh-stack": ["@smsunarto/bb-plugin-gh-stack@workspace:plugins/gh-stack"],
+
+    "@smsunarto/bb-plugin-gitbutler": ["@smsunarto/bb-plugin-gitbutler@workspace:plugins/gitbutler"],
 
     "@smsunarto/bb-plugin-gtd-sidebar": ["@smsunarto/bb-plugin-gtd-sidebar@workspace:plugins/gtd-sidebar"],
 

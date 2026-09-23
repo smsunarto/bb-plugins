@@ -24,6 +24,10 @@
       "source": "./plugins/gh-stack"
     },
     {
+      "name": "gitbutler",
+      "source": "./plugins/gitbutler"
+    },
+    {
       "name": "gtd-sidebar",
       "source": "./plugins/gtd-sidebar"
     },

@@ -1,0 +1,426 @@
+/*
+ * The panel reads BB's theme tokens and falls back to neutral values so it
+ * stays legible under a theme that does not define them.
+ */
+.gb-app {
+  --gb-bg: var(--background, #111315);
+  --gb-panel: var(--card, #17191b);
+  --gb-line: var(--border, #303336);
+  --gb-text: var(--foreground, #e5e7e9);
+  --gb-muted: var(--muted-foreground, #929a9f);
+  --gb-accent: var(--primary, #78cbb1);
+  --gb-danger: var(--destructive-text, #e7a799);
+  --gb-warning: var(--warning-text, #e4b098);
+  --gb-added: var(--diff-added, #99d4a8);
+  --gb-removed: var(--diff-removed, #e0a29e);
+  --gb-radius: var(--radius, 5px);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  color: var(--gb-text);
+  background: var(--gb-bg);
+  font: 12px/1.5 var(--font-sans, system-ui, sans-serif);
+  overflow: hidden;
+}
+.gb-app * {
+  box-sizing: border-box;
+}
+.gb-app button,
+.gb-app select {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+.gb-app :focus-visible {
+  outline: 2px solid var(--gb-accent);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+
+/* ---- header ---------------------------------------------------------- */
+
+.gb-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--gb-line);
+  background: var(--gb-panel);
+}
+.gb-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gb-spacer {
+  flex: 1 1 auto;
+}
+.gb-repo {
+  border: 1px solid var(--gb-line);
+  border-radius: var(--gb-radius);
+  padding: 2px 4px;
+  max-width: 45%;
+  background: var(--gb-bg);
+}
+.gb-refresh {
+  padding: 2px 6px;
+  border-radius: var(--gb-radius);
+  color: var(--gb-muted);
+  font-size: 13px;
+}
+.gb-refresh:hover:not(:disabled) {
+  color: var(--gb-text);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.gb-refresh:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.gb-back {
+  padding: 2px 6px 2px 0;
+  color: var(--gb-muted);
+}
+.gb-back:hover {
+  color: var(--gb-text);
+}
+
+.gb-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px 24px;
+}
+
+/* ---- stacks ---------------------------------------------------------- */
+
+/*
+ * A GitButler workspace is parallel stacks over one base, not a braided
+ * commit graph, so each stack is its own rail rather than a lane in a shared
+ * one. The accent rail is the stack; the dashed rule inside it separates the
+ * branches stacked on top of each other.
+ */
+.gb-stack {
+  margin: 10px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--gb-accent) 45%, transparent);
+}
+.gb-branch + .gb-branch {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--gb-line);
+}
+.gb-branch-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 0 3px;
+}
+.gb-branch-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gb-empty-branch {
+  margin: 2px 0;
+  color: var(--gb-muted);
+  font-style: italic;
+}
+.gb-no-stacks {
+  margin: 12px 0 12px 10px;
+}
+
+/* ---- rows ------------------------------------------------------------ */
+
+.gb-commits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.gb-row,
+.gb-base {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.gb-base {
+  margin: 14px 0 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gb-line);
+}
+.gb-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--gb-muted);
+}
+.gb-dot-stack {
+  background: var(--gb-accent);
+}
+.gb-dot-upstream {
+  background: transparent;
+  border: 1px solid var(--gb-warning);
+}
+.gb-dot-base,
+.gb-dot-base-tip {
+  background: transparent;
+  border: 1px solid var(--gb-muted);
+}
+.gb-dot-base-tip {
+  border-color: var(--gb-text);
+}
+.gb-dot-uncommitted {
+  background: var(--gb-warning);
+}
+.gb-dot-conflicted {
+  background: var(--gb-danger);
+}
+.gb-commit {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 6px;
+  border-radius: var(--gb-radius);
+}
+.gb-commit:hover {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.gb-commit-subject {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gb-commit-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--gb-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.gb-commit-meta code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* ---- pills ----------------------------------------------------------- */
+
+.gb-pill {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--gb-line);
+  border-radius: 999px;
+  color: var(--gb-muted);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+.gb-pill-pushed,
+.gb-pill-integrated {
+  color: var(--gb-added);
+  border-color: color-mix(in srgb, var(--gb-added) 40%, transparent);
+}
+.gb-pill-diverged,
+.gb-pill-behind {
+  color: var(--gb-warning);
+  border-color: color-mix(in srgb, var(--gb-warning) 40%, transparent);
+}
+.gb-pill-conflicted {
+  color: var(--gb-danger);
+  border-color: color-mix(in srgb, var(--gb-danger) 40%, transparent);
+}
+.gb-pill-review {
+  color: var(--gb-accent);
+  border-color: color-mix(in srgb, var(--gb-accent) 40%, transparent);
+}
+.gb-conflicted {
+  color: var(--gb-danger);
+}
+.gb-count {
+  color: var(--gb-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- files ----------------------------------------------------------- */
+
+.gb-uncommitted {
+  margin-bottom: 4px;
+}
+.gb-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 6px;
+  border-radius: var(--gb-radius);
+  font-weight: 600;
+}
+.gb-chevron {
+  flex: 0 0 auto;
+  width: 8px;
+  color: var(--gb-muted);
+  font-size: 9px;
+  transition: transform 120ms ease;
+}
+.gb-disclosure[aria-expanded="true"] .gb-chevron {
+  transform: rotate(90deg);
+}
+.gb-disclosure:disabled {
+  cursor: default;
+}
+.gb-disclosure:disabled .gb-chevron {
+  visibility: hidden;
+}
+.gb-disclosure:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.gb-assigned {
+  margin-top: 6px;
+}
+.gb-assigned-title,
+.gb-section-title {
+  margin: 8px 0 2px;
+  color: var(--gb-muted);
+  font-weight: 600;
+}
+.gb-files {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 16px;
+}
+.gb-file {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 1px 6px;
+  border-radius: var(--gb-radius);
+}
+.gb-file:hover {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.gb-file.gb-active {
+  background: color-mix(in srgb, var(--gb-accent) 14%, transparent);
+}
+.gb-file-kind {
+  flex: 0 0 auto;
+  width: 10px;
+  color: var(--gb-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+}
+.gb-kind-added {
+  color: var(--gb-added);
+}
+.gb-kind-deleted {
+  color: var(--gb-removed);
+}
+.gb-file-name {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * No `direction: rtl` here. It truncates from the left, but it also reorders
+ * leading punctuation, so `.bb` renders as `bb.`.
+ */
+.gb-file-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--gb-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- detail ---------------------------------------------------------- */
+
+.gb-detail-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.gb-detail-body {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: var(--gb-radius);
+  background: var(--gb-panel);
+  color: var(--gb-muted);
+  font: 11px/1.5 var(--font-mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-detail-meta {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 0;
+  color: var(--gb-muted);
+  font-size: 11px;
+}
+.gb-detail-meta code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.gb-diff {
+  margin-top: 10px;
+  border: 1px solid var(--gb-line);
+  border-radius: var(--gb-radius);
+  overflow: hidden;
+}
+.gb-truncated {
+  margin: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--gb-line);
+  color: var(--gb-warning);
+}
+
+/* ---- status ---------------------------------------------------------- */
+
+.gb-loading,
+.gb-notice {
+  color: var(--gb-muted);
+}
+.gb-loading {
+  margin: 10px 0;
+}
+.gb-notice {
+  margin: 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--gb-line);
+  border-radius: var(--gb-radius);
+  background: var(--gb-panel);
+}
+.gb-notice-title {
+  margin: 0;
+  color: var(--gb-text);
+  font-weight: 600;
+}
+.gb-notice-detail {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.gb-more {
+  margin: 8px 0 0 16px;
+  padding: 3px 10px;
+  border: 1px solid var(--gb-line);
+  border-radius: var(--gb-radius);
+  color: var(--gb-muted);
+}
+.gb-more:hover {
+  color: var(--gb-text);
+}
