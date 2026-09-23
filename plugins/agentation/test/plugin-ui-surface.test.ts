@@ -66,6 +66,8 @@ function withFiber(element: FakeElement, fiber: Fiber): FakeElement {
 }
 
 const expectedBoundarySurfaces = {
+  appOverlay: "experimental_appOverlay",
+  browserToolbarAction: "experimental_browserToolbarAction",
   composerAction: "composer.actions",
   composerBanner: "composer.banners",
   composerPlusMenuItem: "composer.plusMenu",
@@ -83,6 +85,7 @@ const expectedBoundarySurfaces = {
   threadHeaderAction: "experimental_threadHeaderAction",
   threadList: "experimental_threadList",
   threadPanelAction: "threadPanelAction.component",
+  timelineRenderer: "experimental_timelineRenderer",
 };
 
 test("every bb plugin component boundary maps to its public SDK surface", () => {

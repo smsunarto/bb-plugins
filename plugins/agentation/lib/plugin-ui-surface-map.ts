@@ -3,6 +3,8 @@
 
 /** Translate bb's internal component-boundary names to the public SDK API. */
 export const PUBLIC_SURFACE_BY_SLOT_KIND = {
+  appOverlay: "experimental_appOverlay",
+  browserToolbarAction: "experimental_browserToolbarAction",
   composerAction: "composer.actions",
   composerBanner: "composer.banners",
   composerPlusMenuItem: "composer.plusMenu",
@@ -20,6 +22,7 @@ export const PUBLIC_SURFACE_BY_SLOT_KIND = {
   threadHeaderAction: "experimental_threadHeaderAction",
   threadList: "experimental_threadList",
   threadPanelAction: "threadPanelAction.component",
+  timelineRenderer: "experimental_timelineRenderer",
 } as const satisfies Readonly<Record<string, string>>;
 
 export interface PluginUiSurfacePromptContext {
@@ -28,6 +31,14 @@ export interface PluginUiSurfacePromptContext {
 }
 
 const PROMPT_CONTEXT_BY_SURFACE = {
+  experimental_appOverlay: {
+    registration: "app.slots.experimental_appOverlay",
+    role: "a plugin component rendered over the whole bb window",
+  },
+  experimental_browserToolbarAction: {
+    registration: "app.slots.experimental_browserToolbarAction",
+    role: "a plugin component rendered beside a Browser tab's address bar",
+  },
   "composer.actions": {
     registration: "app.composer.customize({ actions })",
     role: "a plugin component rendered in the composer action row",
@@ -115,6 +126,10 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   "threadPanelAction.run": {
     registration: "app.slots.threadPanelAction({ run })",
     role: "the host-rendered thread action and its run handler",
+  },
+  experimental_timelineRenderer: {
+    registration: "app.slots.experimental_timelineRenderer",
+    role: "a plugin component rendering a thread timeline row",
   },
   inline: {
     registration: "app.contentScripts.register or custom plugin DOM",
