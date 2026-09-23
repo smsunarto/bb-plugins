@@ -171,6 +171,21 @@ export function settledIndicator(row: SettledThreadRow): {
   return { indicator: "none", indicatorLabel: null };
 }
 
+/** bb reports status as a string; anything outside the sidebar enum reads as idle. */
+function sidebarStatusFor(value: string): PluginSidebarThread["status"] {
+  switch (value) {
+    case "active":
+    case "error":
+    case "idle":
+    case "pending":
+    case "starting":
+    case "stopping":
+      return value;
+    default:
+      return "idle";
+  }
+}
+
 /** Only the one kind this sidebar draws a parent chip for survives. */
 function originKindFor(value: string | null): "fork" | null {
   return value === "fork" ? value : null;
@@ -189,20 +204,31 @@ export function toSidebarThread(row: SettledThreadRow): PluginSidebarThread {
     projectId: row.projectId,
     title: row.title,
     titleFallback: row.titleFallback,
+    displayTitle: row.title?.trim() || row.titleFallback?.trim() || "Untitled thread",
     parentThreadId: row.parentThreadId,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: row.sectionId,
     originKind: originKindFor(row.originKind),
     originPluginId: row.originPluginId,
     providerId: row.providerId,
+    status: sidebarStatusFor(row.status),
+    runtimeStatus: sidebarStatusFor(row.status),
+    queuedWork: "none",
     hasPendingInteraction: row.hasPendingInteraction,
     activity: row.activity,
     indicator,
     indicatorLabel,
     isUnread: isUnread(row),
     isPinned: row.isPinned,
+    pinnedAt: null,
+    pinSortKey: null,
     // The one field the host would never report as true, and the reason this
     // whole path exists. The inbox shelves on it.
     isArchived: true,
+    archivedAt: row.settledAt,
+    href: `/projects/${row.projectId}/threads/${row.id}`,
+    isHidden: false,
     environment: null,
     host: null,
     createdAt: row.createdAt,
