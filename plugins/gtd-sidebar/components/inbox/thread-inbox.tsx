@@ -15,13 +15,7 @@ import {
 import { toast } from "sonner";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import type { ActiveThreadShelf, RowCommand } from "./thread-actions";
@@ -36,7 +30,7 @@ import {
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { useLifecycle, type LifecycleApi } from "../../hooks/use-lifecycle";
 import { usePinnedOrder, type PinnedOrderApi } from "../../hooks/use-pinned-order";
-import { useSettledThreads, type SettledThreadsApi } from "../../hooks/use-settled-threads";
+import { useSettledArchivePaging, useUnsettle } from "../../hooks/use-settled-threads";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
@@ -62,13 +56,16 @@ import {
   type ProjectGroup as ProjectGroupRows,
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
-import { mergeSettledThreads } from "../../lib/settled-threads";
+import { isShelvedThread } from "../../lib/settled-threads";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterByMachine, sidebarMachines } from "../../lib/machines";
 import { MachineScopePicker } from "./machine-scope-picker";
 import { MachineAppearanceProvider } from "./machine-appearance";
 
 const ALL_PROJECTS = "__all__";
+// The Settled shelf is a view of bb's archive, so the host list is asked for
+// archived threads too; `isShelvedThread` cuts it to the shelf's window.
+const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
@@ -83,20 +80,22 @@ export function ThreadInbox({
   onNavigate,
   searchQuery,
 }: PluginThreadListProps) {
-  const { status, threads: hostThreads, projects } = useSidebarThreads();
+  const sidebar = useSidebarThreads({ experimental_lifecycles: SIDEBAR_LIFECYCLES });
+  const { status, projects } = sidebar;
   const now = useMinuteClock();
   const lifecycle = useLifecycle();
   const namingThreads = useNamingThreads();
-  // bb's view never carries an archived thread, so the Settled shelf's rows
-  // come from a second read and are merged in before anything partitions.
-  const settledThreads = useSettledThreads(now);
+  // The cut is made against the list's own clock, so a row ages off the shelf
+  // while the sidebar sits open rather than on the next unrelated refresh.
+  useSettledArchivePaging(sidebar, now);
+  const threads = useMemo(
+    () => sidebar.threads.filter((thread) => isShelvedThread(thread, now)),
+    [now, sidebar.threads],
+  );
+  const unsettle = useUnsettle();
   // bb's pinned order travels the same way: `pinSortKey` is dropped by the
   // host's thread mapping, so the Pinned shelf re-reads it via the backend.
   const pinnedOrder = usePinnedOrder();
-  const threads = useMemo(
-    () => mergeSettledThreads(hostThreads, settledThreads.threads),
-    [hostThreads, settledThreads.threads],
-  );
   // bb's own cached roster, so no glyph waits on a round trip of this plugin's.
   const { providers } = useProviders();
   const providerInfoById = useMemo(
@@ -140,7 +139,6 @@ export function ThreadInbox({
   const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
-    settledThreads,
     pinnedOrder,
     scope,
     machineScope,
@@ -329,7 +327,7 @@ export function ThreadInbox({
     activeThreadId,
     onNavigate,
     lifecycle,
-    settledThreads,
+    unsettle,
     visibleActiveRows,
   });
 
@@ -397,7 +395,7 @@ export function ThreadInbox({
           >
             <InboxContent
               status={status}
-              ready={lifecycle.shelvesReady && settledThreads.ready}
+              ready={lifecycle.shelvesReady && sidebar.experimental_archived?.status !== "loading"}
               count={shelvedTotal}
               searchQuery={searchQuery}
             >
@@ -588,13 +586,13 @@ function useRowCommands({
   activeThreadId,
   onNavigate,
   lifecycle,
-  settledThreads,
+  unsettle,
   visibleActiveRows,
 }: {
   activeThreadId: PluginThreadListProps["activeThreadId"];
   onNavigate: PluginThreadListProps["onNavigate"];
   lifecycle: LifecycleApi;
-  settledThreads: SettledThreadsApi;
+  unsettle: (threadId: string) => void;
   visibleActiveRows: readonly {
     shelf: ActiveThreadShelf;
     row: VisibleInboxRow;
@@ -669,7 +667,7 @@ function useRowCommands({
         return;
       case "restore":
         if (command.shelf === "snoozed") lifecycle.unsnooze(command.threadId);
-        else settledThreads.unsettle(command.threadId);
+        else unsettle(command.threadId);
         return;
       case "pin":
         void threadActions.setPinned(command.threadId, command.pinned);
@@ -688,7 +686,6 @@ function useRowCommands({
 function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
-  settledThreads: SettledThreadsApi,
   pinnedOrder: PinnedOrderApi,
   scope: string,
   machineScope: string | null,
@@ -713,11 +710,10 @@ function useInboxTree(
         {
           arrivals,
           snoozedAtFor: lifecycle.snoozedAtFor,
-          settledAtFor: settledThreads.settledAtFor,
           pinOrderKeyFor: pinnedOrder.pinOrderKeyFor,
         },
       ),
-    [lifecycle, settledThreads, pinnedOrder, scope, machineScope, searchQuery, threads, arrivals],
+    [lifecycle, pinnedOrder, scope, machineScope, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>

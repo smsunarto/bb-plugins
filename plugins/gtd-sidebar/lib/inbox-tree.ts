@@ -91,8 +91,6 @@ export interface InboxSort {
   arrivals?: ShelfArrivals;
   /** The lifecycle row's `snoozedAt` — the Snoozed shelf's exact arrival. */
   snoozedAtFor?: (thread: PluginSidebarThread) => number | null;
-  /** bb's `archivedAt` — the Settled shelf's exact arrival. */
-  settledAtFor?: (thread: PluginSidebarThread) => number | null;
   /**
    * bb's `pinSortKey` for the thread — the Pinned shelf's order, shared with
    * the built-in sidebar's drag order. Null while the keys are still loading.
@@ -105,7 +103,6 @@ export interface InboxSort {
 interface ResolvedSort {
   arrivals: ShelfArrivals;
   snoozedAtFor(thread: PluginSidebarThread): number | null;
-  settledAtFor(thread: PluginSidebarThread): number | null;
   pinOrderKeyFor(thread: PluginSidebarThread): string | null;
   now: number;
 }
@@ -128,7 +125,7 @@ function shelfEnteredAt(
     shelf === "snoozed"
       ? sort.snoozedAtFor(thread)
       : shelf === "settled"
-        ? sort.settledAtFor(thread)
+        ? thread.archivedAt
         : null;
   const seed =
     exact ??
@@ -290,7 +287,6 @@ export function buildInboxTree(
   const resolved: ResolvedSort = {
     arrivals: sort.arrivals ?? createShelfArrivals(),
     snoozedAtFor: sort.snoozedAtFor ?? (() => null),
-    settledAtFor: sort.settledAtFor ?? (() => null),
     pinOrderKeyFor: sort.pinOrderKeyFor ?? (() => null),
     now: sort.now ?? Date.now(),
   };

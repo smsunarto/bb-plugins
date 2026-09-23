@@ -1,39 +1,46 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import type { PluginSidebarThread, PluginSidebarThreadsState } from "@get-bb/plugin-sdk/app";
 import {
-  isUnread,
+  isShelvedThread,
   isWithinSettledWindow,
-  mergeSettledThreads,
-  settledIndicator,
-  settledRowsMatch,
-  toSidebarThread,
+  needsOlderArchivePage,
   SETTLED_WINDOW_MS,
-  type SettledThreadRow,
 } from "../lib/settled-threads.ts";
 
-function row(overrides: Partial<SettledThreadRow> = {}): SettledThreadRow {
+const now = 10 * SETTLED_WINDOW_MS;
+
+function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return {
     id: "thr_1",
-    settledAt: 1_000,
     projectId: "proj_1",
-    title: "A settled thread",
+    title: "A thread",
     titleFallback: null,
     parentThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
-    status: "idle",
     hasPendingInteraction: false,
+    activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
+    indicator: "none",
+    indicatorLabel: null,
+    isUnread: false,
     isPinned: false,
-    activity: {
-      workflows: 0,
-      backgroundAgents: 0,
-      backgroundCommands: 0,
-      planMode: 0,
-      goals: 0,
-    },
+    isArchived: false,
+    environment: null,
+    host: null,
+    displayTitle: "A thread",
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
+    pinnedAt: null,
+    pinSortKey: null,
+    archivedAt: null,
+    href: "",
+    isHidden: false,
     createdAt: 100,
     updatedAt: 100,
     lastReadAt: 100,
@@ -42,88 +49,24 @@ function row(overrides: Partial<SettledThreadRow> = {}): SettledThreadRow {
   };
 }
 
-function hostThread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
-  return { ...toSidebarThread(row()), isArchived: false, ...overrides };
+function settled(id: string, archivedAt: number): PluginSidebarThread {
+  return thread({ id, isArchived: true, archivedAt });
 }
 
-describe("settledRowsMatch", () => {
-  it("matches identical snapshots with separately allocated rows and activity", () => {
-    const current = [row(), row({ id: "thr_2" })];
-    assert.equal(settledRowsMatch(current, structuredClone(current)), true);
-    assert.equal(settledRowsMatch(current, current), true);
-    assert.equal(settledRowsMatch([], []), true);
-  });
-
-  it("detects every snapshot field change", () => {
-    const changedFields = {
-      id: "thr_2",
-      settledAt: 1_001,
-      projectId: "proj_2",
-      title: null,
-      titleFallback: "Fallback title",
-      parentThreadId: "thr_parent",
-      sectionId: "section_1",
-      originKind: "fork",
-      originPluginId: "plugin_1",
-      providerId: "claude",
-      status: "active",
-      hasPendingInteraction: true,
-      isPinned: true,
-      activity: { ...row().activity, workflows: 1 },
-      createdAt: 101,
-      updatedAt: 101,
-      lastReadAt: null,
-      latestAttentionAt: 101,
-    } satisfies SettledThreadRow;
-    for (const key of Object.keys(changedFields) as Array<keyof SettledThreadRow>) {
-      const changed = row({ [key]: changedFields[key] });
-      assert.equal(settledRowsMatch([row()], [changed]), false, key);
-      assert.equal(settledRowsMatch([changed], [row()]), false, key);
-    }
-  });
-
-  it("detects each nested activity change", () => {
-    const changedActivity = {
-      workflows: 1,
-      backgroundAgents: 1,
-      backgroundCommands: 1,
-      planMode: 1,
-      goals: 1,
-    } satisfies SettledThreadRow["activity"];
-    for (const key of Object.keys(changedActivity) as Array<keyof SettledThreadRow["activity"]>) {
-      assert.equal(
-        settledRowsMatch([row()], [row({ activity: { ...row().activity, [key]: 1 } })]),
-        false,
-        key,
-      );
-    }
-  });
-
-  it("detects row additions, deletions, and order changes", () => {
-    const first = row();
-    const second = row({ id: "thr_2" });
-    assert.equal(settledRowsMatch([first], [first, second]), false);
-    assert.equal(settledRowsMatch([first, second], [first]), false);
-    assert.equal(settledRowsMatch([first, second], [second, first]), false);
-    assert.equal(settledRowsMatch([first], []), false);
-    assert.equal(settledRowsMatch([], [first]), false);
-  });
-});
-
-describe("isUnread", () => {
-  it("is bb's own rule: last read has to catch up with last attention", () => {
-    assert.equal(isUnread(row({ lastReadAt: 100, latestAttentionAt: 100 })), false);
-    assert.equal(isUnread(row({ lastReadAt: 100, latestAttentionAt: 101 })), true);
-  });
-
-  it("treats a never-read thread as unread", () => {
-    assert.equal(isUnread(row({ lastReadAt: null, latestAttentionAt: 1 })), true);
-  });
-});
+function archive(
+  overrides: Partial<NonNullable<PluginSidebarThreadsState["experimental_archived"]>> = {},
+): NonNullable<PluginSidebarThreadsState["experimental_archived"]> {
+  return {
+    status: "ready",
+    hasNextPage: true,
+    isFetchingNextPage: false,
+    isFetchNextPageError: false,
+    fetchNextPage: async () => {},
+    ...overrides,
+  };
+}
 
 describe("isWithinSettledWindow", () => {
-  const now = 10 * SETTLED_WINDOW_MS;
-
   it("keeps an archive from inside the window", () => {
     assert.equal(isWithinSettledWindow(now - 1, now), true);
     assert.equal(isWithinSettledWindow(now - SETTLED_WINDOW_MS + 1, now), true);
@@ -145,105 +88,45 @@ describe("isWithinSettledWindow", () => {
   });
 });
 
-describe("settledIndicator", () => {
-  it("draws nothing for a quiet thread", () => {
-    assert.deepEqual(settledIndicator(row()), {
-      indicator: "none",
-      indicatorLabel: null,
-    });
+describe("isShelvedThread", () => {
+  it("keeps every active thread", () => {
+    assert.equal(isShelvedThread(thread(), now), true);
+    assert.equal(isShelvedThread(thread({ archivedAt: 1 }), now), true);
   });
 
-  it("puts a raised hand above everything else", () => {
-    const result = settledIndicator(row({ hasPendingInteraction: true, status: "active" }));
-    assert.equal(result.indicator, "waiting-for-input");
+  it("keeps a settle inside the window and drops an older one", () => {
+    assert.equal(isShelvedThread(settled("recent", now - 1), now), true);
+    assert.equal(isShelvedThread(settled("old", now - SETTLED_WINDOW_MS), now), false);
   });
 
-  it("reports live work from the status", () => {
-    assert.equal(settledIndicator(row({ status: "active" })).indicator, "runtime");
-  });
-
-  it("reports live work from an activity count alone", () => {
-    const working = row({
-      activity: {
-        workflows: 1,
-        backgroundAgents: 0,
-        backgroundCommands: 0,
-        planMode: 0,
-        goals: 0,
-      },
-    });
-    assert.equal(settledIndicator(working).indicator, "runtime");
-  });
-
-  it("separates an unread failure from an unread success", () => {
-    const unread = { lastReadAt: 100, latestAttentionAt: 200 };
-    assert.equal(settledIndicator(row({ ...unread, status: "error" })).indicator, "unread-error");
-    assert.equal(settledIndicator(row({ ...unread, status: "idle" })).indicator, "unread-success");
+  it("drops an archived thread bb reports without a stamp", () => {
+    assert.equal(isShelvedThread(thread({ isArchived: true, archivedAt: null }), now), false);
   });
 });
 
-describe("toSidebarThread", () => {
-  it("marks the thread archived, which is what shelves it", () => {
-    assert.equal(toSidebarThread(row()).isArchived, true);
+describe("needsOlderArchivePage", () => {
+  it("asks for more while every loaded archive is still on the shelf", () => {
+    assert.equal(needsOlderArchivePage([thread(), settled("a", now - 1)], archive(), now), true);
+    assert.equal(needsOlderArchivePage([thread()], archive(), now), true);
   });
 
-  it("keeps only the origin kind this sidebar draws", () => {
-    assert.equal(toSidebarThread(row({ originKind: "fork" })).originKind, "fork");
-    // A kind bb adds later, or one it has since dropped, must degrade rather
-    // than crash the shelf.
-    assert.equal(toSidebarThread(row({ originKind: "side-chat" })).originKind, null);
-    assert.equal(toSidebarThread(row({ originKind: "teleport" })).originKind, null);
+  it("stops once an archive older than the window has been seen", () => {
+    const threads = [settled("a", now - 1), settled("b", now - SETTLED_WINDOW_MS)];
+    assert.equal(needsOlderArchivePage(threads, archive(), now), false);
   });
 
-  it("carries the fields the list sorts, filters, and searches on", () => {
-    const mapped = toSidebarThread(
-      row({
-        id: "thr_9",
-        projectId: "proj_2",
-        title: null,
-        titleFallback: "ask about the parser",
-        parentThreadId: "thr_parent",
-        createdAt: 42,
-        isPinned: true,
-      }),
-    );
-    assert.equal(mapped.id, "thr_9");
-    assert.equal(mapped.projectId, "proj_2");
-    assert.equal(mapped.titleFallback, "ask about the parser");
-    assert.equal(mapped.parentThreadId, "thr_parent");
-    assert.equal(mapped.createdAt, 42);
-    assert.equal(mapped.isPinned, true);
-  });
-});
-
-describe("mergeSettledThreads", () => {
-  it("adds the settled threads the host cannot report", () => {
-    const merged = mergeSettledThreads(
-      [hostThread({ id: "a" })],
-      [toSidebarThread(row({ id: "b" }))],
-    );
-    assert.deepEqual(
-      merged.map((t) => t.id),
-      ["a", "b"],
-    );
+  it("stops at the end of the archive", () => {
+    assert.equal(needsOlderArchivePage([], archive({ hasNextPage: false }), now), false);
   });
 
-  // The host's view is live and this one is a round trip old: a thread bb has
-  // already unarchived must not be dragged back by a stale copy of itself.
-  it("lets the host win a collision", () => {
-    const merged = mergeSettledThreads(
-      [hostThread({ id: "a" })],
-      [toSidebarThread(row({ id: "a" }))],
-    );
-    assert.equal(merged.length, 1);
-    assert.equal(merged[0]?.isArchived, false);
+  it("leaves a page in flight, a failed page, and a loading list alone", () => {
+    assert.equal(needsOlderArchivePage([], archive({ isFetchingNextPage: true }), now), false);
+    assert.equal(needsOlderArchivePage([], archive({ isFetchNextPageError: true }), now), false);
+    assert.equal(needsOlderArchivePage([], archive({ status: "loading" }), now), false);
+    assert.equal(needsOlderArchivePage([], archive({ status: "error" }), now), false);
   });
 
-  it("returns the host list unchanged when nothing is settled", () => {
-    const merged = mergeSettledThreads([hostThread({ id: "a" })], []);
-    assert.deepEqual(
-      merged.map((t) => t.id),
-      ["a"],
-    );
+  it("does nothing when the archive was not requested", () => {
+    assert.equal(needsOlderArchivePage([settled("a", now - 1)], null, now), false);
   });
 });

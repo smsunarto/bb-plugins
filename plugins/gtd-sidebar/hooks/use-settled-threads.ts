@@ -1,97 +1,46 @@
-import { useCallback, useMemo, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import { useCallback, useEffect } from "react";
+import { useSdk, type PluginSidebarThreadsState } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { gtdSidebarRpcContract } from "../server";
-import {
-  isWithinSettledWindow,
-  settledRowsMatch,
-  toSidebarThread,
-  type SettledThreadRow,
-} from "../lib/settled-threads";
-import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
+import { needsOlderArchivePage } from "../lib/settled-threads";
 
-const EMPTY: readonly SettledThreadRow[] = [];
-const ARCHIVE_REFRESHES = ["archive"] as const;
-
-export interface SettledThreadsApi {
-  /** Archived threads, newest archive first, cut to the window against the caller's clock. */
-  threads: readonly PluginSidebarThread[];
-  /**
-   * Whether the shelf is worth painting yet. This list is the ONLY source of a
-   * settled thread, and it is a round trip behind on every mount, so a user
-   * whose threads are all settled would otherwise be told they have none for
-   * exactly that long.
-   */
-  ready: boolean;
-  unsettle(threadId: string): void;
-  /** bb's `archivedAt` for a thread on the shelf; null when it isn't there. */
-  settledAtFor(thread: PluginSidebarThread): number | null;
+/**
+ * Keeps the host's archive paged far enough back to cover the Settled window.
+ *
+ * bb pages its archive newest first, so the effect asks for one more page
+ * whenever every archive it has seen is still on the shelf. The page arrives
+ * through the same `experimental_useSidebarThreads` list, which re-runs this
+ * until an archive older than the window turns up.
+ */
+export function useSettledArchivePaging(
+  sidebar: Pick<PluginSidebarThreadsState, "experimental_archived" | "threads">,
+  now: number,
+): void {
+  const archived = sidebar.experimental_archived;
+  const needsPage = needsOlderArchivePage(sidebar.threads, archived, now);
+  useEffect(() => {
+    if (!needsPage || archived === null) return;
+    void archived.fetchNextPage().catch(() => undefined);
+  }, [archived, needsPage]);
 }
 
 /**
- * The threads on the Settled shelf, fetched from the plugin's own backend.
- *
- * The host cannot supply them: settling archives the thread, and bb's sidebar
- * view is built from queries pinned to `archived: false`. This hook is the
- * second source that fills that hole, refreshed on the same `lifecycle`
- * channel the snooze rows use — the backend publishes there on every archive
- * and un-settle.
- *
- * The rows are kept as the backend sent them and cut to the window on the way
- * out, against the list's own clock. That is what ages a row off the shelf
- * while the sidebar sits open — a cut made once at fetch time would hold a
- * day-old settle on screen until the next unrelated refresh.
+ * bb's unarchive, made from a Settled row. No read after the mutation: the
+ * host's own thread feed moves the row back to its active shelf.
  */
-export function useSettledThreads(now: number): SettledThreadsApi {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  const [rows, setRows] = useState<readonly SettledThreadRow[]>(EMPTY);
-  const ready = useLifecycleChannelList(
-    useCallback(() => rpc.call("listSettledThreads", {}), [rpc]),
-    useCallback((result) => {
-      setRows((current) => (settledRowsMatch(current, result.threads) ? current : result.threads));
-    }, []),
-    ARCHIVE_REFRESHES,
-  );
-
-  const windowed = useMemo(
-    () =>
-      rows
-        .filter((row) => isWithinSettledWindow(row.settledAt, now))
-        .sort((a, b) => b.settledAt - a.settledAt),
-    [now, rows],
-  );
-  const threads = useMemo(() => windowed.map(toSidebarThread), [windowed]);
-  const settledAtById = useMemo(
-    () => new Map(windowed.map((row) => [row.id, row.settledAt])),
-    [windowed],
-  );
-
-  // No read after the mutation: the backend publishes on the lifecycle
-  // channel, and that subscription already refreshes every client.
-  const unsettle = useCallback(
+export function useUnsettle(): (threadId: string) => void {
+  const sdk = useSdk();
+  return useCallback(
     (threadId: string) => {
-      void rpc.call("unsettle", { threadId }).then(
-        (result) => {
-          if (!result.ok) toast.error("Couldn’t restore the thread.");
-          return undefined;
-        },
+      // Unarchiving reaches the thread's host, which can be offline. The row
+      // stays on the shelf, which is where the thread still is.
+      void sdk.threads.unarchive({ threadId }).then(
+        () => undefined,
         (error: unknown) => {
           toast.error(error instanceof Error ? error.message : "Couldn’t restore the thread.");
           return undefined;
         },
       );
     },
-    [rpc],
-  );
-
-  return useMemo(
-    () => ({
-      threads,
-      ready,
-      unsettle,
-      settledAtFor: (thread: PluginSidebarThread) => settledAtById.get(thread.id) ?? null,
-    }),
-    [ready, threads, unsettle, settledAtById],
+    [sdk],
   );
 }

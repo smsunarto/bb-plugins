@@ -1,16 +1,13 @@
 /**
- * The Settled shelf's own thread rows.
+ * The Settled shelf's window over bb's archive.
  *
- * Settling is bb's archive, and the host's sidebar view is built from queries
- * pinned to `archived: false` — an archived thread is evicted from that cache,
- * so `experimental_useSidebarThreads` can never report it, and `isArchived`
- * on a reported thread is always false.
- *
- * So the plugin fetches bb's archived threads through its backend and maps
- * them into the shape the rest of the list already speaks. These functions are
- * that mapping, kept pure so they can be tested without a bb server.
+ * Settling is bb's archive. The host's sidebar view reports archived threads
+ * when asked for the `"archived"` lifecycle, newest archive first, one page at
+ * a time. These functions decide which of those rows the shelf draws and when
+ * an older page is worth asking for. They are pure so they can be tested
+ * without a bb server.
  */
-import type { PluginSidebarThread, PluginSidebarThreadIndicator } from "@get-bb/plugin-sdk";
+import type { PluginSidebarThread, PluginSidebarThreadsState } from "@get-bb/plugin-sdk/app";
 
 /**
  * How far back the Settled shelf reaches.
@@ -36,221 +33,29 @@ export function isWithinSettledWindow(
   return settledAt > now - windowMs;
 }
 
-/** One archived thread as the plugin's backend reports it. */
-export interface SettledThreadRow {
-  id: string;
-  /** bb's `archivedAt`. The shelf's window is measured on this. */
-  settledAt: number;
-  projectId: string;
-  title: string | null;
-  titleFallback: string | null;
-  parentThreadId: string | null;
-  sectionId: string | null;
-  /** bb's `originKind`; anything this sidebar does not draw becomes null. */
-  originKind: string | null;
-  originPluginId: string | null;
-  providerId: string;
-  /** bb's thread status: "active", "starting", "stopping", "idle", "error". */
-  status: string;
-  hasPendingInteraction: boolean;
-  isPinned: boolean;
-  activity: {
-    workflows: number;
-    backgroundAgents: number;
-    backgroundCommands: number;
-    planMode: number;
-    goals: number;
-  };
-  createdAt: number;
-  updatedAt: number;
-  lastReadAt: number | null;
-  latestAttentionAt: number;
+/** Whether the list draws this thread: every active thread, and a settle inside the window. */
+export function isShelvedThread(thread: PluginSidebarThread, now: number): boolean {
+  if (!thread.isArchived) return true;
+  return thread.archivedAt !== null && isWithinSettledWindow(thread.archivedAt, now);
 }
 
-const SETTLED_ROW_SCALAR_FIELDS = {
-  id: true,
-  settledAt: true,
-  projectId: true,
-  title: true,
-  titleFallback: true,
-  parentThreadId: true,
-  sectionId: true,
-  originKind: true,
-  originPluginId: true,
-  providerId: true,
-  status: true,
-  hasPendingInteraction: true,
-  isPinned: true,
-  createdAt: true,
-  updatedAt: true,
-  lastReadAt: true,
-  latestAttentionAt: true,
-} satisfies Record<Exclude<keyof SettledThreadRow, "activity">, true>;
-
-const SETTLED_ACTIVITY_FIELDS = {
-  workflows: true,
-  backgroundAgents: true,
-  backgroundCommands: true,
-  planMode: true,
-  goals: true,
-} satisfies Record<keyof SettledThreadRow["activity"], true>;
-
-const settledRowScalarKeys = Object.keys(SETTLED_ROW_SCALAR_FIELDS) as Array<
-  keyof typeof SETTLED_ROW_SCALAR_FIELDS
->;
-const settledActivityKeys = Object.keys(SETTLED_ACTIVITY_FIELDS) as Array<
-  keyof typeof SETTLED_ACTIVITY_FIELDS
->;
-
-export function settledRowsMatch(
-  current: readonly SettledThreadRow[],
-  next: readonly SettledThreadRow[],
+/**
+ * Whether the shelf should ask the host for the next, older archive page.
+ *
+ * bb hands the archive out newest first, so once one loaded archive falls
+ * outside the window every later page is older still and nothing more is
+ * fetched. A page already in flight or one that failed is left alone: the
+ * host retries the failure on its own schedule, and a loop on top of it would
+ * hammer the server.
+ */
+export function needsOlderArchivePage(
+  threads: readonly PluginSidebarThread[],
+  archived: PluginSidebarThreadsState["experimental_archived"],
+  now: number,
 ): boolean {
-  if (current === next) return true;
-  if (current.length !== next.length) return false;
-
-  return current.every((row, index) => {
-    const nextRow = next[index];
-    if (row === nextRow) return true;
-    if (nextRow === undefined) return false;
-    for (const key of settledRowScalarKeys) {
-      if (row[key] !== nextRow[key]) return false;
-    }
-    for (const key of settledActivityKeys) {
-      if (row.activity[key] !== nextRow.activity[key]) return false;
-    }
-    return true;
-  });
-}
-
-/** bb's own rule: read means the last read caught up with the last attention. */
-export function isUnread(row: SettledThreadRow): boolean {
-  return (row.lastReadAt ?? 0) < row.latestAttentionAt;
-}
-
-function isWorkingStatus(status: string): boolean {
-  return status === "active" || status === "starting" || status === "stopping";
-}
-
-/**
- * The glyph a settled row draws. Almost always "none" — a thread is archived
- * once its work is done — but mapped faithfully so an archived thread that is
- * somehow still working or asking says so on its row.
- */
-export function settledIndicator(row: SettledThreadRow): {
-  indicator: PluginSidebarThreadIndicator;
-  indicatorLabel: string | null;
-} {
-  if (row.hasPendingInteraction) {
-    return {
-      indicator: "waiting-for-input",
-      indicatorLabel: "Thread needs user input",
-    };
+  if (archived === null || archived.status !== "ready") return false;
+  if (!archived.hasNextPage || archived.isFetchingNextPage || archived.isFetchNextPageError) {
+    return false;
   }
-  const { activity } = row;
-  const hasLiveWork =
-    activity.workflows > 0 ||
-    activity.backgroundAgents > 0 ||
-    activity.backgroundCommands > 0 ||
-    activity.planMode > 0 ||
-    activity.goals > 0;
-  if (hasLiveWork || isWorkingStatus(row.status)) {
-    return { indicator: "runtime", indicatorLabel: "Thread is working" };
-  }
-  if (isUnread(row)) {
-    return row.status === "error"
-      ? {
-          indicator: "unread-error",
-          indicatorLabel: "Thread ended with an error",
-        }
-      : {
-          indicator: "unread-success",
-          indicatorLabel: "Thread has unread activity",
-        };
-  }
-  return { indicator: "none", indicatorLabel: null };
-}
-
-/** bb reports status as a string; anything outside the sidebar enum reads as idle. */
-function sidebarStatusFor(value: string): PluginSidebarThread["status"] {
-  switch (value) {
-    case "active":
-    case "error":
-    case "idle":
-    case "pending":
-    case "starting":
-    case "stopping":
-      return value;
-    default:
-      return "idle";
-  }
-}
-
-/** Only the one kind this sidebar draws a parent chip for survives. */
-function originKindFor(value: string | null): "fork" | null {
-  return value === "fork" ? value : null;
-}
-
-/**
- * A settled row as a sidebar thread.
- *
- * `environment` and `host` are null: the Settled shelf draws one line — title,
- * glyph, time — and nothing on it reads a branch or a machine.
- */
-export function toSidebarThread(row: SettledThreadRow): PluginSidebarThread {
-  const { indicator, indicatorLabel } = settledIndicator(row);
-  return {
-    id: row.id,
-    projectId: row.projectId,
-    title: row.title,
-    titleFallback: row.titleFallback,
-    displayTitle: row.title?.trim() || row.titleFallback?.trim() || "Untitled thread",
-    parentThreadId: row.parentThreadId,
-    lifecycleOwnerThreadId: null,
-    sourceThreadId: null,
-    sectionId: row.sectionId,
-    originKind: originKindFor(row.originKind),
-    originPluginId: row.originPluginId,
-    providerId: row.providerId,
-    status: sidebarStatusFor(row.status),
-    runtimeStatus: sidebarStatusFor(row.status),
-    queuedWork: "none",
-    hasPendingInteraction: row.hasPendingInteraction,
-    activity: row.activity,
-    indicator,
-    indicatorLabel,
-    isUnread: isUnread(row),
-    isPinned: row.isPinned,
-    pinnedAt: null,
-    pinSortKey: null,
-    // The one field the host would never report as true, and the reason this
-    // whole path exists. The inbox shelves on it.
-    isArchived: true,
-    archivedAt: row.settledAt,
-    href: `/projects/${row.projectId}/threads/${row.id}`,
-    isHidden: false,
-    environment: null,
-    host: null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    lastReadAt: row.lastReadAt,
-    latestAttentionAt: row.latestAttentionAt,
-  };
-}
-
-/**
- * The host's threads plus the settled ones it cannot see.
- *
- * The host wins every collision. Its view is live and this one is a round trip
- * old, so a thread bb has already unarchived — an un-settle that landed while
- * the fetch was in flight — must not be dragged back to the shelf by a stale
- * copy of itself.
- */
-export function mergeSettledThreads(
-  hostThreads: readonly PluginSidebarThread[],
-  settledThreads: readonly PluginSidebarThread[],
-): PluginSidebarThread[] {
-  if (settledThreads.length === 0) return [...hostThreads];
-  const hostIds = new Set(hostThreads.map((thread) => thread.id));
-  return [...hostThreads, ...settledThreads.filter((thread) => !hostIds.has(thread.id))];
+  return threads.every((thread) => !thread.isArchived || isShelvedThread(thread, now));
 }

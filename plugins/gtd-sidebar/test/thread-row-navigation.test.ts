@@ -15,7 +15,6 @@ import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
 import type { PinnedOrderApi } from "../hooks/use-pinned-order.ts";
-import type { SettledThreadsApi } from "../hooks/use-settled-threads.ts";
 
 if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   it("thread row navigation passes the isolated React suite", () => {
@@ -70,7 +69,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     actions: Partial<PluginSidebarThreadActions>;
     navigate: Partial<BbNavigate>;
     lifecycle: LifecycleApi;
-    settled: SettledThreadsApi;
+    unarchive: (args: { threadId: string }) => Promise<{ ok: true }>;
     pinned: PinnedOrderApi;
     pullRequests: Readonly<Record<string, PluginSidebarPullRequest>>;
     splitThreads: readonly string[];
@@ -92,6 +91,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   mock.module("@get-bb/plugin-sdk/app", () => ({
     ...sdk,
     experimental_useSidebarThreads: () => useHost().sidebar,
+    useSdk: () => ({ threads: { unarchive: useHost().unarchive } }),
     experimental_useSidebarThreadActions: useActions,
     useBbNavigate: () => ({ ...sdk.useBbNavigate(), ...useHost().navigate }),
     experimental_useSidebarThreadSplit: (threadId: string) => {
@@ -122,9 +122,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     }),
   }));
   mock.module("../hooks/use-lifecycle.ts", () => ({ useLifecycle: () => useHost().lifecycle }));
-  mock.module("../hooks/use-settled-threads.ts", () => ({
-    useSettledThreads: () => useHost().settled,
-  }));
   mock.module("../hooks/use-pinned-order.ts", () => ({
     usePinnedOrder: () => useHost().pinned,
   }));
@@ -194,6 +191,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     };
   }
 
+  // Settled a minute ago: inside the shelf's window on the inbox's own clock.
+  function settledThread(id: string) {
+    return thread(id, { isArchived: true, archivedAt: Date.now() - 60_000 });
+  }
+
   const wakeAt = Date.now() + 3_600_000;
   function lifecycle(snoozedIds: readonly string[] = []) {
     return {
@@ -234,7 +236,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       actions: actions(),
       navigate: {},
       lifecycle: lifecycle(),
-      settled: { threads: [], ready: true, unsettle: () => {}, settledAtFor: () => null },
+      unarchive: async () => ({ ok: true }),
       pinned: { pinOrderKeyFor: () => null },
       pullRequests: {},
       splitThreads: [],
@@ -410,14 +412,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           thread("c"),
           thread("waiting", { indicator: "runtime" }),
           thread("snoozed"),
+          settledThread("settled"),
         ]);
         host.lifecycle = lifecycle(["snoozed"]);
-        host.settled = {
-          ready: true,
-          threads: [thread("settled", { isArchived: true })],
-          unsettle: () => {},
-          settledAtFor: () => 50,
-        };
         const view = mount(host, { activeThreadId: "a", isCompactViewport });
         assert.ok(view.slot.container.querySelector("[data-gtd-sidebar-thread-list]"));
         assert.equal(row(view.slot, "a").parentElement!.dataset.sidebarThreadActive, "true");
@@ -1053,22 +1050,17 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("uses current lifecycle actions and general navigation for settled mobile rows", () => {
       const oldLifecycle = lifecycle(["snoozed"]);
-      const oldRestore = mock<SettledThreadsApi["unsettle"]>(() => {});
+      const oldRestore = mock<HostState["unarchive"]>(async () => ({ ok: true }));
       const host = {
-        ...hostState([thread("active"), thread("snoozed")]),
+        ...hostState([thread("active"), thread("snoozed"), settledThread("settled")]),
         lifecycle: oldLifecycle,
-        settled: {
-          ready: true,
-          threads: [thread("settled", { isArchived: true })],
-          unsettle: oldRestore,
-          settledAtFor: () => 50,
-        },
+        unarchive: oldRestore,
       };
       const oldNavigate = mock(() => {});
       const view = mount(host, { isCompactViewport: true, onNavigate: oldNavigate });
       expandParked(view.slot);
       const currentLifecycle = lifecycle(["snoozed"]);
-      const currentRestore = mock<SettledThreadsApi["unsettle"]>(() => {});
+      const currentRestore = mock<HostState["unarchive"]>(async () => ({ ok: true }));
       const currentActions = actions();
       const toThread = mock<BbNavigate["toThread"]>(() => {});
       const onNavigate = mock(() => {});
@@ -1079,7 +1071,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           lifecycle: currentLifecycle,
           actions: currentActions,
           navigate: { toThread },
-          settled: { ...host.settled, unsettle: currentRestore },
+          unarchive: currentRestore,
         },
       });
       view.updateInbox({ onNavigate });
@@ -1094,7 +1086,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.click(rowButton(view.slot, "snoozed", "Wake now"));
       fireEvent.click(rowButton(view.slot, "settled", "Un-settle"));
       assert.deepEqual(currentLifecycle.unsnooze.mock.calls, [["snoozed"]]);
-      assert.deepEqual(currentRestore.mock.calls, [["settled"]]);
+      assert.deepEqual(currentRestore.mock.calls, [[{ threadId: "settled" }]]);
       assert.equal(oldLifecycle.unsnooze.mock.calls.length, 0);
       assert.equal(oldRestore.mock.calls.length, 0);
       assert.equal(oldNavigate.mock.calls.length, 0);
@@ -1156,14 +1148,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("opens settled threads in a split from the menu and cancels rename without saving", async () => {
       const currentActions = actions();
-      const host = hostState([thread("selected")]);
+      const host = hostState([thread("selected"), settledThread("settled")]);
       host.actions = currentActions;
-      host.settled = {
-        threads: [thread("settled", { isArchived: true })],
-        ready: true,
-        unsettle: () => {},
-        settledAtFor: () => 1,
-      };
       const view = mount(host, { activeThreadId: "selected" });
       fireEvent.click(view.slot.getByRole("button", { name: "Settled (1)" }));
       fireEvent.contextMenu(row(view.slot, "settled"));

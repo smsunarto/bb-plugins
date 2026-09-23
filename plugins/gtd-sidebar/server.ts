@@ -1,6 +1,6 @@
-// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store and the two
-// reads of bb's thread table the sidebar view can't reach: the Settled
-// shelf's archived rows, and the pinned order the host mapping drops.
+// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store and the one
+// read of bb's thread table the sidebar view can't reach: the pinned order
+// the host mapping drops.
 //
 // Snoozes live in the plugin's own SQLite database, never on bb's thread.
 // Putting them on the thread would mean a schema change, a wire change, and a
@@ -14,7 +14,6 @@ import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
 import { createThreadNester } from "./lib/nest-thread.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
-import { isWithinSettledWindow } from "./lib/settled-threads.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
@@ -74,45 +73,6 @@ export const gtdSidebarRpcContract = defineRpcContract({
       ),
     }),
   },
-  // The Settled shelf's rows. bb's sidebar view is built from queries pinned
-  // to `archived: false`, so an archived thread never reaches the frontend
-  // through the host. It comes through here instead, and only for the last
-  // day: see `SETTLED_WINDOW_MS`. Fields are deliberately loose (`status`,
-  // `originKind` as plain strings) so a new bb value degrades in the mapper
-  // rather than failing output validation and blanking the shelf.
-  listSettledThreads: {
-    input: z.object({}),
-    output: z.object({
-      threads: z.array(
-        z.object({
-          id: z.string(),
-          settledAt: z.number(),
-          projectId: z.string(),
-          title: z.string().nullable(),
-          titleFallback: z.string().nullable(),
-          parentThreadId: z.string().nullable(),
-          sectionId: z.string().nullable(),
-          originKind: z.string().nullable(),
-          originPluginId: z.string().nullable(),
-          providerId: z.string(),
-          status: z.string(),
-          hasPendingInteraction: z.boolean(),
-          isPinned: z.boolean(),
-          activity: z.object({
-            workflows: z.number(),
-            backgroundAgents: z.number(),
-            backgroundCommands: z.number(),
-            planMode: z.number(),
-            goals: z.number(),
-          }),
-          createdAt: z.number(),
-          updatedAt: z.number(),
-          lastReadAt: z.number().nullable(),
-          latestAttentionAt: z.number(),
-        }),
-      ),
-    }),
-  },
   /**
    * bb's pinned order for the Pinned shelf. `pinSortKey` never reaches the
    * frontend — the host's sidebar thread mapping drops it — so the shelf
@@ -154,8 +114,6 @@ export const gtdSidebarRpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean() }),
   },
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
-  /** bb's unarchive. The thread comes back through the host's own view. */
-  unsettle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
   /**
    * bb's own project reorder, made from a group header. `previousProjectId`
    * and `nextProjectId` are the moved project's new neighbours in bb's order;
@@ -362,67 +320,6 @@ export default async function plugin(bb: BbPluginApi) {
         ),
       };
     },
-    /**
-     * bb's archived threads from the last day, whoever archived them: the
-     * shelf is a view of bb's archive, so a thread archived from bb's own
-     * sidebar sits on it too. One archived longer ago keeps its archive and
-     * simply stops being drawn.
-     *
-     * The window is applied here as well as on the frontend. The frontend's is
-     * the live one — it re-cuts on its own clock, so a row ages off screen
-     * without a refetch — and this one keeps the response proportional to the
-     * shelf instead of to the whole archive.
-     */
-    async listSettledThreads() {
-      const now = Date.now();
-      const archived = await listThreads(true);
-      return {
-        threads: archived.flatMap((thread) => {
-          if (thread.archivedAt === null || !isWithinSettledWindow(thread.archivedAt, now)) {
-            return [];
-          }
-          return [
-            {
-              id: thread.id,
-              settledAt: thread.archivedAt,
-              projectId: thread.projectId,
-              title: thread.title,
-              titleFallback: thread.titleFallback,
-              parentThreadId: thread.parentThreadId,
-              sectionId: thread.sectionId,
-              originKind: thread.originKind,
-              originPluginId: thread.originPluginId,
-              providerId: thread.providerId,
-              status: thread.status,
-              hasPendingInteraction: thread.hasPendingInteraction,
-              isPinned: thread.pinnedAt !== null,
-              activity: {
-                workflows: thread.activity.activeWorkflowCount,
-                backgroundAgents: thread.activity.activeBackgroundAgentCount,
-                backgroundCommands: thread.activity.activeBackgroundCommandCount,
-                planMode: thread.activity.activePlanModeCount,
-                goals: thread.activity.activeGoalCount,
-              },
-              createdAt: thread.createdAt,
-              updatedAt: thread.updatedAt,
-              lastReadAt: thread.lastReadAt,
-              latestAttentionAt: thread.latestAttentionAt,
-            },
-          ];
-        }),
-      };
-    },
-    async unsettle({ threadId }) {
-      try {
-        await bb.sdk.threads.unarchive({ threadId });
-      } catch (error) {
-        // Unarchiving reaches the thread's host, which can be offline. The row
-        // stays on the shelf, which is where the thread still is.
-        bb.log.warn(`unarchive failed for thread ${threadId}: ${String(error)}`);
-        return { ok: false };
-      }
-      return { ok: true };
-    },
     async snooze({ threadId, snoozedUntil }) {
       const ids = await familyIds(threadId);
       const snoozedAt = Date.now();
@@ -475,16 +372,11 @@ export default async function plugin(bb: BbPluginApi) {
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
     clear(thread.id);
-    // Each shelf hears only about its own data changing. Bulk deletion of
-    // unrelated or old threads must not make every client scan the archive.
-    if (thread.archivedAt !== null && isWithinSettledWindow(thread.archivedAt, Date.now())) {
-      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "archive", threadId: thread.id });
-    }
   });
 
-  // One native feed routes pin and archive changes to only the client list
-  // that owns them. A snooze, pin, archive, or fold no longer fans out across
-  // every lifecycle-backed RPC in every open window.
+  // One native feed routes pin changes to only the client list that owns
+  // them. A snooze, pin, or fold no longer fans out across every
+  // lifecycle-backed RPC in every open window.
   bb.onDispose(
     bb.sdk.subscribe({
       event: "thread:changed",
@@ -492,9 +384,6 @@ export default async function plugin(bb: BbPluginApi) {
         if (event.id === undefined) return;
         if (event.changes.includes("pin-state-changed")) {
           bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "pin", threadId: event.id });
-        }
-        if (event.changes.includes("archived-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "archive", threadId: event.id });
         }
       },
     }),

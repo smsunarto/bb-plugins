@@ -19,16 +19,12 @@ type RefreshState =
   | { kind: "disposed" };
 
 type RefreshMode = "batch" | "immediate";
-export type LifecycleRefreshKind = "archive" | "collapsed" | "lifecycle" | "pin" | "naming";
+export type LifecycleRefreshKind = "collapsed" | "lifecycle" | "pin" | "naming";
 
 function refreshKind(payload: unknown): LifecycleRefreshKind | null {
   if (typeof payload !== "object" || payload === null || !("kind" in payload)) return null;
   const kind = payload.kind;
-  return kind === "archive" ||
-    kind === "collapsed" ||
-    kind === "lifecycle" ||
-    kind === "naming" ||
-    kind === "pin"
+  return kind === "collapsed" || kind === "lifecycle" || kind === "naming" || kind === "pin"
     ? kind
     : null;
 }

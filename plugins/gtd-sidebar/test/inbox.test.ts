@@ -390,12 +390,10 @@ describe("inbox families", () => {
         thread({ id: "renamed", latestAttentionAt: 10, updatedAt: 900 }),
         thread({ id: "active", latestAttentionAt: 50, updatedAt: 10 }),
         thread({ id: "waiting-new", indicator: "runtime", updatedAt: 20, latestAttentionAt: 1 }),
-        thread({ id: "settled-first", isArchived: true }),
-        thread({ id: "settled-second", isArchived: true }),
+        thread({ id: "settled-first", isArchived: true, archivedAt: 1 }),
+        thread({ id: "settled-second", isArchived: true, archivedAt: 500 }),
       ],
       active,
-      "",
-      { settledAtFor: (item) => ({ "settled-first": 1, "settled-second": 500 })[item.id] ?? null },
     );
     assert.deepEqual(
       tree.map((node) => node.thread.id),
@@ -498,13 +496,11 @@ describe("shelf arrival order", () => {
   it("sorts settled by when it settled, not by input order", () => {
     const tree = buildInboxTree(
       [
-        thread({ id: "old", isArchived: true }),
-        thread({ id: "new", isArchived: true }),
-        thread({ id: "mid", isArchived: true }),
+        thread({ id: "old", isArchived: true, archivedAt: 10 }),
+        thread({ id: "new", isArchived: true, archivedAt: 30 }),
+        thread({ id: "mid", isArchived: true, archivedAt: 20 }),
       ],
       active,
-      "",
-      { settledAtFor: (item) => ({ old: 10, mid: 20, new: 30 })[item.id] ?? null },
     );
     assert.deepEqual(ids(tree), ["new", "mid", "old"]);
   });
