@@ -3,7 +3,7 @@
 // `experimental_providerBridge` export of the `bb.host` artifact — which
 // spawns the Amp CLI directly and drives it over its stream-json execute
 // wire. No separate bridge process, no launch spec.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { cliCommand, defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { type SentryPluginReporter } from "@bb-kit/sentry/node";
 import { sentryPluginTelemetry } from "@bb-kit/sentry/telemetry";
 import { existsSync } from "node:fs";
@@ -58,18 +58,24 @@ const orbUsageViewSchema = z.discriminatedUnion("state", [
 
 export const rpcContract = defineRpcContract({
   getOrbUsage: {
+    experimental_description:
+      "Which Amp thread a bb thread maps to and whether it runs on an Orb machine; hidden for non-Amp threads.",
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: orbUsageViewSchema,
   },
   getOrbIntent: {
+    experimental_description: "Whether the next new Amp thread is armed to run on an Orb machine.",
     input: z.object({}).strict(),
     output: z.object({ armed: z.boolean() }).strict(),
   },
   setOrbIntent: {
+    experimental_description: "Arm or disarm Orb execution for the next new Amp thread.",
     input: z.object({ armed: z.boolean() }).strict(),
     output: z.object({ armed: z.boolean() }).strict(),
   },
   getOracleReport: {
+    experimental_description:
+      "Load a stored Amp Oracle report (request, response, and trace) by the id an amp/oracle timeline row carries.",
     input: z.object({ reportId: z.string().uuid() }).strict(),
     output: z.object({
       report: z
@@ -144,59 +150,69 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   /** Amp CLI path the registration resolved; `bb amp status` reuses it. */
   let ampCliPath: string | null = null;
 
-  bb.rpc.register(rpcContract, {
-    async getOrbUsage({ threadId }) {
-      return observeFailure(reporter, "rpc.execute", "getOrbUsage", async () => {
-        const thread = await bb.sdk.threads.get({ threadId });
-        if (thread.providerId !== AMP_AGENT.providerId) return { state: "hidden" as const };
-        const rows = await bb.sdk.threads.events.list({
-          threadId,
-          types: ["thread/extensionState/updated"],
-          order: "desc",
-          limit: String(THREAD_LINK_SCAN_LIMIT),
+  bb.rpc.register(
+    rpcContract,
+    {
+      async getOrbUsage({ threadId }) {
+        return observeFailure(reporter, "rpc.execute", "getOrbUsage", async () => {
+          const thread = await bb.sdk.threads.get({ threadId });
+          if (thread.providerId !== AMP_AGENT.providerId) return { state: "hidden" as const };
+          const rows = await bb.sdk.threads.events.list({
+            threadId,
+            types: ["thread/extensionState/updated"],
+            order: "desc",
+            limit: String(THREAD_LINK_SCAN_LIMIT),
+          });
+          for (const row of rows) {
+            if (row.type !== "thread/extensionState/updated") continue;
+            if (row.data.kind !== AMP_THREAD_LINK_KIND) continue;
+            // Ingest already validated the payload against this same schema; a
+            // miss here means the schemas drifted, and hiding is the safe answer.
+            const link = threadLinkStateSchema.safeParse(row.data.payload);
+            return link.success
+              ? threadLinkToOrbUsageView(link.data)
+              : { state: "hidden" as const };
+          }
+          return { state: "hidden" as const };
         });
-        for (const row of rows) {
-          if (row.type !== "thread/extensionState/updated") continue;
-          if (row.data.kind !== AMP_THREAD_LINK_KIND) continue;
-          // Ingest already validated the payload against this same schema; a
-          // miss here means the schemas drifted, and hiding is the safe answer.
-          const link = threadLinkStateSchema.safeParse(row.data.payload);
-          return link.success ? threadLinkToOrbUsageView(link.data) : { state: "hidden" as const };
-        }
-        return { state: "hidden" as const };
-      });
+      },
+      // The Orb toggle arms the next thread here. The provider bridge consumes
+      // the intent at thread/start in its own process, so the slot is a file
+      // under the plugin's bridge data directory (src/orb-intent.ts). The path
+      // derives from experimental_dataDir but only ever touches the plugin's
+      // own bridge storage, never a bb-managed file.
+      getOrbIntent() {
+        return observeFailure(reporter, "rpc.execute", "getOrbIntent", () => ({
+          armed: readOrbIntent(bridgeDataDirFor(bb.server.experimental_dataDir)),
+        }));
+      },
+      setOrbIntent({ armed }) {
+        return observeFailure(reporter, "rpc.execute", "setOrbIntent", () => {
+          const dir = bridgeDataDirFor(bb.server.experimental_dataDir);
+          if (armed) armOrbIntent(dir);
+          else disarmOrbIntent(dir);
+          return { armed };
+        });
+      },
+      getOracleReport({ reportId }) {
+        return observeFailure(reporter, "rpc.execute", "getOracleReport", () => {
+          const report = loadOracleReport(reportId);
+          return report === null
+            ? {
+                report: null,
+                error:
+                  "The Oracle report is unavailable. Open the native tool call to view its output.",
+              }
+            : { report, error: null };
+        });
+      },
     },
-    // The Orb toggle arms the next thread here. The provider bridge consumes
-    // the intent at thread/start in its own process, so the slot is a file
-    // under the plugin's bridge data directory (src/orb-intent.ts). The path
-    // derives from experimental_dataDir but only ever touches the plugin's
-    // own bridge storage, never a bb-managed file.
-    getOrbIntent() {
-      return observeFailure(reporter, "rpc.execute", "getOrbIntent", () => ({
-        armed: readOrbIntent(bridgeDataDirFor(bb.server.experimental_dataDir)),
-      }));
+    {
+      experimental_discoverable: true,
+      experimental_description:
+        "Amp provider state: Orb execution intent and usage per thread, and stored Oracle reports.",
     },
-    setOrbIntent({ armed }) {
-      return observeFailure(reporter, "rpc.execute", "setOrbIntent", () => {
-        const dir = bridgeDataDirFor(bb.server.experimental_dataDir);
-        if (armed) armOrbIntent(dir);
-        else disarmOrbIntent(dir);
-        return { armed };
-      });
-    },
-    getOracleReport({ reportId }) {
-      return observeFailure(reporter, "rpc.execute", "getOracleReport", () => {
-        const report = loadOracleReport(reportId);
-        return report === null
-          ? {
-              report: null,
-              error:
-                "The Oracle report is unavailable. Open the native tool call to view its output.",
-            }
-          : { report, error: null };
-      });
-    },
-  });
+  );
 
   async function resolveDataDir(): Promise<string> {
     try {
@@ -317,26 +333,24 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
     return lines;
   }
 
-  bb.cli.register({
-    name: "amp",
-    summary: "Inspect the Amp provider integration.",
-    commands: [
-      {
-        name: "status",
-        summary: "Check the Amp CLI, the bridge bundle, bb config, and provider registrations",
-        usage: "amp status",
-      },
-    ],
-    async run(argv) {
-      return observeFailure(reporter, "command.execute", argv[0] ?? "status", async () => {
-        const command = argv[0] ?? "status";
-        if (command === "status") {
-          return { exitCode: 0, stdout: `${(await statusLines()).join("\n")}\n` };
-        }
-        return { exitCode: 2, stderr: `Unknown subcommand "${command}". Use "bb amp status".\n` };
-      });
+  const status = cliCommand({
+    summary: "Check the Amp CLI, the bridge bundle, bb config, and provider registrations",
+    async run() {
+      return observeFailure(reporter, "command.execute", "status", async () => ({
+        exitCode: 0,
+        stdout: `${(await statusLines()).join("\n")}\n`,
+      }));
     },
   });
+  bb.cli.register(
+    defineCli({
+      name: "amp",
+      summary: "Inspect the Amp provider integration.",
+      // Bare `bb amp` has always printed the status report; keep that.
+      root: status,
+      commands: { status },
+    }),
+  );
 
   // ACP-era kv rows (thread links, orb usage, archive watches). New state
   // lives on the thread's own extension-state events, which leave with the
