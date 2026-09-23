@@ -27,7 +27,7 @@
   "type": "module",
   "engines": {
     "bb": ">=0.42.1 <1.0.0",
-    "bbPluginSdk": ">=0.4.47"
+    "bbPluginSdk": ">=0.4.104"
   },
   "bb": {
     "name": "Agentation",

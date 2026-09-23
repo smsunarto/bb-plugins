@@ -10,7 +10,13 @@
 //   agent tools    the loop an agent actually runs (pending → fix → resolve)
 //   bb agentation  the same loop for agents that prefer a shell
 
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  PluginCliError,
+  cliCommand,
+  defineCli,
+  defineRpcContract,
+  type BbPluginApi,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 import {
@@ -1102,221 +1108,241 @@ export default async function plugin(bb: BbPluginApi) {
   // CLI
   // -------------------------------------------------------------------------
 
-  bb.cli.register({
-    name: "agentation",
-    summary: "Read and resolve visual feedback left on the bb interface",
-    commands: [
-      {
-        name: "pending",
-        summary: "Show every open annotation",
-        usage: "bb agentation pending [--plugin <id>] [--json]",
+  const JSON_OPTION = { type: "boolean", description: "Emit machine-readable JSON" } as const;
+  const ANNOTATION_ID = {
+    name: "annotationId",
+    description: "Annotation id, as `bb agentation pending` prints it",
+    required: true,
+  } as const;
+
+  const ok = (stdout: string) => ({ exitCode: 0, stdout });
+
+  function noAnnotation(id: string): PluginCliError {
+    return new PluginCliError(`No annotation ${id}.`, {
+      code: "annotation_not_found",
+      hint: "Run `bb agentation pending` for the open annotation ids.",
+    });
+  }
+
+  function renderAnnotationList(
+    annotations: ReturnType<typeof listAnnotations>,
+    json: boolean,
+    empty: string,
+  ) {
+    if (json) return ok(JSON.stringify(annotations, null, 2));
+    if (annotations.length === 0) return ok(empty);
+    return ok(annotations.map(renderAnnotationLine).join("\n"));
+  }
+
+  function closeAnnotation(id: string, status: AnnotationStatus, note: readonly string[]) {
+    const annotation = setAnnotationStatus(db, {
+      annotationId: id,
+      status,
+      by: "agent",
+      resolution: note.join(" ") || null,
+    });
+    if (!annotation) throw noAnnotation(id);
+    broadcast({ type: "annotations", sessionId: annotation.sessionId });
+    return ok(`${status} ${id}`);
+  }
+
+  bb.cli.register(
+    defineCli({
+      name: "agentation",
+      summary: "Read and resolve visual feedback left on the bb interface",
+      commands: {
+        pending: cliCommand({
+          summary: "Show every open annotation",
+          options: {
+            plugin: {
+              type: "string",
+              placeholder: "id",
+              description: "Only annotations left on this plugin's UI",
+            },
+            json: JSON_OPTION,
+          },
+          run(input) {
+            return renderAnnotationList(
+              listAnnotations(db, { statuses: openStatuses, pluginId: input.options.plugin }),
+              input.options.json,
+              "No open annotations.",
+            );
+          },
+        }),
+        staged: cliCommand({
+          summary: "Show annotations waiting for a thread",
+          options: { json: JSON_OPTION },
+          run(input) {
+            return renderAnnotationList(
+              listStagedAnnotations(db),
+              input.options.json,
+              "No staged annotations.",
+            );
+          },
+        }),
+        send: cliCommand({
+          summary: "Assign staged annotations to a thread",
+          positionals: [
+            {
+              name: "threadId",
+              description: "Thread that receives the annotations",
+              required: true,
+            },
+            {
+              name: "annotationId",
+              description: "Staged annotation ids; omit to send every staged annotation",
+              variadic: true,
+            },
+          ],
+          async run(input) {
+            const requestedIds = input.positionals.annotationId;
+            const annotationIds =
+              requestedIds.length > 0
+                ? requestedIds
+                : listStagedAnnotations(db).map((annotation) => annotation.id);
+            if (annotationIds.length === 0) return ok("No staged annotations.");
+
+            const result = await sendStagedToThread(annotationIds, input.positionals.threadId);
+            if (result.outcome === "stale") {
+              throw new PluginCliError(result.message, { code: "stale_staging" });
+            }
+            return ok(result.message);
+          },
+        }),
+        restage: cliCommand({
+          summary: "Return an assigned annotation to staging",
+          positionals: [ANNOTATION_ID],
+          run(input) {
+            const id = input.positionals.annotationId;
+            if (!restageStoredAnnotation(db, id)) {
+              throw new PluginCliError(`Annotation ${id} is not an assigned open annotation.`, {
+                code: "not_assigned",
+                hint: "Run `bb agentation pending` to see each annotation's state.",
+              });
+            }
+            broadcast({ type: "routing", sessionId: null });
+            return ok(`staged ${id}`);
+          },
+        }),
+        sessions: cliCommand({
+          summary: "List annotated pages",
+          run() {
+            const sessions = listSessions(db, {});
+            if (sessions.length === 0) return ok("No annotated pages yet.");
+            return ok(
+              sessions
+                .map(
+                  (session) =>
+                    `${session.id}  ${session.route.padEnd(40)} pending=${session.counts.pending} total=${session.counts.total}`,
+                )
+                .join("\n"),
+            );
+          },
+        }),
+        show: cliCommand({
+          summary: "Show one annotation in full",
+          positionals: [ANNOTATION_ID],
+          run(input) {
+            const annotation = getAnnotation(db, input.positionals.annotationId);
+            if (!annotation) throw noAnnotation(input.positionals.annotationId);
+            return ok(renderAnnotation(annotation));
+          },
+        }),
+        acknowledge: cliCommand({
+          summary: "Mark an annotation as seen",
+          positionals: [
+            ANNOTATION_ID,
+            {
+              name: "note",
+              description: "Optional note stored with the annotation",
+              variadic: true,
+            },
+          ],
+          run(input) {
+            return closeAnnotation(
+              input.positionals.annotationId,
+              "acknowledged",
+              input.positionals.note,
+            );
+          },
+        }),
+        resolve: cliCommand({
+          summary: "Mark an annotation as fixed",
+          positionals: [
+            ANNOTATION_ID,
+            { name: "summary", description: "What changed, shown to the human", variadic: true },
+          ],
+          run(input) {
+            return closeAnnotation(
+              input.positionals.annotationId,
+              "resolved",
+              input.positionals.summary,
+            );
+          },
+        }),
+        dismiss: cliCommand({
+          summary: "Decline an annotation, with a reason",
+          positionals: [
+            ANNOTATION_ID,
+            { name: "reason", description: "Why the annotation is declined", variadic: true },
+          ],
+          run(input) {
+            if (input.positionals.reason.length === 0) {
+              throw new PluginCliError("dismiss needs a reason", {
+                code: "missing_required",
+                hint: "usage: bb agentation dismiss <annotationId> <reason…>",
+              });
+            }
+            return closeAnnotation(
+              input.positionals.annotationId,
+              "dismissed",
+              input.positionals.reason,
+            );
+          },
+        }),
+        reply: cliCommand({
+          summary: "Ask the human a question on an annotation",
+          positionals: [
+            ANNOTATION_ID,
+            { name: "message", description: "Question or note for the human", variadic: true },
+          ],
+          run(input) {
+            const id = input.positionals.annotationId;
+            const message = input.positionals.message.join(" ");
+            if (!message) {
+              throw new PluginCliError("reply needs a message", {
+                code: "missing_required",
+                hint: "usage: bb agentation reply <annotationId> <message…>",
+              });
+            }
+            const annotation = appendThreadMessage(db, id, { role: "agent", content: message });
+            if (!annotation) throw noAnnotation(id);
+            broadcast({ type: "annotations", sessionId: annotation.sessionId });
+            return ok(`Replied on ${id}.`);
+          },
+        }),
+        toolbar: cliCommand({
+          summary: "Show or set whether the annotation toolbar is displayed",
+          positionals: [
+            { name: "state", description: "on or off; omit it to print the current state" },
+          ],
+          async run(input) {
+            const desired = input.positionals.state;
+            if (desired === undefined) return ok((await isToolbarEnabled()) ? "on" : "off");
+            if (desired !== "on" && desired !== "off") {
+              throw new PluginCliError(`toolbar state must be on or off, got "${desired}"`, {
+                code: "invalid_value",
+                hint: "usage: bb agentation toolbar [on|off]",
+              });
+            }
+            await bb.storage.kv.set(TOOLBAR_KEY, desired === "on");
+            broadcast({ type: "config", sessionId: null });
+            return ok(`toolbar ${desired}`);
+          },
+        }),
       },
-      {
-        name: "staged",
-        summary: "Show annotations waiting for a thread",
-        usage: "bb agentation staged [--json]",
-      },
-      {
-        name: "send",
-        summary: "Assign staged annotations to a thread",
-        usage: "bb agentation send <threadId> [annotationId…]",
-      },
-      {
-        name: "restage",
-        summary: "Return an assigned annotation to staging",
-        usage: "bb agentation restage <annotationId>",
-      },
-      {
-        name: "sessions",
-        summary: "List annotated pages",
-        usage: "bb agentation sessions",
-      },
-      {
-        name: "show",
-        summary: "Show one annotation in full",
-        usage: "bb agentation show <annotationId>",
-      },
-      {
-        name: "acknowledge",
-        summary: "Mark an annotation as seen",
-        usage: "bb agentation acknowledge <annotationId>",
-      },
-      {
-        name: "resolve",
-        summary: "Mark an annotation as fixed",
-        usage: "bb agentation resolve <annotationId> [summary…]",
-      },
-      {
-        name: "dismiss",
-        summary: "Decline an annotation, with a reason",
-        usage: "bb agentation dismiss <annotationId> <reason…>",
-      },
-      {
-        name: "reply",
-        summary: "Ask the human a question on an annotation",
-        usage: "bb agentation reply <annotationId> <message…>",
-      },
-      {
-        name: "toolbar",
-        summary: "Show or set whether the annotation toolbar is displayed",
-        usage: "bb agentation toolbar [on|off]",
-      },
-    ],
-    async run(argv) {
-      const [command, ...rest] = argv;
-      const flagIndex = rest.indexOf("--plugin");
-      const pluginId = flagIndex >= 0 ? (rest[flagIndex + 1] ?? undefined) : undefined;
-      const json = rest.includes("--json");
-      const positional = rest.filter(
-        (value, index) => !value.startsWith("--") && !(flagIndex >= 0 && index === flagIndex + 1),
-      );
-
-      const ok = (stdout: string) => ({ exitCode: 0, stdout });
-      const fail = (stderr: string) => ({ exitCode: 1, stderr });
-
-      switch (command) {
-        case undefined:
-        case "help":
-          return ok(
-            [
-              "bb agentation pending [--plugin <id>] [--json]",
-              "bb agentation staged [--json]",
-              "bb agentation send <threadId> [annotationId…]",
-              "bb agentation restage <annotationId>",
-              "bb agentation sessions",
-              "bb agentation show <annotationId>",
-              "bb agentation acknowledge <annotationId>",
-              "bb agentation resolve <annotationId> [summary…]",
-              "bb agentation dismiss <annotationId> <reason…>",
-              "bb agentation reply <annotationId> <message…>",
-              "bb agentation toolbar [on|off]",
-            ].join("\n"),
-          );
-
-        case "toolbar": {
-          const desired = positional[0];
-          if (desired === undefined) {
-            return ok((await isToolbarEnabled()) ? "on" : "off");
-          }
-          if (desired !== "on" && desired !== "off") {
-            return fail("usage: bb agentation toolbar [on|off]");
-          }
-          await bb.storage.kv.set(TOOLBAR_KEY, desired === "on");
-          broadcast({ type: "config", sessionId: null });
-          return ok(`toolbar ${desired}`);
-        }
-
-        case "pending": {
-          const annotations = listAnnotations(db, {
-            statuses: openStatuses,
-            pluginId,
-          });
-          if (json) return ok(JSON.stringify(annotations, null, 2));
-          if (annotations.length === 0) return ok("No open annotations.");
-          return ok(annotations.map(renderAnnotationLine).join("\n"));
-        }
-
-        case "staged": {
-          const annotations = listStagedAnnotations(db);
-          if (json) return ok(JSON.stringify(annotations, null, 2));
-          if (annotations.length === 0) return ok("No staged annotations.");
-          return ok(annotations.map(renderAnnotationLine).join("\n"));
-        }
-
-        case "send": {
-          const threadId = positional[0];
-          if (!threadId) {
-            return fail("usage: bb agentation send <threadId> [annotationId…]");
-          }
-          const requestedIds = positional.slice(1);
-          const annotationIds =
-            requestedIds.length > 0
-              ? requestedIds
-              : listStagedAnnotations(db).map((annotation) => annotation.id);
-          if (annotationIds.length === 0) return ok("No staged annotations.");
-
-          const result = await sendStagedToThread(annotationIds, threadId);
-          return result.outcome === "sent" ? ok(result.message) : fail(result.message);
-        }
-
-        case "restage": {
-          const id = positional[0];
-          if (!id) return fail("usage: bb agentation restage <annotationId>");
-          const routing = restageStoredAnnotation(db, id);
-          if (!routing) {
-            return fail(`Annotation ${id} is not an assigned open annotation.`);
-          }
-          broadcast({ type: "routing", sessionId: null });
-          return ok(`staged ${id}`);
-        }
-
-        case "sessions": {
-          const sessions = listSessions(db, {});
-          if (sessions.length === 0) return ok("No annotated pages yet.");
-          return ok(
-            sessions
-              .map(
-                (session) =>
-                  `${session.id}  ${session.route.padEnd(40)} pending=${session.counts.pending} total=${session.counts.total}`,
-              )
-              .join("\n"),
-          );
-        }
-
-        case "show": {
-          const id = positional[0];
-          if (!id) return fail("usage: bb agentation show <annotationId>");
-          const annotation = getAnnotation(db, id);
-          if (!annotation) return fail(`No annotation ${id}.`);
-          return ok(renderAnnotation(annotation));
-        }
-
-        case "acknowledge":
-        case "resolve":
-        case "dismiss": {
-          const id = positional[0];
-          if (!id) return fail(`usage: bb agentation ${command} <annotationId>`);
-          const note = positional.slice(1).join(" ") || null;
-          if (command === "dismiss" && !note) {
-            return fail("usage: bb agentation dismiss <annotationId> <reason…>");
-          }
-          const status: AnnotationStatus =
-            command === "acknowledge"
-              ? "acknowledged"
-              : command === "resolve"
-                ? "resolved"
-                : "dismissed";
-          const annotation = setAnnotationStatus(db, {
-            annotationId: id,
-            status,
-            by: "agent",
-            resolution: note,
-          });
-          if (!annotation) return fail(`No annotation ${id}.`);
-          broadcast({ type: "annotations", sessionId: annotation.sessionId });
-          return ok(`${status} ${id}`);
-        }
-
-        case "reply": {
-          const id = positional[0];
-          const message = positional.slice(1).join(" ");
-          if (!id || !message) {
-            return fail("usage: bb agentation reply <annotationId> <message…>");
-          }
-          const annotation = appendThreadMessage(db, id, {
-            role: "agent",
-            content: message,
-          });
-          if (!annotation) return fail(`No annotation ${id}.`);
-          broadcast({ type: "annotations", sessionId: annotation.sessionId });
-          return ok(`Replied on ${id}.`);
-        }
-
-        default:
-          return fail(`Unknown command "${command}". Run \`bb agentation help\`.`);
-      }
-    },
-  });
+    }),
+  );
 
   // -------------------------------------------------------------------------
   // Housekeeping

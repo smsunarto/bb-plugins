@@ -87,6 +87,7 @@ bb agentation resolve <annotationId> fixed the wrapping
 bb agentation dismiss <annotationId> intentional, matches the design system
 bb agentation reply <annotationId> should this be 24px or 16px?
 bb agentation toolbar off
+bb agentation <command> --help
 ```
 
 ## Boundaries

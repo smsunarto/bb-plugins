@@ -116,12 +116,15 @@ bb agentation send <threadId> [annotationId…]    assign staged annotations
 bb agentation restage <annotationId>             return one to staging
 bb agentation sessions                           annotated pages
 bb agentation show <annotationId>                one annotation in full
-bb agentation acknowledge <annotationId>         mark as seen
+bb agentation acknowledge <annotationId> [note…] mark as seen
 bb agentation resolve <annotationId> [summary…]  mark as fixed
 bb agentation dismiss <annotationId> <reason…>   decline, with a reason
 bb agentation reply <annotationId> <message…>    ask the human a question
 bb agentation toolbar [on|off]                   show or hide the toolbar
 ```
+
+`bb agentation --help` and `bb agentation <command> --help` print the full
+usage. User errors (unknown id, missing reason) exit 1 with a hint.
 
 ## Configuration
 
