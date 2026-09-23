@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { runDev } from "./command.ts";
 import { DevError } from "./error.ts";
 import { DevManager, type ManagerOptions } from "./manager.ts";
@@ -27,7 +27,12 @@ import {
 } from "./model.ts";
 import { processIdentity, processMatches, runCommand, spawnAndWait } from "./process.ts";
 import { resolveRevision } from "./revision.ts";
-import { assertRuntimeEnvContract, RUNTIME_ENV_KEYS } from "./runtime.ts";
+import {
+  assertRuntimeEnvContract,
+  readRuntimeRecord,
+  runLoggedStep,
+  RUNTIME_ENV_KEYS,
+} from "./runtime.ts";
 import {
   claimDirectoryAtomically,
   ensureOwnedDirectory,
@@ -45,21 +50,33 @@ test("start is retry-safe, explicit revision mismatch fails, and destroy is idem
   });
   assert.equal(first.running, true);
   assert.equal(first.desiredRuntime, "web");
-  assert.equal(first.branch, "detached (fixture)");
-  assert.equal(first.node, "fixture");
-  assert.equal(first.codex, "fixture");
-  assert.equal(first.dataDir?.endsWith("checkout.data"), true);
-  assert.equal(first.serverUrl, "http://localhost:19001");
-  assert.equal(first.hostDaemonUrl, "http://127.0.0.1:27001");
+  assert.match(first.branch ?? "", /^detached \([0-9a-f]{7,}\)$/u);
+  assert.match(first.node ?? "", /^v\d+\.\d+\.\d+$/u);
+  assert.equal(first.codex, null);
   assert.equal(first.devSession, "running");
   assert.equal(first.desktopSession, "stopped");
-  assert.equal(first.devLog?.endsWith("checkout.logs/dev.log"), true);
   const state = JSON.parse(
     readFileSync(join(fixture.home, "instances", "repeat", "state.json"), "utf8"),
-  ) as { plan: { checkoutPath: string } };
+  ) as { ownerToken: string; plan: { checkoutPath: string } };
+  const checkoutPath = join(realpathSync(join(fixture.home, "instances", "repeat")), "checkout");
+  assert.equal(state.plan.checkoutPath, checkoutPath);
+  // The target bb itself derives for this checkout path, so the checkout's own
+  // bb:dev CLI reaches the same stack without any routing.
+  const expected = bbDevInstance(fixture.userHome, checkoutPath);
+  assert.equal(first.dataDir, expected.dataDir);
+  assert.equal(first.appUrl, `http://localhost:${expected.appPort}`);
+  assert.equal(first.serverUrl, `http://127.0.0.1:${expected.serverPort}`);
+  assert.equal(first.hostDaemonUrl, `http://127.0.0.1:${expected.hostDaemonPort}`);
+  assert.equal(first.desktopUserDataDir, join(expected.dataDir, "desktop"));
   assert.equal(
-    state.plan.checkoutPath,
-    join(realpathSync(join(fixture.home, "instances", "repeat")), "checkout"),
+    first.devLog,
+    join(
+      fixture.userHome,
+      ".bb-dev",
+      "launchers",
+      `bb-kit-repeat-${state.ownerToken.slice(0, 8)}`,
+      "dev.log",
+    ),
   );
   const starts = join(fixture.home, "instances", "repeat", "checkout.fake-starts");
   assert.equal(readFileSync(starts, "utf8").trim(), "1");
@@ -94,26 +111,31 @@ test("attached start converges in place, leases its ports, and destroy preserves
   assert.equal(first.revision, null);
   assert.equal(first.checkoutPath, realpathSync(fixture.repository));
   assert.equal(readFileSync(dirtyPath, "utf8"), "keep this edit\n");
-  assert.equal(readFileSync(`${fixture.repository}.fake-launcher-name`, "utf8").trim(), "<unset>");
-  assert.equal(existsSync(join(fixture.home, "leases", "11001-19001-27001", "owner.json")), true);
+  const expected = bbDevInstance(fixture.userHome, fixture.repository);
+  const leaseKey = `${expected.appPort}-${expected.serverPort}-${expected.hostDaemonPort}`;
+  assert.equal(first.dataDir, expected.dataDir);
+  assert.equal(first.appUrl, `http://localhost:${expected.appPort}`);
+  // An attached checkout logs under its bb label, not an owner-scoped name.
+  const logRoot = join(fixture.userHome, ".bb-dev", "launchers", expected.label);
+  assert.equal(first.devLog, join(logRoot, "dev.log"));
+  assert.equal(existsSync(join(fixture.home, "leases", leaseKey, "owner.json")), true);
   assert.equal(existsSync(join(fixture.repository, ".bb-kit-owner.json")), false);
-  assert.equal(existsSync(join(`${fixture.repository}.data`, ".bb-kit-owner.json")), false);
-  assert.equal(existsSync(join(`${fixture.repository}.logs`, ".bb-kit-owner.json")), false);
+  assert.equal(existsSync(join(expected.dataDir, ".bb-kit-owner.json")), false);
+  assert.equal(existsSync(join(logRoot, ".bb-kit-owner.json")), false);
 
   const second = await manager.start({ name: "attached" });
   assert.equal(second.source, "attached");
   assert.equal(readFileSync(`${fixture.repository}.fake-starts`, "utf8").trim(), "1");
 
-  mkdirSync(`${fixture.repository}.data`, { recursive: true });
-  writeFileSync(join(`${fixture.repository}.data`, "preserved"), "data\n");
-  writeFileSync(join(`${fixture.repository}.logs`, "preserved"), "logs\n");
+  writeFileSync(join(expected.dataDir, "preserved"), "data\n");
+  writeFileSync(join(logRoot, "preserved"), "logs\n");
   await manager.destroy("attached");
   assert.equal(existsSync(fixture.repository), true);
   assert.equal(readFileSync(dirtyPath, "utf8"), "keep this edit\n");
-  assert.equal(readFileSync(join(`${fixture.repository}.data`, "preserved"), "utf8"), "data\n");
-  assert.equal(readFileSync(join(`${fixture.repository}.logs`, "preserved"), "utf8"), "logs\n");
+  assert.equal(readFileSync(join(expected.dataDir, "preserved"), "utf8"), "data\n");
+  assert.equal(readFileSync(join(logRoot, "preserved"), "utf8"), "logs\n");
   assert.equal(existsSync(join(fixture.home, "instances", "attached")), false);
-  assert.equal(existsSync(join(fixture.home, "leases", "11001-19001-27001")), false);
+  assert.equal(existsSync(join(fixture.home, "leases", leaseKey)), false);
 });
 
 test("attached and owned source requests refuse mismatches", async () => {
@@ -185,8 +207,9 @@ test("run routes one running instance and blocks lifecycle changes while the chi
   const environment = JSON.parse(readFileSync(environmentPath, "utf8")) as NodeJS.ProcessEnv;
   const routed = manager.environmentFor("routed");
   assert.equal(environment["BB_CLI"], routed.BB_CLI);
-  assert.equal(environment["BB_SERVER_URL"], "http://localhost:11001");
-  assert.equal(environment["BB_HOST_DAEMON_PORT"], "27001");
+  const expected = bbDevInstance(fixture.userHome, fixture.repository);
+  assert.equal(environment["BB_SERVER_URL"], `http://localhost:${expected.appPort}`);
+  assert.equal(environment["BB_HOST_DAEMON_PORT"], String(expected.hostDaemonPort));
   assert.equal(environment["BB_KIT_DEV_NAME"], "routed");
   assert.equal(environment["BB_KIT_DEV_SOURCE"], "attached");
   assert.equal(environment["BB_THREAD_ID"], undefined);
@@ -566,7 +589,7 @@ test("a live lock returns the stable busy error after the bounded wait", async (
   );
 });
 
-test("competing starts serialize and perform the launcher mutation once", async () => {
+test("competing starts serialize and perform the install step once", async () => {
   const fixture = createFixture();
   const first = fixture.manager({ FAKE_START_DELAY: "0.2" });
   const second = fixture.manager({ FAKE_START_DELAY: "0.2" });
@@ -755,7 +778,7 @@ test("destroy removes an owned instance after revision resolution fails", async 
   assert.equal(existsSync(join(fixture.home, "instances", "failed-resolution")), false);
 });
 
-test("destroy removes an owned partial checkout plan without a launcher target", async () => {
+test("destroy removes an owned partial checkout plan without a target", async () => {
   const fixture = createFixture();
   const name = "partial-checkout";
   const store = new InstanceStore(instancePaths(fixture.home, name));
@@ -783,8 +806,6 @@ test("destroy removes an owned partial checkout plan without a launcher target",
         commit,
       },
       checkoutPath,
-      launcherPath: join(checkoutPath, "scripts", "bb-dev-app"),
-      launcherName: "bb-kit-partial-checkout",
       desiredRuntime: "web",
       shimPath: join(store.paths.bin, "bb"),
       leaseKey: null,
@@ -864,6 +885,10 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
     repository: fixture.repository,
   });
   const environment = manager.environmentFor("environment");
+  const expected = bbDevInstance(
+    fixture.userHome,
+    join(realpathSync(join(fixture.home, "instances", "environment")), "checkout"),
+  );
   assert.deepEqual(Object.keys(environment).toSorted(), [
     "BB_CLI",
     "BB_HOST_DAEMON_PORT",
@@ -872,16 +897,16 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
     "BB_SERVER_URL",
     "name",
   ]);
-  assert.equal(environment.BB_SERVER_URL, "http://localhost:11001");
-  assert.equal(environment.BB_HOST_DAEMON_PORT, "27001");
+  assert.equal(environment.BB_SERVER_URL, `http://localhost:${expected.appPort}`);
+  assert.equal(environment.BB_HOST_DAEMON_PORT, String(expected.hostDaemonPort));
   assert.equal(environment.BB_KIT_DEV_SOURCE, "owned");
   const envResult = await runDev(["env", "environment"], { manager });
   assert.equal(
     envResult.stdout,
     [
       `export BB_CLI='${environment.BB_CLI}'`,
-      "export BB_SERVER_URL='http://localhost:11001'",
-      "export BB_HOST_DAEMON_PORT='27001'",
+      `export BB_SERVER_URL='http://localhost:${expected.appPort}'`,
+      `export BB_HOST_DAEMON_PORT='${expected.hostDaemonPort}'`,
       "export BB_KIT_DEV_NAME='environment'",
       "export BB_KIT_DEV_SOURCE='owned'",
       `export PATH='${join(fixture.home, "instances", "environment", "bin")}':"$PATH"`,
@@ -892,11 +917,13 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
   const statusResult = await runDev(["status", "environment"], { manager });
   assert.match(statusResult.stdout, /Checkout: .*checkout/);
   assert.match(statusResult.stdout, /Source: owned/);
-  assert.match(statusResult.stdout, /Branch: detached \(fixture\)/);
-  assert.match(statusResult.stdout, /Node: fixture/);
-  assert.match(statusResult.stdout, /Codex: fixture/);
-  assert.match(statusResult.stdout, /Server: http:\/\/localhost:19001/);
-  assert.match(statusResult.stdout, /Host daemon: http:\/\/127\.0\.0\.1:27001/);
+  assert.match(statusResult.stdout, /Branch: detached \([0-9a-f]+\)/);
+  assert.match(statusResult.stdout, /Node: v\d+/);
+  assert.match(statusResult.stdout, /Codex: unavailable/);
+  assert.ok(statusResult.stdout.includes(`Server: http://127.0.0.1:${expected.serverPort}`));
+  assert.ok(
+    statusResult.stdout.includes(`Host daemon: http://127.0.0.1:${expected.hostDaemonPort}`),
+  );
   assert.match(statusResult.stdout, /Dev session: running/);
   assert.match(statusResult.stdout, /Launcher log: .*launcher\.log/);
 
@@ -952,7 +979,7 @@ test("dev help, start options, env keys, and invalid arguments have stable parsi
   });
 });
 
-test("launcher start and stop timeouts terminate their checkpointed process groups", async () => {
+test("a start timeout terminates the checkpointed install process group", async () => {
   const fixture = createFixture();
   const manager = fixture.manager();
   await manager.start({ name: "timeout", revision: "local:main", repository: fixture.repository });
@@ -962,35 +989,19 @@ test("launcher start and stop timeouts terminate their checkpointed process grou
   const slowStart = fixture.manager({ FAKE_START_DELAY: "10", FAKE_PID_FILE: startPids });
   const startRejection = assert.rejects(
     slowStart.start({ name: "timeout", timeoutMs: 400 }),
-    (error) => error instanceof DevError && error.code === "launcher_timeout",
+    (error) => error instanceof DevError && error.code === "dependency_timeout",
   );
   await waitForFile(startPids);
-  const [startShell] = readPids(startPids);
+  const [installPid] = readPids(startPids);
   const starting = JSON.parse(
     readFileSync(join(fixture.home, "instances", "timeout", "state.json"), "utf8"),
   ) as { phase: string; child: { pid: number } };
   assert.equal(starting.phase, "starting");
-  assert.equal(starting.child.pid, startShell);
+  assert.equal(starting.child.pid, installPid);
   await startRejection;
   await assertPidsExit(readPids(startPids));
 
   await manager.start({ name: "timeout", timeoutMs: 5_000 });
-  const stopPids = join(fixture.home, "stop-pids");
-  const slowStop = fixture.manager({ FAKE_STOP_DELAY: "10", FAKE_PID_FILE: stopPids });
-  const stopRejection = assert.rejects(
-    slowStop.stop("timeout", 400),
-    (error) => error instanceof DevError && error.code === "launcher_timeout",
-  );
-  await waitForFile(stopPids);
-  const [stopShell] = readPids(stopPids);
-  const stopping = JSON.parse(
-    readFileSync(join(fixture.home, "instances", "timeout", "state.json"), "utf8"),
-  ) as { phase: string; child: { pid: number } };
-  assert.equal(stopping.phase, "stopping");
-  assert.equal(stopping.child.pid, stopShell);
-  await stopRejection;
-  await assertPidsExit(readPids(stopPids));
-
   await manager.stop("timeout", 5_000);
   await manager.destroy("timeout", 5_000);
 });
@@ -1274,7 +1285,6 @@ test("an owned latest instance follows newer official releases and keeps a live 
   await manager.destroy("foreign");
 
   // An instance pinned to a commit adopts latest when asked, instead of refusing.
-  // The fixture launcher leases one port triple, so this starts after tracked is gone.
   const pinned = await manager.start({
     name: "pinned",
     revision: `commit:${first}`,
@@ -1328,10 +1338,7 @@ test("an opener spawn failure cannot crash a successful start", async () => {
   child.on("error", (error) => {
     asyncFailure = error;
   });
-  // Its own fixture: the fake launcher reports one fixed port triple, so two
-  // owned instances cannot share a workspace.
-  const second = createFixture();
-  const deferred = second.manager(
+  const deferred = fixture.manager(
     {},
     {
       opener: () => {
@@ -1342,7 +1349,7 @@ test("an opener spawn failure cannot crash a successful start", async () => {
   const late = await deferred.start({
     name: "defers",
     revision: "local:main",
-    repository: second.repository,
+    repository: fixture.repository,
     open: true,
   });
   assert.equal(late.running, true);
@@ -1362,18 +1369,18 @@ test("an opener spawn failure cannot crash a successful start", async () => {
 async function halfPrepared(
   fixture: ReturnType<typeof createFixture>,
   name: string,
-  environment: NodeJS.ProcessEnv = {},
-): Promise<{ checkout: string; running: string }> {
+): Promise<{ checkout: string; stack: ProcessIdentity }> {
   const started = await fixture
-    .manager(environment)
+    .manager()
     .start({ name, revision: "local:main", repository: fixture.repository });
   assert.equal(started.running, true);
   const checkout = started.checkoutPath ?? "";
   assert.notEqual(checkout, "");
-  const running = `${checkout}.fake-running`;
-  assert.equal(existsSync(running), true);
+  const instanceRoot = join(fixture.home, "instances", name);
+  const stack = readRuntimeRecord(instanceRoot)?.identity;
+  assert.notEqual(stack, undefined);
 
-  const statePath = join(fixture.home, "instances", name, "state.json");
+  const statePath = join(instanceRoot, "state.json");
   const state = JSON.parse(readFileSync(statePath, "utf8")) as Record<string, unknown>;
   const plan = state["plan"] as Record<string, unknown>;
   writeFileSync(
@@ -1392,38 +1399,32 @@ async function halfPrepared(
       2,
     )}\n`,
   );
-  return { checkout, running };
+  return { checkout, stack: stack! };
 }
 
-test("preparing an owned checkout adopts its own live session instead of deleting it", async () => {
+test("preparing an owned checkout adopts its own live stack instead of deleting it", async () => {
   const fixture = createFixture();
-  const { checkout } = await halfPrepared(fixture, "stranded");
+  const { checkout, stack } = await halfPrepared(fixture, "stranded");
 
-  // The ports answer because that session is the one serving them.
-  const restarted = await fixture
-    .manager({}, { portProbe: async () => true })
-    .start({ name: "stranded" });
+  // The ports answer because that stack is the one serving them.
+  const restarted = await fixture.manager().start({ name: "stranded" });
 
   assert.equal(restarted.running, true);
   assert.equal(restarted.checkoutPath, checkout);
   assert.equal(existsSync(checkout), true);
-  assert.equal(readFileSync(`${checkout}.fake-starts`, "utf8").trim(), "1");
+  assert.equal(processMatches(stack), true);
+  await fixture.manager().destroy("stranded");
 });
 
-test("destroying a half-prepared instance stops its session before removing the checkout", async () => {
+test("destroying a half-prepared instance stops its stack before removing the checkout", async () => {
   const fixture = createFixture();
-  const events = join(fixture.root, "launcher-events.log");
-  const { checkout } = await halfPrepared(fixture, "stranded", { FAKE_EVENT_LOG: events });
+  const { checkout, stack } = await halfPrepared(fixture, "stranded");
 
-  const destroyed = await fixture.manager({ FAKE_EVENT_LOG: events }).destroy("stranded");
+  const destroyed = await fixture.manager().destroy("stranded");
 
   assert.equal(destroyed.phase, "absent");
   assert.equal(existsSync(checkout), false);
-  assert.equal(
-    readFileSync(events, "utf8").trim().split("\n").at(-1),
-    "stop checkout=present",
-    "the launcher was never told to stop, so its dev session outlived the checkout",
-  );
+  assert.equal(processMatches(stack), false, "the dev stack outlived its checkout");
 });
 
 function createFixture(): {
@@ -1433,7 +1434,9 @@ function createFixture(): {
   repository: string;
   manager: (environment?: NodeJS.ProcessEnv, overrides?: Partial<ManagerOptions>) => DevManager;
 } {
-  const root = mkdtempSync(join(tmpdir(), "bb-kit-manager-"));
+  // Real path: bb labels a checkout by its path relative to HOME, and the
+  // temporary directory is a symlink on macOS.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "bb-kit-manager-")));
   const home = join(root, "state");
   const fakeHome = join(root, "home");
   const repository = join(root, "bb");
@@ -1442,12 +1445,8 @@ function createFixture(): {
   git(repository, ["init", "-b", "main"]);
   git(repository, ["config", "user.email", "test@example.com"]);
   git(repository, ["config", "user.name", "Test"]);
-  mkdirSync(join(repository, "scripts"));
-  const launcher = join(repository, "scripts", "bb-dev-app");
-  writeFileSync(launcher, fakeLauncher());
-  chmodSync(launcher, 0o755);
-  // A runtime checks its source checkout for a package.json and reads the dev
-  // environment contract out of it, so the fixture checkout carries both.
+  // A checkout is recognised by its package.json and its dev environment
+  // contract, which the drift guard reads, so the fixture carries both.
   writeFileSync(join(repository, "package.json"), '{ "name": "bb", "private": true }\n');
   mkdirSync(join(repository, "packages", "config", "src"), { recursive: true });
   writeFileSync(
@@ -1455,7 +1454,7 @@ function createFixture(): {
     devProcessEnvSource(RUNTIME_ENV_KEYS),
   );
   git(repository, ["add", "-A"]);
-  git(repository, ["commit", "-m", "add fake launcher"]);
+  git(repository, ["commit", "-m", "add fake bb checkout"]);
 
   // Ports a fake runtime is "serving" on, so the readiness probe can succeed
   // without a real dev stack. A port stops answering when the process holding
@@ -1475,22 +1474,37 @@ function createFixture(): {
           const holder = listeners.get(port);
           return holder !== undefined && processMatches(holder);
         },
+        // Stands in for pnpm install: counts each run beside the checkout, and
+        // when asked, sleeps as a checkpointed child so timeouts have a process
+        // group to terminate.
+        installDependencies: async (args) => {
+          const delay = args.environment["FAKE_START_DELAY"];
+          if (delay !== undefined && delay !== "0") {
+            const pidFile = args.environment["FAKE_PID_FILE"];
+            await runLoggedStep({
+              ...args,
+              command: "sleep",
+              args: [delay],
+              onSpawn: (identity) => {
+                if (pidFile !== undefined) writeFileSync(pidFile, `${identity.pid}\n`);
+                args.onSpawn(identity);
+              },
+            });
+          }
+          const counter = `${args.checkoutPath}.fake-starts`;
+          const count = existsSync(counter) ? Number(readFileSync(counter, "utf8")) : 0;
+          writeFileSync(counter, `${count + 1}\n`);
+        },
         runtimeSpawn: (args) => {
-          const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-            detached: true,
-            stdio: "ignore",
-          });
-          child.unref();
-          const identity = child.pid === undefined ? null : processIdentity(child.pid);
-          assert.notEqual(identity, null, "fake runtime did not start");
+          const identity = idleProcess();
           for (const port of [
             args.ports.appPort,
             args.ports.serverPort,
             args.ports.hostDaemonPort,
           ]) {
-            listeners.set(port, identity!);
+            listeners.set(port, identity);
           }
-          return { identity: identity!, ports: args.ports };
+          return { identity, ports: args.ports, desktop: args.desktop ? idleProcess() : null };
         },
         // Never the real opener: a test must not open the user's browser.
         opener: () => {},
@@ -1512,78 +1526,49 @@ ${body}
 `;
 }
 
-function fakeLauncher(): string {
-  return `#!/usr/bin/env bash
-set -euo pipefail
-checkout="\${BB_DEV_REPO_ROOT:-$PWD}"
-running="\${checkout}.fake-running"
-desktop="\${checkout}.fake-desktop"
-starts="\${checkout}.fake-starts"
-data="\${checkout}.data"
-logs="\${checkout}.logs"
-log_event() {
-  [[ -n "\${FAKE_EVENT_LOG:-}" ]] || return 0
-  local present=absent
-  [[ -d "\${checkout}" ]] && present=present
-  echo "$1 checkout=\${present}" >> "\${FAKE_EVENT_LOG}"
+/** A detached process that lives until it is killed, standing in for a dev stack. */
+function idleProcess(): ProcessIdentity {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  const identity = child.pid === undefined ? null : processIdentity(child.pid);
+  assert.notEqual(identity, null, "fake process did not start");
+  return identity!;
 }
-case "\${1:-}" in
-  --help|help|-h)
-    echo "current stop status env"
-    ;;
-  status)
-    mkdir -p "\${logs}"
-    echo "Repo: \${checkout}"
-    echo "Branch: detached (fixture)"
-    echo "Node: fixture"
-    echo "Codex: fixture"
-    echo "Instance: fixture"
-    echo "Data dir: \${data}"
-    echo "App: http://localhost:11001"
-    echo "Server: http://localhost:19001"
-    echo "Host daemon: http://127.0.0.1:27001"
-    echo "Desktop user data: \${data}/desktop"
-    [[ -f "\${running}" ]] && echo "Dev session: running" || echo "Dev session: stopped"
-    [[ -f "\${desktop}" ]] && echo "Desktop session: running" || echo "Desktop session: stopped"
-    echo "Logs: \${logs}/dev.log, \${logs}/desktop.log"
-    ;;
-  current)
-    printf '%s\n' "\${BB_DEV_LAUNCHER_NAME:-<unset>}" > "\${checkout}.fake-launcher-name"
-    delay="\${FAKE_START_DELAY:-0}"
-    if [[ "\${delay}" != "0" ]]; then
-      sleep "\${delay}" &
-      worker_pid=$!
-      [[ -n "\${FAKE_PID_FILE:-}" ]] && echo "$$ \${worker_pid}" > "\${FAKE_PID_FILE}"
-      wait "\${worker_pid}"
-    fi
-    count=0
-    [[ -f "\${starts}" ]] && count="$(cat "\${starts}")"
-    echo "$((count + 1))" > "\${starts}"
-    touch "\${running}"
-    log_event current
-    [[ " $* " == *" --desktop "* ]] && touch "\${desktop}"
-    mkdir -p "\${logs}"
-    echo started >> "\${logs}/dev.log"
-    ;;
-  stop)
-    delay="\${FAKE_STOP_DELAY:-0}"
-    if [[ "\${delay}" != "0" ]]; then
-      sleep "\${delay}" &
-      worker_pid=$!
-      [[ -n "\${FAKE_PID_FILE:-}" ]] && echo "$$ \${worker_pid}" > "\${FAKE_PID_FILE}"
-      wait "\${worker_pid}"
-    fi
-    log_event stop
-    rm -f "\${running}" "\${desktop}"
-    ;;
-  env)
-    echo "export BB_SERVER_URL=http://localhost:19001"
-    ;;
-  *)
-    exit 2
-    ;;
-esac
-`;
+
+/**
+ * bb's own dev instance rules, restated here so the manager is checked
+ * against the contract rather than against itself: the id is the checkout
+ * label (HOME-relative when under HOME, else the full path) plus twelve hex
+ * characters of the path hash, the ports come from the first eight, and the
+ * data directory sits under ~/.bb-dev.
+ */
+function bbDevInstance(
+  homeDir: string,
+  checkoutPath: string,
+): {
+  label: string;
+  dataDir: string;
+  appPort: number;
+  serverPort: number;
+  hostDaemonPort: number;
+} {
+  const hash = createHash("sha256").update(checkoutPath).digest("hex");
+  const homeRelative = relative(homeDir, checkoutPath);
+  const label = (homeRelative.startsWith("..") ? checkoutPath : homeRelative)
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^[._-]+|[._-]+$/gu, "");
+  const offset = Number.parseInt(hash.slice(0, 8), 16) % 8000;
+  return {
+    label,
+    dataDir: join(homeDir, ".bb-dev", `${label}-${hash.slice(0, 12)}`),
+    appPort: 11_000 + offset,
+    serverPort: 19_000 + offset,
+    hostDaemonPort: 27_000 + offset,
+  };
 }
 
 function commitFile(repository: string, file: string, contents: string, message: string): string {

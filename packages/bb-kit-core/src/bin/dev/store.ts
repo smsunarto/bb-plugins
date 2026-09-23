@@ -600,7 +600,6 @@ function parsePlan(value: unknown, legacy: boolean): InstancePlan {
   const object = record(value, "plan");
   const common = {
     checkoutPath: stringField(object, "checkoutPath"),
-    launcherPath: stringField(object, "launcherPath"),
     desiredRuntime: runtimeField(object, "desiredRuntime"),
     shimPath: stringField(object, "shimPath"),
     leaseKey: nullableString(object["leaseKey"], "leaseKey"),
@@ -611,7 +610,6 @@ function parsePlan(value: unknown, legacy: boolean): InstancePlan {
       ...common,
       source: "owned",
       revision: parseRevision(object["revision"]),
-      launcherName: stringField(object, "launcherName"),
     };
   }
   const source = stringField(object, "source");
@@ -620,21 +618,19 @@ function parsePlan(value: unknown, legacy: boolean): InstancePlan {
       ...common,
       source,
       revision: parseRevision(object["revision"]),
-      launcherName: stringField(object, "launcherName"),
     };
   }
   if (source === "attached") {
-    if (object["revision"] !== null || object["launcherName"] !== null) {
+    if (object["revision"] !== null) {
       invalid("attached plan source");
     }
-    return { ...common, source, revision: null, launcherName: null };
+    return { ...common, source, revision: null };
   }
   if (source === "runtime") {
     return {
       ...common,
       source,
       revision: parseRevision(object["revision"]),
-      launcherName: stringField(object, "launcherName"),
       sourceInstance: stringField(object, "sourceInstance"),
     };
   }

@@ -51,7 +51,6 @@ export type ProcessIdentity = {
 
 type PlanBase = {
   checkoutPath: string;
-  launcherPath: string;
   desiredRuntime: DesiredRuntime;
   shimPath: string;
   leaseKey: string | null;
@@ -61,13 +60,11 @@ type PlanBase = {
 export type OwnedInstancePlan = PlanBase & {
   source: "owned";
   revision: ResolvedRevision;
-  launcherName: string;
 };
 
 export type AttachedInstancePlan = PlanBase & {
   source: "attached";
   revision: null;
-  launcherName: null;
 };
 
 /**
@@ -80,7 +77,6 @@ export type AttachedInstancePlan = PlanBase & {
 export type RuntimeInstancePlan = PlanBase & {
   source: "runtime";
   revision: ResolvedRevision;
-  launcherName: string;
   sourceInstance: string;
 };
 
@@ -342,7 +338,7 @@ export function requireTargetPlan(plan: InstancePlan): CompleteInstancePlan {
   if (plan.target === null || plan.leaseKey === null) {
     throw new DevError(
       "instance_not_prepared",
-      "The instance plan has no launcher target.",
+      "The instance plan has no target.",
       "Retry start to resume preparation.",
     );
   }

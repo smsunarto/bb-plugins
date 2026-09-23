@@ -1,29 +1,20 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { DevError, asDevError } from "./error.ts";
-import {
-  assertLauncherSupported,
-  assertSameStoredTarget,
-  launcherOptions,
-  leaseKeyFor,
-  logPath,
-  openApp,
-  probeApp,
-  readLauncherStatus,
-  runLauncherCommand,
-  runtimeSatisfied,
-  startLauncher,
-  writeShim,
-} from "./launcher.ts";
+import { leaseKeyFor, logPath, openApp, probeApp, writeShim } from "./launcher.ts";
 import {
   assertRuntimeEnvContract,
+  checkoutTarget,
   clearRuntimeRecord,
+  desktopIsRunning,
+  ensureDependencies,
+  portsFor,
   readRuntimeRecord,
-  runtimeInstanceId,
+  readToolchain,
   runtimeIsRunning,
   runtimePortOffset,
   runtimePorts,
@@ -57,6 +48,7 @@ import {
   type InstanceState,
   type LauncherTarget,
   type OwnedInstancePlan,
+  type ProcessIdentity,
   type RuntimeInstancePlan,
   type ResolvedRevision,
   type RevisionRequest,
@@ -102,8 +94,10 @@ export type ManagerOptions = {
   opener?: (url: string) => void;
   portProbe?: (port: number) => Promise<boolean>;
   progress?: (message: string) => void;
-  /** The seam tests drive a runtime through, beside healthProbe and portProbe. */
+  /** The seam tests drive a dev stack through, beside healthProbe and portProbe. */
   runtimeSpawn?: typeof startRuntimeProcess;
+  /** The seam tests drive the install step through, so no test runs pnpm. */
+  installDependencies?: typeof ensureDependencies;
   /** The seam tests resolve revisions through, so no test contacts get-bb/bb. */
   resolveRevision?: typeof resolveRevision;
 };
@@ -147,6 +141,7 @@ export class DevManager {
   private readonly portProbe: (port: number) => Promise<boolean>;
   private readonly progress: (message: string) => void;
   private readonly runtimeSpawn: typeof startRuntimeProcess;
+  private readonly installDependencies: typeof ensureDependencies;
   private readonly resolver: typeof resolveRevision;
 
   constructor(options: ManagerOptions = {}) {
@@ -158,6 +153,7 @@ export class DevManager {
     this.portProbe = options.portProbe ?? isPortListening;
     this.progress = options.progress ?? (() => {});
     this.runtimeSpawn = options.runtimeSpawn ?? startRuntimeProcess;
+    this.installDependencies = options.installDependencies ?? ensureDependencies;
     this.resolver = options.resolveRevision ?? resolveRevision;
   }
 
@@ -226,14 +222,6 @@ export class DevManager {
     const name = this.resolveName(options.name);
     const attachedPath =
       options.attach === undefined ? undefined : resolveAttachedCheckout(options.attach, this.cwd);
-    if (attachedPath !== undefined) {
-      assertLauncherSupported({
-        launcherPath: join(attachedPath, "scripts", "bb-dev-app"),
-        launcherName: null,
-        checkoutPath: attachedPath,
-        environment: this.environment,
-      });
-    }
     const deadline = options.timeoutMs === undefined ? null : Date.now() + options.timeoutMs;
     const store = this.store(name);
     const owner = store.claim(name);
@@ -363,7 +351,7 @@ export class DevManager {
           }
           plan =
             borrowFrom === null
-              ? this.newOwnedPlan(store, name, owner.ownerToken, revision, desired, 0)
+              ? this.newOwnedPlan(store, name, revision, desired, 0)
               : this.newRuntimePlan(store, name, revision, desired, borrowFrom);
           state = checkpoint(state, {
             phase: "preparing",
@@ -396,13 +384,11 @@ export class DevManager {
       state = await this.prepare(store, state, plan, owner.ownerToken);
       const completePlan = requireCompletePlan(state);
       plan = completePlan;
-      const launcher = launcherOptions(completePlan, this.environment);
       let live = this.liveTarget(store, completePlan);
-      assertSameStoredTarget(completePlan.target, live);
       const livePlan = { ...completePlan, target: live, desiredRuntime: desired };
       plan = livePlan;
 
-      if (await this.satisfied(livePlan, live, desired)) {
+      if (await this.satisfied(live, desired)) {
         state = checkpoint(state, {
           phase: "running",
           plan: livePlan,
@@ -430,50 +416,42 @@ export class DevManager {
       );
       const startingPlan = requireTargetPlan(plan);
       const stateBeforeStart = state;
+      const checkpointChild = (child: ProcessIdentity): void => {
+        state = checkpoint(stateBeforeStart, { phase: "starting", plan: startingPlan, child });
+        store.write(state);
+      };
       try {
-        if (startingPlan.source === "runtime") {
-          // No launcher to ask: bb-kit owns this stack, so it spawns it and
-          // records the process it has to be able to stop later.
-          const started = this.runtimeSpawn({
-            checkoutPath: startingPlan.checkoutPath,
-            target: startingPlan.target,
-            ports: runtimePortsFor(startingPlan.target),
-            homeDir: this.homeDirectory(),
-            base: this.environment,
-          });
-          writeRuntimeRecord(store.paths.root, started);
-          state = checkpoint(stateBeforeStart, {
-            phase: "starting",
-            plan: startingPlan,
-            child: started.identity,
-          });
-          store.write(state);
-        } else {
-          const exitCode = await startLauncher(
-            launcher,
-            desired,
-            startingPlan.target.launcherLog,
-            (child) => {
-              state = checkpoint(stateBeforeStart, {
-                phase: "starting",
-                plan: startingPlan,
-                child,
-              });
-              store.write(state);
-            },
-            deadline === null ? undefined : remainingTimeout(deadline, name, "start"),
-          );
-          if (exitCode !== 0) {
-            const failure = new DevError(
-              "launcher_start_failed",
-              `Launcher exited with status ${exitCode} for instance ${name}.`,
-              "Inspect the launcher log and retry start.",
-              { logPath: startingPlan.target.launcherLog },
-            );
-            store.write(failedFromPlan(state, startingPlan, failure, "start"));
-            throw failure;
-          }
+        if (live.devSession === "running" || live.desktopSession === "running") {
+          // Up but not serving what was asked: a stack still booting from a
+          // start that timed out, or a web stack that now needs the desktop
+          // shell too. One stack per target, so it is replaced, not joined.
+          this.progress(`Restarting ${name}'s dev stack`);
+          await stopRuntimeProcess(readRuntimeRecord(store.paths.root));
+          clearRuntimeRecord(store.paths.root);
         }
+        if (startingPlan.source !== "runtime") {
+          // A runtime borrows a checkout its source already installed.
+          this.progress(`Installing dependencies for ${name}`);
+          await this.installDependencies({
+            checkoutPath: startingPlan.checkoutPath,
+            logPath: startingPlan.target.launcherLog,
+            environment: this.environment,
+            onSpawn: checkpointChild,
+            deadline,
+          });
+        }
+        // bb-kit owns every stack it starts, so it records the process it has
+        // to be able to stop later.
+        const started = this.runtimeSpawn({
+          checkoutPath: startingPlan.checkoutPath,
+          target: startingPlan.target,
+          ports: portsFor(startingPlan.target),
+          homeDir: this.homeDirectory(),
+          base: this.environment,
+          desktop: desired === "desktop",
+        });
+        writeRuntimeRecord(store.paths.root, started);
+        checkpointChild(started.identity);
       } catch (error) {
         const failure = asDevError(error);
         store.write(failedFromPlan(state, startingPlan, failure, "start"));
@@ -483,19 +461,18 @@ export class DevManager {
       const healthDeadline = deadline ?? Date.now() + DEFAULT_HEALTH_TIMEOUT_MS;
       while (true) {
         live = this.liveTarget(store, startingPlan);
-        assertSameStoredTarget(startingPlan.target, live);
-        if (await this.satisfied(startingPlan, live, desired)) {
+        if (await this.satisfied(live, desired)) {
           break;
         }
-        // A launcher supervises its own stack; bb-kit supervises a runtime's.
         // Waiting out the full health timeout on a process that already died
-        // hides the reason, which is in the dev log this points at.
-        if (startingPlan.source === "runtime" && live.devSession === "stopped") {
+        // hides the reason, which is in the log this points at.
+        const desktopDied = desired === "desktop" && live.desktopSession === "stopped";
+        if (live.devSession === "stopped" || desktopDied) {
           const failure = new DevError(
             "runtime_start_failed",
-            `Runtime ${name} exited before it became healthy.`,
-            "Inspect the dev log and retry start.",
-            { logPath: live.devLog },
+            `Instance ${name} exited before it became healthy.`,
+            `Inspect the ${desktopDied ? "desktop" : "dev"} log and retry start.`,
+            { logPath: desktopDied ? live.desktopLog : live.devLog },
           );
           store.write(failedFromPlan(state, { ...startingPlan, target: live }, failure, "start"));
           throw failure;
@@ -539,13 +516,12 @@ export class DevManager {
       return emptyResult(name);
     }
     const plan = statePlan(state);
-    if (plan?.target === null || plan === null || !existsSync(plan.launcherPath)) {
+    if (plan?.target === null || plan === null) {
       return resultFromState(state, false);
     }
     try {
       const live = this.liveTarget(store, plan);
-      assertSameStoredTarget(plan.target, live);
-      const running = await this.satisfied(plan, live, plan.desiredRuntime);
+      const running = await this.satisfied(live, plan.desiredRuntime);
       return {
         ...resultFromState(state, running, live),
         phase: running ? "running" : "stopped",
@@ -631,9 +607,7 @@ export class DevManager {
       } else {
         state = await this.stopLocked(store, state, owner.ownerToken, deadline);
         plan = requireCompletePlan(state);
-        const live = this.liveTarget(store, plan);
-        assertSameStoredTarget(plan.target, live);
-        plan = { ...plan, target: live };
+        plan = { ...plan, target: this.liveTarget(store, plan) };
         state = checkpoint(state, {
           phase: "destroying",
           plan,
@@ -805,9 +779,7 @@ export class DevManager {
         );
       }
       const plan = requireCompletePlan(state);
-      const live = this.liveTarget(store, plan);
-      assertSameStoredTarget(plan.target, live);
-      if (!(await this.satisfied(plan, live, plan.desiredRuntime))) {
+      if (!(await this.satisfied(this.liveTarget(store, plan), plan.desiredRuntime))) {
         throw new DevError(
           "instance_not_running",
           `Instance ${name} is not running.`,
@@ -893,9 +865,7 @@ export class DevManager {
       }
       const plan = requireCompletePlan(state);
       if (requireRunning) {
-        const live = this.liveTarget(store, plan);
-        assertSameStoredTarget(plan.target, live);
-        if (!(await this.satisfied(plan, live, plan.desiredRuntime))) {
+        if (!(await this.satisfied(this.liveTarget(store, plan), plan.desiredRuntime))) {
           throw new DevError(
             "instance_not_running",
             `Instance ${name} is not running.`,
@@ -984,40 +954,34 @@ export class DevManager {
     plan: Extract<InstancePlan, { source: "attached" }>,
     ownerToken: string,
   ): Promise<InstanceState> {
-    assertLauncherSupported(launcherOptions(plan, this.environment));
-    const live = readLauncherStatus(launcherOptions(plan, this.environment));
-    if (plan.target !== null) {
-      assertSameStoredTarget(plan.target, live);
-    }
-    const leaseKey = plan.leaseKey ?? leaseKeyFor(live);
-    const complete: CompleteInstancePlan = { ...plan, target: live, leaseKey };
+    assertRuntimeEnvContract(plan.checkoutPath);
+    const target = this.ownTarget(plan, state.name, ownerToken);
+    const leaseKey = leaseKeyFor(target);
+    const complete: CompleteInstancePlan = { ...plan, target, leaseKey };
     state = checkpoint(state, { phase: "preparing", step: "external", plan: complete });
     store.write(state);
     const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
     if (!leaseClaimed) {
       const failure = new DevError(
         "lease_mismatch",
-        `Attached launcher target for ${state.name} has another lease owner.`,
-        "Use the instance that owns this runtime, or destroy its stopped record first.",
+        `Attached target for ${state.name} has another lease owner.`,
+        "Use the instance that owns this checkout, or destroy its stopped record first.",
       );
       store.write(
         failedFromPlan(state, { ...plan, target: null, leaseKey: null }, failure, "preparation"),
       );
       throw failure;
     }
-    const portsBusy = await Promise.all([
-      this.portProbe(live.appPort),
-      this.portProbe(live.serverPort),
-      this.portProbe(live.hostDaemonPort),
-    ]);
-    const launcherOwnsRuntime = live.devSession === "running" || live.desktopSession === "running";
-    if (portsBusy.some(Boolean) && !launcherOwnsRuntime) {
+    if (plan.leaseKey !== null && plan.leaseKey !== leaseKey) {
+      releaseLease(this.home, plan.leaseKey, ownerToken);
+    }
+    if ((await this.portsBusy(target)) && !this.ownsRunningStack(store, target)) {
       if (plan.leaseKey === null) {
         releaseLease(this.home, leaseKey, ownerToken);
       }
       const failure = new DevError(
-        "ambiguous_launcher_target",
-        `Attached instance ${state.name} has no launcher session but its target ports are occupied.`,
+        "target_ports_busy",
+        `Attached instance ${state.name} has no dev stack but its target ports are occupied.`,
         "Stop the conflicting listeners before retrying start.",
       );
       if (plan.leaseKey === null) {
@@ -1027,6 +991,9 @@ export class DevManager {
       }
       throw failure;
     }
+    // Not owned: an attached checkout's data and logs outlive the record.
+    mkdirSync(target.dataDir, { recursive: true });
+    mkdirSync(dirname(target.launcherLog), { recursive: true });
     writeShim(complete, store.paths.bin);
     const prepared = checkpoint(state, { phase: "prepared", plan: complete });
     store.write(prepared);
@@ -1041,11 +1008,33 @@ export class DevManager {
   ): Promise<InstanceState> {
     let plan = initialPlan;
     if (plan.target !== null && plan.leaseKey !== null) {
-      const live = readLauncherStatus(launcherOptions(plan, this.environment));
-      assertSameStoredTarget(plan.target, live);
-      const adopted = await this.adoptTarget(store, state, plan, live, plan.leaseKey, ownerToken);
-      if (adopted !== null) {
-        return adopted;
+      assertRuntimeEnvContract(plan.checkoutPath);
+      const target = this.ownTarget(plan, state.name, ownerToken);
+      const leaseKey = leaseKeyFor(target);
+      const complete = { ...plan, target, leaseKey };
+      const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
+      const portsBusy = await this.portsBusy(target);
+      const ownsRunningStack = this.ownsRunningStack(store, target);
+      if (leaseClaimed && (!portsBusy || ownsRunningStack)) {
+        if (plan.leaseKey !== leaseKey) {
+          releaseLease(this.home, plan.leaseKey, ownerToken);
+        }
+        ensureOwnedDirectory(target.dataDir, ownerToken, "data");
+        ensureOwnedDirectory(dirname(target.launcherLog), ownerToken, "logs");
+        writeShim(complete, store.paths.bin);
+        const prepared = checkpoint(state, { phase: "prepared", plan: complete });
+        store.write(prepared);
+        return prepared;
+      }
+      if (ownsRunningStack) {
+        throw new DevError(
+          "lease_mismatch",
+          `Running target for ${state.name} has another lease owner.`,
+          "Do not stop or replace it. Inspect the lease and state.json.",
+        );
+      }
+      if (leaseClaimed) {
+        releaseLease(this.home, leaseKey, ownerToken);
       }
       safeRemoveOwned(
         plan.target.dataDir,
@@ -1057,27 +1046,21 @@ export class DevManager {
       plan = this.newOwnedPlan(
         store,
         state.name,
-        ownerToken,
         plan.revision,
         plan.desiredRuntime,
         checkoutIndex(plan.checkoutPath) + 1,
       );
     }
 
+    // Ports derive from the checkout path, so a busy triple means another
+    // checkout path, which is what the next candidate is.
     for (
       let candidate = checkoutIndex(plan.checkoutPath);
       candidate < MAX_CHECKOUT_CANDIDATES;
       candidate += 1
     ) {
       if (candidate > checkoutIndex(plan.checkoutPath)) {
-        plan = this.newOwnedPlan(
-          store,
-          state.name,
-          ownerToken,
-          plan.revision,
-          plan.desiredRuntime,
-          candidate,
-        );
+        plan = this.newOwnedPlan(store, state.name, plan.revision, plan.desiredRuntime, candidate);
       }
       state = checkpoint(state, { phase: "preparing", step: "checkout", plan });
       store.write(state);
@@ -1085,124 +1068,52 @@ export class DevManager {
         `Preparing ${basename(plan.checkoutPath)} at ${plan.revision.commit.slice(0, 12)}`,
       );
       prepareCheckout(plan, ownerToken);
-      assertLauncherSupported(launcherOptions(plan, this.environment));
-      const target = readLauncherStatus(launcherOptions(plan, this.environment));
+      assertRuntimeEnvContract(plan.checkoutPath);
+      const target = this.ownTarget(plan, state.name, ownerToken);
       const leaseKey = leaseKeyFor(target);
       const complete = { ...plan, target, leaseKey };
       state = checkpoint(state, { phase: "preparing", step: "external", plan: complete });
       store.write(state);
 
-      const adopted = await this.adoptTarget(store, state, plan, target, leaseKey, ownerToken);
-      if (adopted !== null) {
-        return adopted;
+      // A stack this instance already runs on the checkout is its own, not a
+      // conflict. Treating it as busy would send a live checkout to cleanup.
+      const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
+      const portsFree = !(await this.portsBusy(target)) || this.ownsRunningStack(store, target);
+      if (leaseClaimed && portsFree) {
+        ensureOwnedDirectory(target.dataDir, ownerToken, "data");
+        ensureOwnedDirectory(dirname(target.launcherLog), ownerToken, "logs");
+        writeShim(complete, store.paths.bin);
+        const prepared = checkpoint(state, { phase: "prepared", plan: complete });
+        store.write(prepared);
+        return prepared;
+      }
+      if (leaseClaimed) {
+        releaseLease(this.home, leaseKey, ownerToken);
       }
       await this.removeOwnedCheckout(store, plan, ownerToken);
     }
     throw new DevError(
       "ports_busy",
-      `Could not find free launcher ports for instance ${state.name}.`,
+      `Could not find free ports for instance ${state.name}.`,
       "Stop the conflicting bb instances, then retry start.",
     );
   }
 
   /**
-   * Take this launcher target for the instance, or report that it cannot.
+   * Remove an owned checkout once the dev stack it serves has stopped.
    *
-   * A dev session already running on the checkout is this instance's own, not
-   * a conflict: the lease is what arbitrates the port triple. Treating a busy
-   * port as someone else's is what used to send a live checkout to cleanup,
-   * stranding a `pnpm dev` tree that nothing could reach afterwards.
-   *
-   * Returns the prepared state on success, or null when the caller should move
-   * on to another checkout.
-   */
-  private async adoptTarget(
-    store: InstanceStore,
-    state: InstanceState,
-    plan: OwnedInstancePlan,
-    target: LauncherTarget,
-    leaseKey: string,
-    ownerToken: string,
-  ): Promise<InstanceState | null> {
-    const leaseClaimed = claimLease(this.home, leaseKey, ownerToken, state.name);
-    const portsBusy = await Promise.all([
-      this.portProbe(target.appPort),
-      this.portProbe(target.serverPort),
-      this.portProbe(target.hostDaemonPort),
-    ]);
-    const launcherOwnsRuntime =
-      target.devSession === "running" || target.desktopSession === "running";
-    if (leaseClaimed && (!portsBusy.some(Boolean) || launcherOwnsRuntime)) {
-      ensureOwnedDirectory(target.dataDir, ownerToken, "data");
-      ensureOwnedDirectory(dirname(target.launcherLog), ownerToken, "logs");
-      const complete = { ...plan, target, leaseKey };
-      writeShim(complete, store.paths.bin);
-      const prepared = checkpoint(state, { phase: "prepared", plan: complete });
-      store.write(prepared);
-      return prepared;
-    }
-    if (launcherOwnsRuntime) {
-      throw new DevError(
-        "lease_mismatch",
-        `Running launcher target for ${state.name} has another lease owner.`,
-        "Do not stop or replace it. Inspect the lease and state.json.",
-      );
-    }
-    if (leaseClaimed) {
-      releaseLease(this.home, leaseKey, ownerToken);
-    }
-    return null;
-  }
-
-  /**
-   * Remove an owned checkout once its launcher has stopped serving it.
-   *
-   * `scripts/bb-dev-app` starts its dev session detached and bb-kit never
-   * learns that pid, so the checkout's own launcher is the only thing that can
-   * stop it. Removing the directory first strands the whole `pnpm dev` tree
-   * with nothing left on disk to find it by, and it runs until the machine
-   * reboots. Stop is idempotent, so this asks for one whenever the launcher is
-   * still there to answer.
+   * Removing the directory first strands the whole Turbo dev tree with
+   * nothing left on disk to find it by, and it runs until the machine
+   * reboots. bb-kit records that tree in runtime.json, so stop it from the
+   * record first. Stop is idempotent and a missing record is a no-op.
    */
   private async removeOwnedCheckout(
     store: InstanceStore,
     plan: OwnedInstancePlan,
     ownerToken: string,
   ): Promise<void> {
-    await this.stopLauncherSessions(plan);
+    await stopRuntimeProcess(readRuntimeRecord(store.paths.root));
     safeRemoveOwned(plan.checkoutPath, store.paths.root, plan.checkoutPath, ownerToken);
-  }
-
-  private async stopLauncherSessions(plan: OwnedInstancePlan): Promise<void> {
-    const launcher = launcherOptions(plan, this.environment);
-    let live: LauncherTarget;
-    try {
-      assertLauncherSupported(launcher);
-      live = readLauncherStatus(launcher);
-    } catch {
-      // A launcher that cannot answer never started a session through this
-      // checkout, so nothing it owns can outlive the directory.
-      return;
-    }
-    if (live.devSession === "stopped" && live.desktopSession === "stopped") {
-      return;
-    }
-    const exitCode = await runLauncherCommand(
-      launcher,
-      ["stop"],
-      live.launcherLog,
-      () => {},
-      DEFAULT_CONTROL_TIMEOUT_MS,
-    );
-    const after = readLauncherStatus(launcher);
-    if (exitCode !== 0 || after.devSession !== "stopped" || after.desktopSession !== "stopped") {
-      throw new DevError(
-        "launcher_stop_failed",
-        `Launcher sessions survived stop for ${plan.checkoutPath}.`,
-        "Stop them by hand before retrying, or the dev stack outlives its checkout.",
-        { logPath: live.launcherLog },
-      );
-    }
   }
 
   private async stopLocked(
@@ -1225,96 +1136,38 @@ export class DevManager {
         "Wait for dev-instance exec or dev-instance run to finish, then retry stop.",
       );
     }
+    remainingTimeout(deadline, state.name, "stop");
     const plan = requireCompletePlan(state);
-    const launcher = launcherOptions(plan, this.environment);
     const live = this.liveTarget(store, plan);
-    assertSameStoredTarget(plan.target, live);
     assertLeaseOwned(this.home, plan.leaseKey, ownerToken);
-    const ports = await Promise.all([
-      this.portProbe(live.appPort),
-      this.portProbe(live.serverPort),
-      this.portProbe(live.hostDaemonPort),
-    ]);
-    if (live.devSession === "stopped" && ports.some(Boolean)) {
-      throw new DevError(
-        "ambiguous_launcher_target",
-        `Instance ${state.name} has no dev session but its target ports are occupied.`,
-        "Stop the conflicting listeners before retrying stop or destroy.",
-      );
-    }
     if (live.devSession === "stopped" && live.desktopSession === "stopped") {
+      if (await this.portsBusy(live)) {
+        throw new DevError(
+          "target_ports_busy",
+          `Instance ${state.name} has no dev stack but its target ports are occupied.`,
+          "Stop the conflicting listeners before retrying stop or destroy.",
+        );
+      }
+      clearRuntimeRecord(store.paths.root);
       const prepared = checkpoint(state, { phase: "prepared", plan: { ...plan, target: live } });
       store.write(prepared);
       return prepared;
     }
-    if (plan.source === "runtime") {
-      // bb-kit started this process group, so bb-kit ends it. There is no
-      // launcher to run `stop` against.
-      await stopRuntimeProcess(readRuntimeRecord(store.paths.root));
-      clearRuntimeRecord(store.paths.root);
-      const stoppedTarget = this.liveTarget(store, plan);
-      if (stoppedTarget.devSession !== "stopped") {
-        throw new DevError(
-          "runtime_stop_failed",
-          `Runtime ${state.name} survived stop.`,
-          "Inspect the dev log and retry stop.",
-          { logPath: live.devLog },
-        );
-      }
-      const prepared = checkpoint(state, {
-        phase: "prepared",
-        plan: { ...plan, target: stoppedTarget },
-      });
-      store.write(prepared);
-      return prepared;
-    }
-    let stopping = checkpoint(state, {
-      phase: "stopping",
-      plan: { ...plan, target: live },
-      child: null,
-    });
-    store.write(stopping);
-    let exitCode: number;
-    try {
-      exitCode = await runLauncherCommand(
-        launcher,
-        ["stop"],
-        live.launcherLog,
-        (child) => {
-          stopping = checkpoint(stopping, {
-            phase: "stopping",
-            plan: { ...plan, target: live },
-            child,
-          });
-          store.write(stopping);
-        },
-        remainingTimeout(deadline, state.name, "stop"),
-      );
-    } catch (error) {
-      const failure = asDevError(error);
-      store.write(failedFromPlan(stopping, { ...plan, target: live }, failure, "stop"));
-      throw failure;
-    }
-    if (exitCode !== 0) {
-      const failure = new DevError(
-        "launcher_stop_failed",
-        `Launcher stop exited with status ${exitCode} for instance ${state.name}.`,
-        "Inspect the launcher log and retry stop.",
-        { logPath: live.launcherLog },
-      );
-      store.write(failedFromPlan(stopping, { ...plan, target: live }, failure, "stop"));
-      throw failure;
-    }
-    const stoppedTarget = readLauncherStatus(launcher);
-    assertSameStoredTarget(live, stoppedTarget);
+    // bb-kit started this process group, so bb-kit ends it.
+    await stopRuntimeProcess(readRuntimeRecord(store.paths.root));
+    clearRuntimeRecord(store.paths.root);
+    const stoppedTarget = this.liveTarget(store, plan);
     if (stoppedTarget.devSession !== "stopped" || stoppedTarget.desktopSession !== "stopped") {
-      throw new DevError(
-        "launcher_stop_failed",
-        `Launcher sessions survived stop for instance ${state.name}.`,
-        "Inspect the launcher log and retry stop.",
+      const failure = new DevError(
+        "runtime_stop_failed",
+        `Instance ${state.name} survived stop.`,
+        "Inspect the dev log and retry stop.",
+        { logPath: live.devLog },
       );
+      store.write(failedFromPlan(state, { ...plan, target: live }, failure, "stop"));
+      throw failure;
     }
-    const prepared = checkpoint(stopping, {
+    const prepared = checkpoint(state, {
       phase: "prepared",
       plan: { ...plan, target: stoppedTarget },
     });
@@ -1379,8 +1232,8 @@ export class DevManager {
    * instance would stay on whatever release was newest that day. Every start
    * asks get-bb/bb again. The same release is answered by one `ls-remote`. A
    * newer one moves the checkout in place, which keeps its installed
-   * dependencies, after stopping the sessions that run from it; the launcher
-   * installs and builds the new release on the start that follows. A runtime
+   * dependencies, after stopping the sessions that run from it; the start
+   * that follows installs and builds the new release. A runtime
    * that is live on this checkout keeps the current release, as does an
    * unreachable repository: neither fails the start.
    */
@@ -1453,7 +1306,7 @@ export class DevManager {
     state = checkpoint(state, { phase: "preparing", step: "checkout", plan: moved });
     store.write(state);
     prepareCheckout(moved, ownerToken);
-    assertLauncherSupported(launcherOptions(moved, this.environment));
+    assertRuntimeEnvContract(moved.checkoutPath);
     return { state, plan: moved };
   }
 
@@ -1489,44 +1342,36 @@ export class DevManager {
   /**
    * What the instance actually looks like right now.
    *
-   * An owned or attached instance has a launcher to ask. A runtime does not:
-   * bb-kit spawned its stack, so the recorded process is the only session it
-   * has, and the rest of the target is what preparation leased.
+   * bb-kit spawned the stack, so the recorded processes are the only sessions
+   * it has; the rest of the target is what preparation leased.
    */
   private liveTarget(store: InstanceStore, plan: InstancePlan): LauncherTarget {
-    if (plan.source !== "runtime") {
-      return readLauncherStatus(launcherOptions(plan, this.environment));
-    }
     if (plan.target === null) {
       throw new DevError(
         "instance_not_prepared",
-        `Runtime ${plan.sourceInstance} has no leased ports yet.`,
+        `Instance ${store.paths.root} has no leased ports yet.`,
         "Run bb-kit dev-instance start to resume preparation.",
       );
     }
+    const record = readRuntimeRecord(store.paths.root);
     return {
       ...plan.target,
-      devSession: runtimeIsRunning(readRuntimeRecord(store.paths.root)) ? "running" : "stopped",
-      desktopSession: "stopped",
+      devSession: runtimeIsRunning(record) ? "running" : "stopped",
+      desktopSession: desktopIsRunning(record) ? "running" : "stopped",
     };
   }
 
   /**
    * Whether the instance is serving what was asked of it.
    *
-   * A runtime also has to hold all three of its ports. bb's launcher waits on
-   * its own log for that; bb-kit spawned the stack itself, so it checks the
-   * sockets directly.
+   * The stack has to hold all three of its ports and answer on the app URL.
+   * bb-kit spawned it, so it checks the sockets directly.
    */
-  private async satisfied(
-    plan: InstancePlan,
-    target: LauncherTarget,
-    desired: DesiredRuntime,
-  ): Promise<boolean> {
-    if (plan.source !== "runtime") {
-      return runtimeSatisfied(target, desired, this.healthProbe);
-    }
+  private async satisfied(target: LauncherTarget, desired: DesiredRuntime): Promise<boolean> {
     if (target.devSession !== "running") {
+      return false;
+    }
+    if (desired === "desktop" && target.desktopSession !== "running") {
       return false;
     }
     const ports = await Promise.all([
@@ -1538,6 +1383,44 @@ export class DevManager {
       return false;
     }
     return this.healthProbe(target.appUrl);
+  }
+
+  private async portsBusy(target: LauncherTarget): Promise<boolean> {
+    const ports = await Promise.all([
+      this.portProbe(target.appPort),
+      this.portProbe(target.serverPort),
+      this.portProbe(target.hostDaemonPort),
+    ]);
+    return ports.some(Boolean);
+  }
+
+  /** Whether the stack this instance recorded is alive on this target's ports. */
+  private ownsRunningStack(store: InstanceStore, target: LauncherTarget): boolean {
+    const record = readRuntimeRecord(store.paths.root);
+    return runtimeIsRunning(record) && record?.ports.appPort === target.appPort;
+  }
+
+  /**
+   * The target bb itself derives for an owned or attached checkout.
+   *
+   * Path-derived, exactly as bb's `resolveDevInstanceConfig` does it, so the
+   * checkout's own `bb:dev` CLI reaches the stack bb-kit started without any
+   * routing. Only the log directory is bb-kit's: an owned instance logs under
+   * a name that includes its owner token, so a re-created instance never
+   * appends to a stranger's log.
+   */
+  private ownTarget(
+    plan: OwnedInstancePlan | Extract<InstancePlan, { source: "attached" }>,
+    name: string,
+    ownerToken: string,
+  ): LauncherTarget {
+    return checkoutTarget({
+      checkoutPath: plan.checkoutPath,
+      homeDir: this.homeDirectory(),
+      logName:
+        plan.source === "owned" ? `bb-kit-${sanitizeName(name)}-${ownerToken.slice(0, 8)}` : null,
+      toolchain: readToolchain(plan.checkoutPath),
+    });
   }
 
   /**
@@ -1579,17 +1462,15 @@ export class DevManager {
         ? record.ports
         : initialPlan.target === null
           ? null
-          : runtimePortsFor(initialPlan.target);
+          : portsFor(initialPlan.target);
     for (let candidate = 0; candidate < MAX_RUNTIME_PORT_CANDIDATES; candidate += 1) {
       const ports: RuntimePorts =
         candidate === 0 && held !== null ? held : runtimePorts(startOffset + candidate);
       const target = runtimeTarget({
         name: state.name,
         checkoutPath: initialPlan.checkoutPath,
-        launcherName: initialPlan.launcherName,
         homeDir: this.homeDirectory(),
         ports,
-        running: false,
         toolchain: this.sourceToolchain(initialPlan.sourceInstance),
       });
       const leaseKey = leaseKeyFor(target);
@@ -1715,8 +1596,6 @@ export class DevManager {
       sourceInstance: source.name,
       revision,
       checkoutPath: source.checkoutPath,
-      launcherPath: join(source.checkoutPath, "scripts", "bb-dev-app"),
-      launcherName: runtimeInstanceId(sanitizeName(name)),
       desiredRuntime,
       shimPath: join(store.paths.bin, "bb"),
       leaseKey: null,
@@ -1749,7 +1628,6 @@ export class DevManager {
   private newOwnedPlan(
     store: InstanceStore,
     name: string,
-    ownerToken: string,
     revision: ResolvedRevision,
     desiredRuntime: DesiredRuntime,
     candidate: number,
@@ -1760,8 +1638,6 @@ export class DevManager {
       source: "owned",
       revision,
       checkoutPath,
-      launcherPath: join(checkoutPath, "scripts", "bb-dev-app"),
-      launcherName: `bb-kit-${sanitizeName(name)}-${ownerToken.slice(0, 8)}`,
       desiredRuntime,
       shimPath: join(store.paths.bin, "bb"),
       leaseKey: null,
@@ -1778,8 +1654,6 @@ export class DevManager {
       source: "attached",
       revision: null,
       checkoutPath,
-      launcherPath: join(checkoutPath, "scripts", "bb-dev-app"),
-      launcherName: null,
       desiredRuntime,
       shimPath: join(store.paths.bin, "bb"),
       leaseKey: null,
@@ -1857,12 +1731,6 @@ export class DevManager {
 }
 
 /**
- * The port set behind a leased target.
- *
- * The three bb ports are recorded on the target; the packaged-app port is not,
- * because bb's launcher never reports it. It is derived from the same offset.
- */
-/**
  * Where destroy starts for each kind of instance.
  *
  * An owned instance made a checkout, a data directory, and logs. A runtime made
@@ -1872,15 +1740,6 @@ export class DevManager {
 function firstDestroyStep(source: InstancePlan["source"]): "checkout" | "external" | "lease" {
   if (source === "owned") return "checkout";
   return source === "runtime" ? "external" : "lease";
-}
-
-function runtimePortsFor(target: LauncherTarget): RuntimePorts {
-  return {
-    ...runtimePorts(target.appPort - runtimePorts(0).appPort),
-    appPort: target.appPort,
-    serverPort: target.serverPort,
-    hostDaemonPort: target.hostDaemonPort,
-  };
 }
 
 function sanitizeName(value: string): string {

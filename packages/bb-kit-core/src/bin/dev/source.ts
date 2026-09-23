@@ -19,9 +19,8 @@ export function resolveAttachedCheckout(input: string, cwd: string): string {
   if (root.status !== 0 || realpathOrNull(root.stdout.trim()) !== checkoutPath) {
     invalidAttach(`Attached checkout ${checkoutPath} is not its Git workspace root.`);
   }
-  const launcher = join(checkoutPath, "scripts", "bb-dev-app");
-  if (!existsSync(launcher)) {
-    invalidAttach(`Attached checkout ${checkoutPath} has no scripts/bb-dev-app.`);
+  if (!existsSync(join(checkoutPath, "packages", "config", "src", "runtime.ts"))) {
+    invalidAttach(`Attached checkout ${checkoutPath} is not a bb checkout.`);
   }
   return checkoutPath;
 }
@@ -38,6 +37,6 @@ function invalidAttach(message: string): never {
   throw new DevError(
     "invalid_attach",
     message,
-    "Pass the path to an existing bb checkout with scripts/bb-dev-app.",
+    "Pass the path to an existing bb checkout (its root holds packages/config).",
   );
 }

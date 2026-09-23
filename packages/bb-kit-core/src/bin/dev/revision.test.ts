@@ -4,7 +4,6 @@ import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DevError } from "./error.ts";
-import { parseLauncherStatus } from "./launcher.ts";
 import { parseRevisionSelector, resolveRevision, selectLatestDesktopTag } from "./revision.ts";
 import { runCommand } from "./process.ts";
 
@@ -164,32 +163,6 @@ test("temporary Git repositories resolve local, origin, tags, and commits exactl
     { repositoryOption: selected },
   );
   assert.equal(commit.commit, mainCommit);
-});
-
-test("launcher status keeps app, server, and host targets distinct", () => {
-  const status = parseLauncherStatus(
-    [
-      "Repo: /tmp/bb",
-      "Instance: fixture",
-      "Data dir: /tmp/data",
-      "App: http://localhost:11001",
-      "Server: http://localhost:19001",
-      "Host daemon: http://127.0.0.1:27001",
-      "Desktop user data: /tmp/data/desktop",
-      "Dev session: running",
-      "Desktop session: stopped",
-      "Logs: /tmp/log/dev.log, /tmp/log/desktop.log",
-      "",
-    ].join("\n"),
-  );
-  assert.equal(status.appPort, 11001);
-  assert.equal(status.serverPort, 19001);
-  assert.equal(status.hostDaemonPort, 27001);
-  assert.notEqual(status.appUrl, status.serverUrl);
-  assert.throws(
-    () => parseLauncherStatus("Repo: /tmp/bb\n"),
-    (error) => code(error) === "malformed_launcher_status",
-  );
 });
 
 function initRepository(path: string): void {
