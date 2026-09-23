@@ -3,7 +3,7 @@ import type { JSONObjectSchema, SchemaOutput, StandardSchemaV1 } from "../rpc/rp
 import type {
   PluginAgentConfigurationContext,
   PluginAgentToolContext,
-  PluginAgentToolPresentation,
+  PluginRowPresentation,
   PluginAgentToolResult,
 } from "@get-bb/plugin-sdk";
 
@@ -18,7 +18,7 @@ import type {
 export type Session = PluginAgentConfigurationContext;
 export type ToolInvocation = PluginAgentToolContext;
 export type ToolResult = PluginAgentToolResult;
-export type ToolPresentation = PluginAgentToolPresentation;
+export type ToolPresentation = PluginRowPresentation;
 
 /**
  * What a tool's `execute` receives: the plugin Context plus the

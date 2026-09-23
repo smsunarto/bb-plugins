@@ -629,3 +629,24 @@ test("a bound field wrapped in .optional() fails", async () => {
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /argv binding must be outermost/);
 });
+
+test("a plugin CLI name outside the host pattern fails rule 5", async () => {
+  const root = makeFixture();
+  edit(root, "src/server/server.ts", 'pluginId: "notes",', 'pluginId: "no.tes",');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /plugin CLI name "no\.tes" does not match the host's .* — rule 5/);
+});
+
+test("an agent tool name outside the host pattern fails rule 7", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  edit(root, "src/server/server.ts", 'pluginId: "notes",', 'pluginId: "no.tes",');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /agent tool name "no\.tes_beacon" does not match the host's .* — rule 7/,
+  );
+});

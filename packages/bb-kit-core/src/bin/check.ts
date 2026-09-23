@@ -1172,6 +1172,10 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   }
 
   // ---- rule 5: host CLI policy, from the plugin's own SDK -----------
+  // The SDK stopped exporting its name patterns in 0.5.x; these local
+  // fallbacks keep both rules running when the export is absent.
+  const CLI_COMMAND_NAME_FALLBACK = /^[a-z0-9-]+$/;
+  const AGENT_TOOL_NAME_FALLBACK = /^[a-zA-Z0-9_-]+$/;
   const cliName = pluginId ?? id;
   if (cliName !== undefined) {
     try {
@@ -1180,9 +1184,12 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         CLI_COMMAND_NAME_PATTERN?: RegExp;
         RESERVED_BB_CLI_COMMANDS?: readonly string[];
       };
-      const pattern = policy.CLI_COMMAND_NAME_PATTERN;
+      const pattern =
+        policy.CLI_COMMAND_NAME_PATTERN instanceof RegExp
+          ? policy.CLI_COMMAND_NAME_PATTERN
+          : CLI_COMMAND_NAME_FALLBACK;
       const reserved = policy.RESERVED_BB_CLI_COMMANDS;
-      if (pattern instanceof RegExp && !pattern.test(cliName)) {
+      if (!pattern.test(cliName)) {
         fail(`plugin CLI name "${cliName}" does not match the host's ${String(pattern)} — rule 5`);
       }
       if (Array.isArray(reserved) && reserved.includes(cliName)) {
@@ -1204,10 +1211,13 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         AGENT_TOOL_NAME_PATTERN?: RegExp;
         RESERVED_AGENT_TOOL_NAMES?: readonly string[];
       };
-      const pattern = policy.AGENT_TOOL_NAME_PATTERN;
+      const pattern =
+        policy.AGENT_TOOL_NAME_PATTERN instanceof RegExp
+          ? policy.AGENT_TOOL_NAME_PATTERN
+          : AGENT_TOOL_NAME_FALLBACK;
       const reserved = policy.RESERVED_AGENT_TOOL_NAMES;
       for (const { name, line } of derivedToolNames) {
-        if (pattern instanceof RegExp && !pattern.test(name)) {
+        if (!pattern.test(name)) {
           fail(
             `agent tool name "${name}" does not match the host's ${String(pattern)} — rule 7`,
             compositionRoot,

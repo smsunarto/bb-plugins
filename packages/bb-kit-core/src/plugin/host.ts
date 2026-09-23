@@ -26,6 +26,7 @@ export type HostCLISeam = {
       name: string;
       summary: string;
       commands?: { name: string; summary: string; usage: string }[];
+      rendersHelp?: boolean;
       run(
         argv: string[],
         ctx: { cwd?: string; threadId?: string; projectId?: string; signal?: AbortSignal },

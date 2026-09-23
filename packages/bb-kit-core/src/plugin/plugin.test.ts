@@ -40,6 +40,7 @@ const readURL = defineMutation({
 const demo = { echo, ping, readURL };
 
 const testSession: Session = {
+  pluginMetadata: {},
   thread: { id: "t", title: null, parentThreadId: null, sourceThreadId: null },
   project: { id: "p", kind: "personal", name: "project", gitRemoteUrl: null },
   environment: {
