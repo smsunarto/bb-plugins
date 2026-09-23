@@ -3,7 +3,7 @@ import { readInstructions } from "./lib/instructions.ts";
 //
 // Runs `gh stack` commands in a thread's workspace (server host):
 // view --json for the panel, plus sync / submit / init actions.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi, type PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -279,6 +279,8 @@ export const rpcContract = defineRpcContract({
   // result is announced on the "stack-updated" realtime channel. With
   // `refresh: true` the call waits for a fresh compute.
   getStack: {
+    experimental_description:
+      "Read the stacked-PR view for a thread's workspace: layers, PR state, checkout, and settings. Cached; refresh forces a GitHub re-read.",
     input: z.object({ threadId: z.string(), refresh: z.boolean().optional() }).strict(),
     output: stackPayloadSchema.extend({
       // Epoch ms of the compute that produced this payload.
@@ -286,6 +288,7 @@ export const rpcContract = defineRpcContract({
     }),
   },
   setPrDraft: {
+    experimental_description: "Mark one PR in the thread's stack as draft or ready for review.",
     input: z
       .object({
         threadId: z.string(),
@@ -299,10 +302,14 @@ export const rpcContract = defineRpcContract({
   // branch against a fresh stack view, so the browser cannot select an
   // arbitrary local ref or a merged layer hidden from the panel.
   checkoutBranch: {
+    experimental_description:
+      "Check out a visible layer of the thread's stack; refuses while the thread is running.",
     input: z.object({ threadId: z.string(), branch: z.string().min(1).max(255) }).strict(),
     output: actionResultSchema,
   },
   runAction: {
+    experimental_description:
+      "Run gh stack sync, submit, sync-submit, or prune in the thread's workspace.",
     input: z
       .object({
         threadId: z.string(),
@@ -312,6 +319,8 @@ export const rpcContract = defineRpcContract({
     output: actionResultSchema,
   },
   mergeStack: {
+    experimental_description:
+      "Merge the stack bottom-up through the given PR number with the chosen merge method.",
     input: z
       .object({
         threadId: z.string(),
@@ -324,23 +333,32 @@ export const rpcContract = defineRpcContract({
     output: actionResultSchema,
   },
   createStack: {
+    experimental_description: "Initialize a new stack on a fresh branch in the thread's workspace.",
     input: layerInputSchema,
     output: actionResultSchema,
   },
   // Stack a new branch on top of the existing stack: gh stack top + add.
   addBranch: {
+    experimental_description:
+      "Stack a new branch on top of the thread's existing stack and check it out.",
     input: layerInputSchema,
     output: actionResultSchema,
   },
   suggestStackName: {
+    experimental_description:
+      "Ask a hidden helper thread for a stack name; falls back to the thread title or branch.",
     input: z.object({ threadId: z.string() }).strict(),
     output: z.object({ name: z.string() }),
   },
   magicStack: {
+    experimental_description:
+      "Send the thread's agent a prompt to create or extend the stack following the configured conventions.",
     input: z.object({ threadId: z.string() }).strict(),
     output: actionResultSchema,
   },
   saveSettings: {
+    experimental_description:
+      "Save the branch prefix and conventional-commit settings for gh-stack.",
     input: z
       .object({
         // Normalized server-side; rejected there when it cannot be a git ref.
@@ -1582,7 +1600,7 @@ export default async function plugin(bb: BbPluginApi) {
     };
   }
 
-  bb.rpc.register(rpcContract, {
+  const rpcHandlers: PluginRpcHandlers<typeof rpcContract> = {
     async getStack({ threadId, refresh }) {
       const cached = stackCache.get(threadId);
       if (refresh !== true && cached) {
@@ -2584,5 +2602,10 @@ export default async function plugin(bb: BbPluginApi) {
       );
       return { ok: true, message: null, settings: next };
     },
+  };
+  bb.rpc.register(rpcContract, rpcHandlers, {
+    experimental_discoverable: true,
+    experimental_description:
+      "Stacked pull requests (gh stack) for a thread's workspace: read the stack, check out layers, sync, submit, merge, and prune.",
   });
 }
