@@ -76,8 +76,20 @@ test("instrument wraps components, callbacks, and content-script failures", asyn
   const RenderDemo = () => null;
   const callbackError = new Error("callback private");
   const mountError = new Error("mount private");
+  const availabilityError = new Error("availability private");
+  const commandError = new Error("command private");
 
   const setup = telemetry.instrument((app: typeof registrations.app) => {
+    app.commands.register({
+      id: "demo-command",
+      title: "Demo",
+      isAvailable: () => {
+        throw availabilityError;
+      },
+      run: async () => {
+        throw commandError;
+      },
+    });
     app.slots.commandPaletteAction({
       id: "demo-action",
       component: RenderDemo,
@@ -99,31 +111,51 @@ test("instrument wraps components, callbacks, and content-script failures", asyn
   const component = action?.component as { displayName?: string } | undefined;
   const run = action?.run as (() => Promise<unknown>) | undefined;
   const mount = registrations.contentScripts[1]?.mount as (() => Promise<unknown>) | undefined;
+  const command = registrations.commands[0];
+  const commandRun = command?.run as (() => Promise<unknown>) | undefined;
+  const isAvailable = command?.isAvailable as (() => boolean) | undefined;
   assert.notEqual(component, RenderDemo);
   assert.equal(component?.displayName, "SentryBoundary(RenderDemo)");
   assert.ok(run);
   assert.ok(mount);
   await assert.rejects(run, callbackError);
   await assert.rejects(mount, mountError);
+  assert.ok(commandRun);
+  assert.ok(isAvailable);
+  await assert.rejects(commandRun, commandError);
+  assert.throws(isAvailable, availabilityError);
   await telemetry.flush(5_000);
 
-  assert.equal(target.envelopes.length, 2);
+  assert.equal(target.envelopes.length, 4);
   const events = target.envelopes.map(parseEnvelopeEvent);
   assert.deepEqual(
     events.map((event) => readRecord(event, "tags")["bb.kit.boundary"]),
-    ["app.callback", "app.contentScript"],
+    ["app.callback", "app.contentScript", "app.callback", "app.callback"],
   );
+  assert.deepEqual(events.map((event) => readRecord(event, "tags")["bb.kit.operation"]).sort(), [
+    "commands.register:demo-command.isAvailable",
+    "commands.register:demo-command.run",
+    "contentScripts.register:demo-script",
+    "slots.commandPaletteAction:demo-action.run",
+  ]);
 });
 
 function createRegistrations() {
   type Registration = Record<string, unknown>;
   type ContentScript = Record<string, unknown>;
   const slots: Registration[] = [];
+  const commands: Registration[] = [];
   const contentScripts: ContentScript[] = [];
   return {
     slots,
+    commands,
     contentScripts,
     app: {
+      commands: {
+        register(registration: Registration) {
+          commands.push(registration);
+        },
+      },
       slots: {
         commandPaletteAction(registration: Registration) {
           slots.push(registration);

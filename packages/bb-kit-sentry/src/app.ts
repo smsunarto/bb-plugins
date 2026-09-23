@@ -221,6 +221,7 @@ function instrumentBuilder<App extends object>(app: App, telemetry: SentryAppTel
   const transforms: Record<string, (kind: string, registration: unknown) => unknown> = {
     slots: (kind, registration) => wrapRegistration(registration, kind, telemetry),
     composer: (kind, registration) => wrapRegistration(registration, kind, telemetry),
+    commands: (kind, registration) => wrapRegistration(registration, kind, telemetry),
     contentScripts: (kind, registration) => wrapContentScript(registration, kind, telemetry),
   };
   return new Proxy(app, {
