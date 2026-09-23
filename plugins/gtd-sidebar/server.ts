@@ -4,7 +4,13 @@
 // Putting them on the thread would mean a schema change, a wire change, and a
 // HOST_DAEMON_PROTOCOL_VERSION bump for something only this sidebar
 // understands. Here, uninstalling the plugin removes this database with it.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  cliCommand,
+  defineCli,
+  defineRpcContract,
+  PluginCliError,
+  type BbPluginApi,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
@@ -45,10 +51,13 @@ const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
 export const gtdSidebarRpcContract = defineRpcContract({
   listNamingThreads: {
+    experimental_description: "Threads whose title the plugin is currently generating.",
     input: z.object({}),
     output: z.array(z.string()),
   },
   listEnvironmentBranches: {
+    experimental_description:
+      "GitButler branch labels for plain (non-worktree) checkouts, when the setting is on.",
     input: z.object({ environmentIds: z.array(z.string().trim().min(1)).max(100) }),
     output: z.object({
       environments: z.array(
@@ -60,6 +69,7 @@ export const gtdSidebarRpcContract = defineRpcContract({
     }),
   },
   listLifecycle: {
+    experimental_description: "Every snoozed thread with its wake time.",
     input: z.object({}),
     output: z.object({
       rows: z.array(
@@ -78,14 +88,18 @@ export const gtdSidebarRpcContract = defineRpcContract({
    * `LIFECYCLE_CHANNEL`.
    */
   listCollapsedThreads: {
+    experimental_description:
+      "Thread families folded in the sidebar, shared with bb's own sidebar.",
     input: z.object({}),
     output: z.object({ threadIds: z.array(z.string()) }),
   },
   toggleCollapsedThread: {
+    experimental_description: "Fold or unfold one thread family.",
     input: threadIdSchema,
     output: z.object({ threadIds: z.array(z.string()) }),
   },
   snooze: {
+    experimental_description: "Park a thread and its family until an absolute wake time.",
     input: z.object({
       threadId: z.string().trim().min(1),
       // Absolute wake time, so a snooze means the same thing on every device.
@@ -93,7 +107,11 @@ export const gtdSidebarRpcContract = defineRpcContract({
     }),
     output: z.object({ ok: z.boolean() }),
   },
-  unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
+  unsnooze: {
+    experimental_description: "Wake a snoozed thread and its family now.",
+    input: threadIdSchema,
+    output: z.object({ ok: z.boolean() }),
+  },
   /**
    * bb's own re-parent, made by dropping one row onto another (nest) or onto
    * a project header (`parentThreadId: null`, back to the top level). The
@@ -101,6 +119,7 @@ export const gtdSidebarRpcContract = defineRpcContract({
    * here. `reason` names the check a refused drop failed.
    */
   nestThread: {
+    experimental_description: "Re-parent a thread under another thread, or back to the top level.",
     input: z.object({
       threadId: z.string().trim().min(1),
       parentThreadId: z.string().trim().min(1).nullable(),
@@ -216,78 +235,86 @@ export default async function plugin(bb: BbPluginApi) {
   const collapsedThreads = createCollapsedThreadsStore(bb.sdk.system.uiPreferences);
   const threadNester = createThreadNester(bb.sdk.threads);
 
-  bb.rpc.register(gtdSidebarRpcContract, {
-    listNamingThreads: threadNamer.listNamingThreads,
-    async listCollapsedThreads() {
-      return { threadIds: await collapsedThreads.list() };
-    },
-    async toggleCollapsedThread({ threadId }) {
-      return { threadIds: await collapsedThreads.toggle(threadId) };
-    },
-    async listEnvironmentBranches({ environmentIds }) {
-      if (!(await settings.get()).gitButlerBranches) return { environments: [] };
-      const environments = await Promise.all(
-        [...new Set(environmentIds)].map(async (environmentId) => {
-          try {
-            const environment = await bb.sdk.environments.get({ environmentId });
-            // GitButler owns the primary checkout. Linked worktrees keep their
-            // real Git branch and must not inherit the primary workspace's
-            // virtual branches. `branchName` is not a guard here: bb records it
-            // when an environment is created, so it can predate GitButler.
-            if (!environment.isGitRepo || environment.isWorktree || environment.path === null) {
+  bb.rpc.register(
+    gtdSidebarRpcContract,
+    {
+      listNamingThreads: threadNamer.listNamingThreads,
+      async listCollapsedThreads() {
+        return { threadIds: await collapsedThreads.list() };
+      },
+      async toggleCollapsedThread({ threadId }) {
+        return { threadIds: await collapsedThreads.toggle(threadId) };
+      },
+      async listEnvironmentBranches({ environmentIds }) {
+        if (!(await settings.get()).gitButlerBranches) return { environments: [] };
+        const environments = await Promise.all(
+          [...new Set(environmentIds)].map(async (environmentId) => {
+            try {
+              const environment = await bb.sdk.environments.get({ environmentId });
+              // GitButler owns the primary checkout. Linked worktrees keep their
+              // real Git branch and must not inherit the primary workspace's
+              // virtual branches. `branchName` is not a guard here: bb records it
+              // when an environment is created, so it can predate GitButler.
+              if (!environment.isGitRepo || environment.isWorktree || environment.path === null) {
+                return null;
+              }
+
+              const summary = await host.call(
+                "branchSummary",
+                { cwd: environment.path },
+                { hostId: environment.hostId },
+              );
+              if (summary.label === null) return null;
+              return {
+                environmentId,
+                label: summary.label,
+              };
+            } catch {
+              // The card keeps bb's own branch label when the environment or its
+              // host is unavailable. A sidebar enhancement must not blank rows.
               return null;
             }
-
-            const summary = await host.call(
-              "branchSummary",
-              { cwd: environment.path },
-              { hostId: environment.hostId },
-            );
-            if (summary.label === null) return null;
-            return {
-              environmentId,
-              label: summary.label,
-            };
-          } catch {
-            // The card keeps bb's own branch label when the environment or its
-            // host is unavailable. A sidebar enhancement must not blank rows.
-            return null;
-          }
-        }),
-      );
-      return { environments: environments.filter((environment) => environment !== null) };
-    },
-    async listLifecycle() {
-      return { rows: readAll() };
-    },
-    async snooze({ threadId, snoozedUntil }) {
-      const ids = await familyIds(threadId);
-      const snoozedAt = Date.now();
-      db.transaction(() => {
-        for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
-      })();
-      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
-      return { ok: true };
-    },
-    async unsnooze({ threadId }) {
-      const ids = await familyIds(threadId);
-      db.transaction(() => {
-        for (const id of ids) deleteSnooze.run(id);
-      })();
-      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
-      return { ok: true };
-    },
-    async nestThread({ threadId, parentThreadId }) {
-      const result = await threadNester.nest(threadId, parentThreadId);
-      if (!result.ok) {
-        bb.log.warn(
-          `nest thread ${threadId} under ${parentThreadId ?? "top level"} refused: ${result.reason}`,
+          }),
         );
-        return { ok: false, reason: result.reason };
-      }
-      return { ok: true };
+        return { environments: environments.filter((environment) => environment !== null) };
+      },
+      async listLifecycle() {
+        return { rows: readAll() };
+      },
+      async snooze({ threadId, snoozedUntil }) {
+        const ids = await familyIds(threadId);
+        const snoozedAt = Date.now();
+        db.transaction(() => {
+          for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
+        })();
+        bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
+        return { ok: true };
+      },
+      async unsnooze({ threadId }) {
+        const ids = await familyIds(threadId);
+        db.transaction(() => {
+          for (const id of ids) deleteSnooze.run(id);
+        })();
+        bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
+        return { ok: true };
+      },
+      async nestThread({ threadId, parentThreadId }) {
+        const result = await threadNester.nest(threadId, parentThreadId);
+        if (!result.ok) {
+          bb.log.warn(
+            `nest thread ${threadId} under ${parentThreadId ?? "top level"} refused: ${result.reason}`,
+          );
+          return { ok: false, reason: result.reason };
+        }
+        return { ok: true };
+      },
     },
-  });
+    {
+      experimental_discoverable: true,
+      experimental_description:
+        "Snooze, fold, nest, and label threads for the GTD Sidebar, an action-oriented sidebar that groups threads by who can act next.",
+    },
+  );
 
   // A deleted thread must not leave a row behind that would park a future
   // thread reusing the id, and stale rows accumulate otherwise.
@@ -313,37 +340,34 @@ export default async function plugin(bb: BbPluginApi) {
 
   subscribeToThreadNaming(bb, threadNamer);
 
-  bb.cli.register({
-    name: "gtd-sidebar",
-    summary: "Manage GTD Sidebar threads.",
-    commands: [
-      {
-        name: "rename",
-        summary: "Generate a new title for a thread.",
-        usage: "bb gtd-sidebar rename [<threadId>]",
+  bb.cli.register(
+    defineCli({
+      name: "gtd-sidebar",
+      summary: "Manage GTD Sidebar threads.",
+      usageErrorExitCode: 2,
+      commands: {
+        rename: cliCommand({
+          summary: "Generate a new title for a thread.",
+          positionals: [
+            {
+              name: "threadId",
+              description: "Thread to rename; defaults to the thread this command runs from.",
+            },
+          ],
+          async run({ positionals }, context) {
+            const threadId = positionals.threadId ?? context.threadId;
+            if (threadId === undefined) {
+              throw new PluginCliError("Pass a thread id or run this command from a thread.", {
+                code: "missing_thread",
+                exitCode: 2,
+              });
+            }
+            const result = await threadNamer.nameThread(threadId, { kind: "forced" });
+            if (!result.ok) throw new PluginCliError(result.error, { code: "rename_failed" });
+            return { exitCode: 0, stdout: `${result.title}\n` };
+          },
+        }),
       },
-    ],
-    async run(argv, context) {
-      const [command, ...args] = argv;
-      if (command !== "rename") {
-        return {
-          exitCode: 2,
-          stderr: `Unknown subcommand "${command ?? ""}". Use "bb gtd-sidebar rename [<threadId>]".\n`,
-        };
-      }
-
-      const threadId = args[0] ?? context.threadId;
-      if (threadId === undefined) {
-        return {
-          exitCode: 2,
-          stderr: "Pass a thread id or run this command from a thread.\n",
-        };
-      }
-
-      const result = await threadNamer.nameThread(threadId, { kind: "forced" });
-      return result.ok
-        ? { exitCode: 0, stdout: `${result.title}\n` }
-        : { exitCode: 1, stderr: `${result.error}\n` };
-    },
-  });
+    }),
+  );
 }

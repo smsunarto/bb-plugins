@@ -27,7 +27,7 @@
   "type": "module",
   "engines": {
     "bb": ">=0.43.1 <1.0.0",
-    "bbPluginSdk": ">=0.4.87"
+    "bbPluginSdk": ">=0.5.9"
   },
   "bb": {
     "name": "GTD Sidebar",
@@ -116,7 +116,7 @@
     "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000 test/*.test.ts && node --experimental-strip-types --test test/feature-settings.node.ts test/snooze-family.node.ts test/deletion-refresh.node.ts",
+    "test": "bun test --timeout=30000 test/*.test.ts && node --experimental-strip-types --test test/feature-settings.node.ts test/snooze-family.node.ts test/deletion-refresh.node.ts test/cli.node.ts",
     "clean": "rm -rf dist"
   }
 }
