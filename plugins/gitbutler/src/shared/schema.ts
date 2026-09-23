@@ -133,8 +133,18 @@ export const patchSourceSchema = z.union([
   z.object({ kind: z.literal("commit"), commitId: commitIdSchema }).strict(),
 ]);
 
-export const patchSchema = z
-  .object({ path: z.string(), patch: z.string(), truncated: z.boolean() })
+/** One file of a `but diff` payload: a complete git patch Pierre can parse. */
+export const filePatchSchema = z
+  .object({
+    path: z.string(),
+    kind: changeKindSchema,
+    patch: z.string(),
+    truncated: z.boolean(),
+  })
+  .strict();
+
+export const patchesSchema = z
+  .object({ files: z.array(filePatchSchema), truncated: z.boolean() })
   .strict();
 
 export type FileChange = z.infer<typeof fileChangeSchema>;
@@ -147,5 +157,6 @@ export type Workspace = z.infer<typeof workspaceSchema>;
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export type Repository = z.infer<typeof repositorySchema>;
 export type PatchSource = z.infer<typeof patchSourceSchema>;
-export type Patch = z.infer<typeof patchSchema>;
+export type FilePatch = z.infer<typeof filePatchSchema>;
+export type Patches = z.infer<typeof patchesSchema>;
 export type BranchStatus = z.infer<typeof branchStatusSchema>;

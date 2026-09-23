@@ -5,8 +5,7 @@ import {
   commitDetailsSchema,
   commitIdSchema,
   environmentPathSchema,
-  filePathSchema,
-  patchSchema,
+  patchesSchema,
   patchSourceSchema,
   repositoriesSchema,
   repositoryKeySchema,
@@ -38,8 +37,8 @@ export const gitbutlerHostContract = defineRpcContract({
     input: target.extend({ commitId: commitIdSchema }).strict(),
     output: commitDetailsSchema,
   },
-  patch: {
-    input: target.extend({ source: patchSourceSchema, path: filePathSchema }).strict(),
-    output: patchSchema,
+  patches: {
+    input: target.extend({ source: patchSourceSchema }).strict(),
+    output: patchesSchema,
   },
 });

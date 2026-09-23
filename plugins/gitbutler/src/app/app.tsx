@@ -15,7 +15,7 @@ import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
-import { PatchView } from "./patch-view.tsx";
+import { FileCards } from "./file-cards.tsx";
 import { rpc, defined } from "./rpc.ts";
 import {
   BRANCH_STATUS_LABEL,
@@ -378,13 +378,11 @@ function CommitDetail({
   repositoryKey,
   selection,
   openPath,
-  onOpenPath,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   selection: Extract<Selection, { kind: "commit" }>;
   openPath: string | null;
-  onOpenPath: (path: string | null) => void;
 }) {
   const details = rpc.commit.useQuery(
     defined({ threadId, repositoryKey, commitId: selection.commitId }),
@@ -409,27 +407,15 @@ function CommitDetail({
         {details.data ? <span>{details.data.authorName}</span> : null}
         <span>{relativeTime(selection.createdAt)}</span>
       </p>
-      {details.isPending ? <Loading label="Loading files…" /> : null}
       {details.isError ? (
         <Notice title="Commit failed to load" detail={errorText(details.error)} />
       ) : null}
-      {details.data ? (
-        <>
-          <p className={SECTION_TITLE}>
-            Files{" "}
-            <span className="tabular-nums text-muted-foreground">{details.data.files.length}</span>
-          </p>
-          <ChangeList changes={details.data.files} activePath={openPath} onOpen={onOpenPath} />
-        </>
-      ) : null}
-      {openPath ? (
-        <PatchView
-          threadId={threadId}
-          repositoryKey={repositoryKey}
-          source={source}
-          path={openPath}
-        />
-      ) : null}
+      <FileCards
+        threadId={threadId}
+        repositoryKey={repositoryKey}
+        source={source}
+        initialPath={openPath}
+      />
     </>
   );
 }
@@ -439,14 +425,12 @@ function DetailScreen({
   repositoryKey,
   selection,
   openPath,
-  onOpenPath,
   onBack,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   selection: Selection;
   openPath: string | null;
-  onOpenPath: (path: string | null) => void;
   onBack: () => void;
 }) {
   return (
@@ -469,18 +453,15 @@ function DetailScreen({
             repositoryKey={repositoryKey}
             selection={selection}
             openPath={openPath}
-            onOpenPath={onOpenPath}
           />
         ) : (
           <>
-            {/* Pierre's own header carries the path, so the screen only has to
-                say which side of the worktree this diff came from. */}
-            <p className={SECTION_TITLE}>Uncommitted</p>
-            <PatchView
+            <h2 className="m-0 text-[13px] font-semibold">Uncommitted</h2>
+            <FileCards
               threadId={threadId}
               repositoryKey={repositoryKey}
               source={UNCOMMITTED_SOURCE}
-              path={selection.path}
+              initialPath={selection.path}
             />
           </>
         )}
@@ -666,7 +647,6 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
         repositoryKey={repositoryKey}
         selection={selection}
         openPath={openPath}
-        onOpenPath={setOpenPath}
         onBack={back}
       />
     );

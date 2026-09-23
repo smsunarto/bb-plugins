@@ -13,3 +13,63 @@
   --diffs-font-size: 11px;
   --diffs-line-height: 20px;
 }
+
+/*
+ * A diff card's header is a Pierre render; its body is a second one with the
+ * header disabled. They stay separate components so the chevron's hit target
+ * can cover the whole header row without swallowing clicks in the code below.
+ */
+.gb-file-head {
+  position: relative;
+  --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
+  --diffs-font-family: var(--font-mono, ui-monospace, monospace);
+  --diffs-font-size: 11px;
+}
+.gb-file-head:hover {
+  --diffs-bg: var(--state-hover);
+}
+.gb-file-head:hover .gb-chevron {
+  color: var(--foreground);
+}
+.gb-chevron {
+  display: inline-flex;
+  width: 18px;
+  height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.gb-chevron::after {
+  /* Extend the native button's hit target across the entire Pierre header. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.gb-chevron:focus-visible {
+  outline: none;
+}
+.gb-chevron:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.gb-chevron svg {
+  width: 8px;
+  height: 12px;
+  transform: rotate(-90deg);
+  transition: transform 150ms;
+}
+.gb-chevron[aria-expanded="true"] svg {
+  transform: rotate(0deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-chevron svg {
+    transition: none;
+  }
+}

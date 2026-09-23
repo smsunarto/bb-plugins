@@ -5,6 +5,18 @@ import { parseWorkspace } from "../src/host/parse.ts";
 import { statusPayload } from "./fixtures.ts";
 
 installDom();
+
+/*
+ * jsdom ships no ResizeObserver, and Pierre measures its own gutter on mount.
+ * The panel's assertions are about what renders, not about layout, so an
+ * inert observer is enough to let the diff cards mount.
+ */
+class InertResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= InertResizeObserver;
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 const workspace = parseWorkspace(statusPayload, "bb-plugins");
@@ -64,11 +76,17 @@ test("opens a commit and then one of its files as a diff", async () => {
       authorEmail: "github@smsunarto.com",
       files: [{ path: "src/app/app.tsx", kind: "modified" }],
     }),
-    patch: () => ({
-      path: "src/app/app.tsx",
-      patch:
-        "diff --git a/src/app/app.tsx b/src/app/app.tsx\n" +
-        "--- a/src/app/app.tsx\n+++ b/src/app/app.tsx\n@@ -1 +1 @@\n-old\n+new\n",
+    patches: () => ({
+      files: [
+        {
+          path: "src/app/app.tsx",
+          kind: "modified",
+          patch:
+            "diff --git a/src/app/app.tsx b/src/app/app.tsx\n" +
+            "--- a/src/app/app.tsx\n+++ b/src/app/app.tsx\n@@ -1 +1 @@\n-old\n+new\n",
+          truncated: false,
+        },
+      ],
       truncated: false,
     }),
   });
@@ -77,15 +95,13 @@ test("opens a commit and then one of its files as a diff", async () => {
   fireEvent.click(slot.getByText("feat(top): add the thing"));
 
   await waitFor(() => expect(slot.getByText("With a body.")).toBeTruthy());
-  await waitFor(() => expect(slot.getByText("app.tsx")).toBeTruthy());
-  fireEvent.click(slot.getByText("app.tsx"));
+  await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
 
   await waitFor(() => {
-    const call = slot.inspection.rpcCalls.find((entry) => entry.method === "patch");
+    const call = slot.inspection.rpcCalls.find((entry) => entry.method === "patches");
     expect(call?.input).toEqual({
       threadId: "thread-1",
       source: { kind: "commit", commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5" },
-      path: "src/app/app.tsx",
     });
   });
 
@@ -97,9 +113,16 @@ test("opens a commit and then one of its files as a diff", async () => {
 test("opens an uncommitted file straight into its working-tree diff", async () => {
   const slot = await panel({
     ...baseRpc,
-    patch: () => ({
-      path: "bun.lock",
-      patch: "diff --git a/bun.lock b/bun.lock\n--- a/bun.lock\n+++ b/bun.lock\n@@ -1 +1 @@\n-a\n+b\n",
+    patches: () => ({
+      files: [
+        {
+          path: "bun.lock",
+          kind: "modified",
+          patch:
+            "diff --git a/bun.lock b/bun.lock\n--- a/bun.lock\n+++ b/bun.lock\n@@ -1 +1 @@\n-a\n+b\n",
+          truncated: false,
+        },
+      ],
       truncated: false,
     }),
   });
@@ -113,13 +136,13 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
   fireEvent.click(slot.getByText("bun.lock"));
 
   await waitFor(() => {
-    const call = slot.inspection.rpcCalls.find((entry) => entry.method === "patch");
+    const call = slot.inspection.rpcCalls.find((entry) => entry.method === "patches");
     expect(call?.input).toEqual({
       threadId: "thread-1",
       source: { kind: "uncommitted" },
-      path: "bun.lock",
     });
   });
+  await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
   slot.lifecycle.unmount();
 });
 

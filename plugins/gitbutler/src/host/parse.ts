@@ -6,6 +6,8 @@ import type {
   Commit,
   CommitDetails,
   FileChange,
+  FilePatch,
+  Patches,
   Stack,
   Workspace,
 } from "../shared/schema.ts";
@@ -200,10 +202,7 @@ function patchHeader(path: string, previousPath: string, status: string): string
  * what Pierre receives is still a patch it can parse; a single hunk larger
  * than the whole budget falls back to the last line boundary inside it.
  */
-function patchBody(diff: Json | undefined, maxChars: number) {
-  const hunks = asArray(diff?.["hunks"])
-    .map((hunk) => asString(asObject(hunk)?.["diff"]))
-    .filter((text) => text !== "");
+function patchBody(hunks: readonly string[], maxChars: number) {
   let body = "";
   for (const hunk of hunks) {
     if (body.length + hunk.length <= maxChars) {
@@ -216,25 +215,91 @@ function patchBody(diff: Json | undefined, maxChars: number) {
   return { body, truncated: false };
 }
 
-/** `but diff --json` to one file's unified patch, headers included. */
-export function patchFor(
-  payload: unknown,
-  path: string,
-  maxChars: number,
-): { patch: string; truncated: boolean } | undefined {
-  const changes = asArray(asObject(payload)?.["changes"]);
-  const match = changes.map(asObject).find((entry) => asString(entry?.["path"]) === path);
-  if (!match) return undefined;
+/** `@@ -old +new @@` start lines, so regrouped hunks stay in file order. */
+function hunkOrder(hunk: string): [number, number] {
+  const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(hunk);
+  return match ? [Number(match[1]), Number(match[2])] : [Number.MAX_SAFE_INTEGER, 0];
+}
 
-  const diff = asObject(match["diff"]);
-  if (diff && asString(diff["type"]) !== "patch") {
-    return { patch: "", truncated: false };
+type Grouped = {
+  change: FileChange;
+  previousPath: string;
+  status: string;
+  binary: boolean;
+  hunks: string[];
+};
+
+/**
+ * `but diff --json` emits one record per hunk, each carrying the change id
+ * GitButler commits by, so a file with six edits arrives six times. The panel
+ * shows files, not hunks, so they are folded back together here and re-sorted
+ * into file order.
+ */
+function groupByPath(payload: unknown): Grouped[] {
+  const groups = new Map<string, Grouped>();
+  for (const entry of asArray(asObject(payload)?.["changes"])) {
+    const record = asObject(entry);
+    const change = record && fileChange(record);
+    if (!record || !change) continue;
+
+    let group = groups.get(change.path);
+    if (!group) {
+      group = {
+        change,
+        previousPath: asString(record["previousPath"] ?? record["oldPath"], change.path),
+        status: asString(record["status"] ?? record["changeType"]),
+        binary: false,
+        hunks: [],
+      };
+      groups.set(change.path, group);
+    }
+    const diff = asObject(record["diff"]);
+    if (diff && asString(diff["type"]) !== "patch") {
+      group.binary = true;
+      continue;
+    }
+    for (const hunk of asArray(diff?.["hunks"])) {
+      const text = asString(asObject(hunk)?.["diff"]);
+      if (text !== "") group.hunks.push(text);
+    }
   }
-  const { body, truncated } = patchBody(diff, maxChars);
-  if (body === "") return { patch: "", truncated };
-  const previousPath = asString(match["previousPath"] ?? match["oldPath"], path);
-  const status = asString(match["status"] ?? match["changeType"]);
-  return { patch: patchHeader(path, previousPath, status) + body, truncated };
+  for (const group of groups.values()) {
+    group.hunks.sort((left, right) => {
+      const [leftOld, leftNew] = hunkOrder(left);
+      const [rightOld, rightNew] = hunkOrder(right);
+      return leftOld - rightOld || leftNew - rightNew;
+    });
+  }
+  return [...groups.values()];
+}
+
+/**
+ * `but diff --json` to one complete git patch per file. The panel renders the
+ * whole change set at once, so a single CLI call covers every card and the
+ * budget is shared: once it runs out the remaining files arrive with an empty
+ * patch and `truncated` set, rather than one enormous payload.
+ */
+export function patchesFor(payload: unknown, maxChars: number): Patches {
+  const files: FilePatch[] = [];
+  let budget = maxChars;
+  let truncated = false;
+
+  for (const group of groupByPath(payload)) {
+    if (group.hunks.length === 0) {
+      files.push({ ...group.change, patch: "", truncated: false });
+      continue;
+    }
+    const body = patchBody(group.hunks, budget);
+    budget -= body.body.length;
+    truncated ||= body.truncated;
+    const header = patchHeader(group.change.path, group.previousPath, group.status);
+    files.push({
+      ...group.change,
+      patch: body.body === "" ? "" : header + body.body,
+      truncated: body.truncated,
+    });
+  }
+  return { files, truncated };
 }
 
 /**
