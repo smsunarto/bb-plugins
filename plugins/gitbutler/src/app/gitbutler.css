@@ -15,66 +15,6 @@
 }
 
 /*
- * A diff card's header is a Pierre render; its body is a second one with the
- * header disabled. They stay separate components so the chevron's hit target
- * can cover the whole header row without swallowing clicks in the code below.
- *
- * The header keeps Pierre's own metrics. `plugins/monokai` reshapes bb's
- * native diff header to those same metrics, so leaving them alone is what
- * makes the two surfaces match.
+ * The card header is bb's own diff-header markup in the light DOM, so
+ * `plugins/monokai` styles it through its existing rules. Nothing to add here.
  */
-.gb-file-head {
-  position: relative;
-  --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
-  --diffs-font-family: var(--font-mono, ui-monospace, monospace);
-}
-.gb-file-head:hover {
-  --diffs-bg: var(--state-hover);
-}
-.gb-file-head:hover .gb-chevron {
-  color: var(--foreground);
-}
-.gb-chevron {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.gb-chevron::after {
-  /* Extend the native button's hit target across the entire Pierre header. */
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-}
-.gb-chevron:focus-visible {
-  outline: none;
-}
-.gb-chevron:focus-visible::after {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-/* Pierre's chevron is a 10x16 glyph, the size monokai masks onto bb's own
- * diff header. Anything smaller shrinks the artwork instead of matching it. */
-.gb-chevron svg {
-  width: 10px;
-  height: 16px;
-  transform: rotate(-90deg);
-  transition: transform 150ms ease;
-}
-.gb-chevron[aria-expanded="true"] svg {
-  transform: rotate(0deg);
-}
-@media (prefers-reduced-motion: reduce) {
-  .gb-chevron svg {
-    transition: none;
-  }
-}

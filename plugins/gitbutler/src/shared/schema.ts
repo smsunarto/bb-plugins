@@ -147,6 +147,7 @@ export const patchesSchema = z
   .object({ files: z.array(filePatchSchema), truncated: z.boolean() })
   .strict();
 
+export type ChangeKind = z.infer<typeof changeKindSchema>;
 export type FileChange = z.infer<typeof fileChangeSchema>;
 export type Commit = z.infer<typeof commitSchema>;
 export type CommitDetails = z.infer<typeof commitDetailsSchema>;

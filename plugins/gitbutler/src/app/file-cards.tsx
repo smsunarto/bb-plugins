@@ -4,20 +4,14 @@ import {
   experimental_useCodeTheme as useCodeTheme,
 } from "@get-bb/plugin-sdk/app";
 import { getSingularPatch } from "@pierre/diffs";
-import { File, FileDiff } from "@pierre/diffs/react";
-import type { FilePatch, PatchSource } from "../shared/schema.ts";
+import { FileDiff } from "@pierre/diffs/react";
+import type { ChangeKind, FilePatch, PatchSource } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { rpc, defined } from "./rpc.ts";
 
 const REFRESH_INTERVAL_MS = 10_000;
-
-/*
- * Pierre draws its change icon at 16px; `plugins/monokai` draws the one on
- * bb's own diff header at 14px. The panel follows monokai, since matching bb
- * is the point. `unsafeCSS` is the only hook that reaches the shadow root.
- */
-const HEADER_CSS = "[data-change-icon]{width:14px;height:14px}";
+const COPIED_FEEDBACK_MS = 1_200;
 
 type Parsed = ReturnType<typeof getSingularPatch>;
 
@@ -38,37 +32,108 @@ function countLines(parsed: Parsed | null): { added: number; removed: number } {
   };
 }
 
-function Chevron({
+/**
+ * bb's diff panel draws its own file header in the light DOM, and this panel
+ * renders inside the same secondary-panel shelf. Reproducing that markup, down
+ * to the `model` prop `plugins/monokai` reads off the fiber, means monokai's
+ * header rules and its injected change icon apply here verbatim. Matching it
+ * by eye against Pierre's shadow-root header never converged.
+ */
+function FileHeader({
+  model,
   open,
-  label,
+  added,
+  removed,
+  hasDiff,
   bodyId,
   onToggle,
 }: {
+  model: { path: string; label: string; changeKind: ChangeKind };
   open: boolean;
-  label: string;
+  added: number;
+  removed: number;
+  hasDiff: boolean;
   bodyId: string;
   onToggle: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+
   return (
-    <button
-      type="button"
-      className="gb-chevron"
-      aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
-      aria-expanded={open}
-      aria-controls={bodyId}
-      onClick={onToggle}
-    >
-      <svg viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
-        <path d="M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
-      </svg>
-    </button>
+    // Sticky like bb's: monokai paints a sticky diff header with its opaque
+    // fallback and a static one with a 6% layer, so this is what picks the same
+    // fill. It also keeps the path in view while the diff scrolls.
+    <div className="sticky top-0 z-10 rounded-lg bg-background px-3 py-0 text-xs font-medium text-foreground">
+      <div className="flex min-h-10 w-full min-w-0 items-center justify-between gap-2">
+        <span className="flex min-w-0 flex-1 items-center">
+          <button
+            type="button"
+            className="inline-flex w-8 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            aria-label={`${open ? "Collapse" : "Expand"} ${model.path}`}
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={onToggle}
+          >
+            <Icon
+              name="ChevronRight"
+              className="size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none"
+              aria-hidden
+            />
+          </button>
+          {/* monokai's content script prepends the change icon into this span. */}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 pl-[1ch]">
+            {/* bb makes the filename a button that opens the file. This panel
+                has nowhere to open it, so it toggles the row instead, which
+                also gives the disclosure a target worth aiming at. */}
+            <button
+              type="button"
+              className="inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left font-mono text-xs font-medium leading-5 text-foreground underline-offset-2 hover:underline"
+              title={model.path}
+              aria-expanded={open}
+              aria-controls={bodyId}
+              onClick={onToggle}
+            >
+              {/* `dir=rtl` keeps the tail of a long path visible, as bb does.
+                  The LRM stops a leading dot from being reordered. */}
+              <span dir="rtl" className="block w-full truncate">
+                {`\u200e${model.path}`}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label={`Copy path for ${model.path}`}
+              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground"
+              onClick={async () => {
+                await navigator.clipboard.writeText(model.path);
+                setCopied(true);
+                setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+              }}
+            >
+              <Icon name={copied ? "Check" : "Copy"} className="size-3" aria-hidden />
+            </button>
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          <span className="whitespace-nowrap text-xs tabular-nums">
+            {hasDiff ? (
+              <>
+                <span className="text-diff-added">+{added}</span>{" "}
+                <span className="text-diff-removed">-{removed}</span>
+              </>
+            ) : (
+              /* Every other row ends in a count pair. A bare change letter in
+                 that slot read as a count, so say plainly there is none. */
+              <span className="text-muted-foreground">No diff</span>
+            )}
+          </span>
+        </span>
+      </div>
+    </div>
   );
 }
 
 /**
- * One file: a Pierre header that is always drawn, and the diff body below it
- * once the row is open. Header and body are separate instances so the header's
- * hit target can cover the whole row without swallowing clicks in the code.
+ * One file: bb's own header, always drawn, and Pierre's diff body below it once
+ * the row is open.
  */
 function FileCard({
   file,
@@ -83,17 +148,12 @@ function FileCard({
 }) {
   const { mode, name } = useCodeTheme();
   const parsed = useMemo(() => parse(file.patch), [file.patch]);
-
-  const headerOptions = useMemo(
-    () => ({
-      collapsed: true,
-      stickyHeader: false,
-      theme: name,
-      themeType: mode,
-      unsafeCSS: HEADER_CSS,
-    }),
-    [mode, name],
+  const counts = useMemo(() => countLines(parsed), [parsed]);
+  const model = useMemo(
+    () => ({ path: file.path, label: file.path, changeKind: file.kind }),
+    [file.kind, file.path],
   );
+
   const bodyOptions = useMemo(
     () => ({
       collapsed: false,
@@ -107,41 +167,18 @@ function FileCard({
     }),
     [mode, name],
   );
-  const placeholder = useMemo(
-    () => ({ name: file.path, contents: "", lang: "text" as const }),
-    [file.path],
-  );
-
-  const toggle = () => (
-    <Chevron open={open} label={file.path} bodyId={bodyId} onToggle={onToggle} />
-  );
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      {parsed ? (
-        <FileDiff
-          className="gb-file-head"
-          disableWorkerPool
-          fileDiff={parsed}
-          options={headerOptions}
-          renderHeaderPrefix={toggle}
-        />
-      ) : (
-        <File
-          className="gb-file-head"
-          disableWorkerPool
-          file={placeholder}
-          options={headerOptions}
-          renderHeaderPrefix={toggle}
-          /*
-           * Every other row ends in `−n +n`. A bare change letter in that slot
-           * read as a count, so say plainly that there is nothing to count.
-           */
-          renderHeaderMetadata={() => (
-            <span className="whitespace-nowrap text-[11px] text-muted-foreground">No diff</span>
-          )}
-        />
-      )}
+      <FileHeader
+        model={model}
+        open={open}
+        added={counts.added}
+        removed={counts.removed}
+        hasDiff={parsed !== null}
+        bodyId={bodyId}
+        onToggle={onToggle}
+      />
       <div id={bodyId} hidden={!open}>
         {open ? (
           parsed ? (
@@ -236,14 +273,22 @@ export function FileCards({
 
   const allOpen = expanded.size >= files.length;
   return (
-    <section className="mt-2 flex flex-col gap-1.5" aria-label="Changed files">
+    <section
+      /*
+       * Opts this list into monokai's diff-header treatment. bb gates the same
+       * rules on its own diff toolbar, which a plugin panel never has.
+       */
+      data-monokai-diff-surface
+      className="mt-2 flex flex-col gap-1.5"
+      aria-label="Changed files"
+    >
       <header className="flex items-center gap-2 px-0.5 text-[11px] tabular-nums text-muted-foreground">
         <span>
           {files.length} {files.length === 1 ? "file" : "files"} changed
         </span>
-        {/* Removed before added, matching the counts Pierre draws on every row. */}
-        <span className="text-diff-removed">−{totals.removed}</span>
+        {/* Added before removed, matching the counts on every row below. */}
         <span className="text-diff-added">+{totals.added}</span>
+        <span className="text-diff-removed">-{totals.removed}</span>
         {/*
          * A chevron, not bare text: at the same size and colour as the summary
          * beside it, the label alone did not read as something to press.
