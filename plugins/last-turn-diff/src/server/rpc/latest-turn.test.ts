@@ -109,6 +109,7 @@ async function setup(
     pendingTodos: null,
     goal: null,
     modelFallback: null,
+    completedTurnDisplay: "flat",
     timelinePage: {
       kind: "latest",
       segmentLimit: 2,
