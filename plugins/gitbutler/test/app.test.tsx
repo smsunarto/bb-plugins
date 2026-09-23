@@ -60,9 +60,59 @@ test("shows the stacks, their branches, the base, and the history below it", asy
   expect(slot.getByText("scott/experimental")).toBeTruthy();
   expect(slot.getByText("feat(top): add the thing")).toBeTruthy();
   expect(slot.getByText("common base")).toBeTruthy();
+  expect(slot.getByText("Before the common base")).toBeTruthy();
   await waitFor(() => expect(slot.getByText("chore: older work")).toBeTruthy());
   // The workspace is 3 commits behind its target.
   expect(slot.getByText("3 behind")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("names upstream commits rather than leaving the dot colour to say it", async () => {
+  const slot = await panel(baseRpc);
+
+  await waitFor(() => expect(slot.getByText("chore: someone else's push")).toBeTruthy());
+  expect(slot.getByText(/Upstream, not in this branch/)).toBeTruthy();
+  expect(slot.getByText("In this branch")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("keeps refresh reachable when the workspace query fails, and retries on click", async () => {
+  let attempts = 0;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      attempts += 1;
+      throw new Error("but exited with code 1");
+    },
+  });
+
+  // One retry, then the failure shows.
+  await waitFor(() => expect(slot.getByText("GitButler could not be reached")).toBeTruthy(), {
+    timeout: 4_000,
+  });
+  expect(slot.getByText("but exited with code 1")).toBeTruthy();
+  expect(slot.getByLabelText("Refresh")).toBeTruthy();
+
+  const before = attempts;
+  fireEvent.click(slot.getByText("Try again"));
+  await waitFor(() => expect(attempts).toBeGreaterThan(before), { timeout: 4_000 });
+  slot.lifecycle.unmount();
+});
+
+test("lets the repository picker stand in for the name instead of printing both", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    repositories: () => ({
+      repositories: [
+        { key: ".", name: "bb-plugins" },
+        { key: "repos/other", name: "other" },
+      ],
+      reason: null,
+    }),
+  });
+
+  await waitFor(() => expect(slot.getByLabelText("Repository")).toBeTruthy());
+  expect(slot.getAllByText("bb-plugins")).toHaveLength(1);
   slot.lifecycle.unmount();
 });
 
@@ -94,7 +144,9 @@ test("opens a commit and then one of its files as a diff", async () => {
   await waitFor(() => expect(slot.getByText("feat(top): add the thing")).toBeTruthy());
   fireEvent.click(slot.getByText("feat(top): add the thing"));
 
+  // Short bodies stay open; only a long one hides behind a disclosure.
   await waitFor(() => expect(slot.getByText("With a body.")).toBeTruthy());
+  expect(slot.queryByText("Show the full message")).toBeNull();
   await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
 
   await waitFor(() => {
@@ -146,6 +198,30 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
   slot.lifecycle.unmount();
 });
 
+test("folds a long commit body away so the file list is not pushed off the panel", async () => {
+  const long = Array.from({ length: 12 }, (_, index) => `Paragraph ${index}.`).join("\n");
+  const slot = await panel({
+    ...baseRpc,
+    commit: () => ({
+      commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
+      message: `feat(top): add the thing\n\n${long}`,
+      authorName: "Scott Sunarto",
+      authorEmail: "github@smsunarto.com",
+      files: [],
+    }),
+    patches: () => ({ files: [], truncated: false }),
+  });
+
+  await waitFor(() => expect(slot.getByText("feat(top): add the thing")).toBeTruthy());
+  fireEvent.click(slot.getByText("feat(top): add the thing"));
+
+  const toggle = await waitFor(() => slot.getByText("Show the full message"));
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  await waitFor(() => expect(slot.getByText("Show less")).toBeTruthy());
+  slot.lifecycle.unmount();
+});
+
 test("tells the user how to fix a repository that GitButler has not set up", async () => {
   const slot = await panel({
     ...baseRpc,
@@ -173,7 +249,7 @@ test("says so when the GitButler CLI is missing on the host", async () => {
     ...baseRpc,
     workspace: () => ({
       state: "cliMissing",
-      reason: "The GitButler CLI (`but`) is not installed on this environment's host.",
+      reason: "The GitButler CLI (but) is not installed on this environment's host.",
       repoName: "",
       unassignedChanges: [],
       stacks: [],

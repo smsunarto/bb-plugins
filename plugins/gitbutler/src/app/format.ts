@@ -15,6 +15,18 @@ export function body(message: string): string {
   return newline === -1 ? "" : message.slice(newline + 1).trim();
 }
 
+const BODY_PREVIEW_LINES = 6;
+const BODY_PREVIEW_CHARACTERS = 400;
+
+/**
+ * A body big enough that leaving it open would push the file list off the
+ * panel. Counted on the source text, so the answer does not depend on how
+ * wide the panel happens to be.
+ */
+export function isLongBody(text: string): boolean {
+  return text.split("\n").length > BODY_PREVIEW_LINES || text.length > BODY_PREVIEW_CHARACTERS;
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

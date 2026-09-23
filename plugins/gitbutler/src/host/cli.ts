@@ -79,7 +79,9 @@ async function spawnFailure(program: string, cwd: string): Promise<Error> {
     return new ButFailedError("The repository directory is no longer available.");
   }
   return program === "but"
-    ? new ButMissingError("The GitButler CLI (`but`) is not installed on this environment's host.")
+    ? // No backticks: the panel renders this message as plain text, so Markdown
+      // syntax would reach the reader literally.
+      new ButMissingError("The GitButler CLI (but) is not installed on this environment's host.")
     : new ButFailedError(`${program} is not installed on this host.`);
 }
 

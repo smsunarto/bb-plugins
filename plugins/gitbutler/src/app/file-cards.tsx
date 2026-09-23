@@ -1,10 +1,12 @@
 import { useCallback, useId, useMemo, useState } from "react";
-import { experimental_useCodeTheme as useCodeTheme } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_Icon as Icon,
+  experimental_useCodeTheme as useCodeTheme,
+} from "@get-bb/plugin-sdk/app";
 import { getSingularPatch } from "@pierre/diffs";
 import { File, FileDiff } from "@pierre/diffs/react";
 import type { FilePatch, PatchSource } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
-import { changeSymbol } from "./format.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { rpc, defined } from "./rpc.ts";
 
@@ -13,7 +15,9 @@ const REFRESH_INTERVAL_MS = 10_000;
 /*
  * Pierre renders inside a shadow root, so the plugin stylesheet cannot reach
  * its header. `unsafeCSS` is the supported hook, and 12px matches the 11px
- * header text and the chevron beside it.
+ * header text and the chevron beside it. bb's own diff header draws the same
+ * icon at 14px beside 13px text, which is the same ratio at its own density,
+ * so the two surfaces differ in scale rather than in treatment.
  */
 const HEADER_CSS = "[data-change-icon]{width:12px;height:12px}";
 
@@ -131,8 +135,12 @@ function FileCard({
           file={placeholder}
           options={headerOptions}
           renderHeaderPrefix={toggle}
+          /*
+           * Every other row ends in `−n +n`. A bare change letter in that slot
+           * read as a count, so say plainly that there is nothing to count.
+           */
           renderHeaderMetadata={() => (
-            <span className="text-[11px] text-muted-foreground">{changeSymbol(file.kind)}</span>
+            <span className="whitespace-nowrap text-[11px] text-muted-foreground">No diff</span>
           )}
         />
       )}
@@ -140,18 +148,20 @@ function FileCard({
         {open ? (
           parsed ? (
             <div className="gb-diff border-t border-border">
+              {/* One phrasing for one condition, here and in the branch below. */}
               {file.truncated ? (
                 <p className="border-b border-border px-2 py-1 text-[11px] text-warning">
-                  Diff truncated to keep the panel responsive.
+                  This diff is too large to show in full. Open the file in your editor to read the
+                  rest.
                 </p>
               ) : null}
               <FileDiff disableWorkerPool fileDiff={parsed} options={bodyOptions} />
             </div>
           ) : (
-            <p className="border-t border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
+            <p className="border-t border-border px-2.5 py-1.5 text-[11px] leading-normal text-muted-foreground">
               {file.truncated
-                ? "This diff is past the panel's size budget."
-                : "No text diff: this file is binary, empty, or unchanged."}
+                ? "This diff is too large to show. Open the file in your editor to read it."
+                : "No text to show. The file is binary or its contents did not change."}
             </p>
           )
         ) : null}
@@ -209,25 +219,49 @@ export function FileCards({
 
   if (patches.isPending) return <Loading label="Loading changes…" />;
   if (patches.isError) {
-    return <Notice title="Changes failed to load" detail={errorText(patches.error)} />;
+    return (
+      <Notice
+        title="Changes failed to load"
+        detail={errorText(patches.error)}
+        onRetry={() => void patches.refetch()}
+      />
+    );
   }
-  if (!files || files.length === 0) return <Notice title="No file changes" />;
+  if (!files || files.length === 0) {
+    return (
+      <Notice
+        title="No file changes"
+        detail="This commit records no file contents. Merges and empty commits look like this."
+      />
+    );
+  }
 
   const allOpen = expanded.size >= files.length;
   return (
     <section className="mt-2 flex flex-col gap-1.5" aria-label="Changed files">
-      <header className="flex items-center gap-2 px-0.5 text-[11px] text-muted-foreground">
+      <header className="flex items-center gap-2 px-0.5 text-[11px] tabular-nums text-muted-foreground">
         <span>
           {files.length} {files.length === 1 ? "file" : "files"} changed
         </span>
-        <span className="tabular-nums text-diff-added">+{totals.added}</span>
-        <span className="tabular-nums text-diff-removed">−{totals.removed}</span>
+        {/* Removed before added, matching the counts Pierre draws on every row. */}
+        <span className="text-diff-removed">−{totals.removed}</span>
+        <span className="text-diff-added">+{totals.added}</span>
+        {/*
+         * A chevron, not bare text: at the same size and colour as the summary
+         * beside it, the label alone did not read as something to press.
+         */}
         <Button
           variant="ghost"
           size="sm"
-          className="ml-auto h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+          className="ms-auto h-5 gap-1 px-1.5 text-[11px] font-normal text-muted-foreground"
           onClick={() => setExpanded(allOpen ? new Set() : new Set(files.map((file) => file.path)))}
+          aria-expanded={allOpen}
         >
+          <Icon
+            name={allOpen ? "ChevronUp" : "ChevronDown"}
+            className="size-3 shrink-0"
+            aria-hidden
+          />
           {allOpen ? "Collapse all" : "Expand all"}
         </Button>
       </header>

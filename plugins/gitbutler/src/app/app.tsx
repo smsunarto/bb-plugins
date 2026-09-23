@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { definePluginApp, experimental_Icon as Icon, useBbContext } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import type {
@@ -21,6 +21,7 @@ import {
   BRANCH_STATUS_LABEL,
   body,
   changeSymbol,
+  isLongBody,
   relativeTime,
   shortId,
   subject,
@@ -35,9 +36,12 @@ const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
 const SHELL = "flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground text-xs";
 const SCROLL = "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-2";
 const ROW =
-  "flex min-w-0 flex-1 flex-col gap-px rounded-md px-1.5 py-0.5 text-left hover:bg-state-hover";
+  "flex min-w-0 flex-1 flex-col gap-px rounded-md px-1.5 py-0.5 text-start hover:bg-state-hover";
 const DOT = "mt-1.5 size-[7px] shrink-0 rounded-full";
-const META = "flex gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground";
+// Relative times and counts here rewrite themselves on every refresh, so the
+// digits are tabular to stop the row twitching.
+const META =
+  "flex gap-1.5 overflow-hidden whitespace-nowrap text-[11px] tabular-nums text-muted-foreground";
 const SECTION_TITLE = "mb-0.5 mt-2 font-semibold text-muted-foreground";
 
 /** What the detail screen is showing: a commit, or one uncommitted file. */
@@ -84,13 +88,25 @@ function writeRepository(threadId: string, key: string | null): void {
   }
 }
 
+/**
+ * A shell command inside prose. Notices are plain text nodes, so a command
+ * written with Markdown backticks would reach the reader as backticks.
+ */
+function Command({ children }: { children: string }) {
+  return (
+    <code className="rounded bg-secondary px-1 py-px font-mono text-foreground" translate="no">
+      {children}
+    </code>
+  );
+}
+
 /** A pill in the panel's vocabulary: outline, small, and colour-coded. */
 function Pill({ tone, title, children }: { tone: string; title?: string; children: string }) {
   return (
     <Badge
       variant="outline"
       className={cn(
-        "shrink-0 rounded-full border-current/40 px-1.5 py-0 text-[10px] font-normal",
+        "shrink-0 rounded-full border-current/40 px-1.5 py-0 text-[11px] font-normal",
         tone,
       )}
       title={title}
@@ -105,13 +121,24 @@ function Pill({ tone, title, children }: { tone: string; title?: string; childre
  * setup step that plain Git does not, so "nothing here" is usually a state
  * the user can act on rather than an error.
  */
-function UnavailableWorkspace({ workspace }: { workspace: Workspace }) {
+function UnavailableWorkspace({
+  workspace,
+  onRetry,
+}: {
+  workspace: Workspace;
+  onRetry: () => void;
+}) {
   const detail = workspace.reason;
   if (workspace.state === "cliMissing") {
     return (
       <Notice
         title="The GitButler CLI is not installed here"
-        detail="Install `but` on the machine hosting this environment, then reopen this panel."
+        detail={
+          <>
+            Install <Command>but</Command> on the machine hosting this environment, then refresh.
+          </>
+        }
+        onRetry={onRetry}
       />
     );
   }
@@ -119,17 +146,30 @@ function UnavailableWorkspace({ workspace }: { workspace: Workspace }) {
     return (
       <Notice
         title="This repository is not a GitButler project"
-        detail="Run `but setup` in the repository to start tracking it as a GitButler workspace."
+        detail={
+          <>
+            Run <Command>but setup</Command> in the repository to start tracking it as a GitButler
+            workspace, then refresh.
+          </>
+        }
+        onRetry={onRetry}
       />
     );
   }
   if (workspace.state === "noRepository") {
-    return <Notice title="No repository in this environment" detail={detail} />;
+    return <Notice title="No repository in this environment" detail={detail} onRetry={onRetry} />;
   }
   if (workspace.state === "noEnvironment") {
-    return <Notice title="No project environment" detail={detail} />;
+    return (
+      <Notice
+        title="No project environment"
+        detail={detail ?? "Attach this thread to an environment to see its GitButler workspace."}
+      />
+    );
   }
-  return <Notice title="GitButler could not read this workspace" detail={detail} />;
+  return (
+    <Notice title="GitButler could not read this workspace" detail={detail} onRetry={onRetry} />
+  );
 }
 
 function FileRow({
@@ -147,7 +187,7 @@ function FileRow({
       <button
         type="button"
         className={cn(
-          "flex w-full min-w-0 items-baseline gap-1.5 rounded-md px-1.5 py-px text-left hover:bg-state-hover",
+          "flex w-full min-w-0 items-baseline gap-1.5 rounded-md px-1.5 py-px text-start hover:bg-state-hover",
           active && "bg-state-active",
         )}
         onClick={onOpen}
@@ -187,7 +227,7 @@ function ChangeList({
   onOpen: (path: string) => void;
 }) {
   return (
-    <ul className="mt-0.5 list-none pl-4">
+    <ul className="mt-0.5 list-none ps-4">
       {changes.map((change) => (
         <FileRow
           key={change.path}
@@ -227,7 +267,9 @@ function StackBlock({
 }) {
   return (
     <section
-      className="my-2.5 border-l-2 border-primary/45 py-0.5 pl-2.5"
+      // 16px between stacks against the 8px between branches inside one, so
+      // the rail is not the only thing saying where a stack ends.
+      className="my-4 border-s-2 border-primary/45 py-0.5 ps-2.5"
       aria-label={`Stack ${stack.key}`}
     >
       {stack.branches.map((branch) => (
@@ -246,20 +288,37 @@ function StackBlock({
             ) : null}
             {branch.reviewId ? <Pill tone="text-primary">{`#${branch.reviewId}`}</Pill> : null}
           </header>
+          {/*
+           * Upstream commits used to be told apart from local ones by the dot
+           * colour alone, which says nothing to anyone who cannot separate the
+           * two hues. The heading carries the meaning; the colour repeats it.
+           */}
           {branch.upstreamCommits.length > 0 ? (
-            <ul className="list-none">
-              {branch.upstreamCommits.map((commit) => (
-                <CommitRow
-                  key={`upstream-${commit.commitId}`}
-                  commit={commit}
-                  tone="bg-warning"
-                  onOpen={() => onOpenCommit(commit)}
-                />
-              ))}
-            </ul>
+            <>
+              <p className={SECTION_TITLE}>
+                Upstream, not in this branch{" "}
+                <span className="tabular-nums">{branch.upstreamCommits.length}</span>
+              </p>
+              <ul className="list-none">
+                {branch.upstreamCommits.map((commit) => (
+                  <CommitRow
+                    key={`upstream-${commit.commitId}`}
+                    commit={commit}
+                    tone="bg-warning"
+                    onOpen={() => onOpenCommit(commit)}
+                  />
+                ))}
+              </ul>
+            </>
           ) : null}
           {branch.commits.length === 0 && branch.upstreamCommits.length === 0 ? (
-            <p className="my-0.5 italic text-muted-foreground">No commits yet</p>
+            <p className="my-0.5 italic text-muted-foreground">
+              No commits yet. Commit on this branch and they appear here.
+            </p>
+          ) : null}
+          {/* Only needed opposite an upstream heading; alone the list is obvious. */}
+          {branch.upstreamCommits.length > 0 && branch.commits.length > 0 ? (
+            <p className={SECTION_TITLE}>In this branch</p>
           ) : null}
           <ul className="list-none">
             {branch.commits.map((commit) => (
@@ -310,9 +369,21 @@ function BaseHistory({
 
   if (history.isPending) return <Loading label="Loading history…" />;
   if (history.isError)
-    return <Notice title="History failed to load" detail={errorText(history.error)} />;
+    return (
+      <Notice
+        title="History failed to load"
+        detail={errorText(history.error)}
+        onRetry={() => void history.refetch()}
+      />
+    );
   if (history.data.reason)
-    return <Notice title="History unavailable" detail={history.data.reason} />;
+    return (
+      <Notice
+        title="History unavailable"
+        detail={history.data.reason}
+        onRetry={() => void history.refetch()}
+      />
+    );
 
   return (
     <>
@@ -335,18 +406,23 @@ function BaseHistory({
         <Button
           variant="outline"
           size="sm"
-          className="ml-4 mt-2 h-6 px-2.5 text-xs font-normal text-muted-foreground"
+          className="ms-4 mt-2 h-6 px-2.5 text-xs font-normal text-muted-foreground"
           onClick={() =>
             setLimit((current) => Math.min(BASE_HISTORY_MAX, current + BASE_HISTORY_PAGE))
           }
         >
-          Load more
+          {/* Names what is hidden without claiming a count the CLI has not sent. */}
+          Load more commits
         </Button>
       ) : null}
     </>
   );
 }
 
+/**
+ * Shown in place of the repository name, not beside it: the name the header
+ * would print is the same string this control already displays.
+ */
 function RepositoryPicker({
   repositories,
   value,
@@ -356,10 +432,9 @@ function RepositoryPicker({
   value: string | undefined;
   onChange: (key: string) => void;
 }) {
-  if (repositories.length < 2) return null;
   return (
     <select
-      className="max-w-[45%] cursor-pointer rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground"
+      className="min-w-0 flex-1 cursor-pointer truncate rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground"
       value={value ?? repositories[0]?.key ?? ""}
       onChange={(event) => onChange(event.target.value)}
       aria-label="Repository"
@@ -370,6 +445,43 @@ function RepositoryPicker({
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * A commit body, clamped when it is long. An unbounded one pushed the file
+ * list, which is what the screen is for, off the bottom of the panel.
+ */
+function CommitBody({ text }: { text: string }) {
+  const long = isLongBody(text);
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  return (
+    <>
+      <pre className="my-1.5 whitespace-pre-wrap rounded-md bg-card px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+        {/*
+         * The clamp is on this span, not the `pre`: clamping the padded box
+         * lets the first hidden line render into the bottom padding, so the
+         * card ends on a sliced row of text.
+         */}
+        <span id={bodyId} className={cn("block", long && !open && "line-clamp-6")}>
+          {text}
+        </span>
+      </pre>
+      {long ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 gap-1 px-1.5 text-[11px] font-normal text-muted-foreground"
+          onClick={() => setOpen((current) => !current)}
+          aria-expanded={open}
+          aria-controls={bodyId}
+        >
+          <Icon name={open ? "ChevronUp" : "ChevronDown"} className="size-3 shrink-0" aria-hidden />
+          {open ? "Show less" : "Show the full message"}
+        </Button>
+      ) : null}
+    </>
   );
 }
 
@@ -396,19 +508,21 @@ function CommitDetail({
 
   return (
     <>
-      <h2 className="m-0 text-[13px] font-semibold [overflow-wrap:anywhere]">{subject(message)}</h2>
-      {body(message) ? (
-        <pre className="my-1.5 whitespace-pre-wrap rounded-md bg-card px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
-          {body(message)}
-        </pre>
-      ) : null}
-      <p className="mt-1 flex gap-2 text-[11px] text-muted-foreground">
+      <h2 className="m-0 text-[13px] font-semibold text-balance [overflow-wrap:anywhere]">
+        {subject(message)}
+      </h2>
+      {body(message) ? <CommitBody text={body(message)} /> : null}
+      <p className="mt-1 flex gap-2 text-[11px] tabular-nums text-muted-foreground">
         <code className="font-mono">{shortId(selection.commitId)}</code>
         {details.data ? <span>{details.data.authorName}</span> : null}
         <span>{relativeTime(selection.createdAt)}</span>
       </p>
       {details.isError ? (
-        <Notice title="Commit failed to load" detail={errorText(details.error)} />
+        <Notice
+          title="Commit failed to load"
+          detail={errorText(details.error)}
+          onRetry={() => void details.refetch()}
+        />
       ) : null}
       <FileCards
         threadId={threadId}
@@ -480,6 +594,7 @@ function UncommittedSection({
   // Closed by default: a busy worktree is dozens of rows, and the stacks are
   // what the panel is for.
   const [open, setOpen] = useState(false);
+  const listId = useId();
   return (
     <section className="mb-1">
       <Button
@@ -488,12 +603,13 @@ function UncommittedSection({
         className="h-6 w-full justify-start gap-2 px-1.5 text-xs font-semibold"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
+        aria-controls={listId}
         disabled={changes.length === 0}
       >
         <Icon
           name="ChevronRight"
           className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform",
+            "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
             open && "rotate-90",
             changes.length === 0 && "invisible",
           )}
@@ -502,9 +618,11 @@ function UncommittedSection({
         <span className={cn(DOT, "mt-0 bg-warning")} />
         Uncommitted <span className="tabular-nums text-muted-foreground">{changes.length}</span>
       </Button>
-      {open && changes.length > 0 ? (
-        <ChangeList changes={changes} activePath={null} onOpen={onOpenFile} />
-      ) : null}
+      <div id={listId} hidden={!open || changes.length === 0}>
+        {open && changes.length > 0 ? (
+          <ChangeList changes={changes} activePath={null} onOpen={onOpenFile} />
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -533,6 +651,8 @@ function BaseSection({
           </span>
         </button>
       </div>
+      {/* The list below carried no label, so it read as commits from nowhere. */}
+      <p className={SECTION_TITLE}>Before the common base</p>
       <BaseHistory
         threadId={threadId}
         repositoryKey={repositoryKey}
@@ -549,14 +669,16 @@ function WorkspaceBody({
   data,
   onOpenCommit,
   onOpenFile,
+  onRetry,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   data: Workspace;
   onOpenCommit: (commit: CommitRef) => void;
   onOpenFile: (path: string) => void;
+  onRetry: () => void;
 }) {
-  if (data.state !== "ready") return <UnavailableWorkspace workspace={data} />;
+  if (data.state !== "ready") return <UnavailableWorkspace workspace={data} onRetry={onRetry} />;
   return (
     <>
       <UncommittedSection changes={data.unassignedChanges} onOpenFile={onOpenFile} />
@@ -569,7 +691,12 @@ function WorkspaceBody({
         />
       ))}
       {data.stacks.length === 0 ? (
-        <p className="my-3 ml-2.5 italic text-muted-foreground">No applied branches</p>
+        <div className="my-3 ms-2.5 text-muted-foreground">
+          <p className="font-semibold text-foreground">No applied branches</p>
+          <p className="mt-1 leading-normal">
+            Branches you apply in GitButler show up here as stacks, with their commits.
+          </p>
+        </div>
       ) : null}
       {data.base ? (
         <BaseSection
@@ -589,11 +716,16 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   );
   const [selection, setSelection] = useState<Selection | null>(null);
   const [openPath, setOpenPath] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const repositories = rpc.repositories.useQuery({ threadId }, { staleTime: 60_000 });
   const workspace = rpc.workspace.useQuery(defined({ threadId, repositoryKey }), {
     refetchInterval: REFRESH_INTERVAL_MS,
     refetchOnWindowFocus: true,
+    // The panel already retries every ten seconds. The query client's default
+    // ladder only added seven more of "Loading workspace…" before the reader
+    // was told anything had gone wrong.
+    retry: 1,
   });
 
   const chooseRepository = useCallback(
@@ -626,20 +758,8 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     setOpenPath(null);
   }, []);
 
-  if (workspace.isPending) {
-    return (
-      <div className={cn(SHELL, "px-2.5")}>
-        <Loading label="Loading workspace…" />
-      </div>
-    );
-  }
-  if (workspace.isError) {
-    return (
-      <div className={cn(SHELL, "px-2.5")}>
-        <Notice title="GitButler could not be reached" detail={errorText(workspace.error)} />
-      </div>
-    );
-  }
+  // Selection first: a failed background poll should not throw the reader out
+  // of the commit they had open.
   if (selection) {
     return (
       <DetailScreen
@@ -653,38 +773,71 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   }
 
   const data = workspace.data;
-  const behind = data.upstream?.behind ?? 0;
+  const behind = data?.upstream?.behind ?? 0;
+  const choices = repositories.data?.repositories ?? [];
+  const refresh = () => {
+    setRefreshing(true);
+    void workspace.refetch().finally(() => setRefreshing(false));
+  };
 
+  /*
+   * The header is drawn in every state, loading and failure included. It used
+   * to be skipped for both, which took Refresh away at exactly the moment a
+   * reader needed it and left the failure with no way out of itself.
+   */
   return (
     <div className={SHELL}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5">
-        <span className="truncate font-semibold">{data.repoName || "GitButler"}</span>
-        <RepositoryPicker
-          repositories={repositories.data?.repositories ?? []}
-          value={repositoryKey}
-          onChange={chooseRepository}
-        />
-        <span className="flex-1" />
+        {choices.length > 1 ? (
+          <RepositoryPicker
+            repositories={choices}
+            value={repositoryKey}
+            onChange={chooseRepository}
+          />
+        ) : (
+          <span
+            className="min-w-0 flex-1 truncate font-semibold"
+            title={data?.repoName || undefined}
+          >
+            {data?.repoName || "GitButler"}
+          </span>
+        )}
         {behind > 0 ? <Pill tone="text-warning">{`${behind} behind`}</Pill> : null}
         <Button
           variant="ghost"
           size="icon"
           className="size-6 text-muted-foreground"
-          onClick={() => void workspace.refetch()}
-          disabled={workspace.isFetching}
+          onClick={refresh}
           aria-label="Refresh"
+          aria-busy={refreshing}
         >
-          <Icon name={workspace.isFetching ? "Spinner" : "RotateCcw"} className="size-3.5" />
+          {/*
+           * The spinner tracks the click, not `isFetching`: the panel polls
+           * every ten seconds, so tying it to the query made the icon blink
+           * six times a minute on its own.
+           */}
+          <Icon name={refreshing ? "Spinner" : "RotateCcw"} className="size-3.5" aria-hidden />
         </Button>
       </header>
       <div className={SCROLL}>
-        <WorkspaceBody
-          threadId={threadId}
-          repositoryKey={repositoryKey}
-          data={data}
-          onOpenCommit={openCommit}
-          onOpenFile={openUncommittedFile}
-        />
+        {workspace.isPending ? (
+          <Loading label="Loading workspace…" />
+        ) : workspace.isError ? (
+          <Notice
+            title="GitButler could not be reached"
+            detail={errorText(workspace.error)}
+            onRetry={refresh}
+          />
+        ) : (
+          <WorkspaceBody
+            threadId={threadId}
+            repositoryKey={repositoryKey}
+            data={workspace.data}
+            onOpenCommit={openCommit}
+            onOpenFile={openUncommittedFile}
+            onRetry={refresh}
+          />
+        )}
       </div>
     </div>
   );
