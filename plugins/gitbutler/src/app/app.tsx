@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { definePluginApp, experimental_Icon as Icon, useBbContext } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import type {
@@ -26,7 +27,15 @@ const BASE_HISTORY_MAX = 500;
 const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
 
 const SHELL = "flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground text-xs";
-const SCROLL = "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-2";
+// The scrollbar's column is reserved up front, on both edges. Without it, the
+// first row that pushed the panel past its height brought a scrollbar with it
+// and shoved every line already on screen sideways. One edge alone would have
+// fixed that but left the list sitting closer to its left border than its
+// right.
+const GUTTER = "[scrollbar-gutter:stable_both-edges]";
+// Hidden overflow is what lets a header that never scrolls reserve the same
+// gutters, so its text starts where the rows below it do.
+const HEADER = `flex shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card px-2.5 py-1.5 ${GUTTER}`;
 const ROW =
   "flex min-w-0 flex-1 flex-col gap-px rounded-md px-1.5 py-0.5 text-start hover:bg-state-hover";
 const DOT = "mt-1.5 size-[7px] shrink-0 rounded-full";
@@ -84,6 +93,41 @@ function writeRepository(threadId: string, key: string | null): void {
  * A shell command inside prose. Notices are plain text nodes, so a command
  * written with Markdown backticks would reach the reader as backticks.
  */
+/**
+ * The panel's scroll container. Each reserved gutter is as wide as the reader's
+ * scrollbar, which is 11px when scrollbars are classic and 0 when they overlay
+ * the page, and CSS has no way to read which. The top inset is measured to
+ * match, so the first row sits as far below the header as it does from the
+ * panel's sides.
+ */
+function ScrollArea({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => {
+      element.style.setProperty("--gutter", `${(element.offsetWidth - element.clientWidth) / 2}px`);
+    };
+    measure();
+    // macOS swaps overlay scrollbars for classic ones when a mouse is plugged
+    // in. The content box narrows when that happens, which this observes.
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-[calc(--spacing(2.5)+var(--gutter,0px))]",
+        GUTTER,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 function Command({ children }: { children: string }) {
   return (
     <code className="rounded bg-secondary px-1 py-px font-mono text-foreground" translate="no">
@@ -503,7 +547,7 @@ function DetailScreen({
 }) {
   return (
     <div className={SHELL}>
-      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5">
+      <header className={HEADER}>
         <Button
           variant="ghost"
           size="sm"
@@ -514,7 +558,7 @@ function DetailScreen({
           Workspace
         </Button>
       </header>
-      <div className={SCROLL}>
+      <ScrollArea>
         {selection.kind === "commit" ? (
           <CommitDetail
             threadId={threadId}
@@ -533,7 +577,7 @@ function DetailScreen({
             />
           </>
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -741,7 +785,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
    */
   return (
     <div className={SHELL}>
-      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5">
+      <header className={HEADER}>
         {choices.length > 1 ? (
           <RepositoryPicker
             repositories={choices}
@@ -773,7 +817,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
           <Icon name={refreshing ? "Spinner" : "RotateCcw"} className="size-3.5" aria-hidden />
         </Button>
       </header>
-      <div className={SCROLL}>
+      <ScrollArea>
         {workspace.isPending ? (
           <Loading label="Loading workspace…" />
         ) : workspace.isError ? (
@@ -792,7 +836,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
             onRetry={refresh}
           />
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }
