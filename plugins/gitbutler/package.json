@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-gitbutler",
   "version": "0.1.0",
-  "description": "Browse a GitButler workspace \u2014 stacks, branches, commits, and diffs \u2014 from a bb thread panel.",
+  "description": "Browse a GitButler workspace — stacks, branches, commits, and diffs — from a bb thread panel.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/gitbutler",
@@ -49,14 +49,19 @@
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.4.84",
+    "@pierre/diffs": "^1.2.9",
+    "@radix-ui/react-slot": "^1.3.0",
     "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "bun-types": "^1.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "jsdom": "25.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "tailwind-merge": "^3.4.0",
     "tsx": "4.23.12",
     "typescript": "^6.0.0"
   },

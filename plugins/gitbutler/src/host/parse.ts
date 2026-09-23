@@ -177,32 +177,64 @@ export function parseCommitDetails(payload: unknown, commitId: string): CommitDe
 }
 
 /**
- * `but diff --json` to one file's unified patch. BB's diff viewer completes a
- * headerless patch from the path it is given, so the hunk bodies are enough.
+ * git's own header lines for one change. Pierre parses a real git patch, so
+ * the hunk bodies `but diff --json` returns are not enough on their own: the
+ * `diff --git` and `---`/`+++` lines are what name the file, and the filename
+ * is what selects the syntax highlighter.
  */
+function patchHeader(path: string, previousPath: string, status: string): string {
+  const lines = [`diff --git a/${previousPath} b/${path}`];
+  if (status === "added") lines.push("new file mode 100644");
+  else if (status === "deleted") lines.push("deleted file mode 100644");
+  else if (previousPath !== path) lines.push(`rename from ${previousPath}`, `rename to ${path}`);
+  lines.push(
+    status === "added" ? "--- /dev/null" : `--- a/${previousPath}`,
+    status === "deleted" ? "+++ /dev/null" : `+++ b/${path}`,
+    "",
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Hunk bodies up to a character budget. The cut lands on a hunk boundary so
+ * what Pierre receives is still a patch it can parse; a single hunk larger
+ * than the whole budget falls back to the last line boundary inside it.
+ */
+function patchBody(diff: Json | undefined, maxChars: number) {
+  const hunks = asArray(diff?.["hunks"])
+    .map((hunk) => asString(asObject(hunk)?.["diff"]))
+    .filter((text) => text !== "");
+  let body = "";
+  for (const hunk of hunks) {
+    if (body.length + hunk.length <= maxChars) {
+      body += hunk;
+      continue;
+    }
+    const cut = body === "" ? hunk.slice(0, hunk.lastIndexOf("\n", maxChars) + 1) : body;
+    return { body: cut, truncated: true };
+  }
+  return { body, truncated: false };
+}
+
+/** `but diff --json` to one file's unified patch, headers included. */
 export function patchFor(
   payload: unknown,
   path: string,
   maxChars: number,
 ): { patch: string; truncated: boolean } | undefined {
   const changes = asArray(asObject(payload)?.["changes"]);
-  const match = changes.map(asObject).find((entry) => {
-    const record = entry;
-    return asString(record?.["path"]) === path;
-  });
+  const match = changes.map(asObject).find((entry) => asString(entry?.["path"]) === path);
   if (!match) return undefined;
 
   const diff = asObject(match["diff"]);
   if (diff && asString(diff["type"]) !== "patch") {
     return { patch: "", truncated: false };
   }
-  const body = asArray(diff?.["hunks"])
-    .map((hunk) => asString(asObject(hunk)?.["diff"]))
-    .filter((text) => text !== "")
-    .join("");
-  return body.length > maxChars
-    ? { patch: body.slice(0, maxChars), truncated: true }
-    : { patch: body, truncated: false };
+  const { body, truncated } = patchBody(diff, maxChars);
+  if (body === "") return { patch: "", truncated };
+  const previousPath = asString(match["previousPath"] ?? match["oldPath"], path);
+  const status = asString(match["status"] ?? match["changeType"]);
+  return { patch: patchHeader(path, previousPath, status) + body, truncated };
 }
 
 /**

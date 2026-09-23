@@ -66,7 +66,9 @@ test("opens a commit and then one of its files as a diff", async () => {
     }),
     patch: () => ({
       path: "src/app/app.tsx",
-      patch: "@@ -1 +1 @@\n-old\n+new\n",
+      patch:
+        "diff --git a/src/app/app.tsx b/src/app/app.tsx\n" +
+        "--- a/src/app/app.tsx\n+++ b/src/app/app.tsx\n@@ -1 +1 @@\n-old\n+new\n",
       truncated: false,
     }),
   });
@@ -87,7 +89,7 @@ test("opens a commit and then one of its files as a diff", async () => {
     });
   });
 
-  fireEvent.click(slot.getByText("← Workspace"));
+  fireEvent.click(slot.getByText("Workspace"));
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   slot.lifecycle.unmount();
 });
@@ -95,7 +97,11 @@ test("opens a commit and then one of its files as a diff", async () => {
 test("opens an uncommitted file straight into its working-tree diff", async () => {
   const slot = await panel({
     ...baseRpc,
-    patch: () => ({ path: "bun.lock", patch: "@@ -1 +1 @@\n-a\n+b\n", truncated: false }),
+    patch: () => ({
+      path: "bun.lock",
+      patch: "diff --git a/bun.lock b/bun.lock\n--- a/bun.lock\n+++ b/bun.lock\n@@ -1 +1 @@\n-a\n+b\n",
+      truncated: false,
+    }),
   });
 
   // Uncommitted starts collapsed, so the file list is one disclosure away.

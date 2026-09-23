@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { definePluginApp, experimental_Diff as Diff, useBbContext } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, experimental_Icon as Icon, useBbContext } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import type {
   BaseCommit,
+  BranchStatus,
   Commit,
   FileChange,
   PatchSource,
@@ -10,6 +11,11 @@ import type {
   Stack,
   Workspace,
 } from "../shared/schema.ts";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { cn } from "./lib/utils.ts";
+import { Loading, Notice, errorText } from "./notice.tsx";
+import { PatchView } from "./patch-view.tsx";
 import { rpc, defined } from "./rpc.ts";
 import {
   BRANCH_STATUS_LABEL,
@@ -26,10 +32,38 @@ const BASE_HISTORY_PAGE = 60;
 const BASE_HISTORY_MAX = 500;
 const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
 
+const SHELL = "flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground text-xs";
+const SCROLL = "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-2";
+const ROW =
+  "flex min-w-0 flex-1 flex-col gap-px rounded-md px-1.5 py-0.5 text-left hover:bg-state-hover";
+const DOT = "mt-1.5 size-[7px] shrink-0 rounded-full";
+const META = "flex gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground";
+const SECTION_TITLE = "mb-0.5 mt-2 font-semibold text-muted-foreground";
+
 /** What the detail screen is showing: a commit, or one uncommitted file. */
 type Selection =
   | { kind: "commit"; commitId: string; createdAt: string; message: string }
   | { kind: "uncommitted"; path: string };
+
+/** Anything the detail screen can be opened from: a stack, base, or history row. */
+type CommitRef = { commitId: string; createdAt: string; message: string };
+
+const UNCOMMITTED_SOURCE: PatchSource = { kind: "uncommitted" };
+
+const STATUS_TONE: Readonly<Record<BranchStatus, string>> = {
+  unpushed: "text-muted-foreground",
+  pushed: "text-success",
+  diverged: "text-warning",
+  integrated: "text-success",
+  conflicted: "text-destructive-text",
+  empty: "text-muted-foreground",
+  unknown: "text-muted-foreground",
+};
+
+const KIND_TONE: Readonly<Record<string, string>> = {
+  added: "text-diff-added",
+  deleted: "text-diff-removed",
+};
 
 function readRepository(threadId: string): string | null {
   try {
@@ -50,16 +84,19 @@ function writeRepository(threadId: string, key: string | null): void {
   }
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
-
-function Notice({ title, detail }: { title: string; detail?: string | null }) {
+/** A pill in the panel's vocabulary: outline, small, and colour-coded. */
+function Pill({ tone, title, children }: { tone: string; title?: string; children: string }) {
   return (
-    <div className="gb-notice">
-      <p className="gb-notice-title">{title}</p>
-      {detail ? <p className="gb-notice-detail">{detail}</p> : null}
-    </div>
+    <Badge
+      variant="outline"
+      className={cn(
+        "shrink-0 rounded-full border-current/40 px-1.5 py-0 text-[10px] font-normal",
+        tone,
+      )}
+      title={title}
+    >
+      {children}
+    </Badge>
   );
 }
 
@@ -109,14 +146,31 @@ function FileRow({
     <li>
       <button
         type="button"
-        className={`gb-file${active ? " gb-active" : ""}`}
+        className={cn(
+          "flex w-full min-w-0 items-baseline gap-1.5 rounded-md px-1.5 py-px text-left hover:bg-state-hover",
+          active && "bg-state-active",
+        )}
         onClick={onOpen}
         title={change.path}
       >
-        <span className={`gb-file-kind gb-kind-${change.kind}`}>{changeSymbol(change.kind)}</span>
-        <span className="gb-file-name">{change.path.slice(separator + 1)}</span>
+        <span
+          className={cn(
+            "w-2.5 shrink-0 font-mono text-[10px]",
+            KIND_TONE[change.kind] ?? "text-muted-foreground",
+          )}
+        >
+          {changeSymbol(change.kind)}
+        </span>
+        <span className="min-w-0 shrink truncate">{change.path.slice(separator + 1)}</span>
+        {/*
+         * No `direction: rtl` on the directory column. It truncates from the
+         * left, but it also reorders leading punctuation, so `.bb` renders as
+         * `bb.`.
+         */}
         {separator > 0 ? (
-          <span className="gb-file-dir">{change.path.slice(0, separator)}</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+            {change.path.slice(0, separator)}
+          </span>
         ) : null}
       </button>
     </li>
@@ -133,7 +187,7 @@ function ChangeList({
   onOpen: (path: string) => void;
 }) {
   return (
-    <ul className="gb-files">
+    <ul className="mt-0.5 list-none pl-4">
       {changes.map((change) => (
         <FileRow
           key={change.path}
@@ -146,23 +200,15 @@ function ChangeList({
   );
 }
 
-function CommitRow({
-  commit,
-  tone,
-  onOpen,
-}: {
-  commit: Commit;
-  tone: "stack" | "upstream" | "base";
-  onOpen: () => void;
-}) {
+function CommitRow({ commit, tone, onOpen }: { commit: Commit; tone: string; onOpen: () => void }) {
   return (
-    <li className="gb-row">
-      <span className={`gb-dot gb-dot-${tone}${commit.conflicted ? " gb-dot-conflicted" : ""}`} />
-      <button type="button" className="gb-commit" onClick={onOpen}>
-        <span className="gb-commit-subject">{subject(commit.message)}</span>
-        <span className="gb-commit-meta">
-          <code>{shortId(commit.commitId)}</code>
-          {commit.conflicted ? <span className="gb-conflicted">conflicts</span> : null}
+    <li className="flex min-w-0 items-start gap-2">
+      <span className={cn(DOT, commit.conflicted ? "bg-destructive" : tone)} />
+      <button type="button" className={ROW} onClick={onOpen}>
+        <span className="truncate">{subject(commit.message)}</span>
+        <span className={META}>
+          <code className="font-mono">{shortId(commit.commitId)}</code>
+          {commit.conflicted ? <span className="text-destructive-text">conflicts</span> : null}
           <span>{relativeTime(commit.createdAt)}</span>
         </span>
       </button>
@@ -174,51 +220,53 @@ function StackBlock({
   stack,
   onOpenCommit,
   onOpenFile,
-  activePath,
 }: {
   stack: Stack;
   onOpenCommit: (commit: Commit) => void;
   onOpenFile: (path: string) => void;
-  activePath: string | null;
 }) {
   return (
-    <section className="gb-stack" aria-label={`Stack ${stack.key}`}>
+    <section
+      className="my-2.5 border-l-2 border-primary/45 py-0.5 pl-2.5"
+      aria-label={`Stack ${stack.key}`}
+    >
       {stack.branches.map((branch) => (
-        <div key={branch.name} className="gb-branch">
-          <header className="gb-branch-head">
-            <span className="gb-branch-name" title={branch.name}>
+        <div
+          key={branch.name}
+          className="[&+&]:mt-2 [&+&]:border-t [&+&]:border-dashed [&+&]:border-border [&+&]:pt-2"
+        >
+          <header className="flex min-w-0 items-center gap-1.5 pb-0.5 pt-px">
+            <span className="truncate font-semibold" title={branch.name}>
               {branch.name}
             </span>
             {BRANCH_STATUS_LABEL[branch.status] ? (
-              <span className={`gb-pill gb-pill-${branch.status}`} title={branch.rawStatus}>
+              <Pill tone={STATUS_TONE[branch.status]} title={branch.rawStatus}>
                 {BRANCH_STATUS_LABEL[branch.status]}
-              </span>
+              </Pill>
             ) : null}
-            {branch.reviewId ? (
-              <span className="gb-pill gb-pill-review">#{branch.reviewId}</span>
-            ) : null}
+            {branch.reviewId ? <Pill tone="text-primary">{`#${branch.reviewId}`}</Pill> : null}
           </header>
           {branch.upstreamCommits.length > 0 ? (
-            <ul className="gb-commits">
+            <ul className="list-none">
               {branch.upstreamCommits.map((commit) => (
                 <CommitRow
                   key={`upstream-${commit.commitId}`}
                   commit={commit}
-                  tone="upstream"
+                  tone="bg-warning"
                   onOpen={() => onOpenCommit(commit)}
                 />
               ))}
             </ul>
           ) : null}
           {branch.commits.length === 0 && branch.upstreamCommits.length === 0 ? (
-            <p className="gb-empty-branch">No commits yet</p>
+            <p className="my-0.5 italic text-muted-foreground">No commits yet</p>
           ) : null}
-          <ul className="gb-commits">
+          <ul className="list-none">
             {branch.commits.map((commit) => (
               <CommitRow
                 key={commit.commitId}
                 commit={commit}
-                tone="stack"
+                tone="bg-primary"
                 onOpen={() => onOpenCommit(commit)}
               />
             ))}
@@ -226,11 +274,14 @@ function StackBlock({
         </div>
       ))}
       {stack.assignedChanges.length > 0 ? (
-        <div className="gb-assigned">
-          <p className="gb-assigned-title">
-            Assigned changes <span className="gb-count">{stack.assignedChanges.length}</span>
+        <div className="mt-1.5">
+          <p className={SECTION_TITLE}>
+            Assigned changes{" "}
+            <span className="tabular-nums text-muted-foreground">
+              {stack.assignedChanges.length}
+            </span>
           </p>
-          <ChangeList changes={stack.assignedChanges} activePath={activePath} onOpen={onOpenFile} />
+          <ChangeList changes={stack.assignedChanges} activePath={null} onOpen={onOpenFile} />
         </div>
       ) : null}
     </section>
@@ -246,7 +297,7 @@ function BaseHistory({
   threadId: string;
   repositoryKey: string | undefined;
   from: string;
-  onOpenCommit: (commit: { commitId: string; createdAt: string; message: string }) => void;
+  onOpenCommit: (commit: CommitRef) => void;
 }) {
   const [limit, setLimit] = useState(BASE_HISTORY_PAGE);
   // A new base means a different history; start the window over.
@@ -254,28 +305,25 @@ function BaseHistory({
 
   const history = rpc.baseHistory.useQuery(
     defined({ threadId, repositoryKey, from, offset: 0, limit }),
-    {
-      staleTime: REFRESH_INTERVAL_MS,
-    },
+    { staleTime: REFRESH_INTERVAL_MS },
   );
 
-  if (history.isPending) return <p className="gb-loading">Loading history…</p>;
+  if (history.isPending) return <Loading label="Loading history…" />;
   if (history.isError)
     return <Notice title="History failed to load" detail={errorText(history.error)} />;
   if (history.data.reason)
     return <Notice title="History unavailable" detail={history.data.reason} />;
 
-  const commits = history.data.commits;
   return (
     <>
-      <ul className="gb-commits gb-history">
-        {commits.map((commit) => (
-          <li key={commit.commitId} className="gb-row">
-            <span className="gb-dot gb-dot-base" />
-            <button type="button" className="gb-commit" onClick={() => onOpenCommit(commit)}>
-              <span className="gb-commit-subject">{subject(commit.message)}</span>
-              <span className="gb-commit-meta">
-                <code>{shortId(commit.commitId)}</code>
+      <ul className="list-none">
+        {history.data.commits.map((commit) => (
+          <li key={commit.commitId} className="flex min-w-0 items-start gap-2">
+            <span className={cn(DOT, "border border-muted-foreground bg-transparent")} />
+            <button type="button" className={ROW} onClick={() => onOpenCommit(commit)}>
+              <span className="truncate">{subject(commit.message)}</span>
+              <span className={META}>
+                <code className="font-mono">{shortId(commit.commitId)}</code>
                 <span>{commit.authorName}</span>
                 <span>{relativeTime(commit.createdAt)}</span>
               </span>
@@ -284,15 +332,16 @@ function BaseHistory({
         ))}
       </ul>
       {history.data.hasMore && limit < BASE_HISTORY_MAX ? (
-        <button
-          type="button"
-          className="gb-more"
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-4 mt-2 h-6 px-2.5 text-xs font-normal text-muted-foreground"
           onClick={() =>
             setLimit((current) => Math.min(BASE_HISTORY_MAX, current + BASE_HISTORY_PAGE))
           }
         >
           Load more
-        </button>
+        </Button>
       ) : null}
     </>
   );
@@ -310,7 +359,7 @@ function RepositoryPicker({
   if (repositories.length < 2) return null;
   return (
     <select
-      className="gb-repo"
+      className="max-w-[45%] cursor-pointer rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground"
       value={value ?? repositories[0]?.key ?? ""}
       onChange={(event) => onChange(event.target.value)}
       aria-label="Repository"
@@ -321,34 +370,6 @@ function RepositoryPicker({
         </option>
       ))}
     </select>
-  );
-}
-
-function PatchView({
-  threadId,
-  repositoryKey,
-  source,
-  path,
-}: {
-  threadId: string;
-  repositoryKey: string | undefined;
-  source: PatchSource;
-  path: string;
-}) {
-  const patch = rpc.patch.useQuery(defined({ threadId, repositoryKey, source, path }), {
-    staleTime: REFRESH_INTERVAL_MS,
-  });
-
-  if (patch.isPending) return <p className="gb-loading">Loading diff…</p>;
-  if (patch.isError) return <Notice title="Diff failed to load" detail={errorText(patch.error)} />;
-  if (patch.data.patch === "") {
-    return <Notice title="No text diff" detail="This file is binary, empty, or unchanged." />;
-  }
-  return (
-    <div className="gb-diff">
-      {patch.data.truncated ? <p className="gb-truncated">Diff truncated.</p> : null}
-      <Diff patch={patch.data.patch} path={path} view="unified" />
-    </div>
   );
 }
 
@@ -377,23 +398,26 @@ function CommitDetail({
 
   return (
     <>
-      <div className="gb-detail-head">
-        <h2>{subject(message)}</h2>
-        {body(message) ? <pre className="gb-detail-body">{body(message)}</pre> : null}
-        <p className="gb-detail-meta">
-          <code>{shortId(selection.commitId)}</code>
-          {details.data ? <span>{details.data.authorName}</span> : null}
-          <span>{relativeTime(selection.createdAt)}</span>
-        </p>
-      </div>
-      {details.isPending ? <p className="gb-loading">Loading files…</p> : null}
+      <h2 className="m-0 text-[13px] font-semibold [overflow-wrap:anywhere]">{subject(message)}</h2>
+      {body(message) ? (
+        <pre className="my-1.5 whitespace-pre-wrap rounded-md bg-card px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          {body(message)}
+        </pre>
+      ) : null}
+      <p className="mt-1 flex gap-2 text-[11px] text-muted-foreground">
+        <code className="font-mono">{shortId(selection.commitId)}</code>
+        {details.data ? <span>{details.data.authorName}</span> : null}
+        <span>{relativeTime(selection.createdAt)}</span>
+      </p>
+      {details.isPending ? <Loading label="Loading files…" /> : null}
       {details.isError ? (
         <Notice title="Commit failed to load" detail={errorText(details.error)} />
       ) : null}
       {details.data ? (
         <>
-          <p className="gb-section-title">
-            Files <span className="gb-count">{details.data.files.length}</span>
+          <p className={SECTION_TITLE}>
+            Files{" "}
+            <span className="tabular-nums text-muted-foreground">{details.data.files.length}</span>
           </p>
           <ChangeList changes={details.data.files} activePath={openPath} onOpen={onOpenPath} />
         </>
@@ -409,11 +433,6 @@ function CommitDetail({
     </>
   );
 }
-
-const UNCOMMITTED_SOURCE: PatchSource = { kind: "uncommitted" };
-
-/** Anything the detail screen can be opened from: a stack, base, or history row. */
-type CommitRef = { commitId: string; createdAt: string; message: string };
 
 function DetailScreen({
   threadId,
@@ -431,13 +450,19 @@ function DetailScreen({
   onBack: () => void;
 }) {
   return (
-    <div className="gb-app">
-      <header className="gb-header">
-        <button type="button" className="gb-back" onClick={onBack}>
-          ← Workspace
-        </button>
+    <div className={SHELL}>
+      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground"
+          onClick={onBack}
+        >
+          <Icon name="ArrowLeft" className="size-3" aria-hidden />
+          Workspace
+        </Button>
       </header>
-      <div className="gb-scroll">
+      <div className={SCROLL}>
         {selection.kind === "commit" ? (
           <CommitDetail
             threadId={threadId}
@@ -448,12 +473,9 @@ function DetailScreen({
           />
         ) : (
           <>
-            <div className="gb-detail-head">
-              <h2>{selection.path}</h2>
-              <p className="gb-detail-meta">
-                <span>Uncommitted</span>
-              </p>
-            </div>
+            {/* Pierre's own header carries the path, so the screen only has to
+                say which side of the worktree this diff came from. */}
+            <p className={SECTION_TITLE}>Uncommitted</p>
             <PatchView
               threadId={threadId}
               repositoryKey={repositoryKey}
@@ -478,20 +500,27 @@ function UncommittedSection({
   // what the panel is for.
   const [open, setOpen] = useState(false);
   return (
-    <section className="gb-uncommitted">
-      <button
-        type="button"
-        className="gb-disclosure"
+    <section className="mb-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 w-full justify-start gap-2 px-1.5 text-xs font-semibold"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         disabled={changes.length === 0}
       >
-        <span className="gb-chevron" aria-hidden="true">
-          ▶
-        </span>
-        <span className="gb-dot gb-dot-uncommitted" />
-        Uncommitted <span className="gb-count">{changes.length}</span>
-      </button>
+        <Icon
+          name="ChevronRight"
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-90",
+            changes.length === 0 && "invisible",
+          )}
+          aria-hidden
+        />
+        <span className={cn(DOT, "mt-0 bg-warning")} />
+        Uncommitted <span className="tabular-nums text-muted-foreground">{changes.length}</span>
+      </Button>
       {open && changes.length > 0 ? (
         <ChangeList changes={changes} activePath={null} onOpen={onOpenFile} />
       ) : null}
@@ -512,13 +541,13 @@ function BaseSection({
 }) {
   return (
     <>
-      <div className="gb-base">
-        <span className="gb-dot gb-dot-base-tip" />
-        <button type="button" className="gb-commit" onClick={() => onOpenCommit(base)}>
-          <span className="gb-commit-subject">{subject(base.message)}</span>
-          <span className="gb-commit-meta">
-            <code>{shortId(base.commitId)}</code>
-            <span className="gb-pill gb-pill-base">common base</span>
+      <div className="mb-1.5 mt-3.5 flex min-w-0 items-start gap-2 border-t border-border pt-2.5">
+        <span className={cn(DOT, "border border-foreground bg-transparent")} />
+        <button type="button" className={ROW} onClick={() => onOpenCommit(base)}>
+          <span className="truncate">{subject(base.message)}</span>
+          <span className={META}>
+            <code className="font-mono">{shortId(base.commitId)}</code>
+            <Pill tone="text-muted-foreground">common base</Pill>
             <span>{relativeTime(base.createdAt)}</span>
           </span>
         </button>
@@ -556,11 +585,10 @@ function WorkspaceBody({
           stack={stack}
           onOpenCommit={onOpenCommit}
           onOpenFile={onOpenFile}
-          activePath={null}
         />
       ))}
       {data.stacks.length === 0 ? (
-        <p className="gb-empty-branch gb-no-stacks">No applied branches</p>
+        <p className="my-3 ml-2.5 italic text-muted-foreground">No applied branches</p>
       ) : null}
       {data.base ? (
         <BaseSection
@@ -619,14 +647,14 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
 
   if (workspace.isPending) {
     return (
-      <div className="gb-app">
-        <p className="gb-loading">Loading workspace…</p>
+      <div className={cn(SHELL, "px-2.5")}>
+        <Loading label="Loading workspace…" />
       </div>
     );
   }
   if (workspace.isError) {
     return (
-      <div className="gb-app">
+      <div className={cn(SHELL, "px-2.5")}>
         <Notice title="GitButler could not be reached" detail={errorText(workspace.error)} />
       </div>
     );
@@ -648,28 +676,28 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   const behind = data.upstream?.behind ?? 0;
 
   return (
-    <div className="gb-app">
-      <header className="gb-header">
-        <span className="gb-title">{data.repoName || "GitButler"}</span>
+    <div className={SHELL}>
+      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5">
+        <span className="truncate font-semibold">{data.repoName || "GitButler"}</span>
         <RepositoryPicker
           repositories={repositories.data?.repositories ?? []}
           value={repositoryKey}
           onChange={chooseRepository}
         />
-        <span className="gb-spacer" />
-        {behind > 0 ? <span className="gb-pill gb-pill-behind">{behind} behind</span> : null}
-        <button
-          type="button"
-          className="gb-refresh"
+        <span className="flex-1" />
+        {behind > 0 ? <Pill tone="text-warning">{`${behind} behind`}</Pill> : null}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground"
           onClick={() => void workspace.refetch()}
           disabled={workspace.isFetching}
           aria-label="Refresh"
-          title="Refresh"
         >
-          ↻
-        </button>
+          <Icon name={workspace.isFetching ? "Spinner" : "RotateCcw"} className="size-3.5" />
+        </Button>
       </header>
-      <div className="gb-scroll">
+      <div className={SCROLL}>
         <WorkspaceBody
           threadId={threadId}
           repositoryKey={repositoryKey}
@@ -687,7 +715,7 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
   const resolved = threadId ?? context.threadId ?? null;
   if (!resolved) {
     return (
-      <div className="gb-app">
+      <div className={cn(SHELL, "px-2.5")}>
         <Notice title="Open a thread to see its GitButler workspace" />
       </div>
     );
