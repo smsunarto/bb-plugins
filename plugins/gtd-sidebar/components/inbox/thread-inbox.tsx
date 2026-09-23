@@ -8,6 +8,7 @@ import {
   experimental_useSidebarThreads as useSidebarThreads,
   useBbNavigate,
   useRpc,
+  useSdk,
   useSettings,
   type PluginSidebarThread,
   type PluginThreadListProps,
@@ -197,7 +198,7 @@ export function ThreadInbox({
     navigate.toProject(projectId);
     onNavigate();
   });
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
+  const sdk = useSdk();
   // One drag context for both payloads (lib/sidebar-drag): a row onto a row
   // nests, a row onto a project header lifts it back out, and a group header
   // onto another group reorders its project. Desktop only: the compact
@@ -218,15 +219,18 @@ export function ThreadInbox({
       if (args === null) return;
       const optimistic = applyProjectMove(orderedProjectIds, projectId, args);
       setProjectOrderOverride(optimistic);
-      // Settle from the RPC's canonical order too: bb returns its current list
-      // for an unchanged reorder but emits no project-order-changed event.
+      // Settle from bb's canonical order too: it returns its current list for
+      // an unchanged reorder but emits no project-order-changed event. bb
+      // refuses to move the personal project; a group header never sends it,
+      // so a rejection here is the host unreachable or the project gone, and
+      // the shelf keeps bb's last order.
       const settle = (order: readonly string[] | null) => {
         setProjectOrderOverride((current) =>
           settleProjectOrderOverride(current, optimistic, order),
         );
       };
-      void rpc.call("reorderProject", { projectId, ...args }).then(
-        (result) => settle(result.ok ? result.projectIds : null),
+      void sdk.projects.reorder({ projectId, ...args }).then(
+        (projects) => settle(projects.map((project) => project.id)),
         () => settle(null),
       );
     },
@@ -247,11 +251,8 @@ export function ThreadInbox({
       // bb republishes project-order-changed, which refetches the sidebar's
       // project list; no plugin publish needed.
       if (args !== null) {
-        void rpc.call("reorderProject", { projectId, ...args }).then(
-          (result) => {
-            if (!result.ok) toast.error("Couldn’t move the project.");
-            return undefined;
-          },
+        void sdk.projects.reorder({ projectId, ...args }).then(
+          () => undefined,
           (error: unknown) => {
             toast.error(error instanceof Error ? error.message : "Couldn’t move the project.");
             return undefined;

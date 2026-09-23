@@ -91,7 +91,7 @@ const sidebarModifiers: Modifier[] = [
  *   redraws off bb's thread feed, so no local reorder happens.
  * - a project group header dragged onto another header in its shelf reorders
  *   the project; `onProjectDrop` resolves the reorder against bb's full
- *   project order and writes it through `reorderProject`.
+ *   project order and writes it through bb's own `projects.reorder`.
  *
  * Which thread targets may take the drop is decided by the tree
  * (`nestDropAllowed`, `unnestDropAllowed`); a refused target is a disabled

@@ -95,23 +95,6 @@ export const gtdSidebarRpcContract = defineRpcContract({
   },
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
   /**
-   * bb's own project reorder, made from a group header. `previousProjectId`
-   * and `nextProjectId` are the moved project's new neighbours in bb's order;
-   * bb republishes `project-order-changed`, which refetches the sidebar's
-   * project list for every window.
-   */
-  reorderProject: {
-    input: z.object({
-      projectId: z.string().trim().min(1),
-      previousProjectId: z.string().nullable(),
-      nextProjectId: z.string().nullable(),
-    }),
-    output: z.discriminatedUnion("ok", [
-      z.object({ ok: z.literal(true), projectIds: z.array(z.string()) }),
-      z.object({ ok: z.literal(false) }),
-    ]),
-  },
-  /**
    * bb's own re-parent, made by dropping one row onto another (nest) or onto
    * a project header (`parentThreadId: null`, back to the top level). The
    * sidebar hears the move through bb's thread feed, so nothing is published
@@ -303,25 +286,6 @@ export default async function plugin(bb: BbPluginApi) {
         return { ok: false, reason: result.reason };
       }
       return { ok: true };
-    },
-    async reorderProject({ projectId, previousProjectId, nextProjectId }) {
-      try {
-        const projects = await bb.sdk.projects.reorder({
-          projectId,
-          previousProjectId,
-          nextProjectId,
-        });
-        // The response is bb's canonical order even when the write resolves as
-        // unchanged (which emits no project-order-changed event). Returning it
-        // lets the sidebar settle its optimistic order on every success path.
-        return { ok: true as const, projectIds: projects.map((project) => project.id) };
-      } catch (error) {
-        // bb refuses to move the personal project; a group header never sends
-        // it, so a failure here is the host being unreachable or the project
-        // gone. The sidebar keeps bb's last order either way.
-        bb.log.warn(`reorder project ${projectId} failed: ${String(error)}`);
-        return { ok: false as const };
-      }
     },
   });
 
