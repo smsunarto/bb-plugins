@@ -18,12 +18,15 @@
  * A diff card's header is a Pierre render; its body is a second one with the
  * header disabled. They stay separate components so the chevron's hit target
  * can cover the whole header row without swallowing clicks in the code below.
+ *
+ * The header keeps Pierre's own metrics. `plugins/monokai` reshapes bb's
+ * native diff header to those same metrics, so leaving them alone is what
+ * makes the two surfaces match.
  */
 .gb-file-head {
   position: relative;
   --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
   --diffs-font-family: var(--font-mono, ui-monospace, monospace);
-  --diffs-font-size: 11px;
 }
 .gb-file-head:hover {
   --diffs-bg: var(--state-hover);
@@ -33,8 +36,8 @@
 }
 .gb-chevron {
   display: inline-flex;
-  width: 18px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -59,11 +62,13 @@
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+/* Pierre's chevron is a 10x16 glyph, the size monokai masks onto bb's own
+ * diff header. Anything smaller shrinks the artwork instead of matching it. */
 .gb-chevron svg {
-  width: 8px;
-  height: 12px;
+  width: 10px;
+  height: 16px;
   transform: rotate(-90deg);
-  transition: transform 150ms;
+  transition: transform 150ms ease;
 }
 .gb-chevron[aria-expanded="true"] svg {
   transform: rotate(0deg);

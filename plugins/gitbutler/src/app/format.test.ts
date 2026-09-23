@@ -1,15 +1,13 @@
 import { expect, test } from "bun:test";
-import { body, changeSymbol, relativeTime, shortId, subject } from "./format.ts";
+import { changeSymbol, relativeTime, shortId, subject } from "./format.ts";
 
-test("subject and body split a commit message at the first blank line", () => {
+test("subject is the first line of a commit message", () => {
   const message = "feat(top): add the thing\n\nWith a body.\nAnd more.";
   expect(subject(message)).toBe("feat(top): add the thing");
-  expect(body(message)).toBe("With a body.\nAnd more.");
 });
 
-test("a one-line commit message has no body", () => {
+test("a one-line commit message is all subject", () => {
   expect(subject("fix: one line")).toBe("fix: one line");
-  expect(body("fix: one line")).toBe("");
 });
 
 test("shortId takes the usual seven characters", () => {

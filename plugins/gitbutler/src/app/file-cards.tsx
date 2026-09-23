@@ -13,13 +13,11 @@ import { rpc, defined } from "./rpc.ts";
 const REFRESH_INTERVAL_MS = 10_000;
 
 /*
- * Pierre renders inside a shadow root, so the plugin stylesheet cannot reach
- * its header. `unsafeCSS` is the supported hook, and 12px matches the 11px
- * header text and the chevron beside it. bb's own diff header draws the same
- * icon at 14px beside 13px text, which is the same ratio at its own density,
- * so the two surfaces differ in scale rather than in treatment.
+ * Pierre draws its change icon at 16px; `plugins/monokai` draws the one on
+ * bb's own diff header at 14px. The panel follows monokai, since matching bb
+ * is the point. `unsafeCSS` is the only hook that reaches the shadow root.
  */
-const HEADER_CSS = "[data-change-icon]{width:12px;height:12px}";
+const HEADER_CSS = "[data-change-icon]{width:14px;height:14px}";
 
 type Parsed = ReturnType<typeof getSingularPatch>;
 

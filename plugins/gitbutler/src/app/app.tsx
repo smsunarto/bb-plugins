@@ -17,15 +17,7 @@ import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { FileCards } from "./file-cards.tsx";
 import { rpc, defined } from "./rpc.ts";
-import {
-  BRANCH_STATUS_LABEL,
-  body,
-  changeSymbol,
-  isLongBody,
-  relativeTime,
-  shortId,
-  subject,
-} from "./format.ts";
+import { BRANCH_STATUS_LABEL, changeSymbol, relativeTime, shortId, subject } from "./format.ts";
 import "./gitbutler.css";
 
 const REFRESH_INTERVAL_MS = 10_000;
@@ -448,43 +440,6 @@ function RepositoryPicker({
   );
 }
 
-/**
- * A commit body, clamped when it is long. An unbounded one pushed the file
- * list, which is what the screen is for, off the bottom of the panel.
- */
-function CommitBody({ text }: { text: string }) {
-  const long = isLongBody(text);
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
-  return (
-    <>
-      <pre className="my-1.5 whitespace-pre-wrap rounded-md bg-card px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
-        {/*
-         * The clamp is on this span, not the `pre`: clamping the padded box
-         * lets the first hidden line render into the bottom padding, so the
-         * card ends on a sliced row of text.
-         */}
-        <span id={bodyId} className={cn("block", long && !open && "line-clamp-6")}>
-          {text}
-        </span>
-      </pre>
-      {long ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 gap-1 px-1.5 text-[11px] font-normal text-muted-foreground"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open}
-          aria-controls={bodyId}
-        >
-          <Icon name={open ? "ChevronUp" : "ChevronDown"} className="size-3 shrink-0" aria-hidden />
-          {open ? "Show less" : "Show the full message"}
-        </Button>
-      ) : null}
-    </>
-  );
-}
-
 function CommitDetail({
   threadId,
   repositoryKey,
@@ -511,7 +466,6 @@ function CommitDetail({
       <h2 className="m-0 text-[13px] font-semibold text-balance [overflow-wrap:anywhere]">
         {subject(message)}
       </h2>
-      {body(message) ? <CommitBody text={body(message)} /> : null}
       <p className="mt-1 flex gap-2 text-[11px] tabular-nums text-muted-foreground">
         <code className="font-mono">{shortId(selection.commitId)}</code>
         {details.data ? <span>{details.data.authorName}</span> : null}

@@ -144,9 +144,8 @@ test("opens a commit and then one of its files as a diff", async () => {
   await waitFor(() => expect(slot.getByText("feat(top): add the thing")).toBeTruthy());
   fireEvent.click(slot.getByText("feat(top): add the thing"));
 
-  // Short bodies stay open; only a long one hides behind a disclosure.
-  await waitFor(() => expect(slot.getByText("With a body.")).toBeTruthy());
-  expect(slot.queryByText("Show the full message")).toBeNull();
+  // The detail screen is the file list. The message body stays on the row.
+  expect(slot.queryByText("With a body.")).toBeNull();
   await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
 
   await waitFor(() => {
@@ -195,30 +194,6 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
     });
   });
   await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
-  slot.lifecycle.unmount();
-});
-
-test("folds a long commit body away so the file list is not pushed off the panel", async () => {
-  const long = Array.from({ length: 12 }, (_, index) => `Paragraph ${index}.`).join("\n");
-  const slot = await panel({
-    ...baseRpc,
-    commit: () => ({
-      commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
-      message: `feat(top): add the thing\n\n${long}`,
-      authorName: "Scott Sunarto",
-      authorEmail: "github@smsunarto.com",
-      files: [],
-    }),
-    patches: () => ({ files: [], truncated: false }),
-  });
-
-  await waitFor(() => expect(slot.getByText("feat(top): add the thing")).toBeTruthy());
-  fireEvent.click(slot.getByText("feat(top): add the thing"));
-
-  const toggle = await waitFor(() => slot.getByText("Show the full message"));
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(toggle);
-  await waitFor(() => expect(slot.getByText("Show less")).toBeTruthy());
   slot.lifecycle.unmount();
 });
 
