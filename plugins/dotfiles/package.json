@@ -69,7 +69,7 @@
     "@lezer/highlight": "1.2.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.4.84",
+    "@get-bb/plugin-sdk": "0.5.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",
     "@radix-ui/react-dialog": "^1.1.19",
