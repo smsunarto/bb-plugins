@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { JSDOM } from "jsdom";
 import { mountTimelineMotion, setTimelineMotionEnabled } from "./timeline-motion.ts";
 import { isThreadWorking, PROBE_ATTRIBUTE, PROBE_WORKING_ATTRIBUTE } from "./thread-activity.ts";
+import { jumpToLatestEvent } from "./jump-to-latest.ts";
 import { SMOOTH_SCROLL_SETTING } from "../../shared/timeline-motion.ts";
 
 // Loaded once up front: the harness registers bun lifecycle hooks on import,
@@ -65,18 +66,44 @@ function probe(container: Element, working: boolean, threadId = "thr_test"): HTM
   return marker;
 }
 
-function sidebarThread(overrides: Partial<PluginSidebarThread>): PluginSidebarThread {
+/** An idle sidebar thread as bb 0.43.4 reports it; override the fields under test. */
+function sidebarThread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return {
-    activity: {
-      workflows: 0,
-      backgroundAgents: 0,
-      backgroundCommands: 0,
-      planMode: 0,
-      goals: 0,
-    },
+    id: "thr_test",
+    projectId: "proj_test",
+    title: "Test thread",
+    titleFallback: null,
+    displayTitle: "Test thread",
+    parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
+    sectionId: null,
+    originKind: null,
+    originPluginId: null,
+    providerId: "claude-code",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
+    hasPendingInteraction: false,
+    activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
     indicator: "none",
+    indicatorLabel: null,
+    isUnread: false,
+    isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
+    isArchived: false,
+    archivedAt: null,
+    href: "/projects/proj_test/threads/thr_test",
+    isHidden: false,
+    environment: null,
+    host: null,
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
+    lastReadAt: null,
+    latestAttentionAt: 1_700_000_000_000,
     ...overrides,
-  } as PluginSidebarThread;
+  };
 }
 
 beforeEach(() => {
@@ -995,12 +1022,47 @@ describe("smooth scroll setting", () => {
 });
 
 describe("thread activity", () => {
-  test("reads any live work as working", () => {
-    expect(isThreadWorking(sidebarThread({ indicator: "runtime" }))).toBe(true);
-    expect(isThreadWorking(sidebarThread({ indicator: "working-draft" }))).toBe(true);
+  test("reads a running turn as working, whatever its glyph or host state", () => {
+    expect(isThreadWorking(sidebarThread({ status: "active", runtimeStatus: "active" }))).toBe(
+      true,
+    );
+    expect(isThreadWorking(sidebarThread({ status: "starting", runtimeStatus: "starting" }))).toBe(
+      true,
+    );
+    expect(isThreadWorking(sidebarThread({ status: "stopping", runtimeStatus: "stopping" }))).toBe(
+      true,
+    );
     expect(
       isThreadWorking(
         sidebarThread({
+          status: "active",
+          runtimeStatus: "host-reconnecting",
+          indicator: "waiting-for-input",
+          hasPendingInteraction: true,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test("reads a queued message that is about to start a turn as working", () => {
+    expect(
+      isThreadWorking(sidebarThread({ queuedWork: "waiting", indicator: "queued-waiting" })),
+    ).toBe(true);
+    expect(
+      isThreadWorking(sidebarThread({ queuedWork: "failed", indicator: "queued-failed" })),
+    ).toBe(false);
+  });
+
+  test("reads a quiet thread as settled even with background counts", () => {
+    expect(isThreadWorking(sidebarThread())).toBe(false);
+    expect(isThreadWorking(sidebarThread({ status: "pending", runtimeStatus: "pending" }))).toBe(
+      false,
+    );
+    expect(isThreadWorking(sidebarThread({ status: "error", runtimeStatus: "error" }))).toBe(false);
+    expect(
+      isThreadWorking(
+        sidebarThread({
+          indicator: "background-agent",
           activity: {
             workflows: 0,
             backgroundAgents: 1,
@@ -1010,12 +1072,83 @@ describe("thread activity", () => {
           },
         }),
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(isThreadWorking(sidebarThread({ indicator: "draft" }))).toBe(false);
   });
 
-  test("reads a quiet thread as settled", () => {
-    expect(isThreadWorking(sidebarThread({ indicator: "none" }))).toBe(false);
-    expect(isThreadWorking(sidebarThread({ indicator: "draft" }))).toBe(false);
-    expect(isThreadWorking(sidebarThread({ indicator: "waiting-for-input" }))).toBe(false);
+  test("the thread-header marker carries the host's status for its own thread", () => {
+    const threads = [
+      sidebarThread({ id: "thr_busy", status: "active", runtimeStatus: "active" }),
+      sidebarThread({ id: "thr_quiet" }),
+    ];
+    for (const [threadId, working] of [
+      ["thr_busy", "true"],
+      ["thr_quiet", "false"],
+      ["thr_unknown", "false"],
+    ] as const) {
+      const slot = renderSlot(
+        { component: ThreadActivityProbe },
+        { threadId, projectId: "proj_test", isCompactViewport: false },
+        { sidebarThreads: { status: "ready", threads } },
+      );
+      try {
+        const marker = slot.container.querySelector(`[${PROBE_ATTRIBUTE}="${threadId}"]`);
+        expect(marker?.getAttribute(PROBE_WORKING_ATTRIBUTE)).toBe(working);
+      } finally {
+        slot.lifecycle.unmount();
+      }
+    }
+  });
+});
+
+describe("jump to latest event", () => {
+  /**
+   * A thread pane as bb lays it out: the header (where the marker lives) and
+   * the thread window are siblings under the pane wrapper.
+   */
+  function pane(threadId: string, start = 0) {
+    const wrapper = document.createElement("div");
+    wrapper.dataset.splitPaneId = threadId;
+    const header = document.createElement("header");
+    probe(header, false, threadId);
+    const shown = timeline(start);
+    wrapper.append(header, shown.root);
+    document.body.append(wrapper);
+    return { ...shown, header };
+  }
+
+  test("clicks bb's latest-event button in the pane that shows the thread", () => {
+    const { root } = pane("thr_a");
+    const other = pane("thr_b", 50);
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Scroll to latest event");
+    const clicked = mock(() => {});
+    button.addEventListener("click", clicked);
+    root.append(button);
+    expect(jumpToLatestEvent(document, "thr_a")).toBe(true);
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(other.geometry.top).toBe(50);
+  });
+
+  test("sends the timeline to its bottom when the button is not showing", () => {
+    dispose = mountTimelineMotion(document);
+    const { element, geometry } = pane("thr_a", 100);
+    expect(jumpToLatestEvent(document, "thr_a")).toBe(true);
+    tick(20);
+    expect(geometry.top).toBeGreaterThan(100);
+    expect(element.scrollTop).toBeGreaterThan(100);
+    expect(jumpToLatestEvent(document, "thr_missing")).toBe(false);
+  });
+
+  test("does nothing when the marker sits in a container of several panes", () => {
+    const wrapper = document.createElement("div");
+    probe(wrapper, false, "thr_a");
+    const first = timeline(100);
+    const second = timeline(100);
+    wrapper.append(first.root, second.root);
+    document.body.append(wrapper);
+    expect(jumpToLatestEvent(document, "thr_a")).toBe(false);
+    expect(first.geometry.top).toBe(100);
+    expect(second.geometry.top).toBe(100);
   });
 });

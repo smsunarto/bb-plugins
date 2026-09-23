@@ -16,20 +16,26 @@ export const PROBE_WORKING_ATTRIBUTE = "data-kitchen-sink-working";
 export const PROBE_SELECTOR = `[${PROBE_ATTRIBUTE}]`;
 
 /**
- * Any live work at all, foreground or background — the same reading of a
- * sidebar thread that decides whether the user is waiting on the agent.
+ * The statuses under which bb is still appending rows to the thread: the same
+ * "busy" set bb's own list sorts to the top. `runtimeStatus` only refines
+ * "active" (a busy thread whose host is provisioning or reconnecting), so it
+ * never changes the answer. An unknown status reads as idle, per the DTO.
  */
-export function isThreadWorking(thread: PluginSidebarThread): boolean {
-  const { activity } = thread;
-  return (
-    activity.workflows > 0 ||
-    activity.backgroundAgents > 0 ||
-    activity.backgroundCommands > 0 ||
-    activity.planMode > 0 ||
-    activity.goals > 0 ||
-    thread.indicator === "runtime" ||
-    thread.indicator === "working-draft"
-  );
+const BUSY_STATUSES: ReadonlySet<PluginSidebarThread["status"]> = new Set([
+  "starting",
+  "active",
+  "stopping",
+]);
+
+/**
+ * Whether the reader is waiting on the agent: a turn is running, or a queued
+ * message is about to start one. Read straight from the host's thread status
+ * rather than inferred from indicator glyphs or activity counts.
+ */
+export function isThreadWorking(
+  thread: Pick<PluginSidebarThread, "status" | "queuedWork">,
+): boolean {
+  return BUSY_STATUSES.has(thread.status) || thread.queuedWork === "waiting";
 }
 
 /**

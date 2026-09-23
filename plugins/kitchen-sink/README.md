@@ -28,7 +28,9 @@ Kitchen Sink also supplies the official Devin icon for the `acp-devin` agent pro
 
 ## Thread motion
 
-Kitchen Sink fades thread switches and smooths automatic timeline scrolling. See
+Kitchen Sink fades thread switches and smooths automatic timeline scrolling. A
+"Jump to latest event" palette command (Mod+Shift+J) scrolls the current thread
+to its live tail. See
 [thread switching and scrolling](src/app/timeline-motion/README.md) for behavior and limitations.
 
 ## Smart Embeds

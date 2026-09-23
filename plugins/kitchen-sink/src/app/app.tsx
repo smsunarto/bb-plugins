@@ -27,6 +27,7 @@ import {
   PROBE_GROUP_TITLE,
   ThreadActivityProbe,
 } from "./timeline-motion/thread-activity-probe.tsx";
+import { JUMP_TO_LATEST_COMMAND, jumpToLatestEvent } from "./timeline-motion/jump-to-latest.ts";
 
 type SourceExcerpt = Pick<
   Extract<RenderEmbedOutput, { status: "ready"; kind: "code" }>,
@@ -298,6 +299,13 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "timeline-motion",
     mount: ({ signal }) => mountTimelineMotion(document, signal),
+  });
+  app.commands.register({
+    ...JUMP_TO_LATEST_COMMAND,
+    isAvailable: ({ threadId }) => threadId !== null,
+    run: ({ threadId }) => {
+      if (threadId !== null) jumpToLatestEvent(document, threadId);
+    },
   });
   app.slots.messageDirective({ id: "smart-diff", component: SmartChangeDirective });
   app.slots.messageDirective({ id: "smart-patch", component: SmartPatchDirective });
