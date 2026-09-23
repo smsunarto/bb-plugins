@@ -662,7 +662,22 @@ describe("Docs vault operations", () => {
     expect(harness.registrations.cli).toMatchObject({
       name: "docs",
       summary: "Discover and safely sync Docs vaults",
+      rendersHelp: true,
     });
+    expect(harness.registrations.cli?.commands?.map((command) => command.name)).toEqual([
+      "vaults",
+      "vault-add",
+      "vault-remove",
+      "list",
+      "read",
+      "pull",
+      "status",
+      "push",
+      "write",
+      "mkdir",
+      "move",
+      "remove",
+    ]);
   });
 
   it("lists and reads Markdown documents beneath hidden folders", async () => {
@@ -1003,11 +1018,9 @@ describe("Docs vault operations", () => {
       cwd: "/work",
     });
     expect(result.exitCode).toBe(1);
-    expect(JSON.parse(result.stdout ?? "{}")).toMatchObject({
-      outcome: "error",
-      error: { code: "operation_failed" },
-    });
-    expect(result.stderr).toBe("");
+    const envelope = JSON.parse(result.stdout ?? "{}");
+    expect(envelope).toMatchObject({ ok: false, error: { code: "operation_failed" } });
+    expect(result.stderr).toBe(`${envelope.error.message}\n`);
   });
 
   it("supports whole-vault and single-file scopes and deprecates direct writes", async () => {
@@ -1057,7 +1070,9 @@ describe("Docs vault operations", () => {
 
     const help = await harness.runCli(["--help"]);
     expect(help).toMatchObject({ exitCode: 0 });
-    expect(help.stdout).toContain("pull|status|push");
+    expect(help.stdout).toContain("bb docs — Discover and safely sync Docs vaults");
+    expect(help.stdout).toContain("bb docs pull ");
+    expect(help.stdout).toContain("bb docs push ");
 
     const statusHelp = await harness.runCli(["status", "--help"]);
     expect(statusHelp).toMatchObject({ exitCode: 0 });
@@ -1070,7 +1085,8 @@ describe("Docs vault operations", () => {
     );
     expect(unsafePull.exitCode).toBe(2);
     expect(JSON.parse(unsafePull.stdout ?? "{}")).toMatchObject({
-      error: { code: "usage_error" },
+      ok: false,
+      error: { code: "unknown_option", message: "unknown option '--dry-run'" },
     });
     expect(files.has("/work/sync/plan.md")).toBe(false);
 
