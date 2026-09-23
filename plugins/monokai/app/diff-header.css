@@ -27,7 +27,8 @@
 
 .dark[data-monokai-diff-headers]
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
   min-height: 40px;
@@ -37,7 +38,8 @@
 
 .dark[data-monokai-diff-headers]
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   button[aria-expanded] {

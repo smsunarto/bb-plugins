@@ -53,7 +53,8 @@
  * Color stays on this theme's surface, ink, state, and feedback roles. */
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .overflow-clip.rounded-lg.border.border-border.bg-background:has(
     > .h-0 + .rounded-lg.bg-background button[aria-expanded]
@@ -66,7 +67,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
   min-height: 44px;
@@ -83,7 +85,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   > .flex {
@@ -93,7 +96,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   > .flex
@@ -103,7 +107,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   button[aria-expanded] {
@@ -121,7 +126,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   button[aria-expanded]
@@ -133,7 +139,8 @@
 @media (hover: hover) {
   .dark
     :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-      [data-testid="git-diff-toolbar-layout"]
+      [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
     )
     .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
     button[aria-expanded]:hover {
@@ -144,7 +151,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   button[aria-expanded]
@@ -155,7 +163,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   .font-mono {
@@ -167,7 +176,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   button[aria-expanded]
@@ -186,7 +196,8 @@
 @media (hover: hover) {
   .dark
     :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-      [data-testid="git-diff-toolbar-layout"]
+      [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
     )
     .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
     button[aria-expanded]
@@ -199,7 +210,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   > .flex
@@ -211,7 +223,8 @@
 
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
   > .flex
@@ -1356,7 +1369,8 @@ diffs-container {
 .dark .smart-embed-path,
 .dark
   :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"]
+    [data-testid="git-diff-toolbar-layout"],
+    [data-monokai-diff-surface]
   )
   .bg-background:has(> .flex > span > button[aria-expanded])
   .font-mono {
