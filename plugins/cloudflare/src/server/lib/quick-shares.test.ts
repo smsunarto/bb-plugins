@@ -26,6 +26,7 @@ function fixture(overrides: Partial<QuickDependencies> = {}) {
     storage,
     executable: async () => "cloudflared",
     hosts: async () => hosts,
+    hostExists: async (hostId) => hosts.some((host) => host.id === hostId),
     probe: async (_host, port) => ({
       available: true,
       originReachable: port !== 4000,
@@ -139,4 +140,38 @@ test("a share on an offline host lists as stopped without calling the host", asy
   const list = await service.list();
   expect(list.shares[0]).toMatchObject({ state: "stopped" });
   expect(list.shares[0]?.url).toBeUndefined();
+});
+
+const other = "0b8f3c2d-5e6a-4f7b-8c9d-1e2f3a4b5c6d";
+test("pruning a removed machine forgets only its shares, without calling it", async () => {
+  const { service, calls, records } = fixture({
+    hosts: async () => [
+      { id: "mac", name: "Dev Mac", online: true },
+      { id: "cloud", name: "Cloud box", online: true },
+    ],
+  });
+  await service.create({ id, port: 3000, hostId: "mac" });
+  await service.create({ id: other, port: 3000, hostId: "cloud" });
+  await service.pruneHost("mac");
+  await service.pruneHost("mac");
+  expect([...records.keys()]).toEqual([`quick:${other}`]);
+  expect(calls.filter((call) => call.startsWith("stop"))).toEqual([]);
+});
+
+test("the startup sweep prunes only machines bb reports removed", async () => {
+  const lookups: string[] = [];
+  const { service, hosts, records } = fixture({
+    hostExists: async (hostId) => {
+      lookups.push(hostId);
+      if (hostId === "linux") throw new Error("bb unavailable");
+      return hosts.some((host) => host.id === hostId);
+    },
+  });
+  hosts[1]!.online = true;
+  await service.create({ id, port: 3000, hostId: "mac" });
+  await service.create({ id: other, port: 3001, hostId: "linux" });
+  hosts.splice(0, 1);
+  await service.pruneRemovedHosts();
+  expect(lookups.sort()).toEqual(["linux", "mac"]);
+  expect([...records.keys()]).toEqual([`quick:${other}`]);
 });

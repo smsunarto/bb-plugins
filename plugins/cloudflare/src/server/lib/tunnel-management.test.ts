@@ -139,6 +139,7 @@ function fixture() {
     },
     api: (token) => new CloudflareAPI(token, fetcher),
     hosts: neverHost,
+    hostExists: neverHost,
     probe: neverHost,
     status: neverHost,
     start: neverHost,

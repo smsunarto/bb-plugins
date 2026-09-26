@@ -23,6 +23,7 @@ function fixture() {
   const calls: { method: string; path: string; body: Record<string, unknown> | undefined }[] = [];
   let running = false;
   let online = true;
+  let removed = false;
   let deny = false;
   let failPost = "";
   let failBeforePost = "";
@@ -90,9 +91,22 @@ function fixture() {
     }
     return success(resource);
   };
-  const serveResource = (path: string, method: string, body?: Record<string, unknown>) => {
+  const serveResource = (
+    path: string,
+    method: string,
+    body?: Record<string, unknown>,
+    cascade = "",
+  ) => {
     const existing = resources.get(path);
     if (method === "DELETE") {
+      // Cloudflare refuses to delete a tunnel with live connections unless the
+      // delete cascades over them, the way `cloudflared tunnel delete --force` asks.
+      if (path.includes("/cfd_tunnel/") && running && cascade !== "?cascade=true")
+        return Response.json(
+          { errors: [{ message: "tunnel has active connections" }] },
+          { status: 400 },
+        );
+      if (cascade) running = false;
       resources.delete(path);
       if (failDelete && path.includes(`/${failDelete}/`)) {
         failDelete = "";
@@ -108,12 +122,13 @@ function fixture() {
     return success(existing);
   };
   const fetcher = (async (url: string | URL | Request, options?: RequestInit) => {
-    const path = new URL(String(url)).pathname.replace("/client/v4", "");
+    const { pathname, search } = new URL(String(url));
+    const path = pathname.replace("/client/v4", "");
     const method = options?.method ?? "GET";
     const body = options?.body
       ? (JSON.parse(String(options.body)) as Record<string, unknown>)
       : undefined;
-    calls.push({ method, path, body });
+    calls.push({ method, path: path + search, body });
     if (deny) return Response.json({ errors: [{ message: "API-SECRET" }] }, { status: 403 });
     if (path in metadata) return success(metadata[path]);
     if (path.endsWith("/token")) return success("CONNECTOR-SECRET");
@@ -123,7 +138,7 @@ function fixture() {
     const collection = path.match(/\/(cfd_tunnel|apps|policies|dns_records)$/)?.[1];
     return collection
       ? serveCollection(path, method, collection, body)
-      : serveResource(path, method, body);
+      : serveResource(path, method, body, search);
   }) as typeof fetch;
   const deps: Dependencies = {
     storage,
@@ -143,7 +158,8 @@ function fixture() {
       },
     },
     api: (secret) => new CloudflareAPI(secret, fetcher),
-    hosts: async () => [{ id: "host", name: "Mac", online }],
+    hosts: async () => (removed ? [] : [{ id: "host", name: "Mac", online }]),
+    hostExists: async () => !removed,
     probe: async () => ({ available: true, originReachable: true, message: "ready" }),
     status: async () => ({ running, ...(running ? { connectorId } : {}) }),
     start: async (hostId, id, secret) => {
@@ -154,7 +170,7 @@ function fixture() {
       return { running, connectorId };
     },
     stop: async () => {
-      if (!online) throw new Error("HOST-SECRET");
+      if (!online || removed) throw new Error("HOST-SECRET");
       running = false;
       return { running };
     },
@@ -181,6 +197,7 @@ function fixture() {
     deps,
     set: (values: {
       online?: boolean;
+      removed?: boolean;
       token?: string | null;
       deny?: boolean;
       failPost?: string;
@@ -192,6 +209,7 @@ function fixture() {
       account?: string;
     }) => {
       online = values.online ?? online;
+      removed = values.removed ?? removed;
       token = values.token === null ? undefined : (values.token ?? token);
       deny = values.deny ?? deny;
       failPost = values.failPost ?? failPost;
@@ -494,4 +512,82 @@ test("overview exposes observed DNS and safe tunnel links without writing or ret
   );
   expect(f.calls.slice(before).every((call) => call.method === "GET")).toBe(true);
   expect(JSON.stringify(overview)).not.toContain("originRequest");
+});
+
+const cascadeDeletes = (f: ReturnType<typeof fixture>) =>
+  f.calls.filter((call) => call.method === "DELETE" && call.path.endsWith("?cascade=true"));
+test("a removed machine's shares lose their Cloudflare resources and leave others alone", async () => {
+  const f = fixture();
+  const initial = await create(f);
+  const other = await f.service.create({
+    ...f.input,
+    id: randomUUID(),
+    hostname: "other.example.com",
+    hostId: "other",
+  });
+  f.set({ removed: true });
+  const [pruned, ...rest] = await f.service.pruneHost("host");
+  expect(rest).toHaveLength(0);
+  expect(pruned?.ok).toBe(true);
+  expect(pruned?.share.state).toBe("removed");
+  expect(pruned?.share.resources).toEqual({});
+  // The orphaned connector was still up, so the tunnel went with its connections.
+  expect(cascadeDeletes(f).map((call) => call.path)).toEqual([
+    `/accounts/account/cfd_tunnel/${initial.share.resources.tunnelId}?cascade=true`,
+  ]);
+  expect(f.records.get(`share:${other.share.id}`)).toMatchObject({
+    state: other.share.state,
+    desiredState: "running",
+  });
+  expect(await f.service.pruneHost("host")).toEqual([]);
+});
+test("a prune that stops partway resumes on the startup sweep", async () => {
+  const f = fixture();
+  await create(f);
+  f.set({ removed: true, token: null });
+  const [failed] = await f.service.pruneHost("host");
+  expect(failed?.ok).toBe(false);
+  expect(failed?.share).toMatchObject({ state: "partial", desiredState: "removed" });
+  expect(failed?.message).toStartWith("Its machine was removed from bb");
+  f.set({ token: "API-SECRET" });
+  await new CloudflareService(f.deps).pruneRemovedHosts();
+  expect(f.records.get(`share:${f.input.id}`)).toMatchObject({ state: "removed", resources: {} });
+});
+test("the startup sweep prunes only machines bb reports removed", async () => {
+  const f = fixture();
+  await create(f);
+  const lookups: string[] = [];
+  const sweep = (hostExists: Dependencies["hostExists"]) =>
+    new CloudflareService({ ...f.deps, hostExists }).pruneRemovedHosts();
+  await sweep(async (hostId) => {
+    lookups.push(hostId);
+    throw new Error("bb unavailable");
+  });
+  f.set({ online: false });
+  await sweep(async () => true);
+  expect(lookups).toEqual(["host"]);
+  expect(f.records.get(`share:${f.input.id}`)).toMatchObject({ desiredState: "running" });
+  f.set({ removed: true });
+  await sweep(async () => false);
+  expect(f.records.get(`share:${f.input.id}`)).toMatchObject({ state: "removed" });
+});
+test("manual removal finishes once the share's machine is gone", async () => {
+  const f = fixture();
+  const initial = await create(f);
+  f.set({ removed: true });
+  const result = await f.service.remove(f.input.id, initial.share.revision);
+  expect(result.ok).toBe(true);
+  expect(result.share.state).toBe("removed");
+  expect(f.resources.size).toBe(0);
+  expect(cascadeDeletes(f)).toHaveLength(1);
+});
+test("an offline machine still blocks removal until it can stop the connector", async () => {
+  const f = fixture();
+  const initial = await create(f);
+  f.set({ online: false });
+  const result = await f.service.remove(f.input.id, initial.share.revision);
+  expect(result.ok).toBe(false);
+  expect(result.message).toContain("host is unreachable");
+  expect(cascadeDeletes(f)).toHaveLength(0);
+  expect(f.resources.size).toBeGreaterThan(0);
 });

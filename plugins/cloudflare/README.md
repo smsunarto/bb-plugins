@@ -82,6 +82,13 @@ A lost creation response is recovered by its durable `bb-dev-<share UUID>` owner
 
 Connector processes belong to the selected host worker. They receive the tunnel token through their environment, and a supervisor terminates and reaps them when the worker disconnects. No operating-system service is installed. Plugin reloads do not automatically republish or restart shares.
 
+## Removed machines
+
+When a machine is removed from BB, the plugin cleans up every share on it. The cleanup runs again on startup for machines removed while the plugin was not loaded. It only acts when BB reports the machine removed. Offline machines keep their shares.
+
+- **Protected shares** are removed the same way as **Remove**, without the host step. Ingress is blocked and DNS is deleted first. Any connector the removed machine left running is disconnected, and the owned tunnel is deleted, which revokes its token. The Access application and policy are deleted last. If a step fails, for example because Cloudflare is disconnected, the share stays partial with the reason. Select **Remove** to retry, or let the next startup finish it.
+- **Quick shares** are forgotten. A Quick Tunnel owns no account resources, so the plugin cannot revoke one that is still running on a removed machine that BB can no longer reach. Its `trycloudflare.com` URL keeps working until that `cloudflared` process stops. Stop quick shares before removing their machine.
+
 ## CLI and agents
 
 All surfaces call the same typed server procedures. The agent tool is `cloudflare_shares`. Its `create` action starts a quick share and returns the public URL, `list` shows hosts and quick shares, and `start`, `stop`, and `remove` take a quick share id. Omit `hostId` to use the thread's own host, or the only online host. `overview` returns the connected account inventory. Protected shares are created from the panel or the `create` RPC below.

@@ -42,11 +42,17 @@ export default definePlugin({
   command: { status },
   agents: { tools: { shares } },
   setup(bb) {
-    setupService(bb);
-    setupQuickShares(bb, async () => {
+    const service = setupService(bb);
+    const quick = setupQuickShares(bb, async () => {
       const { values } = await bb.sdk.plugins.getSettings({ pluginId: bb.pluginId });
       const path = values.cloudflaredPath;
       return typeof path === "string" && path.trim() ? path.trim() : "cloudflared";
     });
+    bb.events.on("experimental_host.deleted", async ({ host }) => {
+      await Promise.all([service.pruneHost(host.id), quick.pruneHost(host.id)]);
+    });
+    void Promise.all([service.pruneRemovedHosts(), quick.pruneRemovedHosts()]).catch((error) =>
+      bb.log.warn(`Pruning shares of removed machines failed: ${String(error)}`),
+    );
   },
 });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { BbPluginApi, PluginKvStorage } from "@get-bb/plugin-sdk";
 import { CloudflareOAuth, oauthCallbackResponse } from "./oauth.ts";
 import { readNetworkInventory, tunnelDNSTarget } from "./inventory.ts";
+import { hostExists, listHosts, type Host } from "./hosts.ts";
 import { z } from "zod";
 import { cloudflareHostContract } from "../../shared/host-contract.ts";
 import {
@@ -102,6 +103,8 @@ const recordSchema = shareSchema.extend({
   pendingApp: z.record(z.string(), z.unknown()).optional(),
   policyCreateIntent: z.record(z.string(), z.unknown()).optional(),
   appCreateIntent: z.record(z.string(), z.unknown()).optional(),
+  // Set once bb reports the share's machine removed. Teardown then skips the host.
+  hostRemovedAt: z.string().optional(),
 });
 type RecordShare = z.infer<typeof recordSchema>;
 type Settings = { accountId?: string; cloudflaredPath: string };
@@ -111,7 +114,8 @@ export interface Dependencies {
   settings: () => Promise<Settings>;
   oauth: Pick<CloudflareOAuth, "status" | "credentials">;
   api: (token: string) => CloudflareAPI;
-  hosts: () => Promise<{ id: string; name: string; online: boolean }[]>;
+  hosts: () => Promise<Host[]>;
+  hostExists: (hostId: string) => Promise<boolean>;
   probe: (
     hostId: string,
     port: number,
@@ -155,6 +159,7 @@ const matchesIntent = (actual: Record<string, unknown>, intent: Record<string, u
         )
       : same(actual[key], value),
   );
+const removedMessage = "Owned tunnel, DNS, and Access resources removed.";
 const safeMessage = (error: unknown) =>
   error instanceof CloudflareError
     ? error.message
@@ -760,63 +765,92 @@ export class CloudflareService {
     );
   }
   remove(id: string, expectedRevision: number): Promise<ShareResult> {
-    return this.mutate(
-      id,
-      expectedRevision,
-      async (s) => {
-        s.desiredState = "removed";
-        s.state = "removing";
-        await this.save(s);
-        const { api } = await this.credentials(s);
-        await this.block(s, api);
-        await this.stopHost(s);
-        await this.deleteDNS(s, api);
-        if (s.pendingOperation) await this.resolvePending(s, api);
-        if (s.resources.tunnelId) {
-          await this.writeConfig(s, api, blocked);
-          if (
-            (
-              await this.allowMissing(() =>
-                api.list(
-                  `${this.base(s)}/cfd_tunnel/${s.resources.tunnelId}/connections`,
-                  connectionSchema,
-                ),
-              )
-            )?.length
-          )
-            fail(
-              "Cloudflare still reports active connectors. Wait for disconnect before removing this share.",
-            );
-          await this.deleteResource(
+    return this.mutate(id, expectedRevision, (s) => this.teardown(s), removedMessage, true);
+  }
+  // Runs when bb announces a removed machine and on the startup sweep.
+  // Repeats are harmless: removed shares are skipped and every step below
+  // tolerates resources that are already gone.
+  pruneHost(hostId: string): Promise<ShareResult[]> {
+    return this.serialize(async () => {
+      const results: ShareResult[] = [];
+      for (const s of await this.records()) {
+        if (s.hostId !== hostId || s.state === "removed") continue;
+        s.hostRemovedAt ??= new Date().toISOString();
+        s.revision++;
+        results.push(
+          await this.perform(
             s,
-            api,
-            "tunnelId",
-            `${this.base(s)}/cfd_tunnel/${s.resources.tunnelId}`,
-          );
-        }
-        if (s.resources.appId) {
-          await this.allowMissing(() => this.ownedApp(s, api));
-          await this.deleteResource(
-            s,
-            api,
-            "appId",
-            `${this.base(s)}/access/apps/${s.resources.appId}`,
-          );
-        }
-        if (s.resources.policyId) {
-          await this.allowMissing(() => this.ownedPolicy(s, api));
-          await this.deleteResource(
-            s,
-            api,
-            "policyId",
-            `${this.base(s)}/access/policies/${s.resources.policyId}`,
-          );
-        }
-        s.state = "removed";
-      },
-      "Owned tunnel, DNS, and Access resources removed.",
-      true,
+            () => this.teardown(s),
+            removedMessage,
+            "Its machine was removed from bb, so the plugin is deleting its Cloudflare resources. ",
+          ),
+        );
+      }
+      return results;
+    });
+  }
+  // Catches machines removed while this plugin was not loaded to hear the
+  // event, and resumes a prune that stopped partway. A failed lookup is not
+  // proof of removal, so it leaves those shares alone.
+  async pruneRemovedHosts() {
+    const records = (await this.serialize(() => this.records())).filter(
+      (s) => s.state !== "removed",
     );
+    for (const hostId of new Set(records.map((s) => s.hostId))) {
+      const pending = records.some((s) => s.hostId === hostId && s.hostRemovedAt);
+      if (pending || !(await this.deps.hostExists(hostId).catch(() => true)))
+        await this.pruneHost(hostId);
+    }
+  }
+  private async teardown(s: RecordShare) {
+    s.desiredState = "removed";
+    s.state = "removing";
+    await this.save(s);
+    const { api } = await this.credentials(s);
+    await this.block(s, api);
+    await this.stopHost(s);
+    await this.deleteDNS(s, api);
+    if (s.pendingOperation) await this.resolvePending(s, api);
+    if (s.resources.tunnelId) {
+      await this.writeConfig(s, api, blocked);
+      const path = `${this.base(s)}/cfd_tunnel/${s.resources.tunnelId}`;
+      // bb can no longer stop a connector left on a removed machine, and it
+      // reconnects as soon as its connections are cleaned up. Ingress is
+      // already blocked, so delete the tunnel with its connections in one
+      // call, as `cloudflared tunnel delete --force` does. That revokes the
+      // token the orphan holds.
+      if (s.hostRemovedAt) {
+        await this.deleteResource(s, api, "tunnelId", `${path}?cascade=true`);
+      } else {
+        const live = await this.allowMissing(() =>
+          api.list(`${path}/connections`, connectionSchema),
+        );
+        if (live?.length)
+          fail(
+            "Cloudflare still reports active connectors. Wait for disconnect before removing this share.",
+          );
+        await this.deleteResource(s, api, "tunnelId", path);
+      }
+    }
+    if (s.resources.appId) {
+      await this.allowMissing(() => this.ownedApp(s, api));
+      await this.deleteResource(
+        s,
+        api,
+        "appId",
+        `${this.base(s)}/access/apps/${s.resources.appId}`,
+      );
+    }
+    if (s.resources.policyId) {
+      await this.allowMissing(() => this.ownedPolicy(s, api));
+      await this.deleteResource(
+        s,
+        api,
+        "policyId",
+        `${this.base(s)}/access/policies/${s.resources.policyId}`,
+      );
+    }
+    s.state = "removed";
   }
   private mutate(
     id: string,
@@ -843,6 +877,7 @@ export class CloudflareService {
     s: RecordShare,
     operation: () => Promise<void>,
     message: string,
+    failurePrefix = "",
   ): Promise<ShareResult> {
     try {
       await operation();
@@ -851,7 +886,7 @@ export class CloudflareService {
       return { ok: true, share: shareSchema.strip().parse(s), message };
     } catch (error) {
       s.state = "partial";
-      s.lastError = safeMessage(error);
+      s.lastError = failurePrefix + safeMessage(error);
       await this.save(s);
       return { ok: false, share: shareSchema.strip().parse(s), message: s.lastError };
     }
@@ -959,12 +994,20 @@ export class CloudflareService {
     await this.writeConfig(s, api, blocked);
   }
   private async stopHost(s: RecordShare) {
+    if (s.hostRemovedAt) return;
     try {
       const status = await this.deps.stop(s.hostId, s.id);
       if (status.running)
         fail("The host still reports the connector running. Ingress remains blocked.");
     } catch (error) {
       if (error instanceof CloudflareError) throw error;
+      // A removed machine never answers again. Its connector is cut off by
+      // deleting the tunnel instead, so removal must not wait for it.
+      if (!(await this.deps.hostExists(s.hostId).catch(() => true))) {
+        s.hostRemovedAt = new Date().toISOString();
+        await this.save(s);
+        return;
+      }
       fail(
         "Ingress is blocked, but the host is unreachable. Retry when it is online to stop the owned connector.",
       );
@@ -1297,12 +1340,8 @@ export function setupService(bb: BbPluginApi) {
     oauth,
     settings: () => settings.get(),
     api: (token) => new CloudflareAPI(token),
-    hosts: async () =>
-      (await bb.sdk.hosts.list()).map((item) => ({
-        id: item.id,
-        name: item.name,
-        online: item.status === "connected",
-      })),
+    hosts: () => listHosts(bb),
+    hostExists: (hostId) => hostExists(bb, hostId),
     probe: (hostId, port, executable) => host.call("probe", { port, executable }, { hostId }),
     status: (hostId, id) => host.call("status", { id }, { hostId }),
     start: (hostId, id, token, executable) =>

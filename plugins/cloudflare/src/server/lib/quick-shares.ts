@@ -4,15 +4,16 @@ import { z } from "zod";
 import { cloudflareHostContract } from "../../shared/host-contract.ts";
 import { quickShareSchema } from "../../shared/schema.ts";
 import type { QuickCreate, QuickList, QuickResult, QuickShare } from "../../shared/schema.ts";
+import { hostExists, listHosts, type Host } from "./hosts.ts";
 
 const recordSchema = quickShareSchema.omit({ state: true, url: true, connectorId: true });
 type QuickRecord = z.infer<typeof recordSchema>;
-type Host = { id: string; name: string; online: boolean };
 type HostStatus = { running: boolean; connectorId?: string; url?: string };
 export interface QuickDependencies {
   storage: PluginKvStorage;
   executable: () => Promise<string>;
   hosts: () => Promise<Host[]>;
+  hostExists: (hostId: string) => Promise<boolean>;
   // The host the calling thread runs on, when the caller is a thread and bb knows it.
   threadHost?: (threadId: string) => Promise<string | undefined>;
   probe: (
@@ -230,6 +231,26 @@ export class QuickShareService {
       };
     });
   }
+
+  // A removed machine takes its cloudflared with it, or bb can no longer reach
+  // it. Either way only the record is left to drop. A quick tunnel owns no
+  // account resources, so nothing on Cloudflare can revoke one that still runs.
+  async pruneHost(hostId: string) {
+    const records = (await this.records()).filter((record) => record.hostId === hostId);
+    await Promise.all(
+      records.map((record) =>
+        this.locked(record.id, () => this.deps.storage.delete(key(record.id))),
+      ),
+    );
+  }
+
+  // Catches machines removed while this plugin was not loaded to hear the
+  // event. A failed lookup is not proof of removal, so it keeps the records.
+  async pruneRemovedHosts() {
+    const hostIds = new Set((await this.records()).map((record) => record.hostId));
+    for (const hostId of hostIds)
+      if (!(await this.deps.hostExists(hostId).catch(() => true))) await this.pruneHost(hostId);
+  }
 }
 
 const services = new WeakMap<BbPluginApi, QuickShareService>();
@@ -251,12 +272,8 @@ export function setupQuickShares(bb: BbPluginApi, executable: () => Promise<stri
     storage: bb.storage.kv,
     executable,
     threadHost: (threadId) => threadHost(bb, threadId),
-    hosts: async () =>
-      (await bb.sdk.hosts.list()).map((item) => ({
-        id: item.id,
-        name: item.name,
-        online: item.status === "connected",
-      })),
+    hosts: () => listHosts(bb),
+    hostExists: (hostId) => hostExists(bb, hostId),
     probe: (hostId, port, executable) => host.call("probe", { port, executable }, { hostId }),
     status: (hostId, id) => host.call("status", { id }, { hostId }),
     startQuick: (hostId, id, port, executable) =>
