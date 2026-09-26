@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v0.2.0...bb-kit-core/v0.3.0) (2026-09-26)
+
+
+### Features
+
+* **bb-kit-core:** opt-in discoverable RPC ([1f6bf3e](https://github.com/smsunarto/bb-plugins/commit/1f6bf3e16a0466080fe5a3ba513d762de9bc2be9))
+* **bb-kit:** run bb dev stacks without scripts/bb-dev-app ([6d847f1](https://github.com/smsunarto/bb-plugins/commit/6d847f17fa5894a41ca3a90bf74d38221b1dbc22))
+
+
+### Bug Fixes
+
+* **bb-kit-core:** compile against plugin SDK 0.5.9 ([b6b9823](https://github.com/smsunarto/bb-plugins/commit/b6b9823792744e19eccd168fb03cd92107166ac0))
+* **bb-kit:** stop a dev session before deleting its checkout ([846c520](https://github.com/smsunarto/bb-plugins/commit/846c52044e5fabc1d629a23725c7bd398d7a442d))
+
 ## [0.2.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v0.1.0...bb-kit-core/v0.2.0) (2026-09-15)
 
 
