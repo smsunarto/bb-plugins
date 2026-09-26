@@ -61,7 +61,7 @@ describe("renderThreadNamingPrompt", () => {
       allowKeep: false,
     });
     assert.match(prompt, /^Generate a thread title for the current request/u);
-    assert.match(prompt, /Return action "rename" and title/u);
+    assert.match(prompt, /Reply with only the title/u);
     assert.match(prompt, /No activity emoji or status markers/u);
     assert.match(prompt, /Use a plain title unless the project title rules specify/u);
     assert.match(prompt, /Current request:\nCan Monaco use TextMate\?/u);
@@ -322,7 +322,7 @@ describe("planThreadNaming", () => {
       assert.match(result.prompt, /Current request:\nEvaluate title accuracy vs cost/u);
       assert.doesNotMatch(result.prompt, /Latest handoff:|Retry this/u);
       assert.match(result.prompt, /^Generate a thread title/u);
-      assert.doesNotMatch(result.prompt, /Current title:|Return action "keep"/u);
+      assert.doesNotMatch(result.prompt, /Current title:|Reply with exactly KEEP/u);
     }
   });
 

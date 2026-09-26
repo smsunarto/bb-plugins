@@ -104,8 +104,8 @@
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.5.29",
         "@types/node": "^22.0.0",
-        "bun-types": "^1.4.0",
         "typescript": "^6.0.0",
+        "vitest": "^4.1.1",
       },
     },
     "packages/unity-inspector": {

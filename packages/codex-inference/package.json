@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./client": "./src/chatgpt-client.ts",
-    "./contract": "./src/contract.ts",
-    "./failure": "./src/failure.ts"
+    "./client": "./src/vendor/provider-codex/src/ai/chatgpt-client.ts",
+    "./contract": "./src/vendor/provider-codex/src/ai/host-contract.ts",
+    "./failure": "./src/vendor/provider-codex/src/ai/failure.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
@@ -14,11 +14,11 @@
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.5.29",
     "@types/node": "^22.0.0",
-    "bun-types": "^1.4.0",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.1"
   },
   "scripts": {
-    "test": "bun test test",
+    "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint"
   }

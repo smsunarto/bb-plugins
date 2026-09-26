@@ -1,9 +1,5 @@
 import { defineRpcContract, type ExperimentalHostClient } from "@get-bb/plugin-sdk";
-import type { z } from "zod";
-import {
-  aiInferenceCompleteInputSchema,
-  aiInferenceCompleteOutputSchema,
-} from "@bb-plugins/codex-inference/contract";
+import { codexAiHostContract, type CodexAiTextResult } from "@bb-plugins/codex-inference/contract";
 import { gitButlerHostContract } from "./gitbutler-contract.ts";
 
 /**
@@ -13,12 +9,8 @@ import { gitButlerHostContract } from "./gitbutler-contract.ts";
  */
 export const gtdSidebarHostContract = defineRpcContract({
   ...gitButlerHostContract,
-  "ai.inference.complete": {
-    input: aiInferenceCompleteInputSchema,
-    output: aiInferenceCompleteOutputSchema,
-  },
+  "codex.ai.complete": codexAiHostContract["codex.ai.complete"],
 });
 
 export type GtdSidebarHostClient = ExperimentalHostClient<typeof gtdSidebarHostContract>;
-export type GtdSidebarAiInferenceCompleteInput = z.infer<typeof aiInferenceCompleteInputSchema>;
-export type GtdSidebarAiInferenceCompleteOutput = z.infer<typeof aiInferenceCompleteOutputSchema>;
+export type GtdSidebarCodexResult = CodexAiTextResult;

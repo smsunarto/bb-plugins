@@ -185,13 +185,20 @@ and other project formatting come only from your naming rules. Existing titles
 are preserved exactly when the decision is to keep them.
 
 The plugin sends a tool-free prompt to GPT-6-Luna with reasoning disabled and
-asks for a keep-or-rename decision with the complete title. The first request, an
+reads a plain-text reply: the complete title, or `KEEP`. The first request, an
 untitled thread, and explicit regeneration use a generation prompt that can only
 rename. Later requests use a review prompt that sees the current title and may
 keep it, and a keep decision does not write to the thread. Both prompts carry the
 latest request, the original request, up to three recent requests, and your
-project naming rules. A transient failure retries once with GPT-6-Luna, and each
+project naming rules. A timeout, rate limit, outage, or unreadable reply retries once with
+GPT-5.6-Luna, the same models and order as bb's built-in Codex AI service. Each
 attempt has a five-second deadline. Logs record timing, never the prompt.
+
+bb also titles a new thread through **Settings → AI services → Thread titles**,
+and that title names a new worktree's branch. GTD naming then replaces the
+thread's title with one that follows your project rules. Setting bb's thread
+titles to Off saves that first request, but new branches are then named after
+the start of the prompt.
 
 Run the **configure-gtd-naming** skill to create or update
 `.agents/GTD_NAMING.md` in your project. The skill inspects the project, chooses

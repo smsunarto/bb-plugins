@@ -27,9 +27,9 @@ export default experimental_defineHostEntry({
         return { label: null };
       }
     },
-    "ai.inference.complete": async (input) => {
+    "codex.ai.complete": async (input, context) => {
       try {
-        return await completeCodexInference(input);
+        return { ok: true as const, text: await completeCodexInference(input, context.signal) };
       } catch (error) {
         return toAiServiceFailure(error);
       }

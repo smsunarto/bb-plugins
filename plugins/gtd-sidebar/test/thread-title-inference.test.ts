@@ -1,238 +1,160 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { gtdSidebarHostContract } from "../lib/host-contract.ts";
 import {
-  completeThreadTitleWithFallback,
+  completeWithModelFallback,
   createThreadTitleInference,
-  formatInferredTitle,
-  TITLE_OUTPUT_SCHEMA,
+  readTitleReply,
   type TitleInferenceAttempt,
 } from "../thread-title-inference.ts";
 
-describe("thread title inference policy", () => {
-  test("retries a timeout with the same ChatGPT-supported model", async () => {
-    const models: string[] = [];
-    const bb = {
-      sdk: { system: { config: async () => ({ primaryHostId: "host-primary" }) } },
-    } as unknown as BbPluginApi;
-    const title = await createThreadTitleInference(bb, {
-      call: async (_method, input) => {
-        assert.ok("model" in input);
-        models.push(input.model);
-        if (models.length === 1) {
-          return { ok: false, code: "timeout", message: "timed out" };
-        }
-        if (input.model !== "gpt-6-luna") {
-          return { ok: false, code: "request_failed", message: "Model not supported" };
-        }
-        return {
-          ok: true,
-          model: input.model,
-          value: { action: "rename", title: "Fix thread naming" },
-        };
-      },
-    }).complete({ environmentId: null, prompt: "Fix thread naming", allowKeep: false });
+const PRIMARY_HOST_BB = {
+  sdk: { system: { config: async () => ({ primaryHostId: "host-primary" }) } },
+  log: { info: () => {} },
+} as unknown as BbPluginApi;
 
-    assert.equal(title, "Fix thread naming");
-    assert.deepEqual(models, ["gpt-6-luna", "gpt-6-luna"]);
-  });
-
-  test("calls GPT-6-Luna without reasoning on the primary host", async () => {
-    const calls: Array<{ input: Record<string, unknown>; hostId: string }> = [];
-    const bb = {
-      hosts: {
-        experimental_client: () => ({
-          call: async (
-            _method: string,
-            input: Record<string, unknown>,
-            options: { hostId: string },
-          ) => {
-            calls.push({ input, hostId: options.hostId });
-            return {
-              ok: true,
-              model: String(input.model),
-              value: { action: "rename", title: "Name threads" },
-            };
-          },
-        }),
+describe("thread title inference", () => {
+  test("sends the plain prompt to GPT-6-Luna on the primary host", async () => {
+    const calls: Array<{ method: string; input: unknown; options: unknown }> = [];
+    const title = await createThreadTitleInference(PRIMARY_HOST_BB, {
+      call: async (method, input, options) => {
+        calls.push({ method, input, options });
+        return { ok: true, text: "Name threads" };
       },
-      sdk: {
-        system: {
-          config: async () => ({ primaryHostId: "host-primary" }),
-        },
-      },
-    } as unknown as BbPluginApi;
-
-    const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
-    const title = await createThreadTitleInference(bb, host).complete({
-      environmentId: null,
-      prompt: "Generate a title",
-      allowKeep: true,
-    });
+    }).complete({ environmentId: null, prompt: "Generate a title", allowKeep: false });
 
     assert.equal(title, "Name threads");
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.hostId, "host-primary");
-    assert.equal(calls[0]?.input.model, "gpt-6-luna");
-    assert.deepEqual(calls[0]?.input.outputSchema, TITLE_OUTPUT_SCHEMA);
-    assert.deepEqual(Object.keys(TITLE_OUTPUT_SCHEMA.properties), ["action", "title"]);
+    assert.deepEqual(calls, [
+      {
+        method: "codex.ai.complete",
+        input: { model: "gpt-6-luna", prompt: "Generate a title", timeoutMs: 5_000 },
+        options: { hostId: "host-primary", timeoutMs: 6_000 },
+      },
+    ]);
   });
 
-  test("excludes keep from the first-turn inference schema", async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    const bb = {
-      hosts: {
-        experimental_client: () => ({
-          call: async (_method: string, input: Record<string, unknown>) => {
-            calls.push(input);
-            return {
-              ok: true,
-              model: String(input.model),
-              value: { action: "rename", title: "GTD title" },
-            };
-          },
-        }),
-      },
-      sdk: { system: { config: async () => ({ primaryHostId: "host-primary" }) } },
-    } as unknown as BbPluginApi;
+  test("a KEEP reply keeps the title only when the prompt allowed it", async () => {
+    const inference = createThreadTitleInference(PRIMARY_HOST_BB, {
+      call: async () => ({ ok: true, text: "KEEP" }),
+    });
     assert.equal(
-      await createThreadTitleInference(
-        bb,
-        bb.hosts.experimental_client({ contract: gtdSidebarHostContract }),
-      ).complete({
-        environmentId: null,
-        prompt: "Name the first request",
-        allowKeep: false,
-      }),
-      "GTD title",
+      await inference.complete({ environmentId: null, prompt: "Review", allowKeep: true }),
+      null,
     );
-    assert.deepEqual(
-      (calls[0]!.outputSchema as typeof TITLE_OUTPUT_SCHEMA).properties.action.enum,
-      ["rename"],
+    await assert.rejects(
+      inference.complete({ environmentId: null, prompt: "Generate", allowKeep: false }),
+      /kept the title when a new name was requested/u,
+    );
+  });
+
+  test("replaces bb's AI-services hint in a Cloudflare failure", async () => {
+    await assert.rejects(
+      createThreadTitleInference(PRIMARY_HOST_BB, {
+        call: async () => ({
+          ok: false,
+          code: "request_failed",
+          message:
+            "Codex inference request failed with HTTP 403: chatgpt.com answered with a Cloudflare challenge that bb cannot solve. Retry, or choose another service in Settings → AI services.",
+        }),
+      }).complete({ environmentId: null, prompt: "Generate", allowKeep: false }),
+      {
+        message:
+          "Codex inference request failed with HTTP 403: chatgpt.com answered with a Cloudflare challenge that bb cannot solve. Retry, or log in to Codex with an OpenAI API key so naming requests go to api.openai.com instead.",
+      },
     );
   });
 });
 
-describe("completeThreadTitleWithFallback", () => {
-  test("returns the structured title from the primary model", async () => {
-    const models: string[] = [];
-    const title = await completeThreadTitleWithFallback({
-      primary: "primary",
-      fallback: "fallback",
-      complete: async (model) => {
-        models.push(model);
-        return {
-          ok: true,
-          model,
-          value: { action: "rename", title: "Fix the login test" },
-        };
-      },
-    });
-
-    assert.equal(title, "Fix the login test");
-    assert.deepEqual(models, ["primary"]);
-  });
-
-  test("uses the fallback model after a transient failure", async () => {
-    const models: string[] = [];
-    const delays: number[] = [];
-    const title = await completeThreadTitleWithFallback({
-      primary: "primary",
-      fallback: "fallback",
-      complete: async (model) => {
-        models.push(model);
-        return model === "primary"
-          ? { ok: false, code: "timeout", message: "timed out" }
-          : { ok: true, model, value: { action: "rename", title: "Fallback title" } };
-      },
-      sleep: async (durationMs) => {
-        delays.push(durationMs);
-      },
-    });
-
-    assert.equal(title, "Fallback title");
-    assert.deepEqual(models, ["primary", "fallback"]);
-    assert.deepEqual(delays, [250]);
-  });
-
-  test("does not retry a non-transient failure", async () => {
-    const models: string[] = [];
-
-    await assert.rejects(
-      completeThreadTitleWithFallback({
-        primary: "primary",
-        fallback: "fallback",
-        complete: async (model) => {
-          models.push(model);
-          return { ok: false, code: "auth_required", message: "Run codex login" };
-        },
-      }),
-      /Run codex login/u,
-    );
-    assert.deepEqual(models, ["primary"]);
-  });
-
-  test("rejects a structured response without a title", async () => {
-    await assert.rejects(
-      completeThreadTitleWithFallback({
-        primary: "primary",
-        fallback: "fallback",
-        complete: async (model) => ({ ok: true, model, value: {} }),
-      }),
-      /returned an invalid title/u,
-    );
-  });
-
-  test("records the model and outcome of every attempt", async () => {
+describe("completeWithModelFallback", () => {
+  test("tries GPT-5.6-Luna after a retryable failure and records each attempt", async () => {
     const attempts: TitleInferenceAttempt[] = [];
-    const title = await completeThreadTitleWithFallback({
-      primary: "primary",
-      fallback: "fallback",
-      sleep: async () => {},
+    const text = await completeWithModelFallback({
       onAttempt: (attempt) => attempts.push(attempt),
       complete: async (model) =>
-        model === "primary"
-          ? { ok: false, code: "timeout", message: "timed out" }
-          : { ok: true, model, value: { action: "rename", title: "Named" } },
+        model === "gpt-6-luna"
+          ? { ok: false, code: "rate_limited", message: "slow down" }
+          : { ok: true, text: "Fallback title" },
     });
-    assert.equal(title, "Named");
+
+    assert.equal(text, "Fallback title");
     assert.deepEqual(
       attempts.map(({ model, attempt, outcome }) => [model, attempt, outcome]),
       [
-        ["primary", 0, "timeout"],
-        ["fallback", 1, "success"],
+        ["gpt-6-luna", 0, "rate_limited"],
+        ["gpt-5.6-luna", 1, "success"],
       ],
     );
   });
 
-  test("observer errors cannot fail a valid title", async () => {
+  test("retries a cold-start timeout with the next model", async () => {
+    const models: string[] = [];
+    const text = await completeWithModelFallback({
+      complete: async (model) => {
+        models.push(model);
+        return models.length === 1
+          ? { ok: false, code: "timeout", message: "timed out" }
+          : { ok: true, text: "Named" };
+      },
+    });
+    assert.equal(text, "Named");
+    assert.deepEqual(models, ["gpt-6-luna", "gpt-5.6-luna"]);
+  });
+
+  test("does not retry a login or request failure", async () => {
+    for (const code of ["auth_required", "request_failed"] as const) {
+      const models: string[] = [];
+      await assert.rejects(
+        completeWithModelFallback({
+          complete: async (model) => {
+            models.push(model);
+            return { ok: false, code, message: `failed: ${code}` };
+          },
+        }),
+        { message: `failed: ${code}` },
+      );
+      assert.deepEqual(models, ["gpt-6-luna"]);
+    }
+  });
+
+  test("observer errors cannot fail a valid reply", async () => {
     assert.equal(
-      await completeThreadTitleWithFallback({
-        primary: "primary",
-        fallback: "fallback",
+      await completeWithModelFallback({
         onAttempt: () => {
           throw new Error("logger");
         },
-        complete: async (model) => ({
-          ok: true,
-          model,
-          value: { action: "rename", title: "Named" },
-        }),
+        complete: async () => ({ ok: true, text: "Named" }),
       }),
       "Named",
     );
   });
 });
 
-test("keeps a title without accepting rewritten fields", () => {
-  assert.equal(formatInferredTitle({ action: "keep", title: "Different" }), null);
-  assert.throws(() => formatInferredTitle({ action: "invalid", title: "Task" }));
-});
+describe("readTitleReply", () => {
+  test("returns project formatting untouched", () => {
+    for (const title of [
+      "Fix sorting",
+      "[Billing] Fix sorting",
+      "[RFC] Retry design",
+      "iOS setup",
+    ]) {
+      assert.equal(readTitleReply(title, false), title);
+    }
+  });
 
-test("returns the complete title without adding or rewriting project formatting", () => {
-  for (const title of ["Fix sorting", "[Billing] Fix sorting", "[RFC] Retry design", "iOS setup"]) {
-    assert.equal(formatInferredTitle({ action: "rename", title }), title);
-  }
-  assert.throws(() => formatInferredTitle({ action: "rename", title: "  " }));
+  test("strips labels, wrapping quotes, fences, and trailing lines", () => {
+    assert.equal(readTitleReply('Title: "Fix sorting"', false), "Fix sorting");
+    assert.equal(readTitleReply("```\n**[GTD] Shimmer names**\n```", false), "[GTD] Shimmer names");
+    assert.equal(readTitleReply("\n  “Retry design”  \nBecause the task", false), "Retry design");
+    assert.equal(
+      readTitleReply("<think>hmm</think>\nKeep “quotes” inside", false),
+      "Keep “quotes” inside",
+    );
+  });
+
+  test("reads KEEP loosely and rejects an empty reply", () => {
+    for (const reply of ["KEEP", "keep", " `KEEP.` ", "Title: KEEP"]) {
+      assert.equal(readTitleReply(reply, true), null, reply);
+    }
+    assert.throws(() => readTitleReply(" \n``` \n", false), /returned no title/u);
+  });
 });

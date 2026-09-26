@@ -15,7 +15,7 @@ MIT License, Copyright (c) 2026 Michael Yong.
 | What                                                                                                                         | Where it ships                                  |
 | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | The whole plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) | `dist/app.js`, `dist/server.js`, `dist/app.css` |
-| Codex structured-inference transport from `plugins/provider-codex/src/ai`                                                    | `dist/host.js`                                  |
+| Codex inference transport, `plugins/provider-codex/src/ai` at `desktop-v0.44.0` (`0baa605b32a0`), unmodified                 | `dist/host.js`                                  |
 | Provider brand-mark geometry, lifted from bb's own icon components                                                           | `dist/app.js`                                   |
 | shadcn/ui-derived components, vendored through bb's plugin component registry                                                | `dist/app.js`                                   |
 
