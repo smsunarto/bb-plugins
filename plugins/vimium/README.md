@@ -23,14 +23,18 @@ Outside a text field, these keys act without a hint prompt:
 - `m` model, `p` project, `l` machine, `b` branch. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
 - `a` permission mode, as in allow. Its hint label stays `k`, because `k` as a direct key scrolls up.
 - `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. A step is 60px. The scroll animates the way Vimium's does. A tap moves one step in about 100ms, a held key keeps scrolling until you release it, and quick taps add up. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it.
-- `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order, including rows BB has temporarily unmounted while virtualizing a long list. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom. For two seconds after a keyboard thread switch, an editor that focuses itself on load (the docs panel's markdown editor does) is blurred, so the next `]` or `[` still lands. A click or any other key ends that guard.
+- `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order, including rows BB has temporarily unmounted while virtualizing a long list. Rows the sidebar keeps in its More popover are skipped, as BB's own previous/next commands skip them. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom. For two seconds after a keyboard thread switch, an editor that focuses itself on load (the docs panel's markdown editor does) is blurred, so the next `]` or `[` still lands. A click or any other key ends that guard.
 - `e` settles the focused thread, including a child in a split pane. This needs a sidebar with a settle button on each row, such as gtd-sidebar. If the focused split thread's row is collapsed, expand it before settling.
 - `E` (Shift+e) undoes the newest archive notification while it is visible and opens the restored thread. Clicking that notification's Undo button also opens the thread.
 - `i` focuses the composer.
 
 A direct key with nothing to act on, such as `e` on a settings page or `j` on a page without a conversation, falls through to bb. Inside a text field every key is just typing. In hint mode `[`, `]`, `e`, `j`, `k`, and `a` keep their hint meanings below.
 
-`s` activates BB's visible Search threads button when there is one. With a custom sidebar such as GTD that omits it, Vimium opens the Quick palette using `Cmd+K` on Mac or `Ctrl+K` elsewhere, then selects Search threads. That bridge depends on the palette shortcut and action label. If either changes, update the bridge. In hint mode, `f` only labels a visible Search threads button.
+`n` and `s` find BB's New thread and Search threads rows by their navigation item id, so they keep working after you unbind those commands' shortcuts. `s` activates BB's visible Search threads button when there is one. With a custom sidebar such as GTD that omits it, Vimium opens the Quick palette using `Cmd+K` on Mac or `Ctrl+K` elsewhere, then selects Search threads. That bridge depends on the palette shortcut and action label. If either changes, update the bridge. In hint mode, `f` only labels a visible Search threads button.
+
+## BB shortcuts
+
+Every BB shortcut uses a modifier, and every direct key above uses none, so the two never collide. `Cmd+F` (BB's find in window) is not `Cmd+Shift+F`, and hint mode exits and passes it to BB. BB already binds split focus and panel tabs (Settings → Keyboard), so Vimium adds no single keys for them.
 
 ## Labels
 

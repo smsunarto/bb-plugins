@@ -81,11 +81,13 @@ describe("GENERAL_ALPHABET", () => {
       '[data-app-composer] button[aria-label="Machine"], [data-app-composer] button[aria-label="Environment"]':
         "l",
       '[data-app-composer] button[aria-label="Branch"]': "b",
-      'button[aria-label="New thread"], button[aria-label^="New thread ("]': "n",
-      'button[aria-label^="Search threads"]': "s",
+      '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[aria-label="New thread"], button[aria-label^="New thread ("]':
+        "n",
+      '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[aria-label="Search threads"], button[aria-label^="Search threads ("]':
+        "s",
       'button[aria-label="Go back"]': "[",
       'button[aria-label="Go forward"]': "]",
-      '[data-sidebar-navigation-item="__bb__/extensions"] button': "e",
+      '[data-sidebar-navigation-item="__bb__/extensions"] > button': "e",
       'a[href="/settings"]': ",",
       'button[aria-label^="Toggle sidebar"]': "q",
       'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "\\",

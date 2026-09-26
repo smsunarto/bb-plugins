@@ -264,6 +264,9 @@ const OPEN_LAYER_SELECTOR =
 // contract (gtd-sidebar rows are `href="#"` anchors carrying the data attribute).
 const THREAD_ROW_SELECTOR = 'a[href*="/threads/"], [data-sidebar-thread-shortcut-target]';
 const WINDOWED_THREAD_SELECTOR = "[data-sidebar-windowed-nav]";
+// Hidden rows the sidebar lists in its More popover. BB's own previous/next
+// commands skip them, so stepping does too.
+const THREAD_OVERFLOW_SELECTOR = "[data-sidebar-overflow='true']";
 
 let openWindowedThread: ((threadId: string) => void) | null = null;
 
@@ -371,7 +374,8 @@ function threadRowId(element: HTMLElement): string | null {
 /**
  * Rendered sidebar thread rows in list order, one per thread. Rows scrolled
  * out of the sidebar's viewport still count, as they do for bb's own
- * previous/next commands; rows in a collapsed shelf or a hidden layer do not.
+ * previous/next commands; rows in a collapsed shelf, a hidden layer, or the
+ * sidebar's overflow popover do not.
  */
 function collectThreadRows(): ThreadRow[] {
   const rows: ThreadRow[] = [];
@@ -380,6 +384,7 @@ function collectThreadRows(): ThreadRow[] {
     `${THREAD_ROW_SELECTOR}, ${WINDOWED_THREAD_SELECTOR}`,
   )) {
     if (element.closest('[aria-hidden="true"]') !== null) continue;
+    if (element.closest(THREAD_OVERFLOW_SELECTOR) !== null) continue;
     if (typeof element.checkVisibility === "function" && !element.checkVisibility()) continue;
     if (element.matches(WINDOWED_THREAD_SELECTOR)) {
       // BB 0.43.4 keeps the list order in a placeholder while distant rows

@@ -988,6 +988,77 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("n and s find BB's navigation rows by item id when their shortcut is unbound", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    // BB 0.44's Navigation plugin drops the aria-label without a shortcut, and
+    // nests each row's options button one level deeper than the row button.
+    document.body.innerHTML =
+      '<div data-sidebar-navigation-item="__bb__/new-thread"><button id="new-thread">New thread</button>' +
+      '<div><button id="new-thread-options" aria-label="New thread options">…</button></div></div>' +
+      '<div data-sidebar-navigation-item="__bb__/search-threads"><button id="search">Search threads</button>' +
+      '<div><button id="search-options" aria-label="Search threads options">…</button></div></div>';
+    const clicked: string[] = [];
+    for (const [index, id] of [
+      "new-thread-options",
+      "new-thread",
+      "search-options",
+      "search",
+    ].entries()) {
+      const element = document.getElementById(id) as HTMLElement;
+      giveRect(element, 10, 10 + index * 30);
+      element.addEventListener("click", () => clicked.push(id));
+    }
+
+    expect(pressKey("n")).toBe(false);
+    expect(pressKey("s")).toBe(false);
+    expect(clicked).toEqual(["new-thread", "search"]);
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("s never picks the Search threads row's options button", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    // BB 0.44 disables the row while thread.search is unavailable and keeps
+    // the options button, labeled "Search threads options", always visible
+    // on coarse-pointer devices.
+    document.body.innerHTML =
+      '<div data-sidebar-navigation-item="__bb__/search-threads"><button id="search" disabled>Search threads</button>' +
+      '<div><button id="search-options" aria-label="Search threads options">…</button></div></div>';
+    const clicked: string[] = [];
+    for (const [index, id] of ["search", "search-options"].entries()) {
+      const element = document.getElementById(id) as HTMLElement;
+      giveRect(element, 10, 10 + index * 30);
+      element.addEventListener("click", () => clicked.push(id));
+    }
+
+    expect(pressKey("s")).toBe(true);
+    expect(clicked).toEqual([]);
+    pressKey("f");
+    expect(markers()).toEqual(["dd"]);
+    pressKey("Escape");
+
+    void dispose();
+    controller.abort();
+  });
+
+  test("Cmd+F leaves hint mode and reaches BB's find in window", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    document.body.innerHTML = '<button id="only">Only</button>';
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+
+    pressKey("f");
+    expect(markers()).toEqual(["dd"]);
+    expect(pressKey("f", window, { code: "KeyF", metaKey: true })).toBe(true);
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    void dispose();
+    controller.abort();
+  });
+
   test("s opens Search threads through the Quick palette when GTD omits the button", async () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
@@ -1160,6 +1231,33 @@ describe("mountLinkHints", () => {
     window.history.pushState({}, "", "/threads/thr_1");
     expect(pressKey("]")).toBe(true);
     expect(opened).toEqual(["thr_2", "thr_2"]);
+
+    window.history.pushState({}, "", "/");
+    void dispose();
+    controller.abort();
+  });
+
+  test("thread stepping skips rows listed in the sidebar's overflow popover", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+    document.body.innerHTML =
+      '<a id="t1" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_1" href="#">One</a>' +
+      '<div data-sidebar-overflow="true">' +
+      '<a id="hidden" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_hidden" href="#">Hidden</a></div>' +
+      '<a id="t2" data-sidebar-thread-shortcut-target data-sidebar-thread-id="thr_2" href="#">Two</a>';
+    const clicked: string[] = [];
+    for (const id of ["t1", "hidden", "t2"]) {
+      document.getElementById(id)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicked.push(id);
+      });
+    }
+
+    window.history.pushState({}, "", "/threads/thr_1");
+    expect(pressKey("]")).toBe(false);
+    window.history.pushState({}, "", "/threads/thr_2");
+    expect(pressKey("[")).toBe(false);
+    expect(clicked).toEqual(["t2", "t1"]);
 
     window.history.pushState({}, "", "/");
     void dispose();

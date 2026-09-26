@@ -30,14 +30,22 @@ export const RESERVED_CONTROLS = [
     char: "l",
   },
   { selector: '[data-app-composer] button[aria-label="Branch"]', char: "b" },
+  // BB 0.44's Navigation plugin sets these aria-labels only while the command
+  // has a shortcut. The item ids hold when the user unbinds it. The label
+  // forms stay exact so a row's "Search threads options" button never matches.
   {
-    selector: 'button[aria-label="New thread"], button[aria-label^="New thread ("]',
+    selector:
+      '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[aria-label="New thread"], button[aria-label^="New thread ("]',
     char: "n",
   },
-  { selector: 'button[aria-label^="Search threads"]', char: "s" },
+  {
+    selector:
+      '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[aria-label="Search threads"], button[aria-label^="Search threads ("]',
+    char: "s",
+  },
   { selector: 'button[aria-label="Go back"]', char: "[" },
   { selector: 'button[aria-label="Go forward"]', char: "]" },
-  { selector: '[data-sidebar-navigation-item="__bb__/extensions"] button', char: "e" },
+  { selector: '[data-sidebar-navigation-item="__bb__/extensions"] > button', char: "e" },
   { selector: 'a[href="/settings"]', char: "," },
   { selector: 'button[aria-label^="Toggle sidebar"]', char: "q" },
   {
