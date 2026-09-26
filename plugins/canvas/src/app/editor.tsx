@@ -1,4 +1,11 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import type { JsxComponentDescriptor, JsxEditorProps } from "@mdxeditor/editor";
+import { toMarkdown } from "mdast-util-to-markdown";
+import { mdxToMarkdown } from "mdast-util-mdx";
+import { directiveToMarkdown } from "mdast-util-directive";
+import { gfmTableToMarkdown } from "mdast-util-gfm-table";
+import { gfmStrikethroughToMarkdown } from "mdast-util-gfm-strikethrough";
+import { gfmTaskListItemToMarkdown } from "mdast-util-gfm-task-list-item";
 import type { StyleName } from "../shared/styles.ts";
 import type { CanvasSource } from "../shared/source.ts";
 import { parseCanvas } from "../shared/parse.ts";
@@ -8,8 +15,6 @@ import { PaletteProvider } from "./charts.tsx";
 import { CanvasBoundary } from "./query-client.ts";
 import { Nodes, ProblemBar } from "./render.tsx";
 import { CanvasProvider, CanvasStateProvider, useCanvasState } from "./state.tsx";
-
-export { componentNames as canvasComponentNames };
 import { CanvasReviewBody, type CanvasReviewProps } from "./review.tsx";
 
 export function CanvasReview(props: CanvasReviewProps) {
@@ -20,8 +25,6 @@ export function CanvasReview(props: CanvasReviewProps) {
     <>{props.children}</>
   );
 }
-export { narrowSource } from "../shared/source.ts";
-export type { CanvasSource } from "../shared/source.ts";
 const WidgetStyle = createContext<StyleName>("default");
 
 export function usesCanvasWidgets(markdown: string): boolean {
@@ -90,3 +93,29 @@ export function CanvasWidget({ markdown }: { markdown: string }) {
     </div>
   );
 }
+
+function WidgetEditor({ mdastNode }: JsxEditorProps) {
+  // JSX children retain the syntax parsed by the document's editor plugins.
+  // Serialize those nodes too, not just the surrounding MDX component.
+  return (
+    <CanvasWidget
+      markdown={toMarkdown(mdastNode, {
+        extensions: [
+          mdxToMarkdown(),
+          directiveToMarkdown(),
+          gfmTableToMarkdown(),
+          gfmStrikethroughToMarkdown(),
+          gfmTaskListItemToMarkdown(),
+        ],
+      })}
+    />
+  );
+}
+
+export const canvasDescriptors: JsxComponentDescriptor[] = componentNames.map((name) => ({
+  name,
+  kind: "flow",
+  props: [],
+  hasChildren: true,
+  Editor: WidgetEditor,
+}));

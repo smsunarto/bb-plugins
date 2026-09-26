@@ -248,7 +248,7 @@ export function CommentMargin({
   useLayoutEffect(() => cancelMotions, []);
   useLayoutEffect(() => {
     const rail = margin.current;
-    const editor = documentRef.current?.querySelector<HTMLElement>(".docs-prose");
+    const editor = documentRef.current?.querySelector<HTMLElement>(".canvas-mdx-prose");
     if (!rail || !editor || !visible) {
       pointerOrigins.current = null;
       cancelMotions();

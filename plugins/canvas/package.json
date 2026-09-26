@@ -29,7 +29,7 @@
   },
   "bb": {
     "name": "Canvas",
-    "description": "Open a .canvas.mdx file beside the chat as a rendered artifact with tables, charts, callouts, diffs, and persisted controls.",
+    "description": "Edit .mdx and .canvas.mdx files beside the chat, with tables, charts, callouts, diffs, and persisted controls.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -52,6 +52,7 @@
     "assets/",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "src/server/",
     "src/app/",
     "src/shared/",
@@ -60,12 +61,23 @@
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",
+    "@codemirror/view": "^6.38.6",
+    "@mdxeditor/editor": "^4.2.4",
+    "@mdxeditor/gurx": "^1.2.4",
     "@tanstack/react-query": "^5.101.4",
     "eta": "^4.6.0",
+    "lexical": "^0.48.0",
+    "mdast-util-directive": "^3.0.0",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "mdast-util-gfm-task-list-item": "^2.0.0",
+    "mdast-util-mdx": "^3.0.0",
+    "mdast-util-to-markdown": "^2.1.0",
     "remark-frontmatter": "^5.0.0",
     "remark-mdx": "^3.1.1",
     "remark-parse": "^11.0.0",
     "unified": "^11.0.5",
+    "yaml": "^2.8.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -91,6 +103,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "jsdom": "25.0.1",
+    "mdast-util-mdxjs-esm": "^2.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sonner": "^1.7.4",
@@ -110,8 +123,6 @@
     "clean": "rm -rf dist"
   },
   "exports": {
-    "./editor": "./src/app/editor.tsx",
-    "./editor-contract": "./src/shared/editor-contract.ts",
-    "./editor.css": "./src/app/app.css"
+    "./editor": "./src/app/markdown-editor.tsx"
   }
 }

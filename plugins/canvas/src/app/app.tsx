@@ -1,4 +1,11 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { MdxOpener } from "./opener.tsx";
 
-// Docs owns Markdown/MDX file opening. Canvas supplies its widgets and services.
-export default definePluginApp(() => {});
+export default definePluginApp((app) => {
+  app.slots.fileOpener({
+    id: "mdx",
+    title: "Canvas",
+    extensions: ["mdx"],
+    component: MdxOpener,
+  });
+});

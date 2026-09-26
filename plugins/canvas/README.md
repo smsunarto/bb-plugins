@@ -15,9 +15,9 @@
 
 ## What it does
 
-An agent writes one `.canvas.mdx` file. Docs opens it beside the chat in MDXEditor, with Canvas providing a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The shared parser validates components against a registry before the editor draws them with the host theme.
+An agent writes one `.canvas.mdx` file. Canvas opens it beside the chat in [MDXEditor](https://mdxeditor.dev/) with a fixed set of components. Tables, charts, callouts, stats, diffs, source excerpts, file links, and a few persisted controls. Nothing in the file runs. The shared parser validates components against a registry before the editor draws them with the host theme.
 
-- **Live.** Docs polls open files. Clean documents refresh after external writes; pending edits retain conflict protection. Invalid MDX remains available in source mode.
+- **Live.** Canvas polls open files. Clean documents refresh after external writes; pending edits retain conflict protection. Invalid MDX remains available in source mode.
 - **Safe.** Every prop value is a literal. Identifiers, calls, and expressions are rejected with a positioned diagnostic. There is no fetch and no code execution.
 - **Forgiving.** An unknown component, a bad prop, or a disallowed child becomes a red problem card in place. The rest of the document still renders. Problem cards switch to source mode. The rich-text toolbar control returns to the editor.
 - **Persisted controls.** `Toggle`, `Select`, `Tabs`, and `Checklist` keep their state per file and control id across reloads.
@@ -82,7 +82,7 @@ style: github
 ---
 ```
 
-Canvas widget styles are `default` and `github`. Docs controls the surrounding editable prose theme. Leave frontmatter out for `default`.
+Canvas widget styles are `default` and `github`. The surrounding editable prose follows the host theme's `--canvas-prose-*` tokens. Leave frontmatter out for `default`.
 
 ## Templates
 
@@ -90,11 +90,24 @@ Canvas widget styles are `default` and `github`. Docs controls the surrounding e
 
 ## How a canvas opens
 
-A canvas link opens a Docs file tab beside the chat. Docs owns `.md`, `.mdx`, and `.canvas.mdx`; Canvas supplies widgets and persistence through its exported editor integration and SDK RPCs.
+A canvas link opens a Canvas file tab beside the chat. Canvas registers the file opener for `.mdx`, which covers `.canvas.mdx`. Canvas does not open `.md` files.
+
+## MDX editing
+
+- **Rich text and source.** The toolbar covers headings, lists, links, tables, images, and code blocks. Switch to source mode to edit MDX props, expressions, or imports.
+- **MDX stays intact.** Unknown JSX remains editable. Imports, exports, and expressions are preserved and never executed.
+- **No silent rewrites.** Opening a file never writes editor normalization back to disk.
+- **Parse failures open source.** Invalid MDX opens in editable source. Source edits still save, and the rich-text control returns once the syntax is fixed.
+- **YAML frontmatter.** A leading YAML mapping stays out of the editor and is saved byte-for-byte.
+- **Canvas widgets.** Known components in `.canvas.mdx`, or in any `.mdx` that uses them, render with their persisted state. Comments and suggested edits appear in the review sidebar.
+- **Safe saves.** Saves are compare-and-swap against the version last read. A clean document refreshes after an external write. A pending draft shows **Reload** and **Overwrite** instead.
+- **Relative assets.** Images and `::html{src="./page.html"}` embeds resolve from the file's directory through a short-lived preview lease. Embedded HTML runs in an opaque-origin iframe.
+
+Other plugins can reuse the editor: `import { MarkdownEditor } from "@smsunarto/bb-plugin-canvas/editor"`.
 
 ## Where canvases live
 
-The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the thread, so the file survives the conversation without touching the repo. A canvas goes into the worktree only when the user wants it committed. Use `.canvas.mdx` for Canvas artifacts. Docs also opens ordinary `.mdx` files directly.
+The skill writes to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the thread, so the file survives the conversation without touching the repo. A canvas goes into the worktree only when the user wants it committed. Use `.canvas.mdx` for Canvas artifacts. Canvas also opens ordinary `.mdx` files directly.
 
 ## Comments
 

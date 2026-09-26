@@ -32,7 +32,7 @@ class EsmNode extends DecoratorNode<ReactNode> {
   }
 
   static override getType() {
-    return "docs-mdx-esm";
+    return "canvas-mdx-esm";
   }
   static override clone(node: EsmNode) {
     return new EsmNode(node.__value, node.__key);
@@ -54,7 +54,7 @@ class EsmNode extends DecoratorNode<ReactNode> {
   }
   override decorate() {
     return (
-      <div className="docs-mdx-declaration" contentEditable={false}>
+      <div className="canvas-mdx-declaration" contentEditable={false}>
         <SourceCode content={this.__value} path={`declaration-${this.getKey()}.tsx`} />
       </div>
     );

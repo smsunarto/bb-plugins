@@ -132,7 +132,7 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
       ?.focus({ preventScroll: true });
   };
   const selection = useCallback(() => {
-    const editor = root.current?.querySelector<HTMLElement>(".docs-prose");
+    const editor = root.current?.querySelector<HTMLElement>(".canvas-mdx-prose");
     const current = window.getSelection();
     if (!editor || !current || current.isCollapsed || !current.rangeCount) {
       setSelected(null);
@@ -192,7 +192,7 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
   }, [selection, beginComment]);
 
   useEffect(() => {
-    const editor = root.current?.querySelector<HTMLElement>(".docs-prose");
+    const editor = root.current?.querySelector<HTMLElement>(".canvas-mdx-prose");
     if (!editor) return;
     const refresh = () => {
       const index = textIndex(editor);

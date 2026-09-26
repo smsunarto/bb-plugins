@@ -1,38 +1,37 @@
-// @vitest-environment jsdom
-import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  installTestPluginRuntime,
-  renderSlot,
-  type RenderSlotOptions,
-} from "@get-bb/plugin-sdk/testing/app";
-import { EditorView } from "@codemirror/view";
-import { $getNearestNodeFromDOMNode, $isTextNode, getNearestEditorFromDOMNode } from "lexical";
+import { afterEach, expect, it, mock } from "bun:test";
+import { installDom } from "@bb-kit/core/testing";
+import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
+
+installDom();
+// Bun's native Event classes survive installDom, but jsdom only dispatches its
+// own. Radix dispatches CustomEvents from focus and dismiss layers.
+for (const name of ["Event", "CustomEvent"] as const) {
+  (globalThis as Record<string, unknown>)[name] = window[name];
+}
+const { act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
+const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+const { EditorView } = await import("@codemirror/view");
+const { $getNearestNodeFromDOMNode, $isTextNode, getNearestEditorFromDOMNode } =
+  await import("lexical");
 installTestPluginRuntime();
 // jsdom has no layout API; CodeMirror measures text ranges when source opens.
 Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 Range.prototype.getBoundingClientRect = () => new DOMRect();
-const { MarkdownEditor, previewUrl } = await import("./markdown-editor");
+globalThis.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+window.matchMedia = ((media: string) => ({
+  matches: false,
+  media,
+  addEventListener() {},
+  removeEventListener() {},
+})) as unknown as typeof window.matchMedia;
+const { MarkdownEditor, previewUrl } = await import("./markdown-editor.tsx");
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-  window.matchMedia = vi.fn().mockImplementation((media: string) => ({
-    matches: false,
-    media,
-    addEventListener() {},
-    removeEventListener() {},
-  }));
-});
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
 });
 
 async function replaceText(element: HTMLElement, text: string) {
@@ -56,9 +55,9 @@ function open(
   canvas = false,
   handlers: NonNullable<RenderSlotOptions["rpc"]> = {},
 ) {
-  const changed = vi.fn();
-  const initialized = vi.fn();
-  const applied = vi.fn();
+  const changed = mock();
+  const initialized = mock();
+  const applied = mock();
   const slot = renderSlot(
     { component: MarkdownEditor },
     {
@@ -91,7 +90,7 @@ function open(
 it.each(["text", "paragraph", "blocks"])(
   "keeps Comment available for %s selection boundaries without editing the MDX",
   async (boundary) => {
-    const comment = vi.fn((input) => ({
+    const comment = mock((input) => ({
       sha256: "saved",
       file: { version: 1, threads: [input.op.thread] },
     }));
@@ -135,7 +134,7 @@ it.each(["text", "paragraph", "blocks"])(
 );
 
 it("preserves an unfinished comment across closing and keyboard tab navigation", async () => {
-  const comment = vi.fn((input) => ({
+  const comment = mock((input) => ({
     sha256: "saved",
     file: { version: 1, threads: [input.op.thread] },
   }));
@@ -198,7 +197,7 @@ it("accepts one suggestion through Canvas and reports the saved source without a
     after: "Verified.",
     status: "pending",
   };
-  const decide = vi.fn(() => ({
+  const decide = mock(() => ({
     content: "Verified.",
     sha256: "written-sha",
     file: { version: 1, proposals: [{ ...proposal, status: "accepted" }] },
@@ -482,4 +481,17 @@ it("resolves attachments from the document directory without changing stored pat
   expect(previewUrl("/preview", "notes/file.md", "https://example.com/image.png")).toBe(
     "https://example.com/image.png",
   );
+});
+
+it.each([
+  ["one final newline", "\n"],
+  ["no final newline", ""],
+  ["CRLF final newline", "\r\n"],
+])("keeps the file's final newline state through a rich-text save (%s)", async (_name, ending) => {
+  const content = `# Heading\n\n<Callout>Keep.</Callout>\n\nOriginal paragraph.${ending}`;
+  const { slot, changed } = open(content);
+  await replaceText(await slot.findByText("Original paragraph."), "Updated paragraph.");
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  const saved = changed.mock.calls.at(-1)?.[0] as string;
+  expect(saved.endsWith(`Updated paragraph.${ending}`)).toBe(true);
 });

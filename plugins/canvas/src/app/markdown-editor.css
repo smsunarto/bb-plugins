@@ -1,0 +1,388 @@
+/*
+ * The MDX editor reuses the rendered-prose contract from app.css: the
+ * contentEditable carries `.canvas-prose`, so it takes the same measure, type
+ * scale, and --canvas-prose-* hues the Monokai theme supplies. These rules
+ * cover the elements MDXEditor emits directly (app.css scopes its element
+ * rules to the host's [data-markdown-preview] renderer) plus editor chrome.
+ */
+
+.canvas-mdx-prose {
+  outline: none;
+  width: 100%;
+  caret-color: var(--foreground);
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+
+.canvas-mdx-prose > :first-child,
+.canvas-mdx-prose li > :first-child,
+.canvas-mdx-prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.canvas-mdx-prose p {
+  margin: 1.75rem 0;
+}
+
+.canvas-mdx-prose :is(h1, h2, h3, h4, h5, h6) {
+  border-bottom: 0;
+  color: var(--canvas-prose-heading);
+  font-family: inherit;
+  font-weight: 600;
+  padding-bottom: 0;
+}
+
+/* Heading scale: 1.5 / 1.25 / 1.1 / 1 em at weight 600, more room above than below. */
+.canvas-mdx-prose h1 {
+  font-size: 1.5em;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 2.5rem 0 1rem;
+}
+
+.canvas-mdx-prose h2 {
+  font-size: 1.25em;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin: 2.25rem 0 0.875rem;
+}
+
+.canvas-mdx-prose h3 {
+  font-size: 1.1em;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 1.75rem 0 0.75rem;
+}
+
+.canvas-mdx-prose h4 {
+  font-size: 1em;
+  line-height: 1.3;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.canvas-mdx-prose :is(h5, h6) {
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: 1.3;
+  margin: 1.75rem 0;
+}
+
+.canvas-mdx-prose :is(ul, ol) {
+  margin: 1.75rem 0;
+  padding-inline-start: 0;
+}
+
+.canvas-mdx-prose :is(ul, ol) > li {
+  margin: 0 0 0 30px;
+}
+
+.canvas-mdx-prose :is(ol ol, ul ul, ol ul, ul ol) > li {
+  margin-inline-start: 32px;
+}
+
+/* List spacing steps by depth: 0.5em between top-level items, 0.25em between
+   nested siblings, 0.25em from a parent item's text to its child list. */
+.canvas-mdx-prose li + li {
+  margin-top: 0.5em;
+}
+
+.canvas-mdx-prose li li + li {
+  margin-top: 0.25em;
+}
+
+.canvas-mdx-prose li > p {
+  margin: 0;
+}
+
+.canvas-mdx-prose li > :is(ul, ol) {
+  margin: 0.25em 0 0;
+}
+
+.canvas-mdx-prose li::marker {
+  color: var(--canvas-prose-marker);
+}
+
+.canvas-mdx-prose [role="checkbox"] {
+  margin-inline-start: 0;
+}
+
+.canvas-mdx-prose strong {
+  color: var(--canvas-prose-strong);
+  font-weight: 600;
+}
+
+.canvas-mdx-prose em {
+  color: color-mix(in srgb, currentColor 84%, transparent);
+}
+
+.canvas-mdx-prose a {
+  color: var(--canvas-prose-link);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.12em;
+}
+
+.canvas-mdx-prose a:hover {
+  color: var(--canvas-prose-link-hover);
+}
+
+.canvas-mdx-prose a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 0.125em;
+}
+
+.canvas-mdx-prose blockquote {
+  border-left: 1px solid var(--canvas-prose-quote-rule);
+  color: var(--muted-foreground);
+  margin: 1rem 0;
+  padding: 0 0 0 1.1em;
+}
+
+.canvas-mdx-prose :is(code, pre) {
+  font-family: var(--font-mono);
+}
+
+.canvas-mdx-prose code {
+  color: var(--foreground);
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+
+.canvas-mdx-prose :not(pre) > code {
+  background: var(--canvas-prose-code-well);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.1em 0.3em;
+}
+
+.canvas-mdx-prose :not(pre) > code > span {
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.canvas-mdx-prose code:has(> a) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+}
+
+.canvas-mdx-prose img {
+  display: block;
+  max-width: 100%;
+  max-height: 38rem;
+  margin: 1.75rem auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.canvas-mdx-prose table {
+  width: 100%;
+  border: 0;
+  border-collapse: collapse;
+  border-radius: 0;
+  table-layout: fixed;
+  font-size: 0.875em;
+  line-height: 1.3;
+}
+
+.canvas-mdx-prose :is(th, td) {
+  position: relative;
+  min-width: 6rem;
+  border: 0;
+  border-bottom: 1px solid var(--canvas-prose-rule);
+  padding: 0.25em 0.625em 0.25em 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.canvas-mdx-prose th {
+  font-weight: 600;
+}
+
+.canvas-mdx-prose :is(th, td) > p {
+  margin-top: 0;
+}
+
+.canvas-mdx-prose :is(th, td) > p + p {
+  margin-top: 0.65em;
+}
+
+.canvas-mdx-prose hr {
+  border: 0;
+  border-top: 1px solid var(--canvas-prose-rule);
+  margin: 1.75rem 0;
+}
+
+.canvas-mdx-prose ::selection {
+  background: var(--muted);
+}
+
+.canvas-mdx-prose [data-lexical-decorator="true"] {
+  white-space: normal;
+}
+
+/* A Canvas widget renders inside the editor's own measure. */
+.canvas-mdx-prose .canvas-document {
+  padding: 0;
+  max-width: none;
+  font-size: 14px;
+}
+
+.canvas-mdx-declaration,
+.canvas-html-embed {
+  margin: 1.75rem 0;
+}
+
+.canvas-html-embed {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--canvas-prose-code-well);
+}
+
+.canvas-html-embed-header {
+  border-bottom: 1px solid var(--canvas-prose-rule);
+  padding: 0.45rem 0.7rem;
+  color: var(--muted-foreground);
+  font: 11px var(--font-mono);
+}
+
+.canvas-html-embed iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: white;
+}
+
+@media (max-width: 47.999rem) {
+  .canvas-mdx-prose {
+    padding-inline: 1.25rem;
+  }
+}
+
+/* MDXEditor's Radix-style variables, mapped onto host tokens. The doubled
+   class outranks MDXEditor's own single-class defaults. */
+.canvas-mdx-editor.canvas-mdx-editor {
+  --basePageBg: var(--background);
+  --baseBase: var(--background);
+  --baseBgSubtle: var(--card);
+  --baseBg: var(--muted);
+  --baseBgHover: var(--accent);
+  --baseBgActive: var(--accent);
+  --baseLine: var(--border);
+  --baseBorder: var(--border);
+  --baseBorderHover: var(--ring);
+  --baseSolid: var(--muted-foreground);
+  --baseSolidHover: var(--foreground);
+  --baseText: var(--muted-foreground);
+  --baseTextContrast: var(--foreground);
+  --accentBase: var(--background);
+  --accentBgSubtle: var(--muted);
+  --accentBg: var(--accent);
+  --accentBgHover: var(--accent);
+  --accentBgActive: var(--accent);
+  --accentLine: var(--border);
+  --accentBorder: var(--ring);
+  --accentBorderHover: var(--ring);
+  --accentSolid: var(--primary);
+  --accentSolidHover: var(--primary);
+  --accentText: var(--primary);
+  --accentTextContrast: var(--foreground);
+  color: var(--foreground);
+  font-family: var(--font-sans, sans-serif);
+}
+
+.canvas-mdx-editor [role="toolbar"] {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-wrap: wrap;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+
+/* MDXEditor gives CodeMirror a floating toolbar and its bundled light theme.
+   Use semantic editor attributes rather than MDXEditor's generated class names,
+   reserve a real header row, and restore the reading theme's code treatment. */
+.canvas-mdx-prose
+  [data-lexical-decorator="true"]
+  > div:has(> div:first-child button[title="Delete code block"]) {
+  padding: 0;
+  background: var(--canvas-prose-code-well);
+}
+
+.canvas-mdx-prose
+  [data-lexical-decorator="true"]
+  > div:has(> div:first-child button[title="Delete code block"])
+  > div:first-child {
+  position: static;
+  justify-content: flex-end;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--canvas-prose-rule);
+  border-bottom-left-radius: 0;
+  background: var(--secondary);
+}
+
+.canvas-mdx-prose
+  [data-lexical-decorator="true"]
+  > div:has(> div:first-child button[title="Delete code block"])
+  > div:nth-child(2) {
+  min-width: 0;
+  padding: 0.75rem 1rem;
+}
+
+.canvas-mdx-prose button[aria-label="Language"] {
+  background: transparent;
+}
+
+/* Source mode sits outside .canvas-prose, so the prose tokens fall back to the
+   page surface there. */
+.canvas-mdx-editor .cm-editor {
+  background: var(--canvas-prose-code-well, var(--background));
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+.canvas-mdx-editor .cm-scroller {
+  overflow-x: auto;
+}
+
+.canvas-mdx-editor .cm-content {
+  min-width: max-content;
+  padding: 0;
+  caret-color: var(--foreground);
+}
+
+.canvas-mdx-editor .cm-lineWrapping .cm-line {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.canvas-mdx-editor .cm-gutters {
+  background: var(--canvas-prose-code-well, var(--background));
+  color: var(--muted-foreground);
+  border-right: 1px solid var(--canvas-prose-rule, var(--border));
+}
+
+.canvas-mdx-editor .cm-activeLine,
+.canvas-mdx-editor .cm-activeLineGutter {
+  background: var(--accent);
+}
+
+.canvas-mdx-editor .cm-cursor {
+  border-left-color: var(--foreground);
+}

@@ -10,13 +10,6 @@ import {
   useState,
 } from "react";
 import {
-  CanvasWidgetsProvider,
-  CanvasReview,
-  usesCanvasWidgets,
-  type CanvasSource,
-} from "@smsunarto/bb-plugin-canvas/editor";
-import "@smsunarto/bb-plugin-canvas/editor.css";
-import {
   MDXEditor,
   addSyntaxExtension$,
   realmPlugin,
@@ -52,10 +45,17 @@ import {
   type MDXEditorMethods,
 } from "@mdxeditor/editor";
 import "@mdxeditor/editor/style.css";
-import { parseMarkdownDocument } from "./markdown-document.js";
-import { ensureEditorStyles } from "./editor-styles.js";
-import { preserveEsmPlugin } from "./mdx-esm.js";
-import { canvasDescriptors } from "./canvas-editor.js";
+import type { CanvasSource } from "../shared/source.ts";
+import {
+  CanvasReview,
+  CanvasWidgetsProvider,
+  canvasDescriptors,
+  usesCanvasWidgets,
+} from "./editor.tsx";
+import { parseMarkdownDocument } from "./markdown-document.ts";
+import { preserveEsmPlugin } from "./mdx-esm.tsx";
+import "./app.css";
+import "./markdown-editor.css";
 
 export function previewUrl(baseUrl: string, notePath: string, source: string): string {
   if (/^(https?:|data:|blob:|#)/i.test(source)) return source;
@@ -138,16 +138,20 @@ function EditorSession(
   );
   const document = useMemo(() => parseMarkdownDocument(initialValue), [initialValue]);
   const leadingBreaks = document.frontmatter ? (/^(?:\r?\n)*/.exec(document.body)?.[0] ?? "") : "";
+  // MDXEditor drops the final newline. Keep the file's own ending so a save
+  // does not add a "No newline at end of file" diff.
+  const finalBreaks = /(?:\r?\n)*$/.exec(initialValue)?.[0] ?? "";
   const lastPublished = useRef(initialValue);
   const publishBody = useCallback(
     (body: string) => {
-      const markdown = document.frontmatter + leadingBreaks + body;
+      const markdown =
+        document.frontmatter + leadingBreaks + body.replace(/(?:\r?\n)*$/, "") + finalBreaks;
       if (markdown === lastPublished.current) return;
       lastPublished.current = markdown;
       setCurrentMarkdown(markdown);
       callbacks.current.onMarkdownChange(markdown);
     },
-    [document.frontmatter, leadingBreaks],
+    [document.frontmatter, leadingBreaks, finalBreaks],
   );
   const plugins = useMemo(() => {
     const html: DirectiveDescriptor = {
@@ -159,8 +163,8 @@ function EditorSession(
         const source = mdastNode.attributes?.src ?? "";
         const height = Math.min(1200, Math.max(120, Number(mdastNode.attributes?.height) || 360));
         return (
-          <section className="simple-html-embed" contentEditable={false}>
-            <div className="simple-html-embed-header">{source}</div>
+          <section className="canvas-html-embed" contentEditable={false}>
+            <div className="canvas-html-embed-header">{source}</div>
             <iframe
               title={`Embedded HTML: ${source}`}
               sandbox="allow-scripts"
@@ -264,8 +268,8 @@ function EditorSession(
         readOnly={applying}
         markdown={document.body}
         suppressHtmlProcessing={!/\.mdx$/i.test(notePath)}
-        contentEditableClassName="docs-prose"
-        className="docs-mdx-editor"
+        contentEditableClassName="canvas-prose canvas-mdx-prose"
+        className="canvas-mdx-editor"
         plugins={plugins}
         placeholder="Start writing…"
         toMarkdownOptions={{ bullet: "-", fences: true, listItemIndent: "one" }}
@@ -306,9 +310,8 @@ function EditorSession(
 
 export function MarkdownEditor(props: MarkdownEditorProps) {
   const [reviewTab, setReviewTab] = useState<"comments" | "edits">("comments");
-  useEffect(ensureEditorStyles, []);
   return (
-    <div className="bb-simple-notes-editor min-h-0 flex-1 overflow-y-auto">
+    <div className="canvas-scroll min-h-0 flex-1 overflow-y-auto">
       <EditorSession
         reviewTab={reviewTab}
         onReviewTabChange={setReviewTab}

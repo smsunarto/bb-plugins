@@ -5,7 +5,7 @@ description: Write a .canvas.mdx file that bb renders beside the chat as a durab
 
 # Canvas
 
-A canvas is one `.canvas.mdx` file. bb opens it beside the chat and renders markdown plus a fixed set of components. Nothing in the file runs. Docs uses MDXEditor for the document and Canvas validates and draws its widgets. Follow the workflow below in order.
+A canvas is one `.canvas.mdx` file. bb opens it beside the chat and renders markdown plus a fixed set of components. Nothing in the file runs. Canvas edits the document in MDXEditor and validates and draws its widgets. Follow the workflow below in order.
 
 ## Workflow
 
@@ -36,7 +36,7 @@ The trigger is **user intent**, not response shape. Ask: would the user benefit 
 
 ### 2. Write the canvas
 
-**Location.** Write the file to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the current thread and bb can open files inside it. Write the canvas into the repo worktree only when the user wants it committed. Use the `.canvas.mdx` suffix for Canvas artifacts. Docs also renders ordinary `.md` and `.mdx` files. Use a descriptive kebab-case filename. Preserve acronym capitalization and lowercase the rest. Create the file with the write tool. Do not stop after showing the source in chat.
+**Location.** Write the file to `$BB_THREAD_STORAGE/canvases/<name>.canvas.mdx`. That directory belongs to the current thread and bb can open files inside it. Write the canvas into the repo worktree only when the user wants it committed. Use the `.canvas.mdx` suffix for Canvas artifacts. Canvas also opens ordinary `.mdx` files. Use a descriptive kebab-case filename. Preserve acronym capitalization and lowercase the rest. Create the file with the write tool. Do not stop after showing the source in chat.
 
 **File rules:**
 
@@ -128,14 +128,14 @@ Both can apply at once. One or two sentences total is enough. Skip the intro for
 
 ## Comments
 
-The user can select text in the Docs editor and comment in the review sidebar. Comments and suggested edits are file-backed. Read [review.md](review.md) for the direct-file contract, agent replies, new comment threads, and individually accepted edits. When the user mentions comments, feedback, or asks you to address notes on a canvas, run `bb canvas comments <absolute path>` first. It lists every open thread with the block it sits on, the quoted text, and whether the block was edited since. Pass `--all` to include resolved threads and `--json` for a machine readable list.
+The user can select text in the Canvas editor and comment in the review sidebar. Comments and suggested edits are file-backed. Read [review.md](review.md) for the direct-file contract, agent replies, new comment threads, and individually accepted edits. When the user mentions comments, feedback, or asks you to address notes on a canvas, run `bb canvas comments <absolute path>` first. It lists every open thread with the block it sits on, the quoted text, and whether the block was edited since. Pass `--all` to include resolved threads and `--json` for a machine readable list.
 
 Address each thread, then answer it with `bb canvas comment <absolute path> <threadId> --reply "<what you did>" --resolve`. Use `--reopen` when a resolved thread needs more work. Keep replies to one or two sentences. Your thread instructions may also carry an "Open canvas comments" line after the user comments on a thread-storage canvas.
 
 ## Troubleshooting
 
-- The canvas opens as plain text. Check that Docs is enabled and selected as the file opener.
+- The canvas opens as plain text. Check that Canvas is enabled and selected as the `.mdx` file opener.
 - The canvas shows an unreadable message. The path is wrong, the file is larger than 2 MB, the file is not UTF-8, or the host that owns it is offline. Fix the path or host. The open canvas retries automatically.
 - The editor reports invalid MDX. Switch to source mode, run `bb canvas check`, and fix the reported line.
 - A component shows a red problem card in place. The name, a prop, or a child is wrong. The card names the fix and links to the line. The rest of the document still renders.
-- To see the raw source, use the source-mode control in the Docs editor toolbar.
+- To see the raw source, use the source-mode control in the Canvas editor toolbar.

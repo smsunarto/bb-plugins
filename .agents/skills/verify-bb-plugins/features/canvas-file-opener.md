@@ -1,10 +1,10 @@
-# Canvas files in Docs
+# Canvas file opener
 
 ## Sub-features
 
-- Docs registration for `.md`, `.mdx`, and `.canvas.mdx` file tabs.
+- Canvas registration for `.mdx` and `.canvas.mdx` file tabs.
 - Rendering of `.canvas.mdx` files inside the side-panel tab.
-- Rich text and source modes for Markdown, MDX, and Canvas files.
+- Rich text and source modes for MDX and Canvas files, with compare-and-swap saves.
 - Interactive controls and rendered document state.
 - Comments: block selection below the editor, existing thread cards, and `bb canvas comments` for the agent.
 
@@ -12,7 +12,7 @@
 
 Open a repository-backed thread. Show the right panel and open a new tab. Search for a `.canvas.mdx` file and select it.
 
-The result is a Docs editor with rendered Canvas widgets. Plain MDX and Markdown files use the same toolbar and source-mode controls.
+The result is the Canvas MDX editor with rendered Canvas widgets. Plain `.mdx` files use the same toolbar and source-mode controls.
 
 ## Driving it with agent-browser
 
