@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { followsBbDeliveryDefault, threadSendMode, turnAssignmentPhase } from "../lib/delivery.ts";
+import {
+  followsBbDeliveryDefault,
+  threadSendMode,
+  threadTurnInProgress,
+  turnAssignmentPhase,
+} from "../lib/delivery.ts";
 
 test("queue waits behind an active thread", () => {
   assert.equal(threadSendMode("Queue", true), "queue-if-active");
@@ -38,4 +43,16 @@ test("a queued active-thread assignment waits for the queued turn to start", () 
 test("steering and idle-thread assignments wait for the next turn finish", () => {
   assert.equal(turnAssignmentPhase("active", "steer-if-active"), "awaiting-finish");
   assert.equal(turnAssignmentPhase("idle", "queue-if-active"), "awaiting-finish");
+});
+
+test("a committed, booting, or running turn counts as in progress", () => {
+  assert.equal(threadTurnInProgress("pending"), true);
+  assert.equal(threadTurnInProgress("starting"), true);
+  assert.equal(threadTurnInProgress("active"), true);
+});
+
+test("an idle, stopping, or failed thread has no turn in progress", () => {
+  assert.equal(threadTurnInProgress("idle"), false);
+  assert.equal(threadTurnInProgress("stopping"), false);
+  assert.equal(threadTurnInProgress("error"), false);
 });

@@ -282,25 +282,47 @@ export function restageTurnAssignments(
   })();
 }
 
-export function recoverInterruptedTurnAssignments(db: Database): number {
+/** Threads that held turn assignments when the server last stopped. */
+export function turnAssignmentThreadIds(db: Database): string[] {
+  const rows = db
+    .prepare(`SELECT DISTINCT thread_id FROM annotation_turn_assignments ORDER BY thread_id`)
+    .all() as Array<{ thread_id: string }>;
+  return rows.map((row) => row.thread_id);
+}
+
+/**
+ * Re-stage turn assignments the server lost track of while it was stopped
+ * (restart, reload, plugin safe mode). An assignment whose thread is still
+ * mid-turn keeps its phase: the thread events that follow finish it as if the
+ * server had never stopped. Every other assignment returns to staging, since
+ * the turn it waited on may have ended unseen.
+ */
+export function recoverInterruptedTurnAssignments(
+  db: Database,
+  activeThreadIds: ReadonlySet<string> = new Set(),
+): number {
   return db.transaction(() => {
     const timestamp = nowIso();
-    const result = db
-      .prepare(
-        `UPDATE annotation_routing
-         SET state = 'staged', assigned_thread_id = NULL, dispatch_id = NULL,
-             updated_at = ?
-         WHERE state = 'assigned'
-           AND annotation_id IN (
-             SELECT t.annotation_id
-             FROM annotation_turn_assignments t
-             JOIN annotations a ON a.id = t.annotation_id
-             WHERE a.status IN ('pending', 'acknowledged')
-           )`,
-      )
-      .run(timestamp);
-    db.prepare(`DELETE FROM annotation_turn_assignments`).run();
-    return result.changes;
+    let restaged = 0;
+    for (const threadId of turnAssignmentThreadIds(db)) {
+      if (activeThreadIds.has(threadId)) continue;
+      restaged += db
+        .prepare(
+          `UPDATE annotation_routing
+           SET state = 'staged', assigned_thread_id = NULL, dispatch_id = NULL,
+               updated_at = ?
+           WHERE state = 'assigned'
+             AND annotation_id IN (
+               SELECT t.annotation_id
+               FROM annotation_turn_assignments t
+               JOIN annotations a ON a.id = t.annotation_id
+               WHERE t.thread_id = ? AND a.status IN ('pending', 'acknowledged')
+             )`,
+        )
+        .run(timestamp, threadId).changes;
+      db.prepare(`DELETE FROM annotation_turn_assignments WHERE thread_id = ?`).run(threadId);
+    }
+    return restaged;
   })();
 }
 

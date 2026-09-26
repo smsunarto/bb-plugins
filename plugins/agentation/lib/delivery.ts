@@ -24,3 +24,12 @@ export function turnAssignmentPhase(
     ? "awaiting-start"
     : "awaiting-finish";
 }
+
+/**
+ * Whether a thread's turn is still ahead of it or underway: the message is
+ * committed (`pending`), the provider is booting (`starting`), or the agent is
+ * working (`active`). `idle`, `stopping`, and `error` mean the turn is over.
+ */
+export function threadTurnInProgress(threadStatus: string): boolean {
+  return threadStatus === "pending" || threadStatus === "starting" || threadStatus === "active";
+}

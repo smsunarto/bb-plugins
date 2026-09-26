@@ -78,11 +78,13 @@ import {
   recoverInterruptedTurnAssignments,
   restageAnnotation as restageStoredAnnotation,
   restageTurnAssignments,
+  turnAssignmentThreadIds,
 } from "./lib/staging.ts";
 import {
   annotationDeliveryModes,
   followsBbDeliveryDefault,
   threadSendMode,
+  threadTurnInProgress,
   turnAssignmentPhase,
 } from "./lib/delivery.ts";
 import { readInstructions } from "./lib/instructions.ts";
@@ -272,10 +274,6 @@ export default async function plugin(bb: BbPluginApi) {
   if (recoveredDispatches > 0) {
     bb.log.warn(`re-staged ${recoveredDispatches} annotations interrupted during delivery`);
   }
-  const recoveredTurnAssignments = recoverInterruptedTurnAssignments(db);
-  if (recoveredTurnAssignments > 0) {
-    bb.log.warn(`re-staged ${recoveredTurnAssignments} annotations interrupted during a turn`);
-  }
 
   bb.ui.registerMentionProvider({
     id: "annotation",
@@ -439,6 +437,44 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.deleted", ({ thread }) => {
     publishRestagedAfterTurn(thread.id, true);
+  });
+
+  // Turn assignments outlive a stop (restart, reload, plugin safe mode), but
+  // the thread events in between were missed. Keep those whose thread is still
+  // mid-turn and re-stage the rest. This runs after the handlers above are
+  // registered, so a turn that ends meanwhile is re-staged by its own event.
+  async function recoverTurnAssignments(): Promise<void> {
+    const threadIds = turnAssignmentThreadIds(db);
+    if (threadIds.length === 0) return;
+    const statuses = await Promise.all(
+      threadIds.map(async (threadId) => {
+        try {
+          const { status } = await bb.sdk.threads.get({ threadId });
+          return { threadId, active: threadTurnInProgress(status) };
+        } catch {
+          return { threadId, active: false };
+        }
+      }),
+    );
+    if (disposed) return;
+    const activeThreadIds = new Set(
+      statuses.filter((status) => status.active).map((status) => status.threadId),
+    );
+    const restaged = recoverInterruptedTurnAssignments(db, activeThreadIds);
+    if (restaged > 0) {
+      broadcast({ type: "routing", sessionId: null });
+      bb.log.warn(
+        `re-staged ${restaged} annotations whose turn ended while Agentation was stopped`,
+      );
+    }
+    if (activeThreadIds.size > 0) {
+      bb.log.info(`kept turn assignments for ${activeThreadIds.size} still-active threads`);
+    }
+  }
+  recoverTurnAssignments().catch((error: unknown) => {
+    bb.log.warn(
+      `could not recover turn assignments: ${error instanceof Error ? error.message : String(error)}`,
+    );
   });
 
   function dropStream(controller: ReadableStreamDefaultController<Uint8Array>): void {

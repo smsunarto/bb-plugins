@@ -15,6 +15,7 @@ import {
   recoverInterruptedTurnAssignments,
   restageAnnotation,
   restageTurnAssignments,
+  turnAssignmentThreadIds,
 } from "../lib/staging.ts";
 import {
   getAnnotation,
@@ -358,6 +359,30 @@ test("restart recovery returns open turn assignments to staging", () => {
 
   assert.equal(recoverInterruptedTurnAssignments(db), 1);
   assert.equal(getAnnotationRouting(db, "ann_1")?.state, "staged");
+});
+
+test("restart recovery keeps assignments whose thread is still mid-turn", () => {
+  const db = freshDb();
+  seed(db, "ann_busy");
+  seed(db, "ann_idle");
+  for (const [annotationId, threadId] of [
+    ["ann_busy", "thr_busy"],
+    ["ann_idle", "thr_idle"],
+  ] as const) {
+    const claim = claimStagedAnnotations(db, { annotationIds: [annotationId], threadId });
+    if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+    completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: "awaiting-finish" });
+  }
+  assert.deepEqual(turnAssignmentThreadIds(db), ["thr_busy", "thr_idle"]);
+
+  assert.equal(recoverInterruptedTurnAssignments(db, new Set(["thr_busy"])), 1);
+  assert.equal(getAnnotationRouting(db, "ann_idle")?.state, "staged");
+  assert.equal(getAnnotationRouting(db, "ann_busy")?.state, "assigned");
+  assert.deepEqual(turnAssignmentThreadIds(db), ["thr_busy"]);
+
+  // The busy thread's next idle event finishes the kept assignment normally.
+  assert.equal(restageTurnAssignments(db, "thr_busy"), 1);
+  assert.equal(getAnnotationRouting(db, "ann_busy")?.state, "staged");
 });
 
 test("closed annotations leave the staged list and reopen as staged", () => {
