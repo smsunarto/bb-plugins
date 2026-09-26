@@ -99,13 +99,15 @@ panel's Dismissed view, where you can reopen it.
 On top of the AFS fields, each annotation carries bb context, so an agent knows
 where to look before it starts grepping.
 
-| Field                          | Meaning                                                                                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bb.route`                     | The bb route the annotation was taken on.                                                                                                                                |
-| `bb.pluginId`                  | Owning plugin, or `null` for the bb app shell.                                                                                                                           |
-| `bb.surface`                   | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_threadList`, or `threadPanelAction.component`; `inline` / `overlay` for trusted custom content. |
-| `bb.surfaceId`                 | Registration/item id exposed by the surface, such as `inbox`; omitted on older annotations or when bb does not expose one.                                               |
-| `bb.threadId` / `bb.projectId` | Source context resolved from the route.                                                                                                                                  |
+| Field                                     | Meaning                                                                                                                                                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bb.route`                                | The bb route the annotation was taken on.                                                                                                                                               |
+| `bb.pluginId`                             | Owning plugin, or `null` for the bb app shell.                                                                                                                                          |
+| `bb.surface`                              | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_threadList`, or `threadPanelAction.component`; `inline` / `overlay` for trusted custom content.                |
+| `bb.surfaceId`                            | Registration/item id exposed by the surface, such as `inbox`; omitted on older annotations or when bb does not expose one.                                                              |
+| `bb.navigationItemId`                     | Sidebar row (`<pluginId>/<panelId>` or `__bb__/…`) when a navigation plugin drew the element. The row's entry comes from that plugin's `navPanel`.                                      |
+| `bb.pluginProvenance` / `bb.pluginSource` | Whether the owner ships with bb (`builtin`, such as the bundled `thread-list` and `navigation`) or was installed (`direct`, `catalog`), and its install source. Recorded by the server. |
+| `bb.threadId` / `bb.projectId`            | Source context resolved from the route.                                                                                                                                                 |
 
 ### Commands
 
@@ -152,6 +154,13 @@ close the note.
 **An agent cannot find the feedback.** Staged annotations belong to no thread
 yet. Send the batch to a thread, or tell the agent to call
 `agentation_get_all_pending`, which reads across every page.
+
+**Plugin safe mode is on.** Safe mode stops every plugin not included with bb,
+so Agentation is stopped: no toolbar, panel, or agent tools. Nothing is lost.
+Annotations and staging live in plugin storage, and notes typed but not yet
+saved stay in the toolbar's local storage and are sent when it returns. When
+safe mode ends, annotations sent to a thread that is still mid-turn stay with
+that thread. The rest return to staging.
 
 **Two panes sent the same batch.** The first pane assigns it. The second pane
 refreshes instead of sending a duplicate. A failed delivery returns the batch to

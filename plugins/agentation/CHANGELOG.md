@@ -9,21 +9,23 @@
 - Mark the RPC contract discoverable with per-method descriptions (`bb plugin rpc inspect agentation`).
 - Remove annotation mentions from the composer when their annotations are sent or discarded, and refresh the banner after the draft is submitted.
 - Map the app-overlay, browser-toolbar-action, and timeline-renderer plugin surfaces for annotations.
+- Map bb 0.44's sidebar header and sidebar navigation slots, plus the diff, source-code, sidebar-footer, and provider-input slots, to their public SDK registrations.
+- Name the sidebar row an annotation on bb's Navigation plugin points at, and the `navPanel` entry behind it.
+- Record whether an annotated plugin ships with bb (bundled thread list, Navigation) or was installed, and where from.
+- Keep turn assignments across a restart or plugin safe mode while their thread is still mid-turn, instead of re-staging them.
 
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-15)
 
-
 ### Features
 
-* **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
-
+- **bb-kit:** support core and plugin dev workflows ([3e2ac94](https://github.com/smsunarto/bb-plugins/commit/3e2ac94a0408d6256f3ccc1e97c3f87858c25299))
 
 ### Bug Fixes
 
-* **agentation:** hide inactive toolbar controls ([b87bfa8](https://github.com/smsunarto/bb-plugins/commit/b87bfa89104ada30ce97d856cb1b9937f60acb38))
-* **ci:** repair icon, skill, lint, and packaging checks ([6c13374](https://github.com/smsunarto/bb-plugins/commit/6c133744736b2fd6bf4c55bce7e3cc2f9adecf40))
-* **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
-* **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
+- **agentation:** hide inactive toolbar controls ([b87bfa8](https://github.com/smsunarto/bb-plugins/commit/b87bfa89104ada30ce97d856cb1b9937f60acb38))
+- **ci:** repair icon, skill, lint, and packaging checks ([6c13374](https://github.com/smsunarto/bb-plugins/commit/6c133744736b2fd6bf4c55bce7e3cc2f9adecf40))
+- **plugins:** support bb 0.41 ([f2418f4](https://github.com/smsunarto/bb-plugins/commit/f2418f4c42786a7f5c8fce13e6d075a38b8eab71))
+- **tooling:** clear repository quality gates ([4155137](https://github.com/smsunarto/bb-plugins/commit/41551375c36ac22a83daef851e065a8cf9c33151))
 
 ## 0.2.3
 
