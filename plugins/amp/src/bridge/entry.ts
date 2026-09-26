@@ -20,6 +20,8 @@ import {
   experimental_BridgeRecoveryError as BridgeRecoveryError,
   experimental_defineProviderBridge,
   modelListParamsSchema,
+  providerInstallationRunParamsSchema,
+  providerInstallationStatusParamsSchema,
   providerMaintenanceParamsSchema,
   runBridgeRequest,
   threadArchiveParamsSchema,
@@ -48,6 +50,11 @@ import {
   type AmpConversationDeps,
 } from "./conversation.ts";
 import { createAmpExecute } from "./execute.ts";
+import {
+  ampInstallDisplayCommand,
+  getAmpInstallationStatus,
+  runAmpInstallation,
+} from "./installation.ts";
 import { readProviderOptions } from "./options.ts";
 import type { OracleReports } from "./project.ts";
 import {
@@ -150,19 +157,26 @@ function providerOptionsOf(options: BridgeExecutionOptions): unknown {
   return (options as { providerOptions?: unknown }).providerOptions;
 }
 
-/** Sessionless requests (archive or rename with no open session) carry no
- * providerOptions, so they resolve the CLI themselves. `resolveAmpCliLaunch`
- * is the same resolution the registration uses, rather than a fall back to
- * bare `amp`: a GUI-launched daemon has a minimal PATH, which is why that
- * search looks in `~/.local/bin` and friends at all. Resolving differently
- * here archived and renamed through a binary the sessions never used, or
- * through none. Reusing it also means a stale `AMP_CLI_PATH` is checked for
- * executability and superseded by a fresh search, instead of being spawned
- * because it is set. */
-function ambientCliPath(): string {
-  const configured = process.env.AMP_CLI_PATH?.trim();
+/** The Amp CLI on this host, or null when there is none. The recorded path
+ * (the registration's providerOptions, else AMP_CLI_PATH) goes through
+ * `resolveAmpCliLaunch`, the same resolution the registration uses: a
+ * GUI-launched daemon has a minimal PATH, which is why that search looks in
+ * `~/.local/bin` and friends at all, and a stale recorded path is checked for
+ * executability and superseded by a fresh search instead of being spawned
+ * because it is set. Maintenance requests (model list, installation) answer
+ * from this, so a CLI installed after registration is found. */
+function hostCliPath(providerOptions: unknown): string | null {
+  const configured =
+    readProviderOptions(providerOptions).ampCliPath ?? process.env.AMP_CLI_PATH?.trim();
   const recorded = configured !== undefined && configured.length > 0 ? configured : null;
-  return resolveAmpCliLaunch(recorded)?.command ?? "amp";
+  return resolveAmpCliLaunch(recorded)?.command ?? null;
+}
+
+/** Sessionless requests (archive or rename with no open session) carry no
+ * providerOptions, so they resolve the CLI themselves. Resolving differently
+ * here archived and renamed through a binary the sessions never used. */
+function ambientCliPath(): string {
+  return hostCliPath(undefined) ?? "amp";
 }
 
 /** The Amp CLI a session spawns: the registration's providerOptions win over
@@ -358,6 +372,16 @@ const handlers: Record<string, RequestHandler> = {
       invalidParams(id, BRIDGE_REQUEST_METHODS.modelList, parsed.error.issues);
       return;
     }
+    // MISSING_EXECUTABLE, not a generic error: bb classifies it as a missing
+    // CLI whatever the message says, and the picker says so.
+    if (hostCliPath(parsed.data.providerOptions) === null) {
+      io.sendError(
+        id,
+        BRIDGE_JSON_RPC_ERRORS.MISSING_EXECUTABLE,
+        `Could not find the Amp CLI on this host. Install it with \`${ampInstallDisplayCommand()}\` and retry.`,
+      );
+      return;
+    }
     // One model whose reasoning efforts are Amp's modes; options.ts maps the
     // level onto --mode. This live answer replaces the declaration's
     // cold-cache fallback, so both read src/bridge/model-catalog.ts.
@@ -382,12 +406,25 @@ const handlers: Record<string, RequestHandler> = {
     io.sendResult(id, { supported: false });
   },
 
-  [BRIDGE_REQUEST_METHODS.providerInstallationStatus]: (id) => {
-    methodNotFound(id, BRIDGE_REQUEST_METHODS.providerInstallationStatus);
+  [BRIDGE_REQUEST_METHODS.providerInstallationStatus]: async (id, params) => {
+    const parsed = providerInstallationStatusParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      invalidParams(id, BRIDGE_REQUEST_METHODS.providerInstallationStatus, parsed.error.issues);
+      return;
+    }
+    io.sendResult(id, await getAmpInstallationStatus(hostCliPath(parsed.data.providerOptions)));
   },
 
-  [BRIDGE_REQUEST_METHODS.providerInstallationRun]: (id) => {
-    methodNotFound(id, BRIDGE_REQUEST_METHODS.providerInstallationRun);
+  [BRIDGE_REQUEST_METHODS.providerInstallationRun]: async (id, params) => {
+    const parsed = providerInstallationRunParamsSchema.safeParse(params);
+    if (!parsed.success) {
+      invalidParams(id, BRIDGE_REQUEST_METHODS.providerInstallationRun, parsed.error.issues);
+      return;
+    }
+    io.sendResult(
+      id,
+      await runAmpInstallation(hostCliPath(parsed.data.providerOptions), parsed.data.action),
+    );
   },
 
   [BRIDGE_REQUEST_METHODS.threadStart]: async (id, params) => {

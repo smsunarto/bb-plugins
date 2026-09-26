@@ -52,6 +52,9 @@ test("the declaration passes the SDK validator", () => {
   assert.deepEqual(skillRoots?.project?.map(rootPath), AMP_NATIVE_SKILL_ROOTS.project);
   assert.deepEqual(skillRoots?.user?.map(rootPath), AMP_NATIVE_SKILL_ROOTS.user);
   assert.deepEqual(normalized.models, { scope: "host", fallback: AMP_FALLBACK_MODELS });
+  // bb asks the bridge for installation status only when this is set; that
+  // status is what shows the composer's Install banner.
+  assert.deepEqual(normalized.maintenance, { health: false, usage: false, installation: true });
 });
 
 test("service tiers and reasoning levels pin the wire ids the bridge maps", () => {
@@ -119,6 +122,20 @@ test("deriveProviderOptions returns the closed-over paths", () => {
     settings: {},
   });
   assert.deepEqual(options, { ampCliPath: PATHS.ampCliPath });
+});
+
+test("without a CLI at load the declaration still registers and names no path", () => {
+  const declaration = buildAmpProviderDeclaration({ ampCliPath: null });
+  assert.equal(validatePluginProviderDeclaration(declaration).maintenance.installation, true);
+  const options = declaration.deriveProviderOptions?.({
+    threadId: "thr_1",
+    projectId: "prj_1",
+    model: "default",
+    permissionMode: "full",
+    settings: {},
+  });
+  // The bridge then resolves the CLI on the host (src/bridge/entry.ts).
+  assert.deepEqual(options, {});
 });
 
 test("the fallback catalog is one default model on the declared mode ladder", () => {

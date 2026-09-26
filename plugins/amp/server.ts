@@ -233,8 +233,8 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   }
 
   const AMP_CLI_HINT =
-    "Install the Amp CLI from https://ampcode.com/manual#get-started, " +
-    "run `amp login`, then run `bb plugin reload amp`.";
+    "Install it with the Install button in bb's composer, or from https://ampcode.com/docs/cli " +
+    "(on Windows, inside WSL), then run `amp login`.";
 
   // A leftover customAcpAgents "amp" entry from the provisioning era shadows
   // this registration, so a purely plugin-managed one is removed here; a
@@ -268,20 +268,18 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   // Register the provider on first load, so installing the plugin is the whole
   // install. A background service is the seam for it: bb starts one after the
   // factory resolves, when `bb.sdk` is bound, and a service that returns
-  // without throwing simply stops. The one prerequisite this cannot supply —
-  // the Amp CLI — is reported as needs-configuration rather than as a load
-  // failure, so the plugin stays installed and says what is missing.
+  // without throwing simply stops. A missing Amp CLI does not stop it: the
+  // provider registers anyway, the bridge reports the CLI as not installed,
+  // and bb's composer offers Install (src/bridge/installation.ts).
   bb.background.service("register", {
     async start() {
       return observeFailure(reporter, "background.service", "register", async () => {
-        const amp = resolveAmpCli(process.env);
-        if (amp === null) {
-          bb.status.needsConfiguration(`The Amp CLI was not found. ${AMP_CLI_HINT}`);
-          return;
+        ampCliPath = resolveAmpCli(process.env);
+        if (ampCliPath === null) {
+          bb.log.info("the Amp CLI was not found; bb will offer to install it");
         }
-        ampCliPath = amp;
         try {
-          bb.providers.register(buildAmpProviderDeclaration({ ampCliPath: amp }));
+          bb.providers.register(buildAmpProviderDeclaration({ ampCliPath }));
         } catch (error) {
           bb.log.error(`Could not register the Amp provider: ${String(error)}`);
           bb.status.needsConfiguration(
@@ -297,7 +295,7 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   async function statusLines(): Promise<string[]> {
     const amp = ampCliPath ?? resolveAmpCli(process.env);
     const lines = [
-      `Amp CLI: ${amp ?? "NOT FOUND"}`,
+      `Amp CLI: ${amp ?? `NOT FOUND. ${AMP_CLI_HINT}`}`,
       `bridge bundle: ${existsSync(HOST_BUNDLE) ? HOST_BUNDLE : `MISSING (${HOST_BUNDLE}); ${BRIDGE_BUILD_HINT}`}`,
     ];
     try {

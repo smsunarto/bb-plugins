@@ -27,8 +27,10 @@ export type AmpThreadLinkState = z.infer<typeof threadLinkStateSchema>;
  *  closes over them: it is synchronous and sits on the turn-submit path, so
  *  it must not resolve anything itself. */
 export interface AmpProviderPaths {
-  /** The Amp CLI the bridge spawns, for executions and thread commands. */
-  ampCliPath: string;
+  /** The Amp CLI the bridge spawns, for executions and thread commands.
+   *  Null when it was not found at load: the provider still registers so bb
+   *  can offer Install, and the bridge resolves the CLI on the host. */
+  ampCliPath: string | null;
 }
 
 /**
@@ -81,10 +83,14 @@ export function buildAmpProviderDeclaration(paths: AmpProviderPaths): PluginProv
     // never workspace-dependent. The fallback mirrors the bridge's live
     // model/list answer so the picker is populated before any probe.
     models: { scope: "host", fallback: AMP_FALLBACK_MODELS },
+    // The bridge answers provider/installation/{status,run}
+    // (src/bridge/installation.ts); bb shows Install when the CLI is missing.
+    maintenance: { installation: true },
     env: {
       passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY", ...AMP_SENTRY_ENV],
     },
     experimental_nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
-    deriveProviderOptions: () => ({ ampCliPath: paths.ampCliPath }),
+    deriveProviderOptions: (): Record<string, string> =>
+      paths.ampCliPath === null ? {} : { ampCliPath: paths.ampCliPath },
   };
 }

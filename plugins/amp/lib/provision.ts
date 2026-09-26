@@ -84,11 +84,12 @@ function findBinary(
 
 /**
  * Resolve the Amp CLI. The bundled bridge spawns it directly; the
- * registration passes this resolved path down in providerOptions.
+ * registration passes this resolved path down in providerOptions. The home
+ * comes from `env` like PATH does, so one env describes the whole host.
  */
 export function resolveAmpCli(
   env: NodeJS.ProcessEnv,
-  home = homedir(),
+  home = env.HOME?.trim() || homedir(),
   platform = process.platform,
 ): string | null {
   return findBinary(

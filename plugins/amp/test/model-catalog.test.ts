@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { BRIDGE_REQUEST_METHODS } from "@get-bb/plugin-sdk/provider-bridge";
 import { experimental_captureBridgeJsonRpcOutput as captureBridgeJsonRpcOutput } from "@get-bb/plugin-sdk/provider-bridge/testing";
 import { handleLine } from "../src/bridge/entry.ts";
 import { AMP_FALLBACK_MODELS, AMP_WIRE_MODELS } from "../src/bridge/model-catalog.ts";
 
 test("model/list answers the shared catalog with wire model ids", async () => {
+  // model/list answers only when an Amp CLI exists; any executable will do.
+  const root = mkdtempSync(join(tmpdir(), "amp-model-list-"));
+  const fakeCli = join(root, "amp");
+  writeFileSync(fakeCli, "#!/bin/sh\n", "utf8");
+  chmodSync(fakeCli, 0o755);
   const output = captureBridgeJsonRpcOutput();
   try {
     handleLine(
@@ -13,7 +21,7 @@ test("model/list answers the shared catalog with wire model ids", async () => {
         jsonrpc: "2.0",
         id: 7,
         method: BRIDGE_REQUEST_METHODS.modelList,
-        params: {},
+        params: { providerOptions: { ampCliPath: fakeCli } },
       }),
     );
     const deadline = Date.now() + 1000;
@@ -40,5 +48,6 @@ test("model/list answers the shared catalog with wire model ids", async () => {
     for (const entry of AMP_WIRE_MODELS) assert.equal(entry.model, entry.id);
   } finally {
     output.restore();
+    rmSync(root, { recursive: true, force: true });
   }
 });

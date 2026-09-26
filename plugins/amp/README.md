@@ -25,13 +25,18 @@ in an [Amp Orb](https://ampcode.com) cloud sandbox instead when you ask for one.
 
 ## Install
 
-First make sure the [Amp CLI](https://ampcode.com/manual#get-started) is installed
-and signed in — the plugin drives it and cannot install or authenticate it for you:
+The plugin drives the [Amp CLI](https://ampcode.com/docs/cli). If the CLI is
+missing, bb 0.44+ shows **Install Amp** in the new-thread composer, which runs
+Amp's install script (`curl -fsSL https://ampcode.com/install.sh | bash`).
+To install it yourself, run that command. Then sign in once:
 
 ```sh
 amp --version
 amp login
 ```
+
+On Windows, Amp runs through WSL. Install and sign in inside WSL. bb offers no
+Install button on a Windows host.
 
 **From the marketplace** — add this repository once, then install by name:
 
@@ -58,13 +63,13 @@ bb plugin install ./plugins/amp
 
 ## Requirements
 
-- bb 0.40+ or a current bb nightly, on macOS or Linux. Amp 0.4.2 starts this
-  compatibility line. The plugin registers its provider through bb's plugin
-  API, which bb 0.39 stable predates
-- The **Amp CLI**, installed ([get started](https://ampcode.com/manual#get-started))
-  and authenticated with `amp login`, or `AMP_API_KEY` exported in the
-  environment bb runs in.
-  The plugin locates and drives the CLI; it cannot install or sign in to it for you
+- bb 0.40+ or a current bb nightly, on macOS or Linux (Windows through WSL).
+  Amp 0.4.2 starts this compatibility line. The plugin registers its provider
+  through bb's plugin API, which bb 0.39 stable predates. The composer's
+  Install button needs bb 0.44+
+- The **Amp CLI**, installed ([docs](https://ampcode.com/docs/cli), or bb's
+  Install button) and authenticated with `amp login`, or `AMP_API_KEY`
+  exported in the environment bb runs in
 - An Amp account
 
 ## Usage
@@ -198,7 +203,7 @@ auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in 
 
 | Symptom                             | Fix                                                                                             |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Plugin shows "needs configuration"  | Install the Amp CLI, run `amp login`, then `bb plugin reload amp`                               |
+| "Amp not installed" in the composer | Click **Install Amp**, or run Amp's install script yourself, then `amp login`                   |
 | Amp is not in the provider list     | `bb amp status` names the broken link                                                           |
 | Auth errors in a thread             | `amp login`, or export `AMP_API_KEY` in the environment bb runs in                              |
 | "Could not find a usable Amp CLI"   | The recorded `AMP_CLI_PATH` no longer exists. Reinstall Amp, then run `bb plugin reload amp`    |
