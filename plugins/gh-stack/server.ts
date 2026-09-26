@@ -1109,6 +1109,20 @@ export default async function plugin(bb: BbPluginApi) {
     const environment = await bb.sdk.environments.get({
       environmentId: thread.environmentId,
     });
+    // An archived thread's workspace is removed after its grace window, which
+    // clears its path; bb restores it only on request.
+    if (environment.status === "destroyed") {
+      threadWorkspaceKeys.delete(threadId);
+      return {
+        cwd: null,
+        key: null,
+        error: {
+          kind: "workspace-missing",
+          message:
+            "This thread's workspace was cleaned up. Unarchive the thread if it is archived, then use Restore workspace to bring it back.",
+        },
+      };
+    }
     if (!environment.path || !environment.isGitRepo) {
       threadWorkspaceKeys.delete(threadId);
       return {
