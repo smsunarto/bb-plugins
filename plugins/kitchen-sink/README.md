@@ -19,10 +19,11 @@ bb's `/` menu lists skills, so each composer command ships as a skill under `ski
 
 Kitchen Sink also supplies the official Devin icon for the `acp-devin` agent provider.
 
-| Command    | What the agent does                                                                                                  |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- |
-| `/ship-it` | Sends “Ship it”.                                                                                                     |
-| `/sync`    | Rebases the workspace onto the latest target branch and resolves every conflict by reading the intent of both sides. |
+| Command       | What the agent does                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `/ship-it`    | Sends “Ship it”.                                                                                                     |
+| `/sync`       | Rebases the workspace onto the latest target branch and resolves every conflict by reading the intent of both sides. |
+| `/whiteboard` | Creates a Whiteboard for the request, then opens it in Whiteboard.                                                   |
 
 `/sync` detects GitButler with `but status` and routes every write through the `gitbutler` skill when it succeeds. Plain Git repositories use `git` and `gh`.
 

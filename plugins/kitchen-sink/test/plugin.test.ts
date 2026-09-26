@@ -67,6 +67,7 @@ test("each skill directory carries a SKILL.md whose frontmatter name matches the
     "subthread",
     "sync",
     "test-remotely",
+    "whiteboard",
   ]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
