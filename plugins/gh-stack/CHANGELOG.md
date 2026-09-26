@@ -1,5 +1,17 @@
 # @smsunarto/bb-plugin-gh-stack
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/gh-stack/v0.3.0...gh-stack/v0.4.0) (2026-09-26)
+
+
+### Features
+
+* **gh-stack:** publish discoverable RPC descriptions ([9c69134](https://github.com/smsunarto/bb-plugins/commit/9c69134c6610acd6bd2f8467a24d470b506fd039))
+
+
+### Bug Fixes
+
+* **gh-stack:** point cleaned-up workspaces at Restore workspace ([4a907d3](https://github.com/smsunarto/bb-plugins/commit/4a907d372a642aeee6860af6ed88ece97416cbdf))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/gh-stack/v0.2.3...gh-stack/v0.3.0) (2026-09-15)
 
 
