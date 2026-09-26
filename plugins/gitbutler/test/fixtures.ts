@@ -127,7 +127,13 @@ export const diffPayload = {
         type: "patch",
         hunks: [
           { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, diff: "@@ -1 +1 @@\n-old\n+new\n" },
-          { oldStart: 9, oldLines: 1, newStart: 9, newLines: 2, diff: "@@ -9 +9,2 @@\n tail\n+more\n" },
+          {
+            oldStart: 9,
+            oldLines: 1,
+            newStart: 9,
+            newLines: 2,
+            diff: "@@ -9 +9,2 @@\n tail\n+more\n",
+          },
         ],
       },
     },
