@@ -113,8 +113,5 @@
     "./editor": "./src/app/editor.tsx",
     "./editor-contract": "./src/shared/editor-contract.ts",
     "./editor.css": "./src/app/app.css"
-  },
-  "imports": {
-    "#canvas-templates/*": "./skills/canvas/templates/*"
   }
 }

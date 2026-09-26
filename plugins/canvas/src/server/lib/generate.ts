@@ -1,8 +1,10 @@
 import { Eta } from "eta/core";
 import { z } from "zod";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseCanvas, maxCanvasBytes } from "../../shared/parse.ts";
 import { collectDiagnostics } from "../../shared/document.ts";
+import { pluginRoot } from "./instructions.ts";
 
 export const templateName = z.enum(["review", "issue", "pull-request"]);
 const text = z.string().trim().min(1);
@@ -32,7 +34,7 @@ export const templateData = z
 
 const eta = new Eta({ autoEscape: false, autoTrim: false });
 const readTemplate = (name: z.infer<typeof templateName>) =>
-  readFileSync(new URL(import.meta.resolve(`#canvas-templates/${name}.eta`)), "utf8");
+  readFileSync(join(pluginRoot(), "skills", "canvas", "templates", `${name}.eta`), "utf8");
 const templates = {
   review: readTemplate("review"),
   issue: readTemplate("issue"),
