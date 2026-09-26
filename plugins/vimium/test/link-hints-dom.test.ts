@@ -118,6 +118,21 @@ function markers(): string[] {
   );
 }
 
+// The hint code polls on chained timers, which drift when the whole suite runs
+// in parallel. Retry an assertion until it holds instead of racing a sleep.
+async function eventually(assertion: () => void, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (Date.now() > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+}
+
 /**
  * A dropdown trigger that appends a two-item menu on click, like a Radix
  * portal; picking an item records it and, unless the popup is persistent
@@ -509,8 +524,7 @@ describe("mountLinkHints", () => {
 
     pressKey("p");
     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "n", "j", "x"]);
+    await eventually(() => expect(markers()).toEqual(["f", "n", "j", "x"]));
     const search = document.querySelector<HTMLInputElement>('input[aria-label="Search projects"]')!;
     search.focus();
     expect(pressKey("i", search)).toBe(true);
@@ -554,13 +568,11 @@ describe("mountLinkHints", () => {
 
     pressKey("f");
     pressKey("m");
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["1", "2", "f", "j", "d", "k", "t"]);
+    await eventually(() => expect(markers()).toEqual(["1", "2", "f", "j", "d", "k", "t"]));
 
     pressKey("t");
     expect(fastToggles).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(markers()).toEqual(["1", "2", "f", "j", "d", "k", "t"]);
+    await eventually(() => expect(markers()).toEqual(["1", "2", "f", "j", "d", "k", "t"]));
 
     pressKey("i");
     expect((document.activeElement as HTMLElement).id).not.toBe("model-search");
@@ -607,8 +619,7 @@ describe("mountLinkHints", () => {
       });
 
       pressKey(picker.key);
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      expect(markers()).not.toEqual([]);
+      await eventually(() => expect(markers()).not.toEqual([]));
       const popup = document.getElementById("picker") as HTMLElement;
       const search = popup.querySelector("input") as HTMLInputElement;
       search.focus();
@@ -635,8 +646,7 @@ describe("mountLinkHints", () => {
 
     pressKey("f");
     pressKey("k");
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["a", "s", "d", "f", "g", "h"]);
+    await eventually(() => expect(markers()).toEqual(["a", "s", "d", "f", "g", "h"]));
 
     void dispose();
     controller.abort();
@@ -771,9 +781,7 @@ describe("mountLinkHints", () => {
     pressKey("d");
     expect(markers()).toEqual([]);
 
-    // The reprompt polls on a 60ms timer, so give it two ticks.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
 
     pressKey("j");
     expect(picked).toEqual(["Luna"]);
@@ -795,16 +803,14 @@ describe("mountLinkHints", () => {
     pressKey("f");
     pressKey("d");
     pressKey("d");
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
 
     // The chord is swallowed at once, then the dismissal poll gives up on the
     // Escape-deaf test menu (~8 ticks of 60ms) and prompts over it anyway:
     // trigger plus both menu items, with general labels.
     const propagated = pressKey("F", window, { code: "KeyF", metaKey: true, shiftKey: true });
     expect(propagated).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    expect(markers()).toEqual(["dd", "df", "dw"]);
+    await eventually(() => expect(markers()).toEqual(["dd", "df", "dw"]));
 
     void dispose();
     controller.abort();
@@ -833,8 +839,7 @@ describe("mountLinkHints", () => {
 
     pressKey("F", window, { code: "KeyF", metaKey: true, shiftKey: true });
     expect(markers()).toEqual([]);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(markers()).toEqual(["dd"]);
+    await eventually(() => expect(markers()).toEqual(["dd"]));
 
     void dispose();
     controller.abort();
@@ -853,8 +858,7 @@ describe("mountLinkHints", () => {
     pressKey("f");
     pressKey("d");
     pressKey("d");
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
 
     pressKey("f");
     expect(picked).toEqual(["Sol"]);
@@ -862,8 +866,7 @@ describe("mountLinkHints", () => {
 
     // The after-pick poll waits ~6 ticks of 80ms for the popup to close, then
     // follows it with a fresh scoped prompt.
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
 
     void dispose();
     controller.abort();
@@ -881,13 +884,11 @@ describe("mountLinkHints", () => {
     pressKey("f");
     pressKey("d");
     pressKey("d");
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
 
     document.getElementById("trigger-menu")?.remove();
     // The popup watcher polls on a 100ms timer.
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+    await eventually(() => expect(document.querySelector(".vimium-hint-layer")).toBeNull());
 
     void dispose();
     controller.abort();
@@ -912,15 +913,13 @@ describe("mountLinkHints", () => {
     pressKey("f");
     pressKey("d");
     pressKey("d");
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
 
     pressKey("f");
     expect(picked).toEqual(["Sol"]);
     // The refocus poll waits for the menu to close, then claims focus on the
     // next 80ms tick.
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(focusCalls).toBeGreaterThanOrEqual(1);
+    await eventually(() => expect(focusCalls).toBeGreaterThanOrEqual(1));
 
     void dispose();
     controller.abort();
@@ -954,8 +953,7 @@ describe("mountLinkHints", () => {
     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
 
     expect(pressKey("m")).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
     pressKey("j");
     expect(picked).toEqual(["Luna"]);
 
@@ -1126,8 +1124,7 @@ describe("mountLinkHints", () => {
     });
 
     expect(pressKey("m")).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["1", "2", "f", "j", "d"]);
+    await eventually(() => expect(markers()).toEqual(["1", "2", "f", "j", "d"]));
 
     void dispose();
     controller.abort();
@@ -1144,8 +1141,7 @@ describe("mountLinkHints", () => {
     installMenuTrigger(machine, picked);
 
     expect(pressKey("l")).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(markers()).toEqual(["f", "j"]);
+    await eventually(() => expect(markers()).toEqual(["f", "j"]));
     pressKey("f");
     expect(picked).toEqual(["Sol"]);
 
