@@ -42,6 +42,9 @@
  *      sets on the tree host. Those already point at our tokens, so tree
  *      background, foreground, border, hover, selection and focus ring track
  *      this palette automatically.
+ *   7. The desktop Cmd+F find bar (bb 0.44). Electron draws it in its own
+ *      WebContentsView from a data: URL with inline system colours, outside
+ *      this document.
  */
 
 /* BB keeps the right-panel diff disclosure outside Pierre's shadow tree.
