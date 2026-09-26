@@ -14,6 +14,12 @@ export interface PluginUiSurfaceContext {
   pluginId: string | null;
   surface: string | null;
   surfaceId: string | null;
+  /**
+   * The sidebar navigation row (`<pluginId>/<panelId>` or `__bb__/…`) when a
+   * navigation plugin drew the element. The row's entry belongs to another
+   * plugin's `navPanel`, so the agent needs both owners.
+   */
+  navigationItemId?: string;
 }
 
 type ReactFiber = {
@@ -234,6 +240,7 @@ function pluginIdFromAssetUrl(rawUrl: string | null): string | null {
   }
 }
 
+/** Host-rendered sidebar rows from bb before 0.44, which had no navigation plugin. */
 function navPanelRowFor(element: Element): PluginUiSurfaceContext | null {
   if (!element.closest("[data-testid='plugin-nav-sidebar-items']")) return null;
   const row =
@@ -248,6 +255,10 @@ function navPanelRowFor(element: Element): PluginUiSurfaceContext | null {
 /**
  * Which bb plugin UI surface an element belongs to.
  *
+ * On bb 0.44+ the sidebar thread list and navigation are plugins (bundled
+ * `thread-list` / `navigation`, or an installed replacement), so their rows
+ * resolve through the component boundary like any other slot.
+ *
  * Exact SDK registrations win. The final `overlay` / `navPanel` / `inline`
  * fallbacks preserve attribution for hand-written trusted content and future
  * bb surfaces that do not yet expose a component boundary.
@@ -256,6 +267,13 @@ export function pluginUiSurfaceFor(element: Element | null, route: string): Plug
   if (!element) return { pluginId: null, surface: null, surfaceId: null };
 
   const boundary = componentBoundaryFor(element);
+  if (boundary?.surface === PUBLIC_SURFACE_BY_SLOT_KIND.sidebarNavigation) {
+    // bb's bundled Navigation plugin marks each row; other navigation plugins
+    // may not, and then only the drawing plugin is known.
+    const row = element.closest<HTMLElement>("[data-sidebar-navigation-item]");
+    const navigationItemId = nonEmptyString(row?.getAttribute("data-sidebar-navigation-item"));
+    return navigationItemId ? { ...boundary, navigationItemId } : boundary;
+  }
   if (boundary) return boundary;
 
   const richTextDecoration = element.closest<HTMLElement>("[data-bb-plugin-decoration]");

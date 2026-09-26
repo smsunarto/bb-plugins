@@ -81,6 +81,81 @@ test("a thread-list annotation points an agent to the exact GTD registration", (
   assert.match(output, /Start at this registration in plugin `gtd-sidebar`'s `app\.tsx`/);
 });
 
+test("the sidebar thread list says whether bb or an installed plugin owns it", () => {
+  const threadList = {
+    route: "/",
+    surface: "experimental_threadList",
+    threadId: null,
+    projectId: null,
+    routeLabel: "home",
+  };
+  const bundled = renderAnnotation(
+    stored({
+      bb: {
+        ...threadList,
+        pluginId: "thread-list",
+        surfaceId: "thread-list",
+        pluginProvenance: "builtin",
+        pluginSource: "builtin:thread-list",
+      },
+    }),
+  );
+  assert.match(
+    bundled,
+    /\*\*Plugin source:\*\* bundled with bb — source in get-bb\/bb `plugins\/thread-list`\. It is a forkable built-in/,
+  );
+
+  const installed = renderAnnotation(
+    stored({
+      bb: {
+        ...threadList,
+        pluginId: "gtd-sidebar",
+        surfaceId: "inbox",
+        pluginProvenance: "direct",
+        pluginSource: "path:/Users/me/git/bb-plugins/plugins/gtd-sidebar",
+      },
+    }),
+  );
+  assert.match(
+    installed,
+    /\*\*Plugin source:\*\* installed from `path:\/Users\/me\/git\/bb-plugins\/plugins\/gtd-sidebar`/,
+  );
+
+  // Annotations stored before bb recorded origins render without the line.
+  assert.doesNotMatch(renderAnnotation(stored()), /Plugin source/);
+});
+
+test("a sidebar navigation row names the entry's own plugin", () => {
+  const navigation = {
+    route: "/",
+    pluginId: "navigation",
+    surface: "experimental_sidebarNavigation",
+    surfaceId: "navigation",
+    threadId: null,
+    projectId: null,
+    routeLabel: "home",
+  };
+  const pluginRow = renderAnnotation(
+    stored({ bb: { ...navigation, navigationItemId: "github/issues" } }),
+  );
+  assert.match(
+    pluginRow,
+    /`app\.slots\.experimental_sidebarNavigation` · registration `navigation`/,
+  );
+  assert.match(
+    pluginRow,
+    /\*\*Sidebar row:\*\* `github\/issues` — `app\.slots\.navPanel` id `issues` in plugin `github`; drawn by plugin `navigation`/,
+  );
+
+  const bbRow = renderAnnotation(
+    stored({ bb: { ...navigation, navigationItemId: "__bb__/new-thread" } }),
+  );
+  assert.match(
+    bbRow,
+    /\*\*Sidebar row:\*\* `__bb__\/new-thread` — bb's own entry; drawn by plugin `navigation`/,
+  );
+});
+
 test("an annotation on the shell says so instead of naming a plugin", () => {
   const output = renderAnnotation(
     stored({

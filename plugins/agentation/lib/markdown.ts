@@ -29,6 +29,28 @@ function pluginUiOf(annotation: StoredAnnotation): string | null {
   return `\`${context.registration}\`${registrationId} — ${context.role}. Start at this registration in plugin \`${pluginId}\`'s \`app.tsx\`, then follow its component or run handler.`;
 }
 
+function pluginSourceOf(annotation: StoredAnnotation): string | null {
+  const { pluginId, pluginProvenance, pluginSource } = annotation.bb;
+  if (!pluginId || !pluginProvenance) return null;
+  if (pluginProvenance === "builtin") {
+    return `bundled with bb — source in get-bb/bb \`plugins/${pluginId}\`. It is a forkable built-in: change it in a fork or in bb core, not in an installed plugin.`;
+  }
+  return pluginSource ? `installed from \`${pluginSource}\`` : "installed plugin";
+}
+
+function navigationRowOf(annotation: StoredAnnotation): string | null {
+  const { pluginId, navigationItemId } = annotation.bb;
+  if (!navigationItemId) return null;
+  const slash = navigationItemId.indexOf("/");
+  const entryPluginId = slash > 0 ? navigationItemId.slice(0, slash) : null;
+  const panelId = slash > 0 ? navigationItemId.slice(slash + 1) : null;
+  const drawnBy = pluginId ? `; drawn by plugin \`${pluginId}\`` : "";
+  if (entryPluginId === "__bb__" || !entryPluginId || !panelId) {
+    return `\`${navigationItemId}\` — bb's own entry${drawnBy}`;
+  }
+  return `\`${navigationItemId}\` — \`app.slots.navPanel\` id \`${panelId}\` in plugin \`${entryPluginId}\`${drawnBy}`;
+}
+
 function describeKind(annotation: StoredAnnotation): string | null {
   if (annotation.kind === "placement" && annotation.placement) {
     const { componentType, width, height } = annotation.placement;
@@ -53,6 +75,8 @@ export function renderAnnotation(annotation: StoredAnnotation, index?: number): 
   let out = `${heading}\n`;
   out += line("Where", locationOf(annotation));
   out += line("Plugin UI", pluginUiOf(annotation));
+  out += line("Plugin source", pluginSourceOf(annotation));
+  out += line("Sidebar row", navigationRowOf(annotation));
   out += line("Selector", `\`${annotation.elementPath}\``);
   out += line("React", annotation.reactComponents);
   out += line("Source", annotation.sourceFile);

@@ -52,6 +52,15 @@ export const bbContextSchema = z.object({
   surface: z.string().nullable(),
   /** Registration/item id exposed by the plugin UI boundary, e.g. `inbox`. */
   surfaceId: z.string().nullable().optional(),
+  /** Sidebar navigation row (`<pluginId>/<panelId>`) a navigation plugin drew. */
+  navigationItemId: z.string().nullable().optional(),
+  /**
+   * How the owning plugin was installed, recorded by the server: `builtin`
+   * ships with bb (source in get-bb/bb), `direct` and `catalog` were installed.
+   */
+  pluginProvenance: z.enum(["builtin", "direct", "catalog"]).nullable().optional(),
+  /** The owning plugin's install source as bb records it, e.g. `path:/…`. */
+  pluginSource: z.string().nullable().optional(),
   threadId: z.string().nullable(),
   projectId: z.string().nullable(),
   /** Human label for the route, used in listings. */

@@ -21,6 +21,7 @@ import { z } from "zod";
 
 import {
   type AnnotationStatus,
+  type BbContext,
   type SessionStatus,
   annotationRoutingSchema,
   annotationSchema,
@@ -398,6 +399,35 @@ export default async function plugin(bb: BbPluginApi) {
     );
   }
 
+  // Whether an annotated plugin ships with bb or was installed, and from where.
+  // Read once and refreshed when an annotation names a plugin not yet listed.
+  type PluginOrigin = Pick<BbContext, "pluginProvenance" | "pluginSource">;
+  let pluginOrigins = new Map<string, PluginOrigin>();
+
+  async function learnPluginOrigins(pluginIds: Iterable<string | null>): Promise<void> {
+    if ([...pluginIds].every((id) => id === null || pluginOrigins.has(id))) return;
+    try {
+      const { plugins } = await bb.sdk.plugins.list();
+      pluginOrigins = new Map(
+        plugins.map((plugin) => [
+          plugin.id,
+          { pluginProvenance: plugin.provenance, pluginSource: plugin.source },
+        ]),
+      );
+    } catch (error) {
+      bb.log.warn(
+        `could not read plugin sources: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /** The client's context with the owning plugin's origin as bb reports it. */
+  function withPluginOrigin(context: BbContext): BbContext {
+    const { pluginProvenance: _provenance, pluginSource: _source, ...rest } = context;
+    const origin = rest.pluginId ? pluginOrigins.get(rest.pluginId) : undefined;
+    return origin ? { ...rest, ...origin } : rest;
+  }
+
   bb.events.on("thread.active", ({ thread }) => {
     advanceTurnAssignments(db, thread.id);
   });
@@ -583,7 +613,10 @@ export default async function plugin(bb: BbPluginApi) {
         });
       },
 
-      pushAnnotations(input) {
+      async pushAnnotations(input) {
+        // Look up plugin sources first so the session check and the writes
+        // below stay in one synchronous step.
+        await learnPluginOrigins(input.upserts.map((item) => item.bb.pluginId));
         // A long-lived bb window caches its session id. The nightly prune can
         // remove an empty session out from under it, and there is no foreign key
         // to stop the write — the annotations would land against a session that
@@ -596,7 +629,7 @@ export default async function plugin(bb: BbPluginApi) {
           upsertAnnotation(db, {
             sessionId: input.sessionId,
             annotation: item.annotation,
-            bb: item.bb,
+            bb: withPluginOrigin(item.bb),
           });
         }
         if (input.deletedIds.length > 0) {

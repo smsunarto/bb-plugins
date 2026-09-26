@@ -8,8 +8,12 @@ export const PUBLIC_SURFACE_BY_SLOT_KIND = {
   composerAction: "composer.actions",
   composerBanner: "composer.banners",
   composerPlusMenuItem: "composer.plusMenu",
+  diffRenderer: "experimental_diffRenderer",
+  environmentProviderInputs: "experimental_environmentProviderInputs",
+  experimental_sidebarFooter: "experimental_sidebarFooter",
   fileOpener: "fileOpener",
   homepageSection: "homepageSection",
+  machineProviderInputs: "experimental_machineProviderInputs",
   messageDirective: "messageDirective",
   navPanel: "navPanel",
   navPanelFixedTab: "navPanel.experimental_fixedTabs",
@@ -19,6 +23,9 @@ export const PUBLIC_SURFACE_BY_SLOT_KIND = {
   pendingInteraction: "pendingInteraction",
   providerIcon: "experimental_providerIcon",
   settingsSection: "settingsSection",
+  sidebarHeader: "experimental_sidebarHeader",
+  sidebarNavigation: "experimental_sidebarNavigation",
+  sourceCodeRenderer: "experimental_sourceCodeRenderer",
   threadHeaderAction: "experimental_threadHeaderAction",
   threadList: "experimental_threadList",
   threadPanelAction: "threadPanelAction.component",
@@ -49,11 +56,27 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   },
   "composer.plusMenu": {
     registration: "app.composer.customize({ plusMenu })",
-    role: "a host-rendered plugin item in the composer's plus menu",
+    role: "a host-rendered plugin item in the composer's plus menu or send menu",
   },
   "composer.richText": {
     registration: "app.composer.customize({ richText })",
     role: "plugin-owned paint or behavior applied to composer text",
+  },
+  experimental_diffRenderer: {
+    registration: "app.slots.experimental_diffRenderer",
+    role: "the plugin component replacing bb's diff renderer",
+  },
+  experimental_environmentProviderInputs: {
+    registration: "app.slots.experimental_environmentProviderInputs",
+    role: "a plugin component collecting environment provider inputs for a new thread",
+  },
+  experimental_machineProviderInputs: {
+    registration: "app.slots.experimental_machineProviderInputs",
+    role: "a plugin component collecting machine provider inputs",
+  },
+  experimental_sidebarFooter: {
+    registration: 'app.experimental_sidebarFooter.register({ kind: "disclosure" })',
+    role: "a plugin disclosure opened from the sidebar footer",
   },
   fileOpener: {
     registration: "app.slots.fileOpener",
@@ -106,6 +129,18 @@ const PROMPT_CONTEXT_BY_SURFACE = {
   settingsSection: {
     registration: "app.slots.settingsSection",
     role: "a plugin component rendered in its settings page",
+  },
+  experimental_sidebarHeader: {
+    registration: "app.slots.experimental_sidebarHeader",
+    role: "the plugin component filling the sidebar header beside the sidebar toggle",
+  },
+  experimental_sidebarNavigation: {
+    registration: "app.slots.experimental_sidebarNavigation",
+    role: "the plugin component drawing bb's sidebar navigation rows (New thread, Search, plugin panels)",
+  },
+  experimental_sourceCodeRenderer: {
+    registration: "app.slots.experimental_sourceCodeRenderer",
+    role: "the plugin component replacing bb's source code renderer",
   },
   sidebarFooterAction: {
     registration: "app.slots.sidebarFooterAction",

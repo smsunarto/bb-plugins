@@ -191,12 +191,16 @@ export function startAnnotationToolbar(
   let stream: EventSource | null = null;
 
   function contextForNewAnnotation(): BbContext {
-    const { pluginId, surface, surfaceId } = pluginUiSurfaceFor(lastTarget, meta.route);
+    const { pluginId, surface, surfaceId, navigationItemId } = pluginUiSurfaceFor(
+      lastTarget,
+      meta.route,
+    );
     return {
       route: meta.route,
       pluginId,
       surface,
       surfaceId,
+      ...(navigationItemId ? { navigationItemId } : {}),
       threadId: meta.threadId,
       projectId: meta.projectId,
       routeLabel: labelForRoute(meta.route),

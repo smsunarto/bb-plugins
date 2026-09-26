@@ -71,8 +71,12 @@ const expectedBoundarySurfaces = {
   composerAction: "composer.actions",
   composerBanner: "composer.banners",
   composerPlusMenuItem: "composer.plusMenu",
+  diffRenderer: "experimental_diffRenderer",
+  environmentProviderInputs: "experimental_environmentProviderInputs",
+  experimental_sidebarFooter: "experimental_sidebarFooter",
   fileOpener: "fileOpener",
   homepageSection: "homepageSection",
+  machineProviderInputs: "experimental_machineProviderInputs",
   messageDirective: "messageDirective",
   navPanel: "navPanel",
   navPanelFixedTab: "navPanel.experimental_fixedTabs",
@@ -82,6 +86,9 @@ const expectedBoundarySurfaces = {
   pendingInteraction: "pendingInteraction",
   providerIcon: "experimental_providerIcon",
   settingsSection: "settingsSection",
+  sidebarHeader: "experimental_sidebarHeader",
+  sidebarNavigation: "experimental_sidebarNavigation",
+  sourceCodeRenderer: "experimental_sourceCodeRenderer",
   threadHeaderAction: "experimental_threadHeaderAction",
   threadList: "experimental_threadList",
   threadPanelAction: "threadPanelAction.component",
@@ -103,6 +110,44 @@ test("every bb plugin component boundary maps to its public SDK surface", () => 
       surfaceId: "example",
     });
   }
+});
+
+test("a sidebar navigation row names both the drawing plugin and the entry", () => {
+  const navigationBoundary: Fiber = {
+    memoizedProps: { pluginId: "navigation", slotId: "navigation", slotKind: "sidebarNavigation" },
+  };
+  const row = new FakeElement({ attributes: { "data-sidebar-navigation-item": "github/issues" } });
+  const label = withFiber(new FakeElement({ closest: { "[data-sidebar-navigation-item]": row } }), {
+    return: navigationBoundary,
+  });
+  assert.deepEqual(pluginUiSurfaceFor(asElement(label), "/"), {
+    pluginId: "navigation",
+    surface: "experimental_sidebarNavigation",
+    surfaceId: "navigation",
+    navigationItemId: "github/issues",
+  });
+
+  // A navigation plugin that does not mark its rows is still attributed.
+  const unmarked = withFiber(new FakeElement(), { return: navigationBoundary });
+  assert.deepEqual(pluginUiSurfaceFor(asElement(unmarked), "/"), {
+    pluginId: "navigation",
+    surface: "experimental_sidebarNavigation",
+    surfaceId: "navigation",
+  });
+
+  // A row accessory's own boundary is nearer than the navigation plugin's.
+  const accessory = withFiber(
+    new FakeElement({ closest: { "[data-sidebar-navigation-item]": row } }),
+    {
+      memoizedProps: { pluginId: "github", slotId: "issues", slotKind: "navPanelSidebarAccessory" },
+      return: navigationBoundary,
+    },
+  );
+  assert.deepEqual(pluginUiSurfaceFor(asElement(accessory), "/"), {
+    pluginId: "github",
+    surface: "navPanel.experimental_sidebarAccessory",
+    surfaceId: "issues",
+  });
 });
 
 test("an unknown future component boundary remains useful without a code update", () => {
