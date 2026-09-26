@@ -80,6 +80,25 @@
   time this version loads. Provider names and marks now come from bb's own cached
   roster instead of a plugin round trip.
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.1...gtd-sidebar/v0.6.0) (2026-09-26)
+
+
+### Features
+
+* **gtd-sidebar:** adopt bb 0.44 sidebar APIs and port thread-list parity ([abc2211](https://github.com/smsunarto/bb-plugins/commit/abc221165322c3790af1a229ce1fcf36784d27cf))
+* **gtd-sidebar:** draw bb's row jump keys and read the worktree flag ([c12af29](https://github.com/smsunarto/bb-plugins/commit/c12af292f259029fa21b8c29c73293fc399ab6dc))
+* **gtd-sidebar:** draw the queued-message glyphs ([15db145](https://github.com/smsunarto/bb-plugins/commit/15db14559624501527a17d5cc9bfcfc99134f491))
+* **gtd-sidebar:** liquid-glass thread menus ([eae260c](https://github.com/smsunarto/bb-plugins/commit/eae260cae8624508bd69d653d3e786576e08d529))
+
+
+### Bug Fixes
+
+* **gtd-sidebar:** name threads through bb 0.44's Codex transport ([ae2577e](https://github.com/smsunarto/bb-plugins/commit/ae2577ec0b5ea9a6a4ac8f92cac5c214b23b6099))
+* **gtd-sidebar:** refresh only shelves affected by deletion ([1a7ed19](https://github.com/smsunarto/bb-plugins/commit/1a7ed19f3748d661060b2de35aa1e799ba51b563))
+* **gtd-sidebar:** satisfy the SDK 0.5.9 sidebar thread shape ([4089838](https://github.com/smsunarto/bb-plugins/commit/408983815dd8d8ad0ab88f90f4b866ae372f56a1))
+* **gtd-sidebar:** snooze thread families together ([654681d](https://github.com/smsunarto/bb-plugins/commit/654681d034f5e25b7d987f0c8ed8a3c4118a72aa))
+* **gtd-sidebar:** use GPT-6-Luna for thread titles ([b31c309](https://github.com/smsunarto/bb-plugins/commit/b31c3094cd7bec04c77feaaea72f792310af29de))
+
 ## [0.5.1](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.0...gtd-sidebar/v0.5.1) (2026-09-22)
 
 
