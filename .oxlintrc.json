@@ -51,6 +51,12 @@
         "typescript/no-non-null-assertion": "off",
         "require-yield": "off"
       }
+    },
+    {
+      "files": ["plugins/docs/components/ui/**"],
+      "rules": {
+        "jsx-a11y/prefer-tag-over-role": "off"
+      }
     }
   ]
 }

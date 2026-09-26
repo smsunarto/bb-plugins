@@ -1,15 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
-import {
-  BLUR_COMMAND,
-  $getNearestNodeFromDOMNode,
-  $isElementNode,
-  $isTextNode,
-  getNearestEditorFromDOMNode,
-} from "lexical";
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { loadPluginApp, renderSlot, type RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
 const docsRegistration = app.navPanels[0];
@@ -20,41 +14,33 @@ const navigationRegistration = {
   ...docsRegistration,
   component: navigationView.component,
 };
-
-async function editText(element: HTMLElement, text: string) {
-  const editor = getNearestEditorFromDOMNode(element);
-  if (!editor) throw new Error("Missing Lexical editor");
-  await act(async () => {
-    editor.update(
-      () => {
-        const node = $getNearestNodeFromDOMNode(element.firstChild ?? element);
-        const target = $isTextNode(node)
-          ? node
-          : $isElementNode(node)
-            ? node.getAllTextNodes()[0]
-            : null;
-        if (!target) throw new Error("Missing Lexical text node");
-        target.setTextContent(text);
-      },
-      { discrete: true },
-    );
-  });
-}
+const rangeGetBoundingClientRectDescriptor = Object.getOwnPropertyDescriptor(
+  Range.prototype,
+  "getBoundingClientRect",
+);
+const rangeGetClientRectsDescriptor = Object.getOwnPropertyDescriptor(
+  Range.prototype,
+  "getClientRects",
+);
 
 beforeEach(() => {
-  // jsdom does not load image resources. Resolve MDXEditor's image preloader.
   vi.stubGlobal(
-    "Image",
+    "ResizeObserver",
     class {
-      onload: (() => void) | null = null;
-      onerror: (() => void) | null = null;
-      width = 0;
-      height = 0;
-      set src(_value: string) {
-        queueMicrotask(() => this.onload?.());
-      }
+      observe() {}
+      disconnect() {}
     },
   );
+  Object.defineProperties(Range.prototype, {
+    getBoundingClientRect: {
+      configurable: true,
+      value: () => new DOMRect(),
+    },
+    getClientRects: {
+      configurable: true,
+      value: () => ({ length: 0, item: () => null }),
+    },
+  });
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn((query: string) => ({
@@ -73,7 +59,20 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  Reflect.deleteProperty(document, "elementFromPoint");
+  if (rangeGetBoundingClientRectDescriptor) {
+    Object.defineProperty(
+      Range.prototype,
+      "getBoundingClientRect",
+      rangeGetBoundingClientRectDescriptor,
+    );
+  } else {
+    Reflect.deleteProperty(Range.prototype, "getBoundingClientRect");
+  }
+  if (rangeGetClientRectsDescriptor) {
+    Object.defineProperty(Range.prototype, "getClientRects", rangeGetClientRectsDescriptor);
+  } else {
+    Reflect.deleteProperty(Range.prototype, "getClientRects");
+  }
 });
 
 interface NoteSummary {
@@ -154,14 +153,45 @@ const preview = {
   expiresAtMs: Date.now() + 60_000,
 };
 
-function makeDataTransfer() {
+function renderDocument(path: string, title: string, options: RenderSlotOptions) {
+  return renderSlot(
+    app.messageDirectives[0]!,
+    {
+      attributes: { vault: "personal", path, title },
+      source: `::docs{vault="personal" path="${path}" title="${title}"}`,
+      message: {
+        id: `msg_${path}`,
+        threadId: "thr_1",
+        turnId: "turn_1",
+        projectId: null,
+      },
+      openWorkspaceFile: null,
+    },
+    {
+      ...options,
+      rpc: {
+        readNote: () => ({
+          content: "Original paragraph.",
+          sha256: "original-sha",
+        }),
+        readProposal: () => null,
+        preparePreview: () => preview,
+        ...options.rpc,
+      },
+    },
+  );
+}
+
+function makeDataTransfer(path = "") {
+  let storedPath = path;
   return {
     effectAllowed: "none",
     dropEffect: "none",
     types: ["text/plain"],
-    setData: vi.fn(),
-    setDragImage: vi.fn(),
-    getData: vi.fn(() => ""),
+    setData: vi.fn((_type: string, value: string) => {
+      storedPath = value;
+    }),
+    getData: vi.fn(() => storedPath),
   };
 }
 
@@ -216,26 +246,8 @@ describe("Docs nav panel", () => {
     expect(app.fileOpeners[0]).toMatchObject({
       id: "docs",
       title: "Docs",
-      extensions: ["md", "mdx", "markdown"],
+      extensions: ["md", "markdown"],
     });
-  });
-
-  it("renders navigation in the BB-owned right-panel view without custom chrome", async () => {
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "personal" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-
-    const toolbar = await slot.findByRole("toolbar", {
-      name: "Notes sidebar actions",
-    });
-    slot.getByRole("navigation", { name: "Notes" });
-    expect(slot.container.querySelector("aside")).toBeNull();
-    expect(slot.queryByRole("separator")).toBeNull();
-    expect(within(toolbar).getByRole("button", { name: "Search notes" })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: "New note" })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: "New folder" })).toBeTruthy();
   });
 
   it("renders the vault with Pierre Trees and bb theme tokens", async () => {
@@ -284,6 +296,24 @@ describe("Docs nav panel", () => {
     expect(file.getAttribute("aria-level")).toBe("2");
     expect(file.getAttribute("aria-selected")).toBe("true");
     expect(sibling.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("renders navigation in the BB-owned right-panel view without custom chrome", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+
+    const toolbar = await slot.findByRole("toolbar", {
+      name: "Notes sidebar actions",
+    });
+    slot.getByRole("navigation", { name: "Notes" });
+    expect(slot.container.querySelector("aside")).toBeNull();
+    expect(slot.queryByRole("separator")).toBeNull();
+    expect(within(toolbar).getByRole("button", { name: "Search notes" })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: "New note" })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: "New folder" })).toBeTruthy();
   });
 
   it("keeps one shared request across page and navigation Strict Mode replay", async () => {
@@ -660,7 +690,8 @@ describe("Docs nav panel", () => {
       },
     );
     const body = await slot.findByText("Personal body");
-    await editText(body, "Edited personal body");
+    body.textContent = "Edited personal body";
+    fireEvent.input(body);
     await waitFor(
       () => expect(slot.rpcCalls.some((call) => call.method === "saveNote")).toBe(true),
       { timeout: 2_000 },
@@ -748,7 +779,7 @@ describe("Docs nav panel", () => {
     const unavailable = {
       ...available,
       vault: { ...available.vault, hostId: "host_remote" },
-      vaults: available.vaults.map((vault) => Object.assign({}, vault, { hostId: "host_remote" })),
+      vaults: [{ ...available.vault, hostId: "host_remote" }],
       hosts: [{ id: "host_remote", name: "Remote Mac", status: "disconnected" }],
     };
     const slot = renderSlot(
@@ -761,7 +792,7 @@ describe("Docs nav panel", () => {
     expect(slot.queryByText("Remote Mac")).toBeNull();
   });
 
-  it("renders nested tasks as accessible checked and unchecked items", async () => {
+  it("keeps task checkboxes aligned with the first line of their text", async () => {
     const existingStyles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     if (existingStyles) existingStyles.textContent = "stale editor styles";
     const slot = renderSlot(
@@ -793,51 +824,15 @@ describe("Docs nav panel", () => {
     expect(slot.container.querySelector('input[type="file"]')).toBeNull();
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     expect(styles?.textContent).not.toBe("stale editor styles");
-    expect(slot.getByRole("checkbox", { name: "One task", checked: true })).toBeTruthy();
-    expect(slot.getByRole("checkbox", { name: "Nested task", checked: false })).toBeTruthy();
-  });
-
-  it("applies the smsunarto Markdown reading theme", async () => {
-    const slot = renderSlot(
-      app.navPanels[0]!,
-      { subPath: "personal/theme.md" },
-      {
-        rpc: {
-          listNotes: () =>
-            listNotesResult([
-              {
-                path: "theme.md",
-                title: "Theme",
-                preview: "Styled document",
-                modifiedAtMs: 1,
-              },
-            ]),
-          readNote: () => ({
-            content: "# Theme\n\n**Strong** and [linked](https://example.com).",
-            sha256: "sha",
-          }),
-          preparePreview: () => preview,
-          renameToTitle: () => ({ path: "theme.md" }),
-        },
-      },
-    );
-
-    await slot.findByText("Theme");
-    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
+    expect(styles?.textContent).toContain("align-items: flex-start");
+    expect(styles?.textContent).toContain("height: 1.5em");
+    expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
     expect(styles?.textContent).toContain(
-      "Ported from smsunarto-theme/styles/cursor-markdown-preview.css",
+      'ul[data-type="taskList"] ul[data-type="taskList"] { margin-top: 0; }',
     );
-    expect(styles?.textContent).toContain("max-width: 700px");
-    expect(styles?.textContent).toContain("color: #9ddd54");
-    expect(styles?.textContent).toContain(".docs-prose strong { color: #51dae9");
-    expect(styles?.textContent).toContain(".docs-prose a:hover { color: #75f0ff; }");
-    expect(styles?.textContent).toContain(":not(pre) > code { background: #252525");
     expect(styles?.textContent).toContain(
-      ":not(pre) > code > span { background: transparent; color: inherit; font: inherit; padding: 0; }",
+      'ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-top: 0.5em;',
     );
-    expect(styles?.textContent).toContain('button[title="Delete code block"]) > div:first-child');
-    expect(styles?.textContent).toContain(".cm-lineWrapping .cm-line { white-space: pre");
-    expect(styles?.textContent).toContain(".cm-activeLineGutter { background: #252525; }");
   });
 
   it("renders and autosaves editable Markdown tables", async () => {
@@ -873,28 +868,24 @@ describe("Docs nav panel", () => {
     await slot.findByText("Ready");
     const table = slot.container.querySelector("table");
     expect(table).toBeTruthy();
-    expect(within(table!).getByText("Project")).toBeTruthy();
-    expect(within(table!).getByText("Docs")).toBeTruthy();
-    expect(table?.closest(".docs-prose")).toBeTruthy();
+    expect(table?.querySelector("th")?.textContent).toBe("Project");
+    expect(table?.querySelector("td")?.textContent).toBe("Docs");
+    expect(table?.closest(".tableWrapper")).toBeTruthy();
     expect(table?.closest('[contenteditable="true"]')).toBeTruthy();
 
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     expect(styles?.textContent).toContain("border-collapse: collapse");
+    expect(styles?.textContent).toContain("column-resize-handle");
 
-    const firstBodyCell = within(table!).getByText("Docs");
+    const firstBodyCell = table?.querySelector("td p");
     expect(firstBodyCell).toBeTruthy();
-    await editText(firstBodyCell as HTMLElement, "Plans");
-    await act(async () => {
-      getNearestEditorFromDOMNode(firstBodyCell)!.dispatchCommand(
-        BLUR_COMMAND,
-        new FocusEvent("blur"),
-      );
-    });
+    firstBodyCell!.textContent = "Plans";
+    fireEvent.input(firstBodyCell!);
     await waitFor(() => expect(saveNote).toHaveBeenCalled(), {
       timeout: 2_000,
     });
     expect(saveNote.mock.calls.at(-1)?.[0]).toMatchObject({
-      content: expect.stringMatching(/\| Plans\s*\| Ready\s*\|/),
+      content: expect.stringContaining("| Plans | Ready |"),
     });
   });
 
@@ -932,11 +923,12 @@ describe("Docs nav panel", () => {
     );
 
     const body = await slot.findByText("Original body.");
-    const editor = slot.container.querySelector(".docs-prose");
+    const editor = slot.container.querySelector(".tiptap");
     expect(editor?.textContent).not.toContain("type: knowledge");
     expect(editor?.querySelector("hr")).toBeNull();
 
-    await editText(body, "Edited body.");
+    body.textContent = "Edited body.";
+    fireEvent.input(body);
     await waitFor(() => expect(saveNote).toHaveBeenCalled(), {
       timeout: 2_000,
     });
@@ -972,7 +964,7 @@ describe("Docs nav panel", () => {
     );
 
     await waitFor(() => {
-      const editor = slot.container.querySelector(".docs-prose");
+      const editor = slot.container.querySelector(".tiptap");
       expect(editor?.textContent).toContain("Some intro text.");
       expect(editor?.textContent).toContain("More text.");
     });
@@ -1012,9 +1004,6 @@ describe("Docs nav panel", () => {
     );
 
     await slot.findByText("Article");
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
     await waitFor(() => {
       const image = slot.container.querySelector("img");
       expect(image?.getAttribute("src")).toBe(
@@ -1244,36 +1233,20 @@ describe("Docs nav panel", () => {
     });
   });
 
-  it("opens Docs directive cards in the thread panel or full editor", () => {
+  it("opens HTML Docs directive cards in the thread panel or full editor", () => {
     const openThreadPanel = vi.fn(() => true);
-    const slot = renderSlot(
-      app.messageDirectives[0]!,
-      {
-        attributes: {
-          vault: "personal",
-          path: "plans/release.md",
-          title: "Release plan",
-        },
-        source: '::docs{vault="personal" path="plans/release.md" title="Release plan"}',
-        message: {
-          id: "msg_1",
-          threadId: "thr_1",
-          turnId: "turn_1",
-          projectId: null,
-        },
-        openWorkspaceFile: null,
-      },
-      { openThreadPanel },
-    );
+    const slot = renderDocument("plans/release.html", "Release plan", {
+      openThreadPanel,
+    });
 
     fireEvent.click(slot.getByText("Release plan"));
-    expect(slot.queryByText("personal · plans/release.md")).toBeNull();
+    expect(slot.queryByText("personal · plans/release.html")).toBeNull();
     expect(openThreadPanel).toHaveBeenCalledWith({
       actionId: "document",
       title: "Release plan",
       params: {
         vaultId: "personal",
-        path: "plans/release.md",
+        path: "plans/release.html",
         title: "Release plan",
       },
     });
@@ -1282,8 +1255,300 @@ describe("Docs nav panel", () => {
     expect(slot.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "docs",
-      options: { subPath: "personal/plans/release.md" },
+      options: { subPath: "personal/plans/release.html" },
     });
+  });
+
+  it("shows cached document content immediately when returning to a thread", async () => {
+    const file = { content: "Keep this draft visible.", sha256: "saved-sha" };
+    const readNote = vi.fn<() => Promise<typeof file>>().mockResolvedValue(file);
+    const render = () =>
+      renderDocument("cached-draft.md", "Cached draft", {
+        rpc: {
+          readNote,
+        },
+      });
+    const first = render();
+    await first.findByText(file.content);
+    await act(async () => {
+      first.unmount();
+    });
+    let finish!: (result: typeof file) => void;
+    readNote.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const returned = render();
+    try {
+      expect(returned.getByRole("textbox", { name: "Document content" }).textContent).toContain(
+        file.content,
+      );
+    } finally {
+      await act(async () => {
+        finish({
+          ...file,
+          content: "Fresh content from disk.",
+          sha256: "new-sha",
+        });
+      });
+    }
+    await returned.findByText("Fresh content from disk.");
+  });
+
+  it("truncates tall inline documents and restores editing when they shrink", async () => {
+    let height = 600;
+    let resize = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(0, 0, 600, height));
+    const openThreadPanel = vi.fn(() => true);
+    try {
+      const slot = renderDocument("tall-inline.md", "Tall document", {
+        openThreadPanel,
+        rpc: {
+          readNote: () => ({ content: "A long document.", sha256: "tall-sha" }),
+        },
+      });
+      const button = await slot.findByRole("button", {
+        name: "Open Tall document in tab",
+      });
+      const editor = slot.getByRole("textbox", { name: "Document content" });
+      expect(editor.getAttribute("contenteditable")).toBe("false");
+      fireEvent.click(button);
+      expect(openThreadPanel).toHaveBeenCalledWith({
+        actionId: "document",
+        title: "Tall document",
+        params: {
+          vaultId: "personal",
+          path: "tall-inline.md",
+          title: "Tall document",
+        },
+      });
+      await act(async () => {
+        height = 200;
+        resize();
+      });
+      expect(slot.queryByRole("button", { name: "Open Tall document in tab" })).toBeNull();
+      expect(editor.getAttribute("contenteditable")).toBe("true");
+    } finally {
+      bounds.mockRestore();
+    }
+  });
+
+  it("edits Markdown inline and opens the same document in a tab", async () => {
+    const openThreadPanel = vi.fn(() => true);
+    const slot = renderDocument("inline-header.md", "Inline header", {
+      openThreadPanel,
+    });
+    const editor = await slot.findByRole("textbox", {
+      name: "Document content",
+    });
+    expect(editor.getAttribute("contenteditable")).toBe("true");
+    fireEvent.focus(editor);
+    expect(slot.queryByText("Editing")).toBeNull();
+    expect(slot.queryByText("Saved")).toBeNull();
+    expect(slot.container.querySelectorAll("header")).toHaveLength(1);
+    expect(slot.container.querySelector("footer")).toBeNull();
+    expect(slot.getByRole("button", { name: "Ask for changes" })).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Open in tab" }));
+    expect(openThreadPanel).toHaveBeenCalledWith({
+      actionId: "document",
+      title: "Inline header",
+      params: {
+        vaultId: "personal",
+        path: "inline-header.md",
+        title: "Inline header",
+      },
+    });
+  });
+
+  it("preserves the composer draft and attaches the document when asking for changes", async () => {
+    const slot = renderDocument("ask-inline.md", "Launch email", {
+      composer: { text: "Keep this instruction." },
+      rpc: {
+        readNote: () => ({ content: "Email body.", sha256: "original-sha" }),
+      },
+    });
+    await slot.findByRole("textbox", { name: "Document content" });
+    fireEvent.click(slot.getByRole("button", { name: "Ask for changes" }));
+    await waitFor(() =>
+      expect(slot.inspection.composer.mentions).toEqual([
+        {
+          provider: "note",
+          id: "personal:ask-inline.md",
+          label: "Launch email",
+        },
+      ]),
+    );
+    expect(slot.inspection.composer.text).toBe("Keep this instruction.\n\nUpdate Launch email ");
+    expect(slot.inspection.composer.focusCount).toBeGreaterThan(0);
+  });
+
+  it.each(["reject", "redo"] as const)(
+    "keeps Ask and progress available through %s and restores proposal controls",
+    async (action) => {
+      const pending = {
+        vaultId: "personal",
+        path: `${action}-inline.md`,
+        version: action === "reject" ? 1 : 3,
+        baseContent: "Original paragraph.",
+        baseSha256: "original-sha",
+        content: "Revised paragraph.",
+        status: action === "reject" ? "pending" : "undone",
+        resolvedSha256: action === "reject" ? null : "original-sha",
+      };
+      let resolution = deferred<void>();
+      const resolveProposal = vi
+        .fn()
+        .mockImplementationOnce(async () => {
+          await resolution.promise;
+          return {
+            ...pending,
+            version: pending.version + 1,
+            status: action === "reject" ? "rejected" : "pending",
+          };
+        })
+        .mockImplementationOnce(async () => {
+          await resolution.promise;
+          return {
+            ...pending,
+            version: pending.version + 2,
+            status: "pending",
+          };
+        });
+      const slot = renderDocument(pending.path, "Proposal", {
+        rpc: { readProposal: () => pending, resolveProposal },
+      });
+      const steps = action === "reject" ? ["Reject", "Undo"] : ["Redo"];
+      for (const [index, label] of steps.entries()) {
+        const button = await slot.findByRole("button", { name: label });
+        expect(button.textContent).toBe("");
+        expect(slot.getByRole("button", { name: "Ask for changes" })).toBeTruthy();
+        resolution = deferred<void>();
+        fireEvent.click(button);
+        expect((await slot.findByRole("status")).textContent).toBe("Updating document…");
+        expect(button.hasAttribute("disabled")).toBe(true);
+        expect(slot.getByRole("textbox", { name: "Document content" })).toBeTruthy();
+        await act(async () => resolution.resolve());
+        expect(slot.queryByRole("status")).toBeNull();
+        expect(resolveProposal).toHaveBeenLastCalledWith({
+          vaultId: "personal",
+          path: pending.path,
+          action: label.toLowerCase(),
+          expectedVersion: pending.version + index,
+        });
+        if (label === "Reject") expect(slot.queryByRole("button", { name: "Accept" })).toBeNull();
+      }
+      expect(slot.getByRole("button", { name: "Accept" })).toBeTruthy();
+      expect(slot.getByRole("button", { name: "Reject" })).toBeTruthy();
+      expect(slot.getByRole("button", { name: "Ask for changes" })).toBeTruthy();
+    },
+  );
+
+  it("parses rich proposal baselines in an inert document and scopes refreshes", async () => {
+    const parse = vi.spyOn(ProseMirrorDOMParser.prototype, "parse");
+    const pending = {
+      vaultId: "personal",
+      path: "scoped-inline.md",
+      version: 1,
+      baseContent: "<p>Original <strong>formatted baseline</strong>.</p>",
+      baseSha256: "original-sha",
+      content: "Revised **formatted baseline**.",
+      status: "pending",
+      resolvedSha256: null,
+    };
+    const readNote = vi.fn(() => ({
+      content: pending.baseContent,
+      sha256: "original-sha",
+    }));
+    const slot = renderDocument(pending.path, "Scoped example", {
+      rpc: {
+        readNote,
+        readProposal: () => pending,
+      },
+    });
+    await slot.findByRole("textbox", { name: "Document content" });
+    const baselines = parse.mock.calls
+      .map(([root]) => root)
+      .filter((root) => root.textContent?.includes("Original formatted baseline"));
+    expect(baselines.length).toBeGreaterThan(0);
+    for (const root of baselines) expect(root.ownerDocument?.defaultView).toBeNull();
+    expect(slot.container.querySelector("strong")?.textContent).toBe("formatted baseline");
+    parse.mockRestore();
+    readNote.mockClear();
+    await slot.emitRealtime("vault-changed", { vaultId: "other" });
+    await slot.emitRealtime("vault-changed", {
+      vaultId: "personal",
+      path: "other.md",
+    });
+    await slot.emitRealtime("proposal-changed", {
+      vaultId: "personal",
+      path: "other.md",
+      version: 2,
+    });
+    await slot.emitRealtime("vault-changed", {
+      vaultId: "personal",
+      path: pending.path,
+      proposalOnly: true,
+    });
+    expect(readNote).not.toHaveBeenCalled();
+    await slot.emitRealtime("proposal-changed", {
+      vaultId: "personal",
+      path: pending.path,
+      version: 2,
+    });
+    await waitFor(() => expect(readNote).toHaveBeenCalledTimes(1));
+    await slot.emitRealtime("vault-changed", {
+      vaultId: "personal",
+      path: pending.path,
+    });
+    await waitFor(() => expect(readNote).toHaveBeenCalledTimes(2));
+    await slot.emitRealtime("vault-changed", {});
+    await waitFor(() => expect(readNote).toHaveBeenCalledTimes(3));
+  });
+
+  it("opens a chosen document from the unconfigured Document panel", async () => {
+    const openThreadPanel = vi.fn(() => true);
+    const slot = renderSlot(
+      app.threadPanelActions[0]!,
+      { threadId: "thr_1", params: null },
+      {
+        openThreadPanel,
+        rpc: {
+          listNotes: () =>
+            listNotesResult([
+              {
+                path: "Launch 50%.md",
+                title: "Launch 50%",
+                preview: "A draft",
+                modifiedAtMs: 1,
+              },
+            ]),
+        },
+      },
+    );
+    fireEvent.click(await findTreeItem(slot.container, "Launch 50%.md"));
+    expect(openThreadPanel).toHaveBeenCalledWith({
+      actionId: "document",
+      title: "Launch 50%",
+      params: {
+        vaultId: "personal",
+        path: "Launch 50%.md",
+        title: "Launch 50%",
+      },
+    });
+    expect(slot.navigateCalls.some((call) => call.method === "toPluginPanel")).toBe(false);
   });
 
   it("renders a linked Markdown document in the Docs thread panel", async () => {
@@ -1293,7 +1558,7 @@ describe("Docs nav panel", () => {
         threadId: "thr_1",
         params: {
           vaultId: "personal",
-          path: "plans/release.md",
+          path: "plans/panel-release.md",
           title: "Release plan",
         },
       },
@@ -1303,6 +1568,7 @@ describe("Docs nav panel", () => {
             content: "# Release plan\n\nShip it.",
             sha256: "sha",
           }),
+          readProposal: () => null,
           preparePreview: () => preview,
         },
       },
@@ -1310,23 +1576,20 @@ describe("Docs nav panel", () => {
 
     await slot.findByText("Ship it.");
     expect(slot.getAllByText("Release plan")).toHaveLength(2);
-    expect(slot.queryByText("plans/release.md")).toBeNull();
+    expect(slot.getByRole("button", { name: "Ask for changes" })).toBeTruthy();
+    expect(slot.queryByText("plans/panel-release.md")).toBeNull();
     expect(slot.getByRole("textbox").getAttribute("contenteditable")).toBe("true");
     expect(slot.queryByRole("button", { name: "Add to chat" })).toBeNull();
     expect(slot.queryByRole("button", { name: "Mention in chat" })).toBeNull();
-    fireEvent.click(slot.getByRole("button", { name: "Open in Docs" }));
-    expect(slot.navigateCalls).toContainEqual({
-      method: "toPluginPanel",
-      path: "docs",
-      options: { subPath: "personal/plans/release.md" },
-    });
+    expect(slot.queryByRole("button", { name: "Open in Docs" })).toBeNull();
   });
 
-  it("preserves an explicit host for file opener reads and autosaves", async () => {
+  it("preserves the file opener host through autosave, conflict overwrite, and reload", async () => {
+    let conflict = true;
     const slot = renderSlot(
       app.fileOpeners[0]!,
       {
-        path: "/Users/shared/notes/plan.mdx",
+        path: "/Users/shared/notes/plan.md",
         source: {
           kind: "host",
           threadId: "thr_1",
@@ -1341,19 +1604,12 @@ describe("Docs nav panel", () => {
           openFile: () => ({
             file: { content: "# Remote plan", sha256: "sha" },
             preview,
-            previewPath: "notes/plan.mdx",
+            previewPath: "notes/plan.md",
           }),
-          state: () => ({ values: {}, revision: 0 }),
-          comments: () => ({
-            status: "loaded",
-            sha256: "none",
-            file: { version: 1, threads: [] },
-            malformed: false,
-          }),
-          saveOpenedFile: () => ({
-            outcome: "written",
-            sha256: "updated-sha",
-          }),
+          saveOpenedFile: () =>
+            conflict
+              ? { outcome: "conflict", currentSha256: "remote-sha" }
+              : { outcome: "written", sha256: "updated-sha" },
         },
       },
     );
@@ -1369,11 +1625,12 @@ describe("Docs nav panel", () => {
           projectId: "project_1",
           experimental_hostId: "host_remote",
         },
-        path: "/Users/shared/notes/plan.mdx",
+        path: "/Users/shared/notes/plan.md",
       },
     });
 
-    await editText(body, "Updated remote plan");
+    body.textContent = "Updated remote plan";
+    fireEvent.input(body);
     await waitFor(
       () => {
         expect(slot.rpcCalls).toContainEqual({
@@ -1386,7 +1643,7 @@ describe("Docs nav panel", () => {
               projectId: "project_1",
               experimental_hostId: "host_remote",
             },
-            path: "/Users/shared/notes/plan.mdx",
+            path: "/Users/shared/notes/plan.md",
             content: "# Updated remote plan",
             expectedSha256: "sha",
           },
@@ -1394,35 +1651,69 @@ describe("Docs nav panel", () => {
       },
       { timeout: 2_000 },
     );
+    await slot.findByText("Changed on disk.");
+    conflict = false;
+    fireEvent.click(slot.getByRole("button", { name: "Overwrite" }));
+    await waitFor(() => expect(slot.queryByText("Changed on disk.")).toBeNull());
+    const writes = slot.rpcCalls.filter((call) => call.method === "saveOpenedFile");
+    expect(writes).toHaveLength(2);
+    expect(writes[1]?.input).toEqual({
+      source: {
+        kind: "host",
+        threadId: "thr_1",
+        environmentId: null,
+        projectId: "project_1",
+        experimental_hostId: "host_remote",
+      },
+      path: "/Users/shared/notes/plan.md",
+      content: "# Updated remote plan",
+    });
+    conflict = true;
+    const updated = slot.getByText("Updated remote plan");
+    updated.textContent = "Discard this edit";
+    fireEvent.input(updated);
+    await slot.findByText("Changed on disk.");
+    fireEvent.click(slot.getByRole("button", { name: "Reload" }));
+    await slot.findByText("Remote plan");
+    expect(slot.queryByText("Discard this edit")).toBeNull();
     expect(slot.queryByRole("button", { name: "Add to chat" })).toBeNull();
     expect(slot.queryByRole("button", { name: "Mention in chat" })).toBeNull();
   });
 
-  it("opens a full HTML page through the same preview lease", async () => {
-    const slot = renderSlot(
-      app.navPanels[0]!,
-      { subPath: "personal/dashboards/metrics.html" },
-      {
-        rpc: {
-          listNotes: () =>
-            listNotesResult(
-              [],
-              [
-                { kind: "directory", path: "dashboards" },
-                { kind: "file", path: "dashboards/metrics.html" },
-              ],
-            ),
-          preparePreview: () => preview,
-        },
+  it.each(["workspace", "panel"])("opens sandboxed HTML in the %s", async (surface) => {
+    const path = "dashboards/metrics.html";
+    const options = {
+      rpc: {
+        listNotes: () =>
+          listNotesResult(
+            [],
+            [
+              { kind: "directory", path: "dashboards" },
+              { kind: "file", path },
+            ],
+          ),
+        preparePreview: () => preview,
       },
-    );
-
+    } satisfies RenderSlotOptions;
+    const slot =
+      surface === "panel"
+        ? renderSlot(
+            app.threadPanelActions[0]!,
+            {
+              threadId: "thr_1",
+              params: { vaultId: "personal", path, title: "Metrics" },
+            },
+            options,
+          )
+        : renderSlot(docsRegistration, { subPath: `personal/${path}` }, options);
     await waitFor(() => {
       const iframe = slot.container.querySelector("iframe");
-      expect(iframe?.getAttribute("src")).toBe(
-        "/api/v1/file-previews/lease/dashboards/metrics.html",
-      );
+      expect(iframe?.getAttribute("src")).toBe(`/api/v1/file-previews/lease/${path}`);
       expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
+      expect(iframe?.title).toBe(surface === "panel" ? "Metrics" : path);
+      expect(iframe?.classList.contains(surface === "panel" ? "min-h-[32rem]" : "min-h-0")).toBe(
+        true,
+      );
     });
     expect(slot.queryByRole("button", { name: "View source" })).toBeNull();
   });
@@ -1470,5 +1761,124 @@ describe("Docs nav panel", () => {
     });
     expect(slot.queryByPlaceholderText("Search this vault")).toBeNull();
     await findTreeItem(slot.container, "roadmap.md");
+  });
+
+  it("applies the smsunarto Markdown reading theme to the Tiptap editor", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "personal/theme.md" },
+      {
+        rpc: {
+          listNotes: () =>
+            listNotesResult([
+              { path: "theme.md", title: "Theme", preview: "Styled document", modifiedAtMs: 1 },
+            ]),
+          readNote: () => ({
+            content: "# Theme\n\n**Strong** and [linked](https://example.com).",
+            sha256: "sha",
+          }),
+          readProposal: () => null,
+          preparePreview: () => preview,
+        },
+      },
+    );
+
+    await slot.findByText("Strong");
+    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]")?.textContent;
+    expect(styles).toContain("max-width: 700px");
+    expect(styles).toContain("color: #9ddd54");
+    expect(styles).toContain(".bb-simple-notes-editor .tiptap strong { color: #51dae9");
+    expect(styles).toContain(".bb-simple-notes-editor .tiptap a:hover { color: #75f0ff; }");
+  });
+
+  it("opens MDX vault entries through bb's file opener", async () => {
+    const openFilePreview = vi.fn(() => true);
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        openFilePreview,
+        // The component reads only primaryHostId from the full system config.
+        sdk: { system: { config: async () => ({ primaryHostId: "host_local" }) as never } },
+        rpc: {
+          listNotes: () =>
+            listNotesResult(
+              [{ path: "notes.md", title: "Notes", preview: "", modifiedAtMs: 1 }],
+              [
+                { kind: "file", path: "notes.md" },
+                { kind: "file", path: "plans/board.canvas.mdx" },
+                { kind: "directory", path: "plans" },
+              ],
+            ),
+        },
+      },
+    );
+
+    fireEvent.click(await findTreeItem(slot.container, "board.canvas.mdx"));
+    await waitFor(() =>
+      expect(openFilePreview).toHaveBeenCalledWith({
+        target: {
+          kind: "host",
+          hostId: "host_local",
+          path: "/Users/me/Notes/plans/board.canvas.mdx",
+        },
+        location: null,
+      }),
+    );
+    expect(slot.navigateCalls.some((call) => call.method === "toPluginPanel")).toBe(false);
+  });
+
+  it("reloads an opened file when it changes on disk", async () => {
+    let disk = { content: "# Plan\n\nFirst draft", sha256: "sha-1" };
+    const source = {
+      kind: "host" as const,
+      threadId: "thr_1",
+      environmentId: null,
+      projectId: "project_1",
+      experimental_hostId: "host_remote",
+    };
+    const slot = renderSlot(
+      app.fileOpeners[0]!,
+      { path: "/Users/shared/notes/plan.md", source, Original: () => null },
+      {
+        rpc: {
+          openFile: () => ({ file: disk, preview, previewPath: "notes/plan.md" }),
+          readOpenedFile: () => disk,
+        },
+      },
+    );
+
+    await slot.findByText("First draft");
+    disk = { content: "# Plan\n\nAgent rewrite", sha256: "sha-2" };
+    await slot.findByText("Agent rewrite", undefined, { timeout: 4_000 });
+    expect(slot.rpcCalls).toContainEqual({
+      method: "readOpenedFile",
+      input: { source, path: "/Users/shared/notes/plan.md" },
+    });
+  });
+
+  it("keeps Docs sibling order where Pierre's default sort disagrees", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        rpc: {
+          listNotes: () =>
+            listNotesResult(
+              ["another.md", "another2.md", "zeta.md"].map((path) => ({
+                path,
+                title: path,
+                preview: "",
+                modifiedAtMs: 1,
+              })),
+              undefined,
+              ["zeta.md"],
+            ),
+        },
+      },
+    );
+
+    await findTreeItem(slot.container, "another2.md");
+    expect(treeItemLabels(slot.container)).toEqual(["zeta.md", "another.md", "another2.md"]);
   });
 });

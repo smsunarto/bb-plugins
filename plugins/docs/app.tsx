@@ -1,36 +1,52 @@
-import { narrowSource } from "@smsunarto/bb-plugin-canvas/editor";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   definePluginApp,
   experimental_FileLink as FileLink,
   useBbNavigate,
+  useComposer,
   useRpc,
   useRealtime,
+  useSdk,
   type PluginFileOpenerProps,
   type PluginMessageDirectiveProps,
   type PluginNavPanelProps,
   type PluginThreadPanelProps,
   type ExperimentalLiveFileTarget,
 } from "@get-bb/plugin-sdk/app";
+import { DOMParser as ProseMirrorDOMParser, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { createProposalDiff, proposalDiffKey } from "./proposal-diff.js";
+import { useDocumentSession, useSavedDocument, type DocumentIO } from "./document-session.js";
+import { Icon } from "@/components/ui/icon";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { docsRpcContract } from "./server.js";
-import { MarkdownEditor } from "./markdown-editor.js";
+import { isRecord, parseMarkdownDocument } from "./markdown-document.js";
+import { Editor, Extension, InputRule, Node, mergeAttributes } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import Placeholder from "@tiptap/extension-placeholder";
+import Table from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
+import { Markdown } from "tiptap-markdown";
+import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
 import { toast } from "sonner";
-import {
-  AlertCircleIcon,
-  ArrowUpRight01Icon,
-  Cancel01Icon,
-  Delete02Icon,
-  File01Icon,
-  FileAddIcon,
-  FolderAddIcon,
-  HtmlFile01Icon,
-  PlusSignIcon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons";
+import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
+import ArrowUpRight01Icon from "@hugeicons/core-free-icons/ArrowUpRight01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
+import FileAddIcon from "@hugeicons/core-free-icons/FileAddIcon";
+import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
+import HtmlFile01Icon from "@hugeicons/core-free-icons/HtmlFile01Icon";
+import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
+import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Button } from "./components/ui/button.js";
-import { DelayedLoading } from "./components/ui/delayed-loading.js";
+import { Button } from "@/components/ui/button";
+import { DelayedLoading } from "@/components/ui/delayed-loading";
 import {
   Dialog,
   DialogContent,
@@ -38,17 +54,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./components/ui/dialog.js";
-import { Input } from "./components/ui/input.js";
-import { Skeleton } from "./components/ui/skeleton.js";
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./components/ui/select.js";
-import { cn } from "./lib/utils.js";
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface Vault {
   id: string;
@@ -91,8 +107,8 @@ interface PreviewLease {
   expiresAtMs: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function encodePath(value: string): string {
@@ -102,6 +118,291 @@ function encodePath(value: string): string {
 function dirname(value: string): string {
   const index = value.lastIndexOf("/");
   return index < 0 ? "" : value.slice(0, index);
+}
+
+function normalizeRelative(base: string, relative: string): string {
+  if (!relative.startsWith(".")) return relative.replace(/^\//, "");
+  const stack = base ? base.split("/") : [];
+  for (const part of relative.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") stack.pop();
+    else stack.push(part);
+  }
+  return stack.join("/");
+}
+
+function relativeFrom(base: string, target: string): string {
+  const from = base ? base.split("/") : [];
+  const to = target.split("/");
+  while (from[0] && from[0] === to[0]) {
+    from.shift();
+    to.shift();
+  }
+  return (
+    `${from.map(() => "..").join("/")}${from.length && to.length ? "/" : ""}${to.join("/")}` || "."
+  );
+}
+
+function previewUrl(baseUrl: string, notePath: string, source: string): string {
+  if (/^(https?:|data:|blob:|#)/i.test(source)) return source;
+  return `${baseUrl}/${encodePath(normalizeRelative(dirname(notePath), source))}`;
+}
+
+function displayMarkdown(content: string, baseUrl: string, notePath: string): string {
+  const withImages = content.replace(
+    /(!\[[^\]]*\]\()([^\s)]+)([^)]*\))/g,
+    (_match, start: string, source: string, end: string) =>
+      `${start}${previewUrl(baseUrl, notePath, source)}${end}`,
+  );
+  return withImages.replace(
+    /^::html\{src="([^"]+)"(?: height="(\d+)")?\}\s*$/gm,
+    (_match, source: string, height: string | undefined) =>
+      `<div data-simple-html-embed="true" data-src="${encodeURIComponent(source)}" data-height="${height ?? "360"}"></div>`,
+  );
+}
+
+function storedMarkdown(content: string, baseUrl: string, notePath: string): string {
+  const prefix = `${baseUrl}/`;
+  return content.replace(
+    /(!\[[^\]]*\]\()([^\s)]+)([^)]*\))/g,
+    (_match, start: string, source: string, end: string) => {
+      if (!source.startsWith(prefix)) return `${start}${source}${end}`;
+      const target = source.slice(prefix.length).split("/").map(decodeURIComponent).join("/");
+      const relative = relativeFrom(dirname(notePath), target);
+      return `${start}${relative.startsWith(".") ? relative : `./${relative}`}${end}`;
+    },
+  );
+}
+
+interface HtmlEmbedOptions {
+  baseUrl: string;
+  notePath: string;
+}
+
+const HtmlEmbed = Node.create<HtmlEmbedOptions>({
+  name: "simpleHtmlEmbed",
+  group: "block",
+  atom: true,
+  isolating: true,
+  addOptions() {
+    return { baseUrl: "", notePath: "" };
+  },
+  addAttributes() {
+    return {
+      src: {
+        default: "",
+        parseHTML: (element) => decodeURIComponent(element.getAttribute("data-src") ?? ""),
+        renderHTML: (attributes) => ({
+          "data-src": encodeURIComponent(String(attributes.src)),
+        }),
+      },
+      height: {
+        default: 360,
+        parseHTML: (element) => Number(element.getAttribute("data-height") ?? 360),
+        renderHTML: (attributes) => ({
+          "data-height": String(attributes.height),
+        }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-simple-html-embed="true"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-simple-html-embed": "true" })];
+  },
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement("section");
+      dom.className = "simple-html-embed";
+      dom.contentEditable = "false";
+      const header = document.createElement("div");
+      header.className = "simple-html-embed-header";
+      header.textContent = `◇ ${String(node.attrs.src)} · sandboxed`;
+      const iframe = document.createElement("iframe");
+      iframe.title = `Embedded HTML: ${String(node.attrs.src)}`;
+      iframe.setAttribute("sandbox", "allow-scripts");
+      iframe.style.height = `${Math.min(1200, Math.max(120, Number(node.attrs.height) || 360))}px`;
+      iframe.src = previewUrl(this.options.baseUrl, this.options.notePath, String(node.attrs.src));
+      dom.append(header, iframe);
+      return { dom };
+    };
+  },
+  addStorage() {
+    return {
+      markdown: {
+        serialize(
+          state: {
+            write(value: string): void;
+            closeBlock(node: unknown): void;
+          },
+          node: { attrs: { src: string; height: number } },
+        ) {
+          state.write(`::html{src="${node.attrs.src}" height="${node.attrs.height}"}`);
+          state.closeBlock(node);
+        },
+      },
+    };
+  },
+});
+
+const MarkdownTaskInput = Extension.create({
+  name: "markdownTaskInput",
+  priority: 200,
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /^\s*\[([ xX]?)\]\s$/,
+        handler: ({ range, match, chain }) => {
+          const commands = chain().deleteRange(range).toggleTaskList();
+          if (/[xX]/.test(match[1] ?? "")) commands.updateAttributes("taskItem", { checked: true });
+          commands.run();
+        },
+      }),
+    ];
+  },
+});
+
+const STYLE_MARKER = "data-bb-simple-notes-styles";
+const EDITOR_CSS = `
+/* smsunarto Monokai reading theme, ported from smsunarto-theme/styles/cursor-markdown-preview.css. */
+.bb-simple-notes-editor {
+  container-type: inline-size;
+  background: #181818;
+}
+.bb-simple-notes-editor .tiptap {
+  outline: none;
+  width: 100%;
+  max-width: 700px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 48px clamp(24px, 4vw, 56px) 40vh;
+  color: #e3e3dd;
+  caret-color: #e3e3dd;
+  font-family: "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 17px;
+  font-kerning: normal;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.bb-simple-notes-editor[data-inline="true"] .tiptap { padding: 1.25rem 1.5rem; max-width: none; min-height: 8rem; font-size: 14px; }
+.bb-simple-notes-editor .tiptap > :first-child,
+.bb-simple-notes-editor .tiptap li > :first-child,
+.bb-simple-notes-editor .tiptap blockquote > :first-child { margin-top: 0; }
+.bb-simple-notes-editor .tiptap p { margin: 1.75rem 0; }
+.bb-simple-notes-editor .tiptap h1,
+.bb-simple-notes-editor .tiptap h2,
+.bb-simple-notes-editor .tiptap h3,
+.bb-simple-notes-editor .tiptap h4,
+.bb-simple-notes-editor .tiptap h5,
+.bb-simple-notes-editor .tiptap h6 {
+  border-bottom: 0;
+  color: #9ddd54;
+  font-family: inherit;
+  font-weight: 600;
+  padding-bottom: 0;
+}
+/* Heading scale: 1.5 / 1.25 / 1.1 / 1 em at weight 600, more room above than below. */
+.bb-simple-notes-editor .tiptap h1 { font-size: 1.5em; line-height: 1.2; letter-spacing: -0.02em; margin: 2.5rem 0 1rem; }
+.bb-simple-notes-editor .tiptap h2 { font-size: 1.25em; line-height: 1.25; letter-spacing: -0.015em; margin: 2.25rem 0 0.875rem; }
+.bb-simple-notes-editor .tiptap h3 { font-size: 1.1em; line-height: 1.3; letter-spacing: -0.01em; margin: 1.75rem 0 0.75rem; }
+.bb-simple-notes-editor .tiptap h4 { font-size: 1em; line-height: 1.3; letter-spacing: 0; margin: 1.75rem 0 0.5rem; }
+.bb-simple-notes-editor .tiptap h5 { font-size: 0.85em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
+.bb-simple-notes-editor .tiptap h6 { font-size: 0.8em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
+.bb-simple-notes-editor .tiptap ul,
+.bb-simple-notes-editor .tiptap ol { margin: 1.75rem 0; padding-inline-start: 0; }
+.bb-simple-notes-editor .tiptap ul { list-style: disc; }
+.bb-simple-notes-editor .tiptap ol { list-style: decimal; }
+.bb-simple-notes-editor .tiptap :is(ul, ol) > li { margin-inline-start: 30px; }
+.bb-simple-notes-editor .tiptap ol ol > li,
+.bb-simple-notes-editor .tiptap ul ul > li { margin-inline-start: 32px; }
+/* List spacing steps by depth: 0.5em between top-level items, 0.25em between
+   nested siblings, 0.25em from a parent item's text to its child list. */
+.bb-simple-notes-editor .tiptap li + li { margin-top: 0.5em; }
+.bb-simple-notes-editor .tiptap li li + li { margin-top: 0.25em; }
+.bb-simple-notes-editor .tiptap li > p { margin: 0; }
+.bb-simple-notes-editor .tiptap li > :is(ul, ol) { margin: 0.25em 0 0; }
+.bb-simple-notes-editor .tiptap li::marker { color: #7c7866; }
+.bb-simple-notes-editor .tiptap strong { color: #51dae9; font-weight: 600; }
+.bb-simple-notes-editor .tiptap em { color: #e3e3ddd6; }
+.bb-simple-notes-editor .tiptap a {
+  color: #51dae9;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.12em;
+}
+.bb-simple-notes-editor .tiptap a:hover { color: #75f0ff; }
+.bb-simple-notes-editor .tiptap a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.125em; }
+.bb-simple-notes-editor .tiptap code:has(> a) { background: transparent; border: 0; border-radius: 0; font-family: inherit; font-size: inherit; padding: 0; }
+.bb-simple-notes-editor .tiptap blockquote { border-left: 1px solid #fe5d86; border-radius: 0; color: #e3e3ddbd; margin: 1rem 0; padding: 0 0 0 1.1em; }
+.bb-simple-notes-editor .tiptap :is(code, pre) { font-family: "Berkeley Mono", var(--font-mono, monospace); }
+.bb-simple-notes-editor .tiptap code { color: #e3e3dd; font-size: 0.875em; line-height: 1.5; }
+.bb-simple-notes-editor .tiptap :not(pre) > code { background: #252525; border: 1px solid #e3e3dd1a; border-radius: 4px; box-decoration-break: clone; padding: 0.1em 0.3em; -webkit-box-decoration-break: clone; }
+.bb-simple-notes-editor .tiptap pre {
+  background: #1e1e1e;
+  border: 0;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 13px;
+  left: 50%;
+  line-height: 19.5px;
+  margin: 1rem 0;
+  max-width: none;
+  overflow-x: auto;
+  padding: 12.75px 17px;
+  position: relative;
+  transform: translateX(-50%);
+  white-space: pre;
+  width: min(calc(100ch + 34px), calc(100cqw - 64px));
+  word-break: normal;
+}
+.bb-simple-notes-editor .tiptap pre code { background: transparent; border: 0; display: inline-block; font-size: inherit; line-height: inherit; overflow-wrap: normal; padding: 0; white-space: pre; word-break: normal; }
+.bb-simple-notes-editor .tiptap img { display: block; max-width: 100%; max-height: 38rem; margin: 1.75rem auto; border-radius: 4px; border: 1px solid #e3e3dd1a; }
+.bb-simple-notes-editor .tiptap .tableWrapper { margin: 1.75rem 0; overflow-x: auto; }
+.bb-simple-notes-editor .tiptap table { width: 100%; border: 0; border-collapse: collapse; border-radius: 0; table-layout: fixed; font-size: 0.875em; line-height: 1.3; }
+.bb-simple-notes-editor .tiptap th,
+.bb-simple-notes-editor .tiptap td { position: relative; min-width: 6rem; border: 0; border-bottom: 1px solid #e3e3dd11; padding: 0.25em 0.625em 0.25em 0; text-align: left; vertical-align: top; }
+.bb-simple-notes-editor .tiptap th { font-weight: 600; }
+.bb-simple-notes-editor .tiptap :is(th, td) > p { margin-top: 0; }
+.bb-simple-notes-editor .tiptap :is(th, td) > p + p { margin-top: 0.65em; }
+.bb-simple-notes-editor .tiptap .selectedCell::after { position: absolute; inset: 0; z-index: 2; pointer-events: none; content: ""; background: color-mix(in oklab, var(--primary) 14%, transparent); }
+.bb-simple-notes-editor .tiptap .column-resize-handle { position: absolute; top: 0; right: -2px; bottom: -1px; width: 4px; z-index: 3; pointer-events: none; background: var(--primary); }
+.bb-simple-notes-editor .tiptap.resize-cursor { cursor: col-resize; }
+.bb-simple-notes-editor .tiptap hr { border: 0; border-top: 1px solid #e3e3dd11; margin: 1.75rem 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] { list-style: none; padding-inline-start: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] ul[data-type="taskList"] { margin-top: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-top: 0.5em; margin-inline-start: 0; padding-left: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > label { flex: 0 0 auto; display: inline-flex; align-items: center; height: 1.5em; user-select: none; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { line-height: 1.5; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p:first-child { margin-top: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] { display: block; width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; margin: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: #e3e3ddbd; text-decoration: line-through; }
+.bb-simple-notes-editor .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #e3e3ddbd; }
+.bb-simple-notes-editor .tiptap ::selection { background: #404040; }
+.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid #e3e3dd1a; border-radius:4px; background:#1e1e1e; }
+.simple-html-embed-header { border-bottom:1px solid #e3e3dd11; background:#262626; padding:.45rem .7rem; color:#e3e3ddbd; font:11px "Berkeley Mono",var(--font-mono,monospace); }
+.simple-html-embed iframe { display:block; width:100%; border:0; background:white; }
+.bb-docs-panel .tiptap { max-width: none; padding: 1rem 0 3rem; font-size: 14px; }
+@media (max-width: 47.999rem) { .bb-simple-notes-editor .tiptap { padding-inline: 1.25rem; font-size: 17px; } }
+`;
+
+function ensureEditorStyles(): void {
+  const existing = document.head.querySelector<HTMLStyleElement>(`[${STYLE_MARKER}]`);
+  if (existing) {
+    existing.textContent = EDITOR_CSS;
+    return;
+  }
+  const style = document.createElement("style");
+  style.setAttribute(STYLE_MARKER, "");
+  style.textContent = EDITOR_CSS;
+  document.head.append(style);
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -114,6 +415,183 @@ function fileToBase64(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
+}
+
+function TiptapEditor(props: {
+  initialValue: string;
+  previewBaseUrl: string;
+  notePath: string;
+  onUpload(file: File): Promise<{ markdownPath: string }>;
+  onFirstRender(markdown: string): void;
+  onMarkdownChange(markdown: string): void;
+  value?: string;
+  baseMarkdown?: string | null;
+  inline?: boolean;
+  disabled?: boolean;
+  onFocusChange?(focused: boolean): void;
+}) {
+  const {
+    initialValue,
+    previewBaseUrl,
+    notePath,
+    value,
+    baseMarkdown = null,
+    inline = false,
+    disabled = false,
+  } = props;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const baselineRef = useRef<ProseMirrorNode | null>(null);
+  const sourceRef = useRef(initialValue);
+  const latest = useRef(props);
+  latest.current = props;
+  const serializeRef = useRef<() => string>(() => "");
+  const setBase = (editor: Editor) => {
+    if (latest.current.baseMarkdown == null) baselineRef.current = null;
+    else {
+      const body = parseMarkdownDocument(latest.current.baseMarkdown).body;
+      const root = new window.DOMParser().parseFromString(
+        editor.storage.markdown.parser.parse(displayMarkdown(body, previewBaseUrl, notePath)),
+        "text/html",
+      ).body;
+      baselineRef.current = ProseMirrorDOMParser.fromSchema(editor.schema).parse(root);
+    }
+    editor.view.dispatch(editor.state.tr.setMeta(proposalDiffKey, { refresh: true }));
+  };
+
+  useEffect(() => {
+    ensureEditorStyles();
+    if (!rootRef.current) return;
+    sourceRef.current = latest.current.value ?? initialValue;
+    const markdownDocument = parseMarkdownDocument(sourceRef.current);
+    let editor: Editor;
+    const upload = async (file: File) => {
+      if (!file.type.startsWith("image/")) return false;
+      const result = await latest.current.onUpload(file);
+      editor
+        .chain()
+        .focus()
+        .setImage({
+          src: previewUrl(previewBaseUrl, notePath, result.markdownPath),
+          alt: file.name,
+        })
+        .run();
+      return true;
+    };
+    editor = new Editor({
+      element: rootRef.current,
+      extensions: [
+        StarterKit,
+        createProposalDiff({ getBaseDocument: () => baselineRef.current }),
+        Link.configure({ openOnClick: false, autolink: true }),
+        Image.configure({ allowBase64: false }),
+        TaskList,
+        TaskItem.configure({ nested: true }),
+        Table.configure({ resizable: true, lastColumnResizable: false }),
+        TableRow,
+        TableHeader,
+        TableCell,
+        MarkdownTaskInput,
+        HtmlEmbed.configure({ baseUrl: previewBaseUrl, notePath }),
+        Placeholder.configure({ placeholder: "Start writing…" }),
+        Markdown.configure({
+          html: true,
+          tightLists: true,
+          bulletListMarker: "-",
+          linkify: true,
+        }),
+      ],
+      content: displayMarkdown(markdownDocument.body, previewBaseUrl, notePath),
+      autofocus: inline ? false : "end",
+      editable: !disabled,
+      onFocus: () => latest.current.onFocusChange?.(true),
+      onBlur: () => latest.current.onFocusChange?.(false),
+      editorProps: {
+        attributes: {
+          role: "textbox",
+          "aria-label": "Document content",
+          "aria-multiline": "true",
+        },
+        handleKeyDown(view, event) {
+          if (!inline || event.key !== "Escape") return false;
+          view.dom.blur();
+          return true;
+        },
+        handlePaste(_view, event) {
+          const file = [...(event.clipboardData?.files ?? [])].find((candidate) =>
+            candidate.type.startsWith("image/"),
+          );
+          if (!file) return false;
+          void upload(file);
+          return true;
+        },
+        handleDrop(_view, event) {
+          const file = [...(event.dataTransfer?.files ?? [])].find((candidate) =>
+            candidate.type.startsWith("image/"),
+          );
+          if (!file) return false;
+          event.preventDefault();
+          void upload(file);
+          return true;
+        },
+      },
+    });
+    editorRef.current = editor;
+    setBase(editor);
+    const getMarkdown = () => {
+      const current = parseMarkdownDocument(sourceRef.current);
+      const leadingBreaks = current.frontmatter
+        ? (/^(?:\r?\n)*/.exec(current.body)?.[0] ?? "")
+        : "";
+      return (
+        current.frontmatter +
+        leadingBreaks +
+        storedMarkdown(editor.storage.markdown.getMarkdown(), previewBaseUrl, notePath)
+      );
+    };
+    serializeRef.current = getMarkdown;
+    latest.current.onFirstRender(getMarkdown());
+    editor.on("update", () => latest.current.onMarkdownChange(getMarkdown()));
+    return () => {
+      editor.destroy();
+      editorRef.current = null;
+    };
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [initialValue, notePath, previewBaseUrl, inline]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || value === undefined) return;
+    if (value !== sourceRef.current && value !== serializeRef.current()) {
+      const { from, to } = editor.state.selection;
+      const focused = editor.isFocused;
+      editor.commands.setContent(
+        displayMarkdown(parseMarkdownDocument(value).body, previewBaseUrl, notePath),
+        false,
+      );
+      if (focused)
+        editor.commands.setTextSelection({
+          from: Math.min(from, editor.state.doc.content.size),
+          to: Math.min(to, editor.state.doc.content.size),
+        });
+    }
+    sourceRef.current = value;
+  }, [value, notePath, previewBaseUrl]);
+  useEffect(() => {
+    if (editorRef.current) setBase(editorRef.current);
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [baseMarkdown]);
+  useEffect(() => {
+    editorRef.current?.setEditable(!disabled, false);
+  }, [disabled]);
+
+  return (
+    <div
+      ref={rootRef}
+      data-inline={inline}
+      className="bb-simple-notes-editor min-h-0 flex-1 overflow-y-auto text-sm"
+    />
+  );
 }
 
 type DocsRpcClient = ReturnType<typeof useRpc<typeof docsRpcContract>>;
@@ -179,7 +657,7 @@ function refreshNotebookStore(
     })
     .catch((error: unknown) => {
       if (requestId !== store.requestId || notebookStores.get(store.vaultId) !== store) return;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       if (store.data === null) store.error = message;
       else store.data = { ...store.data, error: message };
       notifyNotebookStore(store);
@@ -255,7 +733,7 @@ function useNotebook(vaultId: string | null) {
 function DocumentSkeleton() {
   return (
     <DelayedLoading>
-      <output className="min-w-0 flex-1 overflow-hidden" aria-label="Loading document">
+      <output className="block min-w-0 flex-1 overflow-hidden" aria-label="Loading document">
         <span className="sr-only">Loading…</span>
         <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12">
           <div className="space-y-4">
@@ -296,7 +774,7 @@ interface DocumentRef {
 }
 
 function documentTitle(path: string): string {
-  return (path.split("/").at(-1) ?? path).replace(/\.(mdx?|markdown|html?)$/i, "");
+  return (path.split("/").at(-1) ?? path).replace(/\.(md|markdown|html?)$/i, "");
 }
 
 function parseDocumentRef(value: unknown): DocumentRef | null {
@@ -317,10 +795,255 @@ function parseDocumentRef(value: unknown): DocumentRef | null {
     !path ||
     path.startsWith("/") ||
     path.split("/").some((part) => !part || part === "." || part === "..") ||
-    !/\.(mdx?|markdown|html?)$/i.test(path)
+    !/\.(md|markdown|html?)$/i.test(path)
   )
     return null;
   return { vaultId, path, title };
+}
+
+function DocumentAction({
+  label,
+  icon,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  disabled?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">
+          <button
+            type="button"
+            aria-label={label}
+            disabled={disabled}
+            onClick={onClick}
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40"
+          >
+            <Icon name={icon} className="size-3" />
+          </button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function InlineDocument({ document, openInTab }: { document: DocumentRef; openInTab?(): void }) {
+  const { state, session } = useDocumentSession(document.vaultId, document.path);
+  const rpc = useRpc<typeof docsRpcContract>();
+  const composer = useComposer();
+  const [editing, setEditing] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!openInTab || !content) return;
+    const measure = () => setTruncated(content.getBoundingClientRect().height > 400);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [state.loaded, openInTab]);
+  const pending = state.proposal?.status === "pending" ? state.proposal : null;
+  const stale = pending !== null && pending.baseSha256 !== state.sha256;
+  const undo =
+    state.proposal &&
+    ((state.proposal.status === "accepted" && state.proposal.resolvedSha256 === state.sha256) ||
+      (state.proposal.status === "rejected" && state.proposal.baseSha256 === state.sha256));
+  const redo = state.proposal?.status === "undone" && state.proposal.baseSha256 === state.sha256;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(state.draft);
+      toast.success("Document copied");
+    } catch {
+      toast.error("Could not copy the document");
+    }
+  };
+  const ask = async () => {
+    setAsking(true);
+    setAskError(null);
+    try {
+      await session.flush();
+      composer.updateText((current) => `${current}${current.trim() ? "\n\n" : ""}Update `);
+      composer.insertMention({
+        provider: "note",
+        id: `${document.vaultId}:${document.path}`,
+        label: document.title,
+      });
+      composer.focus();
+    } catch (error) {
+      setAskError(errorMessage(error));
+    } finally {
+      setAsking(false);
+    }
+  };
+  const baseMetadata = pending ? parseMarkdownDocument(pending.baseContent).frontmatter : "";
+  const candidateMetadata = pending ? parseMarkdownDocument(state.draft).frontmatter : "";
+  return (
+    <TooltipProvider delayDuration={200}>
+      <section
+        aria-label={document.title}
+        className="my-2 min-w-0 overflow-hidden rounded-lg border border-border bg-background"
+      >
+        <header className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="shrink-0 font-semibold">Docs</span>
+            <span className="truncate opacity-70">{document.title}</span>
+          </div>
+          {(state.busy || state.saving || asking) && (
+            <output className="inline-flex size-5 shrink-0 items-center justify-center">
+              <Icon name="Loading" className="size-3 animate-spin" />
+              <span className="sr-only">Updating document…</span>
+            </output>
+          )}
+          <div
+            className="flex shrink-0 items-center gap-0.5"
+            role="toolbar"
+            aria-label="Document actions"
+          >
+            {pending && (
+              <>
+                <DocumentAction
+                  label="Accept"
+                  icon="Check"
+                  disabled={state.busy || state.saving || stale}
+                  onClick={() => void session.resolve("accept")}
+                />
+                <DocumentAction
+                  label="Reject"
+                  icon="X"
+                  disabled={state.busy}
+                  onClick={() => void session.resolve("reject")}
+                />
+              </>
+            )}
+            {undo && !state.dirty && (
+              <DocumentAction
+                label="Undo"
+                icon="ArrowTurnBackward"
+                disabled={state.busy}
+                onClick={() => void session.resolve("undo")}
+              />
+            )}
+            {redo && !state.dirty && (
+              <DocumentAction
+                label="Redo"
+                icon="ArrowTurnForward"
+                disabled={state.busy}
+                onClick={() => void session.resolve("redo")}
+              />
+            )}
+            <DocumentAction
+              label="Ask for changes"
+              icon="MessageSquare"
+              disabled={!state.loaded || state.busy || asking}
+              onClick={() => void ask()}
+            />
+            <DocumentAction
+              label="Copy"
+              icon="Copy"
+              disabled={!state.loaded}
+              onClick={() => void copy()}
+            />
+            {openInTab && (
+              <>
+                <span className="mx-1 h-4 border-l border-border" />
+                <DocumentAction label="Open in tab" icon="ExternalLink" onClick={openInTab} />
+              </>
+            )}
+          </div>
+        </header>
+        {(state.error || askError) && (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-destructive" role="alert">
+            <span>{state.error || askError}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                void (state.dirty ? session.flush() : session.refresh()).catch(() => undefined)
+              }
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+        {stale && (
+          <p className="px-4 py-2 text-xs text-muted-foreground">
+            This document changed. Ask for an updated proposal before accepting.
+          </p>
+        )}
+        <div
+          className="relative"
+          style={openInTab ? { maxHeight: 400, overflow: "clip" } : undefined}
+        >
+          {!state.loaded ? (
+            <DocumentSkeleton />
+          ) : (
+            <>
+              <div
+                ref={contentRef}
+                data-editing={editing && !truncated}
+                className="min-w-0 data-[editing=true]:bg-muted/10 data-[editing=true]:ring-1 data-[editing=true]:ring-inset data-[editing=true]:ring-ring/50"
+              >
+                {pending && baseMetadata !== candidateMetadata && (
+                  <div className="px-6 pt-4 text-xs">
+                    <p className="mb-2 font-medium">Document metadata</p>
+                    {baseMetadata && (
+                      <pre className="whitespace-pre-wrap bg-diff-removed/10 text-diff-removed">
+                        <del>{baseMetadata}</del>
+                      </pre>
+                    )}
+                    {candidateMetadata && (
+                      <pre className="whitespace-pre-wrap bg-diff-added/10 text-diff-added">
+                        {candidateMetadata}
+                      </pre>
+                    )}
+                  </div>
+                )}
+                <TiptapEditor
+                  initialValue=""
+                  value={state.draft}
+                  baseMarkdown={pending?.baseContent ?? null}
+                  inline
+                  disabled={state.busy || truncated}
+                  previewBaseUrl={state.previewBaseUrl}
+                  notePath={document.path}
+                  onFocusChange={setEditing}
+                  onFirstRender={() => undefined}
+                  onMarkdownChange={session.edit}
+                  onUpload={async (file) => {
+                    const result = await rpc.call("uploadAttachment", {
+                      vaultId: document.vaultId,
+                      notePath: document.path,
+                      name: file.name,
+                      content: await fileToBase64(file),
+                    });
+                    return { markdownPath: result.markdownPath };
+                  }}
+                />
+              </div>
+              {truncated && openInTab && (
+                <button
+                  type="button"
+                  aria-label={`Open ${document.title} in tab`}
+                  className="absolute inset-0 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                  onClick={openInTab}
+                >
+                  <span className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-background via-background/95 to-transparent" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+    </TooltipProvider>
+  );
 }
 
 function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
@@ -349,6 +1072,8 @@ function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
     });
     if (!opened) openInDocs();
   };
+  if (!/\.html?$/i.test(document.path))
+    return <InlineDocument document={document} openInTab={openPreview} />;
   return (
     <div className="my-3 flex h-11 items-center gap-1 rounded-lg border border-border bg-card px-2 shadow-sm transition-colors hover:bg-state-hover">
       <button
@@ -357,10 +1082,7 @@ function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
         onClick={openPreview}
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          <HugeiconsIcon
-            icon={/\.html?$/i.test(document.path) ? HtmlFile01Icon : File01Icon}
-            className="size-4"
-          />
+          <HugeiconsIcon icon={HtmlFile01Icon} className="size-4" />
         </span>
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{document.title}</span>
       </button>
@@ -377,7 +1099,7 @@ function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
   );
 }
 
-function HtmlDocumentPanelBody({ document }: { document: DocumentRef }) {
+function HtmlPreview({ vaultId, path, title, panel = false }: DocumentRef & { panel?: boolean }) {
   const rpc = useRpc<typeof docsRpcContract>();
   const [state, setState] = useState<PreviewLease | { error: string } | null>(null);
   useEffect(() => {
@@ -385,8 +1107,8 @@ function HtmlDocumentPanelBody({ document }: { document: DocumentRef }) {
     setState(null);
     rpc
       .call("preparePreview", {
-        vaultId: document.vaultId,
-        path: document.path,
+        vaultId,
+        path,
       })
       .then((lease) => {
         if (active) setState(lease);
@@ -394,34 +1116,64 @@ function HtmlDocumentPanelBody({ document }: { document: DocumentRef }) {
       .catch((error: unknown) => {
         if (active)
           setState({
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
           });
       });
     return () => {
       active = false;
     };
-  }, [document.path, document.vaultId, rpc]);
+  }, [path, vaultId, rpc]);
   if (!state) return <DocumentSkeleton />;
-  if ("error" in state) return <div className="text-sm text-destructive">{state.error}</div>;
+  if ("error" in state)
+    return (
+      <div className={`text-sm text-destructive ${panel ? "" : "min-w-0 flex-1 p-6"}`}>
+        {state.error}
+      </div>
+    );
   return (
     <iframe
-      className="min-h-[32rem] flex-1 border-0 bg-white"
+      className={`${panel ? "min-h-[32rem]" : "min-h-0"} flex-1 border-0 bg-white`}
       sandbox="allow-scripts"
-      title={document.title}
-      src={`${state.baseUrl}/${encodePath(document.path)}`}
+      title={title}
+      src={`${state.baseUrl}/${encodePath(path)}`}
     />
+  );
+}
+
+function DocumentPicker() {
+  const [subPath, setSubPath] = useState("");
+  const navigate = useBbNavigate();
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <p className="text-sm text-muted-foreground">Choose a document to open.</p>
+      <NotesWorkspace
+        subPath={subPath}
+        navigationOnly
+        onNavigate={(next) => {
+          const [vaultId, ...parts] = next.split("/");
+          const filePath = parts.join("/");
+          if (vaultId && filePath) {
+            const title = (filePath.split("/").pop() ?? filePath).replace(
+              /\.(md|markdown|html?)$/i,
+              "",
+            );
+            navigate.openThreadPanel({
+              actionId: "document",
+              title,
+              params: { vaultId, path: filePath, title },
+            });
+          } else setSubPath(next);
+        }}
+      />
+    </div>
   );
 }
 
 function DocumentPanel({ params }: PluginThreadPanelProps) {
   const document = parseDocumentRef(params);
   const navigate = useBbNavigate();
-  if (!document)
-    return (
-      <div className="text-sm text-muted-foreground">
-        Open a Docs card from a message to edit it here.
-      </div>
-    );
+  if (!document) return <DocumentPicker />;
+  if (!/\.html?$/i.test(document.path)) return <InlineDocument document={document} />;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border pb-2">
@@ -440,17 +1192,89 @@ function DocumentPanel({ params }: PluginThreadPanelProps) {
           <HugeiconsIcon icon={ArrowUpRight01Icon} />
         </Button>
       </div>
-      {/\.html?$/i.test(document.path) ? (
-        <HtmlDocumentPanelBody document={document} />
-      ) : (
-        <NotePane
-          vaultId={document.vaultId}
-          notePath={document.path}
-          onChanged={() => undefined}
-          onRenamed={() => undefined}
-          renameToTitle={false}
-        />
+      <HtmlPreview {...document} panel />
+    </div>
+  );
+}
+
+function SavedDocumentEditor({
+  io,
+  onUpload,
+  onReload,
+  readSha256,
+  errorHint = "",
+}: {
+  io: DocumentIO;
+  onUpload(file: File): Promise<{ markdownPath: string }>;
+  onReload?(): void;
+  /** Polls files Docs cannot watch; a clean document refreshes, a dirty one reports a conflict. */
+  readSha256?(): Promise<string>;
+  errorHint?: string;
+}) {
+  const { state, session } = useSavedDocument(io);
+  const loadedSha256 = state.loaded ? state.sha256 : null;
+  useEffect(() => {
+    if (!readSha256 || loadedSha256 === null) return;
+    let pending = false;
+    const timer = setInterval(() => {
+      if (pending || document.visibilityState === "hidden") return;
+      pending = true;
+      readSha256()
+        .then((sha256) => {
+          if (sha256 !== loadedSha256) void session.refresh();
+        })
+        // A temporary host disconnect keeps the editable document; the next poll retries.
+        .catch(() => undefined)
+        .finally(() => {
+          pending = false;
+        });
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [loadedSha256, readSha256, session]);
+  if (!state.loaded)
+    return state.error ? (
+      <div className="min-w-0 flex-1 p-6 text-sm text-destructive">
+        {state.error}
+        {errorHint}
+      </div>
+    ) : (
+      <DocumentSkeleton />
+    );
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {state.conflict && (
+        <div className="flex items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs">
+          Changed on disk.
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => (onReload ? onReload() : void session.reload())}
+          >
+            Reload
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void session.flush(true).catch(() => undefined)}
+          >
+            Overwrite
+          </Button>
+        </div>
       )}
+      {state.error && !state.conflict && (
+        <div className="border-b border-border px-4 py-2 text-xs text-destructive">
+          {state.error}
+        </div>
+      )}
+      <TiptapEditor
+        initialValue={state.initialContent}
+        value={state.draft}
+        previewBaseUrl={state.previewBaseUrl}
+        notePath={state.previewPath}
+        onUpload={onUpload}
+        onFirstRender={session.initialize}
+        onMarkdownChange={session.edit}
+      />
     </div>
   );
 }
@@ -460,183 +1284,63 @@ function NotePane({
   notePath,
   onChanged,
   onRenamed,
-  renameToTitle = true,
 }: {
   vaultId: string;
   notePath: string;
   onChanged(): void;
   onRenamed(path: string): void;
-  renameToTitle?: boolean;
 }) {
   const rpc = useRpc<typeof docsRpcContract>();
-  const { data: notebook } = useNotebook(vaultId);
-  const [state, setState] = useState<
-    { content: string; lease: PreviewLease } | { error: string } | null
-  >(null);
-  const [conflict, setConflict] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const markdownRef = useRef("");
-  const savedRef = useRef("");
-  const shaRef = useRef<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savingRef = useRef(false);
-  const pathRef = useRef(notePath);
-  const changedRef = useRef(onChanged);
-  changedRef.current = onChanged;
-  const renamedRef = useRef(onRenamed);
-  renamedRef.current = onRenamed;
-
-  useEffect(() => {
-    let active = true;
-    setState(null);
-    Promise.all([
-      rpc.call("readNote", { vaultId, path: notePath }),
-      rpc.call("preparePreview", { vaultId, path: notePath }),
-    ])
-      .then(([file, lease]) => {
-        if (!active) return;
-        pathRef.current = notePath;
-        markdownRef.current = file.content;
-        savedRef.current = file.content;
-        shaRef.current = file.sha256;
-        setState({ content: file.content, lease });
-      })
-      .catch((error: unknown) => {
-        if (active)
-          setState({
-            error: error instanceof Error ? error.message : String(error),
-          });
-      });
-    return () => {
-      active = false;
-    };
-  }, [notePath, rpc, vaultId]);
-
-  const save = useCallback(
-    async (force = false) => {
-      if (savingRef.current || (!force && markdownRef.current === savedRef.current)) return;
-      savingRef.current = true;
-      setSaveError(null);
-      const content = markdownRef.current;
-      try {
-        const value = await rpc.call("saveNote", {
+  const callbacks = useRef({ onChanged, onRenamed });
+  callbacks.current = { onChanged, onRenamed };
+  const { io, upload } = useMemo(() => {
+    let path = notePath;
+    const io: DocumentIO = {
+      delay: 700,
+      read: async () => {
+        const [file, lease] = await Promise.all([
+          rpc.call("readNote", { vaultId, path }),
+          rpc.call("preparePreview", { vaultId, path }),
+        ]);
+        return {
+          content: file.content,
+          sha256: file.sha256,
+          previewBaseUrl: lease.baseUrl,
+          previewPath: path,
+          proposal: null,
+        };
+      },
+      write: (content, expectedSha256) =>
+        rpc.call("saveNote", {
           vaultId,
-          path: pathRef.current,
+          path,
           content,
-          ...(!force && shaRef.current ? { expectedSha256: shaRef.current } : {}),
-        });
-        const result = value;
-        if (result.outcome === "conflict") {
-          setConflict(true);
-          return;
+          ...(expectedSha256 === null ? {} : { expectedSha256 }),
+        }),
+      afterSave: async () => {
+        callbacks.current.onChanged();
+        const renamed = await rpc.call("renameToTitle", { vaultId, path });
+        if (renamed.path !== path) {
+          path = renamed.path;
+          callbacks.current.onRenamed(path);
         }
-        savedRef.current = content;
-        shaRef.current = result.sha256;
-        setConflict(false);
-        changedRef.current();
-        if (renameToTitle) {
-          const renamed = await rpc.call("renameToTitle", {
-            vaultId,
-            path: pathRef.current,
-          });
-          if (renamed.path !== pathRef.current) {
-            pathRef.current = renamed.path;
-            renamedRef.current(renamed.path);
-          }
-        }
-      } catch (error) {
-        setSaveError(error instanceof Error ? error.message : String(error));
-      } finally {
-        savingRef.current = false;
-      }
-    },
-    [renameToTitle, rpc, vaultId],
-  );
-
-  const scheduleSave = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void save(), 700);
-  }, [save]);
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      void save();
-    },
-    [save],
-  );
-
-  if (!state) return <DocumentSkeleton />;
-  if ("error" in state)
-    return <div className="min-w-0 flex-1 p-6 text-sm text-destructive">{state.error}</div>;
-
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {conflict ? (
-        <div className="flex items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs">
-          Changed on disk.
-          <Button size="sm" variant="ghost" onClick={() => location.reload()}>
-            Reload
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void save(true)}>
-            Overwrite
-          </Button>
-        </div>
-      ) : null}
-      {saveError ? (
-        <div className="border-b border-border px-4 py-2 text-xs text-destructive">{saveError}</div>
-      ) : null}
-      <MarkdownEditor
-        initialValue={state.content}
-        previewBaseUrl={state.lease.baseUrl}
-        notePath={notePath}
-        canvasSource={
-          notebook
-            ? {
-                kind: "host",
-                hostId: notebook.vault.hostId,
-                path: `${notebook.vault.rootPath.replace(/[\\/]$/, "")}/${notePath}`,
-              }
-            : undefined
-        }
-        onUpload={async (file) => {
-          const content = await fileToBase64(file);
-          const value = await rpc.call("uploadAttachment", {
-            vaultId,
-            notePath: pathRef.current,
-            name: file.name,
-            content,
-          });
-          return { markdownPath: value.markdownPath };
-        }}
-        onFirstRender={(markdown) => {
-          markdownRef.current = markdown;
-          savedRef.current = markdown;
-        }}
-        onProposalApplied={({ content, sha256 }) => {
-          if (timerRef.current) clearTimeout(timerRef.current);
-          markdownRef.current = content;
-          savedRef.current = content;
-          shaRef.current = sha256;
-          setState((previous) =>
-            previous && !("error" in previous) ? { ...previous, content } : previous,
-          );
-        }}
-        onMarkdownChange={(markdown) => {
-          markdownRef.current = markdown;
-          scheduleSave();
-        }}
-      />
-    </div>
-  );
+      },
+    };
+    const upload = async (file: File) => {
+      const result = await rpc.call("uploadAttachment", {
+        vaultId,
+        notePath: path,
+        name: file.name,
+        content: await fileToBase64(file),
+      });
+      return { markdownPath: result.markdownPath };
+    };
+    return { io, upload };
+  }, [rpc, vaultId, notePath]);
+  return <SavedDocumentEditor io={io} onUpload={upload} onReload={() => location.reload()} />;
 }
 
-function DocsFileOpener(props: PluginFileOpenerProps) {
-  return <DocsFileOpenerSession key={JSON.stringify([props.source, props.path])} {...props} />;
-}
-
-function DocsFileOpenerSession({ path: filePath, source }: PluginFileOpenerProps) {
-  const canvasSourceResult = narrowSource(source, filePath);
+function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
   const rpc = useRpc<typeof docsRpcContract>();
   const navigate = useBbNavigate();
   const liveFileTarget = useMemo<ExperimentalLiveFileTarget | null>(() => {
@@ -681,128 +1385,36 @@ function DocsFileOpenerSession({ path: filePath, source }: PluginFileOpenerProps
       source.threadId,
     ],
   );
-  const [state, setState] = useState<
-    { content: string; lease: PreviewLease; previewPath: string } | { error: string } | null
-  >(null);
-  const [conflict, setConflict] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
-  const markdownRef = useRef("");
-  const savedRef = useRef("");
-  const shaRef = useRef<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savingRef = useRef(false);
-
-  useEffect(() => {
-    let active = true;
-    setState(null);
-    setConflict(false);
-    setSaveError(null);
-    void rpc
-      .call("openFile", { source: openerSource, path: filePath })
-      .then(({ file, preview, previewPath }) => {
-        if (!active) return;
-        markdownRef.current = file.content;
-        savedRef.current = file.content;
-        shaRef.current = file.sha256;
-        setState({ content: file.content, lease: preview, previewPath });
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setState({
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [filePath, openerSource, reloadNonce, rpc]);
-
-  useEffect(() => {
-    if (!state || "error" in state) return;
-    let active = true;
-    let pending = false;
-    const timer = setInterval(async () => {
-      if (pending || document.visibilityState === "hidden") return;
-      pending = true;
-      const knownSha = shaRef.current;
-      try {
-        const file = await rpc.call("readOpenedFile", { source: openerSource, path: filePath });
-        if (!active || shaRef.current !== knownSha || file.sha256 === knownSha) return;
-        if (savingRef.current || markdownRef.current !== savedRef.current) {
-          setConflict(true);
-          return;
-        }
-        markdownRef.current = file.content;
-        savedRef.current = file.content;
-        shaRef.current = file.sha256;
-        setState((previous) =>
-          previous && !("error" in previous) ? { ...previous, content: file.content } : previous,
-        );
-      } catch {
-        // Keep the editable document during a temporary host disconnect. The
-        // next read retries, and a write still reports conflicts or failures.
-      } finally {
-        pending = false;
-      }
-    }, 1500);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [filePath, openerSource, rpc, state]);
-
-  const save = useCallback(
-    async (force = false) => {
-      if (savingRef.current || (!force && markdownRef.current === savedRef.current)) return;
-      savingRef.current = true;
-      setSaveError(null);
-      const content = markdownRef.current;
-      try {
-        const result = await rpc.call("saveOpenedFile", {
+  const io = useMemo<DocumentIO>(
+    () => ({
+      delay: 700,
+      read: async () => {
+        const { file, preview, previewPath } = await rpc.call("openFile", {
+          source: openerSource,
+          path: filePath,
+        });
+        return {
+          content: file.content,
+          sha256: file.sha256,
+          previewBaseUrl: preview.baseUrl,
+          previewPath,
+          proposal: null,
+        };
+      },
+      write: (content, expectedSha256) =>
+        rpc.call("saveOpenedFile", {
           source: openerSource,
           path: filePath,
           content,
-          ...(!force && shaRef.current ? { expectedSha256: shaRef.current } : {}),
-        });
-        if (result.outcome === "conflict") {
-          setConflict(true);
-          return;
-        }
-        savedRef.current = content;
-        shaRef.current = result.sha256;
-        setConflict(false);
-      } catch (error) {
-        setSaveError(error instanceof Error ? error.message : String(error));
-      } finally {
-        savingRef.current = false;
-      }
-    },
-    [filePath, openerSource, rpc],
+          ...(expectedSha256 === null ? {} : { expectedSha256 }),
+        }),
+    }),
+    [rpc, openerSource, filePath],
   );
-
-  const scheduleSave = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void save(), 700);
-  }, [save]);
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      void save();
-    },
-    [save],
+  const readSha256 = useCallback(
+    async () => (await rpc.call("readOpenedFile", { source: openerSource, path: filePath })).sha256,
+    [rpc, openerSource, filePath],
   );
-
-  if (!state) return <DocumentSkeleton />;
-  if ("error" in state) {
-    return (
-      <div className="min-w-0 flex-1 p-6 text-sm text-destructive">
-        {state.error} — use the tab&apos;s Open with menu to choose another viewer.
-      </div>
-    );
-  }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {liveFileTarget === null ? null : (
@@ -827,73 +1439,15 @@ function DocsFileOpenerSession({ path: filePath, source }: PluginFileOpenerProps
           </Button>
         </div>
       )}
-      {conflict ? (
-        <div className="flex items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs">
-          Changed on disk.
-          <Button size="sm" variant="ghost" onClick={() => setReloadNonce((value) => value + 1)}>
-            Reload
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void save(true)}>
-            Overwrite
-          </Button>
-        </div>
-      ) : null}
-      {saveError ? (
-        <div className="border-b border-border px-4 py-2 text-xs text-destructive">{saveError}</div>
-      ) : null}
-      <MarkdownEditor
-        initialValue={state.content}
-        previewBaseUrl={state.lease.baseUrl}
-        notePath={state.previewPath}
-        canvasSource={canvasSourceResult.ok ? canvasSourceResult.value : undefined}
+      <SavedDocumentEditor
+        io={io}
+        readSha256={readSha256}
+        errorHint=" — use the tab's Open with menu to choose another viewer."
         onUpload={async () => {
           throw new Error("Add this file to a Docs vault before uploading images");
         }}
-        onFirstRender={(markdown) => {
-          markdownRef.current = markdown;
-          savedRef.current = markdown;
-        }}
-        onProposalApplied={({ content, sha256 }) => {
-          if (timerRef.current) clearTimeout(timerRef.current);
-          markdownRef.current = content;
-          savedRef.current = content;
-          shaRef.current = sha256;
-          setState((previous) =>
-            previous && !("error" in previous) ? { ...previous, content } : previous,
-          );
-        }}
-        onMarkdownChange={(markdown) => {
-          markdownRef.current = markdown;
-          scheduleSave();
-        }}
       />
     </div>
-  );
-}
-
-function HtmlPane({ vaultId, filePath }: { vaultId: string; filePath: string }) {
-  const rpc = useRpc<typeof docsRpcContract>();
-  const [lease, setLease] = useState<PreviewLease | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setLease(null);
-    setError(null);
-    void rpc
-      .call("preparePreview", { vaultId, path: filePath })
-      .then((value) => setLease(value))
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)),
-      );
-  }, [filePath, rpc, vaultId]);
-  if (error) return <div className="min-w-0 flex-1 p-6 text-sm text-destructive">{error}</div>;
-  if (!lease) return <DocumentSkeleton />;
-  return (
-    <iframe
-      className="min-h-0 flex-1 border-0 bg-white"
-      sandbox="allow-scripts"
-      title={filePath}
-      src={`${lease.baseUrl}/${encodePath(filePath)}`}
-    />
   );
 }
 
@@ -982,7 +1536,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
               props.onSearchOpenChange(false);
             }}
           >
-            <HugeiconsIcon icon={Cancel01Icon} />
+            <HugeiconsIcon icon={Cancel01Icon} className="size-4" />
           </Button>
         </>
       ) : null}
@@ -995,7 +1549,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
             aria-label="Search notes"
             onClick={() => props.onSearchOpenChange(true)}
           >
-            <HugeiconsIcon icon={Search01Icon} />
+            <HugeiconsIcon icon={Search01Icon} className="size-4" />
           </Button>
           <Button
             className="size-8"
@@ -1004,7 +1558,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
             aria-label="New note"
             onClick={props.onNewNote}
           >
-            <HugeiconsIcon icon={FileAddIcon} />
+            <HugeiconsIcon icon={FileAddIcon} className="size-4" />
           </Button>
           <Button
             className="size-8"
@@ -1013,7 +1567,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
             aria-label="New folder"
             onClick={props.onNewFolder}
           >
-            <HugeiconsIcon icon={FolderAddIcon} />
+            <HugeiconsIcon icon={FolderAddIcon} className="size-4" />
           </Button>
           <span className="min-w-0 flex-1" />
         </>
@@ -1084,6 +1638,7 @@ function Tree({
       .map((entry) => (entry.kind === "directory" ? `${entry.path}/` : entry.path));
   }, [notesByPath, orderedEntries, query]);
   const directoryPaths = useMemo(() => treePaths.filter((path) => path.endsWith("/")), [treePaths]);
+  const treeInput = useMemo(() => preparePresortedFileTreeInput(treePaths), [treePaths]);
   const selectedPathRef = useRef(selectedPath);
   selectedPathRef.current = selectedPath;
   const onOpenRef = useRef(onOpen);
@@ -1091,9 +1646,10 @@ function Tree({
   const onMoveFileRef = useRef(onMoveFile);
   onMoveFileRef.current = onMoveFile;
 
+  // Docs orders siblings itself (folders first, then entry order). Pierre's `presorted` flag
+  // re-checks against its own sort, so hand over prepared input it trusts as-is.
   const { model } = useFileTree({
-    paths: treePaths,
-    presorted: true,
+    preparedInput: treeInput,
     initialExpansion: "open",
     initialSelectedPaths: selectedPath ? [selectedPath] : [],
     itemHeight: 28,
@@ -1133,13 +1689,16 @@ function Tree({
   });
 
   useEffect(() => {
-    model.resetPaths(treePaths, { initialExpandedPaths: directoryPaths });
+    model.resetPaths({
+      preparedInput: treeInput,
+      initialExpandedPaths: directoryPaths,
+    });
     const current = selectedPathRef.current;
     if (current && treePaths.includes(current)) {
       for (const path of model.getSelectedPaths()) model.getItem(path)?.deselect();
       model.getItem(current)?.select();
     }
-  }, [directoryPaths, model, treePaths]);
+  }, [directoryPaths, model, treeInput, treePaths]);
 
   useEffect(() => {
     if (selectedPath) {
@@ -1241,7 +1800,7 @@ function Tree({
             aria-label="Add vault"
             onClick={onAddVault}
           >
-            <HugeiconsIcon icon={PlusSignIcon} />
+            <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
           </Button>
         </div>
         {hostUnavailable ? (
@@ -1255,13 +1814,16 @@ function Tree({
   );
 }
 
+const MARKDOWN_PATH = /\.(md|markdown)$/i;
+const MDX_PATH = /\.mdx$/i;
+
 function parseRoute(subPath: string): {
   vaultId: string | null;
   filePath: string | null;
 } {
   if (!subPath) return { vaultId: null, filePath: null };
   const parts = subPath.split("/").map(decodeURIComponent);
-  if (parts.length === 1 && /\.(mdx?|markdown|html?)$/i.test(parts[0] ?? "")) {
+  if (parts.length === 1 && /\.(md|markdown|html?)$/i.test(parts[0] ?? "")) {
     return { vaultId: null, filePath: parts[0] ?? null };
   }
   return {
@@ -1273,9 +1835,24 @@ function parseRoute(subPath: string): {
 function NotesWorkspace({
   subPath,
   navigationOnly,
-}: PluginNavPanelProps & { navigationOnly: boolean }) {
+  onNavigate,
+}: PluginNavPanelProps & {
+  navigationOnly: boolean;
+  onNavigate?(subPath: string, replace?: boolean): void;
+}) {
   const rpc = useRpc<typeof docsRpcContract>();
   const navigate = useBbNavigate();
+  const navigateTo = useCallback(
+    (next: string, replace?: boolean) => {
+      if (onNavigate) onNavigate(next, replace);
+      else
+        navigate.toPluginPanel("docs", {
+          subPath: next,
+          ...(replace === undefined ? {} : { replace }),
+        });
+    },
+    [navigate, onNavigate],
+  );
   const route = parseRoute(subPath);
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -1295,15 +1872,26 @@ function NotesWorkspace({
     [],
   );
 
+  const sdk = useSdk();
+  const vault = data?.vault;
   const open = useCallback(
     (path: string, replace = false) => {
       if (!activeVaultId || !isCurrentVault(activeVaultId)) return;
-      navigate.toPluginPanel("docs", {
-        subPath: `${activeVaultId}/${path}`,
-        replace,
-      });
+      if (!MDX_PATH.test(path) || !vault) {
+        navigateTo(`${activeVaultId}/${path}`, replace);
+        return;
+      }
+      // MDX belongs to whichever plugin bb picks as its file opener (Canvas).
+      void (async () => {
+        const hostId = vault.hostId ?? (await sdk.system.config()).primaryHostId;
+        if (!hostId) return;
+        navigate.experimental_openFilePreview({
+          target: { kind: "host", hostId, path: `${vault.rootPath.replace(/[\\/]$/, "")}/${path}` },
+          location: null,
+        });
+      })().catch((error: unknown) => toast.error(`Could not open ${path}: ${errorMessage(error)}`));
     },
-    [activeVaultId, isCurrentVault, navigate],
+    [activeVaultId, isCurrentVault, navigate, navigateTo, sdk, vault],
   );
 
   if (!data || !activeVaultId) {
@@ -1351,7 +1939,7 @@ function NotesWorkspace({
       setFolderDialogOpen(false);
       refresh();
     } catch (error) {
-      setFolderError(error instanceof Error ? error.message : String(error));
+      setFolderError(errorMessage(error));
     }
   };
 
@@ -1371,11 +1959,9 @@ function NotesWorkspace({
       setVaultRootPath("");
       setVaultHostId("primary");
       setVaultDialogOpen(false);
-      navigate.toPluginPanel("docs", {
-        subPath: value.id,
-      });
+      navigateTo(value.id);
     } catch (error) {
-      setVaultError(error instanceof Error ? error.message : String(error));
+      setVaultError(errorMessage(error));
     }
   };
 
@@ -1388,16 +1974,11 @@ function NotesWorkspace({
       if (!isCurrentVault(activeVaultId)) return;
       refresh();
       if (filePath === path) {
-        navigate.toPluginPanel("docs", {
-          subPath: activeVaultId,
-          replace: true,
-        });
+        navigateTo(activeVaultId, true);
       }
       toast.success(`Deleted ${path}`);
     } catch (error) {
-      toast.error(
-        `Could not delete ${path}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      toast.error(`Could not delete ${path}: ${errorMessage(error)}`);
     }
   };
 
@@ -1419,9 +2000,7 @@ function NotesWorkspace({
           : `Moved ${fileName} to the top level`,
       );
     } catch (error) {
-      toast.error(
-        `Could not move ${fileName}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      toast.error(`Could not move ${fileName}: ${errorMessage(error)}`);
     }
   };
 
@@ -1437,14 +2016,10 @@ function NotesWorkspace({
             onNewFolder={() => setFolderDialogOpen(true)}
             onDeleteFile={(path) => void deleteFile(path)}
             onMoveFile={(sourcePath, targetFolder) => void moveFile(sourcePath, targetFolder)}
-            onVaultChange={(value) => {
-              navigate.toPluginPanel("docs", {
-                subPath: value,
-              });
-            }}
+            onVaultChange={(value) => navigateTo(value)}
             onAddVault={() => setVaultDialogOpen(true)}
           />
-        ) : filePath && /\.(mdx?|markdown)$/i.test(filePath) ? (
+        ) : filePath && MARKDOWN_PATH.test(filePath) ? (
           <NotePane
             key={`${activeVaultId}:${filePath}`}
             vaultId={activeVaultId}
@@ -1456,10 +2031,11 @@ function NotesWorkspace({
             }}
           />
         ) : filePath && /\.html?$/i.test(filePath) ? (
-          <HtmlPane
+          <HtmlPreview
             key={`${activeVaultId}:${filePath}`}
             vaultId={activeVaultId}
-            filePath={filePath}
+            path={filePath}
+            title={filePath}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -1549,7 +2125,7 @@ function NotesWorkspace({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="primary">Primary host</SelectItem>
+                    <SelectItem value="primary">Server machine</SelectItem>
                     {data.hosts.map((host) => (
                       <SelectItem key={host.id} value={host.id}>
                         {host.name} · {host.status}
@@ -1610,7 +2186,7 @@ export default definePluginApp((app) => {
   app.slots.fileOpener({
     id: "docs",
     title: "Docs",
-    extensions: ["md", "mdx", "markdown"],
+    extensions: ["md", "markdown"],
     component: DocsFileOpener,
   });
   app.slots.messageDirective({ id: "docs", component: DocsDirectiveCard });

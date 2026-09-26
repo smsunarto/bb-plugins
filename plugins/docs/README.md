@@ -1,62 +1,58 @@
 # Docs
 
-Docs uses [MDXEditor](https://mdxeditor.dev/) for rich Markdown and MDX editing,
-with the smsunarto Monokai reading theme. It owns `.md`, `.mdx`, `.canvas.mdx`,
-and `.markdown` file rendering throughout bb.
 Docs is a filesystem-first document library for bb. Documents remain ordinary
 Markdown, HTML, and asset files while the plugin adds nested navigation,
 multi-host vaults, rich editing, images, sandboxed HTML, automation, chat
 mentions, and links that open inside a thread.
 
-The fork uses package `bb-plugin-docs` and plugin ID `docs`. bb
-reserves the built-in `simple-notes` ID, so the built-in plugin must be disabled
-before this fork becomes the active owner of the Docs CLI and UI.
+This fork is published as `@smsunarto/bb-plugin-docs` with plugin ID `docs`.
+It keeps upstream's Tiptap editor and proposal review, and adds the smsunarto
+Monokai reading theme, a [Pierre Trees](https://trees.software/) explorer,
+and hidden human-authored folders. bb's built-in Docs (`simple-notes`) claims
+the same `bb docs` command, so installing the fork disables `simple-notes` when
+it is enabled.
 
-The file explorer uses [Pierre Trees](https://trees.software/) for keyboard
-navigation, selection, search results, context actions, and drag-and-drop file
-moves. Host theme tokens keep it visually consistent with bb.
+Forked from [`get-bb/bb/plugins/docs`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/docs).
+Last synced with `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`)
+from base `5c5123d5d94cf673a1dea1bcfaf386c8cd32d392` on 2026-09-26. Shared UI
+under `components/`, `hooks/`, and `lib/` is vendored from the bb plugin
+registry at that tag (`components.json`).
 
 ## Features
 
 - **Vaults on connected hosts:** each vault is a named `{ hostId, rootPath }`
   pair. A new installation starts with a Personal vault at `~/Notes` on the
-  primary host. Manage local and remote vaults from the Docs panel.
+  server machine. Manage local and remote vaults from the Docs panel. When
+  bb removes a host, its vaults and their proposals are deleted, and the
+  Personal vault is recreated if no vault remains.
 - **Nested folders:** the resizable right sidebar recursively displays folders,
-  Markdown documents, and HTML pages. It can be collapsed, and search stays
-  hidden until requested. Human-authored hidden folders such as `.dotfiles`,
-  `.agents`, `.claude`, `.codex`, and `.cursor` are included. Version-control
-  metadata, dependency trees, caches, build outputs, and temporary workspaces
-  stay excluded.
+  Markdown documents, MDX files, and HTML pages. It can be collapsed, and
+  search stays hidden until requested. The Pierre Trees explorer supports
+  keyboard navigation, context actions, and drag-and-drop moves between
+  folders. Human-authored hidden folders such as `.agents`, `.claude`, and
+  `.cursor` are included. Version-control metadata, dependency trees, caches,
+  build outputs, and temporary workspaces stay excluded. MDX files, including
+  `.canvas.mdx`, open through bb's file opener (Canvas) rather than Docs.
 - **Safe host-routed operations:** all list/read/write/mkdir/move/remove calls
   go through `bb.sdk.files` with an explicit vault root. Saves retain SHA-256
   compare-and-swap conflict handling. Local vaults use native filesystem
   watching for immediate UI refreshes; remote or unwatchable vaults fall back
   to polling.
-- **Default Markdown editor:** Docs registers for `.md`, `.mdx`, and
-  `.markdown` files, so it can be selected under Settings → File openers or
-  chosen from a file link's Open with menu. Workspace, absolute host, and
-  thread-storage files retain compare-and-swap saves even when they are outside
-  a Docs vault. Clean open files refresh after external writes; pending drafts keep conflict protection.
+- **Default Markdown editor:** Docs registers for `.md` and `.markdown`
+  files, so it can be selected under Settings → File openers or chosen from a
+  file link's Open with menu. Workspace, absolute host, and thread-storage
+  files retain compare-and-swap saves even when they are outside a Docs vault.
+  Clean open files reload after external writes. Pending edits keep conflict
+  protection.
 - **YAML frontmatter:** an opening fenced block that parses as a YAML mapping
   supplies the document title when it has a string `title`, stays out of the
   rendered body and search preview, and is preserved byte-for-byte when the
   rich editor saves body changes. A document that opens with a thematic break
   instead keeps that content in the editor. Docs leaves the filename unchanged
-  on save when frontmatter sets the title. Otherwise the H1 drives `.md` names; MDX filenames remain stable.
-- **Rich text and source:** toolbar controls cover headings, lists, tasks, links,
-  tables, images, and code blocks. Switch to source mode to edit MDX props,
-  expressions, or imports. Unknown JSX remains editable, and imports and
-  expressions are preserved without executing them. Opening a document alone
-  never writes editor normalization back to disk. Markdown angle-bracket text
-  and bare colon words stay literal. Parse failures automatically open editable
-  source, and source edits still save when rich text cannot parse them. Correct
-  the syntax and switch back to rich text without reopening the document.
-- **Canvas widgets:** `.canvas.mdx` and MDX with known Canvas components keep
-  tables, charts, diffs, and persisted controls through Canvas's existing SDK
-  services. Canvas comments appear below the editor, with block selection,
-  replies, and resolution. Canvas remains the owner of state and comment data.
-- **Tables:** GitHub-flavored Markdown tables have editable cells and controls
-  to insert and remove rows and columns. Saves remain portable Markdown.
+  on save when frontmatter sets the title; otherwise the H1 still drives it.
+- **Tables:** GitHub-flavored Markdown tables render as editable cells. Use Tab
+  and Shift+Tab to move between cells (Tab from the final cell adds a row), and
+  drag column boundaries to resize them. Saves remain portable Markdown.
 - **Images:** paste or drop PNG, JPEG, GIF, WebP, or SVG files into a document.
   Attachments are stored beside it under `_attachments/` and serialized as
   portable relative Markdown image links.
@@ -77,13 +73,16 @@ moves. Host theme tokens keep it visually consistent with bb.
   the selected vault root. HTML responses use `sandbox allow-scripts`, and the
   iframe never receives `allow-same-origin`.
 - **Chat mentions:** `@` searches every vault's titles, previews, filenames,
-  and folders. A selected document resolves to its latest content at send time.
-- **Thread links:** agents can emit a Docs directive that renders as a document
-  card. Clicking the card opens an editable, autosaving document in the thread
-  side panel; its secondary action opens the full Docs editor. The side-panel
-  editor can quote its selection (or full document) into the thread composer or
-  insert a live Docs mention. These composer actions are intentionally absent
-  from the full nav editor and generic file-opener tabs.
+  and folders. Searches share in-flight reads and cache summaries for up to
+  ten seconds. Docs edits and local filesystem notifications invalidate the
+  affected vault's cache. A selected document resolves to its latest content
+  at send time.
+- **Thread documents:** Markdown cards are editable and autosave directly in
+  the timeline. Open in tab opens the same document with shared editing state.
+  Pending agent proposals show live inline additions and deletions, with compact
+  Accept, Reject, Undo, and Redo controls. Ask for changes stays available and
+  adds an `Update` prompt with a Docs mention to the existing composer draft.
+  Ordinary user edits do not show a diff. HTML cards open a sandboxed preview.
 
   ```md
   ::docs{vault="personal" path="plans/release-plan.md" title="Release plan"}
@@ -126,9 +125,8 @@ bb docs push ./docs-work --delete
   so every scope has the same layout.
 - **Collisions:** exact relative paths are the stable identity. Pull rejects
   case-folding collisions before writing, rather than choosing an unstable
-  filename on case-insensitive filesystems. Human-authored hidden paths are
-  supported. Version-control metadata, dependencies, caches, build outputs,
-  and temporary workspaces are excluded from the accessible Docs contract.
+  filename on case-insensitive filesystems. Hidden vault path segments are not
+  part of the accessible Docs contract and are skipped.
 - **Fidelity and assets:** every accessible file in a folder or vault scope is
   included, not only Markdown/HTML. UTF-8 stays UTF-8; other bytes use base64
   across the host RPC and are written back byte-for-byte. Empty accessible
@@ -168,13 +166,17 @@ bb docs push ./docs-work --delete
   a clean destination; the CLI never guesses or repairs identity metadata.
 - **Workspace host:** agent invocations resolve the workspace host from the
   current thread environment. Standalone multi-host callers can pass
-  `--workspace-host <id>`; omission intentionally targets the primary host.
+  `--workspace-host <id>`; omission intentionally targets the server machine.
 
 Human output is concise and `--json` returns a stable structured result on
-both success and failure. Exit codes are 0 success/no-op, 1 validation or
-operational/partial failure, 2 usage error, 3 stale/conflict, and 4 `status`
-found changes or ignored deletions. Options are command-specific; an option
-not shown in a command's usage is rejected before any mutation.
+success; a failure adds the `{"ok":false,"error":{"code","message","hint"?}}`
+envelope on stdout and keeps the readable text on stderr. Exit codes are 0
+success/no-op, 1 validation or operational/partial failure, 2 usage error, 3
+stale/conflict, and 4 `status` found changes or ignored deletions. Options are
+command-specific; an unknown command, an option not shown in a command's usage,
+and a stray argument are all rejected before any mutation, with the nearest
+declared name suggested. `bb docs --help` lists the commands and
+`bb docs <command> --help` prints that command's arguments, options, and rules.
 
 The legacy `write`, `mkdir`, `move`, and `remove` CLI commands remain for one
 backward-compatibility window and emit a deprecation warning. New agent
@@ -215,7 +217,42 @@ state client-side.
 ## Install
 
 ```sh
-bb plugin disable simple-notes
 bb plugin install /path/to/bb-plugins/plugins/docs --yes
 bb plugin reload docs
 ```
+
+## Inline editing and proposed revisions
+
+Markdown document cards support inline editing and opening the same file in a
+Docs tab. An agent can propose a complete revision without modifying the file:
+
+```sh
+bb docs read letter.md --vault personal --json
+bb docs proposal letter.md --vault personal --json
+bb docs propose letter.md --vault personal --file ./candidate.md --expected-sha256 HASH --version none --json
+```
+
+Use the returned proposal version instead of `none` when replacing a previous
+proposal. `--file` is read on the thread's workspace host; `--workspace-host`
+overrides that host. The expected hash must come from the document used to
+write the candidate. Every proposal mutation checks its version, including
+replacement after rejection, so a delayed response cannot restore stale work.
+
+`bb docs proposal-update letter.md --version N --content MARKDOWN` updates only
+the pending candidate. `bb docs accept|reject|undo|redo letter.md --version N`
+performs the same actions as the card. All accept `--vault` and `--json`.
+Accept saves only when the original file hash still matches. Reject leaves the
+file alone. Undo after rejection restores the pending proposal; undo after
+acceptance restores the original file if nobody has changed it. Redo then
+reopens the proposal for review. There is one persisted proposal per document,
+not a revision history. Failed writes leave the candidate available to retry.
+Proposals follow file and folder moves made through Docs and are cleared when
+their document, folder, or vault is removed.
+
+The RPC equivalents are `readProposal`, `proposeNote`, `updateProposal`, and
+`resolveProposal`. `proposal-changed` signals carry `vaultId`, `path`, and
+`version`. `vault-changed` can include `path` for a single-document change and
+`proposalOnly: true` when the matching `proposal-changed` signal covers it.
+Events without a path still invalidate the whole vault (or all vaults when
+`vaultId` is absent), including external filesystem changes. Existing file
+read, save, and sync APIs remain supported.

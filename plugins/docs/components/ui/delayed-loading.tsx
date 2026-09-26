@@ -6,7 +6,10 @@ export function DelayedLoading({ children }: { children: ReactNode }) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setVisible(true), LOADING_REVEAL_DELAY_MS);
+    const timeout = window.setTimeout(
+      () => setVisible(true),
+      LOADING_REVEAL_DELAY_MS,
+    );
     return () => window.clearTimeout(timeout);
   }, []);
 

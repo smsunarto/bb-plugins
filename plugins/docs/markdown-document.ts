@@ -23,7 +23,7 @@ function readLine(content: string, start: number): MarkdownLine {
   };
 }
 
-function isMapping(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -35,7 +35,7 @@ function parseFrontmatterMetadata(source: string): Record<string, unknown> | nul
     return null;
   }
   if (metadata === null || metadata === undefined) return {};
-  return isMapping(metadata) ? metadata : null;
+  return isRecord(metadata) ? metadata : null;
 }
 
 function frontmatterTitle(metadata: Record<string, unknown>): string | null {

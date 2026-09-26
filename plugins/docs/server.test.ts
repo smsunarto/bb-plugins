@@ -14,6 +14,46 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+type FakeHostOptions = NonNullable<Parameters<typeof createFakePluginHost>[0]>;
+
+// Docs lists vaults through its own host entry. Route that call to the fake
+// SDK file listing so fixtures, stubs, and recorded calls stay in one place.
+function createDocsHost(options: FakeHostOptions) {
+  const host: ReturnType<typeof createFakePluginHost> = createFakePluginHost({
+    ...options,
+    experimental_callHostRpc: async ({ method, input, hostId }) => {
+      if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
+      const {
+        path: root,
+        includeFiles,
+        includeDirectories,
+        limit,
+      } = input as {
+        path: string;
+        includeFiles: boolean;
+        includeDirectories: boolean;
+        limit: number;
+      };
+      const result = await host.bb.sdk.files.listPaths({
+        hostId,
+        path: root,
+        includeFiles,
+        includeDirectories,
+        limit,
+      });
+      return {
+        paths: result.paths.map(({ kind, path: listedPath }) => ({ kind, path: listedPath })),
+        truncated: result.truncated,
+      };
+    },
+    sdk: {
+      ...options.sdk,
+      system: { config: async () => ({ primaryHostId: "host_primary" }), ...options.sdk?.system },
+    },
+  });
+  return host;
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories
@@ -31,15 +71,8 @@ async function loadNotebook(
   await Promise.all(
     Object.entries(notes).map(([name, content]) => writeFile(path.join(directory, name), content)),
   );
-  const host = createFakePluginHost({
+  const host = createDocsHost({
     pluginId: "simple-notes",
-    experimental_callHostRpc: ({ method }) => {
-      if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
-      return {
-        paths: Object.keys(notes).map((name) => ({ kind: "file" as const, path: name })),
-        truncated: false,
-      };
-    },
     sdk: {
       files: {
         listPaths: async () => ({
@@ -78,7 +111,6 @@ async function loadNotebook(
         }),
       },
       hosts: { list: async () => [] },
-      system: { config: async () => ({ primaryHostId: "host_primary" }) },
     },
   });
   await simpleNotes(host.bb, watchVault);
@@ -120,54 +152,37 @@ async function loadVirtualSyncVault(initial: Record<string, VirtualFile>) {
       modifiedAtMs: Date.now(),
     });
   };
-  const listVirtualPaths = (args: {
-    path: string;
-    includeFiles: boolean;
-    includeDirectories: boolean;
-  }) => {
-    const prefix = args.path.endsWith("/") ? args.path : `${args.path}/`;
-    const paths = [
-      ...(args.includeDirectories
-        ? [...directories]
-            .filter((entry) => entry.startsWith(prefix))
-            .map((entry) => ({
-              kind: "directory" as const,
-              path: entry.slice(prefix.length),
-              name: path.posix.basename(entry),
-              score: 0,
-              positions: [],
-            }))
-        : []),
-      ...(args.includeFiles
-        ? [...files.keys()]
-            .filter((entry) => entry.startsWith(prefix))
-            .map((entry) => ({
-              kind: "file" as const,
-              path: entry.slice(prefix.length),
-              name: path.posix.basename(entry),
-              score: 0,
-              positions: [],
-            }))
-        : []),
-    ];
-    return { paths, truncated: false };
-  };
-  const host = createFakePluginHost({
+  const host = createDocsHost({
     pluginId: "simple-notes-sync",
-    experimental_callHostRpc: ({ method, input }) => {
-      if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
-      const result = listVirtualPaths(
-        input as { path: string; includeFiles: boolean; includeDirectories: boolean },
-      );
-      return {
-        paths: result.paths.map(({ kind, path: listedPath }) => ({ kind, path: listedPath })),
-        truncated: result.truncated,
-      };
-    },
     sdk: {
       files: {
         async listPaths(args) {
-          return listVirtualPaths(args);
+          const prefix = args.path.endsWith("/") ? args.path : `${args.path}/`;
+          const paths = [
+            ...(args.includeDirectories
+              ? [...directories]
+                  .filter((entry) => entry.startsWith(prefix))
+                  .map((entry) => ({
+                    kind: "directory" as const,
+                    path: entry.slice(prefix.length),
+                    name: path.posix.basename(entry),
+                    score: 0,
+                    positions: [],
+                  }))
+              : []),
+            ...(args.includeFiles
+              ? [...files.keys()]
+                  .filter((entry) => entry.startsWith(prefix))
+                  .map((entry) => ({
+                    kind: "file" as const,
+                    path: entry.slice(prefix.length),
+                    name: path.posix.basename(entry),
+                    score: 0,
+                    positions: [],
+                  }))
+              : []),
+          ];
+          return { paths, truncated: false };
         },
         async read(args) {
           const file = files.get(args.path);
@@ -229,9 +244,28 @@ async function loadVirtualSyncVault(initial: Record<string, VirtualFile>) {
           )
             throw new Error("Directory is not empty");
           directories.delete(args.path);
+          for (const entry of files.keys()) if (entry.startsWith(prefix)) files.delete(entry);
+          for (const entry of directories) if (entry.startsWith(prefix)) directories.delete(entry);
           return { ok: true as const };
         },
-        async move() {
+        async move(args) {
+          const from = args.sourcePath;
+          const to = args.destinationPath;
+          if (!files.has(from) && !directories.has(from)) throw new Error("ENOENT");
+          if (files.has(to) || directories.has(to)) throw new Error("EEXIST");
+          for (const [entry, file] of Array.from(files)) {
+            if (entry === from || entry.startsWith(`${from}/`)) {
+              files.delete(entry);
+              files.set(to + entry.slice(from.length), file);
+            }
+          }
+          for (const entry of Array.from(directories)) {
+            if (entry === from || entry.startsWith(`${from}/`)) {
+              directories.delete(entry);
+              directories.add(to + entry.slice(from.length));
+            }
+          }
+          addParents(to);
           return { ok: true as const };
         },
         async createPreview() {
@@ -242,7 +276,6 @@ async function loadVirtualSyncVault(initial: Record<string, VirtualFile>) {
         },
       },
       hosts: { list: async () => [] },
-      system: { config: async () => ({ primaryHostId: "host_primary" }) },
     },
   });
   await simpleNotes(host.bb);
@@ -362,6 +395,134 @@ async function waitForSignal(predicate: () => boolean, timeoutMs = 2_000): Promi
 }
 
 describe("Docs mention provider", () => {
+  it("shares note reads across overlapping searches and subsequent keystrokes", async () => {
+    const { harness } = await loadNotebook({
+      "roadmap.md": "# Product Roadmap\n\nQuarterly priorities",
+      "meeting.md": "# Standup\n\nLaunch checklist",
+    });
+    const provider = harness.registrations.mentionProviders[0]!;
+    const search = (query: string) =>
+      provider.search({ trigger: "@", query, projectId: null, threadId: null });
+
+    const [roadmap, meeting] = await Promise.all([search("roadmap"), search("launch")]);
+    expect(roadmap.map((item) => item.title)).toEqual(["Product Roadmap"]);
+    expect(meeting.map((item) => item.title)).toEqual(["Standup"]);
+    expect(await search("quarterly")).toEqual(roadmap);
+    expect(harness.sdk.callsTo("files.listPaths")).toHaveLength(1);
+    expect(harness.sdk.callsTo("files.read")).toHaveLength(2);
+  });
+
+  it("refreshes cached mentions after saves, moves, deletions, and external edits", async () => {
+    const { harness, setUtf8 } = await loadVirtualSyncVault({
+      "/vault/plan.md": {
+        content: "# Original",
+        contentEncoding: "utf8",
+        modifiedAtMs: 1,
+      },
+    });
+    const provider = harness.registrations.mentionProviders[0]!;
+    const search = () =>
+      provider.search({
+        trigger: "@",
+        query: "",
+        projectId: null,
+        threadId: null,
+      });
+    expect(await search()).toMatchObject([{ title: "Original" }]);
+    await harness.callRpc("saveNote", { path: "plan.md", content: "# Saved" });
+    expect(await search()).toMatchObject([{ title: "Saved" }]);
+    await harness.callRpc("saveOpenedFile", {
+      source: {
+        kind: "host",
+        threadId: null,
+        projectId: null,
+        environmentId: null,
+      },
+      path: "/vault/plan.md",
+      content: "# Edited in file opener",
+    });
+    expect(await search()).toMatchObject([{ title: "Edited in file opener" }]);
+    await harness.callRpc("movePath", { from: "plan.md", to: "renamed.md" });
+    expect(await search()).toMatchObject([{ id: "personal:renamed.md" }]);
+
+    setUtf8("/vault/renamed.md", "# External edit");
+    expect(await provider.resolve("personal:renamed.md")).toMatchObject({
+      context: expect.stringContaining("# External edit"),
+    });
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 10_001);
+    try {
+      expect(await search()).toMatchObject([{ title: "External edit" }]);
+    } finally {
+      clock.mockRestore();
+    }
+    await harness.callRpc("deletePath", { path: "renamed.md" });
+    expect(await search()).toEqual([]);
+  });
+
+  it("retries a failed vault scan instead of caching the failure", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const listPaths = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Host offline"))
+      .mockResolvedValue({
+        paths: [
+          {
+            kind: "file",
+            path: "plan.md",
+            name: "plan.md",
+            score: 0,
+            positions: [],
+          },
+        ],
+        truncated: false,
+      });
+    harness.sdk.stub("files.listPaths", listPaths);
+    const provider = harness.registrations.mentionProviders[0]!;
+    const context = {
+      trigger: "@" as const,
+      query: "plan",
+      projectId: null,
+      threadId: null,
+    };
+    await expect(provider.search(context)).rejects.toThrow("Host offline");
+    expect(await provider.search(context)).toMatchObject([{ title: "Plan" }]);
+    expect(listPaths).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds parallel summary reads while preserving tied result order", async () => {
+    const { harness } = await loadNotebook(
+      Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`plan-${i}.md`, "# Plan"])),
+    );
+    let active = 0;
+    let peak = 0;
+    harness.sdk.stub("files.read", async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active--;
+      return {
+        path: "/plan.md",
+        content: "# Plan",
+        contentEncoding: "utf8",
+        sizeBytes: 6,
+        modifiedAtMs: 1,
+        sha256: "test-sha",
+      };
+    });
+    const rows = await harness.registrations.mentionProviders[0]!.search({
+      trigger: "@",
+      query: "plan",
+      projectId: null,
+      threadId: null,
+    });
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+    expect(rows.map((row) => row.id)).toEqual(
+      Array.from({ length: 20 }, (_, i) => `personal:plan-${i}.md`),
+    );
+  });
+
   it("searches note titles, previews, and filenames", async () => {
     const { harness } = await loadNotebook({
       "roadmap.md": "# Product Roadmap\n\nQuarterly priorities",
@@ -507,7 +668,8 @@ describe("Docs mention provider", () => {
     const provider = harness.registrations.mentionProviders[0]!;
 
     await expect(provider.resolve("personal:ideas.md")).resolves.toEqual({
-      context: "Docs document (personal/ideas.md):\n\n# Fresh Ideas\n\nBuild the mention flow.",
+      context:
+        "Docs document (personal/ideas.md):\nSHA-256: test-sha\n\n# Fresh Ideas\n\nBuild the mention flow.\n\nProposal version: none. Use bb docs propose to suggest changes for approval.",
     });
     expect(harness.sdk.callsTo("files.read")).toEqual([
       [
@@ -522,13 +684,13 @@ describe("Docs mention provider", () => {
 
 describe("Docs vault operations", () => {
   it.each([false, true])(
-    "accepts SDK machine metadata when vault loading fails: %s",
-    async (fails) => {
-      const { harness } = await loadNotebook({ "guide.md": "# Guide" });
-      const machine = makeHostResponse({ machineProviderId: "manual" });
-      harness.sdk.stub("hosts.list", async () => [machine]);
-      if (fails) {
-        harness.sdk.stub("system.config", async () => {
+    "lists vaults with current host records when file listing fails: %s",
+    async (listingFails) => {
+      const { harness } = await loadNotebook({ "draft.md": "# Draft" });
+      const host = makeHostResponse();
+      harness.sdk.stub("hosts.list", async () => [host]);
+      if (listingFails) {
+        harness.sdk.stub("files.listPaths", async () => {
           throw new Error("Host unavailable");
         });
       }
@@ -536,70 +698,22 @@ describe("Docs vault operations", () => {
       await expect(
         harness.behavior.callRpc("listNotes", { vaultId: "personal" }),
       ).resolves.toMatchObject({
-        hosts: [machine],
-        error: fails ? "Host unavailable" : null,
+        vaults: [expect.objectContaining({ id: "personal" })],
+        hosts: [
+          expect.objectContaining({
+            id: host.id,
+            name: host.name,
+            status: host.status,
+          }),
+        ],
+        notes: listingFails ? [] : [expect.objectContaining({ path: "draft.md" })],
+        error: listingFails ? "Host unavailable" : null,
       });
     },
   );
 
-  it("lists Markdown, MDX, and Canvas documents and preserves MDX filenames", async () => {
-    const { harness } = await loadNotebook({
-      "guide.md": "# Guide",
-      "component.mdx": "# Component",
-      "report.canvas.mdx": '<Stat label="Runs" value={42} />',
-    });
-    const result = await harness.callRpc("listNotes", { vaultId: "personal" });
-    expect(result).toMatchObject({
-      entries: expect.arrayContaining([
-        { kind: "file", path: "guide.md" },
-        { kind: "file", path: "component.mdx" },
-        { kind: "file", path: "report.canvas.mdx" },
-      ]),
-      notes: expect.arrayContaining([
-        expect.objectContaining({ path: "component.mdx", title: "Component" }),
-        expect.objectContaining({ path: "report.canvas.mdx" }),
-      ]),
-    });
-    await expect(
-      harness.callRpc("renameToTitle", { vaultId: "personal", path: "report.canvas.mdx" }),
-    ).resolves.toEqual({ path: "report.canvas.mdx" });
-    expect(harness.sdk.callsTo("files.move")).toHaveLength(0);
-  });
-
-  it("forwards Canvas state and comments through the SDK to their owning plugin", async () => {
-    const host = createFakePluginHost({
-      pluginId: "docs",
-      sdk: {
-        files: { mkdir: async () => ({ ok: true as const }) },
-        plugins: {
-          callRpc: async ({ method, outputSchema }) =>
-            outputSchema.parse(
-              method === "comments"
-                ? {
-                    status: "loaded",
-                    sha256: "comments-sha",
-                    file: { version: 1, threads: [] },
-                    malformed: false,
-                  }
-                : { values: { enabled: true }, revision: 7 },
-            ),
-        },
-      },
-    });
-    await simpleNotes(host.bb);
-    const source = { kind: "host", hostId: "host_remote", path: "/notes/report.canvas.mdx" };
-    await expect(
-      host.harness.callRpc("setState", { source, key: "enabled", value: true }),
-    ).resolves.toMatchObject({ values: { enabled: true }, revision: 7 });
-    await host.harness.callRpc("comments", { source, knownSha256: null });
-    expect(host.harness.sdk.callsTo("plugins.callRpc").map(([args]) => args)).toMatchObject([
-      { pluginId: "canvas", method: "setState", input: { source, key: "enabled", value: true } },
-      { pluginId: "canvas", method: "comments", input: { source, knownSha256: null } },
-    ]);
-  });
-
   it("creates the initial Personal vault without exposing a folder setting", async () => {
-    const host = createFakePluginHost({
+    const host = createDocsHost({
       pluginId: "simple-notes",
       sdk: {
         files: { mkdir: async () => ({ ok: true as const }) },
@@ -662,117 +776,7 @@ describe("Docs vault operations", () => {
     expect(harness.registrations.cli).toMatchObject({
       name: "docs",
       summary: "Discover and safely sync Docs vaults",
-      rendersHelp: true,
     });
-    expect(harness.registrations.cli?.commands?.map((command) => command.name)).toEqual([
-      "vaults",
-      "vault-add",
-      "vault-remove",
-      "list",
-      "read",
-      "pull",
-      "status",
-      "push",
-      "write",
-      "mkdir",
-      "move",
-      "remove",
-    ]);
-  });
-
-  it("publishes every RPC method as discoverable with a description", async () => {
-    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
-    const published = harness.registrations.experimental_publishedRpcMethods;
-    expect(published.map((entry) => entry.method).sort()).toEqual(
-      Object.keys(docsRpcContract).sort(),
-    );
-    for (const entry of published) {
-      expect(entry.registrationDescription).toContain("Markdown vaults");
-      expect(entry.methodDescription).toMatch(/\S/);
-    }
-  });
-
-  it("lists and reads Markdown documents beneath hidden folders", async () => {
-    const { harness, files } = await loadVirtualSyncVault({
-      "/vault/.dotfiles/.agents/instructions/shared.md": {
-        content: "# Shared agent instructions\n\nKeep the response concise.",
-        contentEncoding: "utf8",
-        modifiedAtMs: 1,
-      },
-    });
-
-    await expect(harness.callRpc("listNotes", { vaultId: "personal" })).resolves.toMatchObject({
-      entries: expect.arrayContaining([
-        { kind: "directory", path: ".dotfiles" },
-        { kind: "directory", path: ".dotfiles/.agents" },
-        { kind: "file", path: ".dotfiles/.agents/instructions/shared.md" },
-      ]),
-      notes: [
-        expect.objectContaining({
-          path: ".dotfiles/.agents/instructions/shared.md",
-          title: "Shared agent instructions",
-        }),
-      ],
-    });
-
-    await expect(
-      harness.callRpc("readNote", {
-        vaultId: "personal",
-        path: ".dotfiles/.agents/instructions/shared.md",
-      }),
-    ).resolves.toMatchObject({
-      content: "# Shared agent instructions\n\nKeep the response concise.",
-    });
-
-    await expect(
-      harness.runCli(["pull", ".dotfiles", "--folder", "--into", "sync", "--json"], {
-        cwd: "/work",
-      }),
-    ).resolves.toMatchObject({ exitCode: 0 });
-    expect(files.has("/work/sync/.dotfiles/.agents/instructions/shared.md")).toBe(true);
-  });
-
-  it("rejects generated and dependency directories while accepting authored hidden trees", async () => {
-    const { harness } = await loadVirtualSyncVault({});
-
-    for (const acceptedPath of [
-      ".agents/instructions.md",
-      ".claude/CLAUDE.md",
-      ".codex/AGENTS.md",
-      ".cursor/rules/project.md",
-      ".dotfiles/config.md",
-    ]) {
-      await expect(
-        harness.callRpc("saveNote", {
-          vaultId: "personal",
-          path: acceptedPath,
-          content: "# Human-authored",
-        }),
-      ).resolves.toMatchObject({ outcome: "written" });
-    }
-
-    for (const rejectedPath of [
-      ".claude/worktrees/checkout/AGENTS.md",
-      ".git/README.md",
-      ".node_modules/package/README.md",
-      ".ruff_cache/README.md",
-      ".scratch/notes.md",
-      "dist/README.md",
-      "node_modules/package/README.md",
-    ]) {
-      await expect(
-        harness.callRpc("saveNote", {
-          vaultId: "personal",
-          path: rejectedPath,
-          content: "# Generated",
-        }),
-      ).rejects.toMatchObject({
-        code: "invalid_input",
-        issues: expect.arrayContaining([
-          expect.objectContaining({ message: `Invalid vault path: ${rejectedPath}` }),
-        ]),
-      });
-    }
   });
 
   it("round-trips a folder edit through pull and push without changing binary assets", async () => {
@@ -891,9 +895,10 @@ describe("Docs vault operations", () => {
         modifiedAtMs: 1,
       },
     });
-    await harness.runCli(["pull", "plan.md", "--into", "sync", "--json"], {
+    const pulled = await harness.runCli(["pull", "plan.md", "--dir", "sync", "--json"], {
       cwd: "/work",
     });
+    expect(pulled.exitCode).toBe(0);
     setUtf8("/work/sync/plan.md", "local edit");
     setUtf8("/vault/plan.md", "remote edit");
 
@@ -1030,9 +1035,14 @@ describe("Docs vault operations", () => {
       cwd: "/work",
     });
     expect(result.exitCode).toBe(1);
-    const envelope = JSON.parse(result.stdout ?? "{}");
-    expect(envelope).toMatchObject({ ok: false, error: { code: "operation_failed" } });
-    expect(result.stderr).toBe(`${envelope.error.message}\n`);
+    expect(JSON.parse(result.stdout ?? "{}")).toMatchObject({
+      ok: false,
+      error: {
+        code: "operation_failed",
+        message: expect.stringContaining(".bb-docs-state.json is malformed"),
+      },
+    });
+    expect(result.stderr).toContain(".bb-docs-state.json is malformed");
   });
 
   it("supports whole-vault and single-file scopes and deprecates direct writes", async () => {
@@ -1082,14 +1092,15 @@ describe("Docs vault operations", () => {
 
     const help = await harness.runCli(["--help"]);
     expect(help).toMatchObject({ exitCode: 0 });
-    expect(help.stdout).toContain("bb docs — Discover and safely sync Docs vaults");
-    expect(help.stdout).toContain("bb docs pull ");
-    expect(help.stdout).toContain("bb docs push ");
+    expect(help.stdout).toContain("bb docs pull");
+    expect(help.stdout).toContain("bb docs status");
+    expect(help.stdout).toContain("bb docs push");
 
     const statusHelp = await harness.runCli(["status", "--help"]);
     expect(statusHelp).toMatchObject({ exitCode: 0 });
     expect(statusHelp.stdout).toContain("Exit 4: changes present");
     expect(statusHelp.stdout).toContain("run bb docs push separately");
+    expect(statusHelp.stdout).toContain("[<workspace-dir>]");
 
     const unsafePull = await harness.runCli(
       ["pull", "plan.md", "--into", "sync", "--dry-run", "--json"],
@@ -1098,13 +1109,51 @@ describe("Docs vault operations", () => {
     expect(unsafePull.exitCode).toBe(2);
     expect(JSON.parse(unsafePull.stdout ?? "{}")).toMatchObject({
       ok: false,
-      error: { code: "unknown_option", message: "unknown option '--dry-run'" },
+      error: {
+        code: "unknown_option",
+        message: "unknown option '--dry-run'",
+      },
     });
+    expect(unsafePull.stderr).toContain("unknown option '--dry-run'");
     expect(files.has("/work/sync/plan.md")).toBe(false);
 
     const unsafeRemove = await harness.runCli(["remove", "plan.md", "--dry-run", "--json"]);
     expect(unsafeRemove.exitCode).toBe(2);
     expect(files.has("/vault/plan.md")).toBe(true);
+
+    const noCommand = await harness.runCli([]);
+    expect(noCommand.exitCode).toBe(2);
+    expect(noCommand.stdout).toContain("bb docs <command> [options]");
+
+    const unknownCommand = await harness.runCli(["pul", "plan.md"]);
+    expect(unknownCommand.exitCode).toBe(2);
+    expect(unknownCommand.stderr).toContain("unknown command 'pul' (Did you mean pull?)");
+
+    const strayArgument = await harness.runCli(["vaults", "personal"]);
+    expect(strayArgument.exitCode).toBe(2);
+    expect(strayArgument.stderr).toContain("unexpected argument 'personal'");
+
+    const missingOptions = await harness.runCli(["write", "plan.md"]);
+    expect(missingOptions.exitCode).toBe(2);
+    expect(missingOptions.stderr).toContain("missing required options: --content");
+
+    const missingArguments = await harness.runCli(["move"]);
+    expect(missingArguments.exitCode).toBe(2);
+    expect(missingArguments.stderr).toContain("missing required arguments: <from>, <to>");
+
+    const combined = await harness.runCli(["pull", "--all", "--folder", "--into", "sync"], {
+      cwd: "/work",
+    });
+    expect(combined.exitCode).toBe(2);
+    expect(combined.stderr).toContain("--all and --folder cannot be combined");
+    expect(files.has("/work/sync/plan.md")).toBe(false);
+
+    for (const argv of [["push", "--help"], ["remove", "-h"], ["help"]]) {
+      const commandHelp = await harness.runCli(argv);
+      expect(commandHelp.exitCode).toBe(0);
+      expect(commandHelp.stderr).toBe("");
+      expect(commandHelp.stdout).toContain("Usage:");
+    }
   });
 
   it("keeps CLI removal non-recursive unless --recursive is passed", async () => {
@@ -1228,7 +1277,7 @@ describe("Docs vault operations", () => {
   it("routes explicit host opener reads, previews, and saves to that host", async () => {
     const rootPath = "/shared";
     const filePath = "/shared/plan.md";
-    const host = createFakePluginHost({
+    const host = createDocsHost({
       pluginId: "simple-notes",
       sdk: {
         files: {
@@ -1310,7 +1359,7 @@ describe("Docs vault operations", () => {
   });
 
   it("routes project-backed workspace files through the selected or primary source", async () => {
-    const host = createFakePluginHost({
+    const host = createDocsHost({
       pluginId: "simple-notes",
       sdk: {
         files: {
@@ -1444,7 +1493,7 @@ describe("Docs vault operations", () => {
   it("opens and saves thread-storage Markdown files on the thread's host", async () => {
     const storageRootPath = String.raw`C:\bb\thread-storage\thread_1`;
     const openedPath = String.raw`C:\bb\thread-storage\thread_1\reports\plan.md`;
-    const host = createFakePluginHost({
+    const host = createDocsHost({
       pluginId: "simple-notes",
       sdk: {
         files: {
@@ -1571,7 +1620,17 @@ describe("Docs vault operations", () => {
       if (!notifyChange) {
         throw new Error("Expected vault watcher callback");
       }
+      const provider = harness.registrations.mentionProviders[0]!;
+      const context = {
+        trigger: "@" as const,
+        query: "",
+        projectId: null,
+        threadId: null,
+      };
+      expect(await provider.search(context)).toMatchObject([{ title: "Plan" }]);
+      await writeFile(path.join(temporaryDirectories[0]!, "plan.md"), "# Updated");
       notifyChange();
+      expect(await provider.search(context)).toMatchObject([{ title: "Updated" }]);
       await waitForSignal(
         () =>
           harness.realtimeSignals.some(
@@ -1587,5 +1646,423 @@ describe("Docs vault operations", () => {
       await service.done;
     }
     expect(closeWatcher).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Docs proposals", () => {
+  async function setupProposal() {
+    const host = await loadVirtualSyncVault({
+      "/vault/letter.md": {
+        content: "A simple place.",
+        contentEncoding: "utf8",
+        modifiedAtMs: 1,
+      },
+    });
+    const file = host.files.get("/vault/letter.md")!;
+    const proposal = await host.harness.behavior.callRpc("proposeNote", {
+      path: "letter.md",
+      content: "A calmer space.",
+      expectedSha256: virtualSha(file),
+      expectedVersion: null,
+    });
+    return { ...host, proposal };
+  }
+
+  it("moves proposals with files and folders and clears removed paths", async () => {
+    const { harness, setUtf8 } = await setupProposal();
+    await harness.behavior.callRpc("movePath", {
+      from: "letter.md",
+      to: "drafts/letter.md",
+    });
+    expect(await harness.behavior.callRpc("readProposal", { path: "letter.md" })).toBeNull();
+    expect(
+      await harness.behavior.callRpc("readProposal", {
+        path: "drafts/letter.md",
+      }),
+    ).toMatchObject({ path: "drafts/letter.md", content: "A calmer space." });
+    await harness.behavior.callRpc("movePath", {
+      from: "drafts",
+      to: "renamed",
+    });
+    expect(
+      await harness.behavior.callRpc("readProposal", {
+        path: "renamed/letter.md",
+      }),
+    ).toMatchObject({ path: "renamed/letter.md" });
+    await harness.behavior.callRpc("resolveProposal", {
+      path: "renamed/letter.md",
+      action: "accept",
+      expectedVersion: 1,
+    });
+    await harness.behavior.callRpc("deletePath", {
+      path: "renamed",
+      recursive: true,
+    });
+    setUtf8("/vault/renamed/letter.md", "Unrelated document");
+    expect(
+      await harness.behavior.callRpc("readProposal", {
+        path: "renamed/letter.md",
+      }),
+    ).toBeNull();
+    await harness.lifecycle.dispose();
+  });
+
+  it("cleans file proposals after queued edits and preserves them on failed moves", async () => {
+    const { harness, setUtf8 } = await setupProposal();
+    setUtf8("/vault/existing.md", "Another document");
+    await expect(
+      harness.behavior.callRpc("movePath", {
+        from: "letter.md",
+        to: "existing.md",
+      }),
+    ).rejects.toThrow("EEXIST");
+    await Promise.all([
+      harness.behavior.callRpc("updateProposal", {
+        path: "letter.md",
+        expectedVersion: 1,
+        content: "Updated",
+      }),
+      harness.behavior.callRpc("deletePath", { path: "letter.md" }),
+    ]);
+    setUtf8("/vault/letter.md", "Replacement");
+    expect(await harness.behavior.callRpc("readProposal", { path: "letter.md" })).toBeNull();
+    await harness.lifecycle.dispose();
+  });
+
+  it("does not expose proposals when a removed vault ID is reused", async () => {
+    const { harness } = await setupProposal();
+    await harness.behavior.callRpc("createVault", {
+      name: "Other",
+      rootPath: "/other",
+    });
+    await harness.behavior.callRpc("removeVault", { vaultId: "personal" });
+    await harness.behavior.callRpc("createVault", {
+      name: "Personal",
+      rootPath: "/replacement",
+    });
+    expect(
+      await harness.behavior.callRpc("readProposal", {
+        vaultId: "personal",
+        path: "letter.md",
+      }),
+    ).toBeNull();
+    await harness.lifecycle.dispose();
+  });
+
+  it("keeps candidates separate and restores diff after accept, undo, redo", async () => {
+    const { harness, files } = await setupProposal();
+    expect(files.get("/vault/letter.md")?.content).toBe("A simple place.");
+    await harness.behavior.callRpc("resolveProposal", {
+      path: "letter.md",
+      expectedVersion: 1,
+      action: "accept",
+    });
+    expect(files.get("/vault/letter.md")?.content).toBe("A calmer space.");
+    await harness.behavior.callRpc("resolveProposal", {
+      path: "letter.md",
+      expectedVersion: 2,
+      action: "undo",
+    });
+    expect(files.get("/vault/letter.md")?.content).toBe("A simple place.");
+    expect(
+      await harness.behavior.callRpc("resolveProposal", {
+        path: "letter.md",
+        expectedVersion: 3,
+        action: "redo",
+      }),
+    ).toMatchObject({ status: "pending", version: 4 });
+    expect(files.get("/vault/letter.md")?.content).toBe("A simple place.");
+    const reloaded = await harness.lifecycle.reload(simpleNotes);
+    expect(
+      await reloaded.harness.behavior.callRpc("readProposal", {
+        path: "letter.md",
+      }),
+    ).toMatchObject({ status: "pending", version: 4 });
+    await reloaded.harness.lifecycle.dispose();
+  });
+
+  it("rejects late replacements and restores rejected proposals with undo", async () => {
+    const { harness, files } = await setupProposal();
+    await harness.behavior.callRpc("resolveProposal", {
+      path: "letter.md",
+      expectedVersion: 1,
+      action: "reject",
+    });
+    await expect(
+      harness.behavior.callRpc("proposeNote", {
+        path: "letter.md",
+        expectedVersion: 1,
+        expectedSha256: virtualSha(files.get("/vault/letter.md")!),
+        content: "Late response",
+      }),
+    ).rejects.toThrow("proposal changed");
+    expect(
+      await harness.behavior.callRpc("resolveProposal", {
+        path: "letter.md",
+        expectedVersion: 2,
+        action: "undo",
+      }),
+    ).toMatchObject({ status: "pending", version: 3 });
+    expect(files.get("/vault/letter.md")?.content).toBe("A simple place.");
+    await harness.lifecycle.dispose();
+  });
+
+  it("preserves external edits on acceptance and undo conflicts", async () => {
+    const { harness, setUtf8, files } = await setupProposal();
+    setUtf8("/vault/letter.md", "User's edit");
+    await expect(
+      harness.behavior.callRpc("resolveProposal", {
+        path: "letter.md",
+        expectedVersion: 1,
+        action: "accept",
+      }),
+    ).rejects.toThrow("document changed");
+    setUtf8("/vault/letter.md", "A simple place.");
+    await harness.behavior.callRpc("resolveProposal", {
+      path: "letter.md",
+      expectedVersion: 1,
+      action: "accept",
+    });
+    setUtf8("/vault/letter.md", "Newer edit");
+    await expect(
+      harness.behavior.callRpc("resolveProposal", {
+        path: "letter.md",
+        expectedVersion: 2,
+        action: "undo",
+      }),
+    ).rejects.toThrow("overwrite newer edits");
+    expect(files.get("/vault/letter.md")?.content).toBe("Newer edit");
+    await harness.lifecycle.dispose();
+  });
+
+  it("reads CLI candidates from workspace files without writing the document", async () => {
+    const { harness, files } = await loadVirtualSyncVault({
+      "/vault/letter.md": {
+        content: "Original",
+        contentEncoding: "utf8",
+        modifiedAtMs: 1,
+      },
+      "/work/candidate.md": {
+        content: "Proposed",
+        contentEncoding: "utf8",
+        modifiedAtMs: 1,
+      },
+    });
+    const result = await harness.behavior.runCli([
+      "propose",
+      "letter.md",
+      "--file",
+      "/work/candidate.md",
+      "--expected-sha256",
+      virtualSha(files.get("/vault/letter.md")!),
+      "--version",
+      "none",
+      "--json",
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout ?? "")).toMatchObject({
+      content: "Proposed",
+      status: "pending",
+      version: 1,
+    });
+    expect(files.get("/vault/letter.md")?.content).toBe("Original");
+    await harness.lifecycle.dispose();
+  });
+
+  it("serializes concurrent resolutions and candidate edits", async () => {
+    const { harness } = await setupProposal();
+    const results = await Promise.allSettled([
+      harness.behavior.callRpc("updateProposal", {
+        path: "letter.md",
+        expectedVersion: 1,
+        content: "Edited candidate",
+      }),
+      harness.behavior.callRpc("resolveProposal", {
+        path: "letter.md",
+        expectedVersion: 1,
+        action: "accept",
+      }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect(await harness.behavior.callRpc("readProposal", { path: "letter.md" })).toMatchObject({
+      content: "Edited candidate",
+      status: "pending",
+      version: 2,
+    });
+    await harness.lifecycle.dispose();
+  });
+});
+
+describe("Docs fork divergences", () => {
+  it("publishes every RPC method as discoverable with a description", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const published = harness.registrations.experimental_publishedRpcMethods;
+    expect(published.map((entry) => entry.method).sort()).toEqual(
+      Object.keys(docsRpcContract).sort(),
+    );
+    for (const entry of published) {
+      expect(entry.registrationDescription).toContain("Docs vaults");
+      expect(entry.methodDescription).toMatch(/\S/);
+    }
+  });
+
+  it("lists MDX beside Markdown notes and leaves MDX to bb's file opener", async () => {
+    const { harness } = await loadNotebook({
+      "guide.md": "# Guide",
+      "long-form.markdown": "# Long Form",
+      "component.mdx": "# Component",
+      "report.canvas.mdx": '<Stat label="Runs" value={42} />',
+    });
+    const result = (await harness.callRpc("listNotes", { vaultId: "personal" })) as {
+      entries: unknown[];
+      notes: Array<{ path: string }>;
+    };
+    expect(result.entries).toEqual(
+      expect.arrayContaining([
+        { kind: "file", path: "guide.md" },
+        { kind: "file", path: "long-form.markdown" },
+        { kind: "file", path: "component.mdx" },
+        { kind: "file", path: "report.canvas.mdx" },
+      ]),
+    );
+    expect(result.notes.map((note) => note.path).sort()).toEqual([
+      "guide.md",
+      "long-form.markdown",
+    ]);
+    await expect(
+      harness.callRpc("renameToTitle", { vaultId: "personal", path: "long-form.markdown" }),
+    ).resolves.toEqual({ path: "long-form.markdown" });
+    await expect(
+      harness.callRpc("renameToTitle", { vaultId: "personal", path: "component.mdx" }),
+    ).rejects.toThrow("Path must end with .md or .markdown: component.mdx");
+  });
+
+  it("lists and reads Markdown documents beneath hidden folders", async () => {
+    const { harness, files } = await loadVirtualSyncVault({
+      "/vault/.dotfiles/.agents/instructions/shared.md": {
+        content: "# Shared agent instructions\n\nKeep the response concise.",
+        contentEncoding: "utf8",
+        modifiedAtMs: 1,
+      },
+    });
+
+    await expect(harness.callRpc("listNotes", { vaultId: "personal" })).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        { kind: "directory", path: ".dotfiles" },
+        { kind: "directory", path: ".dotfiles/.agents" },
+        { kind: "file", path: ".dotfiles/.agents/instructions/shared.md" },
+      ]),
+      notes: [
+        expect.objectContaining({
+          path: ".dotfiles/.agents/instructions/shared.md",
+          title: "Shared agent instructions",
+        }),
+      ],
+    });
+
+    await expect(
+      harness.callRpc("readNote", {
+        vaultId: "personal",
+        path: ".dotfiles/.agents/instructions/shared.md",
+      }),
+    ).resolves.toMatchObject({
+      content: "# Shared agent instructions\n\nKeep the response concise.",
+    });
+
+    await expect(
+      harness.runCli(["pull", ".dotfiles", "--folder", "--into", "sync", "--json"], {
+        cwd: "/work",
+      }),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    expect(files.has("/work/sync/.dotfiles/.agents/instructions/shared.md")).toBe(true);
+  });
+
+  it("rejects generated and dependency directories while accepting authored hidden trees", async () => {
+    const { harness } = await loadVirtualSyncVault({});
+
+    for (const acceptedPath of [
+      ".agents/instructions.md",
+      ".claude/CLAUDE.md",
+      ".codex/AGENTS.md",
+      ".cursor/rules/project.md",
+      ".dotfiles/config.md",
+    ]) {
+      await expect(
+        harness.callRpc("saveNote", {
+          vaultId: "personal",
+          path: acceptedPath,
+          content: "# Human-authored",
+        }),
+      ).resolves.toMatchObject({ outcome: "written" });
+    }
+
+    for (const rejectedPath of [
+      ".claude/worktrees/checkout/AGENTS.md",
+      ".git/README.md",
+      ".node_modules/package/README.md",
+      ".ruff_cache/README.md",
+      ".scratch/notes.md",
+      "dist/README.md",
+      "node_modules/package/README.md",
+    ]) {
+      await expect(
+        harness.callRpc("saveNote", {
+          vaultId: "personal",
+          path: rejectedPath,
+          content: "# Generated",
+        }),
+      ).rejects.toMatchObject({
+        code: "invalid_input",
+        issues: expect.arrayContaining([
+          expect.objectContaining({ message: `Invalid vault path: ${rejectedPath}` }),
+        ]),
+      });
+    }
+  });
+
+  it.each([
+    { enabled: true, disables: 1 },
+    { enabled: false, disables: 0 },
+  ])(
+    "disables bb's built-in Docs on install when it is enabled: $enabled",
+    async ({ enabled, disables }) => {
+      const { harness } = await loadNotebook({});
+      harness.sdk.stub("plugins.list", async () => ({
+        plugins: [{ id: "simple-notes", enabled }],
+      }));
+      harness.sdk.stub("plugins.disable", async () => ({ id: "simple-notes", enabled: false }));
+
+      await harness.lifecycle.install();
+
+      expect(harness.sdk.callsTo("plugins.disable")).toEqual(
+        Array.from({ length: disables }, () => [{ pluginId: "simple-notes" }]),
+      );
+    },
+  );
+
+  it("drops the vaults of a removed machine and keeps a vault available", async () => {
+    const { bb, harness } = await loadNotebook({});
+    const db = bb.storage.database();
+    const insert = db.prepare(
+      "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, ?, ?, ?)",
+    );
+    insert.run("remote", "Remote", "host_remote", "/remote/notes", Date.now());
+    insert.run("other", "Other", "host_other", "/other/notes", Date.now());
+
+    await harness.behavior.emitThreadEvent("experimental_host.deleted", {
+      host: makeHostResponse({ id: "host_remote" }),
+    });
+    const vaultIds = () =>
+      db
+        .prepare("SELECT id FROM vaults ORDER BY id")
+        .all()
+        .map((row) => (row as { id: string }).id);
+    expect(vaultIds()).toEqual(["other", "personal"]);
+
+    db.prepare("DELETE FROM vaults WHERE id = 'personal'").run();
+    await harness.behavior.emitThreadEvent("experimental_host.deleted", {
+      host: makeHostResponse({ id: "host_other" }),
+    });
+    expect(vaultIds()).toEqual(["personal"]);
   });
 });
