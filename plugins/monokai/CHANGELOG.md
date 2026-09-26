@@ -63,6 +63,18 @@
 - Lift collapsed timeline toggles ("Ran 2 commands", "Thought 3s") from a
   stacked 12% alpha to the readback step so they read against the ground.
 
+## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.4.0...monokai/v0.5.0) (2026-09-26)
+
+
+### Features
+
+* **monokai:** let a plugin opt into the diff-header treatment ([2ddd66c](https://github.com/smsunarto/bb-plugins/commit/2ddd66cbc1daf0b5e5de881f46327ba8a0c2a5bc))
+
+
+### Bug Fixes
+
+* **monokai:** mute marketplace category icons ([bc41dc0](https://github.com/smsunarto/bb-plugins/commit/bc41dc0c1ea44727ce00bb55de38d90b9851254d))
+
 ## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.3.2...monokai/v0.4.0) (2026-09-15)
 
 
