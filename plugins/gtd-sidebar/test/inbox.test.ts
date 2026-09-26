@@ -4,6 +4,7 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { buildInboxTree, createShelfArrivals, visibleInboxRows } from "../lib/inbox-tree.ts";
 import {
   activeSectionFor,
+  archiveAsksFirst,
   childrenOf,
   filterByProject,
   nextThreadIdAfterSettle,
@@ -124,6 +125,26 @@ describe("nextThreadIdAfterSettle", () => {
 
   it("returns no target when the section has no adjacent row", () => {
     assert.equal(nextThreadIdAfterSettle([thread({ id: "only" })], "only", "only"), null);
+  });
+});
+
+describe("archiveAsksFirst", () => {
+  const threads = [
+    thread({ id: "parent" }),
+    thread({ id: "child", parentThreadId: "parent" }),
+    thread({ id: "fork", parentThreadId: "forked", originKind: "fork" }),
+    thread({ id: "forked" }),
+    thread({ id: "alone" }),
+  ];
+
+  it("expects bb's confirmation for a thread with children, forks included", () => {
+    assert.equal(archiveAsksFirst(threads, "parent"), true);
+    assert.equal(archiveAsksFirst(threads, "forked"), true);
+  });
+
+  it("archives a childless thread straight away", () => {
+    assert.equal(archiveAsksFirst(threads, "alone"), false);
+    assert.equal(archiveAsksFirst(threads, "child"), false);
   });
 });
 

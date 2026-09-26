@@ -59,19 +59,20 @@ reinstall.
 
 ## Requirements
 
-- bb 0.43.1+
+- bb 0.44.0+
 - Sidebar organization needs nothing else.
 - Thread naming needs an existing Codex login on bb's primary host.
 
 ## Usage
 
-Installing does not change your sidebar by itself. Open **Settings → Appearance →
-Sidebar** and choose **GTD Sidebar (inbox)**.
+Installing makes GTD Sidebar your sidebar. bb's **Automatic** choice picks an
+installed thread list over its own. If you pinned a list under **Settings →
+Appearance → Sidebar**, choose **GTD Sidebar (inbox)** there.
 
 <picture><img src="docs/media/enable.png" alt="bb's Appearance settings with GTD Sidebar (inbox) chosen for Sidebar" width="100%" /></picture>
 
-bb's own list stays the default, and comes back the moment you switch away or
-disable the plugin.
+bb's own Thread list comes back the moment you pick it there or disable the
+plugin.
 
 ### Active and parked sections
 
@@ -224,6 +225,9 @@ the task has not changed.
 - A project scope picker — the one control the plugin adds.
 - Right-click a row for Settle and Snooze first, followed by bb's split, copy-link,
   read/unread, pin, section-move, rename, and delete actions. Settle replaces Archive.
+  Settling a thread with subthreads waits for bb's confirmation before moving on.
+- Rename a thread in place: choose Rename, or double-click its title. Enter saves,
+  Escape cancels, and a failed save keeps your text for another try.
   Moving to a section also unpins the thread, as in bb's normal sidebar.
 - On a phone, hold a row for half a second (iOS's own long-press timing) for a short
   settle, snooze, pin, and delete menu, drawn as an iOS-style frosted sheet.
@@ -241,7 +245,7 @@ these preferences on the server and updates open clients when they change.
 
 ### Feature catalog
 
-Core means available when you select GTD Sidebar in Appearance. Core actions run
+Core means available while GTD Sidebar is your sidebar. Core actions run
 only when you use them, apart from reads and clocks needed to keep the inbox
 accurate. Normal inbox behavior does not invoke an AI model or poll external
 services. The explicit naming command below is a separate user-requested inference.
@@ -286,8 +290,9 @@ services. The explicit naming command below is a separate user-requested inferen
 
 ## Troubleshooting
 
-**My sidebar looks the same after installing.** Choose GTD Sidebar in Settings →
-Appearance → Sidebar. Installing alone changes nothing.
+**My sidebar looks the same after installing.** An earlier choice in Settings →
+Appearance → Sidebar outranks Automatic. Choose GTD Sidebar (inbox) or Automatic
+there. Another installed thread list can also win Automatic; pick one explicitly.
 
 **A snoozed thread came back early.** That is the design: a snoozed thread wakes when
 it starts working or asks you a question.
@@ -314,9 +319,14 @@ Thread naming adapts the lifecycle design from
 [`suiramdev/bb-plugin-thread-namer`](https://github.com/suiramdev/bb-plugin-thread-namer)
 at commit `023d1229db020330a940e4bff060e23bd4b278d8`.
 
-The provider brand marks are vendored SVG geometry from `get-bb/bb` and depict
-third-party brands. A host-served logo always wins over them, rendered as a muted
-silhouette rather than in brand color — by design.
+The in-place rename editor, and the compact-viewport hooks it reads, are ported
+from bb's forkable built-in Thread list (`plugins/thread-list`) and its component
+registry at `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`). GTD
+Sidebar is not a fork of that plugin: its t3sidebar lineage has no upstream to merge
+from, so features are ported one at a time.
+
+Provider icons are bb's own artwork, drawn through `experimental_ProviderIcon`
+in one muted tint rather than in brand color — by design.
 
 ## Develop from source
 

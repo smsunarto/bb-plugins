@@ -47,6 +47,19 @@ export function nextThreadIdAfterSettle<T extends { readonly id: string }>(
   return sectionThreads[settledIndex + 1]?.id ?? sectionThreads[settledIndex - 1]?.id ?? null;
 }
 
+/**
+ * Whether bb will ask before archiving this thread. bb archives a thread with
+ * its children and confirms first only when it has any (get-bb/bb#4205), so
+ * the settle waits for that answer before it leaves the thread. Counted on
+ * bb's raw parent link, forks included, the same link bb's count follows.
+ */
+export function archiveAsksFirst(
+  threads: readonly Pick<PluginSidebarThread, "parentThreadId">[],
+  threadId: string,
+): boolean {
+  return threads.some((thread) => thread.parentThreadId === threadId);
+}
+
 export function effectiveParentThreadId(thread: PluginSidebarThread): string | null {
   return thread.originKind === "fork" ? null : thread.parentThreadId;
 }

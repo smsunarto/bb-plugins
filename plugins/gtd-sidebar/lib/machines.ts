@@ -17,11 +17,21 @@ export function machineColor(hostId: string): string {
   return MACHINE_COLORS[hash % MACHINE_COLORS.length]!;
 }
 
-export function sidebarMachines(threads: readonly PluginSidebarThread[]): SidebarMachine[] {
+/**
+ * Every machine the picker offers: bb's known machines, including ones with
+ * no threads yet, plus any machine a thread still names. A known machine's
+ * record wins, so a rename shows before its threads refresh. Hosts older than
+ * bb 0.44 omit `experimental_hosts`, and the threads alone decide.
+ */
+export function sidebarMachines(
+  threads: readonly PluginSidebarThread[],
+  hosts: readonly SidebarMachine[] = [],
+): SidebarMachine[] {
   const machines = new Map<string, SidebarMachine>();
   for (const thread of threads) {
     if (thread.host) machines.set(thread.host.id, thread.host);
   }
+  for (const host of hosts) machines.set(host.id, { id: host.id, name: host.name });
   return [...machines.values()].sort(
     (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
   );

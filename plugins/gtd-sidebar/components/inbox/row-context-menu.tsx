@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Glass } from "@samasante/liquid-glass";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
@@ -8,7 +8,7 @@ import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { MENU_GLASS } from "../../lib/menu-glass";
 import { findThreadAction, type DispatchRowCommand, type ThreadActionPlan } from "./thread-actions";
-import { RenameThreadDialog } from "./rename-thread-dialog";
+import type { ThreadRename } from "./inline-rename";
 
 /**
  * The desktop menu adds BB's normal actions after the GTD lifecycle moves.
@@ -20,16 +20,18 @@ export function RowContextMenu({
   thread,
   command,
   plan,
+  rename,
   disabled = false,
   children,
 }: {
   thread: PluginSidebarThread;
   command: DispatchRowCommand;
   plan: ThreadActionPlan;
+  /** The row's in-place title editor, which Rename opens. */
+  rename: ThreadRename;
   disabled?: boolean;
   children: ReactNode;
 }) {
-  const [renaming, setRenaming] = useState(false);
   const pin = findThreadAction(plan, "toggle-pin");
   const remove = findThreadAction(plan, "request-delete");
 
@@ -47,99 +49,91 @@ export function RowContextMenu({
   }
 
   return (
-    <>
-      <ContextMenu.Root>
-        <ContextMenu.Trigger asChild disabled={disabled}>
-          {children}
-        </ContextMenu.Trigger>
-        <ContextMenu.Portal>
-          <ContextMenu.Content
-            {...usePortalScopeProps()}
-            aria-label="Thread actions"
-            className="z-50 min-w-44 text-popover-foreground"
-            // The theme paints context-menu content as an opaque, bordered
-            // 15px card. Inline resets outrank that selector so the Glass
-            // below is the only surface, with the theme's geometry moved onto it.
-            style={{ padding: 0, border: 0, background: "transparent", boxShadow: "none" }}
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild disabled={disabled}>
+        {children}
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          {...usePortalScopeProps()}
+          aria-label="Thread actions"
+          onCloseAutoFocus={rename.onCloseAutoFocus}
+          className="z-50 min-w-44 text-popover-foreground"
+          // The theme paints context-menu content as an opaque, bordered
+          // 15px card. Inline resets outrank that selector so the Glass
+          // below is the only surface, with the theme's geometry moved onto it.
+          style={{ padding: 0, border: 0, background: "transparent", boxShadow: "none" }}
+        >
+          <Glass
+            optics={MENU_GLASS}
+            style={{ display: "block" }}
+            className={cn(
+              "rounded-[15px] p-[5px]",
+              // Translucent on purpose: the colour is the glass tint and the
+              // refracted sidebar shows through it.
+              "bg-popover/70",
+              // Uniform 1px rim so all four edges read alike (see MENU_GLASS).
+              "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12),0_0_0_0.5px_rgba(0,0,0,0.18),0_16px_40px_rgba(0,0,0,0.26),0_2px_6px_rgba(0,0,0,0.18)]",
+            )}
           >
-            <Glass
-              optics={MENU_GLASS}
-              style={{ display: "block" }}
-              className={cn(
-                "rounded-[15px] p-[5px]",
-                // Translucent on purpose: the colour is the glass tint and the
-                // refracted sidebar shows through it.
-                "bg-popover/70",
-                // Uniform 1px rim so all four edges read alike (see MENU_GLASS).
-                "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12),0_0_0_0.5px_rgba(0,0,0,0.18),0_16px_40px_rgba(0,0,0,0.26),0_2px_6px_rgba(0,0,0,0.18)]",
-              )}
+            {plan
+              .filter(({ id }) => id !== "toggle-pin" && id !== "request-delete")
+              .map((action) => (
+                <MenuAction key={action.id} icon={action.icon} onSelect={action.execute}>
+                  {action.label}
+                </MenuAction>
+              ))}
+            <MenuSeparator />
+            <MenuAction
+              icon="Columns2"
+              onSelect={() =>
+                command({
+                  kind: "open-in-split",
+                  threadId: thread.id,
+                })
+              }
             >
-              {plan
-                .filter(({ id }) => id !== "toggle-pin" && id !== "request-delete")
-                .map((action) => (
-                  <MenuAction key={action.id} icon={action.icon} onSelect={action.execute}>
-                    {action.label}
-                  </MenuAction>
-                ))}
-              <MenuSeparator />
-              <MenuAction
-                icon="Columns2"
-                onSelect={() =>
-                  command({
-                    kind: "open-in-split",
-                    threadId: thread.id,
-                  })
-                }
-              >
-                Open in split
+              Open in split
+            </MenuAction>
+            <MenuSeparator />
+            <MenuAction
+              icon="Copy"
+              onSelect={() => {
+                void copyLink();
+              }}
+            >
+              Copy thread link
+            </MenuAction>
+            <MenuAction
+              icon={thread.isUnread ? "MailOpen" : "Mail"}
+              onSelect={() =>
+                command({
+                  kind: "set-read",
+                  threadId: thread.id,
+                  read: thread.isUnread,
+                })
+              }
+            >
+              {thread.isUnread ? "Mark read" : "Mark unread"}
+            </MenuAction>
+            {pin && (
+              <MenuAction icon={pin.icon} onSelect={pin.execute}>
+                {pin.label}
               </MenuAction>
-              <MenuSeparator />
-              <MenuAction
-                icon="Copy"
-                onSelect={() => {
-                  void copyLink();
-                }}
-              >
-                Copy thread link
+            )}
+            <MenuAction icon="Edit" onSelect={rename.startEditingFromMenu}>
+              Rename
+            </MenuAction>
+            <MenuSeparator />
+            {remove && (
+              <MenuAction icon={remove.icon} onSelect={remove.execute} destructive>
+                {remove.label}
               </MenuAction>
-              <MenuAction
-                icon={thread.isUnread ? "MailOpen" : "Mail"}
-                onSelect={() =>
-                  command({
-                    kind: "set-read",
-                    threadId: thread.id,
-                    read: thread.isUnread,
-                  })
-                }
-              >
-                {thread.isUnread ? "Mark read" : "Mark unread"}
-              </MenuAction>
-              {pin && (
-                <MenuAction icon={pin.icon} onSelect={pin.execute}>
-                  {pin.label}
-                </MenuAction>
-              )}
-              <MenuAction icon="Edit" onSelect={() => setRenaming(true)}>
-                Rename
-              </MenuAction>
-              <MenuSeparator />
-              {remove && (
-                <MenuAction icon={remove.icon} onSelect={remove.execute} destructive>
-                  {remove.label}
-                </MenuAction>
-              )}
-            </Glass>
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
-      </ContextMenu.Root>
-      {renaming && (
-        <RenameThreadDialog
-          threadId={thread.id}
-          initialTitle={thread.displayTitle}
-          onClose={() => setRenaming(false)}
-        />
-      )}
-    </>
+            )}
+          </Glass>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
 

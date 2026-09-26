@@ -26,8 +26,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.43.1 <1.0.0",
-    "bbPluginSdk": ">=0.5.9"
+    "bb": ">=0.44.0 <1.0.0",
+    "bbPluginSdk": ">=0.5.29"
   },
   "bb": {
     "name": "GTD Sidebar",

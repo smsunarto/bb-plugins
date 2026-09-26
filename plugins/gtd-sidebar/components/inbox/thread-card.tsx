@@ -19,6 +19,7 @@ import {
 import { Icon, type IconName } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { RowContextMenu } from "./row-context-menu";
+import { useThreadRename, type ThreadRename } from "./inline-rename";
 import { LIST_HOVER_TRANSITION } from "./row-motion";
 import { CompactThreadActionMenu } from "./thread-action-menu";
 import {
@@ -202,9 +203,11 @@ const ThreadCardBody = memo(function ThreadCardBody({
       ? `${childCount} subthreads`
       : undefined;
   const titleText = thread.displayTitle;
+  const rename = useThreadRename(thread.id, titleText);
 
   const title = (
     <ThreadTitle
+      editor={rename.editor}
       title={titleText}
       isNaming={isNaming}
       isActive={isActive}
@@ -235,10 +238,17 @@ const ThreadCardBody = memo(function ThreadCardBody({
   );
 
   return (
-    <RowContextMenu thread={thread} command={command} plan={plan} disabled={isCompactViewport}>
+    <RowContextMenu
+      thread={thread}
+      command={command}
+      plan={plan}
+      rename={rename}
+      disabled={isCompactViewport}
+    >
       <li className="list-none">
         <div
           ref={setCardRef}
+          data-sidebar-rename-row=""
           data-sidebar-thread-active={isActive ? "true" : undefined}
           data-sidebar-thread-focused={isFocusedInSplit}
           {...handlers}
@@ -288,6 +298,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             onNestPointerDown={onNestPointerDown}
             onNestKeyDown={onNestKeyDown}
             nestActive={drag?.source?.kind === "thread"}
+            rename={rename}
             command={command}
           />
           {isCompactViewport ? (
@@ -394,6 +405,7 @@ function summaryHeight(mobile: boolean, compact: boolean) {
 }
 
 function ThreadTitle({
+  editor,
   title,
   isNaming,
   isActive,
@@ -401,6 +413,8 @@ function ThreadTitle({
   isChild,
   mobile,
 }: {
+  /** The in-place rename editor, drawn instead of the title while open. */
+  editor: ReactNode;
   title: string;
   isNaming: boolean;
   isActive: boolean;
@@ -411,22 +425,28 @@ function ThreadTitle({
   // A read child sits at the slim-row tone so it reads as secondary to its
   // parent; unread children keep full color and weight so attention pops.
   const muted = isChild && !isActive && !isUnread;
+  // The editor takes the title's own classes, so a rename keeps its size,
+  // weight and tone in every row state.
+  const typography = cn(
+    "gtd-thread-title min-w-0 flex-1",
+    mobile && "gtd-mobile-title",
+    isActive
+      ? "text-sidebar-accent-foreground"
+      : muted
+        ? mobile
+          ? "text-muted-foreground"
+          : "text-muted-foreground/70"
+        : "text-sidebar-foreground",
+    isUnread && "font-medium",
+  );
+  if (editor !== null) {
+    return <span className={cn(typography, "pointer-events-auto relative z-10")}>{editor}</span>;
+  }
   return (
     <span
       data-gtd-naming={isNaming || undefined}
       aria-busy={isNaming || undefined}
-      className={cn(
-        "gtd-thread-title min-w-0 flex-1",
-        mobile && "gtd-mobile-title",
-        isActive
-          ? "text-sidebar-accent-foreground"
-          : muted
-            ? mobile
-              ? "text-muted-foreground"
-              : "text-muted-foreground/70"
-            : "text-sidebar-foreground",
-        isUnread && "font-medium",
-      )}
+      className={typography}
     >
       <FadingText text={title} />
     </span>
@@ -566,6 +586,7 @@ function ThreadRowLink({
   onNestPointerDown,
   onNestKeyDown,
   nestActive,
+  rename,
   command,
 }: {
   thread: PluginSidebarThread;
@@ -590,6 +611,7 @@ function ThreadRowLink({
   onNestKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   /** A nest drag is live somewhere in the list. */
   nestActive: boolean;
+  rename: ThreadRename;
   command: DispatchRowCommand;
 }) {
   return (
@@ -608,6 +630,7 @@ function ThreadRowLink({
         // Both attributes, or bb's nine thread shortcuts stop finding rows.
         data-sidebar-thread-shortcut-target=""
         data-sidebar-thread-id={threadId}
+        data-sidebar-rename-anchor=""
         href="#"
         aria-label={title}
         aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
@@ -643,9 +666,11 @@ function ThreadRowLink({
           onNestPointerDown(event);
           onSplitPointerDown?.(event);
         }}
+        onDoubleClick={rename.onDoubleClick}
         onClick={(event) => {
           if (event.button !== 0) return;
           event.preventDefault();
+          if (rename.isEditing) return;
           command({
             kind: "open",
             threadId: threadId,

@@ -11,6 +11,7 @@ import {
   useSdk,
   useSettings,
   type PluginSidebarThread,
+  type PluginSidebarThreadActions,
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
@@ -34,7 +35,7 @@ import { useSettledArchivePaging, useUnsettle } from "../../hooks/use-settled-th
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
 import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
-import { filterByProject, nextThreadIdAfterSettle } from "../../lib/inbox";
+import { archiveAsksFirst, filterByProject, nextThreadIdAfterSettle } from "../../lib/inbox";
 import {
   buildInboxTree,
   createShelfArrivals,
@@ -61,6 +62,8 @@ import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "../../lib/gitbu
 import { filterByMachine, sidebarMachines } from "../../lib/machines";
 import { MachineScopePicker } from "./machine-scope-picker";
 import { MachineAppearanceProvider } from "./machine-appearance";
+import { RenameProvider } from "./inline-rename";
+import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
 
 const ALL_PROJECTS = "__all__";
 // The Settled shelf is a view of bb's archive, so the host list is asked for
@@ -74,12 +77,27 @@ const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
   WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
 };
 
-export function ThreadInbox({
+export function ThreadInbox(props: PluginThreadListProps) {
+  // One subscription to bb's actions for the whole list; rows never take one.
+  const threadActions = useSidebarThreadActions();
+  // bb's slot prop, not a media query, decides compact for the vendored
+  // registry hooks, so the rename editor and the rows agree.
+  return (
+    <CompactViewportOverrideProvider isCompactViewport={props.isCompactViewport}>
+      <RenameProvider renameThread={threadActions.rename}>
+        <InboxList {...props} threadActions={threadActions} />
+      </RenameProvider>
+    </CompactViewportOverrideProvider>
+  );
+}
+
+function InboxList({
   activeThreadId,
   isCompactViewport,
   onNavigate,
   searchQuery,
-}: PluginThreadListProps) {
+  threadActions,
+}: PluginThreadListProps & { threadActions: PluginSidebarThreadActions }) {
   const sidebar = useSidebarThreads({ experimental_lifecycles: SIDEBAR_LIFECYCLES });
   const { status, projects } = sidebar;
   const now = useMinuteClock();
@@ -101,7 +119,7 @@ export function ThreadInbox({
   );
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const [machineScope, setMachineScope] = useState<string | null>(null);
-  const machines = sidebarMachines(threads);
+  const machines = sidebarMachines(threads, sidebar.experimental_hosts);
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon === true;
@@ -193,9 +211,14 @@ export function ThreadInbox({
       ),
     [pinned, nextAction, waiting, showWaiting, searching, grouped, isGroupCollapsed],
   );
-  const navigate = useBbNavigate();
+  // A machine scope carries into the composer, which preselects that machine
+  // for the new environment when it can host one.
   const onNewThread = useCommittedEvent((projectId: string) => {
-    navigate.toProject(projectId);
+    threadActions.openNewThread({
+      projectId,
+      hostId: machineScope ?? undefined,
+      focusPrompt: true,
+    });
     onNavigate();
   });
   const sdk = useSdk();
@@ -325,6 +348,8 @@ export function ThreadInbox({
     lifecycle,
     unsettle,
     visibleActiveRows,
+    threads: sidebar.threads,
+    threadActions,
   });
 
   return (
@@ -584,6 +609,8 @@ function useRowCommands({
   lifecycle,
   unsettle,
   visibleActiveRows,
+  threads,
+  threadActions,
 }: {
   activeThreadId: PluginThreadListProps["activeThreadId"];
   onNavigate: PluginThreadListProps["onNavigate"];
@@ -593,21 +620,40 @@ function useRowCommands({
     shelf: ActiveThreadShelf;
     row: VisibleInboxRow;
   }[];
+  threads: readonly PluginSidebarThread[];
+  threadActions: PluginSidebarThreadActions;
 }) {
-  const threadActions = useSidebarThreadActions();
   const navigate = useBbNavigate();
   // bb's archive sends the viewer to the compose screen once the mutation
   // resolves. Route changes commit inside a React transition, so against a
   // local server that lands before the neighbour's route does and wins. The
   // neighbour is therefore opened twice if need be: eagerly, and again from
   // this effect once the view has left the settled thread for nothing.
-  const pendingAdvanceRef = useRef<{ settledThreadId: string; nextThreadId: string } | null>(null);
+  const pendingAdvanceRef = useRef<{
+    settledThreadId: string;
+    nextThreadId: string;
+    /** bb asked first, so the advance also waits for the list to drop the thread. */
+    awaitsArchive: boolean;
+  } | null>(null);
   useEffect(() => {
     const pending = pendingAdvanceRef.current;
     if (pending === null || activeThreadId === pending.settledThreadId) return;
+    if (activeThreadId !== null) {
+      pendingAdvanceRef.current = null;
+      return;
+    }
+    // A cancelled confirmation leaves the thread live; an empty route is then
+    // the composer opened by hand, not the archive landing, so stay put. The
+    // route and the list refresh land in either order, so both are watched.
+    if (
+      pending.awaitsArchive &&
+      threads.some((entry) => entry.id === pending.settledThreadId && !entry.isArchived)
+    ) {
+      return;
+    }
     pendingAdvanceRef.current = null;
-    if (activeThreadId === null) threadActions.open(pending.nextThreadId);
-  }, [activeThreadId, threadActions]);
+    threadActions.open(pending.nextThreadId);
+  }, [activeThreadId, threads, threadActions]);
 
   const settle = useCommittedEvent((threadId: string) => {
     const settled = visibleActiveRows.find((entry) => entry.row.node.thread.id === threadId);
@@ -628,9 +674,14 @@ function useRowCommands({
       }
       const nextThreadId = nextThreadIdAfterSettle(section, threadId, activeThreadId);
       if (nextThreadId !== null) {
-        pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId };
-        threadActions.open(nextThreadId);
-        onNavigate();
+        const awaitsArchive = archiveAsksFirst(threads, threadId);
+        pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId, awaitsArchive };
+        // A parent waits on bb's confirmation, so only the effect above
+        // advances, once the archive lands. A cancel leaves the user in place.
+        if (!awaitsArchive) {
+          threadActions.open(nextThreadId);
+          onNavigate();
+        }
       }
     }
     threadActions.archive(threadId);

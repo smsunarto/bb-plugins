@@ -14,6 +14,7 @@ import {
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { RowContextMenu } from "./row-context-menu";
+import { useThreadRename } from "./inline-rename";
 import { LIST_HOVER_TRANSITION } from "./row-motion";
 import { CompactThreadActionMenu } from "./thread-action-menu";
 import {
@@ -95,6 +96,7 @@ const SlimRowBody = memo(function SlimRowBody({
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
   const title = thread.displayTitle;
+  const rename = useThreadRename(thread.id, title);
   const onRestore = () => command({ kind: "restore", threadId: thread.id, shelf });
   const plan = buildThreadActionPlan({
     lifecycle:
@@ -143,10 +145,17 @@ const SlimRowBody = memo(function SlimRowBody({
   );
 
   return (
-    <RowContextMenu thread={thread} command={command} plan={plan} disabled={isCompactViewport}>
+    <RowContextMenu
+      thread={thread}
+      command={command}
+      plan={plan}
+      rename={rename}
+      disabled={isCompactViewport}
+    >
       <li className="list-none">
         <div
           ref={rowRef}
+          data-sidebar-rename-row=""
           {...handlers}
           data-action-count={isCompactViewport ? 0 : 1}
           className={rowClassName}
@@ -177,12 +186,15 @@ const SlimRowBody = memo(function SlimRowBody({
               onPointerDown={onSplitPointerDown}
               data-sidebar-thread-shortcut-target=""
               data-sidebar-thread-id={thread.id}
+              data-sidebar-rename-anchor=""
               href="#"
               aria-label={title}
               aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
+              onDoubleClick={rename.onDoubleClick}
               onClick={(event) => {
                 if (event.button !== 0) return;
                 event.preventDefault();
+                if (rename.isEditing) return;
                 command({
                   kind: "open",
                   threadId: thread.id,
@@ -194,17 +206,31 @@ const SlimRowBody = memo(function SlimRowBody({
             />
           </ThreadDetails>
           <HostLead host={thread.host} />
-          <span
-            data-gtd-naming={isNaming || undefined}
-            aria-busy={isNaming || undefined}
-            className={cn(
-              "pointer-events-none relative min-w-0 flex-1 truncate",
-              titleClassName,
-              "group-hover/slim:text-foreground",
-            )}
-          >
-            {isCompactViewport ? title : <FadingText text={title} />}
-          </span>
+          {rename.isEditing ? (
+            // The title's classes minus the click-through and the clip, which
+            // would hide the editor's error below the row.
+            <span
+              className={cn(
+                "relative z-10 min-w-0 flex-1",
+                titleClassName,
+                "group-hover/slim:text-foreground",
+              )}
+            >
+              {rename.editor}
+            </span>
+          ) : (
+            <span
+              data-gtd-naming={isNaming || undefined}
+              aria-busy={isNaming || undefined}
+              className={cn(
+                "pointer-events-none relative min-w-0 flex-1 truncate",
+                titleClassName,
+                "group-hover/slim:text-foreground",
+              )}
+            >
+              {isCompactViewport ? title : <FadingText text={title} />}
+            </span>
+          )}
           <SlimRowStatus
             status={status}
             shelf={shelf}

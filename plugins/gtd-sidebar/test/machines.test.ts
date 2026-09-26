@@ -18,6 +18,19 @@ describe("sidebar machines", () => {
     ]);
   });
 
+  test("lists known machines without threads, preferring their current names", () => {
+    expect(
+      sidebarMachines(threads, [
+        { id: "host-b", name: "Renamed" },
+        { id: "host-c", name: "Empty" },
+      ]),
+    ).toEqual([
+      { id: "host-c", name: "Empty" },
+      { id: "host-b", name: "Renamed" },
+      { id: "host-a", name: "Studio" },
+    ]);
+  });
+
   test("filters machine and project together without treating unknown hosts as local", () => {
     expect(filterByProject(filterByMachine(threads, "host-a"), "repo-a").map((t) => t.id)).toEqual([
       "one",

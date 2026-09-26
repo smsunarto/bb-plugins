@@ -22,8 +22,12 @@ import type { InboxShelf } from "../lib/inbox-tree";
 import { projectDropEdge, type ProjectDropEdge } from "../lib/project-groups";
 import { DRAG_KIND, sidebarDragPayload, type SidebarDragPayload } from "../lib/sidebar-drag";
 
-/** How far the pointer travels before a press becomes a drag; a click stays a click. */
-const DRAG_DISTANCE_PX = 6;
+/**
+ * How far the pointer travels before a press becomes a drag; a click stays a
+ * click. bb's own sidebar settled on 8px (get-bb/bb#4185), since click jitter
+ * crossed the smaller threshold.
+ */
+const DRAG_DISTANCE_PX = 8;
 
 /** Droppable ids: one per thread row, one per project header per shelf. */
 export function threadDropId(threadId: string): string {
