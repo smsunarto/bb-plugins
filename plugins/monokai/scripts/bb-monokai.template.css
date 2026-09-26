@@ -1375,6 +1375,26 @@ diffs-container {
   --canvas-prose-code-well: var(--accent);
 }
 
+/* Plugin marketplace category icons are decoration, not feedback. bb tints
+ * each category with a feedback or accent token (Security amber, Agents green,
+ * Code & Reviews purple), which gives those hues a second meaning. Paint them
+ * on the ladder like the neighbouring BB Official and New & notable shelf
+ * icons. bb sets the colour inline as `color-mix(in oklab, var(<token>) 75%,
+ * var(--ink))`, so only `!important` outranks it. That mix is unique to
+ * `PluginCategoryIcon` (bb 0.44 plugin-ui.tsx), which keeps the hook scoped.
+ * Every `Icon` render path (built-in svg, custom component span, asset span)
+ * carries `data-icon-root`, so match on that rather than the tag. The shelf
+ * row and title are muted text with foreground sibling icons, so the icon
+ * cannot simply inherit there. On the plugin detail page the icon sits inside
+ * the subtle byline (detail-sections.tsx), where it follows the text beside it. */
+.dark [data-icon-root][style*="75%, var(--ink))"] {
+  color: var(--foreground) !important;
+}
+
+.dark .text-subtle-foreground [data-icon-root][style*="75%, var(--ink))"] {
+  color: inherit !important;
+}
+
 /* bb's notification history is a first-class themed surface, separate from
  * the native browser and operating-system banners delivered by the push
  * notification plugin. The host owns responsive placement: a popover on
