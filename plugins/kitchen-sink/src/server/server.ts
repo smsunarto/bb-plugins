@@ -2,10 +2,10 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { readInstructions } from "./lib/instructions.ts";
 
 import { registerCompletionSound } from "./lib/completion-sound.ts";
+import { registerInlineVisOwner } from "./lib/inline-vis-owner.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { registerTimelineMotionSettings } from "./lib/timeline-motion.ts";
 import { mentionProviders } from "./mentions.ts";
-import { preparePreview } from "./rpc/prepare-preview.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
 
 export const SMART_EMBED_INSTRUCTIONS = readInstructions("smart-embeds");
@@ -15,11 +15,10 @@ export default definePlugin({
   pluginId: "kitchen-sink",
   rpc: {
     renderEmbed,
-    preparePreview,
   },
   rpcPublication: {
     discoverable: true,
-    description: "Smart Embed citations and inline visualization previews.",
+    description: "Smart Embed citations.",
   },
   setup(bb) {
     registerTimelineMotionSettings(bb);
@@ -28,6 +27,7 @@ export default definePlugin({
     }
     registerWorkspaceSignals(bb);
     registerCompletionSound(bb);
+    registerInlineVisOwner(bb);
   },
   agents: {
     tools: {},

@@ -1,4 +1,4 @@
-import { expect, mock, spyOn, test } from "bun:test";
+import { beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import { readFile } from "node:fs/promises";
 import { parsePatchFiles } from "@pierre/diffs";
@@ -78,24 +78,36 @@ async function inlineVisDirective() {
   return directive!;
 }
 
-type HtmlPreview = Extract<
-  import("../src/shared/contract.ts").PreparePreviewOutput,
-  { kind: "html" }
+// Upstream's collapse preference persists per client; each test starts without one.
+beforeEach(() => window.localStorage.clear());
+
+type SdkFakes = NonNullable<
+  NonNullable<Parameters<typeof import("@get-bb/plugin-sdk/testing/app").renderSlot>[2]>["sdk"]
 >;
-type MarkdownPreview = Extract<
-  import("../src/shared/contract.ts").PreparePreviewOutput,
-  { kind: "markdown" }
->;
-const previewMetadata = {
-  hostId: "host-1",
-  url: "/api/v1/file-previews/lease/demo.html",
-  expiresAtMs: Date.now() + 3_600_000,
-};
-function markdownPreview(file: string, _source: string, content: string): MarkdownPreview {
-  return { kind: "markdown", file, ...previewMetadata, content };
+const LEASE_URL = "/api/v1/file-previews/lease";
+/** The host file API as `useSdk()` sees it: `read` returns each file's text. */
+function previewSdk(
+  read: (path: string) => string | Promise<string>,
+  expiresAtMs = Date.now() + 3_600_000,
+): SdkFakes {
+  return {
+    threads: { storageLocation: async () => ({ hostId: "host-1", storageRootPath: "/storage" }) },
+    files: {
+      read: async ({ path }: { path: string }) => {
+        const content = await read(path);
+        return { content, contentEncoding: "utf8", sizeBytes: content.length };
+      },
+      createPreview: async () => ({ baseUrl: LEASE_URL, expiresAtMs }),
+    },
+  } as unknown as SdkFakes;
+}
+function previewReads(slot: { sdkCalls: readonly { method: string; args: unknown[] }[] }) {
+  return slot.sdkCalls
+    .filter((call) => call.method === "files.read")
+    .map((call) => (call.args[0] as { path: string }).path);
 }
 
-test("inline-vis rejects an unknown source without calling RPC", async () => {
+test("inline-vis rejects an unknown source without reading the file", async () => {
   const directive = await inlineVisDirective();
   const slot = renderSlot(
     directive,
@@ -105,23 +117,18 @@ test("inline-vis rejects an unknown source without calling RPC", async () => {
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { rpc: {} },
+    { sdk: {} },
   );
 
   expect(slot.getByRole("alert").textContent).toMatch(/no longer accepts source/i);
   expect(slot.container.querySelector("iframe")).toBeNull();
-  expect(slot.rpcCalls).toEqual([]);
+  expect(slot.sdkCalls).toEqual([]);
   slot.unmount();
 });
 
 test("inline-vis renders workspace Markdown with the host renderer and no iframe", async () => {
   const directive = await inlineVisDirective();
   const openWorkspaceFile = mock(() => true);
-  const preview = markdownPreview(
-    "/tmp/reports/notes.md",
-    "workspace",
-    "# Notes\n\nReady for review.",
-  );
   const slot = renderSlot(
     directive,
     {
@@ -130,14 +137,7 @@ test("inline-vis renders workspace Markdown with the host renderer and no iframe
       message: inlineVisMessage,
       openWorkspaceFile,
     },
-    {
-      rpc: {
-        preparePreview: (input) => {
-          expect(input).toEqual({ threadId: "thread-inline-vis", file: "/tmp/reports/notes.md" });
-          return preview;
-        },
-      },
-    },
+    { sdk: previewSdk(() => "# Notes\n\nReady for review.") },
   );
 
   const markdown = await slot.findByTestId("bb-markdown");
@@ -147,13 +147,34 @@ test("inline-vis renders workspace Markdown with the host renderer and no iframe
   expect(markdown.parentElement?.style.height).toBe("224px");
   expect(slot.getByRole("button", { name: "Open /tmp/reports/notes.md" })).toBeTruthy();
   expect(openWorkspaceFile).not.toHaveBeenCalled();
+  expect(slot.sdkCalls.map((call) => [call.method, call.args[0]])).toEqual([
+    ["threads.storageLocation", { threadId: "thread-inline-vis", signal: expect.any(AbortSignal) }],
+    [
+      "files.read",
+      {
+        path: "/tmp/reports/notes.md",
+        rootPath: "/tmp/reports",
+        hostId: "host-1",
+        signal: expect.any(AbortSignal),
+      },
+    ],
+    [
+      "files.createPreview",
+      {
+        rootPath: "/tmp/reports",
+        hostId: "host-1",
+        ttlMs: 3_600_000,
+        signal: expect.any(AbortSignal),
+      },
+    ],
+  ]);
   slot.unmount();
 });
 
 test("inline-vis reserves the Markdown preview height while loading", async () => {
   const directive = await inlineVisDirective();
-  let resolvePreview = (_result: MarkdownPreview) => {};
-  const pendingPreview = new Promise<MarkdownPreview>((resolve) => {
+  let resolvePreview = (_content: string) => {};
+  const pendingPreview = new Promise<string>((resolve) => {
     resolvePreview = resolve;
   });
   const slot = renderSlot(
@@ -164,14 +185,14 @@ test("inline-vis reserves the Markdown preview height while loading", async () =
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { rpc: { preparePreview: () => pendingPreview } },
+    { sdk: previewSdk(() => pendingPreview) },
   );
 
   const loading = await slot.findByRole("status", { name: "Loading visualization /tmp/notes.md" });
   expect((loading as HTMLElement).style.height).toBe("480px");
   const loadingCard = loading.parentElement!;
 
-  resolvePreview(markdownPreview("/tmp/notes.md", "workspace", "# Notes"));
+  resolvePreview("# Notes");
   const markdown = await slot.findByTestId("bb-markdown");
   expect(markdown.parentElement?.style.height).toBe("480px");
   expect(markdown.parentElement?.parentElement).toBe(loadingCard);
@@ -179,7 +200,7 @@ test("inline-vis reserves the Markdown preview height while loading", async () =
   slot.unmount();
 });
 
-test("inline-vis requires a file attribute without calling RPC", async () => {
+test("inline-vis requires a file attribute without reading the file", async () => {
   const directive = await inlineVisDirective();
   const slot = renderSlot(
     directive,
@@ -189,11 +210,11 @@ test("inline-vis requires a file attribute without calling RPC", async () => {
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { rpc: {} },
+    { sdk: {} },
   );
 
   expect(slot.getByRole("alert").textContent).toMatch(/requires a file attribute/i);
-  expect(slot.rpcCalls).toEqual([]);
+  expect(slot.sdkCalls).toEqual([]);
   slot.unmount();
 });
 
@@ -208,22 +229,7 @@ test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox",
       message: inlineVisMessage,
       openWorkspaceFile,
     },
-    {
-      rpc: {
-        preparePreview: (input) => {
-          expect(input).toEqual({
-            threadId: "thread-inline-vis",
-            file: "/tmp/charts/demo file.html",
-          });
-          return {
-            kind: "html",
-            file: "/tmp/charts/demo file.html",
-            ...previewMetadata,
-            html: "<h1>Example</h1>",
-          };
-        },
-      },
-    },
+    { sdk: previewSdk(() => "<h1>Example</h1>") },
   );
 
   await slot.findByRole("status", {
@@ -237,7 +243,7 @@ test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox",
 
   expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
   expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
-  expect(iframe.getAttribute("src")).toBe(previewMetadata.url);
+  expect(iframe.getAttribute("src")).toBe(`${LEASE_URL}/demo%20file.html`);
   expect(iframe.getAttribute("srcdoc")).toBeNull();
   expect(iframe.style.height).toBe("224px");
   const toggle = slot.getByRole("button", { name: "Collapse preview /tmp/charts/demo file.html" });
@@ -254,12 +260,7 @@ test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox",
   );
   expect(slot.getByRole("button", { name: "Open /tmp/charts/demo file.html" })).toBeTruthy();
   expect(openWorkspaceFile).not.toHaveBeenCalled();
-  expect(slot.rpcCalls).toEqual([
-    {
-      method: "preparePreview",
-      input: { threadId: "thread-inline-vis", file: "/tmp/charts/demo file.html" },
-    },
-  ]);
+  expect(previewReads(slot)).toEqual(["/tmp/charts/demo file.html"]);
   slot.unmount();
 });
 
@@ -276,16 +277,7 @@ test("inline-vis sends assets once only to the prepared opaque frame and stops o
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    {
-      rpc: {
-        preparePreview: () => ({
-          kind: "html",
-          file: "/tmp/charts/player.html",
-          ...previewMetadata,
-          html: '<video controls src="clip.mp4"></video>',
-        }),
-      },
-    },
+    { sdk: previewSdk(() => '<video controls src="clip.mp4"></video>') },
   );
   try {
     await waitFor(() =>
@@ -325,8 +317,8 @@ test("inline-vis sends assets once only to the prepared opaque frame and stops o
 
 test("inline-vis uses an optional bounded height and reserves it while loading", async () => {
   const directive = await inlineVisDirective();
-  let resolvePreview = (_result: HtmlPreview) => {};
-  const pendingPreview = new Promise<HtmlPreview>((resolve) => {
+  let resolvePreview = (_html: string) => {};
+  const pendingPreview = new Promise<string>((resolve) => {
     resolvePreview = resolve;
   });
   const slot = renderSlot(
@@ -337,7 +329,7 @@ test("inline-vis uses an optional bounded height and reserves it while loading",
       message: inlineVisMessage,
       openWorkspaceFile: mock(() => true),
     },
-    { rpc: { preparePreview: () => pendingPreview } },
+    { sdk: previewSdk(() => pendingPreview) },
   );
 
   const loading = await slot.findByRole("status", { name: "Loading visualization /tmp/demo.html" });
@@ -348,7 +340,7 @@ test("inline-vis uses an optional bounded height and reserves it while loading",
   expect(loadingHeader.classList.contains("smart-diff-header")).toBe(true);
   expect(loadingHeader.querySelector(".smart-diff-open")).toBeNull();
 
-  resolvePreview({ kind: "html", file: "/tmp/demo.html", ...previewMetadata, html: "" });
+  resolvePreview("");
   const iframe = await waitFor(() => {
     const element = slot.container.querySelector("iframe");
     expect(element).toBeTruthy();
@@ -360,7 +352,7 @@ test("inline-vis uses an optional bounded height and reserves it while loading",
   slot.unmount();
 });
 
-test("inline-vis rejects invalid heights without calling RPC", async () => {
+test("inline-vis rejects invalid heights without reading the file", async () => {
   const directive = await inlineVisDirective();
   const slot = renderSlot(
     directive,
@@ -370,16 +362,16 @@ test("inline-vis rejects invalid heights without calling RPC", async () => {
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { rpc: {} },
+    { sdk: {} },
   );
 
   expect(slot.getByRole("alert").textContent).toMatch(/whole number from 120 to 1200 pixels/i);
   expect(slot.container.querySelector("iframe")).toBeNull();
-  expect(slot.rpcCalls).toEqual([]);
+  expect(slot.sdkCalls).toEqual([]);
   slot.unmount();
 });
 
-test("inline-vis reports RPC failures without mounting an iframe", async () => {
+test("inline-vis reports read failures without mounting an iframe", async () => {
   const directive = await inlineVisDirective();
   const slot = renderSlot(
     directive,
@@ -390,11 +382,9 @@ test("inline-vis reports RPC failures without mounting an iframe", async () => {
       openWorkspaceFile: null,
     },
     {
-      rpc: {
-        preparePreview: () => {
-          throw new Error("Preview file not found: /tmp/missing.html");
-        },
-      },
+      sdk: previewSdk(() => {
+        throw Object.assign(new Error("missing"), { status: 404 });
+      }),
     },
   );
 
@@ -424,22 +414,13 @@ test("inline-vis opens only the final two occurrences and unloads manually colla
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    {
-      rpc: {
-        preparePreview: () => ({
-          kind: "html",
-          file: "/tmp/same.html",
-          ...previewMetadata,
-          html: "",
-        }),
-      },
-    },
+    { sdk: previewSdk(() => "") },
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(2));
   const cards = [...slot.container.querySelectorAll(".inline-vis-card")];
   expect(cards.map((card) => !!card.querySelector("iframe"))).toEqual([false, false, true, true]);
   // StrictMode runs the two open previews' effects twice. Closed previews never prepare.
-  expect(slot.rpcCalls).toHaveLength(4);
+  expect(previewReads(slot)).toHaveLength(4);
   fireEvent.click(cards[0]!.querySelector("button")!);
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   const iframe = cards[0]!.querySelector("iframe");
@@ -482,26 +463,14 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
       },
     },
     { attributes: {}, source: "fixture", message: inlineVisMessage, openWorkspaceFile: null },
-    {
-      rpc: {
-        preparePreview: (input) => ({
-          kind: "html",
-          file: (input as { file: string }).file,
-          ...previewMetadata,
-          html: "",
-        }),
-      },
-    },
+    { sdk: previewSdk(() => "") },
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
-  expect(slot.rpcCalls.map((call) => (call.input as { file: string }).file).sort()).toEqual([
-    "/tmp/2.html",
-    "/tmp/3.html",
-    "/tmp/other.html",
-  ]);
-  fireEvent.click(slot.getByRole("button", { name: "Expand preview /tmp/1.html" }));
-  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(4));
+  expect(previewReads(slot).sort()).toEqual(["/tmp/2.html", "/tmp/3.html", "/tmp/other.html"]);
   fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/3.html" }));
+  // Expanding last leaves the remembered preference open, so new previews still auto-open.
+  fireEvent.click(slot.getByRole("button", { name: "Expand preview /tmp/1.html" }));
+  await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   fireEvent.click(slot.getByRole("button", { name: "Append preview" }));
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   const files = () =>
@@ -520,16 +489,14 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
     "inline-vis: /tmp/4.html",
     "inline-vis: /tmp/other.html",
   ]);
-  expect(
-    slot.rpcCalls.some((call) => (call.input as { file: string }).file === "/tmp/0.html"),
-  ).toBe(false);
+  expect(previewReads(slot)).not.toContain("/tmp/0.html");
   slot.unmount();
 });
 
 test("inline-vis ignores a preparation result that arrives after collapse", async () => {
   const directive = await inlineVisDirective();
-  let resolvePreview = (_result: HtmlPreview) => {};
-  const pending = new Promise<HtmlPreview>((resolve) => {
+  let resolvePreview = (_html: string) => {};
+  const pending = new Promise<string>((resolve) => {
     resolvePreview = resolve;
   });
   const slot = renderSlot(
@@ -540,16 +507,56 @@ test("inline-vis ignores a preparation result that arrives after collapse", asyn
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { rpc: { preparePreview: () => pending } },
+    { sdk: previewSdk(() => pending) },
   );
   await slot.findByRole("status", { name: "Loading visualization /tmp/pending.html" });
   fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/pending.html" }));
-  resolvePreview({ kind: "html", file: "/tmp/pending.html", ...previewMetadata, html: "" });
+  resolvePreview("");
   await waitFor(() =>
     expect(slot.getByRole("button", { name: "Expand preview /tmp/pending.html" })).toBeTruthy(),
   );
   expect(slot.container.querySelector("iframe")).toBeNull();
   slot.unmount();
+});
+
+test("inline-vis remembers the last collapse choice for previews that mount later", async () => {
+  const directive = await inlineVisDirective();
+  const render = (file: string) =>
+    renderSlot(
+      directive,
+      {
+        attributes: { file },
+        source: "fixture",
+        message: { ...inlineVisMessage, id: file },
+        openWorkspaceFile: null,
+      },
+      { sdk: previewSdk(() => "") },
+    );
+
+  const first = render("/tmp/first.html");
+  await waitFor(() => expect(first.container.querySelector("iframe")).toBeTruthy());
+  fireEvent.click(first.getByRole("button", { name: "Collapse preview /tmp/first.html" }));
+  first.unmount();
+  const stored = Object.entries(window.localStorage);
+  expect(stored).toHaveLength(1);
+  // Keyed by plugin id, so it never shares bb's built-in inline-vis preference.
+  expect(stored[0]![0]).toMatch(/^.+\.inline-vis\.collapsed$/u);
+  expect(stored[0]![0]).not.toBe("bb.inline-vis.collapsed");
+  expect(stored[0]![1]).toBe("true");
+
+  const second = render("/tmp/second.html");
+  await waitFor(() =>
+    expect(second.getByRole("button", { name: "Expand preview /tmp/second.html" })).toBeTruthy(),
+  );
+  expect(second.container.querySelector("iframe")).toBeNull();
+  expect(previewReads(second)).toEqual([]);
+  fireEvent.click(second.getByRole("button", { name: "Expand preview /tmp/second.html" }));
+  await waitFor(() => expect(second.container.querySelector("iframe")).toBeTruthy());
+  second.unmount();
+
+  const third = render("/tmp/third.html");
+  await waitFor(() => expect(third.container.querySelector("iframe")).toBeTruthy());
+  third.unmount();
 });
 
 function readyCode(patchText: string) {
@@ -883,17 +890,7 @@ test("inline-vis keeps an open iframe after its lease expires and refreshes only
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    {
-      rpc: {
-        preparePreview: () => ({
-          kind: "html",
-          file: "/tmp/interactive.html",
-          ...previewMetadata,
-          expiresAtMs: Date.now() - 1,
-          html: "<input value='keep me'>",
-        }),
-      },
-    },
+    { sdk: previewSdk(() => "<input value='keep me'>", Date.now() - 1) },
   );
   try {
     const iframe = await waitFor(() => {
@@ -904,10 +901,10 @@ test("inline-vis keeps an open iframe after its lease expires and refreshes only
     // An expired lease previously scheduled a destructive reload after one second.
     await new Promise((resolve) => setTimeout(resolve, 1_100));
     expect(slot.container.querySelector("iframe")).toBe(iframe);
-    expect(slot.rpcCalls).toHaveLength(1);
+    expect(previewReads(slot)).toHaveLength(1);
     fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/interactive.html" }));
     fireEvent.click(slot.getByRole("button", { name: "Expand preview /tmp/interactive.html" }));
-    await waitFor(() => expect(slot.rpcCalls).toHaveLength(2));
+    await waitFor(() => expect(previewReads(slot)).toHaveLength(2));
     await waitFor(() => expect(slot.container.querySelector("iframe")).toBeTruthy());
     expect(slot.container.querySelector("iframe")).not.toBe(iframe);
   } finally {

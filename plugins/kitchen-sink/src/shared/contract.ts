@@ -67,31 +67,6 @@ export type SmartEmbedsRpcContract = {
   };
 };
 
-export const preparePreviewInputSchema = z.strictObject({
-  threadId: z.string().trim().min(1),
-  file: z.string().trim().min(1).max(4_096),
-});
-export type PreparePreviewInput = z.output<typeof preparePreviewInputSchema>;
-
-const previewFields = {
-  file: z.string(),
-  hostId: z.string(),
-  url: z.string(),
-  expiresAtMs: z.number(),
-};
-export const preparePreviewOutputSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("html"), ...previewFields, html: z.string() }),
-  z.strictObject({ kind: z.literal("markdown"), ...previewFields, content: z.string() }),
-]);
-export type PreparePreviewOutput = z.output<typeof preparePreviewOutputSchema>;
-
-export type InlineVisRpcContract = {
-  readonly preparePreview: {
-    readonly input: typeof preparePreviewInputSchema;
-    readonly output: typeof preparePreviewOutputSchema;
-  };
-};
-
 /**
  * Realtime channel the server publishes on when a thread's workspace may have
  * changed. The app drops or refreshes cached embeds for that thread.

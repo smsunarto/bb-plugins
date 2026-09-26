@@ -70,7 +70,7 @@ Add `annotations='[{"x":72,"y":38,"label":"Background removed","side":"after"}]'
 
 ## Inline visualizations
 
-`::inline-vis{file="/absolute/path/demo.html"}` renders HTML directly in an assistant message. `.md` and `.markdown` files use bb's Markdown renderer with raw HTML disabled. An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.
+`::inline-vis{file="/absolute/path/demo.html"}` renders HTML directly in an assistant message. `.md` and `.markdown` files use bb's Markdown renderer with sanitized HTML. An optional `height="480"` sets a 120–1200 pixel viewport. The default is 224 pixels.
 
 `file` is an absolute path on the thread's host. There is no `source` attribute or relative-path fallback. Files can live in the workspace, thread storage, or any other readable directory. Expand `$BB_THREAD_STORAGE` before emitting a directive. Existing relative directives must be updated.
 
@@ -80,13 +80,13 @@ HTML runs with `sandbox="allow-scripts"`, without app cookies or storage access.
 
 For example, `/tmp/demo/player.html` can contain `<video controls src="./clip.mp4"></video>` beside `/tmp/demo/clip.mp4`. Emit `::inline-vis{file="/tmp/demo/player.html" height="400"}`. Keep both files in place.
 
-Only the last two previews per thread open automatically. Collapsing unloads the preview. Reopening rereads the file. Open previews keep their state when the one-hour lease expires. Collapse and reopen to obtain a fresh lease for local links. The header opens the absolute file through the SDK host viewer.
+Only the last two previews per thread open automatically. The last collapse or expand choice is remembered on the client: after collapsing a preview, new previews stay collapsed until one is expanded. Collapsing unloads the preview. Reopening rereads the file. Open previews keep their state when the one-hour lease expires. Collapse and reopen to obtain a fresh lease for local links. The header opens the absolute file through the SDK host viewer.
 
-Keep preview files in a dedicated directory such as `.scratch/demo/`; the SDK lease covers that directory and its children. Markdown previews disable raw HTML: use `![Label](image.png)` for images or an HTML preview for explicit sizing.
+Keep preview files in a dedicated directory such as `.scratch/demo/`; the SDK lease covers that directory and its children. Markdown previews sanitize raw HTML, and local paths inside raw HTML do not resolve from the preview directory. Use `![Label](image.png)` for local images, or an HTML preview for explicit sizing or local video.
 
-Disable the standalone `inline-vis` plugin before enabling this renderer. bb leaves a directive literal when two plugins claim the same directive.
+bb leaves a directive literal when two plugins claim the same directive, so a fresh Kitchen Sink install disables bb's built-in `inline-vis` plugin once. Updates and reloads leave that choice alone. Re-enabling the built-in makes `::inline-vis` render as plain text. Removing Kitchen Sink does not re-enable it; run `bb plugin enable inline-vis` to get bb's renderer back.
 
-This capability is forked from [`get-bb/bb/plugins/inline-vis`](https://github.com/get-bb/bb/tree/b5dc3b8a96390a44045a72602bd164e06ab07686/plugins/inline-vis), last synced with upstream commit `b5dc3b8a96390a44045a72602bd164e06ab07686` on 2026-09-12. Kitchen Sink replaces the upstream plugin's private `@bb/shared-ui` imports with package-owned markup and CSS so the external plugin remains SDK-only, and adds the collapsible card, auto-open limit, and absolute-path preview loader described above.
+This capability is forked from bb's forkable built-in [`get-bb/bb/plugins/inline-vis`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/inline-vis), last synced with `desktop-v0.44.0` (commit `0baa605b32a00619c1d7e3f32be6553ebcf8244a`) on 2026-09-26. UI that upstream imports through `@/components/ui/*` and `@/lib/*` is vendored from bb's component registry at that tag (`components.json`; update with `npx shadcn add @bb/<item>`). Kitchen Sink adds the Smart Embed card, the auto-open limit, and the absolute-path preview loader described above, which reads files through `useSdk()` instead of a plugin RPC. See `THIRD_PARTY_NOTICES.md`.
 
 ## Add a command
 

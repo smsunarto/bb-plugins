@@ -15,7 +15,7 @@ test("the plugin loads against the fake host and registers every mention provide
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
-  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "preparePreview"]);
+  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed"]);
   expect(
     harness.registrations.experimental_publishedRpcMethods.map((entry) => [
       entry.method,
@@ -25,13 +25,8 @@ test("the plugin loads against the fake host and registers every mention provide
   ).toEqual([
     [
       "renderEmbed",
-      "Smart Embed citations and inline visualization previews.",
+      "Smart Embed citations.",
       "Render a Smart Embed: a source citation, a recorded turn or commit diff, or a saved patch.",
-    ],
-    [
-      "preparePreview",
-      "Smart Embed citations and inline visualization previews.",
-      "Read an absolute HTML or Markdown file for an inline visualization preview.",
     ],
   ]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(
@@ -39,18 +34,16 @@ test("the plugin loads against the fake host and registers every mention provide
   );
 });
 
-test("the inline visualization RPC rejects extra input before reading the workspace", async () => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+test("a fresh install disables bb's built-in inline-vis, which claims the same directive", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "kitchen-sink",
+    sdk: { plugins: { disable: () => ({ ok: true }) } },
+  });
   await plugin(bb);
+  expect(harness.sdk.callsTo("plugins.disable")).toEqual([]);
 
-  await expect(
-    harness.callRpc("preparePreview", {
-      threadId: "thread-1",
-      file: "demo.html",
-      extra: true,
-    }),
-  ).rejects.toMatchObject({ code: "invalid_input", issues: expect.any(Array) });
-  expect(harness.sdk.callsTo("threads.get")).toEqual([]);
+  await harness.lifecycle.install();
+  expect(harness.sdk.callsTo("plugins.disable")).toEqual([[{ pluginId: "inline-vis" }]]);
 });
 
 test("mention provider ids are unique and free of the wire separator", () => {

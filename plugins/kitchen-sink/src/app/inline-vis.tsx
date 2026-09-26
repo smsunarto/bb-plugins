@@ -1,7 +1,8 @@
 import {
+  experimental_usePluginId,
   Markdown,
   useBbNavigate,
-  useRpc,
+  useSdk,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
 import {
@@ -13,7 +14,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { type InlineVisRpcContract, type PreparePreviewOutput } from "../shared/contract.ts";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmbedHeader } from "./embed-header.tsx";
 import {
   INLINE_ASSET_MESSAGE,
@@ -22,8 +23,7 @@ import {
 } from "./inline-assets.ts";
 import { previewMarkdown } from "./preview-markdown.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
-
-type MarkdownPreview = Extract<PreparePreviewOutput, { kind: "markdown" }>;
+import { loadPreview } from "./load-preview.ts";
 
 type LoadState =
   | { status: "loading" }
@@ -43,7 +43,7 @@ type LoadState =
       file: string;
       hostId: string;
       url: string;
-      markdown: MarkdownPreview;
+      content: string;
     }
   | { status: "error"; message: string };
 
@@ -121,7 +121,8 @@ export function InlineVisDirective({
 }
 
 function CollapsiblePreview(props: PluginMessageDirectiveProps) {
-  const [expansion] = useState(createPreviewExpansion);
+  const pluginId = experimental_usePluginId();
+  const [expansion] = useState(() => createPreviewExpansion(`${pluginId}.inline-vis.collapsed`));
   const card = useRef<HTMLElement>(null);
   const expanded = useSyncExternalStore(expansion.subscribe, expansion.getSnapshot, () => false);
   useLayoutEffect(
@@ -152,7 +153,7 @@ function ExpandedPreview({
   message,
   onToggle,
 }: PluginMessageDirectiveProps & { onToggle: () => void }) {
-  const rpc = useRpc<InlineVisRpcContract>();
+  const sdk = useSdk();
   const navigate = useBbNavigate();
   const file = attributes.file?.trim() ?? "";
   const previewHeight = parsePreviewHeight(attributes.height);
@@ -183,10 +184,7 @@ function ExpandedPreview({
     setState({ status: "loading" });
     void (async () => {
       try {
-        const result = await rpc.call("preparePreview", {
-          threadId: message.threadId,
-          file,
-        });
+        const result = await loadPreview(sdk, message.threadId, file, controller.signal);
         if (result.kind === "markdown") {
           if (!cancelled)
             setState({
@@ -195,7 +193,7 @@ function ExpandedPreview({
               file: result.file,
               hostId: result.hostId,
               url: result.url,
-              markdown: { ...result, content: previewMarkdown(result.content, result.url) },
+              content: previewMarkdown(result.content, result.url),
             });
           return;
         }
@@ -222,7 +220,7 @@ function ExpandedPreview({
       cancelled = true;
       controller.abort();
     };
-  }, [file, message.threadId, rpc]);
+  }, [file, message.threadId, sdk]);
 
   if (state.status === "error") {
     return (
@@ -257,9 +255,9 @@ function ExpandedPreview({
           aria-busy="true"
           aria-label={`Loading visualization ${file}`}
           style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
-          className="inline-vis-loading"
+          className="block w-full p-3"
         >
-          <span className="inline-vis-skeleton" />
+          <Skeleton className="size-full" />
         </output>
       </>
     );
@@ -282,7 +280,7 @@ function ExpandedPreview({
       />
       {state.kind === "markdown" ? (
         <div style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }} className="inline-vis-markdown">
-          <Markdown content={state.markdown.content} />
+          <Markdown content={state.content} />
         </div>
       ) : (
         <iframe

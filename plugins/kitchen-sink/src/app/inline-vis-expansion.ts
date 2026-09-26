@@ -19,14 +19,36 @@ function reconcile(previews: Set<Preview>) {
   });
 }
 
+/**
+ * Upstream inline-vis remembers the last collapse or expand choice on this
+ * client. Here that choice decides whether the latest two previews open by
+ * themselves. It is read once per occurrence, so it never closes an open card.
+ */
+function readCollapsedPreference(storageKey: string): boolean {
+  try {
+    return window.localStorage.getItem(storageKey) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsedPreference(storageKey: string, collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(storageKey, String(collapsed));
+  } catch {
+    // Storage can be unavailable; the choice still applies to this card.
+  }
+}
+
 /** One mounted directive occurrence, not one file or message. */
-export function createPreviewExpansion() {
+export function createPreviewExpansion(storageKey: string) {
+  const collapsedByDefault = readCollapsedPreference(storageKey);
   let automatic = false;
   let override: boolean | undefined;
   const listeners = new Set<() => void>();
   const preview = {
     element: null as HTMLElement | null,
-    getSnapshot: () => override ?? automatic,
+    getSnapshot: () => override ?? (automatic && !collapsedByDefault),
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -40,6 +62,7 @@ export function createPreviewExpansion() {
     },
     toggle() {
       override = !preview.getSnapshot();
+      writeCollapsedPreference(storageKey, !override);
       for (const listener of listeners) listener();
     },
     register(threadId: string, element: HTMLElement) {

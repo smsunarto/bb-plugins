@@ -74,8 +74,9 @@ needs. Do not assume Codex's theme utilities, `Tweak`, Lucide global, or
 
 - Keep each preview in a dedicated directory such as `.scratch/demo/`. The SDK
   lease covers that directory and its children.
-- Markdown previews disable raw HTML. Use `![Label](image.png)` for images, or
-  an HTML preview when image sizing is needed.
+- Markdown previews sanitize raw HTML, and local paths inside raw HTML do not
+  resolve from the preview directory. Use `![Label](image.png)` for local
+  images, or an HTML preview when image sizing or local video is needed.
 - On BB 0.43.3, separate raster images are limited to 10 MiB.
 - `file` must be an absolute path on the thread's host. Do not use `source`.
 - `height` is optional and sets the preview height in pixels. It must be a
@@ -85,7 +86,7 @@ needs. Do not assume Codex's theme utilities, `Tweak`, Lucide global, or
   fonts, media, fetches, and WebSockets are also allowed subject to normal
   browser CORS, mixed-content, and remote-server policies. Scripts execute in an
   opaque-origin iframe and cannot access the bb page, cookies, or storage.
-  Markdown uses BB's renderer with raw HTML disabled.
+  Markdown uses BB's renderer with sanitized HTML.
 - The document must be at most 5 MiB. Keep videos as separate files beside the
   HTML instead of converting them to base64 or compressing them to fit the HTML.
 - Static `img[src]`, `video[src]`, and nested video `source[src]` paths resolve
