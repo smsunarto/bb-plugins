@@ -32,6 +32,17 @@ export async function locateSource(bb: BbPluginApi, source: CanvasSource): Promi
           detail: `environment lookup failed: ${messageOf(error)}`,
         };
       }
+      // An archived thread's workspace is removed after its grace window, which
+      // clears its path; bb restores it only on request, and refuses while the
+      // thread is still archived.
+      if (environment.status === "destroyed") {
+        return {
+          ok: false,
+          reason: "no-worktree",
+          detail:
+            "this thread's workspace was cleaned up; unarchive the thread if it is archived, then use Restore workspace to bring it back",
+        };
+      }
       if (environment.path === null) {
         return {
           ok: false,

@@ -30,6 +30,23 @@ test("workspace sources without a worktree are unreadable", async () => {
   if (!result.ok) assert.equal(result.reason, "no-worktree");
 });
 
+test("cleaned-up workspaces point at Restore workspace", async () => {
+  const bb = fakeBb({
+    environments: { env1: { hostId: "host-a", path: null, status: "destroyed" } },
+  });
+  const result = await locateSource(bb, {
+    kind: "workspace",
+    environmentId: "env1",
+    path: "a.canvas.mdx",
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    reason: "no-worktree",
+    detail:
+      "this thread's workspace was cleaned up; unarchive the thread if it is archived, then use Restore workspace to bring it back",
+  });
+});
+
 test("workspace lookup failures surface as host-offline", async () => {
   const bb = fakeBb({});
   const result = await locateSource(bb, { kind: "workspace", environmentId: "missing", path: "a" });

@@ -19,7 +19,9 @@ export interface FakeWriteArgs {
 export type FakeStore = Map<string, FakeFile | Error>;
 
 export interface FakeBbOptions {
-  readonly environments?: Readonly<Record<string, { hostId: string; path: string | null }>>;
+  readonly environments?: Readonly<
+    Record<string, { hostId: string; path: string | null; status?: string }>
+  >;
   readonly threads?: Readonly<Record<string, { hostId: string; storageRootPath: string }>>;
   readonly files?: Readonly<Record<string, FakeFile | Error>>;
   /** Runs before each write lands, so a test can play a concurrent writer. */
