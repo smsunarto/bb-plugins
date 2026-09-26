@@ -65,7 +65,7 @@
     "@codemirror/view": "6.43.11",
     "@codemirror/language": "6.12.4",
     "@codemirror/language-data": "6.5.2",
-    "@smsunarto/bb-plugin-docs": "workspace:*",
+    "@smsunarto/bb-plugin-canvas": "workspace:*",
     "@lezer/highlight": "1.2.3"
   },
   "devDependencies": {

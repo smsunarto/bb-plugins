@@ -5,7 +5,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { HighlightStyle, syntaxHighlighting, LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
-import { MarkdownEditor } from "@smsunarto/bb-plugin-docs/editor";
+import { MarkdownEditor } from "@smsunarto/bb-plugin-canvas/editor";
 import type { RepoPath } from "./route.ts";
 
 export interface WorkingFileEditorProps {
