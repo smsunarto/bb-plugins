@@ -6,11 +6,13 @@ export const overview = defineQuery({
   input: z.object({ threadId: idSchema.optional() }).strict(),
   output: overviewSchema,
   async execute(ctx, { threadId }) {
-    const hosts = (await ctx.bb.sdk.hosts.list()).map((host) => ({
-      id: host.id,
-      name: host.name,
-      online: host.status === "connected",
-    }));
+    const hosts = (await ctx.bb.sdk.hosts.list())
+      .filter((host) => host.lifecycle.phase !== "removing" && host.lifecycle.phase !== "destroyed")
+      .map((host) => ({
+        id: host.id,
+        name: host.name,
+        online: host.status === "connected",
+      }));
     if (!threadId) return { hosts, context: null };
     const thread = await ctx.bb.sdk.threads.get({ threadId });
     if (!thread.environmentId) return { hosts, context: null };
@@ -23,12 +25,15 @@ export const overview = defineQuery({
         limit: "1",
       }),
     ]);
-    if (!environment.hostId) return { hosts, context: null };
+    // A removed machine keeps its threads as history, but its session files
+    // went with it: fall back to a machine that is still listed.
+    const hostId = environment.hostId;
+    if (!hostId || !hosts.some((host) => host.id === hostId)) return { hosts, context: null };
     const identity = events.find((event) => event.type === "thread/identity");
     return {
       hosts,
       context: {
-        hostId: environment.hostId,
+        hostId,
         provider: thread.providerId === "claude" ? "claude-code" : thread.providerId,
         nativeId: identity?.type === "thread/identity" ? identity.data.providerThreadId : null,
         title: thread.title ?? "Untitled thread",

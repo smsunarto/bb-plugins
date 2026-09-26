@@ -15,8 +15,8 @@
     "access": "public"
   },
   "engines": {
-    "bb": ">=0.40.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.34"
+    "bb": ">=0.43.0 <1.0.0",
+    "bbPluginSdk": ">=0.4.84"
   },
   "bb": {
     "name": "Traces",
