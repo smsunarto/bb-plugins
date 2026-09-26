@@ -68,7 +68,7 @@
   },
   "devDependencies": {
     "@bb-plugins/icons": "workspace:*",
-    "@get-bb/plugin-sdk": "0.5.9",
+    "@get-bb/plugin-sdk": "0.5.29",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",
