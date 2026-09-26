@@ -14,6 +14,20 @@
 - Record whether an annotated plugin ships with bb (bundled thread list, Navigation) or was installed, and where from.
 - Keep turn assignments across a restart or plugin safe mode while their thread is still mid-turn, instead of re-staging them.
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.3.0...agentation/v0.4.0) (2026-09-26)
+
+
+### Features
+
+* **agentation:** attribute bb 0.44 sidebar surfaces to their owner plugin ([da925e2](https://github.com/smsunarto/bb-plugins/commit/da925e23c98c4e3cdd086ee954b36904b3a9cf9e))
+* **agentation:** make the RPC contract discoverable ([7fcbbaf](https://github.com/smsunarto/bb-plugins/commit/7fcbbaf0a81f5b215d25c58c985a40cf1b226cfb))
+* **agentation:** map overlay, browser toolbar, and timeline surfaces ([708bed4](https://github.com/smsunarto/bb-plugins/commit/708bed4bc6e9dcf9a8a5169327dc08f5ab83e749))
+
+
+### Bug Fixes
+
+* **agentation:** keep turn assignments while their thread is mid-turn ([beb1d37](https://github.com/smsunarto/bb-plugins/commit/beb1d3727dfdcaa25dca805fe1070698b8159479))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-15)
 
 ### Features
