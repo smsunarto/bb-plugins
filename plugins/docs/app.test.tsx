@@ -994,7 +994,7 @@ describe("Docs nav panel", () => {
             ),
           readNote: () => ({
             content:
-              '# Article\n\n![Sketch](./_attachments/sketch.png)\n\n::html{src="./report.html" height="240"}',
+              '# Article\n\n![Sketch](./_attachments/sketch.png)\n\n::html{src="./report.html" height="240"}\n\n## After the embed',
             sha256: "sha-1",
           }),
           preparePreview: () => preview,
@@ -1012,6 +1012,7 @@ describe("Docs nav panel", () => {
       const iframe = slot.container.querySelector("iframe");
       expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
       expect(iframe?.getAttribute("src")).toBe("/api/v1/file-previews/lease/projects/report.html");
+      expect(slot.container.querySelector("h2")?.textContent).toBe("After the embed");
     });
   });
 

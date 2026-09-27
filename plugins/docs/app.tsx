@@ -155,7 +155,7 @@ function displayMarkdown(content: string, baseUrl: string, notePath: string): st
       `${start}${previewUrl(baseUrl, notePath, source)}${end}`,
   );
   return withImages.replace(
-    /^::html\{src="([^"]+)"(?: height="(\d+)")?\}\s*$/gm,
+    /^::html\{src="([^"]+)"(?: height="(\d+)")?\}[ \t]*$/gm,
     (_match, source: string, height: string | undefined) =>
       `<div data-simple-html-embed="true" data-src="${encodeURIComponent(source)}" data-height="${height ?? "360"}"></div>`,
   );
