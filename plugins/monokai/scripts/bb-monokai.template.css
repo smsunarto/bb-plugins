@@ -1150,6 +1150,21 @@ diffs-container {
   --canvas-prose-code-well: var(--accent);
 }
 
+/* The docs plugin renders its Tiptap editor on the same rendered Markdown
+ * contract through --docs-prose-* hooks. Headings keep the contract's green.
+ * Fenced code sits on the content ground, like fenced code in the thread. */
+.dark .bb-simple-notes-editor {
+  --docs-prose-heading: {{code.entity}};
+  --docs-prose-strong: {{code.type}};
+  --docs-prose-link: {{code.type}};
+  --docs-prose-link-hover: {{content.cyan}};
+  --docs-prose-marker: {{content.comment}};
+  --docs-prose-quote-rule: {{code.keyword}};
+  --docs-prose-rule: var(--border-hairline);
+  --docs-prose-code-well: var(--accent);
+  --docs-prose-code-block: {{ground.content}};
+}
+
 /* Plugin marketplace category icons are decoration, not feedback. bb tints
  * each category with a feedback or accent token (Security amber, Agents green,
  * Code & Reviews purple), which gives those hues a second meaning. Paint them

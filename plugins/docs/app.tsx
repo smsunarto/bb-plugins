@@ -265,10 +265,20 @@ const MarkdownTaskInput = Extension.create({
 
 const STYLE_MARKER = "data-bb-simple-notes-styles";
 const EDITOR_CSS = `
-/* smsunarto Monokai reading theme, ported from smsunarto-theme/styles/cursor-markdown-preview.css. */
+/* Rendered Markdown reading theme from the smsunarto-theme contract. Colors
+   stay on host tokens so Docs reads on any bb theme. A theme recolors the
+   prose through the --docs-prose-* hooks; bb Monokai supplies its palette. */
 .bb-simple-notes-editor {
+  --docs-prose-heading: var(--foreground);
+  --docs-prose-strong: var(--foreground);
+  --docs-prose-link: var(--primary);
+  --docs-prose-link-hover: var(--primary);
+  --docs-prose-marker: var(--muted-foreground);
+  --docs-prose-quote-rule: var(--border);
+  --docs-prose-rule: var(--border-seam, var(--border));
+  --docs-prose-code-well: var(--secondary);
+  --docs-prose-code-block: var(--secondary);
   container-type: inline-size;
-  background: #181818;
 }
 .bb-simple-notes-editor .tiptap {
   outline: none;
@@ -277,8 +287,8 @@ const EDITOR_CSS = `
   box-sizing: border-box;
   margin: 0 auto;
   padding: 48px clamp(24px, 4vw, 56px) 40vh;
-  color: #e3e3dd;
-  caret-color: #e3e3dd;
+  color: var(--foreground);
+  caret-color: var(--foreground);
   font-family: "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: 17px;
   font-kerning: normal;
@@ -301,7 +311,7 @@ const EDITOR_CSS = `
 .bb-simple-notes-editor .tiptap h5,
 .bb-simple-notes-editor .tiptap h6 {
   border-bottom: 0;
-  color: #9ddd54;
+  color: var(--docs-prose-heading);
   font-family: inherit;
   font-weight: 600;
   padding-bottom: 0;
@@ -326,26 +336,29 @@ const EDITOR_CSS = `
 .bb-simple-notes-editor .tiptap li li + li { margin-top: 0.25em; }
 .bb-simple-notes-editor .tiptap li > p { margin: 0; }
 .bb-simple-notes-editor .tiptap li > :is(ul, ol) { margin: 0.25em 0 0; }
-.bb-simple-notes-editor .tiptap li::marker { color: #7c7866; }
-.bb-simple-notes-editor .tiptap strong { color: #51dae9; font-weight: 600; }
-.bb-simple-notes-editor .tiptap em { color: #e3e3ddd6; }
+.bb-simple-notes-editor .tiptap li::marker { color: var(--docs-prose-marker); }
+.bb-simple-notes-editor .tiptap strong { color: var(--docs-prose-strong); font-weight: 600; }
+.bb-simple-notes-editor .tiptap em { color: color-mix(in srgb, currentColor 84%, transparent); }
 .bb-simple-notes-editor .tiptap a {
-  color: #51dae9;
+  color: var(--docs-prose-link);
   cursor: pointer;
   text-decoration: underline;
   text-decoration-color: currentColor;
   text-decoration-thickness: from-font;
   text-underline-offset: 0.12em;
 }
-.bb-simple-notes-editor .tiptap a:hover { color: #75f0ff; }
+.bb-simple-notes-editor .tiptap a:hover { color: var(--docs-prose-link-hover); }
 .bb-simple-notes-editor .tiptap a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.125em; }
 .bb-simple-notes-editor .tiptap code:has(> a) { background: transparent; border: 0; border-radius: 0; font-family: inherit; font-size: inherit; padding: 0; }
-.bb-simple-notes-editor .tiptap blockquote { border-left: 1px solid #fe5d86; border-radius: 0; color: #e3e3ddbd; margin: 1rem 0; padding: 0 0 0 1.1em; }
-.bb-simple-notes-editor .tiptap :is(code, pre) { font-family: "Berkeley Mono", var(--font-mono, monospace); }
-.bb-simple-notes-editor .tiptap code { color: #e3e3dd; font-size: 0.875em; line-height: 1.5; }
-.bb-simple-notes-editor .tiptap :not(pre) > code { background: #252525; border: 1px solid #e3e3dd1a; border-radius: 4px; box-decoration-break: clone; padding: 0.1em 0.3em; -webkit-box-decoration-break: clone; }
+.bb-simple-notes-editor .tiptap blockquote { border-left: 1px solid var(--docs-prose-quote-rule); border-radius: 0; color: var(--muted-foreground); margin: 1rem 0; padding: 0 0 0 1.1em; }
+/* A quote reads as one unit: its blocks step by 0.75em instead of the prose gap. */
+.bb-simple-notes-editor .tiptap blockquote > * { margin-bottom: 0; }
+.bb-simple-notes-editor .tiptap blockquote > * + * { margin-top: 0.75em; }
+.bb-simple-notes-editor .tiptap :is(code, pre) { font-family: var(--font-mono, monospace); }
+.bb-simple-notes-editor .tiptap code { color: var(--foreground); font-size: 0.875em; line-height: 1.5; }
+.bb-simple-notes-editor .tiptap :not(pre) > code { background: var(--docs-prose-code-well); border: 1px solid var(--border); border-radius: 4px; box-decoration-break: clone; padding: 0.1em 0.3em; -webkit-box-decoration-break: clone; }
 .bb-simple-notes-editor .tiptap pre {
-  background: #1e1e1e;
+  background: var(--docs-prose-code-block);
   border: 0;
   border-radius: 4px;
   box-sizing: border-box;
@@ -362,35 +375,39 @@ const EDITOR_CSS = `
   width: min(calc(100ch + 34px), calc(100cqw - 64px));
   word-break: normal;
 }
+/* Box-drawing glyphs are 1.2em tall, so tree and patch fences tighten to 1.3
+   leading to keep vertical connectors joined. */
+.bb-simple-notes-editor .tiptap pre:has(> code:is(.language-diagram, .language-patch)) { line-height: 1.3; }
 .bb-simple-notes-editor .tiptap pre code { background: transparent; border: 0; display: inline-block; font-size: inherit; line-height: inherit; overflow-wrap: normal; padding: 0; white-space: pre; word-break: normal; }
-.bb-simple-notes-editor .tiptap img { display: block; max-width: 100%; max-height: 38rem; margin: 1.75rem auto; border-radius: 4px; border: 1px solid #e3e3dd1a; }
+.bb-simple-notes-editor .tiptap img { display: block; max-width: 100%; max-height: 38rem; margin: 1.75rem auto; border-radius: 4px; border: 1px solid var(--border); }
 .bb-simple-notes-editor .tiptap .tableWrapper { margin: 1.75rem 0; overflow-x: auto; }
 .bb-simple-notes-editor .tiptap table { width: 100%; border: 0; border-collapse: collapse; border-radius: 0; table-layout: fixed; font-size: 0.875em; line-height: 1.3; }
 .bb-simple-notes-editor .tiptap th,
-.bb-simple-notes-editor .tiptap td { position: relative; min-width: 6rem; border: 0; border-bottom: 1px solid #e3e3dd11; padding: 0.25em 0.625em 0.25em 0; text-align: left; vertical-align: top; }
+.bb-simple-notes-editor .tiptap td { position: relative; min-width: 6rem; border: 0; border-bottom: 1px solid var(--docs-prose-rule); padding: 0.25em 0.625em 0.25em 0; text-align: left; vertical-align: top; }
 .bb-simple-notes-editor .tiptap th { font-weight: 600; }
-.bb-simple-notes-editor .tiptap :is(th, td) > p { margin-top: 0; }
+.bb-simple-notes-editor .tiptap :is(th, td) > p { margin: 0; }
 .bb-simple-notes-editor .tiptap :is(th, td) > p + p { margin-top: 0.65em; }
 .bb-simple-notes-editor .tiptap .selectedCell::after { position: absolute; inset: 0; z-index: 2; pointer-events: none; content: ""; background: color-mix(in oklab, var(--primary) 14%, transparent); }
 .bb-simple-notes-editor .tiptap .column-resize-handle { position: absolute; top: 0; right: -2px; bottom: -1px; width: 4px; z-index: 3; pointer-events: none; background: var(--primary); }
 .bb-simple-notes-editor .tiptap.resize-cursor { cursor: col-resize; }
-.bb-simple-notes-editor .tiptap hr { border: 0; border-top: 1px solid #e3e3dd11; margin: 1.75rem 0; }
+.bb-simple-notes-editor .tiptap hr { border: 0; border-top: 1px solid var(--docs-prose-rule); margin: 1.75rem 0; }
 .bb-simple-notes-editor .tiptap ul[data-type="taskList"] { list-style: none; padding-inline-start: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] ul[data-type="taskList"] { margin-top: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-top: 0.5em; margin-inline-start: 0; padding-left: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-inline-start: 0; padding-left: 0; }
 .bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > label { flex: 0 0 auto; display: inline-flex; align-items: center; height: 1.5em; user-select: none; }
 .bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { line-height: 1.5; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p:first-child { margin-top: 0; }
+/* Task text sits in a div beside the checkbox, so the li > p and li > ul
+   list rules do not reach it. */
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { margin: 0; line-height: 1.5; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > :is(ul, ol) { margin: 0.25em 0 0; }
 .bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] { display: block; width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; margin: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: #e3e3ddbd; text-decoration: line-through; }
-.bb-simple-notes-editor .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #e3e3ddbd; }
-.bb-simple-notes-editor .tiptap ::selection { background: #404040; }
-.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid #e3e3dd1a; border-radius:4px; background:#1e1e1e; }
-.simple-html-embed-header { border-bottom:1px solid #e3e3dd11; background:#262626; padding:.45rem .7rem; color:#e3e3ddbd; font:11px "Berkeley Mono",var(--font-mono,monospace); }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--muted-foreground); text-decoration: line-through; }
+.bb-simple-notes-editor .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--muted-foreground); }
+.bb-simple-notes-editor .tiptap ::selection { background: var(--muted); }
+.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid var(--border); border-radius:4px; background:var(--docs-prose-code-block); }
+.simple-html-embed-header { border-bottom:1px solid var(--docs-prose-rule); background:var(--secondary); padding:.45rem .7rem; color:var(--muted-foreground); font:11px var(--font-mono,monospace); }
 .simple-html-embed iframe { display:block; width:100%; border:0; background:white; }
 .bb-docs-panel .tiptap { max-width: none; padding: 1rem 0 3rem; font-size: 14px; }
-@media (max-width: 47.999rem) { .bb-simple-notes-editor .tiptap { padding-inline: 1.25rem; font-size: 17px; } }
+@media (max-width: 47.999rem) { .bb-simple-notes-editor .tiptap { padding-inline: 1.25rem; } }
 `;
 
 function ensureEditorStyles(): void {

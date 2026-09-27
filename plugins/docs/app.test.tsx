@@ -828,10 +828,10 @@ describe("Docs nav panel", () => {
     expect(styles?.textContent).toContain("height: 1.5em");
     expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
     expect(styles?.textContent).toContain(
-      'ul[data-type="taskList"] ul[data-type="taskList"] { margin-top: 0; }',
+      'ul[data-type="taskList"] li > div > p { margin: 0; line-height: 1.5; }',
     );
     expect(styles?.textContent).toContain(
-      'ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-top: 0.5em;',
+      'ul[data-type="taskList"] li > div > :is(ul, ol) { margin: 0.25em 0 0; }',
     );
   });
 
@@ -1764,7 +1764,7 @@ describe("Docs nav panel", () => {
     await findTreeItem(slot.container, "roadmap.md");
   });
 
-  it("applies the smsunarto Markdown reading theme to the Tiptap editor", async () => {
+  it("styles the Markdown reading theme through host tokens and prose hooks", async () => {
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "personal/theme.md" },
@@ -1787,9 +1787,14 @@ describe("Docs nav panel", () => {
     await slot.findByText("Strong");
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]")?.textContent;
     expect(styles).toContain("max-width: 700px");
-    expect(styles).toContain("color: #9ddd54");
-    expect(styles).toContain(".bb-simple-notes-editor .tiptap strong { color: #51dae9");
-    expect(styles).toContain(".bb-simple-notes-editor .tiptap a:hover { color: #75f0ff; }");
+    expect(styles).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(styles).toContain("color: var(--docs-prose-heading)");
+    expect(styles).toContain(
+      ".bb-simple-notes-editor .tiptap strong { color: var(--docs-prose-strong)",
+    );
+    expect(styles).toContain(
+      ".bb-simple-notes-editor .tiptap a:hover { color: var(--docs-prose-link-hover); }",
+    );
   });
 
   it("opens MDX vault entries through bb's file opener", async () => {

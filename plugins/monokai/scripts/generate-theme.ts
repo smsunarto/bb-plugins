@@ -549,6 +549,27 @@ const darkExpected = declarationMap({
   "--trees-file-icon-cyan": roleValues["text.ink55"],
 });
 
+// Rendered Markdown roles shared by every plugin prose surface (Canvas, Docs),
+// so the two editors cannot drift apart. Canvas headings take the strongest
+// ink so links stay its only colored prose. Docs keeps the contract's green
+// headings as its one override.
+const proseRoles = {
+  heading: palette.text.ink,
+  strong: palette.code.type,
+  link: palette.code.type,
+  "link-hover": palette.contentTint.cyan,
+  marker: palette.contentTint.comment,
+  "quote-rule": palette.code.keyword,
+  rule: "var(--border-hairline)",
+  "code-well": "var(--accent)",
+} as const;
+
+function proseHooks(prefix: string): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(proseRoles).map(([role, value]) => [`${prefix}-${role}`, value]),
+  );
+}
+
 const requiredRules: Array<{
   selector: string;
   declarations: Record<string, string>;
@@ -747,20 +768,13 @@ const requiredRules: Array<{
       "--diffs-dark": palette.text.ink,
     },
   },
+  { selector: ".dark .canvas-prose", declarations: proseHooks("--canvas-prose") },
   {
-    selector: ".dark .canvas-prose",
+    selector: ".dark .bb-simple-notes-editor",
     declarations: {
-      // Headings are display-size text, not code. The syntax entity green is
-      // tuned for dense tokens and reads as neon at 1.5rem, so prose headings
-      // take the strongest ink and leave links as the only colored prose.
-      "--canvas-prose-heading": palette.text.ink,
-      "--canvas-prose-strong": palette.code.type,
-      "--canvas-prose-link": palette.code.type,
-      "--canvas-prose-link-hover": palette.contentTint.cyan,
-      "--canvas-prose-marker": palette.contentTint.comment,
-      "--canvas-prose-quote-rule": palette.code.keyword,
-      "--canvas-prose-rule": "var(--border-hairline)",
-      "--canvas-prose-code-well": "var(--accent)",
+      ...proseHooks("--docs-prose"),
+      "--docs-prose-heading": palette.code.entity,
+      "--docs-prose-code-block": palette.ground.content,
     },
   },
 ];
