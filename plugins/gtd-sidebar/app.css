@@ -108,7 +108,7 @@
 }
 /* A card's metadata line starts under the title. On a remote card that is
    past the globe: its 12px plus the 4px that separates it from the title. */
-.gtd-thread-row:has(.gtd-host-lead) .gtd-thread-metadata {
+.gtd-thread-metadata.gtd-thread-metadata-remote {
   padding-left: 16px;
 }
 /* The shelf header pins to the top of the list while its rows scroll, and
@@ -222,7 +222,7 @@
   opacity: 1;
 }
 .gtd-project-group-header:hover .gtd-project-group-count,
-.gtd-project-group-header:has(.gtd-project-group-new:focus-visible) .gtd-project-group-count {
+.gtd-project-group-header[data-new-focus-visible="true"] .gtd-project-group-count {
   opacity: 0;
 }
 .gtd-project-group-new:hover {

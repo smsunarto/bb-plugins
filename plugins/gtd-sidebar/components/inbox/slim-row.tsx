@@ -133,7 +133,7 @@ const SlimRowBody = memo(function SlimRowBody({
     <div className="flex h-full items-center gap-2 px-2.5 text-xs">
       <span
         data-gtd-naming={isNaming || undefined}
-        className={cn("min-w-0 flex-1 truncate", titleClassName)}
+        className={cn("gtd-naming-text min-w-0 flex-1 truncate", titleClassName)}
       >
         {title}
       </span>
@@ -223,6 +223,8 @@ const SlimRowBody = memo(function SlimRowBody({
               aria-busy={isNaming || undefined}
               className={cn(
                 "pointer-events-none relative min-w-0 flex-1 truncate",
+                // The compact viewport paints the title here, not in a FadingText.
+                isCompactViewport && "gtd-naming-text",
                 titleClassName,
                 "group-hover/slim:text-foreground",
               )}

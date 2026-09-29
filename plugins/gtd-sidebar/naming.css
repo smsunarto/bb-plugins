@@ -1,6 +1,8 @@
 /* WebKit cannot clip the parent's gradient through a masked text child. Keep
-   the gradient and the overflow fade on the element that paints the text. */
-[data-gtd-naming="true"]:not(:has(.gtd-fading-text)),
+   the gradient and the overflow fade on the element that paints the text:
+   the FadingText label, or a title marked .gtd-naming-text that holds its
+   text directly. */
+.gtd-naming-text[data-gtd-naming="true"],
 [data-gtd-naming="true"] > .gtd-fading-text {
   background-image: linear-gradient(
     110deg,
@@ -25,7 +27,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-gtd-naming="true"]:not(:has(.gtd-fading-text)),
+  .gtd-naming-text[data-gtd-naming="true"],
   [data-gtd-naming="true"] > .gtd-fading-text {
     animation: none;
     background-position: 50% 0;

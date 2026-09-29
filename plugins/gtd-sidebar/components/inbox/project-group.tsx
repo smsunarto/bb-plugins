@@ -58,6 +58,9 @@ export function ProjectGroup({
 }: ProjectGroupProps) {
   const drop = useNestProjectHeader(shelf, projectId, dropAllowed);
   const [hovered, setHovered] = useState(false);
+  // Reaching the new-thread button by keyboard trades the count for it, as
+  // hovering the header does.
+  const [newFocusVisible, setNewFocusVisible] = useState(false);
   const count = attention > 0 ? `${attention} / ${families}` : `${families}`;
   const header = (
     <div
@@ -67,6 +70,7 @@ export function ProjectGroup({
         isCompactViewport && "gtd-project-group-header-touch",
       )}
       data-drop-target={drop.isOver ? "true" : undefined}
+      data-new-focus-visible={newFocusVisible}
       onPointerEnter={(event) => {
         if (event.pointerType !== "touch") setHovered(true);
       }}
@@ -103,15 +107,11 @@ export function ProjectGroup({
         )}
       </button>
       {isCompactViewport ? null : (
-        <button
-          type="button"
-          aria-label={`New thread in ${name}`}
-          title={`New thread in ${name}`}
+        <NewThreadButton
+          name={name}
           onClick={() => onNewThread(projectId)}
-          className="gtd-project-group-new"
-        >
-          <Icon name="Plus" className="size-3" />
-        </button>
+          onFocusVisibleChange={setNewFocusVisible}
+        />
       )}
     </div>
   );
@@ -160,6 +160,31 @@ export function ProjectGroup({
         <ul className="gtd-project-group-rows flex flex-col gap-0.5">{children}</ul>
       ) : null}
     </div>
+  );
+}
+
+/** The header's new-thread button, reporting keyboard focus so the header can hide its count. */
+function NewThreadButton({
+  name,
+  onClick,
+  onFocusVisibleChange,
+}: {
+  name: string;
+  onClick: () => void;
+  onFocusVisibleChange: (focusVisible: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`New thread in ${name}`}
+      title={`New thread in ${name}`}
+      onClick={onClick}
+      onFocus={(event) => onFocusVisibleChange(event.currentTarget.matches(":focus-visible"))}
+      onBlur={() => onFocusVisibleChange(false)}
+      className="gtd-project-group-new"
+    >
+      <Icon name="Plus" className="size-3" />
+    </button>
   );
 }
 

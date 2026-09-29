@@ -32,6 +32,7 @@ import {
 import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
+import { useRemoteMachine } from "./machine-appearance";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
@@ -200,6 +201,8 @@ const ThreadCardBody = memo(function ThreadCardBody({
       ? `${childCount} subthreads`
       : undefined;
   const titleText = thread.displayTitle;
+  // The metadata line starts under the title, past the globe HostLead draws.
+  const remote = useRemoteMachine(thread.host);
   const rename = useThreadRename(thread.id, titleText);
 
   const title = (
@@ -336,6 +339,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
           {isCompactViewport || compact ? null : (
             <ThreadMetadata
               thread={thread}
+              remote={remote}
               provider={provider}
               projectName={projectName}
               branchName={branchName}
@@ -735,6 +739,7 @@ function DesktopThreadSummary({
 
 function ThreadMetadata({
   thread,
+  remote,
   provider,
   projectName,
   branchName,
@@ -742,6 +747,7 @@ function ThreadMetadata({
   showProviderIcon,
 }: {
   thread: PluginSidebarThread;
+  remote: boolean;
   provider?: ProviderGlyphInfo;
   projectName: string | null;
   branchName: string | null;
@@ -753,7 +759,12 @@ function ThreadMetadata({
        alone does not carry the hierarchy, so the line also starts at the
        tint the provider glyph already uses. Segments that rank below the
        project dim further from here. */
-    <div className="gtd-thread-metadata pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70">
+    <div
+      className={cn(
+        "gtd-thread-metadata pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70",
+        remote && "gtd-thread-metadata-remote",
+      )}
+    >
       {/* The project holds its full name and the branch yields: which
          repository a thread belongs to outranks which branch it sits
          on, and the branch is the one that grows without bound. The
