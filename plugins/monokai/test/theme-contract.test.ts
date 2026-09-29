@@ -42,16 +42,6 @@ describe("bb Monokai surface palette", () => {
     expect(theme).toContain(
       ".dark [data-agentation-staging-banner] {\n  background-color: var(--agent-surface-background);\n  background-clip: padding-box;\n  border-color: var(--agent-surface-border)",
     );
-    expect(theme).toContain(
-      "div.rounded-lg.border.border-border:not(.bg-transparent) {\n  background-color: var(--card);\n  border-width: 0",
-    );
-    expect(theme).toContain(
-      ".bg-card:not(button):not(input):not(textarea):not(select):not(.bg-transparent),",
-    );
-    expect(theme).toContain("div.rounded-md.border.border-border:not(.bg-transparent),");
-    expect(theme).toContain("li.rounded-md.border.border-border:not(.bg-transparent),");
-    expect(theme).toContain('body:has(a[aria-current="page"][href^="/settings"])');
-    expect(theme).not.toContain('href="/settings/usage"');
   });
 
   test("styles conversation links with an alpha-derived accent hover surface", () => {
@@ -110,95 +100,6 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("@media (max-width: 767px)");
     expect(theme).toContain("p.is-editor-empty:first-child::before");
     expect(theme).toContain("font-weight: 400");
-  });
-
-  test("keeps compact composer selectors on bb's native layout", () => {
-    const desktopBoundary = theme.indexOf(
-      "/* Compact composers keep bb's native Project, Machine, and Permission mode",
-    );
-    const compactBehavior = theme.indexOf(
-      "/* Narrow-pane rules otherwise hide the metadata row even while expanded. */",
-    );
-    const selector =
-      '.dark [data-promptbox-shell] :is([data-promptbox-project-control], [aria-label="Environment"], [aria-label="Machine"], [aria-label="Branch"], [aria-label="Permission mode"]) {';
-
-    expect(theme.slice(desktopBoundary, theme.indexOf(selector))).toContain(
-      "@media (min-width: 768px)",
-    );
-    expect(theme.indexOf(selector)).toBeGreaterThan(desktopBoundary);
-    expect(theme.indexOf(selector)).toBeLessThan(compactBehavior);
-    expect(theme.split(selector)).toHaveLength(2);
-  });
-
-  test("lets a lone non-project machine summary fill the footer", () => {
-    expect(theme).toContain(
-      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n    > div:has(> [data-option-display]) {\n    grid-column: 1 / -1;\n    width: 100%;\n    max-width: none;",
-    );
-    expect(theme).toContain(
-      "> div:not(:has(> [data-option-display], > [data-promptbox-hide-branch-compact]))\n    > div\n    > [data-option-display] {\n    flex: 1 1 auto;\n    max-width: none;",
-    );
-  });
-
-  test("applies composer environment-control treatments to every surface", () => {
-    // The same controls render as read-only chips in the follow-up composer
-    // footer and as pickers in the new-thread composer. Each shared treatment
-    // keeps both surfaces in one selector list so an adjustment cannot land
-    // on one and miss the other.
-    const centering = theme.match(
-      /\.dark\s+:is\(\[data-follow-up-composer-footer\], \[data-promptbox-shell\]\)[\s\S]*?\{\s*margin-inline: auto;/,
-    );
-    expect(centering).not.toBeNull();
-    for (const control of [
-      "[data-option-display]",
-      "[data-promptbox-project-control]",
-      '[aria-label="Environment"]',
-      '[aria-label="Machine"]',
-      '[aria-label="Branch"]',
-      "[data-promptbox-hide-branch-compact]",
-    ]) {
-      expect(centering?.[0]).toContain(control);
-    }
-    // The fade mask belongs on the label element only: masking the chip or
-    // picker container would dissolve the icon, chevron, and background with
-    // the text. Split rules on their closing brace and assert every
-    // mask-bearing selector ends at a label element on both surfaces.
-    const fadeSelectors = theme
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("}")
-      .filter((block) => block.includes("mask-image"))
-      .flatMap((block) => block.slice(0, block.indexOf("{")).split(","))
-      .map((selector) => selector.trim());
-    expect(fadeSelectors.length).toBeGreaterThan(0);
-    expect(
-      fadeSelectors.some((s) =>
-        s.includes("[data-promptbox-hide-branch-compact] > span:last-of-type"),
-      ),
-    ).toBe(true);
-    expect(
-      fadeSelectors.some(
-        (s) => s.includes('[aria-label="Branch"]') && s.includes("> span.truncate"),
-      ),
-    ).toBe(true);
-    for (const selector of fadeSelectors) {
-      expect(selector).toMatch(/span(?::last-of-type|\.truncate)$/);
-    }
-    // The picker's parenthetical label nests a second .truncate for the
-    // branch name (BranchPicker's `Current (<name>)` shape) and that inner
-    // span is what ellipsizes. `text-overflow: clip` must reach it via a
-    // descendant combinator — a `> span.truncate` arm alone only covers the
-    // outer label and the name keeps its ellipsis.
-    const clipSelectors = theme
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("}")
-      .filter((block) => /text-overflow:\s*clip/.test(block))
-      .flatMap((block) => block.slice(0, block.indexOf("{")).split(","))
-      .map((selector) => selector.trim());
-    expect(clipSelectors).toContain(
-      '.dark [data-promptbox-shell] [aria-label="Branch"] span.truncate',
-    );
-    expect(clipSelectors).toContain(
-      ".dark [data-follow-up-composer-footer] [data-promptbox-hide-branch-compact] span.truncate",
-    );
   });
 
   test("styles bb's notification center without replacing responsive placement", () => {

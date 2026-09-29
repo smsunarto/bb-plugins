@@ -640,22 +640,6 @@ const requiredRules: Array<{
     declarations: { "border-color": "var(--agent-surface-border)" },
   },
   {
-    selector:
-      '.dark body:has(a[aria-current="page"][href^="/settings"]) main main .bg-card:not(button):not(input):not(textarea):not(select):not(.bg-transparent)',
-    declarations: {
-      "background-color": "var(--card)",
-      "border-width": "0",
-    },
-  },
-  {
-    selector:
-      '.dark body:has(a[aria-current="page"][href^="/settings"]) main main li.rounded-md.border.border-border:not(.bg-transparent)',
-    declarations: {
-      "background-color": "var(--card)",
-      "border-width": "0",
-    },
-  },
-  {
     selector: ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col",
     declarations: { "background-color": palette.ground.conversation },
   },
