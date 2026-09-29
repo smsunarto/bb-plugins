@@ -102,7 +102,7 @@ function Node(props: { readonly node: CanvasNode }): ReactElement {
     case "component": {
       const Component = componentTable[node.name];
       return (
-        <Block offset={node.span.startOffset}>
+        <Block offset={node.span.startOffset} component={node.name}>
           <Component props={node.props} nodes={node.children} renderNodes={renderNodes} />
         </Block>
       );

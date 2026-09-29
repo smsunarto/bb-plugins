@@ -118,6 +118,22 @@ test("a block with a thread shows the count badge and a collapsed card", async (
   slot.unmount();
 });
 
+test("hovering a block marks only that block for its add button", async () => {
+  const { slot } = harness([]);
+  await slot.findByText("Runs");
+  const hovered = () =>
+    [...slot.container.querySelectorAll(".canvas-comment-block[data-hovered]")].map((block) =>
+      block.getAttribute("data-comment-offset"),
+    );
+  fireEvent.pointerOver(slot.getByText("First paragraph here."));
+  assert.deepEqual(hovered(), [String(paragraph.offset)]);
+  const [, , statButton] = slot.getAllByLabelText("Comment on this block");
+  fireEvent.pointerOver(statButton as HTMLElement);
+  fireEvent.pointerLeave(slot.getByText("First paragraph here.").closest(".canvas-comment-block")!);
+  assert.deepEqual(hovered(), [String(stat.offset)]);
+  slot.unmount();
+});
+
 test("submitting the composer opens a thread anchored to that block", async () => {
   const { slot, ops } = harness([]);
   await slot.findByText("Runs");

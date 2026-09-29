@@ -167,15 +167,6 @@
   padding: 0;
 }
 
-.canvas-mdx-prose code:has(> a) {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  font-family: inherit;
-  font-size: inherit;
-  padding: 0;
-}
-
 .canvas-mdx-prose img {
   display: block;
   max-width: 100%;
@@ -313,19 +304,15 @@
 }
 
 /* MDXEditor gives CodeMirror a floating toolbar and its bundled light theme.
-   Use semantic editor attributes rather than MDXEditor's generated class names,
-   reserve a real header row, and restore the reading theme's code treatment. */
-.canvas-mdx-prose
-  [data-lexical-decorator="true"]
-  > div:has(> div:first-child button[title="Delete code block"]) {
+   The canvas code block descriptor wraps each block in .canvas-mdx-code, so
+   these rules avoid MDXEditor's generated class names. Reserve a real header
+   row and restore the reading theme's code treatment. */
+.canvas-mdx-prose .canvas-mdx-code > div {
   padding: 0;
   background: var(--canvas-prose-code-well);
 }
 
-.canvas-mdx-prose
-  [data-lexical-decorator="true"]
-  > div:has(> div:first-child button[title="Delete code block"])
-  > div:first-child {
+.canvas-mdx-prose .canvas-mdx-code > div > div:first-child {
   position: static;
   justify-content: flex-end;
   padding: 0.25rem 0.5rem;
@@ -334,10 +321,7 @@
   background: var(--secondary);
 }
 
-.canvas-mdx-prose
-  [data-lexical-decorator="true"]
-  > div:has(> div:first-child button[title="Delete code block"])
-  > div:nth-child(2) {
+.canvas-mdx-prose .canvas-mdx-code > div > div:nth-child(2) {
   min-width: 0;
   padding: 0.75rem 1rem;
 }

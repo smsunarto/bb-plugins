@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import type { JsxComponentDescriptor, JsxEditorProps } from "@mdxeditor/editor";
 import { toMarkdown } from "mdast-util-to-markdown";
 import { mdxToMarkdown } from "mdast-util-mdx";
@@ -81,14 +81,40 @@ export function CanvasWidgetsProvider(props: {
   );
 }
 
+// The host Markdown renderer gives its fenced-code and table wrappers no class.
+// Tag them so app.css can style the wrapper by attribute. The observer watches
+// this widget only, and tagging changes attributes, so it never re-triggers.
+function tagHostWrappers(root: HTMLElement): () => void {
+  const tag = () => {
+    for (const pre of root.querySelectorAll("[data-markdown-preview] div > pre.bb-code-highlight"))
+      pre.parentElement!.toggleAttribute("data-canvas-code", true);
+    for (const table of root.querySelectorAll("[data-markdown-preview] div > div > table"))
+      table.parentElement!.parentElement!.toggleAttribute("data-canvas-table", true);
+  };
+  tag();
+  const observer = new MutationObserver(tag);
+  observer.observe(root, { childList: true, subtree: true });
+  return () => observer.disconnect();
+}
+
 // MDXEditor supplies each JSX block as Markdown. The existing Canvas parser
 // validates literal props and child policies before the widget receives them.
 export function CanvasWidget({ markdown }: { markdown: string }) {
   const style = useContext(WidgetStyle);
   const parsed = useMemo(() => parseCanvas(markdown), [markdown]);
+  const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(
+    () => (root.current === null ? undefined : tagHostWrappers(root.current)),
+    [parsed.ok],
+  );
   if (!parsed.ok) return <div role="alert">{parsed.diagnostic.message}</div>;
   return (
-    <div className="canvas-prose canvas-document" data-canvas-style={style} contentEditable={false}>
+    <div
+      ref={root}
+      className="canvas-prose canvas-document"
+      data-canvas-style={style}
+      contentEditable={false}
+    >
       <Nodes nodes={parsed.document.nodes} />
     </div>
   );

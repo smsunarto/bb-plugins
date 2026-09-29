@@ -17,6 +17,7 @@ import {
   viewMode$,
   BoldItalicUnderlineToggles,
   BlockTypeSelect,
+  CodeMirrorEditor,
   CreateLink,
   DiffSourceToggleWrapper,
   GenericDirectiveEditor,
@@ -41,6 +42,8 @@ import {
   tablePlugin,
   thematicBreakPlugin,
   toolbarPlugin,
+  normalizeCodeBlockLanguages,
+  type CodeBlockEditorDescriptor,
   type DirectiveDescriptor,
   type MDXEditorMethods,
 } from "@mdxeditor/editor";
@@ -56,6 +59,38 @@ import { parseMarkdownDocument } from "./markdown-document.ts";
 import { preserveEsmPlugin } from "./mdx-esm.tsx";
 import "./app.css";
 import "./markdown-editor.css";
+
+const codeBlockLanguages = {
+  text: "Plain text",
+  js: "JavaScript",
+  ts: "TypeScript",
+  tsx: "TSX",
+  jsx: "JSX",
+  json: "JSON",
+  bash: "Shell",
+  css: "CSS",
+  html: "HTML",
+  python: "Python",
+  go: "Go",
+  csharp: "C#",
+  yaml: "YAML",
+  sql: "SQL",
+  markdown: "Markdown",
+};
+const codeBlockKeys = normalizeCodeBlockLanguages(codeBlockLanguages).keyMap;
+
+// Wrap MDXEditor's CodeMirror block in a class so markdown-editor.css can style
+// it without matching the delete button. Priority 2 outranks codeMirrorPlugin's
+// own descriptor, and the match mirrors it.
+const codeBlockDescriptor: CodeBlockEditorDescriptor = {
+  priority: 2,
+  match: (language, meta) => !meta || Object.hasOwn(codeBlockKeys, language ?? ""),
+  Editor: (props) => (
+    <div className="canvas-mdx-code">
+      <CodeMirrorEditor {...props} />
+    </div>
+  ),
+};
 
 export function previewUrl(baseUrl: string, notePath: string, source: string): string {
   if (/^(https?:|data:|blob:|#)/i.test(source)) return source;
@@ -192,26 +227,11 @@ function EditorSession(
             }
           : {}),
       }),
-      codeBlockPlugin({ defaultCodeBlockLanguage: "text" }),
-      codeMirrorPlugin({
-        codeBlockLanguages: {
-          text: "Plain text",
-          js: "JavaScript",
-          ts: "TypeScript",
-          tsx: "TSX",
-          jsx: "JSX",
-          json: "JSON",
-          bash: "Shell",
-          css: "CSS",
-          html: "HTML",
-          python: "Python",
-          go: "Go",
-          csharp: "C#",
-          yaml: "YAML",
-          sql: "SQL",
-          markdown: "Markdown",
-        },
+      codeBlockPlugin({
+        defaultCodeBlockLanguage: "text",
+        codeBlockEditorDescriptors: [codeBlockDescriptor],
       }),
+      codeMirrorPlugin({ codeBlockLanguages }),
       ...(/\.(mdx)$/i.test(notePath)
         ? [
             jsxPlugin({

@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
 
 installDom();
+const { waitFor } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
 const { CanvasWidgetsProvider, CanvasWidget } = await import("./editor.tsx");
@@ -74,6 +75,29 @@ test("pills inside a Row keep the canvas-row hook that stops them stretching", a
     const wrapper = pill.parentElement;
     assert.ok(wrapper);
     assert.ok(wrapper.parentElement?.classList.contains("canvas-row"));
+    assert.equal(wrapper.getAttribute("data-canvas-component"), "Pill");
   }
+  slot.unmount();
+});
+
+// The SDK test runtime stubs Markdown, so the host's markup is inserted the way
+// the real renderer delivers it: after the widget mounts.
+test("host code and table wrappers are tagged for the prose rules", async () => {
+  const slot = renderSlot({ component: WidgetFixture }, propsFor("canvases/host.canvas.mdx"), {
+    rpc: { state: () => ({ values: {}, revision: 0 }) },
+  });
+  await slot.findByText("Heads up");
+  const preview = slot.container.querySelector(".canvas-callout [data-testid='bb-markdown']");
+  assert.ok(preview);
+  preview.setAttribute("data-markdown-preview", "");
+  preview.innerHTML =
+    '<div id="code"><div>TS</div><pre class="bb-code-highlight"><code>x</code></pre></div>' +
+    '<div id="table"><div><table><tr><td>x</td></tr></table></div></div>';
+  await waitFor(() => assert.ok(preview.querySelector("#table[data-canvas-table]")));
+  assert.ok(preview.querySelector("#code[data-canvas-code]"));
+  assert.equal(
+    slot.container.querySelectorAll("[data-canvas-code], [data-canvas-table]").length,
+    2,
+  );
   slot.unmount();
 });

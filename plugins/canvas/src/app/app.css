@@ -195,8 +195,9 @@
 /* The host renderer wraps each fenced block in a div that carries the
  * language label, wrap toggle, and copy button. The breakout applies to that
  * wrapper so the chrome travels with the code. Its font is set to the code
- * font so 100ch measures mono columns. */
-.canvas-prose [data-markdown-preview] :where(div):has(> pre.bb-code-highlight) {
+ * font so 100ch measures mono columns. The wrapper has no class of its own, so
+ * CanvasWidget tags it with data-canvas-code. */
+.canvas-prose [data-markdown-preview] [data-canvas-code] {
   border-radius: 4px;
   box-sizing: border-box;
   font-family: var(--font-mono);
@@ -226,8 +227,9 @@
 /* The host renderer breaks Markdown tables out of the measure with inline
  * width and margin, so !important is the only handle. The theme keeps tables
  * at the prose measure; wide tables scroll inside the host's inner wrapper.
+ * CanvasWidget tags the outer wrapper with data-canvas-table.
  * The canvas Table component is styled in components.tsx on the same scale. */
-.canvas-prose [data-markdown-preview] :where(div):has(> :where(div) > table) {
+.canvas-prose [data-markdown-preview] [data-canvas-table] {
   justify-content: flex-start;
   margin: 1.75rem 0;
   margin-inline: 0 !important;
@@ -274,7 +276,7 @@
   margin-block: 0.75em;
 }
 
-.canvas-nested [data-markdown-preview] :where(div):has(> :where(div) > table) {
+.canvas-nested [data-markdown-preview] [data-canvas-table] {
   margin-block: 0.75em;
 }
 
@@ -369,7 +371,7 @@
  * is a label, so it hugs its text instead of growing into a bar. Each child
  * arrives wrapped in a comment anchor, so the rule targets the wrapper too. */
 .canvas-row > .canvas-pill,
-.canvas-row > .canvas-comment-block:has(> .canvas-pill) {
+.canvas-row > .canvas-comment-block[data-canvas-component="Pill"] {
   align-self: center;
   flex: 0 0 auto;
   min-width: 0;
@@ -691,7 +693,7 @@
 
 .canvas-comment-add[data-count],
 .canvas-comment-add:focus-visible,
-.canvas-comment-block:hover:not(:has(.canvas-comment-block:hover)) > .canvas-comment-add {
+.canvas-comment-block[data-hovered] > .canvas-comment-add {
   opacity: 1;
 }
 
@@ -1112,7 +1114,7 @@
   position: relative;
 }
 @container (max-width: 500px) {
-  .canvas-review-toolbar:has(.canvas-review-controls:not([hidden])) .canvas-review-hint {
+  .canvas-review-toolbar[data-open] .canvas-review-hint {
     display: none;
   }
 }

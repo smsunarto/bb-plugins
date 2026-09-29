@@ -259,7 +259,7 @@ function ReviewPane(props: CanvasReviewProps & { document: CanvasDocument }) {
   return (
     <div className="canvas-review" ref={root}>
       <style>{`::highlight(${highlightName}) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 28%, transparent); text-decoration: underline; text-decoration-color: var(--warning-text, var(--warning)); } ::highlight(${highlightName}-active) { background: color-mix(in srgb, var(--warning-text, var(--warning)) 48%, transparent); text-decoration: underline; }`}</style>
-      <div className="canvas-review-toolbar">
+      <div className="canvas-review-toolbar" data-open={open || undefined}>
         <span className="canvas-review-hint">
           Select text to comment <kbd>⌘⇧M</kbd>
         </span>

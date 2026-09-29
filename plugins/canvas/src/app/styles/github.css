@@ -12,11 +12,6 @@
  * The host diff viewer is left alone on purpose: it keeps the bb theme.
  */
 
-.canvas-scroll:has(> .canvas-prose[data-canvas-style="github"]) {
-  background: #ffffff;
-  color-scheme: light;
-}
-
 /* One more compound than `.dark .canvas-prose`, so this wins over a theme's
  * prose overrides regardless of stylesheet order. */
 .canvas-scroll > .canvas-prose[data-canvas-style="github"] {
@@ -170,9 +165,7 @@
 /* The host wraps fenced code in a div with its own dark surface and border.
  * GitHub draws a flat #f6f8fa block, so the wrapper loses the border and the
  * default style's centered breakout; it stays positioned for the copy button. */
-.canvas-prose[data-canvas-style="github"]
-  [data-markdown-preview]
-  :where(div):has(> pre.bb-code-highlight) {
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] [data-canvas-code] {
   background: var(--gh-bg-muted);
   border-color: transparent;
   border-radius: 6px;
@@ -208,9 +201,7 @@
   padding: 16px;
 }
 
-.canvas-prose[data-canvas-style="github"]
-  [data-markdown-preview]
-  :where(div):has(> :where(div) > table) {
+.canvas-prose[data-canvas-style="github"] [data-markdown-preview] [data-canvas-table] {
   margin: 0 0 16px;
 }
 
@@ -458,7 +449,7 @@
 .canvas-prose[data-canvas-style="github"]
   .canvas-nested
   [data-markdown-preview]
-  :where(div):has(> :where(div) > table) {
+  [data-canvas-table] {
   margin-block: 0 16px;
 }
 

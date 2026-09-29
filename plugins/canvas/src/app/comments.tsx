@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ReactElement, ReactNode } from "react";
+import type { PointerEvent, ReactElement, ReactNode, RefObject } from "react";
 import { useRealtime } from "@get-bb/plugin-sdk/app";
 import { anchorAt, placeThreads } from "../shared/anchor.ts";
 import type { PlacedThread, Placement } from "../shared/anchor.ts";
@@ -666,15 +666,34 @@ export function ThreadCard(props: {
   );
 }
 
+// Only the innermost hovered block shows its add button. Pointer events bubble
+// through every enclosing block, and each one checks whether it is the
+// target's nearest block.
+function useInnermostHover(host: RefObject<HTMLDivElement | null>) {
+  const [hovered, setHovered] = useState(false);
+  return {
+    "data-hovered": hovered || undefined,
+    onPointerOver: (event: PointerEvent) =>
+      setHovered((event.target as Element).closest(".canvas-comment-block") === host.current),
+    onPointerLeave: () => setHovered(false),
+  };
+}
+
 export function Block(props: {
   readonly offset: number;
+  readonly component?: string;
   readonly children: ReactNode;
 }): ReactElement {
   const comments = useContext(CommentsContext);
   const threads = useThreadsAt(props.offset);
   const host = useRef<HTMLDivElement>(null);
+  const hover = useInnermostHover(host);
   if (comments === null || comments.sidebar)
-    return <div className="canvas-comment-block">{props.children}</div>;
+    return (
+      <div className="canvas-comment-block" data-canvas-component={props.component}>
+        {props.children}
+      </div>
+    );
   const composing = comments.composing?.offset === props.offset ? comments.composing : null;
   const selection = comments.selection?.offset === props.offset ? comments.selection : null;
   const frame = host.current?.getBoundingClientRect() ?? { top: 0, left: 0 };
@@ -683,7 +702,9 @@ export function Block(props: {
     <div
       ref={host}
       className={`canvas-comment-block${threads.length > 0 ? " canvas-commented" : ""}`}
+      data-canvas-component={props.component}
       data-comment-offset={props.offset}
+      {...hover}
     >
       {props.children}
       <button
