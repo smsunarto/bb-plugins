@@ -644,13 +644,11 @@ const requiredRules: Array<{
     declarations: { "background-color": palette.ground.conversation },
   },
   {
-    selector:
-      ".dark #thread-detail-secondary-panel .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])",
+    selector: ".dark [data-monokai-diff-shell]",
     declarations: { "background-color": "var(--agent-surface-background)" },
   },
   {
-    selector:
-      ".dark #thread-detail-secondary-panel .sticky.rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])",
+    selector: ".dark [data-monokai-diff-shell].sticky",
     declarations: { "background-color": "var(--surface-raised-solid)" },
   },
   {

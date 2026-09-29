@@ -15,7 +15,7 @@
 - `app/diff-header.ts` decorates BB's native Git headers through a content script. The public diff renderer slot owns only the body.
 - Private contracts: the header's collapse-button structure, DOM `__reactFiber$` and `__reactProps$`, and the header `model` props (`path`, `label`, `changeKind`). Select the fiber by committed DOM props identity. A mounted row can have a stale parent return chain, so do not walk to the root to determine currency. Traversal is bounded and skips unknown models. Recheck these contracts after BB upgrades.
 - Observe each filename once. Batch overflow reads before attribute writes, and ignore mutations outside headers. `test/diff-header.browser.ts` guards against page-wide mutations causing repeated header scans and layout reads.
-- Style headers through the `data-monokai-diff-header` tag the adapter sets. A `:has()` subject on the page root, bb's sidebar containers, or every flex row restyles the page on each DOM change. `theme-contract.test.ts` rejects those subjects.
+- Style the diff shell through the tags the adapter sets: `data-monokai-diff-header` (the header row), `data-monokai-diff-shell` (its `.bg-background` wrapper), `data-monokai-diff-card` (a sticky card that holds bb's `.h-0` sentinel), and `data-monokai-diff-panel` (a secondary panel or shelf that shows `[data-testid="git-diff-toolbar-layout"]` or `[data-monokai-diff-surface]`). Any `:has()` rule makes each streamed DOM change re-check its subjects. `theme-contract.test.ts` rejects `:has()` in the theme and `diff-header.css`.
 - Use Pierre's exported sprite for change-kind artwork and existing theme colors. Remove owned icons on theme deselection and disposal. Hide Open in Editor only in the secondary panel via its accessible label.
 
 ## Terminal adapter

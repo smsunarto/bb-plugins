@@ -50,8 +50,9 @@ try {
       }
     }
     // A sticky Git header covers code using a layer-derived opaque fallback.
+    // app/diff-header.ts tags the shell; the fixture carries that tag itself.
     const shelf=document.createElement('div');shelf.setAttribute('data-secondary-panel-shelf','');
-    shelf.innerHTML='<div class="sticky rounded-lg bg-background"><div class="flex"><span><button aria-expanded="true">Sticky Git header</button></span></div></div>';
+    shelf.innerHTML='<div data-monokai-diff-shell class="sticky rounded-lg bg-background"><div class="flex"><span><button aria-expanded="true">Sticky Git header</button></span></div></div>';
     shelf.style.cssText='margin-top:12px;background:var(--diffs-bg-context-override)';root.append(shelf);
     document.body.append(root);
     const results=measurements.map(({name,kind,e,expected})=>{

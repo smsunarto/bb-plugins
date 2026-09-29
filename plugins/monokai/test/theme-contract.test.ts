@@ -68,7 +68,7 @@ describe("bb Monokai contract audit", () => {
     }
     expect(theme).toContain("--diffs-bg-separator-override: #e3e3dd0f");
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  background-color: var(--agent-surface-background);",
+      ".dark [data-monokai-diff-shell] {\n  background-color: var(--agent-surface-background);",
     );
     expect(theme).toContain(
       ".dark .smart-embed-header,\n.dark .last-turn-diff-heading {\n  background-color: var(--agent-surface-background);",
@@ -157,25 +157,25 @@ describe("bb Monokai contract audit", () => {
 
   test("mirrors the Diffs.com header shell with Monokai color roles", () => {
     expect(theme).toContain(
-      "> .h-0 + .rounded-lg.bg-background button[aria-expanded]\n  ) {\n  overflow: hidden;\n  border-color: var(--border);\n  border-radius: 10px;\n  background-color: #181818;",
+      ".dark [data-monokai-diff-panel] [data-monokai-diff-card] {\n  overflow: hidden;\n  border-color: var(--border);\n  border-radius: 10px;\n  background-color: #181818;",
     );
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {\n  min-height: 44px;\n  margin-top: 0;\n  display: flex;\n  align-items: center;\n  padding: 0 16px;\n  border-top: 0;\n  border-radius: 0;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;",
+      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] {\n  min-height: 44px;\n  margin-top: 0;\n  display: flex;\n  align-items: center;\n  padding: 0 16px;\n  border-top: 0;\n  border-radius: 0;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;",
     );
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])\n  button[aria-expanded] {\n  width: 24px;\n  height: 24px;\n  margin-left: -5px;\n  padding: 0;\n  border-radius: 8px;\n  background-color: transparent;\n  color: var(--muted-foreground);",
+      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] {\n  width: 24px;\n  height: 24px;\n  margin-left: -5px;\n  padding: 0;\n  border-radius: 8px;\n  background-color: transparent;\n  color: var(--muted-foreground);",
     );
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])\n  button[aria-expanded]\n  svg {\n  width: 10px;\n  height: 16px;",
+      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] svg {\n  width: 10px;\n  height: 16px;",
     );
     expect(theme).toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])\n  button[aria-expanded]\n  + span\n  > button:not(.font-mono) {\n  width: 24px;",
+      "[data-monokai-diff-shell]\n  button[aria-expanded]\n  + span\n  > button:not(.font-mono) {\n  width: 24px;",
     );
     expect(theme).not.toContain(
-      ".rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])\n  button[aria-expanded]\n  + span\n  > button {\n  width: 24px;",
+      "[data-monokai-diff-shell]\n  button[aria-expanded]\n  + span\n  > button {\n  width: 24px;",
     );
     expect(theme).toContain(
-      "> span:last-child\n  > .text-xs {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  font-family: var(--font-mono);\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums;",
+      "[data-monokai-diff-shell] > .flex > span:last-child > .text-xs {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  font-family: var(--font-mono);\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums;",
     );
   });
 

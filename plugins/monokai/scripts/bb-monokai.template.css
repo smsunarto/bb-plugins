@@ -48,27 +48,18 @@
 /* BB keeps the right-panel diff disclosure outside Pierre's shadow tree.
  * Mirror the Diffs.com built-in-slots header shell and controls while retaining
  * BB's collapse state, file actions, sticky positioning, and non-text fallbacks.
- * Color stays on this theme's surface, ink, state, and feedback roles. */
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .overflow-clip.rounded-lg.border.border-border.bg-background:has(
-    > .h-0 + .rounded-lg.bg-background button[aria-expanded]
-  ) {
+ * Color stays on this theme's surface, ink, state, and feedback roles.
+ * app/diff-header.ts tags the panel, card, and shell, so none of these
+ * rules need a :has selector. The panel tag appears only while the panel
+ * shows a diff toolbar or an opted-in [data-monokai-diff-surface]. */
+.dark [data-monokai-diff-panel] [data-monokai-diff-card] {
   overflow: hidden;
   border-color: var(--border);
   border-radius: 10px;
   background-color: {{ground.content}};
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] {
   min-height: 44px;
   margin-top: 0;
   display: flex;
@@ -81,35 +72,16 @@
   font-weight: 400;
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  > .flex {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] > .flex {
   height: 100%;
   gap: 8px;
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  > .flex
-  > span:first-child {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] > .flex > span:first-child {
   gap: 8px;
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  button[aria-expanded] {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] {
   width: 24px;
   height: 24px;
   margin-left: -5px;
@@ -122,50 +94,24 @@
     background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  button[aria-expanded]
-  svg {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] svg {
   width: 10px;
   height: 16px;
 }
 
 @media (hover: hover) {
-  .dark
-    :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-      [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-    )
-    .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-    button[aria-expanded]:hover {
+  .dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded]:hover {
     background-color: var(--state-hover);
     color: var(--foreground);
   }
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  button[aria-expanded]
-  + span {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] + span {
   padding-left: 0;
   gap: 8px;
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  .font-mono {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] .font-mono {
   font-size: 13px;
   line-height: 20px;
   font-weight: 400;
@@ -173,11 +119,8 @@
 }
 
 .dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  [data-monokai-diff-panel]
+  [data-monokai-diff-shell]
   button[aria-expanded]
   + span
   > button:not(.font-mono) {
@@ -193,11 +136,8 @@
 
 @media (hover: hover) {
   .dark
-    :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-      [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-    )
-    .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+    [data-monokai-diff-panel]
+    [data-monokai-diff-shell]
     button[aria-expanded]
     + span
     > button:not(.font-mono):hover {
@@ -206,28 +146,13 @@
   }
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  > .flex
-  > span:last-child {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] > .flex > span:last-child {
   gap: 8px;
   font-size: 13px;
   line-height: 20px;
 }
 
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
-  > .flex
-  > span:last-child
-  > .text-xs {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] > .flex > span:last-child > .text-xs {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -1090,43 +1015,27 @@ diffs-container {
 }
 
 /* BB owns the GitDiffCardHeader outside Pierre's shadow root. The wrapper
- * has no dedicated data attribute in BB 0.42.1: match its direct collapse
- * control structure, including collapsed cards, within the Git diff panel.
- * Smart embeds expose their own header class. Bodies keep the content ground. */
+ * has no dedicated data attribute in BB 0.44, so app/diff-header.ts tags it,
+ * including collapsed cards, within the secondary panel. Smart embeds expose
+ * their own header class. Bodies keep the content ground. */
 .dark .smart-embed-header,
 .dark .last-turn-diff-heading {
   background-color: var(--agent-surface-background);
 }
 
-.dark
-  #thread-detail-secondary-panel
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]),
-.dark
-  [data-secondary-panel-shelf]
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+.dark [data-monokai-diff-shell] {
   background-color: var(--agent-surface-background);
 }
 
 /* Sticky headers must hide scrolling code. Their solid fallback is generated
  * from the same 6% layer over content, not a separately chosen header color. */
-.dark
-  #thread-detail-secondary-panel
-  .sticky.rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]),
-.dark
-  [data-secondary-panel-shelf]
-  .sticky.rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+.dark [data-monokai-diff-shell].sticky {
   background-color: var(--surface-raised-solid);
 }
 
 .dark .smart-embed-header,
 .dark .smart-embed-path,
-.dark
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .bg-background:has(> .flex > span > button[aria-expanded])
-  .font-mono {
+.dark [data-monokai-diff-panel] [data-monokai-diff-shell] .font-mono {
   font-family: var(--font-sans);
 }
 

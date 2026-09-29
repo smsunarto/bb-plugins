@@ -25,23 +25,15 @@
   color: var(--diffs-modified-color-override);
 }
 
-.dark[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded]) {
+.dark[data-monokai-diff-headers] [data-monokai-diff-panel] [data-monokai-diff-shell] {
   min-height: 40px;
   padding-block: 0;
   padding-inline: 12px;
 }
 
 .dark[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]):has(
-    [data-testid="git-diff-toolbar-layout"],
-    [data-monokai-diff-surface]
-  )
-  .rounded-lg.bg-background:has(> .flex > span > button[aria-expanded])
+  [data-monokai-diff-panel]
+  [data-monokai-diff-shell]
   button[aria-expanded] {
   margin-left: 0;
 }

@@ -1,8 +1,11 @@
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { SVGSpriteSheet } from "@pierre/diffs";
 
-const HEADER =
-  ":is(#thread-detail-secondary-panel, [data-secondary-panel-shelf]) .bg-background > .flex:has(> span > button[aria-expanded])";
+const PANEL = ":is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])";
+const HEADER = `${PANEL} .bg-background > .flex:has(> span > button[aria-expanded])`;
+// bb's diff toolbar, or a plugin list that opts in (gitbutler's file cards).
+const DIFF_VIEW = '[data-testid="git-diff-toolbar-layout"], [data-monokai-diff-surface]';
+const WATCHED = `${HEADER}, ${DIFF_VIEW}`;
 const ICONS = {
   added: "added",
   deleted: "deleted",
@@ -39,11 +42,30 @@ export function readHeaderKind(element: Element): Kind | null {
   return null;
 }
 
+// Each tagged element carries exactly one of these attributes.
+function diffTags(headers: Element[]): Map<Element, string> {
+  const tags = new Map<Element, string>();
+  const panels = new Map<Element, boolean>();
+  for (const header of headers) {
+    tags.set(header, "data-monokai-diff-header");
+    const shell = header.parentElement!;
+    tags.set(shell, "data-monokai-diff-shell");
+    // bb renders a sticky header's sentinel before its shell, inside the card.
+    if (shell.previousElementSibling?.matches(".h-0") && shell.parentElement)
+      tags.set(shell.parentElement, "data-monokai-diff-card");
+    const panel = header.closest(PANEL)!;
+    if (!panels.has(panel)) panels.set(panel, panel.querySelector(DIFF_VIEW) !== null);
+    if (panels.get(panel)) tags.set(panel, "data-monokai-diff-panel");
+  }
+  return tags;
+}
+
 export function mountDiffHeader({ signal }: PluginContentScriptContext) {
   const sprites = new DOMParser().parseFromString(SVGSpriteSheet, "text/html");
   const owned = new Map<Element, SVGSVGElement>();
-  // Tag headers so diff-header.css can style them without a page-wide :has().
-  const headers = new Set<Element>();
+  // Tag each header, its shell and card, and a panel that shows a diff, so the
+  // theme and diff-header.css can style them without a page-wide :has().
+  let tags = new Map<Element, string>();
   const filenames = new Set<Element>();
   const resizeObserver = new ResizeObserver((entries) => {
     // Finish layout reads before changing attributes. Header decoration must
@@ -76,18 +98,20 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
         filenames.delete(element);
       }
     });
-    // Icons live only on tagged headers, so one pass retires both.
-    headers.forEach((header) => {
-      if (active && header.isConnected && header.matches(HEADER)) return;
-      header.removeAttribute("data-monokai-diff-header");
-      headers.delete(header);
-      owned.get(header)?.remove();
+    const headers = active ? [...document.querySelectorAll(HEADER)] : [];
+    const next = diffTags(headers);
+    tags.forEach((name, element) => {
+      if (next.get(element) !== name) element.removeAttribute(name);
+    });
+    next.forEach((name, element) => element.toggleAttribute(name, true));
+    tags = next;
+    // Icons live only on tagged headers.
+    owned.forEach((icon, header) => {
+      if (next.has(header)) return;
+      icon.remove();
       owned.delete(header);
     });
-    if (!active) return;
-    for (const header of document.querySelectorAll(HEADER)) {
-      headers.add(header);
-      header.toggleAttribute("data-monokai-diff-header", true);
+    for (const header of headers) {
       header.querySelectorAll(".truncate").forEach(observeFilename);
       const kind = readHeaderKind(header);
       const prior = owned.get(header);
@@ -114,8 +138,8 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
   const schedule = () => {
     if (!disposed && frame === null) frame = requestAnimationFrame(reconcile);
   };
-  const containsHeader = (node: Node) =>
-    node instanceof Element && (node.matches(HEADER) || node.querySelector(HEADER) !== null);
+  const containsWatched = (node: Node) =>
+    node instanceof Element && (node.matches(WATCHED) || node.querySelector(WATCHED) !== null);
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.type !== "characterData" && mutation.type !== "childList") continue;
@@ -143,7 +167,7 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
           target === document.documentElement ||
           document.head.contains(target) ||
           Boolean(target?.closest(HEADER)) ||
-          changed.some(containsHeader)
+          changed.some(containsWatched)
         );
       })
     )
@@ -173,8 +197,8 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
     if (frame !== null) cancelAnimationFrame(frame);
     for (const icon of owned.values()) icon.remove();
     owned.clear();
-    for (const header of headers) header.removeAttribute("data-monokai-diff-header");
-    headers.clear();
+    tags.forEach((name, element) => element.removeAttribute(name));
+    tags.clear();
     document.documentElement.removeAttribute("data-monokai-diff-headers");
   };
   signal.addEventListener("abort", dispose, { once: true });
