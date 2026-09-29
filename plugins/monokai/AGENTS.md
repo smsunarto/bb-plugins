@@ -24,4 +24,4 @@
 - The adapter is inert when the host already renders the `--terminal-*` typography tokens. After detecting matching host-owned typography, it bypasses further private traversal, fitting, refresh, and restore registration for that terminal.
 - Private contracts: a DOM `__reactFiber$` attachment, React hook refs, and xterm `_addonManager._addons[].instance`. Find the terminal by exact `element` identity, and FitAddon by `_terminal` identity plus its `fit` and `proposeDimensions` methods. Do not depend on component names or hook indexes.
 - Bound every traversal. Skip unrecognized terminals. Use xterm's public options and the existing FitAddon to resize. Restore only owned values on theme deselection, plugin reload, and disposal.
-- The padding selector is `.bg-sidebar.p-2:has(> div > .xterm)`. Verify it and the runtime adapter against an unmodified BB release before reloading live Monokai.
+- The adapter tags each terminal's `.bg-sidebar.p-2` grandparent with `data-monokai-terminal-surface` for the theme's padding rule, whether or not the host owns typography. Verify it against an unmodified BB release before reloading live Monokai.

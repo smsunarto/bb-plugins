@@ -553,7 +553,7 @@ const requiredRules: Array<{
     declarations: { "background-clip": "padding-box", "box-shadow": "none" },
   },
   {
-    selector: '.dark .bg-popover > .border-b:has(input[aria-label="Search models"])',
+    selector: ".dark .bg-popover > .shrink-0.border-b.px-1\\.5.py-1",
     declarations: { "background-color": "var(--control-background)", "border-bottom-width": "0" },
   },
   {

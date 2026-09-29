@@ -257,26 +257,17 @@ describe("bb Monokai contract audit", () => {
 });
 
 describe("bb Monokai selector cost", () => {
-  test("keeps :has() off page-wide subjects", async () => {
-    // Blink re-checks a :has() subject when any DOM beneath it changes. On the
-    // document root, bb's sidebar containers, or every flex row, one sidebar
-    // or timeline update restyled the whole page. Anchor on a bb hook instead,
-    // or tag the element from a content script (see app/diff-header.ts).
+  test("ships no :has() selectors", async () => {
+    // Blink re-checks a :has() subject when DOM beneath it changes, so every
+    // rule made streamed timeline tokens restyle part of the page. Anchor on a
+    // bb hook, or tag the element from a content script that already finds it
+    // (app/diff-header.ts, app/terminal-appearance.ts).
     const diffHeaderCss = await readFile(
       new URL("../app/diff-header.css", import.meta.url),
       "utf8",
     );
-    const subjects = [theme, diffHeaderCss].flatMap((css) =>
-      [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^\s,>+~(){}]*):has\(/g)].map(
-        (match) => match[1],
-      ),
-    );
-    expect(subjects.length).toBeGreaterThan(0);
-    expect(
-      subjects.filter((subject) =>
-        ["body", "html", ":root", ".dark", ".bg-sidebar", ".flex"].includes(subject!),
-      ),
-    ).toEqual([]);
+    for (const css of [theme, diffHeaderCss])
+      expect(css.replace(/\/\*[\s\S]*?\*\//g, "").match(/[^\n]*:has\([^\n]*/g)).toBeNull();
   });
 });
 

@@ -432,9 +432,10 @@
 
 /* The current BB terminal canvas sits inside this padded sidebar surface.
  * Match its padding to xterm's background even when the side panel scopes
- * --sidebar to the editor ground. The p-2 class keeps :has() off bb's sidebar
- * containers, where it made every sidebar mutation restyle the page. */
-.dark .bg-sidebar.p-2:has(> div > .xterm) {
+ * --sidebar to the editor ground. app/terminal-appearance.ts tags the
+ * surface. A :has selector here put bb's sidebars behind per-mutation
+ * invalidation. */
+.dark [data-monokai-terminal-surface] {
   background-color: var(--terminal-background);
 }
 
@@ -604,8 +605,10 @@
 /* Keep the new-thread composer at the conversation footer's position. The
  * desktop column fills its scroll viewport, with homepage sections above the
  * composer. Compact home already anchors it at the bottom. Both use the same
- * 0.5rem bottom inset, explicitly overriding bb's pb-4 utility. */
-.dark #root-compose-main-panel .\@container\/page > div:has(> [data-promptbox-shell]) {
+ * 0.5rem bottom inset, explicitly overriding bb's pb-4 utility. The desktop
+ * column is the page container's .mx-auto.flex-col child; compact home's root
+ * is not, and it keeps its own layout. */
+.dark #root-compose-main-panel .\@container\/page > .mx-auto.flex-col {
   min-height: 100%;
   padding-bottom: 0.5rem;
 }
@@ -689,9 +692,10 @@
  * in both bubbles, and timeline row previews. Markdown images also get bb's
  * rounded-md radius, a border-box so max-w-full holds, and more block margin
  * than bb's my-2 so the frame is not packed against the surrounding prose.
- * vertical-align drops the inline baseline gap under the frame. */
+ * vertical-align drops the inline baseline gap under the frame. Every bb
+ * zoom button wraps its image directly, so the button needs no :has selector. */
 .dark img.cursor-zoom-in,
-.dark button.cursor-zoom-in:has(> img) {
+.dark button.cursor-zoom-in {
   border: 1px solid var(--border);
 }
 
@@ -734,8 +738,9 @@
 
 /* Tooltips use the same bg-primary utility as action buttons upstream, but
  * they are neutral informational surfaces. Keep the accent for links and
- * mentions; render tooltip content as an elevated dark control instead. */
-.dark .bg-primary:has([role="tooltip"]) {
+ * mentions; render tooltip content as an elevated dark control instead.
+ * Radix puts data-side on the content, which a bg-primary button never has. */
+.dark .bg-primary[data-side] {
   background-color: var(--popover);
   box-shadow: inset 0 0 0 1px var(--border);
   color: var(--foreground);
@@ -748,8 +753,9 @@
   --state-active: var(--state-hover);
 }
 
-/* The model-search row is one field, including its inset around the input. */
-.dark .bg-popover > .border-b:has(input[aria-label="Search models"]) {
+/* The model-search row is one field, including its inset around the input.
+ * bb gives no other popover row this exact padding pair. */
+.dark .bg-popover > .shrink-0.border-b.px-1\.5.py-1 {
   background-color: var(--control-background);
   border-bottom-width: 0;
 }
@@ -897,8 +903,11 @@
  * workspace-checkout-display chunk. That chunk arrives after this sheet, so a
  * tie on specificity loses the moment a thread is opened. Repeating the class
  * outranks it without reaching for `!important`.
- * Measured on the content ground #181818. */
-.dark .bg-surface-recessed:has(> .bb-code-highlight) {
+ * Measured on the content ground #181818. bb's code block and mermaid
+ * wrappers share this class chain, so both sit on the content ground.
+ * :where() keeps the specificity of the rule this replaced, so a plugin
+ * that restyles these wrappers (canvas's GitHub style) still wins. */
+.dark .bg-surface-recessed.my-2:where(.overflow-hidden.rounded-md.border) {
   background-color: {{ground.content}};
 }
 
@@ -990,8 +999,9 @@
 /* Diagram fences describe structure rather than source code, but sugar-high
  * still classifies capitalized labels and connectors as code tokens. Collapse
  * every token to the text color so the diagram stays legible instead of
- * acquiring arbitrary syntax hues. */
-.dark .bb-code-highlight.bb-code-highlight:has(> :is(.language-diagram, .language-patch)) {
+ * acquiring arbitrary syntax hues. The fence's code element carries the
+ * language class, and its tokens inherit the variables from it. */
+.dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {
   --sh-identifier: var(--foreground);
   --sh-property: var(--foreground);
   --sh-sign: var(--foreground);

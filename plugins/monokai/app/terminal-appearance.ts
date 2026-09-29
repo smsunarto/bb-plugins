@@ -3,6 +3,9 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 const ACTIVE_MOUNT = Symbol.for("bb.monokai.terminal-appearance.active-mount");
 const MAX_FIBER_DEPTH = 40;
 const MAX_HOOKS = 128;
+// Tags bb's padded sidebar surface around each terminal for the theme's
+// padding rule, which would otherwise need a :has() on bb's sidebars.
+const SURFACE = "data-monokai-terminal-surface";
 
 type RecordValue = Record<string, unknown>;
 type TerminalTheme = Record<string, unknown>;
@@ -179,6 +182,17 @@ function sameAppearance(left: TerminalAppearance, right: TerminalAppearance): bo
   );
 }
 
+function tagSurfaces(terminals: Element[], previous: Set<Element>): Set<Element> {
+  const next = new Set<Element>();
+  for (const terminal of terminals) {
+    const surface = terminal.parentElement?.parentElement;
+    if (surface?.matches(".bg-sidebar.p-2")) next.add(surface);
+  }
+  for (const surface of previous) if (!next.has(surface)) surface.removeAttribute(SURFACE);
+  for (const surface of next) surface.toggleAttribute(SURFACE, true);
+  return next;
+}
+
 function relevantNode(node: Node): boolean {
   if (!(node instanceof Element)) return node.parentElement?.tagName === "STYLE";
   return (
@@ -192,6 +206,7 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
   registry[ACTIVE_MOUNT]?.();
   const applied = new Map<Element, AppliedTerminal>();
   const hostOwned = new WeakSet<Element>();
+  let surfaces = new Set<Element>();
   let frame: number | null = null;
   let disposed = false;
   const restore = (entry: AppliedTerminal) => {
@@ -211,8 +226,10 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
       restore(entry);
       applied.delete(element);
     }
+    const terminals = appearance ? [...document.querySelectorAll(".xterm")] : [];
+    surfaces = tagSurfaces(terminals, surfaces);
     if (!appearance) return;
-    for (const element of document.querySelectorAll(".xterm")) {
+    for (const element of terminals) {
       if (applied.has(element) || hostOwned.has(element)) continue;
       const binding = findElementBinding(element);
       if (!binding) continue;
@@ -261,6 +278,7 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
     if (frame !== null) cancelAnimationFrame(frame);
     for (const entry of applied.values()) restore(entry);
     applied.clear();
+    surfaces = tagSurfaces([], surfaces);
     if (registry[ACTIVE_MOUNT] === dispose) delete registry[ACTIVE_MOUNT];
   };
   registry[ACTIVE_MOUNT] = dispose;
