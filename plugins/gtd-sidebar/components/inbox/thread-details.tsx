@@ -7,18 +7,32 @@ import { cn } from "../../lib/utils";
 import { MachineGlobe } from "./machine-globe";
 import { useRemoteMachine } from "./machine-appearance";
 
+// One observer for every label. It runs after layout, reads each label once,
+// then writes only the flags that changed, so a list mounting a thousand rows
+// never forces a layout per row.
+let overflowObserver: ResizeObserver | null = null;
+function observeOverflow(element: HTMLElement) {
+  overflowObserver ??= new ResizeObserver((entries) => {
+    const measured = entries.map(({ target }) => ({
+      target: target as HTMLElement,
+      overflowing: String(target.scrollWidth > target.clientWidth + 1),
+    }));
+    for (const { target, overflowing } of measured) {
+      if (target.dataset.overflowing !== overflowing) target.dataset.overflowing = overflowing;
+    }
+  });
+  overflowObserver.observe(element);
+  return () => overflowObserver?.unobserve(element);
+}
+
 export function FadingText({ text, className }: { text: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
+  // Re-observing on a text change queues a fresh measurement: a longer title
+  // can overflow without changing the label's box.
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const update = () => {
-      element.dataset.overflowing = String(element.scrollWidth > element.clientWidth + 1);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
+    return observeOverflow(element);
   }, [text]);
   return (
     <span ref={ref} className={cn("gtd-fading-text", className)}>
