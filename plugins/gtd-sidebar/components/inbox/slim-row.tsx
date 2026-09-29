@@ -151,7 +151,7 @@ const SlimRowBody = memo(function SlimRowBody({
       rename={rename}
       disabled={isCompactViewport}
     >
-      <li className="list-none">
+      <div>
         <div
           ref={rowRef}
           data-sidebar-rename-row=""
@@ -248,7 +248,7 @@ const SlimRowBody = memo(function SlimRowBody({
             />
           ) : null}
         </div>
-      </li>
+      </div>
     </RowContextMenu>
   );
 });

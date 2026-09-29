@@ -231,12 +231,12 @@
 .gtd-project-group-new:focus-visible {
   outline: 1px solid var(--ring);
 }
-/* Move thread content, disclosures, and tree guides together inside groups. */
+/* Move thread content, disclosures, and tree guides together inside groups.
+   The 2px under the header is the first row's own top margin. */
 .gtd-project-group-rows {
   /* The thread glyph starts 6px inside its hit area: 10 + 6 = 16px,
      one 8px nesting step beyond the repo glyph's 8px inset. */
   --gtd-group-indent: 10px;
-  margin-top: 2px;
 }
 .gtd-disclosure {
   position: absolute;

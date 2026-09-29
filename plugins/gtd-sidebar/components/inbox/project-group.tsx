@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useState, type CSSProperties, type ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -9,6 +9,7 @@ import { FadingText } from "./thread-details";
 import { useNestProjectHeader } from "../../hooks/use-nest-drag";
 import { DRAG_KIND } from "../../lib/sidebar-drag";
 import type { InboxShelf } from "../../lib/inbox-tree";
+import type { HeaderMeasureProps } from "../../hooks/use-inbox-window";
 
 /**
  * A project group wired into its shelf's sortable list: the header is the
@@ -54,9 +55,19 @@ export function ProjectGroup({
   isCompactViewport,
   dropAllowed,
   sortable,
+  measureRef,
+  measureIndex,
   children,
 }: ProjectGroupProps) {
   const drop = useNestProjectHeader(shelf, projectId, dropAllowed);
+  const { setDropRef } = drop;
+  const setHeaderRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      setDropRef(element);
+      measureRef(element);
+    },
+    [setDropRef, measureRef],
+  );
   const [hovered, setHovered] = useState(false);
   // Reaching the new-thread button by keyboard trades the count for it, as
   // hovering the header does.
@@ -64,7 +75,8 @@ export function ProjectGroup({
   const count = attention > 0 ? `${attention} / ${families}` : `${families}`;
   const header = (
     <div
-      ref={drop.setDropRef}
+      ref={setHeaderRef}
+      data-index={measureIndex}
       className={cn(
         "gtd-project-group-header group/pg",
         isCompactViewport && "gtd-project-group-header-touch",
@@ -156,9 +168,7 @@ export function ProjectGroup({
           </ContextMenu.Portal>
         </ContextMenu.Root>
       )}
-      {expanded ? (
-        <ul className="gtd-project-group-rows flex flex-col gap-0.5">{children}</ul>
-      ) : null}
+      {expanded ? <ul className="gtd-project-group-rows flex flex-col">{children}</ul> : null}
     </div>
   );
 }
@@ -188,7 +198,7 @@ function NewThreadButton({
   );
 }
 
-export interface ProjectGroupProps {
+export interface ProjectGroupProps extends HeaderMeasureProps {
   projectId: string;
   shelf: InboxShelf;
   name: string;

@@ -103,6 +103,17 @@ Source: <https://github.com/samasante/liquid-glass>
 
 ---
 
+## TanStack Virtual — `@tanstack/react-virtual`, `@tanstack/virtual-core`
+
+MIT License, Copyright (c) 2021-present Tanner Linsley.
+
+`useVirtualizer` windows the thread list, so only the rows in and near view
+mount. Compiled into `dist/app.js`.
+
+Source: <https://github.com/TanStack/virtual>
+
+---
+
 ## Not shipped here
 
 React, `clsx`, `tailwind-merge`, `@radix-ui/react-select`,

@@ -67,6 +67,18 @@ import { MachineScopePicker } from "./machine-scope-picker";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
+import {
+  useInboxWindow,
+  type HeaderMeasureProps,
+  type InboxWindow,
+} from "../../hooks/use-inbox-window";
+import {
+  buildInboxWindow,
+  encodeWindowedNav,
+  estimateInboxItemSize,
+  shelfKey,
+  windowSegments,
+} from "../../lib/inbox-window";
 
 const ALL_PROJECTS = "__all__";
 // The Settled shelf is a view of bb's archive, so the host list is asked for
@@ -132,12 +144,6 @@ function InboxList({
 
   const gitButlerLabels = useGitButlerLabels(threads, settingValues?.gitButlerBranches === true);
 
-  const [showSnoozed, setShowSnoozed] = useState(false);
-  const [showSettled, setShowSettled] = useState(false);
-  // Waiting is the one active shelf worth folding away: its rows are work you
-  // cannot act on, and they can outnumber Next Action several times over.
-  const [showWaiting, setShowWaiting] = useState(true);
-
   const projectNameById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects],
@@ -190,11 +196,12 @@ function InboxList({
     };
   }, [shelves, orderedProjectIds, personalProjectIds]);
   const { pinned, nextAction, waiting } = groupedShelves;
-  const activeShelves = [
-    ["pinned", "Pinned", pinned],
-    ["nextAction", "Next Action", nextAction],
-    ["waiting", "Waiting", waiting],
-  ] as const;
+  const { shelfViews, windowLayout, waitingOpen } = useShelfWindow(
+    groupedShelves,
+    grouped,
+    searching,
+    isGroupCollapsed,
+  );
   // The rows the user can see, in the order they see them and tagged with the
   // shelf they sit under, so settling walks to the visible neighbour in its
   // own section and never into a folded group or another shelf.
@@ -204,7 +211,7 @@ function InboxList({
         [
           ["pinned", pinned],
           ["nextAction", nextAction],
-          ["waiting", showWaiting || searching ? waiting : []],
+          ["waiting", waitingOpen ? waiting : []],
         ] as const
       ).flatMap(([shelf, groups]) =>
         groups.flatMap((group) =>
@@ -213,7 +220,7 @@ function InboxList({
             : group.rows.map((row) => ({ shelf, row })),
         ),
       ),
-    [pinned, nextAction, waiting, showWaiting, searching, grouped, isGroupCollapsed],
+    [pinned, nextAction, waiting, waitingOpen, searching, grouped, isGroupCollapsed],
   );
   // A machine scope carries into the composer, which preselects that machine
   // for the new environment when it can host one.
@@ -288,11 +295,76 @@ function InboxList({
       }
     },
   );
-  const renderGroups = (
+  const renderRow = (shelf: InboxShelf, row: VisibleInboxRow) => {
+    const thread = row.node.thread;
+    const branchName = resolveSidebarBranchLabel(
+      thread.environment?.branchName ?? null,
+      thread.environment?.id ?? null,
+      gitButlerLabels,
+    );
+    if (shelf === "snoozed" || shelf === "settled") {
+      return (
+        <SlimRow
+          isNaming={namingThreads.has(thread.id)}
+          thread={thread}
+          compactThreads={compactThreads}
+          projectName={projectNameById.get(thread.projectId) ?? null}
+          provider={providerInfoById.get(thread.providerId)}
+          branchName={branchName}
+          isActive={thread.id === activeThreadId}
+          shelf={shelf}
+          wakeAt={shelf === "snoozed" ? lifecycle.wakeAtFor(thread) : null}
+          depth={row.depth}
+          childCount={row.node.children.length}
+          expanded={row.expanded}
+          guides={row.guides}
+          lastChild={row.lastChild}
+          toggleThread={toggleThread}
+          isCompactViewport={isCompactViewport}
+          command={command}
+        />
+      );
+    }
+    return (
+      <ThreadCard
+        isNaming={namingThreads.has(thread.id)}
+        thread={thread}
+        shelf={shelf}
+        provider={providerInfoById.get(thread.providerId)}
+        showProviderIcon={showProviderIcon}
+        compactThreads={compactThreads}
+        depth={row.depth}
+        parentId={row.parentId}
+        parentTitle={row.parentTitle}
+        childCount={row.node.children.length}
+        expanded={row.expanded}
+        guides={row.guides}
+        lastChild={row.lastChild}
+        statusThread={row.statusThread}
+        toggleThread={toggleThread}
+        projectName={projectNameById.get(thread.projectId) ?? null}
+        branchName={branchName}
+        isActive={thread.id === activeThreadId}
+        canPark={canParkFamily(row.node, lifecycle)}
+        isCompactViewport={isCompactViewport}
+        command={command}
+        drag={drag}
+        dropAllowed={threadDropAllowed(drag, tree, thread.id)}
+      />
+    );
+  };
+  const renderRows = (
     shelf: InboxShelf,
-    groups: readonly ProjectGroupRows[],
-    renderRow: (row: VisibleInboxRow) => React.ReactNode,
+    key: string,
+    rows: readonly VisibleInboxRow[],
+    gapFirst: boolean,
   ) => {
+    const start = windowLayout.rowsStart.get(key);
+    return start === undefined
+      ? null
+      : windowedRows(inboxWindow, start, rows, gapFirst, (row) => renderRow(shelf, row));
+  };
+  const renderGroups = (shelf: InboxShelf, groups: readonly ProjectGroupRows[]) => {
     const groupIds = groups.map((group) => group.projectId);
     // The shelf's sortable list is its groups that bb can reorder, in
     // rendered order: the personal project and any stale id are out — never
@@ -323,8 +395,10 @@ function InboxList({
           isCompactViewport={isCompactViewport}
           shelf={shelf}
           dropAllowed={projectDropAllowed(drag, tree, group.projectId)}
+          measureRef={inboxWindow.measureRef}
+          measureIndex={windowLayout.headerIndex.get(key)}
         >
-          {group.rows.map(renderRow)}
+          {renderRows(shelf, key, group.rows, true)}
         </Group>
       );
     };
@@ -333,8 +407,13 @@ function InboxList({
         {groups.map(renderGroup)}
       </SortableContext>
     ) : (
-      <ul className="flex flex-col gap-0.5">
-        {groups.flatMap((group) => group.rows).map(renderRow)}
+      <ul className="flex flex-col">
+        {renderRows(
+          shelf,
+          shelfKey(shelf),
+          groups.flatMap((group) => group.rows),
+          false,
+        )}
       </ul>
     );
   };
@@ -354,6 +433,18 @@ function InboxList({
     visibleActiveRows,
     threads: sidebar.threads,
     threadActions,
+  });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const focusedRow = useFocusedRow();
+  const inboxWindow = useInboxWindow({
+    layout: windowLayout,
+    scrollRef,
+    estimateSize: (item) => estimateInboxItemSize(item, { isCompactViewport, compactThreads }),
+    pinnedThreadIds: [
+      activeThreadId,
+      focusedRow.focusedThreadId,
+      dragSource?.kind === "thread" ? dragSource.threadId : null,
+    ],
   });
 
   return (
@@ -410,6 +501,7 @@ function InboxList({
           </div>
 
           <div
+            ref={scrollRef}
             className={cn(
               "min-h-0 flex-1 overflow-y-auto px-1.5",
               isCompactViewport ? "pb-8" : "pb-2",
@@ -417,6 +509,8 @@ function InboxList({
             // bb's compact footer overlays the list edge. Fade content into that
             // surface, while the matching padding lets the final row scroll clear.
             style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
+            onFocus={focusedRow.onFocus}
+            onBlur={focusedRow.onBlur}
           >
             <InboxContent
               status={status}
@@ -424,102 +518,19 @@ function InboxList({
               count={shelvedTotal}
               searchQuery={searchQuery}
             >
-              {activeShelves.map(([shelf, label, groups]) =>
-                groups.length > 0 ? (
-                  <Shelf
-                    key={label}
-                    label={label}
-                    count={shelves[shelf].length}
-                    isCompactViewport={isCompactViewport}
-                    {...(shelf === "waiting"
-                      ? {
-                          expanded: showWaiting || searching,
-                          onToggle: () => setShowWaiting((open) => !open),
-                        }
-                      : {})}
-                  >
-                    {renderGroups(shelf, groups, (row) => {
-                      const thread = row.node.thread;
-                      return (
-                        <ThreadCard
-                          key={thread.id}
-                          isNaming={namingThreads.has(thread.id)}
-                          thread={thread}
-                          shelf={shelf}
-                          provider={providerInfoById.get(thread.providerId)}
-                          showProviderIcon={showProviderIcon}
-                          compactThreads={compactThreads}
-                          depth={row.depth}
-                          parentId={row.parentId}
-                          parentTitle={row.parentTitle}
-                          childCount={row.node.children.length}
-                          expanded={row.expanded}
-                          guides={row.guides}
-                          lastChild={row.lastChild}
-                          statusThread={row.statusThread}
-                          toggleThread={toggleThread}
-                          projectName={projectNameById.get(thread.projectId) ?? null}
-                          branchName={resolveSidebarBranchLabel(
-                            thread.environment?.branchName ?? null,
-                            thread.environment?.id ?? null,
-                            gitButlerLabels,
-                          )}
-                          isActive={thread.id === activeThreadId}
-                          canPark={canParkFamily(row.node, lifecycle)}
-                          isCompactViewport={isCompactViewport}
-                          command={command}
-                          drag={drag}
-                          dropAllowed={threadDropAllowed(drag, tree, thread.id)}
-                        />
-                      );
-                    })}
-                  </Shelf>
-                ) : null,
-              )}
-              {(
-                [
-                  ["snoozed", "Snoozed", showSnoozed, setShowSnoozed, lifecycle.wakeAtFor],
-                  ["settled", "Settled", showSettled, setShowSettled, () => null],
-                ] as const
-              ).map(([shelf, label, show, setShow, wakeAtFor]) =>
+              {shelfViews.map(({ shelf, label, expanded, onToggle }) =>
                 groupedShelves[shelf].length > 0 ? (
                   <Shelf
                     key={label}
                     label={label}
                     count={shelves[shelf].length}
                     isCompactViewport={isCompactViewport}
-                    expanded={show || searching}
-                    onToggle={() => setShow((open) => !open)}
+                    expanded={expanded}
+                    onToggle={onToggle}
+                    measureRef={inboxWindow.measureRef}
+                    measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
                   >
-                    {renderGroups(shelf, groupedShelves[shelf], (row) => {
-                      const thread = row.node.thread;
-                      return (
-                        <SlimRow
-                          key={thread.id}
-                          isNaming={namingThreads.has(thread.id)}
-                          thread={thread}
-                          compactThreads={compactThreads}
-                          projectName={projectNameById.get(thread.projectId) ?? null}
-                          provider={providerInfoById.get(thread.providerId)}
-                          branchName={resolveSidebarBranchLabel(
-                            thread.environment?.branchName ?? null,
-                            thread.environment?.id ?? null,
-                            gitButlerLabels,
-                          )}
-                          isActive={thread.id === activeThreadId}
-                          shelf={shelf}
-                          wakeAt={wakeAtFor(thread)}
-                          depth={row.depth}
-                          childCount={row.node.children.length}
-                          expanded={row.expanded}
-                          guides={row.guides}
-                          lastChild={row.lastChild}
-                          toggleThread={toggleThread}
-                          isCompactViewport={isCompactViewport}
-                          command={command}
-                        />
-                      );
-                    })}
+                    {renderGroups(shelf, groupedShelves[shelf])}
                   </Shelf>
                 ) : null,
               )}
@@ -539,6 +550,135 @@ function InboxList({
       </DndContext>
     </MachineAppearanceProvider>
   );
+}
+
+interface ShelfView {
+  shelf: InboxShelf;
+  label: string;
+  /** Present on the shelves that fold; absent, the shelf always shows. */
+  expanded?: boolean;
+  onToggle?: () => void;
+}
+
+/**
+ * The shelves in draw order, with the fold state of the ones that fold, and
+ * the list window laid out over them.
+ */
+function useShelfWindow(
+  groupedShelves: Record<InboxShelf, readonly ProjectGroupRows[]>,
+  grouped: boolean,
+  searching: boolean,
+  isGroupCollapsed: (key: string) => boolean,
+) {
+  const [showSnoozed, setShowSnoozed] = useState(false);
+  const [showSettled, setShowSettled] = useState(false);
+  // Waiting is the one active shelf worth folding away: its rows are work you
+  // cannot act on, and they can outnumber Next Action several times over.
+  const [showWaiting, setShowWaiting] = useState(true);
+  // Pinned and Next Action always show; the rest fold, and a search opens
+  // them all.
+  const waitingOpen = showWaiting || searching;
+  const snoozedOpen = showSnoozed || searching;
+  const settledOpen = showSettled || searching;
+  // Every shelf in the order it draws.
+  const shelfViews: readonly ShelfView[] = [
+    { shelf: "pinned", label: "Pinned" },
+    { shelf: "nextAction", label: "Next Action" },
+    {
+      shelf: "waiting",
+      label: "Waiting",
+      expanded: waitingOpen,
+      onToggle: () => setShowWaiting((open) => !open),
+    },
+    {
+      shelf: "snoozed",
+      label: "Snoozed",
+      expanded: snoozedOpen,
+      onToggle: () => setShowSnoozed((open) => !open),
+    },
+    {
+      shelf: "settled",
+      label: "Settled",
+      expanded: settledOpen,
+      onToggle: () => setShowSettled((open) => !open),
+    },
+  ];
+  const windowLayout = useMemo(
+    () =>
+      buildInboxWindow(
+        [
+          { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
+          { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
+          { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
+          { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
+          { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
+        ],
+        grouped,
+        (key) => searching || !isGroupCollapsed(key),
+      ),
+    [groupedShelves, waitingOpen, snoozedOpen, settledOpen, grouped, searching, isGroupCollapsed],
+  );
+  return { shelfViews, windowLayout, waitingOpen };
+}
+
+/**
+ * A container's rows, windowed: the rows in and near view mount in their
+ * wrappers, and each run between them collapses into one placeholder as tall
+ * as the rows it stands for. The placeholder lists those threads for bb's
+ * next/previous-thread keys, which walk the rows in DOM order.
+ */
+function windowedRows(
+  inboxWindow: InboxWindow,
+  start: number,
+  rows: readonly VisibleInboxRow[],
+  gapFirst: boolean,
+  renderRow: (row: VisibleInboxRow) => React.ReactNode,
+) {
+  return windowSegments(start, rows.length, inboxWindow.mounted).map((segment) => {
+    if (segment.kind === "placeholder") {
+      return (
+        <li
+          key={`placeholder:${segment.from}`}
+          aria-hidden
+          className="list-none"
+          style={{ height: inboxWindow.span(start + segment.from, start + segment.to) }}
+          data-sidebar-windowed-nav={encodeWindowedNav(rows.slice(segment.from, segment.to))}
+        />
+      );
+    }
+    const row = rows[segment.offset]!;
+    return (
+      <li
+        key={row.node.thread.id}
+        ref={inboxWindow.measureRef}
+        data-index={start + segment.offset}
+        data-gtd-row={row.node.thread.id}
+        // The gap lives on the row, not the list, so a measured row carries
+        // it and a placeholder can stand in for it exactly.
+        className={cn("list-none", (gapFirst || segment.offset > 0) && "mt-0.5")}
+      >
+        {renderRow(row)}
+      </li>
+    );
+  });
+}
+
+/**
+ * The row holding focus, such as an open rename, so it stays mounted while
+ * the list scrolls away from it. The handlers go on the scroll container.
+ */
+function useFocusedRow() {
+  const [focusedThreadId, setFocusedThreadId] = useState<string | null>(null);
+  const onFocus = (event: React.FocusEvent) => {
+    const row = (event.target as Element).closest("[data-gtd-row]");
+    setFocusedThreadId(row?.getAttribute("data-gtd-row") ?? null);
+  };
+  const onBlur = (event: React.FocusEvent) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setFocusedThreadId(null);
+    }
+  };
+  return { focusedThreadId, onFocus, onBlur };
 }
 
 /** The tree's verdict on dropping the dragged row onto `threadId`; false between drags. */
@@ -925,6 +1065,8 @@ function Shelf({
   onToggle,
   children,
   isCompactViewport,
+  measureRef,
+  measureIndex,
 }: {
   label: string;
   count: number;
@@ -932,7 +1074,7 @@ function Shelf({
   onToggle?: () => void;
   children: React.ReactNode;
   isCompactViewport: boolean;
-}) {
+} & HeaderMeasureProps) {
   return (
     <section aria-label={label}>
       <ShelfHeader
@@ -941,6 +1083,8 @@ function Shelf({
         expanded={expanded}
         onToggle={onToggle}
         isCompactViewport={isCompactViewport}
+        measureRef={measureRef}
+        measureIndex={measureIndex}
       />
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
@@ -961,13 +1105,15 @@ function ShelfHeader({
   expanded,
   onToggle,
   isCompactViewport,
+  measureRef,
+  measureIndex,
 }: {
   label: string;
   count: number;
   expanded?: boolean;
   onToggle?: () => void;
   isCompactViewport: boolean;
-}) {
+} & HeaderMeasureProps) {
   const mutedClass = isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70";
   const title = (
     <span className={cn("text-2xs font-medium", mutedClass)}>
@@ -978,7 +1124,11 @@ function ShelfHeader({
 
   if (expanded === undefined || onToggle === undefined) {
     return (
-      <h2 className="gtd-shelf-header flex items-center gap-2 px-2.5 pb-0.5 pt-2">
+      <h2
+        ref={measureRef}
+        data-index={measureIndex}
+        className="gtd-shelf-header flex items-center gap-2 px-2.5 pb-0.5 pt-2"
+      >
         {title}
         {rule}
       </h2>
@@ -987,6 +1137,8 @@ function ShelfHeader({
 
   return (
     <button
+      ref={measureRef}
+      data-index={measureIndex}
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}

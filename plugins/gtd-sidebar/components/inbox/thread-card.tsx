@@ -244,7 +244,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       rename={rename}
       disabled={isCompactViewport}
     >
-      <li className="list-none">
+      <div>
         <div
           ref={setCardRef}
           data-sidebar-rename-row=""
@@ -348,7 +348,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             />
           )}
         </div>
-      </li>
+      </div>
     </RowContextMenu>
   );
 });

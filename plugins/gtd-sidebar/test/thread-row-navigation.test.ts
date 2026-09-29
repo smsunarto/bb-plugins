@@ -59,6 +59,32 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     unobserve() {}
     disconnect() {}
   };
+  // jsdom lays nothing out. The list window reads its viewport from the
+  // scroll container's offsetHeight and each mounted row's height from its
+  // bounding box. By default the viewport is tall and rows are 0px, so every
+  // row mounts; the windowing tests shrink the viewport and give rows height.
+  const layout = { viewport: 10_000, rowHeight: 0 };
+  Object.defineProperty(dom.window.HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.classList.contains("overflow-y-auto") ? layout.viewport : 0;
+    },
+  });
+  const jsdomRect = dom.window.Element.prototype.getBoundingClientRect;
+  dom.window.Element.prototype.getBoundingClientRect = function (this: Element) {
+    if (layout.rowHeight === 0 || !this.hasAttribute("data-gtd-row")) return jsdomRect.call(this);
+    const height = layout.rowHeight;
+    return {
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      width: 240,
+      height,
+      right: 240,
+      bottom: height,
+    } as DOMRect;
+  };
   const { act, cleanup, configure, fireEvent, screen, waitFor, within } =
     await import("@testing-library/react");
   const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -321,6 +347,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   }
 
   beforeEach(() => {
+    layout.viewport = 10_000;
+    layout.rowHeight = 0;
     configure({ reactStrictMode: false });
     localStorage.clear();
     rowBodyRender.mockClear();
@@ -1513,6 +1541,81 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(oldLifecycle.snooze.mock.calls.length, 0);
       assert.equal(oldActions.setPinned.mock.calls.length, 0);
       assert.equal(oldActions.requestDelete.mock.calls.length, 0);
+    });
+  });
+
+  describe("list window", () => {
+    // The row targets bb's next/previous-thread keys walk, in DOM order:
+    // mounted anchors, and the threads each placeholder stands in for.
+    function navigationOrder(slot: RenderedSlot): string[] {
+      return Array.from(
+        slot.container.querySelectorAll(
+          "[data-sidebar-thread-shortcut-target], [data-sidebar-windowed-nav]",
+        ),
+      ).flatMap((element) =>
+        element instanceof HTMLAnchorElement
+          ? [element.dataset.sidebarThreadId!]
+          : element
+              .getAttribute("data-sidebar-windowed-nav")!
+              .split(" ")
+              .map((pair) => pair.split(":")[0]!),
+      );
+    }
+
+    function scrollList(slot: RenderedSlot, top: number) {
+      const scroller = slot.container.querySelector<HTMLElement>(".overflow-y-auto")!;
+      Object.defineProperty(scroller, "scrollTop", { configurable: true, value: top });
+      fireEvent.scroll(scroller);
+    }
+
+    const threads = Array.from({ length: 40 }, (_, index) =>
+      thread(`t${String(index).padStart(2, "0")}`, { projectId: "one" }),
+    );
+
+    function everyRow() {
+      const all = rowIds(mount(hostState(threads)).slot);
+      cleanup();
+      assert.equal(all.length, 40);
+      return all;
+    }
+
+    it("mounts the rows in view and hands the rest to bb's next/previous keys", () => {
+      const all = everyRow();
+      layout.viewport = 200;
+      layout.rowHeight = 32;
+      const view = mount(hostState(threads));
+      const mounted = rowIds(view.slot);
+      assert.ok(mounted.length < 20, `mounted ${mounted.length} rows`);
+      assert.deepEqual(mounted, all.slice(0, mounted.length));
+      assert.deepEqual(navigationOrder(view.slot), all);
+      const placeholder = view.slot.container.querySelector<HTMLElement>(
+        "[data-sidebar-windowed-nav]",
+      )!;
+      // Unmounted cards stand in at their estimated 52px plus the 2px gap.
+      assert.equal(placeholder.style.height, `${(40 - mounted.length) * 54}px`);
+      assert.equal(placeholder.getAttribute("aria-hidden"), "true");
+      assert.ok(
+        placeholder
+          .getAttribute("data-sidebar-windowed-nav")!
+          .startsWith(`${all[mounted.length]}:one `),
+      );
+    });
+
+    it("moves with the scroll, keeping the jump-key rows and the open thread mounted", () => {
+      const all = everyRow();
+      layout.viewport = 200;
+      layout.rowHeight = 32;
+      const view = mount(hostState(threads), { activeThreadId: all[39] });
+      assert.ok(row(view.slot, all[39]!));
+      // The first 20 rows mounted and measured 32px; the rest still stand
+      // in at 54px, so 1,500px down is row 35.
+      scrollList(view.slot, 1500);
+      const mounted = rowIds(view.slot);
+      for (const id of [...all.slice(0, 9), all[35]!, all[39]!]) {
+        assert.ok(mounted.includes(id), id);
+      }
+      assert.ok(!mounted.includes(all[12]!));
+      assert.deepEqual(navigationOrder(view.slot), all);
     });
   });
 }
