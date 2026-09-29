@@ -29,6 +29,7 @@ import type { ProviderGlyphInfo } from "./provider-glyph";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
+import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { ThreadHierarchy } from "./thread-card";
 
 interface SlimRowProps {
@@ -41,7 +42,6 @@ interface SlimRowProps {
   provider?: ProviderGlyphInfo;
   shelf: "snoozed" | "settled";
   wakeAt: number | null;
-  now: number;
   isCompactViewport: boolean;
   command: DispatchRowCommand;
   depth: number;
@@ -82,7 +82,6 @@ const SlimRowBody = memo(function SlimRowBody({
   isNaming = false,
   shelf,
   wakeAt,
-  now,
   isCompactViewport,
   command,
   depth,
@@ -128,7 +127,7 @@ const SlimRowBody = memo(function SlimRowBody({
   const status = shortcut ? (
     <ShortcutPill shortcut={shortcut} />
   ) : (
-    <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} now={now} />
+    <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} />
   );
   const highlightContent = (
     <div className="flex h-full items-center gap-2 px-2.5 text-xs">
@@ -298,17 +297,16 @@ function SlimRowStatusLabel({
   thread,
   shelf,
   wakeAt,
-  now,
 }: {
   thread: PluginSidebarThread;
   shelf: "snoozed" | "settled";
   wakeAt: number | null;
-  now: number;
 }) {
+  const now = useMinuteClock();
   return shelf === "snoozed" && wakeAt !== null ? (
     snoozeWakeLabel(wakeAt, now)
   ) : (
-    <StatusOrTime thread={thread} now={now} />
+    <StatusOrTime thread={thread} />
   );
 }
 

@@ -1,6 +1,7 @@
 import type { PluginSidebarThread, PluginSidebarThreadShortcut } from "@get-bb/plugin-sdk/app";
 import { StatusGlyph, hasStatusGlyph } from "./status-glyph";
 import { relativeTimeLabel } from "../../lib/relative-time";
+import { useMinuteClock } from "../../hooks/use-minute-clock";
 
 /**
  * The row's trailing slot: one fixed width, right-aligned, on every row.
@@ -28,12 +29,9 @@ export const TRAILING_GLYPH_BOX_CLASS = "flex size-3.5 shrink-0 items-center jus
  */
 export function StatusOrTime({
   thread,
-  now,
   shortcut = null,
 }: {
   thread: PluginSidebarThread;
-  /** Quantized clock, shared by every row in one render. */
-  now: number;
   /** bb's jump key for this row while the command modifier is held. */
   shortcut?: PluginSidebarThreadShortcut | null;
 }) {
@@ -42,9 +40,15 @@ export function StatusOrTime({
     return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
   if (thread.isUnread) return <StatusGlyph indicator="unread-success" label="Unread response" />;
+  return <AgeLabel at={thread.latestAttentionAt} />;
+}
+
+/** Reads the minute clock itself, so a tick re-renders the ages, not the rows. */
+function AgeLabel({ at }: { at: number }) {
+  const now = useMinuteClock();
   return (
     <span className="tabular-nums text-2xs text-muted-foreground/40">
-      {relativeTimeLabel(thread.latestAttentionAt, now)}
+      {relativeTimeLabel(at, now)}
     </span>
   );
 }

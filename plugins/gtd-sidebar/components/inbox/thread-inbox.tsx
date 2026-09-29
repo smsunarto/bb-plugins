@@ -59,6 +59,8 @@ import {
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import { isShelvedThread } from "../../lib/settled-threads";
+import { retainUnchangedThreads } from "../../lib/stable-threads";
+import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterByMachine, sidebarMachines } from "../../lib/machines";
 import { MachineScopePicker } from "./machine-scope-picker";
@@ -101,6 +103,7 @@ function InboxList({
 }: PluginThreadListProps & { threadActions: PluginSidebarThreadActions }) {
   const sidebar = useSidebarThreads({ experimental_lifecycles: SIDEBAR_LIFECYCLES });
   const { status, projects } = sidebar;
+  const sidebarThreads = useStableThreads(sidebar.threads);
   const now = useMinuteClock();
   const lifecycle = useLifecycle();
   const namingThreads = useNamingThreads();
@@ -108,8 +111,8 @@ function InboxList({
   // while the sidebar sits open rather than on the next unrelated refresh.
   useSettledArchivePaging(sidebar, now);
   const threads = useMemo(
-    () => sidebar.threads.filter((thread) => isShelvedThread(thread, now)),
-    [now, sidebar.threads],
+    () => sidebarThreads.filter((thread) => isShelvedThread(thread, now)),
+    [now, sidebarThreads],
   );
   const unsettle = useUnsettle();
   // bb's own cached roster, so no glyph waits on a round trip of this plugin's.
@@ -465,7 +468,6 @@ function InboxList({
                           canPark={canParkFamily(row.node, lifecycle)}
                           isCompactViewport={isCompactViewport}
                           command={command}
-                          now={now}
                           drag={drag}
                           dropAllowed={threadDropAllowed(drag, tree, thread.id)}
                         />
@@ -513,7 +515,6 @@ function InboxList({
                           guides={row.guides}
                           lastChild={row.lastChild}
                           toggleThread={toggleThread}
-                          now={now}
                           isCompactViewport={isCompactViewport}
                           command={command}
                         />
@@ -806,15 +807,12 @@ function useCollapsedGroups() {
   return { isGroupCollapsed, toggleGroup };
 }
 
-function useMinuteClock(): number {
-  // One clock for every card in a render, quantized to the minute so the
-  // labels do not disagree and do not churn on unrelated re-renders.
-  const [nowMinute, setNowMinute] = useState(() => Math.floor(Date.now() / 60_000));
-  useEffect(() => {
-    const timer = setInterval(() => setNowMinute(Math.floor(Date.now() / 60_000)), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-  return nowMinute * 60_000;
+function useStableThreads(threads: readonly PluginSidebarThread[]): readonly PluginSidebarThread[] {
+  const previous = useRef<readonly PluginSidebarThread[]>([]);
+  return useMemo(() => {
+    previous.current = retainUnchangedThreads(previous.current, threads);
+    return previous.current;
+  }, [threads]);
 }
 
 function useGitButlerLabels(

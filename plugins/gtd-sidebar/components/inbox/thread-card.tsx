@@ -67,8 +67,6 @@ interface ThreadCardProps {
   showProviderIcon: boolean;
   isCompactViewport: boolean;
   command: DispatchRowCommand;
-  /** Quantized clock, so every card in one render agrees on "now". */
-  now: number;
   /** Sidebar drag state; absent on compact viewports, where there is no drag. */
   drag?: SidebarDragApi;
   /** Whether the row being dragged may drop here, per the tree's cycle guard. */
@@ -149,7 +147,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   showProviderIcon,
   isCompactViewport,
   command,
-  now,
   drag,
   pullRequest,
   isOpenInSplit,
@@ -229,7 +226,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
     <MobileThreadSummary
       title={rowTitle}
       thread={statusThread}
-      now={now}
       shortcut={shortcut}
       activity={thread.activity}
       pullRequest={pullRequest}
@@ -327,7 +323,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
               <DesktopThreadSummary
                 title={rowTitle}
                 thread={statusThread}
-                now={now}
                 shortcut={shortcut}
                 plan={plan}
                 compact={compact}
@@ -462,7 +457,6 @@ function ThreadTitle({
 function MobileThreadSummary({
   title,
   thread,
-  now,
   shortcut,
   activity,
   pullRequest,
@@ -470,7 +464,6 @@ function MobileThreadSummary({
 }: {
   title: ReactNode;
   thread: PluginSidebarThread;
-  now: number;
   shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
   pullRequest: PluginSidebarPullRequest | null;
@@ -489,7 +482,7 @@ function MobileThreadSummary({
           />
         ) : null}
         <span className={STATUS_SLOT_CLASS}>
-          <StatusOrTime thread={thread} now={now} shortcut={shortcut} />
+          <StatusOrTime thread={thread} shortcut={shortcut} />
         </span>
       </span>
     </>
@@ -687,7 +680,6 @@ function ThreadRowLink({
 function DesktopThreadSummary({
   title,
   thread,
-  now,
   shortcut,
   plan,
   compact,
@@ -698,7 +690,6 @@ function DesktopThreadSummary({
 }: {
   title: ReactNode;
   thread: PluginSidebarThread;
-  now: number;
   shortcut: PluginSidebarThreadShortcut | null;
   plan: ThreadActionPlan;
   compact: boolean;
@@ -718,7 +709,7 @@ function DesktopThreadSummary({
           <PullRequestNumber pullRequest={pullRequest} interactive />
         ) : null}
         <span className={STATUS_SLOT_CLASS}>
-          <StatusOrTime thread={thread} now={now} shortcut={shortcut} />
+          <StatusOrTime thread={thread} shortcut={shortcut} />
         </span>
       </span>
       {showActions ? (
