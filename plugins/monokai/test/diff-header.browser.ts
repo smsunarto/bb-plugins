@@ -55,12 +55,16 @@ import { mountDiffHeader } from "../app/diff-header.ts";
     documentScans: scans,
     elapsedMs: performance.now() - start,
     icons: document.querySelectorAll("[data-monokai-diff-kind]").length,
+    tagged: document.querySelectorAll("[data-monokai-diff-header]").length,
   };
   dispose();
   document.querySelectorAll = query;
   if (result.documentScans !== 0 || result.filenameReads !== 0 || result.icons !== 80)
     throw new Error(`Unrelated UI changes triggered diff work: ${JSON.stringify(result)}`);
+  if (result.tagged !== 80) throw new Error(`Headers were not tagged: ${JSON.stringify(result)}`);
   if (document.querySelectorAll("[data-monokai-diff-kind]").length !== 0)
     throw new Error("Disposal left header icons behind");
+  if (document.querySelectorAll("[data-monokai-diff-header]").length !== 0)
+    throw new Error("Disposal left header tags behind");
   return result;
 };

@@ -42,6 +42,8 @@ export function readHeaderKind(element: Element): Kind | null {
 export function mountDiffHeader({ signal }: PluginContentScriptContext) {
   const sprites = new DOMParser().parseFromString(SVGSpriteSheet, "text/html");
   const owned = new Map<Element, SVGSVGElement>();
+  // Tag headers so diff-header.css can style them without a page-wide :has().
+  const headers = new Set<Element>();
   const filenames = new Set<Element>();
   const resizeObserver = new ResizeObserver((entries) => {
     // Finish layout reads before changing attributes. Header decoration must
@@ -74,14 +76,18 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
         filenames.delete(element);
       }
     });
-    for (const [header, icon] of owned) {
-      if (!active || !header.isConnected || !header.matches(HEADER)) {
-        icon.remove();
-        owned.delete(header);
-      }
-    }
+    // Icons live only on tagged headers, so one pass retires both.
+    headers.forEach((header) => {
+      if (active && header.isConnected && header.matches(HEADER)) return;
+      header.removeAttribute("data-monokai-diff-header");
+      headers.delete(header);
+      owned.get(header)?.remove();
+      owned.delete(header);
+    });
     if (!active) return;
     for (const header of document.querySelectorAll(HEADER)) {
+      headers.add(header);
+      header.toggleAttribute("data-monokai-diff-header", true);
       header.querySelectorAll(".truncate").forEach(observeFilename);
       const kind = readHeaderKind(header);
       const prior = owned.get(header);
@@ -167,6 +173,8 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
     if (frame !== null) cancelAnimationFrame(frame);
     for (const icon of owned.values()) icon.remove();
     owned.clear();
+    for (const header of headers) header.removeAttribute("data-monokai-diff-header");
+    headers.clear();
     document.documentElement.removeAttribute("data-monokai-diff-headers");
   };
   signal.addEventListener("abort", dispose, { once: true });

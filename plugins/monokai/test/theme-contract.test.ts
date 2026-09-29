@@ -256,6 +256,30 @@ describe("bb Monokai contract audit", () => {
   });
 });
 
+describe("bb Monokai selector cost", () => {
+  test("keeps :has() off page-wide subjects", async () => {
+    // Blink re-checks a :has() subject when any DOM beneath it changes. On the
+    // document root, bb's sidebar containers, or every flex row, one sidebar
+    // or timeline update restyled the whole page. Anchor on a bb hook instead,
+    // or tag the element from a content script (see app/diff-header.ts).
+    const diffHeaderCss = await readFile(
+      new URL("../app/diff-header.css", import.meta.url),
+      "utf8",
+    );
+    const subjects = [theme, diffHeaderCss].flatMap((css) =>
+      [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^\s,>+~(){}]*):has\(/g)].map(
+        (match) => match[1],
+      ),
+    );
+    expect(subjects.length).toBeGreaterThan(0);
+    expect(
+      subjects.filter((subject) =>
+        ["body", "html", ":root", ".dark", ".bg-sidebar", ".flex"].includes(subject!),
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("bb Monokai code theme", () => {
   test("the shipped JSON is generated from the vendored rules and the palette", () => {
     expect(codeTheme).toBe(`${JSON.stringify(renderCodeTheme(codeThemeRules), null, 2)}\n`);

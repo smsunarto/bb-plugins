@@ -92,30 +92,21 @@
   cursor: pointer;
 }
 
-[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
-  .bg-background
-  > .flex:has(> span > button[aria-expanded]) {
+/* diff-header.ts tags each header. A `.flex:has()` subject here would put
+ * every flex element in the app behind :has() invalidation. */
+[data-monokai-diff-headers] [data-monokai-diff-header] {
   position: relative;
   padding-right: 28px;
 }
 
-[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
-  .bg-background
-  > .flex:has(> span > button[aria-expanded])
-  button[aria-label^="Copy path for "] {
+[data-monokai-diff-headers] [data-monokai-diff-header] button[aria-label^="Copy path for "] {
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
 }
 
-[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
-  .bg-background
-  > .flex:has(> span > button[aria-expanded])
-  .truncate {
+[data-monokai-diff-headers] [data-monokai-diff-header] .truncate {
   text-overflow: clip;
 }
 

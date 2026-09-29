@@ -509,8 +509,9 @@
 
 /* The current BB terminal canvas sits inside this padded sidebar surface.
  * Match its padding to xterm's background even when the side panel scopes
- * --sidebar to the editor ground. */
-.dark .bg-sidebar:has(> div > .xterm) {
+ * --sidebar to the editor ground. The p-2 class keeps :has() off bb's sidebar
+ * containers, where it made every sidebar mutation restyle the page. */
+.dark .bg-sidebar.p-2:has(> div > .xterm) {
   background-color: var(--terminal-background);
 }
 
