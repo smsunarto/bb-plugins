@@ -168,6 +168,9 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       ".dark [data-message-column].group\\/message > .relative.w-full.h-5 {\n  height: 0;",
     );
+    expect(theme).toContain(
+      ".dark [data-message-column].group\\/message + [data-last-turn-diff-portal] {\n  padding-top: 20px;",
+    );
     expect(theme).toContain('> span:empty::after {\n  content: "text";');
     expect(theme).toContain("  button {\n  width: 36px;\n  height: 36px;");
     expect(theme).toContain('a.underline[href^="mailto:"]::before {\n  mask-image: url(');

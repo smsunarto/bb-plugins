@@ -1698,6 +1698,13 @@ diffs-container {
   height: 0;
 }
 
+/* The Last turn diff card mounts inside the message's row, not as the next
+ * list item, so no list gap separates it from the actions. Give back the
+ * row's 20px above the card. */
+.dark [data-message-column].group\/message + [data-last-turn-diff-portal] {
+  padding-top: 20px;
+}
+
 /* bb wraps each row's icon and label in an inline-flex span on a 13px strut,
  * which pads the row to 23px. Making its wrapper a flex box drops the strut. */
 .dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full {
