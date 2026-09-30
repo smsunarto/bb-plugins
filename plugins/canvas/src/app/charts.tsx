@@ -108,7 +108,7 @@ function ChartFrame(props: {
   readonly children: ReactNode;
 }): ReactElement {
   return (
-    <figure className="my-3 flex flex-col gap-2">
+    <figure className="canvas-block flex flex-col gap-2">
       {props.title !== undefined ? (
         <figcaption className="text-sm font-medium text-foreground">{props.title}</figcaption>
       ) : null}
@@ -520,7 +520,7 @@ export function PieChart(props: {
     return { ...slice, color, fraction, start, end };
   });
   return (
-    <figure className="my-3 flex flex-col gap-2">
+    <figure className="canvas-block flex flex-col gap-2">
       {props.title !== undefined ? (
         <figcaption className="text-sm font-medium text-foreground">{props.title}</figcaption>
       ) : null}
@@ -586,7 +586,7 @@ export function UsageBar(props: {
   const palette = usePalette();
   const used = props.segments.reduce((sum, segment) => sum + segment.value, 0);
   return (
-    <div className="my-3 flex flex-col gap-1.5">
+    <div className="canvas-block flex flex-col gap-1.5">
       {props.labels !== undefined ? (
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>{props.labels.left}</span>

@@ -178,7 +178,8 @@ class Walker {
         );
       } else {
         for (const node of run) out.push(...this.embeddedDiagnostics(node));
-        out.push({ kind: "markdown", source: slice, span: { ...this.spanOf(first), endOffset } });
+        const span = { ...this.spanOf(first), endOffset };
+        out.push({ kind: "markdown", source: dedent(slice, span.column), span });
       }
       run = [];
     };
@@ -466,6 +467,13 @@ class Walker {
 }
 
 const frontmatterLine = /^([A-Za-z_][A-Za-z0-9_]*):\s+(\S.*)$/;
+
+// A run inside a component starts after its indent, but its later lines keep
+// that indent. Remove it so a list or paragraph keeps its own structure.
+function dedent(slice: string, column: number): string {
+  if (column <= 1) return slice;
+  return slice.replace(new RegExp(`\\n[ \\t]{0,${column - 1}}`, "g"), "\n");
+}
 
 function diagnosticNode(code: Diagnostic["code"], message: string, span: Span): CanvasNode {
   return { kind: "diagnostic", diagnostic: { code, message, span } };

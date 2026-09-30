@@ -90,7 +90,7 @@ function Grid(props: CanvasComponentProps): ReactElement {
     gap?: "sm" | "md" | "lg";
   }>(props.props);
   return (
-    <div className={`canvas-block grid ${columnsClass[columns]} ${gapClass[gap]}`}>
+    <div className={`canvas-grid canvas-block grid ${columnsClass[columns]} ${gapClass[gap]}`}>
       {props.renderNodes(props.nodes)}
     </div>
   );
@@ -204,7 +204,7 @@ function Stat(props: CanvasComponentProps): ReactElement {
     >
       <p className="m-0 text-[0.75em] text-muted-foreground">{label}</p>
       <p className="m-0 flex items-baseline gap-2">
-        <span className="text-[1.5em] font-semibold leading-tight tracking-[-0.015em] text-foreground">
+        <span className="text-[1.5em] font-semibold leading-tight tracking-[-0.015em] text-foreground tabular-nums">
           {value}
         </span>
         {delta !== undefined ? (
@@ -252,7 +252,7 @@ function Table(props: CanvasComponentProps): ReactElement {
   const keyedRows = keyed(rows, (row) => row.map((cell) => String(cell)).join("\u0000"));
   return (
     <div className="canvas-block overflow-x-auto">
-      <table className="canvas-table w-full border-collapse text-[0.875em] leading-[1.3]">
+      <table className="canvas-table w-full border-collapse text-[0.875em] leading-[1.3] tabular-nums">
         {caption !== undefined ? (
           <caption className="mb-1 text-left text-[0.75em] text-muted-foreground">
             {caption}
@@ -375,7 +375,7 @@ function Ask(props: CanvasComponentProps): ReactElement {
   return (
     <button
       type="button"
-      className={`canvas-ask my-2 ${buttonClass}`}
+      className={`canvas-ask canvas-block block w-fit ${buttonClass}`}
       onClick={() => navigate.toCompose({ initialPrompt: prompt, focusPrompt: true })}
     >
       {label}

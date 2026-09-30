@@ -81,7 +81,8 @@ test("markdown slices are verbatim source", () => {
     assert.equal(body?.kind, "markdown");
     if (body?.kind === "markdown") {
       assert.ok(body.source.startsWith("Every top offender calls `dev:setup`"));
-      assert.equal(body.source, sample.slice(body.span.startOffset, body.span.endOffset));
+      const slice = sample.slice(body.span.startOffset, body.span.endOffset);
+      assert.equal(body.source, slice.replaceAll("\n  ", "\n"));
     }
   }
 });
@@ -342,4 +343,19 @@ test("frontmatter below the top or inside a component is ordinary markdown", () 
     assert.deepEqual(card.children.map(labelOf), ["markdown", "markdown"]);
   }
   assert.deepEqual(collectDiagnostics(nested), []);
+});
+
+test("Markdown inside a component drops the component's indent from every line", () => {
+  const document = parsed(
+    ["<Card>", "  - First item", "  - Second item", "", "      indented code", "</Card>", ""].join(
+      "\n",
+    ),
+  );
+  const card = document.nodes[0];
+  assert.equal(card?.kind, "component");
+  if (card?.kind !== "component") throw new Error("unreachable");
+  assert.deepEqual(
+    card.children.map((node) => (node.kind === "markdown" ? node.source : labelOf(node))),
+    ["- First item\n- Second item\n\n    indented code"],
+  );
 });

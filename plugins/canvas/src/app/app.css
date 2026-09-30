@@ -291,11 +291,15 @@
   margin-block: 0.75rem;
 }
 
-.canvas-nested > [data-markdown-preview] > :first-child {
+/* Each child arrives wrapped in a comment block, so the container's padding
+ * alone frames the first and last child. */
+.canvas-nested > .canvas-comment-block:first-child > :first-child,
+.canvas-nested > .canvas-comment-block:first-child > [data-markdown-preview] > :first-child {
   margin-top: 0;
 }
 
-.canvas-nested > [data-markdown-preview]:last-child > :last-child {
+.canvas-nested > .canvas-comment-block:last-child > :last-child,
+.canvas-nested > .canvas-comment-block:last-child > [data-markdown-preview] > :last-child {
   margin-bottom: 0;
 }
 
@@ -374,6 +378,30 @@
   color: color-mix(in srgb, var(--canvas-tone-danger) 70%, var(--foreground));
 }
 
+/* A right-aligned column would touch the column after it, so every cell after
+ * the first gets the same inset on its leading side. */
+.canvas-prose .canvas-table :is(th, td) + :is(th, td) {
+  padding-left: 0.625em;
+}
+
+/* Row and Grid space their children with gap, so a child block drops its own
+ * margin. A grid or flex item's margin would otherwise add to the gap. */
+:is(.canvas-row, .canvas-grid) > .canvas-comment-block > .canvas-block {
+  margin-block: 0;
+}
+
+/* Row and Grid stretch each comment wrapper to the tallest sibling. The
+ * component inside fills its wrapper, so Stats and Cards in one line share a
+ * height even when one has no caption. */
+:is(.canvas-row, .canvas-grid) > .canvas-comment-block {
+  display: flex;
+  flex-direction: column;
+}
+
+:is(.canvas-row, .canvas-grid) > .canvas-comment-block > :first-child {
+  flex-grow: 1;
+}
+
 /* Row stretches its children so Stats and Cards share the line evenly. A Pill
  * is a label, so it hugs its text instead of growing into a bar. Each child
  * arrives wrapped in a comment anchor, so the rule targets the wrapper too. */
@@ -399,8 +427,9 @@
   cursor: pointer;
   display: flex;
   font-family: var(--font-mono);
+  font-size: 13px;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   text-align: left;
   width: 100%;
 }
