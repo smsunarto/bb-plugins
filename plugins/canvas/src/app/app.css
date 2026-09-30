@@ -24,8 +24,7 @@
 }
 
 .canvas-prose {
-  --canvas-prose-font:
-    "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --canvas-prose-font: var(--font-sans, sans-serif);
   --canvas-prose-heading: var(--foreground);
   --canvas-prose-strong: var(--foreground);
   --canvas-prose-link: var(--primary);

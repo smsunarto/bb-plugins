@@ -289,7 +289,7 @@ const EDITOR_CSS = `
   padding: 48px clamp(24px, 4vw, 56px) 40vh;
   color: var(--foreground);
   caret-color: var(--foreground);
-  font-family: "SN Pro", var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-family: var(--font-sans, sans-serif);
   font-size: 17px;
   font-kerning: normal;
   font-weight: 400;
