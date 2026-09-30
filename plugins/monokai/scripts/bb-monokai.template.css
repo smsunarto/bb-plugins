@@ -940,6 +940,15 @@
   letter-spacing: 0.05em;
 }
 
+/* Agent message prose reads at 14px instead of bb's 13px `text-sm`. The
+ * agent column carries `group/message` itself; the user column nests it in a
+ * bubble, so this skips user requests. The markdown preview re-declares
+ * `text-sm`, so it needs the size too. max() keeps bb's 15px phone size. */
+.dark [data-message-column].group\/message,
+.dark [data-message-column].group\/message [data-markdown-preview] {
+  font-size: max(14px, var(--text-sm));
+}
+
 .dark .bb-code-highlight.bb-code-highlight {
   background-color: {{ground.content}};
   --sh-space: inherit;

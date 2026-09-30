@@ -24,6 +24,9 @@ describe("bb Monokai surface palette", () => {
     expect(theme).toContain(
       ".dark code.bg-muted\\/70 {\n  background-color: var(--accent);\n  color: #eed996;",
     );
+    expect(theme).toContain(
+      ".dark [data-message-column].group\\/message [data-markdown-preview] {\n  font-size: max(14px, var(--text-sm))",
+    );
     expect(theme).toContain("--terminal-background: #181818");
     expect(theme.toLowerCase()).not.toContain("#141414");
   });
