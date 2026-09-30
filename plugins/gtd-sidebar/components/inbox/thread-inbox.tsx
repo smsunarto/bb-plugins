@@ -50,6 +50,7 @@ import {
   applyProjectMove,
   groupCollapseKey,
   groupRowsByProject,
+  groupStartsCollapsed,
   projectDropReorderArgs,
   projectReorderArgs,
   settleProjectOrderOverride,
@@ -786,18 +787,22 @@ function useInboxTree(
  * Folded project groups, keyed by shelf and project: folding bb-plugins in
  * Next Action leaves it open in Waiting. Session state on purpose — a fold is
  * a way to tidy the current scan, not a preference to carry across restarts.
+ * The set holds the groups toggled away from their starting fold.
  */
 function useCollapsedGroups() {
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [toggled, setToggled] = useState<ReadonlySet<string>>(() => new Set());
   const toggleGroup = useCommittedEvent((key: string) => {
-    setCollapsed((current) => {
+    setToggled((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
   });
-  const isGroupCollapsed = useMemo(() => (key: string) => collapsed.has(key), [collapsed]);
+  const isGroupCollapsed = useMemo(
+    () => (key: string) => toggled.has(key) !== groupStartsCollapsed(key),
+    [toggled],
+  );
   return { isGroupCollapsed, toggleGroup };
 }
 

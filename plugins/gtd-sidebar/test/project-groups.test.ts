@@ -6,6 +6,7 @@ import {
   applyProjectMove,
   groupCollapseKey,
   groupRowsByProject,
+  groupStartsCollapsed,
   needsUser,
   projectDropEdge,
   projectDropReorderArgs,
@@ -191,6 +192,12 @@ describe("project groups", () => {
   it("keys collapse state by shelf and project", () => {
     assert.notEqual(groupCollapseKey("nextAction", "one"), groupCollapseKey("waiting", "one"));
     assert.equal(groupCollapseKey("waiting", "one"), groupCollapseKey("waiting", "one"));
+  });
+
+  it("starts only Settled groups folded", () => {
+    assert.equal(groupStartsCollapsed(groupCollapseKey("settled", "one")), true);
+    assert.equal(groupStartsCollapsed(groupCollapseKey("snoozed", "one")), false);
+    assert.equal(groupStartsCollapsed(groupCollapseKey("nextAction", "settled")), false);
   });
 
   it("treats every raised-hand status as needing the user", () => {
