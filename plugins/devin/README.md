@@ -49,8 +49,9 @@ open, so Devin clones it on its VM. Projects without a git remote send nothing.
 ## Known limits
 
 - `devin acp --cloud` can answer the prompt before it streams Devin's final
-  message (the two race), so the last reply of a Cloud turn is sometimes
-  missing from the bb timeline. It is visible in the Devin web app.
+  message. The plugin holds the end of a Cloud turn for up to 1.5 seconds so
+  that message still lands in the turn, which is why a Cloud turn shows as
+  running a moment after Devin's last reply.
 - Cloud threads use Devin Cloud's default model. The bb model picker applies
   to local threads.
 
