@@ -149,6 +149,34 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("sets agent replies and trace rows on the Codex rhythm", () => {
+    const agent = ".dark [data-message-column].group\\/message [data-markdown-preview]";
+    expect(theme).toContain(
+      `${agent} {\n  --agent-md-space: calc(max(14px, var(--text-sm)) / 4);\n  font-weight: 430;`,
+    );
+    expect(theme).toContain(
+      `${agent} h1 {\n  margin: calc(var(--agent-md-space) * 4) 0 8px;\n  font-size: calc(var(--agent-md-space) * 6);`,
+    );
+    expect(theme).toContain(`${agent} > p + p {\n  margin-top: calc(var(--agent-md-space) * 4);`);
+    expect(theme).toContain(`${agent} li {\n  margin: 0 0 4px;`);
+    expect(theme).toContain(`${agent} :is(strong, b) {\n  font-weight: 700;`);
+    expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 28px;\n  padding-bottom: 20px;');
+    expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 8px;');
+    expect(theme).toContain(
+      ".dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {\n  opacity: 1;",
+    );
+    expect(theme).toContain(
+      ".dark [data-message-column].group\\/message > .relative.w-full.h-5 {\n  height: 0;",
+    );
+    expect(theme).toContain('> span:empty::after {\n  content: "text";');
+    expect(theme).toContain("  button {\n  width: 36px;\n  height: 36px;");
+    expect(theme).toContain('a.underline[href^="mailto:"]::before {\n  mask-image: url(');
+    expect(theme).toContain("a.underline code.bg-muted\\/70 {\n  color: inherit;");
+    expect(theme).toContain(
+      ".dark [data-timeline-row-list] span.text-sm.leading-5 {\n  font-size: max(14px, var(--text-sm));\n  line-height: 21px;",
+    );
+  });
+
   test("keeps phone text fields at the 16px iOS zoom floor", () => {
     expect(theme).toContain(
       '@media (max-width: 767px) and (pointer: coarse) {\n  .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror,\n  .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),\n  .dark textarea,\n  .dark select {\n    font-size: 16px;',

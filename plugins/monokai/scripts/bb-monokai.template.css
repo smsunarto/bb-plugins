@@ -1269,3 +1269,445 @@ diffs-container {
 }
 
 }
+
+/* Agent replies copy the Codex app's markdown geometry, measured from its
+ * renderer: every gap, size, and leading is a multiple of one quarter of the
+ * body size (3.5px at 14px). Colors stay on this palette's roles. Scoped to
+ * the agent column; user bubbles keep bb's compact markdown. Bold weight, the
+ * gap under headings and paragraphs, and the gap between list items keep bb's
+ * own values, which read less packed than Codex's. */
+.dark [data-message-column].group\/message [data-markdown-preview] {
+  --agent-md-space: calc(max(14px, var(--text-sm)) / 4);
+  font-weight: 430;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(strong, b) {
+  font-weight: 700;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] th {
+  font-weight: 600;
+}
+
+/* Codex keeps an agent's single newlines as line breaks. bb's renderer leaves
+ * them in the paragraph text, so pre-line shows them. A hard break renders as
+ * a <br> followed by that same newline, so the <br> would double it. */
+.dark [data-message-column].group\/message [data-markdown-preview] p {
+  margin: 0 0 8px;
+  white-space: pre-line;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] p > br {
+  display: none;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] > p:where(:not(:first-child)) {
+  margin-top: calc(var(--agent-md-space) * 2);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] > p + p {
+  margin-top: calc(var(--agent-md-space) * 4);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] > :is(h1, h2, h3) + p,
+.dark [data-message-column].group\/message [data-markdown-preview] h4 + p {
+  margin-top: 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] h1 {
+  margin: calc(var(--agent-md-space) * 4) 0 8px;
+  font-size: calc(var(--agent-md-space) * 6);
+  line-height: calc(var(--agent-md-space) * 8);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] h2 {
+  margin: calc(var(--agent-md-space) * 4) 0 8px;
+  font-size: calc(var(--agent-md-space) * 5);
+  line-height: calc(var(--agent-md-space) * 7);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] h3 {
+  margin: calc(var(--agent-md-space) * 4) 0 8px;
+  font-size: calc(var(--agent-md-space) * 4.5);
+  line-height: calc(var(--agent-md-space) * 7);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] h4 {
+  margin: calc(var(--agent-md-space) * 4) 0 0;
+  font-size: calc(var(--agent-md-space) * 4);
+  line-height: calc(var(--agent-md-space) * 6);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(h5, h6) {
+  margin: 0;
+  font-size: calc(var(--agent-md-space) * 4);
+  line-height: calc(var(--agent-md-space) * 6.5);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) {
+  margin: 0;
+  padding-inline-start: calc(var(--agent-md-space) * 6.5);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) ul {
+  list-style-type: circle;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) :is(ul, ol) ul {
+  list-style-type: square;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] li {
+  margin: 0 0 4px;
+  padding-inline-start: calc(var(--agent-md-space) * 1.5);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] li::marker {
+  font-weight: 600;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] li > p {
+  margin: 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] li > p + p {
+  margin-top: calc(var(--agent-md-space) * 4);
+}
+
+/* Task checkboxes are Codex's 14px rounded box with its check glyph. bb
+ * renders native inputs, which take no pseudo-elements, so the box, fill, and
+ * check are mask layers over the ink: 12% edge like --border, 8% fill like
+ * --accent. */
+.dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0 calc(var(--agent-md-space) * 1.5) 0 0;
+  vertical-align: -0.125rem;
+  background-color: var(--foreground);
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect x='0.5' y='0.5' width='13' height='13' rx='4.5' fill='none' stroke='black' stroke-opacity='0.12'/></svg>") center / 14px no-repeat;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"]:checked {
+  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect width='14' height='14' rx='5' fill-opacity='0.08'/><rect x='0.5' y='0.5' width='13' height='13' rx='4.5' fill='none' stroke='black' stroke-opacity='0.12'/><svg x='1' y='1' width='12' height='12' viewBox='0 0 17 17'><path d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/></svg></svg>");
+}
+
+/* The quote rule is an inset bar, not a border, so it stops short of the
+ * quote's padding like Codex's. */
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote {
+  position: relative;
+  margin: 0 0 calc(var(--agent-md-space) * 2);
+  border-left: 0;
+  padding: calc(var(--agent-md-space) * 2) 0 calc(var(--agent-md-space) * 2)
+    calc(var(--agent-md-space) * 6);
+  color: var(--foreground);
+  font-style: normal;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote::after {
+  content: "";
+  position: absolute;
+  inset-block: calc(var(--agent-md-space) * 2);
+  inset-inline-start: 0;
+  width: var(--agent-md-space);
+  border-radius: calc(var(--agent-md-space) / 2);
+  background-color: var(--border);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote > p {
+  margin: 0;
+  font-weight: 400;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(blockquote, li) > :last-child,
+.dark [data-message-column].group\/message [data-markdown-preview] > :last-child {
+  margin-bottom: 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(blockquote, li) > :first-child,
+.dark [data-message-column].group\/message [data-markdown-preview] > :first-child,
+.dark [data-message-column].group\/message [data-markdown-preview] hr + * {
+  margin-top: 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] hr {
+  margin: calc(var(--agent-md-space) * 7) 0;
+}
+
+/* Tables start at the column edge, fill at least its width, and break out to
+ * the right only, with rules between rows. bb centres a wider breakout box
+ * with inline styles and publishes the column width as --md-content-w, so
+ * the scroller shifts back to the column edge instead of fighting them. */
+.dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center {
+  justify-content: flex-start;
+  margin-block: calc(var(--agent-md-space) * 4) 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center > div {
+  --agent-md-table-shift: max(0px, calc((100% - var(--md-content-w, 100%)) / 2));
+  max-width: calc(100% - var(--agent-md-table-shift));
+  margin-inline-start: var(--agent-md-table-shift);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] table {
+  min-width: var(--md-content-w, 100%);
+  border: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: max(13px, calc(var(--agent-md-space) * 3.5));
+  font-variant-numeric: tabular-nums;
+  line-height: calc(var(--agent-md-space) * 6.5);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] thead {
+  background-color: transparent;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td) {
+  border: 0;
+  vertical-align: top;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] th {
+  border-bottom: 1px solid var(--border);
+  padding: calc(var(--agent-md-space) * 2) calc(var(--agent-md-space) * 6)
+    calc(var(--agent-md-space) * 2) 0;
+  line-height: calc(var(--agent-md-space) * 4);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] th:last-child {
+  padding-inline-end: calc(var(--agent-md-space) * 10);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] td {
+  padding: calc(var(--agent-md-space) * 2.5) calc(var(--agent-md-space) * 6)
+    calc(var(--agent-md-space) * 2.5) 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] td:last-child {
+  padding-inline-end: 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:last-child td {
+  padding-bottom: calc(var(--agent-md-space) * 6);
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] code.bg-muted\/70 {
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.92em;
+  line-height: inherit;
+}
+
+/* Fenced blocks: a 48px header row, 20px gutters, and 13px code. :where()
+ * lets the first- and last-child resets above trim the outer margins. */
+.dark [data-message-column].group\/message [data-markdown-preview] :where(.bg-surface-recessed.my-2.rounded-md) {
+  margin: calc(var(--agent-md-space) * 5) 0;
+  border-radius: 20px;
+}
+
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child {
+  min-height: 48px;
+  padding: 6px 6px 6px 20px;
+}
+
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 20px;
+}
+
+/* The Codex code glyph leads every label. It is a mask over currentColor so
+ * the icon follows the label's muted ink. */
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  > span::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M4.46951 6.27289C4.68734 5.97727 5.10354 5.91356 5.3992 6.13129C5.69464 6.34921 5.75762 6.76637 5.53982 7.06195L3.32791 10.0639L5.5369 13.0131C5.75668 13.3071 5.69695 13.7237 5.40311 13.9438C5.10923 14.1637 4.69261 14.1037 4.47244 13.81L2.04178 10.5639C1.82214 10.2704 1.8206 9.86789 2.03787 9.57269L4.46951 6.27289Z M14.6053 6.13129C14.9009 5.9136 15.3171 5.97728 15.5349 6.27289L17.9666 9.57269C18.1837 9.86787 18.1823 10.2705 17.9627 10.5639L15.532 13.81C15.312 14.1038 14.8953 14.1635 14.6013 13.9438C14.3074 13.7237 14.2476 13.3071 14.4676 13.0131L16.6765 10.0639L14.4646 7.06195C14.2468 6.76628 14.3096 6.34915 14.6053 6.13129Z M11.0584 6.37347C11.2205 6.04395 11.6194 5.90772 11.949 6.06976C12.2782 6.23191 12.4135 6.63003 12.2517 6.95941L8.94119 13.6928C8.77923 14.0222 8.381 14.1581 8.05154 13.9965C7.72196 13.8345 7.58577 13.4355 7.74783 13.1059L11.0584 6.37347Z'/></svg>") center / 20px no-repeat;
+}
+
+/* A fence without a language has an empty label; name it plain text. */
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  > span:empty::after {
+  content: "text";
+}
+
+/* Wrap and copy take Codex's 36px round targets with 16px glyphs. */
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  > div {
+  gap: 1px;
+}
+
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  button {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+}
+
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  button
+  svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (hover: hover) {
+  .dark
+    [data-message-column].group\/message
+    [data-markdown-preview]
+    .bg-surface-recessed.my-2.rounded-md
+    > .flex.justify-between:first-child
+    button:hover {
+    background-color: var(--state-hover);
+  }
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight {
+  padding: 0 20px 12px;
+}
+
+@media (min-width: 768px), (pointer: fine) {
+  .dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight > code {
+    font-size: 13px;
+  }
+
+  .dark
+    [data-message-column].group\/message
+    [data-markdown-preview]
+    pre.bb-code-highlight
+    > code:not(.language-diagram, .language-patch) {
+    line-height: 20px;
+  }
+}
+
+/* Links lead with Codex's 16px glyph and a 3px gap, at medium weight: a
+ * globe for web and in-page links, an envelope for mail. Footnote markers
+ * stay bare, and file links keep bb's own open-file glyph. */
+.dark [data-message-column] [data-markdown-preview] a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"]) {
+  font-weight: 500;
+}
+
+.dark
+  [data-message-column]
+  [data-markdown-preview]
+  a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"])::before {
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 3px;
+  vertical-align: text-top;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M8 1.47461C11.6037 1.47461 14.5254 4.39634 14.5254 8C14.5254 11.6037 11.6037 14.5254 8 14.5254C4.39634 14.5254 1.47461 11.6037 1.47461 8C1.47461 4.39634 4.39634 1.47461 8 1.47461ZM5.87012 8.52539C5.92564 9.91134 6.19693 11.1363 6.59375 12.0293C6.81716 12.532 7.06946 12.9068 7.32324 13.1484C7.57428 13.3873 7.80269 13.4745 8 13.4746C8.19723 13.4745 8.42487 13.3871 8.67578 13.1484C8.92962 12.9069 9.18182 12.532 9.40527 12.0293C9.80215 11.1363 10.0742 9.91142 10.1299 8.52539H5.87012ZM2.55078 8.52539C2.74797 10.5966 4.09925 12.3291 5.9541 13.0771C5.83897 12.8833 5.73221 12.6753 5.63477 12.4561C5.16951 11.4092 4.87546 10.0335 4.81934 8.52539H2.55078ZM11.1797 8.52539C11.1237 10.0335 10.8305 11.4092 10.3652 12.4561C10.2677 12.6755 10.1603 12.8832 10.0449 13.0771C11.9002 12.3293 13.252 10.5969 13.4492 8.52539H11.1797ZM5.9541 2.92188C4.09908 3.66986 2.74798 5.40329 2.55078 7.47461H4.81934C4.87546 5.96653 5.16951 4.59081 5.63477 3.54395C5.73233 3.32446 5.8388 3.11594 5.9541 2.92188ZM8 2.52539C7.80269 2.52546 7.57428 2.61265 7.32324 2.85156C7.06946 3.09315 6.81716 3.46804 6.59375 3.9707C6.19693 4.86365 5.92564 6.08866 5.87012 7.47461H10.1299C10.0742 6.08859 9.80215 4.86367 9.40527 3.9707C9.18182 3.46795 8.92962 3.09313 8.67578 2.85156C8.42487 2.61285 8.19723 2.52549 8 2.52539ZM10.0449 2.92188C10.1605 3.11604 10.2676 3.32427 10.3652 3.54395C10.8305 4.59082 11.1237 5.96649 11.1797 7.47461H13.4492C13.252 5.40298 11.9004 3.66967 10.0449 2.92188Z'/></svg>") center / 16px no-repeat;
+}
+
+.dark [data-message-column] [data-markdown-preview] a.underline[href^="mailto:"]::before {
+  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M16.834 7.23865L11.3447 11.1146C10.589 11.6481 9.59505 11.6819 8.80957 11.2152L8.65528 11.1146L3.16504 7.23865V12.7084C3.16504 13.3027 3.16575 13.7088 3.19141 14.0228C3.21641 14.3286 3.26164 14.4885 3.31934 14.6019L3.37403 14.6996C3.51031 14.9219 3.7058 15.103 3.93946 15.222L4.03516 15.2631C4.14235 15.3014 4.29005 15.3322 4.51953 15.351C4.83346 15.3766 5.23908 15.3763 5.83301 15.3763H14.167C14.7609 15.3763 15.1665 15.3766 15.4805 15.351C15.7867 15.3259 15.9471 15.2799 16.0605 15.222L16.1582 15.1674C16.3804 15.0311 16.5617 14.8355 16.6807 14.6019L16.7217 14.5072C16.7601 14.4 16.7898 14.2525 16.8086 14.0228C16.8343 13.7088 16.835 13.3027 16.835 12.7084V7.29138C16.835 7.27364 16.834 7.25606 16.834 7.23865ZM5.83301 4.62342C5.23905 4.62342 4.83347 4.62416 4.51953 4.64978C4.29013 4.66853 4.14234 4.69839 4.03516 4.7367L3.93946 4.77771C3.70588 4.89673 3.51031 5.07792 3.37403 5.30017L3.31934 5.39783C3.28521 5.46483 3.25631 5.54833 3.23242 5.66834C3.25487 5.68056 3.27841 5.69134 3.29981 5.70642L9.42188 10.0287L9.55762 10.1088C9.88283 10.269 10.2752 10.2425 10.5781 10.0287L16.7002 5.70642L16.7666 5.66834C16.7529 5.59935 16.739 5.54211 16.7217 5.49353L16.6807 5.39783C16.5617 5.16425 16.3805 4.96868 16.1582 4.8324L16.0605 4.77771C15.9471 4.71993 15.7866 4.6748 15.4805 4.64978C15.1665 4.62416 14.761 4.62342 14.167 4.62342H5.83301ZM18.165 12.7084C18.165 13.2808 18.1659 13.7505 18.1348 14.1312C18.107 14.4711 18.0507 14.7848 17.9238 15.0804L17.8652 15.2064C17.6347 15.6588 17.284 16.0371 16.8535 16.3011L16.6641 16.4076C16.332 16.5767 15.9772 16.6444 15.5889 16.6761C15.2082 16.7072 14.7391 16.7064 14.167 16.7064H5.83301C5.26088 16.7064 4.79177 16.7072 4.41113 16.6761C4.0711 16.6484 3.75671 16.5931 3.46094 16.4662L3.33594 16.4076C2.88327 16.1769 2.50431 15.8256 2.24024 15.3949L2.13477 15.2064C1.96555 14.8743 1.89699 14.5196 1.86524 14.1312C1.83413 13.7505 1.83496 13.2808 1.83496 12.7084V7.29138C1.83496 6.71927 1.83416 6.25014 1.86524 5.86951C1.89697 5.48105 1.96557 5.12646 2.13477 4.79431L2.24024 4.60486C2.50431 4.17422 2.88336 3.82374 3.33594 3.59314L3.46094 3.53455C3.75678 3.40758 4.07101 3.3514 4.41113 3.32361C4.79177 3.29253 5.2609 3.29334 5.83301 3.29334H14.167C14.7391 3.29334 15.2082 3.29253 15.5889 3.32361C15.9773 3.35535 16.3319 3.42394 16.6641 3.59314L16.8535 3.69861C17.2842 3.96268 17.6346 4.34173 17.8652 4.79431L17.9238 4.91931C18.0508 5.21516 18.107 5.52938 18.1348 5.86951C18.1658 6.25014 18.165 6.71927 18.165 7.29138V12.7084Z'/></svg>");
+  mask-size: 16px;
+}
+
+/* Code inside a link reads as the link: it takes the link color over the
+ * inline-code yellow and keeps the code chip. */
+.dark [data-message-column] [data-markdown-preview] a.underline code.bg-muted\/70 {
+  color: inherit;
+}
+
+/* Trace entries: activity rows follow Codex, 14px on a 21px line with a 16px
+ * icon. Rows sit 29px apart and conversation items 28px apart, a little looser
+ * than Codex's 25px and 16px so long runs of tool calls don't read as a block. */
+.dark [data-timeline-row-list="top-level"] {
+  gap: 28px;
+  padding-bottom: 20px;
+}
+
+.dark [data-timeline-row-list="bundle"] {
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* bb fades every finished tool row to 40%, which turns a run of calls into one
+ * gray block. Codex keeps the row at full strength and fades only the target:
+ * the verb ("Read", "Searched for") and icon stay muted, the path or query
+ * steps down to readback. */
+.dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {
+  opacity: 1;
+}
+
+.dark [data-timeline-row-list] span.text-sm.leading-5 > span.shrink-0.whitespace-pre + span.min-w-0.truncate {
+  color: var(--readback-foreground);
+}
+
+/* bb reserves a 20px row under a finished agent message for its hover
+ * actions, but not while the turn streams, so the space under a message
+ * changes when the turn ends and never matches the space above it. The row
+ * takes no height here: every item sits one list gap from the next, and the
+ * actions appear on hover inside that gap. The list's bottom padding gives
+ * the last message's actions the same room. */
+.dark [data-message-column].group\/message > .relative.w-full.h-5 {
+  height: 0;
+}
+
+/* bb wraps each row's icon and label in an inline-flex span on a 13px strut,
+ * which pads the row to 23px. Making its wrapper a flex box drops the strut. */
+.dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full {
+  display: flex;
+}
+
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg.size-3\.5 {
+  width: 16px;
+  height: 16px;
+}
+
+.dark [data-timeline-row-list] span.text-sm.leading-5 {
+  font-size: max(14px, var(--text-sm));
+  line-height: 21px;
+}
