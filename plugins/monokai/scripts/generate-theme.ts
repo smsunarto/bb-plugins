@@ -109,6 +109,9 @@ const roleValues = {
   "code.keyword60": withAlpha(palette.code.keyword, 0x99),
   "code.entity": palette.code.entity,
   "code.string": palette.code.string,
+  // Inline code: string yellow softened toward ink, not toward the ground,
+  // so it stays bright instead of turning muddy.
+  "code.stringSoft": flatten(withAlpha(palette.code.string, 0x8c), palette.text.ink),
   "code.type": palette.code.type,
   "code.constant": palette.code.constant,
   "code.constant63": withAlpha(palette.code.constant, 0xa0),

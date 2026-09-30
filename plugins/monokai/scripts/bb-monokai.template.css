@@ -911,9 +911,13 @@
   background-color: {{ground.content}};
 }
 
-/* Backtick-delimited inline code is prose emphasis, not a fenced code body. */
+/* Backtick-delimited inline code is prose emphasis, not a fenced code body.
+ * A soft yellow sets it apart from white body prose. Full-strength string
+ * yellow pulled the eye off the sentence, and alpha over the ground went
+ * muddy, so the role blends the yellow into the ink instead. */
 .dark code.bg-muted\/70 {
   background-color: var(--accent);
+  color: {{code.stringSoft}};
 }
 
 /* Markdown line breaking and tracking. Paragraphs and list items avoid a
