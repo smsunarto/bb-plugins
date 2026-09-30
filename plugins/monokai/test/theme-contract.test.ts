@@ -98,6 +98,14 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain('--font-mono: "Berkeley Mono", ui-monospace, Menlo, monospace');
   });
 
+  test("antialiases dark text and keeps italic synthesis for Inter emphasis", () => {
+    expect(theme).toContain(
+      ".dark body {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n}",
+    );
+    expect(theme).not.toContain("font-synthesis:");
+    expect(theme).toContain(".dark [data-markdown-preview] :is(p, li) {\n  text-wrap: pretty;");
+  });
+
   test("keeps mobile composer placeholders at a readable regular weight", () => {
     expect(theme).toContain("@media (max-width: 767px)");
     expect(theme).toContain("p.is-editor-empty:first-child::before");

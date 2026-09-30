@@ -252,6 +252,17 @@
   --diffs-header-font-family: var(--font-sans);
 }
 
+/* macOS draws light-on-dark text heavier than its weight under the default
+ * smoothing, so Inter and Berkeley Mono read bold and soft on the dark grounds.
+ * Grayscale antialiasing restores the drawn weight. Both properties inherit,
+ * so the rule reaches shadow roots such as the diff viewer.
+ * font-synthesis stays on: bb bundles no Inter italic face, and markdown
+ * emphasis depends on the synthesized slant. */
+.dark body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 .dark {
   --bb-monokai-active: 1;
 
@@ -1245,6 +1256,26 @@
 /* Backtick-delimited inline code is prose emphasis, not a fenced code body. */
 .dark code.bg-muted\/70 {
   background-color: var(--accent);
+}
+
+/* Markdown line breaking and tracking. Paragraphs and list items avoid a
+ * one-word last line. Headings split into lines of even length. bb's 16-18px
+ * h1 and h2 take Inter's recommended tracking for that size. The uppercase h5
+ * and h6 labels open up so capitals do not crowd. */
+.dark [data-markdown-preview] :is(p, li) {
+  text-wrap: pretty;
+}
+
+.dark [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6) {
+  text-wrap: balance;
+}
+
+.dark [data-markdown-preview] :is(h1, h2) {
+  letter-spacing: -0.011em;
+}
+
+.dark [data-markdown-preview] :is(h5, h6) {
+  letter-spacing: 0.05em;
 }
 
 .dark .bb-code-highlight.bb-code-highlight {
