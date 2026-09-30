@@ -263,98 +263,28 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("releases passive composer focus but allows explicit keyboard and pointer focus", () => {
+  test("preserves composer autofocus before and after mounting", () => {
     document.body.innerHTML =
-      '<button id="outside">Outside</button>' +
       '<div data-app-composer><div id="editor" role="textbox" tabindex="0"></div></div>';
-    const outside = document.getElementById("outside") as HTMLElement;
     const editor = document.getElementById("editor") as HTMLElement;
     editor.focus();
-    expect(document.activeElement).toBe(editor);
 
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
-    expect(document.activeElement).not.toBe(editor);
+    expect(document.activeElement).toBe(editor);
 
+    editor.blur();
     editor.focus();
-    expect(document.activeElement).not.toBe(editor);
+    expect(document.activeElement).toBe(editor);
+    expect(pressKey("f", editor)).toBe(true);
+    expect(markers()).toEqual([]);
 
+    editor.blur();
     expect(pressKey("i")).toBe(false);
     expect(document.activeElement).toBe(editor);
 
-    editor.blur();
-    editor.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
-    editor.focus();
-    expect(document.activeElement).toBe(editor);
-
-    editor.blur();
-    outside.focus();
-    pressKey("Tab", outside);
-    editor.focus();
-    expect(document.activeElement).toBe(editor);
-
     void dispose();
     controller.abort();
-  });
-
-  test("allows pointer focus deferred to an animation frame, then guards passive focus again", async () => {
-    document.body.innerHTML =
-      '<div data-app-composer><div id="editor" role="textbox" tabindex="0"></div></div>';
-    const editor = document.getElementById("editor") as HTMLElement;
-    const controller = newController();
-    const dispose = mountLinkHints(contextWith(controller.signal));
-
-    editor.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
-    await new Promise<void>((resolve) => {
-      window.requestAnimationFrame(() => {
-        editor.focus();
-        resolve();
-      });
-    });
-    expect(document.activeElement).toBe(editor);
-
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
-    editor.blur();
-    editor.focus();
-    expect(document.activeElement).not.toBe(editor);
-
-    editor.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
-    editor.focus();
-    expect(document.activeElement).toBe(editor);
-
-    void dispose();
-    controller.abort();
-  });
-
-  test("keeps the composer focusable on coarse-pointer devices", () => {
-    const originalMatchMedia = window.matchMedia;
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: (query: string) => ({ matches: query === "(pointer: coarse)", media: query }),
-    });
-
-    try {
-      document.body.innerHTML =
-        '<div data-app-composer><div id="editor" role="textbox" tabindex="0"></div></div>';
-      const editor = document.getElementById("editor") as HTMLElement;
-      editor.focus();
-
-      const controller = newController();
-      const dispose = mountLinkHints(contextWith(controller.signal));
-      expect(document.activeElement).toBe(editor);
-
-      editor.blur();
-      editor.focus();
-      expect(document.activeElement).toBe(editor);
-
-      void dispose();
-      controller.abort();
-    } finally {
-      Object.defineProperty(window, "matchMedia", {
-        configurable: true,
-        value: originalMatchMedia,
-      });
-    }
   });
 
   test("plain i stays available to editable targets while hint mode is idle", () => {
@@ -1372,7 +1302,7 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("a thread step keeps a self-focusing editor from stealing focus", async () => {
+  test("a thread step preserves editor autofocus", async () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
@@ -1395,17 +1325,13 @@ describe("mountLinkHints", () => {
     expect(pressKey("]")).toBe(false);
     expect(clicked).toEqual(["t2"]);
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(document.activeElement).not.toBe(editor);
+    expect(document.activeElement).toBe(editor);
 
+    editor.blur();
     window.history.pushState({}, "", "/threads/thr_2");
     expect(pressKey("[")).toBe(false);
     expect(clicked).toEqual(["t2", "t1"]);
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(document.activeElement).not.toBe(editor);
-
-    // A pointer press means the user wants the editor, so focus stays.
-    editor.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
-    editor.focus();
     expect(document.activeElement).toBe(editor);
 
     window.history.pushState({}, "", "/");

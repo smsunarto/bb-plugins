@@ -5,7 +5,7 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 ## What it does
 
 - Press `f` anywhere outside a text field. Every clickable element on screen gets a small yellow hint label.
-- bb's passive composer autofocus is released. Press `i`, click the composer, or Tab to it when you want to type.
+- Native input autofocus is preserved. Press `i`, click the composer, or Tab to it to focus it manually.
 - Press `Cmd+Shift+F` anywhere, including bb's composer. `Escape` also leaves the composer, so `Escape` then `f` works too.
 - Type a label's letters to click that element. Already-typed letters dim, and non-matching labels disappear.
 - `Backspace` drops the last typed letter. `Escape`, any other key, scrolling, or resizing exits hint mode. In the model and project pickers, `Escape` also closes the picker.
@@ -23,7 +23,7 @@ Outside a text field, these keys act without a hint prompt:
 - `m` model, `p` project, `l` machine, `b` branch. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
 - `a` permission mode, as in allow. Its hint label stays `k`, because `k` as a direct key scrolls up.
 - `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. A step is 60px. The scroll animates the way Vimium's does. A tap moves one step in about 100ms, a held key keeps scrolling until you release it, and quick taps add up. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it.
-- `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order, including rows BB has temporarily unmounted while virtualizing a long list. Rows the sidebar keeps in its More popover are skipped, as BB's own previous/next commands skip them. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom. For two seconds after a keyboard thread switch, an editor that focuses itself on load (the docs panel's markdown editor does) is blurred, so the next `]` or `[` still lands. A click or any other key ends that guard.
+- `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order, including rows BB has temporarily unmounted while virtualizing a long list. Rows the sidebar keeps in its More popover are skipped, as BB's own previous/next commands skip them. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom.
 - `e` settles the focused thread, including a child in a split pane. This needs a sidebar with a settle button on each row, such as gtd-sidebar. If the focused split thread's row is collapsed, expand it before settling.
 - `E` (Shift+e) undoes the newest archive notification while it is visible and opens the restored thread. Clicking that notification's Undo button also opens the thread.
 - `i` focuses the composer.

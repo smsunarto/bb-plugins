@@ -15,10 +15,8 @@
 // row; the scoped prompt follows the popup — exiting when it is dismissed,
 // re-prompting when a pick leaves it open (the model dialog and its tabs),
 // and handing focus back to the composer when a pick from one of the
-// composer's own dropdowns closes it. On fine-pointer devices, passive
-// composer focus is released so normal mode survives navigation; `i`, a
-// direct pointer press, and Tab focus enter the composer intentionally.
-// Coarse-pointer devices retain native composer focus. `Cmd+Shift+F` always
+// composer's own dropdowns closes it. Native input autofocus is preserved.
+// `Cmd+Shift+F` always
 // means the whole screen: it replaces a scoped prompt, and first closes any
 // open popup layer,
 // which would otherwise aria-hide the rest of the page. In idle mode a few
@@ -283,12 +281,8 @@ const SETTLE_BUTTON_SELECTOR = 'button[aria-label="Settle"]';
 // `overflow-y-auto` div with no data attribute, found by walking up from here.
 const CONVERSATION_LIST_SELECTOR = '[data-timeline-row-list="top-level"]';
 
-/** How long after a keyboard thread switch self-focusing editors stay blurred. */
-const NAVIGATION_FOCUS_GUARD_MS = 2000;
-
 const COMPOSER_SELECTOR = "[data-app-composer]";
 const COMPOSER_TEXTBOX_SELECTOR = '[data-app-composer] [role="textbox"]';
-const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
@@ -543,12 +537,9 @@ function isTextEntry(target: HTMLElement): boolean {
   return false;
 }
 
-function activate(
-  target: HTMLElement,
-  focusTextEntry: (target: HTMLElement) => void = (entry) => entry.focus(),
-): void {
+function activate(target: HTMLElement): void {
   if (isTextEntry(target)) {
-    focusTextEntry(target);
+    target.focus();
     return;
   }
   if (typeof target.focus === "function") target.focus({ preventScroll: true });
@@ -575,79 +566,10 @@ function activate(
 }
 
 export function mountLinkHints(context: PluginContentScriptContext): PluginContentScriptDisposer {
-  const releasePassiveComposerFocus = window.matchMedia?.(COARSE_POINTER_QUERY).matches !== true;
   let mode: HintMode = { kind: "idle" };
   let container: HTMLElement | null = null;
   let popupWatch: number | null = null;
-  let composerFocusAllowed = false;
-  let composerPointerOrTabFocusAllowed = false;
-  let composerFocusWindow: number | null = null;
-  let composerFocusFrame: number | null = null;
-  // While set in the future, editable elements that take focus on their own
-  // are blurred. A thread opened from the keyboard remounts the thread's
-  // panels, and an editor there (the docs panel's markdown editor autofocuses)
-  // would otherwise swallow the next `[` or `]`. The user's next pointer
-  // press or key ends the guard early.
-  let editableFocusGuardUntil = 0;
   const scroller = createScroller();
-
-  function guardEditableFocus(): void {
-    editableFocusGuardUntil = performance.now() + NAVIGATION_FOCUS_GUARD_MS;
-  }
-
-  function withComposerFocusAllowed(action: () => void): void {
-    const wasAllowed = composerFocusAllowed;
-    composerFocusAllowed = true;
-    try {
-      action();
-    } finally {
-      composerFocusAllowed = wasAllowed;
-    }
-  }
-
-  // Pointer focus and the browser's Tab focus happen after their triggering
-  // event listener returns. Tiptap can also defer focus to an animation frame.
-  // Expire after that frame's callbacks, so intentional focus is not blurred.
-  function allowComposerFocusForDefaultAction(): void {
-    composerPointerOrTabFocusAllowed = true;
-    if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
-    if (composerFocusFrame !== null) window.cancelAnimationFrame(composerFocusFrame);
-    composerFocusFrame = window.requestAnimationFrame(() => {
-      composerFocusFrame = null;
-      composerFocusWindow = window.setTimeout(() => {
-        composerPointerOrTabFocusAllowed = false;
-        composerFocusWindow = null;
-      }, 0);
-    });
-  }
-
-  function focusTextEntry(target: HTMLElement): void {
-    if (!target.matches(COMPOSER_TEXTBOX_SELECTOR)) {
-      target.focus();
-      return;
-    }
-    withComposerFocusAllowed(() => target.focus());
-  }
-
-  function onFocusIn(event: FocusEvent): void {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    if (target.matches(COMPOSER_TEXTBOX_SELECTOR)) {
-      if (!releasePassiveComposerFocus) return;
-      if (composerFocusAllowed || composerPointerOrTabFocusAllowed) return;
-      target.blur();
-      return;
-    }
-    if (performance.now() < editableFocusGuardUntil && isEditableTarget(target)) target.blur();
-  }
-
-  function onPointerDown(event: MouseEvent): void {
-    editableFocusGuardUntil = 0;
-    const target = event.target;
-    if (target instanceof Element && target.closest(COMPOSER_SELECTOR) !== null) {
-      allowComposerFocusForDefaultAction();
-    }
-  }
 
   function exit(): void {
     if (popupWatch !== null) {
@@ -760,7 +682,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     const selector = RESERVED_CONTROLS.find((control) => control.char === "s")?.selector;
     const control = selector ? findControl(selector) : null;
     if (control) {
-      activate(control, focusTextEntry);
+      activate(control);
       return true;
     }
 
@@ -797,7 +719,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
             ) ?? []),
         ].find((candidate) => candidate.textContent?.trim().startsWith("Search threads"));
         if (option) {
-          activate(option, focusTextEntry);
+          activate(option);
           return;
         }
       }
@@ -815,7 +737,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       case "focus-composer": {
         const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
         if (textbox === null) return false;
-        withComposerFocusAllowed(() => textbox.focus());
+        textbox.focus();
         return true;
       }
       case "thread-search":
@@ -823,7 +745,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       case "control": {
         const control = findControl(shortcut.selector);
         if (control === null) return false;
-        activate(control, focusTextEntry);
+        activate(control);
         if (!isTextEntry(control) && opensDropdown(control)) scheduleReprompt(control);
         return true;
       }
@@ -836,12 +758,11 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         );
         const row = index === null ? undefined : rows[index];
         if (row === undefined) return false;
-        if (row.element) activate(row.element, focusTextEntry);
+        if (row.element) activate(row.element);
         else {
           if (openWindowedThread === null) return false;
           openWindowedThread(row.id);
         }
-        guardEditableFocus();
         return true;
       }
       case "settle-thread": {
@@ -851,7 +772,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         const settle =
           row?.element?.parentElement?.querySelector<HTMLElement>(SETTLE_BUTTON_SELECTOR);
         if (!settle) return false;
-        activate(settle, focusTextEntry);
+        activate(settle);
         return true;
       }
       case "scroll": {
@@ -897,16 +818,6 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
 
   function onKeydown(event: KeyboardEvent): void {
     scroller.noteKeydown({ code: event.code, repeat: event.repeat });
-    if (!MODIFIER_KEYS.has(event.key)) editableFocusGuardUntil = 0;
-    if (
-      mode.kind === "idle" &&
-      event.key === "Tab" &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey
-    ) {
-      allowComposerFocusForDefaultAction();
-    }
     if (mode.kind === "idle") {
       const shortcut = directShortcutFor({
         key: event.key,
@@ -996,9 +907,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     const scopeKind = mode.scopeKind;
     exit();
     if (!chosen) return;
-    activate(chosen.target, focusTextEntry);
+    activate(chosen.target);
     if (isTextEntry(chosen.target)) return;
-    if (chosen.target.matches(THREAD_ROW_SELECTOR)) guardEditableFocus();
     if (opensDropdown(chosen.target)) {
       scheduleReprompt(chosen.target);
       return;
@@ -1058,7 +968,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       const textbox = document.querySelector<HTMLElement>(COMPOSER_TEXTBOX_SELECTOR);
       if (!textbox) return;
       if (document.activeElement !== textbox) {
-        withComposerFocusAllowed(() => textbox.focus());
+        textbox.focus();
       }
       ticks += 1;
       if (ticks < 6) window.setTimeout(claim, 80);
@@ -1090,37 +1000,14 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
 
   const archiveUndo = mountArchiveUndo();
   context.signal.addEventListener("abort", archiveUndo.dispose, { once: true });
-  window.addEventListener("focusin", onFocusIn, { capture: true, signal: context.signal });
-  window.addEventListener("pointerdown", onPointerDown, {
-    capture: true,
-    signal: context.signal,
-  });
-  // Mouse compatibility events can arrive after pointerdown's focus window.
-  // The composer also focuses its editor from its mousedown handler.
-  window.addEventListener("mousedown", onPointerDown, {
-    capture: true,
-    signal: context.signal,
-  });
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });
   window.addEventListener("keyup", onKeyup, { capture: true, signal: context.signal });
   window.addEventListener("scroll", onScroll, { capture: true, signal: context.signal });
   window.addEventListener("resize", exitIfActive, { signal: context.signal });
   window.addEventListener("blur", onBlur, { signal: context.signal });
 
-  // The content script can mount after React has already applied autofocus.
-  const active = document.activeElement;
-  if (
-    releasePassiveComposerFocus &&
-    active instanceof HTMLElement &&
-    active.matches(COMPOSER_TEXTBOX_SELECTOR)
-  ) {
-    active.blur();
-  }
-
   return () => {
     archiveUndo.dispose();
-    if (composerFocusWindow !== null) window.clearTimeout(composerFocusWindow);
-    if (composerFocusFrame !== null) window.cancelAnimationFrame(composerFocusFrame);
     exit();
   };
 }
