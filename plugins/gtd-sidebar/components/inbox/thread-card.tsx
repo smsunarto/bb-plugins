@@ -529,15 +529,6 @@ export function ThreadHierarchy({
             className={cn("gtd-tree-line", lastChild && "gtd-tree-line-last")}
             style={{ left: 12 + (depth - 1) * DEPTH_STEP }}
           />
-          <span
-            className="gtd-tree-elbow"
-            style={{
-              left: 12 + (depth - 1) * DEPTH_STEP,
-              // Every branch has the same arm, stopping 4px before the
-              // disclosure glyph whether the child has descendants or not.
-              width: DEPTH_STEP - 10,
-            }}
-          />
         </span>
       ) : null}
       {childCount > 0 ? (

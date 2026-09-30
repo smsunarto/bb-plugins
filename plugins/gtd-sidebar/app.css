@@ -342,16 +342,10 @@
   top: -2px;
   bottom: 0;
   width: 1px;
-  background: var(--subtle-foreground);
+  background: color-mix(in srgb, var(--sidebar-foreground) 9%, transparent);
 }
 .gtd-tree-line-last {
   bottom: 50%;
-}
-.gtd-tree-elbow {
-  position: absolute;
-  top: 50%;
-  height: 1px;
-  background: var(--subtle-foreground);
 }
 .gtd-thread-row:is(:hover, :focus-within, [data-sidebar-thread-active="true"]) .gtd-disclosure {
   color: var(--sidebar-accent-foreground);
