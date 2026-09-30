@@ -39,7 +39,7 @@ import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
-const DEPTH_STEP = 8;
+const DEPTH_STEP = 16;
 /** The touch disclosure column: app.css `.gtd-disclosure-touch` width. */
 const MOBILE_DISCLOSURE_WIDTH = 32;
 
@@ -533,9 +533,9 @@ export function ThreadHierarchy({
             className="gtd-tree-elbow"
             style={{
               left: 12 + (depth - 1) * DEPTH_STEP,
-              // Stop short of the child's chevron glyph, or 10px short of a
-              // leaf's title, so the elbow never touches what it points at.
-              width: childCount > 0 ? DEPTH_STEP - 6 : DEPTH_STEP + 6,
+              // Every branch has the same arm, stopping 4px before the
+              // disclosure glyph whether the child has descendants or not.
+              width: DEPTH_STEP - 10,
             }}
           />
         </span>
