@@ -72,6 +72,20 @@
   padding-inline-start: 0;
 }
 
+/* The host's reset strips list markers. MDXEditor's nested-list and task items
+   set their own list-style on the li, so they keep theirs. */
+.canvas-mdx-prose ul {
+  list-style-type: disc;
+}
+
+.canvas-mdx-prose :is(ul, ol) ul {
+  list-style-type: circle;
+}
+
+.canvas-mdx-prose ol {
+  list-style-type: decimal;
+}
+
 .canvas-mdx-prose :is(ul, ol) > li {
   margin: 0 0 0 30px;
 }
@@ -214,6 +228,13 @@
   margin: 1.75rem 0;
 }
 
+/* A heading keeps its content close. The next block drops its top margin,
+   which would otherwise outrank the heading's smaller bottom margin. This rule
+   comes after the block rules so it wins at equal specificity. */
+.canvas-mdx-prose :is(h1, h2, h3, h4) + * {
+  margin-top: 0;
+}
+
 .canvas-mdx-prose ::selection {
   background: var(--muted);
 }
@@ -307,7 +328,12 @@
    The canvas code block descriptor wraps each block in .canvas-mdx-code, so
    these rules avoid MDXEditor's generated class names. Reserve a real header
    row and restore the reading theme's code treatment. */
+.canvas-mdx-prose .canvas-mdx-code {
+  margin: 1rem 0;
+}
+
 .canvas-mdx-prose .canvas-mdx-code > div {
+  margin: 0;
   padding: 0;
   background: var(--canvas-prose-code-well);
 }
@@ -315,10 +341,10 @@
 .canvas-mdx-prose .canvas-mdx-code > div > div:first-child {
   position: static;
   justify-content: flex-end;
-  padding: 0.25rem 0.5rem;
+  padding: 0.125rem 0.25rem;
   border-bottom: 1px solid var(--canvas-prose-rule);
   border-bottom-left-radius: 0;
-  background: var(--secondary);
+  background: transparent;
 }
 
 .canvas-mdx-prose .canvas-mdx-code > div > div:nth-child(2) {
@@ -327,6 +353,27 @@
 }
 
 .canvas-mdx-prose button[aria-label="Language"] {
+  background: transparent;
+  color: var(--muted-foreground);
+  font: 12px var(--font-mono);
+}
+
+.canvas-mdx-prose button[aria-label="Language"] > [aria-hidden="true"] {
+  margin-inline-start: 0.25rem;
+}
+
+/* A fenced block reads as one well, as it does in the rendered preview: the
+   editor surface is transparent on the well and has no line-number gutter or
+   resting line highlight. */
+.canvas-mdx-prose .canvas-mdx-code .cm-editor {
+  background: transparent;
+}
+
+.canvas-mdx-prose .canvas-mdx-code .cm-gutters {
+  display: none;
+}
+
+.canvas-mdx-prose .canvas-mdx-code .cm-editor:not(.cm-focused) .cm-activeLine {
   background: transparent;
 }
 

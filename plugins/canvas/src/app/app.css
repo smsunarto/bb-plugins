@@ -265,6 +265,13 @@
   margin: 1.75rem 0;
 }
 
+/* A heading keeps its content close. The next block drops its top margin,
+ * which would otherwise outrank the heading's smaller bottom margin. This rule
+ * comes after the block rules so it wins at equal specificity. */
+.canvas-prose [data-markdown-preview] :is(h1, h2, h3, h4) + * {
+  margin-top: 0;
+}
+
 /* Block components share the prose rhythm at the top level. */
 .canvas-block {
   margin-block: 1.75rem;

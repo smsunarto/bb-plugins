@@ -333,7 +333,7 @@ it("opens literal angle-bracket placeholders in Markdown and preserves them afte
 
 it.each([
   ["inline placeholders", "Run <group> <name> and </orphan>.", "Run <group> <name> and </orphan>."],
-  ["block placeholders", "<group>\n<name>", "<group> <name>"],
+  ["block placeholders", "<group>\n<name>", "<name>"],
   ["HTML comments", "<!-- unfinished comment", "<!-- unfinished comment"],
   [
     "HTML attributes",
@@ -369,6 +369,30 @@ it.each([
   await reopened.slot.findByText(visible, { exact: false });
   await reopened.slot.findByText("Updated paragraph.");
   expect(reopened.changed).not.toHaveBeenCalled();
+});
+
+it("shows soft line breaks as spaces and saves them as newlines", async () => {
+  const input = [
+    "- **Bold lead.**",
+    "  Wrapped line one",
+    "  and two.",
+    "",
+    "A **bold",
+    "wrap** and *em",
+    "wrap* here.",
+    "",
+    "Original paragraph.",
+    "",
+  ].join("\n");
+  const { slot, changed } = open(input, "guide.md");
+  const lead = await slot.findByText("Bold lead.");
+  expect(lead.closest("li")?.textContent).toBe("Bold lead. Wrapped line one and two.");
+  const bold = await slot.findByText("wrap", { exact: true, selector: "strong" });
+  expect(bold.closest("p")?.textContent).toBe("A bold wrap and em wrap here.");
+  expect(changed).not.toHaveBeenCalled();
+  await replaceText(await slot.findByText("Original paragraph."), "Updated paragraph.");
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  expect(changed.mock.calls.at(-1)?.[0]).toBe(input.replace("Original", "Updated"));
 });
 
 it("keeps Markdown autolinks, formatting, and code fences intact", async () => {

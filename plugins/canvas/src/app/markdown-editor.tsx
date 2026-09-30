@@ -57,6 +57,7 @@ import {
 } from "./editor.tsx";
 import { parseMarkdownDocument } from "./markdown-document.ts";
 import { preserveEsmPlugin } from "./mdx-esm.tsx";
+import { softBreakPlugin } from "./soft-break.ts";
 import "./app.css";
 import "./markdown-editor.css";
 
@@ -215,6 +216,7 @@ function EditorSession(
       listsPlugin(),
       quotePlugin(),
       thematicBreakPlugin(),
+      softBreakPlugin(),
       linkPlugin(),
       linkDialogPlugin(),
       tablePlugin(),
