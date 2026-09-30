@@ -7,15 +7,19 @@ import type { AvailableModel } from "@get-bb/plugin-sdk/provider-bridge";
  * Devin lists nine single models and twenty Fusion pairs (a primary model
  * plus a sidekick) in no useful order. The picker shows instead:
  *
- * 1. Fusion pairs whose primary is the latest Astra, then the latest Sol.
- *    Every other Fusion pair moves under "More models".
+ * 1. The latest Astra and latest Sol Fusion pairs, each with the strongest
+ *    SWE-2 sidekick the catalog offers that primary. Every other Fusion
+ *    pair is omitted. A pair's display name drops the primary's baked-in
+ *    effort ("High Thinking") because the reasoning selector controls the
+ *    primary independently; the sidekick's fixed effort stays in the name.
  * 2. The latest of each headline family: Astra, Fable, Sol, Opus, then SWE.
  * 3. The rest grouped by vendor (Anthropic, OpenAI, then others), largest
  *    model first, then newest version first.
  *
- * "Latest" is read from the catalog, so a new version takes its family's slot
- * without an edit here. A new family or size name needs a table entry; until
- * then it sorts at the end of its vendor's group.
+ * "Latest" and "strongest" are read from the catalog, so a new version or a
+ * stronger sidekick pairing takes the slot without an edit here. A new
+ * family or size name needs a table entry; until then it sorts at the end
+ * of its vendor's group.
  *
  * Model ids are parsed, not display names: `gpt-6-1-sol-medium`,
  * `claude-fable-5-1-medium`, `swe-2-high`, `grok-4-7-medium`, and
@@ -121,6 +125,38 @@ const familyKey = (family: Family): string => `${family.vendor}/${family.line}`;
 const sameFamily = (family: Family, name: ModelName): boolean =>
   family.vendor === name.vendor && family.line === name.line;
 
+const primaryKey = (name: ModelName): string => `${familyKey(name)}/${name.version.join(".")}`;
+const isSwe2 = (name: ModelName | null): name is ModelName =>
+  name !== null &&
+  name.vendor === "cognition" &&
+  name.line === "swe" &&
+  compareNumbers(name.version, [2]) === 0 &&
+  name.effort >= 0;
+
+/** The strongest SWE-2 sidekick effort the catalog pairs with each primary. */
+function strongestSidekickEfforts(ids: readonly ParsedId[]): ReadonlyMap<string, number> {
+  const efforts = new Map<string, number>();
+  for (const { fusion, primary, sidekick } of ids) {
+    if (!fusion || !isSwe2(sidekick)) continue;
+    const key = primaryKey(primary);
+    efforts.set(key, Math.max(efforts.get(key) ?? -1, sidekick.effort));
+  }
+  return efforts;
+}
+
+/**
+ * Drops the primary's baked-in effort from a Fusion display name
+ * ("Fusion (GPT-6 Astra High Thinking + SWE-2 High)" -> "Fusion (GPT-6 Astra
+ * + SWE-2 High)"); the reasoning selector, not the name, carries it.
+ */
+function withSelectableReasoning(model: AvailableModel): AvailableModel {
+  const displayName = model.displayName.replace(
+    /\s+(?:none|minimal|low|medium|high|xhigh|max)(?:\s+thinking)?(?=\s*\+)/i,
+    "",
+  );
+  return displayName === model.displayName ? model : { ...model, displayName };
+}
+
 /** The newest version the catalog names in each family. */
 function latestVersions(names: readonly ModelName[]): ReadonlyMap<string, readonly number[]> {
   const latest = new Map<string, readonly number[]>();
@@ -150,16 +186,19 @@ function nameKey(name: ModelName, latest: ReadonlyMap<string, readonly number[]>
   ];
 }
 
-/** Where a Fusion pair lands; null hides it under "More models". */
+/** Where a Fusion pair lands; null omits it from the picker entirely. */
 function fusionKey(
   parsed: ParsedId,
   latest: ReadonlyMap<string, readonly number[]>,
+  sidekickEfforts: ReadonlyMap<string, number>,
 ): SortKey | null {
   const { primary, sidekick } = parsed;
   const pick = FUSION_PRIMARIES.findIndex((family) => sameFamily(family, primary));
   if (pick === -1) return null;
   if (compareNumbers(primary.version, latest.get(familyKey(primary)) ?? []) !== 0) return null;
-  return [0, pick, -primary.effort, ...(sidekick === null ? [] : nameKey(sidekick, latest))];
+  if (!isSwe2(sidekick) || sidekick.effort !== sidekickEfforts.get(primaryKey(primary)))
+    return null;
+  return [0, pick, -primary.effort];
 }
 
 const withDefault = (model: AvailableModel, isDefault: boolean): AvailableModel =>
@@ -170,12 +209,12 @@ export function orderModelCatalog(catalog: ModelCatalog): ModelCatalog {
   const latest = latestVersions(
     parsed.flatMap(({ id }) => (id.sidekick === null ? [id.primary] : [id.primary, id.sidekick])),
   );
+  const sidekickEfforts = strongestSidekickEfforts(parsed.map(({ id }) => id));
   const shown: { model: AvailableModel; key: SortKey }[] = [];
-  const hidden: AvailableModel[] = [];
   for (const { model, id } of parsed) {
-    const key = id.fusion ? fusionKey(id, latest) : nameKey(id.primary, latest);
-    if (key === null) hidden.push(model);
-    else shown.push({ model, key });
+    const key = id.fusion ? fusionKey(id, latest, sidekickEfforts) : nameKey(id.primary, latest);
+    if (key !== null)
+      shown.push({ model: id.fusion ? withSelectableReasoning(model) : model, key });
   }
   shown.sort((a, b) => compareNumbers(a.key, b.key));
   const models = shown.map(({ model }) => model);
@@ -185,9 +224,9 @@ export function orderModelCatalog(catalog: ModelCatalog): ModelCatalog {
       first === undefined || models.some((model) => model.isDefault)
         ? models
         : [withDefault(first, true), ...models.slice(1)],
-    selectedOnlyModels: [...hidden, ...catalog.selectedOnlyModels].map((model) =>
-      withDefault(model, false),
-    ),
+    selectedOnlyModels: catalog.selectedOnlyModels
+      .filter((model) => !parseId(model.id).fusion)
+      .map((model) => withDefault(model, false)),
   };
 }
 

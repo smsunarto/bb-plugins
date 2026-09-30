@@ -43,11 +43,16 @@ open, so Devin clones it on its VM. Projects without a git remote send nothing.
 ### Models
 
 Devin lists its models in no particular order, so the plugin orders the
-picker: Fusion pairs whose primary is the latest Astra or the latest Sol,
-then the latest Astra, Fable, Sol, Opus, and SWE, then the remaining models
-grouped by vendor (Anthropic, OpenAI, others) from largest to smallest and
-newest to oldest. Fusion pairs with any other primary sit under **More
-models**.
+picker. It starts with Fusion pairs whose primary is the latest Astra or
+Sol, paired with the highest SWE-2 reasoning level that Devin actually
+offers for that primary. Other Fusion pairs are omitted. The reasoning
+selector controls the primary model independently; the sidekick's fixed
+effort stays in the model name. A standalone SWE-2 effort is not assumed to
+be available in Fusion.
+
+Next come the latest Astra, Fable, Sol, Opus, and SWE, then the remaining
+models grouped by vendor (Anthropic, OpenAI, others), largest to smallest
+and newest to oldest.
 
 ### Permissions
 
