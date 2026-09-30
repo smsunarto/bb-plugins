@@ -19,9 +19,10 @@ export const TARGET_MIGRATIONS = [
 ];
 
 /**
- * Which Devin a thread runs on. The Cloud toggle arms a one-shot intent, and a
- * thread's first command claims it and pins its target for good, because a
- * cloud session cannot move to the local agent or back.
+ * Which Devin a thread runs on. The Cloud toggle arms a one-shot intent, and
+ * the thread's first resolution (agent configuration or provider options)
+ * claims it and pins its target for good, because a cloud session cannot move
+ * to the local agent or back.
  *
  * The store is synchronous on purpose: `deriveProviderOptions` sits on the
  * turn-submit path and cannot await. The plugin's own SQLite handle is the one

@@ -37,6 +37,9 @@ Local or Cloud is fixed for the life of the thread. A Cloud thread shows a bar
 above the composer with a link to the session in the Devin web app and a
 copyable `devin --cloud -r <session>` command to attach from a terminal.
 
+A Cloud thread's first prompt tells Devin which repository the bb project has
+open, so Devin clones it on its VM. Projects without a git remote send nothing.
+
 ### Permissions
 
 - **Full** approves every Devin tool request.
