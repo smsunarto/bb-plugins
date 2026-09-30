@@ -2,7 +2,9 @@ import { expect, mock, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   createFakePluginHost,
+  makeMessageDispatchHookContext,
   makePluginAgentConfigurationContext,
+  type ExperimentalFakeHostRpcCall,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 
@@ -81,6 +83,7 @@ async function setup(
   rows: Row[] = [edit],
   timelinePages: Partial<Timeline>[] = [],
   detailsError: Error | null = null,
+  callHost: (call: ExperimentalFakeHostRpcCall) => unknown = () => ({ snapshot: null }),
 ) {
   const list = mock<Threads["events"]["list"]>(async (input) =>
     events
@@ -121,6 +124,8 @@ async function setup(
   }));
   const host = createFakePluginHost({
     pluginId: "last-turn-diff",
+    experimental_hostEntry: true,
+    experimental_callHostRpc: callHost,
     sdk: {
       threads: {
         events: { list },
@@ -309,12 +314,11 @@ test("returns no preview before a turn completes or when boundaries disagree", a
   }
 });
 
-test("adds no model instructions, tools, or dispatch hooks", async () => {
+test("adds no model instructions or tools", async () => {
   const { harness } = await setup();
   expect(harness.registrations.instructionProvider).toBeNull();
   expect(harness.registrations.agentTools).toEqual([]);
   expect(harness.registrations.agentConfigurationProvider).toBeNull();
-  expect(harness.registrations.hooks["message.dispatch"]).toBeNull();
   const config = await harness.behavior.resolveAgentConfiguration(
     makePluginAgentConfigurationContext(),
   );
@@ -485,5 +489,168 @@ test("unresolvable environments leave changes unattributed", async () => {
   expect(result).toMatchObject({ turn: { changes: [{ id: "local" }] } });
   expect(result.turn).not.toHaveProperty("workspace");
   expect(result.turn?.changes[0]).not.toHaveProperty("relPath");
+  await harness.lifecycle.dispose();
+});
+
+const snapshotPatchText =
+  "diff --git a/fmt.ts b/fmt.ts\n--- a/fmt.ts\n+++ b/fmt.ts\n@@ -1 +1 @@\n-a\n+b\n";
+const otherPatchText = "diff --git a/b.ts b/b.ts\n--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-c\n+d\n";
+
+test("a workspace snapshot outranks the provider patch and covers unrecorded edits", async () => {
+  const calls: ExperimentalFakeHostRpcCall[] = [];
+  const { harness } = await setup(
+    [{ ...started, createdAt: 1_000 }, updated, { ...completed, createdAt: 9_000 }],
+    [absoluteEdit("/ws/dotfiles/src/b.ts", "local"), message],
+    [],
+    null,
+    (call) => {
+      calls.push(call);
+      return {
+        snapshot: {
+          root: "/ws/dotfiles",
+          patch: snapshotPatchText,
+          otherPatch: otherPatchText,
+          limited: false,
+        },
+      };
+    },
+  );
+  stubWorkspaces(harness);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "turn-2", patch: snapshotPatchText, otherPatch: otherPatchText },
+  });
+  expect(calls).toEqual([
+    {
+      method: "turnPatch",
+      hostId: "h",
+      input: {
+        environmentPath: "/ws/dotfiles",
+        threadId: "thread-1",
+        startedAt: 1_000,
+        completedAt: 9_000,
+        recordedPaths: ["/ws/dotfiles/src/b.ts"],
+      },
+    },
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("a turn whose only edits came from shell commands still shows them", async () => {
+  const { harness } = await setup([started, completed], [message], [], null, () => ({
+    snapshot: { root: "/ws/dotfiles", patch: snapshotPatchText, otherPatch: null, limited: false },
+  }));
+  stubWorkspaces(harness);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "turn-2", patch: snapshotPatchText, changes: [] },
+  });
+  await harness.lifecycle.dispose();
+});
+
+test("a failing host falls back to the provider's patch", async () => {
+  const { harness } = await setup(undefined, undefined, [], null, () => {
+    throw new Error("host offline");
+  });
+  stubWorkspaces(harness);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { patch },
+  });
+  await harness.lifecycle.dispose();
+});
+
+const command = {
+  ...message,
+  id: "command-2",
+  kind: "work",
+  workKind: "command",
+} as unknown as Row;
+
+test("others' changes alone keep a turn that ran commands, not a chat-only reply", async () => {
+  const onlyOthers = () => ({
+    snapshot: { root: "/ws/dotfiles", patch: "", otherPatch: otherPatchText, limited: false },
+  });
+  const ran = await setup([started, completed], [command, message], [], null, onlyOthers);
+  stubWorkspaces(ran.harness);
+  expect(await ran.harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "turn-2", patch: null, otherPatch: otherPatchText, changes: [] },
+  });
+  await ran.harness.lifecycle.dispose();
+
+  const chat = await setup([started, completed], [message], [], null, onlyOthers);
+  stubWorkspaces(chat.harness);
+  expect(await chat.harness.callRpc("latestTurn", { threadId: "thread-1" })).toEqual({
+    turn: null,
+  });
+  await chat.harness.lifecycle.dispose();
+});
+
+test("edits reported under the resolved environment path stay in this workspace", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [absoluteEdit("/private/ws/dotfiles/src/b.ts", "resolved"), message],
+    [],
+    null,
+    () => ({
+      snapshot: {
+        root: "/private/ws/dotfiles",
+        patch: snapshotPatchText,
+        otherPatch: null,
+        limited: false,
+      },
+    }),
+  );
+  stubWorkspaces(harness);
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  // Nothing is appended as a foreign workspace: the snapshot already covers it.
+  expect(result.turn?.changes).toEqual([]);
+  await harness.lifecycle.dispose();
+});
+
+const readyEnvironment = { status: "ready", hostId: "h", path: "/ws/dotfiles" };
+
+test("the dispatch hook baselines the checkout before a turn starts and always proceeds", async () => {
+  const calls: ExperimentalFakeHostRpcCall[] = [];
+  const { harness } = await setup(undefined, undefined, [], null, (call) => {
+    calls.push(call);
+    if (calls.length > 1) throw new Error("host offline");
+    return { captured: true };
+  });
+  const hook = harness.registrations.hooks["message.dispatch"]!;
+  const dispatch = (attempt: "start-turn" | "join-turn") =>
+    hook(
+      makeMessageDispatchHookContext({
+        attempt,
+        environment: readyEnvironment as never,
+        thread: { id: "thread-1" } as never,
+      }),
+    );
+  expect(await dispatch("start-turn")).toEqual({ action: "proceed" });
+  expect(await dispatch("join-turn")).toEqual({ action: "proceed" });
+  expect(await dispatch("start-turn")).toEqual({ action: "proceed" });
+  expect(calls.map((call) => [call.method, (call.input as { kind: string }).kind])).toEqual([
+    ["capture", "start"],
+    ["capture", "start"],
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("finishing a turn captures the checkout before announcing the change", async () => {
+  const order: string[] = [];
+  const { harness } = await setup(undefined, undefined, [], null, (call) => {
+    order.push(`${call.method}:${(call.input as { kind?: string }).kind}`);
+    return { captured: true };
+  });
+  stubWorkspaces(harness);
+  const thread = { id: "thread-1", environmentId: "env-1" } as never;
+  await harness.behavior.emitThreadEvent("thread.active", { thread });
+  await harness.behavior.emitThreadEvent("thread.idle", { thread, lastAssistantText: null });
+  await harness.behavior.emitThreadEvent("thread.deleted", { thread });
+  expect(order).toEqual(["capture:start", "capture:end", "forget:undefined"]);
+  expect(harness.realtimeSignals.map((signal) => signal.channel)).toEqual([
+    "latest-turn-changed",
+    "latest-turn-changed",
+    "latest-turn-changed",
+  ]);
   await harness.lifecycle.dispose();
 });

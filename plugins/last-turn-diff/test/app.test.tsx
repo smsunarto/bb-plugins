@@ -195,3 +195,32 @@ test("a missing or virtualized target does not attach a diff to another message"
   dispose();
   host.remove();
 });
+
+test("other agents' changes are labeled and left out of the totals", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML =
+    '<div data-timeline-row-id="message-1"><div data-message-column><p>Answer.</p></div></div>';
+  document.body.append(host);
+  const turn: LatestTurn = {
+    ...first,
+    changes: [],
+    otherPatch:
+      "diff --git a/b.ts b/b.ts\n--- a/b.ts\n+++ b/b.ts\n@@ -1 +1,2 @@\n b\n+from agent B\n",
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-1", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).not.toBeNull());
+    const card = within(host.querySelector<HTMLElement>("[data-last-turn-id]")!);
+    expect(card.getByRole("heading", { name: "Other agents in this checkout" })).toBeTruthy();
+    expect(card.getByText("0 files changed")).toBeTruthy();
+    expect(card.getByText("+0")).toBeTruthy();
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});

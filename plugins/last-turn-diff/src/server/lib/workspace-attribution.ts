@@ -55,7 +55,7 @@ function projectSources(projects: Project[], hostId: string | undefined): Source
     .sort((a, b) => b.root.length - a.root.length);
 }
 
-function isFileChangeRow(row: TurnRow): row is FileChangeRow {
+export function isFileChangeRow(row: TurnRow): row is FileChangeRow {
   return (
     row.kind === "work" &&
     row.workKind === "file-change" &&
@@ -111,6 +111,8 @@ export async function attributeWorkspaces(
   threadId: string,
   turn: LatestTurn,
   rows: TurnRow[],
+  /** The environment path with symlinks resolved, which providers may report instead. */
+  resolvedRoot?: string,
 ): Promise<LatestTurn> {
   try {
     const thread = await bb.sdk.threads.get({ threadId });
@@ -132,7 +134,9 @@ export async function attributeWorkspaces(
           ? join(root, path)
           : null;
       if (absolute === null) return {};
-      const local = root === null ? null : under(root, absolute);
+      const local =
+        (root === null ? null : under(root, absolute)) ??
+        (resolvedRoot === undefined ? null : under(resolvedRoot, absolute));
       if (local !== null) return local ? { relPath: local } : {};
       const foreign = sources.find((source) => under(source.root, absolute) !== null);
       if (foreign) return { workspace: foreign.label, relPath: under(foreign.root, absolute)! };

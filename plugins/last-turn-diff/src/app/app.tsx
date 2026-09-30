@@ -21,12 +21,22 @@ type WorkspaceGroup = { key: string; label: string; changes: Change[] };
 
 /**
  * Group changes by owning workspace: the thread's own first, foreign
- * workspaces after in the order their changes appeared.
+ * workspaces after in the order their changes appeared, and changes other
+ * agents made in this checkout during the turn last.
  */
 function groupByWorkspace(changes: Change[], ownLabel: string | undefined): WorkspaceGroup[] {
   const own: WorkspaceGroup = { key: "", label: ownLabel ?? "This workspace", changes: [] };
+  const others: WorkspaceGroup = {
+    key: "other",
+    label: "Other agents in this checkout",
+    changes: [],
+  };
   const foreign = new Map<string, WorkspaceGroup>();
   for (const change of changes) {
+    if (change.other) {
+      others.changes.push(change);
+      continue;
+    }
     if (change.workspace === undefined) {
       own.changes.push(change);
       continue;
@@ -38,7 +48,7 @@ function groupByWorkspace(changes: Change[], ownLabel: string | undefined): Work
     }
     group.changes.push(change);
   }
-  return [own, ...foreign.values()].filter((group) => group.changes.length > 0);
+  return [own, ...foreign.values(), others].filter((group) => group.changes.length > 0);
 }
 
 function TurnDiff({ turn }: { turn: LatestTurn }) {
@@ -51,9 +61,11 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const hasExpanded = changes.some((change) => expanded.has(change.id));
   if (changes.length === 0 && !turn.limited) return null;
-  const fileCount = new Set(changes.map((change) => change.path)).size;
-  const added = changes.reduce((total, change) => total + change.added, 0);
-  const removed = changes.reduce((total, change) => total + change.removed, 0);
+  // Totals describe this turn; other agents' changes are listed but not counted.
+  const own = changes.filter((change) => !change.other);
+  const fileCount = new Set(own.map((change) => change.path)).size;
+  const added = own.reduce((total, change) => total + change.added, 0);
+  const removed = own.reduce((total, change) => total + change.removed, 0);
   return (
     <section
       className="last-turn-diff"
@@ -84,7 +96,8 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
       ) : null}
       {groups.map((group) => (
         <section className="last-turn-diff-workspace" key={group.key || "own"}>
-          {groups.length > 1 ? (
+          {/* Others' changes are always labeled so they never read as this turn's. */}
+          {groups.length > 1 || group.key === "other" ? (
             <h3 className="last-turn-diff-workspace-label" title={group.label}>
               {group.label}
             </h3>
