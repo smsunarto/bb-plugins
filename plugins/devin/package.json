@@ -1,0 +1,77 @@
+{
+  "name": "@smsunarto/bb-plugin-devin",
+  "version": "0.1.0",
+  "description": "Devin as a bb provider, running on your machine or on a Devin Cloud VM.",
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "devin",
+    "cognition",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/devin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/devin"
+  },
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bb": ">=0.43.3 <1.0.0",
+    "bbPluginSdk": ">=0.4.104"
+  },
+  "bb": {
+    "name": "Devin",
+    "description": "Runs Devin threads in bb, locally or on a Devin Cloud VM",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "host": "./src/host/host.ts"
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.css",
+    "dist/*.json",
+    "assets/",
+    "src/",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.2.0",
+    "@tanstack/react-query": "^5.101.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.5.29",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx 'src/**/*.test.ts'",
+    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "clean": "rm -rf dist"
+  }
+}

@@ -20,6 +20,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { workspacePlugins } from "./plugin-package";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "../plugins/amp/src/amp-brand";
+import { DEVIN_LOGO_PATHS, DEVIN_LOGO_VIEW_BOX } from "../plugins/devin/src/shared/devin-brand";
 
 // Keyed by DIRECTORY under plugins/, which scripts/plugin-package.test.ts pins
 // to the plugin id bb derives from the package name. Anchored to the repo root
@@ -144,6 +145,12 @@ const customIcons = {
   amp: {
     name: "Amp (brand mark)",
     brand: { paths: AMP_LOGO_PATHS, viewBox: AMP_LOGO_VIEW_BOX },
+  },
+  // Devin's four-panel mark from Devin Desktop; `src/shared/devin-brand.ts`
+  // is the single source, shared with the plugin's composer surfaces.
+  devin: {
+    name: "Devin (brand mark)",
+    brand: { paths: DEVIN_LOGO_PATHS, viewBox: DEVIN_LOGO_VIEW_BOX },
   },
   cloudflare: {
     name: "CloudServer",

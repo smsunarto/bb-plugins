@@ -1,0 +1,113 @@
+/* Accents follow the theme's primary so the Cloud state tracks Monokai. */
+.devin-cloud-logo {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: 0 0 auto;
+}
+
+.devin-cloud-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: transparent;
+  padding: 0.12rem 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.devin-cloud-toggle:hover,
+.devin-cloud-toggle[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+
+.devin-cloud-toggle[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+.devin-cloud-toggle:focus-visible,
+.devin-cloud-copy:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.devin-cloud-toggle:disabled {
+  cursor: default;
+  background: transparent;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+/* The gate keeps this wrapper mounted as its DOM anchor while the button
+   unmounts; display:contents keeps it out of the action row's layout. */
+.devin-cloud-toggle-slot {
+  display: contents;
+}
+
+.devin-cloud-status {
+  display: inline-flex;
+  min-width: 4.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  padding: 0.12rem 0.42rem;
+  color: var(--primary);
+  font-size: 0.625rem;
+  font-weight: 650;
+  line-height: 1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.devin-cloud-status[data-state="starting"] {
+  border-color: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+  background: color-mix(in oklch, var(--muted-foreground) 8%, transparent);
+  color: var(--muted-foreground);
+}
+
+.devin-cloud-status-dot {
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.devin-cloud-status[data-state="starting"] .devin-cloud-status-dot {
+  animation: devin-cloud-pulse 1.2s ease-in-out infinite;
+}
+
+.devin-cloud-copy {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.devin-cloud-copy:hover {
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+
+@keyframes devin-cloud-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .devin-cloud-status[data-state="starting"] .devin-cloud-status-dot {
+    animation: none;
+  }
+}

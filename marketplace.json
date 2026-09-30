@@ -66,6 +66,26 @@
       }
     },
     {
+      "id": "devin",
+      "displayName": "Devin",
+      "description": "Runs Devin as a bb provider, on your machine or on a Devin Cloud VM, through the SDK's ACP bridge.",
+      "icon": {
+        "url": "plugins/devin/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/devin",
+          "range": "*",
+          "tagPrefix": "devin/"
+        }
+      }
+    },
+    {
       "id": "gh-stack",
       "displayName": "GitHub Stack",
       "description": "Visualize and drive stacked pull requests (gh stack) from BB threads.",

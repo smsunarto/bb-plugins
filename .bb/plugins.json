@@ -16,6 +16,10 @@
       "source": "./plugins/cloudflare"
     },
     {
+      "name": "devin",
+      "source": "./plugins/devin"
+    },
+    {
       "name": "dotfiles",
       "source": "./plugins/dotfiles"
     },
