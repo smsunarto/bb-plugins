@@ -40,6 +40,15 @@ copyable `devin --cloud -r <session>` command to attach from a terminal.
 A Cloud thread's first prompt tells Devin which repository the bb project has
 open, so Devin clones it on its VM. Projects without a git remote send nothing.
 
+### Models
+
+Devin lists its models in no particular order, so the plugin orders the
+picker: Fusion pairs whose primary is the latest Astra or the latest Sol,
+then the latest Astra, Fable, Sol, Opus, and SWE, then the remaining models
+grouped by vendor (Anthropic, OpenAI, others) from largest to smallest and
+newest to oldest. Fusion pairs with any other primary sit under **More
+models**.
+
 ### Permissions
 
 - **Full** approves every Devin tool request.
