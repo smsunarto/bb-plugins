@@ -1,0 +1,4 @@
+interface:
+  display_name: "BB plugin performance"
+  short_description: "Measure and reduce BB plugin interaction costs"
+  default_prompt: "Use $bb-plugin-performance to investigate this plugin slowdown, identify its cause, and verify the affected interaction."

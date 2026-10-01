@@ -38,6 +38,8 @@ When you add, rename, or remove a catalog plugin, update both files in the same 
 
 Read `.agents/skills/verify-bb-plugins`
 
+For plugin UI performance investigations, read `.agents/skills/bb-plugin-performance/SKILL.md`.
+
 #### Agent-driven testing
 
 - Prepare plugin development with `bun run dev:instance`. Route one bb command with `bb-kit dev-instance exec --`.
