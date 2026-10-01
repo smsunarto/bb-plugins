@@ -44,6 +44,10 @@
       "source": "./plugins/my-stack"
     },
     {
+      "name": "pool-bar",
+      "source": "./plugins/pool-bar"
+    },
+    {
       "name": "traces",
       "source": "./plugins/traces"
     },

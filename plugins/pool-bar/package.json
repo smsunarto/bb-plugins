@@ -1,0 +1,60 @@
+{
+  "name": "@smsunarto/bb-plugin-pool-bar",
+  "version": "0.1.0",
+  "description": "CodexBar-style macOS menu bar meters for Account Pooler quota.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/pool-bar",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/pool-bar"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.44.0 <1.0.0",
+    "bbPluginSdk": ">=0.5.29"
+  },
+  "bb": {
+    "name": "Pool Bar",
+    "description": "Shows each Account Pooler account's session and weekly quota in the macOS menu bar, laid out like CodexBar.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./src/server/server.ts"
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "native/",
+    "assets/",
+    "README.md",
+    "LICENSE",
+    "src/server/"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.5.29",
+    "@types/node": "^22.0.0",
+    "bun-types": "^1.4.0",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout=30000",
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
+    "clean": "rm -rf dist"
+  }
+}

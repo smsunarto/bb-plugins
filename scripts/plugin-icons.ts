@@ -7,6 +7,7 @@ import {
   ArtboardIcon,
   ChatFeedbackIcon,
   CloudServerIcon,
+  DashboardSpeed02Icon,
   Doc01Icon,
   KeyboardIcon,
   GitBranchIcon,
@@ -161,6 +162,10 @@ const customIcons = {
   gitbutler: {
     name: "GitBranch",
     nodes: GitBranchIcon,
+  },
+  "pool-bar": {
+    name: "DashboardSpeed",
+    nodes: DashboardSpeed02Icon,
   },
   traces: {
     name: "Activity",
