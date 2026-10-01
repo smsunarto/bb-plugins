@@ -9,6 +9,12 @@ import {
   USAGE_LIST_METHOD,
 } from "./builtin.ts";
 import { localClaude, localCodex, poolToken } from "./credentials.ts";
+import {
+  type ClaudeWebReader,
+  createClaudeWebReader,
+  normalizeEmail,
+  withClaudeWeb,
+} from "./claude-web.ts";
 import { type AccountExtras, claudeExtras, codexExtras, NO_EXTRAS } from "./extras.ts";
 import { accountListSchema, type MenuAccount, type MenuProvider, poolProviders } from "./pool.ts";
 
@@ -18,10 +24,45 @@ export const POOL_PLUGIN_ID = "account-pool";
 export interface Source {
   kind: "pool" | "builtin";
   providers: MenuProvider[];
-  extras(provider: MenuProvider["id"], accountId: string): Promise<AccountExtras>;
+  extras(
+    provider: MenuProvider["id"],
+    accountId: string,
+    refresh?: boolean,
+  ): Promise<AccountExtras>;
 }
 
-type Collected = { provider: MenuProvider["id"]; account: MenuAccount; accountKey: string | null };
+type Collected = {
+  provider: MenuProvider["id"];
+  account: MenuAccount;
+  accountKey: string | null;
+  email: string | null;
+};
+
+function webFallback(
+  source: Source,
+  accounts: { id: string; email: string | null }[],
+  readWeb: ClaudeWebReader,
+  signal: AbortSignal,
+): Source {
+  // An extras fan-out may finish its OAuth calls at different times. Share one web
+  // observation for this source even when an explicit refresh bypasses the service cache.
+  let web: ReturnType<ClaudeWebReader> | null = null;
+  return {
+    ...source,
+    async extras(provider, accountId, refresh = false) {
+      const extras = await source.extras(provider, accountId);
+      if (provider !== "claude" || extras.resetCredits !== null) return extras;
+      const email = normalizeEmail(accounts.find((account) => account.id === accountId)?.email);
+      if (
+        !email ||
+        accounts.filter((account) => normalizeEmail(account.email) === email).length !== 1
+      )
+        return extras;
+      web ??= readWeb(signal, refresh);
+      return withClaudeWeb(extras, accountId, accounts, await web);
+    },
+  };
+}
 
 const BUILTIN_MS = 5 * 60_000;
 type UsageCache = Map<
@@ -32,7 +73,11 @@ type UsageCache = Map<
 type PluginSources = Awaited<ReturnType<BbPluginApi["sdk"]["plugins"]["experimental_discoverRpc"]>>;
 
 /** Account Pooler's accounts, or null when it holds none. */
-async function poolSource(bb: BbPluginApi, signal: AbortSignal): Promise<Source | null> {
+async function poolSource(
+  bb: BbPluginApi,
+  signal: AbortSignal,
+  readWeb: ClaudeWebReader,
+): Promise<Source | null> {
   const accounts = await bb.sdk.plugins.callRpc({
     pluginId: POOL_PLUGIN_ID,
     method: "account.list",
@@ -43,17 +88,22 @@ async function poolSource(bb: BbPluginApi, signal: AbortSignal): Promise<Source 
   if (accounts.length === 0) return null;
   const dataDir = bb.server.experimental_dataDir;
   const codexIds = new Map(accounts.map((account) => [account.id, account.codexAccountId]));
-  return {
-    kind: "pool",
-    providers: poolProviders(accounts),
-    async extras(provider, accountId) {
-      const token = await poolToken(dataDir, accountId);
-      if (token === null) return NO_EXTRAS;
-      return provider === "codex"
-        ? codexExtras(token, codexIds.get(accountId) ?? null)
-        : claudeExtras(token);
+  return webFallback(
+    {
+      kind: "pool",
+      providers: poolProviders(accounts),
+      async extras(provider, accountId) {
+        const token = await poolToken(dataDir, accountId);
+        if (token === null) return NO_EXTRAS;
+        return provider === "codex"
+          ? codexExtras(token, codexIds.get(accountId) ?? null)
+          : claudeExtras(token);
+      },
     },
-  };
+    accounts.filter((account) => account.provider === "claude"),
+    readWeb,
+    signal,
+  );
 }
 
 /** One built-in source's accounts on this Mac. */
@@ -98,6 +148,10 @@ async function collect(
         provider,
         account,
         accountKey: measurement.usage.status === "ok" ? measurement.accountKey : null,
+        email:
+          measurement.usage.status === "ok" && measurement.accountKey
+            ? (measurement.usage.accountEmail ?? null)
+            : null,
       });
   }
   return collected;
@@ -121,6 +175,7 @@ async function builtinSource(
   signal: AbortSignal,
   refresh: boolean,
   cache: UsageCache,
+  readWeb: ClaudeWebReader,
 ): Promise<Source> {
   const { primaryHostId } = await bb.sdk.system.config();
   const collected: Collected[] = [];
@@ -146,11 +201,18 @@ async function builtinSource(
   const identities = new Map(
     collected.map(({ account, accountKey }) => [account.id, accountKey] as const),
   );
-  return {
-    kind: "builtin",
-    providers,
-    extras: (provider, accountId) => localExtras(provider, identities.get(accountId)),
-  };
+  return webFallback(
+    {
+      kind: "builtin",
+      providers,
+      extras: (provider, accountId) => localExtras(provider, identities.get(accountId)),
+    },
+    collected
+      .filter((entry) => entry.provider === "claude")
+      .map(({ account, email }) => ({ id: account.id, email })),
+    readWeb,
+    signal,
+  );
 }
 
 /**
@@ -163,17 +225,21 @@ async function readSource(
   signal: AbortSignal,
   refresh: boolean,
   cache: UsageCache,
+  readWeb: ClaudeWebReader,
 ): Promise<Source> {
   const sources = await bb.sdk.plugins.experimental_discoverRpc({ method: USAGE_LIST_METHOD });
   if (sources.some((source) => source.pluginId === POOL_PLUGIN_ID)) {
-    const pool = await poolSource(bb, signal);
+    const pool = await poolSource(bb, signal, readWeb);
     if (pool !== null) return pool;
   }
-  return builtinSource(bb, sources, signal, refresh, cache);
+  return builtinSource(bb, sources, signal, refresh, cache, readWeb);
 }
 
 /** The service owns one cache, including failed collections, to avoid keychain prompt storms. */
-export function createSourceReader(bb: BbPluginApi) {
+export function createSourceReader(
+  bb: BbPluginApi,
+  readWeb: ClaudeWebReader = createClaudeWebReader(),
+) {
   const cache: UsageCache = new Map();
-  return (signal: AbortSignal, refresh: boolean) => readSource(bb, signal, refresh, cache);
+  return (signal: AbortSignal, refresh: boolean) => readSource(bb, signal, refresh, cache, readWeb);
 }

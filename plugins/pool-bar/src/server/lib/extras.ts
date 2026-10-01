@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { WebResetCredits } from "./claude-web.ts";
 
 /**
  * Quota extras bb does not model: limit reset credits for both providers, Codex's
@@ -22,6 +23,7 @@ export interface AccountExtras {
   resetCredits: ResetCredits | null;
   extraUsage: ExtraUsage | null;
   resetNotice?: string | null;
+  webResetCredits?: WebResetCredits | null;
 }
 
 export const NO_EXTRAS: AccountExtras = { resetCredits: null, extraUsage: null };

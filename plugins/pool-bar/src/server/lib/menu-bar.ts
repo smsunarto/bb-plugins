@@ -91,12 +91,29 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
   let source: Source | null = null;
   let extrasAt = 0;
   let extrasRunning = false;
+  const identities = (value: Source | null) =>
+    JSON.stringify(
+      value?.providers.map((provider) => ({
+        id: provider.id,
+        accounts: provider.accounts.map((account) => ({
+          id: account.id,
+          identity: account.identity,
+        })),
+      })),
+    );
   const attachExtras = () => {
     last = {
       ...last,
       providers: last.providers.map((provider) => ({
         ...provider,
-        accounts: provider.accounts.map((account) => ({ ...account, ...extras.get(account.id) })),
+        accounts: provider.accounts.map((account) => ({
+          ...account,
+          resetCredits: null,
+          extraUsage: null,
+          resetNotice: null,
+          webResetCredits: null,
+          ...extras.get(account.id),
+        })),
       })),
     };
   };
@@ -105,6 +122,7 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
     extrasRunning = true;
     extrasAt = Date.now();
     const current = source;
+    const identity = identities(current);
     try {
       // allSettled: a rejection here would escape the detached call and crash the service.
       await Promise.allSettled(
@@ -112,7 +130,9 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
           provider.accounts
             .filter((account) => account.status !== "disabled")
             .map(async (account) => {
-              extras.set(account.id, await current.extras(provider.id, account.id));
+              const result = await current.extras(provider.id, account.id, force);
+              if (!signal.aborted && identity === identities(source))
+                extras.set(account.id, result);
             }),
         ),
       );
@@ -130,17 +150,10 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
     try {
       const next = await readSource(signal, refresh);
       if (signal.aborted || version !== publication) return;
-      const ids = next.providers.flatMap((provider) =>
-        provider.accounts.map((account) => account.id),
-      );
-      if (
-        JSON.stringify(ids) !==
-        JSON.stringify(
-          source?.providers.flatMap((provider) => provider.accounts.map((account) => account.id)),
-        )
-      )
+      if (identities(next) !== identities(source)) {
         extrasAt = 0;
-      for (const key of extras.keys()) if (!ids.includes(key)) extras.delete(key);
+        extras.clear();
+      }
       source = next;
       last = { providers: source.providers, error: null };
       attachExtras();

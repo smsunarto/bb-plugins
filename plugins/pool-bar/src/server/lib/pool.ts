@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ExtraUsage, ResetCredits } from "./extras.ts";
+import type { WebResetCredits } from "./claude-web.ts";
 
 /**
  * The slice of Account Pooler's `AccountSummary` (bb `plugins/account-pool/src/contracts.ts`)
@@ -67,6 +68,7 @@ export interface MenuAccount {
   resetCredits?: ResetCredits | null;
   extraUsage?: ExtraUsage | null;
   resetNotice?: string | null;
+  webResetCredits?: WebResetCredits | null;
 }
 
 export interface MenuProvider {

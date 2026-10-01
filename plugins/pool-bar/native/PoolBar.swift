@@ -41,6 +41,17 @@ struct Account: Decodable {
     let resetCredits: ResetCredits?
     let extraUsage: ExtraUsage?
     let resetNotice: String?
+    let webResetCredits: WebResetCredits?
+}
+
+struct WebResetCredits: Decodable {
+    let count: Int
+    let expiry: String?
+    let freshUntil: Double
+
+    func isFresh(at now: Date) -> Bool {
+        count > 0 && count <= 50 && freshUntil > now.timeIntervalSince1970 * 1000
+    }
 }
 
 struct ResetCredits: Decodable {
@@ -353,6 +364,24 @@ struct ResetCreditsRow: View {
     }
 }
 
+struct WebResetCreditsRow: View {
+    let credits: WebResetCredits
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Limit Reset Credits").font(.body).fontWeight(.medium)
+            Text("\(credits.count) available").font(.footnote.weight(.semibold))
+            if let expiry = credits.expiry {
+                Label(expiry, systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// CodexBar's ProviderCostContent: an inline balance, or spend against a cap with a bar.
 struct ExtraUsageRow: View {
     let usage: ExtraUsage
@@ -428,7 +457,8 @@ struct AccountCard: View {
                 }
             }
             let availableResets = account.resetCredits?.available(at: store.now) ?? []
-            if !account.windows.isEmpty || !availableResets.isEmpty || account.resetNotice != nil {
+            let webResets = availableResets.isEmpty && account.webResetCredits?.isFresh(at: store.now) == true ? account.webResetCredits : nil
+            if !account.windows.isEmpty || !availableResets.isEmpty || webResets != nil || account.resetNotice != nil {
                 Divider().padding(.top, 6).padding(.bottom, 12)
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(account.windows.enumerated()), id: \.offset) { _, window in
@@ -438,7 +468,11 @@ struct AccountCard: View {
                         if !account.windows.isEmpty { Divider() }
                         ResetCreditsRow(credits: credits, now: store.now)
                     }
-                    if let notice = account.resetNotice {
+                    if let credits = webResets {
+                        if !account.windows.isEmpty { Divider() }
+                        WebResetCreditsRow(credits: credits)
+                    }
+                    if let notice = account.resetNotice, webResets == nil {
                         Link(notice, destination: URL(string: "https://claude.ai/settings/usage")!)
                             .font(.footnote)
                             .help("Claude Code does not expose full-reset inventory. Check the signed-in account in Claude.")
