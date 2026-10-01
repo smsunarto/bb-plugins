@@ -19,6 +19,26 @@ import { latestTurn } from "./rpc/latest-turn.ts";
 const DISPATCH_BUDGET_MS = 1_500;
 /** Thread statuses from which a dispatch starts a new turn. */
 const STARTABLE = new Set(["pending", "idle", "error"]);
+/**
+ * bb releases the dispatch lock before a warm turn turns active, so another
+ * pass for the thread can run in between. An unclaimed baseline this recent
+ * means two passes overlap, and neither can be tied to its turn.
+ */
+const OVERLAP_MS = 60_000;
+
+/** A proven baseline and the dispatch it was taken for. */
+interface Baseline extends Shot {
+  text: string;
+  rows: ReadonlySet<string>;
+}
+
+/** The hook's `input.text` for a queued row: its text blocks, newline-joined. */
+function entryText(content: readonly { type: string; text?: string }[]): string {
+  return content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
+}
 
 export default definePlugin({
   pluginId: "last-turn-diff",
@@ -40,9 +60,9 @@ export default definePlugin({
       return next;
     };
     /** A baseline a dispatch proved, waiting for its turn to begin. */
-    const pending = new Map<string, Shot>();
-    /** Whether each thread's current turn is open or its end is already pinned. */
-    const phase = new Map<string, "open" | "ended">();
+    const pending = new Map<string, Baseline>();
+    /** When each thread's current turn opened, or that its end is already pinned. */
+    const phase = new Map<string, { openedAt: number } | "ended">();
     const snap = (target: Target) => snapshotWorkspace(bb, target).catch(warn);
     const checkoutOf = (thread: { environmentId: string | null }) =>
       resolveTarget(bb, thread).catch(() => null);
@@ -59,7 +79,8 @@ export default definePlugin({
 
     // Baseline the checkout while the dispatch is held, so edits made between
     // turns by the user or other agents stay out of this turn.
-    bb.experimental_hooks.on("message.dispatch", async ({ attempt, thread, environment }) => {
+    bb.experimental_hooks.on("message.dispatch", async (context) => {
+      const { attempt, thread, environment } = context;
       if (
         attempt !== "start-turn" ||
         !STARTABLE.has(thread.status) ||
@@ -69,16 +90,27 @@ export default definePlugin({
         return { action: "proceed" };
       }
       const target = { hostId: environment.hostId, environmentPath: environment.path };
+      const began = Date.now();
       let held = true;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const baseline = enqueue(thread.id, async () => {
+        const prior = pending.get(thread.id);
         pending.delete(thread.id);
         const shot = await snap(target);
         if (!held || !shot) return; // The dispatch went ahead without it.
-        pending.set(thread.id, shot);
+        const current = phase.get(thread.id);
+        const opened = typeof current === "object" ? current.openedAt : null;
+        // Another admitted pass is still waiting for its turn, or a turn
+        // opened no earlier than this pass began. Drop both baselines.
+        if ((prior && shot.at - prior.finishedAt < OVERLAP_MS) || (opened ?? -1) >= began) return;
+        pending.set(thread.id, {
+          ...shot,
+          text: context.input.text,
+          rows: new Set(context.queuedMessages.map((entry) => entry.id)),
+        });
         // The previous turn is over, so this is also its end, and one proven
         // to precede the next turn, unlike a late thread.idle capture.
-        if (phase.get(thread.id) === "open") await finish(thread.id, target, shot);
+        if (opened !== null) await finish(thread.id, target, shot);
       });
       const budget = new Promise<void>((resolve) => {
         timer = setTimeout(() => {
@@ -91,11 +123,22 @@ export default definePlugin({
       return { action: "proceed" };
     });
 
-    // The pass queued the message instead: another plugin or core held it. A
-    // Send-now later skips the hook, so this baseline proves nothing.
+    // The baselined pass queued its message instead: another plugin or core
+    // held it. A Send-now later skips the hook, so the baseline proves nothing.
     bb.events.on("message.queued", ({ entry }) =>
       enqueue(entry.threadId, async () => {
-        pending.delete(entry.threadId);
+        const baseline = pending.get(entry.threadId);
+        if (baseline?.rows.has(entry.id) || baseline?.text === entryText(entry.content)) {
+          pending.delete(entry.threadId);
+        }
+      }),
+    );
+
+    // A row the baselined pass did not carry skipped the hook (Send-now): the
+    // baseline belongs to some other attempt.
+    bb.events.on("message.dispatched", ({ entry }) =>
+      enqueue(entry.threadId, async () => {
+        if (!pending.get(entry.threadId)?.rows.has(entry.id)) pending.delete(entry.threadId);
       }),
     );
 
@@ -103,15 +146,28 @@ export default definePlugin({
       await enqueue(thread.id, async () => {
         const baseline = pending.get(thread.id);
         pending.delete(thread.id);
-        phase.set(thread.id, "open");
+        phase.set(thread.id, { openedAt: Date.now() });
         const target = await checkoutOf(thread);
         if (!target) return;
         const shot = await snap(target);
+        const now = Date.now();
         const pins: Pin[] = [
-          ...(baseline ? [{ kind: "start" as const, ...baseline }] : []),
-          ...(shot ? [{ kind: "open" as const, ...shot }] : []),
+          ...(baseline
+            ? [
+                {
+                  kind: "start" as const,
+                  at: baseline.at,
+                  finishedAt: baseline.finishedAt,
+                  commit: baseline.commit,
+                },
+              ]
+            : []),
+          // Without a snapshot, still mark the thread as running for others.
+          shot
+            ? { kind: "open", ...shot }
+            : { kind: "run", at: now, finishedAt: now, commit: null },
         ];
-        if (pins.length > 0) await pinWorkspace(bb, target, thread.id, pins);
+        await pinWorkspace(bb, target, thread.id, pins);
       });
       publish(thread.id);
     });

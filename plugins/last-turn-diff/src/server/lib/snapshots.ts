@@ -1,11 +1,13 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
+  attributionSchema,
   snapshotHostContract,
   type Attribution,
   type Pin,
   type SnapshotPatch,
   type TurnWindow,
 } from "../../shared/host-contract.ts";
+import { z } from "zod";
 import type { TurnRow } from "./build-latest-turn.ts";
 import { isFileChangeRow } from "./workspace-attribution.ts";
 
@@ -108,8 +110,25 @@ async function remember(bb: BbPluginApi, threadId: string, key: string, value: A
   if (JSON.stringify(value).length > 200_000) return;
   await bb.storage.kv.set(key, value);
   const keys = (await bb.storage.kv.list(attributionPrefix(threadId))).sort();
-  for (const stale of keys.slice(0, -KEEP_ATTRIBUTIONS)) await bb.storage.kv.delete(stale);
+  // Re-saving an older card must not evict it again.
+  for (const stale of keys.slice(0, -KEEP_ATTRIBUTIONS)) {
+    if (stale !== key) await bb.storage.kv.delete(stale);
+  }
 }
+
+const pair = { start: z.string(), end: z.string() };
+/**
+ * Stored attributions, including older builds' shapes. Their files are still
+ * evidence once the other thread's captures are gone, so they are converted,
+ * not dropped. `foreign` was `contested` minus the turn's recorded edits.
+ */
+const storedAttribution = z.union([
+  attributionSchema,
+  z.object({ ...pair, contested: z.array(z.string()) }).transform((a) => ({ ...a, owned: [] })),
+  z
+    .object({ ...pair, foreign: z.array(z.string()) })
+    .transform(({ foreign, ...a }) => ({ ...a, contested: foreign, owned: [] })),
+]);
 
 /** The diff between the workspace captures bracketing a turn, when both exist. */
 export async function snapshotPatch(
@@ -120,7 +139,7 @@ export async function snapshotPatch(
   rows: TurnRow[],
 ): Promise<SnapshotPatch | null> {
   const key = attributionKey(threadId, window);
-  const known = await bb.storage.kv.get<Attribution>(key);
+  const known = storedAttribution.safeParse(await bb.storage.kv.get(key)).data;
   const { snapshot } = await client(bb).call(
     "turnPatch",
     {
@@ -132,9 +151,12 @@ export async function snapshotPatch(
     },
     { hostId: target.hostId },
   );
+  // Ownership can grow on later reads, so compare the whole answer. A turn
+  // with nothing to show is skipped, so it never evicts the card on screen.
   const fresh =
     snapshot &&
-    (known?.start !== snapshot.attribution.start || known.end !== snapshot.attribution.end);
+    (snapshot.patch !== "" || snapshot.attribution.contested.length > 0) &&
+    JSON.stringify(known) !== JSON.stringify(snapshot.attribution);
   if (fresh) await remember(bb, threadId, key, snapshot.attribution);
   return snapshot;
 }

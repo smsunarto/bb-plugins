@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   createFakePluginHost,
@@ -499,11 +499,12 @@ function snapshot(overrides: Record<string, unknown> = {}) {
   return {
     snapshot: {
       root: "/ws/dotfiles",
+      path: "/ws/dotfiles",
       patch: snapshotPatchText,
       otherPatch: null,
       limited: false,
       uncovered: [],
-      attribution: { start: "s", end: "e", contested: [] },
+      attribution: { start: "s", end: "e", contested: [], owned: [] },
       ...overrides,
     },
   };
@@ -659,6 +660,7 @@ async function lifecycle(fail?: (n: number) => "late" | "throw" | null) {
         attempt,
         environment: readyEnvironment as never,
         thread: { ...lifecycleThread, status } as never,
+        input: { blocks: [], text: "go" },
       }),
     );
   const thread = lifecycleThread as never;
@@ -698,20 +700,73 @@ test("a baseline that missed the dispatch budget is never pinned", async () => {
   await harness.lifecycle.dispose();
 });
 
+const row = (id: string, text: string) =>
+  ({ id, threadId: "thread-1", content: [{ type: "text", text }] }) as never;
+
 test("a baseline whose message was queued instead is never pinned", async () => {
-  const { harness, log, dispatch } = await lifecycle();
+  const { harness, log, dispatch, emit } = await lifecycle();
   await dispatch();
-  await harness.behavior.emitThreadEvent("message.queued", {
-    entry: { threadId: "thread-1" } as never,
-  });
-  await harness.behavior.emitThreadEvent("thread.active", { thread: lifecycleThread as never });
+  await harness.behavior.emitThreadEvent("message.queued", { entry: row("row-1", "go") });
+  await emit("thread.active");
   expect(log).toEqual(["snapshot:1", "snapshot:2", "pin:open@2"]);
+  await harness.lifecycle.dispose();
+});
+
+test("an unrelated follow-up queued before the turn opens keeps its baseline", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle();
+  await dispatch();
+  await harness.behavior.emitThreadEvent("message.queued", { entry: row("row-2", "later") });
+  await emit("thread.active");
+  expect(log).toEqual(["snapshot:1", "snapshot:2", "pin:start@1,open@2"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a Send-now that skipped the hook never claims another attempt's baseline", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle();
+  await dispatch(); // Then rejected by a later plugin: no event says so.
+  await harness.behavior.emitThreadEvent("message.dispatched", { entry: row("row-3", "now") });
+  await emit("thread.active");
+  expect(log).toEqual(["snapshot:1", "snapshot:2", "pin:open@2"]);
+  await harness.lifecycle.dispose();
+});
+
+test("overlapping passes before a warm turn opens drop both baselines", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle();
+  await dispatch();
+  await dispatch(); // bb released the lock; the first turn has not opened yet.
+  await emit("thread.active");
+  expect(log).toEqual(["snapshot:1", "snapshot:2", "snapshot:3", "pin:open@3"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a pass beginning the same millisecond its thread opens never ends that turn", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle();
+  const now = spyOn(Date, "now").mockReturnValue(1_000);
+  await dispatch();
+  const opening = emit("thread.active"); // Queued ahead of the second pass's snapshot.
+  await dispatch();
+  await opening;
+  now.mockRestore();
+  await emit("thread.idle");
+  expect(log.filter((entry) => entry.startsWith("pin"))).toEqual([
+    "pin:start@1,open@2",
+    "pin:end@4",
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("a failed open snapshot still marks the thread as running", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle((n) => (n === 2 ? "throw" : null));
+  await dispatch();
+  await emit("thread.active");
+  expect(log).toEqual(["snapshot:1", "pin:start@1,run@-"]);
   await harness.lifecycle.dispose();
 });
 
 test("a dispatch that beats thread.idle pins its baseline as the previous turn's end", async () => {
   const { harness, log, dispatch, emit } = await lifecycle();
   await emit("thread.active");
+  await new Promise((resolve) => setTimeout(resolve, 5)); // The turn runs.
   await dispatch();
   await emit("thread.idle");
   await emit("thread.active");
@@ -771,7 +826,7 @@ test("an empty snapshot hides reverted edits but keeps edits it cannot see", asy
 
 test("a remembered attribution, even an empty one, is sent back so a card never reshuffles", async () => {
   const inputs: unknown[] = [];
-  const attribution = { start: "s", end: "e", contested: [] };
+  const attribution = { start: "s", end: "e", contested: [], owned: [] };
   const { harness } = await setup([started, completed], [message], [], null, (call) => {
     inputs.push((call.input as { known?: unknown }).known);
     return snapshot({ otherPatch: otherPatchText, attribution });
@@ -780,6 +835,25 @@ test("a remembered attribution, even an empty one, is sent back so a card never 
   await harness.callRpc("latestTurn", { threadId: "thread-1" });
   await harness.callRpc("latestTurn", { threadId: "thread-1" });
   expect(inputs).toEqual([undefined, attribution]);
+  await harness.lifecycle.dispose();
+});
+
+test("a remembered attribution in an older shape is converted, keeping its evidence", async () => {
+  const inputs: unknown[] = [];
+  const { harness, bb } = await setup([started, completed], [message], [], null, (call) => {
+    inputs.push((call.input as { known?: unknown }).known);
+    return snapshot({ otherPatch: otherPatchText });
+  });
+  await bb.storage.kv.set("attribution:thread-1:000000000000001", {
+    start: "s",
+    end: "e",
+    foreign: ["vendor.txt"],
+  });
+  stubWorkspaces(harness);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { otherPatch: otherPatchText },
+  });
+  expect(inputs).toEqual([{ start: "s", end: "e", contested: ["vendor.txt"], owned: [] }]);
   await harness.lifecycle.dispose();
 });
 

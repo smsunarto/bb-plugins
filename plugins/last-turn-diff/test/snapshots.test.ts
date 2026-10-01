@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { forget, pin, snapshot, turnPatch } from "../src/host/snapshots.ts";
+import { forget, pin, preview, snapshot, turnPatch } from "../src/host/snapshots.ts";
+import { turnChanges } from "../src/shared/patches.ts";
 import type { CaptureKind, TurnWindow } from "../src/shared/host-contract.ts";
 
 const signal = new AbortController().signal;
@@ -271,6 +272,156 @@ test("an oversized patch is reported as limited instead of failing", async () =>
   expect(await diff(dir, "thr_a", turn(2, 2.5))).toMatchObject({ patch: null, limited: true });
 });
 
+test("another agent's oversized edits never hide or limit this turn's patch", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 0.9, "start");
+  await snap(dir, "thr_a", 1, "open");
+  await snap(dir, "thr_b", 1.9, "start");
+  await snap(dir, "thr_b", 2, "open");
+  writeFileSync(join(dir, "a.ts"), "a from agent A\n");
+  writeFileSync(join(dir, "b.ts"), "b from agent B\n");
+  writeFileSync(join(dir, "vendor.txt"), "line of vendored text\n".repeat(80_000));
+  await snap(dir, "thr_b", 3, "end");
+  await snap(dir, "thr_a", 4, "end");
+
+  const a = await diff(dir, "thr_a", turn(1.5, 3.5), [join(dir, "a.ts")]);
+  expect(files(a?.patch)).toEqual(["a.ts"]);
+  // Others' files that fit stay whole; an oversized one is listed by name only.
+  expect(files(a?.otherPatch)).toEqual(["b.ts", "vendor.txt"]);
+  expect(a?.otherPatch).toContain("+b from agent B");
+  expect(a?.otherPatch).not.toContain("line of vendored text");
+  expect(a?.limited).toBe(false);
+});
+
+/** Agent A edits `a.ts` while agent B runs, and `write` makes B's changes. */
+async function overlapping(dir: string, write: () => void) {
+  await snap(dir, "thr_a", 0.9, "start");
+  await snap(dir, "thr_a", 1, "open");
+  await snap(dir, "thr_b", 1.9, "start");
+  await snap(dir, "thr_b", 2, "open");
+  writeFileSync(join(dir, "a.ts"), "a from agent A\n");
+  write();
+  await snap(dir, "thr_b", 3, "end");
+  await snap(dir, "thr_a", 4, "end");
+  return diff(dir, "thr_a", turn(1.5, 3.5), [join(dir, "a.ts")]);
+}
+
+test("others' diff past every read limit still leaves this turn's patch whole", async () => {
+  const dir = repo();
+  const a = await overlapping(dir, () => {
+    writeFileSync(join(dir, "vendor.txt"), "line of vendored text\n".repeat(1_600_000));
+    writeFileSync(join(dir, "a b.txt"), "spaced\n");
+    writeFileSync(join(dir, 'q"uote\nline.txt'), "quoted\n");
+  });
+  expect(files(a?.patch)).toEqual(["a.ts"]);
+  // Too large to read at all: listed by name, as the app parses them.
+  const others = turnChanges({
+    turnId: "t",
+    anchorId: null,
+    changes: [],
+    limited: false,
+    patch: "",
+    otherPatch: a!.otherPatch!,
+  });
+  expect(others.map((change) => change.path)).toEqual([
+    "a b.txt",
+    'q"uote\nline.txt',
+    "vendor.txt",
+  ]);
+  expect(a?.limited).toBe(false);
+}, 30_000);
+
+test("this turn's file inside a directory another agent replaced stays in its patch", async () => {
+  const dir = repo();
+  writeFileSync(join(dir, "node"), "a file before the turn\n");
+  sh(dir, "add", "node");
+  sh(dir, "commit", "-qm", "node");
+  await overlapping(dir, () => {
+    rmSync(join(dir, "node"));
+    mkdirSync(join(dir, "node"));
+    writeFileSync(join(dir, "node/child"), "written by agent A\n");
+  });
+  // A's provider recorded node/child; B's removal of the file is contested.
+  const a = await diff(dir, "thr_a", turn(1.5, 3.5), [join(dir, "a.ts"), join(dir, "node/child")]);
+  expect(files(a?.patch)).toContain("node/child");
+  expect(a?.patch).toContain("+written by agent A");
+});
+
+test("this turn's change to a non-UTF-8 filename stays in its patch", async () => {
+  const dir = repo();
+  // macOS refuses such names on disk, so build the captures from Git objects.
+  const blob = (text: string) =>
+    execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, input: text })
+      .toString()
+      .trim();
+  const commit = (entries: [string, Buffer][]) => {
+    const tree = execFileSync("git", ["mktree", "-z"], {
+      cwd: dir,
+      input: Buffer.concat(
+        entries.map(([id, name]) =>
+          Buffer.concat([Buffer.from(`100644 blob ${id}\t`), name, Buffer.from([0])]),
+        ),
+      ),
+    })
+      .toString()
+      .trim();
+    return sh(dir, "commit-tree", tree, "-m", "capture").trim();
+  };
+  const odd = Buffer.from([0x66, 0xff]);
+  const b = (text: string): [string, Buffer] => [blob(text), Buffer.from("b.ts")];
+  const before = commit([[blob("odd\n"), odd], b("b\n")]);
+  const removed = commit([b("b\n")]);
+  const after = commit([b("b from agent B\n")]);
+  const at = (t: number) => ({ at: T(t), finishedAt: T(t) + 1 });
+  await pin(
+    dir,
+    "thr_a",
+    [
+      { kind: "start", ...at(0.9), commit: before },
+      { kind: "open", ...at(1), commit: before },
+    ],
+    signal,
+  );
+  await pin(
+    dir,
+    "thr_b",
+    [
+      { kind: "start", ...at(1.9), commit: removed },
+      { kind: "open", ...at(2), commit: removed },
+      { kind: "end", ...at(3), commit: after },
+    ],
+    signal,
+  );
+  await pin(dir, "thr_a", [{ kind: "end", ...at(4), commit: after }], signal);
+
+  const a = await diff(dir, "thr_a", turn(1.5, 3.5));
+  expect(a?.patch).toContain("deleted file mode 100644");
+  expect(files(a?.patch)).not.toContain("b.ts");
+  expect(files(a?.otherPatch)).toEqual(["b.ts"]);
+});
+
+test("a file replaced by a symlink keeps both sides of the split", async () => {
+  const dir = repo();
+  const a = await overlapping(dir, () => {
+    rmSync(join(dir, "b.ts"));
+    symlinkSync("a.ts", join(dir, "b.ts"));
+    writeFileSync(join(dir, "vendor.txt"), "line of vendored text\n".repeat(80_000));
+  });
+  expect(files(a?.patch)).toEqual(["a.ts"]);
+  expect(files(a?.otherPatch)).toEqual(["b.ts", "b.ts", "vendor.txt"]);
+  expect(a?.limited).toBe(false);
+});
+
+test("a patch that only outgrows the limit once JSON-escaped is reported as limited", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  // 990 KB on disk, about 6 MB as JSON: each control character becomes \u0001.
+  writeFileSync(join(dir, "control.bin.txt"), "\x01".repeat(990_000));
+  await snap(dir, "thr_a", 3, "end");
+
+  expect(await diff(dir, "thr_a", turn(2, 2.5))).toMatchObject({ patch: null, limited: true });
+});
+
 test("submodule roots are reported as outside snapshot coverage", async () => {
   const dir = repo();
   const inner = repo();
@@ -330,4 +481,137 @@ test("captures are kept while recent or among a thread's latest, and forgotten w
   expect(refs(dir).map((ref) => ref.slice(-5))).toEqual(["start", "-gone"]);
   await forget(dir, "thr_a", T(later * 2), signal);
   expect(refs(dir)).toEqual([]);
+}, 15_000);
+
+test("a proven pair stays proven after a Send-now turn leaves nothing to prove its end", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  writeFileSync(join(dir, "shell.ts"), "written by a shell command\n");
+  await snap(dir, "thr_a", 3, "end");
+  const first = await diff(dir, "thr_a", turn(2, 2.5));
+  expect(files(first?.patch)).toEqual(["shell.ts"]);
+
+  const later = turn(2, 2.5, { nextStartedAt: T(5) }); // No baseline for that turn.
+  expect(await diff(dir, "thr_a", later)).toBeNull();
+  const kept = await turnPatch(dir, "thr_a", later, [], first!.attribution, signal);
+  expect(files(kept?.patch)).toEqual(["shell.ts"]);
+});
+
+test("ownership a read once established survives a later read without recorded paths", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  await snap(dir, "thr_b", 2, "open");
+  writeFileSync(join(dir, "a.ts"), "a from agent A\n");
+  await snap(dir, "thr_b", 3, "end");
+  await snap(dir, "thr_a", 4, "end");
+  const window = turn(1.5, 3.5);
+  const recorded = await turnPatch(dir, "thr_a", window, ["a.ts"], undefined, signal);
+  expect(recorded?.attribution).toMatchObject({ contested: ["a.ts"], owned: ["a.ts"] });
+
+  const summaryFailed = await turnPatch(dir, "thr_a", window, [], recorded!.attribution, signal);
+  expect(files(summaryFailed?.patch)).toEqual(["a.ts"]);
+  expect(summaryFailed?.otherPatch).toBeNull();
+});
+
+test("another environment's files never collide with this environment's paths", async () => {
+  const dir = repo();
+  const web = join(dir, "packages/web");
+  const api = join(dir, "packages/api");
+  mkdirSync(join(web, "src"), { recursive: true });
+  mkdirSync(join(api, "src"), { recursive: true });
+  await snap(web, "thr_web", 1, "start");
+  await snap(api, "thr_api", 2, "open");
+  writeFileSync(join(web, "src/index.ts"), "web\n");
+  writeFileSync(join(api, "src/index.ts"), "api\n");
+  await snap(api, "thr_api", 3, "end");
+  await snap(web, "thr_web", 4, "end");
+
+  const result = await diff(web, "thr_web", turn(1.5, 3.5), [join(web, "src/index.ts")]);
+  expect(files(result?.patch)).toEqual(["src/index.ts"]);
+  expect(result?.otherPatch).toBeNull();
+});
+
+test("forgetting a thread keeps its stop marker, so it never looks mid-turn again", async () => {
+  const dir = repo();
+  await snap(dir, "thr_b", 0.5, "open");
+  await pin(dir, "thr_b", [{ kind: "stop", at: T(0.8), finishedAt: T(0.8), commit: null }], signal);
+  await snap(dir, "thr_a", 1, "start");
+  await forget(dir, "thr_b", T(1.5), signal);
+  writeFileSync(join(dir, "solo.ts"), "written while only A ran\n");
+  await snap(dir, "thr_a", 3, "end");
+
+  const result = await diff(dir, "thr_a", turn(1.2, 2.5));
+  expect(files(result?.patch)).toEqual(["solo.ts"]);
+  expect(result?.otherPatch).toBeNull();
+});
+
+test("a run marker keeps a thread whose open snapshot failed contesting the window", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  await snap(dir, "thr_b", 1.5, "start");
+  await pin(dir, "thr_b", [{ kind: "run", at: T(2), finishedAt: T(2), commit: null }], signal);
+  writeFileSync(join(dir, "b.ts"), "unrecorded write by B\n");
+  await snap(dir, "thr_a", 3, "end");
+
+  const result = await diff(dir, "thr_a", turn(1.2, 2.5));
+  expect(files(result?.otherPatch)).toEqual(["b.ts"]);
+});
+
+test("ignored recorded files stay uncovered beside a recorded submodule path", async () => {
+  const dir = repo();
+  const inner = repo();
+  sh(dir, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/inner");
+  sh(dir, "commit", "-qm", "add submodule");
+  await snap(dir, "thr_a", 1, "start");
+  writeFileSync(join(dir, "ignored.log"), "ignored\n");
+  writeFileSync(join(dir, "vendor/inner/a.ts"), "inside the submodule\n");
+  await snap(dir, "thr_a", 3, "end");
+
+  const recorded = [join(dir, "ignored.log"), join(dir, "vendor/inner/a.ts")];
+  const result = await diff(dir, "thr_a", turn(2, 2.5), recorded);
+  expect(result?.uncovered).toEqual(["vendor/inner", "ignored.log"]);
+});
+
+test("a submodule log setting never breaks splitting other agents' files out", async () => {
+  const dir = repo();
+  const inner = repo();
+  sh(dir, "-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/inner");
+  sh(dir, "commit", "-qm", "add submodule");
+  sh(dir, "config", "diff.submodule", "log");
+  await snap(dir, "thr_a", 1, "start");
+  await snap(dir, "thr_b", 2, "open");
+  writeFileSync(join(dir, "b.ts"), "b from agent B\n");
+  writeFileSync(join(inner, "c.ts"), "new submodule commit\n");
+  sh(inner, "add", "c.ts");
+  sh(inner, "commit", "-qm", "c");
+  sh(join(dir, "vendor/inner"), "-c", "protocol.file.allow=always", "pull", "-q", "origin", "main");
+  await snap(dir, "thr_b", 3, "end");
+  await snap(dir, "thr_a", 4, "end");
+
+  const result = await diff(dir, "thr_a", turn(1.5, 3.5), ["vendor/inner"]);
+  expect(files(result?.otherPatch)).toEqual(["b.ts"]);
+});
+
+test("a removed worktree's idle captures are swept; a live worktree keeps its latest", async () => {
+  const dir = repo();
+  const [linked, removed] = [`${dir}-linked`, `${dir}-removed`];
+  repos.push(linked, removed);
+  sh(dir, "worktree", "add", "-q", linked);
+  sh(dir, "worktree", "add", "-q", removed);
+  await snap(linked, "thr_live", 1, "end");
+  await snap(removed, "thr_old", 1, "end");
+  rmSync(removed, { recursive: true, force: true });
+  sh(dir, "worktree", "prune");
+  await snap(dir, "thr_a", 31 * 24 * 360, "start"); // Thirty-one days later.
+  const threads = refs(dir).map((ref) => ref.split("/").at(-2));
+  expect(threads.sort()).toEqual(["thr_a", "thr_live"]);
+});
+
+test("a preview past the limit keeps whole metadata-only changes and drops only hunks", () => {
+  const big = `diff --git a/big.txt b/big.txt\n--- a/big.txt\n+++ b/big.txt\n@@ -1 +1 @@\n-${"x".repeat(999_900)}\n+y\n`;
+  const mode = "diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n";
+  const huge = `diff --git a/huge.txt b/huge.txt\nindex 1..2 100644\n--- a/huge.txt\n+++ b/huge.txt\n@@ -1 +1 @@\n-${"z".repeat(2_000_000)}\n`;
+  expect(preview(big + mode + huge)).toBe(
+    `${big}${mode}diff --git a/huge.txt b/huge.txt\nindex 1..2 100644\n--- a/huge.txt\n+++ b/huge.txt\n`,
+  );
 });

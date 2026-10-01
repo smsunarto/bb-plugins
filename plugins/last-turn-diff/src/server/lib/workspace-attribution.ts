@@ -144,7 +144,7 @@ export async function workspaceAttributor(bb: BbPluginApi, threadId: string): Pr
   return (turn, rows, coverage) => {
     // Without the environment, only a snapshot's root tells local from foreign.
     if (!context && !coverage) return turn;
-    const root = context?.root ?? coverage?.root ?? null;
+    const root = context?.root ?? coverage?.roots[0] ?? null;
     const attribute: Attribute = (path) => {
       // Relative paths resolve against the env root so `../` escapes still
       // attribute correctly; without a root they can only be local.
@@ -154,10 +154,10 @@ export async function workspaceAttributor(bb: BbPluginApi, threadId: string): Pr
           ? join(root, path)
           : null;
       if (absolute === null) return {};
-      const local =
-        (root === null ? null : under(root, absolute)) ??
-        (coverage === undefined ? null : under(coverage.root, absolute));
-      if (local !== null) return local ? { relPath: local } : {};
+      const local = [...(root === null ? [] : [root]), ...(coverage?.roots ?? [])]
+        .map((candidate) => under(candidate, absolute))
+        .find((rest) => rest !== null);
+      if (local !== undefined) return local ? { relPath: local } : {};
       const foreign = sources.find((source) => under(source.root, absolute) !== null);
       if (foreign) return { workspace: foreign.label, relPath: under(foreign.root, absolute)! };
       return { workspace: lastSegment(parentDirectory(absolute)) };

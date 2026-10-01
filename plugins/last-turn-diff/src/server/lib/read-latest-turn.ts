@@ -14,8 +14,8 @@ const PAGE_SIZE = 20;
 const UNRECORDED_WRITERS = new Set(["command", "tool", "extension", "delegation", "workflow"]);
 
 export interface Coverage {
-  /** The environment path with symlinks resolved, as providers may report it. */
-  root: string;
+  /** The environment path as given and with symlinks resolved; providers report either. */
+  roots: string[];
   /** Environment-relative submodule roots the snapshot cannot see into. */
   uncovered: string[];
 }
@@ -137,7 +137,9 @@ async function readCandidate(
   // paths the snapshot cannot see.
   if (snapshot?.patch === "") built.patch = "";
   if (snapshot?.limited) built.limited = true;
-  const coverage = snapshot ? { root: snapshot.root, uncovered: snapshot.uncovered } : undefined;
+  const coverage = snapshot
+    ? { roots: [snapshot.path, snapshot.root], uncovered: snapshot.uncovered }
+    : undefined;
   const turn = attribute(built, details.rows, coverage);
   if (!addOthers(turn, snapshot, ownRows)) return null;
   return { turn, startedSeq: started.seq };
