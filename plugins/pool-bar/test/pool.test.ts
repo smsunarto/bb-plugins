@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type AccountSummary, accountListSchema, buildSnapshot } from "../src/server/lib/pool.ts";
+import { type AccountSummary, accountListSchema, poolProviders } from "../src/server/lib/pool.ts";
 
 const NO_FAMILIES = { fable: null, sonnet: null, opus: null, haiku: null, other: null };
 
@@ -53,7 +53,7 @@ test("parses the pool's account list and ignores fields it does not read", () =>
 });
 
 test("Codex windows read as Session then Weekly, skipping the empty header placeholder", () => {
-  const snapshot = buildSnapshot([
+  const providers = poolProviders([
     account({
       email: "me@example.com",
       subscriptionType: "team",
@@ -64,7 +64,7 @@ test("Codex windows read as Session then Weekly, skipping the empty header place
       ],
     }),
   ]);
-  expect(snapshot.providers).toEqual([
+  expect(providers).toEqual([
     {
       id: "codex",
       name: "Codex",
@@ -91,7 +91,7 @@ test("Codex windows read as Session then Weekly, skipping the empty header place
 });
 
 test("Claude shows session, weekly, and each model's weekly window with its Max tier", () => {
-  const [claude] = buildSnapshot([
+  const [claude] = poolProviders([
     account({
       provider: "claude",
       label: "Scott",
@@ -103,7 +103,7 @@ test("Claude shows session, weekly, and each model's weekly window with its Max 
       sevenDayResetAt: 200,
       familyWeekly: { ...NO_FAMILIES, fable: { utilization: 0.58, resetAt: 300 } },
     }),
-  ]).providers;
+  ]);
   expect(claude?.accounts[0]?.identity).toBe("Scott");
   expect(claude?.accounts[0]?.plan).toBe("Max 20x");
   expect(claude?.accounts[0]?.windows).toEqual([
@@ -114,14 +114,14 @@ test("Claude shows session, weekly, and each model's weekly window with its Max 
 });
 
 test("a Codex window of unknown length keeps its usage under its slot name", () => {
-  const [codex] = buildSnapshot([
+  const [codex] = poolProviders([
     account({
       limitWindows: [
         { slot: "secondary", windowMinutes: null, utilization: 0.85, resetAt: 9 },
         { slot: "primary", windowMinutes: 300, utilization: 0.1, resetAt: 1 },
       ],
     }),
-  ]).providers;
+  ]);
   expect(codex?.accounts[0]?.windows).toEqual([
     { label: "Session", usedPercent: 10, resetAt: 1, windowMinutes: 300 },
     { label: "Secondary", usedPercent: 85, resetAt: 9, windowMinutes: null },
@@ -129,7 +129,7 @@ test("a Codex window of unknown length keeps its usage under its slot name", () 
 });
 
 test("an account with requests in flight is current over a later recorded use", () => {
-  const { providers } = buildSnapshot([
+  const providers = poolProviders([
     account({ id: "a", priority: 1, lastUsedAt: 10, inFlight: 1 }),
     account({ id: "b", priority: 2, lastUsedAt: 90 }),
   ]);
@@ -137,7 +137,7 @@ test("an account with requests in flight is current over a later recorded use", 
 });
 
 test("with nothing in flight, the most recently used enabled account is current", () => {
-  const { providers } = buildSnapshot([
+  const providers = poolProviders([
     account({ id: "third", priority: 3, lastUsedAt: 50 }),
     account({ id: "first", priority: 1, lastUsedAt: 10 }),
     account({ id: "second", priority: 2, lastUsedAt: 90 }),
@@ -152,7 +152,7 @@ test("with nothing in flight, the most recently used enabled account is current"
 });
 
 test("an unused pool marks its first enabled account current, and empty providers vanish", () => {
-  const { providers } = buildSnapshot([
+  const providers = poolProviders([
     account({ id: "b", priority: 2 }),
     account({ id: "a", priority: 1 }),
   ]);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ExtraUsage, ResetCredits } from "./extras.ts";
 
 /**
  * The slice of Account Pooler's `AccountSummary` (bb `plugins/account-pool/src/contracts.ts`)
@@ -15,6 +16,7 @@ const accountSummarySchema = z.object({
   provider: z.string(),
   label: z.string(),
   email: z.string().nullable(),
+  codexAccountId: z.string().optional(),
   subscriptionType: z.string().nullable(),
   rateLimitTier: z.string().nullable(),
   enabled: z.boolean(),
@@ -61,6 +63,10 @@ export interface MenuAccount {
   error: string | null;
   inFlight: number;
   windows: MenuWindow[];
+  /** Null until fetched, or when the account has none. */
+  resetCredits?: ResetCredits | null;
+  extraUsage?: ExtraUsage | null;
+  resetNotice?: string | null;
 }
 
 export interface MenuProvider {
@@ -181,8 +187,8 @@ function currentAccountId(accounts: AccountSummary[]): string | null {
   return current?.id ?? null;
 }
 
-export function buildSnapshot(accounts: AccountSummary[]): MenuSnapshot {
-  const providers = PROVIDERS.flatMap(({ id, name }) => {
+export function poolProviders(accounts: AccountSummary[]): MenuProvider[] {
+  return PROVIDERS.flatMap(({ id, name }) => {
     const owned = accounts
       .filter((account) => account.provider === id)
       .sort((left, right) => left.priority - right.priority);
@@ -208,5 +214,4 @@ export function buildSnapshot(accounts: AccountSummary[]): MenuSnapshot {
       },
     ];
   });
-  return { providers, error: null };
 }

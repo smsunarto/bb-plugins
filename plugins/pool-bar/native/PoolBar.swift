@@ -38,6 +38,27 @@ struct Account: Decodable {
     let error: String?
     let inFlight: Int
     let windows: [UsageWindow]
+    let resetCredits: ResetCredits?
+    let extraUsage: ExtraUsage?
+    let resetNotice: String?
+}
+
+struct ResetCredits: Decodable {
+    /// Epoch ms, soonest first; nil never expires.
+    let expiries: [Double?]
+
+    func available(at now: Date) -> [Double?] {
+        expiries.filter { expiry in expiry.map { $0 > now.timeIntervalSince1970 * 1000 } ?? true }
+    }
+}
+
+/// `balance`: Codex prepaid credits. `spend`: Claude spend against a monthly cap.
+struct ExtraUsage: Decodable {
+    let kind: String
+    let balance: Double?
+    let used: Double?
+    let limit: Double?
+    let currency: String?
 }
 
 struct UsageWindow: Decodable {
@@ -130,6 +151,38 @@ enum Format {
     }
 
     static func time(_ date: Date) -> String { clock.string(from: date) }
+
+    /// "3d 19h · 21d 17h · 28d 15h", up to four credits, then "+N".
+    static func expiries(_ expiries: [Double?], now: Date) -> String {
+        let items = expiries.prefix(4).map { expiry -> String in
+            guard let date = date(expiry) else { return "No expiry" }
+            let countdown = countdown(to: date, now: now)
+            return countdown.hasPrefix("in ") ? String(countdown.dropFirst(3)) : countdown
+        }
+        let more = expiries.count > 4 ? ["+\(expiries.count - 4)"] : []
+        return (items + more).joined(separator: " · ")
+    }
+
+    /// Codex credits are a raw count; POSIX formatting keeps them as "62500".
+    private static let credits: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    static func credits(_ value: Double) -> String {
+        credits.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    static func money(_ value: Double, currency: String) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.currencyCode = currency
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
 }
 
 // MARK: - Pace (CodexBarCore/UsagePace.swift, CodexBar/UsagePaceText.swift)
@@ -199,6 +252,7 @@ struct UsageBar: View {
     let remaining: Double
     let tint: Color
     let pace: Pace?
+    var markers: [Double] = warningMarkers
 
     var body: some View {
         Canvas { context, size in
@@ -225,7 +279,7 @@ struct UsageBar: View {
                     Path(CGRect(x: x - stripe / 2, y: 0, width: stripe, height: size.height)),
                     with: .color(color))
             }
-            for marker in warningMarkers {
+            for marker in markers {
                 notch(at: size.width * marker / 100, gap: 5, stripe: 1, color: .primary.opacity(0.68))
             }
             if let pace, !pace.onTrack {
@@ -264,6 +318,66 @@ struct UsageRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+            }
+        }
+    }
+}
+
+/// CodexBar's MenuCardView+CodexResetCredits.
+struct ResetCreditsRow: View {
+    let credits: ResetCredits
+    let now: Date
+
+    var body: some View {
+        let expiries = credits.available(at: now)
+        let count = expiries.count
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Limit Reset Credits").font(.body).fontWeight(.medium).lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(count) available")
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Spacer(minLength: 8)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "clock").font(.caption2)
+                    Text(Format.expiries(expiries, now: now))
+                        .font(.caption)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// CodexBar's ProviderCostContent: an inline balance, or spend against a cap with a bar.
+struct ExtraUsageRow: View {
+    let usage: ExtraUsage
+    let tint: Color
+
+    var body: some View {
+        if usage.kind == "spend", let used = usage.used, let limit = usage.limit, limit > 0 {
+            let currency = usage.currency ?? "USD"
+            let usedPercent = min(100, max(0, used / limit * 100))
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Extra usage").font(.body).fontWeight(.medium).lineLimit(1)
+                UsageBar(remaining: 100 - usedPercent, tint: tint, pace: nil, markers: [])
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Monthly cap: \(Format.money(used, currency: currency)) / \(Format.money(limit, currency: currency))")
+                        .font(.footnote)
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(Int(usedPercent.rounded()))% used").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        } else if let balance = usage.balance {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Extra usage").font(.body).fontWeight(.medium)
+                Spacer()
+                Text("Balance: \(Format.credits(balance))").font(.footnote).monospacedDigit().lineLimit(1)
             }
         }
     }
@@ -313,13 +427,27 @@ struct AccountCard: View {
                     }
                 }
             }
-            if !account.windows.isEmpty {
+            let availableResets = account.resetCredits?.available(at: store.now) ?? []
+            if !account.windows.isEmpty || !availableResets.isEmpty || account.resetNotice != nil {
                 Divider().padding(.top, 6).padding(.bottom, 12)
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(account.windows.enumerated()), id: \.offset) { _, window in
                         UsageRow(window: window, tint: Brand.tint(provider.id), now: store.now)
                     }
+                    if let credits = account.resetCredits, !availableResets.isEmpty {
+                        if !account.windows.isEmpty { Divider() }
+                        ResetCreditsRow(credits: credits, now: store.now)
+                    }
+                    if let notice = account.resetNotice {
+                        Link(notice, destination: URL(string: "https://claude.ai/settings/usage")!)
+                            .font(.footnote)
+                            .help("Claude Code does not expose full-reset inventory. Check the signed-in account in Claude.")
+                    }
                 }
+            }
+            if let extra = account.extraUsage {
+                Divider().padding(.vertical, 12)
+                ExtraUsageRow(usage: extra, tint: Brand.tint(provider.id))
             }
         }
         .padding(.horizontal, 20)

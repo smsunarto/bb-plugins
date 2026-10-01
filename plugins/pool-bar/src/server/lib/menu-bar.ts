@@ -1,15 +1,20 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import type { AccountExtras } from "./extras.ts";
 import { buildHelper, nativeDir } from "./helper.ts";
-import { accountListSchema, buildSnapshot, type MenuSnapshot } from "./pool.ts";
+import type { MenuSnapshot } from "./pool.ts";
+import { POOL_PLUGIN_ID, createSourceReader, type Source } from "./sources.ts";
 
-const POOL_PLUGIN_ID = "account-pool";
 /** Reading the pool is a local store read; quota itself moves on proxied traffic. */
 const POLL_MS = 15_000;
+/** Extras hit provider endpoints (Claude's usage endpoint rate-limits), so poll them slowly. */
+const EXTRAS_MS = 5 * 60_000;
 const BB_BUNDLE_ID = "dev.bb.desktop";
 
 /** Messages the helper writes to stdout, one JSON object per line. */
@@ -31,16 +36,6 @@ function untilAborted(signal: AbortSignal): Promise<void> {
   });
 }
 
-async function readAccounts(bb: BbPluginApi, signal: AbortSignal) {
-  return bb.sdk.plugins.callRpc({
-    pluginId: POOL_PLUGIN_ID,
-    method: "account.list",
-    input: null,
-    outputSchema: accountListSchema,
-    signal,
-  });
-}
-
 /**
  * Own one helper process for the lifetime of the background service: feed it pool
  * snapshots and act on its menu commands. Resolves when the service is stopped or
@@ -50,6 +45,17 @@ async function readAccounts(bb: BbPluginApi, signal: AbortSignal) {
 export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<void> {
   if (process.platform !== "darwin") {
     bb.log.info("pool-bar: the menu bar item is macOS only; idling.");
+    await untilAborted(signal);
+    return;
+  }
+
+  // Dev bb instances auto-install workspace plugins and would each draw duplicate items.
+  const defaultDataDir = join(homedir(), ".bb");
+  if (
+    resolve(bb.server.experimental_dataDir) !== defaultDataDir &&
+    process.env.BB_POOL_BAR_ANY_INSTANCE !== "1"
+  ) {
+    bb.log.info(`pool-bar: only the bb instance at ${defaultDataDir} draws the menu bar; idling.`);
     await untilAborted(signal);
     return;
   }
@@ -73,18 +79,78 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
 
   let last: MenuSnapshot = { providers: [], error: null };
   let lastSent = "";
-  const publish = async () => {
-    try {
-      last = buildSnapshot(await readAccounts(bb, signal));
-    } catch (error) {
-      if (signal.aborted) return;
-      // Keep the last good accounts on screen, dimmed, rather than blanking the menu.
-      last = { ...last, error: error instanceof Error ? error.message : String(error) };
-    }
+  const extras = new Map<string, AccountExtras>();
+  const render = () => {
     const body = JSON.stringify(last);
     if (body === lastSent) return;
     lastSent = body;
     send({ type: "snapshot", ...last });
+  };
+
+  const readSource = createSourceReader(bb);
+  let source: Source | null = null;
+  let extrasAt = 0;
+  let extrasRunning = false;
+  const attachExtras = () => {
+    last = {
+      ...last,
+      providers: last.providers.map((provider) => ({
+        ...provider,
+        accounts: provider.accounts.map((account) => ({ ...account, ...extras.get(account.id) })),
+      })),
+    };
+  };
+  const refreshExtras = async (force: boolean) => {
+    if (source === null || extrasRunning || (!force && Date.now() - extrasAt < EXTRAS_MS)) return;
+    extrasRunning = true;
+    extrasAt = Date.now();
+    const current = source;
+    try {
+      // allSettled: a rejection here would escape the detached call and crash the service.
+      await Promise.allSettled(
+        current.providers.flatMap((provider) =>
+          provider.accounts
+            .filter((account) => account.status !== "disabled")
+            .map(async (account) => {
+              extras.set(account.id, await current.extras(provider.id, account.id));
+            }),
+        ),
+      );
+    } finally {
+      extrasRunning = false;
+    }
+    if (signal.aborted) return;
+    attachExtras();
+    render();
+  };
+
+  let publication = 0;
+  const publish = async (refresh = false) => {
+    const version = ++publication;
+    try {
+      const next = await readSource(signal, refresh);
+      if (signal.aborted || version !== publication) return;
+      const ids = next.providers.flatMap((provider) =>
+        provider.accounts.map((account) => account.id),
+      );
+      if (
+        JSON.stringify(ids) !==
+        JSON.stringify(
+          source?.providers.flatMap((provider) => provider.accounts.map((account) => account.id)),
+        )
+      )
+        extrasAt = 0;
+      for (const key of extras.keys()) if (!ids.includes(key)) extras.delete(key);
+      source = next;
+      last = { providers: source.providers, error: null };
+      attachExtras();
+    } catch {
+      if (signal.aborted || version !== publication) return;
+      // Keep the last good accounts on screen, dimmed, rather than blanking the menu.
+      last = { ...last, error: "Usage unavailable. Check the provider in bb." };
+    }
+    render();
+    void refreshExtras(refresh);
   };
 
   let refreshing = false;
@@ -93,25 +159,26 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
     refreshing = true;
     send({ type: "refreshing", value: true });
     try {
-      const accounts = await readAccounts(bb, signal);
-      await Promise.allSettled(
-        accounts
-          .filter((account) => account.enabled)
-          .map((account) =>
-            bb.sdk.plugins.callRpc({
-              pluginId: POOL_PLUGIN_ID,
-              method: "account.refreshUsage",
-              input: { accountId: account.id },
-              outputSchema: z.unknown(),
-              signal,
-            }),
+      if (source?.kind === "pool") {
+        await Promise.allSettled(
+          source.providers.flatMap((provider) =>
+            provider.accounts
+              .filter((account) => account.status !== "disabled")
+              .map((account) =>
+                bb.sdk.plugins.callRpc({
+                  pluginId: POOL_PLUGIN_ID,
+                  method: "account.refreshUsage",
+                  input: { accountId: account.id },
+                  outputSchema: z.unknown(),
+                  signal,
+                }),
+              ),
           ),
-      );
-    } catch (error) {
-      if (!signal.aborted) bb.log.warn(`pool-bar: refresh failed: ${String(error)}`);
+        );
+      }
     } finally {
       refreshing = false;
-      await publish();
+      await publish(true);
       send({ type: "refreshing", value: false });
     }
   };
