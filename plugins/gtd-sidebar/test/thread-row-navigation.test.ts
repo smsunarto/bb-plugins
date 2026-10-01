@@ -730,22 +730,28 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(rowIds(view.slot), ["a", "b"]);
     });
 
-    it("opens a project's composer from its group header", () => {
-      const currentActions = actions();
-      const onNavigate = mock(() => {});
-      const view = mount(
-        {
-          ...hostState([thread("a"), thread("b", { projectId: "two" })]),
-          actions: currentActions,
-        },
-        { onNavigate },
-      );
-      fireEvent.click(view.slot.getByRole("button", { name: "New thread in Two" }));
-      assert.deepEqual(currentActions.openNewThread.mock.calls, [
-        [{ projectId: "two", hostId: undefined, focusPrompt: true }],
-      ]);
-      assert.equal(onNavigate.mock.calls.length, 1);
-    });
+    it.each([false, true])(
+      "opens a project's composer from its group header, mobile=%s",
+      (mobile) => {
+        const currentActions = actions();
+        const onNavigate = mock(() => {});
+        const view = mount(
+          {
+            ...hostState([thread("a"), thread("b", { projectId: "two" })]),
+            actions: currentActions,
+          },
+          { onNavigate, isCompactViewport: mobile },
+        );
+        const toggle = view.slot.getByRole("button", { name: "Two project" });
+        fireEvent.click(toggle);
+        fireEvent.click(view.slot.getByRole("button", { name: "New thread in Two" }));
+        assert.deepEqual(currentActions.openNewThread.mock.calls, [
+          [{ projectId: "two", hostId: undefined, focusPrompt: true }],
+        ]);
+        assert.equal(onNavigate.mock.calls.length, 1);
+        assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      },
+    );
 
     it("preselects the scoped machine, including one with no threads yet", () => {
       const currentActions = actions();

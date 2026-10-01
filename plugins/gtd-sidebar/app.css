@@ -221,15 +221,50 @@
 .gtd-project-group-new:focus-visible {
   opacity: 1;
 }
-.gtd-project-group-header:hover .gtd-project-group-count,
-.gtd-project-group-header[data-new-focus-visible="true"] .gtd-project-group-count {
-  opacity: 0;
+@media (hover: hover) {
+  .gtd-project-group-header:not(.gtd-project-group-header-touch):hover .gtd-project-group-count,
+  .gtd-project-group-header:not(.gtd-project-group-header-touch)[data-new-focus-visible="true"]
+    .gtd-project-group-count {
+    opacity: 0;
+  }
 }
 .gtd-project-group-new:hover {
   color: var(--foreground);
 }
 .gtd-project-group-new:focus-visible {
   outline: 1px solid var(--ring);
+}
+/* Wider touch screens keep the desktop header height but need the action
+   visible without hover, including when the project is folded. */
+@media (hover: none) {
+  .gtd-project-group-new {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    opacity: 1;
+  }
+  .gtd-project-group-new svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+/* Touch has no hover reveal. Keep the action beside the toggle so the
+   folded count remains visible and each control has its own hit area. */
+.gtd-project-group-header-touch .gtd-project-group-new {
+  position: static;
+  transform: none;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  opacity: 1;
+}
+.gtd-project-group-header-touch .gtd-project-group-new svg {
+  width: 16px;
+  height: 16px;
 }
 /* Move thread content, disclosures, and tree guides together inside groups.
    The 2px under the header is the first row's own top margin. */

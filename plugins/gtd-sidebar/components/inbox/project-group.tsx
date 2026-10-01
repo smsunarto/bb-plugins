@@ -29,7 +29,8 @@ export function SortableProjectGroup(props: ProjectGroupProps) {
  * header carries only the project name. The count shows while the group is
  * folded, where it is the group's whole footprint: `needs-you / total` when
  * something in it asks for the user, the total alone otherwise. Hovering the
- * header trades the count for a new-thread button.
+ * header trades the count for a new-thread button. Compact viewports keep
+ * both the count and the new-thread button visible for touch access.
  *
  * Right-clicking the header offers "Move up" / "Move down", and a sortable
  * group drags by its header — both reorder the project in bb's own order,
@@ -118,13 +119,11 @@ export function ProjectGroup({
           </span>
         )}
       </button>
-      {isCompactViewport ? null : (
-        <NewThreadButton
-          name={name}
-          onClick={() => onNewThread(projectId)}
-          onFocusVisibleChange={setNewFocusVisible}
-        />
-      )}
+      <NewThreadButton
+        name={name}
+        onClick={() => onNewThread(projectId)}
+        onFocusVisibleChange={setNewFocusVisible}
+      />
     </div>
   );
   return (

@@ -101,8 +101,9 @@ in only one project, so the repository context is not lost. Use **Settings → P
 to hide or restore project groups. The choice persists across reloads. The project selector stays available with
 repository grouping on or off, and toggling groups preserves the selected project. The
 header folds the group; a folded header shows `needs-you / total` while
-something inside asks for you, and the total alone otherwise. Hovering the
-header shows a **+** that opens the project's new-thread screen. Shelf and
+something inside asks for you, and the total alone otherwise. The header's
+**+** opens the project's new-thread screen. It appears on hover or keyboard
+focus on desktop and stays visible on mobile and touch screens. Shelf and
 group headers stay pinned while their rows scroll.
 
 Groups follow bb's project order in every shelf, with your personal project
