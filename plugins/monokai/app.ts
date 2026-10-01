@@ -2,6 +2,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
 import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
+import "./app/secondary-panel-resize.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
 
 import { mountTerminalAppearance } from "./app/terminal-appearance.ts";

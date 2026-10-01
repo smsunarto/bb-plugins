@@ -1,0 +1,12 @@
+/*
+ * bb rewrites this property on the right panel's <aside> every frame of a
+ * resize drag. Unregistered custom properties inherit, so each write restyled
+ * every element in the panel (2,349 in a busy GitButler tab, ~70 ms a frame).
+ * Only the <aside> reads it, so it does not need to inherit. bb core registers
+ * the same rule upstream. No initial value, so the `var()` fallback bb uses
+ * before the first drag still applies.
+ */
+@property --secondary-swipe-width {
+  syntax: "*";
+  inherits: false;
+}
