@@ -18,8 +18,8 @@ import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { COMMIT_QUERY, queryClient } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
-import { BaseCard, StackLane, UncommittedCard } from "./workspace-lane.tsx";
-import type { CommitRef } from "./workspace-lane.tsx";
+import { BaseCard, CommitExpansionContext, StackLane, UncommittedCard } from "./workspace-lane.tsx";
+import type { CommitExpansion } from "./workspace-lane.tsx";
 import "./gitbutler.css";
 
 const REFRESH_INTERVAL_MS = 10_000;
@@ -38,9 +38,9 @@ const GUTTER = "[scrollbar-gutter:stable_both-edges]";
 // Hidden overflow is what lets a header that never scrolls reserve the same
 // gutters, so its text starts where the rows below it do.
 const HEADER = `flex shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card px-2.5 py-1.5 ${GUTTER}`;
-/** What the detail screen is showing: a commit, or one uncommitted file. */
+/** What the detail screen is showing, and the file it opened on. */
 type Selection =
-  | { kind: "commit"; commitId: string; createdAt: string; message: string }
+  | { kind: "commit"; commitId: string; createdAt: string; message: string; path: string }
   | { kind: "uncommitted"; path: string };
 
 const UNCOMMITTED_SOURCE: PatchSource = { kind: "uncommitted" };
@@ -93,6 +93,7 @@ function ScrollArea({ children }: { children: ReactNode }) {
   return (
     <div
       ref={ref}
+      data-scroll-area
       className={cn(
         "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-[calc(--spacing(2.5)+var(--gutter,0px))]",
         GUTTER,
@@ -216,12 +217,10 @@ function CommitDetail({
   threadId,
   repositoryKey,
   selection,
-  openPath,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   selection: Extract<Selection, { kind: "commit" }>;
-  openPath: string | null;
 }) {
   const details = rpc.commit.useQuery(
     defined({ threadId, repositoryKey, commitId: selection.commitId }),
@@ -254,7 +253,7 @@ function CommitDetail({
         threadId={threadId}
         repositoryKey={repositoryKey}
         source={source}
-        initialPath={openPath}
+        initialPath={selection.path}
       />
     </>
   );
@@ -264,13 +263,11 @@ function DetailScreen({
   threadId,
   repositoryKey,
   selection,
-  openPath,
   onBack,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   selection: Selection;
-  openPath: string | null;
   onBack: () => void;
 }) {
   return (
@@ -288,12 +285,7 @@ function DetailScreen({
       </header>
       <ScrollArea>
         {selection.kind === "commit" ? (
-          <CommitDetail
-            threadId={threadId}
-            repositoryKey={repositoryKey}
-            selection={selection}
-            openPath={openPath}
-          />
+          <CommitDetail threadId={threadId} repositoryKey={repositoryKey} selection={selection} />
         ) : (
           <>
             <h2 className="m-0 text-[13px] font-semibold">Uncommitted</h2>
@@ -314,14 +306,12 @@ function WorkspaceBody({
   threadId,
   repositoryKey,
   data,
-  onOpenCommit,
   onOpenFile,
   onRetry,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   data: Workspace;
-  onOpenCommit: (commit: CommitRef) => void;
   onOpenFile: (path: string) => void;
   onRetry: () => void;
 }) {
@@ -335,7 +325,6 @@ function WorkspaceBody({
             key={stack.key}
             target={{ threadId, repositoryKey }}
             stack={stack}
-            onOpenCommit={onOpenCommit}
             onOpenFile={onOpenFile}
           />
         ))}
@@ -348,12 +337,7 @@ function WorkspaceBody({
           </div>
         ) : null}
         {data.base ? (
-          <BaseCard
-            threadId={threadId}
-            repositoryKey={repositoryKey}
-            base={data.base}
-            onOpenCommit={onOpenCommit}
-          />
+          <BaseCard threadId={threadId} repositoryKey={repositoryKey} base={data.base} />
         ) : null}
       </div>
     </>
@@ -365,7 +349,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     () => readRepository(threadId) ?? undefined,
   );
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [openPath, setOpenPath] = useState<string | null>(null);
+  const [expandedCommit, setExpandedCommit] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const repositories = rpc.repositories.useQuery({ threadId }, { staleTime: 60_000 });
@@ -379,30 +363,35 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
       setRepositoryKey(key);
       writeRepository(threadId, key);
       setSelection(null);
-      setOpenPath(null);
+      setExpandedCommit(null);
     },
     [threadId],
   );
 
-  const openCommit = useCallback((commit: CommitRef) => {
-    setSelection({
-      kind: "commit",
-      commitId: commit.commitId,
-      createdAt: commit.createdAt,
-      message: commit.message,
-    });
-    setOpenPath(null);
-  }, []);
+  const expansion = useMemo<CommitExpansion>(
+    () => ({
+      threadId,
+      repositoryKey,
+      expanded: expandedCommit,
+      onToggle: (commitId) =>
+        setExpandedCommit((current) => (current === commitId ? null : commitId)),
+      onOpenFile: (commit, path) =>
+        setSelection({
+          kind: "commit",
+          commitId: commit.commitId,
+          createdAt: commit.createdAt,
+          message: commit.message,
+          path,
+        }),
+    }),
+    [expandedCommit, repositoryKey, threadId],
+  );
 
   const openUncommittedFile = useCallback((path: string) => {
     setSelection({ kind: "uncommitted", path });
-    setOpenPath(path);
   }, []);
 
-  const back = useCallback(() => {
-    setSelection(null);
-    setOpenPath(null);
-  }, []);
+  const back = useCallback(() => setSelection(null), []);
 
   // Selection first: a failed background poll should not throw the reader out
   // of the commit they had open.
@@ -412,7 +401,6 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
         threadId={threadId}
         repositoryKey={repositoryKey}
         selection={selection}
-        openPath={openPath}
         onBack={back}
       />
     );
@@ -475,14 +463,15 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
             onRetry={refresh}
           />
         ) : (
-          <WorkspaceBody
-            threadId={threadId}
-            repositoryKey={repositoryKey}
-            data={workspace.data}
-            onOpenCommit={openCommit}
-            onOpenFile={openUncommittedFile}
-            onRetry={refresh}
-          />
+          <CommitExpansionContext.Provider value={expansion}>
+            <WorkspaceBody
+              threadId={threadId}
+              repositoryKey={repositoryKey}
+              data={workspace.data}
+              onOpenFile={openUncommittedFile}
+              onRetry={refresh}
+            />
+          </CommitExpansionContext.Provider>
         )}
       </ScrollArea>
     </div>

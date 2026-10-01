@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_Icon as Icon,
   experimental_useCodeTheme as useCodeTheme,
@@ -6,13 +6,17 @@ import {
 import { getSingularPatch } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import type { ChangeKind, FilePatch, PatchSource } from "../shared/schema.ts";
-import { Button } from "./components/ui/button.tsx";
+import { ChangedFilesCard, FileList, LineStats, fileOrder, useListMode } from "./file-list.tsx";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { COMMIT_QUERY } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
 
 const REFRESH_INTERVAL_MS = 10_000;
 const COPIED_FEEDBACK_MS = 1_200;
+/** Room left above a file scrolled to, so its card's top edge stays in view. */
+const SCROLL_MARGIN_PX = 8;
+/** How long the opened file is held in place while the diffs above it render. */
+const PIN_MS = 2_000;
 
 type Parsed = ReturnType<typeof getSingularPatch>;
 
@@ -136,17 +140,10 @@ function FileHeader({
  * One file: bb's own header, always drawn, and Pierre's diff body below it once
  * the row is open.
  */
-function FileCard({
-  file,
-  open,
-  bodyId,
-  onToggle,
-}: {
-  file: FilePatch;
-  open: boolean;
-  bodyId: string;
-  onToggle: () => void;
-}) {
+function FileCard({ file }: { file: FilePatch }) {
+  const [open, setOpen] = useState(true);
+  const bodyId = useId();
+  const onToggle = () => setOpen((current) => !current);
   const { mode, name } = useCodeTheme();
   const parsed = useMemo(() => parse(file.patch), [file.patch]);
   const counts = useMemo(() => countLines(parsed), [parsed]);
@@ -170,7 +167,10 @@ function FileCard({
   );
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div
+      className="overflow-hidden rounded-lg border border-border bg-card"
+      data-file-card={file.path}
+    >
       <FileHeader
         model={model}
         open={open}
@@ -207,8 +207,56 @@ function FileCard({
 }
 
 /**
- * Every file of a commit or of the worktree, as collapsible diff cards. One
- * `but diff` call covers the whole set, so expanding a row costs nothing.
+ * One `but diff` call for a commit or the worktree, with the file list and line
+ * totals derived from it. Keyed off the query result, not a fresh `?? []`, so
+ * the derivations run once per fetch rather than once per render.
+ */
+export function usePatches(
+  threadId: string,
+  repositoryKey: string | undefined,
+  source: PatchSource,
+) {
+  const patches = rpc.patches.useQuery(
+    defined({ threadId, repositoryKey, source }),
+    // A commit's diff is fixed by its id. The worktree's is not, so that one
+    // is refreshed on the panel's usual cadence.
+    source.kind === "commit" ? COMMIT_QUERY : { staleTime: REFRESH_INTERVAL_MS },
+  );
+  const files = patches.data?.files;
+  const changes = useMemo(
+    () => (files ?? []).map((file) => ({ path: file.path, kind: file.kind })),
+    [files],
+  );
+  const totals = useMemo(
+    () =>
+      (files ?? []).reduce(
+        (total, file) => {
+          const { added, removed } = countLines(parse(file.patch));
+          return { added: total.added + added, removed: total.removed + removed };
+        },
+        { added: 0, removed: 0 },
+      ),
+    [files],
+  );
+  return { patches, files, changes, totals };
+}
+
+/**
+ * Brings `element` to the top of the panel's own scroll area. Not
+ * `scrollIntoView`: that also scrolls every clipped ancestor, bb's layout
+ * included, and can shift the app around the panel.
+ */
+function scrollIntoPanel(element: HTMLElement): void {
+  const scroller = element.closest<HTMLElement>("[data-scroll-area]");
+  if (!scroller) return;
+  const offset = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  scroller.scrollTop += offset - SCROLL_MARGIN_PX;
+}
+
+/**
+ * Every file of a commit or of the worktree: the changed-files list, then
+ * every file's diff, scrolled to the one the reader opened. A row in the list
+ * scrolls to its diff. One `but diff` call covers the whole set.
  */
 export function FileCards({
   threadId,
@@ -221,40 +269,45 @@ export function FileCards({
   source: PatchSource;
   initialPath: string | null;
 }) {
-  const bodyIdPrefix = useId();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(initialPath ? [initialPath] : []),
-  );
+  const [listOpen, setListOpen] = useState(true);
+  const [mode] = useListMode();
+  const [active, setActive] = useState(initialPath);
+  const section = useRef<HTMLElement>(null);
+  const { patches, files, changes, totals } = usePatches(threadId, repositoryKey, source);
 
-  const patches = rpc.patches.useQuery(
-    defined({ threadId, repositoryKey, source }),
-    // A commit's diff is fixed by its id. The worktree's is not, so that one
-    // is refreshed on the panel's usual cadence.
-    source.kind === "commit" ? COMMIT_QUERY : { staleTime: REFRESH_INTERVAL_MS },
-  );
-
-  const toggle = useCallback((path: string) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (!next.delete(path)) next.add(path);
-      return next;
-    });
+  const scrollTo = useCallback((path: string) => {
+    const card = [
+      ...(section.current?.querySelectorAll<HTMLElement>("[data-file-card]") ?? []),
+    ].find((element) => element.dataset.fileCard === path);
+    if (card) scrollIntoPanel(card);
   }, []);
 
-  // Keyed off the query result, not a fresh `?? []`, so the reduce runs once
-  // per fetch rather than once per expand.
-  const files = patches.data?.files;
-  const totals = useMemo(
-    () =>
-      (files ?? []).reduce(
-        (total, file) => {
-          const { added, removed } = countLines(parse(file.patch));
-          return { added: total.added + added, removed: total.removed + removed };
-        },
-        { added: 0, removed: 0 },
-      ),
-    [files],
-  );
+  // Once, when the diffs first land: jump to the file the screen opened on.
+  // Keyed on their arrival, not on each refetch of the worktree's diffs.
+  const ready = Boolean(files);
+  useLayoutEffect(() => {
+    const element = section.current;
+    if (!ready || !element || !initialPath) return;
+    const pin = () => scrollTo(initialPath);
+    pin();
+    /*
+     * Pierre fills each diff in after it mounts, so the page grows under the
+     * jump, and at first it is too short to reach the file at all. Hold the
+     * file in place as it grows, until it settles or the reader scrolls.
+     */
+    const scroller = element.closest("[data-scroll-area]");
+    const observer = new ResizeObserver(pin);
+    observer.observe(element);
+    const intents = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    const stop = () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      for (const intent of intents) scroller?.removeEventListener(intent, stop);
+    };
+    const timer = window.setTimeout(stop, PIN_MS);
+    for (const intent of intents) scroller?.addEventListener(intent, stop, { passive: true });
+    return stop;
+  }, [ready, initialPath, scrollTo]);
 
   if (patches.isPending) return <Loading label="Loading changes…" />;
   if (patches.isError) {
@@ -275,51 +328,40 @@ export function FileCards({
     );
   }
 
-  const allOpen = expanded.size >= files.length;
+  // The diffs follow the list's order, so the two read the same way down.
+  const byPath = new Map(files.map((file) => [file.path, file]));
+
   return (
     <section
+      ref={section}
       /*
        * Opts this list into monokai's diff-header treatment. bb gates the same
        * rules on its own diff toolbar, which a plugin panel never has.
        */
       data-monokai-diff-surface
       className="mt-2 flex flex-col gap-1.5"
-      aria-label="Changed files"
+      aria-label="Changes"
     >
-      <header className="flex items-center gap-2 px-0.5 text-[11px] tabular-nums text-muted-foreground">
-        <span>
-          {files.length} {files.length === 1 ? "file" : "files"} changed
-        </span>
-        {/* Added before removed, matching the counts on every row below. */}
-        <span className="text-diff-added">+{totals.added}</span>
-        <span className="text-diff-removed">-{totals.removed}</span>
-        {/*
-         * A chevron, not bare text: at the same size and colour as the summary
-         * beside it, the label alone did not read as something to press.
-         */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ms-auto h-5 gap-1 px-1.5 text-[11px] font-normal text-muted-foreground"
-          onClick={() => setExpanded(allOpen ? new Set() : new Set(files.map((file) => file.path)))}
-          aria-expanded={allOpen}
-        >
-          <Icon
-            name={allOpen ? "ChevronUp" : "ChevronDown"}
-            className="size-3 shrink-0"
-            aria-hidden
-          />
-          {allOpen ? "Collapse all" : "Expand all"}
-        </Button>
-      </header>
-      {files.map((file) => (
-        <FileCard
-          key={file.path}
-          file={file}
-          open={expanded.has(file.path)}
-          bodyId={`${bodyIdPrefix}-${file.path}`}
-          onToggle={() => toggle(file.path)}
+      <ChangedFilesCard
+        title="Changed files"
+        count={files.length}
+        stats={<LineStats added={totals.added} removed={totals.removed} />}
+        open={listOpen}
+        onToggle={() => setListOpen((current) => !current)}
+      >
+        <FileList
+          changes={changes}
+          mode={mode}
+          active={active}
+          followFocus
+          onSelect={(path) => {
+            setActive(path);
+            scrollTo(path);
+          }}
         />
+      </ChangedFilesCard>
+      {fileOrder(changes, mode).map((path) => (
+        <FileCard key={path} file={byPath.get(path)!} />
       ))}
     </section>
   );

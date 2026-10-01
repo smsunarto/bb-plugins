@@ -1,15 +1,13 @@
-import { useEffect, useId, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { keepPreviousData } from "@tanstack/react-query";
-import { SVGSpriteSheet } from "@pierre/diffs";
 import type {
   BaseCommit,
   Branch,
   BranchStatus,
-  ChangeKind,
-  Commit,
   FileChange,
+  PatchSource,
   Stack,
 } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
@@ -18,6 +16,8 @@ import { Loading, Notice, errorText } from "./notice.tsx";
 import { rpc, defined } from "./rpc.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { BranchActions, BranchName } from "./branch-actions.tsx";
+import { usePatches } from "./file-cards.tsx";
+import { ChangedFilesCard, Count, FileList, LineStats, useListMode } from "./file-list.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 
 /**
@@ -71,40 +71,6 @@ const BRANCH_LOOK: Readonly<
   unknown: { tone: "local", icon: "GitBranch", label: "", diamond: false },
 };
 
-/*
- * Pierre's change-kind artwork, the same sprite `plugins/monokai` puts on bb's
- * diff headers, so a file reads the same here and in the diff it opens to.
- */
-const FILE_LOOK: Readonly<Record<ChangeKind, { label: string; tone: string; symbol: string }>> = {
-  added: { label: "Added", tone: "text-diff-added", symbol: "added" },
-  modified: {
-    label: "Modified",
-    tone: "text-[var(--diffs-modified-color-override,var(--warning))]",
-    symbol: "modified",
-  },
-  deleted: { label: "Deleted", tone: "text-diff-removed", symbol: "deleted" },
-  renamed: { label: "Renamed", tone: "text-pr-merged", symbol: "moved" },
-  copied: { label: "Copied", tone: "text-pr-merged", symbol: "moved" },
-};
-
-/** Each symbol's path data, read once from the sprite. */
-const SPRITE_PATHS: ReadonlyMap<string, readonly string[]> = new Map(
-  [
-    ...SVGSpriteSheet.matchAll(
-      /<symbol id="diffs-icon-symbol-([\w-]+)"[^>]*>([\s\S]*?)<\/symbol>/g,
-    ),
-  ].map(([, name, body]) => [name!, [...body!.matchAll(/ d="([^"]+)"/g)].map(([, d]) => d!)]),
-);
-
-/** GitButler's solid count pill. */
-function Count({ children }: { children: number }) {
-  return (
-    <span className="inline-flex h-4 shrink-0 items-center rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-secondary-foreground">
-      {children}
-    </span>
-  );
-}
-
 type Segment = "solid" | "dashed";
 
 /**
@@ -145,6 +111,20 @@ function Rail({
   );
 }
 
+/** Which commit is open under its row, and what opening one of its files does. */
+export type CommitExpansion = WorkspaceTarget & {
+  expanded: string | null;
+  onToggle: (commitId: string) => void;
+  onOpenFile: (commit: CommitRef, path: string) => void;
+};
+
+/*
+ * Every commit row in the panel opens in place, as GitButler's do, and only
+ * one at a time. A context, so the stack, base, and history cards need not
+ * thread it through.
+ */
+export const CommitExpansionContext = createContext<CommitExpansion | null>(null);
+
 function CommitRow({
   commit,
   tone,
@@ -152,7 +132,6 @@ function CommitRow({
   bottom,
   last,
   meta,
-  onOpen,
 }: {
   commit: CommitRef & { conflicted?: boolean };
   tone: Tone;
@@ -160,26 +139,36 @@ function CommitRow({
   bottom?: Segment;
   last: boolean;
   meta?: ReactNode;
-  onOpen: () => void;
 }) {
+  const expansion = useContext(CommitExpansionContext)!;
+  const open = expansion.expanded === commit.commitId;
   const title = subject(commit.message);
+  const railTone = commit.conflicted ? "conflicted" : tone;
   return (
     <li>
       <button
         type="button"
         className={cn(
-          "flex w-full min-w-0 items-stretch text-start hover:bg-state-hover",
+          "relative flex w-full min-w-0 items-stretch text-start hover:bg-state-hover",
           commit.conflicted && "bg-destructive/10",
         )}
-        onClick={onOpen}
+        onClick={() => expansion.onToggle(commit.commitId)}
+        aria-expanded={open}
         title={`${shortId(commit.commitId)} ${title}`}
       >
-        <Rail tone={commit.conflicted ? "conflicted" : tone} diamond={diamond} bottom={bottom} />
+        {/* GitButler's marker for the open commit, on the card's edge. */}
+        {open ? (
+          <span
+            className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-primary"
+            aria-hidden
+          />
+        ) : null}
+        <Rail tone={railTone} diamond={diamond} bottom={bottom} />
         {/* The rule stops at the rail, so the graph line never breaks. */}
         <span
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2 py-2 pe-2.5",
-            !last && "border-b border-border",
+            !last && !open && "border-b border-border",
           )}
         >
           {commit.conflicted ? (
@@ -205,106 +194,88 @@ function CommitRow({
           </span>
         </span>
       </button>
+      {open ? (
+        <div className="relative px-2.5 pt-0.5 pb-2.5">
+          {/* The rail runs on behind the card, so the graph reads unbroken. */}
+          <span
+            className={cn(
+              "absolute inset-y-0 left-[19px] w-0.5",
+              TONE[railTone],
+              bottom === "dashed"
+                ? "bg-[linear-gradient(to_bottom,currentColor_50%,transparent_50%)] bg-size-[2px_4px]"
+                : "bg-current",
+            )}
+            aria-hidden
+          />
+          {/* Opaque: bb's card fill is translucent, and the rail would show through. */}
+          <div className="relative rounded-lg bg-background">
+            <CommitFiles commit={commit} expansion={expansion} />
+          </div>
+        </div>
+      ) : null}
+      {open && !last ? <div className="ms-10 border-b border-border" /> : null}
     </li>
   );
 }
 
-function FileStatus({ kind }: { kind: ChangeKind }) {
-  const look = FILE_LOOK[kind];
+/** A commit's changed files, under its row. */
+function CommitFiles({ commit, expansion }: { commit: CommitRef; expansion: CommitExpansion }) {
+  const source = useMemo<PatchSource>(
+    () => ({ kind: "commit", commitId: commit.commitId }),
+    [commit.commitId],
+  );
+  const { patches, changes, totals } = usePatches(
+    expansion.threadId,
+    expansion.repositoryKey,
+    source,
+  );
+  if (patches.isPending) return <Loading label="Loading changes…" />;
+  if (patches.isError) {
+    return (
+      <Notice
+        title="Changes failed to load"
+        detail={errorText(patches.error)}
+        onRetry={() => void patches.refetch()}
+      />
+    );
+  }
   return (
-    <>
-      <svg
-        viewBox="0 0 16 16"
-        className={cn("size-3.5 shrink-0", look.tone)}
-        fill="currentColor"
-        aria-hidden
-      >
-        {SPRITE_PATHS.get(look.symbol)?.map((d) => (
-          <path key={d} d={d} />
-        ))}
-      </svg>
-      <span className="sr-only">{look.label}</span>
-    </>
+    <ChangesCard
+      title="Changed files"
+      changes={changes}
+      stats={<LineStats added={totals.added} removed={totals.removed} />}
+      defaultOpen
+      onOpenFile={(path) => expansion.onOpenFile(commit, path)}
+    />
   );
 }
 
-function FileRow({ change, onOpen }: { change: FileChange; onOpen: () => void }) {
-  const separator = change.path.lastIndexOf("/");
-  return (
-    <li className="border-t border-border-hairline">
-      <button
-        type="button"
-        className="flex h-7.5 w-full min-w-0 items-center gap-2 ps-3.5 pe-2.5 text-start hover:bg-state-hover"
-        onClick={onOpen}
-        title={change.path}
-      >
-        <Icon name="File" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        {/*
-         * Directory first, as GitButler lists it, and it gives way before the
-         * filename does. No `direction: rtl`: it reorders leading punctuation,
-         * so `.bb/` renders as `bb./`.
-         */}
-        <span className="flex min-w-0 flex-1 items-baseline">
-          {separator > 0 ? (
-            <span className="min-w-0 shrink truncate text-[11px] text-muted-foreground">
-              {change.path.slice(0, separator + 1)}
-            </span>
-          ) : null}
-          <span className="max-w-full shrink-0 truncate font-semibold">
-            {change.path.slice(separator + 1)}
-          </span>
-        </span>
-        <FileStatus kind={change.kind} />
-      </button>
-    </li>
-  );
-}
-
-/** A card of changed files under a foldable header, as GitButler heads its file lists. */
+/** A card of changed files, as GitButler heads its file lists. */
 function ChangesCard({
   title,
   changes,
+  stats,
   defaultOpen,
   onOpenFile,
 }: {
   title: string;
   changes: readonly FileChange[];
+  stats?: ReactNode;
   defaultOpen: boolean;
   onOpenFile: (path: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const listId = useId();
-  const empty = changes.length === 0;
+  const [mode] = useListMode();
   return (
-    <section className={CARD} aria-label={title}>
-      <button
-        type="button"
-        className="flex h-9 w-full min-w-0 items-center gap-2 px-2.5 text-start enabled:hover:bg-state-hover"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open && !empty}
-        aria-controls={listId}
-        disabled={empty}
-      >
-        <Icon
-          name="ChevronRight"
-          className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-            open && "rotate-90",
-            empty && "invisible",
-          )}
-          aria-hidden
-        />
-        <span className="truncate text-[13px] font-semibold">{title}</span>
-        <Count>{changes.length}</Count>
-      </button>
-      <ul id={listId} className="list-none" hidden={!open || empty}>
-        {open
-          ? changes.map((change) => (
-              <FileRow key={change.path} change={change} onOpen={() => onOpenFile(change.path)} />
-            ))
-          : null}
-      </ul>
-    </section>
+    <ChangedFilesCard
+      title={title}
+      count={changes.length}
+      stats={stats}
+      open={open}
+      onToggle={() => setOpen((current) => !current)}
+    >
+      <FileList changes={changes} mode={mode} onSelect={onOpenFile} />
+    </ChangedFilesCard>
   );
 }
 
@@ -396,13 +367,11 @@ function BranchCard({
   target,
   branch,
   last,
-  onOpenCommit,
 }: {
   target: WorkspaceTarget;
   branch: Branch;
   /** The bottom branch of its stack: its last segment runs on to the base. */
   last: boolean;
-  onOpenCommit: (commit: Commit) => void;
 }) {
   const look = BRANCH_LOOK[branch.status];
   const upstream = branch.upstreamCommits;
@@ -454,7 +423,6 @@ function BranchCard({
                 tone="upstream"
                 diamond={false}
                 last={index === upstream.length - 1}
-                onOpen={() => onOpenCommit(commit)}
               />
             ))}
           </ul>
@@ -481,7 +449,6 @@ function BranchCard({
                 diamond={look.diamond}
                 bottom={last && end ? "dashed" : "solid"}
                 last={end}
-                onOpen={() => onOpenCommit(commit)}
               />
             );
           })}
@@ -499,12 +466,10 @@ function Connector({ tone }: { tone: Tone }) {
 export function StackLane({
   target,
   stack,
-  onOpenCommit,
   onOpenFile,
 }: {
   target: WorkspaceTarget;
   stack: Stack;
-  onOpenCommit: (commit: Commit) => void;
   onOpenFile: (path: string) => void;
 }) {
   return (
@@ -524,7 +489,7 @@ export function StackLane({
         const last = index === stack.branches.length - 1;
         return (
           <div key={branch.name} className="contents">
-            <BranchCard target={target} branch={branch} last={last} onOpenCommit={onOpenCommit} />
+            <BranchCard target={target} branch={branch} last={last} />
             {last ? null : <Connector tone={BRANCH_LOOK[branch.status].tone} />}
           </div>
         );
@@ -541,12 +506,10 @@ export function BaseCard({
   threadId,
   repositoryKey,
   base,
-  onOpenCommit,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   base: BaseCommit;
-  onOpenCommit: (commit: CommitRef) => void;
 }) {
   const [limit, setLimit] = useState(BASE_HISTORY_PAGE);
   // A new base means a different history; start the window over.
@@ -579,7 +542,6 @@ export function BaseCard({
           bottom={commits.length > 0 ? "solid" : "dashed"}
           last={commits.length === 0}
           meta={<span>{base.authorName}</span>}
-          onOpen={() => onOpenCommit(base)}
         />
       </ul>
       {/* The list below carried no label once, so it read as commits from nowhere. */}
@@ -607,7 +569,6 @@ export function BaseCard({
               bottom={index === commits.length - 1 ? "dashed" : "solid"}
               last={index === commits.length - 1}
               meta={<span className="max-w-24 truncate">{commit.authorName}</span>}
-              onOpen={() => onOpenCommit(commit)}
             />
           ))}
         </ul>

@@ -215,20 +215,31 @@ test("opens a commit and then one of its files as a diff", async () => {
   await waitFor(() => expect(slot.getByText("feat(top): add the thing")).toBeTruthy());
   fireEvent.click(slot.getByText("feat(top): add the thing"));
 
-  // The detail screen is the file list. The message body stays on the row.
+  // The commit opens in place, its files listed under its row, as GitButler shows them.
+  const row = slot.getByText("feat(top): add the thing").closest("button")!;
+  expect(row.getAttribute("aria-expanded")).toBe("true");
+  const files = await waitFor(() => slot.getByRole("region", { name: "Changed files" }));
+  expect(row.closest("li")!.contains(files)).toBe(true);
+  expect(within(files).getByText("+1")).toBeTruthy();
+  expect(within(files).getByText("-1")).toBeTruthy();
+  // The message body stays on the row.
   expect(slot.queryByText("With a body.")).toBeNull();
-  await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
-
-  await waitFor(() => {
-    const call = slot.inspection.rpcCalls.find((entry) => entry.method === "patches");
-    expect(call?.input).toEqual({
-      threadId: "thread-1",
-      source: { kind: "commit", commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5" },
-    });
+  expect(slot.inspection.rpcCalls.find((entry) => entry.method === "patches")?.input).toEqual({
+    threadId: "thread-1",
+    source: { kind: "commit", commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5" },
   });
+
+  // A file opens its diff.
+  fireEvent.click(within(files).getByTitle("src/app/app.tsx"));
+  await waitFor(() =>
+    expect(slot.getByRole("button", { name: "Collapse src/app/app.tsx" })).toBeTruthy(),
+  );
 
   fireEvent.click(slot.getByText("Workspace"));
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  // Back on the workspace, the commit is still open. A second click closes it.
+  fireEvent.click(slot.getByText("feat(top): add the thing"));
+  expect(slot.queryByRole("region", { name: "Changed files" })).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -267,8 +278,131 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
       source: { kind: "uncommitted" },
     });
   });
-  await waitFor(() => expect(slot.getByText("1 file changed")).toBeTruthy());
+  await waitFor(() => expect(slot.getByText("Changed files")).toBeTruthy());
+  expect(slot.getByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
   slot.lifecycle.unmount();
+});
+
+const patch = (path: string, kind = "modified") => ({
+  path,
+  kind,
+  patch: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`,
+  truncated: false,
+});
+
+const threeFiles = {
+  ...baseRpc,
+  workspace: () => ({
+    ...workspace,
+    unassignedChanges: [
+      { path: "src/app/b.tsx", kind: "modified" },
+      { path: "src/app/a.tsx", kind: "added" },
+      { path: "README.md", kind: "deleted" },
+    ],
+  }),
+  patches: () => ({
+    files: [patch("src/app/b.tsx"), patch("src/app/a.tsx", "added"), patch("README.md", "deleted")],
+    truncated: false,
+  }),
+};
+
+const openDiffs = (slot: { queryAllByRole: (role: string, options: object) => HTMLElement[] }) =>
+  slot
+    .queryAllByRole("button", { name: /^Collapse / })
+    .map((button) => button.getAttribute("aria-label")!.replace("Collapse ", ""));
+
+test("the tree view folds shared folders into one row, and every list follows the toggle", async () => {
+  const slot = await panel(threeFiles);
+  await waitFor(() => expect(slot.getByText("Uncommitted changes")).toBeTruthy());
+  fireEvent.click(slot.getByText("Uncommitted changes"));
+
+  // List view: the order git gave, each path whole.
+  await waitFor(() => expect(slot.getByTitle("src/app/b.tsx")).toBeTruthy());
+  const card = () => within(slot.getByRole("region", { name: "Uncommitted changes" }));
+  fireEvent.click(card().getByRole("button", { name: "List view" }));
+  expect(
+    card()
+      .getAllByRole("option")
+      .map((row) => row.title),
+  ).toEqual(["src/app/b.tsx", "src/app/a.tsx", "README.md"]);
+
+  fireEvent.click(card().getByRole("button", { name: "Tree view" }));
+  // `src` holds only `app`, so the two share a row. Folders come first, then names in order.
+  const rows = () =>
+    card()
+      .getAllByRole("treeitem")
+      .map((row) => row.title);
+  expect(rows()).toEqual(["src/app", "src/app/a.tsx", "src/app/b.tsx", "README.md"]);
+  // The assigned-changes card below switched with it.
+  expect(
+    slot.getByRole("region", { name: "Assigned changes" }).querySelector("[role=tree]"),
+  ).toBeTruthy();
+  expect(card().getByRole("treeitem", { name: "src/app" }).textContent).toBe("src/app");
+
+  fireEvent.click(card().getByRole("treeitem", { name: "src/app" }));
+  expect(rows()).toEqual(["src/app", "README.md"]);
+
+  // The choice outlives the card: the detail screen opens in the tree too.
+  fireEvent.click(card().getByRole("treeitem", { name: /README/ }));
+  await waitFor(() => expect(slot.getByText("Changed files")).toBeTruthy());
+  expect(slot.getAllByRole("treeitem").map((row) => row.title)).toEqual([
+    "src/app",
+    "src/app/a.tsx",
+    "src/app/b.tsx",
+    "README.md",
+  ]);
+  // Back to the default, which the other tests assume.
+  fireEvent.click(slot.getByRole("button", { name: "List view" }));
+  expect(window.localStorage.getItem("bb-plugin-gitbutler:file-list-mode")).toBe("list");
+  slot.lifecycle.unmount();
+});
+
+test("a file opens every diff, scrolled to that file, and the list scrolls between them", async () => {
+  // jsdom lays nothing out. Each diff card sits 100px below the last, 200px
+  // down the scroll area, and the scroll area records where it is sent.
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+  const scrolls: number[] = [];
+  HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+    const cards = [...document.querySelectorAll("[data-file-card]")];
+    const index = cards.indexOf(this);
+    return { top: index < 0 ? 0 : 200 + index * 100 } as DOMRect;
+  };
+  Object.defineProperty(Element.prototype, "scrollTop", {
+    configurable: true,
+    get: () => 0,
+    set: (value: number) => void scrolls.push(value),
+  });
+  try {
+    const slot = await panel(threeFiles);
+    await waitFor(() => expect(slot.getByText("Uncommitted changes")).toBeTruthy());
+    fireEvent.click(slot.getByText("Uncommitted changes"));
+    await waitFor(() => expect(slot.getByTitle("README.md")).toBeTruthy());
+    fireEvent.click(slot.getByTitle("README.md"));
+
+    // Every diff, in the list's order, and the third card brought to the top.
+    await waitFor(() =>
+      expect(openDiffs(slot)).toEqual(["src/app/b.tsx", "src/app/a.tsx", "README.md"]),
+    );
+    expect(scrolls).toEqual([392]);
+    const row = (path: string) =>
+      slot.container.querySelector<HTMLElement>(`[data-row][title="${path}"]`)!;
+    expect(row("README.md").getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(row("src/app/b.tsx"));
+    expect(scrolls).toEqual([392, 192]);
+    expect(row("src/app/b.tsx").getAttribute("aria-selected")).toBe("true");
+
+    // The arrow keys scroll as they move.
+    fireEvent.keyDown(row("src/app/b.tsx"), { key: "ArrowDown" });
+    expect(scrolls).toEqual([392, 192, 292]);
+    expect(document.activeElement).toBe(row("src/app/a.tsx"));
+    expect(openDiffs(slot)).toHaveLength(3);
+    slot.lifecycle.unmount();
+  } finally {
+    HTMLElement.prototype.getBoundingClientRect = rect;
+    if (scrollTop) Object.defineProperty(Element.prototype, "scrollTop", scrollTop);
+  }
 });
 
 test("tells the user how to fix a repository that GitButler has not set up", async () => {
