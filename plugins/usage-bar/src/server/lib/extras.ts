@@ -142,7 +142,7 @@ export function purchasedCodexBalance(body: unknown, balance: number | null): nu
 export async function codexExtras(token: string, accountId: string | null): Promise<AccountExtras> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
-    "User-Agent": "bb-pool-bar",
+    "User-Agent": "bb-usage-bar",
     ...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
   };
   const [creditsBody, usageBody] = await Promise.all([

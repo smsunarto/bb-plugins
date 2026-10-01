@@ -185,7 +185,7 @@ async function builtinSource(
       collected.push(...(await collect(bb, pluginId, primaryHostId, signal, refresh, cache)));
     } catch (error) {
       if (signal.aborted) throw error;
-      bb.log.warn(`pool-bar: usage source ${pluginId} unavailable.`);
+      bb.log.warn(`usage-bar: usage source ${pluginId} unavailable.`);
     }
   }
   const providers = (["codex", "claude"] as const).flatMap((id) => {

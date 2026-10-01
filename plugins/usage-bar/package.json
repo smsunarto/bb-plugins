@@ -1,14 +1,14 @@
 {
-  "name": "@smsunarto/bb-plugin-pool-bar",
+  "name": "@smsunarto/bb-plugin-usage-bar",
   "version": "0.1.0",
   "description": "CodexBar-style macOS menu bar meters for Account Pooler quota.",
   "license": "MIT",
   "author": "Scott Sunarto",
-  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/pool-bar",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/usage-bar",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/smsunarto/bb-plugins.git",
-    "directory": "plugins/pool-bar"
+    "directory": "plugins/usage-bar"
   },
   "type": "module",
   "private": true,
@@ -17,7 +17,7 @@
     "bbPluginSdk": ">=0.5.29"
   },
   "bb": {
-    "name": "Pool Bar",
+    "name": "Usage Bar",
     "description": "Shows each Account Pooler account's session and weekly quota in the macOS menu bar, laid out like CodexBar.",
     "branding": {
       "icon": "./assets/icon.svg",

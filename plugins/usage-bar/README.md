@@ -1,4 +1,4 @@
-# Pool Bar
+# Usage Bar
 
 CodexBar-style macOS menu bar meters for your Codex and Claude accounts. It reads the accounts in bb's Account Pooler. Without the pool, it reads the account each CLI is signed in to.
 
@@ -19,13 +19,13 @@ CodexBar-style macOS menu bar meters for your Codex and Claude accounts. It read
   - Pool accounts use the pool's stored access token. This reads Account Pooler's private secret files under `<bb data dir>/plugins/account-pool/secrets/`. If that layout changes, these sections disappear while quota keeps working.
   - In fallback mode, the CLI's own credentials: `~/.codex/auth.json`, and Claude Code's keychain item or `~/.claude/.credentials.json`. macOS may ask once to allow keychain access.
   - Tokens are only read, never refreshed. An expired token hides the sections until its owner refreshes it.
-  - **Claude web resets:** optional `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`, using `usage --provider claude --source web --json`. CodexBar handles browser cookies. Pool Bar receives only usage JSON and retains the reset count, expiry text, and email for matching. A web email must uniquely match a Claude pool account, including disabled accounts. Duplicate emails across organizations are ambiguous and receive no web result. Built-in fallback requires a successful usage measurement with an account key and email. Web observations and failures are cached for 5 minutes, Refresh bypasses the cache, and the native menu hides stale web observations. The CLI exposes formatted expiry text rather than exact expiry timestamps.
+  - **Claude web resets:** optional `/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`, using `usage --provider claude --source web --json`. CodexBar handles browser cookies. Usage Bar receives only usage JSON and retains the reset count, expiry text, and email for matching. A web email must uniquely match a Claude pool account, including disabled accounts. Duplicate emails across organizations are ambiguous and receive no web result. Built-in fallback requires a successful usage measurement with an account key and email. Web observations and failures are cached for 5 minutes, Refresh bypasses the cache, and the native menu hides stale web observations. The CLI exposes formatted expiry text rather than exact expiry timestamps.
 
 ## How it works
 
-- A small AppKit helper, [`native/PoolBar.swift`](native/PoolBar.swift), draws the items. The plugin compiles it with `swiftc` on first start and caches the binary under `~/Library/Caches/bb-pool-bar/<source hash>/`.
+- A small AppKit helper, [`native/UsageBar.swift`](native/UsageBar.swift), draws the items. The plugin compiles it with `swiftc` on first start and caches the binary under `~/Library/Caches/bb-usage-bar/<source hash>/`.
 - The helper talks to the server over stdin and stdout and exits when bb stops.
-- Only the bb instance using `~/.bb` draws items, so dev instances do not add duplicates. Set `BB_POOL_BAR_ANY_INSTANCE=1` on a dev server to draw from it anyway.
+- Only the bb instance using `~/.bb` draws items, so dev instances do not add duplicates. Set `BB_USAGE_BAR_ANY_INSTANCE=1` on a dev server to draw from it anyway.
 
 ## Requirements
 

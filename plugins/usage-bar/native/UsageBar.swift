@@ -1,4 +1,4 @@
-// Menu bar helper for the pool-bar bb plugin.
+// Menu bar helper for the usage-bar bb plugin.
 //
 // The plugin's server spawns this process and owns its lifetime. It reads one JSON
 // message per line on stdin (`snapshot`, `refreshing`) and writes one per line on
@@ -13,7 +13,7 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Wire model (plugins/pool-bar/src/server/lib/pool.ts)
+// MARK: - Wire model (plugins/usage-bar/src/server/lib/pool.ts)
 
 struct Snapshot: Decodable {
     let providers: [Provider]
@@ -504,7 +504,7 @@ final class ProviderItem: NSObject, NSMenuDelegate {
         self.providerId = providerId
         self.store = store
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.autosaveName = "bb-pool-bar-\(providerId)"
+        statusItem.autosaveName = "bb-usage-bar-\(providerId)"
         logo = NSImage(contentsOfFile: "\(nativeDir)/\(providerId).svg")
         logo?.size = NSSize(width: 16, height: 16)
         logo?.isTemplate = true
@@ -632,7 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch envelope.type {
         case "snapshot":
             guard let snapshot = try? decoder.decode(Snapshot.self, from: data) else {
-                FileHandle.standardError.write(Data("pool-bar: undecodable snapshot\n".utf8))
+                FileHandle.standardError.write(Data("usage-bar: undecodable snapshot\n".utf8))
                 return
             }
             store.snapshot = snapshot
@@ -660,10 +660,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-enum PoolBar {
+enum UsageBarApp {
     static func main() {
         guard CommandLine.arguments.count > 1 else {
-            FileHandle.standardError.write(Data("usage: PoolBar <native-dir>\n".utf8))
+            FileHandle.standardError.write(Data("usage: UsageBar <native-dir>\n".utf8))
             exit(64)
         }
         let app = NSApplication.shared

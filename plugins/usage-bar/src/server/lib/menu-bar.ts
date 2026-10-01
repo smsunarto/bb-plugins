@@ -44,7 +44,7 @@ function untilAborted(signal: AbortSignal): Promise<void> {
  */
 export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<void> {
   if (process.platform !== "darwin") {
-    bb.log.info("pool-bar: the menu bar item is macOS only; idling.");
+    bb.log.info("usage-bar: the menu bar item is macOS only; idling.");
     await untilAborted(signal);
     return;
   }
@@ -53,9 +53,9 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
   const defaultDataDir = join(homedir(), ".bb");
   if (
     resolve(bb.server.experimental_dataDir) !== defaultDataDir &&
-    process.env.BB_POOL_BAR_ANY_INSTANCE !== "1"
+    process.env.BB_USAGE_BAR_ANY_INSTANCE !== "1"
   ) {
-    bb.log.info(`pool-bar: only the bb instance at ${defaultDataDir} draws the menu bar; idling.`);
+    bb.log.info(`usage-bar: only the bb instance at ${defaultDataDir} draws the menu bar; idling.`);
     await untilAborted(signal);
     return;
   }
@@ -63,10 +63,10 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
   const binary = await buildHelper(signal);
   const child = spawn(binary, [nativeDir()], { stdio: ["pipe", "pipe", "pipe"], signal });
   child.on("error", (error) => {
-    if (!signal.aborted) bb.log.warn(`pool-bar: helper error: ${error.message}`);
+    if (!signal.aborted) bb.log.warn(`usage-bar: helper error: ${error.message}`);
   });
   createInterface({ input: child.stderr }).on("line", (line) => {
-    bb.log.warn(`pool-bar helper: ${line}`);
+    bb.log.warn(`usage-bar helper: ${line}`);
   });
   // A write after the helper exits raises EPIPE here; the exit path handles it.
   child.stdin.on("error", () => {});
@@ -240,5 +240,5 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
   if (signal.aborted) return;
   // Quit from the menu hides the item until bb restarts or the plugin reloads.
   if (quit) return untilAborted(signal);
-  throw new Error(`pool-bar: helper exited with code ${String(code)}`);
+  throw new Error(`usage-bar: helper exited with code ${String(code)}`);
 }

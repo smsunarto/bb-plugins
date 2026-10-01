@@ -14,7 +14,7 @@ function pluginRoot(): string {
   let dir = import.meta.dirname;
   while (!existsSync(join(dir, "package.json"))) {
     const parent = dirname(dir);
-    if (parent === dir) throw new Error("pool-bar: plugin root not found");
+    if (parent === dir) throw new Error("usage-bar: plugin root not found");
     dir = parent;
   }
   return dir;
@@ -28,19 +28,19 @@ export function nativeDir(): string {
 /**
  * Compile the AppKit helper once per source revision. The binary is cached by the
  * source hash under ~/Library/Caches, so a plugin reload reuses it and an edit to
- * PoolBar.swift rebuilds it. Compiling here rather than in `bb plugin build` keeps
+ * UsageBar.swift rebuilds it. Compiling here rather than in `bb plugin build` keeps
  * the plugin installable from a path or Git source with only the Xcode command
  * line tools, which `swiftc` needs either way.
  */
 export async function buildHelper(signal: AbortSignal): Promise<string> {
-  const source = join(nativeDir(), "PoolBar.swift");
+  const source = join(nativeDir(), "UsageBar.swift");
   const hash = createHash("sha256")
     .update(await readFile(source))
     .update(process.arch)
     .digest("hex")
     .slice(0, 16);
-  const dir = join(homedir(), "Library", "Caches", "bb-pool-bar", hash);
-  const binary = join(dir, "PoolBar");
+  const dir = join(homedir(), "Library", "Caches", "bb-usage-bar", hash);
+  const binary = join(dir, "UsageBar");
   if (existsSync(binary)) return binary;
 
   await mkdir(dir, { recursive: true });
@@ -54,7 +54,7 @@ export async function buildHelper(signal: AbortSignal): Promise<string> {
   } catch (error) {
     await rm(partial, { force: true });
     const stderr = (error as { stderr?: string }).stderr?.trim();
-    throw new Error(`pool-bar: swiftc failed${stderr ? `:\n${stderr}` : ""}`, { cause: error });
+    throw new Error(`usage-bar: swiftc failed${stderr ? `:\n${stderr}` : ""}`, { cause: error });
   }
   return binary;
 }

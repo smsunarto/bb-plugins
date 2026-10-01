@@ -59,7 +59,7 @@ user has chosen to install, which is nominative use.
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------- |
 | Amp                                                  | `plugins/amp/assets/*.svg` and `plugins/amp/src/amp-brand.ts`, used for plugin branding and rendered in the Orb banner | Sourcegraph             |
 | OpenAI, Claude, Cursor, Grok, opencode, Pi, oh-my-pi | `plugins/gtd-sidebar/lib/provider-marks.ts`                                                                            | their respective owners |
-| OpenAI, Claude                                       | `plugins/pool-bar/native/codex.svg` and `plugins/pool-bar/native/claude.svg`, rendered as menu bar template images     | their respective owners |
+| OpenAI, Claude                                       | `plugins/usage-bar/native/codex.svg` and `plugins/usage-bar/native/claude.svg`, rendered as menu bar template images     | their respective owners |
 
 In bb provider chrome, a host-served logo always takes precedence over vendored
 geometry and is rendered as a muted silhouette. The Amp Orb banner uses the
@@ -69,9 +69,9 @@ vendored Amp mark as an Amp-red status accent.
 
 ## CodexBar — `steipete/CodexBar`
 
-`plugins/pool-bar/native/PoolBar.swift` ports CodexBar's menu card layout,
+`plugins/usage-bar/native/UsageBar.swift` ports CodexBar's menu card layout,
 progress bar, reset and pace text, and menu bar metric rules. The provider marks
-in `plugins/pool-bar/native/*.svg` are copied from CodexBar's
+in `plugins/usage-bar/native/*.svg` are copied from CodexBar's
 `Sources/CodexBar/Resources/ProviderIcon-*.svg`. CodexBar is under the MIT licence:
 
 ```

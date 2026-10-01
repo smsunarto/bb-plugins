@@ -594,6 +594,21 @@
         "typescript": "^6.0.0",
       },
     },
+    "plugins/usage-bar": {
+      "name": "@smsunarto/bb-plugin-usage-bar",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.2.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.5.29",
+        "@types/node": "^22.0.0",
+        "bun-types": "^1.4.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/vimium": {
       "name": "@smsunarto/bb-plugin-vimium",
       "version": "0.1.0",
@@ -1371,6 +1386,8 @@
     "@smsunarto/bb-plugin-my-stack": ["@smsunarto/bb-plugin-my-stack@workspace:plugins/my-stack"],
 
     "@smsunarto/bb-plugin-traces": ["@smsunarto/bb-plugin-traces@workspace:plugins/traces"],
+
+    "@smsunarto/bb-plugin-usage-bar": ["@smsunarto/bb-plugin-usage-bar@workspace:plugins/usage-bar"],
 
     "@smsunarto/bb-plugin-vimium": ["@smsunarto/bb-plugin-vimium@workspace:plugins/vimium"],
 

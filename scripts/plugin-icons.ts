@@ -163,7 +163,7 @@ const customIcons = {
     name: "GitBranch",
     nodes: GitBranchIcon,
   },
-  "pool-bar": {
+  "usage-bar": {
     name: "DashboardSpeed",
     nodes: DashboardSpeed02Icon,
   },

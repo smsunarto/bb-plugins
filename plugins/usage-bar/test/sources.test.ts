@@ -15,7 +15,7 @@ const signal = new AbortController().signal;
 test("fallback keeps failed collections until Refresh and isolates the next account", async () => {
   let generation = 0;
   const { bb, harness } = createFakePluginHost({
-    pluginId: "pool-bar",
+    pluginId: "usage-bar",
     sdk: {
       system: { config: async () => ({ primaryHostId: "mac" }) },
       plugins: {

@@ -164,8 +164,8 @@ test("pool source shares one web refresh and keeps a mismatched pooled account e
     status: "ready",
   }));
   const { bb, harness } = createFakePluginHost({
-    pluginId: "pool-bar",
-    dataDir: "/tmp/pool-bar-no-secrets",
+    pluginId: "usage-bar",
+    dataDir: "/tmp/usage-bar-no-secrets",
     sdk: {
       plugins: {
         experimental_discoverRpc: async () => [{ pluginId: "account-pool" }],
