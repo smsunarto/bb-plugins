@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { migrate } from "../migrations.ts";
-import { useDatabase } from "../sqlite.ts";
+import { installDatabase } from "../sqlite.ts";
 import { createReviewApi } from "../vendor/review/src/review-api/http.ts";
 import { LocalReviewData } from "../vendor/review/src/review-api/local-data.ts";
 import { ReviewStore } from "../vendor/review/src/review-api/store.ts";
@@ -27,7 +27,7 @@ const post = async (route: string, body: unknown) => {
 beforeEach(async () => {
   host = createFakePluginHost({ pluginId: "whiteboard" });
   migrate(host.bb);
-  useDatabase(host.bb.storage.database());
+  installDatabase(host.bb.storage.database());
   store = new ReviewStore("ignored.db", {
     validatePins: async () => {},
     validateSource: async () => {},

@@ -8,12 +8,13 @@ export function normalizeReviewView(
   softwareMapEnabled: boolean,
   hasChangeRange = true,
   hasTraceSessions = true,
+  hasCommitRange = hasChangeRange,
 ): ReviewView {
   if (view === "map" && !softwareMapEnabled) return "review";
 
   if (view === "trace" && !hasTraceSessions) return "review";
 
-  if (!hasChangeRange && (view === "commits" || view === "diff")) {
+  if ((view === "commits" && !hasCommitRange) || (view === "diff" && !hasChangeRange)) {
     return "review";
   }
 

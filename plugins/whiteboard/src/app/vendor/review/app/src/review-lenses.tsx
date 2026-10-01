@@ -73,12 +73,14 @@ export function ReviewLensesProvider({
   snapshot,
   structuralDiffEnabled = true,
   coverageRevision = 0,
+  sourceGeneration,
   children,
 }: {
   client: ReviewApiClient;
   snapshot: Snapshot;
   structuralDiffEnabled?: boolean;
   coverageRevision?: number;
+  sourceGeneration?: string;
   children: ReactNode;
 }) {
   const [progress, setProgress] = useState<ReviewProgress | null>(null);
@@ -108,12 +110,12 @@ export function ReviewLensesProvider({
     return () => {
       generation.current++;
     };
-  }, [client, route, snapshot.version, mode]);
+  }, [client, route, snapshot.version, mode, sourceGeneration]);
   useEffect(() => {
     const abort = new AbortController();
     void client
       .read<ReviewProgress>(
-        `${route}?version=${snapshot.version}&mode=${mode}&wait=false`,
+        `${route}?version=${snapshot.version}&mode=${mode}&wait=false${sourceGeneration ? `&generation=${encodeURIComponent(sourceGeneration)}` : ""}`,
         abort.signal,
       )
       .then((value) => {
@@ -126,7 +128,7 @@ export function ReviewLensesProvider({
       });
 
     return () => abort.abort();
-  }, [client, route, snapshot.version, mode, coverageRevision]);
+  }, [client, route, snapshot.version, mode, coverageRevision, sourceGeneration]);
 
   const lenses: ReviewProgress["lenses"] = progress?.lenses ?? [
     ...(snapshot.lenses ?? []).map((lens) => ({

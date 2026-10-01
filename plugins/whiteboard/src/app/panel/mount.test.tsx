@@ -2,6 +2,10 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
+import type {
+  ReviewCanvasContent,
+  ReviewSourceView,
+} from "../../shared/vendor/review-protocol/src/index.ts";
 
 /**
  * The mount with bb's SDK, the RPC client and the vendored canvas replaced.
@@ -22,6 +26,10 @@ const rpcState = vi.hoisted(() => ({
   calls: [] as ApiRequest[],
 }));
 const find = vi.hoisted(() => ({ showFind: (_seed?: string) => true as boolean }));
+const canvas = vi.hoisted(() => ({
+  content: undefined as Extract<ReviewCanvasContent, { kind: "api" }> | undefined,
+  sourceView: undefined as (() => ReviewSourceView | undefined) | undefined,
+}));
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({
   useBbNavigate: () => sdk.navigate,
@@ -49,9 +57,10 @@ vi.mock("../rpc.ts", () => {
 });
 
 vi.mock("../vendor/review/app/src/api-canvas.tsx", () => ({
-  ApiCanvas: ({ content }: { content: { reviewId: string } }) => (
-    <div data-testid="api-canvas">canvas {content.reviewId}</div>
-  ),
+  ApiCanvas: ({ content }: { content: Extract<ReviewCanvasContent, { kind: "api" }> }) => {
+    canvas.content = content;
+    return <div data-testid="api-canvas">canvas {content.reviewId}</div>;
+  },
 }));
 vi.mock("../vendor/review/app/src/review-home-view.tsx", () => ({
   ReviewHome: ({ reviews }: { reviews: Array<{ title: string }> }) => (
@@ -71,7 +80,12 @@ vi.mock("../vendor/review/app/src/review-find.tsx", () => ({
 }));
 // WP6 owns these; the mount only needs their factory shapes.
 vi.mock("../bridge/inline-editors.tsx", () => ({ createInlineEditors: () => ({}) }));
-vi.mock("../bridge/diff-view.tsx", () => ({ createDiffView: () => ({}) }));
+vi.mock("../bridge/diff-view.tsx", () => ({
+  createDiffView: ({ sourceView }: { sourceView: () => ReviewSourceView | undefined }) => {
+    canvas.sourceView = sourceView;
+    return { files: async () => [] };
+  },
+}));
 
 const { REMOVED_TITLE, WhiteboardMount } = await import("./mount.tsx");
 
@@ -89,6 +103,8 @@ beforeEach(() => {
   rpcState.calls = [];
   sdk.realtime.clear();
   sdk.connection = "connected";
+  canvas.content = undefined;
+  canvas.sourceView = undefined;
 });
 
 afterEach(() => {
@@ -101,6 +117,34 @@ const themeHost = () => root().querySelector<HTMLElement>(".review-theme-host")!
 const watchCalls = () => rpcState.calls.filter((call) => call.path.startsWith("/watch")).length;
 
 describe("WhiteboardMount", () => {
+  it("preserves current source generation and strips it for a historical address", async () => {
+    render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
+    await screen.findByTestId("api-canvas");
+    const content = canvas.content!;
+    content.setSourceView!(
+      { kind: "current", reviewId: SESSION },
+      {
+        reviewId: SESSION,
+        version: 3,
+        generation: "live-generation",
+      },
+    );
+    await content.bridge.diffView.files();
+    expect(canvas.sourceView!()).toEqual({
+      reviewId: SESSION,
+      version: 3,
+      generation: "live-generation",
+    });
+    content.setSourceView!(
+      { kind: "version", reviewId: SESSION, version: 1 },
+      {
+        reviewId: SESSION,
+        version: 1,
+        generation: "saved-generation",
+      },
+    );
+    expect(canvas.sourceView!()).toEqual({ reviewId: SESSION, version: 1, generation: undefined });
+  });
   it("renders the vendored CSS scope root and follows bb's theme", async () => {
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     await screen.findByTestId("api-canvas");

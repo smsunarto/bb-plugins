@@ -4,7 +4,7 @@ import type * as NodeSqlite from "node:sqlite";
 /**
  * The `node:sqlite` surface `store.ts` and `activity.ts` use, over the bb
  * plugin database (design §3.10). The engine installs bb's handle with
- * `useDatabase` before it constructs the store, and the constructor then
+ * `installDatabase` before it constructs the store, and the constructor then
  * ignores its path. Differences from better-sqlite3 that upstream can observe
  * are normalized here:
  *
@@ -37,12 +37,12 @@ type Source =
 let source: Source | undefined;
 
 /** Install the bb handle that every later `new DatabaseSync(...)` wraps. */
-export function useDatabase(handle: BetterSqlite3.Database): void {
+export function installDatabase(handle: BetterSqlite3.Database): void {
   source = { kind: "borrowed", handle };
 }
 
 /** Open a fresh database per `new DatabaseSync(path)` instead. For specs on real better-sqlite3. */
-export function useDatabaseOpener(open: DatabaseOpener): void {
+export function installDatabaseOpener(open: DatabaseOpener): void {
   source = { kind: "owned", open };
 }
 
@@ -136,7 +136,7 @@ class Database {
   constructor(path: string, options?: NodeSqlite.DatabaseSyncOptions) {
     if (!source)
       throw new Error(
-        "whiteboard: no database installed. Call useDatabase(bb.storage.database()) before constructing the store.",
+        "whiteboard: no database installed. Call installDatabase(bb.storage.database()) before constructing the store.",
       );
     this.#owned = source.kind === "owned";
     this.#handle =

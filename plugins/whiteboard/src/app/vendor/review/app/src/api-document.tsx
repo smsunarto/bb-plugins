@@ -86,7 +86,7 @@ export function createDocumentLoader(client: ReviewApiClient) {
       for (const url of urls) URL.revokeObjectURL(url);
       cache.clear();
     },
-    async load(snapshot: Snapshot): Promise<ApiDocumentData> {
+    async load(snapshot: Snapshot, generation?: string): Promise<ApiDocumentData> {
       const data: ApiDocumentData = {
         snapshot,
         headings: apiHeadingIds(snapshot.document),
@@ -152,12 +152,12 @@ export function createDocumentLoader(client: ReviewApiClient) {
 
           if (node.type === "software_map") {
             const model = await once(
-              `map:${node.mapVersionId}:${JSON.stringify(snapshot.pins ?? null)}`,
+              `map:${node.mapVersionId}:${JSON.stringify(snapshot.pins ?? null)}:${generation ?? ""}`,
               async () => {
                 const saved = await client.read<
                   Awaited<ReturnType<LocalReviewData["map"]>>
                 >(
-                  `/${snapshot.reviewId}/maps/${encodeURIComponent(node.mapVersionId)}?version=${snapshot.version}`,
+                  `/${snapshot.reviewId}/maps/${encodeURIComponent(node.mapVersionId)}?version=${snapshot.version}${generation ? `&generation=${encodeURIComponent(generation)}` : ""}`,
                 );
 
                 return {

@@ -1,5 +1,6 @@
 /** Panel identity shared by the server tab writer and the client listener (design §3.6). */
 export const PLUGIN_ID = "whiteboard";
+export const WHITEBOARD_ICON = "whiteboard/whiteboard";
 export const PANEL_ACTION_ID = "whiteboard";
 export const NAV_PANEL_PATH = "whiteboard";
 

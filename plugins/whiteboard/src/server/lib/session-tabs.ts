@@ -67,7 +67,7 @@ function isTabsConflict(error: unknown): boolean {
  * `undefined` for no change. A conflict re-reads and retries; the last
  * error is thrown after `TAB_WRITE_ATTEMPTS`.
  */
-export async function editThreadTabs(
+async function writeThreadTabs(
   bb: BbPluginApi,
   threadId: string,
   edit: (tabs: ThreadTabs) => ThreadTabs | undefined,
@@ -85,6 +85,37 @@ export async function editThreadTabs(
   }
 }
 
+/** Serialize this load's writes to one thread. The server revision still arbitrates other clients. */
+const tabQueues = new WeakMap<BbPluginApi, Map<string, Promise<void>>>();
+
+export function editThreadTabs(
+  bb: BbPluginApi,
+  threadId: string,
+  edit: (tabs: ThreadTabs) => ThreadTabs | undefined,
+): Promise<void> {
+  let queues = tabQueues.get(bb);
+  if (!queues) tabQueues.set(bb, (queues = new Map()));
+  const previous = queues.get(threadId) ?? Promise.resolve();
+  const pending = previous.catch(() => {}).then(() => writeThreadTabs(bb, threadId, edit));
+  queues.set(threadId, pending);
+  void pending
+    .finally(() => {
+      if (queues.get(threadId) === pending) queues.delete(threadId);
+    })
+    .catch(() => {});
+  return pending;
+}
+
+/** Open attempts invalidate an older close, even while their own tab write is queued. */
+const openGenerations = new WeakMap<BbPluginApi, Map<string, number>>();
+function generations(bb: BbPluginApi): Map<string, number> {
+  let values = openGenerations.get(bb);
+  if (!values) openGenerations.set(bb, (values = new Map()));
+  return values;
+}
+const threadSessionKey = (sessionId: string, threadId: string) =>
+  JSON.stringify([sessionId, threadId]);
+
 /** Append the session's tab, or retitle it when the title changed. */
 export function upsertSessionTab(
   bb: BbPluginApi,
@@ -92,6 +123,8 @@ export function upsertSessionTab(
   sessionId: string,
   title: string,
 ): Promise<void> {
+  const key = threadSessionKey(sessionId, threadId);
+  generations(bb).set(key, (generations(bb).get(key) ?? 0) + 1);
   const wanted = sessionTab(sessionId, title);
   return editThreadTabs(bb, threadId, (tabs) => {
     const index = tabs.findIndex((tab) => tab.id === wanted.id);
@@ -112,10 +145,15 @@ function retitleSessionTab(bb: BbPluginApi, threadId: string, sessionId: string,
   });
 }
 
-function removeSessionTab(bb: BbPluginApi, threadId: string, sessionId: string) {
+function removeSessionTab(
+  bb: BbPluginApi,
+  threadId: string,
+  sessionId: string,
+  stale: () => boolean,
+) {
   const id = sessionTab(sessionId, "").id;
   return editThreadTabs(bb, threadId, (tabs) =>
-    tabs.some((tab) => tab.id === id) ? tabs.filter((tab) => tab.id !== id) : undefined,
+    !stale() && tabs.some((tab) => tab.id === id) ? tabs.filter((tab) => tab.id !== id) : undefined,
   );
 }
 
@@ -139,7 +177,7 @@ export function recordSessionThread(bb: BbPluginApi, sessionId: string, threadId
     .database()
     .prepare("INSERT OR IGNORE INTO session_threads(session_id, thread_id) VALUES (?, ?)")
     .run(sessionId, threadId);
-  openTimes(bb).set(sessionId, new Date().toISOString());
+  openTimes(bb).set(threadSessionKey(sessionId, threadId), new Date().toISOString());
 }
 
 /** Sessions recorded for one thread, oldest first. */
@@ -181,9 +219,13 @@ export function trackSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsStor
   /** Titles the recorded tabs are known to carry. Unknown means "check the tab". */
   const titles = new Map<string, string>();
   const opened = openTimes(bb);
-  /** Dismissed before its latest open: the tab stays until the next dismissal. */
-  const reopened = (sessionId: string, dismissedAt: string) =>
-    (opened.get(sessionId) ?? "") > dismissedAt;
+  const dismissalGenerations = new Map<string, { at: string; generation?: number }>();
+  /** The generation disambiguates a reopen and dismissal in the same millisecond. */
+  const reopened = (sessionId: string, threadId: string, dismissedAt: string) =>
+    (opened.get(threadSessionKey(sessionId, threadId)) ?? "") > dismissedAt ||
+    (dismissalGenerations.get(threadSessionKey(sessionId, threadId))?.at === dismissedAt &&
+      dismissalGenerations.get(threadSessionKey(sessionId, threadId))?.generation !==
+        generations(bb).get(threadSessionKey(sessionId, threadId)));
   let stopped = false;
   let running: Promise<void> | undefined;
   let again = false;
@@ -195,10 +237,12 @@ export function trackSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsStor
   /** Close the tab in every recorded thread. A row stays only while its write keeps failing. */
   const forget = async (sessionId: string, threadIds: string[]) => {
     titles.delete(sessionId);
-    opened.delete(sessionId);
     for (const threadId of threadIds) {
+      const key = threadSessionKey(sessionId, threadId);
+      const generation = generations(bb).get(key);
+      const stale = () => stopped || generations(bb).get(key) !== generation;
       try {
-        await removeSessionTab(bb, threadId, sessionId);
+        await removeSessionTab(bb, threadId, sessionId, stale);
       } catch (error) {
         // 404: the thread is gone, and its tabs with it.
         if (!hasStatus(error, 404)) {
@@ -206,7 +250,8 @@ export function trackSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsStor
           continue;
         }
       }
-      if (stopped) return;
+      if (stale()) continue;
+      opened.delete(key);
       bb.storage
         .database()
         .prepare("DELETE FROM session_threads WHERE session_id=? AND thread_id=?")
@@ -229,6 +274,28 @@ export function trackSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsStor
     if (synced) titles.set(sessionId, title);
   };
 
+  const dismiss = async (
+    sessionId: string,
+    dismissedAt: string,
+    title: string,
+    threadIds: string[],
+  ) => {
+    for (const threadId of threadIds) {
+      const key = threadSessionKey(sessionId, threadId);
+      if (dismissalGenerations.get(key)?.at !== dismissedAt)
+        dismissalGenerations.set(key, { at: dismissedAt, generation: generations(bb).get(key) });
+    }
+    const closedThreads = threadIds.filter(
+      (threadId) => !reopened(sessionId, threadId, dismissedAt),
+    );
+    if (closedThreads.length) await forget(sessionId, closedThreads);
+    const retainedThreads = threadIds.filter((threadId) =>
+      reopened(sessionId, threadId, dismissedAt),
+    );
+    if (retainedThreads.length && titles.get(sessionId) !== title)
+      await retitle(sessionId, title, retainedThreads);
+  };
+
   const sweep = async () => {
     const rows = recordedRows(bb);
     if (!rows.length) return;
@@ -241,9 +308,9 @@ export function trackSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsStor
       if (!summary) {
         // Tutorial sessions are hidden from the catalog but still exist.
         if (!store.has(sessionId)) await forget(sessionId, threadIds);
-      } else if (summary.dismissedAt && !reopened(sessionId, summary.dismissedAt))
-        await forget(sessionId, threadIds);
-      else if (titles.get(sessionId) !== summary.title)
+      } else if (summary.dismissedAt) {
+        await dismiss(sessionId, summary.dismissedAt, summary.title, threadIds);
+      } else if (titles.get(sessionId) !== summary.title)
         await retitle(sessionId, summary.title, threadIds);
     }
   };
@@ -274,15 +341,22 @@ export function trackSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsStor
   // them avoids one tab read per recorded row on the first change. A recorded
   // session that is already dismissed was reopened after its dismissal (or its
   // close failed): only a later dismissal closes it, as in Desktop.
+  const seed = () => {
+    const rows = recordedRows(bb);
+    const recorded = new Set(rows.map((row) => row.sessionId));
+    if (!recorded.size) return;
+    for (const summary of store.list()) {
+      if (!recorded.has(summary.reviewId)) continue;
+      titles.set(summary.reviewId, summary.title);
+      if (!summary.dismissedAt) continue;
+      for (const row of rows.filter((row) => row.sessionId === summary.reviewId)) {
+        const key = threadSessionKey(row.sessionId, row.threadId);
+        if (!opened.has(key)) opened.set(key, new Date().toISOString());
+      }
+    }
+  };
   try {
-    const recorded = new Set(recordedRows(bb).map((row) => row.sessionId));
-    if (recorded.size)
-      for (const summary of store.list())
-        if (recorded.has(summary.reviewId)) {
-          titles.set(summary.reviewId, summary.title);
-          if (summary.dismissedAt && !opened.has(summary.reviewId))
-            opened.set(summary.reviewId, new Date().toISOString());
-        }
+    seed();
   } catch (error) {
     warn(`could not read recorded thread tabs: ${String(error)}`);
   }

@@ -6,6 +6,7 @@ import type {
   ReviewDiffViewHandle,
   ReviewInlineEditorFactory,
   ReviewRuntimeConfig,
+  ReviewSourceView,
 } from "../../shared/vendor/review-protocol/src/index.ts";
 import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
 import type { WhiteboardRpcClient } from "../rpc.ts";
@@ -24,7 +25,7 @@ import {
 } from "./theme.ts";
 import { createTooltips } from "./tooltip.tsx";
 import { createTunnel } from "./tunnel.ts";
-import { createVerbs } from "./verbs.ts";
+import { createLiveFileOpener, createVerbs } from "./verbs.ts";
 
 /** What a mount hands the bridge. */
 export type BbBridgeDeps = {
@@ -38,8 +39,7 @@ export type BbBridgeDeps = {
   events: SurfaceEvents;
   /** Realtime invalidations for live watch streams. */
   hub: LiveHub;
-  /** The bb host holding this session's checkout, for opening live files. */
-  resolveHostId?: () => Promise<string | undefined>;
+  sourceView?: () => ReviewSourceView | undefined;
 };
 
 /**
@@ -74,9 +74,14 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
   const { rpc, threadId, reviewId, navigate, portals, events, hub } = deps;
   const request = createTunnel({ rpc, threadId, hub });
 
-  const inlineEditorFactory = lazy(() =>
-    createInlineEditors({ request, rpc, reviewId, portals, events }),
-  );
+  const notify: NonNullable<ReviewCanvasBridge["notify"]> = (message) => {
+    if (message.kind === "error") toast.error(message.text);
+    else toast.success(message.text);
+  };
+  const openFile = createLiveFileOpener({ rpc, navigate, notify });
+  const surfaces = { request, reviewId, portals, sourceView: deps.sourceView, openFile };
+
+  const inlineEditorFactory = lazy(() => createInlineEditors(surfaces));
   const inlineEditors: ReviewInlineEditorFactory = {
     create: (spec) => inlineEditorFactory().create(spec),
     find: (spec, query) => inlineEditorFactory().find(spec, query),
@@ -85,7 +90,7 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
   // openDiff names a file before the Diffs view may exist; the next handle reveals it.
   let diffHandle: ReviewDiffViewHandle | undefined;
   let pendingReveal: string | undefined;
-  const diffViewFactory = lazy(() => createDiffView({ request, reviewId, portals, events }));
+  const diffViewFactory = lazy(() => createDiffView(surfaces));
   const diffView: ReviewDiffViewFactory = {
     create(spec) {
       const inner = diffViewFactory().create(spec);
@@ -116,11 +121,6 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
     files: (scope) => diffViewFactory().files(scope),
   };
 
-  const notify: NonNullable<ReviewCanvasBridge["notify"]> = (message) => {
-    if (message.kind === "error") toast.error(message.text);
-    else toast.success(message.text);
-  };
-
   const config: ReviewRuntimeConfig = {
     host: "desktop",
     serverUrl: PLACEHOLDER_SERVER_URL,
@@ -149,7 +149,8 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
         if (diffHandle?.revealFile) diffHandle.revealFile(path);
         else pendingReveal = path;
       },
-      resolveHostId: deps.resolveHostId ?? (async () => undefined),
+      openFile,
+      sourceView: deps.sourceView,
       // Read per call: a mount may pass a live getter for settings changes.
       softwareMapEnabled: () => deps.info.softwareMapEnabled,
     }),

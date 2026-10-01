@@ -1,9 +1,7 @@
 // Vendored from dev.fast review/src/review-api/local-data.ts @4ecc570 (MIT).
-import { execFile } from "node:child_process";
-import { type FSWatcher, existsSync, watch } from "node:fs";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import type { FSWatcher } from "node:fs";
+import { execFile, exists, mkdir, readFile, realpath, stat, watch, writeFile, writePrivateJsonAtomic } from "../../../../host-io/fs.ts";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import {
   type BlobBatchReader,
@@ -15,9 +13,8 @@ import {
   createBlobBatchReader,
   detectLocalVcs,
   diffFileSummariesTrees,
-  diffFileSummariesWorkingTree,
   diffTrees,
-  diffWorkingTree,
+  git,
   gitCommonDir,
   listCommitRange,
   listTrackedFilesAtCommit,
@@ -31,7 +28,6 @@ import type {
   ReviewSourceEntry,
   StructuralDiffEvent,
 } from "../../../../../../shared/vendor/review-protocol/src/index.ts";
-import { writePrivateJsonAtomic } from "../../../../../../shared/node/vendor/generated/trace-core-index.ts";
 import { z } from "zod";
 
 import { textIncludesQuote } from "../../../../../../shared/vendor/review/src/evidence.ts";
@@ -94,8 +90,9 @@ import {
   EMPTY_SOURCE,
   inspectWorktree,
   localSourcePath,
-  readWorkingFile,
-  workingFiles,
+  retainedWorktreeTree,
+  retainedWorktreeHead,
+  pruneWorktreeTrees,
 } from "../../../../host-io/worktree-source.ts";
 
 export const uploadSchema = z.discriminatedUnion("kind", [
@@ -355,7 +352,7 @@ export class LocalReviewData {
       );
 
     if (!live) {
-      const { stdout } = await promisify(execFile)("git", [
+      const { stdout } = await execFile("git", [
         "-C",
         rootPath,
         "status",
@@ -469,7 +466,7 @@ export class LocalReviewData {
 
   /** Pins a reference names itself, checked against the registered checkout. */
   async anchorSourcePins(anchor: SourcePins): Promise<Pins> {
-    if (!existsSync(this.store.repositoryPath(anchor.repositoryId)))
+    if (!(await exists(this.store.repositoryPath(anchor.repositoryId))))
       throw unavailableCheckout();
 
     return anchorPins({ pins: anchor }, undefined);
@@ -541,7 +538,9 @@ export class LocalReviewData {
   }): AsyncGenerator<StructuralDiffEvent> {
     if (file !== undefined) checkRelativePath(file);
 
-    const rootPath = await ensureReviewPinnedCheckout({
+    const trees = await this.snapshotPins(pins, true);
+
+    const rootPath = pins.worktreeRevision ? (await this.snapshotTarget(pins)).rootPath : await ensureReviewPinnedCheckout({
       rootPath: this.store.repositoryPath(pins.repositoryId),
       ref: pins.head,
       reviewUuid: reviewId,
@@ -553,7 +552,7 @@ export class LocalReviewData {
       );
     yield* this.structuralComparisons.stream({
       repositoryPath: rootPath,
-      comparison: { kind: "trees", base: pins.base, head: pins.head },
+      comparison: { kind: "trees", base: trees.base, head: trees.head },
       paths: file === undefined ? undefined : [file],
       signal,
     });
@@ -625,6 +624,17 @@ export class LocalReviewData {
 
     const epoch = entry.epoch;
     const inspected = await inspectWorktree(repositoryId, vcs);
+    if (entry.inspection?.revision !== inspected.revision) {
+      const keep = new Set([inspected.revision]);
+      if (entry.inspection) keep.add(entry.inspection.revision);
+      for (const review of this.store.list())
+        for (const version of this.store.history(review.reviewId)) {
+          const saved = this.store.read(review.reviewId, version.version).pins;
+          if (saved?.repositoryId === repositoryId && saved.worktreeRevision)
+            keep.add(saved.worktreeRevision);
+        }
+      await pruneWorktreeTrees(repositoryId, vcs, [...keep]);
+    }
     entry.inspection = inspected;
     entry.inspectedEpoch = epoch;
 
@@ -651,10 +661,10 @@ export class LocalReviewData {
   }
 
   /** Detected once; dropped when the root vanishes or detection found nothing. */
-  private vcs(repositoryId: string): Promise<LocalVcs | null> {
+  private async vcs(repositoryId: string): Promise<LocalVcs | null> {
     const cached = this.repositories.get(repositoryId);
 
-    if (cached && (!cached.vcs || existsSync(cached.vcs.rootPath)))
+    if (cached && (!cached.vcs || await exists(cached.vcs.rootPath)))
       return cached.detection;
 
     this.closeReader(repositoryId);
@@ -738,7 +748,7 @@ export class LocalReviewData {
     const rootPath = this.store.repositoryPath(repositoryId);
 
     // local-vcs would report a missing root as a path-bearing 500.
-    if (!existsSync(rootPath)) throw unavailableCheckout();
+    if (!(await exists(rootPath))) throw unavailableCheckout();
 
     return { rootPath };
   }
@@ -792,15 +802,26 @@ export class LocalReviewData {
   /** Throws 404 when the checkout behind the snapshot is gone. Undefined
    * for a document without default pins. */
   async sourcePins(snapshot: Snapshot): Promise<Pins | undefined> {
-    if (snapshot.target?.kind === "worktree")
-      return (await this.resolveTarget(snapshot.target)).pins;
-
     if (!snapshot.pins) return undefined;
 
-    if (!existsSync(this.store.repositoryPath(snapshot.pins.repositoryId)))
+    if (!(await exists(this.store.repositoryPath(snapshot.pins.repositoryId))))
       throw unavailableCheckout();
 
     return snapshot.pins;
+  }
+  async sourceAtGeneration(snapshot: Snapshot, generation: string): Promise<Snapshot> {
+    if (snapshot.target?.kind !== "worktree" || !snapshot.pins)
+      throw new ReviewInputError("This document has no working source generation.", 409);
+    const vcs = await this.vcs(snapshot.pins.repositoryId);
+    if (!vcs) throw unavailableCheckout();
+    let head: string | null;
+    try {
+      head = await retainedWorktreeHead(snapshot.pins.repositoryId, generation, vcs);
+    } catch (error) {
+      if (!(error instanceof ReviewInputError) || error.status !== 404) throw error;
+      throw new ReviewInputError("The selected working source generation has expired. Refresh the Whiteboard source.", 409);
+    }
+    return { ...snapshot, pins: { ...snapshot.pins, head: head ?? snapshot.pins.head, base: snapshot.target.base ?? head ?? snapshot.pins.base, worktreeRevision: generation } };
   }
   /** Capture a label only when its ref still resolves to these exact pins. */
   async headBranch(pins: Pins, headRef?: string): Promise<string | undefined> {
@@ -809,7 +830,7 @@ export class LocalReviewData {
     if (!vcs || vcs.kind !== "git") return undefined;
 
     try {
-      const run = promisify(execFile);
+      const run = execFile;
 
       const { stdout } = await run("git", [
         "-C",
@@ -945,7 +966,7 @@ export class LocalReviewData {
       throw new ReviewInputError("Repository is not registered.", 404);
 
     for (const { id } of candidates) {
-      if (!existsSync(this.store.repositoryPath(id))) continue;
+      if (!(await exists(this.store.repositoryPath(id)))) continue;
       const vcs = await this.vcs(id);
       const gitDir = vcs && (await gitCommonDir(vcs.rootPath));
 
@@ -1016,28 +1037,32 @@ export class LocalReviewData {
     side: "base" | "head",
     file: string,
     allowBinary = false,
+    comparison = false,
   ) {
     checkRelativePath(file);
     const commit = pins[side];
     const vcs = await this.vcs(pins.repositoryId);
+    const retained = pins.worktreeRevision && side === "head" ? await this.snapshotPins(pins, comparison) : pins;
+    const target = pins.worktreeRevision && side === "head" ? await this.snapshotTarget(pins) : vcs;
 
     const text =
-      pins.worktreeRevision && side === "head"
-        ? vcs
-          ? await readWorkingFile(vcs.rootPath, file)
-          : null
-        : commit === EMPTY_SOURCE
+      commit === EMPTY_SOURCE && side === "base"
           ? null
           : vcs
             ? await readFileAtCommit({
-                rootPath: vcs.rootPath,
-                kind: vcs.kind,
-                commit,
+                rootPath: target!.rootPath,
+                kind: target!.kind ?? "git",
+                commit: retained[side],
                 relativePath: file,
                 reader: this.reader(pins.repositoryId, vcs),
               })
             : null;
 
+    if (text === null && pins.worktreeRevision && side === "head" && vcs) {
+      const { stdout } = await git(target!.rootPath, ["ls-tree", "-z", retained.head, "--", file]);
+      if (stdout.startsWith("160000 "))
+        throw new ReviewInputError("Source is not a regular file.");
+    }
     if (text === null)
       throw new ReviewInputError(
         "File is unavailable at the pinned commit.",
@@ -1060,6 +1085,7 @@ export class LocalReviewData {
     inputError(() => checkSourcePath(directory));
     const prefix = directory ? directory.replace(/\/$/, "") + "/" : "";
     const entries = new Map<string, ReviewSourceEntry>();
+    const retained = await this.snapshotPins(pins);
 
     const vcs = pins.worktreeRevision
       ? await this.vcs(pins.repositoryId)
@@ -1068,11 +1094,11 @@ export class LocalReviewData {
     if (pins.worktreeRevision && !vcs) throw unavailableCheckout();
 
     const files =
-      vcs && side === "head"
-        ? await workingFiles(vcs)
-        : pins[side] === EMPTY_SOURCE
+      pins[side] === EMPTY_SOURCE && side === "base"
           ? []
-          : await this.trackedFilesAt(pins.repositoryId, pins[side]);
+          : pins.worktreeRevision && side === "head" && vcs?.kind === "jj"
+            ? await listTrackedFilesAtCommit({ ...(await this.snapshotTarget(pins)), kind: "git", commit: retained.head })
+            : await this.trackedFilesAt(pins.repositoryId, retained[side]);
 
     for (const file of files) {
       if (!file.startsWith(prefix)) continue;
@@ -1375,14 +1401,12 @@ export class LocalReviewData {
     );
   }
   private async summaries(pins: Pins) {
-    if (pins.worktreeRevision) {
-      return diffFileSummariesWorkingTree(await this.worktreeInput(pins));
-    }
+    const trees = await this.snapshotPins(pins, true);
 
     return diffFileSummariesTrees({
-      ...(await this.vcsTarget(pins.repositoryId)),
-      baseRef: pins.base,
-      headRef: pins.head,
+      ...(await this.snapshotTarget(pins)),
+      baseRef: trees.base,
+      headRef: trees.head,
     });
   }
   /** Raw Git patch text for exact filenames, or every change. */
@@ -1390,31 +1414,35 @@ export class LocalReviewData {
     pins: Pins,
     options: { paths?: string[]; contextLines?: number },
   ) {
-    if (pins.worktreeRevision)
-      return diffWorkingTree({
-        ...(await this.worktreeInput(pins)),
-        ...options,
-      });
+    const trees = await this.snapshotPins(pins, true);
 
     return diffTrees({
-      ...(await this.vcsTarget(pins.repositoryId)),
-      baseRef: pins.base,
-      headRef: pins.head,
+      ...(await this.snapshotTarget(pins)),
+      baseRef: trees.base,
+      headRef: trees.head,
       ...options,
       literalPaths: options.paths !== undefined,
     });
   }
-  private async worktreeInput(pins: Pins) {
+  /** Resolve the immutable working tree captured with these selected coordinates. */
+  private async snapshotPins(pins: Pins, comparison = false): Promise<Pins> {
+    if (!pins.worktreeRevision) return pins;
     const vcs = await this.vcs(pins.repositoryId);
-
     if (!vcs) throw unavailableCheckout();
-
     return {
-      rootPath: vcs.rootPath,
-      kind: vcs.kind,
-      baseRef: pins.base === EMPTY_SOURCE ? undefined : pins.base,
-      headRef: pins.head === EMPTY_SOURCE ? undefined : pins.head,
+      ...pins,
+      base: pins.base === EMPTY_SOURCE ? await retainedWorktreeTree(pins.repositoryId, EMPTY_SOURCE, vcs) : pins.base,
+      head: await retainedWorktreeTree(pins.repositoryId, pins.worktreeRevision, vcs, comparison),
     };
+  }
+  private async snapshotTarget(pins: Pins): Promise<{ rootPath: string; kind?: LocalVcsKind }> {
+    const target = await this.vcsTarget(pins.repositoryId);
+    if (pins.worktreeRevision && target.kind === "jj") {
+      const rootPath = await gitCommonDir(target.rootPath);
+      if (!rootPath) throw unavailableCheckout();
+      return { rootPath, kind: "git" };
+    }
+    return target;
   }
   commits(pins: Pins) {
     if (
@@ -1489,23 +1517,19 @@ export class LocalReviewData {
       head: saved.commit,
     };
 
-    const target = await this.vcsTarget(pins.repositoryId);
+    const target = await this.snapshotTarget(pins);
+    const trees = await this.snapshotPins(pins, true);
 
     const patch = pins.worktreeRevision
-      ? await diffWorkingTree({
-          ...target,
-          kind: target.kind ?? "git",
-          baseRef: pins.base === EMPTY_SOURCE ? undefined : pins.base,
-          headRef: pins.head === EMPTY_SOURCE ? undefined : pins.head,
-        })
+      ? await this.rawPatch(pins, {})
       : undefined;
 
     const resolved = await resolveSoftwareMapDiffCounts({
       patch,
       sourceRootPath: target.rootPath,
       sourceVcsKind: target.kind,
-      baseRef: pins.base,
-      headRef: pins.head,
+      baseRef: trees.base,
+      headRef: trees.head,
       side: saved.side,
       codeElements: saved.elements.filter(
         (element) => element.type === "codeElement",

@@ -437,6 +437,35 @@ describe("tab maintenance", () => {
     expect(rows(bb)).toEqual([]);
   });
 
+  test("a reopen while a dismissal's tab read is delayed keeps the newer tab and row", async () => {
+    const { bb, store, sessionId, tabs, open, harness } = await opened(["t1"]);
+    const originalGet = tabs.sdk.threads.tabs.get;
+    let release: (() => void) | undefined;
+    let first = true;
+    harness.inspection.sdk.stub("threads.tabs.get", async (input) => {
+      if (first) {
+        first = false;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return originalGet(input as { threadId: string });
+    });
+    await command(store, { type: "attention", reviewId: sessionId, action: "dismiss" });
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const reopen = runWithThread({ threadId: "t1" }, () =>
+      open({ reviewId: sessionId, title: "Plan" }),
+    );
+    release!();
+    await reopen;
+    await settle();
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Plan"]);
+    expect(rows(bb)).toEqual([{ session_id: sessionId, thread_id: "t1" }]);
+    await command(store, { type: "rename", reviewId: sessionId, title: "Newest" });
+    await settle();
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Newest"]);
+  });
+
   test("a deleted thread is forgotten; a failed write is retried on the next change", async () => {
     const { bb, store, sessionId, tabs, harness } = await opened(["t1", "gone"]);
     tabs.threads.delete("gone");

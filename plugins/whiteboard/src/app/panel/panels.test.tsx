@@ -73,10 +73,15 @@ describe("HomePanel", () => {
   });
 });
 
-describe("WelcomePage stub", () => {
-  it("renders bb's empty state instead of CLI setup", () => {
+describe("WelcomePage", () => {
+  it("shows upstream starter prompts in bb's empty state", () => {
     render(<WelcomePage />);
     const status = screen.getByRole("status");
-    expect(status.textContent).toBe(`${NO_WHITEBOARDS_TITLE}${NO_WHITEBOARDS_DESCRIPTION}`);
+    expect(status.textContent).toContain(`${NO_WHITEBOARDS_TITLE}${NO_WHITEBOARDS_DESCRIPTION}`);
+    expect(screen.getByRole("button", { name: "Review a change" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Architecture review" }));
+    expect(status.textContent).toContain(
+      "Create a Whiteboard that sketches out the main data flows, access patterns, and code paths in this repo, so I can do a full architecture review of it. Open it in Whiteboard when you're done.",
+    );
   });
 });

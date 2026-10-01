@@ -95,7 +95,7 @@ export function ApiCanvas({
   const [data, setData] = useState<ApiDocumentData>();
   const dataRef = useRef(data);
   dataRef.current = data;
-  const sourceRef = useRef<{ key: string; version: number }>(undefined);
+  const sourceRef = useRef<{ key: string }>(undefined);
   const sourceVersion = sourceRef.current?.key;
   const [error, setError] = useState<string>();
   useEffect(() => {
@@ -110,7 +110,10 @@ export function ApiCanvas({
     const lensMemory: CursorMemory = {};
 
     const show = async (snapshot: Snapshot) => {
-      const next = await loader.load(snapshot);
+      const next = await loader.load(
+        snapshot,
+        version === undefined ? snapshot.pins?.worktreeRevision : undefined,
+      );
 
       if (abort.signal.aborted) return;
 
@@ -122,16 +125,13 @@ export function ApiCanvas({
       ]);
 
       if (sourceRef.current?.key !== key)
-        sourceRef.current = { key, version: snapshot.version };
+        sourceRef.current = { key };
 
       content.setSourceView?.(
         version === undefined
           ? { reviewId: snapshot.reviewId, kind: "current" }
           : { reviewId: snapshot.reviewId, kind: "version", version },
-        resolveReviewSourceView({
-          ...snapshot,
-          version: sourceRef.current.version,
-        }),
+        resolveReviewSourceView(snapshot),
       );
       setData(next);
       setError(undefined);
@@ -370,6 +370,7 @@ export function ApiCanvas({
             client={client}
             snapshot={data.snapshot}
             coverageRevision={coverageRevision}
+            sourceGeneration={version === undefined ? data.snapshot.pins?.worktreeRevision : undefined}
             structuralDiffEnabled={content.structuralDiffEnabled}
           >
             <TutorialProvider tutorial={content.tutorial}>
@@ -450,8 +451,7 @@ const CanvasDocument = memo(function CanvasDocument({
         },
       }}
       softwareMapEnabled={softwareMapEnabled && data.maps.size > 0}
-      // A document without pins of its own has no change range: the Diff and
-      // Commits views hide, as for a review whose base is its head.
+      // Worktree source enables Diff independently of an actual commit range.
       range={{
         sourceUnavailable: snapshot.sourceUnavailable
           ? "Local checkout unavailable."
@@ -460,6 +460,7 @@ const CanvasDocument = memo(function CanvasDocument({
         headRef: snapshot.pins?.head ?? "",
         baseCommit: snapshot.pins?.base ?? "",
         headCommit: snapshot.pins?.head ?? "",
+        hasWorktreeSource: Boolean(snapshot.pins?.worktreeRevision),
       }}
       commits={data.commits}
       findHost={findHost}

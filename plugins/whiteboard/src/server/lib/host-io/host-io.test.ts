@@ -194,6 +194,8 @@ describe("installHostIo through bb.hosts", () => {
         }
       ).watchId;
 
+      await expect.poll(() => events.includes("rename")).toBe(true);
+      events.length = 0;
       await harness.behavior.experimental_emitHostSignal(IN_PROCESS_HOST_ID, "worktreeChanged", {
         watchId,
         rootPath: repo.root,

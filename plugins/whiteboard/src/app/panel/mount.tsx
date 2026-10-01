@@ -3,12 +3,12 @@ import {
   useBbNavigate,
   useRealtime,
   useRealtimeConnectionState,
-  useSdk,
 } from "@get-bb/plugin-sdk/app";
 import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -21,6 +21,7 @@ import {
   type ReviewApiSummary,
   type ReviewCanvasBridge,
   type ReviewCanvasContent,
+  type ReviewSourceView,
   ReviewApiClient,
 } from "../../shared/vendor/review-protocol/src/index.ts";
 import { createBbBridge } from "../bridge/bb-bridge.ts";
@@ -62,7 +63,9 @@ const themeSubscribe = (listener: () => void) => {
 function useStableNavigate(): BbNavigate {
   const navigate = useBbNavigate();
   const ref = useRef(navigate);
-  ref.current = navigate;
+  useLayoutEffect(() => {
+    ref.current = navigate;
+  }, [navigate]);
   return useMemo(
     () =>
       new Proxy({} as BbNavigate, {
@@ -95,30 +98,6 @@ function useLiveHub(): LiveHub {
     previous.current = state;
   }, [hub, state]);
   return hub;
-}
-
-/** The host a live worktree file sits on: the thread's environment, else bb's primary host. */
-function useResolveHostId(threadId: string | undefined) {
-  // Read through a ref: a new SDK object must not rebuild the bridge and its streams.
-  const latest = useSdk();
-  const sdkRef = useRef(latest);
-  sdkRef.current = latest;
-  return useCallback(async (): Promise<string | undefined> => {
-    const sdk = sdkRef.current;
-    if (threadId) {
-      try {
-        const thread = await sdk.threads.get({ threadId, include: "environment" });
-        if ("environment" in thread && thread.environment?.hostId) return thread.environment.hostId;
-      } catch {
-        // Fall back to the primary host below.
-      }
-    }
-    try {
-      return (await sdk.system.config()).primaryHostId ?? undefined;
-    } catch {
-      return undefined;
-    }
-  }, [threadId]);
 }
 
 function isFindShortcut(event: KeyboardEvent): boolean {
@@ -189,12 +168,14 @@ function CanvasView({
   reviewId,
   info,
   findHost,
+  setSourceView,
 }: {
   bridge: ReviewCanvasBridge;
   client: ReviewApiClient;
   reviewId: string;
   info: InfoOutput;
   findHost: ReturnType<typeof createReviewFindHost>;
+  setSourceView: NonNullable<ApiContent["setSourceView"]>;
 }) {
   // Opening marks the session viewed, so Home stops flagging it (reviewCanvasPart.ts:364).
   useEffect(() => {
@@ -212,8 +193,9 @@ function CanvasView({
       softwareMapEnabled: info.softwareMapEnabled,
       // The server retitles thread tabs from the store (design §3.6).
       setTitle() {},
+      setSourceView,
     }),
-    [bridge, reviewId, info.structuralDiffEnabled, info.softwareMapEnabled],
+    [bridge, reviewId, info.structuralDiffEnabled, info.softwareMapEnabled, setSourceView],
   );
   if (removed) return <EmptyState title={REMOVED_TITLE} />;
   return (
@@ -285,11 +267,16 @@ export function WhiteboardMount({
   const rpcClient = rpc.useClient();
   const navigate = useStableNavigate();
   const hub = useLiveHub();
-  const resolveHostId = useResolveHostId(threadId);
+  const sourceViewRef = useRef<ReviewSourceView>(undefined);
+  const setSourceView = useCallback<NonNullable<ApiContent["setSourceView"]>>((address, view) => {
+    sourceViewRef.current = address.kind === "version" ? { ...view, generation: undefined } : view;
+  }, []);
   const portals = useMemo(createPortals, []);
   const events = useMemo(createSurfaceEvents, []);
   const infoRef = useRef(info);
-  infoRef.current = info;
+  useLayoutEffect(() => {
+    infoRef.current = info;
+  }, [info]);
 
   const bridge = useMemo(
     () =>
@@ -305,9 +292,9 @@ export function WhiteboardMount({
         portals,
         events,
         hub,
-        resolveHostId,
+        sourceView: () => sourceViewRef.current,
       }),
-    [rpcClient, threadId, sessionId, navigate, portals, events, hub, resolveHostId],
+    [rpcClient, threadId, sessionId, navigate, portals, events, hub],
   );
   const client = useMemo(() => new ReviewApiClient(bridge.config, bridge.request), [bridge]);
   // Panels key the mount by session, so one find host per mount is one per session.
@@ -354,6 +341,7 @@ export function WhiteboardMount({
         reviewId={sessionId}
         info={info}
         findHost={findHost}
+        setSourceView={setSourceView}
       />
     ) : (
       <HomeView client={client} info={info} onOpen={openSession} />

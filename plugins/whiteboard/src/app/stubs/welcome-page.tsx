@@ -4,6 +4,7 @@ import type {
   ReviewCanvasSetupActions,
 } from "../../shared/vendor/review-protocol/src/index.ts";
 import { EmptyState } from "../panel/empty-state.tsx";
+import { PromptCard } from "../vendor/review/app/src/prompt-card.tsx";
 
 export const NO_WHITEBOARDS_TITLE = "No Whiteboards yet.";
 export const NO_WHITEBOARDS_DESCRIPTION = "Ask an agent to make one.";
@@ -21,5 +22,9 @@ export function WelcomePage(_props: {
   onboarding?: ReviewCanvasOnboarding;
   onOpenTutorial?: () => void;
 }) {
-  return <EmptyState title={NO_WHITEBOARDS_TITLE} description={NO_WHITEBOARDS_DESCRIPTION} />;
+  return (
+    <EmptyState title={NO_WHITEBOARDS_TITLE} description={NO_WHITEBOARDS_DESCRIPTION}>
+      <PromptCard />
+    </EmptyState>
+  );
 }

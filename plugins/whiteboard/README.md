@@ -1,8 +1,5 @@
 # Whiteboard
 
-> Draft (WP0). The plugin loads, but the engine, tools and panels are stubs
-> until the later work packages land. WP9 writes the final text.
-
 [dev.fast Whiteboard](https://github.com/devdotfast/whiteboard) running inside
 bb. Agents author code walkthroughs, diagrams, sequence and call-stack views,
 software maps and Diff lenses. Each session renders in the thread's side panel
@@ -14,14 +11,23 @@ sidebar.
 - **Agent tools.** The upstream MCP catalog is registered as raw bb agent
   tools: `whiteboard_status` and `whiteboard_session_*` (for example
   `whiteboard_session_create`, `whiteboard_session_edit`). Descriptions and
-  schemas come from upstream unchanged, apart from the tool-name rename.
+  schemas come from upstream. Tool names and settings pointers adapt to bb,
+  and schema references expand for bb tool registration.
 - **Panels.** A thread panel shows one session. The sidebar entry shows Home
   with every session, and a full-page view of one session.
 - **Auto-open.** When an agent opens a session, the server adds a durable tab
   to the thread and the client focuses it.
 - **Git.** Git, `gh` and diffr run on the bb host that owns the repository,
   through the plugin's host entry.
-- **Storage.** Sessions live in the plugin's bb database.
+- **Storage.** Sessions, retained resources and history live in the plugin's bb database.
+  Worktree source is retained in namespaced Git refs on its host. Each generation
+  keeps raw source bytes and a Git-normalized comparison tree. Older review versions
+  keep their source, and stale live generations are pruned.
+- **Code views.** Read-only peeks and diffs use bb's source and diff viewers.
+  Sources that match the live file open in bb's File Editor. Historical and
+  transformed comparison sources remain read-only. Raw source peeks retain the
+  live file's bytes.
+- **Starter prompts.** Home includes upstream's change and architecture prompts.
 - **`/whiteboard`.** The composer command asks the agent to create a
   Whiteboard for the request and open it. It moved here from Kitchen Sink.
 
@@ -34,9 +40,10 @@ sidebar.
 
 ## Layout
 
-Every upstream byte lives under a `vendor/` path segment and starts with a
-`Vendored from dev.fast <path> @4ecc570 (MIT).` header. Lint and format skip
-those paths. Authored code (facades, stubs, the bb bridge) lives outside them.
+Upstream files live under a `vendor/` path segment. Source files carry a
+`Vendored from dev.fast <path> @4ecc570 (MIT).` header. Fixtures and instruction
+documents retain their original bytes. Lint and format skip those paths.
+Authored code (facades, stubs, the bb bridge) lives outside them.
 
 - `src/shared/contracts/`: frozen contracts between the server, host and app.
 - `src/shared/vendor/`: browser-safe upstream model and protocol.
@@ -47,7 +54,8 @@ those paths. Authored code (facades, stubs, the bb bridge) lives outside them.
 
 The vendoring tool (`.scratch/whiteboard-port/vendor/vendor.ts`, untracked)
 regenerates every vendored file from upstream and checks for drift. Imports are
-redirected to authored modules instead of editing upstream files.
+redirected to authored modules. Mapped patches adapt source transport and
+rendering to bb. Regeneration preserves those patches.
 
 ## Deviations from upstream
 
@@ -58,7 +66,8 @@ redirected to authored modules instead of editing upstream files.
   - `review-api/store.ts`: `session_get` in an error
   - `review-api/document-text.ts`: `session_lens_edit`
   - `review-api/instructions.ts`: three `session_get_instructions({topic:` references
-  - the four instruction `.md` files
+  - Embedded instruction text adapts tool names at the bb boundary. The four
+    instruction `.md` files remain unchanged.
 - **Settings pointers.** User-facing pointers to Desktop settings name the
   plugin settings in bb instead:
   - `review-api/http.ts`: "Turn it on in Review Desktop Settings." becomes
@@ -66,10 +75,8 @@ redirected to authored modules instead of editing upstream files.
   - `review-api/instructions.ts`: "the scratchpad can be turned on in
     Whiteboard Desktop Settings." becomes "… in the Whiteboard plugin settings
     in bb."
-  - `review-api/instructions.ts`: "It can be turned on in Whiteboard Desktop
-    Settings under Experimental Features." becomes "It can be turned on in the
-    Whiteboard plugin settings in bb under Experimental Features." bb has no
-    trace setting, so this pointer has no target yet.
+  - The disabled trace topic points to Whiteboard Desktop for capture. The bb
+    plugin has no trace-capture setting. Uploaded trace quotes remain supported.
 - **`review_*` names stay.** A few upstream error strings still say
   `review_open`, `review_file` and similar. They are left byte-identical.
 - **Not ported.** Sharing, telemetry, bug reports, the welcome and CLI install
@@ -77,8 +84,14 @@ redirected to authored modules instead of editing upstream files.
   chrome. Their imports point at no-op stubs with the same exports.
 - **Trace capture** is off (`traceEnabled` is a constant `false`).
   `trace_quote` blocks and uploaded traces still render.
-- **Markdown** renders with the Docs TipTap configuration and bb's prose
-  styles instead of upstream's mdast renderer.
+- **Markdown** uses Docs' TipTap extensions and shared prose styles. Raw HTML
+  stays literal, implicit URLs stay unlinked, code link marks and soft breaks
+  follow upstream Whiteboard behavior. Markdown code fences have Docs' plain
+  rendering. Standalone code blocks use bb's syntax highlighting.
+- **Source trees.** Open a live file to browse it in File Editor. bb does not
+  expose a tree-only navigation API for the upstream source-tree action.
+- **Images.** The declared Sharp dependency decodes PNG, JPEG and WebP. A bounded
+  JavaScript fallback retains PNG and JPEG support if native decoding is unavailable.
 - **Fixtures.** Upstream block and legacy-review fixtures sit at their
   upstream-relative path under `src/shared/vendor/review/src/fixtures/`,
   because the vendored specs read them by filesystem path.
@@ -96,8 +109,6 @@ redirected to authored modules instead of editing upstream files.
   diffr. Only the host runs that file.
 - **Rule 8, fixtures.** `fixtures/blocks/fixtures.ts` imports `node:fs` for
   the specs. No app or server code imports it.
-- **Rule 6.** `rpc/api.ts`, `rpc/info.ts` and `command/tool.ts` get their
-  sibling tests with their owning work packages.
 
 ## License
 

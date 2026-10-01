@@ -1,6 +1,9 @@
 import type { BbNavigate } from "@get-bb/plugin-sdk/app";
+import type { WhiteboardRpcClient } from "../rpc.ts";
+import type { OpenSourceFile } from "./diff-view.tsx";
 import {
   REVIEW_DISCORD_URL,
+  type ReviewSourceView,
   type ReviewVerbRequest,
   type ReviewVerbResponse,
 } from "../../shared/vendor/review-protocol/src/index.ts";
@@ -21,6 +24,7 @@ export const SOURCE_TREE_UNAVAILABLE = "Source tree is unavailable in bb.";
 export const UNAVAILABLE_IN_BB = "Unavailable in bb.";
 export const PINNED_SOURCE_NOT_OPENABLE =
   "This source is pinned to a commit. bb can open only live worktree files.";
+export const BASE_SOURCE_NOT_OPENABLE = "Base source is read only.";
 
 export type VerbDeps = {
   navigate: BbNavigate;
@@ -32,8 +36,8 @@ export type VerbDeps = {
   notify(message: { kind: "success" | "error"; text: string }): void;
   /** Scroll the Diffs view to a file once it is mounted. */
   revealDiffFile(path: string): void;
-  /** The bb host that holds this session's checkout, when known. */
-  resolveHostId(): Promise<string | undefined>;
+  openFile: OpenSourceFile;
+  sourceView?: () => ReviewSourceView | undefined;
   softwareMapEnabled(): boolean;
 };
 
@@ -91,41 +95,66 @@ function openSession(deps: VerbDeps, sessionId: string, title: string | undefine
   return true;
 }
 
+/** The server owns repository/host routing and whether a pinned source has a live copy. */
+export function createLiveFileOpener(deps: {
+  rpc: WhiteboardRpcClient;
+  navigate: BbNavigate;
+  notify(message: { kind: "success" | "error"; text: string }): void;
+}): OpenSourceFile {
+  return async (input) => {
+    const { target } = await deps.rpc.liveFile({
+      sessionId: input.reviewId,
+      ...(input.version === undefined ? {} : { version: input.version }),
+      ...(input.generation === undefined ? {} : { generation: input.generation }),
+      path: input.path,
+      ...input.pins,
+    });
+    if (!target) {
+      deps.notify({ kind: "error", text: PINNED_SOURCE_NOT_OPENABLE });
+      return false;
+    }
+    return deps.navigate.experimental_openFilePreview({
+      target,
+      location:
+        input.startLine === undefined
+          ? null
+          : {
+              kind: "range",
+              startLine: input.startLine,
+              endLine: input.endLine ?? input.startLine,
+            },
+    });
+  };
+}
+
 async function reveal(
   deps: VerbDeps,
   args: Extract<ReviewVerbRequest, { name: "reveal" }>["args"],
 ): Promise<ReviewVerbResponse> {
-  const side = args.side ?? "head";
-  // `/:id/file` answers `localPath` only for an unpinned head read of a
-  // worktree target whose live file still matches (local-data.ts liveFile).
-  let localPath: string | undefined;
-  if (deps.reviewId && !args.pins && side === "head") {
-    try {
-      const file = await readJson(
-        deps.request,
-        `/reviews-api/${encodeURIComponent(deps.reviewId)}/file?${new URLSearchParams({ file: args.path, side })}`,
-      );
-      if (
-        typeof file === "object" &&
-        file !== null &&
-        "localPath" in file &&
-        typeof file.localPath === "string"
-      )
-        localPath = file.localPath;
-    } catch {
-      localPath = undefined;
-    }
+  // Base line numbers belong to the historical file, never the live head.
+  if (args.side === "base") {
+    deps.notify({ kind: "error", text: BASE_SOURCE_NOT_OPENABLE });
+    return fail(BASE_SOURCE_NOT_OPENABLE);
   }
-  const hostId = localPath ? await deps.resolveHostId() : undefined;
-  if (!localPath || !hostId) {
-    deps.notify({ kind: "error", text: PINNED_SOURCE_NOT_OPENABLE });
-    return fail(PINNED_SOURCE_NOT_OPENABLE);
+  if (!deps.reviewId) return fail(PINNED_SOURCE_NOT_OPENABLE);
+  try {
+    const view = deps.sourceView?.();
+    const opened = await deps.openFile({
+      reviewId: view?.reviewId ?? deps.reviewId,
+      ...(view
+        ? { version: view.version, generation: args.pins ? undefined : view.generation }
+        : {}),
+      path: args.path,
+      pins: args.pins,
+      startLine: args.startLine,
+      endLine: args.endLine,
+    });
+    return opened ? ok() : fail(PINNED_SOURCE_NOT_OPENABLE);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    deps.notify({ kind: "error", text: message });
+    return fail(message);
   }
-  const opened = deps.navigate.experimental_openFilePreview({
-    target: { kind: "host", hostId, path: localPath },
-    location: { kind: "range", startLine: args.startLine, endLine: args.endLine },
-  });
-  return opened ? ok() : fail(UNAVAILABLE_IN_BB);
 }
 
 export function createVerbs(

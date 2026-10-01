@@ -270,9 +270,9 @@ describe("worktree-source facade", () => {
       expect(await worktree.readWorkingFile(repo.root, "link.ts")).toBe("src/a.ts");
       const first = await worktree.inspectWorktree("repo-1", proxy);
       expect(first.commit).toBe(repo.head);
-      expect(first).toEqual(
-        await upstreamWorktreeInspect("repo-1", (await upstreamVcs.detectLocalVcs(repo.root))!),
-      );
+      expect(first.revision).toMatch(/^[a-f0-9]{64}$/);
+      const tree = await worktree.retainedWorktreeTree("repo-1", first.revision, proxy);
+      expect(repo.git("show", `${tree}:scratch.txt`)).toBe("x\n");
       repo.write("scratch.txt", "changed and longer\n");
       expect((await worktree.inspectWorktree("repo-1", proxy)).revision).not.toBe(first.revision);
     } finally {
@@ -299,12 +299,6 @@ describe("worktree-source facade", () => {
     }
   });
 });
-
-async function upstreamWorktreeInspect(repositoryId: string, local: upstreamVcs.LocalVcs) {
-  const { inspectWorktree } =
-    await import("../../../shared/node/vendor/review/src/review-api/worktree-source.ts");
-  return inspectWorktree(repositoryId, local);
-}
 
 describe("fs and checkoutFs facades", () => {
   it("carries bytes, bigint stats, errno codes and the Stats methods", async () => {

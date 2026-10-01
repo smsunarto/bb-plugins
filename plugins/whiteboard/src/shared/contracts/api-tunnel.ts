@@ -62,8 +62,12 @@ export function isWatchPath(path: string): boolean {
  */
 export const liveFileInput = z.strictObject({
   sessionId: z.string().min(1),
+  version: z.number().int().nonnegative().optional(),
+  generation: z.string().min(1).optional(),
   path: z.string().min(1).max(4096),
   repositoryId: z.string().optional(),
+  head: z.string().optional(),
+  base: z.string().optional(),
 });
 export type LiveFileInput = z.infer<typeof liveFileInput>;
 

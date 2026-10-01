@@ -31,3 +31,4 @@ Every run must show the initial state, the user action, and its visible result. 
 - [Last Turn Diff](last-turn-diff.md)
 - [bb Monokai](bb-monokai.md)
 - [Vimium link hints](vimium-link-hints.md)
+- [Whiteboard](whiteboard.md)

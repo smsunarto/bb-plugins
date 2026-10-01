@@ -189,6 +189,7 @@ export function createReviewApi(
     mountSharingHost(app, store, data, shared, hooks.sharing);
   }
 
+  const sourceGeneration = z.string().regex(/^[a-f0-9]{64}$/).optional();
   const readReview = (id: string, version?: number): Snapshot => {
     if (!id.startsWith("shared-")) return store.read(id, version);
     const snapshot = shared?.get(id).snapshot;
@@ -197,6 +198,10 @@ export function createReviewApi(
       throw new ReviewInputError("Shared review version is unavailable.", 404);
 
     return snapshot;
+  };
+  const readSourceReview = async (id: string, version?: number, generation?: string) => {
+    const snapshot = readReview(id, version);
+    return generation === undefined || isShared(id) ? snapshot : await data!.sourceAtGeneration(snapshot, generation);
   };
 
   const catalog = (mode: "structural" | "textual" = "structural") => {
@@ -251,10 +256,11 @@ export function createReviewApi(
       .extend({
         mode: coverageModeSchema,
         wait: z.enum(["false", "true"]).default("true"),
+        generation: sourceGeneration,
       })
       .parse(context.req.query());
 
-    const snapshot = readReview(context.req.param("id"), query.version);
+    const snapshot = await readSourceReview(context.req.param("id"), query.version, query.generation);
 
     const documentPins =
       query.wait === "false" && snapshot.pins
@@ -673,7 +679,7 @@ export function createReviewApi(
       return context.json(await data!.tree(pins, input.side, input.path));
     });
     app.get("/:id/maps/:resourceId", async (context) => {
-      const query = readQuerySchemas.maps.parse(context.req.query());
+      const query = readQuerySchemas.maps.extend({ generation: sourceGeneration }).parse(context.req.query());
       const id = context.req.param("id");
 
       if (id && isShared(id))
@@ -686,7 +692,7 @@ export function createReviewApi(
 
       return context.json(
         await data.map(
-          await data.sourcePins(readReview(id, query.version)),
+          await data.sourcePins(await readSourceReview(id, query.version, query.generation)),
           z.string().parse(context.req.param("resourceId")),
         ),
       );
@@ -820,22 +826,24 @@ export function createReviewApi(
       );
     });
     app.get("/:id/file", async (context) => {
-      const input = readQuerySchemas.file.parse(context.req.query());
+      const input = readQuerySchemas.file.extend({ generation: sourceGeneration, projection: z.enum(["raw", "comparison"]).optional() }).parse(context.req.query());
       const id = context.req.param("id");
 
       const anchor = queryAnchor(input);
 
       const { snapshot, pins } = await data.resolveSource(
-        readReview(id, input.version),
+        await readSourceReview(id, input.version, input.generation),
         input.commit,
         anchor,
       );
 
-      const file = await data.file(pins, input.side, input.file);
+      const file = await data.file(pins, input.side, input.file, false, input.projection === "comparison");
 
       const local =
         !input.commit &&
         !anchor &&
+        (input.version === undefined || input.generation !== undefined) &&
+        (input.generation === undefined || store.read(id).pins?.worktreeRevision === input.generation) &&
         input.side === "head" &&
         snapshot.target?.kind === "worktree"
           ? await data.liveFile(pins.repositoryId, input.file, file.text)
@@ -844,11 +852,11 @@ export function createReviewApi(
       return context.json({ ...file, ...local });
     });
     app.get("/:id/structural-diff", async (context) => {
-      const input = readQuerySchemas.structuralDiff.parse(context.req.query());
+      const input = readQuerySchemas.structuralDiff.extend({ generation: sourceGeneration }).parse(context.req.query());
       const id = context.req.param("id");
 
       const { pins } = await data.resolveSource(
-        readReview(id, input.version),
+        await readSourceReview(id, input.version, input.generation),
         input.commit,
         queryAnchor(input),
       );
@@ -895,7 +903,7 @@ export function createReviewApi(
     app.get("/:id/diff", async (context) => {
       const query = context.req.query();
       const paths = context.req.queries("paths");
-      const input = readQuerySchemas.diff.parse({ ...query, paths });
+      const input = readQuerySchemas.diff.extend({ generation: sourceGeneration }).parse({ ...query, paths });
 
       if (input.file !== undefined && (paths || "format" in query))
         throw new ReviewInputError(
@@ -903,7 +911,7 @@ export function createReviewApi(
         );
 
       const { pins } = await data.resolveSource(
-        readReview(context.req.param("id"), input.version),
+        await readSourceReview(context.req.param("id"), input.version, input.generation),
         input.commit,
         queryAnchor(input),
       );

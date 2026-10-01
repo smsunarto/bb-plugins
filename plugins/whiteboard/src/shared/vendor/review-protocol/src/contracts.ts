@@ -698,6 +698,8 @@ export type ReviewCanvasContent =
 
 export interface ReviewCanvasRange {
   sourceUnavailable?: string;
+  /** Worktree snapshots can differ even when their commit pins are equal. */
+  hasWorktreeSource?: boolean;
   baseRef: string;
   headRef: string;
   baseCommit: string;

@@ -31,6 +31,9 @@
     "description": "Agents author code walkthroughs, diagrams, and Diff lenses that render beside the thread.",
     "branding": {
       "icon": "./assets/icon.svg",
+      "experimental_icons": {
+        "whiteboard": "./assets/icon.svg"
+      },
       "logo": {
         "light": "./assets/logo.svg",
         "dark": "./assets/logo-dark.svg"
@@ -90,6 +93,7 @@
     "@xyflow/react": "12.10.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "diff": "^9.0.0",
     "elkjs": "0.11.1",
     "fuzzysort": "4.0.2",
     "git-url-parse": "16.1.0",
@@ -100,6 +104,7 @@
     "micromark-extension-gfm": "3.0.0",
     "pngjs": "7.0.0",
     "proper-lockfile": "4.1.2",
+    "sharp": "0.35.4",
     "smol-toml": "1.8.0",
     "tailwind-merge": "^3.4.0",
     "tiptap-markdown": "^0.8.10",

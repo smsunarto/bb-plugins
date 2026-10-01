@@ -4,7 +4,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import BetterSqlite3 from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { migrate } from "./migrations.ts";
-import { DatabaseSync, useDatabase, useDatabaseOpener } from "./sqlite.ts";
+import { DatabaseSync, installDatabase, installDatabaseOpener } from "./sqlite.ts";
 import { ACTIVITY_TTL_MS } from "./vendor/review/src/review-api/activity.ts";
 import { type ReviewProviders, ReviewStore } from "./vendor/review/src/review-api/store.ts";
 
@@ -77,7 +77,7 @@ afterEach(() => {
 
 describe("DatabaseSync over better-sqlite3", () => {
   it.each(Object.keys(scenarios))("matches node:sqlite: %s", (name) => {
-    useDatabaseOpener((path, options) => new BetterSqlite3(path, options));
+    installDatabaseOpener((path, options) => new BetterSqlite3(path, options));
     const scenario = scenarios[name]!;
     const expected = scenario(new NodeDatabaseSync(":memory:"));
     expect(scenario(new DatabaseSync(":memory:"))).toEqual(expected);
@@ -104,7 +104,7 @@ describe("DatabaseSync over better-sqlite3", () => {
   it("turns foreign keys on for a handle that has them off", () => {
     const handle = new BetterSqlite3(":memory:");
     handle.pragma("foreign_keys = OFF");
-    useDatabase(handle);
+    installDatabase(handle);
     const db = new DatabaseSync("ignored");
     expect(db.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     expect(handle.pragma("foreign_keys", { simple: true })).toBe(1);
@@ -115,7 +115,7 @@ describe("DatabaseSync over better-sqlite3", () => {
     vi.resetModules();
     const fresh = await import("./sqlite.ts");
     expect(() => new fresh.DatabaseSync("ignored")).toThrow(
-      "whiteboard: no database installed. Call useDatabase(bb.storage.database()) before constructing the store.",
+      "whiteboard: no database installed. Call installDatabase(bb.storage.database()) before constructing the store.",
     );
   });
 });
@@ -125,7 +125,7 @@ function storeOnBb() {
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
   migrate(bb);
   const db = bb.storage.database();
-  useDatabase(db);
+  installDatabase(db);
   return { bb, harness, db, store: new ReviewStore("ignored.db", providers) };
 }
 

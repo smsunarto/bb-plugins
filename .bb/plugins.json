@@ -54,6 +54,10 @@
     {
       "name": "vimium",
       "source": "./plugins/vimium"
+    },
+    {
+      "name": "whiteboard",
+      "source": "./plugins/whiteboard"
     }
   ]
 }

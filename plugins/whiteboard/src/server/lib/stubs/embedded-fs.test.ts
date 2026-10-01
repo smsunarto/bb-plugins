@@ -75,7 +75,7 @@ describe("renderInstructions on the engine's virtual root", () => {
       "The Whiteboard scratchpad is turned off or Whiteboard Desktop is not running. Answer in chat; the scratchpad can be turned on in the Whiteboard plugin settings in bb.",
     );
     expect(await renderInstructions("trace-archaeology", on)).toBe(
-      "Trace capture is off on this machine, so no agent traces are available. It can be turned on in the Whiteboard plugin settings in bb under Experimental Features.",
+      "Trace capture is off in this bb plugin. Uploaded trace quotes are supported. Configure capture through Whiteboard Desktop.",
     );
   });
 });

@@ -2,6 +2,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { existsSync, type BigIntStats, type Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import { promisify } from "node:util";
+import { writePrivateJsonAtomic } from "../../shared/node/vendor/trace-core/src/atomic-write.ts";
 
 /**
  * The host `fs` module (design §3.1): the `node:fs` and `execFile` calls the
@@ -46,6 +47,7 @@ type ExecOptions = { cwd?: string; timeout?: number; maxBuffer?: number };
 const execFileAsync = promisify(execFileCallback);
 
 export const hostFs = {
+  writePrivateJsonAtomic,
   realpath: (target: string) => fs.realpath(target),
   stat: async (target: string, options?: StatOptions) =>
     serializeStats(await fs.stat(target, { bigint: options?.bigint === true })),

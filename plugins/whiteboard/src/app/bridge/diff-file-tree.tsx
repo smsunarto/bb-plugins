@@ -20,6 +20,7 @@ export function DiffFileTree({
   activePath,
   showFileCounts = false,
   onReveal,
+  onToggleViewed,
 }: {
   files: readonly ReviewDiffFileWire[];
   progress?: Pick<ReviewDiffProgress, "files">;
@@ -27,6 +28,7 @@ export function DiffFileTree({
   /** Fall back to the file's own counts when no progress covers it (the tree inside a commit diff). */
   showFileCounts?: boolean;
   onReveal(path: string): void;
+  onToggleViewed?: (path: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const byPath = new Map(progress?.files.map((file) => [file.path, file]));
@@ -52,6 +54,7 @@ export function DiffFileTree({
             showFileCounts={showFileCounts}
             active={element.file.path === activePath}
             onReveal={onReveal}
+            onToggleViewed={onToggleViewed}
           />
         );
       const { names, folder } = compress(element);
@@ -114,6 +117,7 @@ function FileRow({
   showFileCounts,
   active,
   onReveal,
+  onToggleViewed,
 }: {
   file: ReviewDiffFileWire;
   name: string;
@@ -122,34 +126,46 @@ function FileRow({
   showFileCounts: boolean;
   active: boolean;
   onReveal(path: string): void;
+  onToggleViewed?: (path: string) => void;
 }) {
   const counts = treeCounts(file, progress, showFileCounts);
 
   return (
-    <button
-      type="button"
-      role="treeitem"
-      aria-selected={active}
-      aria-label={file.path}
-      title={counts.tooltip}
-      data-review-file={file.path}
-      className={`review-changed-files-row flex h-[22px] w-full min-w-0 cursor-pointer items-center gap-1.5 pr-2 text-left text-[12px] hover:bg-[var(--wb-surface-raised)] ${active ? "bg-[var(--wb-surface-raised)] text-[var(--ink)]" : "text-[var(--ink-muted)]"} ${progress?.state === "viewed" ? "review-file-viewed opacity-50" : ""} ${progress?.state === "folded" ? "review-file-folded opacity-50" : ""}`}
-      style={{ paddingLeft: 8 + depth * 12 + 14 }}
-      onClick={() => onReveal(file.path)}
-    >
-      <StatusGlyph status={file.status} />
-      <span className="review-changed-files-label min-w-0 flex-1 truncate">{name}</span>
-      <span className="review-tree-counts shrink-0 font-[family-name:var(--wb-font-mono)] text-[11px] tabular-nums">
-        {counts.label ?? (
-          <>
-            <span className="review-tree-added text-[var(--change-added)]">{counts.added}</span>{" "}
-            <span className="review-tree-removed text-[var(--change-removed)]">
-              {counts.removed}
-            </span>
-          </>
-        )}
-      </span>
-    </button>
+    <div className="flex items-center">
+      {onToggleViewed && file.status !== "unchanged" ? (
+        <input
+          type="checkbox"
+          className="ml-2 cursor-pointer accent-[var(--wb-accent)]"
+          checked={progress?.state === "viewed"}
+          aria-label={`${progress?.state === "viewed" ? "Mark unviewed" : "Mark viewed"}: ${file.path}`}
+          onChange={() => onToggleViewed(file.path)}
+        />
+      ) : null}
+      <button
+        type="button"
+        role="treeitem"
+        aria-selected={active}
+        aria-label={file.path}
+        title={counts.tooltip}
+        data-review-file={file.path}
+        className={`review-changed-files-row flex h-[22px] w-full min-w-0 cursor-pointer items-center gap-1.5 pr-2 text-left text-[12px] hover:bg-[var(--wb-surface-raised)] ${active ? "bg-[var(--wb-surface-raised)] text-[var(--ink)]" : "text-[var(--ink-muted)]"} ${progress?.state === "viewed" ? "review-file-viewed opacity-50" : ""} ${progress?.state === "folded" ? "review-file-folded opacity-50" : ""}`}
+        style={{ paddingLeft: 8 + depth * 12 + 14 }}
+        onClick={() => onReveal(file.path)}
+      >
+        <StatusGlyph status={file.status} />
+        <span className="review-changed-files-label min-w-0 flex-1 truncate">{name}</span>
+        <span className="review-tree-counts shrink-0 font-[family-name:var(--wb-font-mono)] text-[11px] tabular-nums">
+          {counts.label ?? (
+            <>
+              <span className="review-tree-added text-[var(--change-added)]">{counts.added}</span>{" "}
+              <span className="review-tree-removed text-[var(--change-removed)]">
+                {counts.removed}
+              </span>
+            </>
+          )}
+        </span>
+      </button>
+    </div>
   );
 }
 

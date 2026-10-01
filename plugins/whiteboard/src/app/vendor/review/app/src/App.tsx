@@ -372,13 +372,16 @@ function ReviewLayoutContent({
   });
 
   const viewStateSync = useReviewViewStateSync({ scrollRegionRef, panelStore });
-  const hasChangeRange = range.baseCommit !== range.headCommit;
+  const hasCommitRange = range.baseCommit !== range.headCommit;
+  const hasChangeRange = hasCommitRange || range.hasWorktreeSource === true;
 
   const [activeView, setActiveView] = useState<ReviewView>(() =>
     normalizeReviewView(
       viewStateSync.initialActiveView ?? "review",
       softwareMapEnabled,
       hasChangeRange,
+      true,
+      hasCommitRange,
     ),
   );
 
@@ -422,7 +425,8 @@ function ReviewLayoutContent({
 
   const reviewViews: readonly ReviewView[] = [
     "review",
-    ...(hasChangeRange ? (["commits", "diff"] as const) : []),
+    ...(hasCommitRange ? (["commits"] as const) : []),
+    ...(hasChangeRange ? (["diff"] as const) : []),
     ...(softwareMapEnabled ? (["map"] as const) : []),
     ...(hasTraceSessions ? (["trace"] as const) : []),
   ];
@@ -448,6 +452,7 @@ function ReviewLayoutContent({
       softwareMapEnabled,
       hasChangeRange,
       hasTraceSessions !== false,
+      hasCommitRange,
     );
 
     if (normalizedView !== "diff") setDiffScope(null);
@@ -467,11 +472,12 @@ function ReviewLayoutContent({
         softwareMapEnabled,
         hasChangeRange,
         hasTraceSessions !== false,
+        hasCommitRange,
       ) !== activeView
     ) {
       applyReviewView("review");
     }
-  }, [activeView, hasChangeRange, hasTraceSessions, softwareMapEnabled]);
+  }, [activeView, hasChangeRange, hasCommitRange, hasTraceSessions, softwareMapEnabled]);
   useReviewTabTelemetry(activeView);
   useEffect(() => {
     if (traceSelection) {

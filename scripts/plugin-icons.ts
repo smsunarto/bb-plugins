@@ -15,6 +15,7 @@ import {
   Layers01Icon,
   PanelLeftIcon,
   Settings01Icon,
+  WhiteboardIcon,
 } from "@hugeicons/core-free-icons";
 import { workspacePlugins } from "./plugin-package";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "../plugins/amp/src/amp-brand";
@@ -174,6 +175,10 @@ const customIcons = {
   vimium: {
     name: "Keyboard",
     nodes: KeyboardIcon,
+  },
+  whiteboard: {
+    name: "Whiteboard",
+    nodes: WhiteboardIcon,
   },
   "kitchen-sink": {
     name: "KitchenUtensils",

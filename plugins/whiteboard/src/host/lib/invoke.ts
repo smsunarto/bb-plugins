@@ -9,6 +9,12 @@ import { resolveReviewStackLayers } from "../../shared/node/vendor/review/src/re
 import { diffrExecutable } from "../../shared/node/vendor/review/src/server/structural-diff.ts";
 import { decodeArgs, failure, hostResult } from "./codec.ts";
 import { hostFs } from "./host-fs.ts";
+import {
+  inspectRetainedWorktree,
+  retainedWorktreeTree,
+  retainedWorktreeHead,
+  pruneWorktreeTrees,
+} from "./worktree-snapshots.ts";
 
 type HostFunction = (args: any[], signal: AbortSignal) => unknown;
 
@@ -46,7 +52,10 @@ export const HOST_FUNCTIONS: {
   "worktree-source": {
     localSourcePath: plain(worktreeSource.localSourcePath),
     workingFiles: plain(worktreeSource.workingFiles),
-    inspectWorktree: plain(worktreeSource.inspectWorktree),
+    inspectWorktree: plain(inspectRetainedWorktree),
+    retainedWorktreeTree: plain(retainedWorktreeTree),
+    retainedWorktreeHead: plain(retainedWorktreeHead),
+    pruneWorktreeTrees: plain(pruneWorktreeTrees),
     readWorkingFile: plain(worktreeSource.readWorkingFile),
   },
   "pull-request": {
@@ -71,6 +80,7 @@ export const HOST_FUNCTIONS: {
     readFile: plain(hostFs.readFile),
     readlink: plain(hostFs.readlink),
     writeFile: plain(hostFs.writeFile),
+    writePrivateJsonAtomic: plain(hostFs.writePrivateJsonAtomic),
     mkdir: plain(hostFs.mkdir),
     exists: plain(hostFs.exists),
     execFile: ([file, args, options], signal) => hostFs.execFile(file, args, options, signal),

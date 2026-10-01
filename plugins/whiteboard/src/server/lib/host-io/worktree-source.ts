@@ -34,3 +34,42 @@ export const readWorkingFile: typeof upstream.readWorkingFile = async (root, fil
   (await invokeHost("worktree-source", "readWorkingFile", [root, file], { rootPath: root })) as
     | string
     | null;
+
+/** Immutable source captured when its worktree generation was first inspected. */
+export const retainedWorktreeTree = async (
+  repositoryId: string,
+  revision: string,
+  vcs: LocalVcs,
+  comparison = false,
+): Promise<string> =>
+  (await invokeHost(
+    "worktree-source",
+    "retainedWorktreeTree",
+    [repositoryId, revision, vcs, comparison],
+    onVcs(vcs),
+  )) as string;
+
+export const retainedWorktreeHead = async (
+  repositoryId: string,
+  revision: string,
+  vcs: LocalVcs,
+): Promise<string | null> =>
+  (await invokeHost(
+    "worktree-source",
+    "retainedWorktreeHead",
+    [repositoryId, revision, vcs],
+    onVcs(vcs),
+  )) as string | null;
+
+export const pruneWorktreeTrees = async (
+  repositoryId: string,
+  vcs: LocalVcs,
+  revisions: string[],
+): Promise<void> => {
+  await invokeHost(
+    "worktree-source",
+    "pruneWorktreeTrees",
+    [repositoryId, vcs, revisions],
+    onVcs(vcs),
+  );
+};

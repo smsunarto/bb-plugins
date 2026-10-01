@@ -51,6 +51,9 @@ class HostWatcher extends EventEmitter {
         onUninstall(() => this.close()),
       );
       await this.arm();
+      // The first inspection may finish before this asynchronous watch starts.
+      // Invalidate once after arming so changes in that gap cannot stay cached.
+      if (!this.closed) this.listener("rename", null);
     } catch (error) {
       this.fail(error);
     }

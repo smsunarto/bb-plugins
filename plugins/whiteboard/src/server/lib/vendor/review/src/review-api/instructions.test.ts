@@ -126,7 +126,7 @@ describe("renderInstructions", () => {
 
     it("answers the trace-archaeology topic with an off message when capture is off", async () => {
       expect(await renderInstructions("trace-archaeology", off, root)).toBe(
-        "Trace capture is off on this machine, so no agent traces are available. It can be turned on in the Whiteboard plugin settings in bb under Experimental Features.",
+        "Trace capture is off in this bb plugin. Uploaded trace quotes are supported. Configure capture through Whiteboard Desktop.",
       );
     });
   });

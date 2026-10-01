@@ -4,8 +4,7 @@ import type {
 } from "../../shared/vendor/review-protocol/src/index.ts";
 
 /**
- * The bridge's surface-event emitter (design §3.8). Frozen API: WP6's
- * `selection.ts` emits through it and `bb-bridge.ts` exposes `subscribe`.
+ * In-panel navigation events. Code selection is owned by bb viewers (§0.1).
  */
 export interface SurfaceEvents {
   emit(event: ReviewSurfaceEvent): void;

@@ -110,3 +110,8 @@ export async function execFile(
     },
   )) as { stdout: string; stderr: string };
 }
+
+/** Preserve upstream atomic/private workspace writes on the checkout host. */
+export async function writePrivateJsonAtomic<T>(target: string, value: T): Promise<void> {
+  await invokeHost("fs", "writePrivateJsonAtomic", [target, value], on(target));
+}

@@ -1,5 +1,5 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
-import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../shared/contracts/panel.ts";
+import { NAV_PANEL_PATH, PANEL_ACTION_ID, WHITEBOARD_ICON } from "../shared/contracts/panel.ts";
 import { HomePanel } from "./panel/home-panel.tsx";
 import { OpenListener } from "./panel/open-listener.tsx";
 import { SessionPanel } from "./panel/session-panel.tsx";
@@ -8,14 +8,14 @@ export default definePluginApp((app) => {
   app.slots.threadPanelAction({
     id: PANEL_ACTION_ID,
     title: "Whiteboard",
-    icon: "Presentation",
+    icon: WHITEBOARD_ICON,
     component: SessionPanel,
     layout: "flush",
   });
   app.slots.navPanel({
     id: NAV_PANEL_PATH,
     title: "Whiteboard",
-    icon: "Presentation",
+    icon: WHITEBOARD_ICON,
     path: NAV_PANEL_PATH,
     component: HomePanel,
   });

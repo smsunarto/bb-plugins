@@ -56,7 +56,7 @@ export async function renderInstructions(
   }
 
   if (topic === "trace-archaeology" && !context.traceEnabled)
-    return "Trace capture is off on this machine, so no agent traces are available. It can be turned on in the Whiteboard plugin settings in bb under Experimental Features.";
+    return "Trace capture is off in this bb plugin. Uploaded trace quotes are supported. Configure capture through Whiteboard Desktop.";
 
   if (topic !== "authoring") return read(root, topic);
 

@@ -4,8 +4,7 @@ import { createPortal } from "react-dom";
 /**
  * Portal registry (design §3.8). Frozen API: imperative surfaces mount React
  * into DOM containers they do not own, and one `<PortalHost/>` per mount
- * renders them inside the plugin tree, so SDK components and `@pierre/diffs`
- * see the host providers.
+ * renders them inside the plugin tree, so SDK components see host providers.
  */
 export interface PortalEntry {
   id: string;

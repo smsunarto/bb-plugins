@@ -254,3 +254,63 @@
 .review-canvas-root[data-review-theme] .copy-for-agent-popover kbd {
   background: var(--state-hover);
 }
+
+/* The lens button depended on review-desktop's workbench review.css. Keep its
+ * sizing and states here, mapped to bb tokens, so the empty button has a hitbox. */
+.review-canvas-root[data-review-theme] button.review-viewed-check {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--background);
+  cursor: pointer;
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check:hover:not(:disabled) {
+  border-color: var(--foreground);
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check:focus-visible {
+  outline: 1px solid var(--timeline-accent);
+  outline-offset: 1px;
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check.is-empty {
+  visibility: hidden;
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check[aria-checked="mixed"]::after {
+  content: "";
+  position: absolute;
+  top: 5.25px;
+  left: 3px;
+  width: 6px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--foreground);
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check[aria-checked="true"] {
+  border-color: var(--timeline-accent);
+  background: var(--timeline-accent);
+}
+
+.review-canvas-root[data-review-theme] button.review-viewed-check[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--background);
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 6.2 5.1 8.3 9 3.9' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>")
+    center / 12px 12px no-repeat;
+}
