@@ -1,7 +1,7 @@
 # Third-party notices
 
 This plugin is forked from the built-in BB Docs plugin, last synced with
-`desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`).
+upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c`.
 
 ## BB Docs
 

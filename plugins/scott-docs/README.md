@@ -14,10 +14,11 @@ the same `bb docs` command, so installing the fork disables `simple-notes` when
 it is enabled.
 
 Forked from [`get-bb/bb/plugins/docs`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/docs).
-Last synced with `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`)
-from base `5c5123d5d94cf673a1dea1bcfaf386c8cd32d392` on 2026-09-26. Shared UI
+Last synced with upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c` on 2026-09-30, except
+[#4474](https://github.com/get-bb/bb/pull/4474) (unified composer API). That change
+needs Plugin SDK 0.6, which bb 0.44.0 does not provide. Shared UI
 under `components/`, `hooks/`, and `lib/` is vendored from the bb plugin
-registry at that tag (`components.json`).
+registry at `desktop-v0.44.0` (`components.json`).
 
 ## Features
 

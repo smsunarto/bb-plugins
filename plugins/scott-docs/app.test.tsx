@@ -1325,7 +1325,9 @@ describe("Docs nav panel", () => {
         name: "Open Tall document in tab",
       });
       const editor = slot.getByRole("textbox", { name: "Document content" });
-      expect(editor.getAttribute("contenteditable")).toBe("false");
+      await waitFor(() => {
+        expect(editor.getAttribute("contenteditable")).toBe("false");
+      });
       fireEvent.click(button);
       expect(openThreadPanel).toHaveBeenCalledWith({
         actionId: "document",
@@ -1341,7 +1343,9 @@ describe("Docs nav panel", () => {
         resize();
       });
       expect(slot.queryByRole("button", { name: "Open Tall document in tab" })).toBeNull();
-      expect(editor.getAttribute("contenteditable")).toBe("true");
+      await waitFor(() => {
+        expect(editor.getAttribute("contenteditable")).toBe("true");
+      });
     } finally {
       bounds.mockRestore();
     }
