@@ -240,9 +240,27 @@ seed_plugin_secrets() {
 }
 
 launch() {
-  local run_id name host host_name revision runtime workspace url run_dir evidence_dir session env_file
+  local run_id name host host_name revision runtime workspace url run_dir evidence_dir session env_file cleanup_trap run_lock existing
   run_id="$(resolve_run_id "${1:-}")"
   name="$(runtime_name_for "${run_id}")"
+  run_dir="${runs_root}/${run_id}"
+  env_file="${run_dir}/run.env"
+  run_lock="${runs_root}/.launch-locks/${name}"
+  mkdir -p "${runs_root}/.launch-locks"
+  mkdir "${run_lock}" 2>/dev/null || fail "run ID is already launching: ${run_id}"
+  printf -v cleanup_trap 'status=$?; rmdir %q; exit "${status}"' "${run_lock}"
+  trap "${cleanup_trap}" EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  trap 'exit 141' PIPE
+  trap 'exit 131' QUIT
+  # status succeeds for unknown names and reports them as absent.
+  existing="$(dev_instance status "${name}" --json | json_field phase)"
+  if [[ "${existing}" != "absent" ]]; then
+    fail "run ID is in use: ${run_id}. Clean up that run or choose a new ID."
+  fi
+  rm -f "${env_file}" "${env_file}.pending"
 
   # The workspace instance owns the checkout every run borrows. Starting it is
   # near a no-op when it is already up, and its name and revision are what this
@@ -259,6 +277,11 @@ launch() {
   # it starts with an empty bb. The same workspace command installs the plugins
   # and pins the baseline into it -- per run now, not per machine. It skips the
   # builds, which the checkout owner already did.
+  # Keep successful runs available for testing, but release this run's resources
+  # if any preparation step fails or the launcher is interrupted.
+  # Bash unwinds function locals on errexit, so capture the run ID now.
+  printf -v cleanup_trap 'status=$?; cleanup %q || printf "verify-bb-plugins: cleanup failed for %%s\\n" %q >&2; rm -f %q %q; rmdir %q; exit "${status}"' "${run_id}" "${run_id}" "${env_file}.pending" "${env_file}" "${run_lock}"
+  trap "${cleanup_trap}" EXIT
   runtime="$(dev_instance start --name "${name}" --revision "${revision}" --from "${host_name}" \
     --json --timeout "${run_timeout}")"
   seed_plugin_secrets "${name}" "$(json_field dataDir <<<"${runtime}")"
@@ -271,33 +294,42 @@ launch() {
   prepare_message_embeds "${name}"
   doctor "${run_id}"
 
-  run_dir="${runs_root}/${run_id}"
   evidence_dir="${run_dir}/evidence"
   session="$(browser_session_for "${run_id}")"
   mkdir -p "${evidence_dir}"
-  env_file="${run_dir}/run.env"
   {
     printf 'export RUN_ID=%q\n' "${run_id}"
     printf 'export BB_APP_URL=%q\n' "${url}"
     printf 'export BB_KIT_DEV_NAME=%q\n' "${name}"
     printf 'export BB_CLI=%q\n' "$(dev_instance env "${name}" --json | json_field BB_CLI)"
     printf 'export BROWSER_SESSION=%q\n' "${session}"
+    # agent-browser 0.38.1 overwrites the idle-timeout environment variable when
+    # spawning its daemon. Pass the CLI flag again on every browser command.
+    printf 'agent-browser() { command agent-browser --idle-timeout %q "$@"; }\n' "${VERIFY_BROWSER_IDLE_TIMEOUT:-10m}"
     printf 'export ARTIFACT_DIR=%q\n' "${evidence_dir}"
-  } >"${env_file}"
+  } >"${env_file}.pending"
 
   bash "${repo_root}/scripts/dev-browser-appearance" "${session}" "${url}"
+
+  mv "${env_file}.pending" "${env_file}"
+  rmdir "${run_lock}"
+  trap - EXIT INT TERM HUP PIPE QUIT
 
   printf 'run: %s\nruntime: %s\ncheckout owner: %s\napp: %s\nsession: %s\nevidence: %s\n' \
     "${run_id}" "${name}" "${host_name}" "${url}" "${session}" "${evidence_dir}"
 }
 
 cleanup() {
-  local run_id name session
+  local run_id name session close_status=0
   run_id="$(resolve_run_id "${1:-}")"
   name="$(runtime_name_for "${run_id}")"
   session="$(browser_session_for "${run_id}")"
-  agent-browser --session "${session}" close >/dev/null 2>&1 || true
-  dev_instance destroy "${name}" --timeout 300 >/dev/null
+  agent-browser --session "${session}" close >/dev/null 2>&1 || close_status=$?
+  dev_instance destroy "${name}" --timeout 300 >/dev/null || return $?
+  if ((close_status != 0)); then
+    printf 'verify-bb-plugins: could not close browser %s\n' "${session}" >&2
+    return "${close_status}"
+  fi
   printf 'cleanup: destroyed %s, closed %s, kept %s\n' \
     "${name}" "${session}" "${runs_root}/${run_id}/evidence"
 }

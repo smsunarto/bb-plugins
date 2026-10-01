@@ -39,6 +39,14 @@ borrowed, the browser session, and the evidence directory. Use those values for
 the whole run. Launch checks the selected appearance controls, loaded Monokai
 styles, and the enabled GTD repository-group toggle before reporting success.
 
+Failed or interrupted launch preparation closes this run's browser and destroys
+its runtime. Successful runs stay available until explicit cleanup. Test browsers
+also exit after ten minutes without commands or dashboard input, discarding
+transient tabs and page state. The generated `run.env` preserves this limit when
+later commands restart an expired daemon. Source `run.env` before browser
+commands. Set `VERIFY_BROWSER_IDLE_TIMEOUT` when launching to change this limit,
+for example `30m` for a longer review.
+
 For CLI actions, use `"$BB_CLI"` from `run.env`. It is this run's routed bb
 executable. `bb-kit dev-instance exec "$BB_KIT_DEV_NAME" -- <bb arguments>`
 also selects this runtime. Do not put a second `bb` after `--`.

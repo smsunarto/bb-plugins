@@ -6,7 +6,8 @@ set -euo pipefail
 session="${1:?pass a browser session}"
 url="${2:?pass the dev app URL}"
 
-browser() { agent-browser --session "${session}" "$@"; }
+# Test browsers should not consume memory for an hour after an abandoned run.
+browser() { agent-browser --session "${session}" --idle-timeout "${VERIFY_BROWSER_IDLE_TIMEOUT:-10m}" "$@"; }
 wait_for_menu() {
   browser wait --fn '(() => { const menu = document.querySelector("[role=menu]"); return menu && menu.getAnimations({subtree:true}).every(animation => animation.playState !== "running"); })()'
 }
