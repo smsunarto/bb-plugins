@@ -199,6 +199,44 @@ describe("thread naming progress", () => {
   }
 });
 
+describe("composer context naming", () => {
+  for (const kind of ["automatic", "forced"] as const) {
+    test(`${kind} naming receives resolved composer chip context`, async () => {
+      const event = requested(1, "Fix it @Browser");
+      const { namer, inferenceCalls, updates } = createHost({
+        events: [
+          {
+            ...event,
+            data: {
+              ...event.data,
+              input: [
+                ...event.data.input,
+                {
+                  type: "text",
+                  text: 'Context for @Browser (resolved by plugin "browser"):\n\nThe checkout page shows a broken payment button.',
+                  mentions: [],
+                  visibility: "agent-only",
+                },
+              ],
+            },
+          },
+        ],
+        inferenceOutput: "Fix checkout payment button",
+      });
+
+      assert.deepEqual(await namer.nameThread(THREAD_ID, { kind }), {
+        ok: true,
+        title: "Fix checkout payment button",
+      });
+      assert.match(
+        (inferenceCalls[0] as { prompt: string }).prompt,
+        /The checkout page shows a broken payment button\./u,
+      );
+      assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix checkout payment button" }]);
+    });
+  }
+});
+
 describe("createThreadNamer", () => {
   test("names an untitled thread when its first prompt arrives", async () => {
     const { namer, updates } = createHost({ events: [requested()] });

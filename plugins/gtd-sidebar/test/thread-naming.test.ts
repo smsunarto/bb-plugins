@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
+import { renderAnnotationMentionContext } from "../../agentation/lib/markdown.ts";
+import type { StoredAnnotation } from "../../agentation/lib/afs.ts";
 import {
   normalizeProjectTitleInstructions,
   planThreadNaming,
@@ -112,7 +114,7 @@ describe("normalizeProjectTitleInstructions", () => {
 });
 
 describe("planThreadNaming", () => {
-  test("normalizes visible text without passing agent-only input to inference", () => {
+  test("normalizes visible text and keeps agent-only context in a separate section", () => {
     const result = plan(
       { kind: "automatic" },
       {
@@ -129,7 +131,123 @@ describe("planThreadNaming", () => {
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(result.prompt, /Current request:\nFix the login test/u);
-      assert.doesNotMatch(result.prompt, /private context/u);
+      assert.match(result.prompt, /Current request context:\nprivate context/u);
+    }
+  });
+
+  test("includes chip labels and bounds resolved context independently of the request", () => {
+    const result = plan(
+      { kind: "forced" },
+      {
+        events: [
+          request(1, [
+            {
+              type: "text",
+              text: "Fix it".repeat(500),
+              mentions: [
+                { resource: { kind: "thread", label: "Checkout payment failure" } },
+                { resource: { kind: "path", label: "src/checkout.ts" } },
+              ],
+            },
+            {
+              type: "text",
+              text: "Browser checkout page. ".repeat(1000),
+              visibility: "agent-only",
+            },
+            { type: "text", text: "Payment button is disabled.", visibility: "agent-only" },
+          ]),
+        ],
+      },
+    );
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.match(
+        result.prompt,
+        /@Checkout payment failure \(thread\)\n@src\/checkout.ts \(path\)/u,
+      );
+      assert.match(result.prompt, /Browser checkout page\./u);
+      assert.match(result.prompt, /Payment button is disabled\./u);
+      assert.ok(result.prompt.length < 3_000);
+      assert.doesNotMatch(result.prompt, /Original request context:/u);
+    }
+  });
+
+  test("keeps original and recent chip context available for short follow-ups", () => {
+    const result = plan(
+      { kind: "automatic" },
+      {
+        thread: { title: "Fix checkout" },
+        events: [
+          request(1, [
+            { type: "text", text: "Fix this @Browser" },
+            { type: "text", text: "Checkout payment failure.", visibility: "agent-only" },
+          ]),
+          request(2, [
+            { type: "text", text: "Check this too" },
+            { type: "text", text: "Safari checkout failure.", visibility: "agent-only" },
+          ]),
+          request(3, [{ type: "text", text: "add tests" }]),
+        ],
+      },
+    );
+    assert.equal(result.kind, "run");
+    if (result.kind === "run") {
+      assert.match(result.prompt, /Current request:\nadd tests/u);
+      assert.match(result.prompt, /Original request context:\nCheckout payment failure\./u);
+      assert.match(
+        result.prompt,
+        /Recent request context \(oldest first\):\nSafari checkout failure\./u,
+      );
+    }
+  });
+
+  test("retains Agentation feedback after the chip's registration metadata", () => {
+    const annotation = {
+      id: "ann_1",
+      timestamp: 1,
+      x: 0,
+      y: 0,
+      createdAt: "2026-10-01T00:00:00Z",
+      updatedAt: "2026-10-01T00:00:00Z",
+      seq: 1,
+      comment: "The label wraps at 320px",
+      elementPath: "body > main > button.cta",
+      element: "button",
+      sessionId: "ses_1",
+      status: "pending",
+      kind: "feedback",
+      reactComponents: "<PluginSlotBoundary> <GithubPanel> <Button>",
+      thread: [],
+      resolution: null,
+      bb: {
+        route: "/plugins/github/issues",
+        pluginId: "github",
+        surface: "navPanel",
+        surfaceId: "issues",
+        threadId: null,
+        projectId: null,
+        routeLabel: "github panel",
+      },
+    } as StoredAnnotation;
+    const resolved = `Context for @button (resolved by plugin "agentation"):\n\n${renderAnnotationMentionContext(annotation, null)}`;
+    for (const kind of ["automatic", "forced"] as const) {
+      const result = plan(
+        { kind },
+        {
+          events: [
+            request(1, [
+              {
+                type: "text",
+                text: "Fix this @button",
+                mentions: [{ resource: { kind: "plugin", label: "button" } }],
+              },
+              { type: "text", text: resolved, visibility: "agent-only" },
+            ]),
+          ],
+        },
+      );
+      assert.equal(result.kind, "run");
+      if (result.kind === "run") assert.match(result.prompt, /The label wraps at 320px/u);
     }
   });
 
