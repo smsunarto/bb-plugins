@@ -329,7 +329,7 @@ export function UncommittedCard({
   );
 }
 
-/** A branch card's header: status square, name, then status and review in words. */
+/** A card's header: status square and name, then an optional line of detail. */
 function CardHeader({
   icon,
   tone,
@@ -340,11 +340,11 @@ function CardHeader({
   icon: string;
   tone: Tone;
   heading: ReactNode;
-  details: ReactNode;
+  details?: ReactNode;
   trailing?: ReactNode;
 }) {
   return (
-    <header className="flex min-w-0 flex-col gap-1.5 px-2.5 py-2.5">
+    <header className="flex min-w-0 flex-col gap-1.5 px-2.5 py-2">
       <div className="flex min-w-0 items-center gap-2">
         {/* The square's centre sits on the commit rail's axis below it. */}
         <span
@@ -360,17 +360,34 @@ function CardHeader({
         {heading}
         {trailing}
       </div>
-      <p className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground">
-        {details}
-      </p>
+      {details ? (
+        <p className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground">
+          {details}
+        </p>
+      ) : null}
     </header>
   );
 }
 
-function Dot() {
+/** A small pill beside the branch name, so status costs no row of its own. */
+function Chip({
+  className,
+  title,
+  children,
+}: {
+  className?: string;
+  title?: string;
+  children: ReactNode;
+}) {
   return (
-    <span className="text-subtle-foreground" aria-hidden>
-      •
+    <span
+      className={cn(
+        "inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 text-[11px] font-semibold whitespace-nowrap text-secondary-foreground",
+        className,
+      )}
+      title={title}
+    >
+      {children}
     </span>
   );
 }
@@ -395,24 +412,27 @@ function BranchCard({
         icon={look.icon}
         tone={look.tone}
         heading={<BranchName key={branch.name} target={target} name={branch.name} />}
-        details={
+        trailing={
           <>
-            {look.label ? <span title={branch.rawStatus}>{look.label}</span> : null}
-            {look.label && branch.reviewId ? <Dot /> : null}
+            {look.label ? (
+              <Chip
+                title={branch.rawStatus}
+                className={
+                  branch.status === "conflicted"
+                    ? "bg-destructive text-destructive-foreground"
+                    : "bg-transparent font-medium text-muted-foreground ring-1 ring-border ring-inset"
+                }
+              >
+                {look.label}
+              </Chip>
+            ) : null}
             {branch.reviewId ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-1.5 font-semibold text-secondary-foreground">
+              <Chip>
                 <Icon name="GitPullRequest" className="size-3" aria-hidden />
                 {`PR #${branch.reviewId}`}
-              </span>
+              </Chip>
             ) : null}
           </>
-        }
-        trailing={
-          branch.status === "conflicted" ? (
-            <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground">
-              Conflicts
-            </span>
-          ) : null
         }
       />
       <BranchActions target={target} branch={branch} landable={last} />
