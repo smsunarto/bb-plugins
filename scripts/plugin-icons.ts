@@ -6,6 +6,7 @@ import {
   Activity01Icon,
   ArtboardIcon,
   ChatFeedbackIcon,
+  CheckListIcon,
   CloudServerIcon,
   DashboardSpeed02Icon,
   Doc01Icon,
@@ -220,6 +221,12 @@ const customIcons = {
         },
       ],
     ],
+  },
+  // Upstream bb Tasks, which this plugin was forked from, declares BB's named
+  // "ListTodo" icon, which bb maps to Hugeicons' CheckList glyph.
+  "tasks-fork": {
+    name: "CheckList",
+    nodes: CheckListIcon,
   },
   monokai: {
     name: "Palette",
