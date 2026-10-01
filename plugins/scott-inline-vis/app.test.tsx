@@ -114,7 +114,7 @@ test("inline-vis renders workspace Markdown with the host renderer and no iframe
   expect(slot.container.querySelector("iframe")).toBeNull();
   expect(markdown.parentElement?.className).toBe("inline-vis-markdown");
   expect(markdown.parentElement?.style.height).toBe("224px");
-  expect(slot.getByRole("button", { name: "Open /tmp/reports/notes.md" })).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Open /tmp/reports/notes.md in sidebar" })).toBeTruthy();
   expect(openWorkspaceFile).not.toHaveBeenCalled();
   expect(slot.sdkCalls.map((call) => [call.method, call.args[0]])).toEqual([
     ["threads.storageLocation", { threadId: "thread-inline-vis", signal: expect.any(AbortSignal) }],
@@ -215,7 +215,9 @@ test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox",
   expect(iframe.getAttribute("src")).toBe(`${LEASE_URL}/demo%20file.html`);
   expect(iframe.getAttribute("srcdoc")).toBeNull();
   expect(iframe.style.height).toBe("224px");
-  const toggle = slot.getByRole("button", { name: "Collapse preview /tmp/charts/demo file.html" });
+  const toggle = slot.getByRole("button", {
+    name: "Collapse visualization /tmp/charts/demo file.html",
+  });
   const header = toggle.closest(".inline-vis-header")!;
   expect(header.closest(".inline-vis-card")).toBeTruthy();
   expect(toggle.classList.contains("inline-vis-toggle")).toBe(true);
@@ -223,7 +225,9 @@ test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox",
   expect(header.querySelector(".inline-vis-path")?.getAttribute("title")).toBe(
     "/tmp/charts/demo file.html",
   );
-  expect(slot.getByRole("button", { name: "Open /tmp/charts/demo file.html" })).toBeTruthy();
+  expect(
+    slot.getByRole("button", { name: "Open /tmp/charts/demo file.html in sidebar" }),
+  ).toBeTruthy();
   expect(openWorkspaceFile).not.toHaveBeenCalled();
   expect(previewReads(slot)).toEqual(["/tmp/charts/demo file.html"]);
   slot.unmount();
@@ -269,7 +273,9 @@ test("inline-vis sends assets once only to the prepared opaque frame and stops o
     expect(post.mock.calls[0]?.[0].assets[0].blob.type).toBe("video/mp4");
     ready(iframe.contentWindow, token!);
     expect(post).toHaveBeenCalledTimes(1);
-    fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/charts/player.html" }));
+    fireEvent.click(
+      slot.getByRole("button", { name: "Collapse visualization /tmp/charts/player.html" }),
+    );
     expect(slot.container.querySelector("iframe")).toBeNull();
     ready(iframe.contentWindow, token!);
     expect(post).toHaveBeenCalledTimes(1);
@@ -432,9 +438,9 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   expect(previewReads(slot).sort()).toEqual(["/tmp/2.html", "/tmp/3.html", "/tmp/other.html"]);
-  fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/3.html" }));
+  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization /tmp/3.html" }));
   // Expanding last leaves the remembered preference open, so new previews still auto-open.
-  fireEvent.click(slot.getByRole("button", { name: "Expand preview /tmp/1.html" }));
+  fireEvent.click(slot.getByRole("button", { name: "Expand visualization /tmp/1.html" }));
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   fireEvent.click(slot.getByRole("button", { name: "Append preview" }));
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
@@ -447,7 +453,7 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
   ]);
   fireEvent.click(slot.getByRole("button", { name: "Prepend history" }));
   await waitFor(() =>
-    expect(slot.getByRole("button", { name: "Expand preview /tmp/0.html" })).toBeTruthy(),
+    expect(slot.getByRole("button", { name: "Expand visualization /tmp/0.html" })).toBeTruthy(),
   );
   expect(files()).toEqual([
     "inline-vis: /tmp/1.html",
@@ -475,10 +481,12 @@ test("inline-vis ignores a preparation result that arrives after collapse", asyn
     { sdk: previewSdk(() => pending) },
   );
   await slot.findByRole("status", { name: "Loading visualization /tmp/pending.html" });
-  fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/pending.html" }));
+  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization /tmp/pending.html" }));
   resolvePreview("");
   await waitFor(() =>
-    expect(slot.getByRole("button", { name: "Expand preview /tmp/pending.html" })).toBeTruthy(),
+    expect(
+      slot.getByRole("button", { name: "Expand visualization /tmp/pending.html" }),
+    ).toBeTruthy(),
   );
   expect(slot.container.querySelector("iframe")).toBeNull();
   slot.unmount();
@@ -500,7 +508,7 @@ test("inline-vis remembers the last collapse choice for previews that mount late
 
   const first = render("/tmp/first.html");
   await waitFor(() => expect(first.container.querySelector("iframe")).toBeTruthy());
-  fireEvent.click(first.getByRole("button", { name: "Collapse preview /tmp/first.html" }));
+  fireEvent.click(first.getByRole("button", { name: "Collapse visualization /tmp/first.html" }));
   first.unmount();
   const stored = Object.entries(window.localStorage);
   expect(stored).toHaveLength(1);
@@ -511,11 +519,13 @@ test("inline-vis remembers the last collapse choice for previews that mount late
 
   const second = render("/tmp/second.html");
   await waitFor(() =>
-    expect(second.getByRole("button", { name: "Expand preview /tmp/second.html" })).toBeTruthy(),
+    expect(
+      second.getByRole("button", { name: "Expand visualization /tmp/second.html" }),
+    ).toBeTruthy(),
   );
   expect(second.container.querySelector("iframe")).toBeNull();
   expect(previewReads(second)).toEqual([]);
-  fireEvent.click(second.getByRole("button", { name: "Expand preview /tmp/second.html" }));
+  fireEvent.click(second.getByRole("button", { name: "Expand visualization /tmp/second.html" }));
   await waitFor(() => expect(second.container.querySelector("iframe")).toBeTruthy());
   second.unmount();
 
@@ -545,8 +555,12 @@ test("inline-vis keeps an open iframe after its lease expires and refreshes only
     await new Promise((resolve) => setTimeout(resolve, 1_100));
     expect(slot.container.querySelector("iframe")).toBe(iframe);
     expect(previewReads(slot)).toHaveLength(1);
-    fireEvent.click(slot.getByRole("button", { name: "Collapse preview /tmp/interactive.html" }));
-    fireEvent.click(slot.getByRole("button", { name: "Expand preview /tmp/interactive.html" }));
+    fireEvent.click(
+      slot.getByRole("button", { name: "Collapse visualization /tmp/interactive.html" }),
+    );
+    fireEvent.click(
+      slot.getByRole("button", { name: "Expand visualization /tmp/interactive.html" }),
+    );
     await waitFor(() => expect(previewReads(slot)).toHaveLength(2));
     await waitFor(() => expect(slot.container.querySelector("iframe")).toBeTruthy());
     expect(slot.container.querySelector("iframe")).not.toBe(iframe);

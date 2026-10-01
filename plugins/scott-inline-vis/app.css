@@ -26,43 +26,35 @@
 .inline-vis-header {
   display: flex;
   min-height: 2.75rem;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 1rem 0 0.6875rem;
+  align-items: stretch;
   background: #1e1e1e;
   font-family: var(--font-sans, system-ui, sans-serif);
   font-size: 0.8125rem;
   line-height: 1.25rem;
 }
 
+/* The toggle fills the row, padding included, so any click on it toggles. */
 .inline-vis-toggle {
-  display: inline-flex;
-  width: 1.5rem;
-  height: 1.5rem;
-  flex: 0 0 auto;
+  display: flex;
+  min-width: 0;
+  flex: 1;
   align-items: center;
-  justify-content: center;
-  padding: 0;
+  gap: 0.5rem;
+  padding: 0 0.5rem 0 1rem;
   border: 0;
-  border-radius: 0.375rem;
   background: transparent;
   color: var(--muted-foreground);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.inline-vis-toggle:hover {
-  background: var(--accent);
+.inline-vis-toggle[aria-expanded="true"] {
   color: var(--foreground);
 }
 
-.inline-vis-toggle svg {
-  width: 0.625rem;
-  height: 1rem;
-  transition: transform 150ms;
-}
-
-.inline-vis-toggle[aria-expanded="false"] svg {
-  transform: rotate(-90deg);
+.inline-vis-label {
+  flex: 0 0 auto;
 }
 
 .inline-vis-path {
@@ -74,23 +66,44 @@
   text-align: left;
 }
 
+.inline-vis-chevron {
+  width: 0.625rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+  transition: transform 150ms;
+}
+
+.inline-vis-toggle[aria-expanded="true"] .inline-vis-chevron {
+  transform: rotate(180deg);
+}
+
+/* The loading placeholder shares this box so the row does not shift. */
+.inline-vis-action {
+  display: inline-flex;
+  width: 2.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
 .inline-vis-open {
   padding: 0;
   border: 0;
   background: transparent;
-  color: inherit;
-  font: inherit;
+  color: var(--muted-foreground);
   cursor: pointer;
 }
 
-.inline-vis-open:hover {
-  text-decoration: underline;
+.inline-vis-open svg {
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 .inline-vis-toggle:focus-visible,
 .inline-vis-open:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .inline-vis-frame {
@@ -126,7 +139,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .inline-vis-toggle svg {
+  .inline-vis-chevron {
     transition: none;
   }
 }

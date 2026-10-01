@@ -73,32 +73,52 @@ function PreviewHeader({
   onToggle: () => void;
   onOpen: (() => void) | null;
 }) {
+  // Upstream #4507 and #4538: the whole row toggles in place, and opening the
+  // file is a separate trailing action so the two never look alike.
   return (
     <figcaption className="inline-vis-header">
       <button
         type="button"
         className="inline-vis-toggle"
-        aria-label={`${expanded ? "Collapse" : "Expand"} preview ${file}`}
+        aria-label={`${expanded ? "Collapse" : "Expand"} visualization ${file}`}
         aria-expanded={expanded}
+        title={expanded ? "Collapse preview" : "Expand preview here"}
         onClick={onToggle}
       >
-        <svg aria-hidden="true" viewBox="0 0 10 16" fill="currentColor">
+        <span className="inline-vis-label">inline-vis</span>
+        <span className="inline-vis-path" title={file}>
+          <bdi>{file}</bdi>
+        </span>
+        <svg
+          aria-hidden="true"
+          className="inline-vis-chevron"
+          viewBox="0 0 10 16"
+          fill="currentColor"
+        >
           <path d="M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
         </svg>
       </button>
       {onOpen === null ? (
-        <span className="inline-vis-path" title={file}>
-          <bdi>{file}</bdi>
-        </span>
+        <span aria-hidden="true" className="inline-vis-action" />
       ) : (
         <button
           type="button"
-          className="inline-vis-path inline-vis-open"
-          title={file}
-          aria-label={`Open ${file}`}
+          className="inline-vis-action inline-vis-open"
+          aria-label={`Open ${file} in sidebar`}
+          title="Open in sidebar"
           onClick={onOpen}
         >
-          <bdi>{file}</bdi>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          </svg>
         </button>
       )}
     </figcaption>
