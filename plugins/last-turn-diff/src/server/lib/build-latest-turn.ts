@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LatestTurn } from "../../shared/contract.ts";
+import { isTemporaryPath, withoutTemporaryFiles } from "../../shared/patches.ts";
 
 export type TurnRow = Awaited<
   ReturnType<BbPluginApi["sdk"]["threads"]["timelineTurnSummaryDetails"]>
@@ -12,8 +13,10 @@ export function buildLatestTurn(
   sourceRows: TurnRow[],
   patch: string | null,
   timelineRows: TurnRow[],
+  keepPath: (path: string) => boolean = (path) => !isTemporaryPath(path),
 ): LatestTurn {
   const rows = sourceRows.filter((row) => row.turnId === turnId);
+  patch = withoutTemporaryFiles(patch, keepPath);
   const oversized = patch !== null && patch.length > MAX_PATCH_CHARS;
   const result: LatestTurn = {
     turnId,
@@ -33,6 +36,9 @@ export function buildLatestTurn(
       row.approvalStatus === "denied"
     )
       continue;
+    const path =
+      row.change.movePath && keepPath(row.change.movePath) ? row.change.movePath : row.change.path;
+    if (!keepPath(path)) continue;
     if (result.changes.length >= MAX_CHANGES) {
       result.limited = true;
       break;
@@ -45,7 +51,7 @@ export function buildLatestTurn(
     remaining -= text?.length ?? 0;
     result.changes.push({
       id: row.id,
-      path: row.change.path,
+      path,
       patch: text,
       ...row.change.diffStats,
     });

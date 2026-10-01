@@ -188,6 +188,128 @@ test("retains the last recorded changes through no-edit and active turns", async
   await harness.lifecycle.dispose();
 });
 
+test("temporary-only turns retain the previous project preview", async () => {
+  const later = laterTurn(0);
+  for (const aggregate of [false, true]) {
+    const temporaryPatch = patch.replaceAll("example.ts", "/tmp/review.txt");
+    const { harness } = await setup(
+      [
+        started,
+        updated,
+        completed,
+        ...later,
+        ...(aggregate
+          ? [
+              {
+                ...updated,
+                id: "temporary-diff",
+                seq: 35,
+                scope: later[0]!.scope,
+                data: { providerThreadId: "provider-1", diff: temporaryPatch },
+              },
+            ]
+          : []),
+      ],
+      [
+        edit,
+        {
+          ...edit,
+          id: "temporary-edit",
+          turnId: "later-0",
+          change: {
+            ...edit.change,
+            path: "/tmp/review.txt",
+            diff: temporaryPatch,
+          },
+        },
+      ],
+    );
+    expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+      turn: { turnId: "turn-2", anchorId: "final-2", patch },
+    });
+    await harness.lifecycle.dispose();
+  }
+});
+
+test("a temporary-only thread has no preview", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [
+      {
+        ...edit,
+        change: { ...edit.change, path: "/private/tmp/review.txt" },
+      },
+    ],
+  );
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toEqual({ turn: null });
+  await harness.lifecycle.dispose();
+});
+
+test("temporary edits never consume the file or text preview budget", async () => {
+  const temporary = {
+    ...edit,
+    change: { ...edit.change, path: "/tmp/review.txt", diff: "x".repeat(1_000_001) },
+  };
+  for (const rows of [
+    [temporary],
+    Array.from({ length: 201 }, (_, n) => ({ ...temporary, id: `tmp-${n}` })),
+  ]) {
+    const { harness } = await setup([started, completed], [...rows, edit]);
+    expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+      turn: { limited: false, changes: [{ path: "example.ts", patch }] },
+    });
+    await harness.lifecycle.dispose();
+  }
+  const temporaryPatch =
+    patch.replaceAll("example.ts", "/private/tmp/review.txt") + "+" + "x".repeat(1_000_001) + "\n";
+  for (const aggregate of [temporaryPatch, temporaryPatch + patch]) {
+    const { harness } = await setup(
+      [{ ...started }, { ...updated, data: { ...updated.data, diff: aggregate } }, completed],
+      [temporary],
+    );
+    const result = await harness.callRpc("latestTurn", { threadId: "thread-1" });
+    expect(result).toEqual(
+      aggregate === temporaryPatch
+        ? { turn: null }
+        : {
+            turn: { turnId: "turn-2", anchorId: "final-2", changes: [], patch, limited: false },
+          },
+    );
+    await harness.lifecycle.dispose();
+  }
+});
+
+test("known project edits under tmp remain visible and moves across tmp stay visible", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [absoluteEdit("/private/tmp/project/src/a.ts", "project")],
+  );
+  stubWorkspaces(harness);
+  harness.sdk.stub("environments.get", async () => ({
+    id: "env-1",
+    hostId: "h",
+    path: "/private/tmp/project",
+    name: null,
+  }));
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { changes: [{ path: "/private/tmp/project/src/a.ts", relPath: "src/a.ts" }] },
+  });
+  await harness.lifecycle.dispose();
+  for (const [path, movePath, expected] of [
+    ["/tmp/gen.ts", "src/gen.ts", "src/gen.ts"],
+    ["src/a.ts", "/tmp/a.ts", "src/a.ts"],
+  ]) {
+    const { harness } = await setup(
+      [started, completed],
+      [{ ...edit, change: { ...edit.change, path: path!, movePath: movePath! } }],
+    );
+    expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+      turn: { changes: [{ path: expected }] },
+    });
+    await harness.lifecycle.dispose();
+  }
+});
+
 test("paginates completed turns and locates the retained answer in older timeline pages", async () => {
   const cursor = { anchorId: "later-final", anchorSeq: 230 };
   const { harness, timeline, list } = await setup(
@@ -447,7 +569,7 @@ test("an aggregate patch still surfaces foreign row changes the patch cannot cov
 test("foreign changes outside every known project are labeled by parent directory", async () => {
   const { harness } = await setup(
     [started, completed],
-    [absoluteEdit("/tmp/scratch/x.ts", "stray"), message],
+    [absoluteEdit("/scratch/x.ts", "stray"), message],
   );
   stubWorkspaces(harness);
   const result = (await harness.callRpc("latestTurn", {
@@ -509,6 +631,26 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     },
   };
 }
+
+test("temporary rows cannot consume snapshot or foreign-project preview budgets", async () => {
+  const temporary = {
+    ...absoluteEdit("/tmp/review.txt", "temporary"),
+    change: { ...edit.change, path: "/tmp/review.txt", diff: "x".repeat(1_000_001) },
+  };
+  const foreign = absoluteEdit("/ws/bb-plugins/src/a.ts", "foreign");
+  const { harness } = await setup(
+    [started, completed],
+    [temporary, foreign, message],
+    [],
+    null,
+    () => snapshot(),
+  );
+  stubWorkspaces(harness);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { patch: snapshotPatchText, limited: false, changes: [{ id: "foreign", patch }] },
+  });
+  await harness.lifecycle.dispose();
+});
 
 test("a workspace snapshot outranks the provider patch and covers unrecorded edits", async () => {
   const calls: ExperimentalFakeHostRpcCall[] = [];

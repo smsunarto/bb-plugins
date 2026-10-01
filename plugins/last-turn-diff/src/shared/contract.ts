@@ -28,6 +28,8 @@ export const latestTurnSchema = z
     limited: z.boolean(),
     /** Label of the thread's own workspace, used as the local section header. */
     workspace: z.string().optional(),
+    /** Known project roots, so checkouts in /tmp retain their own files. */
+    projectRoots: z.array(z.string()).optional(),
     unity: z.record(z.string(), unityDiffSchema).optional(),
   })
   .nullable();

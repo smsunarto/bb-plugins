@@ -3,6 +3,35 @@ import type { Change, LatestTurn } from "./contract.ts";
 
 const HUNK_HEADER = /^@@ /m;
 
+export function isTemporaryPath(path: string): boolean {
+  return /^\/(?:private\/)?tmp(?:\/|$)/.test(path);
+}
+
+/** Remove temporary files before they consume the preview's size budget. */
+export function withoutTemporaryFiles(
+  patch: string | null,
+  keepPath: (path: string) => boolean = (path) => !isTemporaryPath(path),
+): string | null {
+  if (patch === null) return null;
+  return patch
+    .split(GIT_DIFF_FILE_BREAK_REGEX)
+    .filter((chunk) => {
+      if (chunk.trim() === "") return true;
+      try {
+        // Read only metadata, so an oversized hunk never reaches the diff parser.
+        const hunk = chunk.search(/^@@ /m);
+        const file = getSingularPatch(hunk < 0 ? chunk : chunk.slice(0, hunk));
+        return (
+          keepPath(unquoteGitPath(file.name)) ||
+          (file.prevName !== undefined && keepPath(unquoteGitPath(file.prevName)))
+        );
+      } catch {
+        return true;
+      }
+    })
+    .join("");
+}
+
 /**
  * Some providers (Devin's ACP file changes, BB's own new-file rows) record a
  * file change as `---`/`+++` headers followed by bare `-`/`+` lines with no
@@ -71,7 +100,11 @@ function splitPatch(patch: string, idPrefix: string): Change[] {
       const file = getSingularPatch(patch);
       const added = file.hunks.reduce((total, hunk) => total + hunk.additionLines, 0);
       const removed = file.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0);
-      changes.push({ id, path: unquoteGitPath(file.name), patch, added, removed });
+      const name = unquoteGitPath(file.name);
+      const previous = file.prevName === undefined ? undefined : unquoteGitPath(file.prevName);
+      const path =
+        isTemporaryPath(name) && previous && !isTemporaryPath(previous) ? previous : name;
+      changes.push({ id, path, patch, added, removed });
     } catch {
       // Preserve unparseable and binary patches as text, never silently hide changes.
       changes.push({ id, path: "Recorded changes", patch, added: 0, removed: 0 });
@@ -83,10 +116,13 @@ function splitPatch(patch: string, idPrefix: string): Change[] {
 export function turnChanges(turn: LatestTurn): Change[] {
   const others = turn.otherPatch ? splitPatch(turn.otherPatch, "other-") : [];
   for (const change of others) change.other = true;
-  if (turn.patch === null || turn.patch.trim() === "") {
-    return [...turn.changes.map(positionChange), ...others];
-  }
   // Beside a patch, the server keeps in `turn.changes` only the recorded edits
   // the patch cannot cover: other workspaces, submodules, ignored files.
-  return [...splitPatch(turn.patch, ""), ...turn.changes.map(positionChange), ...others];
+  const own = turn.patch?.trim() ? splitPatch(turn.patch, "") : [];
+  return [...own, ...turn.changes.map(positionChange), ...others].filter(
+    (change) =>
+      change.relPath !== undefined ||
+      !isTemporaryPath(change.path) ||
+      turn.projectRoots?.some((root) => change.path.startsWith(`${root}/`)),
+  );
 }

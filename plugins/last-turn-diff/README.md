@@ -4,6 +4,8 @@ Automatically displays the most recent completed turn's recorded file changes be
 
 The plugin has no agent tools, instructions, skills, message directives, message writes, or composer changes. The preview is never appended to the conversation or model input. BB's copy, quote, and fork actions continue to use the original message text.
 
+Files under `/tmp` and `/private/tmp` outside known projects are hidden from the preview and its totals before preview limits are applied. A turn with only those changes retains the previous project preview. Project folders named `tmp`, checkouts under `/tmp`, and moves between temporary files and projects remain visible.
+
 ## Workspace snapshots
 
 Turn diffs come from Git snapshots of the thread's checkout, the approach T3 Code uses. The diff between the captures around a turn is its patch, so shell, formatter, and code-generator edits appear alongside provider-recorded edits.

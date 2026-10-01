@@ -22,6 +22,50 @@ const first: LatestTurn = {
   ],
 };
 
+test("temporary files are absent from the card and its totals", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Original answer.</p></div>';
+  document.body.append(host);
+  let turn: LatestTurn = {
+    ...first,
+    changes: [
+      { ...first.changes[0]!, patch: null },
+      {
+        id: "tmp",
+        path: "/tmp/review.txt",
+        workspace: "tmp",
+        patch: null,
+        added: 40,
+        removed: 20,
+      },
+      { id: "private-tmp", path: "/private/tmp/check.txt", patch: null, added: 10, removed: 5 },
+    ],
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-1", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    const ui = within(host);
+    await ui.findByText("1 file changed");
+    const heading = within(host.querySelector<HTMLElement>(".last-turn-diff-heading")!);
+    expect(heading.getByText("+1")).toBeTruthy();
+    expect(heading.getByText("−1")).toBeTruthy();
+    expect(ui.queryByText("review.txt")).toBeNull();
+    expect(ui.queryByText("/private/tmp/check.txt")).toBeNull();
+    fireEvent.click(ui.getByRole("button", { name: "Expand all" }));
+    expect(ui.getAllByText("No text diff recorded for this change.")).toHaveLength(1);
+    turn = { ...turn, changes: turn.changes.slice(1) };
+    await slot.behavior.emitRealtime(CHANGED_CHANNEL, { threadId: "thread-1" });
+    await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).toBeNull());
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
 test("retains the preview on refresh, replaces newer changes, clears absent data, and cleans up", async () => {
   const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(captured.messageDirectives).toEqual([]);

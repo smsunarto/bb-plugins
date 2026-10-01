@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { positionPatch, turnChanges } from "../src/shared/patches.ts";
+import { positionPatch, turnChanges, withoutTemporaryFiles } from "../src/shared/patches.ts";
 import type { LatestTurn } from "../src/shared/contract.ts";
 const base: LatestTurn = { turnId: "t", anchorId: "m", changes: [], patch: null, limited: false };
 const patch =
@@ -82,4 +82,50 @@ test("recorded edits a patch cannot cover render beside it", () => {
   const submodule = { id: "s", path: "vendor/lib/x.ts", patch, added: 1, removed: 1 };
   const changes = turnChanges({ ...base, patch, changes: [submodule] });
   expect(changes.map((change) => change.path)).toEqual(["a.ts", "vendor/lib/x.ts"]);
+});
+
+test("temporary paths are hidden across recorded, aggregate, and other-agent changes", () => {
+  const change = { id: "c", path: "/tmp/notes.txt", patch: null, added: 1, removed: 0 };
+  const paths = ["/tmp/notes.txt", "/private/tmp/review.txt", "/tmp", "/private/tmp"];
+  for (const path of paths) {
+    const temporaryPatch = patch.replaceAll("a.ts", path);
+    expect(turnChanges({ ...base, patch: temporaryPatch })).toEqual([]);
+    expect(turnChanges({ ...base, otherPatch: temporaryPatch })).toEqual([]);
+    expect(turnChanges({ ...base, changes: [{ ...change, path }] })).toEqual([]);
+  }
+  expect(
+    turnChanges({
+      ...base,
+      patch: patch + patch.replaceAll("a.ts", "/tmp/notes.txt"),
+      changes: [
+        change,
+        { ...change, id: "project", path: "tmp/fixture.ts" },
+        { ...change, id: "similar", path: "/tmp-project/app.ts" },
+      ],
+      otherPatch: patch.replaceAll("a.ts", "/private/tmp/review.txt"),
+    }).map(({ path }) => path),
+  ).toEqual(["a.ts", "tmp/fixture.ts", "/tmp-project/app.ts"]);
+});
+
+test("known project paths and moves crossing tmp stay visible", () => {
+  const change = {
+    id: "project",
+    path: "/tmp/project/src/a.ts",
+    relPath: "src/a.ts",
+    patch: null,
+    added: 1,
+    removed: 0,
+  };
+  expect(turnChanges({ ...base, changes: [change] })).toEqual([change]);
+  for (const [from, to, expected] of [
+    ["src/a.ts", "/tmp/a.ts", "src/a.ts"],
+    ["/tmp/a.ts", "src/a.ts", "src/a.ts"],
+    ["/tmp/a.ts", "/private/tmp/a.ts", null],
+  ]) {
+    const renamed = `diff --git a/${from} b/${to}\nsimilarity index 100%\nrename from ${from}\nrename to ${to}\n`;
+    expect(withoutTemporaryFiles(renamed)).toBe(expected ? renamed : "");
+    expect(turnChanges({ ...base, patch: renamed }).map(({ path }) => path)).toEqual(
+      expected ? [expected] : [],
+    );
+  }
 });

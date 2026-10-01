@@ -4,6 +4,7 @@ import type { LatestTurn } from "../../shared/contract.ts";
 import type { SnapshotPatch, TurnWindow } from "../../shared/host-contract.ts";
 import { resolveTarget, snapshotPatch } from "./snapshots.ts";
 import { workspaceAttributor, type Attributor } from "./workspace-attribution.ts";
+import { isTemporaryPath, turnChanges } from "../../shared/patches.ts";
 
 type Threads = BbPluginApi["sdk"]["threads"];
 type Event = Awaited<ReturnType<Threads["events"]["list"]>>[number];
@@ -44,7 +45,7 @@ export async function readLatestTurn(
   threads: Threads,
   threadId: string,
   readSnapshot?: ReadSnapshot,
-  attribute: Attributor = (turn) => turn,
+  attribute: Attributor = { apply: (turn) => turn, keepPath: (path) => !isTemporaryPath(path) },
 ): Promise<LatestTurn | null> {
   const timeline = await threads.timeline({ threadId, segmentLimit: "2" });
   const boundary = timeline.contextBoundarySeq;
@@ -131,16 +132,22 @@ async function readCandidate(
         .then((window) => readSnapshot(window, ownRows))
         .catch(() => null)
     : null;
-  const built = buildLatestTurn(turnId, details.rows, snapshot?.patch ?? patch, timeline.rows);
+  const coverage = snapshot
+    ? { roots: [snapshot.path, snapshot.root], uncovered: snapshot.uncovered }
+    : undefined;
+  const built = buildLatestTurn(
+    turnId,
+    details.rows,
+    snapshot?.patch ?? patch,
+    timeline.rows,
+    (path) => attribute.keepPath(path, coverage),
+  );
   // An empty snapshot proves the checkout ended where it began: edits the
   // provider recorded there were reverted. Attribution keeps rows only for
   // paths the snapshot cannot see.
   if (snapshot?.patch === "") built.patch = "";
   if (snapshot?.limited) built.limited = true;
-  const coverage = snapshot
-    ? { roots: [snapshot.path, snapshot.root], uncovered: snapshot.uncovered }
-    : undefined;
-  const turn = attribute(built, details.rows, coverage);
+  const turn = attribute.apply(built, details.rows, coverage);
   if (!addOthers(turn, snapshot, ownRows)) return null;
   return { turn, startedSeq: started.seq };
 }
@@ -178,13 +185,13 @@ async function turnWindow(
 
 /** Add other agents' changes when relevant; false when nothing is worth showing. */
 function addOthers(turn: LatestTurn, snapshot: SnapshotPatch | null, ownRows: TurnRow[]) {
-  const hasOwn = Boolean(turn.patch?.trim()) || turn.changes.length > 0 || turn.limited;
+  const hasOwn = turnChanges(turn).length > 0 || turn.limited;
   // Others' changes alone keep a turn only when it ran something that could
   // have written them. A chat-only reply keeps the previous preview instead.
   if (snapshot?.otherPatch && (hasOwn || ownRows.some(isUnrecordedWriter))) {
     turn.otherPatch = snapshot.otherPatch;
   }
-  return hasOwn || turn.otherPatch !== undefined;
+  return turn.limited || turnChanges(turn).length > 0;
 }
 
 function isUnrecordedWriter(row: TurnRow): boolean {
