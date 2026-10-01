@@ -87,7 +87,7 @@
   justify-content: center;
 }
 
-.inline-vis-open {
+.inline-vis-icon {
   padding: 0;
   border: 0;
   background: transparent;
@@ -95,13 +95,13 @@
   cursor: pointer;
 }
 
-.inline-vis-open svg {
+.inline-vis-icon svg {
   width: 0.875rem;
   height: 0.875rem;
 }
 
 .inline-vis-toggle:focus-visible,
-.inline-vis-open:focus-visible {
+.inline-vis-icon:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }

@@ -3,37 +3,34 @@
 ## Video example
 
 Save `.scratch/demo/clip.mp4` and `.scratch/demo/player.html` in a gitignored
-workspace directory. The HTML can be small:
+workspace directory. Write the player as a fragment:
 
 ```html
-<!doctype html>
+<video id="demo-clip" controls autoplay muted loop playsinline src="./clip.mp4"></video>
 <style>
-  html,
-  body {
-    margin: 0;
-    height: 100%;
+  #demo-clip {
+    display: block;
+    width: 100%;
+    max-height: 640px;
+    border-radius: var(--viz-radius);
     background: #000;
   }
-  video {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
 </style>
-<video controls autoplay muted loop playsinline>
-  <source src="./clip.mp4" type="video/mp4" />
-</video>
 ```
 
-Then emit:
+Then emit the directive without `height`:
 
 ```text
-::inline-vis{file="/absolute/workspace/.scratch/demo/player.html" height="400"}
+::inline-vis{file="/absolute/workspace/.scratch/demo/player.html"}
 ```
 
+The frame follows the video's aspect ratio at the chat column width. The
+`max-height` letterboxes portrait recordings instead of filling the 1200px
+limit. Do not add a fixed `height`. It clips the runtime's padding or leaves
+empty space below the video.
+
 Keep both files in place. Use URL encoding for filename characters such as
-spaces (`%20`), `#` (`%23`), and `?` (`%3F`). The optional `height` is fixed;
-choose it for the video aspect ratio and the chat column width.
+spaces (`%20`), `#` (`%23`), and `?` (`%3F`).
 
 ## Mobile video delivery
 

@@ -48,6 +48,8 @@ code, pre { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0
 :not(pre) > code { padding: 0.1em 0.35em; border-radius: 4px; background: var(--muted); }
 pre { margin: 0 0 8px; padding: 10px 12px; overflow-x: auto; border-radius: var(--viz-radius); background: var(--muted); }
 hr { margin: 12px 0; border: 0; border-top: 1px solid var(--border); }
+/* Recordings and screenshots keep their aspect ratio inside the chat column. */
+:where(img, video) { max-width: 100%; }
 svg { overflow: visible; }
 
 .card {

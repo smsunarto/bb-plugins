@@ -795,6 +795,16 @@ test("inline-vis puts a fragment follow-up prompt in the composer", async () => 
   slot.unmount();
 });
 
+test("a preview without design actions sits directly under the header, which holds Wide view", async () => {
+  const { slot, iframe } = await renderFragment("<p>Recording</p>");
+  const header = slot.container.querySelector("figcaption")!;
+  expect(header.contains(slot.getByRole("button", { name: "Wide view" }))).toBe(true);
+  expect(slot.container.querySelector(".inline-vis-toolbar")).toBeNull();
+  expect(slot.queryByRole("button", { name: "Tweak" })).toBeNull();
+  expect(iframe.closest("figure")).toBe(header.parentElement);
+  slot.unmount();
+});
+
 test("wide view preserves the live iframe and returns to chat on Escape", async () => {
   const { slot, iframe, send } = await renderFragment("<p>Wide</p>");
   send({ type: "bb:inline-vis:resize", height: 356 });
