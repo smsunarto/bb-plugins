@@ -1,6 +1,6 @@
 # GitButler
 
-A read-only view of a thread's [GitButler](https://gitbutler.com) workspace in
+A view of a thread's [GitButler](https://gitbutler.com) workspace in
 bb's right panel: applied stacks, the branches in them, their commits, the
 uncommitted work, and the target history below the common base.
 
@@ -26,8 +26,19 @@ what `but status` shows.
 - The first time a thread runs in a GitButler workspace, the GitButler tab is
   added to its side panel without taking focus. A closed tab stays closed.
 
-The panel runs no mutations. It never commits, amends, applies, unapplies,
-pushes, or restores from the oplog.
+## Branch actions
+
+Each branch card can change the repository, one `but` command per action:
+
+- **Rename:** click the branch name (`but reword <branch> -m <name>`).
+- **Push**, or **Force push** after commits were rewritten (`but push`).
+- **Create PR** with a title, description, and draft option (`but pr new`).
+  It needs a forge authenticated with `but config forge auth`.
+- **Land** onto the target without a PR, after a confirmation (`but land`).
+  Only the bottom branch of a stack can land.
+
+The panel never commits, amends, applies, unapplies, or restores from the
+oplog.
 
 ## Requirements
 

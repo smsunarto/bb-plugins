@@ -139,6 +139,40 @@ export async function runBut(
   return payload;
 }
 
+/**
+ * `but`'s refusal as one readable line. Its stderr is `Error: <what>`, then
+ * `Caused by:` and the reason, then a `Hint:` naming more CLI commands. The
+ * panel shows what and why, without the prefixes or the hint.
+ */
+function refusal(stderr: string): string {
+  const lines = stderr.split("\n").map((line) => line.trim());
+  const hint = lines.findIndex((line) => line.startsWith("Hint:"));
+  return (hint === -1 ? lines : lines.slice(0, hint))
+    .filter((line) => line !== "" && line !== "Caused by:")
+    .map((line) => line.replace(/^Error:\s*/, ""))
+    .join(" ");
+}
+
+/**
+ * Run a `but` command that changes the repository. Unlike a read, success
+ * often prints nothing at all (`reword`, `land`), so only the exit status and
+ * a structured `{ error }` decide the outcome.
+ */
+export async function runButAction(
+  cwd: string,
+  args: readonly string[],
+  signal: AbortSignal,
+): Promise<void> {
+  const result = await run("but", [...args, "--json"], cwd, signal);
+  if (signal.aborted) throw new Error("aborted");
+  if (result.spawnFailed) throw await spawnFailure("but", cwd);
+  const failure = structuredError(parseJson(result.stdout));
+  if (failure) throw new ButFailedError(failure.message);
+  if (result.code !== 0) {
+    throw new ButFailedError(refusal(result.stderr) || `but ${args[0] ?? ""} failed.`);
+  }
+}
+
 export async function runGit(
   cwd: string,
   args: readonly string[],

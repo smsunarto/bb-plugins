@@ -1,11 +1,14 @@
 import { beforeEach, expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import { fireEvent, waitFor, within } from "@testing-library/react";
 import { queryClient } from "../src/app/query-client.ts";
 import { parseWorkspace } from "../src/host/parse.ts";
 import { statusPayload } from "./fixtures.ts";
 
 installDom();
+// After the DOM exists: React DOM decides at load time whether the document
+// supports `input` events, and without one it falls back to an IE-only path
+// that breaks every controlled field.
+const { fireEvent, waitFor, within } = await import("@testing-library/react");
 
 /*
  * jsdom ships no ResizeObserver, and Pierre measures its own gutter on mount.
@@ -350,5 +353,118 @@ test("the header draws nothing outside a GitButler workspace", async () => {
   });
   await waitFor(() => expect(asked).toBe(true));
   expect(slot.queryByRole("button")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+function recordActions(result: () => unknown = () => ({ ok: true })) {
+  const actions: unknown[] = [];
+  return {
+    actions,
+    rpc: {
+      ...baseRpc,
+      branchAction: (input: { action: unknown }) => {
+        actions.push(input);
+        return result();
+      },
+    },
+  };
+}
+
+async function bottomCard(rpc: Record<string, (input: never) => unknown>) {
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/bottom")).toBeTruthy());
+  return { slot, card: within(slot.getByRole("article", { name: "Branch scott/bottom" })) };
+}
+
+test("offers only the actions a branch can take", async () => {
+  const { slot, card } = await bottomCard(baseRpc);
+  // Unpushed, no PR, and the bottom of its stack: all three apply.
+  expect(card.getByRole("button", { name: "Push" })).toBeTruthy();
+  expect(card.getByRole("button", { name: "Create PR" })).toBeTruthy();
+  expect(card.getByRole("button", { name: "Land" })).toBeTruthy();
+  // Pushed, with a PR, above another branch: nothing to send and cannot land alone.
+  const top = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  expect(top.queryByRole("button", { name: "Push" })).toBeNull();
+  expect(top.queryByRole("button", { name: "Create PR" })).toBeNull();
+  expect(top.queryByRole("button", { name: "Land" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("pushes a branch by name from its card", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect(actions[0]).toEqual({
+    threadId: "thread-1",
+    action: { kind: "push", branch: "scott/bottom", force: false },
+  });
+  slot.lifecycle.unmount();
+});
+
+test("drafts a PR from the branch's lone commit and sends what the user edited", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Create PR" }));
+  const title = card.getByLabelText("PR title") as HTMLInputElement;
+  expect(title.value).toBe("fix(bottom): repair it");
+  fireEvent.change(card.getByLabelText("PR description"), { target: { value: "Why." } });
+  fireEvent.click(card.getByLabelText("Draft"));
+  fireEvent.click(card.getByRole("button", { name: "Create PR" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "createReview",
+    branch: "scott/bottom",
+    title: "fix(bottom): repair it",
+    body: "Why.",
+    draft: true,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("asks before landing, and lands only on the second click", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  expect(card.getByText(/straight onto the target/)).toBeTruthy();
+  expect(actions).toHaveLength(0);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "land",
+    branch: "scott/bottom",
+  });
+  slot.lifecycle.unmount();
+});
+
+test("renames a branch from its name, and Escape leaves it alone", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  fireEvent.keyDown(card.getByLabelText("New name for scott/bottom"), { key: "Escape" });
+  expect(actions).toHaveLength(0);
+
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByLabelText("New name for scott/bottom");
+  fireEvent.change(field, { target: { value: "scott/base" } });
+  fireEvent.blur(field);
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "rename",
+    branch: "scott/bottom",
+    name: "scott/base",
+  });
+  slot.lifecycle.unmount();
+});
+
+test("shows the CLI's refusal on the card that asked", async () => {
+  const { rpc } = recordActions(() => {
+    throw new Error("Unable to determine the forge for this project.");
+  });
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() =>
+    expect(card.getByRole("alert").textContent).toContain("Unable to determine the forge"),
+  );
   slot.lifecycle.unmount();
 });

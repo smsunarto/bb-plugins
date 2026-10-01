@@ -8,6 +8,7 @@ import type {
   FileChange,
   FilePatch,
   Patches,
+  PushMode,
   Stack,
   Workspace,
 } from "../shared/schema.ts";
@@ -83,6 +84,7 @@ function commits(value: unknown): Commit[] {
 const BRANCH_STATUS: Readonly<Record<string, BranchStatus>> = {
   completelyUnpushed: "unpushed",
   unpushedCommits: "diverged",
+  unpushedCommitsRequiringForce: "diverged",
   nothingToPush: "pushed",
   remoteAhead: "diverged",
   integrated: "integrated",
@@ -91,19 +93,29 @@ const BRANCH_STATUS: Readonly<Record<string, BranchStatus>> = {
   empty: "empty",
 };
 
+/** Which statuses have commits the remote lacks, and whether sending them rewrites it. */
+const PUSH_MODE: Readonly<Record<string, PushMode>> = {
+  completelyUnpushed: "push",
+  unpushedCommits: "push",
+  unpushedCommitsRequiringForce: "force",
+};
+
 function branch(value: unknown): Branch | undefined {
   const record = asObject(value);
   const name = asString(record?.["name"]);
   if (name === "") return undefined;
   const rawStatus = asString(record?.["branchStatus"], "unknown");
   const ci = asObject(record?.["ci"]);
+  const branchCommits = commits(record?.["commits"]);
   return {
     name,
     status: BRANCH_STATUS[rawStatus] ?? "unknown",
     rawStatus,
+    // An empty branch has a status too, but nothing a push would send.
+    push: branchCommits.length > 0 ? (PUSH_MODE[rawStatus] ?? "none") : "none",
     reviewId: asNullableString(record?.["reviewId"]),
     ci: ci ? asNullableString(ci["status"] ?? ci["state"]) : asNullableString(record?.["ci"]),
-    commits: commits(record?.["commits"]),
+    commits: branchCommits,
     upstreamCommits: commits(record?.["upstreamCommits"]),
   };
 }

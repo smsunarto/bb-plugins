@@ -333,6 +333,7 @@ function WorkspaceBody({
         {data.stacks.map((stack) => (
           <StackLane
             key={stack.key}
+            target={{ threadId, repositoryKey }}
             stack={stack}
             onOpenCommit={onOpenCommit}
             onOpenFile={onOpenFile}

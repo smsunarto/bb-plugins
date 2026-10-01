@@ -17,6 +17,8 @@ import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { rpc, defined } from "./rpc.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
+import { BranchActions, BranchName } from "./branch-actions.tsx";
+import type { WorkspaceTarget } from "./branch-actions.tsx";
 
 /**
  * The workspace drawn the way GitButler desktop draws a stack lane: branch
@@ -331,13 +333,13 @@ export function UncommittedCard({
 function CardHeader({
   icon,
   tone,
-  title,
+  heading,
   details,
   trailing,
 }: {
   icon: string;
   tone: Tone;
-  title: string;
+  heading: ReactNode;
   details: ReactNode;
   trailing?: ReactNode;
 }) {
@@ -355,9 +357,7 @@ function CardHeader({
         >
           <Icon name={icon} className="size-3.5 text-background" />
         </span>
-        <h3 className="m-0 min-w-0 flex-1 truncate text-[13px] font-semibold" title={title}>
-          {title}
-        </h3>
+        {heading}
         {trailing}
       </div>
       <p className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground">
@@ -376,10 +376,12 @@ function Dot() {
 }
 
 function BranchCard({
+  target,
   branch,
   last,
   onOpenCommit,
 }: {
+  target: WorkspaceTarget;
   branch: Branch;
   /** The bottom branch of its stack: its last segment runs on to the base. */
   last: boolean;
@@ -392,7 +394,7 @@ function BranchCard({
       <CardHeader
         icon={look.icon}
         tone={look.tone}
-        title={branch.name}
+        heading={<BranchName key={branch.name} target={target} name={branch.name} />}
         details={
           <>
             {look.label ? <span title={branch.rawStatus}>{look.label}</span> : null}
@@ -413,6 +415,7 @@ function BranchCard({
           ) : null
         }
       />
+      <BranchActions target={target} branch={branch} landable={last} />
       {/*
        * Upstream commits were once told apart from local ones by colour alone,
        * which says nothing to anyone who cannot separate the two hues. The
@@ -474,10 +477,12 @@ function Connector({ tone }: { tone: Tone }) {
 }
 
 export function StackLane({
+  target,
   stack,
   onOpenCommit,
   onOpenFile,
 }: {
+  target: WorkspaceTarget;
   stack: Stack;
   onOpenCommit: (commit: Commit) => void;
   onOpenFile: (path: string) => void;
@@ -499,7 +504,7 @@ export function StackLane({
         const last = index === stack.branches.length - 1;
         return (
           <div key={branch.name} className="contents">
-            <BranchCard branch={branch} last={last} onOpenCommit={onOpenCommit} />
+            <BranchCard target={target} branch={branch} last={last} onOpenCommit={onOpenCommit} />
             {last ? null : <Connector tone={BRANCH_LOOK[branch.status].tone} />}
           </div>
         );
@@ -541,7 +546,9 @@ export function BaseCard({
       <CardHeader
         icon="Target"
         tone="remote"
-        title="Common base"
+        heading={
+          <h3 className="m-0 min-w-0 flex-1 truncate text-[13px] font-semibold">Common base</h3>
+        }
         details={<span>Where the applied branches meet the target</span>}
       />
       <ul className="list-none border-t border-border">

@@ -1,7 +1,8 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { gitbutlerHostContract } from "../shared/host-contract.ts";
 import type { Workspace, WorkspaceState } from "../shared/schema.ts";
-import { ButMissingError, ButSetupRequiredError, runBut } from "./cli.ts";
+import { actionArgs } from "./actions.ts";
+import { ButMissingError, ButSetupRequiredError, runBut, runButAction } from "./cli.ts";
 import { readBaseHistory } from "./history.ts";
 import { parseCommitDetails, parseWorkspace, patchesFor } from "./parse.ts";
 import { listRepositories, NoRepositoryError, resolveRepository } from "./repositories.ts";
@@ -84,6 +85,12 @@ export default experimental_defineHostEntry({
         context.signal,
       );
       return patchesFor(payload, MAX_PATCH_CHARS);
+    },
+
+    async branchAction({ environmentPath, repositoryKey, action }, context) {
+      const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+      await runButAction(repository.path, actionArgs(action), context.signal);
+      return { ok: true as const };
     },
   },
 });

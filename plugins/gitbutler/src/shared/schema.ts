@@ -51,11 +51,15 @@ export const branchStatusSchema = z.enum([
   "unknown",
 ]);
 
+/** What a Push button would do: nothing to send, a plain push, or a force push. */
+export const pushModeSchema = z.enum(["none", "push", "force"]);
+
 export const branchSchema = z
   .object({
     name: z.string(),
     status: branchStatusSchema,
     rawStatus: z.string(),
+    push: pushModeSchema,
     reviewId: z.string().nullable(),
     ci: z.string().nullable(),
     commits: z.array(commitSchema),
@@ -147,6 +151,36 @@ export const patchesSchema = z
   .object({ files: z.array(filePatchSchema), truncated: z.boolean() })
   .strict();
 
+/**
+ * A branch name as an argv value. No whitespace, and no leading dash, so `but`
+ * can never read it as a flag. Git applies its own ref rules after that.
+ */
+export const branchNameSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[^\s-]\S*$/, "A branch name cannot start with a dash or contain whitespace.");
+
+/** The branch-card buttons. Each is one `but` command on one named branch. */
+export const branchActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("push"), branch: branchNameSchema, force: z.boolean() }).strict(),
+  z
+    .object({
+      kind: z.literal("createReview"),
+      branch: branchNameSchema,
+      title: z.string().trim().min(1).max(256),
+      body: z.string().max(65_536),
+      draft: z.boolean(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("land"), branch: branchNameSchema }).strict(),
+  z
+    .object({ kind: z.literal("rename"), branch: branchNameSchema, name: branchNameSchema })
+    .strict(),
+]);
+
+export const branchActionResultSchema = z.object({ ok: z.literal(true) }).strict();
+
 export type ChangeKind = z.infer<typeof changeKindSchema>;
 export type FileChange = z.infer<typeof fileChangeSchema>;
 export type Commit = z.infer<typeof commitSchema>;
@@ -161,3 +195,5 @@ export type PatchSource = z.infer<typeof patchSourceSchema>;
 export type FilePatch = z.infer<typeof filePatchSchema>;
 export type Patches = z.infer<typeof patchesSchema>;
 export type BranchStatus = z.infer<typeof branchStatusSchema>;
+export type PushMode = z.infer<typeof pushModeSchema>;
+export type BranchAction = z.infer<typeof branchActionSchema>;
