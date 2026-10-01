@@ -32,7 +32,7 @@ The dispatch hook holds bb's dispatch lock, so it waits at most 1.5 seconds for 
 
 ## Fallbacks
 
-Without a snapshot pair (non-Git environments, turns from before the plugin was installed, an offline host), a nonempty aggregate provider turn patch takes precedence. Empty patches fall back to successful recorded file edits. Providers without one use BB's recorded file-change items, retaining successive edits separately rather than claiming they form a net patch. Previews are bounded to 1,000,000 characters and 200 recorded edits. Large changes show a limit notice. Turns without a final assistant row have no placement target.
+Without a snapshot pair (non-Git environments, turns from before the plugin was installed, an offline host), a nonempty aggregate provider turn patch takes precedence. Empty patches fall back to successful recorded file edits. Providers without one use BB's recorded file-change items, grouping successive edits to a file under one expandable entry. Each recorded edit remains a separate, numbered diff inside that entry. The counts sum recorded edits, rather than claiming they form a net patch. Previews are bounded to 1,000,000 characters and 200 recorded edits. Large changes show a limit notice. Turns without a final assistant row have no placement target.
 
 ## DOM integration contract
 

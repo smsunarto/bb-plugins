@@ -23,21 +23,25 @@ function stripPrefix(name: string | undefined): string | undefined {
 }
 
 export function FileHeader({
-  change,
+  changes,
   open,
   bodyId,
   onToggle,
 }: {
-  change: Change;
+  changes: Change[];
   open: boolean;
   bodyId: string;
   onToggle: () => void;
 }) {
+  const change = changes[0]!;
+  const editCount = changes.length;
+  const added = changes.reduce((total, edit) => total + edit.added, 0);
+  const removed = changes.reduce((total, edit) => total + edit.removed, 0);
   const { name, mode } = useCodeTheme();
   const displayPath = change.relPath ?? change.path;
   const fileDiff = useMemo(() => {
     // Headerless provider hunks remain the host's responsibility to normalize.
-    if (!change.patch || change.patch.trimStart().startsWith("@@")) return null;
+    if (editCount > 1 || !change.patch || change.patch.trimStart().startsWith("@@")) return null;
     try {
       const parsed = getSingularPatch(change.patch);
       // Recorded patches without a `diff --git` header keep their `a/` and `b/`
@@ -49,7 +53,7 @@ export function FileHeader({
     } catch {
       return null;
     }
-  }, [change.patch, displayPath]);
+  }, [change.patch, displayPath, editCount]);
   const file = useMemo(
     () => ({ name: displayPath, contents: "", lang: "text" as const }),
     [displayPath],
@@ -94,8 +98,9 @@ export function FileHeader({
       renderHeaderPrefix={renderToggle}
       renderHeaderMetadata={() => (
         <span className="last-turn-diff-recorded-counts">
-          <span className="last-turn-diff-removed">-{change.removed}</span>
-          <span className="last-turn-diff-added">+{change.added}</span>
+          {editCount > 1 ? <span>{editCount} edits</span> : null}
+          <span className="last-turn-diff-removed">-{removed}</span>
+          <span className="last-turn-diff-added">+{added}</span>
         </span>
       )}
     />

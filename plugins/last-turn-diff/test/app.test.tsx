@@ -198,6 +198,7 @@ test("Pierre owns the file header while expanded patches use the host Diff compo
   try {
     const toggle = await ui.findByRole("button", { name: "Expand after.ts" });
     expect(ui.queryByTestId("bb-diff")).toBeNull();
+    expect(ui.queryByText(/Edit \d+ of/)).toBeNull();
     const header = host.querySelector(".last-turn-diff-file-header")!;
     await waitFor(() =>
       expect(header.shadowRoot?.querySelector("[data-title]")?.textContent).toBe("after.ts"),
@@ -336,6 +337,178 @@ test("a workspace labeled 'other' is not mistaken for other agents' changes", as
     const card = within(host.querySelector<HTMLElement>("[data-last-turn-id]")!);
     expect(card.getByRole("button", { name: "Expand elsewhere.ts" })).toBeTruthy();
     expect(card.queryByRole("button", { name: /^Other agents/ })).toBeNull();
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("successive edits share one file entry and retain every recorded patch", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Answer.</p></div>';
+  document.body.append(host);
+  const turn: LatestTurn = {
+    ...first,
+    changes: [
+      {
+        id: "a",
+        path: "/ws/project/skill.md",
+        relPath: "skill.md",
+        workspace: "project",
+        patch: "@@ -1 +1 @@\n-old\n+middle\n",
+        added: 1,
+        removed: 1,
+      },
+      {
+        id: "b",
+        path: "/ws/project/skill.md",
+        relPath: "skill.md",
+        workspace: "project",
+        patch: "@@ -1 +1,2 @@\n-middle\n+final\n+extra\n",
+        added: 2,
+        removed: 1,
+      },
+    ],
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-repeated", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    const ui = within(host);
+    const toggle = await ui.findByRole("button", { name: "Expand skill.md" });
+    expect(ui.getAllByRole("button", { name: "Expand skill.md" })).toHaveLength(1);
+    expect(ui.getByText("1 file changed").textContent).toBe("1 file changed");
+    expect(
+      within(host.querySelector<HTMLElement>(".last-turn-diff-heading")!).getByText("+3")
+        .textContent,
+    ).toBe("+3");
+    const header = host.querySelector(".last-turn-diff-file-header")!;
+    await waitFor(() => expect(header.textContent).toContain("+3"));
+    expect(header.textContent).toContain("-2");
+    expect(header.textContent).toContain("2 edits");
+    fireEvent.click(toggle);
+    expect(ui.getByText("Edit 1 of 2").textContent).toBe("Edit 1 of 2");
+    expect(ui.getByText("Edit 2 of 2").textContent).toBe("Edit 2 of 2");
+    expect(ui.getAllByTestId("bb-diff").map((diff) => diff.textContent)).toEqual([
+      "@@ -1 +1 @@\n-old\n+middle\n",
+      "@@ -1 +1,2 @@\n-middle\n+final\n+extra\n",
+    ]);
+    fireEvent.click(ui.getByRole("button", { name: "Collapse all" }));
+    expect(ui.queryAllByTestId("bb-diff")).toHaveLength(0);
+    fireEvent.click(ui.getByRole("button", { name: "Expand all" }));
+    expect(ui.getAllByTestId("bb-diff")).toHaveLength(2);
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("matching paths in different workspace and attribution groups stay separate", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Answer.</p></div>';
+  document.body.append(host);
+  const turn: LatestTurn = {
+    ...first,
+    changes: [
+      { id: "own", path: "same.ts", patch: null, added: 1, removed: 0 },
+      { id: "foreign", path: "same.ts", workspace: "elsewhere", patch: null, added: 2, removed: 0 },
+      { id: "other", path: "same.ts", other: true, patch: null, added: 10, removed: 0 },
+      { id: "other-again", path: "same.ts", other: true, patch: null, added: 20, removed: 0 },
+    ],
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-distinct-groups", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    const ui = within(host);
+    await ui.findByText("2 files changed");
+    expect(ui.getAllByRole("button", { name: "Expand same.ts" })).toHaveLength(2);
+    expect(
+      within(host.querySelector<HTMLElement>(".last-turn-diff-heading")!).getByText("+3")
+        .textContent,
+    ).toBe("+3");
+    fireEvent.click(ui.getByRole("button", { name: "Other agents in this checkout 1 file" }));
+    expect(ui.getAllByRole("button", { name: "Expand same.ts" })).toHaveLength(3);
+    fireEvent.click(ui.getByRole("button", { name: "Expand all" }));
+    expect(ui.getAllByText("No text diff recorded for this change.")).toHaveLength(4);
+    expect(ui.getByText("Edit 2 of 2").textContent).toBe("Edit 2 of 2");
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("a grouped Unity file keeps context and raw YAML on the matching edit", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Answer.</p></div>';
+  document.body.append(host);
+  const turn: LatestTurn = {
+    ...first,
+    changes: [
+      {
+        id: "first",
+        path: "Hero.prefab",
+        patch: "@@ -1 +1 @@\n-old\n+middle\n",
+        added: 1,
+        removed: 1,
+      },
+      {
+        id: "second",
+        path: "Hero.prefab",
+        patch: "@@ -1 +1 @@\n-middle\n+final\n",
+        added: 1,
+        removed: 1,
+      },
+    ],
+    unity: {
+      second: {
+        groups: [
+          {
+            id: "hero",
+            name: "Hero",
+            hierarchy: "",
+            status: "modified",
+            components: [
+              {
+                id: "object",
+                type: "GameObject",
+                status: "modified",
+                properties: [{ path: "m_IsActive", before: "1", after: "0" }],
+              },
+            ],
+          },
+        ],
+        propertyCount: 1,
+      },
+    },
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-unity-edits", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    const ui = within(host);
+    fireEvent.click(await ui.findByRole("button", { name: "Expand Hero.prefab" }));
+    expect(ui.getAllByTestId("bb-diff").map((diff) => diff.textContent)).toEqual([
+      "@@ -1 +1 @@\n-old\n+middle\n",
+    ]);
+    const unity = within(ui.getByRole("region", { name: "Unity changes in Hero.prefab" }));
+    expect(unity.getByText("Hero").textContent).toBe("Hero");
+    expect(unity.getByText("1").textContent).toBe("1");
+    expect(unity.getByText("0").textContent).toBe("0");
+    fireEvent.click(unity.getByRole("button", { name: "Raw YAML" }));
+    expect(ui.getAllByTestId("bb-diff").map((diff) => diff.textContent)).toEqual([
+      "@@ -1 +1 @@\n-old\n+middle\n",
+      "@@ -1 +1 @@\n-middle\n+final\n",
+    ]);
   } finally {
     slot.unmount();
     host.remove();
