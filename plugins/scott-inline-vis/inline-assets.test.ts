@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { prepareInlineAssets, resolvePreviewAssetUrl } from "./inline-assets.ts";
+import {
+  injectWideEscapeBridge,
+  prepareInlineAssets,
+  resolvePreviewAssetUrl,
+} from "./inline-assets.ts";
 
 afterEach(() => vi.restoreAllMocks());
 const root = new URL("https://scott.getbb.app/api/v1/file-previews/lease/");
@@ -201,4 +205,101 @@ test("loads sibling images through the same opaque-frame bridge", async () => {
   expect(String(fetch.mock.calls[0]![0])).toBe(`${root.href}before.png`);
   expect(result.assets[0]?.blob.type).toBe("image/png");
   expect(result.srcDoc).toContain('data-bb-inline-preview="0"');
+});
+
+test("local-media Escape waits for author handlers before forwarding", async () => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("<button>Focus</button>", { runScripts: "dangerously" });
+  const win = dom.window;
+  const post = vi.spyOn(win, "postMessage").mockImplementation(() => {});
+  injectWideEscapeBridge(win.document, "media-token");
+  const button = win.document.querySelector("button")!;
+  const press = () =>
+    button.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  win.addEventListener("keydown", (event) => event.preventDefault(), { once: true });
+  press();
+  await new Promise((resolve) => win.setTimeout(resolve, 10));
+  expect(post).not.toHaveBeenCalled();
+  press();
+  await new Promise((resolve) => win.setTimeout(resolve, 10));
+  expect(post).toHaveBeenCalledExactlyOnceWith(
+    { type: "bb:inline-vis:escape", token: "media-token" },
+    "*",
+  );
+  dom.window.close();
+});
+
+test.each([
+  "dialog:modal",
+  "dialog[open][closedby=closerequest i]",
+  "dialog[open][closedby=any i]",
+  ":popover-open:not([popover=manual i])",
+])("local-media Escape lets %s dismiss first", async (selector) => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("<button>Focus</button><dialog></dialog>", { runScripts: "dangerously" });
+  const win = dom.window;
+  const post = vi.spyOn(win, "postMessage").mockImplementation(() => {});
+  injectWideEscapeBridge(win.document, "media-token");
+  const originalQuery = win.document.querySelector.bind(win.document);
+  const dialog = originalQuery("dialog")!;
+  let nativeOpen = true;
+  vi.spyOn(win.document, "querySelector").mockImplementation((query) =>
+    query === selector && nativeOpen
+      ? dialog
+      : originalQuery(
+          [
+            "dialog:modal",
+            "dialog[open][closedby=closerequest i]",
+            ":popover-open:not([popover=manual i])",
+          ].includes(query)
+            ? "#absent"
+            : query,
+        ),
+  );
+  const button = originalQuery("button")!;
+  const press = () =>
+    button.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  press();
+  nativeOpen = false;
+  await new Promise((resolve) => win.setTimeout(resolve, 10));
+  expect(post).not.toHaveBeenCalled();
+  press();
+  await new Promise((resolve) => win.setTimeout(resolve, 10));
+  expect(post).toHaveBeenCalledExactlyOnceWith(
+    { type: "bb:inline-vis:escape", token: "media-token" },
+    "*",
+  );
+  dom.window.close();
+});
+
+test("local-media Escape leaves Wide view with a persistent manual popover", async () => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM('<button>Focus</button><div popover="MANUAL">Legend</div>', {
+    runScripts: "dangerously",
+  });
+  const win = dom.window;
+  const post = vi.spyOn(win, "postMessage").mockImplementation(() => {});
+  injectWideEscapeBridge(win.document, "media-token");
+  const originalQuery = win.document.querySelector.bind(win.document);
+  const popover = originalQuery("[popover]")!;
+  // jsdom does not implement the native open-popover pseudo-class.
+  vi.spyOn(win.document, "querySelector").mockImplementation((query) => {
+    if (query === ":popover-open") return popover;
+    if (query === ":popover-open:not([popover=manual i])")
+      return popover.matches("[popover=manual i]") ? null : popover;
+    return originalQuery(query === "dialog:modal" ? "#absent" : query);
+  });
+  originalQuery("button")!.dispatchEvent(
+    new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
+  await new Promise((resolve) => win.setTimeout(resolve, 10));
+  expect(post).toHaveBeenCalledExactlyOnceWith(
+    { type: "bb:inline-vis:escape", token: "media-token" },
+    "*",
+  );
+  dom.window.close();
 });

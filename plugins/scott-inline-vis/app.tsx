@@ -3,17 +3,19 @@ import {
   experimental_usePluginId,
   Markdown,
   useBbNavigate,
-  useComposer,
   useSdk,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
 import {
   useEffect,
+  useEffectEvent,
+  useCallback,
   useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +36,9 @@ import {
 import { previewMarkdown } from "./preview-markdown.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 import { loadPreview } from "./load-preview.ts";
+import { TweakPanel } from "./tweak-panel.tsx";
+import type { TweakGroup } from "./tweak-contract.ts";
+import { useWidgetState } from "./use-widget-state.ts";
 
 type LoadState =
   | { status: "loading" }
@@ -63,23 +68,6 @@ export const MIN_HEIGHT_PX = 120;
 export const MAX_HEIGHT_PX = 1_200;
 /** Smallest content-sized fragment, so an empty one still shows its frame. */
 const MIN_FRAGMENT_HEIGHT_PX = 40;
-
-/** Fragment state lives on this client, keyed by the directive occurrence. */
-function readWidgetState(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeWidgetState(key: string, state: string): void {
-  try {
-    window.localStorage.setItem(key, state);
-  } catch {
-    // Storage can be unavailable; the frame keeps its in-memory state.
-  }
-}
 
 export function parsePreviewHeight(value: string | undefined): number | null {
   const normalized = value?.trim() ?? "";
@@ -238,25 +226,69 @@ function CollapsiblePreview(props: PluginMessageDirectiveProps) {
   );
 }
 
-function ExpandedPreview({
-  attributes,
-  source,
-  message,
-  onToggle,
-}: PluginMessageDirectiveProps & { onToggle: () => void }) {
-  const sdk = useSdk();
-  const navigate = useBbNavigate();
-  const pluginId = experimental_usePluginId();
-  const composer = useComposer();
-  const composerRef = useRef(composer);
-  composerRef.current = composer;
-  const file = attributes.file?.trim() ?? "";
-  const previewHeight = parsePreviewHeight(attributes.height);
-  const fixedHeight = Boolean(attributes.height?.trim());
+function PreviewDocument({
+  preview,
+  frame,
+  height,
+}: {
+  preview: Extract<LoadState, { status: "ready" }>;
+  frame: RefObject<HTMLIFrameElement | null>;
+  height: number;
+}) {
+  if (preview.kind === "markdown")
+    return (
+      <div style={{ height }} className="inline-vis-markdown">
+        <Markdown content={preview.content} />
+      </div>
+    );
+  return (
+    <iframe
+      title={`inline-vis: ${preview.file}`}
+      src={preview.srcDoc ? undefined : preview.url}
+      srcDoc={preview.srcDoc}
+      ref={frame}
+      sandbox="allow-scripts"
+      style={{ height }}
+      className="inline-vis-frame"
+    />
+  );
+}
+
+function useFragmentBridge(
+  state: LoadState,
+  frame: RefObject<HTMLIFrameElement | null>,
+  updateState: (state: string, modelContent: string | null) => void,
+  updateTweaks: (groups: TweakGroup[], changed: boolean, reset?: string | null) => void,
+  addContext: (prompt?: string) => Promise<void>,
+  leaveWide: () => void,
+) {
   const [contentHeight, setContentHeight] = useState<number | null>(null);
-  const [state, setState] = useState<LoadState>({ status: "loading" });
-  const frame = useRef<HTMLIFrameElement>(null);
-  const stateKey = `${pluginId}.widget-state:${message.threadId}:${message.id}:${file}`;
+  const [tweaks, setTweaks] = useState<{ groups: TweakGroup[]; original: boolean }>({
+    groups: [],
+    original: false,
+  });
+  const onMessage = useEffectEvent((event: MessageEvent) => {
+    if (event.source !== frame.current?.contentWindow) return;
+    if (state.status !== "ready" || state.kind !== "html" || !state.token) return;
+    const data = parseFrameMessage(event.data, state.token);
+    if (data?.type === "escape") {
+      leaveWide();
+      return;
+    }
+    if (!state.fragment) return;
+    if (data?.type === "resize") setContentHeight(data.height);
+    else if (data?.type === "state") {
+      updateState(data.state, data.modelContent ?? null);
+    } else if (data?.type === "tweak") {
+      setTweaks({ groups: data.groups, original: data.original });
+      updateTweaks(data.groups, data.changed, data.reset);
+    }
+    // A click inside the frame also activates this page. Without one, a
+    // fragment script could fill the composer on load.
+    else if (data?.type === "followUp" && navigator.userActivation?.isActive === true) {
+      void addContext(data.prompt);
+    }
+  });
   useLayoutEffect(() => {
     if (
       state.status !== "ready" ||
@@ -280,26 +312,14 @@ function ExpandedPreview({
     };
     window.addEventListener("message", deliver);
     return () => window.removeEventListener("message", deliver);
-  }, [state]);
+  }, [state, frame]);
 
   useEffect(() => {
-    if (state.status !== "ready" || state.kind !== "html" || !state.fragment || !state.token)
-      return;
+    if (state.status !== "ready" || state.kind !== "html" || !state.token) return;
     const token = state.token;
-    const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow) return;
-      const data = parseFrameMessage(event.data, token);
-      if (data?.type === "resize") setContentHeight(data.height);
-      else if (data?.type === "state") writeWidgetState(stateKey, data.state);
-      // A click inside the frame also activates this page. Without one, a
-      // fragment script could fill the composer on load.
-      else if (data?.type === "followUp" && navigator.userActivation?.isActive === true) {
-        composerRef.current.updateText((current) =>
-          current.trim() ? `${current.trimEnd()}\n\n${data.prompt}` : data.prompt,
-        );
-        composerRef.current.focus();
-      }
-    };
+    const receive = (event: MessageEvent) => onMessage(event);
+    window.addEventListener("message", receive);
+    if (!state.fragment) return () => window.removeEventListener("message", receive);
     // Theme switches restyle the host without remounting the frame.
     const root = document.documentElement;
     let theme = readHostTheme(root);
@@ -321,13 +341,141 @@ function ExpandedPreview({
     });
     observer.observe(root, { attributes: true });
     observer.observe(document.head, { childList: true, subtree: true, characterData: true });
-    window.addEventListener("message", receive);
     return () => {
       window.removeEventListener("message", receive);
       observer.disconnect();
       cancelAnimationFrame(pending);
     };
-  }, [state, stateKey]);
+  }, [state, frame]);
+
+  return { contentHeight, tweaks };
+}
+
+function PreviewActions({
+  hasTweaks,
+  canShareState,
+  tweakOpen,
+  saving,
+  onTweak,
+  onShare,
+}: {
+  hasTweaks: boolean;
+  canShareState: boolean;
+  tweakOpen: boolean;
+  saving: boolean;
+  onTweak: () => void;
+  onShare: () => void;
+}) {
+  return (
+    <>
+      {hasTweaks && (
+        <button type="button" aria-expanded={tweakOpen} onClick={onTweak}>
+          Tweak
+        </button>
+      )}
+      {canShareState && (
+        <button type="button" disabled={saving} onClick={onShare}>
+          Use saved state
+        </button>
+      )}
+    </>
+  );
+}
+
+function WidgetStateNotice({
+  source,
+  readError,
+  saveError,
+  onRetry,
+}: {
+  source: string;
+  readError: string | null;
+  saveError: string | null;
+  onRetry: () => void;
+}) {
+  if (readError)
+    return (
+      <Alert source={readError} error>
+        Saved state is unavailable. Preview changes will not be saved until you retry.
+        <button type="button" onClick={onRetry}>
+          Retry saved state
+        </button>
+      </Alert>
+    );
+  if (saveError)
+    return (
+      <Alert source={source} error>
+        Could not save visualization state: {saveError}. Try adding it to chat again.
+      </Alert>
+    );
+  return null;
+}
+
+function ExpandedPreview({
+  attributes,
+  source,
+  message,
+  onToggle,
+}: PluginMessageDirectiveProps & { onToggle: () => void }) {
+  const sdk = useSdk();
+  const navigate = useBbNavigate();
+  const pluginId = experimental_usePluginId();
+  const file = attributes.file?.trim() ?? "";
+  const previewHeight = parsePreviewHeight(attributes.height);
+  const fixedHeight = Boolean(attributes.height?.trim());
+  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const frame = useRef<HTMLIFrameElement>(null);
+  const surface = useRef<HTMLDialogElement>(null);
+  const wideTrigger = useRef<HTMLButtonElement>(null);
+  const [wide, setWide] = useState(false);
+  const [tweakOpen, setTweakOpen] = useState(false);
+  const [restoreRevision, setRestoreRevision] = useState(0);
+  const leaveWide = useCallback(() => {
+    if (!wide) return;
+    setWide(false);
+    wideTrigger.current?.focus();
+  }, [wide]);
+  const {
+    hasSavedState,
+    saving,
+    saveError,
+    readError,
+    restore,
+    addContext: attachContext,
+    updateState,
+    updateTweaks,
+  } = useWidgetState({ threadId: message.threadId, messageId: message.id, file }, pluginId);
+  const addContext = useCallback(
+    (prompt?: string) =>
+      attachContext(prompt, () => {
+        // Native modal close restores its old focus. Close before composer focus.
+        if (surface.current?.getAttribute("aria-modal") === "true") {
+          surface.current.close();
+          setWide(false);
+        }
+      }),
+    [attachContext],
+  );
+  const sendToFrame = (type: string, payload: Record<string, unknown>) => {
+    if (state.status === "ready" && state.kind === "html" && state.token)
+      frame.current?.contentWindow?.postMessage({ type, token: state.token, ...payload }, "*");
+  };
+  useLayoutEffect(() => {
+    const element = surface.current;
+    if (!element) return;
+    if (element.open) element.close();
+    if (wide) element.showModal();
+    // An inline preview must not take focus from the composer on load.
+    else element.setAttribute("open", "");
+  }, [wide, state.status]);
+  const { contentHeight, tweaks } = useFragmentBridge(
+    state,
+    frame,
+    updateState,
+    updateTweaks,
+    addContext,
+    leaveWide,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -349,6 +497,8 @@ function ExpandedPreview({
           return;
         }
         const fragment = isFragment(result.html);
+        const widget = fragment ? await restore(controller.signal) : null;
+        if (cancelled) return;
         const prepared = await prepareInlineAssets(
           result.html,
           result.url,
@@ -358,7 +508,8 @@ function ExpandedPreview({
                 injectFragmentRuntime(document, {
                   token,
                   theme: readHostTheme(window.document.documentElement),
-                  state: readWidgetState(stateKey),
+                  state: widget?.state === "null" ? null : (widget?.state ?? null),
+                  tweaks: widget?.tweaks ?? null,
                 })
             : undefined,
         );
@@ -385,7 +536,7 @@ function ExpandedPreview({
       cancelled = true;
       controller.abort();
     };
-  }, [file, message.threadId, sdk, stateKey]);
+  }, [file, message.threadId, sdk, restore, restoreRevision]);
 
   if (state.status === "error") {
     return (
@@ -414,6 +565,22 @@ function ExpandedPreview({
     );
   }
 
+  const hasTweaks = state.kind === "html" && state.fragment && tweaks.groups.length > 0;
+  const canShareState = state.kind === "html" && state.fragment && hasSavedState;
+  const height =
+    state.kind === "html" && state.fragment && !fixedHeight && contentHeight !== null
+      ? Math.min(MAX_HEIGHT_PX, Math.max(MIN_FRAGMENT_HEIGHT_PX, contentHeight))
+      : (previewHeight ?? DEFAULT_HEIGHT_PX);
+  const actions = (
+    <PreviewActions
+      hasTweaks={hasTweaks}
+      canShareState={canShareState}
+      tweakOpen={tweakOpen}
+      saving={wide && saving}
+      onTweak={() => setTweakOpen(!tweakOpen)}
+      onShare={() => void addContext()}
+    />
+  );
   return (
     <>
       <PreviewHeader
@@ -427,26 +594,68 @@ function ExpandedPreview({
           })
         }
       />
-      {state.kind === "markdown" ? (
-        <div style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }} className="inline-vis-markdown">
-          <Markdown content={state.content} />
-        </div>
-      ) : (
-        <iframe
-          title={`inline-vis: ${state.file}`}
-          src={state.srcDoc ? undefined : state.url}
-          srcDoc={state.srcDoc}
-          ref={frame}
-          sandbox="allow-scripts"
-          style={{
-            height:
-              state.fragment && !fixedHeight && contentHeight !== null
-                ? Math.min(MAX_HEIGHT_PX, Math.max(MIN_FRAGMENT_HEIGHT_PX, contentHeight))
-                : (previewHeight ?? DEFAULT_HEIGHT_PX),
-          }}
-          className="inline-vis-frame"
+      <div className="inline-vis-toolbar">
+        <button type="button" ref={wideTrigger} onClick={() => setWide(true)}>
+          Wide view
+        </button>
+        {actions}
+      </div>
+      <dialog
+        ref={surface}
+        className={`inline-vis-surface${wide ? " inline-vis-wide" : ""}`}
+        role={wide ? "dialog" : "region"}
+        aria-label={wide ? `Wide visualization: ${state.file}` : `Visualization: ${state.file}`}
+        aria-modal={wide || undefined}
+        onCancel={(event) => {
+          event.preventDefault();
+          leaveWide();
+        }}
+      >
+        {wide && (
+          <div className="inline-vis-wide-header">
+            <span>{state.file.split(/[\\/]/u).pop()}</span>
+            <div>
+              {actions}
+              <button
+                type="button"
+                onClick={() => {
+                  leaveWide();
+                }}
+              >
+                Back to chat
+              </button>
+            </div>
+          </div>
+        )}
+        <WidgetStateNotice
+          source={source}
+          readError={readError}
+          saveError={saveError}
+          onRetry={() => setRestoreRevision((value) => value + 1)}
         />
-      )}
+        <div
+          className={`inline-vis-workspace${tweakOpen && tweaks.groups.length > 0 ? " inline-vis-with-tweaks" : ""}`}
+        >
+          <div className="inline-vis-preview">
+            <PreviewDocument preview={state} frame={frame} height={height} />
+          </div>
+          {tweakOpen && tweaks.groups.length > 0 && (
+            <TweakPanel
+              groups={tweaks.groups}
+              original={tweaks.original}
+              saving={saving}
+              readOnly={readError !== null}
+              onClose={() => setTweakOpen(false)}
+              onChange={(groupId, controlId, value) =>
+                sendToFrame(FRAGMENT_MESSAGES.tweakChange, { groupId, controlId, value })
+              }
+              onReset={(groupId) => sendToFrame(FRAGMENT_MESSAGES.tweakReset, { groupId })}
+              onOriginal={(active) => sendToFrame(FRAGMENT_MESSAGES.tweakOriginal, { active })}
+              onApply={() => void addContext("Use these design adjustments for the next revision.")}
+            />
+          )}
+        </div>
+      </dialog>
     </>
   );
 }

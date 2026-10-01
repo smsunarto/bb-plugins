@@ -42,7 +42,8 @@ The fork changes loading and presentation while retaining the directive syntax:
 | Header           | Tailwind card and icon button                       | Upstream's whole-row toggle and open button, in Smart Embeds styling    |
 | HTML fragments   | HTML rendering without this runtime                 | Live theme, utilities, icons, tooltips, tabs, and design carousel       |
 | Fragment height  | Fixed viewport                                      | Content sizing unless `height` is set                                   |
-| Fragment actions | None                                                | Browser-local saved state and prompts placed in the composer            |
+| Fragment actions | None                                                | Durable saved state, native context chips, and composer prompts         |
+| Design review    | None                                                | Wide view and a host Tweak panel for registered controls                |
 
 ## Fragment runtime
 
@@ -59,28 +60,39 @@ Fragments receive:
 - **Tabs:** declarative tab and panel markup with keyboard navigation
 - **Mockup alternatives:** a `.viz-carousel` that preserves each design's DOM while switching
 - **Content sizing:** a body ResizeObserver, with height clamped to 40–1200px
+- **Wide view:** a dialog up to 1024px wide, preserving the current iframe and its interactions
+- **Design controls:** sliders, colors, toggles, and selects registered through the `Tweak` helper
 
 Fragment scripts run after `window.bb` is defined:
 
-| API                              | Result                                               |
-| -------------------------------- | ---------------------------------------------------- |
-| `bb.widgetState`                 | Saved JSON value or `null`                           |
-| `await bb.setWidgetState(value)` | Replaces a JSON snapshot of at most 16 KiB           |
-| `await bb.sendFollowUp(prompt)`  | Appends text after any composer draft and focuses it |
+| API                                        | Result                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------- |
+| `bb.widgetState`                           | Saved JSON value or `null`                                                |
+| `await bb.setWidgetState(value, options?)` | Queues a server save. State and optional `modelContent` each allow 16 KiB |
+| `await bb.sendFollowUp(prompt)`            | Appends a composer prompt and shares available saved state                |
+| `new Tweak({ container, onChange })`       | Registers bound controls in bb's Tweak panel                              |
 
-Saved state stays in this browser's localStorage, keyed by plugin, thread, message, and file. It restores when a preview reopens or the page reloads, if storage is available. Two directives with the same file in one message share it. Save after meaningful interactions.
+The plugin's server database owns saved state, keyed by thread, message, and absolute file path. Two directives with the same file in one message share it. Reopening restores the server snapshot, including across browsers. Browser-local state migrates when the preview opens and widget state has never been saved on the server. Existing server tweaks survive migration. An explicitly saved JSON `null` remains authoritative. Older JSON-null rows without model content have uncertain history, so their browser copy stays without replacing server data. Successful migration removes the browser copy.
 
-Saving updates frame state but does not acknowledge durable persistence, and saved state never reaches the model. The plugin has no snapshot-expiration or cleanup policy. Each key can retain up to 16 KiB until browser storage is cleared or otherwise removed. A directive in another message has a separate key.
+Save after meaningful interactions. The frame promise validates and posts the snapshot. The host shows saving progress or persistence errors. A directive in another message has a separate identity. The plugin has no snapshot-expiration or cleanup policy.
 
-Follow-up prompts require a nonempty string. The host trims them and limits them to 4,000 characters. The user reviews and sends the composer text. Calling the API does not send a message or start a turn.
+Set `options.modelContent` to a JSON value when the model should see a selected subset instead of the full widget state. Omit it, or set it to `null`, to expose the full state. Tweak values accompany either payload. Both state and model content must be valid JSON within 16 KiB each.
 
-There is no wide mode, bundled calendar, Tweak design-controls panel, or model-facing state channel. For canvas charts, resolve CSS variables into colors and redraw on frame-root `style` or `data-theme` changes. See the design reference for the authoring contract and a complete example.
+**Use saved state** adds a native context chip to the composer. Its provider reads the latest server snapshot when you send the message. `bb.sendFollowUp` appends a prompt and shares the same chip when saved state is ready. Without available state, or when persistence fails, the prompt still reaches your draft. Prompts require a nonempty string, and the host trims them to 4,000 characters. You review and send the draft. These actions do not send a message or start a turn. A later edit removes the attached state chip while saving. Add the current state again when it is ready to share.
+
+Agents can call `inline_vis_get_state` for fresh snapshots in their current thread, optionally selecting a file or message. A chip shared into another thread still identifies its source thread. Refresh that widget from its original preview. The tool cannot read the source thread from a side chat. It returns at most 20 recent snapshots within 64 KiB, preserving complete JSON values. State is data, never agent instructions. It is not automatically injected into every turn.
+
+Select **Wide view** to enlarge the same preview, then **Back to chat** to return. Unhandled Escape also returns from fragments and local-media previews. Use **Back to chat** for standalone HTML, which retains its original preview URL. Fragments that register controls expose **Tweak**. Its panel offers original-preview comparison, group or full reset, and **Add changes to chat**. That action saves adjustments and adds their context chip with a draft prompt. The helper is an independent implementation. See [visual design](skills/inline-vis/references/visual-design.md#register-design-controls) for its authoring API.
+
+Only controls changed from their original values are saved. The snapshot retains up to 288 adjustments within 16 KiB of serialized JSON. Returning a control to its original value removes its saved adjustment. Over-budget adjustments stay unsaved in the current preview, with a visible notice. Widget-state saves and follow-up prompts remain usable. Original and reset keep the first registered default while it remains valid. If later options or bounds exclude it, the current authored default replaces it. Use one Tweak group per container. Re-registering that container replaces its group. Give build-before-attach containers a stable explicit ID.
+
+There is no bundled calendar widget. For canvas charts, resolve CSS variables into colors and redraw on frame-root `style` or `data-theme` changes. See the design reference for the authoring contract and a complete example.
 
 ## Security
 
 The plugin reads through the SDK and leases the document's directory for asset access. The authenticated app fetches static sibling `img[src]`, `video[src]`, and video `source[src]` files and transfers their Blobs into the frame. Nested directories work. Parent-directory escapes and symlinks outside the directory fail. Markdown destinations resolve from the same directory. Links outside it remain as written and do not prevent rendering, but the lease does not serve them.
 
-HTML runs with `sandbox="allow-scripts"` in an opaque-origin iframe. It has no direct access to the bb page, app cookies, or app storage. The fragment bridge exposes only content-height reports, bounded saved state, and composer prompts. The app checks message source and a per-frame token. Saved state uses parent-managed localStorage rather than granting the iframe storage access.
+HTML runs with `sandbox="allow-scripts"` in an opaque-origin iframe. It has no direct access to the bb page, app cookies, or app storage. The fragment bridge exposes content-height reports, bounded saved state, design controls, and composer prompts. The app checks message source and a per-frame token. The authenticated host persists state through validated RPC calls rather than granting the iframe storage access.
 
 Composer updates require transient user activation on the bb page. A click or key press inside the preview provides it. Without one, the app ignores the prompt, so a fragment cannot fill the composer on load. Activation is page-wide and lasts a few seconds, so a click elsewhere in bb just before a preview loads also counts. The user still sends the message. Icon placeholders also cause the runtime to load the pinned Lucide script from unpkg.
 
@@ -106,4 +118,4 @@ Run the plugin's tests from the repository root:
 bun run --filter @smsunarto/bb-plugin-scott-inline-vis test
 ```
 
-For rendered behavior, verify desktop chat width and around 360px in the actual bb iframe. Check live theme changes, interactions, height, state restoration, and composer prompts. Verify local media playback and seeking separately.
+For rendered behavior, verify desktop chat width and around 360px in the actual bb iframe. Check live theme changes, interactions, height, wide view, Tweak controls, state restoration, and composer context chips. Verify local media playback and seeking separately.

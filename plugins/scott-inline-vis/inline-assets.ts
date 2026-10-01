@@ -71,6 +71,22 @@ const ASSET_BRIDGE = `(() => {
   addEventListener("pagehide", () => { for (const url of urls) URL.revokeObjectURL(url); });
 })();`;
 
+/** Full HTML keeps its own styling and gains only the Wide-view keyboard bridge. */
+export function injectWideEscapeBridge(document: Document, token: string) {
+  const bridge = document.createElement("script");
+  bridge.textContent = `addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    for (const selector of ["dialog:modal", "dialog[open][closedby=closerequest i]", "dialog[open][closedby=any i]", ":popover-open:not([popover=manual i])"]) {
+      try { if (document.querySelector(selector)) return; }
+      catch { /* Unsupported native features cannot be open. */ }
+    }
+    setTimeout(() => {
+      if (!event.defaultPrevented) parent.postMessage({type:"bb:inline-vis:escape",token:${JSON.stringify(token)}}, "*");
+    }, 0);
+  });`;
+  document.head.prepend(bridge);
+}
+
 /**
  * Build the frame document. Local media becomes Blob assets, and `prepare`
  * (the fragment runtime) gets the parsed document plus the message token.
@@ -115,11 +131,10 @@ export async function prepareInlineAssets(
       blobs.set(url.href, blob);
     }
     const image = element.tagName === "IMG";
-    if (
-      image
-        ? !blob.type.startsWith("image/")
-        : !blob.type.startsWith("video/") && blob.type !== "application/ogg"
-    ) {
+    const compatibleType = image
+      ? blob.type.startsWith("image/")
+      : blob.type.startsWith("video/") || blob.type === "application/ogg";
+    if (!compatibleType) {
       throw new Error(`Preview asset has unsupported MIME type: ${blob.type || "unknown"}`);
     }
     const key = String(assets.length);
@@ -128,7 +143,7 @@ export async function prepareInlineAssets(
     element.setAttribute(ASSET_ATTRIBUTE, key);
   }
   const token = crypto.randomUUID();
-  prepare?.(document, token);
+  (prepare ?? injectWideEscapeBridge)(document, token);
   if (assets.length > 0) {
     const bridge = document.createElement("script");
     bridge.textContent = ASSET_BRIDGE.replace("BB_ASSET_TOKEN", token);
