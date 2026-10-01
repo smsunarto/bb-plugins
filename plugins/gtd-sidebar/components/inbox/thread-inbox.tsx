@@ -305,6 +305,7 @@ function InboxList({
     if (shelf === "snoozed" || shelf === "settled") {
       return (
         <SlimRow
+          isUnread={row.isUnread}
           isNaming={namingThreads.has(thread.id)}
           thread={thread}
           compactThreads={compactThreads}
@@ -327,6 +328,7 @@ function InboxList({
     }
     return (
       <ThreadCard
+        isUnread={row.isUnread}
         isNaming={namingThreads.has(thread.id)}
         thread={thread}
         shelf={shelf}

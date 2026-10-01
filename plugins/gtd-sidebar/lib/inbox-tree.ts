@@ -18,6 +18,7 @@ export interface InboxThreadNode {
    */
   pinOrderKey: string | null;
   statusThread: PluginSidebarThread;
+  hasUnread: boolean;
   matchesSearch: boolean;
   matchesTitle: boolean;
 }
@@ -32,13 +33,17 @@ export interface VisibleInboxRow {
   guides: string;
   lastChild: boolean;
   statusThread: PluginSidebarThread;
+  isUnread: boolean;
 }
 
 function statusPriority(thread: PluginSidebarThread): number {
   if (thread.hasPendingInteraction || thread.indicator === "waiting-for-input") return 5;
   if (thread.indicator === "unread-error") return 4;
-  if (thread.isUnread || thread.indicator === "unread-success") return 3;
-  if (thread.indicator !== "none") return 2;
+  if (
+    thread.queuedWork === "waiting" ||
+    (thread.indicator !== "none" && thread.indicator !== "unread-success")
+  )
+    return 2;
   return 0;
 }
 
@@ -147,6 +152,7 @@ function createInboxNode(
     // bb's own pinned order, shared with the built-in sidebar's drag order.
     pinOrderKey: thread.isPinned ? thread.pinSortKey : null,
     statusThread: thread,
+    hasUnread: thread.isUnread,
     matchesSearch: matchesTitle,
     matchesTitle,
   };
@@ -197,6 +203,7 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
     const node = preorder[index]!;
     for (const child of node.children) {
       node.matchesSearch ||= child.matchesSearch;
+      node.hasUnread ||= child.hasUnread;
       if (statusPriority(child.statusThread) > statusPriority(node.statusThread))
         node.statusThread = child.statusThread;
     }
@@ -320,7 +327,7 @@ export function visibleInboxRows(
       lastChild: false,
       ancestorMatches: false,
     }))
-    .reverse() as (Omit<VisibleInboxRow, "expanded" | "statusThread"> & {
+    .reverse() as (Omit<VisibleInboxRow, "expanded" | "statusThread" | "isUnread"> & {
     ancestorMatches: boolean;
   })[];
   while (stack.length) {
@@ -332,6 +339,7 @@ export function visibleInboxRows(
       ...row,
       expanded,
       statusThread: expanded ? row.node.thread : row.node.statusThread,
+      isUnread: expanded ? row.node.thread.isUnread : row.node.hasUnread,
     });
     if (!expanded) continue;
     for (let index = children.length - 1; index >= 0; index--) {

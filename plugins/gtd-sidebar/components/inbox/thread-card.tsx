@@ -1,6 +1,7 @@
 import {
   memo,
   useCallback,
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -45,6 +46,7 @@ const MOBILE_DISCLOSURE_WIDTH = 32;
 
 interface ThreadCardProps {
   thread: PluginSidebarThread;
+  isUnread: boolean;
   shelf: ActiveThreadShelf;
   compactThreads: boolean;
   depth: number;
@@ -128,6 +130,7 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
  */
 const ThreadCardBody = memo(function ThreadCardBody({
   thread,
+  isUnread,
   shelf,
   compactThreads,
   depth,
@@ -204,6 +207,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       : undefined;
   // The metadata line starts under the title, past the globe HostLead draws.
   const remote = useRemoteMachine(thread.host);
+  const unreadId = useId();
 
   const title = (editable: boolean) => (
     <ThreadTitle
@@ -229,6 +233,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
     <MobileThreadSummary
       title={rowTitle(interactive)}
       thread={statusThread}
+      isUnread={isUnread}
       shortcut={shortcut}
       activity={thread.activity}
       pullRequest={pullRequest}
@@ -287,6 +292,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             shortcut={shortcut}
             threadId={thread.id}
             title={titleText}
+            unreadDescriptionId={isUnread ? unreadId : undefined}
             shelf={shelf}
             isActive={isActive}
             mobile={isCompactViewport}
@@ -301,6 +307,11 @@ const ThreadCardBody = memo(function ThreadCardBody({
             rename={rename}
             command={command}
           />
+          {isUnread ? (
+            <span id={unreadId} className="sr-only">
+              {thread.isUnread ? "Unread response" : "Unread response in subthreads"}
+            </span>
+          ) : null}
           {isCompactViewport ? (
             <CompactThreadActionMenu
               thread={thread}
@@ -331,6 +342,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
               <DesktopThreadSummary
                 title={rowTitle(true)}
                 thread={statusThread}
+                isUnread={isUnread}
                 shortcut={shortcut}
                 plan={plan}
                 compact={compact}
@@ -466,6 +478,7 @@ function ThreadTitle({
 function MobileThreadSummary({
   title,
   thread,
+  isUnread,
   shortcut,
   activity,
   pullRequest,
@@ -473,6 +486,7 @@ function MobileThreadSummary({
 }: {
   title: ReactNode;
   thread: PluginSidebarThread;
+  isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
   pullRequest: PluginSidebarPullRequest | null;
@@ -491,7 +505,7 @@ function MobileThreadSummary({
           />
         ) : null}
         <span className={STATUS_SLOT_CLASS}>
-          <StatusOrTime thread={thread} shortcut={shortcut} />
+          <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
         </span>
       </span>
     </>
@@ -560,6 +574,7 @@ export function ThreadHierarchy({
 
 function ThreadRowLink({
   thread,
+  unreadDescriptionId,
   projectName,
   branchName,
   provider,
@@ -583,6 +598,7 @@ function ThreadRowLink({
   command,
 }: {
   thread: PluginSidebarThread;
+  unreadDescriptionId: string | undefined;
   projectName: string | null;
   branchName: string | null;
   provider?: ProviderGlyphInfo;
@@ -626,6 +642,7 @@ function ThreadRowLink({
         data-sidebar-rename-anchor=""
         href="#"
         aria-label={title}
+        aria-describedby={unreadDescriptionId}
         aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
         aria-current={isActive ? "page" : undefined}
         onKeyDown={(event) => {
@@ -680,6 +697,7 @@ function ThreadRowLink({
 function DesktopThreadSummary({
   title,
   thread,
+  isUnread,
   shortcut,
   plan,
   compact,
@@ -690,6 +708,7 @@ function DesktopThreadSummary({
 }: {
   title: ReactNode;
   thread: PluginSidebarThread;
+  isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   plan: ThreadActionPlan;
   compact: boolean;
@@ -709,7 +728,7 @@ function DesktopThreadSummary({
           <PullRequestNumber pullRequest={pullRequest} interactive />
         ) : null}
         <span className={STATUS_SLOT_CLASS}>
-          <StatusOrTime thread={thread} shortcut={shortcut} />
+          <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
         </span>
       </span>
       {showActions ? (

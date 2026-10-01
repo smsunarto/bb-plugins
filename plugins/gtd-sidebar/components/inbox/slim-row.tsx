@@ -1,6 +1,7 @@
 import {
   memo,
   useRef,
+  useId,
   useState,
   type CSSProperties,
   type PointerEvent,
@@ -34,6 +35,7 @@ import { ThreadHierarchy } from "./thread-card";
 
 interface SlimRowProps {
   thread: PluginSidebarThread;
+  isUnread: boolean;
   isActive: boolean;
   isNaming?: boolean;
   compactThreads: boolean;
@@ -74,6 +76,7 @@ export const SlimRow = memo(function SlimRow(props: SlimRowProps) {
  */
 const SlimRowBody = memo(function SlimRowBody({
   thread,
+  isUnread,
   compactThreads,
   projectName,
   branchName,
@@ -95,6 +98,7 @@ const SlimRowBody = memo(function SlimRowBody({
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
   const title = thread.displayTitle;
+  const unreadId = useId();
   const rename = useThreadRename(thread.id, title);
   const onRestore = () => command({ kind: "restore", threadId: thread.id, shelf });
   const plan = buildThreadActionPlan({
@@ -127,7 +131,7 @@ const SlimRowBody = memo(function SlimRowBody({
   const status = shortcut ? (
     <ShortcutPill shortcut={shortcut} />
   ) : (
-    <SlimRowStatusLabel thread={thread} shelf={shelf} wakeAt={wakeAt} />
+    <SlimRowStatusLabel thread={thread} isUnread={isUnread} shelf={shelf} wakeAt={wakeAt} />
   );
   const highlightContent = (
     <div className="flex h-full items-center gap-2 px-2.5 text-xs">
@@ -189,6 +193,7 @@ const SlimRowBody = memo(function SlimRowBody({
               data-sidebar-rename-anchor=""
               href="#"
               aria-label={title}
+              aria-describedby={isUnread ? unreadId : undefined}
               aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
               onDoubleClick={rename.onDoubleClick}
               onClick={(event) => {
@@ -205,6 +210,11 @@ const SlimRowBody = memo(function SlimRowBody({
               className="absolute inset-0 cursor-pointer rounded-xl"
             />
           </ThreadDetails>
+          {isUnread ? (
+            <span id={unreadId} className="sr-only">
+              {thread.isUnread ? "Unread response" : "Unread response in subthreads"}
+            </span>
+          ) : null}
           <HostLead host={thread.host} />
           {rename.isEditing ? (
             // The title's classes minus the click-through and the clip, which
@@ -302,14 +312,17 @@ function slimRowPresentation({
 
 function SlimRowStatusLabel({
   thread,
+  isUnread,
   shelf,
   wakeAt,
 }: {
   thread: PluginSidebarThread;
+  isUnread: boolean;
   shelf: "snoozed" | "settled";
   wakeAt: number | null;
 }) {
   const now = useMinuteClock();
+  if (isUnread) return <StatusOrTime thread={thread} isUnread />;
   return shelf === "snoozed" && wakeAt !== null ? (
     snoozeWakeLabel(wakeAt, now)
   ) : (

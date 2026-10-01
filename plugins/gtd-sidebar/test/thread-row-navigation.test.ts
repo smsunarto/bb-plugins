@@ -385,6 +385,78 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     dom.window.close();
   });
 
+  describe("unread activity in the status slot", () => {
+    it.each([
+      { mobile: false, compact: false },
+      { mobile: false, compact: true },
+      { mobile: true, compact: false },
+    ])("shows unread dots on every shelf with %j and clears on read", ({ mobile, compact }) => {
+      const unread = { isUnread: true, indicator: "unread-success" as const };
+      const threads = [
+        thread("finished", unread),
+        thread("snoozed", unread),
+        { ...settledThread("settled"), ...unread },
+        thread("working", { isUnread: true, indicator: "runtime", indicatorLabel: "Working" }),
+      ];
+      const host = { ...hostState(threads), lifecycle: lifecycle(["snoozed"]) };
+      const view = mount(host, { isCompactViewport: mobile }, compact);
+      expandParked(view.slot);
+      for (const id of ["finished", "snoozed", "settled"]) {
+        const container = row(view.slot, id).parentElement!;
+        const dot = within(container).getByRole("img", { name: "Unread response" });
+        assert.ok(dot.closest(".w-7"));
+        assert.equal(
+          document.getElementById(row(view.slot, id).getAttribute("aria-describedby")!)
+            ?.textContent,
+          "Unread response",
+        );
+      }
+      assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
+      assert.equal(
+        within(row(view.slot, "working").parentElement!).queryByRole("img", {
+          name: "Unread response",
+        }),
+        null,
+      );
+      view.update({
+        host: {
+          ...host,
+          sidebar: {
+            ...host.sidebar,
+            threads: threads.map((entry) => Object.assign({}, entry, { isUnread: false })),
+          },
+        },
+      });
+      assert.equal(view.slot.queryAllByRole("img", { name: "Unread response" }).length, 0);
+      assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
+    });
+
+    it("keeps the collapsed family's unread dot in the status slot", () => {
+      const root = thread("root");
+      const child = thread("child", {
+        parentThreadId: "root",
+        isUnread: true,
+        indicator: "unread-success",
+      });
+      const view = mount(hostState([root, child]));
+      fireEvent.click(rowButton(view.slot, "root", "Collapse children of root"));
+      const container = row(view.slot, "root").parentElement!;
+      assert.ok(within(container).getByRole("img", { name: "Unread response" }).closest(".w-7"));
+      assert.equal(
+        document.getElementById(row(view.slot, "root").getAttribute("aria-describedby")!)
+          ?.textContent,
+        "Unread response in subthreads",
+      );
+      fireEvent.click(rowButton(view.slot, "root", "Expand children of root"));
+      assert.equal(within(container).queryByRole("img", { name: "Unread response" }), null);
+      assert.ok(
+        within(row(view.slot, "child").parentElement!).getByRole("img", {
+          name: "Unread response",
+        }),
+      );
+    });
+  });
+
   describe("useCommittedEvent", () => {
     it.each([false, true])(
       "keeps event identity while committing new callbacks with strict mode=%s",

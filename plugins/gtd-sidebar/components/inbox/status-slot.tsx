@@ -29,17 +29,20 @@ export const TRAILING_GLYPH_BOX_CLASS = "flex size-3.5 shrink-0 items-center jus
  */
 export function StatusOrTime({
   thread,
+  isUnread = thread.isUnread,
   shortcut = null,
 }: {
   thread: PluginSidebarThread;
+  /** Includes unread descendants while the family is collapsed. */
+  isUnread?: boolean;
   /** bb's jump key for this row while the command modifier is held. */
   shortcut?: PluginSidebarThreadShortcut | null;
 }) {
   if (shortcut) return <ShortcutPill shortcut={shortcut} />;
-  if (hasStatusGlyph(thread.indicator)) {
+  if (thread.indicator !== "unread-success" && hasStatusGlyph(thread.indicator)) {
     return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
-  if (thread.isUnread) return <StatusGlyph indicator="unread-success" label="Unread response" />;
+  if (isUnread) return <StatusGlyph indicator="unread-success" label="Unread response" />;
   return <AgeLabel at={thread.latestAttentionAt} />;
 }
 

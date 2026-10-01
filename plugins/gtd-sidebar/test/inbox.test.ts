@@ -300,7 +300,8 @@ describe("inbox families", () => {
     });
     const tree = buildInboxTree([root, child], active);
     assert.equal(tree[0]?.shelf, "waiting");
-    assert.equal(visibleInboxRows(tree, new Set(["root"]))[0]?.statusThread, child);
+    assert.equal(visibleInboxRows(tree, new Set(["root"]))[0]?.statusThread, root);
+    assert.equal(visibleInboxRows(tree, new Set(["root"]))[0]?.isUnread, true);
     assert.equal(visibleInboxRows(tree, new Set())[0]?.statusThread, root);
     assert.equal(tree[0]?.lifecycle, "active");
   });

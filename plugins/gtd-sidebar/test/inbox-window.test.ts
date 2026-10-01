@@ -20,6 +20,7 @@ function row(id: string, projectId = "p1"): VisibleInboxRow {
       shelfEnteredAt: 0,
       pinOrderKey: null,
       statusThread: thread,
+      hasUnread: false,
       matchesSearch: true,
       matchesTitle: true,
     },
@@ -31,6 +32,7 @@ function row(id: string, projectId = "p1"): VisibleInboxRow {
     guides: "",
     lastChild: false,
     statusThread: thread,
+    isUnread: false,
   };
 }
 
