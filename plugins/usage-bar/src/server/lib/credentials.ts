@@ -34,7 +34,11 @@ async function readJson(path: string): Promise<unknown> {
 function jwtPayload(token: string | null | undefined): Record<string, unknown> {
   try {
     const payload = token?.split(".")[1];
-    return payload ? JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) : {};
+    return payload
+      ? (z
+          .record(z.string(), z.unknown())
+          .safeParse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))).data ?? {})
+      : {};
   } catch {
     return {};
   }
@@ -58,6 +62,7 @@ const poolSecretSchema = z.object({
  * accounts silently disappear while quota keeps working.
  */
 export async function poolToken(dataDir: string, accountId: string): Promise<string | null> {
+  if (!/^[a-z0-9_-]+$/iu.test(accountId)) return null;
   const path = join(
     dataDir,
     "plugins",

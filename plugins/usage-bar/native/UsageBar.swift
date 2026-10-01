@@ -59,7 +59,7 @@ struct ResetCredits: Decodable {
     let expiries: [Double?]
 
     func available(at now: Date) -> [Double?] {
-        expiries.filter { expiry in expiry.map { $0 > now.timeIntervalSince1970 * 1000 } ?? true }
+        expiries.filter { expiry in expiry.map { date($0) != nil && $0 > now.timeIntervalSince1970 * 1000 } ?? true }
     }
 }
 
@@ -79,7 +79,7 @@ struct UsageWindow: Decodable {
     let windowMinutes: Int?
 
     var remainingPercent: Double { max(0, min(100, 100 - usedPercent)) }
-    var resetDate: Date? { resetAt.map { Date(timeIntervalSince1970: $0 / 1000) } }
+    var resetDate: Date? { date(resetAt) }
 }
 
 private struct Envelope: Decodable {
@@ -88,7 +88,8 @@ private struct Envelope: Decodable {
 }
 
 func date(_ milliseconds: Double?) -> Date? {
-    milliseconds.map { Date(timeIntervalSince1970: $0 / 1000) }
+    guard let milliseconds, milliseconds.isFinite, abs(milliseconds) <= 8.64e15 else { return nil }
+    return Date(timeIntervalSince1970: milliseconds / 1000)
 }
 
 // MARK: - Store
@@ -123,6 +124,7 @@ enum Format {
     /// "in 3h 12m", "in 2d 13h", or "now". Minutes round up so a reset never reads early.
     static func countdown(to date: Date, now: Date) -> String {
         let seconds = date.timeIntervalSince(now)
+        guard seconds.isFinite, abs(seconds) <= 8.64e12 else { return "unknown" }
         if seconds <= 0 { return "now" }
         let totalMinutes = max(1, Int(ceil(seconds / 60)))
         let days = totalMinutes / 1440

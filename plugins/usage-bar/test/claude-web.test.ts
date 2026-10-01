@@ -7,6 +7,7 @@ import {
 } from "../src/server/lib/claude-web.ts";
 import { NO_EXTRAS } from "../src/server/lib/extras.ts";
 import { createSourceReader } from "../src/server/lib/sources.ts";
+import { createMenuState } from "../src/server/lib/menu-state.ts";
 
 const NOW = Date.parse("2026-10-01T05:00:00Z");
 const signal = new AbortController().signal;
@@ -37,6 +38,86 @@ function payload(email = "one@example.com", updatedAt = NOW, value = "1 availabl
   ];
 }
 const expected = { count: 1, expiry: "Expires Oct 22 at 9:00 AM", freshUntil: NOW + 300_000 };
+
+test("retained quota source refreshes web resets after failure and cache expiry", async () => {
+  let now = NOW;
+  let calls = 0;
+  let failed = false;
+  const readWeb = createClaudeWebReader(
+    async () => {
+      calls++;
+      now += 3_000;
+      return payload("one@example.com", now, `${calls} available`);
+    },
+    () => now,
+  );
+  const account = {
+    id: "one",
+    provider: "claude",
+    label: "One",
+    email: "one@example.com",
+    subscriptionType: "max",
+    rateLimitTier: null,
+    enabled: true,
+    priority: 1,
+    lastUsedAt: null,
+    fiveHourUtilization: 0.25,
+    fiveHourResetAt: null,
+    sevenDayUtilization: null,
+    sevenDayResetAt: null,
+    familyWeekly: {},
+    limitWindows: [],
+    observedAt: null,
+    heldUntil: null,
+    error: null,
+    inFlight: 0,
+    status: "ready",
+  };
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "usage-bar",
+    dataDir: "/tmp/usage-bar-refresh-no-secrets",
+    sdk: {
+      plugins: {
+        experimental_discoverRpc: async () => [{ pluginId: "account-pool" }],
+        callRpc: async () => {
+          if (failed) throw new Error("unavailable");
+          return [account];
+        },
+      },
+    },
+  });
+  try {
+    const read = createSourceReader(bb, readWeb);
+    const state = createMenuState(
+      signal,
+      () => {},
+      () => now,
+    );
+    const shown = () => state.snapshot().providers[0]!.accounts[0]!.webResetCredits;
+    await state.publish(() => read(signal, false));
+    await state.refresh();
+    expect(shown()).toEqual({ ...expected, freshUntil: NOW + 303_000 });
+    failed = true;
+    now += 301_000;
+    await state.publish(() => read(signal, true), true);
+    expect(shown()).toEqual({ ...expected, count: 2, freshUntil: now + 300_000 });
+    expect(state.snapshot().error).toBe("Usage unavailable. Check the provider in bb.");
+    const started = now;
+    await state.publish(() => read(signal, true), true);
+    expect(shown()).toEqual({ ...expected, count: 3, freshUntil: now + 300_000 });
+    // The service gate must not reopen before the reader's completed-read cache expires.
+    now = started + 301_000;
+    await state.publish(() => read(signal, false));
+    await state.refresh();
+    expect(shown()).toEqual({ ...expected, count: 3, freshUntil: started + 303_000 });
+    now = started + 303_001;
+    await state.publish(() => read(signal, false));
+    await state.refresh();
+    expect(shown()).toEqual({ ...expected, count: 4, freshUntil: now + 300_000 });
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
 
 test("reads display-safe web resets and rejects stale or ambiguous output", () => {
   expect(parseClaudeWeb(payload(" ONE@example.com "), NOW)).toEqual({
@@ -176,25 +257,24 @@ test("pool source shares one web refresh and keeps a mismatched pooled account e
   try {
     const read = createSourceReader(bb, readWeb);
     const source = await read(signal, false);
-    expect(
-      await Promise.all([
-        source.extras("claude", "one", true),
-        source.extras("claude", "two", true),
-      ]),
-    ).toEqual([
+    const batch = source.extras(true);
+    expect(await Promise.all([batch("claude", "one"), batch("claude", "two")])).toEqual([
       { ...NO_EXTRAS, webResetCredits: expected, resetNotice: "Check Claude for full resets" },
       NO_EXTRAS,
     ]);
     expect(calls).toBe(1);
+    // A slower account can reach the fallback after the shared read settles.
+    expect(await batch("claude", "two")).toEqual(NO_EXTRAS);
+    expect(calls).toBe(1);
     const next = await read(signal, false);
-    await next.extras("claude", "one");
+    await next.extras()("claude", "one");
     expect(calls).toBe(1);
     const refreshed = await read(signal, true);
-    await refreshed.extras("claude", "one", true);
+    await refreshed.extras(true)("claude", "one");
     expect(calls).toBe(2);
     accounts[1]!.email = "one@example.com";
     const duplicate = await read(signal, false);
-    expect(await duplicate.extras("claude", "one", true)).toEqual(NO_EXTRAS);
+    expect(await duplicate.extras(true)("claude", "one")).toEqual(NO_EXTRAS);
     expect(calls).toBe(2);
   } finally {
     await harness.lifecycle.dispose();

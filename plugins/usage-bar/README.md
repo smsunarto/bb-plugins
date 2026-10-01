@@ -10,11 +10,13 @@ CodexBar-style macOS menu bar meters for your Codex and Claude accounts. It read
 - **Extra usage** shows the Codex credit balance, or Claude's spend against its monthly cap.
 - The gray header above each card carries the pool's routing state: its position, `In use` with the requests in flight, `Last used` for the account the menu bar shows when nothing is in flight, and held, exhausted, or disabled.
 - **Refresh** (⌘R) re-reads every enabled account's usage and extras. **Open bb** (⌘O) brings bb forward. **Quit** (⌘Q) hides the items until bb restarts or the plugin reloads.
+  Refresh waits for its fresh results even when a background read is already running. Account changes discard observations from the previous configuration. Disabled accounts do not fetch extras.
 
 ## Where the data comes from
 
 - **Quota:** `account.list` from the `account-pool` plugin through `bb.sdk.plugins.callRpc`, every 15 seconds and whenever a menu opens.
 - **Fallback quota:** when Account Pooler is not loaded or holds no accounts, the `provider-usage.v1` resources of bb's built-in Codex and Claude providers on this Mac. Collections, including failures, are cached for 5 minutes. Refresh bypasses that cache. Extras are matched by provider-issued account identity, including workspace identity.
+  A failed resource does not hide healthy accounts. If the whole source fails, the menu keeps its last quota snapshot and reports that usage is unavailable.
 - **Reset credits and extra usage:** the provider endpoints CodexBar uses, at most every 5 minutes, plus on Refresh.
   - Pool accounts use the pool's stored access token. This reads Account Pooler's private secret files under `<bb data dir>/plugins/account-pool/secrets/`. If that layout changes, these sections disappear while quota keeps working.
   - In fallback mode, the CLI's own credentials: `~/.codex/auth.json`, and Claude Code's keychain item or `~/.claude/.credentials.json`. macOS may ask once to allow keychain access.

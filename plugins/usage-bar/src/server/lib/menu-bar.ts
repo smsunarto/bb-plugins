@@ -1,20 +1,17 @@
 import { spawn } from "node:child_process";
-import { once } from "node:events";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type { AccountExtras } from "./extras.ts";
 import { buildHelper, nativeDir } from "./helper.ts";
+import { createMenuState } from "./menu-state.ts";
 import type { MenuSnapshot } from "./pool.ts";
-import { POOL_PLUGIN_ID, createSourceReader, type Source } from "./sources.ts";
+import { POOL_PLUGIN_ID, createSourceReader } from "./sources.ts";
 
 /** Reading the pool is a local store read; quota itself moves on proxied traffic. */
 const POLL_MS = 15_000;
-/** Extras hit provider endpoints (Claude's usage endpoint rate-limits), so poll them slowly. */
-const EXTRAS_MS = 5 * 60_000;
 const BB_BUNDLE_ID = "dev.bb.desktop";
 
 /** Messages the helper writes to stdout, one JSON object per line. */
@@ -61,6 +58,8 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
   }
 
   const binary = await buildHelper(signal);
+  const helperGone = new AbortController();
+  const live = AbortSignal.any([signal, helperGone.signal]);
   const child = spawn(binary, [nativeDir()], { stdio: ["pipe", "pipe", "pipe"], signal });
   child.on("error", (error) => {
     if (!signal.aborted) bb.log.warn(`usage-bar: helper error: ${error.message}`);
@@ -71,100 +70,33 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
   // A write after the helper exits raises EPIPE here; the exit path handles it.
   child.stdin.on("error", () => {});
   // `close`, not `exit`: it waits for stdout to drain, so a final "quit" line is read first.
-  const exited = once(child, "close");
+  const exited = new Promise<number | null>((resolve) => {
+    child.once("close", (code) => {
+      helperGone.abort();
+      resolve(code);
+    });
+    child.once("error", () => {
+      helperGone.abort();
+      resolve(null);
+    });
+  });
 
   const send = (message: HelperInput) => {
     if (child.stdin.writable) child.stdin.write(`${JSON.stringify(message)}\n`);
   };
 
-  let last: MenuSnapshot = { providers: [], error: null };
   let lastSent = "";
-  const extras = new Map<string, AccountExtras>();
   const render = () => {
+    const last = state.snapshot();
     const body = JSON.stringify(last);
     if (body === lastSent) return;
     lastSent = body;
     send({ type: "snapshot", ...last });
   };
-
+  const state = createMenuState(live, render);
   const readSource = createSourceReader(bb);
-  let source: Source | null = null;
-  let extrasAt = 0;
-  let extrasRunning = false;
-  const identities = (value: Source | null) =>
-    JSON.stringify(
-      value?.providers.map((provider) => ({
-        id: provider.id,
-        accounts: provider.accounts.map((account) => ({
-          id: account.id,
-          identity: account.identity,
-        })),
-      })),
-    );
-  const attachExtras = () => {
-    last = {
-      ...last,
-      providers: last.providers.map((provider) => ({
-        ...provider,
-        accounts: provider.accounts.map((account) => ({
-          ...account,
-          resetCredits: null,
-          extraUsage: null,
-          resetNotice: null,
-          webResetCredits: null,
-          ...extras.get(account.id),
-        })),
-      })),
-    };
-  };
-  const refreshExtras = async (force: boolean) => {
-    if (source === null || extrasRunning || (!force && Date.now() - extrasAt < EXTRAS_MS)) return;
-    extrasRunning = true;
-    extrasAt = Date.now();
-    const current = source;
-    const identity = identities(current);
-    try {
-      // allSettled: a rejection here would escape the detached call and crash the service.
-      await Promise.allSettled(
-        current.providers.flatMap((provider) =>
-          provider.accounts
-            .filter((account) => account.status !== "disabled")
-            .map(async (account) => {
-              const result = await current.extras(provider.id, account.id, force);
-              if (!signal.aborted && identity === identities(source))
-                extras.set(account.id, result);
-            }),
-        ),
-      );
-    } finally {
-      extrasRunning = false;
-    }
-    if (signal.aborted) return;
-    attachExtras();
-    render();
-  };
 
-  let publication = 0;
-  const publish = async (refresh = false) => {
-    const version = ++publication;
-    try {
-      const next = await readSource(signal, refresh);
-      if (signal.aborted || version !== publication) return;
-      if (identities(next) !== identities(source)) {
-        extrasAt = 0;
-        extras.clear();
-      }
-      source = next;
-      last = { providers: source.providers, error: null };
-      attachExtras();
-    } catch {
-      if (signal.aborted || version !== publication) return;
-      // Keep the last good accounts on screen, dimmed, rather than blanking the menu.
-      last = { ...last, error: "Usage unavailable. Check the provider in bb." };
-    }
-    render();
-    void refreshExtras(refresh);
-  };
+  const publish = (refresh = false) => state.publish(() => readSource(live, refresh), refresh);
 
   let refreshing = false;
   const refreshAll = async () => {
@@ -172,9 +104,9 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
     refreshing = true;
     send({ type: "refreshing", value: true });
     try {
-      if (source?.kind === "pool") {
+      if (state.source?.kind === "pool") {
         await Promise.allSettled(
-          source.providers.flatMap((provider) =>
+          state.source.providers.flatMap((provider) =>
             provider.accounts
               .filter((account) => account.status !== "disabled")
               .map((account) =>
@@ -183,16 +115,19 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
                   method: "account.refreshUsage",
                   input: { accountId: account.id },
                   outputSchema: z.unknown(),
-                  signal,
+                  signal: live,
                 }),
               ),
           ),
         );
       }
     } finally {
-      refreshing = false;
-      await publish(true);
-      send({ type: "refreshing", value: false });
+      try {
+        await publish(true);
+      } finally {
+        refreshing = false;
+        send({ type: "refreshing", value: false });
+      }
     }
   };
 
@@ -223,17 +158,15 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
     }
   });
 
-  await publish();
-  const helperGone = new AbortController();
-  const live = AbortSignal.any([signal, helperGone.signal]);
+  await Promise.race([publish(), exited]);
   const poll = (async () => {
     while (!live.aborted) {
       await sleep(POLL_MS, undefined, { signal: live }).catch(() => {});
-      if (!live.aborted) await publish();
+      if (!live.aborted) await Promise.race([publish(), exited]);
     }
   })();
 
-  const [code] = await Promise.race([exited, untilAborted(signal).then(() => [null])]);
+  const code = await Promise.race([exited, untilAborted(signal).then(() => null)]);
   helperGone.abort();
   child.kill();
   await poll;

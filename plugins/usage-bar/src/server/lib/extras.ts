@@ -35,11 +35,13 @@ const TIMEOUT_MS = 10_000;
 async function getJson(
   url: string,
   headers: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<{ body: unknown; status: number }> {
   try {
+    signal?.throwIfAborted();
     const response = await fetch(url, {
       headers: { Accept: "application/json", ...headers },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), ...(signal ? [signal] : [])]),
     });
     return { body: response.ok ? await response.json() : null, status: response.status };
   } catch {
@@ -62,7 +64,7 @@ export function parseResetCredits(body: unknown, now: number): ResetCredits | nu
   if (!parsed.success) return null;
   const expiries = parsed.data.credits
     .filter((credit) => credit.status === "available")
-    .map((credit) => (credit.expires_at ? Date.parse(credit.expires_at) : null))
+    .map((credit) => (credit.expires_at != null ? Date.parse(credit.expires_at) : null))
     .filter((expiry) => expiry === null || (Number.isFinite(expiry) && expiry > now))
     .sort((left, right) => (left ?? Infinity) - (right ?? Infinity));
   return expiries.length === 0 ? null : { expiries };
@@ -139,25 +141,37 @@ export function purchasedCodexBalance(body: unknown, balance: number | null): nu
   return remaining !== null && Math.abs(balance - remaining) < 0.0001 ? null : balance;
 }
 
-export async function codexExtras(token: string, accountId: string | null): Promise<AccountExtras> {
+export async function codexExtras(
+  token: string,
+  accountId: string | null,
+  signal?: AbortSignal,
+): Promise<AccountExtras> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "User-Agent": "bb-usage-bar",
     ...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
   };
   const [creditsBody, usageBody] = await Promise.all([
-    getJson(`${CODEX_BASE}/wham/rate-limit-reset-credits`, {
-      ...headers,
-      "OpenAI-Beta": "codex-1",
-      originator: "Codex Desktop",
-    }),
-    getJson(`${CODEX_BASE}/wham/usage`, headers),
+    getJson(
+      `${CODEX_BASE}/wham/rate-limit-reset-credits`,
+      {
+        ...headers,
+        "OpenAI-Beta": "codex-1",
+        originator: "Codex Desktop",
+      },
+      signal,
+    ),
+    getJson(`${CODEX_BASE}/wham/usage`, headers, signal),
   ]);
   let { balance, ask } = parseCodexBalance(usageBody.body);
   if (!ask) balance = purchasedCodexBalance(usageBody.body, balance);
   // Workspace accounts leave the balance off `wham/usage` and report it here.
   if (ask && accountId) {
-    const body = await getJson(`${CODEX_BASE}/accounts/${accountId}/remaining_balance`, headers);
+    const body = await getJson(
+      `${CODEX_BASE}/accounts/${encodeURIComponent(accountId)}/remaining_balance`,
+      headers,
+      signal,
+    );
     balance = toNumber(z.object({ balance: balanceSchema }).safeParse(body.body).data?.balance);
   }
   return {
@@ -198,20 +212,22 @@ const MAX_CLAUDE_RESETS = 50;
 const claudeGrantSchema = z
   .object({
     resets_left: z.number().int().min(0),
+    resets_total: z.number().int().min(0).nullish(),
     starts_at: z.string().nullish(),
     ends_at: z.string().nullish(),
     paused: z.boolean(),
   })
+  .refine((grant) => grant.resets_total == null || grant.resets_left <= grant.resets_total)
   .transform((grant) => ({
     resetsLeft: grant.resets_left,
     paused: grant.paused,
-    startsAt: grant.starts_at ? Date.parse(grant.starts_at) : null,
-    endsAt: grant.ends_at ? Date.parse(grant.ends_at) : null,
+    startsAt: grant.starts_at != null ? Date.parse(grant.starts_at) : null,
+    endsAt: grant.ends_at != null ? Date.parse(grant.ends_at) : null,
   }))
   .refine((grant) => !Number.isNaN(grant.startsAt) && !Number.isNaN(grant.endsAt));
 
 const claudeResetsSchema = z.object({
-  cedar_ember: z.object({ eligible: z.boolean(), grants: z.array(z.unknown()).nullish() }),
+  cedar_ember: z.object({ eligible: z.boolean(), grants: z.array(z.unknown()).max(200).nullish() }),
 });
 
 /**
@@ -235,18 +251,18 @@ export function parseClaudeResetCredits(body: unknown, now: number): ResetCredit
   return expiries.length === 0 ? null : { expiries };
 }
 
-export async function claudeExtras(token: string): Promise<AccountExtras> {
+export async function claudeExtras(token: string, signal?: AbortSignal): Promise<AccountExtras> {
   const headers = {
     Authorization: `Bearer ${token}`,
     "anthropic-beta": "oauth-2025-04-20",
     "User-Agent": "claude-code/2.1.0",
   };
   // An account the reset opt-in is rejected for still reports extra usage without it.
-  let response = await getJson(`${CLAUDE_USAGE_URL}?cedar_ember=1`, headers);
+  let response = await getJson(`${CLAUDE_USAGE_URL}?cedar_ember=1`, headers, signal);
   // Retry only a rejected opt-in. Authentication failures, throttling, and server
   // failures must wait for the next scheduled refresh.
   if (response.status === 400 || response.status === 404 || response.status === 422) {
-    response = await getJson(CLAUDE_USAGE_URL, headers);
+    response = await getJson(CLAUDE_USAGE_URL, headers, signal);
   }
   const { body } = response;
   const surface = z

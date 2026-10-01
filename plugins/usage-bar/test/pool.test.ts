@@ -159,3 +159,26 @@ test("an unused pool marks its first enabled account current, and empty provider
   expect(providers.map((provider) => provider.id)).toEqual(["codex"]);
   expect(providers[0]?.accounts.find((entry) => entry.current)?.id).toBe("a");
 });
+
+test("invalid timestamps and fractional native integers preserve valid quota without crashing", () => {
+  const parsed = accountListSchema.parse([
+    account({
+      provider: "claude",
+      fiveHourUtilization: 0.25,
+      fiveHourResetAt: 1e308,
+      observedAt: 1e308,
+      heldUntil: 1e308,
+      inFlight: 1.5,
+      priority: 1.5,
+    }),
+  ]);
+  expect(poolProviders(parsed)[0]?.accounts[0]).toMatchObject({
+    observedAt: null,
+    heldUntil: null,
+    inFlight: 0,
+    windows: [{ label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300 }],
+  });
+  expect(
+    accountListSchema.safeParse([account({ id: "same" }), account({ id: "same" })]).success,
+  ).toBe(false);
+});

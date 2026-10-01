@@ -7,9 +7,12 @@ import type { WebResetCredits } from "./claude-web.ts";
  * this plugin reads. Unknown fields are stripped, so new pool fields never break the parse.
  * `utilization` is a 0..1 fraction; every timestamp is epoch milliseconds.
  */
+/** JavaScript Date's supported epoch range also keeps native countdowns representable. */
+export const timestampSchema = z.number().min(-8.64e15).max(8.64e15).nullable().catch(null);
+
 const quotaSchema = z.object({
   utilization: z.number().nullable(),
-  resetAt: z.number().nullable(),
+  resetAt: timestampSchema,
 });
 
 const accountSummarySchema = z.object({
@@ -21,24 +24,38 @@ const accountSummarySchema = z.object({
   subscriptionType: z.string().nullable(),
   rateLimitTier: z.string().nullable(),
   enabled: z.boolean(),
-  priority: z.number(),
-  lastUsedAt: z.number().nullable(),
+  priority: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).catch(0),
+  lastUsedAt: timestampSchema,
   fiveHourUtilization: z.number().nullable(),
-  fiveHourResetAt: z.number().nullable(),
+  fiveHourResetAt: timestampSchema,
   sevenDayUtilization: z.number().nullable(),
-  sevenDayResetAt: z.number().nullable(),
+  sevenDayResetAt: timestampSchema,
   familyWeekly: z.record(z.string(), quotaSchema.nullable()),
   limitWindows: z.array(
-    quotaSchema.extend({ slot: z.string(), windowMinutes: z.number().nullable() }),
+    quotaSchema.extend({
+      slot: z.string(),
+      windowMinutes: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .nullable()
+        .catch(null),
+    }),
   ),
-  observedAt: z.number().nullable(),
-  heldUntil: z.number().nullable(),
+  observedAt: timestampSchema,
+  heldUntil: timestampSchema,
   error: z.string().nullable(),
-  inFlight: z.number(),
+  inFlight: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).catch(0),
   status: z.enum(["disabled", "ready", "held", "exhausted", "error"]),
 });
 
-export const accountListSchema = z.array(accountSummarySchema);
+export const accountListSchema = z
+  .array(accountSummarySchema)
+  .refine(
+    (accounts) => new Set(accounts.map((account) => account.id)).size === accounts.length,
+    "Duplicate account identities",
+  );
 export type AccountSummary = z.infer<typeof accountSummarySchema>;
 
 /** One usage lane as the menu shows it: "Session 52% left · Resets in 3h 12m". */

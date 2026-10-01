@@ -199,3 +199,66 @@ test("provider errors never pass credential-containing parser messages into the 
     error: "Usage unavailable. Check the provider in bb.",
   });
 });
+
+test("blank or inconsistent Claude grant bounds never become unbounded resets", () => {
+  const grant = { resets_left: 1, paused: false, ends_at: null, starts_at: null };
+  expect(
+    parseClaudeResetCredits(
+      {
+        cedar_ember: {
+          eligible: true,
+          grants: [
+            grant,
+            { ...grant, ends_at: "" },
+            { ...grant, starts_at: "" },
+            { ...grant, resets_total: 0 },
+          ],
+        },
+      },
+      NOW,
+    ),
+  ).toEqual({ expiries: [null] });
+  expect(
+    parseResetCredits(
+      {
+        credits: [
+          { id: "bad", status: "available", expires_at: "" },
+          { id: "good", status: "available", expires_at: null },
+        ],
+      },
+      NOW,
+    ),
+  ).toEqual({ expiries: [null] });
+});
+
+test("provider extras requests obey service cancellation", async () => {
+  const { claudeExtras, codexExtras } = await import("../src/server/lib/extras.ts");
+  const original = globalThis.fetch;
+  const controller = new AbortController();
+  let captured: AbortSignal | undefined;
+  globalThis.fetch = async (_url, options) => {
+    captured = options?.signal ?? undefined;
+    return new Promise((_resolve, reject) => {
+      captured!.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), {
+        once: true,
+      });
+    });
+  };
+  try {
+    const pending = claudeExtras("fixture-token", controller.signal);
+    controller.abort();
+    expect(await pending).toEqual({ resetCredits: null, extraUsage: null, resetNotice: null });
+    expect(captured?.aborted).toBe(true);
+    globalThis.fetch = async () => Response.json({ credits: { has_credits: true, balance: 7 } });
+    expect(await codexExtras("fixture-token", null)).toEqual({
+      resetCredits: null,
+      extraUsage: { kind: "balance", balance: 7 },
+    });
+    expect(await codexExtras("fixture-token", null, controller.signal)).toEqual({
+      resetCredits: null,
+      extraUsage: null,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});

@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   builtinAccount,
   builtinProvider,
+  type Measurement,
   measurementSchema,
   onHost,
   resourceListSchema,
@@ -20,15 +21,14 @@ import { accountListSchema, type MenuAccount, type MenuProvider, poolProviders }
 
 export const POOL_PLUGIN_ID = "account-pool";
 
+type ExtrasReader = (provider: MenuProvider["id"], accountId: string) => Promise<AccountExtras>;
+
 /** Where the menu's accounts come from, and how to reach each one's extras. */
 export interface Source {
   kind: "pool" | "builtin";
   providers: MenuProvider[];
-  extras(
-    provider: MenuProvider["id"],
-    accountId: string,
-    refresh?: boolean,
-  ): Promise<AccountExtras>;
+  /** Each call creates one fan-out batch. Observations are shared only within that batch. */
+  extras(refresh?: boolean): ExtrasReader;
 }
 
 type Collected = {
@@ -38,28 +38,44 @@ type Collected = {
   email: string | null;
 };
 
+function collectedAccount(
+  id: string,
+  resource: Parameters<typeof builtinAccount>[1],
+  measurement: Measurement,
+  provider: MenuProvider["id"],
+): Collected | null {
+  const account = builtinAccount(id, resource, measurement, 1);
+  if (account === null) return null;
+  const accountKey = measurement.usage.status === "ok" ? measurement.accountKey : null;
+  const email = measurement.usage.status === "ok" ? measurement.usage.accountEmail : null;
+  return { provider, account, accountKey, email: accountKey ? (email ?? null) : null };
+}
+
 function webFallback(
   source: Source,
   accounts: { id: string; email: string | null }[],
   readWeb: ClaudeWebReader,
   signal: AbortSignal,
 ): Source {
-  // An extras fan-out may finish its OAuth calls at different times. Share one web
-  // observation for this source even when an explicit refresh bypasses the service cache.
-  let web: ReturnType<ClaudeWebReader> | null = null;
   return {
     ...source,
-    async extras(provider, accountId, refresh = false) {
-      const extras = await source.extras(provider, accountId);
-      if (provider !== "claude" || extras.resetCredits !== null) return extras;
-      const email = normalizeEmail(accounts.find((account) => account.id === accountId)?.email);
-      if (
-        !email ||
-        accounts.filter((account) => normalizeEmail(account.email) === email).length !== 1
-      )
-        return extras;
-      web ??= readWeb(signal, refresh);
-      return withClaudeWeb(extras, accountId, accounts, await web);
+    extras(refresh = false) {
+      const read = source.extras(refresh);
+      // OAuth requests can finish at different times. Share one web observation
+      // across this fan-out, then let the next batch reach the reader's cache.
+      let web: ReturnType<ClaudeWebReader> | null = null;
+      return async (provider, accountId) => {
+        const extras = await read(provider, accountId);
+        if (provider !== "claude" || extras.resetCredits !== null) return extras;
+        const email = normalizeEmail(accounts.find((account) => account.id === accountId)?.email);
+        if (
+          !email ||
+          accounts.filter((account) => normalizeEmail(account.email) === email).length !== 1
+        )
+          return extras;
+        web ??= readWeb(signal, refresh);
+        return withClaudeWeb(extras, accountId, accounts, await web);
+      };
     },
   };
 }
@@ -92,12 +108,12 @@ async function poolSource(
     {
       kind: "pool",
       providers: poolProviders(accounts),
-      async extras(provider, accountId) {
+      extras: () => async (provider, accountId) => {
         const token = await poolToken(dataDir, accountId);
         if (token === null) return NO_EXTRAS;
         return provider === "codex"
-          ? codexExtras(token, codexIds.get(accountId) ?? null)
-          : claudeExtras(token);
+          ? codexExtras(token, codexIds.get(accountId) ?? null, signal)
+          : claudeExtras(token, signal);
       },
     },
     accounts.filter((account) => account.provider === "claude"),
@@ -123,6 +139,7 @@ async function collect(
     signal,
   });
   const collected: Collected[] = [];
+  let failures = 0;
   for (const resource of resources) {
     const provider = builtinProvider(resource);
     if (provider === null || !onHost(resource, hostId)) continue;
@@ -141,31 +158,35 @@ async function collect(
       };
       cache.set(key, entry);
     }
-    const measurement = await entry.measurement;
-    const account = builtinAccount(`${pluginId}:${resource.id}`, resource, measurement, 1);
-    if (account !== null)
-      collected.push({
-        provider,
-        account,
-        accountKey: measurement.usage.status === "ok" ? measurement.accountKey : null,
-        email:
-          measurement.usage.status === "ok" && measurement.accountKey
-            ? (measurement.usage.accountEmail ?? null)
-            : null,
-      });
+    let measurement: import("./builtin.ts").Measurement;
+    try {
+      measurement = await entry.measurement;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      failures++;
+      bb.log.warn(`usage-bar: one ${pluginId} usage resource unavailable.`);
+      continue;
+    }
+    const account = collectedAccount(key, resource, measurement, provider);
+    if (account !== null) collected.push(account);
   }
+  if (!collected.length && failures) throw new Error("Usage resources unavailable");
   return collected;
 }
 
 /** The CLI's own signed-in account, unless the CLI switched accounts since collection. */
-async function localExtras(provider: MenuProvider["id"], accountKey: string | null | undefined) {
+async function localExtras(
+  provider: MenuProvider["id"],
+  accountKey: string | null | undefined,
+  signal: AbortSignal,
+) {
   if (!accountKey) return NO_EXTRAS;
   const credential = await (provider === "codex" ? localCodex() : localClaude());
   if (credential === null) return NO_EXTRAS;
   if (credential.accountKey !== accountKey) return NO_EXTRAS;
   return provider === "codex"
-    ? codexExtras(credential.token, credential.accountId)
-    : claudeExtras(credential.token);
+    ? codexExtras(credential.token, credential.accountId, signal)
+    : claudeExtras(credential.token, signal);
 }
 
 /** bb's built-in providers: the account signed in to each CLI on this Mac. */
@@ -179,15 +200,18 @@ async function builtinSource(
 ): Promise<Source> {
   const { primaryHostId } = await bb.sdk.system.config();
   const collected: Collected[] = [];
+  let failures = 0;
   for (const { pluginId } of sources) {
     if (pluginId === POOL_PLUGIN_ID) continue;
     try {
       collected.push(...(await collect(bb, pluginId, primaryHostId, signal, refresh, cache)));
     } catch (error) {
       if (signal.aborted) throw error;
+      failures++;
       bb.log.warn(`usage-bar: usage source ${pluginId} unavailable.`);
     }
   }
+  if (!collected.length && failures) throw new Error("Usage sources unavailable");
   const providers = (["codex", "claude"] as const).flatMap((id) => {
     const accounts = collected
       .filter((entry) => entry.provider === id)
@@ -205,7 +229,8 @@ async function builtinSource(
     {
       kind: "builtin",
       providers,
-      extras: (provider, accountId) => localExtras(provider, identities.get(accountId)),
+      extras: () => (provider, accountId) =>
+        localExtras(provider, identities.get(accountId), signal),
     },
     collected
       .filter((entry) => entry.provider === "claude")

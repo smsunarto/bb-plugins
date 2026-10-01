@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { MenuAccount, MenuProvider, MenuWindow } from "./pool.ts";
+import { timestampSchema } from "./pool.ts";
 
 /**
  * Usage from bb's built-in providers when Account Pooler is not available. They
@@ -40,7 +41,7 @@ const accountFields = {
 
 export const measurementSchema = z.object({
   accountKey: z.string().nullable().default(null),
-  observedAt: z.number().nullable(),
+  observedAt: timestampSchema,
   usage: z.discriminatedUnion("status", [
     z.object({
       status: z.literal("ok"),
