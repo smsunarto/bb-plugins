@@ -969,6 +969,42 @@ describe("Tasks RPC domain API", () => {
     await harness.dispose();
   });
 
+  it("publishes every card a board move renumbers", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const project = store.tasks.createProject({
+      name: "Board",
+      prefix: "BRD",
+      color: "blue",
+    });
+    const ids = ["A", "B", "C"].map(
+      (title) => store.tasks.createTask({ projectId: project.id, title, status: "todo" }).id,
+    );
+    // Moving the bottom card to the top halves the top position each time,
+    // so the column runs out of room and renumbers within ~30 moves.
+    let changedIds: string[] = [];
+    for (let move = 0; move < 40 && changedIds.length < 3; move += 1) {
+      const order = store.tasks
+        .listTasks({ projectId: project.id, statuses: ["todo"] })
+        .map((task) => task.id);
+      const before = harness.realtimeSignals.length;
+      await harness.callRpc("boardMove", {
+        taskId: order.at(-1),
+        status: "todo",
+        beforeTaskId: null,
+        afterTaskId: order[0],
+        authorName: "Sawyer",
+      });
+      changedIds = harness.realtimeSignals
+        .slice(before)
+        .filter((signal) => signal.channel === "tasks:changed")
+        .map((signal) => (signal.payload as { taskId: string }).taskId);
+    }
+    expect([...changedIds].sort()).toEqual([...ids].sort());
+    await harness.dispose();
+  });
+
   it("resolves task keys case-insensitively and degrades bad keys to null", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
     const store = createStore(bb);
@@ -1449,6 +1485,8 @@ function makePullRequest(
     baseRefName: "main",
     headRefName: "bb/fix-the-pill",
     updatedAt: "2026-07-15T10:00:00.000Z",
+    autoMerge: false,
+    inMergeQueue: false,
     checks: {
       state: "passing" as const,
       totalCount: 1,

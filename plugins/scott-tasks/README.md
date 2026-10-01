@@ -11,7 +11,18 @@ it. Both claim the `bb tasks` command, so disable the built-in before enabling
 the fork.
 
 Forked from [`get-bb/bb/plugins/tasks`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/tasks).
-Last synced with `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`).
+Last synced with upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c` on 2026-09-30, except
+[#4464](https://github.com/get-bb/bb/pull/4464) (lifecycle without polling). That
+change drops the thread-status reconcile loop and relies on host changes newer
+than bb 0.44.0, so the fork keeps the loop until a bb release ships them.
+
+The fork also fixes three bugs from upstream's incremental loading
+([#4442](https://github.com/get-bb/bb/pull/4442)):
+
+- A late partial result no longer clears a failed load.
+- A task signal after a failed initial load triggers a refetch.
+- `boardMove` publishes every card a column renumber touches, so the board
+  keeps the server order.
 
 ## Install
 

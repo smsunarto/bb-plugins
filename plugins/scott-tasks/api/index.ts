@@ -697,11 +697,15 @@ export function registerHandlers(
     },
     async deleteTask(input) {
       const task = store.tasks.getTask(input.taskId);
+      const subtasks = task ? store.tasks.listSubtasks(task.id) : [];
       const attachments = attachmentsForTasks(store.tasks, [input.taskId]);
       const deleted = store.tasks.deleteTask(input.taskId);
       if (deleted && task) {
         await removeAttachmentBlobs(bb, store.tasks, attachments);
         publishTasksChanged(bb, task.id, task.projectId);
+        for (const subtask of subtasks) {
+          publishTasksChanged(bb, subtask.id, subtask.projectId);
+        }
       }
       return { deleted };
     },
@@ -727,7 +731,7 @@ export function registerHandlers(
       const current = store.tasks.getTask(input.taskId);
       if (!current) throw new Error(`Task not found: ${input.taskId}`);
       const result = store.transaction(() => {
-        const moved = store.tasks.updatePosition(current.id, {
+        const { task: moved, renumberedTaskIds } = store.tasks.updatePosition(current.id, {
           status: input.status,
           beforeTaskId: input.beforeTaskId,
           afterTaskId: input.afterTaskId,
@@ -738,9 +742,12 @@ export function registerHandlers(
             `Status changed to ${displayName(moved.status)} by ${input.authorName}`,
           ]);
         }
-        return { task: apiTask(store, moved), statusChanged };
+        return { task: apiTask(store, moved), statusChanged, renumberedTaskIds };
       });
       publishTasksChanged(bb, result.task.id, result.task.projectId);
+      for (const taskId of result.renumberedTaskIds) {
+        publishTasksChanged(bb, taskId, result.task.projectId);
+      }
       if (result.statusChanged) publishCommentsChanged(bb, result.task.id);
       return { ok: true, task: result.task };
     },

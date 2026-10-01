@@ -1067,7 +1067,7 @@ export function createTasksStore(db: PluginDatabase) {
     projectId: string,
     status: Task["status"],
     excludedTaskId: string,
-  ): void {
+  ): string[] {
     const rows = db
       .prepare<[string, Task["status"], string], { id: string }>(
         `
@@ -1079,10 +1079,11 @@ export function createTasksStore(db: PluginDatabase) {
       .all(projectId, status, excludedTaskId);
     const update = db.prepare<[number, string]>("UPDATE tasks SET position = ? WHERE id = ?");
     rows.forEach((row, index) => update.run((index + 1) * POSITION_STEP, row.id));
+    return rows.map((row) => row.id);
   }
 
   const updatePositionTransaction = db.transaction(
-    (id: string, input: UpdateTaskPositionInput): Task => {
+    (id: string, input: UpdateTaskPositionInput): { task: Task; renumberedTaskIds: string[] } => {
       const task = requireTask(id);
       if (input.beforeTaskId === id || input.afterTaskId === id) {
         throw new Error("A task cannot be its own reorder neighbor");
@@ -1109,8 +1110,9 @@ export function createTasksStore(db: PluginDatabase) {
           : !before && after
             ? after.position <= MIN_POSITION_GAP
             : false;
+      let renumberedTaskIds: string[] = [];
       if (gapIsExhausted) {
-        renormalizeColumn(task.projectId, input.status, id);
+        renumberedTaskIds = renormalizeColumn(task.projectId, input.status, id);
         before = readNeighbor(input.beforeTaskId);
         after = readNeighbor(input.afterTaskId);
       }
@@ -1136,11 +1138,16 @@ export function createTasksStore(db: PluginDatabase) {
         UPDATE tasks SET status = ?, position = ?, updated_at = ? WHERE id = ?
       `,
       ).run(input.status, position, nowIso(), id);
-      return requireTask(id);
+      return { task: requireTask(id), renumberedTaskIds };
     },
   );
 
-  function updatePosition(id: string, input: UpdateTaskPositionInput): Task {
+  // Renormalizing rewrites every other position in the column, so callers get
+  // those ids back to publish alongside the moved task.
+  function updatePosition(
+    id: string,
+    input: UpdateTaskPositionInput,
+  ): { task: Task; renumberedTaskIds: string[] } {
     return updatePositionTransaction(id, input);
   }
 
