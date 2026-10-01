@@ -216,9 +216,82 @@ test("other agents' changes are labeled and left out of the totals", async () =>
   try {
     await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).not.toBeNull());
     const card = within(host.querySelector<HTMLElement>("[data-last-turn-id]")!);
-    expect(card.getByRole("heading", { name: "Other agents in this checkout" })).toBeTruthy();
+    expect(card.getByRole("heading", { name: /^Other agents in this checkout/ })).toBeTruthy();
     expect(card.getByText("0 files changed")).toBeTruthy();
     expect(card.getByText("+0")).toBeTruthy();
+    // Collapsed by default: the files stay hidden and Expand all has nothing to open.
+    const group = card.getByRole("button", { name: "Other agents in this checkout 1 file" });
+    expect(group.getAttribute("aria-expanded")).toBe("false");
+    expect(card.queryByRole("button", { name: "Expand b.ts" })).toBeNull();
+    expect(card.queryByRole("button", { name: "Expand all" })).toBeNull();
+    fireEvent.click(group);
+    expect(group.getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(card.getByRole("button", { name: "Expand b.ts" })).toBeTruthy());
+    expect(card.getByRole("button", { name: "Expand all" })).toBeTruthy();
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("bulk toggles leave the collapsed others group's files alone", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML =
+    '<div data-timeline-row-id="message-1"><div data-message-column><p>Answer.</p></div></div>';
+  document.body.append(host);
+  const turn: LatestTurn = {
+    ...first,
+    otherPatch:
+      "diff --git a/b.ts b/b.ts\n--- a/b.ts\n+++ b/b.ts\n@@ -1 +1,2 @@\n b\n+from agent B\n",
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-bulk", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).not.toBeNull());
+    const card = within(host.querySelector<HTMLElement>("[data-last-turn-id]")!);
+    const group = card.getByRole("button", { name: "Other agents in this checkout 1 file" });
+    fireEvent.click(group);
+    fireEvent.click(await card.findByRole("button", { name: "Expand b.ts" }));
+    fireEvent.click(group);
+    fireEvent.click(card.getByRole("button", { name: "Expand all" }));
+    expect(card.getByRole("button", { name: "Collapse first.ts" })).toBeTruthy();
+    fireEvent.click(group);
+    expect(await card.findByRole("button", { name: "Collapse b.ts" })).toBeTruthy();
+    fireEvent.click(group);
+    fireEvent.click(card.getByRole("button", { name: "Collapse all" }));
+    fireEvent.click(group);
+    expect(await card.findByRole("button", { name: "Collapse b.ts" })).toBeTruthy();
+    expect(card.getByRole("button", { name: "Expand first.ts" })).toBeTruthy();
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("a workspace labeled 'other' is not mistaken for other agents' changes", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML =
+    '<div data-timeline-row-id="message-1"><div data-message-column><p>Answer.</p></div></div>';
+  document.body.append(host);
+  const turn: LatestTurn = {
+    ...first,
+    changes: [{ ...first.changes[0]!, id: "edit-2", path: "elsewhere.ts", workspace: "other" }],
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "thread-other-label", projectId: "p", isCompactViewport: false },
+    { rpc: { latestTurn: async () => ({ turn }) } },
+  );
+  try {
+    await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).not.toBeNull());
+    const card = within(host.querySelector<HTMLElement>("[data-last-turn-id]")!);
+    expect(card.getByRole("button", { name: "Expand elsewhere.ts" })).toBeTruthy();
+    expect(card.queryByRole("button", { name: /^Other agents/ })).toBeNull();
   } finally {
     slot.unmount();
     host.remove();

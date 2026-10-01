@@ -65,6 +65,35 @@
   font-weight: 500;
   line-height: 20px;
 }
+.last-turn-diff-group-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.last-turn-diff-group-toggle svg {
+  /* Rotation keeps the 8px layout box, so reserve room for the 12px it draws. */
+  margin-inline: 2px;
+}
+.last-turn-diff-group-toggle:hover {
+  color: var(--foreground);
+}
+.last-turn-diff-group-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.last-turn-diff-group-count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
 .last-turn-diff-file {
   border-top: 1px solid var(--border);
 }
@@ -111,13 +140,16 @@
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
-.last-turn-diff-chevron svg {
+.last-turn-diff-chevron svg,
+.last-turn-diff-group-toggle svg {
+  flex: 0 0 auto;
   width: 8px;
   height: 12px;
   transform: rotate(-90deg);
   transition: transform 150ms;
 }
-.last-turn-diff-chevron[aria-expanded="true"] svg {
+.last-turn-diff-chevron[aria-expanded="true"] svg,
+.last-turn-diff-group-toggle[aria-expanded="true"] svg {
   transform: rotate(0deg);
 }
 .last-turn-diff-recorded-counts {
@@ -128,7 +160,8 @@
   font-size: 11px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .last-turn-diff-chevron svg {
+  .last-turn-diff-chevron svg,
+  .last-turn-diff-group-toggle svg {
     transition: none;
   }
 }

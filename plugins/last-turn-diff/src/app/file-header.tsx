@@ -9,6 +9,15 @@ import type { Change } from "../shared/contract.ts";
 // the 12px chevron beside it.
 const HEADER_ICON_CSS = "[data-change-icon]{width:12px;height:12px}";
 
+/** Points down; CSS rotates it right while its toggle is collapsed. */
+export function Chevron() {
+  return (
+    <svg viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+      <path d="M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
+    </svg>
+  );
+}
+
 function stripPrefix(name: string | undefined): string | undefined {
   return name?.replace(/^[ab]\//, "");
 }
@@ -65,9 +74,7 @@ export function FileHeader({
       aria-controls={bodyId}
       onClick={onToggle}
     >
-      <svg viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
-        <path d="M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
-      </svg>
+      <Chevron />
     </button>
   );
   return fileDiff ? (
