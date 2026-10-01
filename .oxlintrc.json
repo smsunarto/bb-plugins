@@ -59,7 +59,7 @@
       }
     },
     {
-      "files": ["plugins/tasks-fork/**"],
+      "files": ["plugins/scott-tasks/**"],
       "rules": {
         "no-control-regex": "off",
         "jsx-a11y/click-events-have-key-events": "off",

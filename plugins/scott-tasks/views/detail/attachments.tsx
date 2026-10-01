@@ -10,7 +10,7 @@ let tokenPromise: Promise<string> | null = null;
 
 function pluginToken(): Promise<string> {
   tokenPromise ??= (async () => {
-    const response = await fetch("/api/v1/plugins/tasks-fork/token", {
+    const response = await fetch("/api/v1/plugins/scott-tasks/token", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
@@ -44,7 +44,7 @@ export async function uploadAttachment(
     mime: file.type || "application/octet-stream",
   });
   const response = await fetch(
-    `/api/v1/plugins/tasks-fork/http/attachments/upload?${query.toString()}`,
+    `/api/v1/plugins/scott-tasks/http/attachments/upload?${query.toString()}`,
     {
       method: "POST",
       headers: { "x-bb-plugin-token": token },

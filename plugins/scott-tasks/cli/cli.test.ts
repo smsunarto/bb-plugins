@@ -1413,7 +1413,7 @@ describe("bb tasks CLI", () => {
           "update",
           "FILE-1",
           "--description",
-          `![pixel](/api/v1/plugins/tasks-fork/http/attachments/download?attachmentId=${pngAttachment.id})`,
+          `![pixel](/api/v1/plugins/scott-tasks/http/attachments/download?attachmentId=${pngAttachment.id})`,
         ]),
       );
       const signalsBeforeReferencedRemove = harness.realtimeSignals.length;

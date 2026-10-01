@@ -5,12 +5,21 @@ agents, and keeping the task record connected to the threads doing the work.
 It provides projects and folders, task keys, statuses and priorities, labels,
 subtasks, Markdown comments, attachments, agent presets, and a full CLI.
 
+This fork is published as `@smsunarto/bb-plugin-scott-tasks` with plugin ID
+`scott-tasks`. bb reserves the built-in's `tasks` ID, so the fork cannot reuse
+it. Both claim the `bb tasks` command, so disable the built-in before enabling
+the fork.
+
+Forked from [`get-bb/bb/plugins/tasks`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/tasks).
+Last synced with `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`).
+
 ## Install
 
-Install Tasks from the official plugins that BB includes:
+Install the fork from a checkout of this repository:
 
 ```sh
-bb plugin install tasks
+bb plugin disable tasks
+bb plugin install /path/to/bb-plugins/plugins/scott-tasks --yes
 ```
 
 The plugin adds the Tasks sidebar panel, the `bb tasks` command, and an agent
@@ -18,7 +27,7 @@ skill that teaches workers how to report progress back to tasks.
 
 ## Quick start
 
-Install the plugin with `bb plugin install tasks`. Then use the `bb tasks` CLI
+Install the plugin as shown above. Then use the `bb tasks` CLI
 to create a tracker project. Link it to the bb project where delegated agents
 will run:
 

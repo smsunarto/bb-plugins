@@ -1,7 +1,7 @@
 # Task attachment HTTP surface
 
 Attachment upload uses a raw request body at
-`POST /api/v1/plugins/tasks-fork/http/attachments/upload`. Raw bytes are the
+`POST /api/v1/plugins/scott-tasks/http/attachments/upload`. Raw bytes are the
 simplest supported format, but local-auth non-GET plugin routes require JSON,
 so upload uses plugin-token auth. Pass the token in `x-bb-plugin-token` (or the
 `token` query parameter).
@@ -12,8 +12,8 @@ and `x-mime-type` headers. Exactly one owner is required. The response is
 `{ attachmentId, url }`.
 
 The returned local-auth frontend URL is
-`GET /api/v1/plugins/tasks-fork/http/attachments/download?attachmentId=...`.
+`GET /api/v1/plugins/scott-tasks/http/attachments/download?attachmentId=...`.
 Deletion is
-`DELETE /api/v1/plugins/tasks-fork/http/attachments/delete?attachmentId=...` and,
+`DELETE /api/v1/plugins/scott-tasks/http/attachments/delete?attachmentId=...` and,
 because it is a local-auth non-GET request, must use `Content-Type:
 application/json`.

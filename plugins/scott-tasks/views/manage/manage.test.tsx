@@ -315,7 +315,7 @@ describe("NewTaskDialog attachments", () => {
     uploadGate = null;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/plugins/tasks-fork/token")) {
+      if (url.includes("/plugins/scott-tasks/token")) {
         return new Response(JSON.stringify({ token: "test-token" }), {
           status: 200,
         });

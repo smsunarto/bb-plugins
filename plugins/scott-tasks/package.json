@@ -1,18 +1,18 @@
 {
-  "name": "@smsunarto/bb-plugin-tasks-fork",
+  "name": "@smsunarto/bb-plugin-scott-tasks",
   "version": "0.1.2",
   "description": "Plan and track work in BB, delegate tasks to agents, and keep task context connected to worker threads.",
   "private": true,
   "license": "MIT",
   "author": "Scott Sunarto",
-  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/tasks-fork#readme",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/scott-tasks#readme",
   "bugs": {
     "url": "https://github.com/smsunarto/bb-plugins/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/smsunarto/bb-plugins.git",
-    "directory": "plugins/tasks-fork"
+    "directory": "plugins/scott-tasks"
   },
   "type": "module",
   "files": [
