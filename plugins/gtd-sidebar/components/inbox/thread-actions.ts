@@ -46,8 +46,8 @@ export interface ThreadAction {
 }
 
 /**
- * GTD lifecycle actions, then pin and delete. The phone sheet shows this plan;
- * the desktop context menu inserts BB's navigation and organization actions.
+ * GTD lifecycle actions, then pin and delete. Both menus insert BB's
+ * navigation and organization actions through ThreadMenuActions.
  * The card's hover buttons pick single entries out of it.
  */
 export type ThreadActionPlan = readonly ThreadAction[];

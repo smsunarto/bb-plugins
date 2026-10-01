@@ -27,7 +27,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     );
     assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
-  }, 30_000);
+  }, 60_000);
 } else {
   const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
     JSDOM: new (
@@ -328,6 +328,30 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     );
     assert.ok(element);
     return element;
+  }
+
+  async function openMenu(anchor: HTMLAnchorElement, compact: boolean) {
+    if (compact) {
+      fireEvent.mouseDown(anchor, { button: 0 });
+      await screen.findByRole("menu", { name: "Thread actions" });
+      fireEvent.mouseUp(anchor, { button: 0 });
+    } else {
+      fireEvent.contextMenu(anchor);
+    }
+  }
+
+  async function holdInRenameInput(input: HTMLElement, draft: string) {
+    fireEvent.touchStart(input, { touches: [{ clientX: 0, clientY: 0 }] });
+    fireEvent.mouseDown(input, { button: 0 });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 650));
+    });
+    fireEvent.touchEnd(input);
+    fireEvent.mouseUp(input);
+    assert.equal(screen.queryByRole("menu"), null);
+    assert.equal(screen.getAllByRole("textbox", { name: "Thread name" }).length, 1);
+    assert.equal((input as HTMLInputElement).value, draft);
+    assert.equal(document.activeElement, input);
   }
 
   function rowIds(slot: RenderedSlot): string[] {
@@ -1320,81 +1344,145 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(oldNavigate.mock.calls.length, 0);
     });
 
-    it("keeps GTD actions first and restores native actions for the clicked row", async () => {
-      const currentActions = actions();
-      const host = { ...hostState([thread("a"), thread("b")]), actions: currentActions };
-      const view = mount(host, { activeThreadId: "b" });
-      fireEvent.contextMenu(row(view.slot, "a"));
-      await act(async () => {});
-      assert.deepEqual(
-        screen.getAllByRole("menuitem").map((item) => item.textContent),
-        [
-          "Settle",
-          "Snooze",
-          "Open in split",
-          "Copy thread link",
-          "Mark unread",
-          "Pin",
-          "Rename",
-          "Delete",
-        ],
-      );
-      assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
-      fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
-      assert.deepEqual(currentActions.open.mock.calls, [["a", { split: true }]]);
-      fireEvent.contextMenu(row(view.slot, "a"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
-      assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
+    it.each([false, true])(
+      "allows mobile menu scrolling with haptics enabled, overflow=%s",
+      async (overflow) => {
+        const userAgent = Object.getOwnPropertyDescriptor(navigator, "userAgent");
+        Object.defineProperty(navigator, "userAgent", { configurable: true, value: "iPhone" });
+        const prototype = dom.window.Element.prototype;
+        const clientHeight = Object.getOwnPropertyDescriptor(prototype, "clientHeight")!;
+        const scrollHeight = Object.getOwnPropertyDescriptor(prototype, "scrollHeight")!;
+        Object.defineProperty(prototype, "clientHeight", {
+          configurable: true,
+          get: () => (overflow ? 100 : 400),
+        });
+        Object.defineProperty(prototype, "scrollHeight", { configurable: true, get: () => 400 });
+        try {
+          const view = mount(hostState([thread("a")]), { isCompactViewport: true }, false, "", {
+            settings: { mobileHaptics: true },
+          });
+          await openMenu(row(view.slot, "a"), true);
+          const menu = screen.getByRole("menu", { name: "Thread actions" });
+          assert.equal(within(menu).getAllByRole("menuitem").length, 7);
+          assert.equal(menu.querySelectorAll("[data-haptic-trigger]").length, overflow ? 0 : 7);
+        } finally {
+          cleanup();
+          Object.defineProperty(prototype, "clientHeight", clientHeight);
+          Object.defineProperty(prototype, "scrollHeight", scrollHeight);
+          if (userAgent) Object.defineProperty(navigator, "userAgent", userAgent);
+          else Reflect.deleteProperty(navigator, "userAgent");
+        }
+      },
+    );
 
-      const writeText = mock(async (_text: string) => {});
-      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-      fireEvent.contextMenu(row(view.slot, "a"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Copy thread link" }));
-      await act(async () => {});
-      assert.deepEqual(writeText.mock.calls, [["http://localhost/projects/one/threads/a"]]);
+    it.each([false, true])(
+      "keeps all actions in order for the clicked row with mobile=%s",
+      async (isCompactViewport) => {
+        const currentActions = actions();
+        const host = { ...hostState([thread("a"), thread("b")]), actions: currentActions };
+        const view = mount(host, { activeThreadId: "b", isCompactViewport });
+        await openMenu(row(view.slot, "a"), isCompactViewport);
+        await act(async () => {});
+        assert.deepEqual(
+          screen.getAllByRole("menuitem").map((item) => item.textContent),
+          [
+            "Settle",
+            "Snooze",
+            ...(!isCompactViewport ? ["Open in split"] : []),
+            "Copy thread link",
+            "Mark unread",
+            "Pin",
+            "Rename",
+            "Delete",
+          ],
+        );
+        assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
+        if (!isCompactViewport) {
+          fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
+          assert.deepEqual(currentActions.open.mock.calls, [["a", { split: true }]]);
+          await openMenu(row(view.slot, "a"), isCompactViewport);
+        } else {
+          assert.equal(screen.queryByRole("menuitem", { name: "Open in split" }), null);
+        }
+        fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
+        assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
 
-      fireEvent.contextMenu(row(view.slot, "a"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-      const title = await screen.findByRole("textbox", { name: "Thread name" });
-      fireEvent.change(title, { target: { value: "  New title  " } });
-      fireEvent.keyDown(title, { key: "Enter" });
-      await waitFor(() =>
-        assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null),
-      );
-      assert.deepEqual(currentActions.rename.mock.calls, [["a", "New title"]]);
-    });
+        const writeText = mock(async (_text: string) => {});
+        Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+        await openMenu(row(view.slot, "a"), isCompactViewport);
+        fireEvent.click(screen.getByRole("menuitem", { name: "Copy thread link" }));
+        await act(async () => {});
+        assert.deepEqual(writeText.mock.calls, [["http://localhost/projects/one/threads/a"]]);
 
-    it("marks an unread row read without acting on the selected thread", async () => {
-      const currentActions = actions();
-      const view = mount(
-        { ...hostState([thread("a", { isUnread: true }), thread("b")]), actions: currentActions },
-        { activeThreadId: "b" },
-      );
-      fireEvent.contextMenu(row(view.slot, "a"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Mark read" }));
-      assert.deepEqual(currentActions.setRead.mock.calls, [["a", true]]);
-      await act(async () => {});
-    });
+        await openMenu(row(view.slot, "a"), isCompactViewport);
+        fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+        if (isCompactViewport) {
+          assert.equal(
+            document.activeElement,
+            screen.getByRole("textbox", { name: "Thread name" }),
+          );
+        }
+        const title = await screen.findByRole("textbox", { name: "Thread name" });
+        await waitFor(() => assert.equal(document.activeElement, title));
+        fireEvent.change(title, { target: { value: "  New title  " } });
+        if (isCompactViewport) await holdInRenameInput(title, "  New title  ");
+        fireEvent.keyDown(title, { key: "Enter" });
+        await waitFor(() =>
+          assert.equal(screen.queryByRole("textbox", { name: "Thread name" }) === null, true),
+        );
+        assert.deepEqual(currentActions.rename.mock.calls, [["a", "New title"]]);
+      },
+    );
 
-    it("opens settled threads in a split from the menu and cancels rename without saving", async () => {
-      const currentActions = actions();
-      const host = hostState([thread("selected"), settledThread("settled")]);
-      host.actions = currentActions;
-      const view = mount(host, { activeThreadId: "selected" });
-      fireEvent.click(view.slot.getByRole("button", { name: "Settled (1)" }));
-      fireEvent.contextMenu(row(view.slot, "settled"));
-      assert.equal(screen.getAllByRole("menuitem")[0]?.textContent, "Un-settle");
-      assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
-      fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
-      assert.deepEqual(currentActions.open.mock.calls, [["settled", { split: true }]]);
-      fireEvent.contextMenu(row(view.slot, "settled"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-      const title = await screen.findByRole("textbox", { name: "Thread name" });
-      fireEvent.change(title, { target: { value: "Unsaved title" } });
-      fireEvent.keyDown(title, { key: "Escape" });
-      assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null);
-      assert.equal(currentActions.rename.mock.calls.length, 0);
-    });
+    it.each([false, true])(
+      "marks the target row read with mobile=%s",
+      async (isCompactViewport) => {
+        const currentActions = actions();
+        const view = mount(
+          { ...hostState([thread("a", { isUnread: true }), thread("b")]), actions: currentActions },
+          { activeThreadId: "b", isCompactViewport },
+        );
+        await openMenu(row(view.slot, "a"), isCompactViewport);
+        fireEvent.click(screen.getByRole("menuitem", { name: "Mark read" }));
+        assert.deepEqual(currentActions.setRead.mock.calls, [["a", true]]);
+        await act(async () => {});
+      },
+    );
+
+    it.each([false, true])(
+      "splits and renames settled threads with mobile=%s",
+      async (isCompactViewport) => {
+        const currentActions = actions();
+        const host = hostState([thread("selected"), settledThread("settled")]);
+        host.actions = currentActions;
+        const view = mount(host, { activeThreadId: "selected", isCompactViewport });
+        fireEvent.click(view.slot.getByRole("button", { name: "Settled (1)" }));
+        await openMenu(row(view.slot, "settled"), isCompactViewport);
+        assert.equal(screen.getAllByRole("menuitem")[0]?.textContent, "Un-settle");
+        assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
+        if (!isCompactViewport) {
+          fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
+          assert.deepEqual(currentActions.open.mock.calls, [["settled", { split: true }]]);
+          await openMenu(row(view.slot, "settled"), isCompactViewport);
+        } else {
+          assert.equal(screen.queryByRole("menuitem", { name: "Open in split" }), null);
+        }
+        fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+        if (isCompactViewport) {
+          assert.equal(
+            document.activeElement,
+            screen.getByRole("textbox", { name: "Thread name" }),
+          );
+        }
+        const title = await screen.findByRole("textbox", { name: "Thread name" });
+        await waitFor(() => assert.equal(document.activeElement, title));
+        fireEvent.change(title, { target: { value: "Unsaved title" } });
+        if (isCompactViewport) await holdInRenameInput(title, "Unsaved title");
+        fireEvent.keyDown(title, { key: "Escape" });
+        assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null);
+        assert.equal(currentActions.rename.mock.calls.length, 0);
+      },
+    );
 
     it("draws the rename editor in its title's typography on cards and slim rows", async () => {
       // Layout-only classes differ on purpose: the editor takes clicks and
@@ -1423,7 +1511,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         const wrapper = input.closest("[data-sidebar-rename-editor]")!.parentElement;
         fireEvent.keyDown(input, { key: "Escape" });
         await waitFor(() =>
-          assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null),
+          assert.equal(screen.queryByRole("textbox", { name: "Thread name" }) === null, true),
         );
         return wrapper;
       };
@@ -1488,7 +1576,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
       fireEvent.keyDown(screen.getByRole("textbox", { name: "Thread name" }), { key: "Enter" });
       await waitFor(() =>
-        assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null),
+        assert.equal(screen.queryByRole("textbox", { name: "Thread name" }) === null, true),
       );
       assert.deepEqual(currentActions.rename.mock.calls, [
         ["a", "Renamed"],
@@ -1521,7 +1609,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.change(moved, { target: { value: "Half typed, then done" } });
       fireEvent.keyDown(moved, { key: "Enter" });
       await waitFor(() =>
-        assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null),
+        assert.equal(screen.queryByRole("textbox", { name: "Thread name" }) === null, true),
       );
       assert.deepEqual(currentActions.rename.mock.calls, [["a", "Half typed, then done"]]);
     });

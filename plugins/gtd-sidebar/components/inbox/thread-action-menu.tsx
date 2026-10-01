@@ -1,14 +1,11 @@
-import { useSettings } from "@get-bb/plugin-sdk/app";
 import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Glass } from "@samasante/liquid-glass";
-import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { MENU_GLASS } from "../../lib/menu-glass";
-import { attachHapticTrigger } from "../../lib/ios-haptics";
-import type { ThreadActionPlan } from "./thread-actions";
+import { ThreadMenuActions, type ThreadMenuActionsProps } from "./thread-menu-actions";
 
 /**
  * The compact row's action menu, drawn like an iOS context menu: the rest of
@@ -29,18 +26,31 @@ const SHARED_LAYER_CLASS = cn(
 
 export function CompactThreadActionMenu({
   plan,
+  thread,
+  command,
+  rename,
+  canSplit,
   open,
   onOpenChange,
   anchorRef,
   highlightContent,
-}: {
-  plan: ThreadActionPlan;
+}: ThreadMenuActionsProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef?: RefObject<HTMLElement | null>;
   highlightContent?: ReactNode;
 }) {
-  const { values } = useSettings();
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
+  const [scrollable, setScrollable] = useState(false);
+  useLayoutEffect(() => {
+    if (!content) return;
+    const measure = () => setScrollable(content.scrollHeight > content.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    if (content.firstElementChild) observer.observe(content.firstElementChild);
+    return () => observer.disconnect();
+  }, [content]);
   const [rect, setRect] = useState<DOMRect | null>(null);
   // Glass sizes its lens from getBoundingClientRect, which the sheet's scale-in
   // shrinks on the first frame, and a ResizeObserver never fires for a
@@ -70,18 +80,22 @@ export function CompactThreadActionMenu({
       </HighlightedThreadAnchor>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
+          ref={setContent}
           {...usePortalScopeProps()}
           aria-label="Thread actions"
+          aria-labelledby={undefined}
+          onCloseAutoFocus={rename.onCloseAutoFocus}
           side="top"
           align="start"
           sideOffset={6}
           collisionPadding={12}
           style={{
+            maxHeight: "var(--radix-dropdown-menu-content-available-height)",
             width: rect ? `${rect.width}px` : "var(--radix-dropdown-menu-trigger-width)",
           }}
           onPointerDown={(event) => event.stopPropagation()}
           className={cn(
-            "group/sheet relative isolate z-50 overflow-hidden text-popover-foreground",
+            "group/sheet relative isolate z-50 overflow-x-hidden overflow-y-auto text-popover-foreground",
             SHARED_LAYER_CLASS,
             "origin-[var(--radix-dropdown-menu-content-transform-origin)] will-change-transform",
             // UIKit's context-menu spring: a fast rise with a small overshoot.
@@ -105,24 +119,16 @@ export function CompactThreadActionMenu({
               risen && "gtd-risen",
             )}
           >
-            {plan.map((action) => (
-              <DropdownMenu.Item
-                key={action.id}
-                ref={(element) => {
-                  if (values?.mobileHaptics === true) attachHapticTrigger(element);
-                  else element?.querySelector("[data-haptic-trigger]")?.remove();
-                }}
-                onSelect={action.execute}
-                className={cn(
-                  "relative flex h-[44px] cursor-default select-none items-center gap-3.5 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none",
-                  "data-[highlighted]:bg-black/[0.06] dark:data-[highlighted]:bg-white/10",
-                  action.destructive ? "text-[#ff453a]" : "text-popover-foreground",
-                )}
-              >
-                <Icon name={action.icon} className="size-[20px] shrink-0" />
-                <span className="truncate">{action.label}</span>
-              </DropdownMenu.Item>
-            ))}
+            <ThreadMenuActions
+              thread={thread}
+              command={command}
+              plan={plan}
+              rename={rename}
+              compact
+              canSplit={canSplit}
+              haptics={!scrollable}
+              closeMenu={() => onOpenChange(false)}
+            />
           </Glass>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

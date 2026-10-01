@@ -6,6 +6,7 @@
 // The session is keyed by thread, not by the row that opened it: GTD moves a
 // row between shelves while the list is live, and the remounted row picks
 // the open editor and its draft back up instead of orphaning them.
+import { flushSync } from "react-dom";
 import {
   createContext,
   useCallback,
@@ -124,14 +125,16 @@ export function RenameProvider({
  * Rename one thread in place. A row redraws only when its own editor opens or
  * closes.
  *
- * `startEditingFromMenu` waits for the menu to hand focus back
+ * On desktop, `startEditingFromMenu` waits for the menu to hand focus back
  * (`onCloseAutoFocus`) before it opens the editor, or the returning focus
- * would blur, and so save, the editor the moment it appears.
+ * would blur, and so save, the editor the moment it appears. Touch menus
+ * close and focus synchronously to preserve keyboard activation from the tap.
  */
 export function useThreadRename(threadId: string, name: string) {
   const store = useContext(RenameContext);
   if (store === null) throw new Error("useThreadRename needs a RenameProvider");
   const compact = useIsCompactViewport();
+  const inputRef = useRef<HTMLInputElement>(null);
   const pendingMenuRename = useRef<(() => void) | null>(null);
   const isEditing = useSyncExternalStore(store.subscribe, () => store.get()?.threadId === threadId);
   const startEditing = useCallback(() => {
@@ -139,7 +142,7 @@ export function useThreadRename(threadId: string, name: string) {
   }, [name, store, threadId]);
 
   return {
-    editor: isEditing ? <RenameEditor store={store} /> : null,
+    editor: isEditing ? <RenameEditor store={store} inputRef={inputRef} /> : null,
     isEditing,
     startEditing,
     /** For the row's link: a double-click renames, except on touch screens. */
@@ -150,9 +153,20 @@ export function useThreadRename(threadId: string, name: string) {
             event.preventDefault();
             startEditing();
           },
-    startEditingFromMenu: () => {
-      if (compact) startEditing();
-      else pendingMenuRename.current = startEditing;
+    startEditingFromMenu: (closeMenu?: () => void) => {
+      if (compact && closeMenu) {
+        // Keep focus in the tap event so iOS can open its software keyboard.
+        // The menu's later close-focus event must not return to its trigger.
+        pendingMenuRename.current = () => inputRef.current?.focus({ preventScroll: true });
+        flushSync(() => {
+          closeMenu();
+          startEditing();
+        });
+        inputRef.current?.focus({ preventScroll: true });
+        inputRef.current?.select();
+      } else {
+        pendingMenuRename.current = startEditing;
+      }
     },
     onCloseAutoFocus: (event: Event) => {
       const begin = pendingMenuRename.current;

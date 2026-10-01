@@ -181,10 +181,12 @@ const ThreadCardBody = memo(function ThreadCardBody({
     setPinned: (pinned) => command({ kind: "pin", threadId: thread.id, pinned }),
     requestDelete: () => command({ kind: "request-delete", threadId: thread.id }),
   });
+  const titleText = thread.displayTitle;
+  const rename = useThreadRename(thread.id, titleText);
   const [isMenuOpen, setMenuOpen] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
-    enabled: isCompactViewport,
+    enabled: isCompactViewport && !rename.isEditing,
   });
 
   const setCardRef = (node: HTMLDivElement | null) => {
@@ -200,14 +202,12 @@ const ThreadCardBody = memo(function ThreadCardBody({
     : childCount > 0
       ? `${childCount} subthreads`
       : undefined;
-  const titleText = thread.displayTitle;
   // The metadata line starts under the title, past the globe HostLead draws.
   const remote = useRemoteMachine(thread.host);
-  const rename = useThreadRename(thread.id, titleText);
 
-  const title = (
+  const title = (editable: boolean) => (
     <ThreadTitle
-      editor={rename.editor}
+      editor={editable ? rename.editor : null}
       title={titleText}
       isNaming={isNaming}
       isActive={isActive}
@@ -219,15 +219,15 @@ const ThreadCardBody = memo(function ThreadCardBody({
   // The project lives in the group header above the row. The row leads with
   // the machine globe only when the thread runs elsewhere; a local title
   // starts straight after the disclosure column.
-  const rowTitle = (
+  const rowTitle = (editable: boolean) => (
     <>
       <HostLead host={thread.host} />
-      {title}
+      {title(editable)}
     </>
   );
   const mobileRow = (interactive: boolean) => (
     <MobileThreadSummary
-      title={rowTitle}
+      title={rowTitle(interactive)}
       thread={statusThread}
       shortcut={shortcut}
       activity={thread.activity}
@@ -242,6 +242,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       command={command}
       plan={plan}
       rename={rename}
+      canSplit={onSplitPointerDown !== undefined}
       disabled={isCompactViewport}
     >
       <div>
@@ -302,7 +303,11 @@ const ThreadCardBody = memo(function ThreadCardBody({
           />
           {isCompactViewport ? (
             <CompactThreadActionMenu
+              thread={thread}
+              command={command}
+              rename={rename}
               plan={plan}
+              canSplit={false}
               open={isMenuOpen}
               onOpenChange={setMenuOpen}
               anchorRef={cardRef}
@@ -324,7 +329,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
               mobileRow(true)
             ) : (
               <DesktopThreadSummary
-                title={rowTitle}
+                title={rowTitle(true)}
                 thread={statusThread}
                 shortcut={shortcut}
                 plan={plan}

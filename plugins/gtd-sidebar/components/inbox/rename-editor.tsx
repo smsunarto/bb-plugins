@@ -1,7 +1,14 @@
 // Ported from get-bb/bb `plugins/thread-list/app/rows/SidebarRenameEditor.tsx`
 // at desktop-v0.44.0 (MIT), without the clear button bb draws for names that
 // can fall back to a default. A thread title cannot.
-import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useSyncExternalStore,
+  type RefObject,
+  type SyntheticEvent,
+} from "react";
 import { cn } from "../../lib/utils";
 import type { RenameStore } from "./inline-rename";
 
@@ -30,10 +37,19 @@ export function renameError(error: unknown): { error: string; cannotRetry: boole
  * Focus returns to the row's `[data-sidebar-rename-anchor]` after a keyboard
  * save or cancel, found through the enclosing `[data-sidebar-rename-row]`.
  */
-export function RenameEditor({ store }: { store: RenameStore }) {
+function stopRowGesture(event: SyntheticEvent) {
+  event.stopPropagation();
+}
+
+export function RenameEditor({
+  store,
+  inputRef,
+}: {
+  store: RenameStore;
+  inputRef: RefObject<HTMLInputElement | null>;
+}) {
   const session = useSyncExternalStore(store.subscribe, store.get);
   const isPending = Boolean(session?.pending);
-  const inputRef = useRef<HTMLInputElement>(null);
   const groupRef = useRef<HTMLSpanElement>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
   const restoreFocusRef = useRef(false);
@@ -55,7 +71,7 @@ export function RenameEditor({ store }: { store: RenameStore }) {
       openingRef.current = false;
     });
     return () => cancelAnimationFrame(frame);
-  }, [store]);
+  }, [store, inputRef]);
 
   const restoreFocus = () => {
     const anchor = anchorRef.current;
@@ -115,14 +131,16 @@ export function RenameEditor({ store }: { store: RenameStore }) {
         event.preventDefault();
         event.stopPropagation();
       }}
-      onPointerDown={(event) => event.stopPropagation()}
-      onPointerUp={(event) => event.stopPropagation()}
-      onContextMenu={(event) => event.stopPropagation()}
+      onTouchStart={stopRowGesture}
+      onMouseDown={stopRowGesture}
+      onPointerDown={stopRowGesture}
+      onPointerUp={stopRowGesture}
+      onContextMenu={stopRowGesture}
       onDragStart={(event) => {
         event.preventDefault();
         event.stopPropagation();
       }}
-      onKeyUp={(event) => event.stopPropagation()}
+      onKeyUp={stopRowGesture}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.nativeEvent.isComposing || composingRef.current) return;

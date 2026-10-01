@@ -110,7 +110,7 @@ const SlimRowBody = memo(function SlimRowBody({
   const [isMenuOpen, setMenuOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
-    enabled: isCompactViewport,
+    enabled: isCompactViewport && !rename.isEditing,
   });
 
   const compact = compactThreads && !isCompactViewport;
@@ -149,6 +149,7 @@ const SlimRowBody = memo(function SlimRowBody({
       command={command}
       plan={plan}
       rename={rename}
+      canSplit={onSplitPointerDown !== undefined}
       disabled={isCompactViewport}
     >
       <div>
@@ -240,7 +241,11 @@ const SlimRowBody = memo(function SlimRowBody({
           />
           {isCompactViewport ? (
             <CompactThreadActionMenu
+              thread={thread}
+              command={command}
+              rename={rename}
               plan={plan}
+              canSplit={false}
               open={isMenuOpen}
               onOpenChange={setMenuOpen}
               anchorRef={rowRef}
