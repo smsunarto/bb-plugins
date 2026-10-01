@@ -40,6 +40,10 @@
       "source": "./plugins/monokai"
     },
     {
+      "name": "review",
+      "source": "./plugins/review"
+    },
+    {
       "name": "my-stack",
       "source": "./plugins/my-stack"
     },

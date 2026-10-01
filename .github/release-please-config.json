@@ -52,6 +52,11 @@
       "release-type": "node",
       "component": "monokai",
       "package-name": "@smsunarto/bb-plugin-monokai"
+    },
+    "plugins/review": {
+      "release-type": "node",
+      "component": "review",
+      "package-name": "@smsunarto/bb-plugin-review"
     }
   }
 }
