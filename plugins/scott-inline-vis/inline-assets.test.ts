@@ -1,9 +1,8 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { prepareInlineAssets, resolvePreviewAssetUrl } from "./inline-assets.ts";
 
-installDom();
-afterEach(() => mock.restore());
+afterEach(() => vi.restoreAllMocks());
 const root = new URL("https://scott.getbb.app/api/v1/file-previews/lease/");
 const documentUrl = new URL("player.html", root);
 
@@ -12,8 +11,8 @@ describe("relative preview asset URLs", () => {
     expect(resolvePreviewAssetUrl("media/detail%20clip.mp4#t=4", documentUrl, root)?.href).toBe(
       `${root.href}media/detail%20clip.mp4#t=4`,
     );
-    expect(resolvePreviewAssetUrl("clip%20%231.mp4", documentUrl, root)?.pathname).toEndWith(
-      "/clip%20%231.mp4",
+    expect(resolvePreviewAssetUrl("clip%20%231.mp4", documentUrl, root)?.pathname).toMatch(
+      /\/clip%20%231\.mp4$/,
     );
   });
 
@@ -41,10 +40,12 @@ describe("relative preview asset URLs", () => {
 });
 
 function transport() {
-  const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(new Blob(["video"], { type: "video/mp4" })),
-  );
-  const create = spyOn(URL, "createObjectURL").mockReturnValue("blob:https://scott.getbb.app/test");
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response("video", { headers: { "content-type": "video/mp4" } }));
+  const create = vi
+    .spyOn(URL, "createObjectURL")
+    .mockReturnValue("blob:https://scott.getbb.app/test");
   return { fetch, create };
 }
 
@@ -57,14 +58,14 @@ test("loads video and source src once through the authenticated preview boundary
     signal,
   );
   expect(fetch).toHaveBeenCalledTimes(1);
-  expect(String(fetch.mock.calls[0]![0])).toEndWith("/file-previews/lease/media/a.mp4");
+  expect(String(fetch.mock.calls[0]![0])).toMatch(/\/file-previews\/lease\/media\/a\.mp4$/);
   expect(fetch.mock.calls[0]![1]).toEqual({
     credentials: "same-origin",
     redirect: "error",
     signal,
   });
   const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
-  expect(doc.querySelector("base")?.href).toEndWith("/file-previews/lease/player.html");
+  expect(doc.querySelector("base")?.href).toMatch(/\/file-previews\/lease\/player\.html$/);
   expect(doc.querySelector("video")?.hasAttribute("src")).toBe(false);
   expect(result.assets[0]?.hash).toBe("#t=2");
   expect(result.assets[0]?.blob).toBe(result.assets[1]?.blob);
@@ -88,7 +89,7 @@ test("does not fetch or rewrite HTML containing only existing data or remote emb
 
 test("surfaces root confinement errors without creating a parent-origin blob URL", async () => {
   const { fetch, create } = transport();
-  fetch.mockResolvedValueOnce(new Response(new Blob(["video"], { type: "video/mp4" })));
+  fetch.mockResolvedValueOnce(new Response("video", { headers: { "content-type": "video/mp4" } }));
   fetch.mockResolvedValueOnce(new Response("symlink escapes read root", { status: 400 }));
   await expect(
     prepareInlineAssets(
@@ -118,7 +119,7 @@ test("does not retain a blob when collapse aborts an in-flight read", async () =
   const controller = new AbortController();
   fetch.mockImplementationOnce(async () => {
     controller.abort();
-    return new Response(new Blob(["video"], { type: "video/mp4" }));
+    return new Response("video", { headers: { "content-type": "video/mp4" } });
   });
   await expect(
     prepareInlineAssets('<video src="a.mp4"></video>', documentUrl.href, controller.signal),
@@ -133,9 +134,9 @@ test("fetches videos through the SDK preview lease", async () => {
     documentUrl.href,
     new AbortController().signal,
   );
-  expect(String(fetch.mock.calls[0]![0])).toEndWith("/file-previews/lease/clip.mp4");
+  expect(String(fetch.mock.calls[0]![0])).toMatch(/\/file-previews\/lease\/clip\.mp4$/);
   const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
-  expect(doc.querySelector("base")?.href).toEndWith("/file-previews/lease/player.html");
+  expect(doc.querySelector("base")?.href).toMatch(/\/file-previews\/lease\/player\.html$/);
 });
 
 test("honors an explicit local base and leaves remote-base embeds alone", async () => {
@@ -145,7 +146,7 @@ test("honors an explicit local base and leaves remote-base embeds alone", async 
     documentUrl.href,
     new AbortController().signal,
   );
-  expect(String(fetch.mock.calls[0]![0])).toEndWith("/file-previews/lease/media/a.mp4");
+  expect(String(fetch.mock.calls[0]![0])).toMatch(/\/file-previews\/lease\/media\/a\.mp4$/);
   expect(local.assets).toHaveLength(1);
   const remote = await prepareInlineAssets(
     '<base href="https://example.com/"><video src="a.mp4"></video>',
@@ -167,8 +168,8 @@ test("reports decoder failures inside the opaque frame and clears the alert afte
   const dom = new JSDOM(result.srcDoc!, {
     runScripts: "dangerously",
     beforeParse(window) {
-      window.URL.createObjectURL = mock(() => "blob:null/video");
-      window.HTMLMediaElement.prototype.load = mock();
+      window.URL.createObjectURL = vi.fn(() => "blob:null/video");
+      window.HTMLMediaElement.prototype.load = vi.fn();
     },
   });
   const win = dom.window;
@@ -191,7 +192,7 @@ test("reports decoder failures inside the opaque frame and clears the alert afte
 
 test("loads sibling images through the same opaque-frame bridge", async () => {
   const { fetch } = transport();
-  fetch.mockResolvedValueOnce(new Response(new Blob(["image"], { type: "image/png" })));
+  fetch.mockResolvedValueOnce(new Response("image", { headers: { "content-type": "image/png" } }));
   const result = await prepareInlineAssets(
     '<img src="before.png">',
     documentUrl.href,

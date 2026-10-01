@@ -4,7 +4,7 @@
 
 - Source excerpts and current Unity properties through `smart-code`.
 - Unity object inspectors for supported `.prefab` and `.unity` citations.
-- Interactive HTML previews through `inline-vis`.
+- Interactive HTML previews through `inline-vis`, owned by the `scott-inline-vis` plugin.
 
 ## Fixture and entry
 
@@ -40,7 +40,7 @@ when no suitable Unity asset is available.
 ## Gotchas
 
 - Launch disables the built-in `inline-vis` in the test runtime. If both it and
-  Kitchen Sink are enabled, BB renders the duplicate directive as literal text.
+  `scott-inline-vis` are enabled, BB renders the duplicate directive as literal text.
 - Smart Code resolves current workspace content. Smart Diff defaults to the exact recorded turn, or an explicit commit/workspace source. Smart Patch reads proposals from thread storage. Verify recorded Unity changes in Last Turn.
 - HTML paths must be absolute on the thread host. Workspace, thread storage, or
   another readable directory are allowed. Keep local assets beside the HTML or
@@ -49,7 +49,8 @@ when no suitable Unity asset is available.
 - Keep fixture files until the evidence is captured. An expanded HTML preview
   needs its source file when the page loads again.
 
-Source entry: `plugins/kitchen-sink/src/app/app.tsx` registers these message directives.
+Source entry: `plugins/kitchen-sink/src/app/app.tsx` registers the Smart Embed directives.
+`plugins/scott-inline-vis/app.tsx` registers `inline-vis`.
 
 ## Restored diff evidence
 

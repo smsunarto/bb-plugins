@@ -1,4 +1,5 @@
 import {
+  definePluginApp,
   experimental_usePluginId,
   Markdown,
   useBbNavigate,
@@ -15,7 +16,7 @@ import {
 } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmbedHeader } from "./embed-header.tsx";
+import "./app.css";
 import {
   INLINE_ASSET_MESSAGE,
   prepareInlineAssets,
@@ -61,6 +62,49 @@ export function parsePreviewHeight(value: string | undefined): number | null {
     : null;
 }
 
+function PreviewHeader({
+  file,
+  expanded,
+  onToggle,
+  onOpen,
+}: {
+  file: string;
+  expanded: boolean;
+  onToggle: () => void;
+  onOpen: (() => void) | null;
+}) {
+  return (
+    <figcaption className="inline-vis-header">
+      <button
+        type="button"
+        className="inline-vis-toggle"
+        aria-label={`${expanded ? "Collapse" : "Expand"} preview ${file}`}
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <svg aria-hidden="true" viewBox="0 0 10 16" fill="currentColor">
+          <path d="M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
+        </svg>
+      </button>
+      {onOpen === null ? (
+        <span className="inline-vis-path" title={file}>
+          <bdi>{file}</bdi>
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="inline-vis-path inline-vis-open"
+          title={file}
+          aria-label={`Open ${file}`}
+          onClick={onOpen}
+        >
+          <bdi>{file}</bdi>
+        </button>
+      )}
+    </figcaption>
+  );
+}
+
 function Alert({
   source,
   children,
@@ -81,7 +125,7 @@ function Alert({
   );
 }
 
-export function InlineVisDirective({
+function InlineVisDirective({
   attributes,
   source,
   message,
@@ -130,17 +174,15 @@ function CollapsiblePreview(props: PluginMessageDirectiveProps) {
     [expansion, props.message.threadId],
   );
   return (
-    <figure ref={card} className="smart-embed smart-embed-diff inline-vis-card">
+    <figure ref={card} className="inline-vis-card">
       {expanded ? (
         <ExpandedPreview {...props} onToggle={expansion.toggle} />
       ) : (
-        <EmbedHeader
-          path={props.attributes.file!.trim()}
-          label={props.attributes.file!.trim()}
-          kind="preview"
+        <PreviewHeader
+          file={props.attributes.file!.trim()}
           expanded={false}
           onToggle={expansion.toggle}
-          openWorkspaceFile={null}
+          onOpen={null}
         />
       )}
     </figure>
@@ -225,14 +267,7 @@ function ExpandedPreview({
   if (state.status === "error") {
     return (
       <>
-        <EmbedHeader
-          path={file}
-          label={file}
-          kind="preview"
-          openWorkspaceFile={null}
-          expanded
-          onToggle={onToggle}
-        />
+        <PreviewHeader file={file} expanded onToggle={onToggle} onOpen={null} />
         <Alert source={source} error>
           Failed to load {file}: {state.message}
         </Alert>
@@ -243,14 +278,7 @@ function ExpandedPreview({
   if (state.status === "loading") {
     return (
       <>
-        <EmbedHeader
-          path={file}
-          label={file}
-          kind="preview"
-          openWorkspaceFile={null}
-          expanded
-          onToggle={onToggle}
-        />
+        <PreviewHeader file={file} expanded onToggle={onToggle} onOpen={null} />
         <output
           aria-busy="true"
           aria-label={`Loading visualization ${file}`}
@@ -265,18 +293,16 @@ function ExpandedPreview({
 
   return (
     <>
-      <EmbedHeader
-        path={state.file}
-        label={state.file}
-        kind="preview"
-        openWorkspaceFile={() =>
+      <PreviewHeader
+        file={state.file}
+        expanded
+        onToggle={onToggle}
+        onOpen={() =>
           navigate.experimental_openFilePreview({
             target: { kind: "host", hostId: state.hostId, path: state.file },
             location: null,
           })
         }
-        expanded
-        onToggle={onToggle}
       />
       {state.kind === "markdown" ? (
         <div style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }} className="inline-vis-markdown">
@@ -296,3 +322,7 @@ function ExpandedPreview({
     </>
   );
 }
+
+export default definePluginApp((app) => {
+  app.slots.messageDirective({ id: "inline-vis", component: InlineVisDirective });
+});

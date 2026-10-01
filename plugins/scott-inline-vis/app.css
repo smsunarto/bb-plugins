@@ -1,0 +1,132 @@
+.inline-vis-card {
+  --inline-vis-target-width: calc(100ch + 8rem + 4px);
+  box-sizing: border-box;
+  width: min(var(--inline-vis-target-width), 100%);
+  max-width: 100%;
+  margin: 0.75rem auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(
+    --diffs-font-family,
+    "SF Mono",
+    Monaco,
+    Consolas,
+    "Ubuntu Mono",
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  );
+  font-size: var(--diffs-font-size, 13px);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.inline-vis-header {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem 0 0.6875rem;
+  background: #1e1e1e;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.inline-vis-toggle {
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.inline-vis-toggle:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.inline-vis-toggle svg {
+  width: 0.625rem;
+  height: 1rem;
+  transition: transform 150ms;
+}
+
+.inline-vis-toggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.inline-vis-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.inline-vis-open {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.inline-vis-open:hover {
+  text-decoration: underline;
+}
+
+.inline-vis-toggle:focus-visible,
+.inline-vis-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.inline-vis-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: var(--background);
+}
+
+.inline-vis-markdown {
+  box-sizing: border-box;
+  width: 100%;
+  overflow: auto;
+  padding: 0.75rem;
+  background: var(--background);
+}
+
+.inline-vis-alert {
+  overflow-wrap: anywhere;
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.inline-vis-alert-error {
+  border-color: color-mix(in oklch, var(--destructive) 40%, transparent);
+  background: color-mix(in oklch, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inline-vis-toggle svg {
+    transition: none;
+  }
+}

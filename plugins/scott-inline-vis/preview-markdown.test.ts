@@ -1,7 +1,6 @@
-import { expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+// @vitest-environment jsdom
+import { expect, test } from "vitest";
 import { previewMarkdown } from "./preview-markdown.ts";
-installDom();
 test("resolves image and reference destinations while preserving GFM and code", () => {
   const result = previewMarkdown(
     "![Chart](chart.png)\n\n[Notes][n]\n\n[n]: notes.md\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n- [x] Done\n\n```md\n![Unchanged](chart.png)\n```",

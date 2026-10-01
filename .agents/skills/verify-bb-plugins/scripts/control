@@ -14,7 +14,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../../.." && pwd)"
 runs_root="${repo_root}/.scratch/verify-bb-plugins/runs"
-bb_kit="${repo_root}/packages/bb-kit-core/src/bin/bin.ts"
+bb_kit="${repo_root}/packages/bb-kit-dev/src/bin.ts"
 theme_id="plugin:monokai:bb-monokai"
 
 # A cold workspace instance clones bb and installs its dependencies, which is
@@ -149,7 +149,7 @@ doctor() {
       }
     }
     if (actual.get("inline-vis")?.enabled === true) {
-      failures.push("inline-vis: disable the duplicate renderer; kitchen-sink owns this directive");
+      failures.push("inline-vis: disable the duplicate renderer; scott-inline-vis owns this directive");
     }
     if (failures.length) throw new Error(failures.join("\n"));
   ' <<<"${plugins}"
@@ -160,7 +160,7 @@ doctor() {
   printf 'doctor: %s at %s is ready\n' "${name}" "${url}"
 }
 
-# BB also ships inline-vis. Loading it beside Kitchen Sink makes both claims
+# BB also ships inline-vis. Loading it beside scott-inline-vis makes both claims
 # ambiguous, so BB renders the directive as literal text.
 prepare_message_embeds() {
   local name="$1" enabled

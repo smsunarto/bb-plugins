@@ -5,10 +5,7 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
     "types": ["node", "bun-types/test"],
-    "skipLibCheck": false,
-    "paths": {
-      "@/*": ["./src/app/*"]
-    }
+    "skipLibCheck": false
   },
   "include": ["src", "test", "eval"],
   "exclude": ["eval/cases"]

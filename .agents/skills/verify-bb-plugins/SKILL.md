@@ -61,7 +61,7 @@ Run the doctor before browser work and after unexpected behavior.
 
 The doctor checks this run's runtime, its isolated data directory, every workspace
 plugin, and the bb Monokai theme. Launch disables bb's built-in `inline-vis` in
-this runtime because Kitchen Sink owns the same directive. Doctor rejects that
+this runtime because `scott-inline-vis` owns the same directive. Doctor rejects that
 duplicate if it is enabled again. Fix a failed check before driving the UI.
 
 ## Drive

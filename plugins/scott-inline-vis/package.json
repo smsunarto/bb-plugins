@@ -1,0 +1,91 @@
+{
+  "name": "@smsunarto/bb-plugin-scott-inline-vis",
+  "version": "0.1.0",
+  "description": "Render absolute-path HTML visualizations and Markdown documents inline in assistant messages.",
+  "private": true,
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/scott-inline-vis#readme",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/scott-inline-vis"
+  },
+  "type": "module",
+  "engines": {
+    "bb": ">=0.41.0 <1.0.0",
+    "bbPluginSdk": ">=0.5.16"
+  },
+  "bb": {
+    "name": "Inline visualizations",
+    "description": "Render absolute-path HTML visualizations and Markdown documents inline in assistant messages.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./server.ts",
+    "app": "./app.tsx",
+    "skills": [
+      "skills"
+    ]
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "inline-visualizations"
+  ],
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
+    "assets/",
+    "server.ts",
+    "app.tsx",
+    "app.css",
+    "inline-assets.ts",
+    "inline-vis-expansion.ts",
+    "load-preview.ts",
+    "preview-markdown.ts",
+    "components/",
+    "lib/",
+    "skills/",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-gfm": "3.1.0",
+    "mdast-util-to-markdown": "2.1.2",
+    "micromark-extension-gfm": "3.0.0"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.5.29",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "clsx": "^2.1.1",
+    "jsdom": "25.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "^3.4.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.1"
+  }
+}

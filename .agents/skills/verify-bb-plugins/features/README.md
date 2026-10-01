@@ -6,8 +6,8 @@ Use one file for the changed user path. Each file defines the user entry, browse
 
 The control helper prepares one pinned bb app. It installs every workspace plugin
 from this checkout, resets non-secret plugin settings, and selects bb Monokai.
-It disables the built-in `inline-vis` in this runtime so Kitchen Sink's message
-directive can render.
+It disables the built-in `inline-vis` in this runtime so the `scott-inline-vis`
+message directive can render.
 
 ## Browser conventions
 

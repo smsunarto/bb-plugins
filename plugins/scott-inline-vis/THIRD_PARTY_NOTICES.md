@@ -1,15 +1,14 @@
 # Third-party notices
 
-Kitchen Sink's inline visualization renderer is forked from bb's built-in
-inline-vis plugin, last synced with `desktop-v0.44.0` (commit
-`0baa605b32a00619c1d7e3f32be6553ebcf8244a`).
+This plugin is forked from bb's built-in inline-vis plugin, last synced with
+`desktop-v0.44.0` (commit `0baa605b32a00619c1d7e3f32be6553ebcf8244a`).
 
 ## BB inline-vis and component registry
 
 Copyright (c) 2026 Michael Yong
 
-The upstream plugin and the registry items vendored into `src/app/components/ui/`
-and `src/app/lib/` are available under the MIT License:
+The upstream plugin and the registry items vendored into `components/ui/` and
+`lib/` are available under the MIT License:
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,16 +1,16 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test, vi } from "vitest";
 import type { useSdk } from "@get-bb/plugin-sdk/app";
 import { loadPreview, MAX_PREVIEW_BYTES, parsePreviewFile } from "./load-preview.ts";
 
 function sdk(read?: () => unknown) {
-  const storageLocation = mock(async () => ({
+  const storageLocation = vi.fn(async () => ({
     hostId: "host-1",
     storageRootPath: "/unrelated/thread",
   }));
-  const readFile = mock(
+  const readFile = vi.fn(
     async () => read?.() ?? { content: "<h1>OK</h1>", contentEncoding: "utf8", sizeBytes: 11 },
   );
-  const createPreview = mock(async () => ({
+  const createPreview = vi.fn(async () => ({
     baseUrl: "/api/v1/file-previews/lease",
     expiresAtMs: 12345,
   }));
