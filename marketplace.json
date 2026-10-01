@@ -184,6 +184,26 @@
           "tagPrefix": "vimium/"
         }
       }
+    },
+    {
+      "id": "whiteboard",
+      "displayName": "Whiteboard",
+      "description": "Agents author code walkthroughs, diagrams, and Diff lenses that render beside the thread.",
+      "icon": {
+        "url": "plugins/whiteboard/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/whiteboard",
+          "range": "*",
+          "tagPrefix": "whiteboard/"
+        }
+      }
     }
   ]
 }
