@@ -71,10 +71,16 @@ const ASSET_BRIDGE = `(() => {
   addEventListener("pagehide", () => { for (const url of urls) URL.revokeObjectURL(url); });
 })();`;
 
+/**
+ * Build the frame document. Local media becomes Blob assets, and `prepare`
+ * (the fragment runtime) gets the parsed document plus the message token.
+ * Without either, the caller loads the leased URL directly.
+ */
 export async function prepareInlineAssets(
   html: string,
   previewUrl: string,
   signal: AbortSignal,
+  prepare?: (document: Document, token: string) => void,
 ): Promise<{ srcDoc?: string; assets: InlinePreviewAsset[]; token?: string }> {
   const documentUrl = new URL(previewUrl, window.location.href);
   const rootUrl = new URL("./", documentUrl);
@@ -82,15 +88,16 @@ export async function prepareInlineAssets(
   const declaredBase = document.querySelector("base[href]");
   const assetBase = new URL(declaredBase?.getAttribute("href") ?? documentUrl.href, documentUrl);
   // An explicit external base belongs to the artifact, not the preview loader.
-  if (assetBase.origin !== rootUrl.origin || !assetBase.pathname.startsWith(rootUrl.pathname)) {
-    return { assets: [] };
-  }
-  const sources = [...document.querySelectorAll("img[src], video[src], video source[src]")];
+  const localBase =
+    assetBase.origin === rootUrl.origin && assetBase.pathname.startsWith(rootUrl.pathname);
+  const sources = localBase
+    ? [...document.querySelectorAll("img[src], video[src], video source[src]")]
+    : [];
   const videos = sources.flatMap((element) => {
     const url = resolvePreviewAssetUrl(element.getAttribute("src")!, assetBase, rootUrl);
     return url ? [{ element, url }] : [];
   });
-  if (videos.length === 0) return { assets: [] };
+  if (videos.length === 0 && !prepare) return { assets: [] };
   const blobs = new Map<string, Blob>();
   const assets: InlinePreviewAsset[] = [];
   // Sequential reads keep peak transport memory bounded to one asset at a time.
@@ -120,13 +127,18 @@ export async function prepareInlineAssets(
     element.removeAttribute("src");
     element.setAttribute(ASSET_ATTRIBUTE, key);
   }
-  // srcdoc otherwise inherits the app URL. Keep other relative assets at the HTML directory.
-  const base = document.createElement("base");
-  base.href = assetBase.href;
-  document.head.prepend(base);
-  const bridge = document.createElement("script");
   const token = crypto.randomUUID();
-  bridge.textContent = ASSET_BRIDGE.replace("BB_ASSET_TOKEN", token);
-  document.head.prepend(bridge);
+  prepare?.(document, token);
+  if (assets.length > 0) {
+    const bridge = document.createElement("script");
+    bridge.textContent = ASSET_BRIDGE.replace("BB_ASSET_TOKEN", token);
+    document.head.prepend(bridge);
+  }
+  if (localBase) {
+    // srcdoc otherwise inherits the app URL. Keep other relative assets at the HTML directory.
+    const base = document.createElement("base");
+    base.href = assetBase.href;
+    document.head.prepend(base);
+  }
   return { srcDoc: `<!doctype html>\n${document.documentElement.outerHTML}`, assets, token };
 }

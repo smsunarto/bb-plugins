@@ -51,6 +51,8 @@
     "app.tsx",
     "app.css",
     "inline-assets.ts",
+    "fragment-runtime.ts",
+    "fragment-styles.ts",
     "inline-vis-expansion.ts",
     "load-preview.ts",
     "preview-markdown.ts",

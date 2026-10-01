@@ -4,7 +4,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export const BUILTIN_INLINE_VIS_PLUGIN_ID = "inline-vis";
 
 export const INSTRUCTIONS =
-  "Show images and recordings inline. Before embedding HTML, Markdown, or video, read the `inline-vis` skill. Its `file` must be an existing absolute filesystem path on the thread host. Resolve relative paths and expand variables before emitting the directive. Never use `source`. Relative asset URLs inside HTML are allowed.";
+  "Show images and recordings inline. Before embedding HTML, Markdown, or video, read the `inline-vis` skill. Prefer bare HTML fragments for bb's theme and interaction runtime. Its `file` must be an existing absolute filesystem path on the thread host. Resolve relative paths and expand variables before emitting the directive. Never use `source`. Relative image and video URLs inside HTML are allowed.";
 
 export default async function plugin(bb: BbPluginApi) {
   bb.agents.contributeInstructions(() => INSTRUCTIONS);

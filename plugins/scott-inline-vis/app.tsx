@@ -3,6 +3,7 @@ import {
   experimental_usePluginId,
   Markdown,
   useBbNavigate,
+  useComposer,
   useSdk,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
@@ -22,6 +23,14 @@ import {
   prepareInlineAssets,
   type InlinePreviewAsset,
 } from "./inline-assets.ts";
+import {
+  FRAGMENT_MESSAGES,
+  injectFragmentRuntime,
+  isFragment,
+  parseFrameMessage,
+  readHostTheme,
+  sameTheme,
+} from "./fragment-runtime.ts";
 import { previewMarkdown } from "./preview-markdown.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 import { loadPreview } from "./load-preview.ts";
@@ -37,6 +46,7 @@ type LoadState =
       srcDoc?: string;
       assets: InlinePreviewAsset[];
       token?: string;
+      fragment: boolean;
     }
   | {
       status: "ready";
@@ -51,6 +61,25 @@ type LoadState =
 export const DEFAULT_HEIGHT_PX = 224;
 export const MIN_HEIGHT_PX = 120;
 export const MAX_HEIGHT_PX = 1_200;
+/** Smallest content-sized fragment, so an empty one still shows its frame. */
+const MIN_FRAGMENT_HEIGHT_PX = 40;
+
+/** Fragment state lives on this client, keyed by the directive occurrence. */
+function readWidgetState(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeWidgetState(key: string, state: string): void {
+  try {
+    window.localStorage.setItem(key, state);
+  } catch {
+    // Storage can be unavailable; the frame keeps its in-memory state.
+  }
+}
 
 export function parsePreviewHeight(value: string | undefined): number | null {
   const normalized = value?.trim() ?? "";
@@ -217,12 +246,25 @@ function ExpandedPreview({
 }: PluginMessageDirectiveProps & { onToggle: () => void }) {
   const sdk = useSdk();
   const navigate = useBbNavigate();
+  const pluginId = experimental_usePluginId();
+  const composer = useComposer();
+  const composerRef = useRef(composer);
+  composerRef.current = composer;
   const file = attributes.file?.trim() ?? "";
   const previewHeight = parsePreviewHeight(attributes.height);
+  const fixedHeight = Boolean(attributes.height?.trim());
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const frame = useRef<HTMLIFrameElement>(null);
+  const stateKey = `${pluginId}.widget-state:${message.threadId}:${message.id}:${file}`;
   useLayoutEffect(() => {
-    if (state.status !== "ready" || state.kind !== "html" || !state.token) return;
+    if (
+      state.status !== "ready" ||
+      state.kind !== "html" ||
+      !state.token ||
+      state.assets.length === 0
+    )
+      return;
     const deliver = (event: MessageEvent) => {
       if (
         event.source !== frame.current?.contentWindow ||
@@ -239,6 +281,53 @@ function ExpandedPreview({
     window.addEventListener("message", deliver);
     return () => window.removeEventListener("message", deliver);
   }, [state]);
+
+  useEffect(() => {
+    if (state.status !== "ready" || state.kind !== "html" || !state.fragment || !state.token)
+      return;
+    const token = state.token;
+    const receive = (event: MessageEvent) => {
+      if (event.source !== frame.current?.contentWindow) return;
+      const data = parseFrameMessage(event.data, token);
+      if (data?.type === "resize") setContentHeight(data.height);
+      else if (data?.type === "state") writeWidgetState(stateKey, data.state);
+      // A click inside the frame also activates this page. Without one, a
+      // fragment script could fill the composer on load.
+      else if (data?.type === "followUp" && navigator.userActivation?.isActive === true) {
+        composerRef.current.updateText((current) =>
+          current.trim() ? `${current.trimEnd()}\n\n${data.prompt}` : data.prompt,
+        );
+        composerRef.current.focus();
+      }
+    };
+    // Theme switches restyle the host without remounting the frame.
+    const root = document.documentElement;
+    let theme = readHostTheme(root);
+    let pending = 0;
+    const syncTheme = () => {
+      pending = 0;
+      const next = readHostTheme(root);
+      if (sameTheme(theme, next)) return;
+      theme = next;
+      frame.current?.contentWindow?.postMessage(
+        { type: FRAGMENT_MESSAGES.theme, token, theme },
+        "*",
+      );
+    };
+    // bb swaps theme classes on <html> and may rewrite a theme <style> in
+    // place, so watch both. Coalesce bursts into one style read per frame.
+    const observer = new MutationObserver(() => {
+      pending ||= requestAnimationFrame(syncTheme);
+    });
+    observer.observe(root, { attributes: true });
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    window.addEventListener("message", receive);
+    return () => {
+      window.removeEventListener("message", receive);
+      observer.disconnect();
+      cancelAnimationFrame(pending);
+    };
+  }, [state, stateKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,7 +348,20 @@ function ExpandedPreview({
             });
           return;
         }
-        const videos = await prepareInlineAssets(result.html, result.url, controller.signal);
+        const fragment = isFragment(result.html);
+        const prepared = await prepareInlineAssets(
+          result.html,
+          result.url,
+          controller.signal,
+          fragment
+            ? (document, token) =>
+                injectFragmentRuntime(document, {
+                  token,
+                  theme: readHostTheme(window.document.documentElement),
+                  state: readWidgetState(stateKey),
+                })
+            : undefined,
+        );
         if (!cancelled)
           setState({
             status: "ready",
@@ -267,7 +369,8 @@ function ExpandedPreview({
             file: result.file,
             hostId: result.hostId,
             url: result.url,
-            ...videos,
+            fragment,
+            ...prepared,
           });
       } catch (error) {
         if (cancelled) return;
@@ -282,7 +385,7 @@ function ExpandedPreview({
       cancelled = true;
       controller.abort();
     };
-  }, [file, message.threadId, sdk]);
+  }, [file, message.threadId, sdk, stateKey]);
 
   if (state.status === "error") {
     return (
@@ -335,7 +438,12 @@ function ExpandedPreview({
           srcDoc={state.srcDoc}
           ref={frame}
           sandbox="allow-scripts"
-          style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
+          style={{
+            height:
+              state.fragment && !fixedHeight && contentHeight !== null
+                ? Math.min(MAX_HEIGHT_PX, Math.max(MIN_FRAGMENT_HEIGHT_PX, contentHeight))
+                : (previewHeight ?? DEFAULT_HEIGHT_PX),
+          }}
           className="inline-vis-frame"
         />
       )}

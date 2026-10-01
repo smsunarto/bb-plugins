@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { StrictMode, useState } from "react";
@@ -18,6 +18,7 @@ const app = await loadPluginApp(() => import("./app.tsx"));
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  Reflect.deleteProperty(navigator, "userActivation");
 });
 
 test("registers the inline-vis directive", () => {
@@ -187,7 +188,7 @@ test("inline-vis requires a file attribute without reading the file", async () =
   slot.unmount();
 });
 
-test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox", async () => {
+test("inline-vis loads a full HTML document from the SDK preview URL with an opaque-origin sandbox", async () => {
   const directive = await inlineVisDirective();
   const openWorkspaceFile = vi.fn(() => true);
   const slot = renderSlot(
@@ -198,7 +199,7 @@ test("inline-vis uses the SDK preview URL with an opaque-origin script sandbox",
       message: inlineVisMessage,
       openWorkspaceFile,
     },
-    { sdk: previewSdk(() => "<h1>Example</h1>") },
+    { sdk: previewSdk(() => "<!doctype html><h1>Example</h1>") },
   );
 
   await slot.findByRole("status", {
@@ -567,4 +568,160 @@ test("inline-vis keeps an open iframe after its lease expires and refreshes only
   } finally {
     slot.unmount();
   }
+});
+
+async function renderFragment(
+  html: string,
+  {
+    height,
+    composerText,
+    messageId = inlineVisMessage.id,
+  }: { height?: string; composerText?: string; messageId?: string } = {},
+) {
+  const directive = await inlineVisDirective();
+  const attributes: Record<string, string> = { file: "/tmp/viz/chart.html" };
+  if (height) attributes.height = height;
+  const slot = renderSlot(
+    directive,
+    {
+      attributes,
+      source: '::inline-vis{file="/tmp/viz/chart.html"}',
+      message: { ...inlineVisMessage, id: messageId },
+      openWorkspaceFile: null,
+    },
+    {
+      sdk: previewSdk(() => html),
+      pluginId: "scott-inline-vis",
+      composer: { text: composerText ?? "" },
+    },
+  );
+  const iframe = await waitFor(() => {
+    const element = slot.container.querySelector("iframe");
+    expect(element?.getAttribute("srcdoc")).toBeTruthy();
+    return element as HTMLIFrameElement;
+  });
+  // The frame listener registers in a passive effect after the srcdoc commit.
+  await act(async () => {});
+  const srcdoc = iframe.getAttribute("srcdoc")!;
+  const token = /"token":"([^"]+)"/u.exec(srcdoc)![1]!;
+  const send = (data: Record<string, unknown>) =>
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", { data: { token, ...data }, source: iframe.contentWindow }),
+      );
+    });
+  return { slot, iframe, srcdoc, token, send };
+}
+
+test("inline-vis renders an HTML fragment inside the visualization runtime", async () => {
+  const { slot, iframe, srcdoc } = await renderFragment('<div id="viz" class="card">Hi</div>');
+
+  expect(iframe.getAttribute("src")).toBeNull();
+  expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+  const frameDocument = new DOMParser().parseFromString(srcdoc, "text/html");
+  expect(frameDocument.querySelector("base")?.getAttribute("href")).toBe(
+    "http://localhost:3000/api/v1/file-previews/lease/chart.html",
+  );
+  expect(frameDocument.querySelector("style")?.textContent).toContain("--viz-series-1");
+  expect(frameDocument.querySelector("#viz")?.textContent).toBe("Hi");
+  // The runtime script runs before the fragment's own markup and scripts.
+  expect(frameDocument.head.querySelector("script")?.textContent).toContain('"bb"');
+  slot.unmount();
+});
+
+test("inline-vis sizes a fragment to its content within the height limits", async () => {
+  const { slot, iframe, send } = await renderFragment("<p>Tall</p>");
+  expect(iframe.style.height).toBe("224px");
+
+  send({ type: "bb:inline-vis:resize", height: 318.4 });
+  expect(iframe.style.height).toBe("319px");
+  send({ type: "bb:inline-vis:resize", height: 9_000 });
+  expect(iframe.style.height).toBe("1200px");
+  send({ type: "bb:inline-vis:resize", height: 3 });
+  expect(iframe.style.height).toBe("40px");
+  // A message with the wrong token is ignored.
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "bb:inline-vis:resize", token: "other", height: 500 },
+        source: iframe.contentWindow,
+      }),
+    );
+  });
+  expect(iframe.style.height).toBe("40px");
+  slot.unmount();
+});
+
+test("inline-vis sends theme changes when bb rewrites its theme stylesheet", async () => {
+  const themeStyle = document.createElement("style");
+  themeStyle.textContent = ":root { --background: #111111; }";
+  document.head.append(themeStyle);
+  const { slot, iframe, token } = await renderFragment("<p>Theme</p>");
+  const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+
+  themeStyle.textContent = ":root { --background: #fafafa; }";
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      {
+        type: "bb:inline-vis:theme",
+        token,
+        theme: expect.objectContaining({
+          tokens: expect.objectContaining({ "--background": "#fafafa" }),
+        }),
+      },
+      "*",
+    ),
+  );
+  themeStyle.remove();
+  slot.unmount();
+});
+
+test("inline-vis keeps an explicit fragment height", async () => {
+  const { slot, iframe, send } = await renderFragment("<p>Fixed</p>", { height: "480" });
+  send({ type: "bb:inline-vis:resize", height: 200 });
+  expect(iframe.style.height).toBe("480px");
+  slot.unmount();
+});
+
+test("inline-vis restores saved fragment state when the preview reopens", async () => {
+  const first = await renderFragment("<p>State</p>");
+  first.send({ type: "bb:inline-vis:state", state: '{"tab":"latency"}' });
+  first.slot.unmount();
+
+  const second = await renderFragment("<p>State</p>");
+  expect(second.srcdoc).toContain('"state":"{\\"tab\\":\\"latency\\"}"');
+  second.slot.unmount();
+
+  const otherMessage = await renderFragment("<p>State</p>", { messageId: "message-other" });
+  expect(otherMessage.srcdoc).toContain('"state":null');
+  otherMessage.slot.unmount();
+});
+
+/** jsdom has no user activation API. Browsers report it on the parent page. */
+function setUserActivation(isActive: boolean) {
+  Object.defineProperty(navigator, "userActivation", {
+    configurable: true,
+    value: { isActive, hasBeenActive: isActive },
+  });
+}
+
+test("inline-vis ignores a follow-up prompt without a user click", async () => {
+  setUserActivation(false);
+  const { slot, send } = await renderFragment("<p>Ask</p>", { composerText: "Draft" });
+  send({ type: "bb:inline-vis:follow-up", prompt: "Explain the p99 spike" });
+
+  expect(slot.inspection.composer.text).toBe("Draft");
+  expect(slot.inspection.composer.focusCount).toBe(0);
+  Reflect.deleteProperty(navigator, "userActivation");
+  slot.unmount();
+});
+
+test("inline-vis puts a fragment follow-up prompt in the composer", async () => {
+  setUserActivation(true);
+  const { slot, send } = await renderFragment("<p>Ask</p>", { composerText: "Draft" });
+  send({ type: "bb:inline-vis:follow-up", prompt: "  Explain the p99 spike  " });
+
+  expect(slot.inspection.composer.text).toBe("Draft\n\nExplain the p99 spike");
+  expect(slot.inspection.composer.focusCount).toBe(1);
+  slot.unmount();
 });
