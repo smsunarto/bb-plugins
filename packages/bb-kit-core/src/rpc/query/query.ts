@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo, useRef } from "react";
+import { createElement, useMemo } from "react";
 import type { ReactElement, ReactNode } from "react";
 import {
   QueryClient,
@@ -14,6 +14,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 import { useRpc } from "@get-bb/plugin-sdk/app";
+import { RESERVED_RPC_KEYS } from "../../names/names.ts";
 import type { Client, RPCProcedures, SchemaInput, SchemaOutput, StandardSchemaV1 } from "../rpc.ts";
 
 /** Public surface of `@bb-kit/core/rpc/query` (§1, §5). */
@@ -87,6 +88,21 @@ type RPCTransport = { call(method: string, input?: unknown): Promise<unknown> };
 /** The SDK client behind one structural seam, resolved at render time. */
 function useTransport(): RPCTransport {
   return useRpc() as unknown as RPCTransport;
+}
+
+/**
+ * The wire input for a call. No-input calls send `null`, matching the
+ * SDK. Keys holding `undefined` are dropped, so `{ id, cursor }` with
+ * no cursor passes a `.strict()` schema that only allows `cursor?`.
+ */
+function wireInput(input: unknown): unknown {
+  if (input === undefined || input === null) {
+    return null;
+  }
+  if (typeof input !== "object" || Array.isArray(input)) {
+    return input;
+  }
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
 /**
@@ -165,9 +181,10 @@ function isQueryOptionsObject(value: unknown): value is object {
   return keys.length > 0 && keys.every((key) => QUERY_OPTION_KEYS.has(key));
 }
 
-/** §5 derivation: `[key]`, plus the input when one is given. */
+/** `[key]`, plus the wire input when there is one. */
 function deriveQueryKey(key: string, input: unknown): QueryKey {
-  return input === undefined ? [key] : [key, input];
+  const wire = wireInput(input);
+  return wire === null ? [key] : [key, wire];
 }
 
 type RuntimeProcedureHooks = {
@@ -188,14 +205,14 @@ function procedureHooks(key: string): RuntimeProcedureHooks {
       return useTanStackQuery({
         ...options,
         queryKey: deriveQueryKey(key, input),
-        queryFn: () => transport.call(key, input ?? null),
+        queryFn: () => transport.call(key, wireInput(input)),
       });
     },
     useMutation(options) {
       const transport = useTransport();
       return useTanStackMutation({
         ...(options as object | undefined),
-        mutationFn: (variables: unknown) => transport.call(key, variables ?? null),
+        mutationFn: (variables: unknown) => transport.call(key, wireInput(variables)),
       });
     },
   };
@@ -208,7 +225,7 @@ function clientProxy(transport: RPCTransport): Record<string, unknown> {
       if (typeof property !== "string" || property === "then") {
         return undefined;
       }
-      return (input?: unknown) => transport.call(property, input ?? null);
+      return (input?: unknown) => transport.call(property, wireInput(input));
     },
   });
 }
@@ -238,6 +255,9 @@ export function createRPC<P extends RPCProcedures>(): RPCHooks<P> {
       if (property === "useClient") {
         return useClient;
       }
+      if (RESERVED_RPC_KEYS.includes(property)) {
+        return undefined;
+      }
       let bundle = bundles.get(property);
       if (bundle === undefined) {
         bundle = procedureHooks(property);
@@ -249,51 +269,27 @@ export function createRPC<P extends RPCProcedures>(): RPCHooks<P> {
 }
 
 /**
- * The QueryClientProvider a plugin UI mounts once at its root (§5 —
- * the host does not shim @tanstack/react-query, so the plugin owns its
- * QueryClient). Lazily creates one client per mount and clears it on
- * unmount; a `client` prop overrides ownership — the caller's client is
- * used as-is and never cleared.
+ * The plugin's one cache. bb remounts panels on navigation, so a client
+ * owned by a mount would drop every result each time. This one lives as
+ * long as the plugin's app bundle. One retry keeps a failure visible
+ * after seconds instead of the default ladder's half minute. Tests
+ * reset it with `pluginQueryClient.clear()`.
+ */
+export const pluginQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1 } },
+});
+
+/**
+ * The provider a plugin UI mounts at each registered component's root.
+ * Every mount shares `pluginQueryClient` unless `client` overrides it.
  */
 export function PluginQueryBoundary(props: {
   children?: ReactNode;
   client?: QueryClient;
 }): ReactElement {
-  const owned = useRef<QueryClient | undefined>(undefined);
-  const mounted = useRef(false);
-  const external = props.client;
-  const client = external ?? owned.current ?? (owned.current = new QueryClient());
-  useEffect(() => {
-    if (external !== undefined) {
-      return undefined;
-    }
-    const ownedClient = owned.current;
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      // Child observers detach LATER in this same unmount commit and
-      // re-schedule gcTime timers on the queries and mutations they
-      // release, so sweep once, AFTER the commit — clearing here first
-      // would orphan a settled mutation the microtask can no longer
-      // reach. QueryCache.clear() destroys each query's gc timer, but
-      // MutationCache.clear() only empties its map (verified in
-      // @tanstack/query-core 5.101 source), so mutations are destroyed
-      // explicitly — otherwise a five-minute timer outlives the
-      // boundary and test processes cannot exit.
-      queueMicrotask(() => {
-        // A StrictMode dev double mount remounts the SAME owned client
-        // before this microtask runs — sweeping then would silently
-        // cancel the live panel's first in-flight query, freezing it on
-        // isPending. Only sweep when the boundary is still unmounted.
-        if (mounted.current || ownedClient === undefined) {
-          return;
-        }
-        for (const mutation of ownedClient.getMutationCache().getAll()) {
-          mutation.destroy();
-        }
-        ownedClient.clear();
-      });
-    };
-  }, [external]);
-  return createElement(QueryClientProvider, { client }, props.children);
+  return createElement(
+    QueryClientProvider,
+    { client: props.client ?? pluginQueryClient },
+    props.children,
+  );
 }

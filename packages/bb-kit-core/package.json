@@ -17,14 +17,10 @@
     "node": ">=22.19.0"
   },
   "files": [
-    "bin/",
     "dist/",
     "README.md",
     "LICENSE"
   ],
-  "bin": {
-    "bb-kit": "./bin/bb-kit.mjs"
-  },
   "exports": {
     "./plugin": {
       "types": "./dist/plugin/plugin.d.ts",
@@ -46,26 +42,26 @@
       "types": "./dist/tools/tools.d.ts",
       "import": "./dist/tools/tools.js"
     },
+    "./names": {
+      "types": "./dist/names/names.d.ts",
+      "import": "./dist/names/names.js"
+    },
     "./testing": {
       "types": "./dist/testing/testing.d.ts",
       "import": "./dist/testing/testing.js"
     }
   },
   "scripts": {
-    "build": "bun build src/bin/bin.ts src/plugin/plugin.ts src/rpc/rpc.ts src/rpc/query/query.ts src/command/command.ts src/tools/tools.ts src/testing/testing.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && bun build src/plugin/plugin.ts src/rpc/rpc.ts src/rpc/query/query.ts src/command/command.ts src/tools/tools.ts src/names/names.ts src/testing/testing.ts --root src --outdir dist --target=node --format=esm --packages=external --splitting --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test --timeout=30000",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "commander": "^13.1.0"
-  },
   "peerDependencies": {
-    "@get-bb/plugin-sdk": "0.x",
+    "@get-bb/plugin-sdk": ">=0.5.29 <0.7",
     "@tanstack/react-query": "^5.0.0",
     "jsdom": "*",
-    "react": ">=19",
-    "typescript": "*"
+    "react": ">=19"
   },
   "peerDependenciesMeta": {
     "@tanstack/react-query": {
@@ -75,9 +71,6 @@
       "optional": true
     },
     "react": {
-      "optional": true
-    },
-    "typescript": {
       "optional": true
     }
   },
@@ -91,7 +84,6 @@
     "jsdom": "^25.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tsx": "^4.19.0",
     "typescript": "^6.0.0",
     "zod": "^4.4.3"
   }

@@ -22,12 +22,6 @@
     "packages/bb-kit-core": {
       "name": "@bb-kit/core",
       "version": "0.2.0",
-      "bin": {
-        "bb-kit": "./bin/bb-kit.mjs",
-      },
-      "dependencies": {
-        "commander": "^13.1.0",
-      },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.5.29",
         "@tanstack/react-query": "^5.101.0",
@@ -38,22 +32,19 @@
         "jsdom": "^25.0.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
-        "tsx": "^4.19.0",
         "typescript": "^6.0.0",
         "zod": "^4.4.3",
       },
       "peerDependencies": {
-        "@get-bb/plugin-sdk": "0.x",
+        "@get-bb/plugin-sdk": ">=0.5.29 <0.7",
         "@tanstack/react-query": "^5.0.0",
         "jsdom": "*",
         "react": ">=19",
-        "typescript": "*",
       },
       "optionalPeers": [
         "@tanstack/react-query",
         "jsdom",
         "react",
-        "typescript",
       ],
     },
     "packages/bb-kit-icons": {
@@ -1699,7 +1690,7 @@
 
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "", {}, "sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg=="],
 
-    "commander": ["commander@13.1.0", "", {}, "sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw=="],
+    "commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 
     "compute-scroll-into-view": ["compute-scroll-into-view@2.0.4", "", {}, "sha512-y/ZA3BGnxoM/QHHQ2Uy49CLtnWPbt4tTPpEEZiEmmiWBFKjej7nEyH8Ryz54jH0MLXflUYA3Er2zUxPSJu5R+g=="],
 

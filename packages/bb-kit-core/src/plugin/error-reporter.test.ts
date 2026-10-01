@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   capturePluginFailure,
   createPluginErrorReporter,
-  createPluginErrorReporterDisposer,
+  createReporterDisposer,
   isAbortedFailure,
   observePluginFailure,
   type PluginErrorReporter,
@@ -75,12 +75,12 @@ test("reporter disposal is memoized, bounded, and never rejects", async () => {
       return new Promise(() => {});
     },
   };
-  const dispose = createPluginErrorReporterDisposer(reporter, 5);
+  const dispose = createReporterDisposer(reporter, 5);
   await Promise.all([dispose(), dispose()]);
   assert.equal(calls, 1);
   assert.equal(receivedTimeout, 5);
 
-  const rejecting = createPluginErrorReporterDisposer({
+  const rejecting = createReporterDisposer({
     capture: () => undefined,
     dispose: () => Promise.reject(new Error("close failed")),
   });
@@ -92,7 +92,7 @@ test("reporter disposal is memoized, bounded, and never rejects", async () => {
       throw new Error("dispose getter failed");
     },
   });
-  await createPluginErrorReporterDisposer(throwingGetter)();
+  await createReporterDisposer(throwingGetter)();
 });
 
 test("abort filtering requires both an aborted signal and AbortError", () => {

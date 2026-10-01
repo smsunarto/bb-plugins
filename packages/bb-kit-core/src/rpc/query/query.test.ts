@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { installDom } from "../../testing/testing.ts";
@@ -11,7 +11,7 @@ import { defineMutation, defineQuery } from "../rpc.ts";
 installDom();
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { createRPC, PluginQueryBoundary } = await import("./query.ts");
+const { createRPC, PluginQueryBoundary, pluginQueryClient } = await import("./query.ts");
 const { cleanup, render, screen } = await import("@testing-library/react");
 const { QueryClient, useQuery: useTanStackQuery } = await import("@tanstack/react-query");
 const { StrictMode, createElement, useEffect, useRef, useState } = await import("react");
@@ -61,10 +61,14 @@ void typeChecks;
 
 // ---- runtime, through the SDK tier-3 harness ------------------------
 
-test("no-input useQuery calls the RPC name with null input", async (t) => {
-  // Unmount even on failure — a lingering QueryClient's gcTime timers
-  // (5 minutes) would otherwise keep the test child process alive.
-  t.after(cleanup);
+// Every boundary shares pluginQueryClient, so each test starts from an
+// empty cache, and clearing drops its gcTime timers so the process exits.
+afterEach(() => {
+  cleanup();
+  pluginQueryClient.clear();
+});
+
+test("no-input useQuery calls the RPC name with null input", async () => {
   function OverviewPanel() {
     const overview = rpc.overview.useQuery();
     return createElement(
@@ -84,8 +88,7 @@ test("no-input useQuery calls the RPC name with null input", async (t) => {
   slot.unmount();
 });
 
-test("with-input useQuery(input) sends the input and derives the key", async (t) => {
-  t.after(cleanup);
+test("with-input useQuery(input) sends the input and derives the key", async () => {
   function ReadFilePanel() {
     const file = rpc.readFile.useQuery({ path: "notes.md" });
     return createElement(
@@ -106,8 +109,48 @@ test("with-input useQuery(input) sends the input and derives the key", async (t)
   slot.unmount();
 });
 
-test("no-input useQuery(options) reads a sole options object as options", async (t) => {
-  t.after(cleanup);
+test("input keys holding undefined are dropped from the wire and the key", async () => {
+  function ReadFilePanel() {
+    const file = rpc.readFile.useQuery({ path: "a.md", cursor: undefined } as { path: string });
+    return createElement("div", null, file.status);
+  }
+  const slot = renderSlot(
+    { component: boundary(createElement(ReadFilePanel)) },
+    {},
+    { rpc: { readFile: () => ({ content: "" }) } },
+  );
+  await slot.findByText("success");
+  assert.deepEqual(slot.rpcCalls, [{ method: "readFile", input: { path: "a.md" } }]);
+  assert.deepEqual(rpc.readFile.queryKey({ path: "a.md", cursor: undefined } as { path: string }), [
+    "readFile",
+    { path: "a.md" },
+  ]);
+  slot.unmount();
+});
+
+test("results survive a remount because every mount shares pluginQueryClient", async () => {
+  function OverviewPanel() {
+    const overview = rpc.overview.useQuery({ staleTime: Infinity });
+    return createElement(
+      "div",
+      null,
+      overview.status === "success" ? `total:${overview.data.total}` : overview.status,
+    );
+  }
+  const first = renderSlot(
+    { component: boundary(createElement(OverviewPanel)) },
+    {},
+    { rpc: { overview: () => ({ total: 7 }) } },
+  );
+  await first.findByText("total:7");
+  first.unmount();
+  const second = renderSlot({ component: boundary(createElement(OverviewPanel)) }, {}, { rpc: {} });
+  await second.findByText("total:7");
+  assert.equal(second.rpcCalls.length, 0);
+  second.unmount();
+});
+
+test("no-input useQuery(options) reads a sole options object as options", async () => {
   function DisabledPanel() {
     const overview = rpc.overview.useQuery({ enabled: false });
     return createElement("div", null, `disabled:${overview.status}:${overview.fetchStatus}`);
@@ -122,8 +165,7 @@ test("no-input useQuery(options) reads a sole options object as options", async 
   slot.unmount();
 });
 
-test("useQuery(input, options) passes options through to TanStack", async (t) => {
-  t.after(cleanup);
+test("useQuery(input, options) passes options through to TanStack", async () => {
   function FailingPanel() {
     const file = rpc.readFile.useQuery({ path: "boom.md" }, { retry: false });
     return createElement(
@@ -152,8 +194,7 @@ test("useQuery(input, options) passes options through to TanStack", async (t) =>
   slot.unmount();
 });
 
-test("useMutation sends variables over the wire", async (t) => {
-  t.after(cleanup);
+test("useMutation sends variables over the wire", async () => {
   function SavePanel() {
     const save = rpc.saveFile.useMutation();
     const fired = useRef(false);
@@ -179,8 +220,7 @@ test("useMutation sends variables over the wire", async (t) => {
   slot.unmount();
 });
 
-test("useClient is the imperative escape hatch", async (t) => {
-  t.after(cleanup);
+test("useClient is the imperative escape hatch", async () => {
   function ClientPanel() {
     const client = rpc.useClient();
     const [content, setContent] = useState("pending");
@@ -213,17 +253,11 @@ test("useClient is the imperative escape hatch", async (t) => {
   slot.unmount();
 });
 
-test("an owned client survives a StrictMode double mount", async (t) => {
-  t.after(cleanup);
+test("a query survives a StrictMode double mount", async () => {
   // bb's app root wraps every plugin panel in <StrictMode>, whose dev
-  // double mount runs the boundary's cleanup and re-mount BEFORE the
-  // queued sweep microtask — the sweep must then leave the reclaimed
-  // client alone or it silently cancels the panel's first in-flight
-  // query, freezing it on isPending. Rendered through RTL directly:
-  // strict effects only fire when StrictMode is the ROOT of the render
-  // (nested under providers, as renderSlot mounts things, React 19 only
-  // double-RENDERS), so renderSlot cannot reproduce this. The response
-  // resolves on a timer so it lands after the sweep, like real HTTP.
+  // double mount unmounts and remounts the boundary. Rendered through
+  // RTL directly: strict effects only fire when StrictMode is the ROOT
+  // of the render. The response resolves on a timer, like real HTTP.
   function StrictPanel() {
     const strict = useTanStackQuery({
       queryKey: ["strict-mount"],
@@ -245,8 +279,7 @@ test("an owned client survives a StrictMode double mount", async (t) => {
   await screen.findByText("strict:ok");
 });
 
-test("PluginQueryBoundary uses a provided client instead of owning one", async (t) => {
-  t.after(cleanup);
+test("PluginQueryBoundary uses a provided client instead of the shared one", async () => {
   const provided = new QueryClient();
   provided.setQueryData(["overview"], { total: 42 });
   function SeededPanel() {

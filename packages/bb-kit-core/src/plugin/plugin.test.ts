@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  createFakePluginHost,
+  makePluginAgentConfigurationContext,
+} from "@get-bb/plugin-sdk/testing";
 import { z } from "zod";
 import {
   definePlugin,
@@ -8,52 +12,30 @@ import {
   type PluginErrorReporter,
   type PluginFailure,
   type PluginPerformanceReporter,
+  type PluginTraceOutcome,
 } from "./plugin.ts";
-import { argv, CommandError, defineCommand } from "../command/command.ts";
-import { defineMutation, defineQuery, noInputSchema } from "../rpc/rpc.ts";
-import { defineTool, type Session, type ToolContext, type ToolResult } from "../tools/tools.ts";
-import type { HostSeam } from "./host.ts";
+import { defineCommand, PluginCliError } from "../command/command.ts";
+import { defineMutation, defineQuery } from "../rpc/rpc.ts";
+import { defineTool } from "../tools/tools.ts";
 
 const echo = defineQuery({
-  input: z.object({ path: z.string() }),
+  input: z.object({ path: z.string() }).strict(),
   output: z.object({ path: z.string() }),
-  execute(_ctx, { path }) {
-    return { path };
-  },
+  execute: (_ctx, { path }) => ({ path }),
 });
 
 const ping = defineQuery({
   output: z.object({ pong: z.boolean() }),
-  execute() {
-    return { pong: true };
-  },
+  execute: () => ({ pong: true }),
 });
 
-const readURL = defineMutation({
-  input: z.object({ url: z.string() }),
-  output: z.object({ ok: z.boolean() }),
-  execute() {
-    return { ok: true };
-  },
+type Counter = { next(): number };
+type CounterContext = Context<{ counter: Counter }>;
+
+const bump = defineMutation({
+  output: z.object({ value: z.number() }),
+  execute: (ctx: CounterContext) => ({ value: ctx.counter.next() }),
 });
-
-const demo = { echo, ping, readURL };
-
-const testSession: Session = {
-  pluginMetadata: {},
-  thread: { id: "t", title: null, parentThreadId: null, sourceThreadId: null },
-  project: { id: "p", kind: "personal", name: "project", gitRemoteUrl: null },
-  environment: {
-    id: "e",
-    name: null,
-    path: null,
-    workspaceProvisionType: "personal",
-    branchName: null,
-  },
-  host: { id: "h", name: "host" },
-  provider: { id: "provider", model: "model", capabilities: { supportsNativeUserQuestion: false } },
-  origin: { kind: null, pluginId: null },
-};
 
 const status = defineCommand({
   summary: "Show status",
@@ -65,1198 +47,488 @@ const status = defineCommand({
 
 const cat = defineCommand({
   summary: "Print a path",
-  input: z.object({
-    path: argv.argument(z.string(), { description: "repo-relative path" }),
+  positionals: [{ name: "path", description: "repo-relative path", required: true }],
+  options: { upper: { type: "boolean", description: "uppercase the path" } },
+  execute: (_ctx, { positionals, options }) => ({
+    exitCode: 0,
+    stdout: `${options.upper ? positionals.path.toUpperCase() : positionals.path}\n`,
   }),
-  execute(_ctx, { path }) {
-    return { exitCode: 0, stdout: `${path}\n` };
-  },
 });
 
-const send = defineCommand({
-  summary: "Post a notification",
-  input: z.object({
-    message: argv.words(z.string().min(1), {
-      fallbackOption: true,
-      description: "notification text",
-    }),
-  }),
-  execute(_ctx, { message }) {
-    return { exitCode: 0, stdout: `${message}\n` };
-  },
-});
-
-type RPCArgs = {
-  contract: Parameters<HostSeam["rpc"]["register"]>[0];
-  handlers: Parameters<HostSeam["rpc"]["register"]>[1];
-};
-type CLIRegistration = Parameters<HostSeam["cli"]["register"]>[0];
-type ToolRegistration = Parameters<HostSeam["agents"]["registerTool"]>[0];
-type ConfigureProvider = Parameters<HostSeam["agents"]["configure"]>[0];
-type InstructionsProvider = Parameters<HostSeam["agents"]["contributeInstructions"]>[0];
-
-function fakeHost(
-  options: Readonly<{ rpcRegisterFailure?: unknown; disposeRegistrationFailure?: unknown }> = {},
-) {
-  const captured: {
-    order: string[];
-    rpc?: RPCArgs;
-    cli?: CLIRegistration;
-    agentTools: ToolRegistration[];
-    configure?: ConfigureProvider;
-    instructions?: InstructionsProvider;
-    disposers: Array<() => void | Promise<void>>;
-  } = { order: [], agentTools: [], disposers: [] };
-  const bb: HostSeam & {
-    sdk: { tag: string };
-    storage: { kv: object };
-    onDispose(hook: () => void | Promise<void>): void;
-  } = {
-    rpc: {
-      register(contract, handlers) {
-        if (options.rpcRegisterFailure !== undefined) {
-          throw options.rpcRegisterFailure;
-        }
-        captured.order.push("rpc");
-        captured.rpc = { contract, handlers };
-      },
-    },
-    cli: {
-      register(registration) {
-        captured.order.push("cli");
-        captured.cli = registration;
-      },
-    },
-    agents: {
-      registerTool(registration) {
-        captured.order.push("agents");
-        captured.agentTools.push(registration);
-      },
-      configure(provider) {
-        captured.configure = provider;
-      },
-      contributeInstructions(provider) {
-        captured.instructions = provider;
-      },
-    },
-    onDispose(hook) {
-      if (options.disposeRegistrationFailure !== undefined) {
-        throw options.disposeRegistrationFailure;
-      }
-      captured.disposers.push(hook);
-    },
-    sdk: { tag: "sdk" },
-    storage: { kv: {} },
-  };
-  return { bb: bb as unknown as BbPluginApi, captured };
+function counter(): Counter {
+  let value = 0;
+  return { next: () => ++value };
 }
 
 function recordingReporter() {
   const failures: PluginFailure[] = [];
-  const disposeTimeouts: number[] = [];
   const reporter: PluginErrorReporter = {
     capture(failure) {
       failures.push(failure);
       return undefined;
     },
-    dispose(timeoutMs) {
-      disposeTimeouts.push(timeoutMs);
-    },
   };
-  return { failures, disposeTimeouts, reporter };
+  return { failures, reporter };
 }
 
-function assertNoFailures(failures: readonly PluginFailure[]): void {
-  assert.equal(failures.length, 0);
-}
-
-async function loadPlugin() {
-  const { bb, captured } = fakeHost();
-  const plugin = definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    command: { status, cat, send },
-    setup() {
-      captured.order.push("setup");
-    },
-  });
-  await plugin(bb);
-  return { bb, captured };
-}
-
-test("registration order: rpc, cli, then setup", async () => {
-  const { captured } = await loadPlugin();
-  assert.deepEqual(captured.order, ["rpc", "cli", "setup"]);
-});
-
-test("contract uses public names; no-input RPCs get the vendored schema", async () => {
-  const { captured } = await loadPlugin();
-  const contract = captured.rpc?.contract ?? {};
-  assert.deepEqual(Object.keys(contract).sort(), ["echo", "ping", "readURL"]);
-  assert.equal(contract.ping?.input, noInputSchema);
-  assert.notEqual(contract.echo?.input, noInputSchema);
-});
-
-test("wire handlers invoke the procedure directly with the context (no re-validation)", async () => {
-  const { captured } = await loadPlugin();
-  const handlers = captured.rpc?.handlers ?? {};
-  assert.deepEqual(await handlers.echo?.({ path: "x" }), { path: "x" });
-  assert.deepEqual(await handlers.ping?.(null), { pong: true });
-});
-
-test("wire RPC failures capture once and preserve the original value", async () => {
-  const failure = new Error("wire failed");
-  const failing = defineQuery({
-    output: z.object({ ok: z.boolean() }),
-    execute() {
-      throw failure;
-    },
-  });
-  const { bb, captured } = fakeHost();
-  const recording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => recording.reporter,
-    rpc: { failing },
-  })(bb);
-  const invocation = captured.rpc?.handlers.failing?.(undefined);
-  assert.ok(invocation);
-  await assert.rejects(Promise.resolve(invocation), (error: unknown) => error === failure);
-  assert.deepEqual(recording.failures, [
-    { boundary: "rpc.execute", operation: "failing", error: failure },
-  ]);
-});
-
-test("a failing reporter cannot replace a wire RPC failure", async () => {
-  const failure = new Error("wire failed");
-  const failing = defineQuery({
-    output: z.object({ ok: z.boolean() }),
-    execute() {
-      throw failure;
-    },
-  });
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => ({
-      capture() {
-        throw new Error("reporting failed");
-      },
-    }),
-    rpc: { failing },
-  })(bb);
-  const invocation = captured.rpc?.handlers.failing?.(undefined);
-  assert.ok(invocation);
-  await assert.rejects(Promise.resolve(invocation), (error: unknown) => error === failure);
-});
-
-test("cli registration: plugin id as name, summary, metadata for every command", async () => {
-  const { captured } = await loadPlugin();
-  assert.equal(captured.cli?.name, "demo-ns");
-  assert.equal(captured.cli?.summary, "CLI for the demo-ns plugin");
-  const commands = captured.cli?.commands ?? [];
-  const byName = new Map(commands.map((command) => [command.name, command]));
-  assert.deepEqual([...byName.keys()].sort(), ["cat", "rpc", "send", "status"]);
-  assert.equal(byName.get("status")?.summary, "Show status");
-  assert.equal(byName.get("rpc")?.summary, "Call an RPC (JSON object in, JSON object out)");
-  assert.equal(typeof byName.get("status")?.usage, "string");
-});
-
-test("omitted command: default summary, only the rpc subtree", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({ pluginId: "demo-ns", rpc: demo })(bb);
-  assert.equal(captured.cli?.summary, "CLI for the demo-ns plugin");
-  assert.deepEqual(
-    (captured.cli?.commands ?? []).map((command) => command.name),
-    ["rpc"],
-  );
-});
-
-test("setup receives the host", async () => {
-  const { bb } = fakeHost();
-  let setupBb: BbPluginApi | undefined;
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    setup(received) {
-      setupBb = received;
-    },
-  })(bb);
-  assert.equal(setupBb, bb);
-});
-
-test("error reporter construction fails open", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter() {
-      throw new Error("telemetry unavailable");
-    },
-    rpc: demo,
-  })(bb);
-  assert.deepEqual(captured.order, ["rpc", "cli"]);
-  assert.equal(captured.disposers.length, 0);
-});
-
-test("factory failures capture once, dispose once, and preserve identity", async () => {
-  const failure = new Error("registration failed");
-  const { bb, captured } = fakeHost({ rpcRegisterFailure: failure });
-  const recording = recordingReporter();
-  await assert.rejects(
-    definePlugin({
-      pluginId: "demo-ns",
-      errorReporter: () => recording.reporter,
-      rpc: demo,
-    })(bb),
-    (error) => error === failure,
-  );
-  assert.deepEqual(recording.failures, [{ boundary: "plugin.factory", error: failure }]);
-  assert.deepEqual(recording.disposeTimeouts, [2_000]);
-  assert.equal(captured.disposers.length, 1);
-  await captured.disposers[0]?.();
-  assert.deepEqual(recording.disposeTimeouts, [2_000]);
-});
-
-test("setup failures capture separately and preserve identity", async () => {
-  const failure = new Error("setup failed");
-  const { bb } = fakeHost();
-  const recording = recordingReporter();
-  await assert.rejects(
-    definePlugin({
-      pluginId: "demo-ns",
-      errorReporter: () => recording.reporter,
-      rpc: demo,
-      setup() {
-        throw failure;
-      },
-    })(bb),
-    (error) => error === failure,
-  );
-  assert.deepEqual(recording.failures, [{ boundary: "plugin.setup", error: failure }]);
-  assert.deepEqual(recording.disposeTimeouts, [2_000]);
-});
-
-test("disposal registration failure disables reporting without failing the plugin", async () => {
-  const { bb } = fakeHost({ disposeRegistrationFailure: new Error("hook unavailable") });
-  const recording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => recording.reporter,
-    rpc: demo,
-  })(bb);
-  assertNoFailures(recording.failures);
-  assert.deepEqual(recording.disposeTimeouts, [2_000]);
-});
-
-test("each factory execution owns one reporter and one disposal hook", async () => {
-  const first = fakeHost();
-  const second = fakeHost();
-  const recordings = [recordingReporter(), recordingReporter()];
-  let reporterIndex = 0;
-  const plugin = definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => recordings[reporterIndex++]?.reporter,
-    rpc: demo,
-  });
-  await plugin(first.bb);
-  await plugin(second.bb);
-  assert.equal(reporterIndex, 2);
-  assert.equal(first.captured.disposers.length, 1);
-  assert.equal(second.captured.disposers.length, 1);
-  await first.captured.disposers[0]?.();
-  await second.captured.disposers[0]?.();
-  assert.deepEqual(
-    recordings.map((recording) => recording.disposeTimeouts),
-    [[2_000], [2_000]],
-  );
-});
-
-test("setup disposal runs before reporter disposal under BB's LIFO order", async () => {
-  const order: string[] = [];
-  const { bb, captured } = fakeHost();
-  const reporter: PluginErrorReporter = {
-    capture: () => undefined,
-    dispose() {
-      order.push("reporter");
+function recordingTraces() {
+  const traces: { operation: string; outcome?: PluginTraceOutcome }[] = [];
+  const reporter: PluginPerformanceReporter = {
+    start({ operation }) {
+      const trace: (typeof traces)[number] = { operation };
+      traces.push(trace);
+      return {
+        checkpoint() {},
+        finish(outcome) {
+          trace.outcome = outcome;
+        },
+      };
     },
   };
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => reporter,
-    rpc: demo,
-    setup(setupBb) {
-      setupBb.onDispose(() => {
-        order.push("setup");
-      });
-    },
-  })(bb);
-  for (const dispose of captured.disposers.toReversed()) {
-    await dispose();
-  }
-  assert.deepEqual(order, ["setup", "reporter"]);
-});
-
-test("definePlugin return is callable and carries the rpc map by identity", async () => {
-  const { bb } = fakeHost();
-  const plugin = definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-  });
-  assert.equal(plugin.rpc, demo);
-  await plugin(bb);
-});
-
-test("definePlugin rejects an invalid id", () => {
-  assert.throws(() => definePlugin({ pluginId: "Bad", rpc: demo }), /invalid plugin id "Bad"/);
-  assert.throws(() => definePlugin({ pluginId: "-x", rpc: demo }), /invalid plugin id/);
-});
-
-test("definePlugin rejects an invalid RPC key", () => {
-  assert.throws(
-    () =>
-      definePlugin({
-        pluginId: "demo-ns",
-        rpc: { ReadFile: ping },
-      }),
-    /invalid RPC key "ReadFile"/,
-  );
-});
-
-test("reserved command names throw at define time", () => {
-  const loose = defineCommand({ summary: "x", execute: (_ctx) => ({ exitCode: 0 }) });
-  for (const key of ["rpc", "help"]) {
-    assert.throws(
-      () =>
-        definePlugin({
-          pluginId: "demo-ns",
-          rpc: demo,
-          command: { [key]: loose },
-        }),
-      new RegExp(`"${key}" is a reserved command name`),
-    );
-  }
-});
-
-// ---- the run dispatcher ---------------------------------------------
-
-async function dispatcher() {
-  const { captured } = await loadPlugin();
-  const registration = captured.cli;
-  assert.ok(registration);
-  return registration;
+  return { traces, reporter };
 }
 
-test("curated command runs with the plugin context and the invocation context", async () => {
-  const cli = await dispatcher();
-  assert.deepEqual(await cli.run(["status"], { cwd: "/w" }), {
-    exitCode: 0,
-    stdout: "pong=true cwd=/w\n",
-  });
+async function load(plugin: (bb: BbPluginApi) => Promise<void>, pluginId = "demo") {
+  const host = createFakePluginHost({ pluginId });
+  await plugin(host.bb);
+  return host;
+}
+
+// ── definition ──────────────────────────────────────────────────────
+
+test("definePlugin returns the entry factory carrying the rpc map by identity", () => {
+  const rpc = { echo, ping };
+  const plugin = definePlugin({ pluginId: "demo", rpc });
+  assert.equal(typeof plugin, "function");
+  assert.equal(plugin.rpc, rpc);
 });
 
-test("host cli.run: missing required argument is exit 2", async () => {
-  const cli = await dispatcher();
-  const missing = await cli.run(["cat"], {});
-  assert.equal(missing.exitCode, 2);
-  assert.match(missing.stderr ?? "", /missing required argument/);
-});
-
-test("host cli.run: words join rest tokens and --message is the fallback", async () => {
-  const cli = await dispatcher();
-  assert.deepEqual(await cli.run(["send", "build", "is", "done"], {}), {
-    exitCode: 0,
-    stdout: "build is done\n",
-  });
-  assert.deepEqual(await cli.run(["send", "--message", "hi"], {}), {
-    exitCode: 0,
-    stdout: "hi\n",
-  });
-});
-
-test("rpc subtree: with-input happy path prints compact JSON", async () => {
-  const cli = await dispatcher();
-  assert.deepEqual(await cli.run(["rpc", "echo", '{"path":"a"}'], {}), {
-    exitCode: 0,
-    stdout: '{"path":"a"}\n',
-  });
-});
-
-test("rpc subtree: names match the public RPC name", async () => {
-  const cli = await dispatcher();
-  assert.deepEqual(await cli.run(["rpc", "readURL", '{"url":"u"}'], {}), {
-    exitCode: 0,
-    stdout: '{"ok":true}\n',
-  });
-});
-
-test("rpc subtree: no-input procedure runs without an argument", async () => {
-  const cli = await dispatcher();
-  assert.deepEqual(await cli.run(["rpc", "ping"], {}), {
-    exitCode: 0,
-    stdout: '{"pong":true}\n',
-  });
-});
-
-test("rpc subtree: malformed JSON is exit 1", async () => {
-  const cli = await dispatcher();
-  const result = await cli.run(["rpc", "echo", "{bad"], {});
-  assert.equal(result.exitCode, 1);
-  assert.match(result.stderr ?? "", /^invalid JSON input: /);
-});
-
-test("rpc subtree: non-object JSON is exit 1", async () => {
-  const cli = await dispatcher();
-  for (const raw of ["5", "null", '"x"', "[1]"]) {
-    const result = await cli.run(["rpc", "echo", raw], {});
-    assert.equal(result.exitCode, 1);
-    assert.equal(result.stderr, "input must be a JSON object\n");
-  }
-});
-
-test("rpc subtree: client validation failures are exit 1 on stderr", async () => {
-  const cli = await dispatcher();
-  const missing = await cli.run(["rpc", "echo"], {});
-  assert.equal(missing.exitCode, 1);
-  assert.match(missing.stderr ?? "", /invalid input/);
-  const extra = await cli.run(["rpc", "ping", "{}"], {});
-  assert.equal(extra.exitCode, 1);
-  assert.match(extra.stderr ?? "", /takes no input/);
-});
-
-test("RPC CLI reports owned failures but not malformed JSON or input validation", async () => {
-  const procedureFailure = new Error("procedure failed");
-  const failing = defineQuery({
-    output: z.object({ ok: z.boolean() }),
-    execute() {
-      throw procedureFailure;
-    },
-  });
-  const invalidOutput = defineQuery({
-    output: z.object({ ok: z.boolean() }),
-    execute() {
-      return { ok: true };
-    },
-  });
-  Object.defineProperty(invalidOutput, "execute", {
-    value: () => ({ ok: "private output" }),
-  });
-  const cycle: { link?: unknown } = {};
-  cycle.link = cycle;
-  const circular = defineQuery({
-    output: z.object({ value: z.unknown() }),
-    execute() {
-      return { value: cycle };
-    },
-  });
-  const { bb, captured } = fakeHost();
-  const recording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => recording.reporter,
-    rpc: { echo, failing, invalidOutput, circular },
-  })(bb);
-  const cli = captured.cli;
-  assert.ok(cli);
-
-  await cli.run(["rpc", "echo"], {});
-  await cli.run(["rpc", "echo", "{bad"], {});
-  assertNoFailures(recording.failures);
-
-  await cli.run(["rpc", "failing"], {});
-  await cli.run(["rpc", "invalidOutput"], {});
-  await cli.run(["rpc", "circular"], {});
-  assert.deepEqual(
-    recording.failures.map((failure) => ({
-      boundary: failure.boundary,
-      operation: "operation" in failure ? failure.operation : undefined,
-    })),
-    [
-      { boundary: "rpc.cli", operation: "failing" },
-      { boundary: "rpc.cli", operation: "invalidOutput" },
-      { boundary: "rpc.cli", operation: "circular" },
-    ],
-  );
-  assert.equal(recording.failures[0]?.error, procedureFailure);
-});
-
-test("curated commands report only unexpected non-abort failures", async () => {
-  const commandFailure = new Error("command failed");
-  const abortFailure = new Error("cancelled");
-  abortFailure.name = "AbortError";
-  const concurrentFailure = new Error("failed while aborting");
-  const crash = defineCommand({
-    summary: "Crash",
-    execute() {
-      throw commandFailure;
-    },
-  });
-  const expected = defineCommand({
-    summary: "Expected",
-    execute() {
-      throw new CommandError("expected", { exitCode: 7 });
-    },
-  });
-  const abort = defineCommand({
-    summary: "Abort",
-    execute() {
-      throw abortFailure;
-    },
-  });
-  const concurrent = defineCommand({
-    summary: "Concurrent",
-    execute() {
-      throw concurrentFailure;
-    },
-  });
-  const { bb, captured } = fakeHost();
-  const recording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => recording.reporter,
-    rpc: { ping },
-    command: { crash, expected, abort, concurrent },
-  })(bb);
-  const cli = captured.cli;
-  assert.ok(cli);
-  const controller = new AbortController();
-  controller.abort();
-
-  assert.equal((await cli.run(["expected"], {})).exitCode, 7);
-  assert.equal((await cli.run(["abort"], { signal: controller.signal })).exitCode, 1);
-  assert.equal((await cli.run(["crash"], {})).exitCode, 1);
-  assert.equal((await cli.run(["concurrent"], { signal: controller.signal })).exitCode, 1);
-  assert.deepEqual(recording.failures, [
-    { boundary: "command.execute", operation: "crash", error: commandFailure },
-    { boundary: "command.execute", operation: "concurrent", error: concurrentFailure },
-  ]);
-});
-
-test("root help lists curated commands and the rpc subtree", async () => {
-  const cli = await dispatcher();
-  const result = await cli.run(["--help"], {});
-  assert.equal(result.exitCode, 0);
-  assert.match(result.stdout ?? "", /Usage: demo-ns/);
-  assert.match(result.stdout ?? "", /status/);
-  assert.match(result.stdout ?? "", /rpc/);
-});
-
-test("rpc --help lists procedures with their kinds", async () => {
-  const cli = await dispatcher();
-  const result = await cli.run(["rpc", "--help"], {});
-  assert.equal(result.exitCode, 0);
-  assert.match(result.stdout ?? "", /echo/);
-  assert.match(result.stdout ?? "", /readURL/);
-  assert.match(result.stdout ?? "", /\(query\)/);
-  assert.match(result.stdout ?? "", /\(mutation\)/);
-});
-
-test("empty argv is exit 2 with help; help command is exit 0", async () => {
-  const cli = await dispatcher();
-  const empty = await cli.run([], {});
-  assert.equal(empty.exitCode, 2);
-  assert.match(empty.stderr ?? "", /Usage: demo-ns/);
-  const help = await cli.run(["help"], {});
-  assert.equal(help.exitCode, 0);
-});
-
-// ---- agent tools ----------------------------------------------------
-
-let toolGate = true;
-const seenToolContexts: unknown[] = [];
-
-const notifyUser = defineTool({
-  description: "Post a notification",
-  parameters: z.object({ message: z.string() }),
-  enabled: () => toolGate,
-  execute(ctx: ToolContext<Context>, input) {
-    seenToolContexts.push(ctx);
-    return `sent:${input.message}`;
-  },
-});
-
-const inventory = defineTool({
-  description: "List things",
-  parameters: z.object({}),
-  execute: () => "listed",
-});
-
-test("agent tools register under the derived public name", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: { tools: { user: notifyUser, inventory } },
-  })(bb);
-  assert.deepEqual(
-    captured.agentTools.map((tool) => tool.name),
-    ["demo_ns_user", "demo_ns_inventory"],
-  );
-  assert.equal(captured.agentTools[0]?.description, "Post a notification");
-  assert.equal(captured.agentTools[0]?.parameters, notifyUser.parameters);
-});
-
-test("factory order: rpc, cli, agents, then setup", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    command: { status },
-    agents: { tools: { inventory } },
-    setup() {
-      captured.order.push("setup");
-    },
-  })(bb);
-  assert.deepEqual(captured.order, ["rpc", "cli", "agents", "setup"]);
-});
-
-test("registered execute freezes the overlay context and returns the tool result", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: { tools: { user: notifyUser } },
-  })(bb);
-  const registration = captured.agentTools[0];
-  assert.ok(registration);
-  const signal = new AbortController().signal;
-  seenToolContexts.length = 0;
-  const result = await registration.execute(
-    { message: "hi" },
-    { threadId: "t1", projectId: "p1", signal },
-  );
-  assert.equal(result, "sent:hi");
-  const ctx = seenToolContexts[0] as {
-    bb: unknown;
-    tool: { threadId: string; projectId: string; signal: AbortSignal };
-  };
-  assert.equal(ctx.bb, bb);
-  assert.deepEqual(ctx.tool, { threadId: "t1", projectId: "p1", signal });
-  assert.equal(Object.isFrozen(ctx), true);
-});
-
-test("a gated tool synthesizes one configure listing derived names for passing predicates", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: { tools: { user: notifyUser, inventory } },
-  })(bb);
-  const provider = captured.configure;
-  assert.ok(provider);
-  const session = testSession;
-  toolGate = true;
-  assert.deepEqual(provider(session), {
-    tools: ["demo_ns_user", "demo_ns_inventory"],
-    skills: [],
-  });
-  toolGate = false;
-  assert.deepEqual(provider(session), { tools: ["demo_ns_inventory"], skills: [] });
-  toolGate = true;
-});
-
-test("agents.skills: a static array passes through; a selector runs per resolution", async () => {
-  const fixed = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: { tools: { inventory }, skills: ["triage"] },
-  })(fixed.bb);
-  assert.deepEqual(fixed.captured.configure?.(testSession), {
-    tools: ["demo_ns_inventory"],
-    skills: ["triage"],
-  });
-  const selected = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: { tools: { inventory }, skills: () => ["a", "b"] },
-  })(selected.bb);
-  assert.deepEqual(selected.captured.configure?.(testSession), {
-    tools: ["demo_ns_inventory"],
-    skills: ["a", "b"],
-  });
-});
-
-test("ungated, skill-less tools register no configure and no instructions", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: { tools: { inventory } },
-  })(bb);
-  assert.equal(captured.configure, undefined);
-  assert.equal(captured.instructions, undefined);
-});
-
-test("agents.instructions wires contributeInstructions with the plugin context", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    agents: {
-      tools: { inventory },
-      instructions(ctx, resolution) {
-        return ctx.bb ? `${resolution.threadId}/${resolution.projectId}` : null;
-      },
-    },
-  })(bb);
-  assert.equal(captured.instructions?.({ threadId: "t", projectId: "p" }), "t/p");
-});
-
-test("agent tool reporting preserves sync results, throws, rejections, and abort policy", async () => {
-  const syncFailure = new Error("sync tool failed");
-  const asyncFailure = new Error("async tool failed");
-  const abortFailure = new Error("cancelled");
-  abortFailure.name = "AbortError";
-  const concurrentFailure = new Error("failed while aborting");
-  const syncResult: ToolResult = { content: [{ type: "text", text: "done" }] };
-  const tools = {
-    sync_result: defineTool({
-      description: "Return synchronously",
-      parameters: z.object({}),
-      execute: () => syncResult,
-    }),
-    sync_failure: defineTool({
-      description: "Throw synchronously",
-      parameters: z.object({}),
-      execute() {
-        throw syncFailure;
-      },
-    }),
-    async_failure: defineTool({
-      description: "Reject asynchronously",
-      parameters: z.object({}),
-      execute: () => Promise.reject(asyncFailure),
-    }),
-    abort_failure: defineTool({
-      description: "Abort",
-      parameters: z.object({}),
-      execute() {
-        throw abortFailure;
-      },
-    }),
-    concurrent_failure: defineTool({
-      description: "Fail while aborted",
-      parameters: z.object({}),
-      execute() {
-        throw concurrentFailure;
-      },
-    }),
-    domain_failure: defineTool({
-      description: "Return a domain failure",
-      parameters: z.object({}),
-      execute: (): ToolResult => ({
-        content: [{ type: "text", text: "no" }],
-        isError: true,
-      }),
-    }),
-  };
-  const { bb, captured } = fakeHost();
-  const recording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => recording.reporter,
-    rpc: { ping },
-    agents: { tools },
-  })(bb);
-  const byName = new Map(captured.agentTools.map((tool) => [tool.name, tool]));
-  const active = new AbortController();
-  const aborted = new AbortController();
-  aborted.abort();
-  const invocation = { threadId: "t", projectId: "p", signal: active.signal };
-  const abortedInvocation = { ...invocation, signal: aborted.signal };
-
-  const returned = byName.get("demo_ns_sync_result")?.execute({}, invocation);
-  assert.equal(returned, syncResult);
+test("definePlugin rejects invalid ids, RPC keys, command keys, and tool keys", () => {
+  assert.throws(() => definePlugin({ pluginId: "Demo", rpc: {} }), /invalid plugin id "Demo"/);
+  assert.throws(() => definePlugin({ pluginId: "demo", rpc: { "bad-key": ping } }), /bad-key/);
+  assert.throws(() => definePlugin({ pluginId: "demo", rpc: { then: ping } }), /reserved RPC key/);
   assert.throws(
-    () => byName.get("demo_ns_sync_failure")?.execute({}, invocation),
-    (error) => error === syncFailure,
+    () => definePlugin({ pluginId: "demo", rpc: {}, command: { rpc: status } }),
+    /"rpc" is a reserved command name/,
   );
-  const rejected = byName.get("demo_ns_async_failure")?.execute({}, invocation);
-  assert.ok(rejected instanceof Promise);
-  await assert.rejects(rejected, (error) => error === asyncFailure);
-  assert.throws(
-    () => byName.get("demo_ns_abort_failure")?.execute({}, abortedInvocation),
-    (error) => error === abortFailure,
-  );
-  assert.throws(
-    () => byName.get("demo_ns_concurrent_failure")?.execute({}, abortedInvocation),
-    (error) => error === concurrentFailure,
-  );
-  assert.deepEqual(byName.get("demo_ns_domain_failure")?.execute({}, invocation), {
-    content: [{ type: "text", text: "no" }],
-    isError: true,
-  });
-  assert.deepEqual(recording.failures, [
-    { boundary: "agent.tool", operation: "demo_ns_sync_failure", error: syncFailure },
-    { boundary: "agent.tool", operation: "demo_ns_async_failure", error: asyncFailure },
-    {
-      boundary: "agent.tool",
-      operation: "demo_ns_concurrent_failure",
-      error: concurrentFailure,
-    },
-  ]);
-});
-
-test("agent configure and instructions failures stay synchronous and capture once", async () => {
-  const gateFailure = new Error("gate failed");
-  const gate = defineTool({
-    description: "Gated",
+  const tool = defineTool({
+    description: "t",
     parameters: z.object({}),
-    enabled() {
-      throw gateFailure;
-    },
-    execute: () => "unused",
+    execute: () => "ok",
   });
-  const gatedHost = fakeHost();
-  const gatedRecording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => gatedRecording.reporter,
-    rpc: { ping },
-    agents: { tools: { gate } },
-  })(gatedHost.bb);
   assert.throws(
-    () => gatedHost.captured.configure?.(testSession),
-    (error) => error === gateFailure,
-  );
-  assert.deepEqual(gatedRecording.failures, [{ boundary: "agent.configure", error: gateFailure }]);
-
-  const skillsFailure = new Error("skills failed");
-  const skillsHost = fakeHost();
-  const skillsRecording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => skillsRecording.reporter,
-    rpc: { ping },
-    agents: {
-      tools: { inventory },
-      skills() {
-        throw skillsFailure;
-      },
-    },
-  })(skillsHost.bb);
-  assert.throws(
-    () => skillsHost.captured.configure?.(testSession),
-    (error) => error === skillsFailure,
-  );
-  assert.deepEqual(skillsRecording.failures, [
-    { boundary: "agent.configure", error: skillsFailure },
-  ]);
-
-  const instructionsFailure = new Error("instructions failed");
-  const instructionsHost = fakeHost();
-  const instructionsRecording = recordingReporter();
-  await definePlugin({
-    pluginId: "demo-ns",
-    errorReporter: () => instructionsRecording.reporter,
-    rpc: { ping },
-    agents: {
-      tools: { inventory },
-      instructions() {
-        throw instructionsFailure;
-      },
-    },
-  })(instructionsHost.bb);
-  assert.throws(
-    () => instructionsHost.captured.instructions?.({ threadId: "t", projectId: "p" }),
-    (error) => error === instructionsFailure,
-  );
-  assert.deepEqual(instructionsRecording.failures, [
-    { boundary: "agent.instructions", error: instructionsFailure },
-  ]);
-});
-
-test("invalid tool keys throw at define time", () => {
-  assert.throws(
-    () =>
-      definePlugin({
-        pluginId: "demo-ns",
-        rpc: demo,
-        agents: { tools: { "Bad-Key": inventory } },
-      }),
+    () => definePlugin({ pluginId: "demo", rpc: {}, agents: { tools: { "Bad-Key": tool } } }),
     /invalid tool key "Bad-Key"/,
   );
 });
 
-// ---- performance traces ---------------------------------------------
+test("a handler demanding a service the plugin does not provide is a type error", () => {
+  // @ts-expect-error -- `bump` needs ctx.counter and there are no services.
+  definePlugin({ pluginId: "demo", rpc: { bump } });
+  definePlugin({ pluginId: "demo", rpc: { bump }, services: () => ({ counter: counter() }) });
+});
 
-function recordingPerformance() {
-  const traces: Array<{ operation: string; variant?: string; events: string[] }> = [];
-  const disposeTimeouts: number[] = [];
-  const reporter: PluginPerformanceReporter = {
-    start(args) {
-      const record = { ...args, events: [] as string[] };
-      traces.push(record);
-      return {
-        checkpoint(name) {
-          record.events.push(`checkpoint:${name}`);
-        },
-        finish(outcome) {
-          record.events.push(`finish:${outcome}`);
-        },
-      };
-    },
-    dispose(timeoutMs) {
-      disposeTimeouts.push(timeoutMs);
-    },
-  };
-  return { traces, disposeTimeouts, reporter };
-}
+// ── services and setup ──────────────────────────────────────────────
 
-test("startup and wire RPC calls trace with kebab-case operations", async () => {
-  const { bb, captured } = fakeHost();
-  const recording = recordingPerformance();
-  await definePlugin({
-    pluginId: "demo-ns",
-    performanceReporter: () => recording.reporter,
-    rpc: demo,
-  })(bb);
-  assert.deepEqual(recording.traces[0], {
-    operation: "plugin.startup",
-    events: ["checkpoint:registered", "finish:ok"],
+test("services build once per load and reach RPCs, commands, and setup", async () => {
+  let builds = 0;
+  let setupCount: number | undefined;
+  const show = defineCommand({
+    summary: "Show the counter",
+    execute: (ctx: CounterContext) => ({ exitCode: 0, stdout: `${ctx.counter.next()}\n` }),
   });
-  await captured.rpc?.handlers.readURL?.({ url: "u" });
-  await captured.rpc?.handlers.ping?.(null);
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: { bump },
+      command: { show },
+      services(bb) {
+        assert.equal(bb.pluginId, "demo");
+        builds += 1;
+        return { counter: counter() };
+      },
+      setup(ctx) {
+        setupCount = ctx.counter.next();
+      },
+    }),
+  );
+  assert.equal(setupCount, 1);
+  assert.deepEqual(await harness.callRpc("bump"), { value: 2 });
+  assert.equal((await harness.runCli(["show"])).stdout, "3\n");
+  assert.equal(builds, 1);
+});
+
+test("setup receives a frozen context whose bb is the host", async () => {
+  let seen: Context | undefined;
+  const host = createFakePluginHost({ pluginId: "demo" });
+  await definePlugin({
+    pluginId: "demo",
+    rpc: {},
+    setup(ctx) {
+      seen = ctx;
+    },
+  })(host.bb);
+  assert.equal(seen?.bb, host.bb);
+  assert.equal(Object.isFrozen(seen), true);
+});
+
+// ── RPC ─────────────────────────────────────────────────────────────
+
+test("RPCs register under their map keys with host validation", async () => {
+  const { harness } = await load(definePlugin({ pluginId: "demo", rpc: { echo, ping } }));
+  assert.deepEqual(await harness.callRpc("echo", { path: "a" }), { path: "a" });
+  assert.deepEqual(await harness.callRpc("ping"), { pong: true });
+  await assert.rejects(harness.callRpc("echo", { path: 1 }));
+  await assert.rejects(harness.callRpc("ping", { extra: true }));
+});
+
+test("an RPC failure is captured once and rethrown as-is", async () => {
+  const { failures, reporter } = recordingReporter();
+  const boom = new Error("boom");
+  const fails = defineQuery({
+    output: z.object({}),
+    execute: () => {
+      throw boom;
+    },
+  });
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: { fails },
+      errorReporter: () => reporter,
+    }),
+  );
+  await assert.rejects(harness.callRpc("fails"), /boom/);
+  assert.deepEqual(failures, [{ boundary: "rpc.execute", operation: "fails", error: boom }]);
+});
+
+test("rpcPublication.discoverable publishes descriptions to the host", async () => {
+  const described = defineQuery({
+    description: "Ping the plugin",
+    output: z.object({ pong: z.boolean() }),
+    execute: () => ({ pong: true }),
+  });
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: { described },
+      rpcPublication: { discoverable: true, description: "Demo RPC" },
+    }),
+  );
   assert.deepEqual(
-    recording.traces.slice(1).map(({ operation, events }) => ({ operation, events })),
-    [
-      { operation: "rpc.read-u-r-l", events: ["finish:ok"] },
-      { operation: "rpc.ping", events: ["finish:ok"] },
-    ],
+    harness.inspection.registrations.experimental_publishedRpcMethods.map(
+      (method) => method.method,
+    ),
+    ["described"],
   );
 });
 
-test("wire RPC failures finish the trace as error and preserve identity", async () => {
-  const failure = new Error("wire failed");
-  const failing = defineQuery({
-    output: z.object({ ok: z.boolean() }),
-    execute() {
-      throw failure;
-    },
-  });
-  const { bb, captured } = fakeHost();
-  const recording = recordingPerformance();
-  await definePlugin({
-    pluginId: "demo-ns",
-    performanceReporter: () => recording.reporter,
-    rpc: { failing },
-  })(bb);
-  const invocation = captured.rpc?.handlers.failing?.(undefined);
-  assert.ok(invocation);
-  await assert.rejects(Promise.resolve(invocation), (error: unknown) => error === failure);
-  assert.deepEqual(recording.traces.at(-1), {
-    operation: "rpc.failing",
-    events: ["finish:error"],
-  });
+// ── CLI ─────────────────────────────────────────────────────────────
+
+test("commands parse argv with the SDK and get the invocation context", async () => {
+  const { harness } = await load(
+    definePlugin({ pluginId: "demo", rpc: { ping }, command: { status, cat } }),
+  );
+  assert.equal(
+    (await harness.runCli(["status"], { cwd: "/work" })).stdout,
+    "pong=true cwd=/work\n",
+  );
+  assert.equal((await harness.runCli(["cat", "a/b"])).stdout, "a/b\n");
+  assert.equal((await harness.runCli(["cat", "a/b", "--upper"])).stdout, "A/B\n");
+  const missing = await harness.runCli(["cat"]);
+  assert.equal(missing.exitCode, 1);
+  assert.match(missing.stderr, /missing required arguments: <path>/);
 });
 
-test("agent tool traces finish ok, error, and cancelled", async () => {
-  const toolFailure = new Error("tool failed");
-  const abortFailure = new Error("cancelled");
-  abortFailure.name = "AbortError";
-  const tools = {
-    listing: defineTool({
-      description: "List",
-      parameters: z.object({}),
-      execute: () => "listed",
-    }),
-    crashing: defineTool({
-      description: "Crash",
-      parameters: z.object({}),
-      execute() {
-        throw toolFailure;
-      },
-    }),
-    aborting: defineTool({
-      description: "Abort",
-      parameters: z.object({}),
-      execute() {
-        throw abortFailure;
-      },
-    }),
-  };
-  const { bb, captured } = fakeHost();
-  const recording = recordingPerformance();
-  await definePlugin({
-    pluginId: "demo-ns",
-    performanceReporter: () => recording.reporter,
-    rpc: { ping },
-    agents: { tools },
-  })(bb);
-  const byName = new Map(captured.agentTools.map((tool) => [tool.name, tool]));
+test("help lists curated commands, the rpc command, and every RPC method", async () => {
+  const { harness } = await load(
+    definePlugin({ pluginId: "demo", rpc: { echo }, command: { status } }),
+  );
+  const help = await harness.runCli(["--help"]);
+  assert.equal(help.exitCode, 0);
+  assert.match(help.stdout, /status/);
+  assert.match(help.stdout, /rpc/);
+  assert.match((await harness.runCli(["rpc", "--help"])).stdout, /echo/);
+});
+
+test("rpc command: JSON object in, compact JSON out, validated in-process", async () => {
+  const { harness } = await load(
+    definePlugin({ pluginId: "demo", rpc: { echo, ping, pingTwice: ping } }),
+  );
+  assert.deepEqual(await harness.runCli(["rpc", "echo", '{"path":"a"}']), {
+    exitCode: 0,
+    stdout: '{"path":"a"}\n',
+    stderr: "",
+  });
+  assert.equal((await harness.runCli(["rpc", "ping"])).stdout, '{"pong":true}\n');
+  assert.equal((await harness.runCli(["rpc", "pingTwice"])).stdout, '{"pong":true}\n');
+  const unknown = await harness.runCli(["rpc", "nope"]);
+  assert.equal(unknown.exitCode, 1);
+  assert.match(unknown.stderr, /unknown RPC method "nope"/);
+  for (const [input, message] of [
+    ["{", /invalid JSON input/],
+    ["[1]", /input must be a JSON object/],
+    ['{"path":1}', /invalid input/],
+  ] as const) {
+    const result = await harness.runCli(["rpc", "echo", input]);
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, message);
+  }
+});
+
+test("commands report unexpected failures, not PluginCliError or aborts", async () => {
+  const { failures, reporter } = recordingReporter();
+  const boom = new Error("boom");
   const aborted = new AbortController();
   aborted.abort();
-  const invocation = { threadId: "t", projectId: "p", signal: new AbortController().signal };
-
-  assert.equal(byName.get("demo_ns_listing")?.execute({}, invocation), "listed");
-  assert.throws(() => byName.get("demo_ns_crashing")?.execute({}, invocation));
-  assert.throws(() =>
-    byName.get("demo_ns_aborting")?.execute({}, { ...invocation, signal: aborted.signal }),
-  );
-  assert.deepEqual(
-    recording.traces.slice(1).map(({ operation, events }) => ({ operation, events })),
-    [
-      { operation: "tool.listing", events: ["finish:ok"] },
-      { operation: "tool.crashing", events: ["finish:error"] },
-      { operation: "tool.aborting", events: ["finish:cancelled"] },
-    ],
-  );
-});
-
-test("setup failures finish the startup trace as error", async () => {
-  const { bb } = fakeHost();
-  const recording = recordingPerformance();
-  await assert.rejects(
+  const fails = defineCommand({
+    summary: "Fail",
+    options: {
+      mode: { type: "enum", values: ["usage", "crash"], description: "how", required: true },
+    },
+    execute: (ctx, { options }) => {
+      if (options.mode === "usage") throw new PluginCliError("bad usage", { exitCode: 2 });
+      if (ctx.signal?.aborted) throw ctx.signal.reason;
+      throw boom;
+    },
+  });
+  const { harness } = await load(
     definePlugin({
-      pluginId: "demo-ns",
-      performanceReporter: () => recording.reporter,
-      rpc: demo,
-      setup() {
-        throw new Error("setup failed");
-      },
-    })(bb),
+      pluginId: "demo",
+      rpc: {},
+      command: { fails },
+      errorReporter: () => reporter,
+    }),
   );
-  assert.deepEqual(recording.traces[0]?.events, ["checkpoint:registered", "finish:error"]);
+  const usage = await harness.runCli(["fails", "--mode", "usage"]);
+  assert.equal(usage.exitCode, 2);
+  assert.match(usage.stderr, /bad usage/);
+  assert.deepEqual(failures, []);
+
+  assert.equal(
+    (await harness.runCli(["fails", "--mode", "crash"], { signal: aborted.signal })).exitCode,
+    1,
+  );
+  assert.deepEqual(failures, []);
+
+  const crash = await harness.runCli(["fails", "--mode", "crash"]);
+  assert.equal(crash.exitCode, 1);
+  assert.deepEqual(failures, [{ boundary: "command.execute", operation: "fails", error: boom }]);
 });
 
-test("a performance reporter alone owns one bounded disposal hook", async () => {
-  const { bb, captured } = fakeHost();
-  const recording = recordingPerformance();
-  await definePlugin({
-    pluginId: "demo-ns",
-    performanceReporter: () => recording.reporter,
-    rpc: demo,
-  })(bb);
-  assert.equal(captured.disposers.length, 1);
-  await captured.disposers[0]?.();
-  await captured.disposers[0]?.();
-  assert.deepEqual(recording.disposeTimeouts, [2_000]);
+// ── agents ──────────────────────────────────────────────────────────
+
+const greet = defineTool({
+  description: "Greet someone",
+  parameters: z.object({ name: z.string() }),
+  execute: (ctx, { name }) => `hello ${name} from ${ctx.tool.threadId}`,
 });
 
-test("performance reporter construction fails open", async () => {
-  const { bb, captured } = fakeHost();
-  await definePlugin({
-    pluginId: "demo-ns",
-    performanceReporter() {
-      throw new Error("telemetry unavailable");
-    },
-    rpc: demo,
-  })(bb);
-  assert.deepEqual(captured.order, ["rpc", "cli"]);
-  assert.equal(captured.disposers.length, 0);
+test("tools register under the plugin-prefixed name and get the tool context", async () => {
+  const { harness } = await load(
+    definePlugin({ pluginId: "demo-ns", rpc: {}, agents: { tools: { greet } } }),
+  );
+  assert.equal(
+    await harness.callAgentTool("demo_ns_greet", { name: "ada" }, { threadId: "thr_1" }),
+    "hello ada from thr_1",
+  );
 });
 
-// ---- type-level pins ------------------------------------------------
-
-function typeOnly() {
-  defineCommand({
-    summary: "wants more than the preset provides",
-    // @ts-expect-error a command demanding a field outside CommandContext is rejected
-    execute: (_ctx: { extra(): void }) => ({ exitCode: 0 }),
-  });
-  const usesHostFields = defineCommand({
-    summary: "reads cwd from CommandContext",
-    execute(ctx) {
-      return {
-        exitCode: 0,
-        stdout: ctx.cwd ?? "",
-      };
-    },
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    command: { usesHostFields },
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    // @ts-expect-error leftover wrapper { summary, commands } is a type error
-    command: { summary: "x", commands: { status } },
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    // @ts-expect-error reserved key rpc is a type error
-    command: { rpc: status },
-  });
-  void definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    // @ts-expect-error authors cannot supply a context factory
-    ctx: () => ({ prefix: "" }),
-  });
-  defineQuery({
-    output: z.object({ pong: z.boolean() }),
-    // @ts-expect-error execute demanding a field outside the preset is rejected
-    execute: (_ctx: { extra(): void }) => ({ pong: true }),
-  });
-  defineQuery({
-    output: z.object({ pong: z.boolean() }),
-    // @ts-expect-error sdk lives on bb, not on Context
-    execute: (_ctx: { sdk: unknown }) => ({ pong: true }),
-  });
-  defineQuery({
-    output: z.object({ pong: z.boolean() }),
-    // @ts-expect-error CommandContext fields are not RPC fields
-    execute: (_ctx: { cwd: string }) => ({ pong: true }),
-  });
-  const greedyTool = defineTool({
-    description: "wants more than the preset provides",
+test("gated tools and skills resolve per session through configure", async () => {
+  const gated = defineTool({
+    description: "Only in project p",
     parameters: z.object({}),
-    execute: (_ctx: ToolContext<{ extra(): void }>) => "x",
+    enabled: (_ctx, session) => session.project.id === "p",
+    execute: () => "ok",
   });
-  void definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-    // @ts-expect-error a tool demanding a field outside the preset is rejected
-    agents: { tools: { greedy: greedyTool } },
-  });
-  void definePlugin({ pluginId: "demo-ns", rpc: demo });
-  const plugin = definePlugin({
-    pluginId: "demo-ns",
-    rpc: demo,
-  });
-  type PluginRPC = (typeof plugin)["rpc"];
-  const fromPlugin: PluginRPC = demo;
-  const toDemo: typeof demo = fromPlugin;
-  void toDemo;
-}
-void typeOnly;
+  const host = createFakePluginHost({ pluginId: "demo", agentSkillIds: ["guide"] });
+  await definePlugin({
+    pluginId: "demo",
+    rpc: {},
+    agents: { tools: { greet, gated }, skills: ["guide"] },
+  })(host.bb);
+  const inProject = await host.harness.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({ project: { id: "p" } }),
+  );
+  assert.deepEqual(
+    inProject.tools.map((tool) => tool.name),
+    ["demo_greet", "demo_gated"],
+  );
+  assert.deepEqual(inProject.skills, ["guide"]);
+  const elsewhere = await host.harness.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({ project: { id: "q" } }),
+  );
+  assert.deepEqual(
+    elsewhere.tools.map((tool) => tool.name),
+    ["demo_greet"],
+  );
+});
 
-test("rpcPublication.discoverable publishes the contract through the host", async () => {
-  const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-  const described = defineQuery({
-    description: "Echo a path",
-    input: z.object({ path: z.string() }),
-    output: z.object({ path: z.string() }),
-    execute(_ctx, { path }) {
-      return { path };
+test("agents.instructions receives the plugin context", async () => {
+  const host = createFakePluginHost({ pluginId: "demo" });
+  await definePlugin({
+    pluginId: "demo",
+    rpc: {},
+    services: () => ({ counter: counter() }),
+    agents: {
+      tools: {},
+      instructions: (ctx, { threadId }) => `${threadId}:${ctx.counter.next()}`,
+    },
+  })(host.bb);
+  const provider = host.harness.inspection.registrations.instructionProvider;
+  assert.equal(provider?.({ threadId: "thr_9", projectId: "p" }), "thr_9:1");
+});
+
+test("tool failures are captured unless the call was aborted", async () => {
+  const { failures, reporter } = recordingReporter();
+  const boom = new Error("boom");
+  const fails = defineTool({
+    description: "Fail",
+    parameters: z.object({}),
+    execute: (ctx) => Promise.reject(ctx.tool.signal.aborted ? ctx.tool.signal.reason : boom),
+  });
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: {},
+      agents: { tools: { fails } },
+      errorReporter: () => reporter,
+    }),
+  );
+  const aborted = new AbortController();
+  aborted.abort();
+  await assert.rejects(harness.callAgentTool("demo_fails", {}, { signal: aborted.signal }));
+  assert.deepEqual(failures, []);
+  await assert.rejects(harness.callAgentTool("demo_fails", {}), /boom/);
+  assert.deepEqual(failures, [{ boundary: "agent.tool", operation: "demo_fails", error: boom }]);
+});
+
+// ── load failures and reporters ─────────────────────────────────────
+
+test("service and setup failures are captured at their boundary and rethrown", async () => {
+  for (const [boundary, definition] of [
+    [
+      "plugin.factory",
+      {
+        services: () => {
+          throw new Error("services");
+        },
+      },
+    ],
+    [
+      "plugin.setup",
+      {
+        setup: () => {
+          throw new Error("setup");
+        },
+      },
+    ],
+  ] as const) {
+    const { failures, reporter } = recordingReporter();
+    const host = createFakePluginHost({ pluginId: "demo" });
+    await assert.rejects(
+      definePlugin({ pluginId: "demo", rpc: {}, errorReporter: () => reporter, ...definition })(
+        host.bb,
+      ),
+    );
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.boundary, boundary);
+  }
+});
+
+test("a throwing reporter factory or capture never breaks the plugin", async () => {
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: { ping },
+      errorReporter: () => {
+        throw new Error("factory");
+      },
+    }),
+  );
+  assert.deepEqual(await harness.callRpc("ping"), { pong: true });
+
+  const throwing: PluginErrorReporter = {
+    capture() {
+      throw new Error("capture");
+    },
+  };
+  const fails = defineQuery({
+    output: z.object({}),
+    execute: () => {
+      throw new Error("original");
     },
   });
-  const silent = createFakePluginHost({ pluginId: "demo-ns" });
-  await definePlugin({ pluginId: "demo-ns", rpc: { described, ping } })(silent.bb);
-  assert.deepEqual(silent.harness.inspection.registrations.experimental_publishedRpcMethods, []);
+  const second = await load(
+    definePlugin({ pluginId: "demo", rpc: { fails }, errorReporter: () => throwing }),
+  );
+  await assert.rejects(second.harness.callRpc("fails"), /original/);
+});
 
-  const discoverable = createFakePluginHost({ pluginId: "demo-ns" });
+test("reporters dispose with the plugin", async () => {
+  const disposed: number[] = [];
+  const host = createFakePluginHost({ pluginId: "demo" });
   await definePlugin({
-    pluginId: "demo-ns",
-    rpc: { described, ping },
-    rpcPublication: { discoverable: true, description: "Demo RPC" },
-  })(discoverable.bb);
-  const published = discoverable.harness.inspection.registrations.experimental_publishedRpcMethods;
+    pluginId: "demo",
+    rpc: {},
+    errorReporter: () => ({
+      capture: () => undefined,
+      dispose: (timeoutMs) => {
+        disposed.push(timeoutMs);
+      },
+    }),
+  })(host.bb);
+  await host.harness.lifecycle.dispose();
+  assert.equal(disposed.length, 1);
+});
+
+test("a host that refuses onDispose disables reporting without failing the load", async () => {
+  const { failures, reporter } = recordingReporter();
+  const host = createFakePluginHost({ pluginId: "demo" });
+  const refusing = Object.create(host.bb, {
+    onDispose: {
+      value: () => {
+        throw new Error("no dispose");
+      },
+    },
+  }) as BbPluginApi;
+  const fails = defineQuery({
+    output: z.object({}),
+    execute: () => {
+      throw new Error("x");
+    },
+  });
+  await definePlugin({ pluginId: "demo", rpc: { fails }, errorReporter: () => reporter })(refusing);
+  await assert.rejects(host.harness.callRpc("fails"));
+  assert.deepEqual(failures, []);
+});
+
+test("startup, RPC, and tool calls are traced with their outcomes", async () => {
+  const { traces, reporter } = recordingTraces();
+  const fails = defineQuery({
+    output: z.object({}),
+    execute: () => {
+      throw new Error("x");
+    },
+  });
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: { ping, fails },
+      agents: { tools: { greet } },
+      performanceReporter: () => reporter,
+    }),
+  );
+  await harness.callRpc("ping");
+  await assert.rejects(harness.callRpc("fails"));
+  await harness.callAgentTool("demo_greet", { name: "a" });
   assert.deepEqual(
-    published.map((entry) => [
-      entry.method,
-      entry.registrationDescription,
-      entry.methodDescription,
-    ]),
+    traces.map(({ operation, outcome }) => [operation, outcome]),
     [
-      ["described", "Demo RPC", "Echo a path"],
-      ["ping", "Demo RPC", null],
+      ["plugin.startup", "ok"],
+      ["rpc.ping", "ok"],
+      ["rpc.fails", "error"],
+      ["tool.greet", "ok"],
     ],
   );
-  assert.deepEqual(published[1]?.inputSchema, { type: "null" });
-  assert.equal(published[0]?.inputSchema.type, "object");
 });

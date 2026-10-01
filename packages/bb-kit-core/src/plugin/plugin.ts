@@ -1,22 +1,21 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { RPCContext, RPCProcedures, StandardSchemaV1 } from "../rpc/rpc.ts";
+import type { BbPluginApi, PluginCliCommand, PluginCliContext } from "@get-bb/plugin-sdk";
+import { defineCli, PluginCliError } from "@get-bb/plugin-sdk";
+import type { CommandMap, CommandsContext } from "../command/command.ts";
+import type { Context } from "../context.ts";
 import {
-  assertRPCKeys,
-  createClient,
-  noInputSchema,
-  RPCValidationError,
-  runtimeProcedures,
-} from "../rpc/rpc.ts";
+  PLUGIN_ID_PATTERN,
+  RESERVED_COMMAND_KEYS,
+  TOOL_KEY_PATTERN,
+  toolName,
+} from "../names/names.ts";
+import type { RPCContext, RPCProcedures, RuntimeProcedure, StandardSchemaV1 } from "../rpc/rpc.ts";
+import { assertRPCKeys, callProcedure, noInputSchema, RPCValidationError } from "../rpc/rpc.ts";
+import type { RuntimeTool, Session, ToolMap, ToolsContext } from "../tools/tools.ts";
 import type { MaybePromise } from "../utils/types.ts";
-import type { CommandContext, CommandMap, CommandResult } from "../command/command.ts";
-import type { ProgramDefinition } from "../command/runner.ts";
-import { buildProgram, commandDefinitions, runProgram } from "../command/runner.ts";
-import type { Session, ToolMap, ToolsContext } from "../tools/tools.ts";
-import { assertToolKeys, runtimeTools, toolName } from "../tools/tools.ts";
 import {
   capturePluginFailure,
   createPluginErrorReporter,
-  createPluginErrorReporterDisposer,
+  createReporterDisposer,
   isAbortedFailure,
   observePluginFailure,
   type PluginErrorReporter,
@@ -28,9 +27,9 @@ import {
   rpcTraceOperation,
   startPluginTrace,
   toolTraceOperation,
+  type PluginPerformanceReporter,
   type PluginPerformanceReporterFactory,
 } from "./performance-reporter.ts";
-import { hostContext, type Context, type HostAgentsSeam } from "./host.ts";
 
 export type {
   PluginErrorReporter,
@@ -43,345 +42,147 @@ export type {
   PluginPerformanceTrace,
   PluginTraceOutcome,
 } from "./performance-reporter.ts";
-export type { HostSeam } from "./host.ts";
-export { hostContext } from "./host.ts";
-export type { Context } from "./host.ts";
-
-declare const outsidePreset: unique symbol;
-
-/** `"bb"`. Derived from Context, never spelled twice. */
-type PresetField = keyof Context;
+export type { Context } from "../context.ts";
 
 /**
- * Diagnostic only. An RPC map whose execute demands a field the frozen
- * preset does not have fails to assign to this, and TypeScript prints
- * the offending keys inside the type name.
+ * The services every handler's `ctx` annotation asks for, minus what the
+ * host and the call itself supply. `services(bb)` must return at least
+ * this, so a missing service is reported on the `services` line.
  */
-export type HandlerDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
-  readonly [outsidePreset]: Keys;
-};
+type Demanded<R extends RPCProcedures, M extends CommandMap, T extends ToolMap> = Omit<
+  RPCContext<R> & CommandsContext<M> & ToolsContext<T>,
+  "bb" | "tool" | keyof PluginCliContext
+>;
 
-/** Same, for agent tools. Tools additionally get `tool`. */
-export type ToolDemandsFieldOutsideThePreset<Keys extends PropertyKey> = {
-  readonly [outsidePreset]: Keys;
-};
-
-type OutsidePreset<Demand, Allowed extends PropertyKey> = Exclude<keyof Demand, Allowed>;
-
-type RPCFieldCheck<R extends RPCProcedures> = [OutsidePreset<RPCContext<R>, PresetField>] extends [
-  never,
-]
-  ? unknown
-  : { rpc: HandlerDemandsFieldOutsideThePreset<OutsidePreset<RPCContext<R>, PresetField>> };
-
-type ToolFieldCheck<T extends ToolMap> = [
-  OutsidePreset<ToolsContext<T>, PresetField | "tool">,
+/** Makes `services` required once any handler asks for a service. */
+type RequireServices<R extends RPCProcedures, M extends CommandMap, T extends ToolMap> = [
+  keyof Demanded<R, M, T>,
 ] extends [never]
   ? unknown
-  : {
-      agents: ToolDemandsFieldOutsideThePreset<
-        OutsidePreset<ToolsContext<T>, PresetField | "tool">
-      >;
-    };
-
-/**
- * Intersected into `definePlugin`'s parameter. Resolves to `unknown`
- * when every demand is a preset field, and to a re-declaration of
- * `rpc` / `command` / `agents` with the diagnostic type otherwise.
- */
-export type ClosedContext<
-  R extends RPCProcedures,
-  T extends ToolMap = Record<never, never>,
-> = RPCFieldCheck<R> & ToolFieldCheck<T>;
-
-const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+  : { services: (bb: BbPluginApi) => unknown };
 
 export type DefinedPlugin<R extends RPCProcedures> = ((bb: BbPluginApi) => Promise<void>) & {
   readonly rpc: R;
 };
 
+type Reporters = {
+  errors: PluginErrorReporter | undefined;
+  performance: PluginPerformanceReporter | undefined;
+};
+
 /**
- * The composition root (§2, §7, ADR-0012). Fuses the plugin id, the
- * RPC map, and the curated Commands into one DefinedPlugin. That
- * value is the entry factory bb's server.ts default-exports, plus the
- * map as `.rpc` so UI can type-only import that default. There is no
- * author `context` callback — the factory always builds the frozen
- * `{ bb }` preset from the host. `setup` is METHOD
- * syntax on purpose — bivariant parameters let a callback annotated
- * with a test fake still assign against `BbPluginApi`.
+ * The composition root. Fuses the plugin id, its services, RPCs,
+ * commands, and agent tools into the entry factory `server.ts`
+ * default-exports. The returned factory also carries the RPC map as
+ * `.rpc`, so app/ can type-only import it.
+ *
+ * Load order: services → RPC → CLI → agents → setup. `services(bb)`
+ * runs once per load. A service that holds resources registers its own
+ * cleanup with `bb.onDispose`.
  */
 export function definePlugin<
   R extends RPCProcedures,
-  C extends CommandMap = Record<never, never>,
+  M extends CommandMap = Record<never, never>,
   T extends ToolMap = Record<never, never>,
+  S extends object = Record<never, never>,
 >(
   definition: {
     pluginId: string;
+    /**
+     * Build the plugin's long-lived collaborators once per load. Keep it
+     * synchronous; async start-up work belongs in `setup`.
+     */
+    services?(bb: BbPluginApi): S & Demanded<NoInfer<R>, NoInfer<M>, NoInfer<T>>;
     errorReporter?: PluginErrorReporterFactory;
     performanceReporter?: PluginPerformanceReporterFactory;
     rpc: R;
-    /**
-     * Opt into publishing the RPC contract (method list plus JSON
-     * schemas) to agents through the host. Off by default.
-     */
+    /** Publish the RPC contract (methods and JSON schemas) to `bb plugin rpc`. Off by default. */
     rpcPublication?: { discoverable?: boolean; description?: string };
-    command?: C;
+    command?: M;
     agents?: {
       tools: T;
-      skills?: string[] | ((ctx: Context, session: Session) => string[]);
+      skills?: string[] | ((ctx: Context<S>, session: Session) => string[]);
       instructions?(
-        ctx: Context,
+        ctx: Context<S>,
         resolution: { threadId: string; projectId: string },
       ): string | null;
     };
-    setup?(bb: BbPluginApi): MaybePromise<void>;
-  } & ClosedContext<R, T>,
+    /** Runs last, for host wiring bb-kit does not own: events, hooks, http, settings. */
+    setup?(ctx: Context<S>): MaybePromise<void>;
+  } & RequireServices<NoInfer<R>, NoInfer<M>, NoInfer<T>>,
 ): DefinedPlugin<R> {
   const { pluginId, rpc } = definition;
   if (!PLUGIN_ID_PATTERN.test(pluginId)) {
-    throw new Error(`invalid plugin id "${pluginId}": must match /^[a-z0-9][a-z0-9-]*$/`);
+    throw new Error(`invalid plugin id "${pluginId}": must match ${PLUGIN_ID_PATTERN}`);
   }
   assertRPCKeys(rpc);
-  const curated = definition.command ?? {};
-  for (const key of Object.keys(curated)) {
-    if (key === "rpc" || key === "help") {
+  const commands = definition.command ?? {};
+  for (const key of Object.keys(commands)) {
+    if (RESERVED_COMMAND_KEYS.includes(key)) {
       throw new Error(`"${key}" is a reserved command name`);
     }
   }
-  if (definition.agents) {
-    assertToolKeys(definition.agents.tools);
+  const tools = (definition.agents?.tools ?? {}) as Record<string, RuntimeTool>;
+  for (const key of Object.keys(tools)) {
+    if (!TOOL_KEY_PATTERN.test(key)) {
+      throw new Error(`invalid tool key "${key}": must match ${TOOL_KEY_PATTERN}`);
+    }
   }
-  const summary = `CLI for the ${pluginId} plugin`;
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
-    let reporter = createPluginErrorReporter(definition.errorReporter, pluginId, bb);
-    let performanceReporter = createPluginPerformanceReporter(
-      definition.performanceReporter,
-      pluginId,
-      bb,
-    );
-    const disposeErrorReporter = createPluginErrorReporterDisposer(reporter);
-    const disposePerformanceReporter = createPluginErrorReporterDisposer(performanceReporter);
-    const disposeReporters = async (): Promise<void> => {
-      await Promise.all([disposeErrorReporter(), disposePerformanceReporter()]);
+    const reporters: Reporters = {
+      errors: createPluginErrorReporter(definition.errorReporter, pluginId, bb),
+      performance: createPluginPerformanceReporter(definition.performanceReporter, pluginId, bb),
     };
-    if (reporter !== undefined || performanceReporter !== undefined) {
+    const disposeErrors = createReporterDisposer(reporters.errors);
+    const disposePerformance = createReporterDisposer(reporters.performance);
+    const disposeReporters = async (): Promise<void> => {
+      await Promise.all([disposeErrors(), disposePerformance()]);
+    };
+    if (reporters.errors !== undefined || reporters.performance !== undefined) {
       try {
         bb.onDispose(disposeReporters);
       } catch {
-        reporter = undefined;
-        performanceReporter = undefined;
+        reporters.errors = undefined;
+        reporters.performance = undefined;
         void disposeReporters();
       }
     }
-    const startupTrace = startPluginTrace(performanceReporter, "plugin.startup");
+    const startupTrace = startPluginTrace(reporters.performance, "plugin.startup");
+    const fail = async (boundary: "plugin.factory" | "plugin.setup", error: unknown) => {
+      startupTrace?.finish("error");
+      capturePluginFailure(reporters.errors, { boundary, error });
+      await disposeReporters();
+      throw error;
+    };
 
+    let ctx: Context<S>;
     try {
-      // Order (§7): context → client → rpc.register → cli.register → agents → setup.
-      const ctx = hostContext(bb);
-      const client = createClient(rpc, ctx as RPCContext<R>);
-
-      // rpc.register: contract keyed by the map key (the public
-      // name); handlers invoke RPC execute DIRECTLY (the host
-      // validates the name, the client the in-process path — no call is
-      // validated twice).
-      const procedures = runtimeProcedures(rpc);
-      const contract: Record<
-        string,
-        { input: StandardSchemaV1; output: StandardSchemaV1; experimental_description?: string }
-      > = {};
-      const handlers: Record<string, (input: unknown) => Promise<unknown>> = {};
-      for (const key of Object.keys(procedures)) {
-        const procedure = procedures[key];
-        if (!procedure) {
-          continue;
-        }
-        contract[key] = {
-          input: procedure.input ?? noInputSchema,
-          output: procedure.output,
-          ...(procedure.description === undefined
-            ? {}
-            : { experimental_description: procedure.description }),
-        };
-        const traceOperation = rpcTraceOperation(key);
-        handlers[key] = procedure.input
-          ? async (input: unknown) => {
-              const trace = startPluginTrace(performanceReporter, traceOperation);
-              try {
-                const result = await procedure.execute(ctx, input);
-                trace?.finish("ok");
-                return result;
-              } catch (error) {
-                trace?.finish("error");
-                capturePluginFailure(reporter, { boundary: "rpc.execute", operation: key, error });
-                throw error;
-              }
-            }
-          : async () => {
-              const trace = startPluginTrace(performanceReporter, traceOperation);
-              try {
-                const result = await procedure.execute(ctx);
-                trace?.finish("ok");
-                return result;
-              } catch (error) {
-                trace?.finish("error");
-                capturePluginFailure(reporter, { boundary: "rpc.execute", operation: key, error });
-                throw error;
-              }
-            };
-      }
-      const publication = definition.rpcPublication;
-      bb.rpc.register(contract, handlers, {
-        experimental_discoverable: publication?.discoverable ?? false,
-        ...(publication?.description === undefined
-          ? {}
-          : { experimental_description: publication.description }),
-      });
-
-      // cli.register — always (§2): curated commands plus the always-on
-      // rpc subtree behind ONE program, so root help lists everything.
-      const runtimeClient = client as unknown as Record<
-        string,
-        (input?: unknown) => Promise<unknown>
-      >;
-      const makeDefinitions = (overlay: Omit<CommandContext, "bb">): ProgramDefinition[] => [
-        ...commandDefinitions(curated, Object.freeze({ ...ctx, ...overlay })),
-        rpcSubtreeDefinition(rpc, runtimeClient, reporter),
-      ];
-      // One metadata build at registration; a configure that throws here
-      // propagates out of the factory (the plugin does not load).
-      const metadataProgram = buildProgram(makeDefinitions({}), { name: pluginId, summary });
-      const commands = metadataProgram.commands.map((command) => ({
-        name: command.name(),
-        summary: command.summary(),
-        usage: command.usage(),
-      }));
-      bb.cli.register({
-        name: pluginId,
-        summary,
-        commands,
-        rendersHelp: true,
-        run: (argv, overlay) =>
-          runProgram(() => makeDefinitions(overlay), argv, {
-            name: pluginId,
-            summary,
-            onUnhandledError(error) {
-              if (!isAbortedFailure(error, overlay.signal)) {
-                capturePluginFailure(reporter, {
-                  boundary: "command.execute",
-                  operation: argv[0] ?? "root",
-                  error,
-                });
-              }
-            },
-          }),
-      });
-
-      // agents (ADR-0015): one registration per tool under the derived
-      // name. Registration goes through the seam type — the SDK's own
-      // registerTool overloads name zod, which bb-kit never imports.
-      const agents = definition.agents;
-      if (agents) {
-        const host: HostAgentsSeam = bb;
-        const tools = runtimeTools(agents.tools);
-        const keys = Object.keys(tools);
-        for (const key of keys) {
-          const tool = tools[key];
-          if (!tool) {
-            continue;
-          }
-          const operation = toolName(pluginId, key);
-          const traceOperation = toolTraceOperation(key);
-          host.agents.registerTool({
-            name: operation,
-            description: tool.description,
-            ...(tool.instructions === undefined ? {} : { instructions: tool.instructions }),
-            ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
-            parameters: tool.parameters,
-            execute: (params, invocation) => {
-              const trace = startPluginTrace(performanceReporter, traceOperation);
-              return observePluginFailure(
-                () =>
-                  finishTraceOnSuccess(trace, () =>
-                    tool.execute(Object.freeze({ ...ctx, tool: invocation }), params),
-                  ),
-                (error) => {
-                  if (isAbortedFailure(error, invocation.signal)) {
-                    trace?.finish("cancelled");
-                    return;
-                  }
-                  trace?.finish("error");
-                  capturePluginFailure(reporter, {
-                    boundary: "agent.tool",
-                    operation,
-                    error,
-                  });
-                },
-              );
-            },
-          });
-        }
-
-        // Synthesized ONLY when gating or a skills selection exists
-        // (ADR-0017) — an unconditional configure would override the
-        // host's all-on default. A throwing predicate propagates and
-        // the host fails that selection closed.
-        const gated = keys.some((key) => tools[key]?.enabled !== undefined);
-        const skills = agents.skills;
-        if (gated || skills !== undefined) {
-          host.agents.configure((session) =>
-            observePluginFailure(
-              () => {
-                const selected = keys.filter((key) => {
-                  const tool = tools[key];
-                  if (!tool) {
-                    return false;
-                  }
-                  return tool.enabled === undefined || tool.enabled(ctx, session);
-                });
-                let selectedSkills: string[] = [];
-                if (skills !== undefined) {
-                  selectedSkills = Array.isArray(skills) ? skills : skills(ctx, session);
-                }
-                return {
-                  tools: selected.map((key) => toolName(pluginId, key)),
-                  skills: selectedSkills,
-                };
-              },
-              (error) => {
-                capturePluginFailure(reporter, { boundary: "agent.configure", error });
-              },
-            ),
-          );
-        }
-
-        if (agents.instructions !== undefined) {
-          const instructions = agents.instructions;
-          host.agents.contributeInstructions((resolution) =>
-            observePluginFailure(
-              () => instructions(ctx, resolution),
-              (error) => {
-                capturePluginFailure(reporter, { boundary: "agent.instructions", error });
-              },
-            ),
-          );
-        }
+      const services = definition.services?.(bb) ?? ({} as S);
+      ctx = Object.freeze({ ...services, bb }) as Context<S>;
+      registerRPC(bb, ctx, rpc, definition.rpcPublication, reporters);
+      bb.cli.register(
+        defineCli({
+          name: pluginId,
+          summary: `CLI for the ${pluginId} plugin`,
+          commands: {
+            ...cliCommands(ctx, commands, reporters.errors),
+            ...rpcCommands(ctx, rpc, reporters.errors),
+          },
+        }),
+      );
+      if (definition.agents) {
+        registerAgents(bb, ctx, pluginId, tools, definition.agents, reporters);
       }
       startupTrace?.checkpoint("registered");
     } catch (error) {
-      startupTrace?.finish("error");
-      capturePluginFailure(reporter, { boundary: "plugin.factory", error });
-      await disposeReporters();
-      throw error;
+      return fail("plugin.factory", error);
     }
 
     try {
-      await definition.setup?.(bb);
+      await definition.setup?.(ctx);
     } catch (error) {
-      startupTrace?.finish("error");
-      capturePluginFailure(reporter, { boundary: "plugin.setup", error });
-      await disposeReporters();
-      throw error;
+      return fail("plugin.setup", error);
     }
     startupTrace?.finish("ok");
   };
@@ -389,60 +190,218 @@ export function definePlugin<
 }
 
 /**
- * The always-mounted `rpc` subtree (ADR-0013): one entry per
- * RPC under its public name, one optional JSON-object
- * positional, dispatched through the validating client. Success prints
- * compact JSON to stdout; every failure is exit 1 on stderr.
+ * The host validates every call on the HTTP path, so handlers run
+ * `execute` directly; nothing is validated twice.
  */
-function rpcSubtreeDefinition(
-  procedures: RPCProcedures,
-  client: Record<string, (input?: unknown) => Promise<unknown>>,
+function registerRPC(
+  bb: BbPluginApi,
+  ctx: Context,
+  rpc: RPCProcedures,
+  publication: { discoverable?: boolean; description?: string } | undefined,
+  reporters: Reporters,
+): void {
+  const contract: Record<
+    string,
+    { input: StandardSchemaV1; output: StandardSchemaV1; experimental_description?: string }
+  > = {};
+  const handlers: Record<string, (input: unknown) => Promise<unknown>> = {};
+  for (const [key, procedure] of Object.entries(rpc as Record<string, RuntimeProcedure>)) {
+    contract[key] = {
+      input: procedure.input ?? noInputSchema,
+      output: procedure.output,
+      ...(procedure.description === undefined
+        ? {}
+        : { experimental_description: procedure.description }),
+    };
+    const operation = rpcTraceOperation(key);
+    handlers[key] = async (input) => {
+      const trace = startPluginTrace(reporters.performance, operation);
+      try {
+        const result = await (procedure.input
+          ? procedure.execute(ctx, input)
+          : procedure.execute(ctx));
+        trace?.finish("ok");
+        return result;
+      } catch (error) {
+        trace?.finish("error");
+        capturePluginFailure(reporters.errors, {
+          boundary: "rpc.execute",
+          operation: key,
+          error,
+        });
+        throw error;
+      }
+    };
+  }
+  bb.rpc.register(contract, handlers as never, {
+    experimental_discoverable: publication?.discoverable ?? false,
+    ...(publication?.description === undefined
+      ? {}
+      : { experimental_description: publication.description }),
+  });
+}
+
+function cliCommands(
+  ctx: Context,
+  commands: CommandMap,
   reporter: PluginErrorReporter | undefined,
-): ProgramDefinition {
-  const children = Object.keys(procedures).map((key): ProgramDefinition => {
-    const kind = procedures[key]?.kind ?? "query";
-    return {
-      name: key,
-      summary: `(${kind})`,
-      configure: (cmd) => {
-        cmd.argument("[input]", "JSON object input");
-      },
-      action: async (cmd): Promise<CommandResult> => {
-        const raw = cmd.processedArgs[0] as string | undefined;
-        let input: unknown;
-        if (raw !== undefined) {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(raw);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            return { exitCode: 1, stderr: `invalid JSON input: ${message}\n` };
-          }
-          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-            return { exitCode: 1, stderr: "input must be a JSON object\n" };
-          }
-          input = parsed;
-        }
+): Record<string, PluginCliCommand> {
+  const out: Record<string, PluginCliCommand> = {};
+  for (const [key, command] of Object.entries(commands)) {
+    const { execute, ...spec } = command as unknown as {
+      execute(ctx: unknown, input: unknown): Promise<never>;
+    } & Omit<PluginCliCommand, "run">;
+    out[key] = {
+      ...spec,
+      run: async (input, cli: PluginCliContext) => {
         try {
-          const call = client[key];
-          if (!call) {
-            return { exitCode: 1, stderr: `unknown RPC "${key}"\n` };
-          }
-          const result = input === undefined ? await call() : await call(input);
-          return { exitCode: 0, stdout: `${JSON.stringify(result)}\n` };
+          return await execute(Object.freeze({ ...ctx, ...cli }), input);
         } catch (error) {
-          if (!(error instanceof RPCValidationError && error.stage === "input")) {
-            capturePluginFailure(reporter, { boundary: "rpc.cli", operation: key, error });
+          if (!(error instanceof PluginCliError) && !isAbortedFailure(error, cli.signal)) {
+            capturePluginFailure(reporter, { boundary: "command.execute", operation: key, error });
           }
-          const message = error instanceof Error ? error.message : String(error);
-          return { exitCode: 1, stderr: `${message}\n` };
+          throw error;
         }
       },
     };
-  });
+  }
+  return out;
+}
+
+/**
+ * `bb <plugin> rpc <method> [json]`: call any RPC by its key, with one
+ * optional JSON-object input validated in-process the way the host
+ * validates it. Prints the result as compact JSON. One command rather than
+ * one per method: host command names are lowercase, RPC keys are camelCase.
+ */
+function rpcCommands(
+  ctx: Context,
+  rpc: RPCProcedures,
+  reporter: PluginErrorReporter | undefined,
+): Record<string, PluginCliCommand> {
+  const procedures = rpc as Record<string, RuntimeProcedure>;
+  const methods = Object.entries(procedures).map(
+    ([key, procedure]) => `  ${key}${procedure.description ? `  ${procedure.description}` : ""}`,
+  );
+  if (methods.length === 0) return {};
   return {
-    name: "rpc",
-    summary: "Call an RPC (JSON object in, JSON object out)",
-    children,
+    rpc: {
+      summary: "Call an RPC method with an optional JSON object input",
+      description: `Methods:\n${methods.join("\n")}`,
+      positionals: [
+        { name: "method", description: "RPC method key", required: true },
+        { name: "input", description: "JSON object input" },
+      ],
+      run: async ({ positionals }) => {
+        const key = positionals["method"] as string;
+        const procedure = Object.hasOwn(procedures, key) ? procedures[key] : undefined;
+        if (procedure === undefined) {
+          throw new PluginCliError(`unknown RPC method "${key}"`, { code: "invalid_value" });
+        }
+        const raw = positionals["input"];
+        let input: unknown;
+        if (typeof raw === "string") {
+          try {
+            input = JSON.parse(raw);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new PluginCliError(`invalid JSON input: ${message}`, { code: "invalid_value" });
+          }
+          if (input === null || typeof input !== "object" || Array.isArray(input)) {
+            throw new PluginCliError("input must be a JSON object", { code: "invalid_value" });
+          }
+        }
+        try {
+          const result = await callProcedure(procedure as never, ctx, input);
+          return { exitCode: 0, stdout: `${JSON.stringify(result)}\n` };
+        } catch (error) {
+          if (error instanceof RPCValidationError && error.stage === "input") {
+            throw new PluginCliError(error.message, { code: "invalid_value" });
+          }
+          capturePluginFailure(reporter, { boundary: "rpc.cli", operation: key, error });
+          throw error;
+        }
+      },
+    },
   };
+}
+
+function registerAgents(
+  bb: BbPluginApi,
+  ctx: Context,
+  pluginId: string,
+  tools: Record<string, RuntimeTool>,
+  agents: {
+    skills?: string[] | ((ctx: never, session: Session) => string[]);
+    instructions?(ctx: never, resolution: { threadId: string; projectId: string }): string | null;
+  },
+  reporters: Reporters,
+): void {
+  const keys = Object.keys(tools);
+  for (const [key, tool] of Object.entries(tools)) {
+    const operation = toolName(pluginId, key);
+    const traceOperation = toolTraceOperation(key);
+    bb.agents.registerTool({
+      name: operation,
+      description: tool.description,
+      ...(tool.instructions === undefined ? {} : { instructions: tool.instructions }),
+      ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
+      // A zod object schema at runtime. The SDK's overloads name zod's
+      // types, which bb-kit does not import.
+      parameters: tool.parameters as never,
+      execute: (params: unknown, invocation) => {
+        const trace = startPluginTrace(reporters.performance, traceOperation);
+        return observePluginFailure(
+          () =>
+            finishTraceOnSuccess(trace, () =>
+              tool.execute(Object.freeze({ ...ctx, tool: invocation }), params),
+            ),
+          (error) => {
+            if (isAbortedFailure(error, invocation.signal)) {
+              trace?.finish("cancelled");
+              return;
+            }
+            trace?.finish("error");
+            capturePluginFailure(reporters.errors, { boundary: "agent.tool", operation, error });
+          },
+        );
+      },
+    });
+  }
+
+  // Only when gating or a skills selection exists: an unconditional
+  // configure would override the host's all-on default. The host
+  // requires `skills`, so a gated plugin without `agents.skills` selects
+  // none; `bb-kit check` flags that when the manifest has skills.
+  const gated = keys.some((key) => tools[key]?.enabled !== undefined);
+  const skills = agents.skills as string[] | ((ctx: Context, session: Session) => string[]);
+  if (gated || skills !== undefined) {
+    bb.agents.configure((session) =>
+      observePluginFailure(
+        () => ({
+          tools: keys
+            .filter((key) => tools[key]?.enabled?.(ctx, session) ?? true)
+            .map((key) => toolName(pluginId, key)),
+          skills: skills === undefined ? [] : Array.isArray(skills) ? skills : skills(ctx, session),
+        }),
+        (error) => {
+          capturePluginFailure(reporters.errors, { boundary: "agent.configure", error });
+        },
+      ),
+    );
+  }
+
+  const instructions = agents.instructions as
+    | ((ctx: Context, resolution: { threadId: string; projectId: string }) => string | null)
+    | undefined;
+  if (instructions !== undefined) {
+    bb.agents.contributeInstructions((resolution) =>
+      observePluginFailure(
+        () => instructions(ctx, resolution),
+        (error) => {
+          capturePluginFailure(reporters.errors, { boundary: "agent.instructions", error });
+        },
+      ),
+    );
+  }
 }

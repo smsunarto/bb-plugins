@@ -1,10 +1,9 @@
 import { createRequire } from "node:module";
 
-/** Public surface of `@bb-kit/core/testing` (§1, §9). */
-
-/** Re-export — for tests that still build an in-process RPC client. */
-export { stubClient } from "./stub-client.ts";
-export { stubHostContext } from "./stub-context.ts";
+/**
+ * Public surface of `@bb-kit/core/testing`. For a host, use the SDK's
+ * `createFakePluginHost` from `@get-bb/plugin-sdk/testing`.
+ */
 
 /**
  * Install a jsdom document onto `globalThis` for tier-3 tests (§9).

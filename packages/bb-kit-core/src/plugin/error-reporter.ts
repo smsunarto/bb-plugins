@@ -50,7 +50,7 @@ export function capturePluginFailure(
   }
 }
 
-export function createPluginErrorReporterDisposer(
+export function createReporterDisposer(
   reporter: DisposableReporter | undefined,
   timeoutMs = REPORTER_DISPOSE_TIMEOUT_MS,
 ): () => Promise<void> {

@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
-  createClient,
+  assertRPCKeys,
+  callProcedure,
   defineMutation,
   defineQuery,
   noInputSchema,
   RPCValidationError,
-  runtimeProcedures,
 } from "./rpc.ts";
 import type {
   AnyProcedure,
@@ -90,6 +90,7 @@ type _ctx = Expect<MutuallyAssignable<RPCContext<Demo>, { readonly bb: BbPluginA
 
 const bare = { bump };
 type _floor = Expect<MutuallyAssignable<RPCContext<typeof bare>, { readonly bb: BbPluginApi }>>;
+void bare;
 
 function typeOnly(client: Client<Demo>) {
   // @ts-expect-error a with-input procedure requires its input
@@ -102,17 +103,17 @@ function typeOnly(client: Client<Demo>) {
   void defineQuery({ input: z.number(), output: z.object({}), execute: () => ({}) });
   defineQuery({
     output: z.object({ pong: z.boolean() }),
-    // @ts-expect-error execute demanding a field outside the preset is rejected
+    // @ts-expect-error ctx must be a Context: services ride beside `bb`
     execute: (_ctx: { extra(): void }) => ({ pong: true }),
   });
 }
 void typeOnly;
 
-// ---- Standard Schema v1 (vendored) ----------------------------------
+// ---- Standard Schema v1 ---------------------------------------------
 
 const schema = z.object({ path: z.string() });
 
-// zod 4 schemas satisfy the vendored interface directly, no adapter.
+// zod 4 schemas satisfy the SDK's interface directly, no adapter.
 const asStandard: StandardSchemaV1<{ path: string }, { path: string }> = schema;
 void asStandard;
 
@@ -132,7 +133,7 @@ test("Standard Schema validate reports issues for a non-conforming value", async
   assert.equal(typeof result.issues[0]?.message, "string");
 });
 
-// ---- no-input schema (vendored) -------------------------------------
+// ---- no-input schema --------------------------------------------
 
 test("noInputSchema accepts null (SDK hooks and fake host deliver null)", async () => {
   const result = await noInputSchema["~standard"].validate(null);
@@ -174,33 +175,22 @@ const overview = defineQuery({
 const asAny: AnyProcedure = overview;
 void asAny;
 
-test("runtimeProcedures is a view over the same procedure objects", () => {
-  const rpc = { overview };
-  const runtime = runtimeProcedures(rpc);
-  assert.deepEqual(Object.keys(runtime), ["overview"]);
-  assert.equal(runtime.overview, overview as unknown);
+test("assertRPCKeys rejects invalid and reserved keys", () => {
+  assert.throws(() => assertRPCKeys({ ReadFile: ping }), /invalid RPC key "ReadFile"/);
+  assert.throws(() => assertRPCKeys({ "read-file": ping }), /invalid RPC key/);
+  assert.throws(() => assertRPCKeys({ useClient: ping }), /"useClient" is a reserved RPC key/);
+  // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point
+  assert.throws(() => assertRPCKeys({ then: ping }), /"then" is a reserved RPC key/);
 });
 
-// ---- RPC key validation (createClient) ------------------------------
+// ---- callProcedure --------------------------------------------------
 
-test("createClient rejects an invalid RPC key", () => {
-  assert.throws(() => createClient({ ReadFile: ping }, host), /invalid RPC key "ReadFile"/);
-  assert.throws(() => createClient({ "read-file": ping }, host), /invalid RPC key/);
-});
-
-test("createClient rejects the reserved keys useClient and then", () => {
-  assert.throws(() => createClient({ useClient: ping }, host), /"useClient" is a reserved RPC key/);
-  assert.throws(
-    // oxlint-disable-next-line unicorn/no-thenable -- the thenable hazard is the point: createClient must reject this key
-    () => createClient({ then: ping }, host),
-    /"then" is a reserved RPC key/,
-  );
-});
-
-// ---- createClient ---------------------------------------------------
-
-const client = createClient(demo, host);
-type _createClientReturnsClient = Expect<Equal<typeof client, Client<Demo>>>;
+const client = {
+  echo: (input: unknown) => callProcedure(echo, host, input),
+  ping: (input?: unknown) => callProcedure(ping, host, input),
+  bump: (input: unknown) => callProcedure(bump, host, input),
+  broken: () => callProcedure(broken, host, undefined),
+};
 
 test("with-input call validates, runs execute, returns the parsed output", async () => {
   assert.deepEqual(await client.echo({ path: "x" }), { ok: true, path: "p:x" });
@@ -216,8 +206,7 @@ test("no-input call passes only the context", async () => {
 });
 
 test("invalid input throws RPCValidationError at stage input", async () => {
-  const loose = client.echo as unknown as (input: unknown) => Promise<unknown>;
-  await assert.rejects(loose(5), (error: unknown) => {
+  await assert.rejects(client.echo(5), (error: unknown) => {
     assert.ok(error instanceof RPCValidationError);
     assert.equal(error.name, "RPCValidationError");
     assert.equal(error.stage, "input");
@@ -227,9 +216,8 @@ test("invalid input throws RPCValidationError at stage input", async () => {
   });
 });
 
-test("input given to a no-input procedure is rejected by the vendored schema", async () => {
-  const loose = client.ping as unknown as (input: unknown) => Promise<unknown>;
-  await assert.rejects(loose({}), (error: unknown) => {
+test("input given to a no-input procedure is rejected by noInputSchema", async () => {
+  await assert.rejects(client.ping({}), (error: unknown) => {
     assert.ok(error instanceof RPCValidationError);
     assert.equal(error.stage, "input");
     assert.equal(error.issues[0]?.message, "this RPC takes no input");
@@ -244,9 +232,4 @@ test("an execute result failing the output schema throws at stage output", async
     assert.match(error.message, /^invalid output: /);
     return true;
   });
-});
-
-test("createClient accepts a defineQuery map with the pinned { bb } context", async () => {
-  const bareClient = createClient(bare, host);
-  assert.deepEqual(await bareClient.bump({}), { value: 2 });
 });
