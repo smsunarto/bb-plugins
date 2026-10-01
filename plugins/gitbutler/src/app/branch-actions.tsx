@@ -1,17 +1,17 @@
-import { useId, useState } from "react";
-import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import type { Branch, BranchAction, PushMode } from "../shared/schema.ts";
+import { useState } from "react";
+import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import type { Branch, BranchAction, PushMode, ReviewRequest } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { queryClient } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
-import { subject } from "./format.ts";
 
 /**
  * The branch card's write side: rename on the name, and Push, Create PR, and
- * Land in a footer, as GitButler desktop puts them. Every action is one `but`
- * command; afterwards the whole cache is dropped, because a push, a land, or
- * a rename can change any branch, the base, and the history below it.
+ * Land in a footer, as GitButler desktop puts them. Push, Land, and rename are
+ * one `but` command each; afterwards the whole cache is dropped, because any
+ * of them can change every branch, the base, and the history below it. Create
+ * PR hands the branch to a subthread instead.
  */
 
 export type WorkspaceTarget = { threadId: string; repositoryKey: string | undefined };
@@ -91,93 +91,56 @@ export function BranchName({ target, name }: { target: WorkspaceTarget; name: st
   );
 }
 
-/** What a review starts with: GitButler's default of the lone commit's message, else the branch. */
-function reviewDraft(branch: Branch): { title: string; body: string } {
-  const only = branch.commits.length === 1 ? branch.commits[0] : undefined;
-  if (!only) return { title: branch.name, body: "" };
-  const newline = only.message.indexOf("\n");
+const REVIEW_POLL_MS = 5_000;
+
+/**
+ * Create PR is the agent's job, not a form's: a subthread reads the branch,
+ * writes the description, and runs `but pr new`. Which subthread belongs to
+ * which branch lives on the server, so the card finds it again after the
+ * panel remounts or the repository changes.
+ */
+function useReviewRequest(target: WorkspaceTarget, branch: string) {
+  const requests = rpc.reviewRequests.useQuery(defined(target), {
+    // Poll only while a subthread works, so the card sees it finish.
+    refetchInterval: (query) =>
+      query.state.data?.requests.some((request) => request.running) ? REVIEW_POLL_MS : false,
+  });
+  const mutation = rpc.requestReview.useMutation({
+    onSettled: () => queryClient.invalidateQueries(),
+  });
   return {
-    title: subject(only.message),
-    body: newline === -1 ? "" : only.message.slice(newline + 1).trim(),
+    request: () => mutation.mutate(defined({ ...target, branch })),
+    pending: mutation.isPending,
+    current: requests.data?.requests.find((request) => request.branch === branch) ?? null,
+    error: mutation.error,
+    reset: mutation.reset,
   };
 }
 
-function ReviewForm({
-  branch,
-  pending,
-  onSubmit,
-  onCancel,
-}: {
-  branch: Branch;
-  pending: boolean;
-  onSubmit: (review: { title: string; body: string; draft: boolean }) => void;
-  onCancel: () => void;
-}) {
-  const initial = reviewDraft(branch);
-  const [title, setTitle] = useState(initial.title);
-  const [body, setBody] = useState(initial.body);
-  const [draft, setDraft] = useState(false);
-  const draftId = useId();
-
+function ReviewStatus({ request }: { request: ReviewRequest }) {
+  const navigate = useBbNavigate();
   return (
-    <form
-      className="flex w-full flex-col gap-1.5"
-      aria-label="Create PR"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (title.trim() !== "") onSubmit({ title: title.trim(), body, draft });
-      }}
-    >
-      <input
-        // The form opens in answer to "Create PR", so its first field takes focus.
-        // oxlint-disable-next-line jsx-a11y/no-autofocus
-        autoFocus
-        className={FIELD}
-        aria-label="PR title"
-        placeholder="Title"
-        value={title}
-        onChange={(event) => setTitle(event.target.value)}
-      />
-      <textarea
-        className={cn(FIELD, "min-h-16 resize-y leading-normal")}
-        aria-label="PR description"
-        placeholder="Description"
-        rows={3}
-        value={body}
-        onChange={(event) => setBody(event.target.value)}
-      />
-      <div className="flex items-center gap-1.5">
-        <label
-          htmlFor={draftId}
-          className="me-auto flex items-center gap-1.5 text-muted-foreground"
-        >
-          <input
-            id={draftId}
-            type="checkbox"
-            className="accent-primary"
-            checked={draft}
-            onChange={(event) => setDraft(event.target.checked)}
-          />
-          Draft
-        </label>
-        <Button type="button" variant="ghost" size="sm" className={ACTION} onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          size="sm"
-          className={ACTION}
-          disabled={pending || title.trim() === ""}
-        >
-          <Pending pending={pending} />
-          Create PR
-        </Button>
-      </div>
-    </form>
+    // `output` is the native polite live region, so the hand-off is announced.
+    <output className="flex items-center gap-1.5 text-muted-foreground">
+      <Icon name="GitPullRequest" className="size-3 shrink-0" aria-hidden />
+      <span className="me-auto">
+        {request.running
+          ? "A subthread is writing and opening the PR."
+          : "The PR subthread stopped without opening a PR."}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={ACTION}
+        onClick={() => navigate.toThread(request.threadId)}
+      >
+        Open subthread
+      </Button>
+    </output>
   );
 }
 
-type Mode = "idle" | "review" | "land";
+type Mode = "idle" | "land";
 
 function Pending({ pending, icon }: { pending: boolean; icon?: string }) {
   if (pending) return <Icon name="Spinner" className="size-3 animate-spin" aria-hidden />;
@@ -262,11 +225,13 @@ function ActionRow({
   available,
   pending,
   onPush,
+  onReview,
   onChoose,
 }: {
   available: Available;
   pending: boolean;
   onPush: () => void;
+  onReview: () => void;
   onChoose: (mode: Mode) => void;
 }) {
   return (
@@ -275,7 +240,7 @@ function ActionRow({
         <PushButton force={available.push === "force"} pending={pending} onPush={onPush} />
       )}
       {available.review ? (
-        <ActionButton icon="GitPullRequest" disabled={pending} onClick={() => onChoose("review")}>
+        <ActionButton icon="GitPullRequest" disabled={pending} onClick={onReview}>
           Create PR
         </ActionButton>
       ) : null}
@@ -304,28 +269,21 @@ export function BranchActions({
 }) {
   const [mode, setMode] = useState<Mode>("idle");
   const action = useBranchAction(target);
+  const review = useReviewRequest(target, branch.name);
   const available = availableFor(branch, landable);
   const nothing = available.push === "none" && !available.review && !available.land;
   if (nothing && !action.error) return null;
 
   const choose = (next: Mode) => {
     action.reset();
+    review.reset();
     setMode(next);
   };
   const idle = () => setMode("idle");
+  const error = action.error ?? review.error;
 
   return (
     <div className="flex flex-col gap-1.5 border-t border-border bg-secondary/40 px-2.5 py-2">
-      {mode === "review" ? (
-        <ReviewForm
-          branch={branch}
-          pending={action.pending}
-          onCancel={() => choose("idle")}
-          onSubmit={(review) =>
-            action.run({ kind: "createReview", branch: branch.name, ...review }, idle)
-          }
-        />
-      ) : null}
       {mode === "land" ? (
         <LandConfirm
           name={branch.name}
@@ -336,17 +294,26 @@ export function BranchActions({
       ) : null}
       {mode === "idle" ? (
         <ActionRow
-          available={available}
-          pending={action.pending}
+          // While a subthread writes this PR, a second click would start another.
+          available={{ ...available, review: available.review && !review.current?.running }}
+          pending={action.pending || review.pending}
           onChoose={choose}
+          onReview={() => {
+            action.reset();
+            review.request();
+          }}
           onPush={() =>
             action.run({ kind: "push", branch: branch.name, force: available.push === "force" })
           }
         />
       ) : null}
-      {action.error ? (
+      {/* Once the PR exists the card shows it, so a finished subthread drops out. */}
+      {review.current && (review.current.running || branch.reviewId === null) ? (
+        <ReviewStatus request={review.current} />
+      ) : null}
+      {error ? (
         <p role="alert" className="text-[11px] leading-normal text-destructive-text">
-          {action.error.message}
+          {error.message}
         </p>
       ) : null}
     </div>

@@ -161,18 +161,9 @@ export const branchNameSchema = z
   .max(255)
   .regex(/^[^\s-]\S*$/, "A branch name cannot start with a dash or contain whitespace.");
 
-/** The branch-card buttons. Each is one `but` command on one named branch. */
+/** The branch-card buttons that run `but` directly, each on one named branch. */
 export const branchActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("push"), branch: branchNameSchema, force: z.boolean() }).strict(),
-  z
-    .object({
-      kind: z.literal("createReview"),
-      branch: branchNameSchema,
-      title: z.string().trim().min(1).max(256),
-      body: z.string().max(65_536),
-      draft: z.boolean(),
-    })
-    .strict(),
   z.object({ kind: z.literal("land"), branch: branchNameSchema }).strict(),
   z
     .object({ kind: z.literal("rename"), branch: branchNameSchema, name: branchNameSchema })
@@ -180,6 +171,16 @@ export const branchActionSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const branchActionResultSchema = z.object({ ok: z.literal(true) }).strict();
+
+/** The repository a possibly omitted key means, as the host found it. */
+export const resolvedRepositorySchema = z.object({ key: z.string(), path: z.string() }).strict();
+
+/** A Create PR subthread the panel started, and whether its agent is still at work. */
+export const reviewRequestSchema = z
+  .object({ branch: z.string(), threadId: z.string(), running: z.boolean() })
+  .strict();
+
+export const reviewRequestsSchema = z.object({ requests: z.array(reviewRequestSchema) }).strict();
 
 export type ChangeKind = z.infer<typeof changeKindSchema>;
 export type FileChange = z.infer<typeof fileChangeSchema>;
@@ -197,3 +198,4 @@ export type Patches = z.infer<typeof patchesSchema>;
 export type BranchStatus = z.infer<typeof branchStatusSchema>;
 export type PushMode = z.infer<typeof pushModeSchema>;
 export type BranchAction = z.infer<typeof branchActionSchema>;
+export type ReviewRequest = z.infer<typeof reviewRequestSchema>;

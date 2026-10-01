@@ -46,6 +46,11 @@ export default experimental_defineHostEntry({
       }
     },
 
+    async repository({ environmentPath, repositoryKey }, context) {
+      const { key, path } = await resolveRepository(environmentPath, repositoryKey, context.signal);
+      return { key, path };
+    },
+
     async workspace({ environmentPath, repositoryKey }, context) {
       try {
         const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);

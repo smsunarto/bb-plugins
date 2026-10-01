@@ -28,12 +28,14 @@ what `but status` shows.
 
 ## Branch actions
 
-Each branch card can change the repository, one `but` command per action:
+Each branch card can change the repository:
 
 - **Rename:** click the branch name (`but reword <branch> -m <name>`).
 - **Push**, or **Force push** after commits were rewritten (`but push`).
-- **Create PR** with a title, description, and draft option (`but pr new`).
-  It needs a forge authenticated with `but config forge auth`.
+- **Create PR** spawns a subthread of the current thread. Its agent reads the
+  branch, writes the title and description, and runs `but pr new`. While it
+  works, the card links to it instead of offering a second one. It needs a
+  forge authenticated with `but config forge auth`.
 - **Land** onto the target without a PR, after a confirmation (`but land`).
   Only the bottom branch of a stack can land.
 

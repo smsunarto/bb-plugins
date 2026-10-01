@@ -11,6 +11,7 @@ import {
   patchSourceSchema,
   repositoriesSchema,
   repositoryKeySchema,
+  resolvedRepositorySchema,
   workspaceSchema,
 } from "./schema.ts";
 
@@ -24,6 +25,7 @@ export const gitbutlerHostContract = defineRpcContract({
     input: z.object({ environmentPath: environmentPathSchema }).strict(),
     output: repositoriesSchema,
   },
+  repository: { input: target.strict(), output: resolvedRepositorySchema },
   workspace: { input: target.strict(), output: workspaceSchema },
   baseHistory: {
     input: target

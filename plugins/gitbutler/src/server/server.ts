@@ -5,11 +5,22 @@ import { branchAction } from "./rpc/branch-action.ts";
 import { commit } from "./rpc/commit.ts";
 import { patches } from "./rpc/patches.ts";
 import { repositories } from "./rpc/repositories.ts";
+import { requestReview } from "./rpc/request-review.ts";
+import { reviewRequests } from "./rpc/review-requests.ts";
 import { workspace } from "./rpc/workspace.ts";
 
 export default definePlugin({
   pluginId: "gitbutler",
-  rpc: { repositories, workspace, baseHistory, commit, patches, branchAction },
+  rpc: {
+    repositories,
+    workspace,
+    baseHistory,
+    commit,
+    patches,
+    branchAction,
+    requestReview,
+    reviewRequests,
+  },
   setup(bb) {
     // `active` rather than `created`: a new thread's environment is still
     // provisioning when it is created, so there is no workspace to check yet.

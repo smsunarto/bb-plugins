@@ -43,6 +43,7 @@ async function panel(rpc: Record<string, (input: never) => unknown>) {
 }
 
 const baseRpc = {
+  reviewRequests: () => ({ requests: [] }),
   repositories: () => ({ repositories: [{ key: ".", name: "bb-plugins" }], reason: null }),
   workspace: () => workspace,
   baseHistory: () => ({
@@ -402,23 +403,57 @@ test("pushes a branch by name from its card", async () => {
   slot.lifecycle.unmount();
 });
 
-test("drafts a PR from the branch's lone commit and sends what the user edited", async () => {
-  const { actions, rpc } = recordActions();
-  const { slot, card } = await bottomCard(rpc);
-  fireEvent.click(card.getByRole("button", { name: "Create PR" }));
-  const title = card.getByLabelText("PR title") as HTMLInputElement;
-  expect(title.value).toBe("fix(bottom): repair it");
-  fireEvent.change(card.getByLabelText("PR description"), { target: { value: "Why." } });
-  fireEvent.click(card.getByLabelText("Draft"));
-  fireEvent.click(card.getByRole("button", { name: "Create PR" }));
-  await waitFor(() => expect(actions).toHaveLength(1));
-  expect((actions[0] as { action: unknown }).action).toEqual({
-    kind: "createReview",
-    branch: "scott/bottom",
-    title: "fix(bottom): repair it",
-    body: "Why.",
-    draft: true,
+test("Create PR hands the branch to a subthread and links to it", async () => {
+  const requests: unknown[] = [];
+  let started: { branch: string; threadId: string; running: boolean }[] = [];
+  const { slot, card } = await bottomCard({
+    ...baseRpc,
+    reviewRequests: () => ({ requests: started }),
+    requestReview: (input: unknown) => {
+      requests.push(input);
+      started = [{ branch: "scott/bottom", threadId: "child-1", running: true }];
+      return { threadId: "child-1" };
+    },
   });
+  fireEvent.click(card.getByRole("button", { name: "Create PR" }));
+  await waitFor(() => expect(card.getByRole("button", { name: "Open subthread" })).toBeTruthy());
+  expect(requests).toEqual([{ threadId: "thread-1", branch: "scott/bottom" }]);
+  expect(card.getByRole("status").textContent).toContain(
+    "A subthread is writing and opening the PR.",
+  );
+  // A second click would spawn a second subthread for the same PR, and
+  // backing out of Land must not bring the button back.
+  expect(card.queryByRole("button", { name: "Create PR" })).toBeNull();
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  fireEvent.click(card.getByRole("button", { name: "Cancel" }));
+  expect(card.queryByRole("button", { name: "Create PR" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a reopened panel finds the subthread still writing the PR", async () => {
+  const { slot, card } = await bottomCard({
+    ...baseRpc,
+    reviewRequests: () => ({
+      requests: [{ branch: "scott/bottom", threadId: "child-1", running: true }],
+    }),
+  });
+  fireEvent.click(await waitFor(() => card.getByRole("button", { name: "Open subthread" })));
+  expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "child-1" }]);
+  expect(card.queryByRole("button", { name: "Create PR" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a subthread that stopped without a PR leaves Create PR to retry", async () => {
+  const { slot, card } = await bottomCard({
+    ...baseRpc,
+    reviewRequests: () => ({
+      requests: [{ branch: "scott/bottom", threadId: "child-1", running: false }],
+    }),
+  });
+  await waitFor(() =>
+    expect(card.getByRole("status").textContent).toContain("stopped without opening a PR"),
+  );
+  expect(card.getByRole("button", { name: "Create PR" })).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
