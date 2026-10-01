@@ -1,7 +1,9 @@
 import {
   definePluginApp,
   experimental_Icon as Icon,
+  experimental_ProviderIcon as ProviderIcon,
   experimental_usePluginId,
+  experimental_useProviders,
   type PluginBrowserBbSdk,
   type PluginThreadHeaderActionProps,
   useBbNavigate,
@@ -23,7 +25,7 @@ const RELEVANT_CHANGES = new Set([
 
 type Review = Pick<
   Awaited<ReturnType<PluginBrowserBbSdk["threads"]["get"]>>,
-  "id" | "providerId" | "status"
+  "id" | "providerId" | "status" | "createdAt"
 >;
 type ReviewParent = { threadId: string; isReview: boolean; parentThreadId: string | null };
 
@@ -128,7 +130,7 @@ function useReviews(threadId: string): Review[] | null {
       setReviews(
         children
           .sort((a, b) => b.createdAt - a.createdAt)
-          .map(({ id, providerId, status }) => ({ id, providerId, status })),
+          .map(({ id, providerId, status, createdAt }) => ({ id, providerId, status, createdAt })),
       );
     };
     const unsubscribe = sdk.subscribe({
@@ -162,34 +164,85 @@ function useReviews(threadId: string): Review[] | null {
   return reviews;
 }
 
+// Each review state reads at a glance: what is happening, and how it went.
+const PHASES = {
+  running: { icon: "Spinner", tone: "text-muted-foreground animate-spin", status: "Running" },
+  complete: { icon: "CircleCheck", tone: "text-success", status: "Done" },
+  failed: { icon: "AlertCircle", tone: "text-destructive", status: "Failed" },
+} as const;
+
+type Navigation =
+  | { back: true; target: string; label: string }
+  | {
+      back: false;
+      target: string;
+      label: string;
+      phase: keyof typeof PHASES;
+      running: number;
+      startedAt: number;
+      providerId: string;
+    };
+
 /** Select one navigation target before rendering either direction in the same row. */
-function reviewNavigation(parent: ReviewParent, reviews: Review[] | null) {
+function reviewNavigation(parent: ReviewParent, reviews: Review[] | null): Navigation | null {
   if (parent.isReview) {
     return parent.parentThreadId
-      ? {
-          target: parent.parentThreadId,
-          label: "Back to main thread",
-          providerId: null,
-          back: true,
-          animated: false,
-        }
+      ? { back: true, target: parent.parentThreadId, label: "Back to main thread" }
       : null;
   }
   const running = reviews?.filter((review) => RUNNING.has(review.status)) ?? [];
   const review = running[0] ?? reviews?.[0];
   if (!review) return null;
-  let label =
-    review.status === "error" ? "Adversarial review failed" : "Adversarial review complete";
-  if (running.length === 1) label = "Adversarial review running";
-  if (running.length > 1) label = `${running.length} adversarial reviews running`;
+  const phase = running.length > 0 ? "running" : review.status === "error" ? "failed" : "complete";
+  const label =
+    running.length > 1
+      ? `${running.length} adversarial reviews running`
+      : `Adversarial review ${phase}`;
   return {
+    back: false,
     target: review.id,
     label,
+    phase,
+    running: running.length,
+    startedAt: review.createdAt,
     providerId: review.providerId,
-    back: false,
-    animated: running.length > 0,
   };
 }
+
+function formatElapsed(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+/** Ticks once a second so a running review shows that it is still alive. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className="tabular-nums">{formatElapsed(now - since)}</span>;
+}
+
+function Reviewer({ providerId }: { providerId: string }) {
+  const { providers } = experimental_useProviders();
+  const provider = providers.find((candidate) => candidate.id === providerId);
+  return (
+    <span className="hidden min-w-0 shrink items-center gap-1 text-muted-foreground @sm:flex">
+      <ProviderIcon
+        providerKind="agent"
+        provider={provider ?? { id: providerId }}
+        className="size-3.5 shrink-0"
+        aria-hidden
+      />
+      <span className="truncate">{provider?.displayName ?? providerId}</span>
+    </span>
+  );
+}
+
+const ROW =
+  "group @container flex h-8 w-full rounded-[calc(var(--radius-lg)-1px)] min-w-0 shrink-0 cursor-pointer items-center gap-2 px-3 text-xs transition-colors hover:bg-background/80";
 
 function ReviewRow({ threadId }: { threadId: string }) {
   const sdk = useSdk();
@@ -205,33 +258,55 @@ function ReviewRow({ threadId }: { threadId: string }) {
   }
   const navigation = reviewNavigation(parent, reviews);
   if (!navigation) return null;
-  const { target, label, providerId, back, animated } = navigation;
+  const open = () => navigate.toThread(navigation.target);
+
+  if (navigation.back) {
+    return (
+      <button
+        type="button"
+        data-review-navigation
+        onClick={open}
+        aria-label={navigation.label}
+        className={`${ROW} text-muted-foreground hover:text-foreground`}
+      >
+        <Icon name="ArrowLeft" className="size-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-left font-medium">{navigation.label}</span>
+      </button>
+    );
+  }
+
+  const phase = PHASES[navigation.phase];
+  const running = navigation.phase === "running";
   return (
     <button
       type="button"
       data-review-navigation
-      onClick={() => navigate.toThread(target)}
-      aria-label={back ? label : `${label}. Open the review thread.`}
-      className="flex h-8 w-full min-w-0 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-xs text-foreground transition-colors hover:bg-background/80"
+      data-review-phase={navigation.phase}
+      onClick={open}
+      aria-label={`${navigation.label}. Open the review thread.`}
+      className={`${ROW} text-foreground`}
     >
-      <Icon
-        name={back ? "ArrowLeft" : "SecurityCheck"}
-        className={`${animated ? "animate-shine-icon " : ""}size-3.5 shrink-0`}
-        aria-hidden
-      />
-      <span
-        className={`${animated ? "animate-shine " : ""}min-w-0 flex-1 truncate text-left font-medium`}
-      >
-        {label}
-      </span>
-      {providerId && (
-        <span className="hidden shrink-0 font-mono text-muted-foreground sm:inline">
-          {providerId}
+      <Icon name={phase.icon} className={`size-3.5 shrink-0 ${phase.tone}`} aria-hidden />
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
+        <span className={`${running ? "animate-shine " : ""}min-w-0 truncate font-medium`}>
+          Adversarial review
         </span>
-      )}
-      <span className="flex w-14 shrink-0 items-center justify-end gap-0.5 text-muted-foreground">
-        {back ? "Back" : "Open"}
-        <Icon name={back ? "ArrowLeft" : "ArrowUpRight"} className="size-3.5" aria-hidden />
+        <span
+          className={`shrink-0 whitespace-nowrap ${running ? "text-muted-foreground" : phase.tone}`}
+        >
+          {navigation.running > 1 ? `${navigation.running} running` : phase.status}
+          {running && navigation.running === 1 && (
+            <>
+              {" · "}
+              <Elapsed since={navigation.startedAt} />
+            </>
+          )}
+        </span>
+      </span>
+      <Reviewer providerId={navigation.providerId} />
+      <span className="flex shrink-0 items-center text-muted-foreground transition-colors group-hover:text-foreground">
+        Open
+        <Icon name="ChevronRight" className="size-3.5" aria-hidden />
       </span>
     </button>
   );

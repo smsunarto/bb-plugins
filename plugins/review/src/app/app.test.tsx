@@ -1,7 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import type { PluginBrowserBbSdk, PluginRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
+import type {
+  PluginBrowserBbSdk,
+  PluginProvidersState,
+  PluginRealtimeConnectionState,
+} from "@get-bb/plugin-sdk/app";
 
 installDom();
 const { act, fireEvent, waitFor } = await import("@testing-library/react");
@@ -339,6 +343,7 @@ async function renderBanner(
     makeThreadResponse({ id: threadId }),
   threadId = "thr_author",
   realtimeConnectionState: PluginRealtimeConnectionState = "connected",
+  providers?: Partial<PluginProvidersState>,
 ) {
   const app = await loadPluginApp(() => import("./app.tsx"));
   type Event = { type: "changed"; entity: "thread"; id: string; changes: Change[] };
@@ -351,6 +356,7 @@ async function renderBanner(
       {
         pluginId: "review",
         realtimeConnectionState,
+        providers,
         context: { threadId: "thr_other_pane" },
         composer: { scope: { kind: "thread", threadId } },
         sdk: {
@@ -871,7 +877,9 @@ test("completion during discovery cannot install a stale running banner", async 
     return [];
   });
   try {
-    expect((await slot.findByRole("button")).textContent).toContain("Adversarial review running");
+    await slot.findByRole("button", {
+      name: "Adversarial review running. Open the review thread.",
+    });
     await change("thr_review", ["thread-created"]);
     await change("thr_review", ["status-changed"]);
     await act(async () => resolveDiscovery([discovered]));
@@ -959,4 +967,45 @@ test("unmount cancels a scheduled retry", async () => {
   await new Promise((resolve) => setTimeout(resolve, 1100));
 
   expect(calls).toBe(1);
+});
+
+test("the banner shows each review's state, elapsed time, and reviewer by name", async () => {
+  const providers = {
+    status: "ready",
+    providers: [{ id: "codex", displayName: "Codex", logoUrl: null }],
+  } as unknown as PluginProvidersState;
+  setSystemTime(new Date(200_000));
+  let children = [
+    child({ id: "thr_review", providerId: "codex", status: "active", createdAt: 125_000 }),
+  ];
+  const { slot, change } = await renderBanner(
+    async () => children,
+    undefined,
+    undefined,
+    "connected",
+    providers,
+  );
+  try {
+    const running = await slot.findByRole("button", {
+      name: "Adversarial review running. Open the review thread.",
+    });
+    expect(running.textContent).toBe("Adversarial reviewRunning · 1m 15sCodexOpen");
+
+    children = [child({ id: "thr_review", providerId: "codex", status: "idle" })];
+    await change("thr_review", ["status-changed"]);
+    const complete = await slot.findByRole("button", {
+      name: "Adversarial review complete. Open the review thread.",
+    });
+    expect(complete.textContent).toBe("Adversarial reviewDoneCodexOpen");
+
+    children = [child({ id: "thr_review", providerId: "codex", status: "error" })];
+    await change("thr_review", ["status-changed"]);
+    const failed = await slot.findByRole("button", {
+      name: "Adversarial review failed. Open the review thread.",
+    });
+    expect(failed.textContent).toBe("Adversarial reviewFailedCodexOpen");
+  } finally {
+    slot.unmount();
+    setSystemTime();
+  }
 });
