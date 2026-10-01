@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - packages/bb-kit-core
+          - packages/bb-kit-dev
           - packages/bb-kit-sentry
           - plugins/agentation
           - plugins/amp

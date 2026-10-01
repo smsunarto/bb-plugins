@@ -1,0 +1,51 @@
+{
+  "name": "@bb-kit/dev",
+  "version": "0.0.0",
+  "description": "Development tooling for bb-kit plugins: scaffolding, wiring checks, and isolated bb dev instances.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "packages/bb-kit-dev"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "bb-kit": "./bin/bb-kit.mjs"
+  },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/bin.ts --root src --outdir dist --target=node --format=esm --packages=external --sourcemap=linked",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "bun test --timeout=30000",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@bb-kit/core": "0.2.0"
+  },
+  "peerDependencies": {
+    "@get-bb/plugin-sdk": ">=0.5.29 <0.7",
+    "typescript": "*"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.5.29",
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  }
+}

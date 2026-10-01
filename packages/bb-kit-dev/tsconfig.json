@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": ["node"],
+    "erasableSyntaxOnly": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "include": ["src"]
+}

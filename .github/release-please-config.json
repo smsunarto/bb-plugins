@@ -13,6 +13,11 @@
       "component": "bb-kit-core",
       "package-name": "@bb-kit/core"
     },
+    "packages/bb-kit-dev": {
+      "release-type": "node",
+      "component": "bb-kit-dev",
+      "package-name": "@bb-kit/dev"
+    },
     "packages/bb-kit-sentry": {
       "release-type": "node",
       "component": "bb-kit-sentry",

@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { loadWorkspaceDefinition } from "../packages/bb-kit-core/src/bin/dev/workspace.ts";
+import { loadWorkspaceDefinition } from "../packages/bb-kit-dev/src/dev/workspace.ts";
 
 export const SCREENSHOT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SCREENSHOT_WORKSPACE = loadWorkspaceDefinition(SCREENSHOT_ROOT);

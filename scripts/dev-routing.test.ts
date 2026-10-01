@@ -11,10 +11,10 @@ describe("managed dev routing", () => {
       bbKit: { devInstance: { watchExclude: string[] } };
     };
     expect(packageJson.scripts.dev).toBe(
-      "bun packages/bb-kit-core/src/bin/bin.ts dev-instance workspace --watch",
+      "bun packages/bb-kit-dev/src/bin.ts dev-instance workspace --watch",
     );
     expect(packageJson.scripts["dev:instance"]).toBe(
-      "bun packages/bb-kit-core/src/bin/bin.ts dev-instance workspace",
+      "bun packages/bb-kit-dev/src/bin.ts dev-instance workspace",
     );
     expect(packageJson.scripts["dev:setup"]).toBeUndefined();
     expect(packageJson.scripts["build:managed"]).toBeUndefined();

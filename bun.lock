@@ -47,6 +47,28 @@
         "react",
       ],
     },
+    "packages/bb-kit-dev": {
+      "name": "@bb-kit/dev",
+      "version": "0.0.0",
+      "bin": {
+        "bb-kit": "./bin/bb-kit.mjs",
+      },
+      "dependencies": {
+        "@bb-kit/core": "0.2.0",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.5.29",
+        "@types/node": "^22.0.0",
+        "typescript": "^6.0.0",
+      },
+      "peerDependencies": {
+        "@get-bb/plugin-sdk": ">=0.5.29 <0.7",
+        "typescript": "*",
+      },
+      "optionalPeers": [
+        "typescript",
+      ],
+    },
     "packages/bb-kit-icons": {
       "name": "@bb-plugins/icons",
       "version": "0.1.0",
@@ -683,6 +705,8 @@
     "@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
     "@bb-kit/core": ["@bb-kit/core@workspace:packages/bb-kit-core"],
+
+    "@bb-kit/dev": ["@bb-kit/dev@workspace:packages/bb-kit-dev"],
 
     "@bb-kit/sentry": ["@bb-kit/sentry@workspace:packages/bb-kit-sentry"],
 
