@@ -19,6 +19,13 @@ what `but status` shows.
 - The common base, and the target-branch history continuing below it
 - Per-file diffs rendered by bb's own diff viewer
 
+## Thread header and tab
+
+- In a GitButler workspace, the thread header has a **View in GitButler**
+  button that opens the GitButler tab.
+- The first time a thread runs in a GitButler workspace, the GitButler tab is
+  added to its side panel without taking focus. A closed tab stays closed.
+
 The panel runs no mutations. It never commits, amends, applies, unapplies,
 pushes, or restores from the oplog.
 

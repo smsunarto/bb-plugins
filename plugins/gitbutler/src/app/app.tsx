@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { definePluginApp, experimental_Icon as Icon, useBbContext } from "@get-bb/plugin-sdk/app";
+import {
+  definePluginApp,
+  experimental_Icon as Icon,
+  useBbContext,
+  useBbNavigate,
+} from "@get-bb/plugin-sdk/app";
+import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { keepPreviousData } from "@tanstack/react-query";
 import type {
@@ -18,6 +24,7 @@ import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { FileCards } from "./file-cards.tsx";
+import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { COMMIT_QUERY, queryClient } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
 import { BRANCH_STATUS_LABEL, changeSymbol, relativeTime, shortId, subject } from "./format.ts";
@@ -27,6 +34,9 @@ const REFRESH_INTERVAL_MS = 10_000;
 const BASE_HISTORY_PAGE = 60;
 const BASE_HISTORY_MAX = 500;
 const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
+/** Shared with the server, which adds this tab to new GitButler threads. */
+const PANEL_ACTION_ID = "gitbutler";
+const HEADER_LABEL = "View in GitButler";
 
 const SHELL = "flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground text-xs";
 // The scrollbar's column is reserved up front, on both edges. Without it, the
@@ -859,9 +869,51 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
   );
 }
 
+/**
+ * A button in the thread header that opens the GitButler tab, or focuses it
+ * when it is already open. Draws nothing outside a GitButler workspace, so
+ * threads in other repositories keep a clean header. It reads the same query
+ * as the panel, so an open panel answers it from cache.
+ */
+function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
+  const navigate = useBbNavigate();
+  const repositoryKey = readRepository(threadId) ?? undefined;
+  const workspace = rpc.workspace.useQuery(defined({ threadId, repositoryKey }), {
+    staleTime: 60_000,
+  });
+  if (workspace.data?.state !== "ready") return null;
+  return (
+    // bb's own toolbar buttons (the editor picker beside this one) are an
+    // outline button with this sizing, so the two read as one row of controls.
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 gap-1.5 border-border px-2 text-xs font-medium text-foreground shadow-none max-md:pointer-coarse:h-9"
+      aria-label={HEADER_LABEL}
+      onClick={() => navigate.openThreadPanel({ actionId: PANEL_ACTION_ID })}
+    >
+      <GitButlerMark className="size-4 shrink-0" />
+      {isCompactViewport ? null : HEADER_LABEL}
+    </Button>
+  );
+}
+
+function HeaderAction(props: PluginThreadHeaderActionProps) {
+  return (
+    <PluginQueryBoundary client={queryClient}>
+      <HeaderButton key={props.threadId} {...props} />
+    </PluginQueryBoundary>
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.experimental_threadHeaderAction({
+    id: "open",
+    title: "GitButler",
+    component: HeaderAction,
+  });
   app.slots.threadPanelAction({
-    id: "gitbutler",
+    id: PANEL_ACTION_ID,
     title: "GitButler",
     icon: "GitBranch",
     component: GitButlerApp,

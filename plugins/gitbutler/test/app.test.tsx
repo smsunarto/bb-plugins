@@ -306,3 +306,46 @@ test("says so when the GitButler CLI is missing on the host", async () => {
   );
   slot.lifecycle.unmount();
 });
+
+async function header(workspaceResult: () => unknown, isCompactViewport = false) {
+  const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const registration = app.threadHeaderActions[0]!;
+  return renderSlot(
+    registration,
+    { threadId: "thread-1", projectId: "project-1", isCompactViewport },
+    {
+      rpc: { workspace: workspaceResult } as never,
+      context: { threadId: "thread-1", projectId: "project-1" },
+    },
+  );
+}
+
+test("the header button opens the GitButler tab", async () => {
+  const slot = await header(() => workspace);
+
+  const button = await waitFor(() => slot.getByRole("button", { name: "View in GitButler" }));
+  expect(button.textContent).toBe("View in GitButler");
+  fireEvent.click(button);
+  expect(slot.inspection.navigateCalls).toEqual([
+    { method: "openThreadPanel", options: { actionId: "gitbutler" } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("the header button is icon-only on compact viewports", async () => {
+  const slot = await header(() => workspace, true);
+  const button = await waitFor(() => slot.getByRole("button", { name: "View in GitButler" }));
+  expect(button.textContent).toBe("");
+  slot.lifecycle.unmount();
+});
+
+test("the header draws nothing outside a GitButler workspace", async () => {
+  let asked = false;
+  const slot = await header(() => {
+    asked = true;
+    return { ...workspace, state: "setupRequired", stacks: [] };
+  });
+  await waitFor(() => expect(asked).toBe(true));
+  expect(slot.queryByRole("button")).toBeNull();
+  slot.lifecycle.unmount();
+});
