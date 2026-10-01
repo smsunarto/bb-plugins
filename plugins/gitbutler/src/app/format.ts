@@ -1,5 +1,3 @@
-import type { BranchStatus } from "../shared/schema.ts";
-
 /** Presentation helpers. Pure, so the panel's labels are unit-testable. */
 
 export function shortId(commitId: string): string {
@@ -23,22 +21,4 @@ export function relativeTime(value: string, now = Date.now()): string {
   if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h ago`;
   if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)}d ago`;
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-export const BRANCH_STATUS_LABEL: Readonly<Record<BranchStatus, string>> = {
-  unpushed: "unpushed",
-  pushed: "pushed",
-  diverged: "diverged",
-  integrated: "integrated",
-  conflicted: "conflicted",
-  empty: "empty",
-  unknown: "",
-};
-
-export function changeSymbol(kind: string): string {
-  if (kind === "added") return "A";
-  if (kind === "deleted") return "D";
-  if (kind === "renamed") return "R";
-  if (kind === "copied") return "C";
-  return "M";
 }

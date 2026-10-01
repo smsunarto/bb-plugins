@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { changeSymbol, relativeTime, shortId, subject } from "./format.ts";
+import { relativeTime, shortId, subject } from "./format.ts";
 
 test("subject is the first line of a commit message", () => {
   const message = "feat(top): add the thing\n\nWith a body.\nAnd more.";
@@ -24,11 +24,4 @@ test("relativeTime counts back from a fixed now", () => {
 
 test("relativeTime is blank for a date the CLI did not supply", () => {
   expect(relativeTime("")).toBe("");
-});
-
-test("changeSymbol labels each change kind", () => {
-  expect(changeSymbol("added")).toBe("A");
-  expect(changeSymbol("deleted")).toBe("D");
-  expect(changeSymbol("renamed")).toBe("R");
-  expect(changeSymbol("modified")).toBe("M");
 });

@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import { fireEvent, waitFor } from "@testing-library/react";
+import { fireEvent, waitFor, within } from "@testing-library/react";
 import { queryClient } from "../src/app/query-client.ts";
 import { parseWorkspace } from "../src/host/parse.ts";
 import { statusPayload } from "./fixtures.ts";
@@ -63,7 +63,7 @@ test("shows the stacks, their branches, the base, and the history below it", asy
   expect(slot.getByText("scott/bottom")).toBeTruthy();
   expect(slot.getByText("scott/experimental")).toBeTruthy();
   expect(slot.getByText("feat(top): add the thing")).toBeTruthy();
-  expect(slot.getByText("common base")).toBeTruthy();
+  expect(slot.getByRole("heading", { name: "Common base" })).toBeTruthy();
   expect(slot.getByText("Before the common base")).toBeTruthy();
   await waitFor(() => expect(slot.getByText("chore: older work")).toBeTruthy());
   // The workspace is 3 commits behind its target.
@@ -246,11 +246,14 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
   });
 
   // Uncommitted starts collapsed, so the file list is one disclosure away.
-  await waitFor(() => expect(slot.getByText("Uncommitted")).toBeTruthy());
+  await waitFor(() => expect(slot.getByText("Uncommitted changes")).toBeTruthy());
   expect(slot.queryByText("bun.lock")).toBeNull();
-  fireEvent.click(slot.getByText("Uncommitted"));
+  fireEvent.click(slot.getByText("Uncommitted changes"));
 
   await waitFor(() => expect(slot.getByText("bun.lock")).toBeTruthy());
+  // The change kind is drawn as a glyph, so it has to carry its name.
+  const row = slot.getByTitle("bun.lock");
+  expect(within(row).getByText("Modified")).toBeTruthy();
   fireEvent.click(slot.getByText("bun.lock"));
 
   await waitFor(() => {

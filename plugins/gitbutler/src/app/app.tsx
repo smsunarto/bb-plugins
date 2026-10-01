@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   definePluginApp,
@@ -8,17 +8,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import { keepPreviousData } from "@tanstack/react-query";
-import type {
-  BaseCommit,
-  BranchStatus,
-  Commit,
-  FileChange,
-  PatchSource,
-  Repository,
-  Stack,
-  Workspace,
-} from "../shared/schema.ts";
+import type { PatchSource, Repository, Workspace } from "../shared/schema.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
@@ -27,12 +17,12 @@ import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { COMMIT_QUERY, queryClient } from "./query-client.ts";
 import { rpc, defined } from "./rpc.ts";
-import { BRANCH_STATUS_LABEL, changeSymbol, relativeTime, shortId, subject } from "./format.ts";
+import { relativeTime, shortId, subject } from "./format.ts";
+import { BaseCard, StackLane, UncommittedCard } from "./workspace-lane.tsx";
+import type { CommitRef } from "./workspace-lane.tsx";
 import "./gitbutler.css";
 
 const REFRESH_INTERVAL_MS = 10_000;
-const BASE_HISTORY_PAGE = 60;
-const BASE_HISTORY_MAX = 500;
 const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
 /** Shared with the server, which adds this tab to new GitButler threads. */
 const PANEL_ACTION_ID = "gitbutler";
@@ -48,39 +38,12 @@ const GUTTER = "[scrollbar-gutter:stable_both-edges]";
 // Hidden overflow is what lets a header that never scrolls reserve the same
 // gutters, so its text starts where the rows below it do.
 const HEADER = `flex shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card px-2.5 py-1.5 ${GUTTER}`;
-const ROW =
-  "flex min-w-0 flex-1 flex-col gap-px rounded-md px-1.5 py-0.5 text-start hover:bg-state-hover";
-const DOT = "mt-1.5 size-[7px] shrink-0 rounded-full";
-// Relative times and counts here rewrite themselves on every refresh, so the
-// digits are tabular to stop the row twitching.
-const META =
-  "flex gap-1.5 overflow-hidden whitespace-nowrap text-[11px] tabular-nums text-muted-foreground";
-const SECTION_TITLE = "mb-0.5 mt-2 font-semibold text-muted-foreground";
-
 /** What the detail screen is showing: a commit, or one uncommitted file. */
 type Selection =
   | { kind: "commit"; commitId: string; createdAt: string; message: string }
   | { kind: "uncommitted"; path: string };
 
-/** Anything the detail screen can be opened from: a stack, base, or history row. */
-type CommitRef = { commitId: string; createdAt: string; message: string };
-
 const UNCOMMITTED_SOURCE: PatchSource = { kind: "uncommitted" };
-
-const STATUS_TONE: Readonly<Record<BranchStatus, string>> = {
-  unpushed: "text-muted-foreground",
-  pushed: "text-success",
-  diverged: "text-warning",
-  integrated: "text-success",
-  conflicted: "text-destructive-text",
-  empty: "text-muted-foreground",
-  unknown: "text-muted-foreground",
-};
-
-const KIND_TONE: Readonly<Record<string, string>> = {
-  added: "text-diff-added",
-  deleted: "text-diff-removed",
-};
 
 function readRepository(threadId: string): string | null {
   try {
@@ -220,256 +183,6 @@ function UnavailableWorkspace({
   );
 }
 
-function FileRow({
-  change,
-  active,
-  onOpen,
-}: {
-  change: FileChange;
-  active: boolean;
-  onOpen: () => void;
-}) {
-  const separator = change.path.lastIndexOf("/");
-  return (
-    <li>
-      <button
-        type="button"
-        className={cn(
-          "flex w-full min-w-0 items-baseline gap-1.5 rounded-md px-1.5 py-px text-start hover:bg-state-hover",
-          active && "bg-state-active",
-        )}
-        onClick={onOpen}
-        title={change.path}
-      >
-        <span
-          className={cn(
-            "w-2.5 shrink-0 font-mono text-[10px]",
-            KIND_TONE[change.kind] ?? "text-muted-foreground",
-          )}
-        >
-          {changeSymbol(change.kind)}
-        </span>
-        <span className="min-w-0 shrink truncate">{change.path.slice(separator + 1)}</span>
-        {/*
-         * No `direction: rtl` on the directory column. It truncates from the
-         * left, but it also reorders leading punctuation, so `.bb` renders as
-         * `bb.`.
-         */}
-        {separator > 0 ? (
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-            {change.path.slice(0, separator)}
-          </span>
-        ) : null}
-      </button>
-    </li>
-  );
-}
-
-function ChangeList({
-  changes,
-  activePath,
-  onOpen,
-}: {
-  changes: readonly FileChange[];
-  activePath: string | null;
-  onOpen: (path: string) => void;
-}) {
-  return (
-    <ul className="mt-0.5 list-none ps-4">
-      {changes.map((change) => (
-        <FileRow
-          key={change.path}
-          change={change}
-          active={change.path === activePath}
-          onOpen={() => onOpen(change.path)}
-        />
-      ))}
-    </ul>
-  );
-}
-
-function CommitRow({ commit, tone, onOpen }: { commit: Commit; tone: string; onOpen: () => void }) {
-  return (
-    <li className="flex min-w-0 items-start gap-2">
-      <span className={cn(DOT, commit.conflicted ? "bg-destructive" : tone)} />
-      <button type="button" className={ROW} onClick={onOpen}>
-        <span className="truncate">{subject(commit.message)}</span>
-        <span className={META}>
-          <code className="font-mono">{shortId(commit.commitId)}</code>
-          {commit.conflicted ? <span className="text-destructive-text">conflicts</span> : null}
-          <span>{relativeTime(commit.createdAt)}</span>
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function StackBlock({
-  stack,
-  onOpenCommit,
-  onOpenFile,
-}: {
-  stack: Stack;
-  onOpenCommit: (commit: Commit) => void;
-  onOpenFile: (path: string) => void;
-}) {
-  return (
-    <section
-      // 16px between stacks against the 8px between branches inside one, so
-      // the rail is not the only thing saying where a stack ends.
-      className="my-4 border-s-2 border-primary/45 py-0.5 ps-2.5"
-      aria-label={`Stack ${stack.key}`}
-    >
-      {stack.branches.map((branch) => (
-        <div
-          key={branch.name}
-          className="[&+&]:mt-2 [&+&]:border-t [&+&]:border-dashed [&+&]:border-border [&+&]:pt-2"
-        >
-          <header className="flex min-w-0 items-center gap-1.5 pb-0.5 pt-px">
-            <span className="truncate font-semibold" title={branch.name}>
-              {branch.name}
-            </span>
-            {BRANCH_STATUS_LABEL[branch.status] ? (
-              <Pill tone={STATUS_TONE[branch.status]} title={branch.rawStatus}>
-                {BRANCH_STATUS_LABEL[branch.status]}
-              </Pill>
-            ) : null}
-            {branch.reviewId ? <Pill tone="text-primary">{`#${branch.reviewId}`}</Pill> : null}
-          </header>
-          {/*
-           * Upstream commits used to be told apart from local ones by the dot
-           * colour alone, which says nothing to anyone who cannot separate the
-           * two hues. The heading carries the meaning; the colour repeats it.
-           */}
-          {branch.upstreamCommits.length > 0 ? (
-            <>
-              <p className={SECTION_TITLE}>
-                Upstream, not in this branch{" "}
-                <span className="tabular-nums">{branch.upstreamCommits.length}</span>
-              </p>
-              <ul className="list-none">
-                {branch.upstreamCommits.map((commit) => (
-                  <CommitRow
-                    key={`upstream-${commit.commitId}`}
-                    commit={commit}
-                    tone="bg-warning"
-                    onOpen={() => onOpenCommit(commit)}
-                  />
-                ))}
-              </ul>
-            </>
-          ) : null}
-          {branch.commits.length === 0 && branch.upstreamCommits.length === 0 ? (
-            <p className="my-0.5 italic text-muted-foreground">
-              No commits yet. Commit on this branch and they appear here.
-            </p>
-          ) : null}
-          {/* Only needed opposite an upstream heading; alone the list is obvious. */}
-          {branch.upstreamCommits.length > 0 && branch.commits.length > 0 ? (
-            <p className={SECTION_TITLE}>In this branch</p>
-          ) : null}
-          <ul className="list-none">
-            {branch.commits.map((commit) => (
-              <CommitRow
-                key={commit.commitId}
-                commit={commit}
-                tone="bg-primary"
-                onOpen={() => onOpenCommit(commit)}
-              />
-            ))}
-          </ul>
-        </div>
-      ))}
-      {stack.assignedChanges.length > 0 ? (
-        <div className="mt-1.5">
-          <p className={SECTION_TITLE}>
-            Assigned changes{" "}
-            <span className="tabular-nums text-muted-foreground">
-              {stack.assignedChanges.length}
-            </span>
-          </p>
-          <ChangeList changes={stack.assignedChanges} activePath={null} onOpen={onOpenFile} />
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function BaseHistory({
-  threadId,
-  repositoryKey,
-  from,
-  onOpenCommit,
-}: {
-  threadId: string;
-  repositoryKey: string | undefined;
-  from: string;
-  onOpenCommit: (commit: CommitRef) => void;
-}) {
-  const [limit, setLimit] = useState(BASE_HISTORY_PAGE);
-  // A new base means a different history; start the window over.
-  useEffect(() => setLimit(BASE_HISTORY_PAGE), [from]);
-
-  const history = rpc.baseHistory.useQuery(
-    defined({ threadId, repositoryKey, from, offset: 0, limit }),
-    // A bigger page is a new key. Keep the list the reader was looking at
-    // until the longer one lands, instead of swapping it for a spinner.
-    { staleTime: REFRESH_INTERVAL_MS, placeholderData: keepPreviousData },
-  );
-
-  if (history.isPending) return <Loading label="Loading history…" />;
-  if (history.isError)
-    return (
-      <Notice
-        title="History failed to load"
-        detail={errorText(history.error)}
-        onRetry={() => void history.refetch()}
-      />
-    );
-  if (history.data.reason)
-    return (
-      <Notice
-        title="History unavailable"
-        detail={history.data.reason}
-        onRetry={() => void history.refetch()}
-      />
-    );
-
-  return (
-    <>
-      <ul className="list-none">
-        {history.data.commits.map((commit) => (
-          <li key={commit.commitId} className="flex min-w-0 items-start gap-2">
-            <span className={cn(DOT, "border border-muted-foreground bg-transparent")} />
-            <button type="button" className={ROW} onClick={() => onOpenCommit(commit)}>
-              <span className="truncate">{subject(commit.message)}</span>
-              <span className={META}>
-                <code className="font-mono">{shortId(commit.commitId)}</code>
-                <span>{commit.authorName}</span>
-                <span>{relativeTime(commit.createdAt)}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {history.data.hasMore && limit < BASE_HISTORY_MAX ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="ms-4 mt-2 h-6 px-2.5 text-xs font-normal text-muted-foreground"
-          disabled={history.isFetching}
-          onClick={() =>
-            setLimit((current) => Math.min(BASE_HISTORY_MAX, current + BASE_HISTORY_PAGE))
-          }
-        >
-          {/* Names what is hidden without claiming a count the CLI has not sent. */}
-          Load more commits
-        </Button>
-      ) : null}
-    </>
-  );
-}
-
 /**
  * Shown in place of the repository name, not beside it: the name the header
  * would print is the same string this control already displays.
@@ -597,85 +310,6 @@ function DetailScreen({
   );
 }
 
-function UncommittedSection({
-  changes,
-  onOpenFile,
-}: {
-  changes: readonly FileChange[];
-  onOpenFile: (path: string) => void;
-}) {
-  // Closed by default: a busy worktree is dozens of rows, and the stacks are
-  // what the panel is for.
-  const [open, setOpen] = useState(false);
-  const listId = useId();
-  return (
-    <section className="mb-1">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 w-full justify-start gap-2 px-1.5 text-xs font-semibold"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        aria-controls={listId}
-        disabled={changes.length === 0}
-      >
-        <Icon
-          name="ChevronRight"
-          className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-            open && "rotate-90",
-            changes.length === 0 && "invisible",
-          )}
-          aria-hidden
-        />
-        <span className={cn(DOT, "mt-0 bg-warning")} />
-        Uncommitted <span className="tabular-nums text-muted-foreground">{changes.length}</span>
-      </Button>
-      <div id={listId} hidden={!open || changes.length === 0}>
-        {open && changes.length > 0 ? (
-          <ChangeList changes={changes} activePath={null} onOpen={onOpenFile} />
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function BaseSection({
-  threadId,
-  repositoryKey,
-  base,
-  onOpenCommit,
-}: {
-  threadId: string;
-  repositoryKey: string | undefined;
-  base: BaseCommit;
-  onOpenCommit: (commit: CommitRef) => void;
-}) {
-  return (
-    <>
-      <div className="mb-1.5 mt-3.5 flex min-w-0 items-start gap-2 border-t border-border pt-2.5">
-        <span className={cn(DOT, "border border-foreground bg-transparent")} />
-        <button type="button" className={ROW} onClick={() => onOpenCommit(base)}>
-          <span className="truncate">{subject(base.message)}</span>
-          <span className={META}>
-            <code className="font-mono">{shortId(base.commitId)}</code>
-            <Pill tone="text-muted-foreground">common base</Pill>
-            <span>{relativeTime(base.createdAt)}</span>
-          </span>
-        </button>
-      </div>
-      {/* The list below carried no label, so it read as commits from nowhere. */}
-      <p className={SECTION_TITLE}>Before the common base</p>
-      <BaseHistory
-        threadId={threadId}
-        repositoryKey={repositoryKey}
-        from={base.commitId}
-        onOpenCommit={onOpenCommit}
-      />
-    </>
-  );
-}
-
 function WorkspaceBody({
   threadId,
   repositoryKey,
@@ -694,31 +328,33 @@ function WorkspaceBody({
   if (data.state !== "ready") return <UnavailableWorkspace workspace={data} onRetry={onRetry} />;
   return (
     <>
-      <UncommittedSection changes={data.unassignedChanges} onOpenFile={onOpenFile} />
-      {data.stacks.map((stack) => (
-        <StackBlock
-          key={stack.key}
-          stack={stack}
-          onOpenCommit={onOpenCommit}
-          onOpenFile={onOpenFile}
-        />
-      ))}
-      {data.stacks.length === 0 ? (
-        <div className="my-3 ms-2.5 text-muted-foreground">
-          <p className="font-semibold text-foreground">No applied branches</p>
-          <p className="mt-1 leading-normal">
-            Branches you apply in GitButler show up here as stacks, with their commits.
-          </p>
-        </div>
-      ) : null}
-      {data.base ? (
-        <BaseSection
-          threadId={threadId}
-          repositoryKey={repositoryKey}
-          base={data.base}
-          onOpenCommit={onOpenCommit}
-        />
-      ) : null}
+      <div className="flex flex-col gap-4">
+        <UncommittedCard changes={data.unassignedChanges} onOpenFile={onOpenFile} />
+        {data.stacks.map((stack) => (
+          <StackLane
+            key={stack.key}
+            stack={stack}
+            onOpenCommit={onOpenCommit}
+            onOpenFile={onOpenFile}
+          />
+        ))}
+        {data.stacks.length === 0 ? (
+          <div className="ms-2.5 text-muted-foreground">
+            <p className="font-semibold text-foreground">No applied branches</p>
+            <p className="mt-1 leading-normal">
+              Branches you apply in GitButler show up here as stacks, with their commits.
+            </p>
+          </div>
+        ) : null}
+        {data.base ? (
+          <BaseCard
+            threadId={threadId}
+            repositoryKey={repositoryKey}
+            base={data.base}
+            onOpenCommit={onOpenCommit}
+          />
+        ) : null}
+      </div>
     </>
   );
 }
