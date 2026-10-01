@@ -1170,6 +1170,13 @@ diffs-container {
   color: inherit !important;
 }
 
+/* p-0 replaces responsive overlays' safe-area padding in pickers and dialogs.
+ * Keep explicit max-md:p-0 bodies unchanged: the context-window card owns its
+ * mobile padding. BB's body variable removes the inset while the keyboard is up. */
+.dark [data-persistent-drawer-content] > .p-0:not(.max-md\:p-0) {
+  padding-bottom: max(1rem, var(--bb-safe-area-bottom, env(safe-area-inset-bottom)));
+}
+
 /* bb's notification history is a first-class themed surface, separate from
  * the native browser and operating-system banners delivered by the push
  * notification plugin. The host owns responsive placement: a popover on
