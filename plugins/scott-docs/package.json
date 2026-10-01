@@ -1,18 +1,18 @@
 {
-  "name": "@smsunarto/bb-plugin-docs",
+  "name": "@smsunarto/bb-plugin-scott-docs",
   "version": "0.2.3",
   "description": "Create and edit Markdown documents with the smsunarto Monokai reading theme.",
   "private": true,
   "license": "MIT",
   "author": "Scott Sunarto",
-  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/docs#readme",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/scott-docs#readme",
   "bugs": {
     "url": "https://github.com/smsunarto/bb-plugins/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/smsunarto/bb-plugins.git",
-    "directory": "plugins/docs"
+    "directory": "plugins/scott-docs"
   },
   "type": "module",
   "files": [

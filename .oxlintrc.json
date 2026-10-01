@@ -53,7 +53,7 @@
       }
     },
     {
-      "files": ["plugins/docs/components/ui/**"],
+      "files": ["plugins/scott-docs/components/ui/**"],
       "rules": {
         "jsx-a11y/prefer-tag-over-role": "off"
       }

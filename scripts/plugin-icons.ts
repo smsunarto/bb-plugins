@@ -156,7 +156,7 @@ const customIcons = {
     name: "CloudServer",
     nodes: CloudServerIcon,
   },
-  docs: {
+  "scott-docs": {
     name: "Doc",
     nodes: Doc01Icon,
   },

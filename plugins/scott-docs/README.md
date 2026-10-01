@@ -5,7 +5,8 @@ Markdown, HTML, and asset files while the plugin adds nested navigation,
 multi-host vaults, rich editing, images, sandboxed HTML, automation, chat
 mentions, and links that open inside a thread.
 
-This fork is published as `@smsunarto/bb-plugin-docs` with plugin ID `docs`.
+This fork is published as `@smsunarto/bb-plugin-scott-docs` with plugin ID
+`scott-docs`.
 It keeps upstream's Tiptap editor and proposal review, and adds the smsunarto
 Monokai reading theme, a [Pierre Trees](https://trees.software/) explorer,
 and hidden human-authored folders. bb's built-in Docs (`simple-notes`) claims
@@ -185,19 +186,19 @@ its existing compare-and-swap behavior.
 
 ## Token-authenticated HTTP API
 
-The fork's plugin ID is `docs`. Generate or inspect its token with
-`bb plugin token docs`, then send it in
+The fork's plugin ID is `scott-docs`. Generate or inspect its token with
+`bb plugin token scott-docs`, then send it in
 `x-bb-plugin-token` to these JSON endpoints:
 
 ```text
-POST /api/v1/plugins/docs/http/list
-POST /api/v1/plugins/docs/http/read
-POST /api/v1/plugins/docs/http/write
-POST /api/v1/plugins/docs/http/mkdir
-POST /api/v1/plugins/docs/http/move
-POST /api/v1/plugins/docs/http/remove
-POST /api/v1/plugins/docs/http/sync/snapshot
-POST /api/v1/plugins/docs/http/sync/apply
+POST /api/v1/plugins/scott-docs/http/list
+POST /api/v1/plugins/scott-docs/http/read
+POST /api/v1/plugins/scott-docs/http/write
+POST /api/v1/plugins/scott-docs/http/mkdir
+POST /api/v1/plugins/scott-docs/http/move
+POST /api/v1/plugins/scott-docs/http/remove
+POST /api/v1/plugins/scott-docs/http/sync/snapshot
+POST /api/v1/plugins/scott-docs/http/sync/apply
 ```
 
 Example request body:
@@ -217,8 +218,8 @@ state client-side.
 ## Install
 
 ```sh
-bb plugin install /path/to/bb-plugins/plugins/docs --yes
-bb plugin reload docs
+bb plugin install /path/to/bb-plugins/plugins/scott-docs --yes
+bb plugin reload scott-docs
 ```
 
 ## Inline editing and proposed revisions
