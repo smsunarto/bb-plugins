@@ -1,5 +1,4 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { stubHostContext } from "@bb-kit/core/testing";
 
 /**
  * A `{ bb }` context whose thread lookup and host client are both recorded.
@@ -38,5 +37,5 @@ export function harness(options: {
     },
   } as unknown as BbPluginApi;
 
-  return { ctx: stubHostContext({ bb }), calls };
+  return { ctx: { bb }, calls };
 }

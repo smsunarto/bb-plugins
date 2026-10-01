@@ -1,20 +1,18 @@
-import { argv, CommandError, defineCommand } from "@bb-kit/core/command";
-import { z } from "zod";
+import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
 
+import type { GitContext } from "../git.ts";
 import { overview } from "../rpc/overview.ts";
 import { readFile } from "../rpc/read-file.ts";
 
 export const cat = defineCommand({
   summary: "Print a tweakable file",
-  input: z.object({
-    path: argv.argument(z.string(), { description: "repo-relative path" }),
-  }),
-  async execute(ctx, { path }) {
+  positionals: [{ name: "path", description: "repo-relative path", required: true }],
+  async execute(ctx: CommandContext<GitContext>, { positionals }) {
     const snapshot = await overview.execute(ctx);
     if (!snapshot.repoExists) {
-      throw new CommandError(`dotfiles repo not found at ${snapshot.repoPath}`);
+      throw new PluginCliError(`dotfiles repo not found at ${snapshot.repoPath}`);
     }
-    const file = await readFile.execute(ctx, { path });
+    const file = await readFile.execute(ctx, { path: positionals.path });
     return { exitCode: 0, stdout: file.content };
   },
 });

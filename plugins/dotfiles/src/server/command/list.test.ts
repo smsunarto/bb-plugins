@@ -1,15 +1,18 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { CommandError } from "@bb-kit/core/command";
+import { PluginCliError } from "@bb-kit/core/command";
 
 import { createFakeContext } from "../fake-context.ts";
 import { list } from "./list.ts";
 
+const noArgs = { options: {}, positionals: {}, passthrough: [], help: "" };
+
 test("list throws when the repo is missing", async () => {
   await assert.rejects(
-    () => Promise.resolve(list.execute(createFakeContext({ repoExists: () => false }))),
+    () => Promise.resolve(list.execute(createFakeContext({ repoExists: () => false }), noArgs)),
     (error: unknown) => {
-      assert.ok(error instanceof CommandError);
+      assert.ok(error instanceof PluginCliError);
+      assert.equal(error.exitCode, 1);
       assert.equal(error.message, "dotfiles repo not found at /dotfiles");
       return true;
     },
@@ -25,6 +28,7 @@ test("list prints grouped files with bracketed flag suffixes", async () => {
         entries: [{ status: "M", path: ".dotfiles/mcp.json" }],
       }),
     }),
+    noArgs,
   );
   assert.equal(result.exitCode, 0);
   const stdout = result.stdout ?? "";

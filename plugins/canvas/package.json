@@ -118,7 +118,7 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000",
-    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "reference": "bun scripts/reference.ts",
     "clean": "rm -rf dist"
   },

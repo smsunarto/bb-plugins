@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { dotfilesQueryClient, DotfilesBoundary } from "./query-client.ts";
+import { pluginQueryClient, PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { rpc, type RPCOutput } from "./rpc.ts";
 import { useDotfilesRoute, type DotfilesNavigation } from "./route.ts";
 import { errorMessage } from "./tasks.ts";
@@ -29,7 +29,7 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
   const overview = rpc.overview.useQuery();
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const removeSkillMutation = rpc.removeSkill.useMutation({
-    onSuccess: () => dotfilesQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
+    onSuccess: () => pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
   });
 
   async function removeSkill({ name, path }: PendingRemoval): Promise<void> {
@@ -185,10 +185,10 @@ function FileRow({
 
 export function DotfilesFilesTab(props: PluginNavPanelProps): ReactElement {
   return (
-    <DotfilesBoundary>
+    <PluginQueryBoundary>
       <div className="flex h-full min-h-0 flex-col bg-sidebar">
         <FilesTabBody {...props} />
       </div>
-    </DotfilesBoundary>
+    </PluginQueryBoundary>
   );
 }

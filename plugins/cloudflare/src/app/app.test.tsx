@@ -87,15 +87,15 @@ async function loaded(slot: {
   await slot.findByRole("button", { name: "Tunnels 1" });
 }
 
-// The panel keeps one module-level query cache so tab switches stay instant;
-// each test starts from an empty cache. The module is only importable once
-// loadPluginApp has installed the SDK runtime, so the handle is captured lazily.
-let appModule: { queryClient: { clear(): void } } | undefined;
-beforeEach(() => appModule?.queryClient.clear());
+// The panel shares bb-kit's module-level query cache so tab switches stay
+// instant; each test starts from an empty cache. The module is only importable
+// once loadPluginApp has installed the SDK runtime, so it is captured lazily.
+let queryCache: { clear(): void } | undefined;
+beforeEach(() => queryCache?.clear());
 
 async function panel() {
   const app = await loadPluginApp(() => import("./app.tsx"));
-  appModule ??= await import("./app.tsx");
+  queryCache ??= (await import("@bb-kit/core/rpc/query")).pluginQueryClient;
   const registration = app.navPanels[0];
   if (!registration) throw new Error("app.tsx registers one nav panel");
   return registration;

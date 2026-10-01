@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { dotfilesQueryClient } from "./query-client.ts";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { rpc, type RPCInput } from "./rpc.ts";
 
 type TaskId = RPCInput<"runTask">["task"];
@@ -85,13 +85,13 @@ export function useTasks(): Tasks {
           if (result.exitCode === 0) toast.success(`${id} succeeded`);
           else toast.error(`${id} exited with code ${result.exitCode}`);
           if (task === "sync:pull" || task === "publish") {
-            await dotfilesQueryClient.invalidateQueries({ queryKey: rpc.readFile.queryKey() });
+            await pluginQueryClient.invalidateQueries({ queryKey: rpc.readFile.queryKey() });
           }
         } catch (error) {
           emit({ ...snapshot, current: { status: "failed", id, message: errorMessage(error) } });
           toast.error(`${task} failed: ${errorMessage(error)}`);
         } finally {
-          await dotfilesQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
+          await pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
         }
       })();
     },

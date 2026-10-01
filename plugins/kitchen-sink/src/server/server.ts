@@ -20,7 +20,7 @@ export default definePlugin({
     discoverable: true,
     description: "Smart Embed citations.",
   },
-  setup(bb) {
+  setup({ bb }) {
     registerTimelineMotionSettings(bb);
     for (const provider of mentionProviders) {
       bb.ui.registerMentionProvider(provider);

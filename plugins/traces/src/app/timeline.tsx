@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
-import { rpc, definedFields } from "./rpc.ts";
+import { rpc } from "./rpc.ts";
 import {
   Empty,
   Pages,
@@ -88,7 +88,7 @@ export function Timeline({
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length - 1;
   const result = rpc.events.useQuery(
-    definedFields({
+    {
       hostId,
       sessionId: session.id,
       kind,
@@ -97,7 +97,7 @@ export function Timeline({
       query,
       cursor: cursors[page],
       limit: 100,
-    }),
+    },
     { staleTime: 1000, gcTime: 0, retry: false },
   );
   const { refetch } = result;

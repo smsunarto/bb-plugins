@@ -12,7 +12,7 @@ import { readFile } from "./rpc/read-file.ts";
 import { removeSkill } from "./rpc/remove-skill.ts";
 import { runTask } from "./rpc/run-task.ts";
 import { saveFile } from "./rpc/save-file.ts";
-import { bindGit, createDotfilesGit } from "./git.ts";
+import { createDotfilesGit } from "./git.ts";
 import { PLUGIN_TELEMETRY } from "../shared/telemetry.ts";
 
 const telemetry = sentryPluginTelemetry({
@@ -26,7 +26,7 @@ export default definePlugin({
   performanceReporter: telemetry.performanceReporter,
   rpc: { overview, publish, readFile, removeSkill, runTask, saveFile },
   command: { cat, check, list, render, status, sync },
-  async setup(bb) {
+  services(bb) {
     const settings = bb.settings.define({
       repoPath: {
         type: "string",
@@ -38,8 +38,10 @@ export default definePlugin({
       files: bb.sdk.files,
       getConfiguredRepoPath: async () => (await settings.get()).repoPath,
     });
-    bindGit(bb, git);
     bb.onDispose(() => git.dispose());
+    return { git };
+  },
+  async setup({ bb, git }) {
     const repoPath = await git.getRepoPath();
     if (!git.repoExists(repoPath)) {
       bb.status.needsConfiguration(

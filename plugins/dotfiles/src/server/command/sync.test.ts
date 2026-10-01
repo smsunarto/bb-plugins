@@ -1,18 +1,21 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { CommandError } from "@bb-kit/core/command";
+import { PluginCliError } from "@bb-kit/core/command";
 
 import { createFakeContext } from "../fake-context.ts";
 import { sync } from "./sync.ts";
 
+function args(publish: boolean) {
+  return { options: { publish }, positionals: {}, passthrough: [], help: "" };
+}
+
 test("sync throws when the repo is missing", async () => {
   await assert.rejects(
     () =>
-      Promise.resolve(
-        sync.execute(createFakeContext({ repoExists: () => false }), { publish: false }),
-      ),
+      Promise.resolve(sync.execute(createFakeContext({ repoExists: () => false }), args(false))),
     (error: unknown) => {
-      assert.ok(error instanceof CommandError);
+      assert.ok(error instanceof PluginCliError);
+      assert.equal(error.exitCode, 1);
       assert.equal(error.message, "dotfiles repo not found at /dotfiles");
       return true;
     },
@@ -23,7 +26,7 @@ test("sync without --publish runs the pull-only task", async () => {
   const ctx = createFakeContext({
     run: async () => ({ exitCode: 0, output: "pulled" }),
   });
-  const result = await sync.execute(ctx, { publish: false });
+  const result = await sync.execute(ctx, args(false));
   assert.deepEqual(result, { exitCode: 0, stdout: "pulled" });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([, command]) => command),
@@ -35,7 +38,7 @@ test("sync --publish publishes instead of pulling", async () => {
   const ctx = createFakeContext({
     run: async () => ({ exitCode: 1, output: "push rejected" }),
   });
-  const result = await sync.execute(ctx, { publish: true });
+  const result = await sync.execute(ctx, args(true));
   assert.deepEqual(result, { exitCode: 1, stdout: "push rejected" });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([, command]) => command),

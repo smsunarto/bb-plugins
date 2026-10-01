@@ -50,6 +50,6 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check"
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check"
   }
 }

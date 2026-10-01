@@ -253,7 +253,6 @@ export class QuickShareService {
   }
 }
 
-const services = new WeakMap<BbPluginApi, QuickShareService>();
 // The thread's environment names the host its agent runs on, so agent-created
 // shares default to the port the agent can actually see.
 async function threadHost(bb: BbPluginApi, threadId: string) {
@@ -266,7 +265,7 @@ async function threadHost(bb: BbPluginApi, threadId: string) {
     return undefined;
   }
 }
-export function setupQuickShares(bb: BbPluginApi, executable: () => Promise<string>) {
+export function createQuickShares(bb: BbPluginApi, executable: () => Promise<string>) {
   const host = bb.hosts.experimental_client({ contract: cloudflareHostContract });
   const service = new QuickShareService({
     storage: bb.storage.kv,
@@ -280,11 +279,5 @@ export function setupQuickShares(bb: BbPluginApi, executable: () => Promise<stri
       host.call("startQuick", { id, port, executable }, { hostId }),
     stop: (hostId, id) => host.call("stop", { id }, { hostId }),
   });
-  services.set(bb, service);
-  return service;
-}
-export function getQuickShares(bb: BbPluginApi) {
-  const service = services.get(bb);
-  if (!service) throw new Error("Cloudflare quick shares are not initialized.");
   return service;
 }

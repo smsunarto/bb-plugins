@@ -7,8 +7,8 @@ import { stop } from "./rpc/stop.ts";
 import { remove } from "./rpc/remove.ts";
 import { status } from "./command/status.ts";
 import { shares } from "./tools/shares.ts";
-import { setupService } from "./lib/service.ts";
-import { setupQuickShares } from "./lib/quick-shares.ts";
+import { createService } from "./lib/service.ts";
+import { createQuickShares } from "./lib/quick-shares.ts";
 import { quickList } from "./rpc/quick-list.ts";
 import { quickCreate } from "./rpc/quick-create.ts";
 import { quickStart } from "./rpc/quick-start.ts";
@@ -41,18 +41,22 @@ export default definePlugin({
   },
   command: { status },
   agents: { tools: { shares } },
-  setup(bb) {
-    const service = setupService(bb);
-    const quick = setupQuickShares(bb, async () => {
-      const { values } = await bb.sdk.plugins.getSettings({ pluginId: bb.pluginId });
-      const path = values.cloudflaredPath;
-      return typeof path === "string" && path.trim() ? path.trim() : "cloudflared";
-    });
+  services(bb) {
+    return {
+      ...createService(bb),
+      quickShares: createQuickShares(bb, async () => {
+        const { values } = await bb.sdk.plugins.getSettings({ pluginId: bb.pluginId });
+        const path = values.cloudflaredPath;
+        return typeof path === "string" && path.trim() ? path.trim() : "cloudflared";
+      }),
+    };
+  },
+  setup({ bb, cloudflare, quickShares }) {
     bb.events.on("experimental_host.deleted", async ({ host }) => {
-      await Promise.all([service.pruneHost(host.id), quick.pruneHost(host.id)]);
+      await Promise.all([cloudflare.pruneHost(host.id), quickShares.pruneHost(host.id)]);
     });
-    void Promise.all([service.pruneRemovedHosts(), quick.pruneRemovedHosts()]).catch((error) =>
-      bb.log.warn(`Pruning shares of removed machines failed: ${String(error)}`),
+    void Promise.all([cloudflare.pruneRemovedHosts(), quickShares.pruneRemovedHosts()]).catch(
+      (error) => bb.log.warn(`Pruning shares of removed machines failed: ${String(error)}`),
     );
   },
 });

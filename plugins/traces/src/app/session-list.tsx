@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { TraceSession } from "../shared/model.ts";
-import { rpc, definedFields } from "./rpc.ts";
+import { rpc } from "./rpc.ts";
 import { Empty, Pages, QueryError, moveSelection, providerLabel, shortDate } from "./controls.tsx";
 const EMPTY_SESSIONS: TraceSession[] = [];
 
@@ -31,7 +31,7 @@ export function SessionList({
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length - 1;
   const result = rpc.sessions.useQuery(
-    definedFields({ hostId, provider, query, nativeId, cursor: cursors[page], limit: 50 }),
+    { hostId, provider, query, nativeId, cursor: cursors[page], limit: 50 },
     { staleTime: 1000, gcTime: 0, retry: false },
   );
   const lastRevision = useRef(revision);

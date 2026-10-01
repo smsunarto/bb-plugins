@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-import { stubHostContext } from "@bb-kit/core/testing";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { codeCitation } from "../lib/code-citation.ts";
 import { renderEmbed } from "./render-embed.ts";
@@ -19,7 +18,7 @@ function context(content = "one\ntwo\nthree\n") {
     },
     log: { warn() {}, debug() {} },
   } as unknown as BbPluginApi;
-  return { ctx: stubHostContext({ bb }), read, bb };
+  return { ctx: { bb }, read, bb };
 }
 describe("codeCitation", () => {
   test("keeps the source line numbers and adds bounded context", () => {

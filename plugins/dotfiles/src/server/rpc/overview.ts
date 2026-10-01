@@ -6,7 +6,7 @@ import {
   isValidSkillName,
   type TweakableGroupDefinition,
 } from "../domain.ts";
-import { gitFor } from "../git.ts";
+import type { GitContext } from "../git.ts";
 
 function toOverviewGroup(
   group: TweakableGroupDefinition,
@@ -59,8 +59,8 @@ export const overview = defineQuery({
       gitEntries: z.array(gitEntrySchema),
     })
     .strict(),
-  async execute(ctx) {
-    const git = gitFor(ctx.bb);
+  async execute(ctx: GitContext) {
+    const { git } = ctx;
     const repoPath = await git.getRepoPath();
     const repoExists = git.repoExists(repoPath);
     const skills = repoExists ? git.discoverSkills(repoPath) : [];

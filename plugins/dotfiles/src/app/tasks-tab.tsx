@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DotfilesBoundary } from "./query-client.ts";
+import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { rpc } from "./rpc.ts";
 import { quickTasks, useTasks } from "./tasks.ts";
 
@@ -102,10 +102,10 @@ function TasksTabBody(): ReactElement {
 
 export function DotfilesTasksTab(_props: PluginNavPanelProps): ReactElement {
   return (
-    <DotfilesBoundary>
+    <PluginQueryBoundary>
       <div className="flex h-full min-h-0 flex-col bg-sidebar">
         <TasksTabBody />
       </div>
-    </DotfilesBoundary>
+    </PluginQueryBoundary>
   );
 }

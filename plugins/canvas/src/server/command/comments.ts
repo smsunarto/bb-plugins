@@ -1,6 +1,5 @@
-import { argv, CommandError, defineCommand } from "@bb-kit/core/command";
+import { defineCommand, PluginCliError } from "@bb-kit/core/command";
 import { isAbsolute, resolve } from "node:path";
-import { z } from "zod";
 import { placeThreads, type PlacedThread } from "../../shared/anchor.ts";
 import type { CanvasDocument } from "../../shared/document.ts";
 import { fileNameOf } from "../../shared/document.ts";
@@ -40,21 +39,22 @@ function threadLines(placed: PlacedThread, nowMs: number): readonly string[] {
 
 export const comments = defineCommand({
   summary: "List the comments on a .canvas.mdx file with where each one sits now",
-  input: z.object({
-    path: argv.argument(z.string().min(1), {
-      description: "Canvas file, absolute or relative to the cwd",
-    }),
-    all: argv.flag(z.boolean().optional(), { description: "Include resolved threads" }),
-    json: argv.flag(z.boolean().optional(), {
+  positionals: [
+    { name: "path", description: "Canvas file, absolute or relative to the cwd", required: true },
+  ],
+  options: {
+    all: { type: "boolean", description: "Include resolved threads" },
+    json: {
+      type: "boolean",
       description: "Print {path, sidecarPath, parses, threads: [{thread, match, context}]} as JSON",
-    }),
-  }),
-  async execute(ctx, { path, all, json }) {
+    },
+  },
+  async execute(ctx, { positionals: { path }, options: { all, json } }) {
     const absolute = isAbsolute(path) ? path : resolve(ctx.cwd ?? process.cwd(), path);
     const source = { kind: "host", hostId: null, path: absolute } as const;
     const rendered = await render.execute(ctx, { source, knownSha256: null });
     if (rendered.status === "unreadable") {
-      throw new CommandError(`${path}: ${rendered.reason}: ${rendered.detail}`, { exitCode: 2 });
+      throw new PluginCliError(`${path}: ${rendered.reason}: ${rendered.detail}`, { exitCode: 2 });
     }
     const parses = rendered.status === "rendered";
     const document = parses ? rendered.document : emptyDocument;
@@ -63,21 +63,23 @@ export const comments = defineCommand({
       read = await readComments(ctx.bb, source);
     } catch (error) {
       if (error instanceof CommentsError)
-        throw new CommandError(`${path}: ${error.message}`, { exitCode: 2 });
+        throw new PluginCliError(`${path}: ${error.message}`, { exitCode: 2 });
       throw error;
     }
     if (read.malformed) {
-      throw new CommandError(`${read.sidecarPath} is not a valid comments file; fix or delete it`, {
-        exitCode: 2,
-      });
+      throw new PluginCliError(
+        `${read.sidecarPath} is not a valid comments file; fix or delete it`,
+        {
+          exitCode: 2,
+        },
+      );
     }
     const placement = placeThreads(document, read.file.threads);
     const everything = [...[...placement.byOffset.values()].flat(), ...placement.detached].sort(
       (a, b) => orderOf(a) - orderOf(b),
     );
-    const shown =
-      all === true ? everything : everything.filter((p) => p.thread.resolvedAtMs === null);
-    if (json === true) {
+    const shown = all ? everything : everything.filter((p) => p.thread.resolvedAtMs === null);
+    if (json) {
       const report = { path: absolute, sidecarPath: read.sidecarPath, parses, threads: shown };
       return { exitCode: 0, stdout: `${JSON.stringify(report)}\n` };
     }

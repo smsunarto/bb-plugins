@@ -1,15 +1,18 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { CommandError } from "@bb-kit/core/command";
+import { PluginCliError } from "@bb-kit/core/command";
 
 import { createFakeContext } from "../fake-context.ts";
 import { status } from "./status.ts";
 
+const noArgs = { options: {}, positionals: {}, passthrough: [], help: "" };
+
 test("status throws when the repo is missing", async () => {
   await assert.rejects(
-    () => Promise.resolve(status.execute(createFakeContext({ repoExists: () => false }))),
+    () => Promise.resolve(status.execute(createFakeContext({ repoExists: () => false }), noArgs)),
     (error: unknown) => {
-      assert.ok(error instanceof CommandError);
+      assert.ok(error instanceof PluginCliError);
+      assert.equal(error.exitCode, 1);
       assert.equal(error.message, "dotfiles repo not found at /dotfiles");
       return true;
     },
@@ -27,6 +30,7 @@ test("status prints the branch and two-column entries", async () => {
         ],
       }),
     }),
+    noArgs,
   );
   assert.deepEqual(result, {
     exitCode: 0,
@@ -35,6 +39,6 @@ test("status prints the branch and two-column entries", async () => {
 });
 
 test("status prints clean when there are no entries", async () => {
-  const result = await status.execute(createFakeContext());
+  const result = await status.execute(createFakeContext(), noArgs);
   assert.deepEqual(result, { exitCode: 0, stdout: "branch: main\nclean" });
 });

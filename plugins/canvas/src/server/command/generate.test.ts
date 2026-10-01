@@ -1,6 +1,5 @@
 import { test, expect } from "bun:test";
-import { fakeBb, fileKeyOf } from "../fake-bb.ts";
-import { generate } from "./generate.ts";
+import { fakeBb, fileKeyOf, runCanvasCli } from "../fake-bb.ts";
 import { generateCanvas } from "../lib/generate.ts";
 
 const data = {
@@ -50,12 +49,17 @@ function fixture(content = JSON.stringify(data), existing = false) {
     },
   });
 }
-const input = { template: "review" as const, data: "data.json", out: "result.canvas.mdx" };
+const argv = ["generate", "review", "--data", "data.json", "--out", "result.canvas.mdx"];
+const inThread = { cwd: "/work", threadId: "t" };
 
 test("generate routes reads and writes to the thread host", async () => {
   const bb = fixture();
-  const result = await generate.execute({ bb, cwd: "/work", threadId: "t" }, input);
-  expect(result.exitCode).toBe(0);
+  const result = await runCanvasCli(bb, argv, inThread);
+  expect(result).toEqual({
+    exitCode: 0,
+    stdout: "ok — generated /work/result.canvas.mdx\n",
+    stderr: "",
+  });
   expect(bb.calls.filesRead).toEqual([{ hostId: "remote", path: "/work/data.json" }]);
   expect(bb.calls.filesWrite[0]).toMatchObject({
     hostId: "remote",
@@ -67,16 +71,18 @@ test("generate routes reads and writes to the thread host", async () => {
 test("generation failures never write an output file", async () => {
   for (const content of ["not json", JSON.stringify({ title: "Bad", summary: "<Unknown />" })]) {
     const bb = fixture(content);
-    await expect(generate.execute({ bb, cwd: "/work", threadId: "t" }, input)).rejects.toThrow();
+    expect((await runCanvasCli(bb, argv, inThread)).exitCode).toBe(1);
     expect(bb.calls.filesWrite).toHaveLength(0);
   }
 });
 
 test("existing output is preserved", async () => {
   const bb = fixture(JSON.stringify(data), true);
-  await expect(generate.execute({ bb, cwd: "/work", threadId: "t" }, input)).rejects.toThrow(
-    "already exists",
-  );
+  expect(await runCanvasCli(bb, argv, inThread)).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr: "/work/result.canvas.mdx already exists; choose a new output path\n",
+  });
   expect(bb.store.get(fileKeyOf("remote", undefined, "/work/result.canvas.mdx"))).toMatchObject({
     content: "# Existing\n",
   });
@@ -84,10 +90,18 @@ test("existing output is preserved", async () => {
 
 test("outside a thread an explicit host is required", async () => {
   const bb = fixture();
-  await expect(generate.execute({ bb, cwd: "/work" }, input)).rejects.toThrow("--host");
-  expect(
-    (await generate.execute({ bb, cwd: "/work" }, { ...input, host: "remote" })).exitCode,
-  ).toBe(0);
+  expect(await runCanvasCli(bb, argv, { cwd: "/work" })).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr: "Pass --host <host-id> when running outside a thread\n",
+  });
+  expect(await runCanvasCli(bb, [...argv, "--host", "remote", "--json"], { cwd: "/work" })).toEqual(
+    {
+      exitCode: 0,
+      stdout: '{"path":"/work/result.canvas.mdx","hostId":"remote","template":"review"}\n',
+      stderr: "",
+    },
+  );
 });
 
 test("issue sections are conditional and numbered steps preserve order", () => {
@@ -102,10 +116,20 @@ test("issue sections are conditional and numbered steps preserve order", () => {
   expect(output).not.toContain("## Actual");
 });
 
-test("missing required options fail before host IO", async () => {
+test("missing required options and unknown templates fail before host IO", async () => {
   const bb = fixture();
-  await expect(generate.execute({ bb }, { template: "review" })).rejects.toThrow(
-    "--data and --out",
-  );
+  expect(await runCanvasCli(bb, ["generate", "review"])).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr:
+      "missing required options: --data, --out\n\nUsage:\n  bb canvas generate <template> --data <file> --out <file> [--host <host-id>] [--json]\n",
+  });
+  expect(
+    await runCanvasCli(bb, ["generate", "memo", "--data", "d.json", "--out", "o.canvas.mdx"]),
+  ).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr: "invalid value 'memo' for <template>. Expected one of: review, issue, pull-request\n",
+  });
   expect(bb.calls.filesRead).toHaveLength(0);
 });

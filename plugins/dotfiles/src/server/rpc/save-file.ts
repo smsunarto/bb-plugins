@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineMutation } from "@bb-kit/core/rpc";
 import { isAllowedPath, needsRender } from "../domain.ts";
-import { gitFor } from "../git.ts";
+import type { GitContext } from "../git.ts";
 
 export const saveFile = defineMutation({
   input: z
@@ -21,8 +21,8 @@ export const saveFile = defineMutation({
       .strict(),
     z.object({ outcome: z.literal("conflict") }).strict(),
   ]),
-  async execute(ctx, { path, content, expectedSha256 }) {
-    const git = gitFor(ctx.bb);
+  async execute(ctx: GitContext, { path, content, expectedSha256 }) {
+    const { git } = ctx;
     const repoPath = await git.getRepoPath();
     // Allowlist guard, duplicated with read-file.ts on purpose: rpc/
     // holds only units, so shared micro-logic stays inline.

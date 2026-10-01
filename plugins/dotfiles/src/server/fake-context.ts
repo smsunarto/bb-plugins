@@ -1,21 +1,15 @@
-import { stubHostContext } from "@bb-kit/core/testing";
-import type { Context } from "@bb-kit/core/plugin";
-import { provideFakeGit, type FakeDotfilesGit } from "./fake-git.ts";
-import type { DotfilesGit } from "./git.ts";
+import { createFakePluginHost, type FakePluginHarness } from "@get-bb/plugin-sdk/testing";
+import { createFakeGit, type FakeDotfilesGit } from "./fake-git.ts";
+import type { DotfilesGit, GitContext } from "./git.ts";
 
-export interface FakeContext extends Context {
+export interface FakeContext extends GitContext {
   readonly git: FakeDotfilesGit;
+  /** The fake host behind `bb`, for assertions such as `logEntries`. */
+  readonly harness: FakePluginHarness;
 }
 
-export function createFakeContext(
-  git: Partial<DotfilesGit> = {},
-  options: { log?: (message: string) => void } = {},
-): FakeContext {
-  const ctx = stubHostContext();
-  const bb = ctx.bb as { log?: { info(message: string): void } };
-  bb.log = { info: options.log ?? (() => {}) };
-  return {
-    ...ctx,
-    git: provideFakeGit(ctx.bb, git),
-  };
+/** The `{ bb, git }` a handler receives, over a fake host and a fake git. */
+export function createFakeContext(git: Partial<DotfilesGit> = {}): FakeContext {
+  const { bb, harness } = createFakePluginHost({ pluginId: "dotfiles" });
+  return { bb, git: createFakeGit(git), harness };
 }

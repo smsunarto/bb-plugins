@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineMutation } from "@bb-kit/core/rpc";
 import { isValidSkillName } from "../domain.ts";
-import { gitFor } from "../git.ts";
+import type { GitContext } from "../git.ts";
 
 export const removeSkill = defineMutation({
   input: z.object({ name: z.string() }).strict(),
@@ -15,9 +15,9 @@ export const removeSkill = defineMutation({
       .strict(),
     z.object({ outcome: z.literal("not-found") }).strict(),
   ]),
-  async execute(ctx, { name }) {
+  async execute(ctx: GitContext, { name }) {
     if (!isValidSkillName(name)) throw new Error(`invalid skill name: ${name}`);
-    const git = gitFor(ctx.bb);
+    const { git } = ctx;
     const repoPath = await git.getRepoPath();
     const skillExists = git.discoverSkills(repoPath).some((skill) => skill.title === name);
     if (!skillExists) return { outcome: "not-found" as const };

@@ -66,7 +66,7 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node --import ./test/preload-require.mjs --import tsx --test src/shared/providers/*.test.ts src/app/*.test.ts src/host/*.test.ts test/*.test.ts",
-    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   },
   "exports": {

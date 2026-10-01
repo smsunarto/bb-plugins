@@ -1,5 +1,5 @@
 import { mock, type Mock } from "bun:test";
-import { bindGit, type DotfilesGit, type ManagedDotfilesGit } from "./git.ts";
+import type { DotfilesGit } from "./git.ts";
 
 export interface FakeDotfilesGit extends DotfilesGit {
   readonly run: Mock<DotfilesGit["run"]>;
@@ -22,11 +22,4 @@ export function createFakeGit(overrides: Partial<DotfilesGit> = {}): FakeDotfile
     ...overrides,
     run,
   };
-}
-
-/** Bind a fake git collaborator to a host so `gitFor(ctx.bb)` finds it. */
-export function provideFakeGit(bb: object, overrides: Partial<DotfilesGit> = {}): FakeDotfilesGit {
-  const fake = createFakeGit(overrides);
-  bindGit(bb, Object.assign(fake, { dispose() {} }) as ManagedDotfilesGit);
-  return fake;
 }

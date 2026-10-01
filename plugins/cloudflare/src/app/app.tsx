@@ -1,6 +1,5 @@
 import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import { QueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type {
@@ -27,13 +26,6 @@ import {
 import type { TabPath } from "./labels.ts";
 import { Badge, CopyButton, EmptyState, Mono, Notice, SettingsLink } from "./ui.tsx";
 import "./cloudflare.css";
-
-// bb remounts the panel on every sub-path change. A client owned by the
-// boundary would be discarded with it, so each tab switch would reload the
-// account and flash skeletons. Sharing one client keeps the overview cached
-// across tabs and lets the interval refetch update it in the background.
-// Exported so tests can reset the cache between cases.
-export const queryClient = new QueryClient();
 
 function ConnectionSkeleton() {
   return (
@@ -597,7 +589,7 @@ function CloudflarePanel({ subPath }: { subPath: string }) {
 
 function CloudflareApp({ subPath }: { subPath: string }) {
   return (
-    <PluginQueryBoundary client={queryClient}>
+    <PluginQueryBoundary>
       <CloudflarePanel subPath={subPath} />
     </PluginQueryBoundary>
   );

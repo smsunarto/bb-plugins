@@ -1,3 +1,4 @@
+import type { Context } from "@bb-kit/core/plugin";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -40,6 +41,9 @@ export interface DotfilesGit {
   run(repoPath: string, command: string): Promise<TaskResult>;
   removeSkill(repoPath: string, name: string): Promise<TaskResult>;
 }
+
+/** The `ctx` every rpc and command handler declares: the host plus `git`. */
+export type GitContext = Context<{ git: DotfilesGit }>;
 
 export interface GitDependencies {
   readonly files: BbPluginApi["sdk"]["files"];
@@ -218,24 +222,4 @@ export function createDotfilesGit({
       activeChildren.clear();
     },
   };
-}
-
-const gits = new WeakMap<object, ManagedDotfilesGit>();
-
-/**
- * The one git collaborator per plugin instance. Identity is the host
- * object, so two tests (and two plugin loads) never share children.
- * `setup` binds the production instance; tests call `bindGit` via
- * `provideFakeGit`.
- */
-export function gitFor(bb: object): ManagedDotfilesGit {
-  const existing = gits.get(bb);
-  if (!existing) {
-    throw new Error("dotfiles git is not bound for this host");
-  }
-  return existing;
-}
-
-export function bindGit(bb: object, git: ManagedDotfilesGit): void {
-  gits.set(bb, git);
 }

@@ -1,9 +1,8 @@
-import type { Context } from "@bb-kit/core/plugin";
 import { defineTool } from "@bb-kit/core/tools";
 import type { ToolContext } from "@bb-kit/core/tools";
 import { z } from "zod";
 import { quickCreateSchema, quickIdSchema } from "../../shared/schema.ts";
-import { getQuickShares } from "../lib/quick-shares.ts";
+import type { CloudflareContext } from "../lib/context.ts";
 import { overview } from "../rpc/overview.ts";
 export const shares = defineTool({
   presentation: {
@@ -19,9 +18,9 @@ export const shares = defineTool({
     quickIdSchema.extend({ action: z.literal("stop") }),
     quickIdSchema.extend({ action: z.literal("remove") }),
   ]),
-  async execute(ctx: ToolContext<Context>, input) {
+  async execute(ctx: ToolContext<CloudflareContext>, input) {
     const { action, ...params } = input;
-    const quick = getQuickShares(ctx.bb);
+    const quick = ctx.quickShares;
     switch (action) {
       case "overview":
         return JSON.stringify(await overview.execute(ctx));

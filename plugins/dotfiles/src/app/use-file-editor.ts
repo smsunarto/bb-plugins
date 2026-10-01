@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dotfilesQueryClient } from "./query-client.ts";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { rpc, type RPCOutput } from "./rpc.ts";
 import type { RepoPath } from "./route.ts";
 import { errorMessage, markRenderStale } from "./tasks.ts";
@@ -32,15 +32,15 @@ function commitWritten(
 ): void {
   if (result.renderHint) markRenderStale();
   const key = rpc.readFile.queryKey({ path });
-  const cached = dotfilesQueryClient.getQueryData<ReadFileResult>(key);
+  const cached = pluginQueryClient.getQueryData<ReadFileResult>(key);
   if (cached !== undefined) {
-    dotfilesQueryClient.setQueryData<ReadFileResult>(key, {
+    pluginQueryClient.setQueryData<ReadFileResult>(key, {
       ...cached,
       content,
       sha256: result.sha256,
     });
   }
-  void dotfilesQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
+  void pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
 }
 
 export function useFileEditor(path: RepoPath): FileEditor {

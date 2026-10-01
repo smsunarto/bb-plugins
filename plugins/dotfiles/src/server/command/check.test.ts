@@ -1,15 +1,20 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { CommandError } from "@bb-kit/core/command";
+import { PluginCliError } from "@bb-kit/core/command";
 
 import { createFakeContext } from "../fake-context.ts";
 import { check } from "./check.ts";
 
+function args(target?: string) {
+  return { options: {}, positionals: { target }, passthrough: [], help: "" };
+}
+
 test("check throws when the repo is missing", async () => {
   await assert.rejects(
-    () => Promise.resolve(check.execute(createFakeContext({ repoExists: () => false }), {})),
+    () => Promise.resolve(check.execute(createFakeContext({ repoExists: () => false }), args())),
     (error: unknown) => {
-      assert.ok(error instanceof CommandError);
+      assert.ok(error instanceof PluginCliError);
+      assert.equal(error.exitCode, 1);
       assert.equal(error.message, "dotfiles repo not found at /dotfiles");
       return true;
     },
@@ -18,7 +23,7 @@ test("check throws when the repo is missing", async () => {
 
 test("check without a target runs the full check task", async () => {
   const ctx = createFakeContext();
-  const result = await check.execute(ctx, {});
+  const result = await check.execute(ctx, args());
   assert.deepEqual(result, { exitCode: 0, stdout: "ok" });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([, command]) => command),
@@ -40,7 +45,7 @@ test("check routes each named target to its check task", async () => {
   };
   for (const [target, command] of Object.entries(routes)) {
     const ctx = createFakeContext();
-    const result = await check.execute(ctx, { target });
+    const result = await check.execute(ctx, args(target));
     assert.deepEqual(result, { exitCode: 0, stdout: "ok" });
     assert.deepEqual(
       ctx.git.run.mock.calls.map(([, calledCommand]) => calledCommand),
@@ -54,16 +59,16 @@ test("check passes the task exit code and output through", async () => {
     createFakeContext({
       run: async () => ({ exitCode: 3, output: "2 failures" }),
     }),
-    { target: "mise" },
+    args("mise"),
   );
   assert.deepEqual(result, { exitCode: 3, stdout: "2 failures" });
 });
 
 test("check with an unknown target throws", async () => {
   await assert.rejects(
-    () => Promise.resolve(check.execute(createFakeContext(), { target: "nope" })),
+    () => Promise.resolve(check.execute(createFakeContext(), args("nope"))),
     (error: unknown) => {
-      assert.ok(error instanceof CommandError);
+      assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 2);
       assert.equal(error.message, "unknown check target: nope");
       return true;

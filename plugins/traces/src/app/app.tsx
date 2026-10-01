@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
-import { rpc, definedFields } from "./rpc.ts";
+import { rpc } from "./rpc.ts";
 import {
   Empty,
   QueryError,
@@ -412,10 +412,13 @@ function TracesPanel({
   threadId?: string;
   renderers?: TraceRendererRegistry;
 }) {
-  const overview = rpc.overview.useQuery(definedFields({ threadId }), {
-    staleTime: 10_000,
-    retry: false,
-  });
+  const overview = rpc.overview.useQuery(
+    { threadId },
+    {
+      staleTime: 10_000,
+      retry: false,
+    },
+  );
   const [chosen, setChosen] = useState("");
   if (overview.isPending) return <Empty title="Connecting to trace hosts…" />;
   if (overview.error)
