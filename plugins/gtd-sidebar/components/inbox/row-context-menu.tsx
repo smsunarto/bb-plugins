@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { Glass } from "@samasante/liquid-glass";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
-import { MENU_GLASS } from "../../lib/menu-glass";
 import type { DispatchRowCommand, ThreadActionPlan } from "./thread-actions";
 import { ThreadMenuActions } from "./thread-menu-actions";
 import type { ThreadRename } from "./inline-rename";
@@ -45,19 +43,16 @@ export function RowContextMenu({
           onCloseAutoFocus={rename.onCloseAutoFocus}
           className="z-50 min-w-44 text-popover-foreground"
           // The theme paints context-menu content as an opaque, bordered
-          // 15px card. Inline resets outrank that selector so the Glass
-          // below is the only surface, with the theme's geometry moved onto it.
+          // 15px card. Inline resets outrank that selector so the blurred
+          // layer below is the only surface, with the theme's geometry on it.
           style={{ padding: 0, border: 0, background: "transparent", boxShadow: "none" }}
         >
-          <Glass
-            optics={MENU_GLASS}
-            style={{ display: "block" }}
+          <div
             className={cn(
               "rounded-[15px] p-[5px]",
-              // Translucent on purpose: the colour is the glass tint and the
-              // refracted sidebar shows through it.
-              "bg-popover/70",
-              // Uniform 1px rim so all four edges read alike (see MENU_GLASS).
+              // Translucent on purpose: the blurred sidebar shows through.
+              "bg-popover/70 backdrop-blur-xl backdrop-saturate-150",
+              // A 1px inner rim lifts the edge off the blur.
               "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12),0_0_0_0.5px_rgba(0,0,0,0.18),0_16px_40px_rgba(0,0,0,0.26),0_2px_6px_rgba(0,0,0,0.18)]",
             )}
           >
@@ -68,7 +63,7 @@ export function RowContextMenu({
               rename={rename}
               canSplit={canSplit}
             />
-          </Glass>
+          </div>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

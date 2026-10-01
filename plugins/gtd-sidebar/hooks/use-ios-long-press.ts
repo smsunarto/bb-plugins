@@ -8,6 +8,7 @@ import {
   type TouchEvent,
 } from "react";
 import { useLongPress } from "@uidotdev/usehooks";
+import { nativeHaptic } from "../lib/native-haptics";
 
 /**
  * `UILongPressGestureRecognizer.minimumPressDuration` default: 0.5 s.
@@ -51,7 +52,13 @@ export function useIosLongPress(
   const callback = useCallback(() => {
     fired.current = true;
     setIsPressing(false);
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+    // UIKit plays a medium impact as a context menu lifts. Outside BB's
+    // mobile app, Android browsers can still vibrate.
+    if (
+      !nativeHaptic("impact-medium") &&
+      typeof navigator !== "undefined" &&
+      "vibrate" in navigator
+    ) {
       try {
         navigator.vibrate(10);
       } catch {}

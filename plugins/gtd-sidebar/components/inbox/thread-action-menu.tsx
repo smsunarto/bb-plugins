@@ -1,10 +1,8 @@
 import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Glass } from "@samasante/liquid-glass";
 import { cn } from "../../lib/utils";
 import { usePortalScopeProps } from "../../lib/portal-scope";
-import { MENU_GLASS } from "../../lib/menu-glass";
 import { ThreadMenuActions, type ThreadMenuActionsProps } from "./thread-menu-actions";
 
 /**
@@ -52,16 +50,9 @@ export function CompactThreadActionMenu({
     return () => observer.disconnect();
   }, [content]);
   const [rect, setRect] = useState<DOMRect | null>(null);
-  // Glass sizes its lens from getBoundingClientRect, which the sheet's scale-in
-  // shrinks on the first frame, and a ResizeObserver never fires for a
-  // transform. Flipping a class once the rise ends makes Glass measure again.
-  const [risen, setRisen] = useState(false);
 
   useLayoutEffect(() => {
-    if (open && anchorRef?.current) {
-      setRect(anchorRef.current.getBoundingClientRect());
-      setRisen(false);
-    }
+    if (open && anchorRef?.current) setRect(anchorRef.current.getBoundingClientRect());
   }, [open, anchorRef]);
 
   return (
@@ -102,21 +93,16 @@ export function CompactThreadActionMenu({
             "data-[state=open]:animate-[gtd-sheet-in_280ms_cubic-bezier(0.32,1.25,0.4,1)_both]",
             "data-[state=closed]:animate-[gtd-sheet-out_150ms_ease-in_both]",
           )}
-          onAnimationEnd={(event) => {
-            if (event.animationName === "gtd-sheet-in") setRisen(true);
-          }}
         >
-          <Glass
-            optics={MENU_GLASS}
-            style={{ display: "block" }}
+          <div
             className={cn(
               "relative rounded-[11px] py-1",
-              // Translucent on purpose: the colour is the glass tint over the
-              // refracted (Chromium) or frosted (Safari) thread list.
-              "bg-white/75 dark:bg-[#1c1c1e]/80",
+              // Translucent over a saturated blur, like a UIKit menu material.
+              // 24px holds up across the 280ms rise on mobile Safari; the
+              // scrim below already softens the list.
+              "bg-white/70 backdrop-blur-xl backdrop-saturate-150 dark:bg-[#1c1c1e]/70",
               "group-data-[state=open]/sheet:animate-[gtd-sheet-fade-in_180ms_ease-out_both]",
               "group-data-[state=closed]/sheet:animate-[gtd-sheet-fade-out_150ms_ease-in_both]",
-              risen && "gtd-risen",
             )}
           >
             <ThreadMenuActions
@@ -129,7 +115,7 @@ export function CompactThreadActionMenu({
               haptics={!scrollable}
               closeMenu={() => onOpenChange(false)}
             />
-          </Glass>
+          </div>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

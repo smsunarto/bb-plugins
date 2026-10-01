@@ -92,17 +92,6 @@ Source: <https://github.com/uidotdev/usehooks>
 
 ---
 
-## @samasante/liquid-glass
-
-MIT License, Copyright (c) Sam Asante.
-
-`Glass` frosts and refracts the thread menus. The menu optics follow its
-`GlassContextMenu` example. Compiled into `dist/app.js`.
-
-Source: <https://github.com/samasante/liquid-glass>
-
----
-
 ## TanStack Virtual — `@tanstack/react-virtual`, `@tanstack/virtual-core`
 
 MIT License, Copyright (c) 2021-present Tanner Linsley.

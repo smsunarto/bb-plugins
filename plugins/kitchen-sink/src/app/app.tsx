@@ -18,6 +18,7 @@ import {
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import { UnityCitationView } from "@bb-plugins/unity-inspector/app";
 import { DevinIcon } from "./devin-branding.tsx";
+import { SendHaptic } from "./send-haptic.tsx";
 import { SmartImageCompareDirective } from "./smart-image-compare.tsx";
 import "./app.css";
 import "./timeline-motion/timeline-motion.css";
@@ -305,6 +306,11 @@ export default definePluginApp((app) => {
     run: ({ threadId }) => {
       if (threadId !== null) jumpToLatestEvent(document, threadId);
     },
+  });
+  app.composer.customize({
+    id: "send-haptic",
+    scopes: ["thread", "new-thread"],
+    banners: [{ id: "send-haptic", chrome: "bare", component: SendHaptic }],
   });
   app.slots.messageDirective({ id: "smart-diff", component: SmartChangeDirective });
   app.slots.messageDirective({ id: "smart-patch", component: SmartPatchDirective });
